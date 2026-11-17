@@ -68,6 +68,10 @@ export const STEP_UP_ACTION_KINDS = [
   /** Answer one remote approval, bound to the whole request. */
   'approval.grant',
   'approval.grant-always',
+  /** Approve a mini app, or widen what it may reach (rooms, agents, an "Allow all" set). */
+  'extension.grant',
+  /** Change a mini app's project settings. */
+  'extension.settings-change',
 ] as const;
 
 /** One kind of guarded action. */

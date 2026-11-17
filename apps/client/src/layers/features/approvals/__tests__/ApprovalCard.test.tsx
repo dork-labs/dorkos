@@ -161,6 +161,42 @@ describe('ApprovalCard', () => {
       expect(screen.queryByText('Allowed once')).not.toBeInTheDocument();
     });
 
+    it('uses server context for a neutral card without another list read or an early receipt', async () => {
+      let settle: () => void = () => {};
+      const getConfig = vi.fn<Transport['getConfig']>().mockResolvedValue({
+        ...(await createMockTransport().getConfig()),
+        callerRoute: 'local',
+        approvalAnswerContext: {
+          answerNeedsStepUp: true,
+          answeringFrom: remote().answeringFrom,
+          onWifi: false,
+        },
+      });
+      const { transport } = renderCard(
+        { ...remote(), answerNeedsStepUp: undefined, answeringFrom: undefined },
+        {
+          getConfig,
+          grantApproval: vi.fn(
+            () =>
+              new Promise<ApprovalDecisionResponse>((resolve) => {
+                settle = () =>
+                  resolve({ ok: true, approvalId: remote().approvalId, outcome: 'granted' });
+              })
+          ),
+        }
+      );
+      expect(
+        await screen.findByText('You’re answering from Safari on iPhone over Remote Access.')
+      ).toBeVisible();
+      expect(getConfig).toHaveBeenCalled();
+      expect(transport.listPendingApprovals).not.toHaveBeenCalled();
+
+      await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
+      expect(screen.queryByText('Allowed once')).not.toBeInTheDocument();
+      await act(async () => settle());
+      expect(await screen.findByText('Allowed once')).toBeVisible();
+    });
+
     it('keeps request codes off desk cards', () => {
       renderCard(buildApproval({ requestCode: 'K7MR-4XQ9-HT3W' }));
       expect(screen.queryByText('K7MR-4XQ9-HT3W')).not.toBeInTheDocument();
@@ -783,28 +819,30 @@ describe('a connected-app action says what it does (DOR-2504)', () => {
 describe('on Wi-Fi (DOR-2969)', () => {
   const wifi = { getConfig: vi.fn().mockResolvedValue({ callerRoute: 'wifi' }) } as never;
 
-  it('offers Allow once and Deny, says where Always allow lives, and sends a one-time yes', async () => {
+  it('offers only Deny on Wi-Fi and explains where to allow', async () => {
     const { transport } = renderCard(
       buildApproval({ alwaysOffered: true, suggestAlways: true }),
       wifi
     );
-    await screen.findByText('Always allow is only available at this computer.');
-    expect(screen.queryByRole('button', { name: /always allow/i })).toBeNull();
-    const once = screen.getByRole('button', { name: 'Allow once' });
-    expect(once).toHaveAttribute('data-variant', 'secondary');
-    expect(screen.getByRole('button', { name: 'Deny' })).toBeInTheDocument();
-    await userEvent.click(once);
-    await waitFor(() => expect(transport.grantApproval).toHaveBeenCalled());
-    expect(vi.mocked(transport.grantApproval).mock.calls[0]![0]).not.toMatchObject({
-      answer: 'always',
-    });
+    await screen.findByText('Answer at your computer or over Remote Access.');
+    expect(screen.queryByRole('button', { name: /allow/i })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Deny' }));
+    await waitFor(() => expect(transport.denyApproval).toHaveBeenCalled());
+    expect(transport.grantApproval).not.toHaveBeenCalled();
+  });
+
+  it('keeps showing what is asked on Wi-Fi, hiding only Allow', async () => {
+    renderCard(buildApproval({ source: { name: 'Acme' } } as never), wifi);
+    await screen.findByText('Answer at your computer or over Remote Access.');
+    expect(screen.getByText('From Acme')).toBeVisible();
+    expect(screen.getByText('Uninstall "sentry-monitor"')).toBeVisible();
+    expect(screen.queryByRole('button', { name: /allow/i })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Deny' })).toBeVisible();
   });
 
   it('says where a Wi-Fi answer can be confirmed', async () => {
     renderCard(buildApproval({ answerNeedsStepUp: true, requestCode: 'K7MR-4XQ9-HT3W' }), wifi);
-    expect(
-      await screen.findByText('On Wi-Fi, answer on the computer running DorkOS.')
-    ).toBeVisible();
+    expect(await screen.findByText('Answer at your computer or over Remote Access.')).toBeVisible();
     expect(screen.queryByText('Allowing asks you to confirm it’s you.')).not.toBeInTheDocument();
   });
 
@@ -813,7 +851,7 @@ describe('on Wi-Fi (DOR-2969)', () => {
       getConfig: vi.fn().mockResolvedValue({ callerRoute: 'local' }),
     } as never);
     expect(await screen.findByRole('button', { name: 'Always allow' })).toBeInTheDocument();
-    expect(screen.queryByText('Always allow is only available at this computer.')).toBeNull();
+    expect(screen.queryByText('Answer at your computer or over Remote Access.')).toBeNull();
   });
 });
 

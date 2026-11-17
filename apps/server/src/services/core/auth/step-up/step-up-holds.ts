@@ -79,6 +79,8 @@ export interface StepUpActionInput {
 /** One held action. */
 export interface HeldStepUp {
   statement: LocalStepUpStatementV1;
+  /** Full action identity for replacement; a display binding may be shared by distinct actions. */
+  canonicalHash: string;
   reason: string;
   notes: readonly string[];
   warnings: readonly string[];
@@ -127,13 +129,10 @@ export function stepUpActionHash(
 }
 
 /** Drop what expired, and the live one this same browser held for the same action. */
-function prune(now: number, sessionId: string | null, kind: string, inputSha256: string): void {
+function prune(now: number, sessionId: string | null, canonicalHash: string): void {
   for (const [id, entry] of held) {
     const { statement } = entry;
-    const sameAction =
-      entry.sessionId === sessionId &&
-      statement.kind === kind &&
-      statement.inputSha256 === inputSha256;
+    const sameAction = entry.sessionId === sessionId && entry.canonicalHash === canonicalHash;
     if (sameAction || now >= Date.parse(statement.expiresAt)) drop(id);
   }
 }
@@ -158,7 +157,7 @@ export function holdStepUp(
   const canonicalHash = stepUpActionHash(action);
   const inputSha256 = action.binding?.hash ?? canonicalHash;
   if (!/^[0-9a-f]{64}$/.test(inputSha256)) throw new Error('Step-up binding must be SHA-256');
-  prune(now, sessionId, action.kind, inputSha256);
+  prune(now, sessionId, canonicalHash);
   while (held.size >= MAX_HELD_STEP_UPS) {
     const oldest = held.keys().next().value;
     if (oldest === undefined) break;
@@ -177,6 +176,7 @@ export function holdStepUp(
   };
   held.set(statement.heldActionId, {
     statement,
+    canonicalHash,
     reason: action.reason,
     notes: action.notes ?? [],
     warnings: action.warnings ?? [],

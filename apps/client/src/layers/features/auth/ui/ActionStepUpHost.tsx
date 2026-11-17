@@ -414,7 +414,8 @@ function EndedBody({ message, onClose }: { message: string; onClose: () => void 
  * "Confirm" otherwise.
  */
 function primaryLabel(kind: StepUpActionKind | undefined): string {
-  if (kind === 'approval.grant') return 'Allow';
+  if (kind === 'approval.grant' || kind === 'extension.grant') return 'Allow';
+  if (kind === 'extension.settings-change') return 'Save settings';
   if (kind === 'approval.grant-always') return 'Always allow';
   if (kind === 'connection.confirm-setting') return 'Confirm setting';
   if (kind === 'connection.use-setting') return 'Allow sending';

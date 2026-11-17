@@ -160,6 +160,25 @@ describe('holdStepUp', () => {
     expect(peekHeldStepUp(other.heldActionId, NOW)).toBeDefined();
   });
 
+  it('keeps distinct actions with the same bound display hash independent', () => {
+    const binding = { hash: 'a'.repeat(64), currentHash: () => 'a'.repeat(64) };
+    const offer = holdStepUp(
+      action({ target: 'offer', input: { offerId: 'next' }, binding }),
+      'session-a',
+      NOW
+    );
+    const put = holdStepUp(
+      action({ target: 'settings', input: { value: { autonomy: 'always' } }, binding }),
+      'session-a',
+      NOW
+    );
+    expect(offer.inputSha256).toBe(put.inputSha256);
+    expect(peekHeldStepUp(offer.heldActionId, NOW)).toBeDefined();
+    expect(peekHeldStepUp(put.heldActionId, NOW)).toBeDefined();
+    takeHeldStepUp(offer.heldActionId, NOW);
+    expect(peekHeldStepUp(put.heldActionId, NOW)).toBeDefined();
+  });
+
   it('drops the oldest once too many are held', () => {
     const first = holdStepUp(action({ target: 't-0' }), 'session-a', NOW);
     for (let i = 1; i <= MAX_HELD_STEP_UPS; i++) {

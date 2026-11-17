@@ -66,8 +66,19 @@ describe('ApprovalPrompt', () => {
     expect(
       screen.getByText('You’re answering from Safari on a phone over Remote Access.')
     ).toBeDefined();
-    expect(screen.getByText('Allowing asks you to confirm it’s you.')).toBeDefined();
+    // A one-time Allow here goes straight through, so the card never says it asks.
+    expect(screen.queryByText('Allowing asks you to confirm it’s you.')).toBeNull();
+    expect(screen.queryByText('Always allow asks you to confirm it’s you.')).toBeNull();
     expect(screen.getByText('K7MR-4XQ9-HT3W')).toBeDefined();
+  });
+
+  it('says only Always allow asks to confirm on a remote prompt that offers it', () => {
+    wifi.remote = true;
+    render(
+      <ApprovalPrompt {...baseProps} approvalHasSuggestions approvalRequestCode="K7MR-4XQ9-HT3W" />
+    );
+    expect(screen.getByText('Always allow asks you to confirm it’s you.')).toBeDefined();
+    expect(screen.queryByText('Allowing asks you to confirm it’s you.')).toBeNull();
   });
 
   it('keeps desk cards free of remote confirmation details', () => {
@@ -912,24 +923,23 @@ describe('a routine ask is calm and says who and what (DOR-4117)', () => {
 });
 
 describe('ApprovalPrompt on Wi-Fi (DOR-2969)', () => {
-  it('shows Allow once and Deny, never Always allow, and says why once', () => {
+  it('shows only Deny on Wi-Fi and says where to allow', () => {
     wifi.on = true;
     render(<ApprovalPrompt {...baseProps} approvalHasSuggestions />);
     expect(screen.queryByRole('button', { name: /always allow/i })).toBeNull();
-    const once = screen.getByRole('button', { name: /^Allow once/ });
-    expect(once.getAttribute('data-variant')).toBe('secondary');
+    expect(screen.queryByRole('button', { name: /^Allow/ })).toBeNull();
     expect(screen.getByRole('button', { name: /^Deny/ })).toBeDefined();
-    expect(screen.getByText('Always allow is only available at this computer.')).toBeDefined();
+    expect(screen.getByText('Answer at your computer or over Remote Access.')).toBeDefined();
   });
 
-  it('answers Enter with Allow once and Esc with Deny; the always shortcut does nothing', async () => {
+  it('ignores both Allow shortcuts on Wi-Fi', async () => {
     wifi.on = true;
     const ref = createRef<ApprovalPromptHandle>();
     render(<ApprovalPrompt {...baseProps} approvalHasSuggestions ref={ref} />);
     act(() => ref.current!.alwaysAllow());
     expect(mockApproveTool).not.toHaveBeenCalled();
     act(() => ref.current!.approve());
-    await waitFor(() => expect(mockApproveTool).toHaveBeenCalledWith('session-1', 'tc-1'));
+    expect(mockApproveTool).not.toHaveBeenCalled();
   });
 
   it('denies from Wi-Fi', async () => {

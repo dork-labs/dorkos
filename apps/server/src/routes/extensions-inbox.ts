@@ -24,7 +24,11 @@
  *
  * @module routes/extensions-inbox
  */
-import { holdRemoteExtensionAnswer } from './extension-decision-step-up.js';
+import {
+  holdRemoteExtensionAnswer,
+  holdRemoteExtensionSettings,
+} from './extension-decision-step-up.js';
+import { grantsPower } from '../services/core/approvals/model/approval-answer-policy.js';
 import type { StepUpCommitResult } from '../services/core/auth/step-up/step-up-holds.js';
 import type { Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
@@ -44,7 +48,7 @@ import { logger } from '../lib/logger.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
-import { honoRequestFacts } from '../http/request-facts.js';
+import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { DECISION_BAR, recordSettingsChange } from './extension-decisions.js';
 import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
@@ -106,8 +110,7 @@ export function registerExtensionInboxRoutes(
           ? { status: 200, body: outcome.response }
           : { status: outcome.status, body: { error: outcome.message, code: outcome.code } };
       };
-      const decision = inbox.listOpen(id).find((entry) => entry.id === decisionId);
-      if (body.data.action === 'approve' && (!decision || decision.actions.kind === 'yes-no')) {
+      if (grantsPower({ kind: body.data.action === 'reject' ? 'reject' : 'extension-answer' })) {
         const held = holdRemoteExtensionAnswer(
           c,
           { id: decisionId, kind: 'decision', inbox, copy: DECISION_BAR, extensionId: id },
@@ -163,28 +166,48 @@ export function registerExtensionInboxRoutes(
       if (!resolved || resolved === 'outside' || !allowed.some((p) => p.root === resolved.root)) {
         return c.json({ error: `${record.manifest.name} is not set up in that project.` }, 404);
       }
-      try {
-        await projectSettingsStore(dorkHome).write(
-          id,
-          resolved.root,
-          body.data.value,
-          'extension-page'
-        );
-      } catch (err) {
-        if (err instanceof ProjectSettingsError) {
-          return c.json(
-            { error: err.message, code: err.code },
-            err.code === 'too_large' ? 413 : 400
+      const run = async (facts: RequestFacts): Promise<Response> => {
+        const current = extensionManager.get(id);
+        const projects = await projectRegistry.listForExtension(id);
+        if (!current || !projects.some((p) => p.root === resolved.root))
+          return c.json({ error: 'That project is no longer available.' }, 404);
+        try {
+          await projectSettingsStore(dorkHome).write(
+            id,
+            resolved.root,
+            body.data.value,
+            'extension-page'
           );
+        } catch (err) {
+          if (err instanceof ProjectSettingsError)
+            return c.json(
+              { error: err.message, code: err.code },
+              err.code === 'too_large' ? 413 : 400
+            );
+          throw err;
         }
-        throw err;
-      }
-      await recordSettingsChange(activity, honoRequestFacts(c), {
-        extensionId: id,
-        extensionName: record.manifest.name,
-        projectName: resolved.name,
+        await recordSettingsChange(activity, facts, {
+          extensionId: id,
+          extensionName: current.manifest.name,
+          projectName: resolved.name,
+        });
+        return c.body(null, 204);
+      };
+      const held = await holdRemoteExtensionSettings(c, {
+        id,
+        copy: SETTINGS_BAR,
+        project: body.data.project,
+        value: body.data.value,
+        read: () => ({
+          t: 'dorkos.extension-settings.step-up.v1',
+          extensionId: id,
+          manifest: extensionManager.get(id)?.manifest ?? null,
+          project: resolved.root,
+          value: body.data.value,
+        }),
+        run,
       });
-      return c.body(null, 204);
+      return held ?? (await run(honoRequestFacts(c)));
     } catch (err) {
       logger.error('[Extensions] Failed to write project settings', err);
       return c.json({ error: 'Failed to write project settings' }, 500);

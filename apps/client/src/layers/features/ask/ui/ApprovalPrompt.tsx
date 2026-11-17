@@ -34,7 +34,7 @@ import { WRAPPING_ACTION_CLASS } from '../lib/wrapping-action';
 const ACTION_CLASS = cn('transition-opacity duration-150', WRAPPING_ACTION_CLASS);
 
 /** What a card on Wi-Fi says in place of Always allow (DOR-2969). */
-export const WIFI_ALWAYS_ALLOW_LINE = 'Always allow is only available at this computer.';
+export const WIFI_ALWAYS_ALLOW_LINE = 'Answer at your computer or over Remote Access.';
 
 // --- Animation constants (module-scope to avoid per-render allocation) ---
 
@@ -413,7 +413,7 @@ export function ApprovalPrompt({
     ref,
     () => ({
       approve() {
-        handleApprove();
+        if (!onWifi) handleApprove();
       },
       alwaysAllow() {
         if (!onWifi) handleAlwaysAllow();
@@ -556,7 +556,11 @@ export function ApprovalPrompt({
         {answerContext?.answerNeedsStepUp && approvalRequestCode && (
           <RequestCode code={approvalRequestCode} />
         )}
-        <ApprovalAnswerNote context={answerContext} />
+        {/* A one-time Allow goes straight through; only the standing rule asks. */}
+        <ApprovalAnswerNote
+          context={answerContext}
+          confirms={approvalHasSuggestions ? 'Always allow asks you to confirm it’s you.' : null}
+        />
         {error && <p className="text-status-error text-2xs mb-2">{error}</p>}
         {choosing && mcp && (
           <AlwaysAllowChoice
@@ -606,16 +610,18 @@ export function ApprovalPrompt({
           </div>
         )}
         <AskCard.Actions className={cn(choosing && 'hidden')}>
-          <Button
-            size="sm"
-            variant={onWifi ? 'outline' : 'default'}
-            onClick={handleApprove}
-            disabled={responding}
-            className={ACTION_CLASS}
-          >
-            <Check className="size-(--size-icon-xs)" /> {onWifi ? 'Allow once' : 'Allow'}
-            {showKeyHints && <Kbd className="ml-1.5">Enter</Kbd>}
-          </Button>
+          {!onWifi && (
+            <Button
+              size="sm"
+              variant="default"
+              onClick={handleApprove}
+              disabled={responding}
+              className={ACTION_CLASS}
+            >
+              <Check className="size-(--size-icon-xs)" /> Allow
+              {showKeyHints && <Kbd className="ml-1.5">Enter</Kbd>}
+            </Button>
+          )}
           {approvalHasSuggestions && !onWifi && (
             <Button
               size="sm"

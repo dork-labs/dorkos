@@ -147,16 +147,19 @@ import { projectsOfFolders } from '../services/projects/project-registry.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
-import {
-  isFromWifi,
-  NOT_FROM_WIFI,
-  refuseStandingYesFromWifi,
-  WIFI_ACTION_REFUSAL,
-} from '../services/core/auth/sessions/wifi-level.js';
+import { NOT_FROM_WIFI } from '../services/core/auth/sessions/wifi-level.js';
 import { wifiTurnHeld } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
 import { WIFI_DENY_REASON_REFUSAL } from './session-answer-wifi.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
-import { holdForStepUp } from './step-up-guard.js';
+import { deskGoesOnWithoutSheet, holdForStepUp } from './step-up-guard.js';
+import {
+  CONFIG_PATCH_CAPABILITY,
+  configPatchCardTouchesFrontDoor,
+} from '../services/core/approvals/model/front-door-cards.js';
+import {
+  grantsPower,
+  refuseApprovalYesFromWifi,
+} from '../services/core/approvals/model/approval-answer-policy.js';
 import type { StepUpCommitResult } from '../services/core/auth/step-up/step-up-holds.js';
 import { remoteAnswerDevice } from '../services/core/auth/sessions/remote-answer-device.js';
 
@@ -568,15 +571,8 @@ export function createApprovalsRoutes(
   router.post('/:id/grant', async (c) => {
     const authority = personOrRefuse(c);
     if (authority instanceof Response) return authority;
-    // A Wi-Fi sign-in answers approvals, but never a destructive one (DOR-2969)
-    // or one that could raise what agents may do (DOR-3037): those are the
-    // computer's owner's call, made at the computer.
-    const scope = isFromWifi(honoRequestFacts(c))
-      ? approvals.answerScope(c.req.param('id'))
-      : undefined;
-    if (scope && (scope.tier === 'destructive' || scope.raisesPermissions)) {
-      return c.json({ error: WIFI_ACTION_REFUSAL, code: NOT_FROM_WIFI }, 403);
-    }
+    const wifi = refuseApprovalYesFromWifi(honoRequestFacts(c));
+    if (wifi) return c.json(wifi, 403);
 
     // An empty POST reads as `{}`, as Express 5's undefined `req.body` did, and
     // `answer` defaults to `once`, so an absent body is a plain one-time yes.
@@ -586,8 +582,6 @@ export function createApprovalsRoutes(
       return c.json({ error: 'Validation failed', code: 'INVALID_GRANT_BODY', details }, 400);
     }
     const { answer } = parsed.data;
-    const standing = refuseStandingYesFromWifi(honoRequestFacts(c), answer === 'always');
-    if (standing) return c.json(standing, 403);
     const id = c.req.param('id');
 
     // Two Always allows for the same agent and action run one after the other:
@@ -602,7 +596,16 @@ export function createApprovalsRoutes(
       const run = () => grantAnswer(id, person, answer, expectedHash);
       return key ? serializedAlways(key, run) : run();
     };
-    if (isAtThisComputer(authority.facts)) {
+    // A settings card that changes a front-door setting is confirmed at this
+    // computer too, the bar the settings page's own write meets (Security M1 on #3878).
+    const frontDoorAtDesk =
+      first?.capabilityId === CONFIG_PATCH_CAPABILITY &&
+      configPatchCardTouchesFrontDoor(id) &&
+      !deskGoesOnWithoutSheet(authority.facts);
+    if (
+      !grantsPower({ kind: 'capability-approve' }) ||
+      (isAtThisComputer(authority.facts) && !frontDoorAtDesk)
+    ) {
       const result = await apply(authority);
       return c.json(result.body as never, result.status as ContentfulStatusCode);
     }
@@ -640,16 +643,9 @@ export function createApprovalsRoutes(
       commit: async (confirming) => {
         const person = personFromFacts(confirming);
         if (!('facts' in person)) return person;
-        const live = approvals.answerScope(id);
-        if (
-          isFromWifi(confirming) &&
-          live &&
-          (live.tier === 'destructive' || live.raisesPermissions)
-        ) {
-          return { status: 403, body: { error: WIFI_ACTION_REFUSAL, code: NOT_FROM_WIFI } };
-        }
-        const standing = refuseStandingYesFromWifi(confirming, answer === 'always');
-        if (standing) return { status: 403, body: standing };
+        // The same Wi-Fi rule as the request: a confirmation finished on Wi-Fi allows nothing.
+        const wifi = refuseApprovalYesFromWifi(confirming);
+        if (wifi) return { status: 403, body: wifi };
         return apply({ ...person, answeringFrom: from, confirmedWith: 'password' }, hash);
       },
     });

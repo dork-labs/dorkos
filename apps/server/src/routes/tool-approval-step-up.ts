@@ -3,11 +3,14 @@ import type { Context } from 'hono';
 import type { AlwaysAllowBreadth } from '@dorkos/shared/schemas';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
-import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
+import {
+  grantsPower,
+  refuseApprovalYesFromWifi,
+} from '../services/core/approvals/model/approval-answer-policy.js';
 import { toolApprovalHash } from '../services/core/approvals/model/tool-approval-binding.js';
 import type { StepUpCommitResult } from '../services/core/auth/step-up/step-up-holds.js';
 import { peekProjector } from '../services/session/session-state-projector.js';
-import { holdForStepUp } from './step-up-guard.js';
+import { deskGoesOnWithoutSheet, holdForStepUp } from './step-up-guard.js';
 
 /** Refuse a pending request that changed while its confirmation was open. */
 export const DIFFERENT_TOOL_APPROVAL: StepUpCommitResult = {
@@ -33,7 +36,7 @@ export function pendingToolApprovalHash(
     : undefined;
 }
 
-/** Hold only remote yeses; the caller keeps the desk path and all lowering paths unchanged. */
+/** Confirm standing rules at every location; a one-time tool answer is session-scoped. */
 export function holdRemoteToolApproval(
   c: Context<ApiEnv>,
   action: {
@@ -45,8 +48,12 @@ export function holdRemoteToolApproval(
   run: (facts: RequestFacts, hash: string) => Promise<StepUpCommitResult>
 ): Response | undefined {
   const facts = honoRequestFacts(c);
-  if (isAtThisComputer(facts)) return undefined;
-  if (facts.user?.credential !== 'cookie' || !facts.user.sessionId) {
+  const wifi = refuseApprovalYesFromWifi(facts);
+  if (wifi) return c.json(wifi, 403);
+  if (!grantsPower({ kind: action.always ? 'runtime-tool-always' : 'runtime-tool-once' }))
+    return undefined;
+  if (deskGoesOnWithoutSheet(facts)) return undefined;
+  if (facts.user && (facts.user.credential !== 'cookie' || !facts.user.sessionId)) {
     return c.json({ error: 'Sign in to DorkOS to decide an approval.', code: 'not-a-person' }, 403);
   }
   const hash = pendingToolApprovalHash(action.sessionId, action.ids);

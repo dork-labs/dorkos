@@ -1,4 +1,5 @@
 /** The full stored request a remote extension yes confirms. */
+import path from 'node:path';
 import type { ExtensionDecisionRow } from '@dorkos/db';
 import {
   DECISION_OFFER_TTL_MS,
@@ -11,6 +12,7 @@ import type { StoredOffer } from './extension-inbox-rows.js';
 /** Server-only binding plus the words and display code the person sees. */
 export interface ExtensionStepUpView {
   hash: string;
+  identityHash: string;
   reason: string;
   requestCode: string;
 }
@@ -54,6 +56,7 @@ export function extensionDecisionStepUp(row: ExtensionDecisionRow): ExtensionSte
   });
   return {
     hash,
+    identityHash: hash,
     reason: [title, why, detail].filter(Boolean).join('\n'),
     requestCode: requestCodeForHash(hash),
   };
@@ -73,14 +76,18 @@ export function extensionOfferStepUp(
   if (!offer || row.offerUsedAt || row.resolvedBy !== 'person') return undefined;
   const made = Date.parse(offer.createdAt);
   if (Number.isNaN(made) || now - made > DECISION_OFFER_TTL_MS) return undefined;
-  const hash = hashApprovalInput({
+  const identityHash = hashApprovalInput({
     t: 'dorkos.extension-offer.step-up.v1',
     decisionId: row.id,
+    revision: row.revision,
     extensionId: row.extensionId,
     projectRoot: row.projectRoot,
     offer,
   });
-  return { hash, reason: offer.text, requestCode: requestCodeForHash(hash) };
+  const hash = offer.settingsPatch
+    ? extensionSettingsHash(row.extensionId, offer.settingsPatch.project, offer.settingsPatch.patch)
+    : identityHash;
+  return { hash, identityHash, reason: offer.text, requestCode: requestCodeForHash(hash) };
 }
 
 /** List later offers; an immediate reply remains private to the browser that answered. */
@@ -100,11 +107,26 @@ export function pendingOffersForRows(
       ? [
           {
             decisionId: row.id,
+            revision: row.revision,
             text: offer.text,
             requestCode: view.requestCode,
             expiresAt: new Date(Date.parse(offer.createdAt) + DECISION_OFFER_TTL_MS).toISOString(),
           },
         ]
       : [];
+  });
+}
+
+/** One full JSON settings body has the same display code at either writing door. */
+export function extensionSettingsHash(
+  extensionId: string,
+  project: string,
+  value: unknown
+): string {
+  return hashApprovalInput({
+    t: 'dorkos.extension-settings.step-up.v1',
+    extensionId,
+    project: path.resolve(project),
+    value,
   });
 }

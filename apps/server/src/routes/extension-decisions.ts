@@ -24,6 +24,11 @@
  */
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 import { holdRemoteExtensionAnswer } from './extension-decision-step-up.js';
+import { deskGoesOnWithoutSheet } from './step-up-guard.js';
+import {
+  grantsPower,
+  refuseApprovalYesFromWifi,
+} from '../services/core/approvals/model/approval-answer-policy.js';
 import type { StepUpCommitResult } from '../services/core/auth/step-up/step-up-holds.js';
 import { Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
@@ -115,12 +120,16 @@ export function createExtensionDecisionsRoutes(
     return c.json({
       decisions: inbox.listOpen(query.data.extensionId).map((decision) => ({
         ...decision,
-        answerNeedsStepUp:
-          decision.actions.kind === 'yes-no' && !isAtThisComputer(honoRequestFacts(c)),
+        // Every yes away from this computer is held (no extension declares its effect yet).
+        answerNeedsStepUp: !isAtThisComputer(honoRequestFacts(c)),
       })),
+      // An offer is lasting, so it is held at the desk too unless no sheet could answer there.
       offers: inbox
         .pendingOffers()
-        .map((offer) => ({ ...offer, answerNeedsStepUp: !isAtThisComputer(honoRequestFacts(c)) })),
+        .map((offer) => ({
+          ...offer,
+          answerNeedsStepUp: !deskGoesOnWithoutSheet(honoRequestFacts(c)),
+        })),
     });
   });
 
@@ -151,14 +160,13 @@ export function createExtensionDecisionsRoutes(
               ? {
                   ...offer,
                   requestCode: inbox.stepUpView(id, 'offer')?.requestCode,
-                  answerNeedsStepUp: !isAtThisComputer(facts),
+                  answerNeedsStepUp: !deskGoesOnWithoutSheet(facts),
                 }
               : null,
           },
         };
       };
-      const decision = inbox.listOpen().find((entry) => entry.id === id);
-      if (body.data.action === 'approve' && (!decision || decision.actions.kind === 'yes-no')) {
+      if (grantsPower({ kind: body.data.action === 'reject' ? 'reject' : 'extension-answer' })) {
         const held = holdRemoteExtensionAnswer(
           c,
           { id, kind: 'decision', inbox, copy: DECISION_BAR },
@@ -184,6 +192,8 @@ export function createExtensionDecisionsRoutes(
       if (refused) return refused;
       const body = DecisionOfferRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
       if (!body.success) return c.json({ error: 'Send { accept: true | false }.' }, 400);
+      const wifi = body.data.accept ? refuseApprovalYesFromWifi(honoRequestFacts(c)) : undefined;
+      if (wifi) return c.json(wifi, 403);
       // "Next time, on its own" is a standing yes: never from Wi-Fi (DOR-2969).
       const standing = refuseStandingYesFromWifi(honoRequestFacts(c), body.data.accept);
       if (standing) return c.json(standing, 403);
@@ -197,7 +207,7 @@ export function createExtensionDecisionsRoutes(
           await recordSettingsChange(deps.activity, facts, outcome.settingsChanged);
         return { status: 200, body: { message: outcome.message } };
       };
-      if (body.data.accept) {
+      if (grantsPower({ kind: body.data.accept ? 'offer-accept' : 'dismiss' })) {
         const held = holdRemoteExtensionAnswer(
           c,
           { id, kind: 'offer', inbox, copy: DECISION_BAR },

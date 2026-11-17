@@ -14594,6 +14594,9 @@
       "PendingExtensionApproval": {
         "type": "object",
         "properties": {
+          "requestCode": {
+            "type": "string"
+          },
           "id": {
             "type": "string",
             "minLength": 1
@@ -21251,6 +21254,10 @@
           "decisionId": {
             "type": "string",
             "minLength": 1
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0
           },
           "text": {
             "type": "string",

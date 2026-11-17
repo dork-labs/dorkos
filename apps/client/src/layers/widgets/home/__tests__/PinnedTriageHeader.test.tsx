@@ -112,6 +112,7 @@ function buildApproval(overrides: Partial<PendingApproval> = {}): PendingApprova
     hasAgentPath: true,
     area: null,
     alwaysOffered: false,
+    answerNeedsStepUp: false,
     requestedAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 8.5 * 60_000).toISOString(),
     ...overrides,

@@ -144,6 +144,10 @@ import {
   describeRemainingArguments,
   type ApprovalSubjectDeclaration,
 } from '../approvals/index.js';
+import {
+  CONFIG_PATCH_CAPABILITY,
+  noteConfigPatchCard,
+} from '../approvals/model/front-door-cards.js';
 import { logger } from '../../../lib/logger.js';
 import {
   APPROVAL_TOKEN_ARGUMENT,
@@ -1012,6 +1016,9 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
       auditStoreFailure();
       throw err;
     }
+    // The card keeps only the patch's hash; the grant route reads this note (DOR-3648).
+    if (action.id === CONFIG_PATCH_CAPABILITY)
+      noteConfigPatchCard(ticket.approvalId, (input as { patch?: unknown } | null)?.patch);
     const payload: ApprovalRequiredPayload = {
       status: 'approval_required',
       capabilityId: action.id,

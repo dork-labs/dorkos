@@ -20,6 +20,12 @@ import { useEventSubscription, useTransport } from '@/layers/shared/model';
 /** Query key for the pending-approval list. */
 export const PENDING_APPROVALS_QUERY_KEY = ['approvals', 'pending'] as const;
 
+/** Broadcasts carry requests; only HTTP can classify the answering browser. */
+const StreamPendingApprovalSchema = PendingApprovalSchema.omit({
+  answerNeedsStepUp: true,
+  answeringFrom: true,
+});
+
 /**
  * Grace added to an expiry timer so it fires strictly after the deadline.
  *
@@ -101,7 +107,7 @@ function pruneExpired(queryClient: QueryClient): boolean {
  * `approval_pending` adds a card the moment an agent asks, and
  * `approval_resolved` retires one as soon as anybody decides — including from
  * another window. The `/api/events` stream has no replay, so the fetch is what
- * makes a freshly opened cockpit correct and the events are what keep it that way.
+ * makes a freshly opened app correct and the events are what keep it that way.
  *
  * Expiry is the one ending the server never announces by itself: it is enforced
  * when a token is presented, so an approval nobody answered and no agent retried
@@ -117,17 +123,29 @@ export function usePendingApprovals(): PendingApprovalsState {
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: PENDING_APPROVALS_QUERY_KEY,
-    queryFn: () => transport.listPendingApprovals(),
+    queryFn: async () => {
+      const atStart = new Set(
+        queryClient
+          .getQueryData<PendingApprovalsResponse>(PENDING_APPROVALS_QUERY_KEY)
+          ?.approvals.map((a) => a.approvalId)
+      );
+      const snapshot = await transport.listPendingApprovals();
+      const fetchedIds = new Set(snapshot.approvals.map((a) => a.approvalId));
+      const arrivals = (
+        queryClient.getQueryData<PendingApprovalsResponse>(PENDING_APPROVALS_QUERY_KEY)
+          ?.approvals ?? []
+      ).filter((a) => !atStart.has(a.approvalId) && !fetchedIds.has(a.approvalId));
+      return { ...snapshot, approvals: [...snapshot.approvals, ...arrivals] };
+    },
   });
 
   useEventSubscription('approval_pending', (raw) => {
-    const parsed = PendingApprovalSchema.safeParse(raw);
+    const parsed = StreamPendingApprovalSchema.safeParse(raw);
     if (!parsed.success) return;
-    // Broadcasts carry no answering session: refresh its server-derived route.
-    void queryClient.invalidateQueries({ queryKey: PENDING_APPROVALS_QUERY_KEY });
+    // Cards read this browser's context from config. The neutral queue update
+    // needs no refetch; the read above preserves arrivals during bootstrap.
     queryClient.setQueryData<PendingApprovalsResponse>(PENDING_APPROVALS_QUERY_KEY, (current) => {
       const approvals = current?.approvals ?? [];
-      // The same approval can arrive twice if a refetch races the event.
       if (approvals.some((a) => a.approvalId === parsed.data.approvalId)) return current;
       return { approvals: [...approvals, parsed.data] };
     });

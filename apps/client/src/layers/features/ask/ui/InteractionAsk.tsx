@@ -61,6 +61,7 @@ export function InteractionAsk({
 }: InteractionAskProps) {
   const answerContext = useConfig().data?.approvalAnswerContext;
   const remotely = answerContext?.answerNeedsStepUp === true;
+  const wifiApproval = answerContext?.onWifi === true && ask.interaction.type === 'approval';
   const now = useNow(TICK_MS);
   // Fixed at mount, so the legacy fallback below cannot drift with the tick.
   const [mountedAt] = useState(() => Date.now());
@@ -121,7 +122,10 @@ export function InteractionAsk({
       isActive={isActive}
       isResolved={receipt !== undefined}
       {...(receipt === undefined
-        ? { onAllow: () => void answer(ask, 'allow'), onDeny: () => void answer(ask, 'deny') }
+        ? {
+            ...(!wifiApproval ? { onAllow: () => void answer(ask, 'allow') } : {}),
+            onDeny: () => void answer(ask, 'deny'),
+          }
         : {})}
       className={className}
       data-testid="interaction-ask"
@@ -179,7 +183,7 @@ export function InteractionAsk({
           <AskReceiptLine receipt={receipt} />
         ) : (
           <AskCard.Actions>
-            {interaction.type !== 'question' && (
+            {interaction.type !== 'question' && !wifiApproval && (
               <Button
                 size="sm"
                 data-slot="ask-allow"

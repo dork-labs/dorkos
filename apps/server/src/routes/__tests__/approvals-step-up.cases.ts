@@ -12,6 +12,11 @@ import { resetHeldStepUpsForTests } from '../../services/core/auth/step-up/step-
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { createApprovalsRoutes, type ApprovalsRouterOptions } from '../approvals.js';
 import { createStepUpRoutes } from '../step-up.js';
+import { setTestOwner } from './test-owner.js';
+import {
+  noteConfigPatchCard,
+  resetFrontDoorCardsForTests,
+} from '../../services/core/approvals/model/front-door-cards.js';
 
 /** Remote cases registered beside the existing approvals route tests. */
 export function registerApprovalStepUpCases(): void {
@@ -122,7 +127,7 @@ export function registerApprovalStepUpCases(): void {
       vi.restoreAllMocks();
     });
 
-    it.each(['own-tunnel', 'managed', 'wifi'] as const)(
+    it.each(['own-tunnel', 'managed'] as const)(
       'holds a one-time answer from %s',
       async (ingress) => {
         const ticket = ask();
@@ -146,34 +151,97 @@ export function registerApprovalStepUpCases(): void {
       expect(approvals.answerScope(ticket.approvalId)?.state).toBe('pending');
     });
 
+    describe('a settings card that changes a front-door setting (Security M1 on #3878)', () => {
+      const settingsCard = (patch?: unknown) => {
+        const ticket = approvals.request({
+          capabilityId: 'operator.config_patch',
+          inputHash: hashApprovalInput({ patch }),
+          summary: 'Update configuration.',
+          requestedBy: 'Kestrel',
+        });
+        if (patch !== undefined) noteConfigPatchCard(ticket.approvalId, patch);
+        return ticket;
+      };
+      const deskGrant = (id: string, ingress?: IngressKind) =>
+        request(app(ingress))
+          .post(`/api/approvals/${id}/grant`)
+          .set('Origin', ORIGIN)
+          .send({ answer: 'once' });
+      beforeEach(() => {
+        resetFrontDoorCardsForTests();
+        setTestOwner('owner');
+      });
+      afterEach(() => setTestOwner(null));
+
+      it('holds it at this computer too, and writes it only once confirmed', async () => {
+        const ticket = settingsCard({ tunnel: { auth: { mode: 'open' } } });
+        const held = await deskGrant(ticket.approvalId);
+        expect(held.status).toBe(428);
+        expect(approvals.answerScope(ticket.approvalId)?.state).toBe('pending');
+        const confirmed = await request(app())
+          .post(`/api/step-up/${held.body.heldActionId}/password`)
+          .set('Origin', ORIGIN)
+          .send({ password: PASSWORD });
+        expect(confirmed.body).toMatchObject({ ok: true, status: 200 });
+        expect(approvals.answerScope(ticket.approvalId)?.state).toBe('granted');
+      });
+
+      it.each([undefined, 'own-tunnel', 'managed'] as const)(
+        'holds an Allow-once of a front-door settings card (%s) and writes nothing',
+        async (via) => {
+          const ticket = settingsCard({ mcp: { apiKey: 'made-up-key-value' } });
+          const held = await deskGrant(ticket.approvalId, via);
+          expect(held.status).toBe(428);
+          expect(held.body.heldActionId).toEqual(expect.any(String));
+          expect(approvals.answerScope(ticket.approvalId)?.state).toBe('pending');
+          expect(events).toEqual([]);
+        }
+      );
+
+      it('leaves an ordinary settings card immediate at this computer', async () => {
+        const ticket = settingsCard({ ui: { theme: 'dark' } });
+        const res = await deskGrant(ticket.approvalId);
+        expect(res.status).toBe(200);
+        expect(approvals.answerScope(ticket.approvalId)?.state).toBe('granted');
+      });
+
+      it('holds a settings card whose patch this process never saw', async () => {
+        const ticket = settingsCard();
+        expect((await deskGrant(ticket.approvalId)).status).toBe(428);
+      });
+    });
+
     it('keeps desk answers immediate', async () => {
       const ticket = ask();
       expect((await grant(ticket.approvalId)).status).toBe(200);
       expect(approvals.answerScope(ticket.approvalId)?.state).toBe('granted');
     });
 
-    it('holds a remote Always allow before saving its setting', async () => {
-      const ticket = approvals.request({
-        capabilityId: 'rooms.create',
-        inputHash: hashApprovalInput({ title: 'notes' }),
-        summary: 'Open a room.',
-        requestedBy: 'Kestrel',
-        requestedByPath: '/made-up/kestrel',
-        area: 'rooms',
-      });
-      const held = await request(app('managed'))
-        .post(`/api/approvals/${ticket.approvalId}/grant`)
-        .set('Origin', ORIGIN)
-        .send({ answer: 'always' });
-      expect(held.status).toBe(428);
-      expect(setAgent).not.toHaveBeenCalled();
-      expect((await confirm(held.body.heldActionId, 'managed')).body).toMatchObject({
-        ok: true,
-        status: 200,
-      });
-      expect(setAgent).toHaveBeenCalledTimes(1);
-      expect(approvals.answerScope(ticket.approvalId)?.state).toBe('granted');
-    });
+    it.each(['own-tunnel', 'managed'] as const)(
+      'holds an Always allow from %s before saving its setting',
+      async (via) => {
+        const ticket = approvals.request({
+          capabilityId: 'rooms.create',
+          inputHash: hashApprovalInput({ title: 'notes' }),
+          summary: 'Open a room.',
+          requestedBy: 'Kestrel',
+          requestedByPath: '/made-up/kestrel',
+          area: 'rooms',
+        });
+        const held = await request(app(via))
+          .post(`/api/approvals/${ticket.approvalId}/grant`)
+          .set('Origin', ORIGIN)
+          .send({ answer: 'always' });
+        expect(held.status).toBe(428);
+        expect(setAgent).not.toHaveBeenCalled();
+        expect((await confirm(held.body.heldActionId, via)).body).toMatchObject({
+          ok: true,
+          status: 200,
+        });
+        expect(setAgent).toHaveBeenCalledTimes(1);
+        expect(approvals.answerScope(ticket.approvalId)?.state).toBe('granted');
+      }
+    );
 
     it('confirms the exact held request once', async () => {
       const ticket = ask();
@@ -232,11 +300,27 @@ export function registerApprovalStepUpCases(): void {
       expect((await grant(once.approvalId, 'wifi')).status).toBe(403);
     });
 
+    it('allows nothing when a held yes is finished on Wi-Fi', async () => {
+      const ticket = ask();
+      const held = await grant(ticket.approvalId, 'own-tunnel');
+      expect(held.status).toBe(428);
+      // Refused by the sheet (no password over plain Wi-Fi) or by the commit's own Wi-Fi rule.
+      const finished = await confirm(held.body.heldActionId, 'wifi');
+      expect(finished.body.ok === true ? finished.body.result.code : finished.body.code).toMatch(
+        /^(NOT_FROM_WIFI|insecure-connection)$/
+      );
+      expect(approvals.answerScope(ticket.approvalId)?.state).toBe('pending');
+    });
+
     it('keeps passwords off plain-http Wi-Fi', async () => {
       const ticket = ask();
-      const held = await grant(ticket.approvalId, 'wifi');
-      expect(held.status).toBe(428);
-      expect((await confirm(held.body.heldActionId, 'wifi')).body.code).toBe('insecure-connection');
+      const refused = await grant(ticket.approvalId, 'wifi');
+      expect(refused.status).toBe(403);
+      expect(refused.body).toMatchObject({
+        code: 'NOT_FROM_WIFI',
+        error: 'Answer at your computer or over Remote Access.',
+      });
+      expect(refused.body.heldActionId).toBeUndefined();
       expect(approvals.answerScope(ticket.approvalId)?.state).toBe('pending');
     });
 

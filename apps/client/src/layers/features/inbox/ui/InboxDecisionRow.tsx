@@ -314,6 +314,7 @@ export function InboxDecisionRow({
   const reducedMotion = useReducedMotion();
   const busy = pending !== null;
   const history = actions === undefined;
+  const wifiGrant = answerContext?.onWifi === true && requestCode !== undefined;
 
   const titleText = onOpen ? (
     <button
@@ -404,9 +405,12 @@ export function InboxDecisionRow({
               {sourceLine}
             </p>
           )}
-          {actions?.kind === 'yes-no' && <ApprovalAnswerNote context={answerContext} />}
+          {(actions?.kind === 'yes-no' || (actions && requestCode)) && (
+            <ApprovalAnswerNote context={answerContext} />
+          )}
           {actions?.kind === 'yes-no' && actions.words && (
             <InboxAnswerButtons
+              canApprove={!wifiGrant}
               approveLabel={actions.approveLabel}
               rejectLabel={actions.rejectLabel}
               onApprove={actions.onApprove}
@@ -416,7 +420,7 @@ export function InboxDecisionRow({
               {...(actions.rejectNote ? { rejectExpanded: answering === 'note' } : {})}
             />
           )}
-          {actions?.kind === 'word' && actions.block && (
+          {actions?.kind === 'word' && actions.block && !wifiGrant && (
             <InboxWordButton
               block
               reachesInfo={more !== undefined}
@@ -428,7 +432,7 @@ export function InboxDecisionRow({
               working={pending === 'word'}
             />
           )}
-          {actions?.kind === 'choice' && (
+          {actions?.kind === 'choice' && !wifiGrant && (
             <div className="mt-1.5" data-slot="inbox-decision-choices">
               <div className="flex flex-wrap gap-1.5">
                 {actions.choices.map((choice) => {
@@ -532,15 +536,17 @@ export function InboxDecisionRow({
                     buttonRef={rejectRef}
                     disabled={busy}
                   />
-                  <IconAction
-                    label={actions.approveLabel}
-                    icon={ThumbsUp}
-                    onClick={actions.onApprove}
-                    disabled={busy}
-                  />
+                  {!wifiGrant && (
+                    <IconAction
+                      label={actions.approveLabel}
+                      icon={ThumbsUp}
+                      onClick={actions.onApprove}
+                      disabled={busy}
+                    />
+                  )}
                 </>
               )}
-              {actions.kind === 'word' && !actions.block && (
+              {actions.kind === 'word' && !actions.block && !wifiGrant && (
                 <InboxWordButton
                   label={actions.label}
                   description={actions.description}

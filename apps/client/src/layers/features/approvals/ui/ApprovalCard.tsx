@@ -1,6 +1,3 @@
-import { useQuery } from '@tanstack/react-query';
-import { PENDING_APPROVALS_QUERY_KEY } from '@/layers/entities/attention';
-import { useTransport } from '@/layers/shared/model';
 import { ApprovalStepUpNote } from './ApprovalStepUpNote';
 import { HookApprovalCard } from './HookApprovalCard';
 import { motion, useReducedMotion } from 'motion/react';
@@ -16,7 +13,7 @@ import {
   formatTimeLeft,
   WIFI_ALWAYS_ALLOW_LINE,
 } from '@/layers/features/ask';
-import { useOnWifi } from '@/layers/entities/config';
+import { useConfig, useOnWifi } from '@/layers/entities/config';
 import { agentLabelFrom } from '../lib/agent-label';
 import { useGrantApproval, useDenyApproval } from '../model/use-approval-decision';
 import { useDismissSuggestion, useSuggestionDismissed } from '../model/use-dismiss-suggestion';
@@ -108,7 +105,7 @@ export interface ApprovalCardProps {
   onDecided?: (approvalId: string) => void;
   /** Focus the first hook title when a list opens. */
   focusOnOpen?: boolean;
-  /** The pending tool row keeps the code visible at the desk too. */
+  /** The card is drawn in a chat row. */
   inChat?: boolean;
 }
 
@@ -186,16 +183,17 @@ export interface ApprovalCardProps {
  * surfaces that have no card.
  */
 export function ApprovalCard(props: ApprovalCardProps) {
-  const transport = useTransport();
-  const { data } = useQuery({
-    queryKey: PENDING_APPROVALS_QUERY_KEY,
-    queryFn: () => transport.listPendingApprovals(),
-    enabled: props.approval.answerNeedsStepUp === undefined,
-  });
-  // Stream and transcript cards are session-neutral. The HTTP read supplies
-  // this browser's route without guessing from its URL or a saved transcript.
-  const live = data?.approvals.find((a) => a.approvalId === props.approval.approvalId);
-  const approval = live ?? props.approval;
+  const context = useConfig().data?.approvalAnswerContext;
+  // Stream and transcript cards are neutral. Server config classifies this
+  // browser without another list read replacing the arriving request.
+  const approval =
+    props.approval.answerNeedsStepUp === undefined && context
+      ? {
+          ...props.approval,
+          answerNeedsStepUp: context.answerNeedsStepUp,
+          answeringFrom: context.answeringFrom,
+        }
+      : props.approval;
   return approval.capabilityId === 'harness.project_hooks' ? (
     <HookApprovalCard {...props} approval={approval} />
   ) : (
@@ -495,10 +493,10 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
               )}
               <ApprovalStepUpNote approval={approval} />
               <AskCard.Actions className="w-full flex-col items-stretch gap-2 md:w-auto md:flex-row md:items-center">
-                {!approval.cannotAllow && (
+                {/* Wi-Fi may only deny: the detail above stays, so the person sees what they refuse. */}
+                {!approval.cannotAllow && !onWifi && (
                   <Button
                     size="sm"
-                    variant={onWifi ? 'outline' : 'default'}
                     data-slot="approval-allow"
                     className={ANSWER_BUTTON}
                     disabled={deciding}
@@ -517,7 +515,7 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
                       )
                     }
                   >
-                    {onWifi ? 'Allow once' : 'Allow'}
+                    Allow
                   </Button>
                 )}
                 {offersAlways && (
@@ -570,7 +568,7 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
           )}
           {/* Why Always allow is missing, said once, and only where a setting
               could never change it. */}
-          {onWifi && !decision && (
+          {onWifi && approval.answerNeedsStepUp !== true && !decision && (
             <p
               data-slot="approval-wifi-line"
               className="text-muted-foreground text-2xs flex items-center gap-1"

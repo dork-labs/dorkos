@@ -7,6 +7,7 @@
  *
  * @module routes/session-answers
  */
+import { refuseApprovalYesFromWifi } from '../services/core/approvals/model/approval-answer-policy.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import {
@@ -213,8 +214,8 @@ export function createSessionAnswerRoutes(
     const parsed = ApprovalRequestSchema.safeParse(readJsonBody(c));
     if (!parsed.success) return c.json(INVALID_REQUEST, 400);
     const { toolCallId, alwaysAllow, alwaysAllowBreadth } = parsed.data;
-    const standing = refuseStandingYesFromWifi(facts, alwaysAllow === true);
-    if (standing) return c.json(standing, 403);
+    const wifi = refuseApprovalYesFromWifi(facts);
+    if (wifi) return c.json(wifi, 403);
     const held = holdRemoteToolApproval(
       c,
       { sessionId, ids: [toolCallId], always: alwaysAllow, breadth: alwaysAllowBreadth },
@@ -300,10 +301,12 @@ export function createSessionAnswerRoutes(
       const parsed = BatchApprovalRequestSchema.safeParse(readJsonBody(c));
       if (!parsed.success) return c.json(INVALID_REQUEST, 400);
       if (approved) {
-        const ids = parsed.data.toolCallIds;
-        // Every remote confirmation names one card and its own display code.
-        // The app sends remote batches through the individual answer route.
-        if (ids.length > 1 && !isAtThisComputer(facts)) {
+        const wifi = refuseApprovalYesFromWifi(facts);
+        if (wifi) return c.json(wifi, 403);
+        // A remote batch of two or more is refused whole, before anything runs;
+        // the app sends remote answers one card at a time. Each is a one-time
+        // Allow, which goes straight through like the single route's.
+        if (parsed.data.toolCallIds.length > 1 && !isAtThisComputer(facts)) {
           return c.json(
             {
               error: 'Confirm each request separately.',
@@ -312,24 +315,6 @@ export function createSessionAnswerRoutes(
             403
           );
         }
-        const held = holdRemoteToolApproval(c, { sessionId, ids }, async (confirming, hash) => {
-          const refused = requirePersonToAnswer(confirming);
-          if (refused)
-            return { status: refused.status, body: { error: refused.error, code: refused.code } };
-          const runtime = await deps.resolveRuntime(sessionId);
-          if (pendingToolApprovalHash(sessionId, ids) !== hash) return DIFFERENT_TOOL_APPROVAL;
-          const answerer = answeredBy(confirming);
-          return {
-            status: 200,
-            body: {
-              results: ids.map((id) => ({
-                toolCallId: id,
-                ok: runtime.approveTool(sessionId, id, true, { ...answerer }),
-              })),
-            },
-          };
-        });
-        if (held) return held;
       }
       const runtime = await deps.resolveRuntime(sessionId);
       const answerer = answeredBy(facts);

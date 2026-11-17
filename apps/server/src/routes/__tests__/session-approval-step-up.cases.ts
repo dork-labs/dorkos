@@ -16,6 +16,12 @@ import { createSessionAnswerRoutes } from '../session-answers.js';
 import { requestCodeForHash } from '../../services/core/auth/step-up/request-code.js';
 import { pendingToolApprovalHash } from '../tool-approval-step-up.js';
 import { createStepUpRoutes } from '../step-up.js';
+import { readOwnerAccount } from '../../services/core/auth/index.js';
+import { setTestOwner } from './test-owner.js';
+import {
+  currentStepUpExtensionRisks,
+  setStepUpExtensionRiskInputs,
+} from '../../services/extensions/step-up/step-up-extension-risk.js';
 
 /** Register beside the approvals router's existing configuration fixture. */
 export function registerSessionApprovalStepUpCases(): void {
@@ -40,7 +46,7 @@ export function registerSessionApprovalStepUpCases(): void {
       } satisfies Omit<Extract<SessionEvent, { type: 'approval_required' }>, 'seq'>;
       projector().ingest(event);
     }
-    function app(remote = true) {
+    function app(remote: boolean | 'managed' = true) {
       return target.mount(
         honoGroupListener(
           [
@@ -51,17 +57,19 @@ export function registerSessionApprovalStepUpCases(): void {
             {
               path: '/api/step-up',
               routes: createStepUpRoutes({
-                ownerId: () => 'owner',
+                ownerId: () => readOwnerAccount()?.id ?? null,
                 checkPassword: async (value) => (value === password ? 'ok' : 'wrong'),
                 setOwnerPassword: async () => undefined,
                 minPasswordLength: async () => 8,
                 trustedOrigins: () => [origin],
+                extensionRisks: currentStepUpExtensionRisks,
               }),
             },
           ],
           {
             before: async (c, next) => {
-              if (remote) markIngress(c.env.incoming, 'own-tunnel');
+              if (remote)
+                markIngress(c.env.incoming, remote === 'managed' ? 'managed' : 'own-tunnel');
               c.set('user', {
                 userId: 'owner',
                 credential: 'cookie',
@@ -78,13 +86,15 @@ export function registerSessionApprovalStepUpCases(): void {
       runtime = new FakeAgentRuntime();
       runtime.approveTool.mockReturnValue(true);
       resetHeldStepUpsForTests();
+      setTestOwner('owner');
     });
     afterEach(() => {
+      setTestOwner(null);
       disposeProjector(sessionId);
       resetHeldStepUpsForTests();
       vi.restoreAllMocks();
     });
-    const approve = (remote = true, extra = {}) =>
+    const approve = (remote: boolean | 'managed' = true, extra = {}) =>
       request(app(remote))
         .post(`/api/sessions/${sessionId}/approve`)
         .set('Origin', origin)
@@ -92,22 +102,28 @@ export function registerSessionApprovalStepUpCases(): void {
     const confirm = (id: string) =>
       request(app()).post(`/api/step-up/${id}/password`).set('Origin', origin).send({ password });
 
-    it('holds a remote tool yes before the runtime hears it', async () => {
+    it.each([true, 'managed'] as const)(
+      'holds a remote Always allow (own tunnel, then managed) before the runtime hears it',
+      async (via) => {
+        pending();
+        const held = await approve(via, { alwaysAllow: true });
+        expect(held.status).toBe(428);
+        expect(runtime.approveTool).not.toHaveBeenCalled();
+        expect((await confirm(held.body.heldActionId)).body).toMatchObject({
+          ok: true,
+          status: 200,
+        });
+        expect(runtime.approveTool).toHaveBeenCalledExactlyOnceWith(
+          sessionId,
+          'tool-one',
+          true,
+          expect.any(Object)
+        );
+      }
+    );
+    it('binds Always allow to its full pending input', async () => {
       pending();
-      const held = await approve();
-      expect(held.status).toBe(428);
-      expect(runtime.approveTool).not.toHaveBeenCalled();
-      expect((await confirm(held.body.heldActionId)).body).toMatchObject({ ok: true, status: 200 });
-      expect(runtime.approveTool).toHaveBeenCalledExactlyOnceWith(
-        sessionId,
-        'tool-one',
-        true,
-        expect.any(Object)
-      );
-    });
-    it('binds a tool yes to its full pending input', async () => {
-      pending();
-      const held = await approve();
+      const held = await approve(true, { alwaysAllow: true });
       expect(held.status).toBe(428);
       pending('tool-one', '{"command":"whoami"}');
       expect((await confirm(held.body.heldActionId)).body.code).toBe('different-request');
@@ -127,8 +143,8 @@ export function registerSessionApprovalStepUpCases(): void {
         .post(`/api/sessions/${sessionId}/batch-approve`)
         .set('Origin', origin)
         .send({ toolCallIds: ['tool-one'] });
-      expect(single.status).toBe(428);
-      expect(runtime.approveTool).not.toHaveBeenCalled();
+      expect(single.status).toBe(200);
+      expect(runtime.approveTool).toHaveBeenCalledTimes(1);
     });
 
     it('shows the canonical card code when an old session link answers after rekey', async () => {
@@ -146,7 +162,7 @@ export function registerSessionApprovalStepUpCases(): void {
       const hash = pendingToolApprovalHash(sessionId, ['tool-one']);
       expect(hash).toBeDefined();
       expect(card.type === 'approval' && card.requestCode).toBe(requestCodeForHash(hash!));
-      const held = await approve();
+      const held = await approve(true, { alwaysAllow: true });
       const sheet = await request(app()).get(`/api/step-up/${held.body.heldActionId}`);
       expect(sheet.body.requestCode).toBe(card.type === 'approval' && card.requestCode);
       disposeProjector(canonicalId);
@@ -166,6 +182,80 @@ export function registerSessionApprovalStepUpCases(): void {
         true,
         expect.objectContaining({ alwaysAllow: true, alwaysAllowBreadth: 'server' })
       );
+    });
+
+    it('allows a one-time remote tool call without creating a hold', async () => {
+      pending();
+      const response = await approve();
+      expect(response.status).toBe(200);
+      expect(response.body.heldActionId).toBeUndefined();
+      expect(runtime.approveTool).toHaveBeenCalledExactlyOnceWith(
+        sessionId,
+        'tool-one',
+        true,
+        expect.objectContaining({ alwaysAllow: undefined })
+      );
+    });
+
+    it('holds desk Always allow before saving the standing rule', async () => {
+      pending();
+      const response = await approve(false, { alwaysAllow: true });
+      expect(response.status).toBe(428);
+      expect(runtime.approveTool).not.toHaveBeenCalled();
+      const confirmed = await request(app(false))
+        .post(`/api/step-up/${response.body.heldActionId}/password`)
+        .set('Origin', origin)
+        .send({ password });
+      expect(confirmed.body).toMatchObject({ ok: true, status: 200 });
+      expect(runtime.approveTool).toHaveBeenCalledWith(
+        sessionId,
+        'tool-one',
+        true,
+        expect.objectContaining({ alwaysAllow: true })
+      );
+    });
+
+    it('saves desk Always allow at once while no owner exists, with no password to ask for', async () => {
+      setTestOwner(null);
+      pending();
+      const response = await approve(false, { alwaysAllow: true });
+      expect(response.status).toBe(200);
+      expect(response.body.heldActionId).toBeUndefined();
+      expect(runtime.approveTool).toHaveBeenCalledExactlyOnceWith(
+        sessionId,
+        'tool-one',
+        true,
+        expect.objectContaining({ alwaysAllow: true })
+      );
+    });
+
+    it('keeps desk Always allow held while an agent-editable mini app is loaded, refusing a scripted confirm', async () => {
+      // The page could script anything it holds (the cookie, the person proof), so
+      // nothing from the page stands in for the person while such code is loaded.
+      setStepUpExtensionRiskInputs(() => ({
+        records: [
+          {
+            id: 'risky',
+            status: 'compiled',
+            path: '/made-up/risky',
+            originProblem: 'changed',
+            manifest: { name: 'Risky' },
+          } as never,
+        ],
+        approvals: {},
+        agents: [],
+      }));
+      try {
+        pending();
+        const held = await approve(false, { alwaysAllow: true });
+        expect(held.status).toBe(428);
+        const scripted = await confirm(held.body.heldActionId);
+        expect(scripted.status).toBe(409);
+        expect(scripted.body.code).toBe('extension-risk');
+        expect(runtime.approveTool).not.toHaveBeenCalled();
+      } finally {
+        setStepUpExtensionRiskInputs(() => ({ records: [], approvals: {}, agents: [] }));
+      }
     });
 
     it('leaves desk tool approvals and remote denials immediate', async () => {
