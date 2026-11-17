@@ -49,7 +49,7 @@ import {
 } from '../sessions/tool-result-outcome.js';
 import { randomUUID } from 'node:crypto';
 import type { ReadFolders } from '../tool-gate/held-turn-reads.js';
-import { statusReadRunsUnasked } from '../tool-gate/never-ask-status-reads.js';
+import { FAIL_CLOSED_CHECKS, statusReadRunsUnasked } from '../tool-gate/never-ask-status-reads.js';
 import {
   autoAllowedByCall,
   DORKOS_AGENT_TOOLS,
@@ -492,10 +492,7 @@ export function createCanUseTool(
   readFolders: ReadFolders | undefined = session.cwd
     ? { cwd: session.cwd, roots: [session.cwd] }
     : undefined,
-  outsideChecks: [isMarked: () => boolean, readOutsideWords: () => boolean] = [
-    () => true,
-    () => true,
-  ]
+  outsideChecks = FAIL_CLOSED_CHECKS
 ): (
   toolName: string,
   input: Record<string, unknown>,
@@ -510,15 +507,9 @@ export function createCanUseTool(
     // auto-allowed on the strength of the level a person chose for others, and
     // nor may background work an earlier ceilinged turn left running.
     const full = chosenFullAutonomy(session);
-    // The named status reads run unasked at Ask first and Accept edits (DOR-4601), by the same rule
-    // the Never ask hook reads, so the answer holds whether or not the CLI honoured its `allow`.
-    if (statusReadRunsUnasked(session, toolName, context.mcpServer, ...outsideChecks)) {
-      log.debug('[canUseTool] status read runs unasked', {
-        toolName,
-        toolUseID: context.toolUseID,
-      });
+    // The status reads, by the Never ask hook's own rule, whether or not the CLI honoured its allow.
+    if (statusReadRunsUnasked(session, toolName, context.mcpServer, ...outsideChecks))
       return { behavior: 'allow', updatedInput: input };
-    }
     const decision = full ? 'allow' : resolveModeDecision(gatePermissionMode(session));
     // "Never ask": `neverAsks` also covers a chat set to it whose turn a
     // stricter ceiling holds to Plan, which would otherwise ask.

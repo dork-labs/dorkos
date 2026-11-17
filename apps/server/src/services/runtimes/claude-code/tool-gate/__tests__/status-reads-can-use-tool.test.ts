@@ -63,22 +63,24 @@ describe.each(['default', 'acceptEdits'] as const)('a scheduled run at %s', (mod
     expect(session.eventQueue).toEqual([]);
   });
 
-  it.each([
+  const OUTSIDE: Array<[string, [() => boolean, () => boolean]]> = [
     ['a turn marked by a line it read', [() => true, () => false]],
     ['a chat that read outside words', [() => false, () => true]],
     [
       'a chat whose outside-words lookup throws',
       [
         () => false,
-        () => {
+        (): boolean => {
           throw new Error('no database');
         },
       ],
     ],
-  ] as const)('refuses every status read in %s, and records it', async (_label, checks) => {
+  ];
+
+  it.each(OUTSIDE)('refuses every status read in %s, and records it', async (_label, checks) => {
     for (const tool of STATUS_READS) {
       const session = unattended(mode);
-      expect(await call(session, tool, [...checks]), tool).toEqual(REFUSED);
+      expect(await call(session, tool, checks), tool).toEqual(REFUSED);
       expect(session.eventQueue).toEqual([
         expect.objectContaining({
           type: 'permission_denied',

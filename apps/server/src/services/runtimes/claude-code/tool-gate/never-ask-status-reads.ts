@@ -67,6 +67,12 @@ export const STATUS_READ_MODES: ReadonlySet<string> = new Set([
   'acceptEdits',
 ]);
 
+/** The two outside-words checks: is the turn marked, and did the chat read outside words. */
+export type OutsideChecks = [isMarked: () => boolean, readOutsideWords: () => boolean];
+
+/** The checks a caller that passes none gets: both say yes, so no status read runs unasked. */
+export const FAIL_CLOSED_CHECKS: OutsideChecks = [() => true, () => true];
+
 /** Whether a check says yes; a throw counts as yes. */
 function yesOrDoubtful(check: () => boolean): boolean {
   try {

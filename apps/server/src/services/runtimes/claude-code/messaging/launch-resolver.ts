@@ -810,21 +810,19 @@ export async function resolveLaunch(args: {
   const heldReadFolders = { cwd: effectiveCwd, roots: [effectiveCwd, ...turnGrantPaths] };
   // The status reads' outsider bound (DOR-3971, DOR-4601), shared by canUseTool and the hook.
   const outsideChecks = turnOutsideChecks(session, sessionId, turnAgentPath);
+  const readRoots = turnReadRoots({
+    cwd: effectiveCwd,
+    agentHome: turnAgentPath,
+    grants: turnGrantPaths,
+    plugins: (opts.plugins ?? []).map((plugin) => plugin.path),
+    accountRoot,
+  });
   sdkOptions.canUseTool = createCanUseTool(
     session,
     logger,
     editBaselineCapture,
     resolveIdentity,
-    {
-      cwd: effectiveCwd,
-      roots: turnReadRoots({
-        cwd: effectiveCwd,
-        agentHome: turnAgentPath,
-        grants: turnGrantPaths,
-        plugins: (opts.plugins ?? []).map((plugin) => plugin.path),
-        accountRoot,
-      }),
-    },
+    { cwd: effectiveCwd, roots: readRoots },
     outsideChecks
   );
   // Pre-edit baseline capture must ALSO ride the SDK PreToolUse hook (DOR-212):
