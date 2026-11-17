@@ -126,9 +126,12 @@ export function noteWritesBefore(
     matcher: FILE_TOOLS,
     hooks: [
       async (hookInput, toolUseId) => {
-        if (hookInput.hook_event_name === 'PreToolUse') {
+        const callId =
+          hookInput.hook_event_name === 'PreToolUse' && (hookInput.tool_use_id || toolUseId);
+        // A write with no id cannot be matched to its result, so it is not noted: it vouches for nothing.
+        if (callId) {
           const input = (hookInput.tool_input ?? {}) as Record<string, unknown>;
-          await note(hookInput.tool_use_id ?? toolUseId ?? '', hookInput.tool_name, input);
+          await note(callId, hookInput.tool_name, input);
         }
         return { continue: true };
       },
@@ -144,7 +147,8 @@ export const NOTE_WRITES_AFTER: HookCallbackMatcher = {
   matcher: FILE_TOOLS,
   hooks: [
     async (hookInput, toolUseId) => {
-      const callId = ('tool_use_id' in hookInput ? hookInput.tool_use_id : toolUseId) ?? '';
+      const callId = ('tool_use_id' in hookInput && hookInput.tool_use_id) || toolUseId;
+      if (!callId) return { continue: true };
       if (hookInput.hook_event_name === 'PostToolUse') await noteWriteDone(callId);
       else if (hookInput.hook_event_name === 'PostToolUseFailure') noteWriteFailed(callId);
       return { continue: true };

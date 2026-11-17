@@ -2,6 +2,7 @@
 covers:
   - "fix(extensions): a mini app's server edit runs without a card only when DorkOS can tie it to its author (DOR-4528)"
   - "fix(extensions): every changed file of a mini app is traced by content, and judged again before it runs (DOR-4528)"
+  - "fix(extensions): a person's yes trusts exactly the files they approved, and only DorkOS keeps that record (DOR-4528)"
 ---
 
 ### Changed

@@ -24,6 +24,7 @@
  *
  * @module services/extensions/pin/path-trust-edits
  */
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { ExtensionRecord } from '@dorkos/extension-api';
@@ -102,9 +103,15 @@ const LIVE: PathTrustEditDeps = {
   unpin: (id) => writeSource(id, ({ digest: _pinned, ...source }) => source),
 };
 
-/** The file the last-seen digests are kept in. */
+/**
+ * The file the last-seen digests and trusted files are kept in. No agent may write it
+ * (`PERSON_ONLY_DATA_PATHS`), and it is replaced whole through a temp file beside it.
+ */
 const seenFile = (dorkHome: string) =>
   path.join(dorkHome, 'extension-data', 'path-trust-seen.json');
+
+/** A pin no files match: a copy held to it runs nothing until a person approves. */
+const MATCHES_NOTHING = `sha256:${'0'.repeat(64)}`;
 
 /** The files a copy may run as without a person: their digest and each file's content. */
 interface TrustedFiles {
@@ -114,28 +121,102 @@ interface TrustedFiles {
 
 /**
  * What the last scan saw: each copy's digest, the copies whose agent was below Full, the copies
- * whose edit could not be traced to their author, and each copy's trusted files.
+ * whose edit could not be traced to their author, and each copy's trusted files. `distrustNew`
+ * once the file was ever found there but unreadable: what it held is gone, so a copy it does not
+ * name is never taken on first sight again, and waits for a person instead.
  */
 interface SeenState {
   digests: Record<string, string>;
   below: string[];
   untied: string[];
   trusted: Record<string, TrustedFiles>;
+  distrustNew?: true;
 }
 
-/** What the last scan saw; unreadable reads as nothing. */
+/** Whether a value is a plain object. */
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** What the last scan saw: nothing when the file is not there, `distrustNew` when it is but fails. */
 async function readSeen(dorkHome: string): Promise<SeenState> {
+  const empty = (): SeenState => ({ digests: {}, below: [], untied: [], trusted: {} });
+  let text: string;
   try {
-    const parsed = JSON.parse(await fs.readFile(seenFile(dorkHome), 'utf8')) as Partial<SeenState>;
-    return {
+    text = await fs.readFile(seenFile(dorkHome), 'utf8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return empty();
+    return { ...empty(), distrustNew: true };
+  }
+  try {
+    const parsed = JSON.parse(text) as Partial<SeenState>;
+    if (!isRecord(parsed)) throw new Error('not an object');
+    const state: SeenState = {
       digests: parsed.digests ?? {},
       below: parsed.below ?? [],
       untied: parsed.untied ?? [],
       trusted: parsed.trusted ?? {},
+      ...(parsed.distrustNew === true ? { distrustNew: true as const } : {}),
     };
+    if (!isRecord(state.digests) || !isRecord(state.trusted)) throw new Error('bad shape');
+    if (!Array.isArray(state.below) || !Array.isArray(state.untied)) throw new Error('bad shape');
+    return state;
   } catch {
-    return { digests: {}, below: [], untied: [], trusted: {} };
+    return { ...empty(), distrustNew: true };
   }
+}
+
+/** Replace the file whole, so a crash mid-write leaves the old one, never half of a new one. */
+async function writeSeen(dorkHome: string, state: SeenState): Promise<void> {
+  const file = seenFile(dorkHome);
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  const temp = `${file}.${randomUUID()}.tmp`;
+  const { digests, below, untied, trusted, distrustNew } = state;
+  await fs.writeFile(temp, JSON.stringify({ digests, below, untied, trusted, distrustNew }));
+  await fs.rename(temp, file);
+}
+
+/** The last read or write of the file queued, so two never interleave. */
+let queue: Promise<unknown> = Promise.resolve();
+
+/** Run `work` after every earlier read or write of the file has finished. */
+function oneAtATime<T>(work: () => Promise<T>): Promise<T> {
+  const run = queue.then(work, work);
+  queue = run.catch(() => undefined);
+  return run;
+}
+
+/**
+ * Record a person's yes to a path-trust copy's files as they were shown (`approveToRun`): those
+ * files are trusted now, and a hold on the copy is lifted. Files that changed since the yes, or
+ * cannot be read, are not trusted, so the copy stays held. Never throws.
+ *
+ * @param dorkHome - The DorkOS data directory.
+ * @param record - The approved copy.
+ * @param digest - The digest of the files the person approved.
+ * @param filesOf - Reads the files a digest names (tests pass their own).
+ */
+export function notePersonApproval(
+  dorkHome: string,
+  record: ExtensionRecord,
+  digest: string,
+  filesOf: NonNullable<PathTrustEditDeps['filesOf']> = (r, d) => verifiedFilesOf(dorkHome, r, d)
+): Promise<void> {
+  return oneAtATime(async () => {
+    try {
+      const state = await readSeen(dorkHome);
+      const files = await filesOf(record, digest);
+      if (!files) return;
+      state.trusted[record.id] = { digest, files };
+      state.digests[record.id] = digest;
+      state.untied = state.untied.filter((id) => id !== record.id);
+      markTrusted(record.id);
+      await writeSeen(dorkHome, state);
+    } catch (err) {
+      logger.warn('[Extensions] could not record an approval of a path-trust copy', {
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
 }
 
 /**
@@ -147,11 +228,21 @@ async function readSeen(dorkHome: string): Promise<SeenState> {
  * @param dorkHome - The DorkOS data directory.
  * @param deps - Where the level is read and the pin written.
  */
-export async function notePathTrustEdits(
+export function notePathTrustEdits(
   records: readonly ExtensionRecord[],
   approvals: { approvedSources?: Record<string, ExtensionApprovedSource> } | undefined,
   dorkHome: string,
   deps: PathTrustEditDeps = LIVE
+): Promise<void> {
+  return oneAtATime(() => scan(records, approvals, dorkHome, deps));
+}
+
+/** One scan, run by {@link notePathTrustEdits} after any other read or write of the file. */
+async function scan(
+  records: readonly ExtensionRecord[],
+  approvals: { approvedSources?: Record<string, ExtensionApprovedSource> } | undefined,
+  dorkHome: string,
+  deps: PathTrustEditDeps
 ): Promise<void> {
   try {
     const state = await readSeen(dorkHome);
@@ -177,6 +268,14 @@ export async function notePathTrustEdits(
       if (!source || !digest || !source.authorHome) continue;
       if (!keepsPathTrust(record, source)) continue;
       const before = seen[record.id];
+      if (before === undefined && state.distrustNew) {
+        // What the file held is gone: a copy it does not name waits for a person.
+        if (!source.digest) deps.pin(record.id, MATCHES_NOTHING);
+        untied.add(record.id);
+        seen[record.id] = digest;
+        changed = true;
+        continue;
+      }
       const edited = before !== undefined && before !== digest;
       const atFull = await deps.agentAtFull(source.authorHome).catch(() => undefined);
       if (atFull === undefined) {
@@ -189,8 +288,13 @@ export async function notePathTrustEdits(
         seen[record.id] = digest;
         changed = true;
       }
-      // First sight, or a copy seen before trusted files were kept, unchanged and running freely.
-      const settled = !edited && !source.digest && !untied.has(record.id) && !below.has(record.id);
+      // First sight, or a copy seen before trusted files were kept: unchanged, not held, and
+      // running freely or pinned to exactly the files last seen (the boot scan pins first).
+      const settled =
+        !edited &&
+        !untied.has(record.id) &&
+        !below.has(record.id) &&
+        (!source.digest || source.digest === before);
       if (!trusted[record.id] && (before === undefined || settled)) await trust(record, digest);
       if (!atFull) {
         if (!below.has(record.id)) {
@@ -204,30 +308,26 @@ export async function notePathTrustEdits(
       // The scan that finds the agent raised: whatever changed was made while it was below Full.
       const raisedNow = below.delete(record.id);
       if (raisedNow) changed = true;
-      if (untied.has(record.id)) {
-        // Held until a person approves; approving a path-trust copy writes no digest.
-        if (source.digest) continue;
-        // Approved as it is: those files are the trusted ones now.
-        untied.delete(record.id);
-        changed = true;
-        await trust(record, digest);
-        continue;
-      }
+      // Held until a person approves (`notePersonApproval` lifts it).
+      const held = untied.has(record.id);
+      if (held && source.digest) continue;
       // Pinned and back at Full: a raise alone runs nothing. Only an edit made now does.
       if (source.digest && (raisedNow || !edited || digest === source.digest)) continue;
-      if (!edited) continue;
+      // A held copy found unpinned without a person's recorded yes is traced like an edit.
+      if (!edited && !held) continue;
       const base = trusted[record.id];
-      const next = base ? await filesOf(record, digest) : null;
+      const next = base && base.digest !== digest ? await filesOf(record, digest) : null;
       const traced =
         !!base &&
-        !!next &&
-        tied({
-          id: record.id,
-          folder: record.realPath!,
-          authorHome: source.authorHome,
-          trusted: base.files,
-          next,
-        });
+        (base.digest === digest ||
+          (!!next &&
+            tied({
+              id: record.id,
+              folder: record.realPath!,
+              authorHome: source.authorHome,
+              trusted: base.files,
+              next,
+            })));
       if (!traced) {
         // Not traced to the author's own unheld turn: the trusted files stay.
         if (!source.digest) deps.pin(record.id, base?.digest ?? before ?? digest);
@@ -235,10 +335,17 @@ export async function notePathTrustEdits(
         changed = true;
         continue;
       }
-      trusted[record.id] = { digest, files: next! };
-      noteTrusted(record.id);
-      changed = true;
+      if (held) {
+        untied.delete(record.id);
+        changed = true;
+      }
+      if (next) {
+        trusted[record.id] = { digest, files: next };
+        noteTrusted(record.id);
+        changed = true;
+      }
       if (source.digest) deps.unpin(record.id);
+      if (!edited) continue;
       recordFullAction({
         actionId: 'extension.edit',
         did: `edited the extension ${record.id}, and its server code runs as edited`,
@@ -247,11 +354,13 @@ export async function notePathTrustEdits(
       });
     }
     if (changed) {
-      await fs.mkdir(path.dirname(seenFile(dorkHome)), { recursive: true });
-      await fs.writeFile(
-        seenFile(dorkHome),
-        JSON.stringify({ digests: seen, below: [...below], untied: [...untied], trusted })
-      );
+      await writeSeen(dorkHome, {
+        ...state,
+        digests: seen,
+        below: [...below],
+        untied: [...untied],
+        trusted,
+      });
     }
   } catch (err) {
     logger.warn('[Extensions] could not check path-trust copies', {

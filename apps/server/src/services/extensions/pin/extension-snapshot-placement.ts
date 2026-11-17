@@ -35,7 +35,7 @@ import { collectSnapshots, ensureSnapshot, snapshotRootOf } from './extension-sn
 import { configManager } from '../../core/config-manager.js';
 import { digestRootOf, liveDigestOf, pinStillHolds } from './extension-content-pin.js';
 import { isPathTrustApproval } from './extension-path-trust.js';
-import { notePathTrustEdits } from './path-trust-edits.js';
+import { notePathTrustEdits, notePersonApproval } from './path-trust-edits.js';
 
 /**
  * Point a copy at the verified snapshot of `digest`, made from its folder
@@ -160,14 +160,22 @@ export async function recheckAtItsLevel(
  * @param dorkHome - DorkOS's data directory.
  * @param records - The copies this scan chose.
  * @param approvals - `config.extensions`.
+ * @param approvedDigest - Set by `approveToRun`: the digest of the files a person just approved.
+ *   A yes to a path-trust copy records them as trusted first, so later edits are traced from
+ *   exactly those (DOR-4528).
  */
 export async function placeSnapshots(
   dorkHome: string,
   records: readonly ExtensionRecord[],
-  approvals: ExtensionApprovals
+  approvals: ExtensionApprovals,
+  approvedDigest?: string | null
 ): Promise<void> {
   for (const record of records) {
     if (record.origin !== 'user' || record.devLink) continue;
+    const source = approvals.approvedSources?.[record.id];
+    if (approvedDigest && source && isPathTrustApproval(source)) {
+      await notePersonApproval(dorkHome, record, approvedDigest);
+    }
     if (await refreshPathTrustRun(dorkHome, record, approvals)) continue;
     // A yes pinned to these exact files runs them from the snapshot, at any
     // scope, plugin-carried or installed directly.

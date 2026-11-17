@@ -12,7 +12,7 @@ import { setMarkedFullActivity } from '../../../core/turn-power/full-autonomy.js
 import { resetLiveOutsiderTurns } from '../../../core/turn-power/live-outsider-turns.js';
 import { isApprovedByPath } from '../../extension-load-policy.js';
 import { grantsDigestOf } from '../extension-path-trust.js';
-import { notePathTrustEdits } from '../path-trust-edits.js';
+import { notePathTrustEdits, notePersonApproval } from '../path-trust-edits.js';
 import { noteWriteDone, noteWriteStarting, resetPathTrustWriters } from '../path-trust-writers.js';
 
 const manifest = {
@@ -75,6 +75,12 @@ describe('path-trust edits traced file by file', () => {
     await fs.writeFile(file, text);
     await noteWriteDone(id);
   };
+  /** What a person's yes writes for a held path-trust copy: no digest, and its files recorded. */
+  const approve = async (digest: string) => {
+    delete approvals.approvedSources.desk!.digest;
+    await notePersonApproval(dorkHome, copyAt(digest), digest, filesOf);
+  };
+  const seenFile = () => path.join(dorkHome, 'extension-data', 'path-trust-seen.json');
   /** A write nothing noted: a shell, another runtime, a program outside DorkOS. */
   const unseenWrite = (rel: string, text: string) => fs.writeFile(path.join(folder, rel), text);
 
@@ -147,14 +153,50 @@ describe('path-trust edits traced file by file', () => {
     await scan('sha256:3');
     expect(runs('sha256:3')).toBe(false);
     expect(emit).not.toHaveBeenCalled();
-    // What approving writes for a copy that keeps path trust: no digest.
-    delete approvals.approvedSources.desk!.digest;
+    await approve('sha256:3');
     await scan('sha256:3');
     expect(runs('sha256:3')).toBe(true);
     await toolWrite('server.ts', 'v4');
     await scan('sha256:4');
     expect(runs('sha256:4')).toBe(true);
     expect(emit).toHaveBeenCalledTimes(1);
+  });
+
+  it('an unseen change after a person’s yes waits: the yes covered only what they saw', async () => {
+    await scan('sha256:1');
+    await unseenWrite('server.ts', 'v2');
+    await scan('sha256:2');
+    await approve('sha256:2');
+    await unseenWrite('server.ts', 'payload');
+    await scan('sha256:3');
+    expect(runs('sha256:3')).toBe(false);
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it('a held copy found unpinned with no recorded yes is traced, and held again', async () => {
+    await scan('sha256:1');
+    await unseenWrite('server.ts', 'v2');
+    await scan('sha256:2');
+    // Unpinned, but not through a person's yes.
+    delete approvals.approvedSources.desk!.digest;
+    await scan('sha256:2');
+    expect(runs('sha256:2')).toBe(false);
+  });
+
+  it('an unreadable record holds every copy it can no longer vouch for, until a person approves', async () => {
+    await scan('sha256:1');
+    await fs.writeFile(seenFile(), '{');
+    await toolWrite('server.ts', 'v2');
+    await scan('sha256:2');
+    expect(runs('sha256:2')).toBe(false);
+    // Rewritten whole, but what it held is gone: a copy it no longer names still waits.
+    expect(JSON.parse(await fs.readFile(seenFile(), 'utf8')).distrustNew).toBe(true);
+    await approve('sha256:2');
+    await scan('sha256:2');
+    expect(runs('sha256:2')).toBe(true);
+    await toolWrite('server.ts', 'v3');
+    await scan('sha256:3');
+    expect(runs('sha256:3')).toBe(true);
   });
 
   it('a change made below Full is traced too once the agent is raised', async () => {
