@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "6c72b0b6-b6cf-4910-bddc-0529c87f2cf5",
-  "prevId": "03961734-24b3-4911-8438-109527093e3a",
+  "id": "95d12639-1ac6-4ca6-abaa-deb42d8ae8b9",
+  "prevId": "ba5d5b51-2abf-42cf-932c-f469f61867a3",
   "tables": {
     "a2a_tasks": {
       "name": "a2a_tasks",
@@ -1918,6 +1918,13 @@
           "autoincrement": false,
           "default": true
         },
+        "off_since": {
+          "name": "off_since",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "file_enabled": {
           "name": "file_enabled",
           "type": "integer",
@@ -2019,13 +2026,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true,
-          "autoincrement": false
-        },
-        "off_since": {
-          "name": "off_since",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
           "autoincrement": false
         }
       },
@@ -9674,6 +9674,161 @@
         "connection_grant_changes_actor_kind": {
           "name": "connection_grant_changes_actor_kind",
           "value": "\"connection_grant_changes\".\"actor_kind\" IN ('person', 'agent')"
+        }
+      }
+    },
+    "spending_prices": {
+      "name": "spending_prices",
+      "columns": {
+        "toolkit": {
+          "name": "toolkit",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "price_micro": {
+          "name": "price_micro",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "spending_prices_positive": {
+          "name": "spending_prices_positive",
+          "value": "\"spending_prices\".\"price_micro\" > 0"
+        }
+      }
+    },
+    "spending_runs": {
+      "name": "spending_runs",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "month": {
+          "name": "month",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "toolkit": {
+          "name": "toolkit",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "agent_id": {
+          "name": "agent_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "amount_micro": {
+          "name": "amount_micro",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "spending_runs_month_idx": {
+          "name": "spending_runs_month_idx",
+          "columns": [
+            "month"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "spending_runs_amount": {
+          "name": "spending_runs_amount",
+          "value": "\"spending_runs\".\"amount_micro\" >= 0"
+        }
+      }
+    },
+    "spending_settings": {
+      "name": "spending_settings",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "limit_micro": {
+          "name": "limit_micro",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "spending_settings_singleton": {
+          "name": "spending_settings_singleton",
+          "value": "\"spending_settings\".\"id\" = 1"
+        },
+        "spending_settings_limit_positive": {
+          "name": "spending_settings_limit_positive",
+          "value": "\"spending_settings\".\"limit_micro\" IS NULL OR \"spending_settings\".\"limit_micro\" > 0"
         }
       }
     },
