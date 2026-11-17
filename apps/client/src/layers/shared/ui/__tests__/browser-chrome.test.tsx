@@ -302,6 +302,32 @@ describe('BrowserChrome', () => {
       expect(onReload).toHaveBeenCalledOnce();
     });
 
+    it('keeps the address text, Not secure included, clear of Reload', () => {
+      // DOR-4436 round 3: at 258px "Not secure" plus the host ran under Reload.
+      const { container } = renderChrome({ url: 'http://printer.example/status' });
+      const field = screen.getByRole('button', { name: /^Address:/ });
+      // Reload's 44px is the field's right padding, and the text lives in a box that clips
+      // at that padding, so nothing it holds can draw under Reload.
+      expect(field).toHaveClass('pr-11');
+      const text = container.querySelector('[data-slot="browser-address-text"]')!;
+      expect(field).toContainElement(text as HTMLElement);
+      expect(text).toHaveClass('min-w-0', 'flex-1', 'overflow-hidden');
+      expect(text).toContainElement(screen.getByText('Not secure'));
+      // The host truncates rather than pushing past it.
+      const host = screen.getByText('printer.example').parentElement!;
+      expect(host).toHaveClass('min-w-0', 'truncate');
+    });
+
+    it('shrinks Not secure to an open-lock icon below 360px of chrome, keeping its words', () => {
+      renderChrome({ url: 'http://printer.example/status' });
+      const badge = screen.getByText('Not secure');
+      // Words at zero size (still read aloud), and the icon only shows below 360px.
+      expect(badge).toHaveClass('@max-[359px]/browser-chrome:text-[0px]');
+      const icon = badge.querySelector('svg')!;
+      expect(icon).toHaveAttribute('aria-hidden', 'true');
+      expect(icon).toHaveClass('@min-[360px]/browser-chrome:hidden');
+    });
+
     it('never lets the field shrink under Reload plus a sliver of host', () => {
       // DOR-4436 round 2: 88px is Reload's 44 plus 44 of host, which still truncates.
       const { container } = renderChrome();

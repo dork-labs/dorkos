@@ -356,6 +356,33 @@ test.describe('Touch reach — the browser row on a phone (DOR-4436) @smoke', ()
     );
   });
 
+  test('a 258px row keeps Not secure and the host clear of Reload', async ({ page }) => {
+    await page.goto('/dev/home-inbox');
+    const demo = page.getByTestId('browser-chrome-phone-narrow-not-secure');
+    await expect(demo, 'the Playground must draw the 258px Not secure row').toBeVisible({
+      timeout: 15_000,
+    });
+    await demo.scrollIntoViewIfNeeded();
+
+    const text = (await demo.locator('[data-slot="browser-address-text"]').boundingBox())!;
+    const reload = (await demo.getByRole('button', { name: 'Reload', exact: true }).boundingBox())!;
+    // The text box, badge and host inside it, ends before Reload begins.
+    expect(text.x + text.width, 'the address text must end before Reload').toBeLessThanOrEqual(
+      reload.x + 0.5
+    );
+    // And each part inside it, the badge and the host, ends before Reload too: the
+    // host truncates and the badge shrinks, rather than relying on the clip.
+    const spills = await demo
+      .locator('[data-slot="browser-address-text"] > *')
+      .evaluateAll(
+        (children, left) => children.some((el) => el.getBoundingClientRect().right > left + 0.5),
+        reload.x
+      );
+    expect(spills, 'no part of the address may reach under Reload').toBe(false);
+    // Not secure is the open lock here, its words kept for assistive tech.
+    await expect(demo.getByText('Not secure')).toHaveCSS('font-size', '0px');
+  });
+
   test('Your turn shows its full words on a phone', async ({ page }) => {
     // Still the phone layout (under 768), but wide enough that the Playground's page
     // padding leaves the demo its full 390px; at a 390 viewport it is squeezed to ~258,

@@ -147,6 +147,17 @@ export function BrowserChromeShowcases() {
           menu={<DemoMenu />}
         />
       </ShowcaseDemo>
+      <ShowcaseLabel>
+        Phone, narrow (258px): Not secure shrinks to an open lock, and nothing runs under Reload
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <ChromeDemo
+          width={258}
+          testId="browser-chrome-phone-narrow-not-secure"
+          url="http://printer.example/status"
+          menu={<DemoMenu />}
+        />
+      </ShowcaseDemo>
       <ShowcaseLabel>Plain http:// off this machine says Not secure</ShowcaseLabel>
       <ShowcaseDemo>
         <ChromeDemo width={640} url="http://printer.example/status" />

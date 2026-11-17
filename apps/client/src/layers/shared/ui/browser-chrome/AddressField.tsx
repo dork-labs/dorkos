@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { LockOpen } from 'lucide-react';
 import {
   describeAddress,
   ADDRESS_PLACEHOLDER,
@@ -107,44 +108,57 @@ export function AddressField({
           'focus-ring hover:bg-foreground/10 text-field flex items-center gap-1.5 text-left transition-colors'
         )}
       >
-        {display.kind === 'local' && (
-          <>
-            <span className="bg-muted-foreground/15 text-3xs text-muted-foreground shrink-0 rounded px-1 py-0.5 font-medium tracking-wide uppercase">
-              local
-            </span>
-            <span className="text-foreground truncate">{display.path}</span>
-          </>
-        )}
-        {display.kind === 'url' && (
-          <>
-            {display.notSecure && (
-              <span
-                // A native tooltip draws above the page, so it never blanks it (DOR-4438).
-                title={showsOpenedOverHttp ? OPENED_OVER_HTTP : undefined}
-                className="text-muted-foreground shrink-0 text-xs"
-              >
-                Not secure
+        {/* Clips at the button's padding, so with Reload over the right end (a
+          phone's `pr-11`) nothing in here ever draws under it (DOR-4436). */}
+        <span
+          data-slot="browser-address-text"
+          className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden"
+        >
+          {display.kind === 'local' && (
+            <>
+              <span className="bg-muted-foreground/15 text-3xs text-muted-foreground shrink-0 rounded px-1 py-0.5 font-medium tracking-wide uppercase">
+                local
               </span>
-            )}
-            {showsOpenedOverHttp && (
-              <span id={whyNotSecure} className="sr-only">
-                {OPENED_OVER_HTTP}
+              <span className="text-foreground min-w-0 truncate">{display.path}</span>
+            </>
+          )}
+          {display.kind === 'url' && (
+            <>
+              {display.notSecure && (
+                <span
+                  // A native tooltip draws above the page, so it never blanks it (DOR-4438).
+                  title={showsOpenedOverHttp ? OPENED_OVER_HTTP : undefined}
+                  // Below 360px of chrome the words go to zero size (still read aloud)
+                  // and an open lock stands in, so the host keeps some room.
+                  className="text-muted-foreground inline-flex shrink-0 items-center gap-1 text-xs @max-[359px]/browser-chrome:text-[0px]"
+                >
+                  <LockOpen
+                    aria-hidden
+                    className="size-(--size-icon-xs) shrink-0 @min-[360px]/browser-chrome:hidden"
+                  />
+                  Not secure
+                </span>
+              )}
+              {showsOpenedOverHttp && (
+                <span id={whyNotSecure} className="sr-only">
+                  {OPENED_OVER_HTTP}
+                </span>
+              )}
+              <span className="min-w-0 truncate">
+                <span className="text-foreground">{display.host}</span>
+                <span className="text-muted-foreground hidden @min-[480px]/browser-chrome:inline">
+                  {display.rest}
+                </span>
               </span>
-            )}
-            <span className="truncate">
-              <span className="text-foreground">{display.host}</span>
-              <span className="text-muted-foreground hidden @min-[480px]/browser-chrome:inline">
-                {display.rest}
-              </span>
-            </span>
-          </>
-        )}
-        {display.kind === 'raw' &&
-          (display.text ? (
-            <span className="text-foreground truncate">{display.text}</span>
-          ) : (
-            <span className="text-muted-foreground truncate">{ADDRESS_PLACEHOLDER}</span>
-          ))}
+            </>
+          )}
+          {display.kind === 'raw' &&
+            (display.text ? (
+              <span className="text-foreground min-w-0 truncate">{display.text}</span>
+            ) : (
+              <span className="text-muted-foreground min-w-0 truncate">{ADDRESS_PLACEHOLDER}</span>
+            ))}
+        </span>
       </button>
     );
   }
