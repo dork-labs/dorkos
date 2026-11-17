@@ -60,7 +60,9 @@ export { installPersonAwareFetch, personAwareFetch } from './person-aware-fetch'
 export {
   finishActionStepUp,
   getActionStepUpAfterExpiry,
+  getActionStepUpFromLink,
   getActionStepUpShowing,
+  openActionStepUpFromLink,
   requestActionStepUp,
   subscribeActionStepUp,
   type ActionStepUpOutcome,

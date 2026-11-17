@@ -70,6 +70,15 @@ describe('mini app access confirmation', () => {
     );
   });
 
+  it('names the held yes with the same request code the app’s sheet shows', async () => {
+    const held = await owner.call('post', DECISION, 'own-tunnel').send(APPROVE);
+    expect(held.status).toBe(428);
+    expect(held.body.requestCode).toMatch(/^[0-9A-HJKMNP-TV-Z]{12}$/);
+    const view = await owner.call('get', `/api/step-up/${held.body.heldActionId}`, 'own-tunnel');
+    expect(view.body.requestCode).toBe(held.body.requestCode);
+    expect(access.approve).not.toHaveBeenCalled();
+  });
+
   it('keeps a yes from Wi-Fi refused', async () => {
     const res = await owner.call('post', DECISION, 'wifi').send(APPROVE);
     expect(res.status).toBe(403);

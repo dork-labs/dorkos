@@ -186,6 +186,12 @@ export const LocalStepUpStatementV1Schema = z
 /** What a held action is bound to. */
 export type LocalStepUpStatementV1 = z.infer<typeof LocalStepUpStatementV1Schema>;
 
+/** Letters and digits a request code uses: no I, L, O or U, so none reads as another. */
+export const STEP_UP_REQUEST_CODE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+
+/** A held action's request code: 12 of those characters, shown as three groups of four. */
+export const StepUpRequestCodeSchema = z.string().regex(/^[0-9A-HJKMNP-TV-Z]{12}$/);
+
 /** What a guarded action answers while it waits for a step-up. */
 export const StepUpRequiredBodySchema = z.object({
   error: z.string(),
@@ -193,6 +199,11 @@ export const StepUpRequiredBodySchema = z.object({
   /** The held action to read and confirm. */
   heldActionId: z.string().min(1),
   expiresAt: z.string().datetime(),
+  /**
+   * The same 12 characters the sheet shows, so a page outside the app can say
+   * which held action to confirm. This server always sends one.
+   */
+  requestCode: StepUpRequestCodeSchema.optional(),
 });
 
 /** What a guarded action answers while it waits for a step-up. */
@@ -249,6 +260,8 @@ export const HeldStepUpViewSchema = z.object({
   blockedBy: z.array(StepUpExtensionRiskSchema).optional(),
   /** Wrong passwords left before the held action is dropped. */
   triesLeft: z.number().int().min(0),
+  /** The code the guarded route answered with. This server always sends one. */
+  requestCode: StepUpRequestCodeSchema.optional(),
 });
 
 /** A held action, as the sheet shows it. */

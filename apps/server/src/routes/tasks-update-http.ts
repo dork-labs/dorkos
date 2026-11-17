@@ -67,8 +67,8 @@ import {
   taskModeRefusal,
   scheduleEditorOf,
   namesCredits,
-  changesCreditsWork,
 } from './task-route-answers.js';
+import { changesCreditsWork } from '../services/tasks/credits/credits-work.js';
 import { refuseUnknownTaskUpdateFields } from '../services/tasks/task-write-policy.js';
 import {
   agentEditMayStayLive,

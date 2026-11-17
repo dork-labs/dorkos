@@ -5,8 +5,6 @@
  * @module routes/task-route-answers
  */
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
-import { parseDuration } from '@dorkos/skills/duration';
-import { changesApprovedWork } from '../services/tasks/task-file-update.js';
 import type { MeshCore } from '@dorkos/mesh';
 import type { Task, UpdateTaskRequest } from '@dorkos/shared/types';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
@@ -32,17 +30,6 @@ import {
  * is the last place to print one.
  */
 const UNNAMED_PERMISSION_LEVEL = 'the level saved on it';
-
-/** Changed credits work needs confirmation; reducing its runtime limit does not. */
-export function changesCreditsWork(data: UpdateTaskRequest, existing: Task): boolean {
-  if (data.resetTiming) return true;
-  const { maxRuntime, ...work } = data;
-  if (changesApprovedWork(work, existing)) return true;
-  if (maxRuntime === undefined) return false;
-  // A null (or zero-duration) limit removes the cap rather than lowering it.
-  const next = maxRuntime === null ? Infinity : parseDuration(maxRuntime) || Infinity;
-  return next > (existing.maxRuntime || Infinity);
-}
 
 /**
  * The human name of the level a schedule runs at, in the vocabulary of the

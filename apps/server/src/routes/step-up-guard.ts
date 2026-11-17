@@ -24,6 +24,7 @@ import { honoRequestFacts } from '../http/request-facts.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
 import {
   holdStepUp,
+  peekHeldStepUp,
   HeldStepUpCapacityError,
   type StepUpActionInput,
 } from '../services/core/auth/step-up/step-up-holds.js';
@@ -62,6 +63,8 @@ export function holdForStepUp(c: Context<ApiEnv>, action: StepUpActionInput): Re
     heldActionId: statement.heldActionId,
     expiresAt: statement.expiresAt,
   };
+  const requestCode = peekHeldStepUp(statement.heldActionId)?.requestCode;
+  if (requestCode) body.requestCode = requestCode;
   c.header('Cache-Control', 'no-store');
   return c.json(body, 428);
 }

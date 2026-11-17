@@ -16,6 +16,7 @@ import {
   cn,
   finishActionStepUp,
   getActionStepUpAfterExpiry,
+  getActionStepUpFromLink,
   getActionStepUpShowing,
   subscribeActionStepUp,
   type ActionStepUpOutcome,
@@ -122,6 +123,7 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
   const [secondsLeft, setSecondsLeft] = useState(0);
   const passwordRef = useRef<HTMLInputElement>(null);
   const afterExpiry = useSyncExternalStore(subscribeActionStepUp, getActionStepUpAfterExpiry);
+  const fromLink = useSyncExternalStore(subscribeActionStepUp, getActionStepUpFromLink);
 
   useEffect(() => {
     let live = true;
@@ -241,6 +243,7 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
               This took too long. Confirm it’s you again.
             </p>
           )}
+          {fromLink && view?.requestCode && <RequestCode code={view.requestCode} />}
         </AlertDialogHeader>
         {stage.kind === 'ended' ? (
           <EndedBody message={stage.message} onClose={cancel} />
@@ -461,6 +464,28 @@ function NoPasswordBody({ onClose }: { onClose: () => void }) {
           Close
         </Button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The code the page that sent the person here shows, so they can check it is
+ * the same action: three groups of four on screen, the plain 12 when copied
+ * or read out.
+ */
+function RequestCode({ code }: { code: string }) {
+  return (
+    <div className="space-y-1">
+      <p className="text-muted-foreground text-xs font-medium">Request code</p>
+      <code
+        aria-label={code}
+        data-testid="step-up-request-code"
+        className="bg-muted inline-flex gap-[0.6em] rounded-md px-2 py-1 font-mono text-base font-semibold tracking-wider"
+      >
+        <span>{code.slice(0, 4)}</span>
+        <span>{code.slice(4, 8)}</span>
+        <span>{code.slice(8, 12)}</span>
+      </code>
     </div>
   );
 }

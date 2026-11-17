@@ -354,6 +354,7 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
       ...(unavailable ? { passwordUnavailable: unavailable } : {}),
       ...(unavailable === 'extension-risk' ? { blockedBy: [...blockedBy()] } : {}),
       triesLeft: entry.triesLeft,
+      requestCode: entry.requestCode,
     };
     return c.json(view);
   });

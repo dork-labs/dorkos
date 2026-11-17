@@ -37,6 +37,8 @@ interface Ask {
   openedFrom: HTMLElement | null;
   /** Whether the last ask for this same call expired, so the sheet says so. */
   afterExpiry: boolean;
+  /** Opened from a link a page outside the app gave, so the sheet shows its request code. */
+  fromLink: boolean;
 }
 
 /** The asks waiting, the first one showing. */
@@ -52,20 +54,56 @@ function notify(): void {
  *
  * @param heldActionId - The id the guarded route answered with.
  * @param options - `afterExpiry`: the last ask for this same call expired.
+ *   `fromLink`: a page outside the app sent the person here to confirm it.
  * @returns How the sheet ended.
  */
 export function requestActionStepUp(
   heldActionId: string,
-  options: { afterExpiry?: boolean } = {}
+  options: { afterExpiry?: boolean; fromLink?: boolean } = {}
 ): Promise<ActionStepUpOutcome> {
   return new Promise((resolve) => {
     const openedFrom =
       typeof document !== 'undefined' && document.activeElement instanceof HTMLElement
         ? document.activeElement
         : null;
-    queue.push({ heldActionId, resolve, openedFrom, afterExpiry: options.afterExpiry ?? false });
+    queue.push({
+      heldActionId,
+      resolve,
+      openedFrom,
+      afterExpiry: options.afterExpiry ?? false,
+      fromLink: options.fromLink ?? false,
+    });
     if (queue.length === 1) notify();
   });
+}
+
+/** The query parameter a page outside the app links with: `/?confirm=<held action id>`. */
+export const CONFIRM_LINK_PARAM = 'confirm';
+
+/** A held action's id: a ULID, nothing else. */
+const HELD_ACTION_ID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
+
+/**
+ * Open the sheet for the held action a link names, once, and take the id out
+ * of the address so a reload or a shared link never asks again. Nothing waits
+ * on the answer: the page that sent the person here reloads to see it.
+ *
+ * @param location - Where the app opened, for tests.
+ * @param history - The window's history, for tests.
+ * @returns Whether a sheet was asked for.
+ */
+export function openActionStepUpFromLink(
+  location: Pick<Location, 'href'> = window.location,
+  history: Pick<History, 'replaceState' | 'state'> = window.history
+): boolean {
+  const url = new URL(location.href);
+  const id = url.searchParams.get(CONFIRM_LINK_PARAM);
+  if (id === null) return false;
+  url.searchParams.delete(CONFIRM_LINK_PARAM);
+  history.replaceState(history.state, '', `${url.pathname}${url.search}${url.hash}`);
+  if (!HELD_ACTION_ID.test(id)) return false;
+  void requestActionStepUp(id, { fromLink: true });
+  return true;
 }
 
 /**
@@ -96,6 +134,11 @@ export function getActionStepUpShowing(): string | null {
 /** Whether the sheet that is showing follows one that expired. */
 export function getActionStepUpAfterExpiry(): boolean {
   return queue[0]?.afterExpiry ?? false;
+}
+
+/** Whether the sheet that is showing was opened from a link, so it shows the request code. */
+export function getActionStepUpFromLink(): boolean {
+  return queue[0]?.fromLink ?? false;
 }
 
 /** Subscribe to the sheet opening, changing and closing; returns an unsubscribe function. */

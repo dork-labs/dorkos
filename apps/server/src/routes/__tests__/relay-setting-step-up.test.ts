@@ -41,7 +41,7 @@ import { Hono } from 'hono';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { StepUpRequiredBodySchema } from '@dorkos/shared/step-up';
-import { SLACK_MANIFEST, WEBHOOK_MANIFEST } from '@dorkos/relay';
+import { SLACK_MANIFEST, WEBHOOK_MANIFEST, toIdList } from '@dorkos/relay';
 import type { StreamEvent } from '@dorkos/shared/types';
 
 import type { ApiEnv } from '../../http/api-chain.js';
@@ -656,7 +656,7 @@ describe('adding someone to a chat connection’s approver or DM list', () => {
   it.each([
     ['approver', { approverAllowlist: 'U0OWNER01\nU0STRANGR', dmAllowlist: [] }],
     ['DM', { approverAllowlist: 'U0OWNER01', dmAllowlist: ['U0STRANGR'] }],
-  ])('holds the owner’s %s addition, naming the id and the connection', async (_list, config) => {
+  ])('holds the owner’s %s addition, naming the id and the connection', async (list, config) => {
     slackConnection();
     const held = await save(request(app()), config);
     expect(held.status).toBe(428);
@@ -670,6 +670,11 @@ describe('adding someone to a chat connection’s approver or DM list', () => {
     const confirmed = await confirmWith(held.body.heldActionId, PASSWORD);
     expect(confirmed.body).toMatchObject({ ok: true, status: 200 });
     expect(manager.updateConfig).toHaveBeenCalledOnce();
+    // The person's own addition is what lands: the new id is in the saved list.
+    const saved = manager.updateConfig.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(toIdList(saved[list === 'approver' ? 'approverAllowlist' : 'dmAllowlist'])).toContain(
+      'U0STRANGR'
+    );
   });
 
   it.each([

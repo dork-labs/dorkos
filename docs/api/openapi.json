@@ -22774,6 +22774,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -22986,6 +22990,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -24820,6 +24828,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -31537,6 +31549,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -31753,6 +31769,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -34498,6 +34518,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -38626,6 +38650,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -38996,6 +39024,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -39325,6 +39357,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -39824,6 +39860,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -40893,6 +40933,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -41002,6 +41046,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -46361,6 +46409,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -46445,6 +46497,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -48034,6 +48090,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -48638,6 +48698,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -52653,6 +52717,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -53154,6 +53222,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -55295,6 +55367,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -56026,6 +56102,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -56381,6 +56461,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -57056,6 +57140,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -57561,6 +57649,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -57627,6 +57719,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -57693,6 +57789,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -57834,6 +57934,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -58271,6 +58375,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -59999,6 +60107,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -62287,6 +62399,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -62612,6 +62728,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -88127,6 +88247,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -88720,6 +88844,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -89816,6 +89944,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -89958,6 +90090,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -90809,6 +90945,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -91009,6 +91149,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -91120,6 +91264,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -92026,6 +92174,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -92196,6 +92348,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -103445,6 +103601,10 @@
                     "triesLeft": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -103711,6 +103871,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -103778,6 +103942,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -103852,6 +104020,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -103919,6 +104091,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -103986,6 +104162,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -104053,6 +104233,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -104132,6 +104316,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -104199,6 +104387,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -104273,6 +104465,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -104340,6 +104536,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -104407,6 +104607,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -104474,6 +104678,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -104575,6 +104783,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -104654,6 +104866,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -104741,6 +104957,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -104841,6 +105061,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -104918,6 +105142,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -104995,6 +105223,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -105084,6 +105316,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -105161,6 +105397,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -105238,6 +105478,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [
@@ -105326,6 +105570,10 @@
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{12}$"
                     }
                   },
                   "required": [

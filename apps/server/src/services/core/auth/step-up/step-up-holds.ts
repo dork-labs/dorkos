@@ -32,6 +32,7 @@ import {
   LOCAL_STEP_UP_STATEMENT_TYPE,
   LocalStepUpStatementV1Schema,
   STEP_UP_MAX_PASSWORD_TRIES,
+  STEP_UP_REQUEST_CODE_ALPHABET,
   STEP_UP_TTL_MS,
   type LocalStepUpStatementV1,
   type StepUpActionKind,
@@ -97,6 +98,19 @@ export interface HeldStepUp {
   commit: StepUpActionInput['commit'];
   /** Wrong passwords it will still take. */
   triesLeft: number;
+  /** What the 428 and the sheet both show, so a page outside the app can name this action. */
+  requestCode: string;
+}
+
+/**
+ * A fresh request code: 12 characters from the shared alphabet. Not a secret:
+ * it only lets a person check the sheet is for the page they came from.
+ */
+export function newStepUpRequestCode(): string {
+  const bytes = randomBytes(12);
+  return [...bytes]
+    .map((byte) => STEP_UP_REQUEST_CODE_ALPHABET[byte % STEP_UP_REQUEST_CODE_ALPHABET.length])
+    .join('');
 }
 
 /** By held-action id, oldest first. */
@@ -202,6 +216,7 @@ export function holdStepUp(
     commit: action.commit,
     onDiscard: action.onDiscard,
     triesLeft: STEP_UP_MAX_PASSWORD_TRIES,
+    requestCode: newStepUpRequestCode(),
   });
   const expiry = setTimeout(() => drop(statement.heldActionId), STEP_UP_TTL_MS);
   expiry.unref?.();

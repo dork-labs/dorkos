@@ -185,9 +185,15 @@ export const MINI_APP_ACCESS_PAGE_SCRIPT = `'use strict';
       }),
     })
       .then(function (response) {
-        return response.json().then(function (body) { return { ok: response.ok, body: body }; });
+        return response.json().then(function (body) {
+          return { ok: response.ok, status: response.status, body: body };
+        });
       })
       .then(function (answer) {
+        if (answer.status === 428 && answer.body && answer.body.code === 'step_up_required') {
+          confirmInDorkOS(answer.body);
+          return;
+        }
         result.textContent = answer.ok
           ? answer.body.message
           : (answer.body && answer.body.error) || 'Nothing changed. Open the page again.';
@@ -197,6 +203,60 @@ export const MINI_APP_ACCESS_PAGE_SCRIPT = `'use strict';
         result.textContent = 'Nothing changed. Open the page again.';
         result.setAttribute('data-state', 'refused');
       });
+  }
+
+  function el(tag, className, text) {
+    var node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text) node.textContent = text;
+    return node;
+  }
+
+  // A yes waits for the owner to confirm it's them, in DorkOS itself: this page
+  // shows the same request code the sheet will, and a way there (DOR-4355).
+  function confirmInDorkOS(held) {
+    var id = String(held.heldActionId);
+    var code = String(held.requestCode || '');
+    var actions = form.querySelector('.actions');
+    var step = el('section', 'step-up');
+    step.setAttribute('data-testid', 'mini-app-step-up');
+    step.appendChild(el('p', 'step-line', 'One more step: confirm it\\u2019s you in DorkOS.'));
+    if (code) {
+      step.appendChild(el('p', 'code-label', 'Request code'));
+      // Three groups of four on screen; copied and read out as the plain 12.
+      var shown = el('code', 'request-code');
+      shown.setAttribute('aria-label', code);
+      shown.setAttribute('data-testid', 'mini-app-request-code');
+      [code.slice(0, 4), code.slice(4, 8), code.slice(8, 12)].forEach(function (group) {
+        shown.appendChild(el('span', '', group));
+      });
+      step.appendChild(shown);
+      step.appendChild(el('p', 'quiet', 'Check that DorkOS shows the same code.'));
+    }
+    var buttons = el('div', 'actions');
+    var notNow = el('button', 'secondary', 'Not now');
+    notNow.type = 'button';
+    var open = el('a', 'button primary', 'Open DorkOS');
+    open.href = '/?confirm=' + encodeURIComponent(id);
+    open.target = '_blank';
+    open.rel = 'noopener noreferrer';
+    buttons.appendChild(notNow);
+    buttons.appendChild(open);
+    step.appendChild(buttons);
+    step.appendChild(el('p', 'quiet', 'Then come back here and reload.'));
+    notNow.addEventListener('click', function (event) {
+      if (!event.isTrusted) return;
+      fetch('/api/step-up/' + encodeURIComponent(id), { method: 'DELETE', credentials: 'same-origin' })
+        .catch(function () {})
+        .then(function () {
+          step.remove();
+          result.textContent = 'Nothing changed. You can close this page.';
+          result.setAttribute('data-state', 'refused');
+        });
+    });
+    if (actions) actions.replaceWith(step);
+    else form.appendChild(step);
+    open.focus();
   }
 
   // First focus is the question, never Allow, so a key already held does nothing.
@@ -260,6 +320,19 @@ button {
 }
 button.secondary { border-color: var(--line-strong); }
 button.primary { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
+a.button {
+  display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 7rem;
+  padding: 0 1rem; border-radius: 8px; font-weight: 600; text-decoration: none; border: 1px solid var(--line);
+}
+a.button.primary { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
+.step-up { margin-top: 1.25rem; }
+.step-line { font-weight: 600; }
+.code-label { font-size: .8rem; font-weight: 700; color: var(--muted); margin: 1rem 0 .25rem; }
+/* Gaps, not spaces, between the groups: what is copied is the plain 12 characters. */
+.request-code {
+  display: inline-flex; gap: .6em; padding: .5rem .75rem; border-radius: 8px; background: var(--tint);
+  font: 600 1.125rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .08em;
+}
 button:disabled { opacity: .5; cursor: default; }
 /* Looks only: the 1s gate and the press check live in the script, not here. */
 button { transition: opacity 150ms ease; }

@@ -40,6 +40,8 @@ import {
 import { liveAgentModeSources } from './agent-mode-sources.js';
 import { identityResolutionOf } from './agent-mode-identity.js';
 import { agentModeChangeOf } from './agent-mode-change.js';
+import type { CreditsEdit } from '../credits/credits-work.js';
+import { creditsEditEscalation } from '../credits/credits-edit-escalation.js';
 
 const STATE_RANK = { allowed: 0, ask: 1, blocked: 2 } as const;
 
@@ -150,14 +152,20 @@ export function registerAgentModeEscalators(
   const removeUpdate = registerToolCallEscalator(
     'tasks_update',
     async ({ action, input, permission, context }) => {
-      const body = bodyOf(input);
-      if (!agentModeControlOn() || !reachesAgentMode(body)) return null;
       // The tool itself is off for this caller: its own refusal stands.
       if (permission?.state === 'blocked') return null;
+      const body = bodyOf(input);
       const id = (input as { id?: unknown } | undefined)?.id;
       const task = typeof id === 'string' ? deps.store.getTask(id) : null;
       if (!task) return null;
       const caller = withRunOrigin(gateCallerOf(context), liveRunOriginSources(deps.store));
+      // A raise on a task that spends DorkOS credits always waits for a person (DOR-4609).
+      const credits = (mode: ToolCallEscalation | null) =>
+        creditsEditEscalation(
+          { action, permission, body: body as CreditsEdit, task, marked: caller.marked },
+          mode
+        );
+      if (!agentModeControlOn() || !reachesAgentMode(body)) return credits(null);
       const decision = await decideAgentModeCall(
         { door: 'update', body, task, edits: deps.store.approvals.agentEditsOf(task.id) },
         caller,
@@ -172,7 +180,7 @@ export function registerAgentModeEscalators(
               caller.agentPath
             )
           : undefined;
-      return escalationFor(decision, action, permission, change);
+      return credits(escalationFor(decision, action, permission, change));
     }
   );
   const removeCreate = registerToolCallEscalator(

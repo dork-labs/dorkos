@@ -84,6 +84,11 @@ import { auditScheduleUpdate, scheduleEdit } from '../../../../tasks/approvals/s
 import { applyTaskFileUpdate } from '../../../../tasks/lifecycle/update-task-file.js';
 import { taskCreateLifecycleDeps } from './task-create-deps.js';
 import { changesApprovedWork } from '../../../../tasks/task-file-update.js';
+import {
+  agentEditRaisesCredits,
+  CREDITS_EDIT_NEEDS_YES,
+} from '../../../../tasks/credits/credits-work.js';
+import { escalatedGrantFor } from '../../../../core/capabilities/tool-call-escalation.js';
 import { refuseStickyAccountChange } from '../../../../tasks/session/sticky-session.js';
 import { AGENT_TIMING_CHANGE_REASON } from '../../../../tasks/timing/effective-timing.js';
 import { describeScheduleProblem } from '../../../../tasks/cron-validation.js';
@@ -435,6 +440,14 @@ export function createUpdateScheduleHandler(
       (runsOnCredits && args.enabled === true && !existing.enabled)
     ) {
       return jsonContent(CREDITS_SCHEDULE_AGENT_REFUSAL, true);
+    }
+    // Making a live credits task spend more waits for a person's yes on the card;
+    // a marked turn gets none (DOR-4609).
+    if (
+      agentEditRaisesCredits(args, existing) &&
+      (caller.marked || escalatedGrantFor(args)?.via !== 'card')
+    ) {
+      return jsonContent(CREDITS_EDIT_NEEDS_YES, true);
     }
 
     // A new timing and the package's own timing are two different answers to

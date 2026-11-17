@@ -419,6 +419,12 @@ export function registerOwnerManagementTests(harness: OwnerManagementHarness): v
         expect(paused.status()).toBe(409);
         expect(await paused.json()).toMatchObject({ code: 'CONNECTOR_NOT_EXECUTABLE' });
         await fix.getByRole('button', { name: 'Resume', exact: true }).click();
+        // Turning an account back on waits for the owner to confirm it's them (DOR-4355).
+        const sheet = page.getByRole('alertdialog', { name: 'Confirm it’s you' });
+        await expect(sheet).toContainText('Turn this connected account back on for your agents.');
+        await sheet.getByLabel('DorkOS password').fill(PROGRAM_KEY_OWNER.password);
+        await sheet.getByRole('button', { name: 'Allow', exact: true }).click();
+        await expect(sheet).toBeHidden();
         await expect(fix).toHaveCount(0);
         const resumed = await execute();
         expect(resumed.status(), await resumed.text()).toBe(200);

@@ -8,6 +8,7 @@ import type { HeldStepUpView } from '@dorkos/shared/step-up';
 import {
   finishActionStepUp,
   getActionStepUpShowing,
+  openActionStepUpFromLink,
   requestActionStepUp,
   type ActionStepUpOutcome,
 } from '@/layers/shared/lib';
@@ -203,6 +204,55 @@ describe('ActionStepUpHost', () => {
     const outcome = ask();
     await confirmWith('the-password');
     await expect(outcome).resolves.toEqual({ kind: 'ask-again' });
+  });
+
+  describe('opened from a link a page outside the app gave', () => {
+    const LINKED = '01M7M696Q8GA7H8MQ7WVRZ1K4P';
+
+    it('opens the sheet for that held action once, and takes the id out of the address', async () => {
+      heldWith({ ...VIEW, heldActionId: LINKED, requestCode: 'K7Q2M9XD4HTN' }, [
+        200,
+        { ok: true, status: 200, result: {} },
+      ]);
+      const replaceState = vi.fn();
+      render(<ActionStepUpHost />);
+      act(() => {
+        openActionStepUpFromLink(
+          { href: `https://dorkos.example/?confirm=${LINKED}#top` },
+          { replaceState, state: null }
+        );
+      });
+      expect(replaceState).toHaveBeenCalledExactlyOnceWith(null, '', '/#top');
+      expect(getActionStepUpShowing()).toBe(LINKED);
+      // Three groups of four on screen; the plain 12 for copying and screen readers.
+      const code = await screen.findByTestId('step-up-request-code');
+      expect(code.textContent).toBe('K7Q2M9XD4HTN');
+      expect(code.getAttribute('aria-label')).toBe('K7Q2M9XD4HTN');
+      expect(code.querySelectorAll('span')).toHaveLength(3);
+      expect(screen.getByText('Request code')).toBeTruthy();
+    });
+
+    it('opens nothing for an id that is not a held action’s', () => {
+      const replaceState = vi.fn();
+      const opened = openActionStepUpFromLink(
+        { href: 'https://dorkos.example/?confirm=../../settings' },
+        { replaceState, state: null }
+      );
+      expect(opened).toBe(false);
+      expect(replaceState).toHaveBeenCalledOnce();
+      expect(getActionStepUpShowing()).toBeNull();
+    });
+
+    it('shows no request code on a sheet the app itself asked for', async () => {
+      heldWith({ ...VIEW, requestCode: 'K7Q2M9XD4HTN' }, [
+        200,
+        { ok: true, status: 200, result: {} },
+      ]);
+      render(<ActionStepUpHost />);
+      void ask();
+      await screen.findByText(VIEW.reason);
+      expect(screen.queryByTestId('step-up-request-code')).toBeNull();
+    });
   });
 
   it('says it took too long on the sheet that follows an expired one', async () => {
