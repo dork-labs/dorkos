@@ -228,6 +228,21 @@ describe('a spin-off reports into the room seat that started it (DOR-3488)', () 
     expect(gone).toHaveBeenCalledExactlyOnceWith(false);
   });
 
+  // DOR-4619: a seat in a room nobody has posted in yet has no entry to be about, and the report
+  // used to stop there without a turn.
+  it('a seat in a room nobody has posted in yet still takes the report', async () => {
+    store.bindRoomSession(dorkos.id, bo, 'bo-seat', new Date().toISOString());
+    expect(store.listEntries(dorkos.id, { limit: 1 })).toEqual([]);
+    const ran = vi.fn();
+
+    expect(service.handoffs.reports.deliver('bo-seat', report('PR #12 is green.'), ran)).toBe(true);
+    await settle();
+
+    expect(ran).toHaveBeenCalledExactlyOnceWith(true);
+    expect(reportTurns()).toHaveLength(1);
+    expect(reportTurns()[0]!.sessionId).toBe('bo-seat');
+  });
+
   it('a seat mid-turn in the room takes the report once that turn ends', async () => {
     let delivered = false;
     const order: string[] = [];

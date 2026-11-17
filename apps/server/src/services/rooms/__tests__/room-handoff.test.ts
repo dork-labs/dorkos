@@ -559,6 +559,80 @@ describe('one seat per agent per room, and the hand-off', () => {
     }
   );
 
+  // DOR-4619: a room nobody has posted in yet has no entry for the seat's turn to be about, and
+  // the hand-off used to stop there with "nothing to answer", verbatim or not.
+  describe('into a room nobody has posted in yet', () => {
+    /** Bo's #team-product seat posts whatever draft it is handed. */
+    function emptyRoomSeatPosts(): PostResult[] {
+      const attempts: PostResult[] = [];
+      scripts[product.id] = async (request, sessionId) => {
+        const draft = draftIn(request.prompt);
+        if (draft === undefined) return null;
+        attempts.push(await postAsBo(sessionId, { roomId: product.id, text: draft }));
+        return null;
+      };
+      return attempts;
+    }
+
+    async function statusOf(handoffId: string | undefined): Promise<unknown> {
+      return registry.invoke(
+        'rooms.handoff_status',
+        { handoffId },
+        { identity: BO, sessionId: 'bo-chat', retryChannel: 'mcp-argument' }
+      );
+    }
+
+    it.each([
+      ['a hand-off', false],
+      ['a verbatim hand-off', true],
+    ])('%s is posted by the seat', async (_label, verbatim) => {
+      expect(entries(product)).toEqual([]);
+      const attempts = emptyRoomSeatPosts();
+
+      const receipt = await postAsBo('bo-chat', {
+        roomId: product.id,
+        text: 'Ledger opened.',
+        ...(verbatim ? { verbatim: true } : {}),
+      });
+      await settle();
+
+      expect(receipt).toMatchObject({ posted: false, handedOff: true });
+      expect(attempts).toEqual([expect.objectContaining({ posted: true })]);
+      expect(bosPosts(product)).toEqual(['Ledger opened.\n\n_Shared from another chat._']);
+      await expect(statusOf(receipt.handoffId)).resolves.toMatchObject({ status: 'posted' });
+    });
+
+    it('runs the seat turn with no marks the room never had, and points the post at nothing', async () => {
+      emptyRoomSeatPosts();
+
+      await postAsBo('bo-chat', { roomId: product.id, text: 'Ledger opened.' });
+      await settle();
+
+      const seatTurn = runner.turns.find(
+        (turn) => turn.roomId === product.id && turn.prompt.includes('BEGIN HANDED-OFF DRAFT')
+      );
+      expect(seatTurn?.externalAuthor).toBe(false);
+      expect(seatTurn?.permissionCeiling).toBeUndefined();
+      expect(seatTurn?.carriedOutsider).toBeUndefined();
+      const [post] = entries(product).filter((entry) => entry.authorId === bo);
+      // No entry was answered, so the post names none.
+      expect(post?.body.answersEntryId).toBeUndefined();
+    });
+
+    it('a seat that declines says its own reason, never "nothing to answer"', async () => {
+      scripts[product.id] = () => Promise.resolve('This belongs in #dorkos.');
+
+      const receipt = await postAsBo('bo-chat', { roomId: product.id, text: 'Ledger opened.' });
+      await settle();
+
+      expect(bosPosts(product)).toEqual([]);
+      await expect(statusOf(receipt.handoffId)).resolves.toMatchObject({
+        status: 'declined',
+        reason: 'This belongs in #dorkos.',
+      });
+    });
+  });
+
   it('reports back into a chat no room keeps', async () => {
     const send = vi.fn(() =>
       Promise.resolve({ messageId: 'm', chatId: 'bo-chat', status: 'queued' })
