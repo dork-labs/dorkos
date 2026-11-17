@@ -12,6 +12,7 @@ import type { RemoteCommunityPairingService } from '../../services/communities/r
 import type { CommunityNavigationPreferenceService } from '../../services/communities/community-navigation-preferences.js';
 import type { CommunityOwnerNoticeAnnouncer } from '../../services/notifications/emitters/community-owner-replacement.js';
 import type { RemoteWakePolicy } from '../../services/communities/remote/wake/wake-policy.js';
+import { AnswerInChangedError } from '../../services/communities/remote/wake/answer-in-store.js';
 import { resetHeldStepUpsForTests } from '../../services/core/auth/step-up/step-up-holds.js';
 import { frontDoorStepUpHarness } from './front-door-step-up-harness.js';
 
@@ -35,9 +36,18 @@ describe('who can reach and wake your agents in a space waits for the owner', ()
       wake.from = value;
     }),
     getAnswerIn: vi.fn(async () => [...wake.answerIn]),
-    setAnswerIn: vi.fn(async (_ref: unknown, _owner: unknown, channels: readonly string[]) => {
-      wake.answerIn = [...channels];
-    }),
+    setAnswerIn: vi.fn(
+      async (
+        _ref: unknown,
+        _owner: unknown,
+        channels: readonly string[],
+        expect?: (current: readonly string[]) => boolean
+      ) => {
+        // As the store does inside its lock (Security S5 on DOR-4355 M3).
+        if (expect && !expect(wake.answerIn)) throw new AnswerInChangedError();
+        wake.answerIn = [...channels];
+      }
+    ),
   };
   const pairing = {
     start: vi.fn(async () => ({
@@ -143,6 +153,17 @@ describe('who can reach and wake your agents in a space waits for the owner', ()
     const narrowed = await owner.call('put', url, 'managed').send({ answerIn: [] });
     expect(narrowed.status).toBe(200);
     expect(narrowed.body.heldActionId).toBeUndefined();
+    expect(wake.answerIn).toEqual([]);
+  });
+
+  // Security S5 on DOR-4355 M3: a save read as adding nothing must still add nothing when it lands.
+  it('answers 409 for a free save judged before the person took a channel away', async () => {
+    const url = '/api/community-connections/northwind/answer-in';
+    // Read before the person's removal landed: #help was still listed.
+    policy.getAnswerIn.mockResolvedValueOnce(['help']);
+    const res = await owner.call('put', url, 'own-tunnel').send({ answerIn: ['#Help'] });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('ANSWER_IN_CHANGED');
     expect(wake.answerIn).toEqual([]);
   });
 });

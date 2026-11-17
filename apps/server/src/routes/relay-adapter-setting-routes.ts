@@ -64,8 +64,9 @@ import {
 import { holdForStepUp } from './step-up-guard.js';
 import {
   addedListIds,
-  addedListReason,
+  opensDirectMessages,
   ownerAddsListIdRefusal,
+  ownerGrantReason,
   type AddedListId,
 } from './relay-adapter-grants.js';
 
@@ -111,6 +112,8 @@ interface SettingUse {
   typedSecret?: () => boolean;
   /** The ids it adds to the connection's approver or DM list. */
   addedIds?: readonly AddedListId[];
+  /** Whether it opens the connection's DMs to anyone, the whole DM list at once. */
+  opensDms?: boolean;
   /** Run it as `writer`, answering as the route would. */
   run: (writer: SecretWriter) => Promise<{ status: number; body: unknown }>;
 }
@@ -132,22 +135,23 @@ async function runOrHold(
     c.json(result.body as object, result.status as ContentfulStatusCode);
   const writer = secretWriter(c);
   const added = use.addedIds ?? [];
-  if (writer !== 'person' && added.length > 0) return c.json(ownerAddsListIdRefusal(), 403);
+  // Adding someone, or opening the DMs to anyone, makes them the owner there (DOR-4595).
+  const grantsOwner = added.length > 0 || use.opensDms === true;
+  if (writer !== 'person' && grantsOwner) return c.json(ownerAddsListIdRefusal(), 403);
   if (writer !== 'person') return answer(await use.run(writer));
   if (!ownerExists()) {
     // No owner yet: the person at this computer goes on with no sheet.
     if (use.settings.length === 0) return answer(await use.run('person'));
     return noOwnerRefusal(c, SETTING_WORDING.personOnly) ?? answer(await use.run('person'));
   }
-  if (use.settings.length === 0 && added.length === 0 && use.typedSecret?.() !== true)
+  if (use.settings.length === 0 && !grantsOwner && use.typedSecret?.() !== true)
     return answer(await use.run(writer));
   return holdForStepUp(c, {
-    kind:
-      added.length > 0
-        ? 'relay.allowlist'
-        : use.settings.length > 0
-          ? 'connection.use-setting'
-          : 'connection.credential',
+    kind: grantsOwner
+      ? 'relay.allowlist'
+      : use.settings.length > 0
+        ? 'connection.use-setting'
+        : 'connection.credential',
     target: use.target,
     input: use.input,
     reason: use.reason,
@@ -219,9 +223,10 @@ function markedAdapterSecretRefusal(
 function settingReason(
   name: string,
   settings: readonly string[],
-  added: readonly AddedListId[]
+  added: readonly AddedListId[],
+  opensDms = false
 ): string {
-  if (added.length > 0) return addedListReason(added, name);
+  if (added.length > 0 || opensDms) return ownerGrantReason(added, opensDms, name);
   if (settings.length > 0) return `Lets ${name} use ${settingNamesText(settings)}.`;
   return `Save the key ${name} uses.`;
 }
@@ -285,6 +290,7 @@ export function registerSettingRoutes(router: Hono<ApiEnv>, deps: SettingRouteDe
     const settings = personSettingsIn(config);
     const name = quotedName(label ?? type);
     const addedIds = addedListIds(config, undefined);
+    const opensDms = opensDirectMessages(config, undefined);
     return runOrHold(
       c,
       {
@@ -293,7 +299,8 @@ export function registerSettingRoutes(router: Hono<ApiEnv>, deps: SettingRouteDe
         settings,
         typedSecret: () => hasTypedAdapterSecret(config, adapterManager.getManifest(type)),
         addedIds,
-        reason: settingReason(name, settings, addedIds),
+        opensDms,
+        reason: settingReason(name, settings, addedIds, opensDms),
         run: (writer) =>
           adapterResult(async () => {
             await adapterManager.addAdapter(type, id, config, enabled, label, writer);
@@ -334,7 +341,10 @@ export function registerSettingRoutes(router: Hono<ApiEnv>, deps: SettingRouteDe
     if (markedRefusal) return c.json(markedRefusal, 403);
     const settings = personSettingsIn(config);
     const name = quotedName(adapterManager.resolveAdapterName(id));
-    const addedIds = addedListIds(config, existing?.config as Record<string, unknown> | undefined);
+    const stored = existing?.config as Record<string, unknown> | undefined;
+    const addedIds = addedListIds(config, stored);
+    // An unknown connection is the save's own 404.
+    const opensDms = existing !== undefined && opensDirectMessages(config, stored);
     return runOrHold(
       c,
       {
@@ -346,7 +356,8 @@ export function registerSettingRoutes(router: Hono<ApiEnv>, deps: SettingRouteDe
           existing !== undefined &&
           hasTypedAdapterSecret(config, adapterManager.getManifest(existing.type)),
         addedIds,
-        reason: settingReason(name, settings, addedIds),
+        opensDms,
+        reason: settingReason(name, settings, addedIds, opensDms),
         run: (writer) =>
           adapterResult(async () => {
             await adapterManager.updateConfig(id, config, writer);

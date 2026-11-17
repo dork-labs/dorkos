@@ -29,6 +29,7 @@ import {
   ConnectorReconciliationError,
   ConnectorReconciliationService,
 } from '../reconciliation-service.js';
+import { ReconciliationNeedsConfirmationError } from '../reconciliation/reconciliation-error.js';
 import { ManagedAuthoritySyncService } from '../resources/managed-authority-sync-service.js';
 
 const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
@@ -518,6 +519,49 @@ describe('ConnectorReconciliationService', () => {
         .all()
         .every((grant) => grant.revokedAt === null)
     ).toBe(true);
+  });
+
+  describe('a save the route sends as only taking access away (Security M1 on DOR-4355 M3)', () => {
+    const narrowing = async () => {
+      const preview = await service.preview(
+        OWNER,
+        { connectionId: CONNECTION_ID },
+        new AbortController().signal
+      );
+      return service.apply(
+        OWNER,
+        { previewId: preview.previewId, grants: [] },
+        new AbortController().signal,
+        { onlyNarrowing: true }
+      );
+    };
+
+    it('refuses inside the write while the review is open, and settles nothing', async () => {
+      const before = db.select().from(connections).get()?.grantReconciliationStatus;
+      expect(before).not.toBe('ready');
+      await expect(narrowing()).rejects.toBeInstanceOf(ReconciliationNeedsConfirmationError);
+      expect(db.select().from(connections).get()?.grantReconciliationStatus).toBe(before);
+    });
+
+    it('refuses on a managed connection, whose service may re-send refused changes', async () => {
+      db.update(connectorProviderInstances)
+        .set({ mode: 'managed', custody: 'managed' })
+        .where(eq(connectorProviderInstances.id, provider.instanceId))
+        .run();
+      db.update(connections)
+        .set({ grantReconciliationStatus: 'ready' })
+        .where(eq(connections.id, CONNECTION_ID))
+        .run();
+      await expect(narrowing()).rejects.toBeInstanceOf(ReconciliationNeedsConfirmationError);
+    });
+
+    it('goes through on a settled connection', async () => {
+      db.update(connections)
+        .set({ grantReconciliationStatus: 'ready' })
+        .where(eq(connections.id, CONNECTION_ID))
+        .run();
+      await expect(narrowing()).resolves.toMatchObject({ reconciliationStatus: 'ready' });
+    });
   });
 
   it('sends a refused change again when the owner confirms, so the refusal clears', async () => {

@@ -40,18 +40,23 @@ import {
   MoveBindingRequestSchema,
   bridgeAllowsChatId,
   BRIDGE_REQUIRES_CHAT_ID_MESSAGE,
+  type AdapterBinding,
   type PlatformChatType,
 } from '@dorkos/shared/relay-schemas';
 import { AdapterError, type AdapterManager } from '../services/relay/adapter-manager.js';
 import { broadcastBindingsChanged } from '../services/relay/relay-sse-events.js';
-import { BindingConflictError, type BindingUpdate } from '../services/relay/binding-store.js';
+import {
+  BindingChangedError,
+  BindingConflictError,
+  type BindingUpdate,
+} from '../services/relay/binding-store.js';
 import { RoomError } from '../services/rooms/room-errors.js';
 import { ADAPTER_EVENTS_KEPT, type TraceStore } from '../services/relay/trace-store.js';
 import { registerConfirmReferencesRoute, sendAdapterError } from './relay-adapter-http.js';
 import { registerSettingRoutes } from './relay-adapter-setting-routes.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
-import { registerBindingWrites } from './relay-binding-step-up.js';
+import { bindingChanged, registerBindingWrites } from './relay-binding-step-up.js';
 
 /** Resolve a human-readable name for an adapter, falling back to its ID. */
 function resolveAdapterName(adapterManager: AdapterManager, adapterId: string): string {
@@ -420,7 +425,10 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
     return c.json({ binding: moved });
   };
 
-  const updateBinding = async (c: Context<ApiEnv>): Promise<Response> => {
+  const updateBinding = async (
+    c: Context<ApiEnv>,
+    stillNarrows?: (current: AdapterBinding) => boolean
+  ): Promise<Response> => {
     const bindingStore = adapterManager.getBindingStore();
     if (!bindingStore) {
       return c.json({ error: 'Binding subsystem not available' }, 503);
@@ -552,13 +560,23 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
     } else if (bridgingOff && existing && lifecycle) {
       await lifecycle.unbridge(existing.id);
       if (Object.keys(updates).length > 0) {
-        await bindingStore.update(existing.id, updates as BindingUpdate);
+        try {
+          await bindingStore.update(existing.id, updates as BindingUpdate, stillNarrows);
+        } catch (err) {
+          if (err instanceof BindingChangedError) return bindingChanged(c, err);
+          throw err;
+        }
       }
       updated = bindingStore.getById(existing.id);
     } else {
       try {
-        updated = await bindingStore.update(c.req.param('id') ?? '', updates as BindingUpdate);
+        updated = await bindingStore.update(
+          c.req.param('id') ?? '',
+          updates as BindingUpdate,
+          stillNarrows
+        );
       } catch (err) {
+        if (err instanceof BindingChangedError) return bindingChanged(c, err);
         // "One chat, one agent": changing `chatId` onto a value another binding
         // already owns is the same 409 the create path gives (see above).
         if (err instanceof BindingConflictError) {

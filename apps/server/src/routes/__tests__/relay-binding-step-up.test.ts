@@ -68,6 +68,20 @@ describe('chat route confirmation', () => {
     expect(JSON.stringify(store.getById(bindingId))).not.toBe(before);
   });
 
+  // Security S5 on DOR-4355 M3: a change read as free must still be free when it lands.
+  it('answers 409 for a free change judged on a route the person narrowed meanwhile', async () => {
+    const narrowed = store.getById(bindingId)!;
+    expect(narrowed.canInitiate).toBe(false);
+    // The read the route judges on is from before the person took "start chats" away.
+    vi.spyOn(store, 'getById').mockReturnValueOnce({ ...narrowed, canInitiate: true });
+    const res = await owner
+      .call('patch', `/api/relay/bindings/${bindingId}`, 'own-tunnel')
+      .send({ canInitiate: true });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('BINDING_CHANGED');
+    expect(store.getById(bindingId)?.canInitiate).toBe(false);
+  });
+
   it('holds a new route that starts looser than the defaults', async () => {
     const held = await owner
       .call('post', '/api/relay/bindings', 'own-tunnel')

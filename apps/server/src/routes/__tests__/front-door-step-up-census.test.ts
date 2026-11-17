@@ -7,6 +7,36 @@ import { exportedHandler, unguardedWrites } from './front-door-write-flow.js';
 import { HELD_WRITES } from '../../services/core/auth/step-up/front-door-openapi.js';
 
 const ROUTES = path.resolve(__dirname, '..');
+/** The groups DOR-4355 M3 held, each write route judged on its own. */
+const M3_GROUPS = [
+  'connector-management',
+  'connector-resources',
+  'connector-events',
+  'connector-providers',
+  'connector-access-changes',
+  'mini-app-access-page',
+  'marketplace/package-actions',
+  'marketplace/updates',
+  'marketplace/dev-links',
+  'marketplace/held-back',
+  'marketplace/sources',
+  'shapes',
+  'workspaces',
+  'task-file-approve',
+  'task-mode-undo',
+  'runtimes',
+  'runtimes-account-eligibility',
+  'community-connections',
+  'community-answer-in',
+  'community-teammate-spend',
+  'canvas-doc-route-controls',
+  'extensions',
+  'permissions',
+  'relay-adapters',
+  'relay-binding-step-up',
+  'relay-adapter-setting-routes',
+  'unclaimed-chats',
+];
 const GROUPS = [
   'remote-access',
   'tunnel',
@@ -21,6 +51,8 @@ const GROUPS = [
   'heartbeat-triage',
   'tasks',
   'mesh',
+  // DOR-4355 M3, checked per route (Security S4): reverting any one hold turns its row red.
+  ...M3_GROUPS,
 ];
 const EXCEPTIONS: Record<string, string> = {
   'mesh POST /discover': 'Reads agent candidates; grants no account access.',
@@ -56,6 +88,90 @@ const EXCEPTIONS: Record<string, string> = {
   'session-relay-passkeys DELETE /': 'Existing password check removes a damaged passkey file.',
   'session-relay-passkeys DELETE /:credentialId': 'Existing password check removes a passkey.',
   'config PUT /agents/defaultAgent': 'Changes a preference.',
+  // DOR-4355 M3, route by route: each of these only narrows, reads or answers once.
+  'connector-management POST /reviews': 'Asks the owner to review an agent; grants nothing.',
+  'connector-management POST /reconciliation/previews':
+    'Builds a review of current access to read; writes no grant.',
+  'connector-management DELETE /connections/:connectionId/every-agent':
+    'Stops sharing an account with every agent.',
+  'connector-management PUT /connections/:connectionId/exclusions/:agentId':
+    'Leaves one agent out of an account.',
+  'connector-resources PATCH /connections/:connectionId': 'Renames an account.',
+  'connector-resources POST /connections/:connectionId/remove': 'Removes an account.',
+  'connector-resources DELETE /connections/:connectionId': 'Disconnects an account.',
+  'connector-resources PUT /sessions/:sessionId/connections/:connectionId':
+    'Turns an app the chat’s agent already holds on or off for one chat; never more than the agent’s own access.',
+  'connector-events DELETE ${prefix}/subscriptions/:subscriptionId':
+    'Removes an event subscription.',
+  'connector-providers DELETE /:provider/credential': 'Removes a saved provider key.',
+  'marketplace/package-actions POST /packages/:name/preview':
+    'Shows what an install would do; installs nothing.',
+  'marketplace/package-actions POST /packages/:name/check-files':
+    'Checks installed files against the record; changes nothing.',
+  'marketplace/package-actions POST /packages/:name/uninstall': 'Removes a package.',
+  'marketplace/package-actions POST /packages/:name/update':
+    'Checks for a newer version; applying one is held in updates.ts.',
+  'marketplace/dev-links POST /dev-links/preview': 'Shows what a link would run; links nothing.',
+  'marketplace/dev-links POST /dev-links/:name/unlink': 'Removes a linked folder.',
+  'marketplace/held-back POST /held-back/:name/review':
+    'Asks the person about a held-back package on a card; allows nothing.',
+  'marketplace/sources DELETE /sources': 'Removes package sources.',
+  'marketplace/sources DELETE /sources/:name': 'Removes a package source.',
+  'marketplace/sources POST /sources/refresh':
+    'Re-reads the sources a person already added; adds none.',
+  'marketplace/sources POST /sources/:name/refresh':
+    'Re-reads a source a person already added; adds none.',
+  'shapes POST /:name/fork': 'Copies a Shape to edit; applies nothing.',
+  'workspaces POST /ports': 'Reads a workspace’s ports.',
+  'workspaces POST /:id/pin': 'Pins a workspace in the list.',
+  'runtimes POST /opencode/provision':
+    'Installs OpenCode at this computer only; grants no account or key.',
+  'runtimes POST /codex/provision':
+    'Installs Codex at this computer only; grants no account or key.',
+  'runtimes POST /claude-code/provision':
+    'Installs Claude Code at this computer only; grants no account or key.',
+  'runtimes POST /opencode/openrouter/oauth/start':
+    'Starts a sign-in the person finishes on OpenRouter’s own page; saves no key itself.',
+  'runtimes POST /opencode/ollama/pull': 'Downloads a local model at this computer only.',
+  'runtimes POST /opencode/ollama/provision': 'Points OpenCode at a local model on this computer.',
+  'runtimes POST /opencode/provider/credential/check': 'Tries a key; saves nothing.',
+  'runtimes POST /claude-code/accounts/:id/probe': 'Checks an account signs in; saves nothing.',
+  'runtimes POST /claude-code/accounts/found/dismiss': 'Hides a found account from the list.',
+  'runtimes POST /:type/credential/check': 'Tries a key; saves nothing.',
+  'runtimes POST /:type/login':
+    'Starts a runtime’s own sign-in, which the person finishes in its window.',
+  'runtimes-account-eligibility POST /claude-code/project-accounts/without-credits':
+    'Keeps DorkOS credits out of one project; only narrows.',
+  'community-connections POST /navigation/move': 'Moves a space in the sidebar.',
+  'community-connections PUT /navigation/installation': 'Chooses where a space shows.',
+  'community-connections PUT /navigation/destination': 'Chooses where a space opens.',
+  'community-connections POST /:ref/poll': 'Reads whether a pairing finished.',
+  'community-connections POST /:ref/cancel': 'Cancels a pairing.',
+  'community-connections DELETE /:ref': 'Removes a space connection.',
+  'canvas-doc-route-controls POST /:id/routes/:routeId/review':
+    'Marks a page route reviewed; grants nothing.',
+  'canvas-doc-route-controls POST /:id/routes/:routeId/revoke': 'Stops a page route.',
+  'extensions POST /:id/disable': 'Turns an extension off.',
+  'extensions POST /:id/init-server':
+    'Starts the server of an extension that is already on; turns nothing on.',
+  'extensions POST /reload': 'Reloads the extensions that are already on.',
+  'extensions POST /cwd-changed': 'Loads the extensions of the folder the person opened.',
+  'extensions PUT /:id/data': 'An extension’s own data file; grants nothing.',
+  'extensions DELETE /:id/secrets/:key': 'Removes an extension’s secret.',
+  'extensions PUT /:id/settings/:key':
+    'An extension’s own non-secret settings; its secrets are held separately.',
+  'extensions DELETE /:id/settings/:key': 'Removes an extension’s setting.',
+  'relay-adapters POST /adapters/reload':
+    'Re-reads the chat connections a person already saved; adds none.',
+  'relay-adapters DELETE /adapters/:id': 'Removes a chat connection.',
+  'relay-adapters POST /adapters/:id/enable':
+    'Turns a chat connection back on with the settings a person already saved; a call for Security.',
+  'relay-adapters POST /adapters/:id/disable': 'Turns a chat connection off.',
+  'relay-adapters DELETE /bindings/:id': 'Removes a chat route.',
+  'relay-adapters POST /bindings/:id/test': 'Sends a test message on a saved chat route.',
+  'unclaimed-chats POST /:id/ignore': 'Ignores a chat nobody answers yet.',
+  'unclaimed-chats POST /:id/block': 'Blocks a chat.',
+  'unclaimed-chats POST /:id/leave': 'Leaves a chat.',
 };
 const OTHER_FRONT_DOOR_CALLERS: Record<string, string> = {
   'admin.ts': 'Reset prepare creates only a one-use reset token; no lasting credential (N).',
@@ -64,14 +180,13 @@ const OTHER_FRONT_DOOR_CALLERS: Record<string, string> = {
   'workbench-serve.ts':
     'Scoped serve/proxy URLs are transient preview grants, not front-door credentials (N).',
   'mcp-servers.ts': 'Already holds add, replace and widen; mcp-servers-step-up.test.ts covers it.',
-  'runtimes-http.ts': 'Runtime sign-in and model settings are N.',
+  'runtimes-http.ts':
+    'Shared runtime bars and the key-save hold (HOLD_HELPERS); runtimes.ts routes are checked.',
   'runtimes-doe-setup.ts': 'Runtime sign-in and model settings are N.',
   'cloud-owner-bar.ts': 'Shared account owner bar; writes are classified in its callers.',
   'cloud-community-move-http.ts': 'Delegated cloud-communities POST /moves hold, checked below.',
   'account-signin.ts': 'Runtime account sign-in is N.',
   'computers.ts': 'Computer naming and removal; own separate owner checks.',
-  'connector-providers.ts':
-    'Holds saving a provider key; removing one is free. connector-providers-step-up.test.ts covers it.',
   'heartbeats.ts': 'Beat preferences and schedule ownership; no front-door credentials.',
   'local-browser.ts': 'Browser actions retain their existing person checks.',
   'local-browser-profiles.ts': 'Browser profiles retain their existing person checks.',
@@ -80,8 +195,6 @@ const OTHER_FRONT_DOOR_CALLERS: Record<string, string> = {
   'relay-adapter-http.ts': 'Chat connections retain their separate consent flow.',
   'onboarding.ts':
     'Credits choices only while first run is open; closing first run removes this setup door.',
-  'tasks.ts':
-    'Credits create and edit delegate to held handlers; trigger runs once without changing a lasting credits choice.',
   'tasks-create-http.ts':
     'Holds credits create before dispatch; task-credits-step-up.test.ts covers each route.',
   'tasks-update-http.ts':
@@ -90,8 +203,6 @@ const OTHER_FRONT_DOOR_CALLERS: Record<string, string> = {
     'Session Runs on ends with that session; session-tools/task-tools credits tests prove children do not inherit it (N).',
   'session-continue.ts':
     'Per-session Runs on is N; limit-plans-eligibility proves automatic carry-over uses its independently allowed target.',
-  'relay-adapter-setting-routes.ts':
-    'Holds a person’s setting, typed key, or approver/DM addition; anything else adding to those lists is refused. relay-setting-step-up.test.ts covers each.',
   'mesh-agent-patch-http.ts':
     'Delegated mesh PATCH holds credits-on and rechecks the agent and manifest; mesh-credits-step-up.test.ts covers it.',
   'front-door-step-up.ts': 'The shared helper itself rechecks the bar.',
@@ -120,10 +231,6 @@ const OTHER_FRONT_DOOR_CALLERS: Record<string, string> = {
     'The person’s own messages and memberships in a space; halts only lower (N).',
   'remote-community-conduct.ts': 'The person’s own rules answer, name and reports in a space (N).',
   'session-queue-handler.ts': 'Edits, removes or steers one queued message (N).',
-  // Held in this PR: raises wait for the owner, lowering stays free.
-  'permissions.ts': 'Holds raises and Undo; permissions-step-up.test.ts covers each route.',
-  'community-teammate-spend.ts':
-    'Holds raising or removing the limit; teammate-spend-step-up.test.ts covers it.',
   // Held in DOR-3648 (remote approval step-up), which merges first or in the same release.
   'approvals.ts': 'Card answers are held in DOR-3648.',
   'session-answers.ts': 'Always allow on a chat’s tool request is held in DOR-3648.',
@@ -133,58 +240,32 @@ const OTHER_FRONT_DOOR_CALLERS: Record<string, string> = {
   'extensions-forward.ts': 'Widening who an extension forwards to is held in DOR-3648.',
   'extensions-rooms.ts': 'Widening an extension’s rooms is held in DOR-3648.',
   'extensions-inbox.ts': 'Project settings writes from another device are held in DOR-3648.',
-  // DOR-4355 M3: each holds its raises; the reverse of each answers at once.
-  'connector-management.ts':
-    'Holds approvals, access grants, connecting, letting an agent back in and widening applies; connector-management-step-up.test.ts.',
-  'connector-resources.ts':
-    'Holds connecting, reconnecting and resuming an account; pausing and removing are free. connector-resources-step-up.test.ts.',
-  'connector-events.ts':
-    'Holds event subscriptions and the webhook secret; removing one is free. connector-events-step-up.test.ts.',
-  'mini-app-access-page.ts':
-    'Holds a mini app’s account access approval; Not now is free. mini-app-access-page-step-up.test.ts.',
-  'connector-access-changes.ts':
-    'Holds undoing a narrowing, which restores wider access. connector-access-changes-step-up.test.ts.',
-  'connector-step-up.ts': 'Shared connector hold helpers, used by the files above.',
-  'marketplace/package-actions.ts':
-    'Holds a person’s install and keep-files; preview, check and uninstall are free. marketplace-install-step-up.test.ts.',
-  'marketplace/updates.ts':
-    'Holds a person applying updates; the check is free. marketplace-install-step-up.test.ts.',
-  'marketplace/dev-links.ts':
-    'Holds a person linking a folder’s code; unlinking is free. marketplace-dev-link-step-up.test.ts.',
-  'marketplace/held-back.ts':
-    'Holds allowing a held-back package; refusing is free. marketplace-held-back-step-up.test.ts.',
-  'marketplace/sources.ts':
-    'Holds adding a package source; removing one is free. marketplace-source-step-up.test.ts.',
-  'shapes.ts': 'Holds a person applying a Shape; fork is free. shapes-apply-step-up.test.ts.',
-  'workspaces.ts':
-    'Holds create and remove only when their commands will run. workspaces-setup-step-up.test.ts.',
-  'task-file-approve.ts': 'Holds approving a capped SKILL file. tasks-arm-step-up.test.ts.',
-  'task-mode-undo.ts':
-    'Holds an Undo that would put back a looser mode; a stricter one is free. tasks-arm-step-up.test.ts.',
-  'task-arm-raise.ts': 'The task raise rules and hold, used by the task routes.',
-  'runtimes-account-eligibility.ts':
-    'Holds widening where Claude accounts may run; narrowing is free. account-eligibility-step-up.test.ts.',
+  // DOR-4355 M3's route files are in M3_GROUPS, judged per route. These are their helpers.
+  'connector-step-up.ts': 'Shared connector hold helpers; their routes are in M3_GROUPS.',
+  'task-arm-raise.ts': 'The task raise rules and holds (HOLD_HELPERS); their routes are checked.',
   'account-eligibility-hold.ts':
-    'The account widening hold, used by runtimes-account-eligibility.ts.',
-  'community-connections.ts':
-    'Holds connecting a space account; cancel, remove and moves are free. community-wake-step-up.test.ts.',
-  'community-answer-in.ts':
-    'Holds widening where a space wakes your agents (answer-in, wake from members); narrowing is free. community-wake-step-up.test.ts.',
-  'canvas-doc-route-controls.ts':
-    'Holds a person approving a standing page-event route; review and revoke are free. canvas-route-approve-step-up.test.ts.',
-  'extensions.ts':
-    'Holds turning an extension on and a person giving it a secret; disable, data and removals are free. extensions-enable-step-up.test.ts, extensions-secret-step-up.test.ts.',
+    'The account widening hold (HOLD_HELPERS); its routes are checked.',
+  'relay-adapter-grants.ts': 'The approver/DM list rules, used by relay-adapter-setting-routes.ts.',
   // Not held: decided writes that are not a lasting grant, each a call for Security to confirm.
   'agents.ts':
-    'Creates an agent only from the template or package review the person was shown (DOR-2325); no mode, credential or access.',
-  'runtimes.ts':
-    'Runtime sign-in, model settings and checking or hiding an account are N, as in runtimes-http.ts.',
+    'Creates an agent only from the template or package review the person was shown (DOR-2325), and PATCH /current refuses operator-only fields (instructions and model, no grant).',
   'system-shell-check.ts': 'Continues past a shell check in memory until the next restart (N).',
-  'relay-adapters.ts':
-    'Holds a chat route raise, a move to another agent, or a wider chat filter through relay-binding-step-up.ts; relay-binding-step-up.test.ts covers each.',
-  'relay-binding-step-up.ts': 'The chat-route raise rules and hold, used by relay-adapters.ts.',
-  'relay-adapter-grants.ts': 'The approver/DM list rules, used by relay-adapter-setting-routes.ts.',
 };
+
+/** What the route groups name their Hono app. */
+const ROUTERS = new Set(['router', 'app']);
+
+/**
+ * Shared holds a route may call instead of `runFrontDoorWrite` itself, by the
+ * file that exports each. A test below proves each one holds.
+ */
+const HOLD_HELPERS = new Map([
+  ['holdBindingRaise', 'relay-binding-step-up'],
+  ['holdAccountWidening', 'account-eligibility-hold'],
+  ['holdCredentialSave', 'runtimes-http'],
+  ['holdTaskArm', 'task-arm-raise'],
+  ['holdTaskRaise', 'task-arm-raise'],
+]);
 
 /** Writes that grant lasting access without calling any person bar, so named here. */
 const ALWAYS_DECIDED = new Set(['relay-adapters.ts']);
@@ -235,6 +316,8 @@ const NARROWING: Record<string, string[]> = {
   'devices DELETE /sessions/:id': ['own'],
   'cloud PUT /credits/default': ['!useCredits'],
   'heartbeat-triage PUT /': ['!useCredits'],
+  // Not narrowing: an agent's link, which the tool gate already carded and decided.
+  'marketplace/dev-links POST /dev-links': ['!person'],
 };
 const DELEGATES = new Map([
   ['patchConfig', exportedHandler(parse('config-patch-http'), 'patchConfig')],
@@ -244,8 +327,8 @@ const DELEGATES = new Map([
   ],
 ]);
 
-const rows = GROUPS.flatMap((name) => {
-  const source = parse(name);
+/** Every named function in a file, so a call can be followed into its helper. */
+function functionsOf(source: ts.SourceFile): Map<string, ts.Node> {
   const functions = new Map<string, ts.Node>();
   function collect(node: ts.Node) {
     if (ts.isFunctionDeclaration(node) && node.name && node.body)
@@ -256,10 +339,22 @@ const rows = GROUPS.flatMap((name) => {
     ts.forEachChild(node, collect);
   }
   collect(source);
+  return functions;
+}
+
+const rows = GROUPS.flatMap((name) => {
+  const source = parse(name);
+  const functions = functionsOf(source);
   const found: { id: string; calls: Set<string>; policy: string; handlers: readonly ts.Node[] }[] =
     [];
   function visit(node: ts.Node) {
-    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      // A route is registered on the group's Hono app; `someSet.delete(x)` is not a route.
+      ts.isIdentifier(node.expression.expression) &&
+      ROUTERS.has(node.expression.expression.text)
+    ) {
       const method = node.expression.name.text;
       const [route, ...handlers] = node.arguments;
       if (['post', 'put', 'patch', 'delete'].includes(method) && route) {
@@ -294,6 +389,7 @@ describe('front-door write census', () => {
       calls.has('runFrontDoorWrite') ||
       calls.has('runAccountWrite') ||
       calls.has('holdForStepUp') ||
+      [...HOLD_HELPERS.keys()].some((helper) => calls.has(helper)) ||
       (id === 'config PATCH /' && calls.has('patchConfig')) ||
       (id === 'cloud-communities POST /moves' && calls.has('startHostedSpaceMove')) ||
       (id === 'tasks POST /' && calls.has('createTaskHttp')) ||
@@ -304,6 +400,16 @@ describe('front-door write census', () => {
       unguardedWrites(handlers, NARROWING[id] ?? [], DELEGATES),
       `${id} writes before its hold or in an unclassified branch`
     ).toEqual([]);
+  });
+
+  it.each([...HOLD_HELPERS])('the shared hold %s really holds', (helper, file) => {
+    const source = parse(file);
+    const fn = exportedHandler(source, helper);
+    const calls = callsFrom(fn, functionsOf(source));
+    expect(
+      calls.has('runFrontDoorWrite') || calls.has('runAccountWrite'),
+      `${file}: ${helper} must hold through the shared bar`
+    ).toBe(true);
   });
 
   it.each([
@@ -414,12 +520,20 @@ describe('front-door write census', () => {
     for (const { id, policy } of rows) {
       if (policy === 'exception') continue;
       const [group, method, route] = id.split(' ') as [string, string, string];
+      // Most M3 groups aren't in the OpenAPI registry, so their 428 can't be documented there.
+      if (M3_GROUPS.includes(group)) continue;
       const path = ((prefixes[group] ?? `/api/${group}`) + (route === '/' ? '' : route)).replace(
         /:([A-Za-z0-9_]+)/g,
         '{$1}'
       );
       expect(HELD_WRITES.has(`${method.toLowerCase()} ${path}`), id).toBe(true);
     }
+  });
+
+  // Security S4 on DOR-4355 M3: a file judged per route is never also excused as a whole.
+  it('never excuses a route group as a whole file', () => {
+    const both = GROUPS.filter((group) => `${group}.ts` in OTHER_FRONT_DOOR_CALLERS);
+    expect(both).toEqual([]);
   });
 
   it('keeps every exception attached to a real route', () => {

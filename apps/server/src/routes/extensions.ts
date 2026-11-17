@@ -56,6 +56,7 @@ import { liveForwardDeps, registerExtensionForwardRoutes } from './extensions-fo
 import type { PersonForwardDeps } from '../services/extensions/forward/person-forward.js';
 import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
+import { markedExtensionSecretRefusal } from './extension-secret-agent-gate.js';
 import {
   OPERATOR_ONLY_CONFIG_CODE,
   OPERATOR_ONLY_CONFIG_ERROR,
@@ -509,6 +510,9 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
       // An agent may still set one (DOR-1801); a person's waits for the owner (DOR-4355).
       // The value stays out of the held input, so the sheet never carries it.
       const caller = honoRequestFacts(c);
+      // Not from a turn that read outside words, or an agent DorkOS can't name (Security S3).
+      const marked = markedExtensionSecretRefusal(c);
+      if (marked) return c.json(marked, 403);
       if (caller.agentIdentity !== undefined) return await run();
       return await runFrontDoorWrite(c, {
         kind: 'extensions.secret',

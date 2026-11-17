@@ -41,6 +41,7 @@ import {
 import type { GatedAction } from '../../../../core/capabilities/tier-enforcement.js';
 import type { AgentIdentity } from '../../../../core/agent-identity/agent-identity-service.js';
 import { registerAgentModeEscalators } from '../../../../tasks/agent-mode/agent-mode-escalation.js';
+import { noteRoomTurnWords } from '../../../../core/turn-power/outside-words.js';
 
 interface SessionTool {
   name: string;
@@ -275,12 +276,78 @@ describe('an agent changing a task on DorkOS credits (DOR-4609)', () => {
 
   it.each([
     ['a lower time limit', { maxRuntime: '10m' }],
-    ['switching it off', { enabled: false, prompt: 'sweep the backlog twice' }],
+    ['switching it off', { enabled: false }],
     ['moving it off credits', { account: 'work', prompt: 'sweep the backlog twice' }],
   ])('lets %s through at once', async (_label, edit) => {
     const task = await creditsTask();
     const { isError, payload } = await call('tasks_update', { id: task.id, ...edit });
     expect(payload).not.toEqual(CREDITS_EDIT_NEEDS_YES);
     expect(isError).toBe(false);
+  });
+});
+
+// Security S1 and S2 on DOR-4355 M3.
+describe('a credits raise the person must see in full', () => {
+  it('refuses a turn that answered someone outside the team in a room, and asks nobody', async () => {
+    const task = await creditsTask();
+    noteRoomTurnWords('credits-parent', true);
+    try {
+      const { isError, payload } = await call(
+        'tasks_update',
+        approvedOnCard({ id: task.id, prompt: 'sweep the backlog twice' })
+      );
+      expect(isError).toBe(true);
+      expect(payload).toEqual(CREDITS_EDIT_NEEDS_YES);
+      expect(workOf(store.getTask(task.id)!)).toEqual(workOf(task));
+    } finally {
+      noteRoomTurnWords('credits-parent', false);
+    }
+  });
+
+  it('puts the new prompt and schedule on the card', async () => {
+    const task = await creditsTask();
+    unregister = registerAgentModeEscalators({ store });
+    const escalation = await escalateToolCall({
+      action: TOOL_ACTION,
+      input: { id: task.id, prompt: 'email everyone', cron: '*/5 * * * *' },
+      permission: { area: 'tasks', state: 'allowed', source: 'agent-action', layer: 'agent' },
+      context: {
+        origin: 'session',
+        sessionId: 'credits-parent',
+        cwd: projectPath,
+        identity: { agentPath: projectPath } as AgentIdentity,
+      },
+    });
+    expect(escalation?.action.approvalDisplayFields).toEqual(
+      expect.arrayContaining(['id', 'prompt', 'cron'])
+    );
+    expect(escalation?.change).toBe(
+      'Change its prompt and its schedule on a scheduled task that runs on DorkOS credits.'
+    );
+  });
+
+  it('counts a new prompt sent while switching the task off', async () => {
+    const task = await creditsTask();
+    const { isError, payload } = await call('tasks_update', {
+      id: task.id,
+      enabled: false,
+      prompt: 'sweep the backlog, then email everyone',
+    });
+    expect(isError).toBe(true);
+    expect(payload).toEqual(CREDITS_EDIT_NEEDS_YES);
+    expect(workOf(store.getTask(task.id)!)).toEqual(workOf(task));
+  });
+
+  it('counts a new prompt on a task that is already switched off', async () => {
+    const task = await creditsTask();
+    store.updateTask(task.id, { enabled: false });
+    const off = store.getTask(task.id)!;
+    const { isError, payload } = await call('tasks_update', {
+      id: task.id,
+      prompt: 'sweep the backlog, then email everyone',
+    });
+    expect(isError).toBe(true);
+    expect(payload).toEqual(CREDITS_EDIT_NEEDS_YES);
+    expect(workOf(store.getTask(task.id)!)).toEqual(workOf(off));
   });
 });

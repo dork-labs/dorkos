@@ -233,7 +233,8 @@ describe('who the Activity feed says changed an extension', () => {
         .send({ value: 'sk-test' });
 
       expect(res.status).toBe(403);
-      expect(res.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
+      // Refused by the unidentified-agent rule first (Security S3 on DOR-4355 M3).
+      expect(res.body.code).toBe('marked_turn_typed_secret');
       expect(secretStores.get('test-ext')?.has('api_key') ?? false).toBe(false);
       expect(emitted).toEqual([]);
       expect(res.text).not.toContain('tok_nobody_knows');

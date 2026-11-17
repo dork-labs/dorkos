@@ -27,6 +27,7 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { RemoteConnectionNotFoundError } from '../services/communities/remote/connection-store.js';
 import type { RemoteWakePolicy } from '../services/communities/remote/wake/wake-policy.js';
+import { AnswerInChangedError } from '../services/communities/remote/wake/answer-in-store.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
 
 /** The part of the wake policy these routes read and write. */
@@ -152,11 +153,17 @@ export function addAnswerInRoutes(
       );
     }
     const next = body.data.answerIn;
-    const run = async () => {
+    /** Save it; a free save lands only if it still adds no channel when it writes. */
+    const run = async (free: boolean) => {
+      const addsNothing = (current: readonly string[]) =>
+        next.every((name) => current.includes(name));
       try {
-        await policy().setAnswerIn(ref, owner, next);
+        await policy().setAnswerIn(ref, owner, next, free ? addsNothing : undefined);
         return c.json(body.data);
       } catch (error) {
+        if (error instanceof AnswerInChangedError) {
+          return c.json({ error: error.message, code: 'ANSWER_IN_CHANGED' }, 409);
+        }
         return failure(c, error);
       }
     };
@@ -167,7 +174,7 @@ export function addAnswerInRoutes(
     } catch (error) {
       return failure(c, error);
     }
-    if (added.length === 0) return run();
+    if (added.length === 0) return run(true);
     return runFrontDoorWrite(c, {
       kind: 'community.wake',
       target: ref,
@@ -177,7 +184,7 @@ export function addAnswerInRoutes(
           ? `Let any post in #${added[0]} wake your agents.`
           : `Let any post in ${added.length} more channels wake your agents.`,
       subject: SUBJECT,
-      run,
+      run: () => run(false),
     });
   });
 }

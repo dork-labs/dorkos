@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Mock } from 'vitest';
 import { env } from '../../env.js';
 import { createConnectorManagementRoutes } from '../connector-management.js';
+import { ReconciliationNeedsConfirmationError } from '../../services/connectors/reconciliation/reconciliation-error.js';
 import { frontDoorStepUpHarness } from './front-door-step-up-harness.js';
 
 const OWNER = { kind: 'local_install', installationId: 'northwind-install' } as const;
@@ -200,5 +201,43 @@ describe('connected-app decision confirmation', () => {
       });
     expect(held.status).toBe(428);
     expect(reconciliation.apply).not.toHaveBeenCalled();
+  });
+
+  // Security M1 on DOR-4355 M3: "confirm who can use it as it stands" settles the
+  // review, which can turn suspended grants back on.
+  it('holds confirming access as it stands (grants: [])', async () => {
+    const res = await owner
+      .call('post', '/api/connectors/reconciliation/apply', 'own-tunnel')
+      .send({ previewId: 'preview-a', grants: [] });
+    expect(res.status).toBe(428);
+    expect(reconciliation.apply).not.toHaveBeenCalled();
+  });
+
+  it('sends a named narrowing as narrowing, so the service can refuse it inside its write', async () => {
+    const body = {
+      previewId: 'preview-a',
+      grants: [{ agentId: 'agent-a', operationRevisionIds: [] }],
+    };
+    await owner.call('post', '/api/connectors/reconciliation/apply', 'own-tunnel').send(body);
+    expect(reconciliation.apply).toHaveBeenCalledWith(OWNER, body, expect.any(AbortSignal), {
+      onlyNarrowing: true,
+    });
+  });
+
+  it('holds a narrowing that would also settle the review, and writes nothing until confirmed', async () => {
+    reconciliation.apply.mockRejectedValueOnce(new ReconciliationNeedsConfirmationError());
+    const held = await owner
+      .call('post', '/api/connectors/reconciliation/apply', 'own-tunnel')
+      .send({ previewId: 'preview-a', grants: [{ agentId: 'agent-a', operationRevisionIds: [] }] });
+    expect(held.status).toBe(428);
+    expect(reconciliation.apply).toHaveBeenCalledOnce();
+    const confirmed = await owner.confirm(held.body.heldActionId, 'own-tunnel');
+    expect(confirmed.body).toMatchObject({ ok: true, status: 200 });
+    expect(reconciliation.apply).toHaveBeenLastCalledWith(
+      OWNER,
+      expect.anything(),
+      expect.any(AbortSignal),
+      { onlyNarrowing: false }
+    );
   });
 });

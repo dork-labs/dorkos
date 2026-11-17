@@ -87,6 +87,7 @@ import { changesApprovedWork } from '../../../../tasks/task-file-update.js';
 import {
   agentEditRaisesCredits,
   CREDITS_EDIT_NEEDS_YES,
+  readOutside,
 } from '../../../../tasks/credits/credits-work.js';
 import { escalatedGrantFor } from '../../../../core/capabilities/tool-call-escalation.js';
 import { refuseStickyAccountChange } from '../../../../tasks/session/sticky-session.js';
@@ -445,7 +446,7 @@ export function createUpdateScheduleHandler(
     // a marked turn gets none (DOR-4609).
     if (
       agentEditRaisesCredits(args, existing) &&
-      (caller.marked || escalatedGrantFor(args)?.via !== 'card')
+      (readOutside(caller) || escalatedGrantFor(args)?.via !== 'card')
     ) {
       return jsonContent(CREDITS_EDIT_NEEDS_YES, true);
     }

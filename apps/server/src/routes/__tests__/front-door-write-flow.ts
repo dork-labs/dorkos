@@ -52,6 +52,17 @@ function localFunction(name: string, from: ts.Node): Fn | undefined {
   return undefined;
 }
 
+/** Whether an identifier names a parameter of a function around it. */
+function isParameter(node: ts.Node): boolean {
+  if (!ts.isIdentifier(node)) return false;
+  for (let scope: ts.Node | undefined = node.parent; scope; scope = scope.parent) {
+    if (!ts.isFunctionLike(scope)) continue;
+    if (scope.parameters.some((p) => ts.isIdentifier(p.name) && p.name.text === node.text))
+      return true;
+  }
+  return false;
+}
+
 /** The exported function a small route module delegates its handler to. */
 export function exportedHandler(source: ts.SourceFile, name: string): Fn {
   const fn = source.statements.find(
@@ -133,6 +144,9 @@ export function unguardedWrites(
                 ? property.name
                 : undefined;
             const fn = value && resolve(value);
+            // A helper's own `run` parameter: the callback a route passed in was
+            // already walked where the route called the helper.
+            if (!fn && value && isParameter(value)) continue;
             if (!fn) violations.push('unresolved held callback');
             else invoke(fn, true, conditions, seen);
           }

@@ -62,10 +62,48 @@ export function addedListReason(added: readonly AddedListId[], connection: strin
   return `Let ${ids} ${what} on ${connection}.`;
 }
 
+/**
+ * Whether a save opens the connection's DMs to anyone: `dmPolicy` moves to
+ * anything but `'allowlist'` from a connection that only took listed people,
+ * or a new connection starts that way. Open DMs are the whole DM list at once
+ * (Security M2 on DOR-4355 M3), so this is a list addition too. A save that
+ * doesn't name `dmPolicy` leaves it as it is. A stored value that is absent is
+ * read as the schemas' default, `'allowlist'`.
+ *
+ * @param incoming - The connection settings as the request sends them.
+ * @param existing - The settings as stored, or none for a new connection.
+ */
+export function opensDirectMessages(
+  incoming: Record<string, unknown>,
+  existing: Record<string, unknown> | undefined
+): boolean {
+  if (!Object.hasOwn(incoming, 'dmPolicy')) return false;
+  const before = existing?.dmPolicy ?? 'allowlist';
+  return incoming.dmPolicy !== 'allowlist' && before === 'allowlist';
+}
+
+/**
+ * The sheet's sentence for a save that adds people or opens DMs: the exact
+ * ids, that anyone may now message, and the connection.
+ *
+ * @param added - What the save adds to the lists.
+ * @param opensDms - Whether it opens the DMs to anyone.
+ * @param connection - The connection's name, already quoted.
+ */
+export function ownerGrantReason(
+  added: readonly AddedListId[],
+  opensDms: boolean,
+  connection: string
+): string {
+  if (!opensDms) return addedListReason(added, connection);
+  const open = `Let anyone message your agents on ${connection}.`;
+  return added.length > 0 ? `${open} ${addedListReason(added, connection)}` : open;
+}
+
 /** The refusal anything but the owner gets for adding to one of those lists. */
 export function ownerAddsListIdRefusal(): { error: string; code: string } {
   return {
-    error: 'Only the owner can add someone who approves or messages agents here.',
+    error: 'Only the owner can let someone approve or message agents here.',
     code: OWNER_ADDS_LIST_ID_CODE,
   };
 }

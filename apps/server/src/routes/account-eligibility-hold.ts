@@ -54,6 +54,19 @@ export const ONLY_PROJECTS_FAILED = 'Could not save which projects this account 
 /** What a failed automatic-move switch save says. */
 export const NO_AUTO_MOVE_FAILED = 'Could not save whether agents move to this account.';
 
+/**
+ * The 409 for a change judged as narrowing on a rule that has since changed,
+ * re-read inside the write (Security S5 on DOR-4355 M3): it would widen now.
+ *
+ * @param c - The request.
+ */
+export function accountRulesChanged(c: Context<ApiEnv>): Response {
+  return c.json(
+    { error: 'Where this account may work changed. Try again.', code: 'ACCOUNT_RULES_CHANGED' },
+    409
+  );
+}
+
 /** One widening of an account rule, held. */
 export interface AccountWidening {
   /** What it acts on, in the server's words. */

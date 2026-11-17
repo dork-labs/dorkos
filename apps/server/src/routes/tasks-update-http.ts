@@ -68,7 +68,7 @@ import {
   scheduleEditorOf,
   namesCredits,
 } from './task-route-answers.js';
-import { changesCreditsWork } from '../services/tasks/credits/credits-work.js';
+import { changesCreditsWork, creditsPromptNote } from '../services/tasks/credits/credits-work.js';
 import { refuseUnknownTaskUpdateFields } from '../services/tasks/task-write-policy.js';
 import {
   agentEditMayStayLive,
@@ -155,6 +155,8 @@ export async function updateTaskHttp(
       target: `scheduled-task:${id}`,
       input: { id, data, revision },
       reason: 'Run this scheduled task on DorkOS credits.',
+      // The work it will spend on, as it will run: an agent may have changed it (Security S2).
+      notes: [`Prompt: ${creditsPromptNote(data.prompt ?? existing.prompt)}`],
       run: async (verified) => {
         const current = store.getTask(id);
         if (!current || personReview.taskReviewRevision(current) !== revision)

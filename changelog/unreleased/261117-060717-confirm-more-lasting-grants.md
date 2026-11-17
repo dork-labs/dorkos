@@ -2,6 +2,7 @@
 covers:
   - 'fix(auth): confirm the remaining lasting grants (DOR-4355, DOR-4595)'
   - "fix(auth): an agent's change to a task on credits asks first, and the mini app page links to its confirm (DOR-4609, DOR-4355)"
+  - 'fix(auth): hold opening DMs to anyone, confirming access as it stands, and runtime keys (DOR-4355, DOR-4595)'
 ---
 
 ### Security
@@ -12,3 +13,7 @@ covers:
 - Confirm before a schedule runs with more permission, a space account is connected, a space may wake your agents more widely, an extension gets a secret, or a page gets a standing event route.
 - When an agent changes a scheduled task that runs on DorkOS credits so it costs more (its prompt, its schedule, a longer time limit, or what it runs on), you get a card first, and nothing changes until you say yes. Lowering the limit, switching it off or moving it off credits still happens at once.
 - Letting a mini app read a connected account now ends on its own page with a request code and an **Open DorkOS** button, so you can confirm it's you there and check the code matches.
+- Confirm before a chat connection lets anyone message your agents. Agents can no longer open it that way.
+- Confirm before you keep a connected app's access as it stands after a review, since that can turn paused access back on.
+- Confirm before you save a key or a provider address for a runtime, since it decides where your agents' prompts go.
+- An agent working from a message DorkOS can't vouch for can no longer change an extension's secret.

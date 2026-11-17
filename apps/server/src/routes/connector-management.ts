@@ -38,6 +38,7 @@ import {
   ConnectorReconciliationError,
   type ConnectorReconciliationService,
 } from '../services/connectors/reconciliation-service.js';
+import { ReconciliationNeedsConfirmationError } from '../services/connectors/reconciliation/reconciliation-error.js';
 import type { ConnectorRegistry } from '../services/connectors/registry.js';
 import {
   ConnectorAgentRequestError,
@@ -528,25 +529,34 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
       readJsonBody(c, { emptyAs: {} })
     );
     if (!input.success) return c.json(validationFailureBody(input.error), 400);
-    const apply = async () => {
+    /**
+     * Send the save. As narrowing, the service refuses it inside its write when it
+     * would also settle the review, and this answers `null` so the save waits.
+     */
+    const send = async (onlyNarrowing: boolean): Promise<Response | null> => {
       const active = requestAbortSignal(c);
       try {
-        return c.json(await deps.reconciliation.apply(owner, input.data, active.signal));
+        return c.json(
+          await deps.reconciliation.apply(owner, input.data, active.signal, { onlyNarrowing })
+        );
       } catch (error) {
+        if (onlyNarrowing && error instanceof ReconciliationNeedsConfirmationError) return null;
         return managementErrorResponse(c, error);
       } finally {
         active.dispose();
       }
     };
-    // Taking every action away is immediate; anything that may give more waits (DOR-4355).
-    if (onlyRemovesAccess(input.data)) return apply();
+    // Taking access away from those it names is immediate, when it also leaves the
+    // review as settled as it was; anything that may give more waits (DOR-4355).
+    const narrowed = onlyRemovesAccess(input.data) ? await send(true) : null;
+    if (narrowed) return narrowed;
     return runFrontDoorWrite(c, {
       kind: 'connection.grant',
       target: input.data.previewId,
       input: { op: 'apply-grants', ...input.data },
       reason: 'Change what your agents may do with this app.',
       subject: CONNECTED_APPS,
-      run: apply,
+      run: async () => (await send(false)) as Response,
     });
   });
 

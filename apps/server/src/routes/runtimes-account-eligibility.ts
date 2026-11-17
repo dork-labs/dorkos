@@ -95,6 +95,7 @@ import {
   NO_AUTO_MOVE_FAILED,
   ONLY_PROJECTS_FAILED,
   PROJECT_ACCOUNTS_FAILED,
+  accountRulesChanged,
   holdAccountWidening,
 } from './account-eligibility-hold.js';
 
@@ -306,11 +307,15 @@ export function mountAccountEligibilityRoutes(
           );
         }
       }
-      const rules = readEligibilityRules(configManager.get('runtimes')?.claudeCode);
-      const current = rules.projectAllow.get(project.root) ?? null;
-      const widens =
-        current !== null && (allow === null || allow.some((id) => !current.includes(id)));
-      const run = async (caller: RequestFacts) => {
+      const widensNow = () => {
+        const rules = readEligibilityRules(configManager.get('runtimes')?.claudeCode);
+        const current = rules.projectAllow.get(project.root) ?? null;
+        return current !== null && (allow === null || allow.some((id) => !current.includes(id)));
+      };
+      const widens = widensNow();
+      const run = async (caller: RequestFacts, free = false) => {
+        // A free change is judged again where it writes (Security S5 on DOR-4355 M3).
+        if (free && widensNow()) return accountRulesChanged(c);
         const before = configManager.get('runtimes');
         writeProjectAccounts(configManager, project.root, allow);
         logConfigWrite(
@@ -338,7 +343,7 @@ export function mountAccountEligibilityRoutes(
         });
         return c.json(eligibilityFor(project));
       };
-      if (!widens) return await run(caller);
+      if (!widens) return await run(caller, true);
       return await holdAccountWidening(c, {
         target: `project:${project.root}`,
         input: { project: project.root, allow },
@@ -463,10 +468,15 @@ export function mountAccountEligibilityRoutes(
           roots.push(project.root);
         }
       }
-      const current = onlyProjectsOf(configManager, accountId)?.map((p) => p.root) ?? null;
       const next = roots;
-      const widens = current !== null && (next === null || next.some((r) => !current.includes(r)));
-      const run = async (caller: RequestFacts) => {
+      const widensNow = () => {
+        const current = onlyProjectsOf(configManager, accountId)?.map((p) => p.root) ?? null;
+        return current !== null && (next === null || next.some((r) => !current.includes(r)));
+      };
+      const widens = widensNow();
+      const run = async (caller: RequestFacts, free = false) => {
+        // A free change is judged again where it writes (Security S5 on DOR-4355 M3).
+        if (free && widensNow()) return accountRulesChanged(c);
         const before = configManager.get('runtimes');
         if (!writeOnlyProjects(configManager, accountId, next)) return c.json(unknownAccount, 404);
         logConfigWrite(
@@ -495,7 +505,7 @@ export function mountAccountEligibilityRoutes(
         });
         return c.json({ onlyProjects });
       };
-      if (!widens) return await run(caller);
+      if (!widens) return await run(caller, true);
       return await holdAccountWidening(c, {
         target: `claude-account:${accountId}`,
         input: { account: accountId, projects: next },
@@ -530,11 +540,14 @@ export function mountAccountEligibilityRoutes(
     const before = configAutoMoveFlagPort(configManager).flagOf(accountId);
     if (before === 'gone') return c.json(unknownAccount, 404);
     const { noAutoMove } = parsed.data;
-    const run = async (caller: RequestFacts) => {
+    const run = async (caller: RequestFacts, free = false) => {
       const stored = configManager.get('runtimes');
       // Read again: a confirmation can come after the flag moved.
       const prior = configAutoMoveFlagPort(configManager).flagOf(accountId);
-      if (prior === 'gone' || !writeNoAutoMove(configManager, accountId, noAutoMove)) {
+      if (prior === 'gone') return c.json(unknownAccount, 404);
+      // Turning moves back on was free only while they were on (Security S5 on DOR-4355 M3).
+      if (free && !noAutoMove && prior !== null) return accountRulesChanged(c);
+      if (!writeNoAutoMove(configManager, accountId, noAutoMove)) {
         return c.json(unknownAccount, 404);
       }
       logConfigWrite('the no-auto-move route', 'runtimes', stored, configManager.get('runtimes'));
@@ -567,7 +580,7 @@ export function mountAccountEligibilityRoutes(
     };
     try {
       // Letting agents move here on their own again widens where they run.
-      if (noAutoMove || before === null) return await run(caller);
+      if (noAutoMove || before === null) return await run(caller, true);
       return await holdAccountWidening(c, {
         target: `claude-account:${accountId}`,
         input: { account: accountId, noAutoMove },

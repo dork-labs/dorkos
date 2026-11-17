@@ -1,9 +1,13 @@
 vi.mock('../../services/runtimes/connect/signin-accounts.js', () => ({
   signinAccounts: () => [{ accountId: 'two', path: '/Users/x/.claude2', name: 'Claude2' }],
 }));
+// The key saves wait for an owner to confirm it's them (DOR-4355), which
+// `runtimes-credential-step-up.test.ts` pins with a real sign-in. The tests here
+// are about what a save stores, so they run before an owner exists.
+const owner = vi.hoisted(() => ({ exists: true }));
 vi.mock('../../services/core/auth/index.js', async (original) => ({
   ...(await original<typeof import('../../services/core/auth/index.js')>()),
-  readOwnerAccount: () => ({ id: 'user_owner' }),
+  readOwnerAccount: () => (owner.exists ? { id: 'user_owner' } : null),
 }));
 import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -36,6 +40,13 @@ vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => {
     decideSessionGate: async (...args: Parameters<typeof actual.decideSessionGate>) => {
       const [, , facts, access] = args;
       const cookie = facts.headers.cookie ?? '';
+      // The owner's own browser, with a session a held action can belong to (DOR-4355).
+      if (access !== 'refused' && cookie.includes('dorkos-test-browser=owner')) {
+        return {
+          allowed: true,
+          user: { userId: 'user_owner', credential: 'cookie', sessionId: 'sess-owner-browser' },
+        };
+      }
       if (access !== 'refused' && cookie.includes(PERSON_SESSION)) {
         return { allowed: true, user: { userId: 'user_owner', credential: 'cookie' } };
       }
@@ -161,6 +172,13 @@ describe('runtime connect endpoints', () => {
   afterEach(() => vi.restoreAllMocks());
 
   describe('POST /api/runtimes/:type/credential', () => {
+    // Before an owner exists, a save runs at once, as it always has.
+    beforeEach(() => {
+      owner.exists = false;
+    });
+    afterEach(() => {
+      owner.exists = true;
+    });
     it('stores a credential and returns ONLY the reference — never the secret, never a log line', async () => {
       const spies = [
         vi.spyOn(logger, 'error').mockImplementation(() => undefined as never),
@@ -216,6 +234,13 @@ describe('runtime connect endpoints', () => {
   });
 
   describe('POST /api/runtimes/opencode/provider/credential', () => {
+    // Before an owner exists, a save runs at once, as it always has.
+    beforeEach(() => {
+      owner.exists = false;
+    });
+    afterEach(() => {
+      owner.exists = true;
+    });
     it('stores a provider key and returns ONLY the reference — never the secret', async () => {
       vi.mocked(storeProviderCredential).mockResolvedValue({ ref: 'file:openai' });
       const res = await request(server)
@@ -367,7 +392,52 @@ describe('runtime connect endpoints', () => {
     });
   });
 
+  // Security S6 on DOR-4355 M3: a runtime's key and a provider's address choose
+  // where every agent prompt goes, so once an owner exists a save waits for them
+  // to confirm it's them. The key never rides in what is held.
+  describe('saving a runtime key once an owner exists', () => {
+    const OWNER_BROWSER = 'dorkos-test-browser=owner';
+    it.each([
+      ['a runtime key', '/api/runtimes/claude-code/credential', { secret: SECRET }],
+      ['an OpenRouter key', '/api/runtimes/opencode/openrouter/key', { key: SECRET }],
+      [
+        'a provider key and address',
+        '/api/runtimes/opencode/provider/credential',
+        { providerId: 'openai', secret: SECRET, baseURL: 'https://models.example.test/v1' },
+      ],
+    ])('holds %s, stores nothing, and never echoes the key', async (_label, url, body) => {
+      const res = await request(server).post(url).set('Cookie', OWNER_BROWSER).send(body);
+      expect(res.status).toBe(428);
+      expect(res.body.code).toBe('step_up_required');
+      expect(res.text).not.toContain(SECRET);
+      expect(storeRuntimeCredential).not.toHaveBeenCalled();
+      expect(storeProviderCredential).not.toHaveBeenCalled();
+      expect(storeOpenRouterKeyReference).not.toHaveBeenCalled();
+    });
+
+    it('names the address on the sheet', async () => {
+      const held = await request(server)
+        .post('/api/runtimes/opencode/provider/credential')
+        .set('Cookie', OWNER_BROWSER)
+        .send({ providerId: 'openai', secret: SECRET, baseURL: 'https://models.example.test/v1' });
+      const view = await request(server)
+        .get(`/api/step-up/${held.body.heldActionId}`)
+        .set('Cookie', OWNER_BROWSER);
+      expect(view.body.reason).toBe(
+        "Send OpenCode's prompts to openai at https://models.example.test/v1, with the key you typed."
+      );
+      expect(JSON.stringify(view.body)).not.toContain(SECRET);
+    });
+  });
+
   describe('POST /api/runtimes/opencode/provider/credential — an empty key keeps the saved one', () => {
+    // Before an owner exists, a save runs at once, as it always has.
+    beforeEach(() => {
+      owner.exists = false;
+    });
+    afterEach(() => {
+      owner.exists = true;
+    });
     it('forwards an empty secret rather than refusing it at the schema', async () => {
       vi.mocked(storeProviderCredential).mockResolvedValue({ ref: 'file:openai' });
 
@@ -552,6 +622,13 @@ describe('runtime connect endpoints', () => {
   });
 
   describe('POST /api/runtimes/opencode/openrouter/key', () => {
+    // Before an owner exists, a save runs at once, as it always has.
+    beforeEach(() => {
+      owner.exists = false;
+    });
+    afterEach(() => {
+      owner.exists = true;
+    });
     it('stores a valid key and returns { ok: true } without echoing it', async () => {
       vi.mocked(storeOpenRouterKeyReference).mockResolvedValue({ ref: 'file:openrouter' });
       const res = await request(server)
@@ -972,8 +1049,11 @@ describe('runtime connect endpoints', () => {
 
       // The gate is what is under test, not each route's own outcome — a handler
       // may still 400 on a stub'd dependency. Anything but the locality refusal
-      // proves the request got past it.
-      expect(res.status).not.toBe(403);
+      // proves the request got past it. A key save now waits for the owner to
+      // confirm it's them (DOR-4355), and with no browser session here the hold
+      // answers `not-a-person`, which only a request past the gate can reach.
+      expect(res.body?.error).not.toBe('Runtime connect actions are only available locally');
+      if (res.status === 403) expect(res.body.code).toBe('not-a-person');
     });
   });
 });

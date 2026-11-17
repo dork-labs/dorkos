@@ -715,3 +715,85 @@ describe('adding someone to a chat connection’s approver or DM list', () => {
     expect(manager.updateConfig).toHaveBeenCalledOnce();
   });
 });
+
+// Security M2 on DOR-4355 M3: "DM Access: Open (anyone)" is every id on the DM list at once.
+describe('opening a chat connection to every DM sender', () => {
+  function slackConnection(stored: Record<string, unknown> = { dmPolicy: 'allowlist' }) {
+    manager.resolveAdapterName.mockReturnValue('Northwind Slack');
+    manager.getManifest.mockReturnValue(SLACK_MANIFEST);
+    manager.getAdapter.mockReturnValue({
+      config: {
+        id: 'sl',
+        type: 'slack',
+        enabled: true,
+        builtin: false,
+        config: { ...stored, approverAllowlist: 'U0OWNER01', dmAllowlist: [] },
+      },
+      status: { state: 'connected' },
+    });
+  }
+  const openDms = (r: ReturnType<typeof request>, headers: Record<string, string> = {}) =>
+    r
+      .patch('/api/relay/adapters/sl/config')
+      .set('Origin', OWN_ORIGIN)
+      .set(headers)
+      .send({ config: { dmPolicy: 'open' } });
+
+  it.each([
+    ['a marked agent turn', true],
+    ['an unmarked agent', false],
+  ])('refuses %s switching DMs to open, and applies nothing', async (_label, marked) => {
+    slackConnection();
+    const send = () => openDms(request(app(null)), { [AGENT[0]]: AGENT[1] });
+    const res = await withStrangerMarkFlag(true, () => (marked ? duringMarkedTurn(send) : send()));
+    expect(res.status).toBe(403);
+    expect(res.body.heldActionId).toBeUndefined();
+    expect(manager.updateConfig).not.toHaveBeenCalled();
+  });
+
+  it('refuses it from a connection whose stored policy is the default', async () => {
+    slackConnection({});
+    const res = await withStrangerMarkFlag(true, () =>
+      openDms(request(app(null)), { [AGENT[0]]: AGENT[1] })
+    );
+    expect(res.status).toBe(403);
+    expect(manager.updateConfig).not.toHaveBeenCalled();
+  });
+
+  it('refuses an agent adding a new connection that starts open', async () => {
+    manager.getManifest.mockReturnValue(SLACK_MANIFEST);
+    const res = await withStrangerMarkFlag(true, () =>
+      request(app(null))
+        .post('/api/relay/adapters')
+        .set('Origin', OWN_ORIGIN)
+        .set(AGENT[0], AGENT[1])
+        .send({ type: 'slack', id: 'sl2', config: { dmPolicy: 'open' } })
+    );
+    expect(res.status).toBe(403);
+    expect(manager.addAdapter).not.toHaveBeenCalled();
+  });
+
+  it('holds the owner’s switch, saying anyone can message the agents there', async () => {
+    slackConnection();
+    const held = await openDms(request(app()));
+    expect(held.status).toBe(428);
+    expect(manager.updateConfig).not.toHaveBeenCalled();
+    const view = await request(app())
+      .get(`/api/step-up/${held.body.heldActionId}`)
+      .set('Origin', OWN_ORIGIN);
+    expect(view.body.reason).toBe('Let anyone message your agents on “Northwind Slack”.');
+    const confirmed = await confirmWith(held.body.heldActionId, PASSWORD);
+    expect(confirmed.body).toMatchObject({ ok: true, status: 200 });
+    expect(manager.updateConfig).toHaveBeenCalledWith('sl', { dmPolicy: 'open' }, 'person');
+  });
+
+  it('closes DMs back to the list at once', async () => {
+    slackConnection({ dmPolicy: 'open' });
+    const res = await request(app())
+      .patch('/api/relay/adapters/sl/config')
+      .set('Origin', OWN_ORIGIN)
+      .send({ config: { dmPolicy: 'allowlist' } });
+    expect(res.status).toBe(200);
+    expect(manager.updateConfig).toHaveBeenCalledOnce();
+  });
+});

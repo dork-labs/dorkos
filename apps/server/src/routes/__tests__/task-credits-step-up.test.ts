@@ -124,6 +124,9 @@ describe('scheduled task credits confirmation', () => {
       .send({ enabled: true });
     expect(held.status).toBe(428);
     expect(store.getTask(task.id)?.enabled).toBe(false);
+    // The sheet quotes the work it will spend on, which an agent may have changed (Security S2).
+    const view = await owner.call('get', `/api/step-up/${held.body.heldActionId}`, 'own-tunnel');
+    expect(view.body.notes).toContain('Prompt: Check stock.');
     store.updateTask(task.id, { prompt: 'Different work.' });
     expect((await owner.confirm(held.body.heldActionId, 'own-tunnel')).body).toMatchObject({
       status: 409,

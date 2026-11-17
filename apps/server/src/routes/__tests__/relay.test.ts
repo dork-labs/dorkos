@@ -1477,7 +1477,12 @@ describe('Adapter routes', () => {
         });
         expect(res.status).toBe(200);
         expect(res.body.binding.sessionStrategy).toBe('stateless');
-        expect(mockStore.update).toHaveBeenCalledWith('b-1', { sessionStrategy: 'stateless' });
+        // A free change carries its "still narrows" check into the write (Security S5).
+        expect(mockStore.update).toHaveBeenCalledWith(
+          'b-1',
+          { sessionStrategy: 'stateless' },
+          expect.any(Function)
+        );
       });
 
       it('returns 200 with updated binding for label change', async () => {
@@ -1530,7 +1535,12 @@ describe('Adapter routes', () => {
         });
         expect(res.status).toBe(200);
         // null should be converted to undefined for clearing
-        expect(mockStore.update).toHaveBeenCalledWith('b-1', { chatId: undefined });
+        // The stored route has no filter to widen, so this is free and carries its check (Security S5).
+        expect(mockStore.update).toHaveBeenCalledWith(
+          'b-1',
+          { chatId: undefined },
+          expect.any(Function)
+        );
       });
     });
 

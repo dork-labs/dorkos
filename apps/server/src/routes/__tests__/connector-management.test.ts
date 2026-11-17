@@ -479,7 +479,10 @@ describe('connector management routes', () => {
       .post('/api/connectors/reconciliation/apply')
       .send(body)
       .expect(200);
-    expect(reconciliation.apply).toHaveBeenCalledWith(OWNER, body, expect.any(AbortSignal));
+    // A save that turns access on is never sent as only taking access away.
+    expect(reconciliation.apply).toHaveBeenCalledWith(OWNER, body, expect.any(AbortSignal), {
+      onlyNarrowing: false,
+    });
   });
 
   it('lets only the owner stop sharing with every agent, with no preview', async () => {

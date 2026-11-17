@@ -19,6 +19,7 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { modeRaises } from '../services/core/auth/sessions/wifi-raise-guard.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../services/runtimes/claude-code/runtime-constants.js';
 import type { AdapterManager } from '../services/relay/adapter-manager.js';
+import type { BindingChangedError } from '../services/relay/binding-store.js';
 import { readJsonBody } from '../http/request-body.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
 
@@ -108,8 +109,25 @@ export function holdBindingRaise(
   });
 }
 
-/** One chat-route write, answering as its route does. */
-type BindingWrite = (c: Context<ApiEnv>) => Promise<Response>;
+/**
+ * One chat-route write, answering as its route does. `stillNarrows`, when
+ * given, is checked against the stored route inside the write.
+ */
+type BindingWrite = (
+  c: Context<ApiEnv>,
+  stillNarrows?: (current: AdapterBinding) => boolean
+) => Promise<Response>;
+
+/**
+ * The 409 for a change judged on a route that has since changed (Security S5
+ * on DOR-4355 M3).
+ *
+ * @param c - The request.
+ * @param err - The store's refusal.
+ */
+export function bindingChanged(c: Context<ApiEnv>, err: BindingChangedError): Response {
+  return c.json({ error: err.message, code: 'BINDING_CHANGED' }, 409);
+}
 
 /**
  * Mount the chat-route writes, each run at once or held for the owner when it raises.
@@ -149,19 +167,23 @@ export function registerBindingWrites(
       () => moveBinding(c)
     )
   );
-  router.patch('/bindings/:id', (c) =>
-    holdBindingRaise(
+  router.patch('/bindings/:id', (c) => {
+    const body = readJsonBody(c);
+    const raises = bindingUpdateRaises(
+      adapterManager.getBindingStore()?.getById(c.req.param('id')),
+      body
+    );
+    return holdBindingRaise(
       c,
-      bindingUpdateRaises(
-        adapterManager.getBindingStore()?.getById(c.req.param('id')),
-        readJsonBody(c)
-      ),
+      raises,
       {
         target: c.req.param('id'),
-        input: readJsonBody(c),
+        input: body,
         reason: 'Let this chat connection do more, or reach more chats.',
       },
-      () => updateBinding(c)
-    )
-  );
+      // A free change was judged on a read: it lands only if it still raises
+      // nothing against the route as stored when it writes (Security S5).
+      () => updateBinding(c, raises ? undefined : (current) => !bindingUpdateRaises(current, body))
+    );
+  });
 }

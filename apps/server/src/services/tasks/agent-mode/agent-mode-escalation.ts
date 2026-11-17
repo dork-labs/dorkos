@@ -40,7 +40,7 @@ import {
 import { liveAgentModeSources } from './agent-mode-sources.js';
 import { identityResolutionOf } from './agent-mode-identity.js';
 import { agentModeChangeOf } from './agent-mode-change.js';
-import type { CreditsEdit } from '../credits/credits-work.js';
+import { readOutside, type CreditsEdit } from '../credits/credits-work.js';
 import { creditsEditEscalation } from '../credits/credits-edit-escalation.js';
 
 const STATE_RANK = { allowed: 0, ask: 1, blocked: 2 } as const;
@@ -162,7 +162,7 @@ export function registerAgentModeEscalators(
       // A raise on a task that spends DorkOS credits always waits for a person (DOR-4609).
       const credits = (mode: ToolCallEscalation | null) =>
         creditsEditEscalation(
-          { action, permission, body: body as CreditsEdit, task, marked: caller.marked },
+          { action, permission, body: body as CreditsEdit, task, marked: readOutside(caller) },
           mode
         );
       if (!agentModeControlOn() || !reachesAgentMode(body)) return credits(null);
