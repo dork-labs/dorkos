@@ -9,7 +9,11 @@
  * the plan of record's.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
+import {
+  ROOM_RECEIPT_EMOJI,
+  type RoomEntry,
+  type RoomWithRoster,
+} from '@dorkos/shared/room-schemas';
 import { mockInterruptReceipt } from '@dorkos/test-utils';
 import { setChatMessageService } from '../../session/chat-messages/chat-message-current.js';
 import type { ChatMessageService } from '../../session/chat-messages/chat-message-service.js';
@@ -615,8 +619,62 @@ describe('one seat per agent per room, and the hand-off', () => {
       expect(seatTurn?.permissionCeiling).toBeUndefined();
       expect(seatTurn?.carriedOutsider).toBeUndefined();
       const [post] = entries(product).filter((entry) => entry.authorId === bo);
+      expect(post).toBeDefined();
       // No entry was answered, so the post names none.
       expect(post?.body.answersEntryId).toBeUndefined();
+    });
+
+    it('keeps a ceiling the drafting chat carried', async () => {
+      emptyRoomSeatPosts();
+      const human2 = harnessAuthors.resolveExternal({
+        platformType: 'telegram',
+        instanceId: 'bot-example',
+        platformUserId: 'platform-stranger-7',
+        displayName: 'Wren',
+      });
+      service.addMember(dorkos.id, human, { authorId: human2.id });
+      // Bo's #dorkos turn answers a stranger, then hands a post into the empty #team-product.
+      scripts[dorkos.id] = async (_request, sessionId) => {
+        await postAsBo(sessionId, { roomId: product.id, text: 'Ledger opened.' });
+        return null;
+      };
+
+      service.post(dorkos.id, { authorId: human2.id, text: '@bo log this in team-product' });
+      await settle();
+
+      const seatTurn = runner.turns.find(
+        (turn) => turn.roomId === product.id && turn.prompt.includes('BEGIN HANDED-OFF DRAFT')
+      );
+      expect(seatTurn).toBeDefined();
+      expect(seatTurn?.externalAuthor).toBe(true);
+    });
+
+    it('a person who asks the seat while it runs keeps their 👀 until it answers them', async () => {
+      let asked: RoomEntry | undefined;
+      const seen: string[][] = [];
+      scripts[product.id] = async (request, sessionId) => {
+        const draft = draftIn(request.prompt);
+        if (draft === undefined) {
+          // Bo's own turn for the person's message: their 👀 must still be on it.
+          seen.push(
+            service
+              .reactionsFor(product.id, asked!.id)
+              .filter((pill) => pill.emoji === ROOM_RECEIPT_EMOJI)
+              .flatMap((pill) => pill.authorIds ?? [])
+          );
+          return null;
+        }
+        await postAsBo(sessionId, { roomId: product.id, text: draft });
+        // While the seat's turn still holds Bo, a person asks him something.
+        asked = service.post(product.id, { authorId: human, text: '@bo is the ledger live?' });
+        return null;
+      };
+
+      await postAsBo('bo-chat', { roomId: product.id, text: 'Ledger opened.' });
+      await settle();
+
+      expect(asked).toBeDefined();
+      expect(seen).toEqual([[bo]]);
     });
 
     it('a seat that declines says its own reason, never "nothing to answer"', async () => {

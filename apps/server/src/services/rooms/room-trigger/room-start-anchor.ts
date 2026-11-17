@@ -5,8 +5,9 @@
  * indicator. A room hand-off is about the newest entry, and an empty room has none, so a post an
  * agent handed to its seat in a quiet room was refused as "nothing to answer". The anchor stands
  * in for that entry: the room's start, before its first line. It is never stored, so nothing can
- * react to it, thread under it or read it back, and the two places that would follow its id to a
- * stored entry ask {@link isRoomStartAnchor} first.
+ * react to it, thread under it or read it back. A lookup by its id finds nothing, which every
+ * reader takes as "no entry" except two, and those ask {@link isRoomStartAnchor} first. Its
+ * cascade root is the room's own id, the root a notice nobody's message caused carries.
  *
  * @module server/services/rooms/room-trigger/room-start-anchor
  */
@@ -33,7 +34,7 @@ export function roomStartAnchor(room: Room, authorId: string): RoomEntry {
     body: { text: '' },
     mentions: [],
     sessionId: null,
-    cascadeRoot: id,
+    cascadeRoot: room.id,
     cascadeDepth: 0,
     parentEntryId: null,
     threadRootEntryId: null,
