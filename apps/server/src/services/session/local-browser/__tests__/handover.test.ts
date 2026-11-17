@@ -1054,3 +1054,43 @@ describe('a person takes the page (DOR-4428)', () => {
     expect(next.takenOver).toBe(false);
   });
 });
+
+// DOR-4097 (c): a site that refuses the in-app browser goes on in its own window. The
+// person signs in in the plain window on the same default profile, and Hand back
+// opens the site in its own window, where that sign-in is.
+describe('continuing a refused in-app handoff in its own window (DOR-4097)', () => {
+  it('signs in in the plain window, then hands back into its own window on that page', async () => {
+    const { handover, browser, signIns, setProfile, finish } = setup();
+    setProfile(null);
+    const asked = 'https://accounts.example.com/login?next=%2Fhome';
+    const { handoffId } = await handover.ask('chat-1', 'password');
+    await handover.open({ mode: 'new-window', sessionId: 'chat-1' });
+    expect(browser.disconnect).toHaveBeenCalledOnce();
+    expect(signIns.start).toHaveBeenCalledWith(
+      path.join(dataDirectory, 'browser-profiles', 'default'),
+      null,
+      asked
+    );
+    await expect(handover.handBack(handoffId)).rejects.toMatchObject({ code: 'signing_in' });
+    finish('saved');
+    await handover.handBack(handoffId);
+    expect(browser.open).toHaveBeenLastCalledWith({
+      mode: 'new-window',
+      sessionId: 'chat-1',
+      url: asked,
+    });
+    expect((await handover.state()).handoff?.outcome).toBe('handed-back');
+  });
+
+  it('keeps every agent out until the person hands back', async () => {
+    const { handover, finish } = setup();
+    const { handoffId } = await handover.ask('chat-1', 'password');
+    await handover.open({ mode: 'new-window', sessionId: 'chat-1' });
+    finish('saved');
+    await expect(handover.requireAgentMayUse('chat-1')).rejects.toMatchObject({
+      code: 'handed_to_person',
+    });
+    await handover.handBack(handoffId);
+    await expect(handover.requireAgentMayUse('chat-1')).resolves.toBeUndefined();
+  });
+});

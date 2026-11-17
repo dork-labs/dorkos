@@ -21,6 +21,7 @@ const transport = vi.hoisted(() => ({
   navigateLocalBrowser: vi.fn(),
   takeOverLocalBrowser: vi.fn(),
   handBackLocalBrowser: vi.fn(),
+  signInLocalBrowser: vi.fn(),
   stepLocalBrowserHistory: vi.fn(),
   interruptSession: vi.fn(),
   getSession: vi.fn(),
@@ -1576,6 +1577,7 @@ describe('LocalBrowserPanel', () => {
         'Second page',
         'Copy address',
         'Open in your browser',
+        'Sign in to example.com in a separate window',
         'Forget saved sign-ins…',
         'Close browser',
       ]);
@@ -1640,6 +1642,23 @@ describe('LocalBrowserPanel', () => {
       expect(opened).toHaveBeenCalledOnce();
       expect(opened.mock.calls[0]?.[0]).toBe('https://example.com/');
     });
+    // DOR-4097: the plain sign-in window for the site on screen, from the menu, in either mode.
+    it.each(['new-window', 'embedded'] as const)(
+      'opens the plain sign-in window on the page’s own site, in %s mode',
+      async (mode) => {
+        transport.getLocalBrowserState.mockResolvedValue({
+          ...connected,
+          mode,
+          tabs: [{ id: 'one', title: 'Sign in', url: 'https://shop.example/login?next=%2Fcart' }],
+        });
+        transport.signInLocalBrowser.mockResolvedValue({ ...connected, mode });
+        mount();
+        await chooseFromMenu('Sign in to shop.example in a separate window');
+        expect(transport.signInLocalBrowser).toHaveBeenCalledExactlyOnceWith({
+          url: 'https://shop.example',
+        });
+      }
+    );
     it('Forget saved sign-ins… opens today’s dialog and hands focus back to the menu', async () => {
       transport.getLocalBrowserState.mockResolvedValue(connected);
       mount();

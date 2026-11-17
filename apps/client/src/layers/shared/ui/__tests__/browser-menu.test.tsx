@@ -161,6 +161,40 @@ describe('BrowserMenu', () => {
     expect(onClose).toHaveBeenCalledExactlyOnceWith(button);
   });
 
+  // DOR-4097: a way into the plain sign-in window for any site, from the menu.
+  describe('Sign in in a separate window', () => {
+    it('names the site from the address, and runs the handler', () => {
+      const onSignInSeparately = vi.fn();
+      mount({ url: 'https://www.northwind.example/login?next=%2F', onSignInSeparately });
+      fireEvent.click(
+        within(openMenu()).getByRole('menuitem', {
+          name: 'Sign in to northwind.example in a separate window',
+        })
+      );
+      expect(onSignInSeparately).toHaveBeenCalledOnce();
+    });
+
+    it('shows only with a handler, and only on a web page', () => {
+      mount({ onSignInSeparately: undefined });
+      expect(within(openMenu()).queryByRole('menuitem', { name: /separate window/ })).toBeNull();
+      cleanup();
+      render(
+        <div data-slot="browser-chrome">
+          <BrowserMenu url="about:blank" onSignInSeparately={() => {}} onClose={() => {}} />
+        </div>
+      );
+      expect(within(openMenu()).queryByRole('menuitem', { name: /separate window/ })).toBeNull();
+    });
+
+    it('waits while another browser action runs', () => {
+      mount({ onSignInSeparately: () => {}, busy: true });
+      expect(within(openMenu()).getByRole('menuitem', { name: /separate window/ })).toHaveAttribute(
+        'aria-disabled',
+        'true'
+      );
+    });
+  });
+
   it('names its closing item by what it closes', () => {
     mount({ closeLabel: 'Stop sharing' });
     expect(within(openMenu()).getByRole('menuitem', { name: 'Stop sharing' })).toBeInTheDocument();
