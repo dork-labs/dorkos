@@ -229,7 +229,11 @@ export function createPermissionsRoutes(deps: PermissionsRouterDeps): Hono<ApiEn
     if ('refusal' in caller) return caller.refusal;
     const body = SetPermissionPresetBodySchema.safeParse(readJsonBody(c));
     if (!body.success) return c.json(validationFailureBody(body.error), 400);
-    const raises = presetRaises(body.data.preset, body.data.applyToAgents);
+    const raises = presetRaises(
+      body.data.preset,
+      body.data.applyToAgents,
+      await permissions.getOverview()
+    );
     if (fromWifi(c) && raises) return c.json(wifiRaiseRefusal(), 403);
     const run = async () => {
       try {

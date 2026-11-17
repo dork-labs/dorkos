@@ -66,6 +66,36 @@ describe('permission raise confirmation', () => {
     expect(world.events.length).toBeGreaterThan(0);
   });
 
+  // Careful by name can still loosen: it replaces the person's own changes with its table.
+  it.each([
+    ['choosing Careful again clears a Blocked', 'careful', { messages: 'blocked' }],
+    ['moving into Careful drops an Ask Careful allows', 'trusted', { messages: 'ask' }],
+  ] as const)('holds Careful when %s', async (_label, preset, areas) => {
+    world = createPermissionWorld({
+      preset,
+      defaults: { areas: { ...areas }, actions: {} },
+      agents: TWO_AGENTS,
+    });
+    const held = await owner
+      .call('put', '/api/permissions/preset', 'own-tunnel')
+      .send({ preset: 'careful', surface: 'settings' });
+    expect(held.status).toBe(428);
+    expect(world.events).toEqual([]);
+  });
+
+  it('answers Careful at once when it keeps every Blocked and loosens nothing', async () => {
+    world = createPermissionWorld({
+      preset: 'trusted',
+      defaults: { areas: { messages: 'blocked' }, actions: {} },
+      agents: TWO_AGENTS,
+    });
+    const res = await owner
+      .call('put', '/api/permissions/preset', 'own-tunnel')
+      .send({ preset: 'careful', surface: 'settings' });
+    expect(res.status).toBe(200);
+    expect(res.body.heldActionId).toBeUndefined();
+  });
+
   it('holds a raise at this computer too', async () => {
     const held = await owner
       .call('put', '/api/permissions/preset')

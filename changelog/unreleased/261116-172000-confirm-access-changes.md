@@ -5,6 +5,7 @@ covers:
   - 'fix(auth): clean up refused space moves and declare the upload as binary'
   - 'fix(auth): confirm raising what agents may do and spend'
   - 'fix(auth): remove only the staged export a space move made'
+  - 'fix(auth): treat choosing Careful as a raise when it would loosen anything'
 ---
 
 ### Security
