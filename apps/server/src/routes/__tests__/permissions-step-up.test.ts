@@ -21,21 +21,56 @@ function live<T extends object>(current: () => T): T {
   });
 }
 
+/** Reads the overview slowly when `slow.on`, so two requests both read before either writes. */
+const slow = { on: false };
+
 describe('permission raise confirmation', () => {
   let world = createPermissionWorld({ preset: 'careful', agents: TWO_AGENTS });
   const owner = frontDoorStepUpHarness(() => [
     {
       path: '/api',
       routes: createPermissionsRoutes({
-        permissions: live(() => world.service),
+        permissions: live(() => {
+          const service = world.service;
+          if (!slow.on) return service;
+          return Object.assign(Object.create(service) as typeof service, {
+            getOverview: async () => {
+              const overview = await service.getOverview();
+              await new Promise((resolve) => setTimeout(resolve, 30));
+              return overview;
+            },
+          });
+        }),
         activity: live(() => world.activity),
         isLoginEnabled: () => true,
       }),
     },
   ]);
   beforeEach(() => {
+    slow.on = false;
     world = createPermissionWorld({ preset: 'careful', agents: TWO_AGENTS });
   });
+
+  // Each request judges the move against what it read; one made meanwhile is refused.
+  it.each(['own-tunnel', 'wifi'] as const)(
+    'keeps a Blocked when two Careful moves from %s arrive at once',
+    async (via) => {
+      world = createPermissionWorld({
+        preset: 'trusted',
+        defaults: { areas: { messages: 'blocked' }, actions: {} },
+        agents: TWO_AGENTS,
+      });
+      slow.on = true;
+      const body = { preset: 'careful', surface: 'settings' };
+      const answers = await Promise.all([
+        owner.call('put', '/api/permissions/preset', via).send(body),
+        owner.call('put', '/api/permissions/preset', via).send(body),
+      ]);
+      expect(answers.map((answer) => answer.status).sort()).toEqual([200, 409]);
+      const overview = await world.service.getOverview();
+      expect(overview.areas.find((area) => area.id === 'messages')!.resolved.state).toBe('blocked');
+    }
+  );
 
   it.each([
     ['the preset', 'put', '/api/permissions/preset', { preset: 'trusted', surface: 'settings' }],

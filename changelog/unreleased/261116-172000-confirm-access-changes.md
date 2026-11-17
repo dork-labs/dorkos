@@ -6,6 +6,7 @@ covers:
   - 'fix(auth): confirm raising what agents may do and spend'
   - 'fix(auth): remove only the staged export a space move made'
   - 'fix(auth): treat choosing Careful as a raise when it would loosen anything'
+  - 'fix(auth): refuse a preset move judged against permissions that changed'
 ---
 
 ### Security
