@@ -1,8 +1,9 @@
 /** Repository-control policy crosses the real reconciliation and execution-authority seam. */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { connections, eq } from '@dorkos/db';
+import { connectionOperationGrants, connections, eq } from '@dorkos/db';
 import { ConnectorExecutionTargetSchema } from '@dorkos/shared/connector-schemas';
 import { ConnectorExecutionAuthorizationService } from '../execution/authorization-service.js';
+import { grantRefusal } from '../execution/grant-refusal.js';
 import { createServerPrincipal } from '../principal/server-principal.js';
 import {
   CONNECTION_ID,
@@ -17,6 +18,8 @@ const TREE = 'GITHUB_CREATE_A_TREE';
 const MULTIPLE = 'GITHUB_COMMIT_MULTIPLE_FILES';
 const DELETE = 'GITHUB_DELETE_A_FILE';
 const opened: ReturnType<typeof levelHarness>[] = [];
+/** The database and revision ids of the last {@link setup}, for grants the harness can't make. */
+let latest: { db: ReturnType<typeof levelHarness>['db']; revisionOf: (slug: string) => string };
 afterEach(() => {
   for (const h of opened.splice(0)) h.db.$client.close();
 });
@@ -46,6 +49,7 @@ async function setup(toolkit = 'github') {
       'GITLAB_CREATE_FILE',
       'GITEA_CHANGE_REPOSITORY_FILES',
       'GITEA_UPSERT_REPOSITORY_FILE',
+      'GITLAB_UPDATE_PROJECT',
     ].map((slug) => ({
       slug,
       classification: 'write' as const,
@@ -86,6 +90,7 @@ async function setup(toolkit = 'github') {
   const authorization = new ConnectorExecutionAuthorizationService(h.db, h.registry, {
     ownsAgent: () => true,
   });
+  latest = { db: h.db, revisionOf: (slug) => idOf(snapshot, slug) };
   return (agentId: string, slug: string, args: Record<string, unknown>) =>
     authorization.prepare({
       capabilityId: HAND_PICKED.includes(slug)
@@ -384,5 +389,73 @@ describe('repository history and branch arguments need exact grants', () => {
     await expect(
       run('exact', 'GITHUB_MERGE_A_PULL_REQUEST', { pull_number: 7 })
     ).resolves.toMatchObject({ agentId: 'exact' });
+  });
+});
+
+describe('moving where CI reads its config needs the agent’s own exact grant', () => {
+  const MOVES = [
+    { id: 1, ci_config_path: 'ci/x.yml' },
+    { id: 1, ciConfigPath: 'build.yml@acme/other' },
+  ] as const;
+
+  it.each(
+    (['writer', 'reader'] as const).flatMap((agentId) =>
+      MOVES.map((args) => [agentId, args] as const)
+    )
+  )('refuses %s, through a level or the every-agent share, with %j', async (agentId, args) => {
+    const run = await setup('gitlab');
+    await expect(run(agentId, 'GITLAB_UPDATE_PROJECT', args)).rejects.toMatchObject({
+      payload: {
+        code: 'CONNECTOR_GRANT_REQUIRED',
+        error:
+          'Changing repository control files needs this action given to this agent on its own.',
+      },
+    });
+  });
+
+  it.each(MOVES)('runs for the agent’s own exact grant with %j', async (args) => {
+    const run = await setup('gitlab');
+    await expect(run('exact', 'GITLAB_UPDATE_PROJECT', args)).resolves.toMatchObject({
+      agentId: 'exact',
+    });
+  });
+
+  it('lets a level and the share update a project that keeps its CI config', async () => {
+    const run = await setup('gitlab');
+    for (const agentId of ['writer', 'reader']) {
+      await expect(
+        run(agentId, 'GITLAB_UPDATE_PROJECT', { id: 1, description: 'Docs', ci_config_path: '' })
+      ).resolves.toMatchObject({ agentId });
+    }
+  });
+
+  it('refuses it under a per-chat grant too', async () => {
+    await setup('gitlab');
+    const operationRevisionId = latest.revisionOf('GITLAB_UPDATE_PROJECT');
+    latest.db
+      .insert(connectionOperationGrants)
+      .values({
+        id: 'grant-session-ci',
+        subjectType: 'session',
+        subjectId: 'session-a',
+        agentId: 'chatty',
+        connectionId: CONNECTION_ID,
+        operationRevisionId,
+        createdBy: 'operator',
+        createdAt: '2026-11-17T12:00:00.000Z',
+      })
+      .run();
+    const refusal = (args: Record<string, unknown>) =>
+      grantRefusal(
+        latest.db,
+        'chatty',
+        { connectionId: CONNECTION_ID, operationRevisionId, arguments: args },
+        { named: true, everyAgent: false },
+        { toolkit: 'gitlab', operationSlug: 'GITLAB_UPDATE_PROJECT' }
+      );
+    expect(refusal({ id: 1, ci_config_path: 'ci/x.yml' })).toBe(
+      'Changing repository control files needs this action given to this agent on its own.'
+    );
+    expect(refusal({ id: 1, description: 'Docs' })).toBeNull();
   });
 });

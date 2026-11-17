@@ -111,6 +111,26 @@ describe('which repository arguments the control-file check reads (DOR-4508)', (
     }
   });
 
+  it.each([
+    { ci_config_path: 'ci/x.yml' },
+    { ciConfigPath: ' build.yml ' },
+    { CI_CONFIG_PATH: '.gitlab-ci.yml@other/project' },
+    { settings: [{ ci_config_path: 'a.yml' }] },
+    { ci_config_path: 7 },
+    { ci_config_path: { file: 'x.yml' } },
+  ])('treats moving the CI config to anywhere as a control change: %o', (args) => {
+    expect(changesRepositoryControlFiles(args)).toBe(true);
+  });
+
+  it.each([
+    { ci_config_path: '' },
+    { ci_config_path: '   ' },
+    { ci_config_path: null },
+    { name: 'ci' },
+  ])('leaves a project update that keeps the CI config where it is alone: %o', (args) => {
+    expect(changesRepositoryControlFiles(args)).toBe(false);
+  });
+
   it('lists no exception the snapshot no longer has', () => {
     const present = new Set(fields.map(({ slug, path }) => `${slug} ${path}`));
     expect(Object.keys(NOT_A_REPOSITORY_FILE).filter((entry) => !present.has(entry))).toEqual([]);

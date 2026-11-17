@@ -63,7 +63,8 @@ function controlSpelling(value: string): boolean {
  * Inspect nested path arguments, including path lists and legacy multi-file deletes.
  *
  * What it reads, on purpose (DOR-4508): string values under a key whose name
- * contains `path` (and everything nested under such a key), plus `deletes`.
+ * contains `path` (and everything nested under such a key), plus `deletes`;
+ * {@link movesCiConfig} separately treats any CI config location as a change.
  * File content is never read as a path. `__tests__/workflow-file-keys.test.ts`
  * keeps that honest against a snapshot of every repository write schema: a
  * location-like argument the check doesn't read fails it until it is read or
@@ -85,7 +86,24 @@ function containsControlPath(value: unknown, isPath = false): boolean {
  * @param args - Arguments before schema validation and execution.
  */
 export function changesRepositoryControlFiles(args: Record<string, unknown>): boolean {
-  return containsControlPath(args);
+  return containsControlPath(args) || movesCiConfig(args);
+}
+
+/**
+ * Argument names that move where CI reads its config from (GitLab's
+ * `ci_config_path`). Pointing CI at an ordinary file and then writing that
+ * file is a control-file change, so any value that isn't plainly empty counts.
+ */
+const CI_CONFIG_KEYS = new Set(['ciconfigpath']);
+
+/** Whether nested arguments move the CI config location. */
+function movesCiConfig(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(movesCiConfig);
+  if (value === null || typeof value !== 'object') return false;
+  return Object.entries(value).some(
+    ([key, entry]) =>
+      (CI_CONFIG_KEYS.has(looseKey(key)) && !namesNothing(entry)) || movesCiConfig(entry)
+  );
 }
 
 /** Argument names that replace history when set; any value but an explicit "off" counts. */
