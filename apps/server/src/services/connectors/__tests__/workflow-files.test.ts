@@ -50,6 +50,7 @@ async function setup(toolkit = 'github') {
       'GITEA_CHANGE_REPOSITORY_FILES',
       'GITEA_UPSERT_REPOSITORY_FILE',
       'GITLAB_UPDATE_PROJECT',
+      'GITLAB_CREATE_MERGE_REQUEST_DISCUSSION',
     ].map((slug) => ({
       slug,
       classification: 'write' as const,
@@ -357,7 +358,6 @@ describe('repository history and branch arguments need exact grants', () => {
     { startSha: ' a1b2 ' },
     { start_project: 0 },
     { start_project: { id: 10 } },
-    { actions: [{ start_project: 10 }] },
   ])('fails closed on a loosely spelled history argument %j', async (args) => {
     const run = await setup();
     await expect(run('writer', MULTIPLE, args)).rejects.toMatchObject({
@@ -375,6 +375,25 @@ describe('repository history and branch arguments need exact grants', () => {
   ])('allows ordinary file changes with %j', async (args) => {
     const run = await setup();
     await expect(run('writer', MULTIPLE, args)).resolves.toMatchObject({ agentId: 'writer' });
+  });
+  it('lets a level leave an inline GitLab review comment, whose position names a start_sha', async () => {
+    const run = await setup('gitlab');
+    const position = {
+      position_type: 'text',
+      base_sha: 'a'.repeat(40),
+      start_sha: 'b'.repeat(40),
+      head_sha: 'c'.repeat(40),
+      new_path: 'src/x.ts',
+      new_line: 12,
+    };
+    await expect(
+      run('writer', 'GITLAB_CREATE_MERGE_REQUEST_DISCUSSION', {
+        id: 1,
+        merge_request_iid: 7,
+        body: 'Looks good',
+        position,
+      })
+    ).resolves.toMatchObject({ agentId: 'writer' });
   });
   it('runs a hand-picked GITHUB_CREATE_A_RELEASE, and refuses it to a Read and write level', async () => {
     const run = await setup();
@@ -429,7 +448,9 @@ describe('moving where CI reads its config needs the agent’s own exact grant',
     }
   });
 
-  it('refuses it under a per-chat grant too', async () => {
+  // A per-chat grant reaches grantRefusal as `named`; only the agent's own
+  // exact grant row counts, so the session row alone must not let it through.
+  it('refuses it when the agent holds it only through a named grant that isn’t its own, like a chat’s', async () => {
     await setup('gitlab');
     const operationRevisionId = latest.revisionOf('GITLAB_UPDATE_PROJECT');
     latest.db

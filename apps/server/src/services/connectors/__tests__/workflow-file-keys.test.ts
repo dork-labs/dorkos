@@ -11,7 +11,10 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { changesRepositoryControlFiles } from '../execution/workflow-files.js';
+import {
+  changesRepositoryControlFiles,
+  changesRepositoryHistory,
+} from '../execution/workflow-files.js';
 
 /** Per action, the key path of each string argument; `[]` marks an array item. */
 const snapshot = JSON.parse(
@@ -23,10 +26,17 @@ const loose = (key: string) => key.toLowerCase().replace(/[^a-z0-9]/g, '');
 
 /** Leaf names that could hold a location (Security's list, DOR-4508). */
 function looksLikeLocation(leaf: string): boolean {
-  return /path|file|dest|target/.test(leaf) || ['to', 'from', 'name', 'ref'].includes(leaf);
+  return (
+    /path|file|dest|target|dir|folder|location/.test(leaf) ||
+    ['to', 'from', 'name', 'ref'].includes(leaf)
+  );
 }
 
-/** These leaf names never hold a repository file location in a write action of these apps. */
+/**
+ * These leaf names never hold a repository file location in a write action of
+ * these apps, as top-level arguments. A nested field with one of these names
+ * is listed one by one below, so a new upload shape like `files[].name` fails.
+ */
 const NOT_A_PATH_LEAF: Readonly<Record<string, string>> = {
   name: 'names a label, repository, team, variable, release, field or person',
   ref: 'a git ref or commit to act on, not a file; new branches are the history check',
@@ -53,7 +63,49 @@ const NOT_A_REPOSITORY_FILE: Readonly<Record<string, string>> = {
   'GITLAB_UPLOAD_PROJECT_WIKI_ATTACHMENT file': 'a wiki attachment, not a repository file',
   'GITHUB_CREATE_A_SCOPED_ACCESS_TOKEN permissions__single__file':
     'a token scope; minting a token is already a one-by-one pick',
+  'GITHUB_COMMIT_MULTIPLE_FILES author.name': 'a person’s name on the commit',
+  'GITHUB_COMMIT_MULTIPLE_FILES committer.name': 'a person’s name on the commit',
+  'GITEA_CHANGE_REPOSITORY_FILES author.name': 'a person’s name on the commit',
+  'GITEA_CHANGE_REPOSITORY_FILES committer.name': 'a person’s name on the commit',
+  'GITEA_UPSERT_REPOSITORY_FILE author.name': 'a person’s name on the commit',
+  'GITEA_UPSERT_REPOSITORY_FILE committer.name': 'a person’s name on the commit',
+  'GITHUB_ADD_FIELD_TO_USER_PROJECT single_select_options[].name': 'a project field option',
+  'GITHUB_CREATE_INFERENCE_CHAT_COMPLETIONS tools[].name': 'a model tool name',
+  'GITLAB_CREATE_PIPELINE_SCHEDULE inputs[].name': 'a pipeline input’s name',
+  'GITLAB_UPDATE_PIPELINE_SCHEDULE inputs[].name': 'a pipeline input’s name',
+  'GITLAB_CREATE_RELEASE assets.links[].name': 'a release link’s label',
+  'GITHUB_CONFIGURE_JIT_RUNNER_FOR_ORG work_folder': 'a folder on the runner machine',
+  'GITHUB_CREATE_JIT_RUNNER_CONFIG work_folder': 'a folder on the runner machine',
+  'GITHUB_CREATE_A_CODESPACE_FROM_A_PULL_REQUEST location': 'a codespace region',
+  'GITHUB_CREATE_A_CODESPACE_FROM_A_PULL_REQUEST working_directory':
+    'where a codespace opens; writes nothing',
+  'GITHUB_CREATE_A_CODESPACE_IN_A_REPOSITORY location': 'a codespace region',
+  'GITHUB_CREATE_A_CODESPACE_IN_A_REPOSITORY working_directory':
+    'where a codespace opens; writes nothing',
+  'GITHUB_UPDATE_CODESPACE recent_folders[]': 'a codespace’s recent folders list',
+  'GITHUB_UPDATE_AN_ORGANIZATION location': 'an organization’s place, on its profile',
+  'GITHUB_UPDATE_THE_AUTHENTICATED_USER location': 'a person’s place, on their profile',
 };
+
+/**
+ * History arguments (`start_sha`, `new_branch`, …) count only where a commit
+ * takes them. A nested one is listed here with why it changes nothing.
+ */
+const NESTED_HISTORY_FIELDS: Readonly<Record<string, string>> = {
+  'GITLAB_CREATE_MERGE_REQUEST_DISCUSSION position.start_sha':
+    'names the diff an inline comment sits on',
+  'GITLAB_UPDATE_MERGE_REQUEST_DRAFT_NOTE position.start_sha':
+    'names the diff an inline comment sits on',
+};
+const HISTORY_LEAVES = new Set([
+  'startsha',
+  'startproject',
+  'startbranch',
+  'newbranch',
+  'basebranch',
+  'force',
+  'forcepush',
+]);
 
 /** `{ a: [{ b: value }] }` from the key path `a[].b`. */
 function argumentsAt(path: string, value: string): Record<string, unknown> {
@@ -69,6 +121,7 @@ const fields = Object.values(snapshot.toolkits).flatMap((actions) =>
   Object.entries(actions).flatMap(([slug, paths]) => (paths ?? []).map((path) => ({ slug, path })))
 );
 const leafOf = (path: string) => loose(path.replaceAll('[]', '').split('.').pop()!);
+const isTopLevel = (path: string) => !/[.[]/.test(path);
 
 describe('which repository arguments the control-file check reads (DOR-4508)', () => {
   it('has a complete snapshot of the repository apps', () => {
@@ -92,10 +145,27 @@ describe('which repository arguments the control-file check reads (DOR-4508)', (
       )
       .filter(
         ({ slug, path }) =>
-          !NOT_A_PATH_LEAF[leafOf(path)] && !NOT_A_REPOSITORY_FILE[`${slug} ${path}`]
+          !(isTopLevel(path) && NOT_A_PATH_LEAF[leafOf(path)]) &&
+          !NOT_A_REPOSITORY_FILE[`${slug} ${path}`]
       )
       .map(({ slug, path }) => `${slug} ${path}`);
     expect(unexplained).toEqual([]);
+  });
+
+  it('reads every history argument a commit takes, and only those', () => {
+    const history = fields.filter(({ path }) => HISTORY_LEAVES.has(leafOf(path)));
+    const unread = history
+      .filter(({ path }) => isTopLevel(path))
+      .filter(({ path }) => !changesRepositoryHistory(argumentsAt(path, 'b'.repeat(40))))
+      .map(({ slug, path }) => `${slug} ${path}`);
+    expect(unread).toEqual([]);
+    const nested = history.filter(({ path }) => !isTopLevel(path));
+    expect(nested.map(({ slug, path }) => `${slug} ${path}`).sort()).toEqual(
+      Object.keys(NESTED_HISTORY_FIELDS).sort()
+    );
+    for (const { path } of nested) {
+      expect(changesRepositoryHistory(argumentsAt(path, 'b'.repeat(40)))).toBe(false);
+    }
   });
 
   it('reads the real path keys it is meant to', () => {

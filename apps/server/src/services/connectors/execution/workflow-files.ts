@@ -109,18 +109,16 @@ function movesCiConfig(value: unknown): boolean {
 /** Argument names that replace history when set; any value but an explicit "off" counts. */
 const FORCE_KEYS = new Set(['force', 'forcepush']);
 
+/** Argument names that create a branch when given a value, at any depth. */
+const NEW_BRANCH_KEYS = new Set(['newbranch', 'startbranch', 'basebranch']);
+
 /**
- * Argument names that create a branch when given a value. GitLab's
- * `start_sha` and `start_project` start a branch from another commit or
- * project, like `start_branch` (DOR-4507).
+ * GitLab's `start_sha` and `start_project` start a commit from another commit
+ * or project, like `start_branch` (DOR-4507). Only at the top level, where a
+ * commit takes them: an inline review comment's `position.start_sha` names
+ * the diff it sits on and changes nothing.
  */
-const NEW_BRANCH_KEYS = new Set([
-  'newbranch',
-  'startbranch',
-  'basebranch',
-  'startsha',
-  'startproject',
-]);
+const TOP_LEVEL_START_KEYS = new Set(['startsha', 'startproject']);
 
 /** Values that plainly name no branch, commit or project. Anything else fails closed, numbers included. */
 function namesNothing(value: unknown): boolean {
@@ -150,17 +148,18 @@ function looseKey(key: string): string {
 
 /** Whether nested arguments request history replacement or a new branch. */
 export function changesRepositoryHistory(args: Record<string, unknown>): boolean {
-  function changes(value: unknown): boolean {
-    if (Array.isArray(value)) return value.some(changes);
+  function changes(value: unknown, topLevel: boolean): boolean {
+    if (Array.isArray(value)) return value.some((entry) => changes(entry, false));
     if (value === null || typeof value !== 'object') return false;
     return Object.entries(value).some(([key, entry]) => {
       const loose = looseKey(key);
       return (
         (FORCE_KEYS.has(loose) && !forceIsOff(entry)) ||
         (NEW_BRANCH_KEYS.has(loose) && !namesNothing(entry)) ||
-        changes(entry)
+        (topLevel && TOP_LEVEL_START_KEYS.has(loose) && !namesNothing(entry)) ||
+        changes(entry, false)
       );
     });
   }
-  return changes(args);
+  return changes(args, true);
 }

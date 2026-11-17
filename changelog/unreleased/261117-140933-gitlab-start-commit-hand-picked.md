@@ -5,4 +5,4 @@ covers:
 
 ### Fixed
 
-- A GitLab commit that starts from another commit or another project now needs to be given to that agent on its own, the same as one that starts a new branch. Read and write no longer covers it.
+- Making a GitLab commit that starts from another commit or another project now needs that action given to the agent on its own, the same as starting a new branch. Read and write, sharing GitLab with every agent, or allowing it in one chat no longer covers it. Inline review comments are unchanged.
