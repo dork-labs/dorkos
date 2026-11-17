@@ -86,6 +86,7 @@ function decide(
     mcpServer?: { name: string; source: string };
     resolveIdentity?: () => Promise<unknown>;
     isMarked?: () => boolean;
+    readOutsideWords?: () => boolean;
   } = {}
 ) {
   const input = {
@@ -102,7 +103,8 @@ function decide(
     options.session ?? NEVER_ASK,
     options.resolveIdentity ?? IDENTITY,
     noopLog,
-    options.isMarked
+    options.isMarked,
+    options.readOutsideWords
   )(input, 'use-1', { signal: new AbortController().signal });
 }
 
@@ -215,6 +217,17 @@ describe('a Never ask turn that carries an outsider’s words', () => {
       {
         isMarked: () => {
           throw new Error('no record');
+        },
+      },
+    ],
+    // The wider DOR-4029 test: a chat binding, an outside sender or a connector event launched
+    // the chat, or a room turn's note says it read a stranger, with no mark at all.
+    ['a chat that read outside words but carries no mark', { readOutsideWords: () => true }],
+    [
+      'a chat whose outside-words lookup throws',
+      {
+        readOutsideWords: () => {
+          throw new Error('no database');
         },
       },
     ],

@@ -14,14 +14,16 @@
  * Security has read, and the reason says plainly what comes back.
  * `never-ask-status-reads.test.ts` pins each entry to a real `observe` tool.
  *
- * Two of them answer narrower at Never ask, told so per call by the in-session server
+ * Three of them answer narrower at Never ask, told so per call by the in-session server
  * (`neverAsks`, Security on DOR-3971): `running_chats` leaves every title out, since a stranger can
- * name a bridged group, and `tasks_get_run_history` leaves out each run's summary.
+ * name a bridged group, and `tasks_get_run_history` and `heartbeat_status` leave out each run's and
+ * each beat's summary, which is an agent's own words about what it read.
  *
  * What these return is the owner's working data, so the Never ask hook (`never-ask-hook.ts`) runs
  * them only for the server DorkOS registered, and never in a turn that carries an outsider's
- * words: a stranger's own, one our agents passed on, or one marked by a line it read. That is the
- * bound `own-connection-reads.ts` has. A teammate's turn still runs them.
+ * words: a stranger's own, one our agents passed on, one marked by a line it read, or one the
+ * DOR-4029 test (`chatReadOutsideWords`) says read outside words, as memory and `chat_send` read
+ * it. A teammate's turn still runs them, as it runs the agent's own connection reads.
  *
  * @module services/runtimes/claude-code/tool-gate/never-ask-status-reads
  */
@@ -35,7 +37,7 @@ export const NEVER_ASK_STATUS_READS: Readonly<Record<string, string>> = {
     'Any schedule’s run records, by id: when each ran, how it ended and what it was refused, with each run’s summary left out at Never ask.',
   agents_recent_activity: 'When each agent last worked: one timestamp per agent.',
   heartbeat_status:
-    'How an agent wakes and how its beats went: its schedule, counts and record lines, readable by everyone in the space.',
+    'How an agent wakes and how its beats went: its schedule, outcomes and counts, with each beat’s summary left out at Never ask.',
 };
 
 /** The same reads by their in-session names, which the Never ask hook sees. */
