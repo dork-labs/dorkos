@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { siteName } from '@dorkos/shared/site-name';
 import {
   ArrowRight,
   Copy,
@@ -131,7 +132,7 @@ function chatLine(chat: BrowserMenuOtherChat): string {
  * The browser's ⋯ menu, at the end of the chrome: browser and page actions,
  * each group shown only when it applies. In order: Forward (only while the row
  * is too narrow to show it), Pages, Copy address, Open in your browser, Sign in
- * to a site in a separate window, Also open in other chats, Forget saved sign-ins…, and the closing item (plain,
+ * to a site in its own window, Also open in other chats, Forget saved sign-ins…, and the closing item (plain,
  * never red: closing loses nothing saved). A bottom sheet on a phone.
  *
  * Agent controls (Pause, Take over, Hand back) are the status pill's, not this
@@ -211,7 +212,7 @@ export function BrowserMenu({
         )}
         {onSignInSeparately && (
           <ResponsiveDropdownMenuItem icon={LogIn} disabled={busy} onSelect={onSignInSeparately}>
-            {`Sign in to ${siteOf(url)} in a separate window`}
+            {`Sign in to ${siteName(new URL(url).host)} in its own window`}
           </ResponsiveDropdownMenuItem>
         )}
       </div>

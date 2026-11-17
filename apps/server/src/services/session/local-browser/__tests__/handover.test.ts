@@ -5,7 +5,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { LocalBrowserState } from '@dorkos/shared/local-browser';
+import { LocalBrowserAskPersonSchema, type LocalBrowserState } from '@dorkos/shared/local-browser';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { logger } from '../../../../lib/logger.js';
 import { BrowserHandover, assertSignInUrl, type HandoverBrowser } from '../handover.js';
@@ -1092,5 +1092,40 @@ describe('continuing a refused in-app handoff in its own window (DOR-4097)', () 
     });
     await handover.handBack(handoffId);
     await expect(handover.requireAgentMayUse('chat-1')).resolves.toBeUndefined();
+  });
+});
+
+// DOR-4097: the card offers the sign-in window only when DorkOS's own last reading of
+// that same site was a refusal. The agent's words can't set it.
+describe('a handoff on a refused site (DOR-4097)', () => {
+  it('marks the handoff refused from the server’s own reading of the same site', async () => {
+    const { handover, browser } = setup();
+    const lastRefusalHost = vi.fn(() => 'accounts.example.com');
+    Object.assign(browser, { lastRefusalHost });
+    const order: string[] = [];
+    lastRefusalHost.mockImplementation(() => (order.push('read'), 'accounts.example.com'));
+    browser.handToPerson.mockImplementationOnce(async () => {
+      order.push('hand');
+      return { ...connected(), mode: 'embedded' as const, paused: true };
+    });
+    await handover.ask('chat-1', 'password');
+    expect((await handover.state()).handoff?.refused).toBe(true);
+    // Handing over clears the reading, so it is read first.
+    expect(order).toEqual(['read', 'hand']);
+  });
+
+  it('leaves it unmarked when the refusal was another site, or there was none', async () => {
+    for (const host of ['elsewhere.example', null]) {
+      const { handover, browser } = setup();
+      Object.assign(browser, { lastRefusalHost: () => host });
+      await handover.ask('chat-1', 'password');
+      expect((await handover.state()).handoff?.refused).toBeUndefined();
+    }
+  });
+
+  it('refuses an agent’s own claim that the site refused it', () => {
+    expect(
+      LocalBrowserAskPersonSchema.safeParse({ reason: 'password', refused: true }).success
+    ).toBe(false);
   });
 });

@@ -218,6 +218,11 @@ export const LocalBrowserHandoffSchema = z.object({
   site: z.string(),
   askedAt: z.string(),
   /**
+   * True when DorkOS's own last reading of this same site was a page refusing the
+   * Agent browser (DOR-4097), so the card offers the sign-in window. Never the agent's word.
+   */
+  refused: z.boolean().optional(),
+  /**
    * How it ended, or null while it is open. `window-closed` is a person's Disconnect
    * during the handoff: it ends the task as `stopped` does, and the card says why.
    */

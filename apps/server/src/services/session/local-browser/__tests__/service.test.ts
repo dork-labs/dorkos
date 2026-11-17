@@ -2520,3 +2520,50 @@ describe('a page that refuses the Agent browser', () => {
     expect(LOCAL_BROWSER_REFUSAL_NEXT).not.toMatch(/user.?agent|try again|instead use/i);
   });
 });
+
+// DOR-4097: the in-app handoff card learns of a refusal from DorkOS's own reading.
+it('marks an in-app handoff refused only after DorkOS read the refusal itself', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'embedded-refused-'));
+  directories.push(dir);
+  const f = fixture();
+  const bridge = {
+    endpoint: 'ws://127.0.0.1:9876/page/guest',
+    headers: {},
+    close: vi.fn(async () => undefined),
+    detach: vi.fn(async () => {
+      f.browserEvents.emit('disconnected');
+    }),
+    reattach: vi.fn(async () => undefined),
+  };
+  const service = new LocalBrowserService(dir, { open: async () => bridge }, f.backend);
+  await service.open({ mode: 'embedded', sessionId: 'chat-1' });
+  service.handover.useOutsideTurnCheck(async () => false);
+  f.navigate('https://accounts.google.com/v3/signin/rejected?made=up');
+  f.change('- heading "Couldn’t sign you in" [level=1]');
+  await service.observe();
+  await service.handover.ask('chat-1', 'password');
+  expect((await service.handover.state()).handoff).toMatchObject({
+    site: 'accounts.google.com',
+    refused: true,
+  });
+});
+
+it('leaves an in-app handoff unmarked when no reading saw a refusal', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'embedded-unrefused-'));
+  directories.push(dir);
+  const f = fixture();
+  const bridge = {
+    endpoint: 'ws://127.0.0.1:9876/page/guest',
+    headers: {},
+    close: vi.fn(async () => undefined),
+    detach: vi.fn(async () => undefined),
+    reattach: vi.fn(async () => undefined),
+  };
+  const service = new LocalBrowserService(dir, { open: async () => bridge }, f.backend);
+  await service.open({ mode: 'embedded', sessionId: 'chat-1' });
+  service.handover.useOutsideTurnCheck(async () => false);
+  // The agent never read the page, whatever it might say about it.
+  f.navigate('https://accounts.google.com/v3/signin/rejected?made=up');
+  await service.handover.ask('chat-1', 'password');
+  expect((await service.handover.state()).handoff?.refused).toBeUndefined();
+});

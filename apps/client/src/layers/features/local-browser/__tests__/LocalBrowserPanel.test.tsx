@@ -1577,7 +1577,7 @@ describe('LocalBrowserPanel', () => {
         'Second page',
         'Copy address',
         'Open in your browser',
-        'Sign in to example.com in a separate window',
+        'Sign in to example.com in its own window',
         'Forget saved sign-ins…',
         'Close browser',
       ]);
@@ -1653,7 +1653,7 @@ describe('LocalBrowserPanel', () => {
         });
         transport.signInLocalBrowser.mockResolvedValue({ ...connected, mode });
         mount();
-        await chooseFromMenu('Sign in to shop.example in a separate window');
+        await chooseFromMenu('Sign in to shop.example in its own window');
         expect(transport.signInLocalBrowser).toHaveBeenCalledExactlyOnceWith({
           url: 'https://shop.example',
         });
