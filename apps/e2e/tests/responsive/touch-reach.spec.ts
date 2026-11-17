@@ -284,7 +284,7 @@ test.describe('Touch reach — the browser row on a phone (DOR-4436) @smoke', ()
   }
 
   test('the pill and ⋯ each own their 44px, and the address reads at 16px', async ({ page }) => {
-    await page.goto('/dev/features');
+    await page.goto('/dev/home-inbox');
     const demo = page.getByTestId('browser-chrome-phone-driving');
     await expect(demo, 'the Playground must draw the 390px browser row').toBeVisible({
       timeout: 15_000,
@@ -318,7 +318,7 @@ test.describe('Touch reach — the browser row on a phone (DOR-4436) @smoke', ()
   });
 
   test('Your turn shows its full words on a phone', async ({ page }) => {
-    await page.goto('/dev/features');
+    await page.goto('/dev/home-inbox');
     const demo = page.getByTestId('browser-chrome-phone-your-turn');
     await expect(demo).toBeVisible({ timeout: 15_000 });
     await demo.scrollIntoViewIfNeeded();
