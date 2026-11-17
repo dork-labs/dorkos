@@ -3865,8 +3865,12 @@ describe("a chat's snapshot carries only that chat (DOR-4552)", () => {
   beforeEach(() => {
     optIn.persistentSession = true;
   });
+  // A turn a case answers on a timer, cleared so it never fires into the next case.
+  let answerLater: ReturnType<typeof setTimeout> | undefined;
   afterEach(() => {
     slotWait.ms = 0;
+    clearTimeout(answerLater);
+    answerLater = undefined;
   });
 
   /** Run one turn to completion, feeding its projector. */
@@ -3936,10 +3940,16 @@ describe("a chat's snapshot carries only that chat (DOR-4552)", () => {
     const older = nextSession();
     const olderTurn = await openFedTurn(older, 'OLDER CHAT question');
     olderTurn.process.say('OLDER CHAT working');
-    setTimeout(() => olderTurn.process.answer(olderTurn.process.received.at(-1)), 50);
+    let olderAnswered = false;
+    answerLater = setTimeout(() => {
+      olderAnswered = true;
+      olderTurn.process.answer(olderTurn.process.received.at(-1));
+    }, 50);
 
     const newer = nextSession();
     const { process, done } = await openFedTurn(newer, 'NEWER CHAT question');
+    // The newer chat really waited: it launched only after the older chat's turn ended.
+    expect(olderAnswered).toBe(true);
     process.say('NEWER CHAT working on it');
 
     expect(await snapshotText(newer)).toContain('NEWER CHAT working on it');
@@ -3970,6 +3980,13 @@ describe("a chat's snapshot carries only that chat (DOR-4552)", () => {
     );
   });
 
+  /** Whether the cross-chat report was logged since the last clear. */
+  function reportedCrossChat(): boolean {
+    return vi
+      .mocked(logger.warn)
+      .mock.calls.some(([message]) => String(message).includes("another chat's live state"));
+  }
+
   it('stays quiet for a chat reading its own live state', async () => {
     const chat = nextSession();
     cli.nextSdkSessionId = chat;
@@ -3978,9 +3995,23 @@ describe("a chat's snapshot carries only that chat (DOR-4552)", () => {
 
     await snapshotText(chat);
 
-    expect(logger.warn).not.toHaveBeenCalledWith(
-      "[ClaudeCodeRuntime] a chat resolved to another chat's live state",
-      expect.anything()
-    );
+    expect(reportedCrossChat()).toBe(false);
+  });
+
+  it('stays quiet across the SDK renaming a chat, under every id it has held', async () => {
+    const chat = nextSession();
+    const firstCanonical = `${chat}-sdk-1`;
+    const secondCanonical = `${chat}-sdk-2`;
+    cli.nextSdkSessionId = firstCanonical;
+    await fedTurn(chat, 'first');
+    // A relaunch re-mints the id a second time, as a resume does.
+    await runtime.reapSession(chat);
+    cli.nextSdkSessionId = secondCanonical;
+    await fedTurn(chat, 'second');
+    vi.mocked(logger.warn).mockClear();
+
+    for (const id of [chat, firstCanonical, secondCanonical]) await snapshotText(id);
+
+    expect(reportedCrossChat()).toBe(false);
   });
 });

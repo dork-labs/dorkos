@@ -1274,7 +1274,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * reports one that belongs to another chat (DOR-4552, `live-projector.ts`).
    */
   private resolveLiveProjector(sessionId: string): SessionStateProjector | undefined {
-    return peekLiveProjector(sessionId, this.getInternalSessionId(sessionId));
+    return peekLiveProjector(sessionId, this.getInternalSessionId(sessionId), this.sessionStore);
   }
 
   /** @inheritdoc */
