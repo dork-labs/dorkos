@@ -47,11 +47,16 @@ export function storableSummary(summary: string): string {
  * and a dropped card is worse than a shortened one for exactly the reason this
  * field exists.
  *
+ * The bound is the card builders' own unless a caller passes the stored
+ * ceiling: only a capability's `approvalDetailField` may use it (DOR-4266).
+ * Package cards and the "is this whole?" checks keep the smaller one.
+ *
  * @param detail - The verbatim argument the capability declared.
+ * @param max - The bound to cap at.
  * @returns The swept, capped value to store.
  */
-export function storableDetail(detail: string): string {
-  return clampForStorage(redactSecretsInText(detail), APPROVAL_DETAIL_MAX_LENGTH);
+export function storableDetail(detail: string, max = APPROVAL_DETAIL_MAX_LENGTH): string {
+  return clampForStorage(redactSecretsInText(detail), max);
 }
 
 /**
