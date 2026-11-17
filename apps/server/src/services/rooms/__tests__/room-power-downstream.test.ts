@@ -21,7 +21,10 @@ import {
 } from '../../core/turn-power/outside-words.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { noteTurnHold, setContinuationHoldDb } from '../../core/turn-power/continuation-hold.js';
+import {
+  noteBridgedSender,
+  setContinuationHoldDb,
+} from '../../core/turn-power/continuation-hold.js';
 import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomService } from '../room-service.js';
 import type { RoomTurnRequest } from '../room-turn-port.js';
@@ -287,8 +290,8 @@ describe('an agent post from a chat that read outside words', () => {
           vi.spyOn(runtimeRegistry, 'getSessionLaunchOrigin').mockImplementation((id: string) =>
             id === anaChat ? origin : null
           );
-          // Whether the chat's latest real turn was a stranger's, as the bridge marks it.
-          noteTurnHold(anaChat, strangers);
+          // Whether the chat held a stranger's words, or only the owner's, as the bridge records it.
+          noteBridgedSender(anaChat, { marked: strangers, bridged: true }, true);
         }
         rooms.service!.postFromTool(request.room.id, {
           authorId: request.authorId,

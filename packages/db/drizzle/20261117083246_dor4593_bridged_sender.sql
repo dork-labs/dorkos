@@ -1,0 +1,1 @@
+ALTER TABLE `session_metadata` ADD `bridged_sender` text;

@@ -2,6 +2,7 @@
 covers:
   - "fix(turn-power): your own linked Telegram or Slack chat hands on your words, not a stranger's (DOR-4593)"
   - "fix(rooms): a relayed post's outside-words mark is saved with the post itself (DOR-4593)"
+  - "fix(turn-power): a bridged chat that ever held a stranger's words keeps handing them on (DOR-4593)"
 ---
 
 ### Fixed

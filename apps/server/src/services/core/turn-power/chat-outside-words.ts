@@ -10,16 +10,18 @@
  *
  * A bridged Telegram or Slack chat is the one origin that can be the owner's own (DOR-4593). With
  * stranger marking on, a bridged turn is marked unless its sender is on the connection's approver
- * list in a one-to-one chat (`wordsAreUntrusted`), and the chat keeps whether its latest real turn
- * was marked (`lastTurnHeld`), which a continuation turn never overwrites. So the owner's own
- * linked chat hands on clean words, while a group's, an unlisted sender's and their continuations
- * still count. With marking off nothing tells them apart, so every bridged chat counts.
+ * list in a one-to-one chat (`wordsAreUntrusted`), and the chat keeps whose words it holds
+ * (`bridgedSenderVouched`): vouched only while every bridged turn on it was a vouched sender's, and
+ * a stranger's for good once any turn on it was marked or ran with marking off. So the owner's own
+ * linked chat hands on clean words, while a group's, an unlisted sender's, and any chat not known
+ * to be vouched still count, whatever turns ran on it since. With marking off nothing tells them
+ * apart, so every bridged chat counts.
  *
  * @module services/core/turn-power/chat-outside-words
  */
 import { env } from '../../../env.js';
 import { runtimeRegistry } from '../runtime-registry.js';
-import { lastTurnHeld } from './continuation-hold.js';
+import { bridgedSenderVouched } from './continuation-hold.js';
 import { roomTurnReadOutsideWords } from './outside-words.js';
 import { marksOf } from './turn-levels.js';
 
@@ -46,7 +48,8 @@ export function chatReadOutsideWords(
   if (roomTurnReadOutsideWords(sessionId)) return true;
   try {
     const origin = runtimeRegistry.getSessionLaunchOrigin(sessionId) ?? '';
-    if (origin === BRIDGED_LAUNCH_ORIGIN) return !markStrangerTurns || lastTurnHeld(sessionId);
+    if (origin === BRIDGED_LAUNCH_ORIGIN)
+      return !markStrangerTurns || !bridgedSenderVouched(sessionId);
     return OUTSIDE_LAUNCH_ORIGINS.has(origin);
   } catch {
     // No database (early boot): nothing stored to read, as memory and the browser read it.

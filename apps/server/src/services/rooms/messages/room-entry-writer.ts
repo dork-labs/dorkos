@@ -398,7 +398,7 @@ export class RoomEntryWriter {
       ? keptMarks
       : keptMarks
         ? { ...keptMarks, outsider: true }
-        : level !== undefined && !held
+        : level !== undefined
           ? marksOfLevel({ ...level, outsider: true })
           : { outsider: true };
     const bindTransactional =

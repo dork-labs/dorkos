@@ -44,7 +44,10 @@ import { ChatMessageStore } from '../chat-message-store.js';
 import { ChatMessageService, type ChatMessageServiceDeps } from '../chat-message-service.js';
 import { rowsCarryWords } from '../chat-message-ceiling.js';
 import { passedOnLevelOf } from '../../../core/turn-power/turn-levels.js';
-import { noteTurnHold, setContinuationHoldDb } from '../../../core/turn-power/continuation-hold.js';
+import {
+  noteBridgedSender,
+  setContinuationHoldDb,
+} from '../../../core/turn-power/continuation-hold.js';
 import {
   noteRoomTurnWords,
   roomTurnReadOutsideWords,
@@ -230,11 +233,11 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-/** A Telegram chat whose latest real turn was a stranger's (marked) or the owner's own (DOR-4593). */
+/** A Telegram chat that held a stranger's words, or only the owner's own (DOR-4593). */
 function telegramChat(strangers: boolean) {
   origins.set(ana, 'relay-binding');
   setContinuationHoldDb(createTestDb());
-  noteTurnHold(ana, strangers);
+  noteBridgedSender(ana, { marked: strangers, bridged: true }, true);
 }
 
 describe('a chat_send from a chat that read outside words', () => {

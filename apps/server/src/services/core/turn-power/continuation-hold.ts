@@ -25,15 +25,19 @@
  *
  * @module services/core/turn-power/continuation-hold
  */
-import { eq, sessionMetadata, type Db } from '@dorkos/db';
+import { eq, sessionMetadata, sql, type Db } from '@dorkos/db';
 import type { TurnPermissionBound } from '@dorkos/shared/agent-runtime';
 import { primaryOf } from '../../session/resolution/session-key-registry.js';
 import { logger } from '../../../lib/logger.js';
+import { env } from '../../../env.js';
 
 let db: Db | undefined;
 
 /** What this process last wrote per chat, so an unchanged answer writes nothing. */
 const written = new Map<string, boolean>();
+
+/** Chats this process recorded as holding a stranger's words; the record never clears. */
+const strangers = new Set<string>();
 
 /** How many chats the write cache remembers; the oldest go first. */
 const WRITTEN_MAX = 10_000;
@@ -46,6 +50,132 @@ const WRITTEN_MAX = 10_000;
 export function setContinuationHoldDb(handle: Db | undefined): void {
   db = handle;
   written.clear();
+  strangers.clear();
+}
+
+/** One turn as the bridged-sender record reads it (DOR-4593). */
+export interface BridgedTurn {
+  /** Whether the turn carried the outsider mark. */
+  readonly marked: boolean;
+  /** Whether a Telegram or Slack message started it (`MessageOpts.turnStarter`). */
+  readonly bridged: boolean;
+}
+
+/**
+ * Record whose words a chat holds, for a bridged Telegram or Slack chat (DOR-4593). Any marked
+ * turn, or a bridged turn while stranger marking is off (nothing then tells the owner from a
+ * stranger), records `stranger`, which nothing clears. Only an unmarked bridged turn with marking
+ * on, from a sender the binding vouched for, records `vouched`, and only on a chat with no record.
+ * A turn the owner types in the app, or one a continuation's hold clamped, proves nothing and
+ * writes nothing. Never throws: a failed write leaves the chat not known, which reads as a
+ * stranger's.
+ *
+ * @param sessionId - The id the turn was sent under.
+ * @param turn - Whether the turn was marked, and whether a bridged message started it.
+ * @param markStrangerTurns - DOR-3858's boot flag; this boot's value by default.
+ */
+export function noteBridgedSender(
+  sessionId: string,
+  turn: BridgedTurn,
+  markStrangerTurns = env.DORKOS_MARK_STRANGER_TURNS
+): void {
+  const stranger = turn.marked || (turn.bridged && !markStrangerTurns);
+  if (!stranger && !turn.bridged) return;
+  if (!db) return;
+  // Under the id the turn was sent with AND the chat's first id: a rename moves the row to the
+  // newest id while this process files the chat under its first, so both rows must say it.
+  for (const key of chatKeys(sessionId)) {
+    if (strangers.has(key)) continue;
+    try {
+      db.insert(sessionMetadata)
+        .values({
+          sessionId: key,
+          runtime: null,
+          createdAt: new Date().toISOString(),
+          bridgedSender: stranger ? 'stranger' : 'vouched',
+        })
+        .onConflictDoUpdate({
+          target: sessionMetadata.sessionId,
+          // `stranger` overwrites anything; `vouched` only fills a chat with no record.
+          set: {
+            bridgedSender: stranger
+              ? 'stranger'
+              : sql`coalesce(${sessionMetadata.bridgedSender}, 'vouched')`,
+          },
+        })
+        .run();
+      if (stranger) {
+        strangers.add(key);
+        if (strangers.size > WRITTEN_MAX) {
+          strangers.delete(strangers.values().next().value as string);
+        }
+      }
+    } catch (err) {
+      logger.warn('[continuation-hold] could not record whose words a bridged chat holds', {
+        sessionId: key,
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+}
+
+/** The ids a chat's record is kept under: the one in hand and the chat's first, once each. */
+function chatKeys(sessionId: string): string[] {
+  const first = primaryOf(sessionId);
+  return first === sessionId ? [sessionId] : [sessionId, first];
+}
+
+/**
+ * Whether a bridged chat holds only words from a sender its binding vouched for (DOR-4593): only
+ * when its row under the id in hand, and under its first id when that differs, both say so.
+ * `false` when it ever held a stranger's, when nothing is recorded, when there is no database, and
+ * when the record cannot be read: each reads as a stranger's.
+ *
+ * @param sessionId - The chat.
+ */
+export function bridgedSenderVouched(sessionId: string): boolean {
+  const keys = chatKeys(sessionId);
+  const handle = db;
+  if (!handle || keys.some((key) => strangers.has(key))) return false;
+  try {
+    return keys.every(
+      (key) =>
+        handle
+          .select({ sender: sessionMetadata.bridgedSender })
+          .from(sessionMetadata)
+          .where(eq(sessionMetadata.sessionId, key))
+          .get()?.sender === 'vouched'
+    );
+  } catch (err) {
+    logger.warn('[continuation-hold] could not read whose words a bridged chat holds', {
+      sessionId,
+      err: err instanceof Error ? err.message : String(err),
+    });
+    return false;
+  }
+}
+
+/**
+ * What a merged chat row keeps of the holds (DOR-4593): held if either row was, and a stranger's
+ * if either was, or if either is not known. Only two vouched rows stay vouched.
+ *
+ * @param a - One row's holds.
+ * @param b - The other row's holds.
+ */
+export function mergedHolds(
+  a: { lastTurnHeld: boolean | null; bridgedSender: 'vouched' | 'stranger' | null },
+  b: { lastTurnHeld: boolean | null; bridgedSender: 'vouched' | 'stranger' | null }
+): { lastTurnHeld: boolean | null; bridgedSender: 'vouched' | 'stranger' | null } {
+  const held = a.lastTurnHeld === true || b.lastTurnHeld === true;
+  return {
+    lastTurnHeld: held ? true : (a.lastTurnHeld ?? b.lastTurnHeld),
+    bridgedSender:
+      a.bridgedSender === 'vouched' && b.bridgedSender === 'vouched'
+        ? 'vouched'
+        : a.bridgedSender === 'stranger' || b.bridgedSender === 'stranger'
+          ? 'stranger'
+          : null,
+  };
 }
 
 /**
