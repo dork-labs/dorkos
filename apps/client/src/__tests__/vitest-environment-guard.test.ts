@@ -24,6 +24,8 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { describe, it, expect } from 'vitest';
 
+import { codeOnly } from '../../../../scripts/lib/code-only.mjs';
+
 const SRC = join(__dirname, '..');
 
 /** The environments a client test may declare. */
@@ -47,18 +49,14 @@ function clientTests(): Map<string, string> {
 /**
  * The comment block(s) at the very top of a file, before its first line of code.
  *
+ * `codeOnly` blanks comments (and literals) to spaces at the same positions, so
+ * the first non-blank character it leaves is where the code starts.
+ *
  * @param text - The file's source.
  */
 function leadingComments(text: string): string {
-  let rest = text.replace(/^\uFEFF/, '');
-  let header = '';
-  for (;;) {
-    const trimmed = rest.replace(/^\s+/, '');
-    const match = /^(\/\/[^\n]*|\/\*[\s\S]*?\*\/)/.exec(trimmed);
-    if (!match) return header;
-    header += `${match[0]}\n`;
-    rest = trimmed.slice(match[0].length);
-  }
+  const firstCode = codeOnly(text).search(/\S/);
+  return firstCode === -1 ? text : text.slice(0, firstCode);
 }
 
 /**
