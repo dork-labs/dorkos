@@ -1,8 +1,9 @@
 ---
 covers:
   - "fix(connectors): a mini app's room post holds sends and deletes like a stranger's words (DOR-4587)"
+  - 'fix(connectors): the approval card names a turn that read outside words (DOR-4587)'
 ---
 
 ### Fixed
 
-- A room message a mini app wrote now counts as words from outside your team, the same as a stranger's. An agent that read one asks you before it sends email, replies, changes an event with guests, or deletes something in a connected app, even at Full autonomy, where drafts and labels still go ahead. Messages you send your own agent from your linked Telegram or Slack account still go through without asking.
+- A mini app's reply in a room now limits the turn it starts, like a message from someone else: a send through a connected app asks you first. Before 0.135.13, from 0.125.0 on, it didn't.

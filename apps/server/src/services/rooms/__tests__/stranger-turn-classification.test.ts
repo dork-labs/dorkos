@@ -148,7 +148,7 @@ describe('an agent post that relays outside words marks the turn that reads it (
   });
 });
 
-describe('a mini app post the context showed but the turn does not answer (DOR-4587)', () => {
+describe('a mini app post only in the ambient window the turn is shown (DOR-4587)', () => {
   const room = 'room-classification-shown';
   const shownPost = { id: 'entry-shown-mini-app', authorId: owner.id } as RoomEntry;
   const deps = {
@@ -156,6 +156,7 @@ describe('a mini app post the context showed but the turn does not answer (DOR-4
     authors,
     isOwnerAuthor: isOwner,
   };
+  // `pending` is the unread ambient window `room-context.ts` renders, from `ambientFrom` to the trigger.
   const context = { pending: [{ id: shownPost.id }] } as unknown as RoomContextData;
 
   it('marks the turn with stranger marking off', () => {
