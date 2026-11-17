@@ -254,21 +254,14 @@ describe('a turn that answers a mini app’s post', () => {
 describe('an agent post from a chat that read outside words', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  // DOR-4029 (Security S4 on #3576): a chat a stranger started has read their words. While the
-  // bridge marks strangers (the default), a stranger's Telegram turn carries the mark itself, so
-  // an unmarked Telegram chat is the owner's own linked account and carries nothing (DOR-4587).
-  // The origin alone still counts with stranger marking off (`chat-outside-words.ts`).
+  // DOR-4029 (Security S4 on #3576): a chat a stranger started (a Telegram chat) has read their
+  // words without any room turn noting it, and its post carries them on too.
   it.each([
-    ['carries them to the turn it wakes', true, null, true],
-    [
-      "carries nothing from the owner's own Telegram chat (DOR-4587)",
-      false,
-      'relay-binding',
-      false,
-    ],
-    ['carries them from an outside agent’s chat', false, 'outside-sender', true],
-    ['carries nothing from a clean chat', false, null, false],
-  ])('%s', async (_label, readOutside, origin, expected) => {
+    ['carries them to the turn it wakes', true, null],
+    ['carries them from a Telegram chat (DOR-4029)', false, 'relay-binding'],
+    ['carries nothing from a clean chat', false, null],
+  ])('%s', async (_label, readOutside, origin) => {
+    const expected = readOutside || origin !== null;
     const seen: RoomTurnRequest[] = [];
     const rooms: { service?: RoomService } = {};
     const runner = outcomeRunner((request) => {
@@ -349,5 +342,15 @@ describe('an agent relaying a mini app’s reply to another agent', () => {
     expect(bo.carriedOutsider).toBe(true);
     expect(bo.outsideWords).toBe(true);
     expect(roomTurnReadOutsideWords(bo.sessionId!)).toBe(true);
+
+    // The owner's next ask renders no marked post, so Bo's next turn comes back clean.
+    const asked = seen.length;
+    service.post(channel.id, { authorId: human, text: '@bo thanks, that is all' });
+    await settleUntil(() => seen.length > asked, 'Bo was asked again');
+    const next = seen.at(-1)!;
+    expect(next.agentPath).toBe('/agents/bo');
+    expect(next.carriedOutsider).toBeUndefined();
+    expect(next.outsideWords).toBeUndefined();
+    expect(roomTurnReadOutsideWords(next.sessionId!)).toBe(false);
   });
 });

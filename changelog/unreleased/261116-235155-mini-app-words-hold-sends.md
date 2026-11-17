@@ -4,6 +4,7 @@ covers:
   - 'fix(connectors): the approval card names a turn that read outside words (DOR-4587)'
   - "fix(rooms): an agent's post relaying outside words keeps the outsider mark (DOR-4587)"
   - "fix(agents): a turn noted as reading outside words can't raise its mode, approve its own extension or write another agent's setup (DOR-4587)"
+  - "refactor(turn-power): leave bridged chats' outside words as they were (DOR-4587)"
 ---
 
 ### Fixed

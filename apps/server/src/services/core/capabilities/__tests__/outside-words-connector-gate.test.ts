@@ -17,7 +17,6 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
 import { recordTurnLevels } from '../../turn-power/turn-levels.js';
 import { noteRoomTurnWords } from '../../turn-power/outside-words.js';
-import { chatReadOutsideWords } from '../../turn-power/chat-outside-words.js';
 import { resetLiveOutsiderTurns } from '../../turn-power/live-outsider-turns.js';
 import { resetChosenTurns } from '../../turn-power/full-autonomy.js';
 import { ApprovalService } from '../../approvals/index.js';
@@ -198,6 +197,17 @@ describe('local work from a turn that answered outside words', () => {
   // The mark holds outward, destructive and standing actions only; the turn keeps its level.
   const localWrite = { id: 'files.write_note', tier: 'act' as const, area: null };
 
+  it('runs unasked on a turn carrying the mark itself, at Full and below Full', async () => {
+    for (const stored of ['bypassPermissions', 'acceptEdits']) {
+      const chat = fresh();
+      await ran(chat, stored, { carriedMarks: { outsider: true } });
+      expect(
+        await resolveCallPermission({ action: localWrite, identity: AGENT, sessionId: chat }),
+        stored
+      ).toBeNull();
+    }
+  });
+
   it('runs unasked at Full and below Full', async () => {
     for (const stored of ['bypassPermissions', 'acceptEdits']) {
       const chat = fresh();
@@ -278,28 +288,5 @@ describe('a destructive connected-app call from a turn that answered outside wor
     expect(await holdRequesterFor(contextFor(chat), preflight, sources)).toMatchObject({
       sessionId: chat,
     });
-  });
-});
-
-describe('words a bridged Telegram or Slack chat sends on', () => {
-  it("carry nothing from the owner's own account while the bridge marks strangers", async () => {
-    const chat = fresh();
-    vi.spyOn(runtimeRegistry, 'getSessionLaunchOrigin').mockReturnValue('relay-binding');
-    await ran(chat, 'bypassPermissions');
-    expect(chatReadOutsideWords(chat, AGENT.agentPath, true)).toBe(false);
-  });
-
-  it("carry a stranger's words: the bridge marked the turn", async () => {
-    const chat = fresh();
-    vi.spyOn(runtimeRegistry, 'getSessionLaunchOrigin').mockReturnValue('relay-binding');
-    await ran(chat, 'bypassPermissions', { carriedMarks: { outsider: true } });
-    expect(chatReadOutsideWords(chat, AGENT.agentPath, true)).toBe(true);
-  });
-
-  it('count by origin alone while the bridge marks nobody', async () => {
-    const chat = fresh();
-    vi.spyOn(runtimeRegistry, 'getSessionLaunchOrigin').mockReturnValue('relay-binding');
-    await ran(chat, 'bypassPermissions');
-    expect(chatReadOutsideWords(chat, AGENT.agentPath, false)).toBe(true);
   });
 });
