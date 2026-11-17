@@ -1,8 +1,9 @@
 /** X uploads and posts that reach past the owner's account need the agent's own grant, through the real execution-authority seam (DOR-4332). */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { connections, eq } from '@dorkos/db';
+import { connectionOperationGrants, connections, eq } from '@dorkos/db';
 import { ConnectorExecutionTargetSchema } from '@dorkos/shared/connector-schemas';
 import { ConnectorExecutionAuthorizationService } from '../execution/authorization-service.js';
+import { grantRefusal } from '../execution/grant-refusal.js';
 import { createServerPrincipal } from '../principal/server-principal.js';
 import {
   CONNECTION_ID,
@@ -20,6 +21,8 @@ const UPLOADS = [
 const APPEND = 'TWITTER_APPEND_MEDIA_UPLOAD';
 const POST = 'TWITTER_CREATION_OF_A_POST';
 const opened: ReturnType<typeof levelHarness>[] = [];
+/** The database and revision ids of the last {@link setup}, for grants the harness can't make. */
+let latest: { db: ReturnType<typeof levelHarness>['db']; revisionOf: (slug: string) => string };
 afterEach(() => {
   for (const h of opened.splice(0)) h.db.$client.close();
 });
@@ -70,6 +73,7 @@ async function setup(toolkit = 'twitter') {
   const authorization = new ConnectorExecutionAuthorizationService(h.db, h.registry, {
     ownsAgent: () => true,
   });
+  latest = { db: h.db, revisionOf: (slug) => idOf(snapshot, slug) };
   return (agentId: string, slug: string, args: Record<string, unknown>) =>
     authorization.prepare({
       capabilityId: 'connectors.execute_write',
@@ -91,14 +95,14 @@ const SHARED_UPLOAD = {
   payload: {
     code: 'CONNECTOR_GRANT_REQUIRED',
     error:
-      'This X upload would let other accounts use your media, so it needs to be given to this agent on its own.',
+      'This X upload shares your media with another account, so it needs to be given to this agent on its own.',
   },
 };
 const HIDDEN_POST = {
   payload: {
     code: 'CONNECTOR_GRANT_REQUIRED',
     error:
-      'This X post would be promoted-only and stay off your timeline, so it needs to be given to this agent on its own.',
+      'This X post goes out only as an ad, not on your timeline, so it needs to be given to this agent on its own.',
   },
 };
 /** Broad access: the agent's own level, and the owner's every-agent share. */
@@ -172,6 +176,51 @@ describe('a promoted-only X post needs the agent’s own grant', () => {
     await expect(run('writer', POST, { text: 'Hello', nullcast: false })).resolves.toMatchObject({
       agentId: 'writer',
     });
+  });
+});
+
+describe('a per-chat grant doesn’t cover these either', () => {
+  /** Give agent `chatty` this one action for one chat only, then ask the grant rule. */
+  async function underChatGrant(slug: string, args: Record<string, unknown>) {
+    await setup();
+    const operationRevisionId = latest.revisionOf(slug);
+    latest.db
+      .insert(connectionOperationGrants)
+      .values({
+        id: `grant-session-${slug}`,
+        subjectType: 'session',
+        subjectId: 'session-a',
+        agentId: 'chatty',
+        connectionId: CONNECTION_ID,
+        operationRevisionId,
+        createdBy: 'operator',
+        createdAt: '2026-11-17T12:00:00.000Z',
+      })
+      .run();
+    return grantRefusal(
+      latest.db,
+      'chatty',
+      { connectionId: CONNECTION_ID, operationRevisionId, arguments: args },
+      { named: true, everyAgent: false },
+      { toolkit: 'twitter', operationSlug: slug }
+    );
+  }
+
+  it.each(SHARING)('refuses %s with %o', async (slug, args) => {
+    expect(await underChatGrant(slug, args)).toBe(SHARED_UPLOAD.payload.error);
+  });
+
+  it('refuses a nullcast post', async () => {
+    expect(await underChatGrant(POST, { text: 'Hello', nullcast: true })).toBe(
+      HIDDEN_POST.payload.error
+    );
+  });
+
+  it.each([
+    [UPLOADS[0], { media: '/tmp/a.png' }],
+    [POST, { text: 'Hello' }],
+  ] as const)('still runs a clean %s', async (slug, args) => {
+    expect(await underChatGrant(slug, args)).toBeNull();
   });
 });
 

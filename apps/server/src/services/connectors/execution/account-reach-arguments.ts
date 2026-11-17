@@ -17,11 +17,11 @@ const X_TOOLKITS = new Set(['twitter']);
 
 /** Why an upload that shares the media with other accounts needs its own grant. */
 export const X_SHARED_UPLOAD_NEEDS_OWN_GRANT =
-  'This X upload would let other accounts use your media, so it needs to be given to this agent on its own.';
+  'This X upload shares your media with another account, so it needs to be given to this agent on its own.';
 
 /** Why a promoted-only post needs its own grant. */
 export const X_HIDDEN_POST_NEEDS_OWN_GRANT =
-  'This X post would be promoted-only and stay off your timeline, so it needs to be given to this agent on its own.';
+  'This X post goes out only as an ad, not on your timeline, so it needs to be given to this agent on its own.';
 
 /** Name or key spelled without case or separators, so `additional_owners` and `additionalOwners` match. */
 function looseKey(key: string): string {
