@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   describeAddress,
   ADDRESS_PLACEHOLDER,
@@ -34,6 +34,7 @@ function locationLabel(display: AddressDisplay): string {
 export function AddressField({
   url,
   openedOverHttp = false,
+  focusRequest,
   startEditing = false,
   initialDraft,
   busy = false,
@@ -42,6 +43,8 @@ export function AddressField({
   url: string;
   /** Whether the one HTTP fallback opened this page and it is still on HTTP. */
   openedOverHttp?: boolean;
+  /** A new positive number opens the field and selects all. */
+  focusRequest?: number;
   /** Open as a text box rather than at rest — how a refused address is offered back. */
   startEditing?: boolean;
   /** What the text box opens holding, when it is not the address itself. */
@@ -52,9 +55,28 @@ export function AddressField({
 }) {
   const [editing, setEditing] = useState(startEditing);
   const [draft, setDraft] = useState(initialDraft ?? url);
+  const inputRef = useRef<HTMLInputElement>(null);
   const display = useMemo(() => describeAddress(url), [url]);
   const showsOpenedOverHttp = openedOverHttp && /^http:/i.test(url);
   const whyNotSecure = useId();
+
+  // A new focus request opens the field on the address; one already open keeps what was typed.
+  const [handledRequest, setHandledRequest] = useState(focusRequest ?? 0);
+  if (focusRequest !== undefined && focusRequest > 0 && focusRequest !== handledRequest) {
+    setHandledRequest(focusRequest);
+    if (!editing) {
+      setDraft(url);
+      setEditing(true);
+    }
+  }
+  // Either way it ends focused with everything selected, so typing replaces it. A request
+  // already made when the field mounted is `handledRequest`'s first value and never focuses.
+  const mountedRequest = useRef(handledRequest);
+  useEffect(() => {
+    if (handledRequest === mountedRequest.current) return;
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, [handledRequest]);
 
   if (!editing) {
     return (
@@ -126,6 +148,7 @@ export function AddressField({
       }}
     >
       <Input
+        ref={inputRef}
         aria-label="Address"
         placeholder={ADDRESS_PLACEHOLDER}
         // The field exists only while the person is typing in it.

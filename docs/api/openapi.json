@@ -3314,6 +3314,9 @@
           "enqueuedBy": {
             "type": "string"
           },
+          "canRestoreToComposer": {
+            "type": "boolean"
+          },
           "waitingOn": {
             "$ref": "#/components/schemas/QueuedWaitingOn"
           },
@@ -5261,7 +5264,7 @@
           },
           "detail": {
             "type": "string",
-            "maxLength": 4000
+            "maxLength": 16000
           },
           "marketplaceSummary": {
             "$ref": "#/components/schemas/MarketplaceApprovalSummary"
@@ -5514,8 +5517,12 @@
           "keptCardBecause": {
             "type": "string",
             "enum": [
-              "wifi-open"
+              "wifi-open",
+              "spend"
             ]
+          },
+          "spend": {
+            "$ref": "#/components/schemas/ApprovalSpend"
           }
         },
         "required": [
@@ -5568,6 +5575,56 @@
           "label",
           "value",
           "depth"
+        ],
+        "additionalProperties": false
+      },
+      "ApprovalSpend": {
+        "type": "object",
+        "properties": {
+          "priceMicro": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^\\d+$"
+          },
+          "priceSource": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "person",
+              "reported",
+              null
+            ]
+          },
+          "limitMicro": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^\\d+$"
+          },
+          "leftMicro": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^\\d+$"
+          },
+          "currency": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 3
+          }
+        },
+        "required": [
+          "priceMicro",
+          "priceSource",
+          "limitMicro",
+          "leftMicro",
+          "currency"
         ],
         "additionalProperties": false
       },
@@ -20050,6 +20107,9 @@
           "community.owner-replacement",
           "community.teammate-limit",
           "community.teammate-limits-reset",
+          "spending.near-limit",
+          "spending.limit-reached",
+          "spending.meter-reset",
           "browser.handoff",
           "heartbeat.credits-offer",
           "connector.destructive_pending",
@@ -23055,6 +23115,416 @@
           },
           "503": {
             "description": "Notifications are unavailable or the owner decision changed."
+          }
+        }
+      }
+    },
+    "/api/connectors/spending": {
+      "get": {
+        "tags": [
+          "Connections"
+        ],
+        "summary": "Read the monthly spend limit and what agents spent this month",
+        "responses": {
+          "200": {
+            "description": "This month’s limit, prices and spending.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "currency": {
+                      "type": "string"
+                    },
+                    "limitMicro": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^\\d+$"
+                    },
+                    "maxMicro": {
+                      "type": "string",
+                      "pattern": "^\\d+$"
+                    },
+                    "resetsAt": {
+                      "type": "string"
+                    },
+                    "prices": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string",
+                        "pattern": "^\\d+$"
+                      }
+                    },
+                    "meterReadable": {
+                      "type": "boolean"
+                    },
+                    "month": {
+                      "type": "string"
+                    },
+                    "usedMicro": {
+                      "type": "string",
+                      "pattern": "^\\d+$"
+                    },
+                    "leftMicro": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^\\d+$"
+                    },
+                    "overMicro": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^\\d+$"
+                    },
+                    "approximate": {
+                      "type": "boolean"
+                    },
+                    "byApp": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "toolkit": {
+                            "type": "string"
+                          },
+                          "runs": {
+                            "type": "integer"
+                          },
+                          "amountMicro": {
+                            "type": "string",
+                            "pattern": "^\\d+$"
+                          },
+                          "estimated": {
+                            "type": "boolean"
+                          },
+                          "unknownRuns": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "toolkit",
+                          "runs",
+                          "amountMicro",
+                          "estimated",
+                          "unknownRuns"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "currency",
+                    "limitMicro",
+                    "maxMicro",
+                    "resetsAt",
+                    "prices",
+                    "meterReadable"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connectors/spending/limit": {
+      "put": {
+        "tags": [
+          "Connections"
+        ],
+        "summary": "Set, lower or clear the monthly spend limit",
+        "description": "A first limit or a higher one waits for Confirm it’s you; lowering never does.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "limit": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^\\d{1,11}$"
+                  }
+                },
+                "required": [
+                  "limit"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "This month’s limit, prices and spending.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "currency": {
+                      "type": "string"
+                    },
+                    "limitMicro": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^\\d+$"
+                    },
+                    "maxMicro": {
+                      "type": "string",
+                      "pattern": "^\\d+$"
+                    },
+                    "resetsAt": {
+                      "type": "string"
+                    },
+                    "prices": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string",
+                        "pattern": "^\\d+$"
+                      }
+                    },
+                    "meterReadable": {
+                      "type": "boolean"
+                    },
+                    "month": {
+                      "type": "string"
+                    },
+                    "usedMicro": {
+                      "type": "string",
+                      "pattern": "^\\d+$"
+                    },
+                    "leftMicro": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^\\d+$"
+                    },
+                    "overMicro": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^\\d+$"
+                    },
+                    "approximate": {
+                      "type": "boolean"
+                    },
+                    "byApp": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "toolkit": {
+                            "type": "string"
+                          },
+                          "runs": {
+                            "type": "integer"
+                          },
+                          "amountMicro": {
+                            "type": "string",
+                            "pattern": "^\\d+$"
+                          },
+                          "estimated": {
+                            "type": "boolean"
+                          },
+                          "unknownRuns": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "toolkit",
+                          "runs",
+                          "amountMicro",
+                          "estimated",
+                          "unknownRuns"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "currency",
+                    "limitMicro",
+                    "maxMicro",
+                    "resetsAt",
+                    "prices",
+                    "meterReadable"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The amount is below $0.01, above the maximum, or not a number."
+          },
+          "403": {
+            "description": "Only the person who owns this DorkOS can change spending."
+          },
+          "428": {
+            "description": "Confirm it’s you first: more money could leave without a card."
+          }
+        }
+      }
+    },
+    "/api/connectors/spending/prices/{toolkit}": {
+      "put": {
+        "tags": [
+          "Connections"
+        ],
+        "summary": "Set or clear an app’s price per run",
+        "description": "A first price or a lower one waits for Confirm it’s you; raising never does.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "toolkit",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "price": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^\\d{1,11}$"
+                  }
+                },
+                "required": [
+                  "price"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "This month’s limit, prices and spending.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "currency": {
+                      "type": "string"
+                    },
+                    "limitMicro": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^\\d+$"
+                    },
+                    "maxMicro": {
+                      "type": "string",
+                      "pattern": "^\\d+$"
+                    },
+                    "resetsAt": {
+                      "type": "string"
+                    },
+                    "prices": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string",
+                        "pattern": "^\\d+$"
+                      }
+                    },
+                    "meterReadable": {
+                      "type": "boolean"
+                    },
+                    "month": {
+                      "type": "string"
+                    },
+                    "usedMicro": {
+                      "type": "string",
+                      "pattern": "^\\d+$"
+                    },
+                    "leftMicro": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^\\d+$"
+                    },
+                    "overMicro": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^\\d+$"
+                    },
+                    "approximate": {
+                      "type": "boolean"
+                    },
+                    "byApp": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "toolkit": {
+                            "type": "string"
+                          },
+                          "runs": {
+                            "type": "integer"
+                          },
+                          "amountMicro": {
+                            "type": "string",
+                            "pattern": "^\\d+$"
+                          },
+                          "estimated": {
+                            "type": "boolean"
+                          },
+                          "unknownRuns": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "toolkit",
+                          "runs",
+                          "amountMicro",
+                          "estimated",
+                          "unknownRuns"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "currency",
+                    "limitMicro",
+                    "maxMicro",
+                    "resetsAt",
+                    "prices",
+                    "meterReadable"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The amount is below $0.01, above the maximum, or not a number."
+          },
+          "403": {
+            "description": "Only the person who owns this DorkOS can change spending."
+          },
+          "428": {
+            "description": "Confirm it’s you first: more money could leave without a card."
           }
         }
       }

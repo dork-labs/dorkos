@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import type { WebContents } from 'electron';
 import { describe, expect, it, vi } from 'vitest';
 import { chromeIdentity } from '../browser-identity';
+import { createAgentInputGate } from '../page-keys';
 import { pageTransport } from '../page-transport';
 
 function fixture(identity?: ReturnType<typeof chromeIdentity>) {
@@ -16,7 +17,7 @@ function fixture(identity?: ReturnType<typeof chromeIdentity>) {
     debugger: debuggerApi,
     isDestroyed: () => false,
   }) as unknown as WebContents;
-  const transport = pageTransport(contents, identity);
+  const transport = pageTransport(contents, createAgentInputGate(), identity);
   const received = vi.fn();
   transport.onmessage = received;
   const send = async (
@@ -179,7 +180,7 @@ it('reapplies the guest engine UA and hints before exposing each freshly attache
   ]);
   transport.close();
   debuggerApi.sendCommand.mockClear();
-  const fresh = pageTransport(contents, identity);
+  const fresh = pageTransport(contents, createAgentInputGate(), identity);
   fresh.send({ id: 3, method: 'Target.setAutoAttach', params: {} });
   await new Promise<void>((resolve) => setImmediate(resolve));
   expect(debuggerApi.sendCommand.mock.calls[0]).toEqual([

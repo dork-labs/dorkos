@@ -585,8 +585,10 @@ describe('in-session tool exposure', () => {
     // another agent's queue (`work_queue_read_agent`, `_configure`, `_reorder`, `_requeue`).
     // 149 -> 152 total, 137 -> 140 deferred: `work_claim`, `work_claim_check` and
     // `work_claim_release` (DOR-4019), reached when a chat is about to take on a job.
-    expect(tools).toHaveLength(152);
-    expect(deferred).toHaveLength(140);
+    // 152 -> 153 total, 140 -> 141 deferred: `update_agent_config` (DOR-4266), like
+    // `update_agent_boundaries`: a person asking for a setup change can afford a search.
+    expect(tools).toHaveLength(153);
+    expect(deferred).toHaveLength(141);
     for (const name of [
       'local_browser_ask_person',
       'local_browser_state',

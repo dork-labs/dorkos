@@ -3,7 +3,7 @@
  * the room's recent posts would be: a mini app's post among them counts as a stranger's
  * (DOR-4023), through the REAL room service, author registry and kept marks.
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { RoomEntry } from '@dorkos/shared/room-schemas';
 import { MINI_APP_REPLY_MARKS } from '../../../extensions/rooms/extension-room-threads.js';
 import {
@@ -12,6 +12,7 @@ import {
   outcomeRunner,
 } from '../../__tests__/room-test-harness.js';
 import type { RoomCore } from '../../service/room-core.js';
+import { env } from '../../../../env.js';
 import { withRoomMarks } from '../seat-carry.js';
 
 function roomWith(marked: boolean) {
@@ -52,5 +53,31 @@ describe('withRoomMarks', () => {
     expect(
       withRoomMarks(core, 'seat-agent', { externalAuthor: false }, room, posted)
     ).toMatchObject({ externalAuthor: false });
+  });
+});
+
+// DOR-4587 (Security S2): the seat's outsider mark comes from the post's own record, so it holds
+// with stranger marking switched off, and only for the room the post is in.
+describe('withRoomMarks with stranger marking off', () => {
+  const flags = env as { DORKOS_MARK_STRANGER_TURNS: boolean };
+  const saved = flags.DORKOS_MARK_STRANGER_TURNS;
+  afterEach(() => {
+    flags.DORKOS_MARK_STRANGER_TURNS = saved;
+  });
+
+  it('marks the seat turn for a mini app’s recent post', () => {
+    flags.DORKOS_MARK_STRANGER_TURNS = false;
+    const { core, room, posted } = roomWith(true);
+    expect(
+      withRoomMarks(core, 'seat-agent', { externalAuthor: false }, room, posted)
+    ).toMatchObject({ outsider: true });
+  });
+
+  it('leaves the seat turn unmarked for a person’s own post', () => {
+    flags.DORKOS_MARK_STRANGER_TURNS = false;
+    const { core, room, posted } = roomWith(false);
+    expect(
+      withRoomMarks(core, 'seat-agent', { externalAuthor: false }, room, posted).outsider
+    ).toBeUndefined();
   });
 });

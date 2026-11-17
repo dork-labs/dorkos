@@ -15,6 +15,8 @@
  *   (DOR-3218).
  * - `shell-check-notifications.ts`: the check on agents' shell commands can't
  *   start (DOR-3300).
+ * - `connectors/spending/spending-notifications.ts`: the monthly spend limit on paid app actions
+ *   (DOR-4204 PR 2).
  * - `session/chat-messages/report-undelivered-notice.ts`: a spin-off report
  *   never reached its parent chat (DOR-3561).
  * - `todos/notice/todo-change-notifications.ts`: an agent moved or dropped a promise it
@@ -32,6 +34,11 @@ import {
   type CommunityNotificationPayloads,
 } from './community-notifications.js';
 import { WEB_DEVICE_ENTRIES, type WebDevicePayloads } from './web-device-notifications.js';
+import {
+  SPENDING_ENTRIES,
+  SPENDING_NOTIFICATION_KINDS,
+  type SpendingPayloads,
+} from '../connectors/spending/spending-notifications.js';
 import { SECRET_FILE_ENTRIES, type SecretFilePayloads } from './secret-file-notifications.js';
 import {
   ACCOUNT_SIGNIN_ENTRIES,
@@ -80,7 +87,8 @@ export interface DeclaredPayloads
     ComposioWriteNoticePayloads,
     McpToolAddedPayloads,
     McpReservedNamePayloads,
-    TodoChangePayloads {}
+    TodoChangePayloads,
+    SpendingPayloads {}
 
 /** Every declared entry, spread into the registry's `ENTRIES`. */
 export const DECLARED_ENTRIES = {
@@ -97,6 +105,7 @@ export const DECLARED_ENTRIES = {
   ...MCP_TOOL_ADDED_ENTRIES,
   ...MCP_RESERVED_NAME_ENTRIES,
   ...TODO_CHANGE_ENTRIES,
+  ...SPENDING_ENTRIES,
 };
 
 /**
@@ -118,4 +127,5 @@ export const DECLARED_WIRED_KINDS = [
   'mcp-server.tool_added',
   'mcp-server.reserved_name',
   'todo.changed',
+  ...SPENDING_NOTIFICATION_KINDS,
 ] as const;

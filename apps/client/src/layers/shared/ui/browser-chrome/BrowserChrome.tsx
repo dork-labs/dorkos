@@ -39,6 +39,8 @@ export interface BrowserChromeProps {
   url: string;
   /** Whether the one HTTP fallback opened this page and it is still on HTTP. */
   openedOverHttp?: boolean;
+  /** A new number opens the address field, all selected: ⌘L. */
+  focusAddress?: number;
   /** Whether there is a page to go back to. */
   canBack: boolean;
   /** Whether there is a page to go forward to. */
@@ -103,6 +105,7 @@ export interface BrowserChromeProps {
 export function BrowserChrome({
   url,
   openedOverHttp = false,
+  focusAddress,
   canBack,
   canForward,
   onBack,
@@ -157,6 +160,7 @@ export function BrowserChrome({
               key={retry === null ? 'address' : `retry:${retry.attempt}`}
               url={url}
               openedOverHttp={openedOverHttp}
+              focusRequest={focusAddress}
               startEditing={retry !== null}
               initialDraft={retry?.draft}
               busy={busy}

@@ -129,7 +129,9 @@ export const chatDomain: CapabilityDomain = {
         'started if needed). The other side sees it came from you and this chat, never from the ' +
         'person. It waits until that chat’s current turn ends (delivery `queue`, the default); ' +
         '`steer` joins its running turn now, `interrupt` stops its turn and runs this next. ' +
-        'Waking an idle chat starts its turn at once. Give a short `summary` (a few words) for ' +
+        'An idle chat starts at once unless its agent is paused. A paused agent’s message ' +
+        'is held, not lost, and runs once the agent is resumed. Do not resend it. ' +
+        'Give a short `summary` (a few words) for ' +
         'the card the person sees. Use `replyTo` with a message id to answer a message another ' +
         'chat sent you. Their reply comes back as a new message in this chat. A queued result ' +
         'says how many messages are `ahead` of yours. The result names ' +
