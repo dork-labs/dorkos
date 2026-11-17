@@ -880,8 +880,9 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
    *   that agent's access here since (it was removed, say), what it holds now
    *   goes instead: nothing sent is ever wider than the owner's latest choice.
    *   A change the write upgrade set aside always goes as what the agent holds
-   *   now, never as the saved choice (DOR-4510). A disconnect still owed goes again even for an account removed from
-   *   the owner's list, so DorkOS still ends its access at the service.
+   *   now, never as the saved choice (DOR-4510). A disconnect still owed goes
+   *   again even for an account removed from the owner's list, so DorkOS
+   *   still ends its access at the service.
    * - `confirmed` — the owner confirmed who can use the account: every
    *   refused change is settled with exactly the access the owner was shown
    *   (what each agent holds now), never the refused selection. An agent the
