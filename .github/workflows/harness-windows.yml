@@ -87,6 +87,18 @@ on:
       - 'vitest.config.ts'
       - '.github/workflows/harness-windows.yml'
   merge_group:
+  # Weekly, on main, ONLY so main holds the Windows pnpm store the queue and
+  # pull requests restore (DOR-4190, ledger 261117-170155). Only a run on
+  # refs/heads/main saves it (the save step below), and before this nothing on
+  # main ever ran here, so every queue build installed from the registry. One
+  # Windows run a week, not a push trigger (a run per merge) and not a leg of a
+  # canary (test.yml's runs four times a day, and this header says why a
+  # Windows leg never joins `test`). Monday 02:43 UTC, clear of the four
+  # canaries' :29/:33/:37/:41 at 0,5,10,21 and codeql's Monday 06:30. A
+  # scheduled run reports on no PR and no queue build, so it blocks nothing;
+  # it runs every suite, as merge_group does. The job reads no secrets.
+  schedule:
+    - cron: '43 2 * * 1'
   workflow_dispatch:
 
 # Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
@@ -199,9 +211,9 @@ jobs:
       # runs leave for the queue. Same shape as test.yml's test-shard, which
       # says why the save sits right after the install.
       #
-      # This workflow has no schedule and no push trigger, so the save only
-      # fires on a `workflow_dispatch` with `--ref main`. Until one runs per
-      # lockfile, queue and PR runs here install from the registry.
+      # The weekly `schedule` above is what runs this save on main (and a
+      # `workflow_dispatch --ref main` does too). After a lockfile change, queue
+      # and PR runs here install from the registry until the next one.
       - name: Find the pnpm store
         id: pnpm-store
         run: echo "image=${ImageOS:?ImageOS is not set on this runner}" >> "$GITHUB_OUTPUT" && echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"

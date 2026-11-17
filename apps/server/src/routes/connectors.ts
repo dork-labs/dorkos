@@ -56,6 +56,10 @@ import {
   type ConnectorMiniAppAccessRouterDeps,
 } from './connector-mini-app-access.js';
 import { createMiniAppAccessPageRoutes } from './mini-app-access-page.js';
+import {
+  createConnectorSpendingRoutes,
+  type ConnectorSpendingRouteDeps,
+} from './connector-spending.js';
 
 /** What the connector groups read, one entry per group. */
 export interface ConnectorRoutesDeps {
@@ -75,6 +79,8 @@ export interface ConnectorRoutesDeps {
   accessChanges?: ConnectorAccessChangeRouterDeps;
   /** Mini apps' access to connected apps (`/mini-app-access`). */
   miniAppAccess?: ConnectorMiniAppAccessRouterDeps;
+  /** The monthly spend limit and prices per run (`/spending`, DOR-4204 PR 2). */
+  spending?: ConnectorSpendingRouteDeps;
 }
 
 /**
@@ -92,6 +98,7 @@ export function createConnectorRoutes(deps: ConnectorRoutesDeps): Hono<ApiEnv> {
   if (deps.execution) app.route('/', createConnectorExecutionRoutes(deps.execution));
   if (deps.holds) app.route('/', createConnectorHoldRoutes(deps.holds));
   if (deps.accessChanges) app.route('/', createConnectorAccessChangeRoutes(deps.accessChanges));
+  if (deps.spending) app.route('/spending', createConnectorSpendingRoutes(deps.spending));
   if (deps.miniAppAccess) {
     app.route('/', createConnectorMiniAppAccessRoutes(deps.miniAppAccess));
     app.route('/', createMiniAppAccessPageRoutes(deps.miniAppAccess));

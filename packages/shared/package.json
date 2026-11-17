@@ -169,10 +169,6 @@
       "types": "./src/extension-id.ts",
       "default": "./dist/extension-id.js"
     },
-    "./portable-input-shape": {
-      "types": "./src/portable-input-shape.ts",
-      "default": "./dist/portable-input-shape.js"
-    },
     "./relay-schemas": {
       "types": "./src/relay-schemas.ts",
       "default": "./dist/relay-schemas.js"
@@ -288,6 +284,10 @@
     "./community-teammates": {
       "types": "./src/community-teammates.ts",
       "default": "./dist/community-teammates.js"
+    },
+    "./connector-spending": {
+      "types": "./src/connector-spending.ts",
+      "default": "./dist/connector-spending.js"
     },
     "./community-space-settings": {
       "types": "./src/community-space-settings.ts",

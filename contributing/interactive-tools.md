@@ -265,11 +265,15 @@ Full walkthrough for a mode that asks (every mode but `bypassPermissions` and `d
 
 **1. SDK triggers `canUseTool`**
 
-First, a chat in `dontAsk` ("Never ask"), whether its turn runs at it or a stricter ceiling holds it to Plan (`neverAsks` in `claude-code/turn-permission.ts`), is refused at once with `NEVER_ASK_DENIAL`, ahead of the question handler and the safe lists below: nobody is asked and nothing extra runs (DOR-2838). The CLI refuses most such calls itself before this callback. For every other mode: for any tool that is not `AskUserQuestion`, and is not in the auto-approved sets (read-only Claude Code tools and DorkOS agent tools), the `createCanUseTool` callback consults `resolveModeDecision(turnPermissionMode(session))`: the session's mode held to the current turn's `permissionCeiling` (`claude-code/turn-permission.ts`; spec `trusted-by-default-flip` §4), so a turn another agent's post or a stranger's message started is never auto-allowed on the session's own level; when it returns `'ask'`, the callback calls `handleToolApproval`. Only `bypassPermissions` returns `'allow'` and only `dontAsk` returns `'refuse'`; every other mode (`default`, `acceptEdits`, `auto`, `plan`) asks, each for its own reason (see the TSDoc on `resolveModeDecision`, now in `turn-permission.ts`). The auto-approved tool sets are defined as module-level `Set` constants (`READ_ONLY_TOOLS` and `DORKOS_AGENT_TOOLS`) to avoid per-call reconstruction. Read-only tools (`Read`, `Grep`, `Glob`, `LS`, `NotebookRead`, `WebSearch`, `WebFetch`) are auto-approved in every mode but `dontAsk`, except on a stranger's turn (see `isAutoAllowedCall`).
+`createCanUseTool` in `apps/server/src/services/runtimes/claude-code/messaging/interactive-handlers.ts` computes the mode decision from the chosen chat level and the current gate ceiling. A chat explicitly set to Full autonomy uses `allow`; below Full it calls `resolveModeDecision(gatePermissionMode(session))`. `neverAsks(session)` still marks Never ask as refusing even when a stricter turn ceiling would otherwise ask.
 
-`DORKOS_AGENT_TOOLS` is **not** `mcp__dorkos__*`. It is a hand-written set of exactly **32** prefixed names, listed in `tool-gate/auto-allow.ts`: the eight room CONVERSATION-and-lookup verbs (`post_to_room`, `react_to_room_entry`, `read_room_history`, `search_room_history`, `list_member_rooms`, `search_member_rooms`, `get_room`, `find_room`), `read_canvas`, the six that ARRANGE rooms (`create_room`, `add_room_members`, `remove_room_members`, `update_room`, `leave_room`, `archive_room` — these six sit in the Rooms permission area, so the permission gate inside `registry.invoke` still refuses or asks about them whatever this set says), `request_permission`, two Relay tools (`relay_notify_user`, `relay_list_endpoints`), the three chat tools (`chat_send`, `chat_read`, `chat_stop`; spec `spin-off-chats`, which retired the relay send, inbox and endpoint tools), six Mesh tools (`mesh_list`, `mesh_inspect`, `mesh_discover`, `mesh_register`, `mesh_status`, `mesh_query_topology`), `get_agent`, `memory_write`, `compact_my_session`, and the two UI-control tools (`control_ui`, `get_ui_state`). Every other DorkOS tool prompts like any other MCP tool. The exclusions are deliberate: all five destructive actions are absent (`tasks_delete`, `mesh_unregister`, `marketplace.uninstall` via its `marketplace_uninstall` tool, `marketplace.link` via `marketplace_link`, `operator.update_agent_boundaries`, and `operator.update_agent_execution`), and so are `config_patch` and the other eight `marketplace_*` tools. `core/__tests__/mcp-tool-gate.test.ts` asserts every name in the set is a real tool and that none is `destructive`, so promoting a tool in `mcp-tool-tiers.ts` without removing it here fails. Do not widen the set to a prefix, and do not derive it from `act` + `observe`: either change would auto-approve tools nobody chose, which is fail-open on the one axis that costs something. The `tool-gate/auto-allow.ts` TSDoc has the full argument.
+Eligible safe-listed DorkOS calls are checked **before** that refusal. They pass only when `autoAllowedByCall` clears the call and an identity-scoped tool resolves an agent identity. Never ask refuses other calls, including the CLI's own read-only tools and `AskUserQuestion`, without a card. In modes that can ask, the callback routes questions to their handler and asks about calls whose mode decision is not `allow`.
 
-Membership is **necessary but not sufficient** (DOR-625). `isAutoAllowedCall(toolName, input)` has the last word, and one member needs it: `control_ui` is a multiplexer — one tool name carrying 22 different effects chosen by its `action` argument. Twenty-one only move pixels; `apply_layout` drives the client to `POST /api/shapes/:name/apply`, which writes a `SKILL.md` into the person's own skills root for every schedule that Shape declares, records a receipt naming what it wrote, rewrites `ui.shapes.active` in `~/.dork/config.json`, creates, rebinds and **deletes** scheduled tasks, and turns extensions on and off. It was auto-allowed under a comment claiming the UI tools have "no system access", which was false for that one action, in every permission mode including `default`.
+`DORKOS_AGENT_TOOLS` is a curated set, not the `mcp__dorkos__*` prefix and not all `observe`/`act` capabilities. Read its current members in `apps/server/src/services/runtimes/claude-code/tool-gate/auto-allow.ts`; the list includes room work, chat messaging, selected Mesh reads/actions, memory, own-account/connection reads and UI tools. A copied fixed count or prose inventory goes stale when those tools change. Capability permission checks still run inside these tools. Do not derive this safe list from a name prefix or tier: that would grant calls nobody selected.
+
+Membership is **necessary but not sufficient**. `autoAllowedByCall` checks server provenance and confines safe-listed file reads to their allowed folders. It also checks outsider marks on own-connection reads, then calls `isAutoAllowedCall(toolName, input, ceilingOn(session))`. A ceiling can make chat stop, steering/interrupting chat sends and account probes ask; a stranger ceiling also removes the read-only and always-on-read exemptions.
+
+`control_ui` additionally parses the command and checks `UI_COMMAND_REACH`. A client-only command can skip a runtime card; an unknown or machine-reaching command cannot use that exemption. For example, `apply_layout` reaches `POST /api/shapes/:name/apply`, which can write skill files, record receipts, change the active Shape, create/rebind/delete schedules and change extension state. It is not only a pixel change.
 
 What apply cannot do — and this guide claimed it could until DOR-1713 — is hand those schedules a permission mode nobody granted. `clampSchedulePermissionMode` downgrades a manifest's `bypassPermissions` to `acceptEdits` (DOR-607), a schedule is created enabled only when the manifest asked **and** its agent already exists, and `resolveFileArmStatus` parks the row at `pending_approval` on first sighting (DOR-1486). The card is warranted by the writing and rewiring, not by a cron-with-no-prompts story.
 
@@ -420,7 +424,7 @@ onDecided?.(); // Optimistically update indicator (see below)
 
 // Always Allow (Shift+Enter keyboard shortcut)
 // Only shown when hasSuggestions is true (SDK provided permission suggestions)
-await transport.approveTool(sessionId, toolCallId, { alwaysAllow: true });
+await transport.approveTool(sessionId, toolCallId, true);
 onDecided?.();
 
 // Deny — "Add a reason" reveals an optional one-line field on the card, and
@@ -430,14 +434,14 @@ await transport.denyTool(sessionId, toolCallId, reason);
 onDecided?.();
 ```
 
-When several tool approvals are pending at once, they collapse into one **burst card** (`AskStack`, `features/ask`) whose Allow all / Deny all answer the lot in a single call. It replaced `BatchApprovalBar` in DOR-1330; the two transport calls are unchanged:
+When several tool approvals are pending at once, they collapse into one **burst card** (`AskStack`, `features/ask`) whose Allow all / Deny all answer the lot in a single call. It replaced `BatchApprovalBar` in DOR-1330; the transport methods are `batchApprove` and `batchDeny`:
 
 ```typescript
 // Batch approve all pending
-await transport.batchApproveTool(sessionId, toolCallIds);
+await transport.batchApprove(sessionId, toolCallIds);
 
 // Batch deny all pending
-await transport.batchDenyTool(sessionId, toolCallIds);
+await transport.batchDeny(sessionId, toolCallIds);
 ```
 
 **6. Optimistic indicator update via `markToolCallResponded`**
@@ -855,17 +859,19 @@ The `UiActionDispatcher` is a pure function with no React dependencies. It is ca
 
 ### UI State Awareness
 
-The client can send a `uiState` snapshot with each `sendMessage()` request. This is an optional `uiState` field on `SendMessageRequest` (validated against `UiStateSchema`), which the server injects into the agent's system prompt as context. This gives agents situational awareness of what the user is currently viewing:
+The client can send neutral UI signals as `context.uiState` on a `postMessage()` request. `SendMessageRequestSchema` validates the context through `ClientContextSchema` (`packages/shared/src/additional-context.ts`) and `UiStateSchema` (`packages/shared/src/schemas.ts`). The client-supplied shape is:
 
 ```typescript
-// UiState shape (packages/shared/src/schemas.ts)
-{
-  canvas: { open: boolean, contentType: string | null },
-  panels: { settings: boolean, tasks: boolean, relay: boolean },
-  sidebar: { open: boolean, activeTab: 'sessions' | 'agents' | null },
-  agent: { id: string | null, cwd: string | null },
-}
+import type { UiState } from '@dorkos/shared/schemas';
+
+const uiState: UiState = {
+  panels: { settings: false, tasks: false, relay: false, picker: false },
+  sidebar: { open: true },
+  agent: { id: null, cwd: null },
+};
 ```
+
+Canvas documents and viewers are server-owned state returned by `get_ui_state`; they are not a client `canvas` field on this input. The old top-level message `uiState` and sidebar `activeTab` examples are retired.
 
 This two-way channel -- `uiState` in (client tells agent what is visible) and `ui_command` out (agent tells client what to change) -- enables agents to make contextual UI decisions rather than issuing commands blindly.
 
@@ -892,7 +898,7 @@ This two-way channel -- `uiState` in (client tells agent what is visible) and `u
 
 ## Capability Approval Holds
 
-A third, separate system covers DorkOS's own destructive MCP tools -- the ones the [action approvals](../docs/guides/action-approvals.mdx) guide describes for end users, such as `tasks_delete`, `mesh_unregister`, `marketplace.uninstall`, `marketplace.link`, `operator.update_agent_boundaries`, and `operator.update_agent_execution`, gated by `services/core/capabilities/tier-enforcement.ts`. It shares nothing with the SDK's `canUseTool` pattern above: there is no `pendingInteractions` entry and no deferred promise on the session.
+A third, separate system covers DorkOS's own destructive MCP tools -- the ones the [action approvals](../docs/guides/action-approvals.mdx) guide describes for end users, such as `tasks_delete`, `mesh_unregister`, `marketplace.uninstall`, `marketplace.link`, `operator.update_agent_boundaries`, `operator.update_agent_execution`, and `operator.update_agent_config`, gated by `services/core/capabilities/tier-enforcement.ts`. It shares nothing with the SDK's `canUseTool` pattern above: there is no `pendingInteractions` entry and no deferred promise on the session.
 
 Before DOR-939, a held capability call returned `approval_required` immediately and ended the turn -- the operator approved on the dashboard, then had to tell the agent to retry. Now the call can HOLD instead (`capability-approval-hold.ts`, spec `approvals-resume-inline`): it pushes the same `PendingApproval` the dashboard renders as a `capability_approval_required` event onto the session, waits up to ten minutes for the operator's decision, and on a grant resumes the held call and returns the real result in the SAME turn -- no retry needed.
 

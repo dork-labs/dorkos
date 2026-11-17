@@ -12,9 +12,12 @@ vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../services/core/auth/session-gate.js')>()),
   decideSessionGate: vi.fn(async () => ({ allowed: true })),
 }));
+// Login is on unless a test turns it off (DOR-4450: the one case only the route's own
+// person check can refuse).
+const login = vi.hoisted(() => ({ on: true }));
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: {
-    get: (key: string) => (key === 'auth' ? { enabled: true } : undefined),
+    get: (key: string) => (key === 'auth' ? { enabled: login.on } : undefined),
     onChange: () => () => {},
   },
 }));
@@ -36,6 +39,7 @@ const spies = {
   open: vi.fn(async () => ({})),
   selectTab: vi.fn(async () => ({})),
   navigate: vi.fn(async () => ({})),
+  takeOver: vi.fn(async () => ({})),
   stepHistory: vi.fn(async () => ({})),
   pause: vi.fn(async () => ({})),
   resume: vi.fn(async () => ({})),
@@ -58,6 +62,7 @@ const service = {
     open: spies.open,
     selectTab: spies.selectTab,
     navigate: spies.navigate,
+    takeOver: spies.takeOver,
     stepHistory: spies.stepHistory,
     disconnect: spies.disconnect,
     resume: spies.resume,
@@ -115,6 +120,7 @@ const endpoints = [
   ['post', '/open', { mode: 'new-window' }, 'open'],
   ['post', '/tabs/tab-1/select', undefined, 'selectTab'],
   ['post', '/navigate', { url: 'https://example.test/' }, 'navigate'],
+  ['post', '/take-over', undefined, 'takeOver'],
   ['post', '/history', { direction: 'back' }, 'stepHistory'],
   ['post', '/pause', undefined, 'pause'],
   ['post', '/resume', undefined, 'resume'],
@@ -161,6 +167,7 @@ describe.each([
   ['/open', { mode: 'new-window' }],
   ['/tabs/tab-1/select', undefined],
   ['/navigate', { url: 'https://example.test/' }],
+  ['/take-over', undefined],
   ['/history', { direction: 'forward' }],
   ['/resume', undefined],
   ['/disconnect', undefined],
@@ -285,4 +292,55 @@ it('POST /pause ignores a body that names a handoff, a page or a tab', async () 
   expect(spies.pause).toHaveBeenCalledWith();
   for (const [name, spy] of Object.entries(spies))
     if (name !== 'pause') expect(spy, name).not.toHaveBeenCalled();
+});
+
+// DOR-4450: the address bar asks for the one http:// fallback; the server decides if it runs.
+it('POST /navigate passes the http fallback ask through, and nothing else', async () => {
+  const asked = await request(server)
+    .post('/api/local-browser/navigate')
+    .set('Host', 'localhost')
+    .send({ url: 'https://shop.example/', httpFallback: true });
+  expect(asked.status).toBe(200);
+  expect(spies.navigate).toHaveBeenLastCalledWith('https://shop.example/', { httpFallback: true });
+  const plain = await request(server)
+    .post('/api/local-browser/navigate')
+    .set('Host', 'localhost')
+    .send({ url: 'https://shop.example/' });
+  expect(plain.status).toBe(200);
+  expect(spies.navigate).toHaveBeenLastCalledWith('https://shop.example/', { httpFallback: false });
+  const stray = await request(server)
+    .post('/api/local-browser/navigate')
+    .set('Host', 'localhost')
+    .send({ url: 'https://shop.example/', httpFallback: 'http://elsewhere.example/' });
+  expect(stray.status).toBe(400);
+  expect(spies.navigate).toHaveBeenCalledTimes(2);
+});
+
+// The owner check answers an agent or an API key first, so the route's own person
+// check is proved by the one caller only it refuses: with login off, a program
+// credential and no signed-in person. Each code names the gate that answered.
+it.each([
+  ['an agent', 'owner_only'],
+  ['an API key', 'owner_only'],
+  ['a program credential with login off', 'person_only'],
+] as const)('POST /navigate refuses the http fallback ask from %s', async (caller, code) => {
+  if (caller === 'an API key') user.credential = 'api-key';
+  const call = request(server)
+    .post('/api/local-browser/navigate')
+    .set('Host', 'localhost')
+    .send({ url: 'https://shop.example/', httpFallback: true });
+  if (caller === 'an agent') call.set('X-DorkOS-Agent', '');
+  if (caller === 'a program credential with login off') {
+    login.on = false;
+    user = undefined as unknown as typeof user;
+    call.set('Authorization', 'Bearer made-up');
+  }
+  try {
+    const response = await call;
+    expect(response.status).toBe(403);
+    expect(response.body.code).toBe(code);
+    expect(spies.navigate).not.toHaveBeenCalled();
+  } finally {
+    login.on = true;
+  }
 });

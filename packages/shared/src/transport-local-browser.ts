@@ -22,9 +22,22 @@ export interface LocalBrowserTransport {
   deleteLocalBrowserProfile(profileId: string): Promise<{ success: true }>;
   openLocalBrowser(input: LocalBrowserOpen): Promise<LocalBrowserPersonState>;
   selectLocalBrowserTab(id: string): Promise<LocalBrowserState>;
-  navigateLocalBrowser(url: string): Promise<LocalBrowserState>;
+  /**
+   * A person's navigation, which takes the page from an agent sharing it (DOR-4428).
+   *
+   * @param url - The address to open.
+   * @param options - Whether a bare host may ask the server for one HTTP fallback.
+   */
+  navigateLocalBrowser(
+    url: string,
+    options?: { httpFallback?: boolean }
+  ): Promise<LocalBrowserPersonState>;
   /** Move the page one step back or forward through its own history. Takes the page from an agent. */
-  stepLocalBrowserHistory(direction: LocalBrowserHistoryDirection): Promise<LocalBrowserState>;
+  stepLocalBrowserHistory(
+    direction: LocalBrowserHistoryDirection
+  ): Promise<LocalBrowserPersonState>;
+  /** Take the page from the chat it is shared with, until the person resumes the agent. */
+  takeOverLocalBrowser(): Promise<LocalBrowserPersonState>;
   pauseLocalBrowser(): Promise<LocalBrowserState>;
   resumeLocalBrowser(): Promise<LocalBrowserPersonState>;
   disconnectLocalBrowser(): Promise<LocalBrowserPersonState>;

@@ -60,6 +60,7 @@ function person(overrides: Partial<LocalBrowserPersonState> = {}): LocalBrowserP
     preparation: null,
     handoff,
     signIn: null,
+    takenOver: false,
     ...overrides,
   };
 }

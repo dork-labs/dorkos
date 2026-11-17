@@ -770,7 +770,7 @@ export function getTasksTools(
         schedule_id: z.string().describe('Schedule ID to get runs for'),
         limit: z.number().optional().describe('Max runs to return (default 20)'),
       },
-      createGetRunHistoryHandler(deps)
+      createGetRunHistoryHandler(deps, resolveProvenance)
     ),
   ];
 }

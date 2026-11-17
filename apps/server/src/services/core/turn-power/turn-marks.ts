@@ -20,7 +20,8 @@
  * A turn runs at its agent's set level, wherever its message came from (Dorian 2026-10-30,
  * DOR-3440). A Wi-Fi sign-in's hold bounds one (who is calling, DOR-3037). An outsider mark can
  * instead ride beside the level without lowering it, including one carried from earlier work and,
- * when DOR-3858 is on, one from a non-owner Telegram, Slack, or room message. A teammate's chain in
+ * when DOR-3858 is on, one from a non-owner Telegram, Slack, or room message, and one from a mini
+ * app's post or forward a room turn reads (DOR-4587). A teammate's chain in
  * a shared space is a record for the space's monthly limit, and lowers nothing.
  *
  * ## The seam

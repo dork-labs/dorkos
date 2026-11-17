@@ -78,6 +78,8 @@ const OWNING_SKILL: Record<string, string> = {
   'operator.update_agent_boundaries': 'managing-agents',
   // Same reasoning: the choice is update_agent or this one (DOR-2328).
   'operator.update_agent_execution': 'managing-agents',
+  // Same skill: the choice is "my own file tools, or this one" (DOR-4266).
+  'operator.update_agent_config': 'managing-agents',
 };
 
 /** Hand-registered tools that stop and ask. */

@@ -30,6 +30,9 @@ import ts from 'typescript';
 
 const SRC = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 
+/** Time allowed for the test that walks the whole client source tree. */
+const SCAN_TIMEOUT_MS = 30_000;
+
 /** A raw Tailwind status-hue colour used as text, fill or stroke, any variant prefix. */
 const RAW_STATUS_COLOUR =
   /\b(?:text|fill|stroke)-(?:amber|yellow|orange|red|rose|green|emerald|lime)-\d{2,3}\b/g;
@@ -308,7 +311,13 @@ const n = 1;`,
     expect(ratchetProblems({ 'a.tsx': 2 }, { 'a.tsx': { count: 2 } })).toEqual([]);
   });
 
-  it('every file paints exactly the raw status colours the list allows it', () => {
-    expect(ratchetProblems(rawHits(), ALLOWED)).toEqual([]);
-  });
+  // Reads and parses every client source file: about 3 s on a busy laptop, and
+  // over vitest's 5 s default on a slow shared CI runner (DOR-4580).
+  it(
+    'every file paints exactly the raw status colours the list allows it',
+    { timeout: SCAN_TIMEOUT_MS },
+    () => {
+      expect(ratchetProblems(rawHits(), ALLOWED)).toEqual([]);
+    }
+  );
 });

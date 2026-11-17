@@ -107,7 +107,7 @@ import { createHeldTurnHook } from '../tool-gate/held-turn-hook.js';
 import { protectedFileMatcher } from '../tool-gate/protected-file-hook.js';
 import { turnReadRoots } from '../tool-gate/held-turn-reads.js';
 import { shellGuardMatcher } from '../shell-guard/shell-guard-launch.js';
-import { createNeverAskHook } from '../tool-gate/never-ask-hook.js';
+import { createNeverAskHook, turnOutsideChecks } from '../tool-gate/never-ask-hook.js';
 import { marksHold } from '../../../core/turn-power/turn-marks.js';
 import { marksOf } from '../../../core/turn-power/turn-levels.js';
 import { applyFolderAllowsToLaunch } from '../folder-settings/launch-folder-allows.js';
@@ -865,8 +865,11 @@ export async function resolveLaunch(args: {
       {
         matcher: `^${IN_SESSION_TOOL_PREFIX}`,
         hooks: [
-          createNeverAskHook(session, resolveIdentity, logger, () =>
-            marksHold(marksOf(session.sdkSessionId ?? sessionId, turnAgentPath ?? undefined))
+          createNeverAskHook(
+            session,
+            resolveIdentity,
+            logger,
+            ...turnOutsideChecks(session, sessionId, turnAgentPath)
           ),
         ],
       },

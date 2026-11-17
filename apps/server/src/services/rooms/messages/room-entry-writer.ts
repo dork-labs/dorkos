@@ -447,10 +447,23 @@ export class RoomEntryWriter {
     // the turn that wrote it (spec `trusted-by-default-flip` §4).
     // A level, or only marks when the level is unknown (DOR-3107); a hold to
     // the default (DOR-3037) is kept beside the marks, never instead of them.
+    // A post written from a chat that had read outside words is kept with the outsider mark
+    // itself (DOR-4587): an agent relaying a mini app's or a stranger's ask hands it on as their
+    // words, on its row, so the turn it wakes is marked even after a restart. A chat a stranger
+    // started (a Telegram chat) counts too, not only its room turns (DOR-4029).
+    const carries =
+      opts?.carryWordsFrom?.some(
+        (id) => typeof id === 'string' && id !== '' && chatReadOutsideWords(id)
+      ) === true;
     if (held) noteEntryHeldToDefault(entry.id);
-    if (keptMarks) noteEntryMarks(entry.id, keptMarks, roomId);
-    else if (!held) noteEntryLevel(entry.id, kept as TurnPermissionLevel | undefined, roomId);
-    // A writer's chat a stranger started (a Telegram chat) counts too, not only its room turns (DOR-4029).
+    if (keptMarks) {
+      noteEntryMarks(entry.id, carries ? { ...keptMarks, outsider: true } : keptMarks, roomId);
+    } else if (carries) {
+      const level = kept as TurnPermissionLevel | undefined;
+      if (level !== undefined && !held)
+        noteEntryLevel(entry.id, { ...level, outsider: true }, roomId);
+      else noteEntryMarks(entry.id, { outsider: true }, roomId);
+    } else if (!held) noteEntryLevel(entry.id, kept as TurnPermissionLevel | undefined, roomId);
     if (opts?.carryWordsFrom) {
       carryRoomPostWords(entry.id, opts.carryWordsFrom, (id) => chatReadOutsideWords(id));
     }
