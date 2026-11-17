@@ -526,7 +526,8 @@ jobs:
       # context only sees variables a workflow sets, never the runner's own, so
       # that key came out `pnpm-store-Linux--X64-…` (ledger 261031-071000). The
       # step fails if `ImageOS` is unset rather than key on an empty string.
-      # Back to `cache: pnpm` when the 24.04 pin is lifted.
+      # Never back to `cache: pnpm`, even once the 24.04 pin is lifted: it saves
+      # on any ref, PR merge refs included (ledger 261117-141554).
       - name: Find the pnpm store
         id: pnpm-store
         run: echo "image=${ImageOS:?ImageOS is not set on this runner}" >> "$GITHUB_OUTPUT" && echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
