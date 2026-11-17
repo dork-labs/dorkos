@@ -7,6 +7,7 @@
  *
  * @module startup/steps/capabilities
  */
+import { initAgentRaiseCards } from '../../services/core/approvals/agent-raise/agent-raise-cards.js';
 import type { McpCapabilityDeps } from '../../services/mesh/mcp-capability-deps.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { composeDorkOsCapabilityRegistry } from '../../services/core/self-description/dorkos-registry.js';
@@ -329,6 +330,8 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
     approvals: approvalService,
     onAttempt: createCapabilityGateAuditObserver(activityService),
   });
+  // An agent's front-door raise goes on a card in the same store (DOR-4355 M4).
+  initAgentRaiseCards(approvalService);
   // Wire the permission half of the same gate (spec `agent-permissions` D6):
   // the live `permissions` config section, read per call like everything else
   // this gate decides on. The agent's own overrides are read fresh off its

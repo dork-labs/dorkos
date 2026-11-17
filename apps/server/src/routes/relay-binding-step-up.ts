@@ -22,6 +22,12 @@ import type { AdapterManager } from '../services/relay/adapter-manager.js';
 import type { BindingChangedError } from '../services/relay/binding-store.js';
 import { readJsonBody } from '../http/request-body.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
+import { quotedName } from './relay-adapter-http.js';
+import type {
+  AgentRaiseChange,
+  AgentRaiseEffect,
+  AgentRaiseWrite,
+} from '../services/core/approvals/agent-raise/agent-raise-cards.js';
 
 /** The mode ids a route carries are DorkOS's own; Claude Code declares every one of them. */
 const MODES = CLAUDE_CODE_CAPABILITIES.permissionModes;
@@ -98,7 +104,8 @@ export function holdBindingRaise(
   c: Context<ApiEnv>,
   raises: boolean,
   held: { target: string; input: unknown; reason: string },
-  run: () => Promise<Response>
+  run: () => Promise<Response>,
+  agentCard?: () => Pick<AgentRaiseWrite, 'effect' | 'run'>
 ): Promise<Response> {
   if (!raises) return run();
   return runFrontDoorWrite(c, {
@@ -106,7 +113,71 @@ export function holdBindingRaise(
     ...held,
     subject: 'what a chat connection may do',
     run,
+    ...(agentCard ? { agentCard } : {}),
   });
+}
+
+/** Yes or No, for a card. */
+const yesNo = (value: boolean): string => (value ? 'Yes' : 'No');
+
+/**
+ * The parts of a stored chat route a raise is judged on, as one comparable value.
+ * An agent's card is judged on this, and its write lands only while it matches.
+ *
+ * @param route - The route as stored.
+ */
+export function bindingRaiseState(route: AdapterBinding): string {
+  return JSON.stringify([
+    route.permissionMode,
+    route.canInitiate,
+    route.canReply,
+    route.canReceive,
+    route.enabled,
+    route.bridge ?? null,
+    route.chatId ?? null,
+    route.channelType ?? null,
+    route.roomId ?? null,
+  ]);
+}
+
+/**
+ * What a chat-route change does, read against the stored route, for an agent's
+ * card (DOR-4355 M4): each field it changes, from → to. Every word comes from the
+ * stored route and the fields the change names.
+ *
+ * @param existing - The route as stored.
+ * @param body - The request body, before validation.
+ * @param connection - The connection's name, already quoted.
+ */
+export function bindingUpdateEffect(
+  existing: AdapterBinding,
+  body: unknown,
+  connection: string
+): AgentRaiseEffect {
+  const parsed = UpdateBindingRequestSchema.safeParse(body);
+  const next = parsed.success ? parsed.data : {};
+  const changes: AgentRaiseChange[] = [];
+  const add = (what: string, from: string, to: string) => {
+    if (from !== to) changes.push({ what, from, to });
+  };
+  if (next.permissionMode !== undefined)
+    add('Permission mode', existing.permissionMode, next.permissionMode);
+  const flags = [
+    ['canInitiate', 'May start chats'],
+    ['canReply', 'May reply'],
+    ['canReceive', 'May receive messages'],
+    ['enabled', 'Turned on'],
+  ] as const;
+  for (const [key, what] of flags) {
+    if (next[key] !== undefined) add(what, yesNo(existing[key]), yesNo(next[key]));
+  }
+  if (next.bridge !== undefined) add('Shown in a room', existing.bridge ?? 'none', next.bridge);
+  const filter = (value: string | null | undefined) => value ?? 'Every chat';
+  if (next.chatId !== undefined) add('Which chat', filter(existing.chatId), filter(next.chatId));
+  if (next.channelType !== undefined)
+    add('Which kind of chat', filter(existing.channelType), filter(next.channelType));
+  if (next.roomId !== undefined) add('Room', existing.roomId ?? 'none', next.roomId ?? 'none');
+  return { summary: `Let a chat route on ${connection} do more, or reach more chats.`, changes };
 }
 
 /**
@@ -138,7 +209,7 @@ export function bindingChanged(c: Context<ApiEnv>, err: BindingChangedError): Re
  */
 export function registerBindingWrites(
   router: Hono<ApiEnv>,
-  adapterManager: Pick<AdapterManager, 'getBindingStore'>,
+  adapterManager: Pick<AdapterManager, 'getBindingStore' | 'resolveAdapterName'>,
   writes: { createBinding: BindingWrite; moveBinding: BindingWrite; updateBinding: BindingWrite }
 ): void {
   const { createBinding, moveBinding, updateBinding } = writes;
@@ -169,10 +240,8 @@ export function registerBindingWrites(
   );
   router.patch('/bindings/:id', (c) => {
     const body = readJsonBody(c);
-    const raises = bindingUpdateRaises(
-      adapterManager.getBindingStore()?.getById(c.req.param('id')),
-      body
-    );
+    const existing = adapterManager.getBindingStore()?.getById(c.req.param('id'));
+    const raises = bindingUpdateRaises(existing, body);
     return holdBindingRaise(
       c,
       raises,
@@ -183,7 +252,24 @@ export function registerBindingWrites(
       },
       // A free change was judged on a read: it lands only if it still raises
       // nothing against the route as stored when it writes (Security S5).
-      () => updateBinding(c, raises ? undefined : (current) => !bindingUpdateRaises(current, body))
+      () => updateBinding(c, raises ? undefined : (current) => !bindingUpdateRaises(current, body)),
+      // An agent's raise goes on a card, judged on the route as stored now; the write
+      // lands only while the route still matches, checked inside the store's write.
+      existing &&
+        (() => {
+          const shown = bindingRaiseState(existing);
+          return {
+            effect: bindingUpdateEffect(
+              existing,
+              body,
+              quotedName(adapterManager.resolveAdapterName(existing.adapterId))
+            ),
+            run: async () => {
+              const res = await updateBinding(c, (current) => bindingRaiseState(current) === shown);
+              return { status: res.status, body: await res.json() };
+            },
+          };
+        })
     );
   });
 }

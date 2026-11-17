@@ -162,6 +162,11 @@ import {
   refuseApprovalYesFromWifi,
 } from '../services/core/approvals/model/approval-answer-policy.js';
 import type { StepUpCommitResult } from '../services/core/auth/step-up/step-up-holds.js';
+import {
+  discardAgentRaise,
+  grantAgentRaise,
+  isAgentRaiseCard,
+} from '../services/core/approvals/agent-raise/agent-raise-cards.js';
 import { remoteAnswerDevice } from '../services/core/auth/sessions/remote-answer-device.js';
 
 /** Optional collaborators the boot wiring supplies; omitted in unit tests. */
@@ -507,6 +512,24 @@ export function createApprovalsRoutes(
       }
     }
 
+    // An agent's front-door raise runs its stored write once on this yes (DOR-4355 M4).
+    if (isAgentRaiseCard(scope.capabilityId)) {
+      const answered = await grantAgentRaise(
+        approvalId,
+        writerForPosture(authority.posture, authority.facts.user).actorLabel,
+        () =>
+          expectedHash && approvals.stepUpHash(approvalId) !== expectedHash
+            ? 'different-request'
+            : approvals.grant(
+                approvalId,
+                authority.posture === 'signed-in-operator' ? authority.decidedBy : undefined
+              )
+      );
+      if ('failure' in answered) return decisionFailureResponse(answered.failure);
+      if (answered.status < 400) auditAnswer(approvalId, scope, answer, authority);
+      return result(answered.body, answered.status);
+    }
+
     // Who said yes, kept with the yes: a change only the owner of this DorkOS
     // may make is checked against it when the yes is spent (DOR-2678).
     const failure =
@@ -619,6 +642,8 @@ export function createApprovalsRoutes(
       (answer === 'always' ||
         // A permission change lasts whichever answer allows it (Security S1).
         first?.capabilityId === CHANGE_PERMISSION_ID ||
+        // An agent's front-door raise meets the bar the person's own write meets.
+        isAgentRaiseCard(first?.capabilityId) ||
         (first?.capabilityId === CONFIG_PATCH_CAPABILITY && configPatchCardTouchesFrontDoor(id)));
     if (
       !grantsPower({ kind: 'capability-approve' }) ||
@@ -742,6 +767,7 @@ export function createApprovalsRoutes(
     const scope = approvals.answerScope(id);
     const failure = approvals.deny(id, parsed.data.reason);
     if (failure) return failed(c, failure);
+    discardAgentRaise(id);
     if (scope)
       auditAnswer(id, scope, 'deny', {
         ...authority,

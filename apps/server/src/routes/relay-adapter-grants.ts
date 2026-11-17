@@ -107,3 +107,61 @@ export function ownerAddsListIdRefusal(): { error: string; code: string } {
     code: OWNER_ADDS_LIST_ID_CODE,
   };
 }
+
+/**
+ * The stored owner lists and DM rule, as one comparable value. An agent's card
+ * is judged on this, and its write lands only while it still matches.
+ *
+ * @param config - The connection's settings as stored.
+ */
+export function ownerListState(config: Record<string, unknown> | undefined): string {
+  return JSON.stringify({
+    approverAllowlist: toIdList(config?.approverAllowlist),
+    dmAllowlist: toIdList(config?.dmAllowlist),
+    dmPolicy: config?.dmPolicy ?? 'allowlist',
+  });
+}
+
+/** The words for one owner list on a card. */
+const LIST_WHAT: Record<(typeof OWNER_LIST_KEYS)[number], string> = {
+  approverAllowlist: 'Who may approve your agents’ requests',
+  dmAllowlist: 'Who may message your agents directly',
+};
+
+/** A list of ids for a card, or "Nobody". */
+function idsText(ids: readonly string[]): string {
+  return ids.length > 0 ? ids.join(', ') : 'Nobody';
+}
+
+/**
+ * What a save that adds people or opens DMs does, read against what is stored,
+ * for an agent's card (DOR-4355 M4). Every word comes from the stored settings
+ * and the ids the save names, never from anything else the agent sent.
+ *
+ * @param incoming - The connection settings as the request sends them.
+ * @param existing - The settings as stored.
+ * @param connection - The connection's name, already quoted.
+ */
+export function ownerGrantEffect(
+  incoming: Record<string, unknown>,
+  existing: Record<string, unknown> | undefined,
+  connection: string
+): { summary: string; changes: { what: string; from: string; to: string }[] } {
+  const added = addedListIds(incoming, existing);
+  const opensDms = opensDirectMessages(incoming, existing);
+  const changes = OWNER_LIST_KEYS.filter((list) => added.some((entry) => entry.list === list)).map(
+    (list) => ({
+      what: `${LIST_WHAT[list]} on ${connection}`,
+      from: idsText(toIdList(existing?.[list])),
+      to: idsText(toIdList(incoming[list])),
+    })
+  );
+  if (opensDms) {
+    changes.push({
+      what: `Who may message your agents directly on ${connection}`,
+      from: 'Only people on the DM list',
+      to: 'Anyone',
+    });
+  }
+  return { summary: ownerGrantReason(added, opensDms, connection), changes };
+}

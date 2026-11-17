@@ -56,6 +56,12 @@ import type { AdapterManager } from '../../services/relay/adapter-manager.js';
 import { env } from '../../env.js';
 import { personSettingsIn, registerSettingRoutes } from '../relay-adapter-setting-routes.js';
 import { createStepUpRoutes, type StepUpRouteDeps } from '../step-up.js';
+import { createTestDb } from '@dorkos/test-utils/db';
+import { ApprovalService } from '../../services/core/approvals/index.js';
+import {
+  initAgentRaiseCards,
+  resetAgentRaiseCardsForTests,
+} from '../../services/core/approvals/agent-raise/agent-raise-cards.js';
 
 const target = swappableServer();
 const OWN_ORIGIN = 'http://localhost:4242';
@@ -160,6 +166,7 @@ function confirmWith(id: string, password: string) {
 
 beforeEach(() => {
   resetHeldStepUpsForTests();
+  initAgentRaiseCards(new ApprovalService(createTestDb()));
   manager = {
     testConnection: vi.fn(async () => ({ ok: true })),
     addAdapter: vi.fn(async () => undefined),
@@ -182,6 +189,7 @@ beforeEach(() => {
   };
 });
 afterEach(() => {
+  resetAgentRaiseCardsForTests();
   state.ownerId = 'user_owner';
   state.notTheOwner = false;
   resetLiveOutsiderTurns();
@@ -677,10 +685,12 @@ describe('adding someone to a chat connection’s approver or DM list', () => {
     );
   });
 
+  // DOR-4355 M4: an unmarked agent's addition goes on a card for the person instead
+  // (`agent-raise-cards.test.ts`); a marked turn still gets no card.
   it.each([
-    ['a marked agent turn', true],
-    ['an unmarked agent', false],
-  ])('refuses %s adding an approver, and applies nothing', async (_label, marked) => {
+    ['a marked agent turn', true, 403, 'agent_raise_marked'],
+    ['an unmarked agent', false, 428, 'agent_raise_card'],
+  ])('answers %s adding an approver, and applies nothing', async (_label, marked, status, code) => {
     slackConnection();
     const send = () =>
       save(
@@ -689,7 +699,8 @@ describe('adding someone to a chat connection’s approver or DM list', () => {
         { [AGENT[0]]: AGENT[1] }
       );
     const res = await withStrangerMarkFlag(true, () => (marked ? duringMarkedTurn(send) : send()));
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(status);
+    expect(res.body.code).toBe(code);
     expect(res.body.heldActionId).toBeUndefined();
     expect(manager.updateConfig).not.toHaveBeenCalled();
   });
@@ -740,23 +751,29 @@ describe('opening a chat connection to every DM sender', () => {
       .send({ config: { dmPolicy: 'open' } });
 
   it.each([
-    ['a marked agent turn', true],
-    ['an unmarked agent', false],
-  ])('refuses %s switching DMs to open, and applies nothing', async (_label, marked) => {
-    slackConnection();
-    const send = () => openDms(request(app(null)), { [AGENT[0]]: AGENT[1] });
-    const res = await withStrangerMarkFlag(true, () => (marked ? duringMarkedTurn(send) : send()));
-    expect(res.status).toBe(403);
-    expect(res.body.heldActionId).toBeUndefined();
-    expect(manager.updateConfig).not.toHaveBeenCalled();
-  });
+    ['a marked agent turn', true, 403, 'agent_raise_marked'],
+    ['an unmarked agent', false, 428, 'agent_raise_card'],
+  ])(
+    'answers %s switching DMs to open, and applies nothing',
+    async (_label, marked, status, code) => {
+      slackConnection();
+      const send = () => openDms(request(app(null)), { [AGENT[0]]: AGENT[1] });
+      const res = await withStrangerMarkFlag(true, () =>
+        marked ? duringMarkedTurn(send) : send()
+      );
+      expect(res.status).toBe(status);
+      expect(res.body.code).toBe(code);
+      expect(res.body.heldActionId).toBeUndefined();
+      expect(manager.updateConfig).not.toHaveBeenCalled();
+    }
+  );
 
-  it('refuses it from a connection whose stored policy is the default', async () => {
+  it('reads it as opening from a connection whose stored policy is the default', async () => {
     slackConnection({});
     const res = await withStrangerMarkFlag(true, () =>
       openDms(request(app(null)), { [AGENT[0]]: AGENT[1] })
     );
-    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('agent_raise_card');
     expect(manager.updateConfig).not.toHaveBeenCalled();
   });
 

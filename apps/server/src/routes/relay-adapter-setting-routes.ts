@@ -66,9 +66,15 @@ import {
   addedListIds,
   opensDirectMessages,
   ownerAddsListIdRefusal,
+  ownerGrantEffect,
   ownerGrantReason,
+  ownerListState,
   type AddedListId,
 } from './relay-adapter-grants.js';
+import {
+  raiseAgentCard,
+  type AgentRaiseWrite,
+} from '../services/core/approvals/agent-raise/agent-raise-cards.js';
 
 /** How these routes word a refusal: to anything but a person, and to a non-owner. */
 const SETTING_WORDING = {
@@ -116,6 +122,11 @@ interface SettingUse {
   opensDms?: boolean;
   /** Run it as `writer`, answering as the route would. */
   run: (writer: SecretWriter) => Promise<{ status: number; body: unknown }>;
+  /**
+   * How an agent's addition goes on a card instead of being refused (DOR-4355 M4):
+   * the effect read from stored settings, and the write that re-checks them.
+   */
+  agentCard?: () => Pick<AgentRaiseWrite, 'effect' | 'run'>;
 }
 
 /**
@@ -137,7 +148,18 @@ async function runOrHold(
   const added = use.addedIds ?? [];
   // Adding someone, or opening the DMs to anyone, makes them the owner there (DOR-4595).
   const grantsOwner = added.length > 0 || use.opensDms === true;
-  if (writer !== 'person' && grantsOwner) return c.json(ownerAddsListIdRefusal(), 403);
+  if (writer !== 'person' && grantsOwner) {
+    // An agent's addition goes on a card for the person; anything else is refused.
+    const facts = honoRequestFacts(c);
+    const agent = facts.agentIdentity !== undefined || presentsAgentIdentity(facts);
+    if (!agent || !use.agentCard || use.settings.length > 0 || use.typedSecret?.() === true)
+      return c.json(ownerAddsListIdRefusal(), 403);
+    const card = raiseAgentCard(
+      { identity: facts.agentIdentity, presentsAgent: true },
+      { kind: 'relay.allowlist', target: use.target, input: use.input, ...use.agentCard() }
+    );
+    return c.json(card.body, card.status);
+  }
   if (writer !== 'person') return answer(await use.run(writer));
   if (!ownerExists()) {
     // No owner yet: the person at this computer goes on with no sheet.
@@ -363,8 +385,33 @@ export function registerSettingRoutes(router: Hono<ApiEnv>, deps: SettingRouteDe
             await adapterManager.updateConfig(id, config, writer);
             return { status: 200, body: { ok: true } };
           }, 'Update failed'),
+        agentCard: () => {
+          const shown = ownerListState(stored);
+          return {
+            effect: ownerGrantEffect(config, stored, name),
+            // Runs as the agent, with exactly what it sent. The lists are re-read in the same
+            // tick as the save's own read and write (nothing awaits between), so a change made
+            // since the card was raised answers 409 and saves nothing.
+            run: () =>
+              adapterResult(async () => {
+                if (ownerListState(adapterManager.getAdapter(id)?.config.config) !== shown) {
+                  return { status: 409, body: listsChangedRefusal() };
+                }
+                await adapterManager.updateConfig(id, config, 'agent');
+                return { status: 200, body: { ok: true } };
+              }, 'Update failed'),
+          };
+        },
       },
       ownerExists
     );
   });
+}
+
+/** The 409 for an agent's card whose lists changed before the person said yes. */
+function listsChangedRefusal(): { error: string; code: string } {
+  return {
+    error: 'Who may reach your agents here changed since the agent asked. Ask it to ask again.',
+    code: 'LISTS_CHANGED',
+  };
 }

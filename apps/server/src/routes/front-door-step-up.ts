@@ -9,12 +9,23 @@ import type {
   StepUpCommitResult,
 } from '../services/core/auth/step-up/step-up-holds.js';
 import { holdForStepUp } from './step-up-guard.js';
+import { presentsAgentIdentity } from '../middleware/agent-identity.js';
+import {
+  raiseAgentCard,
+  type AgentRaiseWrite,
+} from '../services/core/approvals/agent-raise/agent-raise-cards.js';
 
 /** A validated write, with its own response and the subject of its front-door bar. */
 export interface FrontDoorWrite extends Omit<StepUpActionInput, 'commit'> {
   subject: string;
   /** Recheck mutable prerequisites, then write using the confirming caller. */
   run: (confirming: RequestFacts) => Promise<Response>;
+  /**
+   * How an agent's request for this write goes on a card instead of being refused
+   * (DOR-4355 M4). Only a route that can describe the effect from stored state, and
+   * re-check that state inside its write, supplies one; every other route keeps the 403.
+   */
+  agentCard?: () => Pick<AgentRaiseWrite, 'effect' | 'run'>;
 }
 
 /** The JSON response a held write returns through the confirmation route. */
@@ -43,9 +54,16 @@ export async function runFrontDoorWrite(
   c: Context<ApiEnv>,
   action: FrontDoorWrite
 ): Promise<Response> {
-  const { subject, run, ...held } = action;
+  const { subject, run, agentCard, ...held } = action;
   const facts = honoRequestFacts(c);
   const refusal = refuseFrontDoorChange(facts, subject);
+  if (refusal && agentCard && (facts.agentIdentity || presentsAgentIdentity(facts))) {
+    const card = raiseAgentCard(
+      { identity: facts.agentIdentity, presentsAgent: true },
+      { kind: held.kind, target: held.target, input: held.input, ...agentCard() }
+    );
+    return c.json(card.body, card.status);
+  }
   if (refusal) return c.json({ error: refusal.error, code: refusal.code }, 403);
   if (readOwnerAccount() === null) return run(facts);
   return holdForStepUp(c, {
