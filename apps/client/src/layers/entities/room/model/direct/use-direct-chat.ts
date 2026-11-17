@@ -28,7 +28,11 @@ import { useTransport } from '@/layers/shared/model';
 // included. An edge from this foundational slice to `session`, on purpose: the
 // fallback IS a session question (the agent's latest chat), and answering it
 // here would be a second copy of the sidebar's rule.
-import { agentChatTarget } from '@/layers/entities/session';
+import {
+  agentChatTarget,
+  beginSessionNavigation,
+  useLiveLocation,
+} from '@/layers/entities/session';
 import { useRooms } from '../use-rooms';
 
 /** What an agent's Direct chat is always called. It is never renamed. */
@@ -119,14 +123,21 @@ export function useOpenDirectChat(): (
   const transport = useTransport();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const readLocation = useLiveLocation();
   return useCallback(
     async (req, opts = {}) => {
+      // Taken at the call. The answer takes a server round trip, and a person
+      // who opened another chat meanwhile must not be pulled back — least of
+      // all by a `replace` redirect, which would overwrite that chat's address
+      // (DOR-4622). Overtaken resolves `false`: nothing opened.
+      const isStillWanted = beginSessionNavigation(readLocation);
       try {
         if ('agentPath' in req && !opts.quiet) {
           const found = await agentChatTarget({ queryClient, transport }, req.agentPath, {
             ...(opts.runtime && { runtime: opts.runtime }),
           });
           if (!found) throw new Error('No chat with this agent could be found.');
+          if (!isStillWanted()) return false;
           await navigate({ ...found, ...(opts.replace && { replace: true }) });
           return true;
         }
@@ -136,9 +147,12 @@ export function useOpenDirectChat(): (
           dir: chat.agentPath,
           ...(opts.runtime && { runtime: opts.runtime }),
         });
+        if (!isStillWanted()) return false;
         await navigate({ ...target, ...(opts.replace && { replace: true }) });
         return true;
       } catch (err) {
+        // An abandoned open does not explain itself.
+        if (!isStillWanted()) return false;
         const status = (err as { status?: number }).status;
         if (opts.quiet && (status === 403 || status === 409)) return false;
         toast.error('Couldn’t open that chat', {
@@ -147,7 +161,7 @@ export function useOpenDirectChat(): (
         return false;
       }
     },
-    [transport, queryClient, navigate]
+    [transport, queryClient, navigate, readLocation]
   );
 }
 

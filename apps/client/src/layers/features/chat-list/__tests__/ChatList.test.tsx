@@ -19,7 +19,9 @@ import { ChatList, CHAT_LIST_ROW_SLOT } from '../index';
 let mockSearch: Record<string, unknown> = {};
 vi.mock('@tanstack/react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tanstack/react-router')>()),
-  useRouter: () => ({ stores: {} }),
+  // `state.location` is read by the fork's overtaken-navigation guard
+  // (DOR-4622); it never moves here, so a fork always lands.
+  useRouter: () => ({ stores: {}, state: { location: { pathname: '/session', search: {} } } }),
   useSearch: () => mockSearch,
   useNavigate: () => vi.fn(),
   useRouterState: () => '/session',

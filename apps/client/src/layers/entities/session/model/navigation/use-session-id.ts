@@ -1,21 +1,28 @@
 import { notifySessionLookupFailed } from '../../lib/resolve-session-for-cwd';
+import { beginSessionNavigation } from '../../lib/session-navigation-intent';
 import { useCallback } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { useSessionSearch } from './use-session-search';
+import { useLiveLocation } from './use-live-location';
 import { getSessionRouteContext, setSessionRouteContext } from './session-route-context';
 import { toSession, newSessionTarget, reportClientError } from '@/layers/shared/lib';
 
 /** Open a fresh conversation in the chosen directory, preserving an optional seed. */
 export function useStartNewSession(): (dir?: string, options?: StartNewSessionOptions) => void {
   const navigate = useNavigate();
+  const readLocation = useLiveLocation();
   const transport = useTransport();
   const selectedCwd = useAppStore((s) => s.selectedCwd);
   const setPendingRuntime = useAppStore((s) => s.setPendingRuntime);
 
   return useCallback(
     (dir?: string, options?: StartNewSessionOptions) => {
+      // Taken at the click: the fresh chat waits on the server, and a person
+      // who opened something else meanwhile must not be pulled into it
+      // (DOR-4622).
+      const isStillWanted = beginSessionNavigation(readLocation);
       const target = dir ?? selectedCwd ?? undefined;
       const session = crypto.randomUUID();
       if (options?.runtime) setPendingRuntime({ sessionId: session, type: options.runtime });
@@ -25,13 +32,15 @@ export function useStartNewSession(): (dir?: string, options?: StartNewSessionOp
         seed: options?.seed,
         runtime: options?.runtime,
       })
-        .then((target) => navigate(target))
+        .then((target) => (isStillWanted() ? navigate(target) : undefined))
         .catch((error) => {
           reportClientError(transport, error);
-          notifySessionLookupFailed(selectedCwd);
+          // An abandoned start does not explain itself (the use-directory-state
+          // ordering); the report above still goes out.
+          if (isStillWanted()) notifySessionLookupFailed(selectedCwd);
         });
     },
-    [navigate, selectedCwd, setPendingRuntime, transport]
+    [navigate, readLocation, selectedCwd, setPendingRuntime, transport]
   );
 }
 
@@ -49,14 +58,43 @@ export interface StartNewSessionOptions {
   runtime?: string;
 }
 
-/** Options for the session-id setter. */
-export interface SetSessionIdOptions {
+/**
+ * Options for the session-id setter.
+ *
+ * A `replace` is always a rename of one chat, so it must say which chat: the
+ * type requires `from` with it, and there is no anonymous in-place rewrite.
+ */
+export type SetSessionIdOptions = SetSessionIdBaseOptions &
+  (SetSessionIdPushOptions | SetSessionIdRenameOptions);
+
+/** A navigation that pushes a history entry (the default). */
+interface SetSessionIdPushOptions {
+  /** Push a new history entry. */
+  replace?: false;
+  /** Only a rename names the chat it renames. */
+  from?: never;
+}
+
+/**
+ * A rename of the chat on screen: REPLACES the current history entry instead of
+ * pushing one. Used for the create-on-first-message client-UUID → canonical-id
+ * rekey so the canonical URL silently supersedes the optimistic one (no extra
+ * Back step).
+ */
+interface SetSessionIdRenameOptions {
+  /** Replace the current history entry. */
+  replace: true;
   /**
-   * When true, REPLACE the current history entry instead of pushing a new one.
-   * Used for the create-on-first-message client-UUID → canonical-id rekey so the
-   * canonical URL silently supersedes the optimistic one (no extra Back step).
+   * The chat this rename renames from. The rename lands only while the live
+   * location still shows it: renames arrive late (after a POST resolves, or a
+   * rekey announce), and one that landed after a tab switch or a sidebar click
+   * would rewrite another chat's address into this one (DOR-4622).
    */
-  replace?: boolean;
+  from: string;
+}
+
+/** Options shared by every session-id navigation. */
+interface SetSessionIdBaseOptions {
   /** The ID is an explicit fresh conversation, never an existing-session lookup. */
   draft?: boolean;
   /**
@@ -77,12 +115,19 @@ export function useSessionId(): [
   // Standalone: TanStack Router search params
   const search = useSessionSearch();
   const navigate = useNavigate();
+  const readLocation = useLiveLocation();
   const transport = useTransport();
 
   // Stable reference — navigate from TanStack Router is already stable.
   const setSessionId = useCallback(
     (id: string | null, options?: SetSessionIdOptions) => {
+      // A rename of a chat the person has since left goes nowhere. Read from
+      // the router itself, not this render's `search`: the caller may hold a
+      // setter from before the switch, or a fresh one from after it.
+      if (options?.replace && readLocation().search.session !== options.from) return;
       if (id && options?.draft) {
+        // Taken at the call, checked after the server answers (DOR-4622).
+        const isStillWanted = beginSessionNavigation(readLocation);
         const cwd =
           getSessionRouteContext(search.session ?? '')?.cwd ??
           useAppStore.getState().selectedCwd ??
@@ -93,14 +138,18 @@ export function useSessionId(): [
           runtime: getSessionRouteContext(search.session ?? '')?.runtime ?? search.runtime,
           continuedFrom: options.continuedFrom,
         })
-          .then((target) => navigate(target))
+          .then((target) => (isStillWanted() ? navigate(target) : undefined))
           .catch((error) => {
             reportClientError(transport, error);
-            notifySessionLookupFailed(cwd ?? null);
+            if (isStillWanted()) notifySessionLookupFailed(cwd ?? null);
           });
         return;
       }
-      const context = getSessionRouteContext(search.session ?? '');
+      // A rename carries the context of the chat it renames, which the guard
+      // above proved is the one on screen; this render's `search` may be older.
+      const context = getSessionRouteContext(
+        options?.replace ? options.from : (search.session ?? '')
+      );
       if (id && options?.replace && context) setSessionRouteContext(id, context);
       navigate({
         ...toSession((prev) => ({
@@ -134,7 +183,7 @@ export function useSessionId(): [
         replace: options?.replace,
       });
     },
-    [navigate, transport, search.session, search.runtime]
+    [navigate, readLocation, transport, search.session, search.runtime]
   );
 
   return [search.session ?? null, setSessionId];

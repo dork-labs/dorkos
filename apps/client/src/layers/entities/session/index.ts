@@ -40,6 +40,9 @@ export type { SessionLimitDisplay } from './lib/session-limit-text';
 export { useSessionRuntime } from './model/query/use-session-runtime';
 export { useSessionId, useStartNewSession } from './model/navigation/use-session-id';
 export type { SetSessionIdOptions } from './model/navigation/use-session-id';
+// The router's location read at the moment a late navigation would land, so
+// one that resolves after the person moved on can stay quiet (DOR-4622).
+export { useLiveLocation } from './model/navigation/use-live-location';
 export { useRecordChatOpened } from './model/navigation/use-record-chat-opened';
 // Two hooks, two questions. This one is the session's SETTINGS — its model,
 // permission mode, effort, and any change still in flight. `useSessionChatStatus`
