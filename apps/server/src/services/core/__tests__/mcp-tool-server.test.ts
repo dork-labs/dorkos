@@ -69,39 +69,13 @@ vi.mock('../config-manager.js', () => ({
   },
 }));
 
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
-  // The real factory returns `{ type, name, instance }` where `instance` is a live
-  // `McpServer`; `createDorkOsToolServer` registers the `dorkos://` resources on
-  // it. The stub carries just enough of that shape to record the registrations.
-  createSdkMcpServer: vi.fn((config: Record<string, unknown>) => ({
-    ...config,
-    instance: {
-      registerResource: vi.fn(),
-      server: { registerCapabilities: vi.fn() },
-    },
-  })),
-  // Mirrors the real `SdkMcpToolDefinition`: the field is `inputSchema`, and the
-  // fifth argument (annotations, alwaysLoad, searchHint) becomes `_meta`. An
-  // earlier version of this mock called it `schema`, which the in-session server's
-  // exposure pass then read as `undefined` and dropped (DOR-1292).
-  tool: vi.fn(
-    (
-      name: string,
-      desc: string,
-      inputSchema: Record<string, unknown>,
-      handler: (...args: unknown[]) => unknown,
-      extras?: Record<string, unknown>
-    ) => ({
-      name,
-      description: desc,
-      inputSchema,
-      handler,
-      ...(extras ? { _meta: extras } : {}),
-    })
-  ),
-}));
+vi.mock('@anthropic-ai/claude-agent-sdk', async () => {
+  const { sdkMcpFactoryMock } =
+    await import('../../runtimes/claude-code/mcp-tools/__tests__/sdk-mcp-factory-mock.js');
+  return sdkMcpFactoryMock();
+});
 
-/** Passthrough shape returned by mocked createSdkMcpServer */
+/** Recorded tool surface returned by the adapter-owned SDK factory fixture. */
 interface MockServer {
   name: string;
   version: string;
@@ -784,7 +758,7 @@ describe('MCP Tool Handlers', () => {
       expect(server.version).toBe('1.0.0');
     });
 
-    it('registers 53 tools including the five document-channel verbs', () => {
+    it('registers 55 tools including the five document-channel verbs', () => {
       // Purpose: regression guard against accidental tool omissions or additions.
       // This count changes intentionally when new MCP tools are added. 32 legacy
       // (4 core + 5 tasks + 8 relay + 1 agent + 2 ui + 3 devtools + 6 browser

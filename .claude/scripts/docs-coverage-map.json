@@ -511,12 +511,13 @@
     },
     {
       "guide": "agent-operator-surface.md",
-      "description": "Agent-facing capability surface: operator + marketplace MCP tools (in-session vs external `/mcp`), CLI operator verbs, the read-only carve-out, tier enforcement + approvals, how to add a tool/verb, compiled upgrade facts",
+      "description": "Agent-facing capability surface: operator + marketplace MCP tools (in-session vs external `/mcp`), CLI operator verbs, the read-only carve-out, full MCP input objects and verification, tier enforcement + approvals, how to add a tool/verb, compiled upgrade facts",
       "patterns": [
         "services/session/new-since/",
         "services/runtimes/shared/awareness/",
         "services/core/operator/",
         "services/core/capabilities/",
+        "services/runtimes/claude-code/mcp-tools/",
         "services/core/approvals/",
         "services/core/agent-identity/",
         "services/core/mcp-tool-",

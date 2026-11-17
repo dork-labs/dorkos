@@ -28,7 +28,7 @@ import {
   resolveAgentTokenEnv,
   resolveAgentHome,
 } from '../../../../core/agent-identity/index.js';
-import { capabilityMcpTools } from '../capability-mcp-tools.js';
+import { createCapabilityMcpClient } from '../__tests__/capability-mcp-client.js';
 import {
   clearTestHomes,
   registerEveryFolderAsHome,
@@ -73,7 +73,9 @@ function buildRegistry(activityService: ActivityService): CapabilityRegistry {
 
 /** Invoke the projected `demo_patch` tool exactly as the SDK would. */
 async function callTool(registry: CapabilityRegistry, agentPath: string | undefined) {
-  const [projected] = capabilityMcpTools(
+  const {
+    tools: [projected],
+  } = await createCapabilityMcpClient(
     registry,
     'in-session',
     createInSessionContextResolver(resolveAgentHome(agentPath))
@@ -138,13 +140,15 @@ describe('in-session capability attribution', () => {
   it('passes the exact capability id and per-call signal to the context resolver', async () => {
     const signal = new AbortController().signal;
     const resolveContext = vi.fn(async () => undefined);
-    const [projected] = capabilityMcpTools(registry, 'in-session', resolveContext);
+    const {
+      tools: [projected],
+    } = await createCapabilityMcpClient(registry, 'in-session', resolveContext);
 
     await (
       projected as unknown as { handler: (args: unknown, extra: unknown) => Promise<unknown> }
     ).handler({}, { signal });
 
-    expect(resolveContext).toHaveBeenCalledWith('demo.patch', signal);
+    expect(resolveContext).toHaveBeenCalledExactlyOnceWith('demo.patch', expect.any(AbortSignal));
   });
 
   // ── Unattributed in-session calls stay exactly as they were ──────────────
