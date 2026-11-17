@@ -232,6 +232,19 @@ describe.each(['default', 'acceptEdits'] as const)('a scheduled run at %s', (per
       'background work a stranger’s turn left running',
       { session: { ...AT, backgroundPermissionCeiling: 'runtime-default' } },
     ],
+    [
+      'a turn our agent passed an outsider’s words on to',
+      {
+        session: {
+          ...AT,
+          turnPermissionCeiling: {
+            asks: 'never',
+            reach: 'everything',
+            outsider: true,
+          } as unknown as TurnPermissionCeiling,
+        },
+      },
+    ],
     ['a turn marked by a line it read', { session: AT, isMarked: () => true }],
     [
       'a chat that read outside words but carries no mark',
@@ -250,6 +263,14 @@ describe.each(['default', 'acceptEdits'] as const)('a scheduled run at %s', (per
 
   it.each(OUTSIDER_TURNS)('runs no status read unasked in %s', async (_label, options) => {
     for (const name of STATUS_READS) expect(await decide(name, options), name).toEqual({});
+  });
+
+  it('still runs them in a turn a teammate holds to this level', async () => {
+    // A teammate's level, as a level: Ask first asks always, Accept edits when risky.
+    const level = { asks: permissionMode === 'default' ? 'always' : 'when-risky', reach: 'edit' };
+    const session = { ...AT, turnPermissionCeiling: level as unknown as TurnPermissionCeiling };
+    for (const name of STATUS_READS)
+      expect(await decide(name, { session }), name).toMatchObject(ALLOWED);
   });
 });
 

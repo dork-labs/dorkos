@@ -96,6 +96,26 @@ describe.each(['default', 'acceptEdits'] as const)('a scheduled run at %s', (mod
     }
   });
 
+  it('refuses them in a turn our agent passed an outsider’s words on to', async () => {
+    const carried = { asks: 'never', reach: 'everything', outsider: true } as unknown;
+    for (const tool of STATUS_READS) {
+      const session = unattended(mode, carried as TurnPermissionCeiling);
+      expect(await call(session, tool, CLEAN), tool).toMatchObject({ behavior: 'deny' });
+    }
+  });
+
+  it('still runs them in a turn a teammate holds to this level', async () => {
+    for (const tool of STATUS_READS) {
+      // A teammate's level, as a level: Ask first asks always, Accept edits when risky.
+      const level = { asks: mode === 'default' ? 'always' : 'when-risky', reach: 'edit' };
+      const session = unattended(mode, level as unknown as TurnPermissionCeiling);
+      expect(await call(session, tool, CLEAN), tool).toEqual({
+        behavior: 'allow',
+        updatedInput: {},
+      });
+    }
+  });
+
   it('fails closed: without the outside-words checks, no status read runs unasked', async () => {
     for (const tool of STATUS_READS) {
       expect(await call(unattended(mode), tool), tool).toEqual(REFUSED);

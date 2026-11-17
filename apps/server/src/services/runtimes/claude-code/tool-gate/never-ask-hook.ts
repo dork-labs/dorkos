@@ -56,6 +56,7 @@ import { DORKOS_AGENT_TOOLS, dorkosAutoAllows } from './auto-allow.js';
 import {
   NEVER_ASK_STATUS_READS_QUALIFIED,
   statusReadRunsUnasked,
+  yesOrDoubtful,
 } from './never-ask-status-reads.js';
 import { OWN_CONNECTION_READS_QUALIFIED } from './own-connection-reads.js';
 import type { ToolApprovalContext, ToolGateLogger } from '../messaging/interactive-handlers.js';
@@ -102,17 +103,9 @@ export function turnOutsideChecks(
   return [() => marksHold(marksOf(id(), home)), () => chatReadOutsideWords(id(), home)];
 }
 
-/** Whether the running turn is marked; a throw counts as marked. */
-function markedOrDoubtful(isMarked: () => boolean): boolean {
-  try {
-    return isMarked();
-  } catch {
-    return true;
-  }
-}
-
 /**
- * Whether DorkOS lets this call run unasked at Never ask. Never throws.
+ * Whether DorkOS lets this call run unasked at Never ask, or, for the named status reads, at the
+ * levels in `STATUS_READ_MODES` (`statusReadRunsUnasked`). Never throws.
  *
  * @param session - The session's chosen mode and both ceilings.
  * @param toolName - The tool the model called.
@@ -150,11 +143,11 @@ export async function neverAskAllows(
     if (heldForOutsider(session)) return false;
   } else if (NEVER_IN_A_HELD_OR_MARKED_TURN.has(toolName)) {
     if (ceilingOn(session) !== 'none') return false;
-    if (markedOrDoubtful(isMarked)) return false;
+    if (yesOrDoubtful(isMarked)) return false;
   } else if (OWN_CONNECTION_READS_QUALIFIED.has(toolName)) {
     // The agent's own grants (DOR-3205) run in a turn another of our agents holds, but not in
     // one that read an outsider's words: the gate refuses a carried mark, this the turn's own.
-    if (markedOrDoubtful(isMarked)) return false;
+    if (yesOrDoubtful(isMarked)) return false;
   }
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {

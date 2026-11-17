@@ -453,9 +453,10 @@ export interface ToolApprovalContext {
  * Routes `AskUserQuestion` to the question handler, auto-allows calls to the two
  * safe-listed tool sets ({@link READ_ONLY_TOOLS}, {@link DORKOS_AGENT_TOOLS})
  * that {@link isAutoAllowedCall} also clears — and, for the owner-facing subset,
- * that this session has an agent identity ({@link IDENTITY_SCOPED_TOOLS}) — and
- * hands every remaining call to {@link resolveModeDecision}, which either allows
- * it or raises an approval card.
+ * that this session has an agent identity ({@link IDENTITY_SCOPED_TOOLS}) —
+ * allows the named status reads where {@link statusReadRunsUnasked} says so
+ * (DOR-4601), and hands every remaining call to {@link resolveModeDecision},
+ * which either allows it or raises an approval card.
  *
  * Nothing reaches a person's machine on a fall-through: a tool that matches no
  * safe list and no permissive mode asks. `Bash` under `acceptEdits` asks, and so
@@ -500,6 +501,9 @@ export function createCanUseTool(
 ) => Promise<PermissionResult> {
   return async (toolName, input, context) => {
     if (onToolPreflight) await onToolPreflight(toolName, input);
+    // The status reads, by the Never ask hook's own rule, whether or not the CLI honoured its allow.
+    if (statusReadRunsUnasked(session, toolName, context.mcpServer, ...outsideChecks))
+      return { behavior: 'allow', updatedInput: input };
     // A chat SET to Full autonomy asks nobody anything (DOR-3394): a mark, a
     // carried ceiling or a stranger's hold may have launched the turn lower, but
     // what it asks about is decided by the level the person chose. Below Full,
@@ -507,9 +511,6 @@ export function createCanUseTool(
     // auto-allowed on the strength of the level a person chose for others, and
     // nor may background work an earlier ceilinged turn left running.
     const full = chosenFullAutonomy(session);
-    // The status reads, by the Never ask hook's own rule, whether or not the CLI honoured its allow.
-    if (statusReadRunsUnasked(session, toolName, context.mcpServer, ...outsideChecks))
-      return { behavior: 'allow', updatedInput: input };
     const decision = full ? 'allow' : resolveModeDecision(gatePermissionMode(session));
     // "Never ask": `neverAsks` also covers a chat set to it whose turn a
     // stricter ceiling holds to Plan, which would otherwise ask.

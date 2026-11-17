@@ -74,7 +74,7 @@ export type OutsideChecks = [isMarked: () => boolean, readOutsideWords: () => bo
 export const FAIL_CLOSED_CHECKS: OutsideChecks = [() => true, () => true];
 
 /** Whether a check says yes; a throw counts as yes. */
-function yesOrDoubtful(check: () => boolean): boolean {
+export function yesOrDoubtful(check: () => boolean): boolean {
   try {
     return check();
   } catch {
