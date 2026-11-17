@@ -32268,6 +32268,10 @@
                           "title": {
                             "type": "string"
                           },
+                          "openedOverHttp": {
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
+                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -32633,6 +32637,10 @@
                           "title": {
                             "type": "string"
                           },
+                          "openedOverHttp": {
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
+                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -32994,6 +33002,10 @@
                           "title": {
                             "type": "string"
                           },
+                          "openedOverHttp": {
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
+                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -33109,7 +33121,7 @@
           "Local browser"
         ],
         "summary": "Open a web address in the selected tab",
-        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Accepts HTTP or HTTPS addresses and invalidates earlier observations. Refused during a handoff. Takes the page from a chat sharing it first, as take-over does.",
+        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Accepts HTTP or HTTPS addresses and invalidates earlier observations. Refused during a handoff. Takes the page from a chat sharing it first, as take-over does. A bare host may ask for one HTTP fallback when the HTTPS page cannot connect; a timeout never falls back.",
         "requestBody": {
           "required": true,
           "content": {
@@ -33120,6 +33132,10 @@
                   "url": {
                     "type": "string",
                     "format": "uri"
+                  },
+                  "httpFallback": {
+                    "type": "boolean",
+                    "description": "Ask for one HTTP fallback for a bare host."
                   }
                 },
                 "required": [
@@ -33226,6 +33242,10 @@
                           },
                           "title": {
                             "type": "string"
+                          },
+                          "openedOverHttp": {
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
                           },
                           "canGoBack": {
                             "type": "boolean"
@@ -33384,7 +33404,7 @@
             }
           },
           "400": {
-            "description": "The web address is invalid",
+            "description": "The web address or HTTP fallback choice is invalid",
             "content": {
               "application/json": {
                 "schema": {
@@ -33428,7 +33448,7 @@
             }
           },
           "409": {
-            "description": "The browser cannot complete this request in its current state",
+            "description": "The browser cannot complete the navigation (`navigation_timed_out`, `navigation_unreachable`, or `navigation_uncertain`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -33577,6 +33597,10 @@
                           },
                           "title": {
                             "type": "string"
+                          },
+                          "openedOverHttp": {
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
                           },
                           "canGoBack": {
                             "type": "boolean"
@@ -33930,6 +33954,10 @@
                           "title": {
                             "type": "string"
                           },
+                          "openedOverHttp": {
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
+                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -34281,6 +34309,10 @@
                           "title": {
                             "type": "string"
                           },
+                          "openedOverHttp": {
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
+                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -34493,6 +34525,10 @@
                           },
                           "title": {
                             "type": "string"
+                          },
+                          "openedOverHttp": {
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
                           },
                           "canGoBack": {
                             "type": "boolean"
@@ -35251,6 +35287,10 @@
                           "title": {
                             "type": "string"
                           },
+                          "openedOverHttp": {
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
+                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -35620,6 +35660,10 @@
                           },
                           "title": {
                             "type": "string"
+                          },
+                          "openedOverHttp": {
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
                           },
                           "canGoBack": {
                             "type": "boolean"
@@ -35992,6 +36036,10 @@
                           "title": {
                             "type": "string"
                           },
+                          "openedOverHttp": {
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
+                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -36362,6 +36410,10 @@
                           },
                           "title": {
                             "type": "string"
+                          },
+                          "openedOverHttp": {
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
                           },
                           "canGoBack": {
                             "type": "boolean"
