@@ -1305,6 +1305,8 @@ export class AdapterManager {
 
     const ownership = reserveWebhookOwnership(prospective, this.configs, this.registry);
     try {
+      // No await before the in-memory write: the card re-check relies on it
+      // (`relay-adapter-setting-routes.ts`, DOR-4355 M4).
       existing.config = prospective.config;
 
       // Promote label from config to top-level if present (client embeds it in config)

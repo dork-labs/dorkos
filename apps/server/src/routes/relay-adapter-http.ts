@@ -106,6 +106,40 @@ export function settingNamesText(names: readonly string[]): string {
 /** The longest connection name the sheet shows before cutting it. */
 const MAX_SHOWN_NAME = 40;
 
+/** The longest connection name an agent's card quotes (Security N1 on DOR-4355 M4). */
+const MAX_CARD_NAME = 24;
+
+/** How an agent's card names a connection: a headline, and its name kept apart. */
+export interface CardConnection {
+  /** `the Slack connection northwind-sl`: its type and id, neither free text. */
+  headline: string;
+  /** Its name, quoted, cut short and marked as a name an agent can set, when it has one. */
+  note?: string;
+}
+
+/**
+ * A connection as an agent's card names it. Anyone who can save a connection, an
+ * agent included, sets its name, and nothing records who did, so the headline
+ * never shows it: it shows the connection's type and its id, which is lowercase
+ * letters, digits and hyphens only. The name appears on its own line, quoted,
+ * cut short and marked as one an agent can set.
+ *
+ * @param adapterManager - Where the connection and its type are read.
+ * @param id - The connection's id.
+ */
+export function cardConnection(
+  adapterManager: Pick<AdapterManager, 'getAdapter' | 'getManifest'>,
+  id: string
+): CardConnection {
+  const config = adapterManager.getAdapter(id)?.config;
+  const type = config ? (adapterManager.getManifest(config.type)?.displayName ?? config.type) : '';
+  const headline = `the ${type ? `${type} ` : ''}connection ${id}`;
+  const label = typeof config?.label === 'string' ? config.label.replace(/\s+/g, ' ').trim() : '';
+  if (!label) return { headline };
+  const cut = label.length > MAX_CARD_NAME ? `${label.slice(0, MAX_CARD_NAME - 1)}…` : label;
+  return { headline, note: `Its name, which an agent can set: “${cut}”` };
+}
+
 /**
  * A connection's name as the sheet shows it: quoted and cut short, since an
  * agent may have chosen it (Security, #3401 Should 2).

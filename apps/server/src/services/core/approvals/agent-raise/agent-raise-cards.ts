@@ -55,6 +55,8 @@ export interface AgentRaiseEffect {
   summary: string;
   /** Each change, from → to. */
   changes: readonly AgentRaiseChange[];
+  /** Lines shown after the changes, such as a name an agent can set, already fenced. */
+  notes?: readonly string[];
 }
 
 /** A raise a route offers to put on a card. */
@@ -140,7 +142,10 @@ function turnMarked(agentPath: string, sessionId?: string): boolean {
 
 /** The card's full text: each change, from → to. */
 function detailOf(effect: AgentRaiseEffect): string {
-  return effect.changes.map((c) => `${c.what}: ${c.from} → ${c.to}`).join('\n');
+  return [
+    ...effect.changes.map((c) => `${c.what}: ${c.from} → ${c.to}`),
+    ...(effect.notes ?? []),
+  ].join('\n');
 }
 
 /** Turn a waiting card down and forget it. */

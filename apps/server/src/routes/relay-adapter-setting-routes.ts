@@ -54,6 +54,7 @@ import {
 import { errorRefusalUnlessOwner } from './cloud-owner-bar.js';
 import {
   adapterResult,
+  cardConnection,
   noOwnerRefusal,
   quotedName,
   secretWriter,
@@ -388,7 +389,7 @@ export function registerSettingRoutes(router: Hono<ApiEnv>, deps: SettingRouteDe
         agentCard: () => {
           const shown = ownerListState(stored);
           return {
-            effect: ownerGrantEffect(config, stored, name),
+            effect: ownerGrantEffect(config, stored, cardConnection(adapterManager, id)),
             // Runs as the agent, with exactly what it sent. The lists are re-read in the same
             // tick as the save's own read and write (nothing awaits between), so a change made
             // since the card was raised answers 409 and saves nothing.

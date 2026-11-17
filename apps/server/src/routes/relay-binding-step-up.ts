@@ -22,7 +22,7 @@ import type { AdapterManager } from '../services/relay/adapter-manager.js';
 import type { BindingChangedError } from '../services/relay/binding-store.js';
 import { readJsonBody } from '../http/request-body.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
-import { quotedName } from './relay-adapter-http.js';
+import { cardConnection, type CardConnection } from './relay-adapter-http.js';
 import type {
   AgentRaiseChange,
   AgentRaiseEffect,
@@ -147,12 +147,12 @@ export function bindingRaiseState(route: AdapterBinding): string {
  *
  * @param existing - The route as stored.
  * @param body - The request body, before validation.
- * @param connection - The connection's name, already quoted.
+ * @param card - The connection as `cardConnection` names it.
  */
 export function bindingUpdateEffect(
   existing: AdapterBinding,
   body: unknown,
-  connection: string
+  card: CardConnection
 ): AgentRaiseEffect {
   const parsed = UpdateBindingRequestSchema.safeParse(body);
   const next = parsed.success ? parsed.data : {};
@@ -177,7 +177,11 @@ export function bindingUpdateEffect(
   if (next.channelType !== undefined)
     add('Which kind of chat', filter(existing.channelType), filter(next.channelType));
   if (next.roomId !== undefined) add('Room', existing.roomId ?? 'none', next.roomId ?? 'none');
-  return { summary: `Let a chat route on ${connection} do more, or reach more chats.`, changes };
+  return {
+    summary: `Let a chat route on ${card.headline} do more, or reach more chats.`,
+    changes,
+    ...(card.note ? { notes: [card.note] } : {}),
+  };
 }
 
 /**
@@ -209,7 +213,7 @@ export function bindingChanged(c: Context<ApiEnv>, err: BindingChangedError): Re
  */
 export function registerBindingWrites(
   router: Hono<ApiEnv>,
-  adapterManager: Pick<AdapterManager, 'getBindingStore' | 'resolveAdapterName'>,
+  adapterManager: Pick<AdapterManager, 'getBindingStore' | 'getAdapter' | 'getManifest'>,
   writes: { createBinding: BindingWrite; moveBinding: BindingWrite; updateBinding: BindingWrite }
 ): void {
   const { createBinding, moveBinding, updateBinding } = writes;
@@ -262,7 +266,7 @@ export function registerBindingWrites(
             effect: bindingUpdateEffect(
               existing,
               body,
-              quotedName(adapterManager.resolveAdapterName(existing.adapterId))
+              cardConnection(adapterManager, existing.adapterId)
             ),
             run: async () => {
               const res = await updateBinding(c, (current) => bindingRaiseState(current) === shown);

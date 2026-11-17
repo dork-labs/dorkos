@@ -140,13 +140,18 @@ function idsText(ids: readonly string[]): string {
  *
  * @param incoming - The connection settings as the request sends them.
  * @param existing - The settings as stored.
- * @param connection - The connection's name, already quoted.
+ * @param card - The connection as `cardConnection` names it.
  */
 export function ownerGrantEffect(
   incoming: Record<string, unknown>,
   existing: Record<string, unknown> | undefined,
-  connection: string
-): { summary: string; changes: { what: string; from: string; to: string }[] } {
+  card: { headline: string; note?: string }
+): {
+  summary: string;
+  changes: { what: string; from: string; to: string }[];
+  notes?: string[];
+} {
+  const connection = card.headline;
   const added = addedListIds(incoming, existing);
   const opensDms = opensDirectMessages(incoming, existing);
   const changes = OWNER_LIST_KEYS.filter((list) => added.some((entry) => entry.list === list)).map(
@@ -163,5 +168,9 @@ export function ownerGrantEffect(
       to: 'Anyone',
     });
   }
-  return { summary: ownerGrantReason(added, opensDms, connection), changes };
+  return {
+    summary: ownerGrantReason(added, opensDms, connection),
+    changes,
+    ...(card.note ? { notes: [card.note] } : {}),
+  };
 }

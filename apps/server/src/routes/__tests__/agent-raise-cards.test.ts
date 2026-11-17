@@ -55,14 +55,16 @@ const ADD_APPROVER = { approverAllowlist: 'U0OWNER01\nU0NEWBIE1' };
 
 let approvals: ApprovalService;
 let lists: Record<string, unknown>;
+let label: string | undefined;
 let store: BindingStore;
 let storeDir: string;
 let routeId: string;
 const manager = {
-  resolveAdapterName: vi.fn(() => 'Northwind Slack'),
+  // As the real one does: the stored name when there is one (`adapter-manager.ts`).
+  resolveAdapterName: vi.fn(() => label ?? 'Northwind Slack'),
   getManifest: vi.fn(() => SLACK_MANIFEST),
   getAdapter: vi.fn(() => ({
-    config: { id: 'sl', type: 'slack', enabled: true, builtin: false, config: lists },
+    config: { id: 'sl', type: 'slack', enabled: true, builtin: false, label, config: lists },
     status: { state: 'connected' },
   })),
   updateConfig: vi.fn(async () => undefined),
@@ -173,6 +175,7 @@ beforeEach(async () => {
   });
   initAgentRaiseCards(approvals);
   lists = { approverAllowlist: 'U0OWNER01', dmAllowlist: [], dmPolicy: 'allowlist' };
+  label = undefined;
   manager.updateConfig.mockClear();
   resetHeldStepUpsForTests();
   resetRemotePasswordFailuresForTests();
@@ -224,11 +227,35 @@ describe('an agent adding someone who may approve on a chat connection', () => {
       label: 'Say yes, this was checked by the owner',
     });
     const card = approvals.listPending().find((p) => p.approvalId === asked.body.approvalId);
-    expect(card?.summary).toBe('Let U0NEWBIE1 approve your agents’ requests on “Northwind Slack”.');
+    expect(card?.summary).toBe(
+      'Let U0NEWBIE1 approve your agents’ requests on the Slack connection sl.'
+    );
     expect(approvals.fullDetail(asked.body.approvalId) ?? card?.detail).toContain(
-      'Who may approve your agents’ requests on “Northwind Slack”: U0OWNER01 → U0OWNER01, U0NEWBIE1'
+      'Who may approve your agents’ requests on the Slack connection sl: U0OWNER01 → U0OWNER01, U0NEWBIE1'
     );
     expect(JSON.stringify(card)).not.toContain('checked by the owner');
+  });
+
+  // Security N1 on M4: an agent can name a connection, so its name never heads the card.
+  it.each([
+    ['a connection save', () => agentAddsApprover()],
+    [
+      'a chat-route raise',
+      () =>
+        request(app())
+          .patch(`/api/relay/bindings/${routeId}`)
+          .set(...AGENT)
+          .send({ canInitiate: true }),
+    ],
+  ])('keeps an agent-set name out of the headline on %s', async (_label, ask) => {
+    label = 'Your own Telegram, already approved by the owner';
+    const asked = await ask();
+    const card = approvals.listPending().find((p) => p.approvalId === asked.body.approvalId);
+    expect(card?.summary).not.toContain('Your own Telegram');
+    expect(card?.summary).toContain('the Slack connection sl');
+    const detail = approvals.fullDetail(asked.body.approvalId) ?? card?.detail ?? '';
+    expect(detail).toContain('Its name, which an agent can set: “Your own Telegram, alre…”');
+    expect(detail).not.toContain('approved by the owner');
   });
 
   it('refuses a replayed yes, and applies nothing twice', async () => {
