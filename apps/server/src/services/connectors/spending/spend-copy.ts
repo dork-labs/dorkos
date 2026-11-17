@@ -48,11 +48,10 @@ export const SPEND_COPY = {
  * can't answer a card, so each case that would ask a person is a refusal.
  */
 export const EXTENSION_SPEND_COPY = {
-  noLimit:
-    'This read spends money. Mini apps run paid reads only under a monthly limit, set in Connections.',
-  unknownPrice:
-    "This read spends money, and its app has no price per run, so the limit can't count it.",
+  noLimit: 'This read spends money. It runs only under a monthly limit, set in Connections.',
+  unknownPrice: 'This read spends money. Set its price per run in Connections first.',
   unreadable: "Spending can't be checked right now, so this paid read didn't run.",
+  outsideLimit: "This paid read doesn't fit this month's spending limit. Nothing ran.",
 } as const;
 
 /** The full refusal an agent gets past the limit: the case, then what to do. */

@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(connectors): a mini app's paid reads go through the monthly spend limit, and its access page says Spends money (DOR-4575)"
+  - 'fix(connectors): a mini app gets its own short refusals, and a paid name in any spelling stays paid (DOR-4575)'
 ---
 
 ### Changed

@@ -88,7 +88,9 @@ const REVIEWED_FREE_NORMALIZED: ReadonlySet<string> = new Set(
 export function isPaidOperation(op: { toolkit: string; operationSlug: string }): boolean {
   const toolkit = normalizeToolkit(op.toolkit);
   const slug = normalizeSlug(op.operationSlug);
-  if (PAID_PATTERNS_NORMALIZED.get(toolkit)?.test(slug)) return true;
+  // Both spellings: splitting camel case can break a pattern the plain one matches.
+  const pattern = PAID_PATTERNS_NORMALIZED.get(toolkit);
+  if (pattern?.test(slug) || pattern?.test(op.operationSlug.toUpperCase())) return true;
   return PAID_TOOLKITS_NORMALIZED.has(toolkit) && !REVIEWED_FREE_NORMALIZED.has(slug);
 }
 

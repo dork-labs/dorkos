@@ -269,7 +269,7 @@ export function reserveExtensionSpend(
     return refuse(EXTENSION_SPEND_COPY.unreadable);
   }
   const decision = decideSpend(facts);
-  if (decision.kind === 'refuse') return refuse(decision.message);
+  if (decision.kind === 'refuse') return refuse(EXTENSION_SPEND_COPY.outsideLimit);
   if (decision.kind === 'ask') {
     return refuse(
       decision.reason === 'no-limit'
@@ -294,7 +294,7 @@ export function reserveExtensionSpend(
   } catch {
     return refuse(EXTENSION_SPEND_COPY.unreadable);
   }
-  if (!result.ok) return refuse(limitRefusal(result.reason, result.leftMicro, resetsAt));
+  if (!result.ok) return refuse(EXTENSION_SPEND_COPY.outsideLimit);
   const usedMicro = facts.usedMicro as number;
   const afterMicro = usedMicro + decision.priceMicro;
   recordExtension(

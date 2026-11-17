@@ -33,6 +33,7 @@ describe('isPaidOperation', () => {
     [' Apify ', 'apifyRunActor'],
     ['People-Data-Labs', 'PEOPLEDATALABS_ENRICH'],
     ['GitHub', 'githubRunInference'],
+    ['github', 'GitHub_Run_Inference'],
   ])('never reads a variant spelling as free: %s', (toolkit, operationSlug) => {
     expect(isPaidOperation({ toolkit, operationSlug })).toBe(true);
   });
