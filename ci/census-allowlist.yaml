@@ -237,6 +237,21 @@ entries:
     step: Save the pnpm store for the queue and pull requests
     kind: step-if
     reason: Saves the pnpm store only on refs/heads/main and only on a restore miss, right after the install (DOR-4537, ledger 261116-114104). It asserts nothing; on pull_request and merge_group the job restores main's store and saves none, because a queue ref's or a PR merge ref's cache scope is unreadable by any other ref and those copies pushed the repo past its 10 GB cache budget.
+  - workflow: browser-test.yml
+    job: browser-smoke
+    step: Save the Chromium browser for the queue and pull requests
+    kind: step-if
+    reason: Saves the Playwright Chromium cache only on refs/heads/main and only on a restore miss, after the install step succeeded (DOR-4190, ledger 261117-170155). It asserts nothing; on pull_request and merge_group the job restores main's browser and saves none, because a queue ref's or a PR merge ref's cache scope is unreadable by any other ref.
+  - workflow: browser-test.yml
+    job: browser-shard
+    step: Save the Chromium browser for the queue and pull requests
+    kind: step-if
+    reason: Saves the Playwright Chromium cache only on refs/heads/main and only on a restore miss, after the install step succeeded (DOR-4190, ledger 261117-170155). It asserts nothing; on pull_request and merge_group the job restores main's browser and saves none, because a queue ref's or a PR merge ref's cache scope is unreadable by any other ref.
+  - workflow: browser-test.yml
+    job: first-run
+    step: Save the Chromium browser for the queue and pull requests
+    kind: step-if
+    reason: Saves the Playwright Chromium cache only on refs/heads/main and only on a restore miss, after the install step succeeded (DOR-4190, ledger 261117-170155). It asserts nothing; on pull_request and merge_group the job restores main's browser and saves none, because a queue ref's or a PR merge ref's cache scope is unreadable by any other ref.
 
   # --- credential-free-build.yml ---
   - workflow: credential-free-build.yml

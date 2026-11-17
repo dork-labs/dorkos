@@ -189,7 +189,7 @@ jobs:
         run: echo "version=$(pnpm --filter @dorkos/e2e exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
       - name: Restore the Chromium browser Playwright drives
         id: pw-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
@@ -223,6 +223,13 @@ jobs:
             sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
           fi
           bash scripts/playwright-apt-debs.sh install "$RUNNER_TEMP/playwright-apt"
+      # main only, after a good install: the pnpm store's save says why (DOR-4537).
+      - name: Save the Chromium browser for the queue and pull requests
+        if: ${{ github.ref == 'refs/heads/main' && steps.pw-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
       - name: Build what the smoke projects boot from
         run: pnpm exec turbo run build --filter=@dorkos/server --filter=@dorkos/client
       # An inner deadline flushes reports before the step/job backstops.
@@ -563,7 +570,7 @@ jobs:
         run: echo "version=$(pnpm --filter @dorkos/e2e exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
       - name: Restore the Chromium browser Playwright drives
         id: pw-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
@@ -623,6 +630,13 @@ jobs:
             sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
           fi
           bash scripts/playwright-apt-debs.sh install "$RUNNER_TEMP/playwright-apt"
+      # main only, after a good install: the pnpm store's save says why (DOR-4537).
+      - name: Save the Chromium browser for the queue and pull requests
+        if: ${{ github.ref == 'refs/heads/main' && steps.pw-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
       # The ONLY step that saves the OS-package cache: a scheduled run on main,
       # shard 1 alone (the other shards would race to save the same key), after
       # a miss, and only once the install step has checked every file against
@@ -929,7 +943,7 @@ jobs:
         run: echo "version=$(pnpm --filter @dorkos/e2e exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
       - name: Restore the Chromium browser Playwright drives
         id: pw-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
@@ -959,6 +973,13 @@ jobs:
             sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
           fi
           bash scripts/playwright-apt-debs.sh install "$RUNNER_TEMP/playwright-apt"
+      # main only, after a good install: the pnpm store's save says why (DOR-4537).
+      - name: Save the Chromium browser for the queue and pull requests
+        if: ${{ github.ref == 'refs/heads/main' && steps.pw-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
       - name: Build what the webServer legs boot from
         run: pnpm exec turbo run build --filter=@dorkos/server --filter=@dorkos/client
       # Both paths must have reached DorkBot's reply. Each leg is picked by a
