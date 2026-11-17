@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import {
   ArrowUpRight,
   Clock,
@@ -76,6 +76,38 @@ const PILL_PHONE_HIT_WIDTH = 'max-md:after:inset-x-[min(0px,calc((100%_-_2.75rem
  * §12: the chip may look smaller than its 44 × 44 target).
  */
 const PILL_SLOT = 'flex shrink-0 justify-center max-md:min-w-11';
+
+/**
+ * Below this many pixels of chrome, Your turn shows only its icon: the same
+ * number as its `@max-[359px]/browser-chrome` classes, which hide the words.
+ */
+const YOUR_TURN_WORDS_MIN_PX = 360;
+
+/** What Your turn's name starts with while its words show (WCAG 2.5.3, label in name). */
+const YOUR_TURN_NAME_PREFIX = 'Your turn: ';
+
+/**
+ * Whether the browser chrome around `ref` is at least `min` pixels wide, kept
+ * current as the panel resizes. An accessible name can't follow a container
+ * query, so the name reads the same width the query does. No chrome, or no
+ * layout yet (a width of 0), counts as wide.
+ */
+function useChromeAtLeast(ref: RefObject<HTMLElement | null>, min: number): boolean {
+  const [wide, setWide] = useState(true);
+  useLayoutEffect(() => {
+    const chrome = ref.current?.closest('[data-slot="browser-chrome"]');
+    if (!chrome) return;
+    const read = () => {
+      const width = chrome.getBoundingClientRect().width;
+      setWide(width === 0 || width >= min);
+    };
+    read();
+    const observer = new ResizeObserver(read);
+    observer.observe(chrome);
+    return () => observer.disconnect();
+  }, [ref, min]);
+  return wide;
+}
 
 /** Words the pill says on its own, which an agent's name must not pass for. */
 const PILL_WORDS = new Set([
@@ -215,6 +247,11 @@ export function BrowserStatusPill({
   };
   const copy = browserPillCopy(state, agentName, now ?? openedAt);
   const yourTurn = state.kind === 'your-turn';
+  const slot = useRef<HTMLSpanElement>(null);
+  const showsYourTurnWords = useChromeAtLeast(slot, YOUR_TURN_WORDS_MIN_PX);
+  // A fixed prefix of DorkOS's own words; the sentence keeps the host the page reported.
+  const name =
+    yourTurn && showsYourTurnWords ? `${YOUR_TURN_NAME_PREFIX}${copy.lines[0]}` : copy.lines[0];
   const agent = pillAgentName(agentName) ?? 'the agent';
   const run = (action: (() => void) | undefined) =>
     action &&
@@ -228,14 +265,14 @@ export function BrowserStatusPill({
       <span role="status" className="sr-only">
         {copy.status}
       </span>
-      <span data-slot="browser-status-pill-slot" className={PILL_SLOT}>
+      <span ref={slot} data-slot="browser-status-pill-slot" className={PILL_SLOT}>
         <ResponsivePopover open={open} onOpenChange={onOpenChange}>
           <ResponsivePopoverTrigger asChild>
             <button
               type="button"
               data-slot="browser-status-pill"
               data-state-kind={state.kind}
-              aria-label={copy.lines[0]}
+              aria-label={name}
               // Your turn can go icon-only on a narrow row; a pointer still gets its
               // words. A native hint draws above the page, so it never blanks it (DOR-4438).
               title={yourTurn ? copy.label : undefined}

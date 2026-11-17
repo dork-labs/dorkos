@@ -485,7 +485,10 @@ describe('LocalBrowserPanel', () => {
       mount();
       const pill = await findPill();
       expect(pill).toHaveTextContent('Your turn');
-      expect(pill).toHaveAccessibleName('Atlas needs you to finish a step on northwind.example.');
+      // Its words show, so its name says them first (WCAG 2.5.3, DOR-4436).
+      expect(pill).toHaveAccessibleName(
+        'Your turn: Atlas needs you to finish a step on northwind.example.'
+      );
       // The stacked strip is gone: the pill is the one place that says it.
       expect(document.querySelector('[data-slot="your-turn-strip"]')).toBeNull();
       expect(

@@ -222,8 +222,9 @@ describe('BrowserStatusPill', () => {
     render(
       <BrowserStatusPill state={EVERY_STATE[kind]} agentName="Atlas" now={NOW} {...handlers} />
     );
-    // Named by its full sentence, and a dialog it opens.
-    expect(pill()).toHaveAccessibleName(sentence);
+    // Named by its full sentence (Your turn, showing its words, says them first:
+    // WCAG 2.5.3), and a dialog it opens.
+    expect(pill()).toHaveAccessibleName(kind === 'your-turn' ? `Your turn: ${sentence}` : sentence);
     expect(pill()).toHaveAttribute('aria-haspopup', 'dialog');
     expect(pill()).toHaveTextContent(label);
     expect(label.length).toBeLessThanOrEqual(15);
@@ -323,10 +324,53 @@ describe('BrowserStatusPill', () => {
     // Its words stay: still in the button, and a tooltip names it to a pointer.
     expect(word).toHaveTextContent('Your turn');
     expect(pill()).toHaveAttribute('title', 'Your turn');
-    // The same tone as the worded pill, and still named by its full sentence.
+    // The same tone as the worded pill.
     expect(pill()).toHaveClass('bg-brand/15');
     expect(pill().querySelector('svg')).toHaveClass('text-brand');
-    expect(pill()).toHaveAccessibleName('Atlas needs you to sign in to northwind.example.');
+  });
+
+  describe('Your turn’s name follows whether it shows its words (WCAG 2.5.3)', () => {
+    /** Render the pill inside a chrome this many pixels wide, as the browser lays it out. */
+    function renderInChrome(width: number) {
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+        this: HTMLElement
+      ) {
+        const w = this.dataset.slot === 'browser-chrome' ? width : 0;
+        return { width: w, height: 0, top: 0, left: 0, right: w, bottom: 0, x: 0, y: 0 } as DOMRect;
+      });
+      render(
+        <div data-slot="browser-chrome">
+          <BrowserStatusPill state={EVERY_STATE['your-turn']} agentName="Atlas" now={NOW} />
+        </div>
+      );
+    }
+
+    it('says its words first while it shows them, as the literal "Your turn: "', () => {
+      renderInChrome(390);
+      const name = pill().getAttribute('aria-label')!;
+      expect(name.startsWith('Your turn: ')).toBe(true);
+      // The rest is the sentence, with the host DorkOS read from the page.
+      expect(name.slice('Your turn: '.length)).toBe(
+        'Atlas needs you to sign in to northwind.example.'
+      );
+    });
+
+    it('keeps the plain sentence when it is icon-only, below 360px of chrome', () => {
+      renderInChrome(300);
+      expect(pill()).toHaveAccessibleName('Atlas needs you to sign in to northwind.example.');
+    });
+
+    it('never gives the prefix to any other state', () => {
+      for (const kind of BROWSER_PILL_KINDS.filter((k) => k !== 'your-turn')) {
+        const { unmount } = render(
+          <div data-slot="browser-chrome">
+            <BrowserStatusPill state={EVERY_STATE[kind]} agentName="Atlas" now={NOW} />
+          </div>
+        );
+        expect(pill().getAttribute('aria-label')).not.toMatch(/^Your turn/);
+        unmount();
+      }
+    });
   });
 
   it('gives only Your turn a tooltip, since the others are named in their popover', () => {
@@ -438,8 +482,11 @@ describe('BrowserStatusPill', () => {
     );
     render(<BrowserStatusPill state={state} agentName="your-bank.example" now={NOW} />);
     expect(pill()).toHaveAccessibleName(
-      'your-bank.example needs you to sign in to attacker.example.'
+      'Your turn: your-bank.example needs you to sign in to attacker.example.'
     );
+    // The prefix is DorkOS's own literal words; the host is still the page's.
+    expect(pill().getAttribute('aria-label')!.startsWith('Your turn: ')).toBe(true);
+    expect(pill().getAttribute('aria-label')).toMatch(/sign in to attacker\.example\.$/);
     // The page's title, which the page itself wrote, appears nowhere.
     expect(document.body.textContent).not.toContain('Sign in to your-bank.example');
   });
