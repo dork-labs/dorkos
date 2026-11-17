@@ -47,14 +47,16 @@ import { marksOf } from '../../../core/turn-power/turn-levels.js';
 import { NEVER_ASK_MODE_ID } from '../runtime-constants.js';
 import { inSessionToolName } from '../mcp-tools/tool-exposure.js';
 import {
-  carriesOutsiderMark,
   ceilingOn,
   gatePermissionMode,
   heldForOutsider,
   type CeilingedMode,
 } from '../turn-permission.js';
 import { DORKOS_AGENT_TOOLS, dorkosAutoAllows } from './auto-allow.js';
-import { NEVER_ASK_STATUS_READS_QUALIFIED, STATUS_READ_MODES } from './never-ask-status-reads.js';
+import {
+  NEVER_ASK_STATUS_READS_QUALIFIED,
+  statusReadRunsUnasked,
+} from './never-ask-status-reads.js';
 import { OWN_CONNECTION_READS_QUALIFIED } from './own-connection-reads.js';
 import type { ToolApprovalContext, ToolGateLogger } from '../messaging/interactive-handlers.js';
 
@@ -123,6 +125,7 @@ function markedOrDoubtful(isMarked: () => boolean): boolean {
  * @param readOutsideWords - Whether the chat read words from outside the team by the wider
  *   DOR-4029 test (`chatReadOutsideWords`): its marks, a room turn's note, or a launch from a chat
  *   binding, an outside sender or a connector event. Read at call time; a throw counts as yes.
+ *   Absent, it counts as yes too, so a caller that forgets it gets no status read (Security S3).
  */
 export async function neverAskAllows(
   session: NeverAskSession,
@@ -132,28 +135,15 @@ export async function neverAskAllows(
   resolveIdentity: () => Promise<unknown>,
   log: ToolGateLogger,
   isMarked: () => boolean = () => false,
-  readOutsideWords: () => boolean = () => false
+  readOutsideWords: () => boolean = () => true
 ): Promise<boolean> {
-  const mode = gatePermissionMode(session);
-  const statusRead = NEVER_ASK_STATUS_READS_QUALIFIED.has(toolName);
-  // The status reads run unasked at Ask first and Accept edits too (DOR-4601); all else, Never ask.
-  if (statusRead ? !STATUS_READ_MODES.has(mode) : mode !== NEVER_ASK_MODE_ID) return false;
+  // The status reads also run at Ask first and Accept edits (DOR-4601), by their own rule.
+  if (NEVER_ASK_STATUS_READS_QUALIFIED.has(toolName)) {
+    return statusReadRunsUnasked(session, toolName, mcpServer, isMarked, readOutsideWords);
+  }
+  if (gatePermissionMode(session) !== NEVER_ASK_MODE_ID) return false;
   // Proven, not assumed: an absent source is NOT the host here.
   if (mcpServer?.source !== 'sdk') return false;
-  // The named status reads (DOR-3971) return the owner's working data, so they run only in a chat
-  // that read nothing from outside the team: not a stranger's turn, not one our agents passed an
-  // outsider's words on to, not one marked by a line it read, and not one the wider DOR-4029 test
-  // says read outside words (a chat binding, an outside sender, a connector event). A teammate's
-  // turn still gets them.
-  if (statusRead) {
-    // `carriesOutsiderMark` covers a stranger's ceiling too; the first check states it outright.
-    return (
-      ceilingOn(session) !== 'stranger' &&
-      !carriesOutsiderMark(session) &&
-      !markedOrDoubtful(isMarked) &&
-      !markedOrDoubtful(readOutsideWords)
-    );
-  }
   if (!DORKOS_AGENT_TOOLS.has(toolName)) return false;
   if (toolName === CHAT_SEND_QUALIFIED) {
     // A held turn (a Wi-Fi sign-in's) passes nothing on.
@@ -195,14 +185,14 @@ export async function neverAskAllows(
  * @param log - Where a failed lookup is reported.
  * @param isMarked - Whether the running turn is marked, read at call time.
  * @param readOutsideWords - Whether the chat read outside words by the DOR-4029 test, read at
- *   call time; bounds the status reads.
+ *   call time; bounds the status reads. Absent, it counts as yes (fails closed, Security S3).
  */
 export function createNeverAskHook(
   session: NeverAskSession,
   resolveIdentity: () => Promise<unknown>,
   log: ToolGateLogger,
   isMarked: () => boolean = () => false,
-  readOutsideWords: () => boolean = () => false
+  readOutsideWords: () => boolean = () => true
 ): HookCallback {
   return async (hookInput) => {
     if (hookInput.hook_event_name !== 'PreToolUse') return {};

@@ -30,8 +30,16 @@
  *
  * @module services/runtimes/claude-code/tool-gate/never-ask-status-reads
  */
+import type { PermissionModeId } from '@dorkos/shared/schemas';
 import { NEVER_ASK_MODE_ID } from '../runtime-constants.js';
 import { inSessionToolName } from '../mcp-tools/tool-exposure.js';
+import {
+  carriesOutsiderMark,
+  ceilingOn,
+  gatePermissionMode,
+  type CeilingedMode,
+} from '../turn-permission.js';
+import type { ToolApprovalContext } from '../messaging/interactive-handlers.js';
 
 /** Each status read, by bare tool name, and why a run with nobody there may call it. */
 export const NEVER_ASK_STATUS_READS: Readonly<Record<string, string>> = {
@@ -58,3 +66,49 @@ export const STATUS_READ_MODES: ReadonlySet<string> = new Set([
   'default',
   'acceptEdits',
 ]);
+
+/** Whether a check says yes; a throw counts as yes. */
+function yesOrDoubtful(check: () => boolean): boolean {
+  try {
+    return check();
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Whether one of the named status reads runs unasked right now (DOR-3971, DOR-4601). Read by the
+ * Never ask hook and by `canUseTool`, so the two cannot disagree: at Ask first and Accept edits the
+ * answer is the same whether or not the CLI honours the hook's `allow` before it calls `canUseTool`.
+ *
+ * Only at the levels in {@link STATUS_READ_MODES}, only for the server DorkOS registered, and only
+ * in a chat that read nothing from outside the team: not a stranger's turn, not one our agents
+ * passed an outsider's words on to, not one marked by a line it read, and not one the wider
+ * DOR-4029 test says read outside words (a chat binding, an outside sender, a connector event). A
+ * teammate's turn still gets them. Never throws; a throwing check counts as outside words.
+ *
+ * @param session - The session's chosen mode and both ceilings.
+ * @param toolName - The tool the model called.
+ * @param mcpServer - The serving server's provenance.
+ * @param isMarked - Whether the running turn is marked, read at call time.
+ * @param readOutsideWords - Whether the chat read outside words by the DOR-4029 test.
+ */
+export function statusReadRunsUnasked(
+  session: CeilingedMode<PermissionModeId>,
+  toolName: string,
+  mcpServer: ToolApprovalContext['mcpServer'],
+  isMarked: () => boolean,
+  readOutsideWords: () => boolean
+): boolean {
+  if (!NEVER_ASK_STATUS_READS_QUALIFIED.has(toolName)) return false;
+  if (!STATUS_READ_MODES.has(gatePermissionMode(session))) return false;
+  // Proven, not assumed: an absent source is NOT the host here.
+  if (mcpServer?.source !== 'sdk') return false;
+  // `carriesOutsiderMark` covers a stranger's ceiling too; the first check states it outright.
+  return (
+    ceilingOn(session) !== 'stranger' &&
+    !carriesOutsiderMark(session) &&
+    !yesOrDoubtful(isMarked) &&
+    !yesOrDoubtful(readOutsideWords)
+  );
+}

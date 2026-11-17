@@ -104,7 +104,7 @@ function decide(
     options.resolveIdentity ?? IDENTITY,
     noopLog,
     options.isMarked,
-    options.readOutsideWords
+    options.readOutsideWords ?? (() => false)
   )(input, 'use-1', { signal: new AbortController().signal });
 }
 
@@ -124,6 +124,21 @@ describe('the Never ask status reads', () => {
       expect(tiers.get(name), `${name} is a real tool`).toBe('observe');
       expect(NEVER_ASK_STATUS_READS, name).not.toHaveProperty(name);
     }
+  });
+
+  it('fail closed: a hook built without the outside-words check runs none (Security S3)', async () => {
+    const input = {
+      hook_event_name: 'PreToolUse',
+      session_id: 's',
+      transcript_path: '/tmp/t.jsonl',
+      cwd: '/agents/ana',
+      tool_name: inSessionToolName('running_chats'),
+      tool_input: {},
+      tool_use_id: 'use-1',
+      mcp_server: SDK,
+    } as HookInput;
+    const bare = createNeverAskHook(NEVER_ASK, IDENTITY, noopLog);
+    expect(await bare(input, 'use-1', { signal: new AbortController().signal })).toEqual({});
   });
 
   it('share no name with the safe list, whose per-call checks they would skip', () => {

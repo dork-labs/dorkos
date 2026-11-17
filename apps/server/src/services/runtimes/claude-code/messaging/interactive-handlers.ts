@@ -49,6 +49,7 @@ import {
 } from '../sessions/tool-result-outcome.js';
 import { randomUUID } from 'node:crypto';
 import type { ReadFolders } from '../tool-gate/held-turn-reads.js';
+import { statusReadRunsUnasked } from '../tool-gate/never-ask-status-reads.js';
 import {
   autoAllowedByCall,
   DORKOS_AGENT_TOOLS,
@@ -477,6 +478,9 @@ export interface ToolApprovalContext {
  * @param readFolders - The folders a file read skips the card inside (DOR-3300). A launch hands in
  *   the working folder, the agent's home and this turn's grants; the default is the session's own
  *   folder, and a session with none has no read that skips the card.
+ * @param outsideChecks - Whether the turn is marked, and whether the chat read outside words by the
+ *   DOR-4029 test (`turnOutsideChecks`), for the status reads. Absent, both count as yes, so a
+ *   caller that forgets them gets no status read unasked.
  */
 export function createCanUseTool(
   session: InteractiveSession & CeilingedMode<PermissionModeId>,
@@ -487,7 +491,11 @@ export function createCanUseTool(
   ),
   readFolders: ReadFolders | undefined = session.cwd
     ? { cwd: session.cwd, roots: [session.cwd] }
-    : undefined
+    : undefined,
+  outsideChecks: [isMarked: () => boolean, readOutsideWords: () => boolean] = [
+    () => true,
+    () => true,
+  ]
 ): (
   toolName: string,
   input: Record<string, unknown>,
@@ -502,6 +510,15 @@ export function createCanUseTool(
     // auto-allowed on the strength of the level a person chose for others, and
     // nor may background work an earlier ceilinged turn left running.
     const full = chosenFullAutonomy(session);
+    // The named status reads run unasked at Ask first and Accept edits (DOR-4601), by the same rule
+    // the Never ask hook reads, so the answer holds whether or not the CLI honoured its `allow`.
+    if (statusReadRunsUnasked(session, toolName, context.mcpServer, ...outsideChecks)) {
+      log.debug('[canUseTool] status read runs unasked', {
+        toolName,
+        toolUseID: context.toolUseID,
+      });
+      return { behavior: 'allow', updatedInput: input };
+    }
     const decision = full ? 'allow' : resolveModeDecision(gatePermissionMode(session));
     // "Never ask": `neverAsks` also covers a chat set to it whose turn a
     // stricter ceiling holds to Plan, which would otherwise ask.
