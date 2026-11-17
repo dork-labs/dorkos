@@ -18,6 +18,7 @@ import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-
 import { recordTurnLevels } from '../../turn-power/turn-levels.js';
 import { noteRoomTurnWords } from '../../turn-power/outside-words.js';
 import { chatReadOutsideWords } from '../../turn-power/chat-outside-words.js';
+import { setContinuationHoldDb } from '../../turn-power/continuation-hold.js';
 import { resetLiveOutsiderTurns } from '../../turn-power/live-outsider-turns.js';
 import { resetChosenTurns } from '../../turn-power/full-autonomy.js';
 import { ApprovalService } from '../../approvals/index.js';
@@ -293,9 +294,13 @@ describe('a destructive connected-app call from a turn that answered outside wor
 });
 
 // Security M1 on 8cfce13: a continuation turn (a verdict wake, a resume) of a stranger's bridged
-// chat carries no mark of its own, so what its words carry on reads the chat's origin, as on main.
-describe("words a stranger's bridged chat sends on after a continuation turn", () => {
-  it('still carry outside words', async () => {
+// chat carries no mark of its own, so what its words carry on reads the chat's last real turn,
+// which the continuation never overwrites (DOR-4593).
+describe('words a bridged chat sends on after a continuation turn', () => {
+  beforeEach(() => setContinuationHoldDb(createTestDb()));
+  afterEach(() => setContinuationHoldDb(undefined));
+
+  it("a stranger's still carry outside words", async () => {
     const chat = fresh();
     vi.spyOn(runtimeRegistry, 'getSessionLaunchOrigin').mockReturnValue('relay-binding');
     await ran(chat, 'bypassPermissions', { carriedMarks: { outsider: true } });
@@ -303,6 +308,17 @@ describe("words a stranger's bridged chat sends on after a continuation turn", (
       permissionCeiling: 'runtime-default',
       continuationHold: true,
     });
-    expect(chatReadOutsideWords(chat, AGENT.agentPath)).toBe(true);
+    expect(chatReadOutsideWords(chat, AGENT.agentPath, true)).toBe(true);
+  });
+
+  it("the owner's own linked chat's stay clean", async () => {
+    const chat = fresh();
+    vi.spyOn(runtimeRegistry, 'getSessionLaunchOrigin').mockReturnValue('relay-binding');
+    await ran(chat, 'bypassPermissions');
+    await ran(chat, 'bypassPermissions', {
+      permissionCeiling: 'runtime-default',
+      continuationHold: true,
+    });
+    expect(chatReadOutsideWords(chat, AGENT.agentPath, true)).toBe(false);
   });
 });

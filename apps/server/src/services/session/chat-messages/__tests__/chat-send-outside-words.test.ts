@@ -44,6 +44,7 @@ import { ChatMessageStore } from '../chat-message-store.js';
 import { ChatMessageService, type ChatMessageServiceDeps } from '../chat-message-service.js';
 import { rowsCarryWords } from '../chat-message-ceiling.js';
 import { passedOnLevelOf } from '../../../core/turn-power/turn-levels.js';
+import { noteTurnHold, setContinuationHoldDb } from '../../../core/turn-power/continuation-hold.js';
 import {
   noteRoomTurnWords,
   roomTurnReadOutsideWords,
@@ -229,14 +230,29 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
+/** A Telegram chat whose latest real turn was a stranger's (marked) or the owner's own (DOR-4593). */
+function telegramChat(strangers: boolean) {
+  origins.set(ana, 'relay-binding');
+  setContinuationHoldDb(createTestDb());
+  noteTurnHold(ana, strangers);
+}
+
 describe('a chat_send from a chat that read outside words', () => {
+  afterEach(() => setContinuationHoldDb(undefined));
+
   it.each([
     ['a room turn that answered a stranger', () => noteRoomTurnWords(ana, true)],
-    ['a Telegram chat', () => origins.set(ana, 'relay-binding')],
+    ["a stranger's Telegram chat", () => telegramChat(true)],
   ])('from %s: the turn it wakes is noted before it runs', async (_label, mark) => {
     mark();
     await anaSendsBo();
     expect(notedAtSend).toEqual([true]);
+  });
+
+  it("from the owner's own Telegram chat: the turn it wakes is not noted (DOR-4593)", async () => {
+    telegramChat(false);
+    await anaSendsBo();
+    expect(notedAtSend).toEqual([false]);
   });
 
   it('wakes a turn that cannot rewrite or remove a note (memory)', async () => {

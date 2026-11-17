@@ -20,6 +20,8 @@ import {
   roomTurnReadOutsideWords,
 } from '../../core/turn-power/outside-words.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
+import { createTestDb } from '@dorkos/test-utils/db';
+import { noteTurnHold, setContinuationHoldDb } from '../../core/turn-power/continuation-hold.js';
 import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomService } from '../room-service.js';
 import type { RoomTurnRequest } from '../room-turn-port.js';
@@ -252,16 +254,27 @@ describe('a turn that answers a mini app’s post', () => {
 // DOR-4023, Security: marks spread through agent hops. An agent whose chat read outside words and
 // then posts carries them to the turn its post wakes.
 describe('an agent post from a chat that read outside words', () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    setContinuationHoldDb(undefined);
+    vi.restoreAllMocks();
+  });
 
   // DOR-4029 (Security S4 on #3576): a chat a stranger started (a Telegram chat) has read their
-  // words without any room turn noting it, and its post carries them on too.
+  // words without any room turn noting it, and its post carries them on too. The owner's own
+  // linked chat, whose turns are not marked, carries nothing (DOR-4593).
   it.each([
-    ['carries them to the turn it wakes', true, null],
-    ['carries them from a Telegram chat (DOR-4029)', false, 'relay-binding'],
-    ['carries nothing from a clean chat', false, null],
-  ])('%s', async (_label, readOutside, origin) => {
-    const expected = readOutside || origin !== null;
+    ['carries them to the turn it wakes', true, null, false],
+    ["carries them from a stranger's Telegram chat (DOR-4029)", false, 'relay-binding', true],
+    [
+      "carries nothing from the owner's own Telegram chat (DOR-4593)",
+      false,
+      'relay-binding',
+      false,
+    ],
+    ['carries nothing from a clean chat', false, null, false],
+  ])('%s', async (_label, readOutside, origin, strangers) => {
+    const expected = readOutside || strangers;
+    setContinuationHoldDb(createTestDb());
     const seen: RoomTurnRequest[] = [];
     const rooms: { service?: RoomService } = {};
     const runner = outcomeRunner((request) => {
@@ -274,6 +287,8 @@ describe('an agent post from a chat that read outside words', () => {
           vi.spyOn(runtimeRegistry, 'getSessionLaunchOrigin').mockImplementation((id: string) =>
             id === anaChat ? origin : null
           );
+          // Whether the chat's latest real turn was a stranger's, as the bridge marks it.
+          noteTurnHold(anaChat, strangers);
         }
         rooms.service!.postFromTool(request.room.id, {
           authorId: request.authorId,
