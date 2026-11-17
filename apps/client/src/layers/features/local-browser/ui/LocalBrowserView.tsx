@@ -9,6 +9,13 @@ import type { NativeStillControls } from '../model/use-native-browser-surface';
 import { searchAddress } from '../lib/page-error';
 import { browserErrorMessage } from '../lib/browser-error-message';
 import { BrowserPageArea } from './BrowserPageArea';
+import { PageAreaBlock } from './PageAreaBlock';
+
+/** The address of a new empty page. */
+export const EMPTY_PAGE = 'about:blank';
+
+/** What a new empty page says in its place (DOR-4420 spec §9). */
+const EMPTY_PAGE_LINE = 'Type an address or a search above.';
 
 /** Props for {@link LocalBrowserView}. */
 export interface LocalBrowserViewProps {
@@ -227,21 +234,34 @@ export function LocalBrowserView({
           disabled={busy}
           onStillControls={keepStillControls}
         >
-          {surfaceUnavailable && (
-            <div className="space-y-2 p-3">
-              <p role="alert" className="text-sm">
-                Couldn’t show the page. Reconnect to try again.
-              </p>
-              <Button size="sm" variant="outline" onClick={onReconnect} disabled={busy}>
-                Reconnect
-              </Button>
+          {surfaceUnavailable ? (
+            <div className="absolute inset-0 flex flex-col">
+              <PageAreaBlock>
+                <p role="alert" className="text-sm">
+                  Couldn’t show the page. Reconnect to try again.
+                </p>
+                <Button size="sm" variant="outline" onClick={onReconnect} disabled={busy}>
+                  Reconnect
+                </Button>
+              </PageAreaBlock>
             </div>
+          ) : (
+            tab?.url === EMPTY_PAGE && (
+              // The panel keeps the native page hidden while it is empty, so this shows.
+              <div className="absolute inset-0 flex flex-col">
+                <PageAreaBlock>
+                  <p className="text-muted-foreground text-center text-sm">{EMPTY_PAGE_LINE}</p>
+                </PageAreaBlock>
+              </div>
+            )
           )}
         </BrowserPageArea>
       ) : (
-        <p className="text-muted-foreground p-3 text-sm">
-          This page is in the separate browser window.
-        </p>
+        <PageAreaBlock>
+          <p className="text-muted-foreground text-center text-sm">
+            This page is in the separate browser window.
+          </p>
+        </PageAreaBlock>
       )}
     </div>
   );
