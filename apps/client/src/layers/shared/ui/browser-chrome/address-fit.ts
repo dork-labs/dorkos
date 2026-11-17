@@ -65,6 +65,12 @@ export const ROOMY_ADDRESS_FIT: AddressFit = {
 };
 
 /**
+ * The address before anything is measured (first paint, a hidden panel, no resize
+ * yet): the whole host, free to wrap, so no guess can ever clip or elide it.
+ */
+export const UNMEASURED_ADDRESS_FIT: AddressFit = { ...ROOMY_ADDRESS_FIT, wrap: true };
+
+/**
  * Choose how the at-rest address fits, giving up the least it can and never
  * clipping the kept part.
  *

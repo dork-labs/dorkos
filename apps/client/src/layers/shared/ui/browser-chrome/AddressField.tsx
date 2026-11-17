@@ -93,7 +93,10 @@ function AddressMeasure({
       ref={ref}
       aria-hidden
       data-slot="browser-address-measure"
-      className="pointer-events-none invisible absolute top-0 left-0 whitespace-nowrap"
+      // Unseen, unclickable and unselectable; a zero-size box that clips, so its
+      // one-line copy can never stretch, scroll or overlap anything. Clipping
+      // leaves each part's own measured width as it is.
+      className="pointer-events-none invisible absolute top-0 left-0 size-0 overflow-hidden whitespace-nowrap select-none"
     >
       <Measured name="host" text={host} />
       <Measured name="kept" text={kept} />

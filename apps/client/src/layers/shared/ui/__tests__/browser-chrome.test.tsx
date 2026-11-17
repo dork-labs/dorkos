@@ -412,6 +412,36 @@ describe('BrowserChrome', () => {
     }
     afterEach(() => vi.restoreAllMocks());
 
+    it('before anything is measured, shows the whole host free to wrap, never a clipped guess', () => {
+      // No layout: first paint, a hidden panel (width 0), no resize yet.
+      renderChrome({ url: 'https://accounts.google.com.attacker.example/login' });
+      expect(address()).toHaveAttribute('data-host-fit', 'full');
+      expect(address()).toHaveAttribute('data-wrap', 'true');
+      expect(address()).toHaveClass('h-auto', 'min-h-11');
+      expect(host()).toHaveClass('whitespace-normal');
+      expect(host().textContent).toBe('accounts.google.com.attacker.example');
+      expect(host().style.fontSize).toBe('');
+    });
+
+    it('measures from a hidden copy that can take no click, focus or room', () => {
+      renderChrome({ url: 'https://accounts.google.com.attacker.example/login' });
+      const copy = document.querySelector('[data-slot="browser-address-measure"]') as HTMLElement;
+      expect(copy).toHaveAttribute('aria-hidden', 'true');
+      // Unseen and unclickable, and a zero-size box that clips, so its one-line copy
+      // can't stretch or scroll anything around it.
+      expect(copy).toHaveClass(
+        'pointer-events-none',
+        'invisible',
+        'absolute',
+        'size-0',
+        'overflow-hidden',
+        'select-none'
+      );
+      expect(copy.querySelector('a, button, input, [tabindex]')).toBeNull();
+      // Its words come from attributes, so the page never says them twice.
+      expect(copy.textContent).toBe('');
+    });
+
     it('draws the whole host when it fits, the start included', () => {
       withLayout(400);
       renderChrome({ url: 'https://accounts.google.com.attacker.example/login' });

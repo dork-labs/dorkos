@@ -1,5 +1,5 @@
 import { useLayoutEffect, useState, type RefObject } from 'react';
-import { ROOMY_ADDRESS_FIT, chooseAddressFit, type AddressFit } from './address-fit';
+import { UNMEASURED_ADDRESS_FIT, chooseAddressFit, type AddressFit } from './address-fit';
 
 /** The at-rest field's normal left padding, `px-2`. */
 const PADDING_LEFT_PX = 8;
@@ -18,7 +18,7 @@ function measured(root: HTMLElement, name: string): number {
  * Measure the at-rest address field and choose how its address fits
  * (`chooseAddressFit`), again whenever the field resizes. `measure` is a hidden
  * copy of the parts at their normal size, so a choice never feeds its own
- * measurement. With no layout yet (a width of 0) everything shows, as with room.
+ * measurement. With no layout yet (a width of 0) the whole host shows, free to wrap.
  *
  * @param field - The at-rest field.
  * @param measure - The hidden copy, its parts marked `data-measure`.
@@ -29,7 +29,7 @@ export function useAddressFit(
   measure: RefObject<HTMLElement | null>,
   key: string
 ): AddressFit {
-  const [fit, setFit] = useState<AddressFit>(ROOMY_ADDRESS_FIT);
+  const [fit, setFit] = useState<AddressFit>(UNMEASURED_ADDRESS_FIT);
   useLayoutEffect(() => {
     const box = field.current;
     const copy = measure.current;
@@ -38,7 +38,7 @@ export function useAddressFit(
       const width = box.clientWidth;
       const host = measured(copy, 'host');
       if (width === 0 || host === 0) {
-        setFit(ROOMY_ADDRESS_FIT);
+        setFit(UNMEASURED_ADDRESS_FIT);
         return;
       }
       const paddingRight = parseFloat(getComputedStyle(box).paddingRight) || 0;
