@@ -138,6 +138,11 @@ export interface LocalBrowserObservation {
   tabId: string;
   /** The selected page was opened by the one HTTP fallback and is still on HTTP. */
   openedOverHttp?: boolean;
+  /**
+   * The site refused the Agent browser itself (DOR-4097): a sign-in it won't take
+   * here, or a bot check. `host` is from the page's address; `next` says to stop.
+   */
+  refusal?: { kind: 'sign-in' | 'blocked'; host: string; next: string };
 }
 export interface LocalBrowserCapabilities {
   platform: string;
@@ -269,6 +274,16 @@ export const LocalBrowserObservationSchema = z.object({
     .optional()
     .describe(
       'True while this page is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details.'
+    ),
+  refusal: z
+    .object({
+      kind: z.enum(['sign-in', 'blocked']),
+      host: z.string(),
+      next: z.string(),
+    })
+    .optional()
+    .describe(
+      'Present when the site refused the Agent browser itself. Follow next: stop and hand the site to the person.'
     ),
 });
 

@@ -685,6 +685,10 @@
       "types": "./src/local-browser-page-error.ts",
       "default": "./dist/local-browser-page-error.js"
     },
+    "./local-browser-refusal": {
+      "types": "./src/local-browser-refusal.ts",
+      "default": "./dist/local-browser-refusal.js"
+    },
     "./transport-local-browser": {
       "types": "./src/transport-local-browser.ts",
       "default": "./dist/transport-local-browser.js"

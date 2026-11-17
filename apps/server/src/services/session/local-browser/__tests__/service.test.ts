@@ -13,6 +13,7 @@ import { AUDIT_WRITE_RESPONSE_TIMEOUT_MS, LOAD_START_MS } from '../page-action.j
 import { LocalBrowserService } from '../service.js';
 import { assertLocalBrowserUrl, httpFallbackAllowed, navigationRefusal } from '../errors.js';
 import { CLOUD_ORIGIN_REFUSAL } from '@dorkos/shared/cloud-origin';
+import { LOCAL_BROWSER_REFUSAL_NEXT } from '@dorkos/shared/local-browser-refusal';
 import { MAX_BROWSER_SNAPSHOT_BYTES, MAX_BROWSER_SCREENSHOT_EDGE } from '../observation-limits.js';
 import type { LocalBrowserBackend } from '../playwright-backend.js';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -2471,5 +2472,51 @@ describe('Back and Forward (DOR-4449)', () => {
       canGoForward: false,
     });
     await service.disconnect();
+  });
+});
+
+// DOR-4097, DOR-4650: a site refusing the Agent browser reads as a refusal, so the
+// agent stops and hands it to the person instead of reading or fighting the page.
+describe('a page that refuses the Agent browser', () => {
+  it('tells the agent a Google sign-in refusal is a stop, from the page text', async () => {
+    const { service, navigate, change } = await create();
+    await selectOwned(service);
+    navigate('https://accounts.google.com/v3/signin/identifier?made=up');
+    change(
+      '- heading "Couldn’t sign you in" [level=1]\n- text: This browser or app may not be secure.'
+    );
+    const observed = await service.observe();
+    expect(observed.refusal).toEqual({
+      kind: 'sign-in',
+      host: 'accounts.google.com',
+      next: LOCAL_BROWSER_REFUSAL_NEXT,
+    });
+    await service.disconnect();
+  });
+
+  it('reads a bot check the same way, naming the host from the address', async () => {
+    const { service, navigate, change } = await create();
+    await selectOwned(service);
+    navigate('https://shop.example/cart');
+    change('- heading "Verify you are human" [level=1]\n- text: Sign in at attacker.example');
+    expect((await service.observe()).refusal).toEqual({
+      kind: 'blocked',
+      host: 'shop.example',
+      next: LOCAL_BROWSER_REFUSAL_NEXT,
+    });
+    await service.disconnect();
+  });
+
+  it('says nothing on an ordinary page', async () => {
+    const { service } = await create();
+    await selectOwned(service);
+    expect((await service.observe()).refusal).toBeUndefined();
+    await service.disconnect();
+  });
+
+  it('tells the agent to stop and hand over, never to retry or get around the check', () => {
+    expect(LOCAL_BROWSER_REFUSAL_NEXT).toMatch(/local_browser_ask_person/);
+    expect(LOCAL_BROWSER_REFUSAL_NEXT).toMatch(/\bStop\b/);
+    expect(LOCAL_BROWSER_REFUSAL_NEXT).not.toMatch(/user.?agent|try again|instead use/i);
   });
 });
