@@ -51,7 +51,7 @@ import {
 } from './turn-marks.js';
 import { primaryOf } from '../../session/resolution/session-key-registry.js';
 import { noteBridgedSender, noteTurnHold } from './continuation-hold.js';
-import { aliasRoomTurnWords, noteRoomTurnWords as noteOutsideWords } from './outside-words.js';
+import { aliasRoomTurnWords } from './outside-words.js';
 import { endReadMark, noteReadMark, sessionReadOutsideText } from './live-outsider-turns.js';
 
 /** The room turn's outside-words note travels with its level; a room runner sets both here. */
@@ -315,31 +315,27 @@ export function markRunningTurn(sessionId: string, read: TurnMarks): void {
  * until the conversation's next turn starts, which records a level of its own:
  *
  * - the outsider mark on the recorded level and its hand-off copy, under the id in hand and the
- *   conversation's first id (when neither has a record, the outside-words note stands in, which
- *   only a room turn clears: more marked, never fewer);
- * - an agent-wide entry for callers that know only the agent (`live-outsider-turns`);
- * - the chat's stored hold and its bridged-sender record, so a turn that picks the chat up on its
- *   own after a restart is held too.
+ *   conversation's first id;
+ * - a read record keyed by the first id, which {@link marksOf} ORs in even when no level was
+ *   recorded under the id a caller names, plus an agent-wide entry for callers that know only the
+ *   agent (`live-outsider-turns`);
+ * - the chat's stored hold, so a turn that picks the chat up on its own after a restart is held.
  *
  * @param sessionId - The conversation, from the verified caller.
  * @param agentPath - The calling agent's home, from its verified identity.
  */
 export function markRunningTurnOutsider(sessionId: string, agentPath?: string): void {
   const marks: TurnMarks = { outsider: true };
-  let recorded = false;
   for (const id of new Set([sessionId, primaryOf(sessionId)])) {
     const level = turnLevels.get(id);
-    if (level !== undefined) {
-      remember(turnLevels, id, withMarks(level, marks));
-      recorded = true;
-    }
+    if (level !== undefined) remember(turnLevels, id, withMarks(level, marks));
     const handOff = handOffLevels.get(id);
     if (handOff !== undefined) remember(handOffLevels, id, withMarks(handOff, marks));
   }
-  if (!recorded) noteOutsideWords(sessionId, true);
   noteReadMark(primaryOf(sessionId), agentPath);
+  // Not the bridged-sender latch: that says a stranger spoke on a Telegram or Slack bridge, and
+  // one inbox read in the owner's own linked chat must not make it a stranger's for good.
   noteTurnHold(sessionId, true);
-  noteBridgedSender(sessionId, { marked: true, bridged: false });
 }
 
 /**

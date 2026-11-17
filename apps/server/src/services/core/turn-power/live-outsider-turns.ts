@@ -79,13 +79,18 @@ export function countWhileRunning(
   })();
 }
 
-/** Session → the agent-wide entry a read inside its running turn added (DOR-3969). */
-const readMarks = new Map<string, { key: string; token: { readonly marks: TurnMarks } }>();
+/**
+ * Session → its read record (DOR-3969), with the agent-wide entry it added when the agent's home
+ * resolved.
+ */
+const readMarks = new Map<string, { key: string; token: { readonly marks: TurnMarks } } | null>();
 
 /**
- * Count a turn that read outside text mid-turn against its agent (DOR-3969), for callers that
- * know the agent but not the session (external `/mcp`, path-trust). It marks the agent's other
- * running turns too: more marked, never fewer. It ends when that session's next turn starts
+ * Record that a session's running turn read outside text mid-turn (DOR-3969), and count it
+ * against its agent for callers that know the agent but not the session (external `/mcp`,
+ * path-trust). The agent-wide entry marks the agent's other running turns too: more marked, never
+ * fewer. When the agent's home cannot be resolved the session's own record stands alone, rather
+ * than marking every agent. Both end when that session's next real turn starts
  * ({@link endReadMark}), never earlier.
  *
  * @param sessionId - The session whose turn read outside text.
@@ -93,7 +98,11 @@ const readMarks = new Map<string, { key: string; token: { readonly marks: TurnMa
  */
 export function noteReadMark(sessionId: string, agentPath: string | undefined): void {
   if (readMarks.has(sessionId)) return;
-  const key = (agentPath !== undefined ? homeKey(agentPath) : undefined) ?? UNPLACED;
+  const key = agentPath !== undefined ? homeKey(agentPath) : undefined;
+  if (key === undefined) {
+    readMarks.set(sessionId, null);
+    return;
+  }
   const token = { marks: { outsider: true } as TurnMarks };
   const turns = running.get(key) ?? new Set();
   turns.add(token);
@@ -119,8 +128,8 @@ export function sessionReadOutsideText(sessionId: string): boolean {
  */
 export function endReadMark(sessionId: string): void {
   const entry = readMarks.get(sessionId);
-  if (!entry) return;
   readMarks.delete(sessionId);
+  if (!entry) return;
   const turns = running.get(entry.key);
   if (!turns) return;
   turns.delete(entry.token);

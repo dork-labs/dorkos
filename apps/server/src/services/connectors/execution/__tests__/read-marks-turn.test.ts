@@ -40,6 +40,14 @@ import { eventFanOut } from '../../../core/event-fan-out.js';
 import { recordTurnLevels } from '../../../core/turn-power/turn-levels.js';
 import { resetChosenTurns } from '../../../core/turn-power/full-autonomy.js';
 import { resetLiveOutsiderTurns } from '../../../core/turn-power/live-outsider-turns.js';
+import {
+  linkSessionId,
+  resetSessionKeys,
+} from '../../../session/resolution/session-key-registry.js';
+import {
+  clearTestHomes,
+  registerTestHomes,
+} from '../../../core/agent-identity/__tests__/agent-home-fixture.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
 import { ConnectorRegistry } from '../../registry.js';
 import { createServerPrincipal } from '../../principal/server-principal.js';
@@ -152,6 +160,7 @@ describe('a connected-app read marks the turn it ran in, at Full', () => {
     readFails = false;
     resetChosenTurns();
     resetLiveOutsiderTurns();
+    registerTestHomes([AGENT.agentPath]);
     vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => {});
     db = createDb(':memory:');
     runMigrations(db);
@@ -210,11 +219,29 @@ describe('a connected-app read marks the turn it ran in, at Full', () => {
     resetPermissionGate();
     resetChosenTurns();
     resetLiveOutsiderTurns();
+    resetSessionKeys();
+    clearTestHomes();
     vi.restoreAllMocks();
   });
 
   /** The verified caller: the agent, in this chat, or (no chat) as the external server sees it. */
-  function caller(sessionId: string | undefined) {
+  function caller(sessionId: string | undefined, runtimeTurn?: string) {
+    if (runtimeTurn !== undefined) {
+      // The connector loopback: a turn-bound runtime principal, and no session in the context.
+      return {
+        serverPrincipal: createServerPrincipal({
+          kind: 'runtime',
+          owner: OWNER,
+          bindingId: 'binding-a',
+          runtime: 'claude-code',
+          canonicalSessionId: runtimeTurn,
+          agentId: 'agent-a',
+          agentPath: AGENT.agentPath,
+          canonicalCwd: AGENT.agentPath,
+        }),
+        identity: AGENT,
+      };
+    }
     return {
       serverPrincipal: createServerPrincipal({
         kind: 'agent',
@@ -228,7 +255,7 @@ describe('a connected-app read marks the turn it ran in, at Full', () => {
   }
 
   /** Read the inbox from the chat; resolves whether or not the app answered. */
-  async function read(sessionId: string) {
+  async function read(sessionId: string | undefined, runtimeTurn?: string) {
     await registry
       .invoke(
         'connectors.execute_read',
@@ -237,13 +264,13 @@ describe('a connected-app read marks the turn it ran in, at Full', () => {
           operationRevisionId: READ_REVISION_ID,
           arguments: { query: 'is:unread' },
         },
-        caller(sessionId)
+        caller(sessionId, runtimeTurn)
       )
       .catch(() => undefined);
   }
 
   /** Send one made-up email; the outcome and how many cards wait. */
-  async function send(sessionId: string | undefined) {
+  async function send(sessionId: string | undefined, runtimeTurn?: string) {
     const outcome = await registry
       .invoke(
         'connectors.execute_write',
@@ -252,7 +279,7 @@ describe('a connected-app read marks the turn it ran in, at Full', () => {
           operationRevisionId: SEND_REVISION_ID,
           arguments: { recipient_email: 'ann@example.com', subject: 'Garden', body: 'Made up.' },
         },
-        caller(sessionId)
+        caller(sessionId, runtimeTurn)
       )
       .then(
         () => 'ran',
@@ -300,6 +327,17 @@ describe('a connected-app read marks the turn it ran in, at Full', () => {
     await read(chat);
     await ranAtFull(chat, { permissionCeiling: 'runtime-default', continuationHold: true });
     expect(await send(chat)).toEqual({ outcome: 'approval_required', cards: 1 });
+  });
+
+  it('cards a send through the connector loopback, a runtime principal with no chat named', async () => {
+    const born = fresh();
+    const sdk = `${born}-sdk`;
+    await ranAtFull(born);
+    linkSessionId(born, sdk);
+    await read(undefined, sdk);
+    expect(await send(undefined, sdk)).toEqual({ outcome: 'approval_required', cards: 1 });
+    expect(await send(born)).toMatchObject({ outcome: 'approval_required' });
+    expect(sent).not.toHaveBeenCalled();
   });
 
   it('marks the agent for a caller that names no chat, until that chat starts a new turn', async () => {
