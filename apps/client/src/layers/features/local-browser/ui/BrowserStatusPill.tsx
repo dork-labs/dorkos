@@ -236,6 +236,9 @@ export function BrowserStatusPill({
               data-slot="browser-status-pill"
               data-state-kind={state.kind}
               aria-label={copy.lines[0]}
+              // Your turn can go icon-only on a narrow row; a pointer still gets its
+              // words. A native hint draws above the page, so it never blanks it (DOR-4438).
+              title={yourTurn ? copy.label : undefined}
               className={cn(
                 chipVariants({ size: 'sm' }),
                 // Reserved: the address field never moves when the words change.
@@ -247,6 +250,9 @@ export function BrowserStatusPill({
                 // On a phone, Your turn is as wide as its words, never cut; the field
                 // gives up the room. (The chip never shrinks: `shrink-0` is its own.)
                 yourTurn && 'max-md:w-auto',
+                // Below 360px of chrome its words would squeeze the field under its
+                // floor, so Your turn goes icon-only too, in the same tone (DOR-4436).
+                yourTurn && '@max-[359px]/browser-chrome:w-auto @max-[359px]/browser-chrome:px-2',
                 // Orange means "this is about you": only Your turn wears it.
                 yourTurn && 'bg-brand/15 text-foreground hover:bg-brand/25'
               )}
@@ -267,7 +273,8 @@ export function BrowserStatusPill({
                 className={cn(
                   'min-w-0 truncate',
                   !yourTurn && '@max-[479px]/browser-chrome:sr-only',
-                  yourTurn && 'max-md:min-w-max'
+                  yourTurn &&
+                    '@max-[359px]/browser-chrome:sr-only max-md:@min-[360px]/browser-chrome:min-w-max'
                 )}
               >
                 {copy.label}

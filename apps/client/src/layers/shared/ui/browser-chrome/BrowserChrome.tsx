@@ -165,7 +165,12 @@ export function BrowserChrome({
               className={menu ? 'hidden @min-[480px]/browser-chrome:inline-flex' : undefined}
             />
             {!phone && reload}
-            <div data-slot="browser-chrome-field" className="relative flex min-w-0 flex-1">
+            {/* On a phone the field keeps Reload's 44px plus 44 of host, which
+              truncates; below that the pill goes icon-only rather than squeeze it. */}
+            <div
+              data-slot="browser-chrome-field"
+              className="relative flex min-w-0 flex-1 max-md:min-w-22"
+            >
               {/* Keyed on the retry so a refused address reopens the field in edit
                 mode, holding what was typed rather than the page still open. */}
               <AddressField

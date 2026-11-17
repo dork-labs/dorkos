@@ -302,6 +302,12 @@ describe('BrowserChrome', () => {
       expect(onReload).toHaveBeenCalledOnce();
     });
 
+    it('never lets the field shrink under Reload plus a sliver of host', () => {
+      // DOR-4436 round 2: 88px is Reload's 44 plus 44 of host, which still truncates.
+      const { container } = renderChrome();
+      expect(field(container)).toHaveClass('max-md:min-w-22');
+    });
+
     it('turns that Reload into Stop while loading', () => {
       const onStop = vi.fn();
       const { container } = renderChrome({ loading: true, onStop });

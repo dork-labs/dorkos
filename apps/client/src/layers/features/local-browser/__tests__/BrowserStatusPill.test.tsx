@@ -311,15 +311,45 @@ describe('BrowserStatusPill', () => {
     }
   });
 
+  it('makes Your turn icon-only below 360px of chrome, keeping its words, tooltip and tone', () => {
+    // DOR-4436 round 2: below 360px the worded pill would squeeze the field under its floor.
+    render(<BrowserStatusPill state={EVERY_STATE['your-turn']} agentName="Atlas" now={NOW} />);
+    expect(pill()).toHaveClass(
+      '@max-[359px]/browser-chrome:w-auto',
+      '@max-[359px]/browser-chrome:px-2'
+    );
+    const word = pill().querySelector('[data-slot="browser-status-pill-label"]')!;
+    expect(word).toHaveClass('@max-[359px]/browser-chrome:sr-only');
+    // Its words stay: still in the button, and a tooltip names it to a pointer.
+    expect(word).toHaveTextContent('Your turn');
+    expect(pill()).toHaveAttribute('title', 'Your turn');
+    // The same tone as the worded pill, and still named by its full sentence.
+    expect(pill()).toHaveClass('bg-brand/15');
+    expect(pill().querySelector('svg')).toHaveClass('text-brand');
+    expect(pill()).toHaveAccessibleName('Atlas needs you to sign in to northwind.example.');
+  });
+
+  it('gives only Your turn a tooltip, since the others are named in their popover', () => {
+    for (const kind of BROWSER_PILL_KINDS) {
+      const { unmount } = render(
+        <BrowserStatusPill state={EVERY_STATE[kind]} agentName="Atlas" now={NOW} />
+      );
+      expect(pill().hasAttribute('title')).toBe(kind === 'your-turn');
+      unmount();
+    }
+  });
+
   it('shows Your turn’s full words on a phone and never shrinks', () => {
     render(<BrowserStatusPill state={EVERY_STATE['your-turn']} agentName="Atlas" now={NOW} />);
     // As wide as its words on a phone; the desktop's reserved width stays.
     expect(pill()).toHaveClass('shrink-0', 'w-32', 'max-md:w-auto');
     const word = pill().querySelector('span:last-child')!;
     expect(word).toHaveTextContent('Your turn');
-    // The words can't be squeezed into an ellipsis there.
-    expect(word).toHaveClass('max-md:min-w-max');
-    expect(word.className).not.toContain('sr-only');
+    // From 360px of chrome up, the words can't be squeezed into an ellipsis there.
+    expect(word).toHaveClass('max-md:@min-[360px]/browser-chrome:min-w-max');
+    // Hidden only below 360px of chrome (the test above), never below 480 like the rest.
+    expect(word).not.toHaveClass('sr-only');
+    expect(word).not.toHaveClass('@max-[479px]/browser-chrome:sr-only');
   });
 
   it('shows a live dot only while the agent drives', () => {

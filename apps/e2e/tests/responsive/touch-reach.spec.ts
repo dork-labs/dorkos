@@ -317,11 +317,57 @@ test.describe('Touch reach — the browser row on a phone (DOR-4436) @smoke', ()
     await expect(demo.getByRole('button', { name: /^Address:/ })).toHaveCSS('font-size', '16px');
   });
 
+  test('a 258px row never overlaps: Your turn goes icon-only and the field keeps its room', async ({
+    page,
+  }) => {
+    await page.goto('/dev/home-inbox');
+    const demo = page.getByTestId('browser-chrome-phone-narrow-your-turn');
+    await expect(demo, 'the Playground must draw the 258px browser row').toBeVisible({
+      timeout: 15_000,
+    });
+    await demo.scrollIntoViewIfNeeded();
+
+    const row = (await demo.locator('[data-slot="browser-chrome-row"]').boundingBox())!;
+    const field = (await demo.locator('[data-slot="browser-chrome-field"]').boundingBox())!;
+    const slot = (await demo.locator('[data-slot="browser-status-pill-slot"]').boundingBox())!;
+    const menu = (await demo
+      .getByRole('button', { name: 'Browser menu', exact: true })
+      .boundingBox())!;
+
+    // Left to right, each part ends before the next begins, and ⋯ stays inside the row.
+    expect(field.x + field.width, 'the field must end before the pill').toBeLessThanOrEqual(
+      slot.x + 0.5
+    );
+    expect(slot.x + slot.width, 'the pill must end before ⋯').toBeLessThanOrEqual(menu.x + 0.5);
+    expect(menu.x + menu.width, '⋯ must stay inside the row').toBeLessThanOrEqual(
+      row.x + row.width + 0.5
+    );
+    expect(field.width, 'the field keeps Reload plus some host').toBeGreaterThanOrEqual(87.5);
+    expect(slot.width, 'the pill still holds 44px').toBeGreaterThanOrEqual(43.5);
+    expect(menu.width, '⋯ still holds 44px').toBeGreaterThanOrEqual(43.5);
+
+    // Icon-only, but its words stay: in the button for assistive tech, and as a hint.
+    const pill = demo.locator('[data-slot="browser-status-pill"]');
+    await expect(pill).toHaveAttribute('title', 'Your turn');
+    await expect(pill.locator('[data-slot="browser-status-pill-label"]')).toHaveText('Your turn');
+    await expect(pill.locator('[data-slot="browser-status-pill-label"]')).toHaveCSS(
+      'position',
+      'absolute'
+    );
+  });
+
   test('Your turn shows its full words on a phone', async ({ page }) => {
+    // Still the phone layout (under 768), but wide enough that the Playground's page
+    // padding leaves the demo its full 390px; at a 390 viewport it is squeezed to ~258,
+    // where Your turn is icon-only on purpose (the test above).
+    await page.setViewportSize({ width: 540, height: PHONE.height });
     await page.goto('/dev/home-inbox');
     const demo = page.getByTestId('browser-chrome-phone-your-turn');
     await expect(demo).toBeVisible({ timeout: 15_000 });
     await demo.scrollIntoViewIfNeeded();
+    const rowWidth = (await demo.locator('[data-slot="browser-chrome-row"]').boundingBox())!.width;
+    // 390 less the demo frame's 1px border each side.
+    expect(rowWidth, 'the 390px case must get its 390px here').toBeGreaterThanOrEqual(387);
     const pill = demo.locator('[data-slot="browser-status-pill"]');
     await expect(pill).toHaveText('Your turn');
     // Nothing cut off: the words fit inside the chip.

@@ -6,7 +6,7 @@ import {
   type BrowserMenuOtherChat,
   type BrowserMenuPage,
 } from '@/layers/shared/ui';
-import { BrowserStatusPill } from '@/layers/features/local-browser';
+import { BrowserStatusPill, type BrowserPillState } from '@/layers/features/local-browser';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -63,6 +63,15 @@ const OTHER_CHATS: BrowserMenuOtherChat[] = [
     status: 'waiting',
   },
 ];
+
+/** The agent asking the person to sign in on a made-up site: the orange Your turn pill. */
+const YOUR_TURN: BrowserPillState = {
+  kind: 'your-turn',
+  site: 'northwind.example',
+  reason: 'password',
+  handoffId: 'demo',
+  askedAt: '2026-11-17T12:00:00.000Z',
+};
 
 /** The ⋯ menu with every group that can apply, on made-up pages and chats. */
 function DemoMenu() {
@@ -123,18 +132,18 @@ export function BrowserChromeShowcases() {
         <ChromeDemo
           width={390}
           testId="browser-chrome-phone-your-turn"
-          status={
-            <BrowserStatusPill
-              state={{
-                kind: 'your-turn',
-                site: 'northwind.example',
-                reason: 'password',
-                handoffId: 'demo',
-                askedAt: '2026-11-17T12:00:00.000Z',
-              }}
-              agentName="Atlas"
-            />
-          }
+          status={<BrowserStatusPill state={YOUR_TURN} agentName="Atlas" />}
+          menu={<DemoMenu />}
+        />
+      </ShowcaseDemo>
+      <ShowcaseLabel>
+        Phone, narrow (258px): Your turn goes icon-only below 360px, so the address keeps its room
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <ChromeDemo
+          width={258}
+          testId="browser-chrome-phone-narrow-your-turn"
+          status={<BrowserStatusPill state={YOUR_TURN} agentName="Atlas" />}
           menu={<DemoMenu />}
         />
       </ShowcaseDemo>
