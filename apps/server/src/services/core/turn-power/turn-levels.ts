@@ -51,7 +51,8 @@ import {
 } from './turn-marks.js';
 import { primaryOf } from '../../session/resolution/session-key-registry.js';
 import { noteBridgedSender, noteTurnHold } from './continuation-hold.js';
-import { aliasRoomTurnWords } from './outside-words.js';
+import { aliasRoomTurnWords, noteRoomTurnWords as noteOutsideWords } from './outside-words.js';
+import { endReadMark, noteReadMark, sessionReadOutsideText } from './live-outsider-turns.js';
 
 /** The room turn's outside-words note travels with its level; a room runner sets both here. */
 export { noteRoomTurnWords } from './outside-words.js';
@@ -198,8 +199,16 @@ export function marksOf(
   agentPath: string | undefined
 ): TurnMarks {
   const level = sessionId ? turnLevels.get(sessionId) : undefined;
-  if (level !== undefined) return marksOfLevel(level);
-  return agentPath !== undefined ? agentMarksRunning(agentPath) : NO_MARKS;
+  const marks =
+    level !== undefined
+      ? marksOfLevel(level)
+      : agentPath !== undefined
+        ? agentMarksRunning(agentPath)
+        : NO_MARKS;
+  // A read that handed this turn, or the turn a continuation picked up, outside text (DOR-3969).
+  return sessionId && sessionReadOutsideText(primaryOf(sessionId))
+    ? { ...marks, outsider: true }
+    : marks;
 }
 
 /**
@@ -297,6 +306,40 @@ export function markRunningTurn(sessionId: string, read: TurnMarks): void {
   if (level !== undefined) remember(turnLevels, sessionId, withMarks(level, marks));
   const handOff = handOffLevels.get(sessionId);
   if (handOff !== undefined) remember(handOffLevels, sessionId, withMarks(handOff, marks));
+}
+
+/**
+ * Mark a conversation's running turn as one that read outside text mid-turn (DOR-3969): a read
+ * through a connected app, a web page, or another MCP server. Only ever adds, and every enforcement
+ * point sees it on its next call, because each reads the level through {@link marksOf}. It lasts
+ * until the conversation's next turn starts, which records a level of its own:
+ *
+ * - the outsider mark on the recorded level and its hand-off copy, under the id in hand and the
+ *   conversation's first id (when neither has a record, the outside-words note stands in, which
+ *   only a room turn clears: more marked, never fewer);
+ * - an agent-wide entry for callers that know only the agent (`live-outsider-turns`);
+ * - the chat's stored hold and its bridged-sender record, so a turn that picks the chat up on its
+ *   own after a restart is held too.
+ *
+ * @param sessionId - The conversation, from the verified caller.
+ * @param agentPath - The calling agent's home, from its verified identity.
+ */
+export function markRunningTurnOutsider(sessionId: string, agentPath?: string): void {
+  const marks: TurnMarks = { outsider: true };
+  let recorded = false;
+  for (const id of new Set([sessionId, primaryOf(sessionId)])) {
+    const level = turnLevels.get(id);
+    if (level !== undefined) {
+      remember(turnLevels, id, withMarks(level, marks));
+      recorded = true;
+    }
+    const handOff = handOffLevels.get(id);
+    if (handOff !== undefined) remember(handOffLevels, id, withMarks(handOff, marks));
+  }
+  if (!recorded) noteOutsideWords(sessionId, true);
+  noteReadMark(primaryOf(sessionId), agentPath);
+  noteTurnHold(sessionId, true);
+  noteBridgedSender(sessionId, { marked: true, bridged: false });
 }
 
 /**
@@ -625,6 +668,9 @@ function recordLevels(
           } catch {
             stored = undefined;
           }
+          // A read's agent-wide mark from this chat's last turn ends as its next real turn starts
+          // (DOR-3969); a continuation picks up the same words, so it keeps it.
+          if (opts?.continuationHold !== true) endReadMark(primaryOf(sessionId));
           const level = recordTurn(target, sessionId, stored, opts);
           // Kept on the chat's row, for the turns that later pick it up on their own. A
           // turn a continuation's hold clamped read no new words, so it leaves the answer

@@ -79,6 +79,54 @@ export function countWhileRunning(
   })();
 }
 
+/** Session → the agent-wide entry a read inside its running turn added (DOR-3969). */
+const readMarks = new Map<string, { key: string; token: { readonly marks: TurnMarks } }>();
+
+/**
+ * Count a turn that read outside text mid-turn against its agent (DOR-3969), for callers that
+ * know the agent but not the session (external `/mcp`, path-trust). It marks the agent's other
+ * running turns too: more marked, never fewer. It ends when that session's next turn starts
+ * ({@link endReadMark}), never earlier.
+ *
+ * @param sessionId - The session whose turn read outside text.
+ * @param agentPath - The agent's home, from its verified identity.
+ */
+export function noteReadMark(sessionId: string, agentPath: string | undefined): void {
+  if (readMarks.has(sessionId)) return;
+  const key = (agentPath !== undefined ? homeKey(agentPath) : undefined) ?? UNPLACED;
+  const token = { marks: { outsider: true } as TurnMarks };
+  const turns = running.get(key) ?? new Set();
+  turns.add(token);
+  running.set(key, turns);
+  readMarks.set(sessionId, { key, token });
+}
+
+/**
+ * Whether a read inside this session's current turn, or the turn a continuation picked up, handed
+ * it outside text (DOR-3969).
+ *
+ * @param sessionId - The session.
+ */
+export function sessionReadOutsideText(sessionId: string): boolean {
+  return readMarks.has(sessionId);
+}
+
+/**
+ * End the agent-wide entry a read in this session's previous turn added. Called as its next turn
+ * starts.
+ *
+ * @param sessionId - The session starting a turn.
+ */
+export function endReadMark(sessionId: string): void {
+  const entry = readMarks.get(sessionId);
+  if (!entry) return;
+  readMarks.delete(sessionId);
+  const turns = running.get(entry.key);
+  if (!turns) return;
+  turns.delete(entry.token);
+  if (turns.size === 0) running.delete(entry.key);
+}
+
 /**
  * The marks of every marked turn the agent at this home has running, and of
  * every one no agent could be found for. `turn-marks.ts` merges them.
@@ -97,4 +145,5 @@ export function runningMarksOf(agentPath: string): readonly TurnMarks[] {
  */
 export function resetLiveOutsiderTurns(): void {
   running.clear();
+  readMarks.clear();
 }
