@@ -178,7 +178,7 @@ export function bindingUpdateEffect(
     add('Which kind of chat', filter(existing.channelType), filter(next.channelType));
   if (next.roomId !== undefined) add('Room', existing.roomId ?? 'none', next.roomId ?? 'none');
   return {
-    summary: `Let a chat route on ${card.headline} do more, or reach more chats.`,
+    summary: `Let a chat route on ${card.headline} do more.`,
     changes,
     ...(card.note ? { notes: [card.note] } : {}),
   };

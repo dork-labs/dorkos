@@ -280,7 +280,7 @@ export function refuseAgentRaiseYes(approvalId: string): AgentRaiseRefusal | und
   if (turnMarked(raise.agentPath, raise.sessionId)) {
     retire(raise, 'The agent’s turn read words from outside your team since it asked.');
     return askAgain(
-      'The agent read words from outside your team since it asked, so this card no longer counts.',
+      'The agent read outside words since asking, so this card no longer counts.',
       'agent_raise_marked'
     );
   }

@@ -3,6 +3,7 @@ covers:
   - 'fix(auth): turning on a chat connection that is already on changes nothing (DOR-4355)'
   - 'feat(auth): an agent asks on a card to let someone reach your agents or widen a chat route (DOR-4355, DOR-4595)'
   - 'fix(auth): an agent raise card never heads with a name an agent can set (DOR-4355)'
+  - 'fix(auth): agent raise card lines stay within 15 words (DOR-4355)'
 ---
 
 ### Security

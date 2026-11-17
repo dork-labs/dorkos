@@ -11,6 +11,7 @@ import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { ApprovalList, ApprovalsUnavailable } from '@/layers/features/approvals';
 import { AgentRequestApprovalShowcase } from './AgentRequestApprovalShowcase';
+import { AgentRaiseCardShowcase } from './AgentRaiseCardShowcase';
 import { INSTALL_SUMMARY, UPDATE_SUMMARY } from './marketplace-summary-samples';
 
 const POPOVER_CONTENT_PX = 424;
@@ -312,6 +313,11 @@ export function ApprovalCardShowcase() {
       </ShowcaseLabel>
       <ShowcaseDemo responsive>
         <AgentRequestApprovalShowcase />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>An agent’s raise: what changes, and its name kept apart</ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <AgentRaiseCardShowcase />
       </ShowcaseDemo>
 
       <ShowcaseLabel>Who asked, and how long is left</ShowcaseLabel>
