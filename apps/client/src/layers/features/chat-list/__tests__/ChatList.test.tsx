@@ -17,11 +17,22 @@ import { ChatList, CHAT_LIST_ROW_SLOT } from '../index';
 // `useAgentSessions` reaches `useSessionId`, which reads the URL. What the list
 // needs from the router is one value, which chat is open, so that is stubbed.
 let mockSearch: Record<string, unknown> = {};
+// `state.location` is read by the fork's overtaken-navigation guard (DOR-4622),
+// live on each check. It stays put unless a case moves the window itself.
+let mockLocation: { pathname: string; search: Record<string, unknown> } = {
+  pathname: '/session',
+  search: {},
+};
 vi.mock('@tanstack/react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tanstack/react-router')>()),
-  // `state.location` is read by the fork's overtaken-navigation guard
-  // (DOR-4622); it never moves here, so a fork always lands.
-  useRouter: () => ({ stores: {}, state: { location: { pathname: '/session', search: {} } } }),
+  useRouter: () => ({
+    stores: {},
+    state: {
+      get location() {
+        return mockLocation;
+      },
+    },
+  }),
   useSearch: () => mockSearch,
   useNavigate: () => vi.fn(),
   useRouterState: () => '/session',
@@ -172,6 +183,7 @@ function headings(): string[] {
 
 beforeEach(() => {
   mockSearch = {};
+  mockLocation = { pathname: '/session', search: {} };
   useSessionListStore.setState({ sessions: {}, statuses: {}, statusCwds: {}, unseen: {} });
   mockWaiting = [];
   vi.clearAllMocks();
@@ -455,6 +467,26 @@ describe('ChatList', () => {
       );
       await waitFor(() => expect(onOpenChat).toHaveBeenCalledWith('forked'));
       expect(onOpenChat).toHaveBeenCalledTimes(1);
+    });
+
+    it('a fork that finishes after the person opened another chat does not pull them back (DOR-4622)', async () => {
+      let finish!: (session: Session) => void;
+      mockTransport.forkSession = vi.fn(
+        () => new Promise<Session>((resolve) => (finish = resolve))
+      );
+      const { onOpenChat } = renderList([chat('a', 'One')]);
+      (await findRow('One')).focus();
+      await userEvent.keyboard('{Shift>}{Enter}{/Shift}');
+      await waitFor(() => expect(mockTransport.forkSession).toHaveBeenCalled());
+
+      // A tab switch or a sidebar click while the copy is still being made.
+      mockLocation = { pathname: '/session', search: { session: 'b' } };
+      finish(chat('forked', 'Fork'));
+
+      // Past the fork's own awaits (the copy, then the list refresh): the same
+      // turn of events that opens the fork in the case above.
+      await new Promise((r) => setTimeout(r, 50));
+      expect(onOpenChat).not.toHaveBeenCalled();
     });
 
     it('⌘↵ on a row menu item does not start a new chat', async () => {

@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(client): a late send or chat lookup never rewrites the chat you switched to (DOR-4622)'
+  - 'fix(client): overtaken opens stay quiet without breaking redirects, and background tabs keep the renamed chat (DOR-4622)'
 ---
 
 ### Fixed

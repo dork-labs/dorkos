@@ -23,7 +23,7 @@
  * having a location to be wrong about.
  */
 import { createContext, useContext, type ReactNode } from 'react';
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import {
   createMemoryHistory,
@@ -36,7 +36,7 @@ import {
 import { zodValidator } from '@tanstack/zod-adapter';
 import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 
-import { TransportProvider, useAppStore } from '@/layers/shared/model';
+import { TransportProvider, useAppStore, useAppTabsStore } from '@/layers/shared/model';
 import { sessionSearchSchema } from '@/layers/shared/lib';
 import { useSessionId, useStartNewSession } from '../use-session-id';
 
@@ -162,6 +162,52 @@ describe('setSessionId replace-rename (DOR-4622)', () => {
     await settle();
 
     expect(harness.readSearch().session).toBe('B');
+  });
+
+  describe('in the desktop shell', () => {
+    beforeEach(() => {
+      // What `isDesktopShell` checks for: the tab store is only ever written there.
+      window.electronAPI = { getServerPort: () => 4242 } as unknown as typeof window.electronAPI;
+    });
+
+    afterEach(() => {
+      delete window.electronAPI;
+      useAppTabsStore.setState({ tabs: [], activeTabId: null });
+    });
+
+    it('renames the background tab still saved on the old id, so a restart opens the right chat', async () => {
+      // Tab 1 sent its first message on a draft id and the person switched to
+      // Tab 2 before the server's id came back. The URL is Tab 2's, so the
+      // rename is skipped there, and Tab 1's saved address must be told.
+      useAppTabsStore.setState({
+        tabs: [
+          {
+            id: 'tab-1',
+            href: '/session?session=client-uuid&draft=1',
+            history: ['/session?session=client-uuid&draft=1'],
+            cursor: 0,
+          },
+          { id: 'tab-2', href: '/session?session=B', history: ['/session?session=B'], cursor: 0 },
+        ],
+        activeTabId: 'tab-2',
+      });
+      const harness = buildHarness('/session?session=client-uuid&draft=1');
+      const { result } = renderHook(() => useSessionId(), { wrapper: harness.Wrapper });
+      await harness.waitForRouterReady();
+      const setWhileOnTab1 = result.current[1];
+
+      await harness.goTo('/session?session=B');
+      await act(async () => {
+        setWhileOnTab1('sdk-canonical', { replace: true, from: 'client-uuid' });
+      });
+      await settle();
+
+      expect(harness.readSearch().session).toBe('B');
+      const [tab1, tab2] = useAppTabsStore.getState().tabs;
+      expect(tab1.href).toBe('/session?session=sdk-canonical&draft=1');
+      expect(tab1.history).toEqual(['/session?session=sdk-canonical&draft=1']);
+      expect(tab2.href).toBe('/session?session=B');
+    });
   });
 });
 

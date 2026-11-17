@@ -3,11 +3,16 @@ import { beginSessionNavigation } from '../../lib/session-navigation-intent';
 import { useCallback } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 
-import { useAppStore, useTransport } from '@/layers/shared/model';
+import { useAppStore, useAppTabsStore, useTransport } from '@/layers/shared/model';
 import { useSessionSearch } from './use-session-search';
 import { useLiveLocation } from './use-live-location';
 import { getSessionRouteContext, setSessionRouteContext } from './session-route-context';
-import { toSession, newSessionTarget, reportClientError } from '@/layers/shared/lib';
+import {
+  isDesktopShell,
+  toSession,
+  newSessionTarget,
+  reportClientError,
+} from '@/layers/shared/lib';
 
 /** Open a fresh conversation in the chosen directory, preserving an optional seed. */
 export function useStartNewSession(): (dir?: string, options?: StartNewSessionOptions) => void {
@@ -88,7 +93,8 @@ interface SetSessionIdRenameOptions {
    * The chat this rename renames from. The rename lands only while the live
    * location still shows it: renames arrive late (after a POST resolves, or a
    * rekey announce), and one that landed after a tab switch or a sidebar click
-   * would rewrite another chat's address into this one (DOR-4622).
+   * would rewrite another chat's address into this one (DOR-4622). Otherwise
+   * only desktop tabs still saved on `from` are renamed.
    */
   from: string;
 }
@@ -107,6 +113,22 @@ interface SetSessionIdBaseOptions {
   continuedFrom?: string;
 }
 
+/**
+ * Carry a rename the URL could not take to the tabs that still hold the chat.
+ *
+ * The chat left the screen before its new id arrived, but a desktop tab in the
+ * background may still be saved on the old one, and the in-memory rekey that
+ * redirects it is gone after a restart. So the saved tab is renamed, and the
+ * new id inherits the old one's route context so the tab reopens in the same
+ * folder. Desktop shell only, the gate `useAppTabsSync` uses: outside it the
+ * tab store is never written, not even its `sessionStorage` mirror (DOR-568).
+ */
+function renameInBackgroundTabs(from: string, to: string): void {
+  const context = getSessionRouteContext(from);
+  if (context && !getSessionRouteContext(to)) setSessionRouteContext(to, context);
+  if (isDesktopShell()) useAppTabsStore.getState().renameSessionInTabs(from, to);
+}
+
 /** Read the session from the URL and navigate when its id changes. */
 export function useSessionId(): [
   string | null,
@@ -121,10 +143,15 @@ export function useSessionId(): [
   // Stable reference — navigate from TanStack Router is already stable.
   const setSessionId = useCallback(
     (id: string | null, options?: SetSessionIdOptions) => {
-      // A rename of a chat the person has since left goes nowhere. Read from
-      // the router itself, not this render's `search`: the caller may hold a
-      // setter from before the switch, or a fresh one from after it.
-      if (options?.replace && readLocation().search.session !== options.from) return;
+      // A rename of a chat the person has since left never touches the URL,
+      // which now shows another chat; only the tabs still saved on it are
+      // renamed. Read from the router itself, not this render's `search`: the
+      // caller may hold a setter from before the switch, or a fresh one from
+      // after it.
+      if (options?.replace && readLocation().search.session !== options.from) {
+        if (id) renameInBackgroundTabs(options.from, id);
+        return;
+      }
       if (id && options?.draft) {
         // Taken at the call, checked after the server answers (DOR-4622).
         const isStillWanted = beginSessionNavigation(readLocation);
