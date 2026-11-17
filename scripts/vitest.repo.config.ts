@@ -50,6 +50,8 @@ export const REPO_WIDE_SUITES = [
   '__tests__/dependabot-lockstep-families.test.ts',
   '__tests__/extension-child-build-entry.test.ts',
   '__tests__/gray-matter-import-boundary.test.ts',
+  // Reads ci/config.yaml, the root package.json and vitest.config.ts.
+  '__tests__/load-wait.test.ts',
   '__tests__/loopback-dial-boundary.test.ts',
   '__tests__/mcp-exclude-copy.test.ts',
   '__tests__/merge-group-runner-label.test.ts',

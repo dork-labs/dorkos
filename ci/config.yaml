@@ -442,5 +442,12 @@ local:
   # is long enough for a burst to clear and short enough that a refused agent
   # retries the same hour rather than sitting out the night.
   heavy_max_load: 24
+  # A full or multi-file TEST run waits under a lower bar (DOR-4646, an interim
+  # step until DOR-4209 puts a machine-wide gate in DorkOS itself). Test runs
+  # are the heavy job agents start most often; 16 on 14 cores (about 1.1 per
+  # core) is the bar the PM set for them on 2026-11-17. Covers `pnpm test`, the test step of `pnpm verify` (both through
+  # `heavy-run-lock.sh --tests`) and a bare root `vitest run` with no path or
+  # more than one (scripts/lib/load-wait.ts). A single-file run never waits.
+  heavy_test_max_load: 16
   heavy_load_wait_seconds: 600
   heavy_load_poll_seconds: 30
