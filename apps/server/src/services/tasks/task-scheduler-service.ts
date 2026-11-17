@@ -1,3 +1,4 @@
+import { failedRunTerminal, finalizeRunTerminal } from './session/finalize-run-terminal.js';
 import { Cron } from 'croner';
 import { outsideAuditScope } from '../audit/audit-context.js';
 import type { RelayCore } from '@dorkos/relay';
@@ -29,7 +30,7 @@ import { withSpan, SPAN, ATTR } from '../observability/index.js';
 import { consumeRunStream, interruptRun } from './run-stream.js';
 import { publishRunStop, type CancelRunOutcome, type RunStopDelivery } from './run-cancel.js';
 import { atCapSkipReason, RunAccounting } from './run-accounting.js';
-import { emitRefusedAskActivity, emitRunActivity } from './run-activity.js';
+import { emitRefusedAskActivity } from './run-activity.js';
 import { checkRunAccount } from './session/run-account.js';
 import { dispatchRunViaRelay } from './relay-dispatch.js';
 import { pruneRunHistory, PRUNE_INTERVAL_MS } from './run-retention.js';
@@ -44,14 +45,12 @@ import { resolveRunSession, STICKY_BUSY_SKIP_REASON } from './session/sticky-ses
 import { parkIfAgentApprovalStale } from './agent-mode/agent-mode-record.js';
 import { V1_RELAY_RUNTIME } from './execution/relay-runtime.js';
 import { checkMisplacedMode } from './execution/misplaced-mode.js';
-import { guardRunPlacement, unregisteredAgentError } from './execution/run-place-guard.js';
+import { resolveTaskRunPlacement } from './execution/resolve-task-run-placement.js';
 import { capRunIfFileChanged } from './agent-mode/file-cap/run-cap.js';
 import { creatorMarked, withCreatorMarks } from './approvals/cross-agent.js';
 import { endRunSessions, noteRunSession } from './session/active-run-sessions.js';
 import { claimRunTurn, SESSION_BUSY_ERROR, type RunTurn } from './session/run-projection.js';
 import { recordRunSession } from './session/record-run-session.js';
-import { resolveSessionCwd } from '../workspace/resolve-session-cwd.js';
-import { assertOwnDesk, deskBindingFor } from '../core/agent-identity/index.js';
 import { resolveRunExecution, type RunExecution } from './execution/resolve-run-execution.js';
 import {
   singleRuntimeSource,
@@ -839,24 +838,7 @@ export class TaskSchedulerService {
    *   (spec `agent-home-desk` §3.4)
    */
   private async resolveRunPlacement(task: Task): Promise<RunPlacement> {
-    if (task.agentId && this.meshCore) {
-      const projectPath = this.meshCore.getProjectPath(task.agentId);
-      if (!projectPath) {
-        throw unregisteredAgentError(task.agentId, task.id);
-      }
-      const resolved = await resolveSessionCwd({ agentPath: projectPath });
-      // **The desk guard** (spec `agent-home-desk` §3.4, DOR-2356): a run for
-      // this agent never stands in another agent's home, a copy of it, or a
-      // room's folder. A refusal throws, and the run is recorded failed with
-      // the reason — nothing reaches a runtime.
-      assertOwnDesk(projectPath, resolved.cwd, deskBindingFor(resolved));
-      return guardRunPlacement({ cwd: resolved.cwd, agentPath: projectPath });
-    }
-    // Unchanged: `process.cwd()`, not `DEFAULT_CWD`. The two are the same in
-    // every deployment that does not set `DORKOS_DEFAULT_CWD`, and routing an
-    // agent-less task through the chain's default rung would quietly move the
-    // ones where they differ.
-    return guardRunPlacement({ cwd: process.cwd() });
+    return resolveTaskRunPlacement(task, this.meshCore);
   }
 
   /**
@@ -1342,17 +1324,8 @@ export class TaskSchedulerService {
     // fails the run through the one finalizer, and released in the `finally`.
     let turn: RunTurn | undefined;
 
-    // What to write as this run's `sessionId`: the RUNTIME's own id after the
-    // turn — the id the SDK actually wrote its transcript under — so a sticky
-    // task's next fire can resume it cold and so clicking ANY run opens the real
-    // conversation. `sessionId` (the key we passed in) is only a request; the SDK
-    // mints or keeps its own, and `getInternalSessionId` reads it back. A runtime
-    // that does not rename its own sessions answers with the id it ran under, so
-    // the same expression is right for all of them. Resolved lazily so each
-    // terminal branch — including the failure finalizer — records the freshest
-    // answer, and falls back to the requested id once the session is evicted.
-    const persistedSessionId = (): string =>
-      agentManager.getInternalSessionId(sessionId) ?? sessionId;
+    let terminal: Parameters<TaskStore['updateRun']>[1] | undefined;
+    let emitCancellation = false;
 
     try {
       // A raw file edit must not inherit the agent's connected apps. Keep its
@@ -1496,7 +1469,7 @@ export class TaskSchedulerService {
         // it holds the task's own `maxRuntime`, which the relay path never sees.
         const timedOut = stop.timedOut();
         const operatorCancelled = stop.signal.reason === OPERATOR_CANCEL;
-        this.store.updateRun(run.id, {
+        terminal = {
           status: 'cancelled',
           finishedAt: new Date().toISOString(),
           durationMs,
@@ -1506,8 +1479,8 @@ export class TaskSchedulerService {
               ? runTimeLimitError(formatDuration(task.maxRuntime))
               : 'Run cancelled',
           refusedTools: refusedToolNames(refusals.all()),
-          sessionId: persistedSessionId(),
-        });
+          sessionId,
+        };
         // A cancel is the one terminal status that does NOT ride the run-terminal
         // hook's activity emit (DOR-1573): the run row cannot say whether an
         // operator or a deadline ended it, and the two carry different actors. So
@@ -1519,8 +1492,7 @@ export class TaskSchedulerService {
         // DIRECT-path only — a relay-dispatched run that hits its deadline is
         // finalized in `packages/relay` and emits nothing, so that case reaches
         // no activity feed today (the residual gap tracked by DOR-1580).
-        if (!operatorCancelled)
-          emitRunActivity(this.activityService, task, run, 'cancelled', durationMs);
+        emitCancellation = !operatorCancelled;
       } else {
         // The stream ended on its own, which is NOT the same as the work having
         // succeeded: a turn can stream a typed `error` and then end normally,
@@ -1532,14 +1504,14 @@ export class TaskSchedulerService {
         // twin in `packages/relay/src/adapters/claude-code/task-handler.ts`
         // writes its row through the same function, because a run must not be
         // recorded differently for having taken the other path.
-        this.store.updateRun(run.id, {
+        terminal = {
           ...settledRunFields(outcome.settle(), refusalLine),
           finishedAt: new Date().toISOString(),
           durationMs,
           outputSummary: summaryForRow(),
           refusedTools: refusedToolNames(refusals.all()),
-          sessionId: persistedSessionId(),
-        });
+          sessionId,
+        };
         // The activity-feed event for either outcome rides the TaskStore
         // run-terminal hook (DOR-1573), fired by the `updateRun` above — the one
         // funnel both dispatch paths share. A failed run also reaches the
@@ -1549,28 +1521,33 @@ export class TaskSchedulerService {
         // a duplicate of the other.
       }
     } catch (err) {
-      const durationMs = Date.now() - startTime;
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      this.store.updateRun(run.id, {
-        status: 'failed',
-        finishedAt: new Date().toISOString(),
-        durationMs,
-        outputSummary: withRefusedAsks(refusals.summaryLine(), outputSummary.slice(0, 500)),
-        error: errorMsg,
-        refusedTools: refusedToolNames(refusals.all()),
-        sessionId: persistedSessionId(),
+      terminal = failedRunTerminal({
+        sessionId,
+        startTime,
+        error: err,
+        outputSummary,
+        refusals,
       });
       logger.error(`run ${run.id} failed:`, err);
       // The activity-feed event for this failure rides the TaskStore run-terminal
       // hook (DOR-1573), fired by the `updateRun('failed')` above.
     } finally {
-      // Closes the turn window, withdraws any ask nobody answered, and hands the
-      // session back — whichever way the run ended, including the throw above. A
-      // session left `streaming` forever, or a card left standing for a run that
-      // is over, is how a finished run keeps claiming a person's attention.
-      stop.cancel();
-      await turn?.finish();
-      this.runs.release(run.id);
+      await finalizeRunTerminal({
+        task,
+        run,
+        sessionId,
+        startTime,
+        terminal,
+        stop,
+        turn,
+        outputSummary,
+        refusals,
+        agentManager,
+        store: this.store,
+        runs: this.runs,
+        activityService: this.activityService,
+        emitCancellation,
+      });
     }
   }
 }

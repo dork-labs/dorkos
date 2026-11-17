@@ -1,3 +1,10 @@
+import {
+  sessionBillingPrediction,
+  observedSessionRoot,
+  observedSessionBilling,
+  failedSessionAuthority,
+  requiredLaunchOwnerFromSettings,
+} from './sessions/identity/failed-seat-authority.js';
 import { AccountsAccessContext } from '../shared/accounts-access-context.js';
 /**
  * Claude Code Runtime — implements the AgentRuntime interface for the Claude Agent SDK.
@@ -116,10 +123,9 @@ import {
 } from '../../core/agent-identity/index.js';
 import { projectOfFolder } from '../../core/usage/account-eligibility.js';
 import { accountUnlessHeld, checkClaudeLaunchAccount } from './launch-account-check.js';
-import { predictLaunchBillsPerToken, readPerTokenSignals } from './messaging/per-token-billing.js';
 import { getOrCreateProjector, peekProjector, streamGenerationOf } from '../../session/index.js';
 import type { SessionCapacity } from '@dorkos/shared/running-chats';
-import { mcpAuthEvidenceFrom } from '../../mesh/mcp-revocation.js';
+import { reportClaudeMcpAuthFailures } from './tooling/mcp-auth-report.js';
 import type { McpAuthEvidencePort } from '../../mesh/mcp-revocation.js';
 
 /**
@@ -135,6 +141,10 @@ import type { RevokeConnectorTurnReason } from '../../connectors/runtime-princip
 import { ClaudeConnectorTurnContext } from './connector-turn-context.js';
 import { broadcastCommandsChanged } from './tooling/commands-changed-broadcast.js';
 import { overlayClaudeCodeHistory } from './history/claude-code-history-overlays.js';
+import {
+  readTranscriptContextUsage,
+  readTranscriptMessageIds,
+} from './history/transcript-derived-state.js';
 
 export { buildTaskEvent } from './sdk/build-task-event.js';
 
@@ -146,6 +156,8 @@ export { buildTaskEvent } from './sdk/build-task-event.js';
  * SDK response caching (RuntimeCache), transcript reading, broadcasting, and locking.
  */
 export class ClaudeCodeRuntime implements AgentRuntime {
+  private requiredLaunches:
+    import('./messaging/launch/required-launch.js').RequiredLaunchOwner | undefined;
   readonly type = 'claude-code' as const;
 
   // Collaborators
@@ -439,6 +451,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * so evicted/restarted sessions hydrate the operator's chosen settings.
    */
   setSessionSettings(port: SessionSettingsPort): void {
+    this.requiredLaunches = requiredLaunchOwnerFromSettings(port);
     this.sessionStore.configureSettings(
       port,
       // A descriptor's `id` is a plain string — a runtime names its own modes —
@@ -579,6 +592,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     const cacheCallbacks = this.cache.buildSendCallbacks(cwdKey);
 
     return {
+      requiredLaunches: this.requiredLaunches,
       cwd: this.cwd,
       sessionCwd: session.cwd,
       claudeCliPath: this.spawnBinaryPath,
@@ -607,7 +621,12 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       // after the session's first rename it is an alias, not the key the
       // store holds it under. The store resolves the real key itself.
       onSdkSessionRebind: (previousSdkSessionId, nextSdkSessionId) =>
-        this.sessionStore.rebindSdkSession(previousSdkSessionId, nextSdkSessionId, sessionId),
+        this.sessionStore.rebindSdkSession(
+          previousSdkSessionId,
+          nextSdkSessionId,
+          sessionId,
+          session
+        ),
       modelThinkingCapability: modelCapability,
       modelSupportsAutoMode: modelCapability
         ? (modelCapability.supportsAutoMode ?? false)
@@ -1554,13 +1573,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * @param sessionId - DorkOS or SDK session id.
    */
   async sessionBillsPerToken(sessionId: string): Promise<boolean> {
-    const session = this.sessionStore.findSession(sessionId);
-    if (session?.launchedPerToken !== undefined) return session.launchedPerToken;
-    if (session?.lastSubscriptionUsage?.kind === 'subscription') return false;
-    const root = session?.accountRoot;
-    return predictLaunchBillsPerToken(
-      readPerTokenSignals(root !== undefined && isCreditsClaudeRoot(root))
-    );
+    return sessionBillingPrediction(this.sessionStore.findSession(sessionId));
   }
 
   /**
@@ -1577,15 +1590,10 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     sessionId: string,
     cwd: string | undefined
   ): Promise<{ contextTokens: number; contextMaxTokens: number } | null> {
-    try {
-      const projectDir = cwd ?? this.sessionStore.findSession(sessionId)?.cwd ?? this.cwd;
-      const historyId = this.getInternalSessionId(sessionId) ?? sessionId;
-      const session = await this.transcriptReader.getSession(projectDir, historyId);
-      if (!session?.contextTokens) return null;
-      return { contextTokens: session.contextTokens, contextMaxTokens: 0 };
-    } catch {
-      return null;
-    }
+    return readTranscriptContextUsage(this.transcriptReader, () => ({
+      projectDir: cwd ?? this.sessionStore.findSession(sessionId)?.cwd ?? this.cwd,
+      historyId: this.getInternalSessionId(sessionId) ?? sessionId,
+    }));
   }
 
   /**
@@ -1781,38 +1789,29 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * the exception.
    */
   getSessionAccount(sessionId: string): string | undefined {
-    const session = this.sessionStore.findSession(sessionId);
-    const root = session?.launchedAccountRoot ?? session?.accountRoot;
-    return root === undefined ? undefined : path.resolve(root);
+    return observedSessionRoot(this.sessionStore.findSession(sessionId));
+  }
+  /** Actual SDK-init billing; unknown is never predicted. */
+  readObservedBilling(sessionId: string) {
+    return observedSessionBilling(this.sessionStore.findSession(sessionId));
+  }
+  /** Existing crash/current guards plus the exact previous terminal SDK witness. */
+  readFailedSeatAuthority(sessionId: string) {
+    return failedSessionAuthority(
+      this.sessionStore.findSession(sessionId),
+      this.isLocked(sessionId) ||
+        this.holdsBackgroundWork(sessionId) ||
+        this.isHelperWorking(sessionId) ||
+        !this.persistent.failedSeatCrashAllows(sessionId)
+    );
   }
 
   /** @inheritdoc */
   async getLastMessageIds(sessionId: string): Promise<{ user: string; assistant: string } | null> {
-    try {
+    return readTranscriptMessageIds(sessionId, this.transcriptReader, () => {
       const session = this.sessionStore.findSession(sessionId);
-      const projectDir = session?.cwd ?? this.cwd;
-      const messages = await this.transcriptReader.readTranscript(projectDir, sessionId);
-      if (!messages.length) return null;
-
-      let lastUser: string | null = null;
-      let lastAssistant: string | null = null;
-
-      for (let i = messages.length - 1; i >= 0; i--) {
-        const m = messages[i];
-        if (!lastAssistant && m.role === 'assistant') lastAssistant = m.id;
-        if (!lastUser && m.role === 'user') lastUser = m.id;
-        if (lastUser && lastAssistant) break;
-      }
-
-      if (!lastUser || !lastAssistant) return null;
-      return { user: lastUser, assistant: lastAssistant };
-    } catch (err) {
-      logger.warn('[getLastMessageIds] failed to read transcript', {
-        sessionId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return null;
-    }
+      return session?.cwd ?? this.cwd;
+    });
   }
 
   /** @inheritdoc */
@@ -2046,6 +2045,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   }
 
   /** @inheritdoc */
+  /** Server-only pure owner read; not a tool or shared runtime capability. */
+  hasIndependentLiveSession(fromId: string, toId: string): boolean {
+    return this.sessionStore.hasIndependentLiveSession(fromId, toId);
+  }
+
   getInternalSessionId(sessionId: string): string | undefined {
     return this.sessionStore.getInternalSessionId(sessionId);
   }
@@ -2097,11 +2101,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * port is only woken by news.
    */
   private reportMcpAuthFailures(sessionId: string, cwd: string, servers: McpServerEntry[]): void {
-    const port = this.mcpAuthEvidence;
-    if (!port) return;
-    const serverNames = mcpAuthEvidenceFrom(servers);
-    if (serverNames.length === 0) return;
-    port({ sessionId, cwd, serverNames });
+    reportClaudeMcpAuthFailures(this.mcpAuthEvidence, sessionId, cwd, servers);
   }
 
   /**

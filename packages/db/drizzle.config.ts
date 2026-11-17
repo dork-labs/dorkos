@@ -21,6 +21,7 @@ export default defineConfig({
     './src/schema/session/session-limits.ts',
     './src/schema/session/session-limit-history.ts',
     './src/schema/session/session-context.ts',
+    './src/schema/session/room-seat-launch-requirements.ts',
     './src/schema/session/session-started-by.ts',
     './src/schema/session/session-locations.ts',
     './src/schema/session/session-native-bindings.ts',

@@ -32,14 +32,14 @@
  *
  * @module services/rooms/reseat/seat-mover
  */
-import { randomUUID } from 'node:crypto';
+import { replaceRoomSeat, type SeatReplacementPlan } from './seat-replacement.js';
+import type { FailedSeatCandidate } from './failed-seat-candidate.js';
+import type { RequiredRoomLaunchStore } from './required-launch-store.js';
 import { IMPLICIT_ACCOUNT_ID, type AccountUsage } from '@dorkos/shared/account-usage';
 import type { DeclaredPermissionModes } from '@dorkos/shared/permission-semantics';
 import type { SessionSettings } from '@dorkos/shared/schemas';
 import { logger } from '../../../lib/logger.js';
 import type { RankedAccount } from '../../core/usage/account-ranking.js';
-import { carrySessionMarks } from '../../core/turn-power/seat-marks.js';
-import { reseatSettings } from '../../session/fleet/carry-over-power.js';
 import type { ReseatNoticeReason } from '../notices/notice-copy.js';
 import {
   canTakeWork,
@@ -131,7 +131,7 @@ export interface SeatMove {
 }
 
 /** Why the seat moved, for the Activity entry. */
-export type ReseatTrigger = 'limit' | 'nearly-out' | 'stranded' | 'person';
+export type ReseatTrigger = 'limit' | 'nearly-out' | 'stranded' | 'person' | 'failed';
 
 /** One Activity entry per move (Security Must 6). */
 export interface ReseatActivity {
@@ -160,6 +160,10 @@ export interface SeatAccount {
 
 /** Everything the mover reads from or writes to the app. Injected so a test supplies all of it. */
 export interface SeatMoverDeps {
+  /** Strict prior-turn and current runtime authority, unknown refuses. */
+  recoveryCandidate?: (seat: Seat) => Promise<FailedSeatCandidate | null>;
+  /** Same app database requirement store; no preference-hint authority. */
+  requiredLaunches?: RequiredRoomLaunchStore;
   /** Health read port: production identity policy, fake account world in tests. */
   signinHealthy?: (root: string) => boolean;
   /** Move the seat's binding; `false` when the store refused or there was no seat. */
@@ -489,66 +493,40 @@ export class RoomSeatMover {
    * The one shared function: give the seat a fresh session carrying the old
    * one's power and marks, and leave its next turn a launch.
    */
-  private async reseat(
+  private async reseat(seat: Seat, plan: SeatReplacementPlan): Promise<SeatMove> {
+    return replaceRoomSeat(this.deps, seat, plan, {
+      seedFor: () => this.seedFor(seat, plan),
+      recordSeatMove: (old) => this.recordSeatMove(old, seat),
+      pending: (launch) => this.pending.set(seatKey(seat.roomId, seat.authorId), launch),
+    });
+  }
+
+  /** One new-work recovery through the common mover; never usage/account failover. */
+  async recoverFailedSeat(
     seat: Seat,
-    plan: {
-      trigger: ReseatTrigger;
-      by?: string;
-      entryId: string | null;
-      runtime: string;
-      current?: SeatAccount;
-      target?: RankedAccount;
-      alreadyPosted?: boolean;
-      hideAccounts: boolean;
-    }
-  ): Promise<SeatMove> {
-    const newSessionId = this.deps.newSessionId?.() ?? randomUUID();
-    const old = seat.sessionId;
-    // Power first (Must 1): the row exists before anything can launch on it.
-    const settings = old === null ? null : await this.deps.settingsOf(old);
-    // A stored mode is the person-set level and wins; with none, the seat ran
-    // at its agent's effective level, so that is what it keeps.
-    const ranAt = settings?.permissionMode
-      ? undefined
-      : await this.deps.effectiveModeOf(seat, plan.runtime);
-    await this.deps.saveSettings(
-      newSessionId,
-      reseatSettings(settings, this.deps.declaredModes(plan.runtime), ranAt)
-    );
-    // Marks next (Must 2), before the first turn.
-    if (old !== null) carrySessionMarks(old, newSessionId);
-    const seedContext = await this.seedFor(seat, plan);
-    if (!this.deps.rebind(seat.roomId, seat.authorId, newSessionId)) {
-      throw new Error('The room would not move this seat to its new session.');
-    }
-    if (old !== null) this.recordSeatMove(old, seat);
-    this.pending.set(seatKey(seat.roomId, seat.authorId), {
-      sessionId: newSessionId,
-      ...(plan.target ? { accountHint: plan.target.id } : {}),
-      ...(seedContext ? { seedContext } : {}),
+    entryId: string,
+    currentAdmission: () => boolean
+  ): Promise<SeatMove | null> {
+    if (!seat.sessionId || !currentAdmission() || !this.deps.requiredLaunches) return null;
+    const candidate = await this.deps.recoveryCandidate?.(seat);
+    if (!candidate || !currentAdmission() || !candidate.currentAllowed()) return null;
+    if (
+      (await this.deps.runtimeOf(seat)) !== RESEAT_RUNTIME ||
+      (await this.deps.newSeatRuntime(seat.agentPath)) !== RESEAT_RUNTIME ||
+      (await this.deps.transcriptState(seat)) !== 'present'
+    )
+      return null;
+    if (!currentAdmission() || !candidate.currentAllowed()) return null;
+    return this.reseat(seat, {
+      trigger: 'failed',
+      entryId,
+      runtime: RESEAT_RUNTIME,
+      hideAccounts: true,
+      recovery: {
+        candidate,
+        currentAllowed: () => currentAdmission() && candidate.currentAllowed(),
+      },
     });
-    this.deps.recordActivity({
-      trigger: plan.trigger,
-      ...(plan.by !== undefined ? { by: plan.by } : {}),
-      roomId: seat.roomId,
-      authorId: seat.authorId,
-      entryId: plan.entryId,
-      fromSessionId: old,
-      toSessionId: newSessionId,
-      fromAccountId: plan.current?.id ?? null,
-      toAccountId: plan.target?.id ?? null,
-      fromAccountLabel: plan.current ? (plan.current.label ?? plan.current.id) : null,
-      toAccountLabel: plan.target ? (plan.target.label ?? plan.target.id) : null,
-    });
-    logger.info('[rooms] moved a seat to a fresh session', {
-      roomId: seat.roomId,
-      authorId: seat.authorId,
-      trigger: plan.trigger,
-      fromSessionId: old,
-      toSessionId: newSessionId,
-      toAccountId: plan.target?.id ?? null,
-    });
-    return { newSessionId, reason: reasonOf(plan) };
   }
 
   /** Remember the seat a session held; a failure is logged, and the move stands. */
@@ -601,27 +579,6 @@ export class RoomSeatMover {
     if (plan.trigger !== 'limit') return summary || undefined;
     const tail = CONTINUE_LINE + (plan.alreadyPosted ? ALREADY_POSTED_LINE : NOT_POSTED_LINE);
     return summary ? `${summary}\n\n${tail}` : tail;
-  }
-}
-
-/** The room line's reason for a move. */
-function reasonOf(plan: {
-  trigger: ReseatTrigger;
-  by?: string;
-  current?: SeatAccount;
-  target?: RankedAccount;
-}): ReseatNoticeReason {
-  const to = plan.target ? (plan.target.label ?? plan.target.id) : '';
-  const from = plan.current ? (plan.current.label ?? plan.current.id) : null;
-  switch (plan.trigger) {
-    case 'stranded':
-      return { kind: 'stranded' };
-    case 'limit':
-      return { kind: 'limit', from, to };
-    case 'nearly-out':
-      return { kind: 'nearly-out', from, to };
-    case 'person':
-      return { kind: 'by-hand', by: plan.by ?? 'Somebody', to };
   }
 }
 

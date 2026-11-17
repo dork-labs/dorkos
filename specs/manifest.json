@@ -2,6 +2,15 @@
   "version": 1,
   "specs": [
     {
+      "id": "261115-200450",
+      "slug": "room-handoff-failed-seat-recovery",
+      "title": "Own spin-off room posts and bounded failed-seat recovery",
+      "created": "2026-11-15",
+      "status": "specified",
+      "project": "Agent teams that ship",
+      "linearIssue": "DOR-4328"
+    },
+    {
       "id": "261115-194346",
       "slug": "agent-teams-seat-asides",
       "title": "Private messages into room seats",

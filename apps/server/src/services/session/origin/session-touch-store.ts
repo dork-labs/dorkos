@@ -20,7 +20,7 @@
  *
  * @module services/session/origin/session-touch-store
  */
-import { eq, inArray, sessionTouches, sql, type Db } from '@dorkos/db';
+import { eq, inArray, sessionTouches, sql, type Db, type DbTransaction } from '@dorkos/db';
 
 /** What the store knows about one chat; either time may be missing. */
 export interface SessionTouch {
@@ -132,28 +132,28 @@ export class SessionTouchStore {
    */
   move(fromId: string, toId: string): void {
     if (fromId === toId) return;
-    this.db.transaction((tx) => {
-      const source = tx
-        .select()
-        .from(sessionTouches)
-        .where(eq(sessionTouches.sessionId, fromId))
-        .get();
-      if (!source) return;
-      const target = tx
-        .select()
-        .from(sessionTouches)
-        .where(eq(sessionTouches.sessionId, toId))
-        .get();
-      const merged = {
-        openedAt: laterIso(source.openedAt, target?.openedAt),
-        wroteAt: laterIso(source.wroteAt, target?.wroteAt),
-      };
-      tx.delete(sessionTouches).where(eq(sessionTouches.sessionId, fromId)).run();
-      tx.insert(sessionTouches)
-        .values({ sessionId: toId, ...merged })
-        .onConflictDoUpdate({ target: sessionTouches.sessionId, set: merged })
-        .run();
-    });
+    this.db.transaction((tx) => this.moveWithin(tx, fromId, toId));
+  }
+
+  /** Contribute to the caller's actual SQLite transaction; no global store lookup. */
+  moveWithin(tx: DbTransaction, fromId: string, toId: string): void {
+    if (fromId === toId) return;
+    const source = tx
+      .select()
+      .from(sessionTouches)
+      .where(eq(sessionTouches.sessionId, fromId))
+      .get();
+    if (!source) return;
+    const target = tx.select().from(sessionTouches).where(eq(sessionTouches.sessionId, toId)).get();
+    const merged = {
+      openedAt: laterIso(source.openedAt, target?.openedAt),
+      wroteAt: laterIso(source.wroteAt, target?.wroteAt),
+    };
+    tx.delete(sessionTouches).where(eq(sessionTouches.sessionId, fromId)).run();
+    tx.insert(sessionTouches)
+      .values({ sessionId: toId, ...merged })
+      .onConflictDoUpdate({ target: sessionTouches.sessionId, set: merged })
+      .run();
   }
 }
 

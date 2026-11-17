@@ -60,15 +60,15 @@ import { decideCreditsLaunchModel } from '../../../core/cloud/credits-models.js'
 export { creditsRefusalEvent } from '../../../core/cloud/credits-protocols.js';
 import type { AgentSession } from '../agent-types.js';
 import { noteAccountLogin } from '../accounts/account-login-metadata.js';
-import {
-  claudeConfigDirEnv,
-  resolveClaudeRootSet,
-  resolveLaunchAccountRoot,
-} from '../claude-config-dir.js';
+import { claudeConfigDirEnv, resolveClaudeRootSet } from '../claude-config-dir.js';
 import { ensureCreditsClaudeRoot, isCreditsClaudeRoot } from '../credits-root.js';
 import { applyCreditsSettingsEnv, creditsSettingsEnv, forCredits } from './credits-launch.js';
 import { CLAUDE_CODE_CAPABILITIES, NEVER_ASK_MODE_ID } from '../runtime-constants.js';
-import { projectOfFolder } from '../../../core/usage/account-eligibility.js';
+import {
+  requiredClaudeRoot,
+  enforceRequiredClaudeConfiguration,
+  validatedRecoveryRoute,
+} from './launch/required-launch.js';
 import { noteSessionAccountLaunched } from '../accounts/account-usage-feed.js';
 import { envBillsPerToken } from './per-token-billing.js';
 import type { AgentIdentityPin } from '../sessions/launch-fingerprint.js';
@@ -119,7 +119,7 @@ import { applyRepoConfigStep, applyRepoMcpServers } from '../repo-settings/launc
 import { prepareOwnFolder } from '../folder-settings/own-folder-open.js';
 import { createStopHook } from '../tool-gate/stop-hook.js';
 import { hasUnmovedClaudeMemory } from '../claude-memory-folder.js';
-import { enrichContent } from '../enrich-content.js';
+import { launchPrompt } from './launch/launch-content.js';
 
 // Split out to keep this file under the line limit (see message-sender-shared.ts).
 export {
@@ -282,16 +282,7 @@ export async function resolveLaunch(args: {
   // preserve prompt cache hits on the static prefix. The user's `content` is
   // NEVER mutated: the prepend produces a separate `enrichedContent` and the
   // tags are stripped on render (ADR-0273).
-  let enrichedContent: string;
-  if (isCommandDispatch) {
-    // DOR-107: a `/`-prefixed prompt must reach the CLI bare (leading whitespace
-    // also breaks command parsing). NO context prepend on command turns. Retained.
-    enrichedContent = content.trim();
-  } else {
-    // Context blocks defused always, the words when somebody other than the
-    // person here wrote them (DOR-2955, `enrich-content.ts`).
-    enrichedContent = enrichContent(content, messageOpts?.additionalContext, untrustedText);
-  }
+  const enrichedContent = launchPrompt(content, messageOpts, isCommandDispatch, untrustedText);
 
   // Mint this session's agent identity token (spec `agent-trust` §3.1). It
   // rides the process env — NOT the context-builder's prompt block — so it
@@ -330,21 +321,15 @@ export async function resolveLaunch(args: {
   // (spec `flow-multiproject` §8.4). A refusal throws the plain sentence, which
   // the turn reports as its error; an existing session keeps its account, since
   // the rule applies when an account is picked, not mid-conversation.
-  let accountRoot = session.accountRoot;
-  if (accountRoot === undefined) {
-    const launch = resolveLaunchAccountRoot({
-      hintId: messageOpts?.accountHint,
-      // The account this agent is pinned to, off the manifest already read
-      // above. It reaches the spawn env and stops there — nothing writes it to
-      // `session_metadata`, because disk stays the per-session truth.
-      // Not while a changed agent file waits for a person (DOR-3068).
-      agentAccountId: agentFileHeld ? undefined : manifest?.account,
-      agentId: manifest?.id,
-      project: await projectOfFolder(effectiveCwd),
-    });
-    if (!launch.ok) throw launch.error;
-    accountRoot = launch.root;
-  }
+  const { root: accountRoot, requirement } = await requiredClaudeRoot({
+    requiredLaunches: opts.requiredLaunches,
+    sessionId,
+    sessionRoot: session.accountRoot,
+    hintId: messageOpts?.accountHint,
+    agentAccountId: agentFileHeld ? undefined : manifest?.account,
+    agentId: manifest?.id,
+    cwd: effectiveCwd,
+  });
   // Refuses only for a person-set rule; a new or changed sign-in runs and is said once.
   if (!isCreditsClaudeRoot(accountRoot)) noteAccountLogin(accountRoot);
   const accountEnv = claudeConfigDirEnv(accountRoot);
@@ -778,6 +763,17 @@ export async function resolveLaunch(args: {
     chat: session,
     ownFolderOpen: ownFolder.open,
   });
+  enforceRequiredClaudeConfiguration(requirement, accountRoot, onCredits, sdkOptions.env ?? {}, {
+    cwd: effectiveCwd,
+    settings: sdkOptions.settings,
+  });
+  session.validatedRecoveryRoute = validatedRecoveryRoute(
+    accountRoot,
+    onCredits,
+    sdkOptions.env ?? {},
+    { cwd: effectiveCwd, settings: sdkOptions.settings }
+  );
+
   // Inject MCP tool servers -- create fresh instances per query to avoid
   // "Already connected to a transport" errors from reused Protocol objects.
   if (opts.mcpServerFactory) {

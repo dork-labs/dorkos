@@ -1,3 +1,4 @@
+import { RuntimeRegistry } from '../../../../core/runtime-registry.js';
 /**
  * The composition: a claude-code message reaching a process that is already
  * running, and everything that must stay true when it does (spec
@@ -195,6 +196,7 @@ const CWD = '/projects/pump';
 const mockedQuery = vi.mocked(query);
 let cli: FakeCli;
 let runtime: ClaudeCodeRuntime;
+let settingsDb: ReturnType<typeof createTestDb> | undefined;
 let dorkHome: string;
 let sessionSeq = 0;
 
@@ -272,6 +274,10 @@ beforeEach(() => {
   // work record there (DOR-2065), and no case may write into a shared one.
   dorkHome = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'persistent-dispatch-'));
   runtime = new ClaudeCodeRuntime(dorkHome, CWD);
+  const settingsOwner = new RuntimeRegistry();
+  settingsDb = createTestDb();
+  settingsOwner.setDb(settingsDb);
+  runtime.setSessionSettings(settingsOwner);
 });
 
 afterEach(() => {
@@ -279,6 +285,8 @@ afterEach(() => {
   // prompt stream for the rest of the file.
   for (const process of cli.processes) process.endStream();
   fs.rmSync(dorkHome, { recursive: true, force: true });
+  settingsDb?.$client.close();
+  settingsDb = undefined;
 });
 
 describe('the opt-in decides which path a message takes', () => {
@@ -2064,6 +2072,7 @@ describe('deliverIntoTurn — a steer reaches the running turn (task 4.1)', () =
 
   it('degrades rather than throwing when the bundle points at a reaped pump (finding 2)', async () => {
     const a = nextSession();
+    cli.nextSdkSessionId = `${a}-native`;
     await turn(a);
     expect(runtime.getSessionWarmth(a)).toBe('warm');
 
@@ -2071,6 +2080,7 @@ describe('deliverIntoTurn — a steer reaches the running turn (task 4.1)', () =
     // and the registry does it WITHOUT telling PersistentDispatch — so A's bundle
     // lingers, pointing at a spent pump whose every method throws.
     const b = nextSession();
+    cli.nextSdkSessionId = `${b}-native`;
     await turn(b);
     expect(runtime.getSessionWarmth(a)).toBe('cold');
 
@@ -2092,6 +2102,7 @@ describe('deliverIntoTurn — a steer reaches the running turn (task 4.1)', () =
   it('logs at info when a dispatch relaunches after the registry reclaimed this session (DOR-1323)', async () => {
     const { logger } = await import('../../../../../lib/logger.js');
     const a = nextSession();
+    cli.nextSdkSessionId = `${a}-native`;
     vi.mocked(logger.info).mockClear();
     await turn(a);
     expect(
@@ -2101,10 +2112,12 @@ describe('deliverIntoTurn — a steer reaches the running turn (task 4.1)', () =
     // Warming a second session reclaims A's warm pump (the ceiling is 1 here),
     // WITHOUT telling PersistentDispatch — A's bundle now points at a spent pump.
     const b = nextSession();
+    cli.nextSdkSessionId = `${b}-native`;
     await turn(b);
     expect(runtime.getSessionWarmth(a)).toBe('cold');
 
     vi.mocked(logger.info).mockClear();
+    cli.nextSdkSessionId = `${a}-native`;
     await turn(a, 'again, after the reclaim');
 
     expect(cli.launches).toBe(3);

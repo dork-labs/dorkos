@@ -26,6 +26,7 @@ import {
   heartbeatOutbox,
   heartbeatState,
   type Db,
+  type DbTransaction,
   type HeartbeatBeatRow,
   type HeartbeatOutboxRow,
   type HeartbeatStateRow,
@@ -84,7 +85,7 @@ export interface HeldMatch {
  * @param fromId - The id the chat was known by.
  * @param toId - Its canonical id.
  */
-export function moveBeatChats(db: Db, fromId: string, toId: string): void {
+export function moveBeatChats(db: Db | DbTransaction, fromId: string, toId: string): void {
   if (fromId === toId) return;
   db.update(heartbeatBeats)
     .set({ turnSessionId: toId })

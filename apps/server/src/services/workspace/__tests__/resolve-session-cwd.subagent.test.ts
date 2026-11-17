@@ -68,7 +68,7 @@ const SERVER_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.
  */
 const ALLOWED = new Set([
   'services/session/launch/resolve-chat-place.ts',
-  'services/tasks/task-scheduler-service.ts',
+  'services/tasks/execution/resolve-task-run-placement.ts',
   'services/relay/binding-router.ts',
   'services/relay/adapter-factory.ts',
   'services/heartbeats/beat-launch.ts',

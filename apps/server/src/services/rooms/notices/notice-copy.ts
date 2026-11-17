@@ -441,7 +441,8 @@ export type ReseatNoticeReason =
   | { kind: 'limit'; from: string | null; to: string }
   | { kind: 'nearly-out'; from: string | null; to: string }
   | { kind: 'by-hand'; by: string; to: string }
-  | { kind: 'stranded' };
+  | { kind: 'stranded' }
+  | { kind: 'failed' };
 
 /**
  * The quiet `agent_reseated` line for a room seat that moved to a fresh
@@ -468,6 +469,8 @@ export function buildAgentReseatedNotice(
     notice: 'agent_reseated',
     subjectAuthorId,
   });
+  if (reason.kind === 'failed')
+    return body(`${agentName} started a fresh room chat after a server error.`);
   if (reason.kind === 'stranded') {
     return body(`${agentName} started a fresh chat here. Its earlier one had expired.`);
   }

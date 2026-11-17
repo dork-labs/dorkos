@@ -408,6 +408,19 @@ describe('one seat per agent per room, and the hand-off', () => {
     expect(notice?.body.subjectAuthorId).toBe(bo);
   });
 
+  it('explains a thrown seat turn without leaking its diagnostic or claiming empty history', async () => {
+    productHandsOff('Share the update.');
+    scripts[dorkos.id] = async () => {
+      throw new Error('secret account /private/home token=hidden');
+    };
+    service.post(product.id, { authorId: human, text: '@bo share the update' });
+    await settle();
+    const notice = entries(product).find((entry) => entry.body.notice === 'handoff_declined');
+    expect(notice?.body.text).toContain('the chat stopped. Open it to continue.');
+    expect(notice?.body.text).not.toMatch(/secret|private|token=|nothing to answer|gave no reason/);
+    expect(bosPosts(dorkos)).toEqual([]);
+  });
+
   it('D: an agent not in the room is refused, told who can post, and not added', async () => {
     const elsewhere = service.createRoom(
       { kind: 'channel', title: 'finance', members: [], agentPaths: ['/agents/cy'] },
