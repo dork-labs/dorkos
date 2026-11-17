@@ -50,7 +50,7 @@ import {
   type TurnMarks,
 } from './turn-marks.js';
 import { primaryOf } from '../../session/resolution/session-key-registry.js';
-import { noteTurnHold } from './continuation-hold.js';
+import { noteBridgedSender, noteTurnHold } from './continuation-hold.js';
 import { aliasRoomTurnWords } from './outside-words.js';
 
 /** The room turn's outside-words note travels with its level; a room runner sets both here. */
@@ -629,7 +629,14 @@ function recordLevels(
           // Kept on the chat's row, for the turns that later pick it up on their own. A
           // turn a continuation's hold clamped read no new words, so it leaves the answer
           // the last real turn gave (DOR-3203).
-          if (opts?.continuationHold !== true) noteTurnHold(sessionId, level.outsider === true);
+          // A bridged chat's record of whose words it holds rides the same turns (DOR-4593).
+          if (opts?.continuationHold !== true) {
+            noteTurnHold(sessionId, level.outsider === true);
+            noteBridgedSender(sessionId, {
+              marked: level.outsider === true,
+              bridged: opts?.turnStarter === 'telegram' || opts?.turnStarter === 'slack',
+            });
+          }
           // Under the id the turn was sent with AND the conversation's first
           // id, so a turn sent under a renamed id is the newest by either.
           const serial = ++nextTurnSerial;
