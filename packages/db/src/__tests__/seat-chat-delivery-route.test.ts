@@ -7,7 +7,7 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 /** Real migration coverage for private seat route ownership and malformed scope refusal. */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createDb, runMigrations, type Db } from '../index.js';
-const TAG = '20261116110632_seat_chat_delivery_route';
+const TAG = '20261117115545_seat_chat_delivery_route';
 const migrationDirectory = fileURLToPath(new URL('../../drizzle/', import.meta.url));
 const directories: string[] = [];
 let db: Db;
@@ -39,12 +39,12 @@ function migrationsThroughSeatRoute(): string {
 }
 const insert = `INSERT INTO chat_messages (id,to_session_id,from_session_id,from_agent_path,from_agent_name,kind,text,delivery,status,ceiling_json,created_at,updated_at) VALUES ('ordinary','target','sender','/agents/a','A','message','hello','queue','queued','"none"','2026-11-15','2026-11-15')`;
 
-const WHEN = 1794827192742;
+const WHEN = 1794916545269;
 
 /** Run only the shell-safe SQL, with the production latest-migration guard intact. */
 function runDown(): void {
   const down = readFileSync(
-    new URL('../down/20261116110632_seat_chat_delivery_route.down.sql', import.meta.url),
+    new URL('../down/20261117115545_seat_chat_delivery_route.down.sql', import.meta.url),
     'utf8'
   );
   db.$client.exec(down.replace(/^\.bail on\n/u, ''));
@@ -66,7 +66,7 @@ describe('seat delivery route migration', () => {
       const database = join(directory, 'fabricated.sqlite');
       writeFileSync(database, db.$client.serialize());
       const down = readFileSync(
-        new URL('../down/20261116110632_seat_chat_delivery_route.down.sql', import.meta.url),
+        new URL('../down/20261117115545_seat_chat_delivery_route.down.sql', import.meta.url),
         'utf8'
       );
       const result = spawnSync('/usr/bin/sqlite3', [database], {

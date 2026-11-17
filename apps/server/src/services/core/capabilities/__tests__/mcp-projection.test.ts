@@ -54,6 +54,7 @@ const EXPECTED_TOOL_NAMES = [
   'update_agent',
   'update_agent_boundaries',
   'update_agent_execution',
+  'update_agent_config',
   'config_patch',
   'sidebar_add_to_group',
   'sidebar_remove_from_group',
@@ -179,6 +180,14 @@ const EXPECTED_ANNOTATIONS: Record<string, ToolAnnotations> = {
   // Tier `destructive` because every schedule that follows the agent moves with
   // it (DOR-2328); setting the same values twice lands the same state.
   update_agent_execution: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    idempotentHint: true,
+    openWorldHint: false,
+  },
+  // Tier `destructive`: the file is replaced whole (DOR-4266); writing the same
+  // content twice lands the same file.
+  update_agent_config: {
     readOnlyHint: false,
     destructiveHint: true,
     idempotentHint: true,

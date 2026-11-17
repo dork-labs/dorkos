@@ -53,6 +53,8 @@ export type TaskProvenanceResolver = () => {
   cwd?: string;
   /** Every id the chat's turn levels may be kept under: its canonical one and its first. */
   turnSessionIds?: string[];
+  /** The chat's turn runs at Never ask right now (DOR-3971). */
+  neverAsks?: boolean;
 };
 
 /**
@@ -191,8 +193,25 @@ export function createListSchedulesHandler(deps: McpToolDeps) {
   };
 }
 
-/** Get recent runs for a schedule. */
-export function createGetRunHistoryHandler(deps: McpToolDeps) {
+/** What run history says in place of the summaries it left out at Never ask. */
+export const SUMMARIES_LEFT_OUT_AT_NEVER_ASK =
+  'Each run’s summary is left out at Never ask: it is that run’s own words and can quote what it read. ' +
+  '`refusedTools` still says what each run was refused.';
+
+/**
+ * Get recent runs for a schedule.
+ *
+ * At Never ask each run's `outputSummary` is left out (Security, DOR-3971): it is the first 500
+ * characters of what that run wrote, so it can carry words the run read from anyone. A run's
+ * status, timing and `refusedTools` stay, which is what an unattended watchdog reads.
+ *
+ * @param deps - The tool dependencies.
+ * @param resolveProvenance - The calling chat, read at call time; absent off a session.
+ */
+export function createGetRunHistoryHandler(
+  deps: McpToolDeps,
+  resolveProvenance?: TaskProvenanceResolver
+) {
   return async (args: { schedule_id: string; limit?: number }) => {
     const err = requireTasks(deps);
     if (err) return err;
@@ -200,7 +219,13 @@ export function createGetRunHistoryHandler(deps: McpToolDeps) {
       taskId: args.schedule_id,
       limit: args.limit ?? 20,
     });
-    return jsonContent({ runs, count: runs.length });
+    if (resolveProvenance?.().neverAsks !== true) return jsonContent({ runs, count: runs.length });
+    const withoutSummaries = runs.map(({ outputSummary: _left, ...run }) => run);
+    return jsonContent({
+      runs: withoutSummaries,
+      count: runs.length,
+      note: SUMMARIES_LEFT_OUT_AT_NEVER_ASK,
+    });
   };
 }
 

@@ -26,7 +26,9 @@ DORKOS_PORT=5000 dorkos
 
 ## Upgrading older settings
 
-If your settings were last used before version 0.115, upgrade to 0.115 first. Then upgrade to the current version. DorkOS stops before changing older settings and shows these steps. A settings file you wrote by hand starts normally.
+If your settings were last used before version 0.115, upgrade to 0.115 first. Then upgrade to the current version. DorkOS stops before changing older settings and shows these steps.
+
+A settings file you wrote by hand starts normally unless it includes retired settings. If it does, DorkOS names the settings to remove. Remove only those, then restart DorkOS. If DorkOS cannot read the saved version, it stops and leaves the file unchanged. Fix the `version` value in the file, or restore a saved copy, then restart DorkOS.
 
 ## Required
 
@@ -687,7 +689,7 @@ Right after you turn on an extension, the inbox may ask once more: "Next time, t
 
 Extensions that ship with DorkOS never ask. You already installed DorkOS. DorkOS tells its own extensions apart by where their files sit, not by the name inside them, so a folder in your project cannot claim to be one.
 
-Your answer lives in `extensions.approvedToRun`, and the copy it applies to lives in `extensions.approvedSources`. Your agents can read the first but cannot write either, which is the point: an agent that could add an extension to that list could approve any code at all. DorkOS writes one entry itself: for an extension one of your agents builds with `create_extension`, unless you chose Careful. That entry names the new folder and the permissions it asks for today, so a copy from somewhere else, or a later version that asks for more, still waits for you. See [Settings your agents cannot change](/docs/guides/action-approvals#settings-your-agents-cannot-change).
+Your answer lives in `extensions.approvedToRun`, and the copy it applies to lives in `extensions.approvedSources`. Your agents can read the first but cannot write either, which is the point: an agent that could add an extension to that list could approve any code at all. DorkOS writes one entry itself: for an extension one of your agents builds with `create_extension`, unless you chose Careful. That entry names the new folder and the permissions it asks for today, so a copy from somewhere else, or a later version that asks for more, still waits for you. See [Settings only you decide](/docs/guides/action-approvals#settings-only-you-decide).
 
 <Callout type="warn">
   Adding a ships-on extension's id to `enabled` does nothing, since it's already on. To disable it,

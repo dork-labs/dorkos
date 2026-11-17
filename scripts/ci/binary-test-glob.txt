@@ -1,0 +1,8 @@
+# Real-CLI test suites `pnpm verify` leaves to CI (DOR-4501), one glob per line.
+# They spawn whichever Codex, Claude or OpenCode binary this computer has
+# installed, so a local pass or fail says nothing about the branch. CI runs them
+# in their own job. scripts/verify-proof/cli.ts passes each glob to vitest as
+# --exclude and records the list in the proof. This file must equal the
+# binary-test --exclude on every shard line of .github/workflows/test.yml
+# (scripts/__tests__/binary-test-glob.test.ts).
+**/*.binary.test.ts

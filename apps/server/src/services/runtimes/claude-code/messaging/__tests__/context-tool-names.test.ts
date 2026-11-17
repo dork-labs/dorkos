@@ -527,7 +527,9 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // deferred, no prompt block names them.
     // 149 -> 152 for `work_claim`, `work_claim_check` and `work_claim_release` (DOR-4019):
     // no prompt block names them, so they stay deferred.
-    expect(advertised.size).toBe(152);
+    // 152 -> 153 for `update_agent_config` (DOR-4266): no prompt block names it,
+    // so it stays deferred.
+    expect(advertised.size).toBe(153);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',

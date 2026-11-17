@@ -73,6 +73,8 @@ export function createLocalBrowserRoutes(
     const { url } = z.object({ url: z.string().url() }).strict().parse(readJsonBody(c));
     return c.json(await service.handover.navigate(url));
   });
+  // Taking the page shuts an agent out of it, so only a person can.
+  router.post('/take-over', personOnly, async (c) => c.json(await service.handover.takeOver()));
   // Back and Forward move the page too, and take it from a driving agent (DOR-4449).
   router.post('/history', personOnly, async (c) => {
     const { direction } = z

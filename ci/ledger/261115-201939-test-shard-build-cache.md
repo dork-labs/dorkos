@@ -2,12 +2,12 @@
 id: 261115-201939
 title: test shards restore the main canary's turbo builds instead of rebuilding 19 packages each
 kind: experiment
-status: proposed
+status: active
 actor: agent
 gates:
   - wf.test.test-shard
   - wf.scripts-test.fixtures
-prs: []
+prs: [3814, 3849]
 hypothesis:
   metric: 'gate.wf.test.test-shard.duration_p50@merge_group'
   slo: 'queue-build'

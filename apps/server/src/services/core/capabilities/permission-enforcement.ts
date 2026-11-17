@@ -82,7 +82,7 @@ import {
   type ResolvedPermission,
 } from '@dorkos/shared/permissions';
 
-import { marksOf } from '../turn-power/turn-levels.js';
+import { turnReadOutsideWords } from '../turn-power/outsider-turn.js';
 import { choseFullAutonomy, recordMarkedFullAction } from '../turn-power/full-autonomy.js';
 import { HELD_IN_A_MARKED_TURN, markedTurnCardArea } from './marked-turn-holds.js';
 import type { PermissionStop } from '@dorkos/shared/agent-runtime';
@@ -405,10 +405,12 @@ export async function resolveCallPermission(request: {
   const { action, identity, principalTurn } = request;
   // Read from the turn's own record, never from the model: the session's
   // latest turn, or for a caller with no session, any running turn of its agent.
+  // The outside-words note counts as the mark does (DOR-4587): a room turn that
+  // answered a mini app's post carries the note and no mark.
   const marked =
-    marksOf(request.sessionId, identity?.agentPath).outsider === true ||
+    turnReadOutsideWords(request.sessionId, identity?.agentPath) ||
     (principalTurn !== undefined &&
-      marksOf(principalTurn.sessionId, principalTurn.agentPath).outsider === true);
+      turnReadOutsideWords(principalTurn.sessionId, principalTurn.agentPath));
   // A chat set to Full autonomy asks nobody anything (DOR-3394): its mark holds nothing here.
   // Only a named chat can say it is set to Full; a caller with none keeps the mark's holds.
   const full =

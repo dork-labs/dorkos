@@ -152,6 +152,7 @@ test.describe('Agent browser Back and Forward in the panel', () => {
       preparation: null,
       signIn: null,
       handoff: null,
+      takenOver: false,
     });
     let current = state('https://northwind.example/fares/lisbon', true, false);
     const steps: string[] = [];
@@ -187,17 +188,17 @@ test.describe('Agent browser Back and Forward in the panel', () => {
       forward: state('https://northwind.example/fares/lisbon', true, false, true),
     };
     const back = browser.controls.getByRole('button', { name: 'Back', exact: true });
-    const forward = browser.controls.getByRole('button', { name: 'Forward', exact: true });
     await expect(back).toBeEnabled();
-    await expect(forward).toBeDisabled();
+    // Forward sits in the row, or in the ⋯ menu below 480px of chrome (spec §12).
+    await expect.poll(() => browser.forwardEnabled()).toBe(false);
     await expect(browser.controls.getByText(/coming soon/i)).toHaveCount(0);
     await back.click();
     await expect(
       browser.controls.getByRole('button', { name: 'Address: northwind.example/fares' })
     ).toBeVisible();
-    await expect(forward).toBeEnabled();
+    await expect.poll(() => browser.forwardEnabled()).toBe(true);
     await expect(back).toBeDisabled();
-    await forward.click();
+    await browser.goForward();
     await expect(
       browser.controls.getByRole('button', { name: 'Address: northwind.example/fares/lisbon' })
     ).toBeVisible();

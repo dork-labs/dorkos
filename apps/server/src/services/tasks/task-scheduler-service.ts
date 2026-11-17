@@ -45,7 +45,8 @@ import { resolveRunSession, STICKY_BUSY_SKIP_REASON } from './session/sticky-ses
 import { parkIfAgentApprovalStale } from './agent-mode/agent-mode-record.js';
 import { V1_RELAY_RUNTIME } from './execution/relay-runtime.js';
 import { checkMisplacedMode } from './execution/misplaced-mode.js';
-import { resolveTaskRunPlacement } from './execution/resolve-task-run-placement.js';
+import { guardRunPlacement } from './execution/run-place-guard.js';
+import { chainRunPlacement } from './execution/run-placement.js';
 import { capRunIfFileChanged } from './agent-mode/file-cap/run-cap.js';
 import { creatorMarked, withCreatorMarks } from './approvals/cross-agent.js';
 import { endRunSessions, noteRunSession } from './session/active-run-sessions.js';
@@ -698,10 +699,7 @@ export class TaskSchedulerService {
       // useless answer.
       const message = err instanceof Error ? err.message : String(err);
       logger.error(`could not send the stop request for run ${runId}: ${message}`);
-      return {
-        state: 'unconfirmed',
-        reason: `The stop request could not be sent: ${message}`,
-      };
+      return { state: 'unconfirmed', reason: `The stop request could not be sent: ${message}` };
     }
 
     if (delivery.deliveredTo > 0) {
@@ -838,7 +836,9 @@ export class TaskSchedulerService {
    *   (spec `agent-home-desk` §3.4)
    */
   private async resolveRunPlacement(task: Task): Promise<RunPlacement> {
-    return resolveTaskRunPlacement(task, this.meshCore);
+    // The same chain the approval card reads (`execution/run-placement.ts`).
+    const { cwd, agentPath } = await chainRunPlacement(task, this.meshCore);
+    return guardRunPlacement(agentPath === undefined ? { cwd } : { cwd, agentPath });
   }
 
   /**
@@ -1521,13 +1521,7 @@ export class TaskSchedulerService {
         // a duplicate of the other.
       }
     } catch (err) {
-      terminal = failedRunTerminal({
-        sessionId,
-        startTime,
-        error: err,
-        outputSummary,
-        refusals,
-      });
+      terminal = failedRunTerminal({ sessionId, startTime, error: err, outputSummary, refusals });
       logger.error(`run ${run.id} failed:`, err);
       // The activity-feed event for this failure rides the TaskStore run-terminal
       // hook (DOR-1573), fired by the `updateRun('failed')` above.

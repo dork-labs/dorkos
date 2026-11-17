@@ -67,6 +67,8 @@ export interface ApiKeyRecord {
   createdAt: string;
   expiresAt: string | null;
   enabled: boolean;
+  /** Remote MCP use recorded by the server; absent on create responses and older servers. */
+  lastUsedRemotelyAt?: string | null;
 }
 
 /** A freshly created API key — the only time the plaintext `key` is ever returned. */

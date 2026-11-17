@@ -285,6 +285,36 @@ describe('the Wi-Fi hold a row another chat sent carries on (DOR-3561)', () => {
   });
 });
 
+// DOR-4594: a mini app's words (`ctx.agent.send`, a chat it starts) are someone else's words for
+// the turn they start, as its room posts are (DOR-4587): the turn keeps its level and carries the
+// outsider mark, read from who queued the row, so a row that waited or outlived a restart keeps it.
+describe('a message a mini app sent', () => {
+  const MINI_APP = 'extension:made-up-board';
+  const carriedOfCall = (n: number) =>
+    (runtime.sendMessage.mock.calls[n]![2] as Record<string, unknown>).carriedMarks;
+
+  it('launches marked, with no ceiling', async () => {
+    runtime.withScenarios([quickTurn()]);
+    await send('from the board app', MINI_APP);
+    await settle();
+    expect(carriedOfCall(0)).toEqual({ outsider: true });
+    expect(ceilingOfCall(0)).toEqual({ has: false });
+  });
+
+  it('launches marked after waiting behind a running turn', async () => {
+    const busy = gate();
+    runtime.withScenarios([heldTurn(busy.wait), quickTurn()]);
+    await send('the person', PERSON);
+    await settle();
+    await send('from the board app', MINI_APP);
+    await settle();
+    busy.open();
+    await settle();
+    expect(carriedOfCall(0)).toBeUndefined();
+    expect(carriedOfCall(1)).toEqual({ outsider: true });
+  });
+});
+
 describe('the outside words a row another chat sent carries on (DOR-4029)', () => {
   afterEach(() => {
     setQueuedChatWordsResolver(undefined);

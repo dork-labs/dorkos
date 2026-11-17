@@ -87,7 +87,7 @@ describe('what the narrowing tools say about their limits', () => {
     const { ACCESS_CHANGE_CAPABILITIES } = await import('../access/access-change-capabilities.js');
     const { NARROWING_MESSAGES } = await import('../access/access-narrowing.js');
     const { APPROVAL_MESSAGES } = await import('../access/access-approval.js');
-    const { existsSync, readFileSync } = await import('node:fs');
+    const { existsSync, readdirSync, readFileSync } = await import('node:fs');
     const fragmentUrl = new URL(
       '../../../../../../changelog/unreleased/261109-000501-agents-approve-read-requests.md',
       import.meta.url
@@ -116,7 +116,15 @@ describe('what the narrowing tools say about their limits', () => {
       const tool = ACCESS_CHANGE_CAPABILITIES.find((capability) => capability.id === id);
       expect(tool?.description).toContain('these limits don’t cover that case');
     }
-    expect(releaseNotes).toMatch(/these limits don['’]t cover (?:that case|those cases)/);
+    // Once the section holding the caveat ages out of CHANGELOG.md, it lives in the archive.
+    const archiveDir = new URL('../../../../../../changelog/archive/', import.meta.url);
+    const shipped = [
+      releaseNotes,
+      ...readdirSync(archiveDir)
+        .filter((name) => name.endsWith('.md'))
+        .map((name) => readFileSync(new URL(name, archiveDir), 'utf8')),
+    ].join('\n');
+    expect(shipped).toMatch(/these limits don['’]t cover (?:that case|those cases)/);
   });
 });
 

@@ -1,6 +1,11 @@
 /** Refuse unsupported config upgrades before Conf can write defaults. */
 import semver from 'semver';
-import { ConfigBootError, ConfigUnreadableError } from './boot-errors.js';
+import {
+  ConfigBootError,
+  ConfigRetiredSettingsError,
+  ConfigUnreadableError,
+  ConfigVersionUnreadableError,
+} from './boot-errors.js';
 import { readStoredConfigForSalvage } from './salvage-read.js';
 
 /** Oldest release from which a current build can upgrade directly. */
@@ -33,49 +38,51 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Whether an unstamped config carries a field that only a pre-0.115 release
+ * Fields in an unstamped config that only a pre-0.115 release
  * wrote: one the retired v0.44-v0.56 migrators existed to rename or remove.
  * A missing field proves nothing (a person may write one setting by hand), so
  * only a present legacy field counts.
  *
  * @param config - The parsed config object.
  */
-function hasPreFloorShape(config: Record<string, unknown>): boolean {
-  if ('sessionSecret' in config) return true;
+function preFloorKeys(config: Record<string, unknown>): string[] {
+  const keys: string[] = [];
+  if ('sessionSecret' in config) keys.push('sessionSecret');
   const { tunnel, telemetry, onboarding } = config;
-  if (
-    isRecord(tunnel) &&
-    ('passcodeEnabled' in tunnel || 'passcodeHash' in tunnel || 'passcodeSalt' in tunnel)
-  ) {
-    return true;
+  if (isRecord(tunnel)) {
+    for (const key of ['passcodeEnabled', 'passcodeHash', 'passcodeSalt']) {
+      if (key in tunnel) keys.push(`tunnel.${key}`);
+    }
   }
-  if (isRecord(telemetry) && 'enabled' in telemetry) return true;
+  if (isRecord(telemetry) && 'enabled' in telemetry) keys.push('telemetry.enabled');
   if (isRecord(onboarding)) {
     for (const field of ['completedSteps', 'skippedSteps'] as const) {
       const steps = onboarding[field];
-      if (
-        Array.isArray(steps) &&
-        steps.some((step) => typeof step === 'string' && RETIRED_ONBOARDING_STEPS.has(step))
-      ) {
-        return true;
+      if (Array.isArray(steps)) {
+        for (const step of new Set(steps)) {
+          if (typeof step === 'string' && RETIRED_ONBOARDING_STEPS.has(step)) {
+            keys.push(`onboarding.${field}: ${JSON.stringify(step)}`);
+          }
+        }
       }
     }
   }
-  return false;
+  return keys;
 }
 
 /**
  * Check an existing file before opening Conf, including its defaults merge.
  *
- * Refuses only a real pre-0.115 stamp, or an unstamped file whose shape only a
- * pre-0.115 release wrote. Any other unstamped file (one written by hand, as
+ * Refuses a real pre-0.115 stamp, an unreadable stamp, or an unstamped file
+ * carrying retired fields. Any other unstamped file (one written by hand, as
  * the docs suggest, or by the packaged smoke) is current: Conf opens it the way
  * it opens a fresh install and stamps it with this version.
  *
  * The intermediate release itself must still accept earlier configs. Raw dev
  * trees use 0.0.0 rather than a release version and run no release migrations.
  * Neither can establish that a current-release upgrade is taking place.
- * Invalid JSON and malformed markers retain the existing corruption recovery.
+ * Invalid JSON retains corruption recovery. A present unreadable version must
+ * not reach Conf: its recovery would replace the person's settings.
  *
  * @param configPath - Existing config file to inspect, without changing it.
  * @param projectVersion - The version Conf will use for migration selection.
@@ -94,11 +101,15 @@ export function assertSupportedConfigUpgrade(
   const internal = (value as { __internal__?: { migrations?: { version?: unknown } } })
     .__internal__;
   const version = internal?.migrations?.version;
-  const tooOld =
-    version === undefined
-      ? hasPreFloorShape(value)
-      : typeof version === 'string' &&
-        semver.valid(version) !== null &&
-        semver.lt(version, MINIMUM_CONFIG_UPGRADE_VERSION);
-  if (tooOld) throw new ConfigUpgradeRequiredError(configPath);
+  if (version === undefined) {
+    const keys = preFloorKeys(value);
+    if (keys.length > 0) throw new ConfigRetiredSettingsError(configPath, keys);
+    return;
+  }
+  if (typeof version !== 'string' || semver.valid(version) === null) {
+    throw new ConfigVersionUnreadableError(configPath);
+  }
+  if (semver.lt(version, MINIMUM_CONFIG_UPGRADE_VERSION)) {
+    throw new ConfigUpgradeRequiredError(configPath);
+  }
 }

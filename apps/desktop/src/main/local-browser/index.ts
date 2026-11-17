@@ -9,6 +9,7 @@ import { forgetGuestSignIns } from './forget-sign-ins';
 import { chromeIdentity } from './browser-identity';
 import { pageTransport } from './page-transport';
 import { isGuestPageAction, watchGuestPage } from './page-events';
+import { createAgentInputGate, forwardGuestShortcuts } from './page-keys';
 import { capturePageStill } from './page-still';
 import {
   guardGuestNavigation,
@@ -18,6 +19,8 @@ import {
 } from './page-history';
 
 export const LOCAL_BROWSER_BOUNDS_CHANNEL = 'local-browser:set-bounds';
+/** The shell tells the window showing a guest that the person pressed a browser key in it (DOR-4432). */
+export const LOCAL_BROWSER_SHORTCUT_CHANNEL = 'local-browser:shortcut';
 /** The app asks about or acts on one guest page (DOR-4430, DOR-4431). */
 const LOCAL_BROWSER_PAGE_CHANNEL = 'local-browser:page';
 /** The shell tells the window showing a guest that its page started, stopped or failed a load. */
@@ -42,6 +45,8 @@ interface Guest {
   attachTimer?: ReturnType<typeof setTimeout>;
   popups?: Set<BrowserWindow>;
   page?: ReturnType<typeof watchGuestPage>;
+  inputGate: ReturnType<typeof createAgentInputGate>;
+  keys?: () => void;
   /** Loads the navigation guard refused, so a history step can say it was refused. */
   refusals: number;
   /** The server's list of its own addresses, refreshed on every history call. */
@@ -87,6 +92,7 @@ export async function startLocalBrowserBridge(
       guest.parent.removeListener('closed', guest.onParentClosed);
     clearTimeout(guest.attachTimer);
     guest.page?.dispose();
+    guest.keys?.();
     for (const popup of guest.popups ?? []) if (!popup.isDestroyed()) popup.destroy();
     guest.socket?.terminate();
     guest.transport?.close();
@@ -232,7 +238,7 @@ export async function startLocalBrowserBridge(
           backgroundThrottling: false,
         },
       });
-      const guest: Guest = { view, refusals: 0, refused: [] };
+      const guest: Guest = { view, inputGate: createAgentInputGate(), refusals: 0, refused: [] };
       const rules = () => ({ rendererUrl: getRendererUrl(), refused: guest.refused });
       const parent = getWindow();
       if (!parent || parent.isDestroyed()) {
@@ -310,6 +316,19 @@ export async function startLocalBrowserBridge(
         if (shown && !shown.isDestroyed())
           shown.webContents.send(LOCAL_BROWSER_PAGE_CHANGED_CHANNEL, page);
       });
+      guest.keys = forwardGuestShortcuts(view.webContents, {
+        platform: process.platform,
+        gate: guest.inputGate,
+        personFocused: () =>
+          !!guest.parent && !guest.parent.isDestroyed() && guest.parent.isFocused(),
+        // The app copies the address it shows, the same as ⌘⇧C in the panel.
+        send: (shortcut) => {
+          const shown = guest.parent;
+          if (!shown || shown.isDestroyed()) return;
+          if (shortcut === 'focus-address') shown.webContents.focus();
+          shown.webContents.send(LOCAL_BROWSER_SHORTCUT_CHANNEL, { connectionId, shortcut });
+        },
+      });
       try {
         await view.webContents.loadURL('about:blank');
       } catch (error) {
@@ -342,7 +361,7 @@ export async function startLocalBrowserBridge(
       clearTimeout(guest.attachTimer);
       guest.socket = ws;
       try {
-        guest.transport = pageTransport(guest.view.webContents, identity);
+        guest.transport = pageTransport(guest.view.webContents, guest.inputGate, identity);
       } catch {
         ws.close(1011);
         guest.socket = undefined;

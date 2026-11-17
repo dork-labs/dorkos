@@ -170,6 +170,14 @@ tracked:
       read by hand from that workflow's runs. The Vercel-Neon integration makes
       one per deployed git branch; the plan includes 10 per project and bills
       the rest.
+  - id: tracked.verify-proof-share
+    unit: ratio
+    definition: >-
+      Share of armed PRs whose final head carried a recorded `pnpm verify`
+      proof (scripts/verify-proof/cli.ts) when it was armed; the rest were
+      armed on the logged `--no-verify-proof` escape or a coordinator
+      override. Hand-audited from the arm log and escapes.jsonl in the common
+      git dir; not computed by the daily collector, which cannot see either.
   - id: tracked.review-runs-per-merged-pr
     unit: count
     definition: Automated review runs per merged PR.
