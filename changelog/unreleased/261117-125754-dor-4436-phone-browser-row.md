@@ -9,4 +9,4 @@ covers:
 
 ### Fixed
 
-- When a site's address is too long for the browser's address bar, the end of the site's name now always stays in view, and only the start is shortened. (DOR-4655)
+- When a site's address is too long for the browser's address bar, the site's own name now always shows in full. The start of the address is shortened first, and on a narrow phone the name gets a little smaller or moves onto a second line, but it is never cut off. (DOR-4655)

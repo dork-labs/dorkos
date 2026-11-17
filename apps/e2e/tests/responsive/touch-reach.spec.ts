@@ -384,7 +384,7 @@ test.describe('Touch reach — the browser row on a phone (DOR-4436) @smoke', ()
   });
 
   // DOR-4655 (Security Must): a long, trusted-looking start never hides the real site.
-  test('a spoof host shows its real site whole at 390, and its end at 258', async ({ page }) => {
+  test('a spoof host shows its real site whole at 390', async ({ page }) => {
     // 540 keeps the phone layout while the 390 demo gets its full width (see below).
     await page.setViewportSize({ width: 540, height: PHONE.height });
     await page.goto('/dev/home-inbox');
@@ -420,21 +420,67 @@ test.describe('Touch reach — the browser row on a phone (DOR-4436) @smoke', ()
       'Address: accounts.google.com.attacker.example/login'
     );
 
-    // 258: too little room for even the kept part, so it stays anchored at its end:
-    // the visible text ends with "example", never with the trusted-looking start.
-    const narrow = await measure('browser-chrome-phone-narrow-spoof');
-    expect(
-      Math.abs(narrow.kept.x + narrow.kept.width - (narrow.box.x + narrow.box.width)),
-      'the kept part must end exactly where the visible host ends'
-    ).toBeLessThan(1);
-    expect(narrow.box.x + narrow.box.width).toBeLessThanOrEqual(narrow.reload.x + 0.5);
-    const lastVisible = await page.evaluate(
-      ([x, y]) => document.elementFromPoint(x, y)?.getAttribute('data-slot') ?? '',
-      [narrow.box.x + narrow.box.width - 2, narrow.box.y + narrow.box.height / 2] as const
+    // 390 with the Your turn pill: login-google.vercel.app whole, never cut inside a label.
+    const login = await measure('browser-chrome-phone-login-google');
+    await expect(login.demo.locator('[data-slot="browser-address-host-kept"]')).toHaveText(
+      'login-google.vercel.app'
     );
-    expect(lastVisible, 'the right end of the host is the kept part').toBe(
-      'browser-address-host-kept'
-    );
+    expect(login.kept.x).toBeGreaterThanOrEqual(login.box.x - 0.5);
+    expect(login.box.x + login.box.width).toBeLessThanOrEqual(login.reload.x + 0.5);
+  });
+
+  // DOR-4655: at 258px there is room for little, and still the site is never clipped:
+  // the start goes, then the path, the Not secure words and the padding, then the
+  // host takes its one smaller size, and last it wraps, the row growing with it.
+  test('at 258px each spoof host keeps its site whole, smaller or wrapped, never clipped', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 540, height: PHONE.height });
+    await page.goto('/dev/home-inbox');
+    // The Playground's NARROW_HOSTS, in order, and the part of each that stays whole.
+    const kept = [
+      'notgoogle.com',
+      'evil-google.com',
+      'com.attacker.example',
+      'login-google.vercel.app',
+      'a-very-long-attacker-registrable-name.example',
+    ];
+    for (const [index, site] of kept.entries()) {
+      const demo = page.getByTestId(`browser-chrome-phone-narrow-host-${index}`);
+      await expect(demo, `the Playground must draw the 258px row for ${site}`).toBeVisible({
+        timeout: 15_000,
+      });
+      await demo.scrollIntoViewIfNeeded();
+      await expect(demo.locator('[data-slot="browser-address-host-kept"]')).toHaveText(site);
+      const drawn = await demo.evaluate((root) => {
+        const rect = (selector: string) => root.querySelector(selector)!.getBoundingClientRect();
+        const text = rect('[data-slot="browser-address-text"]');
+        const row = rect('[data-slot="browser-chrome-row"]');
+        const field = rect('button[aria-label^="Address:"]');
+        const back = rect('button[aria-label="Back"]');
+        const reload = rect('button[aria-label="Reload"]');
+        // Every line the kept part is drawn on, as the browser clips it.
+        const lines = [
+          ...root.querySelector('[data-slot="browser-address-host-kept"]')!.getClientRects(),
+        ];
+        return {
+          whole: lines.every(
+            (line) =>
+              line.left >= text.left - 0.5 &&
+              line.right <= text.right + 0.5 &&
+              line.top >= text.top - 0.5 &&
+              line.bottom <= text.bottom + 0.5
+          ),
+          clearOfReload: text.right <= reload.left + 0.5,
+          fieldInRow: field.top >= row.top - 0.5 && field.bottom <= row.bottom + 0.5,
+          backCentred: Math.abs(back.top + back.height / 2 - (row.top + row.height / 2)) < 1,
+        };
+      });
+      expect(drawn.whole, `${site} must be wholly inside the visible address`).toBe(true);
+      expect(drawn.clearOfReload, `${site}: the address must end before Reload`).toBe(true);
+      expect(drawn.fieldInRow, `${site}: the row must grow with the field, not clip it`).toBe(true);
+      expect(drawn.backCentred, `${site}: the controls stay centred in the row`).toBe(true);
+    }
   });
 
   test('Your turn shows its full words on a phone', async ({ page }) => {

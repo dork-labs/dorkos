@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import {
   BrowserChrome,
   BrowserMenu,
@@ -72,6 +72,18 @@ const YOUR_TURN: BrowserPillState = {
   handoffId: 'demo',
   askedAt: '2026-11-17T12:00:00.000Z',
 };
+
+/**
+ * Made-up hosts that try to pass for another site (DOR-4655). At 258px each must
+ * keep its site whole; e2e measures them in this order (touch-reach.spec.ts).
+ */
+const NARROW_HOSTS = [
+  'notgoogle.com',
+  'evil-google.com',
+  'accounts.google.com.attacker.example',
+  'login-google.vercel.app',
+  'a-very-long-attacker-registrable-name.example',
+];
 
 /** The ⋯ menu with every group that can apply, on made-up pages and chats. */
 function DemoMenu() {
@@ -170,16 +182,33 @@ export function BrowserChromeShowcases() {
         />
       </ShowcaseDemo>
       <ShowcaseLabel>
-        Phone, narrow (258px): too little room even for the site, so its end stays in view
+        Phone (390px): login-google.vercel.app shows whole, never cut inside a label
       </ShowcaseLabel>
       <ShowcaseDemo>
         <ChromeDemo
-          width={258}
-          testId="browser-chrome-phone-narrow-spoof"
-          url="https://accounts.google.com.attacker.example/login"
+          width={390}
+          testId="browser-chrome-phone-login-google"
+          url="https://login-google.vercel.app/signin"
+          status={<BrowserStatusPill state={YOUR_TURN} agentName="Atlas" />}
           menu={<DemoMenu />}
         />
       </ShowcaseDemo>
+      {NARROW_HOSTS.map((host, index) => (
+        <Fragment key={host}>
+          <ShowcaseLabel>
+            {`Phone, narrow (258px): ${host} keeps its site whole, smaller or wrapped, never clipped`}
+          </ShowcaseLabel>
+          <ShowcaseDemo>
+            <ChromeDemo
+              width={258}
+              testId={`browser-chrome-phone-narrow-host-${index}`}
+              url={`https://${host}/login`}
+              status={<BrowserStatusPill state={YOUR_TURN} agentName="Atlas" />}
+              menu={<DemoMenu />}
+            />
+          </ShowcaseDemo>
+        </Fragment>
+      ))}
       <ShowcaseLabel>Plain http:// off this machine says Not secure</ShowcaseLabel>
       <ShowcaseDemo>
         <ChromeDemo width={640} url="http://printer.example/status" />

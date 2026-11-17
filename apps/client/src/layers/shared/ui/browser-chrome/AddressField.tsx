@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type RefObject } from 'react';
 import { LockOpen } from 'lucide-react';
 import { keptHostTail } from '@dorkos/shared/site-name';
 import {
@@ -8,6 +8,8 @@ import {
 } from '@/layers/shared/lib/browser-address';
 import { cn } from '@/layers/shared/lib/utils';
 import { Input } from '../input';
+import type { AddressFit } from './address-fit';
+import { useAddressFit } from './use-address-fit';
 
 /** Why a page the one http:// fallback opened is not secure (DOR-4450). */
 const OPENED_OVER_HTTP = 'This site didn’t answer over https, so it opened over http.';
@@ -21,43 +23,87 @@ function fieldInset(endButton: boolean): string {
   return endButton ? 'px-2 pr-11' : 'px-2';
 }
 
-/**
- * The host, drawn so its end is always seen (DOR-4655): the part {@link keptHostTail}
- * keeps never shrinks, and anything in front of it is elided from the left (an
- * ellipsis below 480px of chrome; in full above, clipped from the left if it still
- * does not fit). A page can't push the real site out of view with a long,
- * trusted-looking start like `accounts.google.com.attacker.example`.
- */
-function HostText({ host }: { host: string }) {
+/** The host split at the part {@link keptHostTail} never lets go of. */
+function splitHost(host: string): { elided: string; kept: string } {
   const kept = keptHostTail(host);
-  const elided = host.slice(0, host.length - kept.length);
+  return { elided: host.slice(0, host.length - kept.length), kept };
+}
+
+/**
+ * The host as the fit draws it (DOR-4655): whole, or "…" for the labels before
+ * the kept part, at its normal size or the one smaller step, on one line or
+ * wrapped. Never clipped: a page can't push the real site out of view with a
+ * long, trusted-looking start like `accounts.google.com.attacker.example`.
+ */
+function HostText({ host, fit }: { host: string; fit: AddressFit }) {
+  const { elided, kept } = splitHost(host);
   return (
     <span
       data-slot="browser-address-host"
-      // Anchored at the end: whatever can't fit overflows off the left and is clipped.
-      className="flex min-w-0 justify-end overflow-hidden whitespace-nowrap"
-    >
-      {elided && (
-        <>
-          <span
-            data-slot="browser-address-host-elided"
-            // Never shrinks into the kept part: it overflows off the left instead.
-            className="text-foreground shrink-0 @max-[479px]/browser-chrome:hidden"
-          >
-            {elided}
-          </span>
-          <span
-            data-slot="browser-address-host-ellipsis"
-            aria-hidden
-            className="text-foreground @min-[480px]/browser-chrome:hidden"
-          >
-            …
-          </span>
-        </>
+      style={fit.fontPx === null ? undefined : { fontSize: `${fit.fontPx}px`, lineHeight: 1.25 }}
+      className={cn(
+        'text-foreground min-w-0',
+        fit.wrap ? '[overflow-wrap:anywhere] whitespace-normal' : 'whitespace-nowrap'
       )}
-      <span data-slot="browser-address-host-kept" className="text-foreground shrink-0">
+    >
+      {elided && fit.host === 'full' && (
+        <span data-slot="browser-address-host-elided" className="text-foreground">
+          {elided}
+        </span>
+      )}
+      {elided && fit.host === 'elided' && (
+        <span data-slot="browser-address-host-ellipsis" aria-hidden>
+          …
+        </span>
+      )}
+      <span data-slot="browser-address-host-kept" className="text-foreground">
         {kept}
       </span>
+    </span>
+  );
+}
+
+/** One measured part: its words drawn from `data-text`, so they never sit in the page twice. */
+function Measured({ name, text, className }: { name: string; text: string; className?: string }) {
+  return (
+    <span
+      data-measure={name}
+      data-text={text}
+      className={cn('before:content-[attr(data-text)]', className)}
+    />
+  );
+}
+
+/**
+ * A hidden copy of the address's parts at their normal size, for
+ * {@link useAddressFit} to measure. Each part is marked `data-measure`.
+ */
+function AddressMeasure({
+  host,
+  notSecure,
+  ref,
+}: {
+  host: string;
+  notSecure: boolean;
+  ref: RefObject<HTMLSpanElement | null>;
+}) {
+  const { elided, kept } = splitHost(host);
+  return (
+    <span
+      ref={ref}
+      aria-hidden
+      data-slot="browser-address-measure"
+      className="pointer-events-none invisible absolute top-0 left-0 whitespace-nowrap"
+    >
+      <Measured name="host" text={host} />
+      <Measured name="kept" text={kept} />
+      {elided && <Measured name="ellipsis" text="…" />}
+      {notSecure && (
+        <>
+          <Measured name="badge" text="Not secure" className="text-xs" />
+          <LockOpen data-measure="badge-icon" className="size-(--size-icon-xs)" />
+        </>
+      )}
     </span>
   );
 }
@@ -111,6 +157,14 @@ export function AddressField({
   const display = useMemo(() => describeAddress(url), [url]);
   const showsOpenedOverHttp = openedOverHttp && /^http:/i.test(url);
   const whyNotSecure = useId();
+  const atRest = useRef<HTMLButtonElement>(null);
+  const measure = useRef<HTMLSpanElement>(null);
+  const notSecure = display.kind === 'url' && display.notSecure;
+  const fit = useAddressFit(
+    atRest,
+    measure,
+    `${editing}|${display.kind === 'url' ? display.host : ''}|${notSecure}`
+  );
 
   // A new focus request opens the field on the address; one already open keeps what was typed.
   const [handledRequest, setHandledRequest] = useState(focusRequest ?? 0);
@@ -133,11 +187,14 @@ export function AddressField({
   if (!editing) {
     return (
       <button
+        ref={atRest}
         type="button"
         // The accessible name carries WHERE the person is, not just what the control
         // is. A local file is announced by its path, never a signed token URL.
         aria-label={`Address: ${locationLabel(display)}`}
         aria-describedby={showsOpenedOverHttp ? whyNotSecure : undefined}
+        data-host-fit={fit.host}
+        data-wrap={fit.wrap || undefined}
         onClick={() => {
           setDraft(url);
           setEditing(true);
@@ -147,9 +204,15 @@ export function AddressField({
           fieldInset(endButton),
           // The text box's own size (16px on a phone, so iOS never zooms), so a tap
           // swaps the field without the address changing size.
-          'focus-ring hover:bg-foreground/10 text-field flex items-center gap-1.5 text-left transition-colors'
+          'focus-ring hover:bg-foreground/10 text-field relative flex items-center gap-1.5 text-left transition-colors',
+          fit.tightPadding && 'pl-0.5',
+          // Wrapped, the field grows taller rather than clip; the row grows with it.
+          fit.wrap && 'h-auto min-h-11 py-1 md:h-auto md:min-h-7'
         )}
       >
+        {display.kind === 'url' && (
+          <AddressMeasure ref={measure} host={display.host} notSecure={notSecure} />
+        )}
         {/* Clips at the button's padding, so with Reload over the right end (a
           phone's `pr-11`) nothing in here ever draws under it (DOR-4436). */}
         <span
@@ -170,14 +233,16 @@ export function AddressField({
                 <span
                   // A native tooltip draws above the page, so it never blanks it (DOR-4438).
                   title={showsOpenedOverHttp ? OPENED_OVER_HTTP : undefined}
-                  // Below 360px of chrome the words go to zero size (still read aloud)
-                  // and an open lock stands in, so the host keeps some room.
-                  className="text-muted-foreground inline-flex shrink-0 items-center gap-1 text-xs @max-[359px]/browser-chrome:text-[0px]"
+                  // Short of room, the words go to zero size (still read aloud) and an
+                  // open lock stands in, so the site keeps its room (DOR-4655).
+                  className={cn(
+                    'text-muted-foreground inline-flex shrink-0 items-center gap-1 text-xs',
+                    fit.badgeIcon && 'text-[0px]'
+                  )}
                 >
-                  <LockOpen
-                    aria-hidden
-                    className="size-(--size-icon-xs) shrink-0 @min-[360px]/browser-chrome:hidden"
-                  />
+                  {fit.badgeIcon && (
+                    <LockOpen aria-hidden className="size-(--size-icon-xs) shrink-0" />
+                  )}
                   Not secure
                 </span>
               )}
@@ -186,14 +251,16 @@ export function AddressField({
                   {OPENED_OVER_HTTP}
                 </span>
               )}
-              <HostText host={display.host} />
-              <span
-                data-slot="browser-address-path"
-                // Gives way first: the path shrinks to nothing before the host does.
-                className="text-muted-foreground hidden min-w-0 shrink-[1000] truncate @min-[480px]/browser-chrome:inline"
-              >
-                {display.rest}
-              </span>
+              <HostText host={display.host} fit={fit} />
+              {fit.path && (
+                <span
+                  data-slot="browser-address-path"
+                  // Gives way first: the path shortens to nothing before the host does.
+                  className="text-muted-foreground hidden min-w-0 shrink-[1000] truncate @min-[480px]/browser-chrome:inline"
+                >
+                  {display.rest}
+                </span>
+              )}
             </>
           )}
           {display.kind === 'raw' &&

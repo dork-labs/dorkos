@@ -136,7 +136,7 @@ export function BrowserChrome({
       icon={stopping ? X : RotateCw}
       disabled={busy && !stopping}
       onClick={stopping ? onStop : onReload}
-      className={phone ? 'absolute inset-y-0 right-0' : undefined}
+      className={phone ? 'absolute top-1/2 right-0 -translate-y-1/2' : undefined}
     />
   );
   const end = status || trailing || menu;
@@ -153,8 +153,10 @@ export function BrowserChrome({
           <div
             data-slot="browser-chrome-row"
             aria-busy={loading}
-            // A phone's 390px: 10 + Back 44 + 6 + field + 6 + pill 44 + ⋯ 44 + 10.
-            className="flex h-12 items-center gap-1.5 px-2.5 md:h-9 md:gap-1"
+            // A phone's 390px: 10 + Back 44 + 6 + field + 6 + pill 44 + ⋯ 44 + 10. A
+            // minimum, not a height: a wrapped address grows the row, never clips (DOR-4655),
+            // and the 44px controls stay centred.
+            className="flex min-h-12 items-center gap-1.5 px-2.5 md:min-h-9 md:gap-1"
           >
             <ChromeButton label="Back" icon={ArrowLeft} disabled={!canBack} onClick={onBack} />
             <ChromeButton
