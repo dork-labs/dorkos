@@ -124,12 +124,10 @@ export function createExtensionDecisionsRoutes(
         answerNeedsStepUp: !isAtThisComputer(honoRequestFacts(c)),
       })),
       // An offer is lasting, so it is held at the desk too unless no sheet could answer there.
-      offers: inbox
-        .pendingOffers()
-        .map((offer) => ({
-          ...offer,
-          answerNeedsStepUp: !deskGoesOnWithoutSheet(honoRequestFacts(c)),
-        })),
+      offers: inbox.pendingOffers().map((offer) => ({
+        ...offer,
+        answerNeedsStepUp: !deskGoesOnWithoutSheet(honoRequestFacts(c)),
+      })),
     });
   });
 
