@@ -15,9 +15,10 @@
  * {@link dorkosAutoAllows} lets run for this session RIGHT NOW: the running
  * turn's ceilings, `control_ui` per effect, and the identity the room verbs
  * need. Nothing else: never a built-in tool, so Bash, Edit, Write and WebFetch
- * stay refused. Beside them, the named status reads only Never ask needs
+ * stay refused. Beside them, the named status reads
  * ({@link NEVER_ASK_STATUS_READS_QUALIFIED}, DOR-3971), never in a turn that carries an
- * outsider's words.
+ * outsider's words, and those alone also at Ask first and Accept edits (DOR-4601): a PreToolUse
+ * `allow` skips the card there, which a scheduled run has nobody to answer.
  *
  * **Stricter than the gate in one place.** A turn held for a stranger gets no
  * `chat_send` at all, not even a queued one. A turn that only carries an
@@ -27,7 +28,7 @@
  * one, gets no account tools. A marked turn lists none of its own connection
  * grants either (DOR-3205).
  *
- * **It only ever allows, and only at Never ask.** In every other mode, and on
+ * **It only ever allows, and only at Never ask** (the status reads aside). In every other mode, and on
  * any doubt (a throw, a slow lookup, an unknown name), it answers nothing, so
  * `dontAsk` refuses as before and every other mode reaches `canUseTool` as
  * before. A deny rule still beats its allow (QA, proven on the CLI).
@@ -53,7 +54,7 @@ import {
   type CeilingedMode,
 } from '../turn-permission.js';
 import { DORKOS_AGENT_TOOLS, dorkosAutoAllows } from './auto-allow.js';
-import { NEVER_ASK_STATUS_READS_QUALIFIED } from './never-ask-status-reads.js';
+import { NEVER_ASK_STATUS_READS_QUALIFIED, STATUS_READ_MODES } from './never-ask-status-reads.js';
 import { OWN_CONNECTION_READS_QUALIFIED } from './own-connection-reads.js';
 import type { ToolApprovalContext, ToolGateLogger } from '../messaging/interactive-handlers.js';
 
@@ -133,7 +134,10 @@ export async function neverAskAllows(
   isMarked: () => boolean = () => false,
   readOutsideWords: () => boolean = () => false
 ): Promise<boolean> {
-  if (gatePermissionMode(session) !== NEVER_ASK_MODE_ID) return false;
+  const mode = gatePermissionMode(session);
+  const statusRead = NEVER_ASK_STATUS_READS_QUALIFIED.has(toolName);
+  // The status reads run unasked at Ask first and Accept edits too (DOR-4601); all else, Never ask.
+  if (statusRead ? !STATUS_READ_MODES.has(mode) : mode !== NEVER_ASK_MODE_ID) return false;
   // Proven, not assumed: an absent source is NOT the host here.
   if (mcpServer?.source !== 'sdk') return false;
   // The named status reads (DOR-3971) return the owner's working data, so they run only in a chat
@@ -141,7 +145,7 @@ export async function neverAskAllows(
   // outsider's words on to, not one marked by a line it read, and not one the wider DOR-4029 test
   // says read outside words (a chat binding, an outside sender, a connector event). A teammate's
   // turn still gets them.
-  if (NEVER_ASK_STATUS_READS_QUALIFIED.has(toolName)) {
+  if (statusRead) {
     // `carriesOutsiderMark` covers a stranger's ceiling too; the first check states it outright.
     return (
       ceilingOn(session) !== 'stranger' &&

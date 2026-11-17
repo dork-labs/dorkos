@@ -180,11 +180,61 @@ describe('a scheduled run at Never ask', () => {
     for (const name of STATUS_READS) expect(await decide(name, { mcpServer })).toEqual({});
   });
 
-  it('says nothing in every other mode, so the gate decides as before', async () => {
-    for (const permissionMode of ['default', 'acceptEdits', 'plan', 'bypassPermissions']) {
+  it('says nothing at Plan, Auto or Full, so the gate decides as before', async () => {
+    for (const permissionMode of ['plan', 'auto', 'bypassPermissions']) {
       const session = { permissionMode: permissionMode as PermissionModeId };
       for (const name of STATUS_READS) expect(await decide(name, { session })).toEqual({});
     }
+  });
+});
+
+// DOR-4601, PM ruling A: the same four reads run unasked at Ask first and Accept edits, with both
+// of Security's conditions, the outsider refusal and the narrowed answers.
+describe.each(['default', 'acceptEdits'] as const)('a scheduled run at %s', (permissionMode) => {
+  const AT = { permissionMode: permissionMode as PermissionModeId };
+
+  it.each(STATUS_READS)('runs %s with nobody there to answer a card', async (name) => {
+    expect(await decide(name, { session: AT })).toMatchObject(ALLOWED);
+  });
+
+  it.each([...PRIVATE_READS, ...ACT, ...DESTRUCTIVE])(
+    'says nothing about %s, so the gate decides as before',
+    async (name) => {
+      expect(await decide(name, { session: AT })).toEqual({});
+    }
+  );
+
+  it('gives nothing to a server that only calls itself dorkos', async () => {
+    const mcpServer = { name: 'dorkos', source: 'project' };
+    for (const name of STATUS_READS) {
+      expect(await decide(name, { session: AT, mcpServer })).toEqual({});
+    }
+  });
+
+  const OUTSIDER_TURNS: Array<[string, Parameters<typeof decide>[1]]> = [
+    ['a stranger’s own turn', { session: { ...AT, turnPermissionCeiling: 'runtime-default' } }],
+    [
+      'background work a stranger’s turn left running',
+      { session: { ...AT, backgroundPermissionCeiling: 'runtime-default' } },
+    ],
+    ['a turn marked by a line it read', { session: AT, isMarked: () => true }],
+    [
+      'a chat that read outside words but carries no mark',
+      { session: AT, readOutsideWords: () => true },
+    ],
+    [
+      'a chat whose outside-words lookup throws',
+      {
+        session: AT,
+        readOutsideWords: () => {
+          throw new Error('no database');
+        },
+      },
+    ],
+  ];
+
+  it.each(OUTSIDER_TURNS)('runs no status read unasked in %s', async (_label, options) => {
+    for (const name of STATUS_READS) expect(await decide(name, options), name).toEqual({});
   });
 });
 
