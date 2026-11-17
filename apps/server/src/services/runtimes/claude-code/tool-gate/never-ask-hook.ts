@@ -16,7 +16,8 @@
  * turn's ceilings, `control_ui` per effect, and the identity the room verbs
  * need. Nothing else: never a built-in tool, so Bash, Edit, Write and WebFetch
  * stay refused. Beside them, the named status reads only Never ask needs
- * ({@link NEVER_ASK_STATUS_READS_QUALIFIED}, DOR-3971), outside a stranger's turn.
+ * ({@link NEVER_ASK_STATUS_READS_QUALIFIED}, DOR-3971), never in a turn that carries an
+ * outsider's words.
  *
  * **Stricter than the gate in one place.** A turn held for a stranger gets no
  * `chat_send` at all, not even a queued one. A turn that only carries an
@@ -42,6 +43,7 @@ import { CHAT_SEND_TOOL } from '@dorkos/shared/chat-messages';
 import { NEVER_ASK_MODE_ID } from '../runtime-constants.js';
 import { inSessionToolName } from '../mcp-tools/tool-exposure.js';
 import {
+  carriesOutsiderMark,
   ceilingOn,
   gatePermissionMode,
   heldForOutsider,
@@ -108,9 +110,16 @@ export async function neverAskAllows(
   if (gatePermissionMode(session) !== NEVER_ASK_MODE_ID) return false;
   // Proven, not assumed: an absent source is NOT the host here.
   if (mcpServer?.source !== 'sdk') return false;
-  // The named status reads (DOR-3971): a stranger's turn asks for them, as for the always-on
-  // reads, and at Never ask asking is refusing.
-  if (NEVER_ASK_STATUS_READS_QUALIFIED.has(toolName)) return ceilingOn(session) !== 'stranger';
+  // The named status reads (DOR-3971) return the owner's working data, so they get the
+  // own-connection-reads bound: never in a turn that carries an outsider's words, a stranger's own,
+  // one our agents passed on, or one marked by a line it read. A teammate's turn still gets them.
+  if (NEVER_ASK_STATUS_READS_QUALIFIED.has(toolName)) {
+    return (
+      ceilingOn(session) !== 'stranger' &&
+      !carriesOutsiderMark(session) &&
+      !markedOrDoubtful(isMarked)
+    );
+  }
   if (!DORKOS_AGENT_TOOLS.has(toolName)) return false;
   if (toolName === CHAT_SEND_QUALIFIED) {
     // A held turn (a Wi-Fi sign-in's) passes nothing on.

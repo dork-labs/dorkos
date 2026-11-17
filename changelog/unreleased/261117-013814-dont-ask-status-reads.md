@@ -5,4 +5,4 @@ covers:
 
 ### Fixed
 
-- A schedule set to Don't ask can now check on things. It can see which chats are running, read its own past runs, see when each agent last worked, and read an agent's heartbeat. Before, it was refused these simple reads. Everything else stays as it was: it still can't read messages, transcripts or the activity record, or change anything.
+- A schedule set to Never ask can now check on things. It can see which chats are running, read a schedule's past runs, see when each agent last worked, and read an agent's heartbeat. Before, it was refused these simple reads. Everything else it was refused before is still refused.
