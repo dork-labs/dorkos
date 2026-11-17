@@ -88,6 +88,32 @@ const NOT_A_REPOSITORY_FILE: Readonly<Record<string, string>> = {
 };
 
 /**
+ * Free-form object arguments (`{}`): their keys come from the caller, not the
+ * schema, so no snapshot can name what's inside. Each is listed with why it
+ * isn't a way to write a repository file around the check.
+ */
+const FREE_FORM_ARGUMENTS: Readonly<Record<string, string>> = {
+  'GITHUB_CREATE_A_TREE tree[]{}':
+    'tree entries; the check reads their `path` key wherever it sits',
+  'GITHUB_CREATE_INFERENCE_CHAT_COMPLETIONS tools[].parameters.properties{}':
+    'a model tool’s schema; writes nothing to a repository',
+  'GITHUB_RUN_GRAPH_QL_QUERY variables{}':
+    'GraphQL variables; the action is already a one-by-one pick',
+  'GITHUB_RUN_GRAPH_QL_RELAY_QUERY variables{}':
+    'GraphQL variables; the action is already a one-by-one pick',
+  'GITHUB_UPDATE_USER_PROJECT_ITEM value{}': 'a project field’s value',
+  'GITLAB_CREATE_GROUP default_branch_protection_defaults{}':
+    'branch protection settings, not a file',
+  'GITLAB_CREATE_PIPELINE inputs{}':
+    'pipeline inputs; running a pipeline is already a one-by-one pick',
+  'GITLAB_CREATE_PIPELINE_SCHEDULE inputs[].value[]{}': 'a pipeline input’s value, not a file',
+  'GITLAB_UPDATE_PIPELINE_SCHEDULE inputs[].value[]{}': 'a pipeline input’s value, not a file',
+  'GITLAB_PLAY_JOB job_inputs{}': 'job inputs; playing a job is already a one-by-one pick',
+  'GITLAB_RETRY_JOB job_inputs{}': 'job inputs, not a file',
+  'GITEA_DISPATCH_WORKFLOW inputs{}': 'workflow inputs; dispatching is already a one-by-one pick',
+};
+
+/**
  * History arguments (`start_sha`, `new_branch`, …) count only where a commit
  * takes them. A nested one is listed here with why it changes nothing.
  */
@@ -179,6 +205,18 @@ describe('which repository arguments the control-file check reads (DOR-4508)', (
         true
       );
     }
+    // A tree's entries are free-form in the schema; the check still reads their path.
+    expect(changesRepositoryControlFiles({ tree: [{ path: '.github/workflows/ci.yml' }] })).toBe(
+      true
+    );
+  });
+
+  it('knows why every free-form object argument is no way around the check', () => {
+    const freeForm = fields
+      .filter(({ path }) => path.endsWith('{}'))
+      .map(({ slug, path }) => `${slug} ${path}`)
+      .sort();
+    expect(freeForm).toEqual(Object.keys(FREE_FORM_ARGUMENTS).sort());
   });
 
   it.each([

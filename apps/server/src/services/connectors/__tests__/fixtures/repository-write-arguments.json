@@ -1,5 +1,5 @@
 {
-  "source": "Composio live input schemas, `composio execute <slug> --get-schema`",
+  "source": "Composio live input schemas, scripts/composio-repository-write-arguments.mjs",
   "checkedAt": "2026-11-17",
   "toolkits": {
     "github": {
@@ -449,7 +449,7 @@
         "repo_names[]"
       ],
       "GITHUB_CREATE_A_TEMPORARY_PRIVATE_FORK": ["ghsa_id", "owner", "repo"],
-      "GITHUB_CREATE_A_TREE": ["base_tree", "owner", "repo"],
+      "GITHUB_CREATE_A_TREE": ["base_tree", "owner", "repo", "tree[]{}"],
       "GITHUB_CREATE_A_USER_PROJECT": ["body", "name"],
       "GITHUB_CREATE_A_WORKFLOW_DISPATCH_EVENT": ["inputs", "owner", "ref", "repo", "workflow_id"],
       "GITHUB_CREATE_BRANCH": ["branch_name", "owner", "repo", "sha"],
@@ -466,6 +466,7 @@
         "tool_choice",
         "tools[].description",
         "tools[].name",
+        "tools[].parameters.properties{}",
         "tools[].parameters.required[]",
         "tools[].parameters.type",
         "tools[].type"
@@ -856,8 +857,8 @@
       "GITHUB_RE_RUN_A_JOB_FROM_A_WORKFLOW_RUN": ["owner", "repo"],
       "GITHUB_RE_RUN_A_WORKFLOW": ["owner", "repo"],
       "GITHUB_RE_RUN_FAILED_JOBS_FROM_A_WORKFLOW_RUN": ["owner", "repo"],
-      "GITHUB_RUN_GRAPH_QL_QUERY": ["query"],
-      "GITHUB_RUN_GRAPH_QL_RELAY_QUERY": ["query"],
+      "GITHUB_RUN_GRAPH_QL_QUERY": ["query", "variables{}"],
+      "GITHUB_RUN_GRAPH_QL_RELAY_QUERY": ["query", "variables{}"],
       "GITHUB_SET_ADMIN_BRANCH_PROTECTION": ["branch", "owner", "repo"],
       "GITHUB_SET_APP_ACCESS_RESTRICTIONS": ["apps[]", "branch", "owner", "repo"],
       "GITHUB_SET_A_REPOSITORY_SUBSCRIPTION": ["owner", "repo"],
@@ -1160,7 +1161,7 @@
         "list_ids[]",
         "suggested_list_ids[]"
       ],
-      "GITHUB_UPDATE_USER_PROJECT_ITEM": ["fieldId", "itemId", "projectId"],
+      "GITHUB_UPDATE_USER_PROJECT_ITEM": ["fieldId", "itemId", "projectId", "value{}"],
       "GITHUB_UPDATE_USER_STATUS": [
         "clientMutationId",
         "emoji",
@@ -1327,6 +1328,7 @@
       "GITLAB_CREATE_GROUP": [
         "avatar",
         "default_branch",
+        "default_branch_protection_defaults{}",
         "description",
         "duo_availability",
         "enabled_git_access_protocol",
@@ -1403,6 +1405,7 @@
         "visibility"
       ],
       "GITLAB_CREATE_PIPELINE": [
+        "inputs{}",
         "project_id",
         "ref",
         "variables[].key",
@@ -1417,6 +1420,7 @@
         "inputs[].name",
         "inputs[].value",
         "inputs[].value[]",
+        "inputs[].value[]{}",
         "ref"
       ],
       "GITLAB_CREATE_PIPELINE_SCHEDULE_VARIABLE": ["id", "key", "value", "variable_type"],
@@ -1548,6 +1552,7 @@
       ],
       "GITLAB_MOVE_ISSUE": ["id"],
       "GITLAB_PLAY_JOB": [
+        "job_inputs{}",
         "job_variables_attributes[].key",
         "job_variables_attributes[].value",
         "project_id"
@@ -1569,7 +1574,7 @@
       "GITLAB_RESET_SPENT_TIME": ["id"],
       "GITLAB_RESET_TIME_ESTIMATE": ["id"],
       "GITLAB_RESTORE_PROJECT": ["id"],
-      "GITLAB_RETRY_JOB": ["id"],
+      "GITLAB_RETRY_JOB": ["id", "job_inputs{}"],
       "GITLAB_RETRY_PIPELINE": ["project_id"],
       "GITLAB_REVERT_COMMIT": ["branch", "id", "sha"],
       "GITLAB_SET_PROJECT_APPROVALS": ["project_id"],
@@ -1680,6 +1685,7 @@
         "inputs[].name",
         "inputs[].value",
         "inputs[].value[]",
+        "inputs[].value[]{}",
         "ref"
       ],
       "GITLAB_UPDATE_PIPELINE_SCHEDULE_VARIABLE": ["id", "key", "value", "variable_type"],
@@ -1845,7 +1851,7 @@
         "title"
       ],
       "GITEA_CREATE_REPOSITORY_LABEL": ["color", "description", "name", "owner", "repo"],
-      "GITEA_DISPATCH_WORKFLOW": ["owner", "ref", "repo", "workflow_id"],
+      "GITEA_DISPATCH_WORKFLOW": ["inputs{}", "owner", "ref", "repo", "workflow_id"],
       "GITEA_MERGE_PULL_REQUEST": [
         "head_commit_id",
         "merge_commit_id",
