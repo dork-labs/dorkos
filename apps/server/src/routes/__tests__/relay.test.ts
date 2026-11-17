@@ -973,6 +973,10 @@ describe('Adapter routes', () => {
 
   describe('POST /api/relay/adapters/:id/enable', () => {
     it('enables adapter and returns ok', async () => {
+      vi.mocked(adapterManager.getAdapter).mockReturnValueOnce({
+        config: { id: 'tg-main', type: 'telegram', enabled: false, config: {} },
+        status: { state: 'disabled' },
+      } as unknown as ReturnType<AdapterManager['getAdapter']>);
       const res = await request(server).post('/api/relay/adapters/tg-main/enable');
 
       expect(res.status).toBe(200);

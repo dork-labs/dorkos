@@ -256,7 +256,7 @@ export function registerConfirmReferencesRoute(
  * Register `POST /adapters/:id/enable`. Turning a chat connection back on lets
  * its people reach your agents again (Security S7 on DOR-4355 M3): the owner
  * confirms it's them, and no agent turns one on over HTTP. One that is on
- * already answers at once.
+ * already answers at once and changes nothing.
  *
  * @param router - The connection routes.
  * @param adapterManager - The connections.
@@ -272,7 +272,9 @@ export function registerEnableRoute(router: Hono<ApiEnv>, adapterManager: Adapte
         return c.json({ error: err instanceof Error ? err.message : 'Enable failed' }, 400);
       }
     };
-    if (adapterManager.getAdapter(id)?.config.enabled === true) return enable();
+    // Already on: nothing to do, and calling enable here could undo a person's switch-off
+    // that landed after this read.
+    if (adapterManager.getAdapter(id)?.config.enabled === true) return c.json({ ok: true });
     return runFrontDoorWrite(c, {
       kind: 'relay.binding',
       target: id,

@@ -53,10 +53,13 @@ describe('turning a chat connection back on', () => {
     expect(manager.enable).not.toHaveBeenCalled();
   });
 
-  it('answers at once for a connection that is already on', async () => {
+  // Security's nit on be29563e91: an "already on" answer changes nothing, so a call that
+  // lands just after the person turns it off can't switch it back on.
+  it('answers at once for a connection that is already on, and changes nothing', async () => {
     adapter.enabled = true;
     const res = await owner.call('post', '/api/relay/adapters/tg/enable', 'own-tunnel');
     expect(res.status).toBe(200);
-    expect(manager.enable).toHaveBeenCalledExactlyOnceWith('tg');
+    expect(res.body).toEqual({ ok: true });
+    expect(manager.enable).not.toHaveBeenCalled();
   });
 });
