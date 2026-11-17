@@ -9,7 +9,7 @@
  * `routes/cloud-communities.ts` without the bar has to be added here to be
  * covered, and the reads below pin that the bar did not spread to them.
  */
-import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, type Mock } from 'vitest';
 import { mkdtempSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -160,6 +160,19 @@ import {
   holdStepUp,
   MAX_HELD_STEP_UPS_PER_SESSION,
 } from '../../services/core/auth/step-up/step-up-holds.js';
+import {
+  initMoveStaging,
+  moveStagingRoot,
+} from '../../services/core/cloud/community-move-upload.js';
+
+/** A data directory whose staging folder holds this file's made-up exports. */
+const MOVE_HOME = mkdtempSync(path.join(tmpdir(), 'owner-bar-moves-'));
+beforeAll(() => initMoveStaging(MOVE_HOME));
+
+/** A staged-export folder where staging makes them, so discarding may remove it. */
+function stagingDir(): string {
+  return mkdtempSync(path.join(moveStagingRoot(MOVE_HOME), 'move-'));
+}
 
 /** Who `sessionGate` resolved, as a test sets it; nobody by default (login off). */
 let signedInUser:
@@ -603,7 +616,7 @@ describe('DorkOS account confirmation', () => {
     'holds a staged move from %s before any outgoing upload',
     async (route) => {
       via = route;
-      const directory = mkdtempSync(path.join(tmpdir(), 'held-space-move-'));
+      const directory = stagingDir();
       const filePath = path.join(directory, 'export.zip');
       writeFileSync(filePath, 'made-up-export');
       moveUploads.stageArchive.mockResolvedValueOnce({
@@ -642,7 +655,7 @@ describe('DorkOS account confirmation', () => {
   // The account's refusal answers 200, so the hold's own failure cleanup never sees it.
   it('removes the staged export when the account refuses a confirmed move', async () => {
     via = 'own-tunnel';
-    const directory = mkdtempSync(path.join(tmpdir(), 'refused-space-move-'));
+    const directory = stagingDir();
     const filePath = path.join(directory, 'export.zip');
     writeFileSync(filePath, 'made-up-export');
     moveUploads.stageArchive.mockResolvedValueOnce({
@@ -671,7 +684,7 @@ describe('DorkOS account confirmation', () => {
     'removes a %s staged export and caps pending moves per browser',
     async (ending) => {
       via = 'own-tunnel';
-      const directory = mkdtempSync(path.join(tmpdir(), 'discarded-space-move-'));
+      const directory = stagingDir();
       const filePath = path.join(directory, 'export.zip');
       writeFileSync(filePath, 'made-up-export');
       moveUploads.stageArchive.mockResolvedValueOnce({
