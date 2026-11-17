@@ -121,6 +121,8 @@ describe('ApprovalService', () => {
           requestedBy: 'ops-agent',
           requestedAt: expect.any(String),
           expiresAt: ticket.expiresAt,
+          // The display code a remote confirmation matches (DOR-3648).
+          requestCode: ticket.requestCode,
         },
         expect.any(Function)
       );
@@ -221,6 +223,7 @@ describe('ApprovalService', () => {
         outcome: 'pending',
         approvalId: ticket.approvalId,
         expiresAt: ticket.expiresAt,
+        requestCode: ticket.requestCode,
       });
     });
 

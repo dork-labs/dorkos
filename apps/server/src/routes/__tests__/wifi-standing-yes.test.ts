@@ -6,6 +6,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
+import type { SessionEvent } from '@dorkos/shared/session-stream';
 
 let fakeRuntime: FakeAgentRuntime;
 const inbox = vi.hoisted(() => ({
@@ -102,15 +103,17 @@ describe('a tool prompt in a chat', () => {
   it('holds always-allow at this computer before the runtime hears it', async () => {
     resetHeldStepUpsForTests();
     setTestOwner('owner');
-    getOrCreateProjector(SESSION_ID, '/made-up').ingest({
+    const event = {
       type: 'approval_required',
       id: 'tc-1',
       toolName: 'Bash',
       input: '{}',
       startedAt: Date.now(),
       remainingMs: 600000,
+      timeoutMs: 600000,
       hasSuggestions: true,
-    });
+    } satisfies Omit<Extract<SessionEvent, { type: 'approval_required' }>, 'seq'>;
+    getOrCreateProjector(SESSION_ID, '/made-up').ingest(event);
     const res = await request(app('direct'))
       .post(`/api/sessions/${SESSION_ID}/approve`)
       .send({ toolCallId: 'tc-1', alwaysAllow: true });
