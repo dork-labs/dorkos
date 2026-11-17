@@ -215,7 +215,7 @@ function ApiKeyRow({
     <div
       role="group"
       aria-label={
-        exactRemoteTime ? `${label}. Last used remotely for tools ${exactRemoteTime}` : label
+        exactRemoteTime ? `${label}. Last used by a remote tool ${exactRemoteTime}` : label
       }
       className="flex items-center justify-between gap-2 rounded-md border px-3 py-2"
     >
@@ -230,7 +230,7 @@ function ApiKeyRow({
         {/* Only MCP (tool) sessions from another device record this; other API calls don't. */}
         {remoteUse && (
           <p className="text-muted-foreground text-xs">
-            Last used remotely for tools ·{' '}
+            Last used by a remote tool ·{' '}
             <time dateTime={remoteUse} title={exactRemoteTime ?? undefined}>
               {formatRelativeTime(remoteUse).replace(/^(Just now|Yesterday)/, (word) =>
                 word.toLowerCase()

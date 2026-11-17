@@ -61,14 +61,14 @@ function keysOnlyClient(apiKeys: ApiKeyRecord[]): AuthClient {
   };
 }
 
-/** The API keys list in Login & security, with the "Last used remotely for tools" line (DOR-4206). */
+/** The API keys list in Login & security, with the "Last used by a remote tool" line (DOR-4206). */
 export function ApiKeysShowcases() {
   const queryClient = useMemo(() => new QueryClient(), []);
   const client = useMemo(() => keysOnlyClient(sampleKeys()), []);
   return (
     <PlaygroundSection
       title="API Keys"
-      description="The key list in Login & security. A key used for tools from another device shows when; the exact time shows on hover."
+      description="The key list in Login & security. Each key shows when a remote tool last used it; the exact time shows on hover."
     >
       <ShowcaseLabel>Three keys: used minutes ago, days ago, never</ShowcaseLabel>
       <ShowcaseDemo>

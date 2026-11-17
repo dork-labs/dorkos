@@ -48,14 +48,14 @@ describe('ApiKeysSection', () => {
     });
     renderSection(createFakeAuthClient({ apiKeyList }));
 
-    const remoteUse = await screen.findByText('Last used remotely for tools ·');
-    expect(remoteUse).toHaveTextContent('Last used remotely for tools · 5m ago');
+    const remoteUse = await screen.findByText('Last used by a remote tool ·');
+    expect(remoteUse).toHaveTextContent('Last used by a remote tool · 5m ago');
     const time = remoteUse.querySelector('time');
     expect(time).toHaveAttribute('dateTime', lastUsedRemotelyAt);
     expect(time).toHaveAttribute('title', new Date(lastUsedRemotelyAt).toLocaleString());
     expect(
       screen.getByRole('group', {
-        name: `laptop. Last used remotely for tools ${new Date(lastUsedRemotelyAt).toLocaleString()}`,
+        name: `laptop. Last used by a remote tool ${new Date(lastUsedRemotelyAt).toLocaleString()}`,
       })
     ).toContainElement(remoteUse);
   });
@@ -70,7 +70,7 @@ describe('ApiKeysSection', () => {
       renderSection(createFakeAuthClient({ apiKeyList }));
 
       expect(await screen.findByText('laptop')).toBeInTheDocument();
-      expect(screen.queryByText(/Last used remotely/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Last used/)).not.toBeInTheDocument();
     }
   );
 
