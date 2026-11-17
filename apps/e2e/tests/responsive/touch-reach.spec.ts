@@ -383,6 +383,60 @@ test.describe('Touch reach — the browser row on a phone (DOR-4436) @smoke', ()
     await expect(demo.getByText('Not secure')).toHaveCSS('font-size', '0px');
   });
 
+  // DOR-4655 (Security Must): a long, trusted-looking start never hides the real site.
+  test('a spoof host shows its real site whole at 390, and its end at 258', async ({ page }) => {
+    // 540 keeps the phone layout while the 390 demo gets its full width (see below).
+    await page.setViewportSize({ width: 540, height: PHONE.height });
+    await page.goto('/dev/home-inbox');
+
+    /** Where the host's box and its kept end sit, as drawn. */
+    const measure = async (testId: string) => {
+      const demo = page.getByTestId(testId);
+      await expect(demo).toBeVisible({ timeout: 15_000 });
+      await demo.scrollIntoViewIfNeeded();
+      const box = (await demo.locator('[data-slot="browser-address-host"]').boundingBox())!;
+      const kept = (await demo.locator('[data-slot="browser-address-host-kept"]').boundingBox())!;
+      const reload = (await demo
+        .getByRole('button', { name: 'Reload', exact: true })
+        .boundingBox())!;
+      return { demo, box, kept, reload };
+    };
+
+    // 390: the whole kept part, attacker's label included, is in view.
+    const wide = await measure('browser-chrome-phone-spoof');
+    await expect(wide.demo.locator('[data-slot="browser-address-host-kept"]')).toHaveText(
+      'com.attacker.example'
+    );
+    expect(
+      wide.kept.x,
+      '"com.attacker.example" must start inside the field'
+    ).toBeGreaterThanOrEqual(wide.box.x - 0.5);
+    expect(wide.kept.x + wide.kept.width, 'and end inside it').toBeLessThanOrEqual(
+      wide.box.x + wide.box.width + 0.5
+    );
+    expect(wide.box.x + wide.box.width).toBeLessThanOrEqual(wide.reload.x + 0.5);
+    // The full host is the field's name.
+    await expect(wide.demo.getByRole('button', { name: /^Address:/ })).toHaveAccessibleName(
+      'Address: accounts.google.com.attacker.example/login'
+    );
+
+    // 258: too little room for even the kept part, so it stays anchored at its end:
+    // the visible text ends with "example", never with the trusted-looking start.
+    const narrow = await measure('browser-chrome-phone-narrow-spoof');
+    expect(
+      Math.abs(narrow.kept.x + narrow.kept.width - (narrow.box.x + narrow.box.width)),
+      'the kept part must end exactly where the visible host ends'
+    ).toBeLessThan(1);
+    expect(narrow.box.x + narrow.box.width).toBeLessThanOrEqual(narrow.reload.x + 0.5);
+    const lastVisible = await page.evaluate(
+      ([x, y]) => document.elementFromPoint(x, y)?.getAttribute('data-slot') ?? '',
+      [narrow.box.x + narrow.box.width - 2, narrow.box.y + narrow.box.height / 2] as const
+    );
+    expect(lastVisible, 'the right end of the host is the kept part').toBe(
+      'browser-address-host-kept'
+    );
+  });
+
   test('Your turn shows its full words on a phone', async ({ page }) => {
     // Still the phone layout (under 768), but wide enough that the Playground's page
     // padding leaves the demo its full 390px; at a 390 viewport it is squeezed to ~258,

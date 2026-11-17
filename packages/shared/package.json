@@ -89,6 +89,10 @@
       "types": "./src/constants.ts",
       "default": "./dist/constants.js"
     },
+    "./site-name": {
+      "types": "./src/site-name.ts",
+      "default": "./dist/site-name.js"
+    },
     "./company": {
       "types": "./src/company.ts",
       "default": "./dist/company.js"

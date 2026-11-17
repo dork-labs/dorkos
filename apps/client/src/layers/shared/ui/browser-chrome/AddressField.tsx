@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { LockOpen } from 'lucide-react';
+import { keptHostTail } from '@dorkos/shared/site-name';
 import {
   describeAddress,
   ADDRESS_PLACEHOLDER,
@@ -18,6 +19,47 @@ const FIELD_BOX = 'h-11 min-w-0 flex-1 rounded-md bg-foreground/5 md:h-7';
 function fieldInset(endButton: boolean): string {
   // `px-2` either way, so it replaces the Input's own `px-3` when merged.
   return endButton ? 'px-2 pr-11' : 'px-2';
+}
+
+/**
+ * The host, drawn so its end is always seen (DOR-4655): the part {@link keptHostTail}
+ * keeps never shrinks, and anything in front of it is elided from the left (an
+ * ellipsis below 480px of chrome; in full above, clipped from the left if it still
+ * does not fit). A page can't push the real site out of view with a long,
+ * trusted-looking start like `accounts.google.com.attacker.example`.
+ */
+function HostText({ host }: { host: string }) {
+  const kept = keptHostTail(host);
+  const elided = host.slice(0, host.length - kept.length);
+  return (
+    <span
+      data-slot="browser-address-host"
+      // Anchored at the end: whatever can't fit overflows off the left and is clipped.
+      className="flex min-w-0 justify-end overflow-hidden whitespace-nowrap"
+    >
+      {elided && (
+        <>
+          <span
+            data-slot="browser-address-host-elided"
+            // Never shrinks into the kept part: it overflows off the left instead.
+            className="text-foreground shrink-0 @max-[479px]/browser-chrome:hidden"
+          >
+            {elided}
+          </span>
+          <span
+            data-slot="browser-address-host-ellipsis"
+            aria-hidden
+            className="text-foreground @min-[480px]/browser-chrome:hidden"
+          >
+            …
+          </span>
+        </>
+      )}
+      <span data-slot="browser-address-host-kept" className="text-foreground shrink-0">
+        {kept}
+      </span>
+    </span>
+  );
 }
 
 /** The spoken location for the at-rest field's accessible name. */
@@ -144,11 +186,13 @@ export function AddressField({
                   {OPENED_OVER_HTTP}
                 </span>
               )}
-              <span className="min-w-0 truncate">
-                <span className="text-foreground">{display.host}</span>
-                <span className="text-muted-foreground hidden @min-[480px]/browser-chrome:inline">
-                  {display.rest}
-                </span>
+              <HostText host={display.host} />
+              <span
+                data-slot="browser-address-path"
+                // Gives way first: the path shrinks to nothing before the host does.
+                className="text-muted-foreground hidden min-w-0 shrink-[1000] truncate @min-[480px]/browser-chrome:inline"
+              >
+                {display.rest}
               </span>
             </>
           )}

@@ -158,6 +158,28 @@ export function BrowserChromeShowcases() {
           menu={<DemoMenu />}
         />
       </ShowcaseDemo>
+      <ShowcaseLabel>
+        Phone (390px): a long, trusted-looking start is elided; the real site at the end stays whole
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <ChromeDemo
+          width={390}
+          testId="browser-chrome-phone-spoof"
+          url="https://accounts.google.com.attacker.example/login"
+          menu={<DemoMenu />}
+        />
+      </ShowcaseDemo>
+      <ShowcaseLabel>
+        Phone, narrow (258px): too little room even for the site, so its end stays in view
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <ChromeDemo
+          width={258}
+          testId="browser-chrome-phone-narrow-spoof"
+          url="https://accounts.google.com.attacker.example/login"
+          menu={<DemoMenu />}
+        />
+      </ShowcaseDemo>
       <ShowcaseLabel>Plain http:// off this machine says Not secure</ShowcaseLabel>
       <ShowcaseDemo>
         <ChromeDemo width={640} url="http://printer.example/status" />

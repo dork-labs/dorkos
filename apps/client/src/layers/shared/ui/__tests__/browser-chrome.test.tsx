@@ -313,9 +313,10 @@ describe('BrowserChrome', () => {
       expect(field).toContainElement(text as HTMLElement);
       expect(text).toHaveClass('min-w-0', 'flex-1', 'overflow-hidden');
       expect(text).toContainElement(screen.getByText('Not secure'));
-      // The host truncates rather than pushing past it.
+      // The host shrinks, clipping from the left, rather than pushing past it (DOR-4655).
       const host = screen.getByText('printer.example').parentElement!;
-      expect(host).toHaveClass('min-w-0', 'truncate');
+      expect(host).toHaveAttribute('data-slot', 'browser-address-host');
+      expect(host).toHaveClass('min-w-0', 'overflow-hidden', 'justify-end');
     });
 
     it('shrinks Not secure to an open-lock icon below 360px of chrome, keeping its words', () => {
@@ -377,6 +378,62 @@ describe('BrowserChrome', () => {
     expect(reload.nextElementSibling).toBe(
       container.querySelector('[data-slot="browser-chrome-field"]')
     );
+  });
+
+  // DOR-4655 (Security Must): a long, trusted-looking start must never push the real
+  // site out of view. The end of the host is kept whole; only the start is elided.
+  describe('never hides the end of the host', () => {
+    const kept = () =>
+      document.querySelector('[data-slot="browser-address-host-kept"]') as HTMLElement;
+    const elided = () =>
+      document.querySelector('[data-slot="browser-address-host-elided"]') as HTMLElement | null;
+
+    it('keeps com.attacker.example whole, and elides only the start, with an ellipsis', () => {
+      renderChrome({ url: 'https://accounts.google.com.attacker.example/login' });
+      expect(kept()).toHaveTextContent(/^com\.attacker\.example$/);
+      // Never shrinks: the start goes first, from the left.
+      expect(kept()).toHaveClass('shrink-0');
+      const host = document.querySelector('[data-slot="browser-address-host"]')!;
+      expect(host).toHaveClass('justify-end', 'overflow-hidden', 'min-w-0');
+      // Below 480px of chrome the start is an ellipsis; from 480 it shows in full.
+      expect(elided()).toHaveTextContent('accounts.google.');
+      expect(elided()).toHaveClass('@max-[479px]/browser-chrome:hidden');
+      const dots = host.querySelector('[data-slot="browser-address-host-ellipsis"]')!;
+      expect(dots).toHaveTextContent('…');
+      expect(dots).toHaveClass('@min-[480px]/browser-chrome:hidden');
+      // The visible text, read left to right, ends with the real site.
+      expect(host.textContent).toMatch(/attacker\.example$/);
+      // The full host is still the field's name.
+      expect(screen.getByRole('button', { name: /^Address:/ })).toHaveAccessibleName(
+        'Address: accounts.google.com.attacker.example/login'
+      );
+    });
+
+    it.each([
+      ['evil.github.io', 'https://evil.github.io/'],
+      ['login-google.vercel.app', 'https://login-google.vercel.app/'],
+      ['192.0.2.10', 'http://192.0.2.10/'],
+      ['[2001:db8::1]', 'http://[2001:db8::1]/'],
+      ['localhost:5173', 'http://localhost:5173/'],
+      ['xn--bcher-kva.example', 'https://xn--bcher-kva.example/'],
+    ])('shows %s whole, with nothing elided', (host, url) => {
+      renderChrome({ url });
+      expect(kept()).toHaveTextContent(host);
+      expect(elided()).toBeNull();
+    });
+
+    it('keeps the label in front of a two-part ending: attacker.co.za', () => {
+      renderChrome({ url: 'https://victim.attacker.co.za/' });
+      expect(kept()).toHaveTextContent(/^attacker\.co\.za$/);
+      expect(elided()).toHaveTextContent('victim.');
+    });
+
+    it('lets the path give way before the host', () => {
+      renderChrome({ url: 'https://accounts.google.com.attacker.example/a/very/long/path' });
+      const path = document.querySelector('[data-slot="browser-address-path"]')!;
+      expect(path).toHaveClass('min-w-0', 'truncate');
+      expect(path).toHaveTextContent('/a/very/long/path');
+    });
   });
 
   it('shows an empty page as the placeholder, named as a new page', () => {
