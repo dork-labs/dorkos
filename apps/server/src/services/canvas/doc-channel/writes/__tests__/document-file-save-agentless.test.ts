@@ -182,13 +182,47 @@ it('a chat with no agent cannot save a file outside the folder it recorded', asy
   const h = await setup(null, (dir) => dirname(dir));
   const recorded = join(h.dir, 'recorded');
   await fs.mkdir(recorded);
-  const doc = await openInChat(h, recorded);
-  const input = doc.input();
+  const path = join(h.dir, 'notes.md');
+  const content = 'original bytes';
+  await fs.writeFile(path, content, { flag: 'wx' });
+  // A chat turn can no longer open it at all (DOR-3519)...
   await expect(
-    saveOriginalDocumentFile(h.http.fileWrites, { ...input, cwd: h.dir }, { headers: {} })
+    controlUi(
+      { action: 'open_canvas', content: { type: 'file', title: 'Notes', sourcePath: path } },
+      { sessionId: SESSION, cwd: recorded, principal: h.runtime.principal }
+    )
+  ).rejects.toMatchObject({ payload: { code: 'OUTSIDE_FOLDER' } });
+  // ...so the save path's own refusal is proven on a row written directly,
+  // as an older build or another opener could have left it.
+  const opened = h.rooms.canvas.open(
+    `session:${SESSION}`,
+    'owner',
+    { type: 'file', title: 'Notes', sourcePath: path },
+    {
+      principal: h.runtime.principal,
+      tree: { resolvedCwd: recorded, sourceLabel: null, treeKind: null, aheadOfMain: null },
+    }
+  );
+  const incarnation = CanvasDocIncarnationSchema.parse(
+    (await h.http.service.replay(opened.id, h.actor)).incarnation
+  );
+  await expect(
+    saveOriginalDocumentFile(
+      h.http.fileWrites,
+      {
+        cwd: h.dir,
+        path,
+        content: 'edited in the canvas',
+        expectedContent: content,
+        documentSave: { documentId: opened.id, eventId: randomUUID(), incarnation },
+      },
+      { headers: {} }
+    )
   ).rejects.toBeInstanceOf(DocChannelNotFoundError);
-  await request(docs.server).get(doc.endpoint).expect(404);
-  expect(await fs.readFile(doc.path, 'utf8')).toBe(doc.content);
+  await request(docs.server)
+    .get(`/api/canvas/docs/${encodeURIComponent(opened.id)}/file-saves`)
+    .expect(404);
+  expect(await fs.readFile(path, 'utf8')).toBe(content);
 });
 
 it('a document with no recorded folder answers 404, not a server fault, on both routes', async () => {

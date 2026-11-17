@@ -283,9 +283,8 @@ export async function proveInstalledLocalBrowserUi(
       await page.screenshot({ path: path.join(output, 'browser-preparation-cancelled.png') });
       await ui.controls.getByRole('button', { name: 'Open browser', exact: true }).click();
 
-      await expect(
-        ui.controls.getByRole('button', { name: 'Pause agent', exact: true })
-      ).toBeVisible({ timeout: 210_000 });
+      // Pause and Resume live in the chrome's status pill (DOR-4428).
+      await expect(ui.pill).toBeVisible({ timeout: 210_000 });
       evidence.firstUsePreparation = {
         firstOpenAt,
         genuineDownloadState: preparation.preparation,
@@ -297,26 +296,26 @@ export async function proveInstalledLocalBrowserUi(
         cacheManipulated: false,
       };
       await ui.navigate(`${origin}/`);
+      // Using the address bar takes the page from the agent; hand it back first.
+      await ui.pressInPill(/^Hand back to /);
+      // "Handed back" shows for a few seconds first.
+      await expect(ui.pill).toHaveAttribute('data-state-kind', 'driving', { timeout: 8_000 });
       await chat.sendAndLand('use the local page', 30_000);
       await chat.waitForTurnToEnd(30_000);
       await expect(
         page.locator('[data-testid="message-item"][data-role="assistant"]').last()
       ).toContainText('local-browser: saved; screenshot=image/png');
       await expect.poll(() => saved).toEqual(['Scripted local input']);
-      await ui.controls.getByRole('button', { name: 'Pause agent', exact: true }).click();
-      await expect(
-        ui.controls.getByRole('button', { name: 'Resume agent', exact: true })
-      ).toBeVisible();
+      await ui.pressInPill('Pause agent');
+      await expect(ui.pill).toHaveAttribute('data-state-kind', 'paused');
       await chat.sendAndLand('try while paused', 30_000);
       await chat.waitForTurnToEnd(30_000);
       await expect(
         page.locator('[data-testid="message-item"][data-role="assistant"]').last()
       ).toContainText('local-browser: paused');
       expect(saved).toEqual(['Scripted local input']);
-      await ui.controls.getByRole('button', { name: 'Resume agent', exact: true }).click();
-      await expect(
-        ui.controls.getByRole('button', { name: 'Pause agent', exact: true })
-      ).toBeVisible();
+      await ui.pressInPill('Resume agent');
+      await expect(ui.pill).toHaveAttribute('data-state-kind', 'driving');
       await chat.sendAndLand('use it after resuming', 30_000);
       await chat.waitForTurnToEnd(30_000);
       await expect(
@@ -325,6 +324,9 @@ export async function proveInstalledLocalBrowserUi(
       await expect.poll(() => saved).toEqual(['Scripted local input', 'Scripted local input']);
       await page.screenshot({ path: path.join(output, 'browser-shared-agent.png') });
       await ui.navigate(origin + '/key-focus?nonce=' + keyNonce);
+      await ui.pressInPill(/^Hand back to /);
+      // "Handed back" shows for a few seconds first.
+      await expect(ui.pill).toHaveAttribute('data-state-kind', 'driving', { timeout: 8_000 });
       await expect
         .poll(() => focusAcknowledgements.some((entry) => entry.target === 'first'))
         .toBe(true);
@@ -371,7 +373,7 @@ export async function proveInstalledLocalBrowserUi(
         keyEffects,
       };
       await page.screenshot({ path: path.join(output, 'browser-key-focus.png') });
-      await ui.controls.getByRole('button', { name: 'Disconnect', exact: true }).click();
+      await ui.close();
       await expect(ui.controls.getByRole('status')).toHaveText('Disconnected');
       evidence.productionTools = {
         sameLivePage: true,

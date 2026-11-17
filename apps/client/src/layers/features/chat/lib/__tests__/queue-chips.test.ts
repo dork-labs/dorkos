@@ -166,4 +166,10 @@ describe('a message held for background work (DOR-2065)', () => {
     expect(selectWaitingQueue(queue, 'idle')).toEqual(queue);
     expect(selectWaitingQueue([row('a'), row('b')], 'idle')).toEqual([row('b')]);
   });
+
+  it('shows the head a paused agent holds, with no turn running (DOR-4348)', () => {
+    const queue = [row('a'), row('b')];
+    expect(selectWaitingQueue(queue, 'idle', { agentPaused: true })).toEqual(queue);
+    expect(selectWaitingQueue(queue, 'idle', { agentPaused: false })).toEqual([row('b')]);
+  });
 });

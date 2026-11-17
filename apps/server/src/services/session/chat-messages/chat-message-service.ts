@@ -51,6 +51,7 @@ import type {
   SentChatMessage,
 } from '@dorkos/shared/chat-messages';
 import { logError, logger } from '../../../lib/logger.js';
+import { pausedChatMessageNote, redirectedChatReceipt } from './chat-message-receipt.js';
 import { recordAudit } from '../../audit/audit-trail.js';
 import {
   dispatchSessionMessage,
@@ -325,12 +326,7 @@ export class ChatMessageService {
     this.deps.emitActivity(receipt.chatId);
     if (target.redirectedReplyTo) {
       const asker = this.deps.store.get(target.redirectedReplyTo)?.fromAgentName ?? 'that agent';
-      return {
-        ...receipt,
-        note:
-          `That chat was a scheduled run, so your answer went to ${asker}'s direct chat ` +
-          'with you, where it will see it.',
-      };
+      return redirectedChatReceipt(receipt, asker);
     }
     return receipt;
   }
@@ -424,6 +420,7 @@ export class ChatMessageService {
       const stopped = await this.deps.interruptTurn(chatId).catch(() => false);
       if (!stopped) note = 'Nothing was running there, so it simply runs next.';
     }
+    note = pausedChatMessageNote({ status, chatId, cwd, agentPath: target.agent?.path }) ?? note;
     return {
       messageId: row.id,
       chatId,

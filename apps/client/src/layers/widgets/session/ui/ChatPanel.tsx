@@ -21,9 +21,7 @@ import {
   useSessionId,
   useSessions,
   useSessionStartedBy,
-  useSessionQueue,
   useSessionStatus,
-  useSessionStreamLifecycle,
   useSessionStreamStatus,
   useSessionToolActivity,
   useDirectoryState,
@@ -53,7 +51,6 @@ import {
   compactComposerGate,
   resolveSigninResumeText,
   resolveTransportRetryText,
-  selectWaitingQueue,
   shouldShowTurnFailedNotice,
   useChatSession,
   useChatStatusSync,
@@ -71,6 +68,7 @@ import { useChooseModel } from '../model/model-trigger';
 import { useDirectChatLog } from '../model/use-direct-chat-notes';
 import { useSessionLaneState } from '../model/use-session-lane-state';
 import { useSessionSurface } from '../model/use-session-surface';
+import { useSessionWaitingQueue } from '../model/use-session-waiting-queue';
 import { useSessionTarget } from '../model/session-target';
 import { SessionNotices } from './SessionNotices';
 import { SessionComposer } from './SessionComposer';
@@ -514,11 +512,9 @@ export function ChatPanel({
   // projection and narrows it to the messages that are genuinely waiting. Read
   // HERE rather than in the composer because it is what the lane's "1 queued"
   // rung counts too, and one fact has one source.
-  const serverQueue = useSessionQueue(sessionId ?? '');
-  const lifecycle = useSessionStreamLifecycle(sessionId ?? '');
-  const waiting = useMemo(
-    () => selectWaitingQueue(serverQueue, lifecycle),
-    [serverQueue, lifecycle]
+  const { serverQueue, lifecycle, waiting, agentPaused } = useSessionWaitingQueue(
+    sessionId ?? '',
+    composerAgent?.id ?? null
   );
 
   // What the failed turn's typed error said, when it left one. The auth card
@@ -828,6 +824,7 @@ export function ChatPanel({
           sessionId={sessionId ?? ''}
           sessionStatus={sessionStatus}
           waiting={waiting}
+          agentPaused={agentPaused}
           interaction={{
             active: activeInteraction,
             pendingApprovals: pendingInteractions.filter((tc) => tc.interactiveType === 'approval'),

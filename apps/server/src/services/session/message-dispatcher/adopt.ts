@@ -23,6 +23,7 @@ import { isChatClientId } from '../chat-messages/chat-client-id.js';
 import { launching, pending } from './state.js';
 import { parkDispatch, unwatchedSettle } from './park.js';
 import { schedulePump } from './pump.js';
+import { awaitsPersonSend } from './pause-hold.js';
 import type { DispatchPlan } from './types.js';
 
 /** Inputs for {@link adoptQueuedMessages}. */
@@ -54,6 +55,19 @@ export interface AdoptQueuedMessagesOpts {
    * when they next send.
    */
   onlyFromChats?: boolean;
+}
+
+/**
+ * Recover older rows before a new dispatch joins the queue. Another chat may
+ * recover peer messages, but cannot press Send for a person's held words.
+ *
+ * @param opts - The new dispatch's sender and the queue recovery context
+ */
+export function adoptMessagesForDispatch(
+  opts: AdoptQueuedMessagesOpts & { clientId: string }
+): void {
+  adoptQueuedMessages({ ...opts, onlyFromChats: isChatClientId(opts.clientId) });
+  adoptAcceptedPrivateMessages({ ...opts, excludeDocumentMessages: true });
 }
 
 /**
@@ -94,6 +108,10 @@ export function adoptQueuedMessages(opts: AdoptQueuedMessagesOpts): number {
   let swept = 0;
   for (const row of rows) {
     if (pending.has(row.id) || launching.has(row.id)) continue;
+    // A person's row a pause held waits in their composer for their Send, so
+    // no other dispatch may press it for them after a resume. Any other person
+    // row (queued behind a busy turn, then a restart) is adopted and runs.
+    if (awaitsPersonSend(row.id)) continue;
     if (opts.onlyFromChats && !isChatClientId(row.enqueuedBy)) continue;
     // Protected rows have their own adoption path because their visible queue
     // text is only a placeholder. Generic recovery must never send it or bypass

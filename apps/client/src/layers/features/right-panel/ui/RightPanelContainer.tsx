@@ -379,6 +379,14 @@ export function RightPanelContainer({
         <ResponsiveSheetContent
           showCloseButton={false}
           {...(activeTab === WORK_PANEL_ID ? { onOpenAutoFocus: focusPanelBody } : {})}
+          // Radix hears Escape first (a capture listener on the document), so a part of
+          // a tab that uses Escape itself, like the Agent browser (revert the address,
+          // stop a load), marks itself `data-keeps-escape` and the sheet stays open.
+          onEscapeKeyDown={(event) => {
+            if (event.target instanceof Element && event.target.closest('[data-keeps-escape]')) {
+              event.preventDefault();
+            }
+          }}
           style={{
             top: viewport.top,
             bottom: 'auto',

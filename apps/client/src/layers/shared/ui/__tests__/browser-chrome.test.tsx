@@ -363,4 +363,58 @@ describe('BrowserChrome', () => {
       expect(still.release).toHaveBeenCalledOnce();
     });
   });
+
+  describe('focusAddress (⌘L, DOR-4432)', () => {
+    it('each new request opens the field on the address, all selected', () => {
+      const { rerender } = renderChrome({ focusAddress: 0 });
+      // A request of 0 is no request: the field stays at rest.
+      expect(screen.queryByRole('textbox', { name: 'Address' })).not.toBeInTheDocument();
+      rerender(
+        <BrowserChrome
+          url="https://www.example.com/docs/guide?x=1"
+          canBack
+          canForward
+          onReload={vi.fn()}
+          onSubmit={vi.fn()}
+          focusAddress={1}
+        />
+      );
+      const input = screen.getByRole('textbox', { name: 'Address' }) as HTMLInputElement;
+      expect(input).toHaveValue('https://www.example.com/docs/guide?x=1');
+      expect(input).toHaveFocus();
+      expect(input.selectionStart).toBe(0);
+      expect(input.selectionEnd).toBe(input.value.length);
+    });
+
+    it('a request while typing selects everything again, keeping what was typed', () => {
+      const props = {
+        url: 'https://www.example.com/',
+        canBack: true,
+        canForward: true,
+        onReload: vi.fn(),
+        onSubmit: vi.fn(),
+      };
+      const { rerender } = render(<BrowserChrome {...props} focusAddress={0} />);
+      rerender(<BrowserChrome {...props} focusAddress={1} />);
+      const input = screen.getByRole('textbox', { name: 'Address' }) as HTMLInputElement;
+      fireEvent.change(input, { target: { value: 'contoso.example' } });
+      input.setSelectionRange(3, 3);
+      rerender(<BrowserChrome {...props} focusAddress={2} />);
+      expect(input).toHaveValue('contoso.example');
+      expect(input).toHaveFocus();
+      expect(input.selectionStart).toBe(0);
+      expect(input.selectionEnd).toBe('contoso.example'.length);
+    });
+
+    it('a request already made when the field appears is old: it stays at rest, focus stays put', () => {
+      // A refused address remounts the field (it is keyed on the retry) while an old ⌘L
+      // is still counted; that count must not reopen it or pull focus.
+      render(<button type="button">Elsewhere</button>);
+      const elsewhere = screen.getByRole('button', { name: 'Elsewhere' });
+      elsewhere.focus();
+      renderChrome({ focusAddress: 3 });
+      expect(screen.queryByRole('textbox', { name: 'Address' })).not.toBeInTheDocument();
+      expect(elsewhere).toHaveFocus();
+    });
+  });
 });
