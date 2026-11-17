@@ -268,6 +268,8 @@ export const ConfigSchema = z
         heavy_job_wait_seconds: z.number().int().positive(),
         /** The 1-minute load a heavy `--job` waits under; never applied to the commit gate. */
         heavy_max_load: z.number().int().positive(),
+        /** The lower bar a full or multi-file test run (`--tests`, bare root vitest) waits under. */
+        heavy_test_max_load: z.number().int().positive(),
         /** How long a `--job` waits for the load to drop before refusing with exit 75. */
         heavy_load_wait_seconds: z.number().int().positive(),
         /** How often a `--job` waiting on the load re-reads it. */
