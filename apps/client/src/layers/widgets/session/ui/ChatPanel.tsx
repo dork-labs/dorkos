@@ -211,11 +211,12 @@ export function ChatPanel({
   /**
    * Rewrite the URL to the SDK-canonical id IN PLACE after the create-on-
    * first-message trigger (no history push), so the optimistic client UUID is
-   * silently superseded and Back does not return to the throwaway URL.
+   * silently superseded and Back does not return to the throwaway URL. Lands
+   * only while `fromId` is still the chat on screen (DOR-4622).
    */
   const handleSessionIdChangeReplace = useCallback(
-    (canonicalId: string) => {
-      setSessionId(canonicalId, { replace: true });
+    (canonicalId: string, fromId: string) => {
+      setSessionId(canonicalId, { replace: true, from: fromId });
       queryClient.invalidateQueries({ queryKey: sessionKeys.bySession(canonicalId) });
     },
     [setSessionId, queryClient]
