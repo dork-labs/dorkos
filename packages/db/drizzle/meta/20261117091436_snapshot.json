@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "b17b168c-d248-4b3c-9692-bfec242a7da4",
+  "id": "750d443e-07c6-416e-ad4e-5106d3974668",
   "prevId": "ba5d5b51-2abf-42cf-932c-f469f61867a3",
   "tables": {
     "a2a_tasks": {
@@ -1798,28 +1798,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "allow_list_pins": {
-          "name": "allow_list_pins",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "run_once": {
-          "name": "run_once",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": false
-        },
-        "ran_once_at": {
-          "name": "ran_once_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
         "last_edited_by_agent_path": {
           "name": "last_edited_by_agent_path",
           "type": "text",
@@ -2925,6 +2903,13 @@
         "last_turn_held": {
           "name": "last_turn_held",
           "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "bridged_sender": {
+          "name": "bridged_sender",
+          "type": "text",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
