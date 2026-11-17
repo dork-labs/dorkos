@@ -423,6 +423,17 @@ describe('ApprovalCard', () => {
       expect(screen.queryByText('Always allowed for DorkBot: Open a room')).not.toBeInTheDocument();
     });
 
+    it('shows the request code the sheet asks to check while the sheet holds the answer', async () => {
+      const coded = desk({ requestCode: 'K7MR-4XQ9-HT3W' });
+      const held = heldGrant(coded.approvalId);
+      renderCard(coded, { grantApproval: held.grantApproval });
+      expect(screen.queryByText('K7MR-4XQ9-HT3W')).not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole('button', { name: 'Always allow' }));
+      expect(screen.getByText('K7MR-4XQ9-HT3W')).toBeVisible();
+      await act(async () => held.cancel());
+      await waitFor(() => expect(screen.queryByText('K7MR-4XQ9-HT3W')).not.toBeInTheDocument());
+    });
+
     it('draws no receipt for a permission change allowed once until the server confirms', async () => {
       const change = desk({
         capabilityId: 'permissions.change',

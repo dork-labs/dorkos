@@ -230,6 +230,9 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
   const dismissSuggestion = useDismissSuggestion();
   const suggestionDismissed = useSuggestionDismissed(approval.approvalId);
   const deciding = grant.isPending || deny.isPending;
+  // A desk answer the server may hold for a password: the sheet asks the person
+  // to check this card's code, so the card shows it while that answer is out.
+  const awaitingSheet = grant.isPending && grant.variables?.receipt !== undefined;
   const reducedMotion = useReducedMotion();
   // **The answer is read, never stored.** There is no local decision state here
   // on purpose: an answer belongs to the request, not to one mounted card, and
@@ -471,7 +474,7 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
             {inChat && !decision && (
               <span className="text-muted-foreground text-xs">Waiting for your yes</span>
             )}
-            {approval.answerNeedsStepUp && approval.requestCode && (
+            {(approval.answerNeedsStepUp || awaitingSheet) && approval.requestCode && (
               <RequestCode code={approval.requestCode} />
             )}
           </div>
