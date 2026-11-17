@@ -639,6 +639,34 @@ describe('DorkOS account confirmation', () => {
       }
     }
   );
+  // The account's refusal answers 200, so the hold's own failure cleanup never sees it.
+  it('removes the staged export when the account refuses a confirmed move', async () => {
+    via = 'own-tunnel';
+    const directory = mkdtempSync(path.join(tmpdir(), 'refused-space-move-'));
+    const filePath = path.join(directory, 'export.zip');
+    writeFileSync(filePath, 'made-up-export');
+    moveUploads.stageArchive.mockResolvedValueOnce({
+      filePath,
+      bytes: 14,
+      sha256: 'c'.repeat(64),
+    });
+    hosted.startMove.mockRejectedValueOnce(new Error('made-up outage'));
+    try {
+      const held = await request(confirmedServer)
+        .post('/api/cloud/communities/moves?idempotencyKey=refused&name=Northwind')
+        .set('Origin', origin)
+        .set('Content-Type', 'application/zip')
+        .send(Buffer.from('made-up-export'));
+      expect(held.status).toBe(428);
+      expect(existsSync(filePath)).toBe(true);
+      const confirmed = await confirm(held.body.heldActionId);
+      expect(confirmed.body).toMatchObject({ ok: true, status: 200, result: { ok: false } });
+      expect(existsSync(filePath)).toBe(false);
+      expect(moveUploads.uploads.begin).not.toHaveBeenCalled();
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
   it.each(['cancelled', 'capacity refused'] as const)(
     'removes a %s staged export and caps pending moves per browser',
     async (ending) => {

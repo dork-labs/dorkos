@@ -113,8 +113,9 @@ export function documentFrontDoorStepUps(registry: OpenAPIRegistry): void {
             }
           : {}),
         body: {
+          // The archive is raw bytes; the docs site renders only the generic binary type.
           content: binary
-            ? { 'application/zip': { schema: z.string().openapi({ format: 'binary' }) } }
+            ? { 'application/octet-stream': { schema: z.string().openapi({ format: 'binary' }) } }
             : { 'application/json': { schema: nativeBody(path) } },
         },
       },

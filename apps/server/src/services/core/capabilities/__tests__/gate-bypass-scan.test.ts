@@ -94,8 +94,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     what: 'writes user config through the guarded step, whose bars are only as strong as the authority the caller hands it',
     call: 'applyGuardedConfigWrite(',
     allowed: {
-      'routes/config.ts':
-        'the cockpit REST route — builds its authority from the request, refusing operator-only paths for any caller that is not a trusted caller (DOR-467), and with login on for any caller without a session cookie (DOR-505)',
+      'routes/config-patch-http.ts':
+        'the cockpit REST route `PATCH /api/config`, moved out of routes/config.ts with its bars (DOR-4355) — builds its authority from the request, refusing operator-only paths for any caller that is not a trusted caller (DOR-467), and with login on for any caller without a session cookie (DOR-505); a lasting access change is also held for the owner to confirm, and the authority is rebuilt from the confirming request before the write',
       'services/core/operator/operator-tool-handlers.ts':
         'the agent capability — OPERATOR_TOOL_AUTHORITY refuses operator-only paths unconditionally (DOR-488)',
       'services/core/operator/config-write.ts': 'the definition itself',
@@ -772,8 +772,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     allowed: {
       'services/shapes/shape-schedule-service.ts':
         "one write after the raw create fallback only: `updateTask(schedule.id, { status: 'pending_approval' })` parks that newly created row before registration (DOR-3861). It changes nothing else, grants no mode and cannot arm a schedule; this entry does not cover any other updateTask write",
-      'routes/tasks.ts':
-        'the cockpit REST route — refuses operator-only task fields unless the caller clears the agent bar (DOR-504); see the createTask entry for why the DOR-474 cookie bar stops short of here',
+      'routes/tasks-update-http.ts':
+        'the cockpit REST route `PATCH /api/tasks/:id`, moved out of routes/tasks.ts with its bars (DOR-4355) — refuses operator-only task fields unless the caller clears the agent bar (DOR-504); see the createTask entry for why the DOR-474 cookie bar stops short of here. An edit that puts a task on credits, or changes one already on them, is also held for the owner to confirm',
       'services/tasks/lifecycle/create-task.ts':
         'the shared create sequence, which parks a proposal and lifts the permission clamp for a trusted caller only — reached through a door that already refused operator-only fields (DOR-1568)',
       'services/runtimes/claude-code/mcp-tools/tasks/task-tools.ts':
@@ -850,8 +850,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     what: "writes any agent's manifest by id, runtime, model and effort included",
     call: 'meshCore.update(',
     allowed: {
-      'routes/mesh.ts':
-        '`PATCH /api/mesh/agents/:id`, mounted behind `refuseAgentExecutionWrites` (DOR-2328), and refusing permission fields by name (spec `agent-permissions` D10)',
+      'routes/mesh-agent-patch-http.ts':
+        '`PATCH /api/mesh/agents/:id`, moved out of routes/mesh.ts (DOR-4355) and still mounted behind `refuseAgentExecutionWrites` (DOR-2328), refusing permission fields by name (spec `agent-permissions` D10); putting an agent on credits is also held for the owner to confirm',
     },
   },
   {

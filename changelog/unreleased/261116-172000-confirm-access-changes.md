@@ -2,6 +2,7 @@
 covers:
   - 'fix(auth): confirm lasting access changes (DOR-4355)'
   - 'fix(auth): preserve confirmations and allow lower spending limits'
+  - 'fix(auth): clean up refused space moves and declare the upload as binary'
 ---
 
 ### Security

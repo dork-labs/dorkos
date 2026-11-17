@@ -72,7 +72,8 @@ const ROUTE_BARS: Record<string, readonly string[]> = {
   'routes/session-launcher.ts': ['isPersonTurn'],
   'http/hono-api.ts': ['askForPersonBeforeTaskWrite'],
   'routes/marketplace/context.ts': ['trustedCaller', 'personSessionRequired'],
-  'routes/mesh.ts': ['clearsTheAgentBar'],
+  // `PATCH /api/mesh/agents/:id` moved out of routes/mesh.ts with its bar (DOR-4355).
+  'routes/mesh-agent-patch-http.ts': ['clearsTheAgentBar'],
   // A server for every agent runs in every session (DOR-3213, Security's M1).
   'routes/mcp-servers.ts': ['refuseFrontDoorChange', 'clearsTheAgentBar'],
   'startup/steps/core-routes.ts': ['loginEnabled: personSessionRequired'],

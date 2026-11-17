@@ -147,6 +147,9 @@ export async function startHostedSpaceMove(
             archiveSha256: staged.sha256,
           });
         } catch (error) {
+          // The refusal answers 200, so the hold's failure cleanup never sees it.
+          discard();
+          await cleanup;
           return writeFailed(c, error, 'start a move');
         }
         if (browserLeft) {
@@ -163,6 +166,8 @@ export async function startHostedSpaceMove(
           // move starts, so this should not happen; if it does, sending would only
           // be refused by the Community server. Stop before a byte leaves.
           const limit = hostLimitBytes(started.upload);
+          discard();
+          await cleanup;
           // When the cancel does not go through, the move still exists; say so,
           // so a retry with the same key picks it up rather than making another.
           const cancelled = await cancelMove(started.move.moveId).then(
@@ -188,6 +193,8 @@ export async function startHostedSpaceMove(
           // A replay of a move that was cancelled, most often by the refusal just
           // above on an earlier try. Answering `ok` would show the person a
           // cancelled move in place of a reason, so say what happened.
+          discard();
+          await cleanup;
           return c.json(
             { ok: false, message: MOVE_ALREADY_CANCELLED } satisfies CloudCommunityRefusal,
             409
@@ -213,6 +220,7 @@ export async function startHostedSpaceMove(
   });
   if (held.status >= 400 && held.status !== 428) {
     discard();
+    await cleanup;
   }
   return held;
 }

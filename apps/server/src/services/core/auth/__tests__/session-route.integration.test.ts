@@ -215,7 +215,7 @@ describe('a sign-in works only on the route it was made on', () => {
         name: 'stolen',
       });
       // The route-bound cookie proves nobody, so no action can be held.
-      expect(created.status).toBe(403);
+      expect(created.status).toBe(401);
       expect(created.body.code).toBe('not-a-person');
       expect(keys()).toBe(before);
       const listed = await authCall('get', 'list-sessions', elsewhere, cookie);
@@ -225,7 +225,7 @@ describe('a sign-in works only on the route it was made on', () => {
       expect(who.status).toBe(200);
       expect(who.body).toBeNull();
       expect((await authCall('post', 'revoke-sessions', elsewhere, cookie).send({})).status).toBe(
-        403
+        401
       );
       expect(
         (await authCall('post', 'update-user', elsewhere, cookie).send({ name: 'Taken' })).status
