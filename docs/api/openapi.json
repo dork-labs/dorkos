@@ -3314,6 +3314,9 @@
           "enqueuedBy": {
             "type": "string"
           },
+          "canRestoreToComposer": {
+            "type": "boolean"
+          },
           "waitingOn": {
             "$ref": "#/components/schemas/QueuedWaitingOn"
           },
