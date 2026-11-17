@@ -333,7 +333,7 @@ describe('buildAgentBlock conventions', () => {
     expect(result).not.toContain('Console (chat)');
     expect(result).toContain('What you can do here is listed area by area in the next block.');
     expect(result).toContain('<dorkos_areas>');
-    expect(result).toContain('- Agent browser: drive a real website');
+    expect(result).toContain('- Agent browser: drive real sites');
     expect(result).toContain('https://dorkos.ai/llms.txt');
     expect(result).toContain('https://dorkos.ai/docs');
   });
