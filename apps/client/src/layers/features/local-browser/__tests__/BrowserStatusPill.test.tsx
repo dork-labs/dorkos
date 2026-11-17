@@ -273,6 +273,39 @@ describe('BrowserStatusPill', () => {
     }
   });
 
+  it('gives every state a tap area at least 44 × 44 on a phone, however small the chip', () => {
+    // DOR-4420 spec §12: the drawn chip may be smaller; its hit area may not.
+    // jsdom draws nothing, so this pins the classes that make the area:
+    // 40 tall plus 2px above and below, and at least 44 wide, centred.
+    for (const kind of BROWSER_PILL_KINDS) {
+      const { unmount } = render(
+        <BrowserStatusPill state={EVERY_STATE[kind]} agentName="Atlas" now={NOW} />
+      );
+      const classes = pill().classList;
+      expect(classes.contains('max-md:h-10')).toBe(true);
+      expect(classes.contains('max-md:after:-inset-y-0.5')).toBe(true);
+      expect(classes.contains('max-md:after:inset-x-[min(0px,calc((100%_-_2.75rem)/2))]')).toBe(
+        true
+      );
+      // The wider rule replaced the chip's own edge-to-edge one rather than fight it.
+      expect(classes.contains('max-md:after:inset-x-0')).toBe(false);
+      // The drawn chip stays snug below 480px, as before.
+      expect(classes.contains('@max-[479px]/browser-chrome:w-auto')).toBe(kind !== 'your-turn');
+      unmount();
+    }
+  });
+
+  it('shows Your turn’s full words on a phone and never shrinks', () => {
+    render(<BrowserStatusPill state={EVERY_STATE['your-turn']} agentName="Atlas" now={NOW} />);
+    // As wide as its words on a phone; the desktop's reserved width stays.
+    expect(pill()).toHaveClass('shrink-0', 'w-32', 'max-md:w-auto');
+    const word = pill().querySelector('span:last-child')!;
+    expect(word).toHaveTextContent('Your turn');
+    // The words can't be squeezed into an ellipsis there.
+    expect(word).toHaveClass('max-md:min-w-max');
+    expect(word.className).not.toContain('sr-only');
+  });
+
   it('shows a live dot only while the agent drives', () => {
     const { rerender } = render(
       <BrowserStatusPill state={{ kind: 'driving' }} agentName="Atlas" />

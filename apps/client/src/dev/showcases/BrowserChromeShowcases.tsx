@@ -6,6 +6,7 @@ import {
   type BrowserMenuOtherChat,
   type BrowserMenuPage,
 } from '@/layers/shared/ui';
+import { BrowserStatusPill } from '@/layers/features/local-browser';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -78,7 +79,8 @@ function DemoMenu() {
 /**
  * The shared browser chrome (DOR-4427): the canvas browser and the Agent
  * browser both wear it. It sizes itself by its own width: from 480px
- * everything shows; below that the path drops and Forward moves into ⋯.
+ * everything shows; below that the path drops and Forward moves into ⋯. On a
+ * phone, Reload moves inside the address field.
  */
 export function BrowserChromeShowcases() {
   return (
@@ -93,6 +95,38 @@ export function BrowserChromeShowcases() {
       <ShowcaseLabel>Narrow: host only, Forward moves into ⋯ (400px)</ShowcaseLabel>
       <ShowcaseDemo>
         <ChromeDemo width={400} menu={<DemoMenu />} />
+      </ShowcaseDemo>
+      <ShowcaseLabel>
+        Phone (390px): Reload inside the field, pill and ⋯ side by side. Open this page at phone
+        width to see it; wider, it shows the narrow row.
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <ChromeDemo
+          width={390}
+          status={<BrowserStatusPill state={{ kind: 'driving' }} agentName="Atlas" />}
+          menu={<DemoMenu />}
+        />
+      </ShowcaseDemo>
+      <ShowcaseLabel>
+        Phone (390px): Your turn keeps its words, and the field gives up room
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <ChromeDemo
+          width={390}
+          status={
+            <BrowserStatusPill
+              state={{
+                kind: 'your-turn',
+                site: 'northwind.example',
+                reason: 'password',
+                handoffId: 'demo',
+                askedAt: '2026-11-17T12:00:00.000Z',
+              }}
+              agentName="Atlas"
+            />
+          }
+          menu={<DemoMenu />}
+        />
       </ShowcaseDemo>
       <ShowcaseLabel>Plain http:// off this machine says Not secure</ShowcaseLabel>
       <ShowcaseDemo>

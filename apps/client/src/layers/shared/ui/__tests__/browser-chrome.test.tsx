@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { BrowserChrome, CHROME_TOOLTIP_DELAY_MS, type BrowserChromeProps } from '../browser-chrome';
 
@@ -249,6 +249,91 @@ describe('BrowserChrome', () => {
     expect(screen.queryByRole('textbox', { name: 'Address' })).not.toBeInTheDocument();
     rerender(<BrowserChrome {...props} retry={{ draft: 'file:///x', attempt: 2 }} />);
     expect(screen.getByRole('textbox', { name: 'Address' })).toHaveValue('file:///x');
+  });
+
+  it('sets the address at rest in the field text size, so tapping it never changes the size', () => {
+    renderChrome();
+    const field = screen.getByRole('button', { name: /^Address:/ });
+    expect(field).toHaveClass('text-field');
+    expect(field).not.toHaveClass('text-sm');
+  });
+
+  // DOR-4420 spec §12: at 390px, 10+44+6+field+6+44+44+10.
+  describe('on a phone', () => {
+    const desktop = window.matchMedia;
+    beforeEach(() => {
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        configurable: true,
+        value: vi.fn().mockImplementation((query: string) => ({
+          matches: true,
+          media: query,
+          onchange: null,
+          addListener: vi.fn(),
+          removeListener: vi.fn(),
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        })),
+      });
+    });
+    afterEach(() => {
+      // Back to the setup's desktop answer.
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        configurable: true,
+        value: desktop,
+      });
+    });
+
+    const field = (container: HTMLElement) =>
+      container.querySelector('[data-slot="browser-chrome-field"]') as HTMLElement;
+
+    it('puts Reload inside the right end of the address field', () => {
+      const { container, onReload } = renderChrome();
+      const reload = screen.getByRole('button', { name: 'Reload' });
+      expect(field(container)).toContainElement(reload);
+      expect(field(container).lastElementChild).toBe(reload);
+      // No Reload slot of its own before the field: Forward (no menu here) is next to it.
+      expect(field(container).previousElementSibling).toBe(
+        screen.getByRole('button', { name: 'Forward' })
+      );
+      fireEvent.click(reload);
+      expect(onReload).toHaveBeenCalledOnce();
+    });
+
+    it('turns that Reload into Stop while loading', () => {
+      const onStop = vi.fn();
+      const { container } = renderChrome({ loading: true, onStop });
+      const stop = screen.getByRole('button', { name: 'Stop' });
+      expect(field(container)).toContainElement(stop);
+      fireEvent.click(stop);
+      expect(onStop).toHaveBeenCalledOnce();
+    });
+
+    it('spaces the row 6px around the field, with the pill and ⋯ side by side', () => {
+      const { container } = renderChrome({
+        status: <button type="button">Status</button>,
+        menu: <button type="button">More</button>,
+      });
+      const row = container.querySelector('[data-slot="browser-chrome-row"]');
+      expect(row).toHaveClass('h-12', 'px-2.5', 'gap-1.5', 'md:h-9', 'md:gap-1');
+      const end = container.querySelector('[data-slot="browser-chrome-end"]');
+      expect(end).toContainElement(screen.getByRole('button', { name: 'Status' }));
+      expect(end).toContainElement(screen.getByRole('button', { name: 'More' }));
+      expect(end).toHaveClass('gap-0', 'md:gap-1');
+    });
+  });
+
+  it('keeps Reload its own button before the field off a phone', () => {
+    const { container } = renderChrome();
+    const reload = screen.getByRole('button', { name: 'Reload' });
+    expect(container.querySelector('[data-slot="browser-chrome-field"]')).not.toContainElement(
+      reload
+    );
+    expect(reload.nextElementSibling).toBe(
+      container.querySelector('[data-slot="browser-chrome-field"]')
+    );
   });
 
   it('shows an empty page as the placeholder, named as a new page', () => {

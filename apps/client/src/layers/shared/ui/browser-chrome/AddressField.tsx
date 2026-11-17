@@ -13,6 +13,12 @@ const OPENED_OVER_HTTP = 'This site didn’t answer over https, so it opened ove
 /** The field's box at rest and while typing: a 5% tint, no border, filling the row. */
 const FIELD_BOX = 'h-11 min-w-0 flex-1 rounded-md bg-foreground/5 md:h-7';
 
+/** Side padding: room for a 44px button at the right end, or the plain inset. */
+function fieldInset(endButton: boolean): string {
+  // `px-2` either way, so it replaces the Input's own `px-3` when merged.
+  return endButton ? 'px-2 pr-11' : 'px-2';
+}
+
 /** The spoken location for the at-rest field's accessible name. */
 function locationLabel(display: AddressDisplay): string {
   if (display.kind === 'local') return display.path;
@@ -38,6 +44,7 @@ export function AddressField({
   startEditing = false,
   initialDraft,
   busy = false,
+  endButton = false,
   onSubmit,
 }: {
   url: string;
@@ -51,6 +58,8 @@ export function AddressField({
   initialDraft?: string;
   /** While busy, Enter keeps the field open on what was typed and commits nothing. */
   busy?: boolean;
+  /** Whether a 44px button sits over the field's right end (Reload, on a phone). */
+  endButton?: boolean;
   onSubmit: (value: string) => void;
 }) {
   const [editing, setEditing] = useState(startEditing);
@@ -92,7 +101,10 @@ export function AddressField({
         }}
         className={cn(
           FIELD_BOX,
-          'focus-ring hover:bg-foreground/10 flex items-center gap-1.5 px-2 text-left text-sm transition-colors'
+          fieldInset(endButton),
+          // The text box's own size (16px on a phone, so iOS never zooms), so a tap
+          // swaps the field without the address changing size.
+          'focus-ring hover:bg-foreground/10 text-field flex items-center gap-1.5 text-left transition-colors'
         )}
       >
         {display.kind === 'local' && (
@@ -169,7 +181,11 @@ export function AddressField({
         spellCheck={false}
         autoCapitalize="off"
         autoCorrect="off"
-        className={cn(FIELD_BOX, 'dui-dark:bg-foreground/5 border-0 px-2 hover:border-0')}
+        className={cn(
+          FIELD_BOX,
+          fieldInset(endButton),
+          'dui-dark:bg-foreground/5 border-0 hover:border-0'
+        )}
       />
     </form>
   );

@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowLeft, ArrowRight, CircleAlert, RotateCw, X, type LucideIcon } from 'lucide-react';
 import { cn } from '@/layers/shared/lib/utils';
+import { useIsMobile } from '../../model';
 import { Button } from '../button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../tooltip';
 import { AddressField } from './AddressField';
@@ -100,7 +101,7 @@ export interface BrowserChromeProps {
  *
  * It sizes itself by its own width, not the window's: from 480px everything
  * shows; below that the path drops and, once a ⋯ menu exists, Forward moves
- * into it.
+ * into it. On a phone, Reload moves inside the address field's right end.
  */
 export function BrowserChrome({
   url,
@@ -125,6 +126,19 @@ export function BrowserChrome({
   className,
 }: BrowserChromeProps) {
   const stopping = loading && onStop !== undefined;
+  // On a phone, Reload sits inside the field's right end rather than taking a
+  // 44px slot of its own (spec §12).
+  const phone = useIsMobile();
+  const reload = (
+    <ChromeButton
+      label={stopping ? 'Stop' : 'Reload'}
+      icon={stopping ? X : RotateCw}
+      disabled={busy && !stopping}
+      onClick={stopping ? onStop : onReload}
+      className={phone ? 'absolute inset-y-0 right-0' : undefined}
+    />
+  );
+  const end = status || trailing || menu;
   return (
     <TooltipProvider delayDuration={CHROME_TOOLTIP_DELAY_MS}>
       <TooltipStillContext.Provider value={tooltipStill ?? null}>
@@ -138,7 +152,8 @@ export function BrowserChrome({
           <div
             data-slot="browser-chrome-row"
             aria-busy={loading}
-            className="flex h-12 items-center gap-1 px-2.5 md:h-9"
+            // A phone's 390px: 10 + Back 44 + 6 + field + 6 + pill 44 + ⋯ 44 + 10.
+            className="flex h-12 items-center gap-1.5 px-2.5 md:h-9 md:gap-1"
           >
             <ChromeButton label="Back" icon={ArrowLeft} disabled={!canBack} onClick={onBack} />
             <ChromeButton
@@ -148,27 +163,33 @@ export function BrowserChrome({
               onClick={onForward}
               className={menu ? 'hidden @min-[480px]/browser-chrome:inline-flex' : undefined}
             />
-            <ChromeButton
-              label={stopping ? 'Stop' : 'Reload'}
-              icon={stopping ? X : RotateCw}
-              disabled={busy && !stopping}
-              onClick={stopping ? onStop : onReload}
-            />
-            {/* Keyed on the retry so a refused address reopens the field in edit
-              mode, holding what was typed rather than the page still open. */}
-            <AddressField
-              key={retry === null ? 'address' : `retry:${retry.attempt}`}
-              url={url}
-              openedOverHttp={openedOverHttp}
-              focusRequest={focusAddress}
-              startEditing={retry !== null}
-              initialDraft={retry?.draft}
-              busy={busy}
-              onSubmit={onSubmit}
-            />
-            {status}
-            {trailing}
-            {menu}
+            {!phone && reload}
+            <div data-slot="browser-chrome-field" className="relative flex min-w-0 flex-1">
+              {/* Keyed on the retry so a refused address reopens the field in edit
+                mode, holding what was typed rather than the page still open. */}
+              <AddressField
+                key={retry === null ? 'address' : `retry:${retry.attempt}`}
+                url={url}
+                openedOverHttp={openedOverHttp}
+                focusRequest={focusAddress}
+                startEditing={retry !== null}
+                initialDraft={retry?.draft}
+                busy={busy}
+                endButton={phone}
+                onSubmit={onSubmit}
+              />
+              {phone && reload}
+            </div>
+            {end && (
+              <div
+                data-slot="browser-chrome-end"
+                className="flex shrink-0 items-center gap-0 md:gap-1"
+              >
+                {status}
+                {trailing}
+                {menu}
+              </div>
+            )}
           </div>
           <div
             aria-hidden

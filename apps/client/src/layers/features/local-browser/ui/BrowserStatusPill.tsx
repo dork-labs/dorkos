@@ -59,6 +59,14 @@ export function askedAgo(askedAt: string, now: number): string {
   return `Asked ${hours} hour${hours === 1 ? '' : 's'} ago.`;
 }
 
+/**
+ * The pill's tap area on a phone: the chip's own hit area (44 tall) made at least
+ * 44 wide, centred on it. `100%` is the chip's width, so a chip already 44 or
+ * wider keeps its own edges. Same modifiers as the chip's hit area, so it
+ * replaces that `inset-x-0` when merged.
+ */
+const PILL_PHONE_HIT_WIDTH = 'max-md:after:inset-x-[min(0px,calc((100%_-_2.75rem)/2))]';
+
 /** Words the pill says on its own, which an agent's name must not pass for. */
 const PILL_WORDS = new Set([
   'agent',
@@ -222,6 +230,12 @@ export function BrowserStatusPill({
               // Reserved: the address field never moves when the words change.
               'w-32 justify-start',
               !yourTurn && '@max-[479px]/browser-chrome:w-auto @max-[479px]/browser-chrome:px-2',
+              // On a phone the tap area is never under 44 wide, whatever the drawn
+              // chip's width: an icon-only chip's grows to each side (spec §12).
+              PILL_PHONE_HIT_WIDTH,
+              // On a phone, Your turn is as wide as its words, never cut; the field
+              // gives up the room. (The chip never shrinks: `shrink-0` is its own.)
+              yourTurn && 'max-md:w-auto',
               // Orange means "this is about you": only Your turn wears it.
               yourTurn && 'bg-brand/15 text-foreground hover:bg-brand/25'
             )}
@@ -235,7 +249,11 @@ export function BrowserStatusPill({
               />
             )}
             <span
-              className={cn('min-w-0 truncate', !yourTurn && '@max-[479px]/browser-chrome:sr-only')}
+              className={cn(
+                'min-w-0 truncate',
+                !yourTurn && '@max-[479px]/browser-chrome:sr-only',
+                yourTurn && 'max-md:min-w-max'
+              )}
             >
               {copy.label}
             </span>
