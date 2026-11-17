@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fixture suite for scripts/no-code-scope.sh, the decision that lets a pull
-# request changing only changelog, docs or version lines skip test.yml's six
-# test shards.
+# request changing only changelog, docs, research or version lines skip
+# test.yml's six test shards.
 #
 # Both directions fail quietly:
 #
@@ -105,6 +105,12 @@ echo 'more' >"$r/docs/x.mdx"
 echo 'post' >"$r/blog/y.mdx"
 commit "$r"
 expect false 'CHANGELOG.md, VERSION, docs and blog' "$r"
+
+r=$(fresh_repo)
+mkdir -p "$r/research"
+echo '# A research report' >"$r/research/20261116_x.md"
+commit "$r"
+expect false 'a research report only' "$r"
 
 r=$(fresh_repo)
 bump "$r/package.json"
@@ -234,6 +240,12 @@ mkdir -p "$r/apps/client/docs"
 echo 'x' >"$r/apps/client/docs/a.md"
 commit "$r"
 expect true 'a docs folder that is not the root docs/' "$r"
+
+r=$(fresh_repo)
+mkdir -p "$r/.agents/skills/research"
+echo 'x' >"$r/.agents/skills/research/SKILL.md"
+commit "$r"
+expect true 'a research folder that is not the root research/' "$r"
 
 r=$(fresh_repo)
 commit "$r"
