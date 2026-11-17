@@ -16,7 +16,9 @@
  *   initializer always has);
  * - a security head in label-at-head mode: `success` when `security-reviewed`
  *   (and `security-deep-reviewed` on a P0 path) is newer than the last push,
- *   from a person, with no `hold`; otherwise `failure`, naming why;
+ *   from a person, with no `hold`; `pending`, naming why, while an open PR is
+ *   only waiting (no label yet, `hold` on, a P0 path still lacking the deep
+ *   label: `awaitingReview` in security-gate.mjs); otherwise `failure`, naming why;
  * - in App mode: the initializer's `pending` only. The App writes the verdict.
  *
  * Until the Security App exists, any workflow file the PR adds, changes, renames
@@ -45,6 +47,7 @@ import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import {
   DEEP_LABEL,
+  awaitingReview,
   checkMergeGroup,
   checkPullRequest,
   githubApi,
@@ -127,8 +130,17 @@ export async function headVerdict(api, pr, files, { pattern, deepPattern, botUse
   const others = workflows.filter((file) => !judges.includes(file));
   if (others.length) notes.push(`${others.join(', ')} is a workflow`);
   const why = [verdict.reason, ...notes].join('; ');
+  // An open PR that is only waiting for Security posts `pending`, not a red
+  // `failure` that reads as "rejected" (DOR-4459). It is the gate job's own
+  // waiting rule, judged with the P0 list alone: in each such state
+  // `security-gate`'s merge-group leg refuses from the labels by itself, so
+  // reading `pending` there instead of `failure` changes no queue outcome. A
+  // workflow or judge edit missing only the deep label stays `failure`: that
+  // leg does not know those files need it. `pending` is still not `success`,
+  // so arm.sh and the merge-group verdict refuse it as before.
+  const waiting = awaitingReview(pr, input, touchesSecurity(files, deepPattern));
   // GitHub caps a status description at 140 characters.
-  return { state: 'failure', description: why.slice(0, 140) };
+  return { state: waiting ? 'pending' : 'failure', description: why.slice(0, 140) };
 }
 
 /**
@@ -219,6 +231,7 @@ export async function verdictForMergeGroup(api, event, lists) {
       if (pr.head.sha !== headRefOid) throw new Error(`PR #${number} head moved`);
       const files = await prFiles(api, number, pr, lists.pattern);
       const verdict = await headVerdict(api, pr, files, lists);
+      // A head that is only waiting (`pending`) fails the group like any other.
       if (verdict && verdict.state !== 'success')
         throw new Error(`PR #${number}: ${verdict.description}`);
     }

@@ -42,11 +42,13 @@ export function createLocalBrowserMethods(baseUrl: string): LocalBrowserTranspor
     selectLocalBrowserTab: async (id) =>
       LocalBrowserStateSchema.parse(await request(`/tabs/${encodeURIComponent(id)}/select`, {})),
     navigateLocalBrowser: async (url, options) =>
-      LocalBrowserStateSchema.parse(
+      LocalBrowserPersonStateSchema.parse(
         await request('/navigate', options?.httpFallback ? { url, httpFallback: true } : { url })
       ),
     stepLocalBrowserHistory: async (direction) =>
-      LocalBrowserStateSchema.parse(await request('/history', { direction })),
+      LocalBrowserPersonStateSchema.parse(await request('/history', { direction })),
+    takeOverLocalBrowser: async () =>
+      LocalBrowserPersonStateSchema.parse(await request('/take-over', {})),
     pauseLocalBrowser: async () => LocalBrowserStateSchema.parse(await request('/pause', {})),
     resumeLocalBrowser: async () =>
       LocalBrowserPersonStateSchema.parse(await request('/resume', {})),

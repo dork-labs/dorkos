@@ -19,7 +19,7 @@ MoSCoW maps onto **Linear's own priority field**. Never use a label for it.
 
 **Urgent** is only for something broken right now: `main` red, an open security hole, data loss, or broken UX that blocks a user with no workaround. Urgent work starts today, not this week.
 
-**A cycle is one week.** **The PM confirms every Must:** a filer may suggest Must (or Urgent); @dorkos-pm confirms it or lowers it. Until then it counts as a Should.
+**A cycle is one week.** **The PM confirms every Must** (the Linear priority, not a Security Must on a PR review, which blocks that PR whatever the priority): a filer may suggest Must (or Urgent); @dorkos-pm confirms it or lowers it. Until then it counts as a Should.
 
 ### Must (High)
 
@@ -69,7 +69,7 @@ Missing any of these means **don't file it yet**: ask the one person who knows, 
 
 - **Must:** its project, Todo, worked this week, once @dorkos-pm confirms it.
 - **Should:** its project, Backlog. Every Monday, @dorkos-pm re-checks the Should list: promote to Must, keep, or drop to Could.
-- **Could:** its project, Backlog. The groom closes it as Canceled after **60 days with no update** (flow's `couldExpiryDays` setting, default 60), with a comment saying it closed as a stale Could and can be reopened if it matters. Reopening is cheap; carrying it forever is not.
+- **Could:** its project, Backlog. The groom closes it as Canceled after **60 days with no update** (flow's `couldExpiryDays` setting, default 60), with a comment saying it closed as a stale Could and can be reopened if it matters. Reopening is cheap; carrying it forever is not. A Could labelled `security` or `needs-security-design` never expires (flow's `neverExpireLabels`): keep that label on every security Could, so a known risk never drops off the list unseen.
 - **Won't:** Canceled now, with a one-line reason.
 
 The expiry applies only to an issue a person or agent deliberately marked Could. Never bulk re-bucket, demote or close old issues with a script.

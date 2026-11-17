@@ -125,6 +125,11 @@ export interface LocalBrowserState {
 export interface LocalBrowserPersonState extends LocalBrowserState {
   handoff: LocalBrowserHandoff | null;
   signIn: LocalBrowserSignIn | null;
+  /**
+   * The person took the page from the chat it is shared with (DOR-4428). Until they
+   * hand it back, that chat's agent can't read or use it, as during a handoff.
+   */
+  takenOver: boolean;
 }
 export interface LocalBrowserObservation {
   revision: number;
@@ -244,6 +249,7 @@ export const LocalBrowserAskPersonSchema = z
 export const LocalBrowserPersonStateSchema = LocalBrowserStateSchema.extend({
   handoff: LocalBrowserHandoffSchema.nullable(),
   signIn: LocalBrowserSignInSchema.nullable(),
+  takenOver: z.boolean(),
 });
 
 /** What the agent hears back. */

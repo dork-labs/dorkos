@@ -116,7 +116,9 @@ a status with the same state adds no comment. It never renders `target_url`.
 After Security approves, rerun the PR verifier. While a PR is only waiting (no
 Security label yet, or `hold` on and no Security label on it is wrong), the PR
 run of `security-gate` succeeds with a "Waiting for Security" annotation instead
-of failing. It approves nothing: `security-review` stays short of `success`, so
+of failing, and main's `security-review` status says `pending` rather than `failure`
+(a P0 path still lacking `security-deep-reviewed` is waiting too; a workflow or
+judge-file edit lacking it stays `failure`). It approves nothing: `security-review` stays short of `success`, so
 `arm.sh` and merge-tail refuse, and the merge-queue run still refuses (DOR-4459).
 A stale label with no `hold`, or a label a bot added, still fails. A fully classified nonsensitive
 PR with no security-review status can pass read-only as "no security paths

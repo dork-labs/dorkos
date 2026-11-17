@@ -32268,10 +32268,6 @@
                           "title": {
                             "type": "string"
                           },
-                          "openedOverHttp": {
-                            "type": "boolean",
-                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
-                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -32405,6 +32401,9 @@
                         "status",
                         "startedAt"
                       ]
+                    },
+                    "takenOver": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -32418,7 +32417,8 @@
                     "selectedTabId",
                     "revision",
                     "handoff",
-                    "signIn"
+                    "signIn",
+                    "takenOver"
                   ]
                 }
               }
@@ -32633,10 +32633,6 @@
                           "title": {
                             "type": "string"
                           },
-                          "openedOverHttp": {
-                            "type": "boolean",
-                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
-                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -32770,6 +32766,9 @@
                         "status",
                         "startedAt"
                       ]
+                    },
+                    "takenOver": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -32783,7 +32782,8 @@
                     "selectedTabId",
                     "revision",
                     "handoff",
-                    "signIn"
+                    "signIn",
+                    "takenOver"
                   ]
                 }
               }
@@ -32994,10 +32994,6 @@
                           "title": {
                             "type": "string"
                           },
-                          "openedOverHttp": {
-                            "type": "boolean",
-                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
-                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -33113,7 +33109,7 @@
           "Local browser"
         ],
         "summary": "Open a web address in the selected tab",
-        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Accepts HTTP or HTTPS addresses and invalidates earlier observations. A bare host may ask for one HTTP fallback when the HTTPS page cannot connect; a timeout never falls back. Refused during a handoff.",
+        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Accepts HTTP or HTTPS addresses and invalidates earlier observations. Refused during a handoff. Takes the page from a chat sharing it first, as take-over does.",
         "requestBody": {
           "required": true,
           "content": {
@@ -33124,10 +33120,6 @@
                   "url": {
                     "type": "string",
                     "format": "uri"
-                  },
-                  "httpFallback": {
-                    "type": "boolean",
-                    "description": "Ask for one HTTP fallback for a bare host."
                   }
                 },
                 "required": [
@@ -33140,7 +33132,7 @@
         },
         "responses": {
           "200": {
-            "description": "Current browser state",
+            "description": "Current browser state, with its handoff and sign-in",
             "content": {
               "application/json": {
                 "schema": {
@@ -33235,10 +33227,6 @@
                           "title": {
                             "type": "string"
                           },
-                          "openedOverHttp": {
-                            "type": "boolean",
-                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
-                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -33262,6 +33250,119 @@
                     "revision": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "handoff": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "sessionId": {
+                          "type": "string"
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentFolder": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "profileId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "reason": {
+                          "type": "string",
+                          "enum": [
+                            "wall",
+                            "password"
+                          ]
+                        },
+                        "site": {
+                          "type": "string"
+                        },
+                        "askedAt": {
+                          "type": "string"
+                        },
+                        "outcome": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "handed-back",
+                            "stopped",
+                            "window-closed",
+                            null
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "sessionId",
+                        "agentName",
+                        "agentId",
+                        "agentFolder",
+                        "profileId",
+                        "reason",
+                        "site",
+                        "askedAt",
+                        "outcome"
+                      ]
+                    },
+                    "signIn": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "profileId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "site": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "open",
+                            "saving",
+                            "saved",
+                            "failed"
+                          ]
+                        },
+                        "startedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "profileId",
+                        "site",
+                        "status",
+                        "startedAt"
+                      ]
+                    },
+                    "takenOver": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -33273,14 +33374,17 @@
                     "paused",
                     "tabs",
                     "selectedTabId",
-                    "revision"
+                    "revision",
+                    "handoff",
+                    "signIn",
+                    "takenOver"
                   ]
                 }
               }
             }
           },
           "400": {
-            "description": "The web address or HTTP fallback choice is invalid",
+            "description": "The web address is invalid",
             "content": {
               "application/json": {
                 "schema": {
@@ -33324,7 +33428,336 @@
             }
           },
           "409": {
-            "description": "The browser cannot complete the navigation (`navigation_timed_out`, `navigation_unreachable`, or `navigation_uncertain`)",
+            "description": "The browser cannot complete this request in its current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The browser operation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/local-browser/take-over": {
+      "post": {
+        "tags": [
+          "Local browser"
+        ],
+        "summary": "Take the page from the agent",
+        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Pauses the chat sharing the page and refuses its every browser call, reads included, until a person resumes, opens or disconnects the browser. Does nothing when no chat shares it or during a handoff.",
+        "responses": {
+          "200": {
+            "description": "Current browser state, with its handoff and sign-in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "preparation": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "stage": {
+                          "type": "string",
+                          "enum": [
+                            "checking",
+                            "downloading",
+                            "launching"
+                          ]
+                        },
+                        "component": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "chromium",
+                            "headless-shell",
+                            "ffmpeg",
+                            null
+                          ]
+                        },
+                        "percent": {
+                          "type": [
+                            "number",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "maximum": 100
+                        }
+                      },
+                      "required": [
+                        "stage",
+                        "component",
+                        "percent"
+                      ]
+                    },
+                    "connectionId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "sessionId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "mode": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "embedded",
+                        "new-window",
+                        null
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "disconnected",
+                        "connected",
+                        "closed"
+                      ]
+                    },
+                    "paused": {
+                      "type": "boolean"
+                    },
+                    "tabs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "url": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "canGoBack": {
+                            "type": "boolean"
+                          },
+                          "canGoForward": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "url",
+                          "title"
+                        ]
+                      }
+                    },
+                    "selectedTabId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "handoff": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "sessionId": {
+                          "type": "string"
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentFolder": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "profileId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "reason": {
+                          "type": "string",
+                          "enum": [
+                            "wall",
+                            "password"
+                          ]
+                        },
+                        "site": {
+                          "type": "string"
+                        },
+                        "askedAt": {
+                          "type": "string"
+                        },
+                        "outcome": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "handed-back",
+                            "stopped",
+                            "window-closed",
+                            null
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "sessionId",
+                        "agentName",
+                        "agentId",
+                        "agentFolder",
+                        "profileId",
+                        "reason",
+                        "site",
+                        "askedAt",
+                        "outcome"
+                      ]
+                    },
+                    "signIn": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "profileId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "site": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "open",
+                            "saving",
+                            "saved",
+                            "failed"
+                          ]
+                        },
+                        "startedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "profileId",
+                        "site",
+                        "status",
+                        "startedAt"
+                      ]
+                    },
+                    "takenOver": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "preparation",
+                    "connectionId",
+                    "sessionId",
+                    "mode",
+                    "status",
+                    "paused",
+                    "tabs",
+                    "selectedTabId",
+                    "revision",
+                    "handoff",
+                    "signIn",
+                    "takenOver"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not the owner on this computer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The browser cannot complete this request in its current state",
             "content": {
               "application/json": {
                 "schema": {
@@ -33376,7 +33809,7 @@
           "Local browser"
         ],
         "summary": "Move the selected tab back or forward through its own history",
-        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Goes to the nearest page that way the address rules still allow, skipping refused ones. Every load on the way, a redirect included, runs the same rules; a refused one leaves the person on the page they were on (`history_refused`). While an agent drives, the step pauses it first. Refused during a handoff.",
+        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Goes to the nearest page that way the address rules still allow, skipping refused ones. Every load on the way, a redirect included, runs the same rules; a refused one leaves the person on the page they were on (`history_refused`). Takes the page from a chat sharing it first, as take-over does, so that agent stays shut out even when the step is refused. Refused during a handoff.",
         "requestBody": {
           "required": true,
           "content": {
@@ -33402,7 +33835,7 @@
         },
         "responses": {
           "200": {
-            "description": "Current browser state",
+            "description": "Current browser state, with its handoff and sign-in",
             "content": {
               "application/json": {
                 "schema": {
@@ -33497,10 +33930,6 @@
                           "title": {
                             "type": "string"
                           },
-                          "openedOverHttp": {
-                            "type": "boolean",
-                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
-                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -33524,6 +33953,119 @@
                     "revision": {
                       "type": "integer",
                       "minimum": 0
+                    },
+                    "handoff": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "sessionId": {
+                          "type": "string"
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentFolder": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "profileId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "reason": {
+                          "type": "string",
+                          "enum": [
+                            "wall",
+                            "password"
+                          ]
+                        },
+                        "site": {
+                          "type": "string"
+                        },
+                        "askedAt": {
+                          "type": "string"
+                        },
+                        "outcome": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "handed-back",
+                            "stopped",
+                            "window-closed",
+                            null
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "sessionId",
+                        "agentName",
+                        "agentId",
+                        "agentFolder",
+                        "profileId",
+                        "reason",
+                        "site",
+                        "askedAt",
+                        "outcome"
+                      ]
+                    },
+                    "signIn": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "profileId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "site": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "open",
+                            "saving",
+                            "saved",
+                            "failed"
+                          ]
+                        },
+                        "startedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "profileId",
+                        "site",
+                        "status",
+                        "startedAt"
+                      ]
+                    },
+                    "takenOver": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -33535,7 +34077,10 @@
                     "paused",
                     "tabs",
                     "selectedTabId",
-                    "revision"
+                    "revision",
+                    "handoff",
+                    "signIn",
+                    "takenOver"
                   ]
                 }
               }
@@ -33736,10 +34281,6 @@
                           "title": {
                             "type": "string"
                           },
-                          "openedOverHttp": {
-                            "type": "boolean",
-                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
-                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -33855,7 +34396,7 @@
           "Local browser"
         ],
         "summary": "Resume agent browser actions",
-        "description": "Only the owner on this computer can call this route. The agent must read a fresh observation before its next action. During a handoff this hands the browser back.",
+        "description": "Only the owner on this computer can call this route. The agent must read a fresh observation before its next action. During a handoff this hands the browser back, and after a take-over it gives the page back to the agent.",
         "responses": {
           "200": {
             "description": "Current browser state, with its handoff and sign-in",
@@ -33952,10 +34493,6 @@
                           },
                           "title": {
                             "type": "string"
-                          },
-                          "openedOverHttp": {
-                            "type": "boolean",
-                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
                           },
                           "canGoBack": {
                             "type": "boolean"
@@ -34090,6 +34627,9 @@
                         "status",
                         "startedAt"
                       ]
+                    },
+                    "takenOver": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -34103,7 +34643,8 @@
                     "selectedTabId",
                     "revision",
                     "handoff",
-                    "signIn"
+                    "signIn",
+                    "takenOver"
                   ]
                 }
               }
@@ -34710,10 +35251,6 @@
                           "title": {
                             "type": "string"
                           },
-                          "openedOverHttp": {
-                            "type": "boolean",
-                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
-                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -34847,6 +35384,9 @@
                         "status",
                         "startedAt"
                       ]
+                    },
+                    "takenOver": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -34860,7 +35400,8 @@
                     "selectedTabId",
                     "revision",
                     "handoff",
-                    "signIn"
+                    "signIn",
+                    "takenOver"
                   ]
                 }
               }
@@ -35080,10 +35621,6 @@
                           "title": {
                             "type": "string"
                           },
-                          "openedOverHttp": {
-                            "type": "boolean",
-                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
-                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -35217,6 +35754,9 @@
                         "status",
                         "startedAt"
                       ]
+                    },
+                    "takenOver": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -35230,7 +35770,8 @@
                     "selectedTabId",
                     "revision",
                     "handoff",
-                    "signIn"
+                    "signIn",
+                    "takenOver"
                   ]
                 }
               }
@@ -35451,10 +35992,6 @@
                           "title": {
                             "type": "string"
                           },
-                          "openedOverHttp": {
-                            "type": "boolean",
-                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
-                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -35588,6 +36125,9 @@
                         "status",
                         "startedAt"
                       ]
+                    },
+                    "takenOver": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -35601,7 +36141,8 @@
                     "selectedTabId",
                     "revision",
                     "handoff",
-                    "signIn"
+                    "signIn",
+                    "takenOver"
                   ]
                 }
               }
@@ -35822,10 +36363,6 @@
                           "title": {
                             "type": "string"
                           },
-                          "openedOverHttp": {
-                            "type": "boolean",
-                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
-                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -35959,6 +36496,9 @@
                         "status",
                         "startedAt"
                       ]
+                    },
+                    "takenOver": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
@@ -35972,7 +36512,8 @@
                     "selectedTabId",
                     "revision",
                     "handoff",
-                    "signIn"
+                    "signIn",
+                    "takenOver"
                   ]
                 }
               }
