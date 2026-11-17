@@ -27,7 +27,7 @@
  */
 import { eq, sessionMetadata, sql, type Db } from '@dorkos/db';
 import type { TurnPermissionBound } from '@dorkos/shared/agent-runtime';
-import { primaryOf } from '../../session/resolution/session-key-registry.js';
+import { primaryOf, queueKeyOf } from '../../session/resolution/session-key-registry.js';
 import { logger } from '../../../lib/logger.js';
 import { env } from '../../../env.js';
 
@@ -82,10 +82,15 @@ export function noteBridgedSender(
   const stranger = turn.marked || (turn.bridged && !markStrangerTurns);
   if (!stranger && !turn.bridged) return;
   if (!db) return;
-  // Under the id the turn was sent with AND the chat's first id: a rename moves the row to the
-  // newest id while this process files the chat under its first, so both rows must say it.
+  // Under every id the chat answers to: a rename moves the row to the newest id while this
+  // process files the chat under its first, and a turn may be sent under either.
   for (const key of chatKeys(sessionId)) {
     if (strangers.has(key)) continue;
+    // Known here before the write, so a failed write still reads as a stranger's in this process.
+    if (stranger) {
+      strangers.add(key);
+      if (strangers.size > WRITTEN_MAX) strangers.delete(strangers.values().next().value as string);
+    }
     try {
       db.insert(sessionMetadata)
         .values({
@@ -104,12 +109,6 @@ export function noteBridgedSender(
           },
         })
         .run();
-      if (stranger) {
-        strangers.add(key);
-        if (strangers.size > WRITTEN_MAX) {
-          strangers.delete(strangers.values().next().value as string);
-        }
-      }
     } catch (err) {
       logger.warn('[continuation-hold] could not record whose words a bridged chat holds', {
         sessionId: key,
@@ -119,15 +118,17 @@ export function noteBridgedSender(
   }
 }
 
-/** The ids a chat's record is kept under: the one in hand and the chat's first, once each. */
+/**
+ * The ids a chat's record is kept under, once each: the one in hand, the chat's first, and the
+ * newest, which its durable rows were moved to (`queueKeyOf`).
+ */
 function chatKeys(sessionId: string): string[] {
-  const first = primaryOf(sessionId);
-  return first === sessionId ? [sessionId] : [sessionId, first];
+  return [...new Set([sessionId, primaryOf(sessionId), queueKeyOf(sessionId)])];
 }
 
 /**
  * Whether a bridged chat holds only words from a sender its binding vouched for (DOR-4593): only
- * when its row under the id in hand, and under its first id when that differs, both say so.
+ * when its row under every id it answers to here says so.
  * `false` when it ever held a stranger's, when nothing is recorded, when there is no database, and
  * when the record cannot be read: each reads as a stranger's.
  *

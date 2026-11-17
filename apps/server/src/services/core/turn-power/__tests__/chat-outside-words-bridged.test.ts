@@ -22,6 +22,10 @@ import { chatReadOutsideWords } from '../chat-outside-words.js';
 import { noteBridgedSender, setContinuationHoldDb } from '../continuation-hold.js';
 import { recordTurnLevels } from '../turn-levels.js';
 import { resetChosenTurns } from '../full-autonomy.js';
+import {
+  linkSessionId,
+  resetSessionKeys,
+} from '../../../session/resolution/session-key-registry.js';
 
 let db: Db;
 let counter = 0;
@@ -76,6 +80,7 @@ beforeEach(() => {
 afterEach(() => {
   setContinuationHoldDb(undefined);
   resetChosenTurns();
+  resetSessionKeys();
   vi.restoreAllMocks();
 });
 
@@ -183,6 +188,69 @@ describe('a renamed bridged chat', () => {
     await turn('new-u', vouched);
     await rename('old-u', 'new-u');
     expect(carries('new-u')).toBe(true);
+  });
+
+  /** The runtime's rename as it happens live: the row moves, and this process links the ids. */
+  async function renameLive(fromId: string, toId: string) {
+    await rename(fromId, toId);
+    linkSessionId(fromId, toId);
+    // The launch origin moves with the row, as `getSessionLaunchOrigin` reads it there.
+    origins.set(toId, 'relay-binding');
+  }
+
+  /** A restart: this process forgets every id link and every cached record. */
+  function restart() {
+    resetSessionKeys();
+    setContinuationHoldDb(db);
+  }
+
+  it('a stranger turn sent under the first id after a rename carries under the new id after a restart', async () => {
+    seed('born');
+    await turn('born', vouched);
+    await renameLive('born', 'canonical');
+    await turn('born', stranger);
+    restart();
+    expect(carries('canonical')).toBe(true);
+    expect(carries('born')).toBe(true);
+  });
+
+  it("a stranger's chat renamed into an existing row carries after a restart", async () => {
+    seed('src');
+    seed('dst');
+    await turn('src', stranger);
+    await turn('dst', vouched);
+    await renameLive('src', 'dst');
+    restart();
+    expect(carries('dst')).toBe(true);
+  });
+
+  it('keeps the record through a later rename too', async () => {
+    seed('first');
+    await turn('first', stranger);
+    await renameLive('first', 'second');
+    await renameLive('second', 'third');
+    restart();
+    expect(carries('third')).toBe(true);
+  });
+
+  it("the owner's own chat stays clean through a rename and a restart", async () => {
+    seed('owner-born');
+    await turn('owner-born', vouched);
+    await renameLive('owner-born', 'owner-canonical');
+    await turn('owner-born', vouched);
+    restart();
+    expect(carries('owner-canonical')).toBe(false);
+    expect(carries('owner-born')).toBe(false);
+  });
+});
+
+describe('a marked turn on a bridged chat that no bridged message started', () => {
+  it('makes it a stranger’s for good', async () => {
+    const chat = bridgedChat('marked-elsewhere');
+    await turn(chat, vouched);
+    await turn(chat, { carriedMarks: { outsider: true } });
+    await turn(chat, vouched);
+    expect(carries(chat)).toBe(true);
   });
 });
 

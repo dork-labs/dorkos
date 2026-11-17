@@ -53,7 +53,8 @@ export const sessionMetadata = sqliteTable(
     // once a turn from a sender on the connection's approver list in a
     // one-to-one chat ran with stranger marking on, `stranger` once any marked
     // turn, or any bridged turn with marking off, ran on it. `stranger` is never
-    // cleared. NULL = not known: read as a stranger's.
+    // cleared. NULL = not known: read as a stranger's. Every row from before
+    // this column was set to `stranger` by its migration.
     bridgedSender: text('bridged_sender', { enum: ['vouched', 'stranger'] }),
     createdAt: text('created_at').notNull(),
     // --- Mutable per-session settings (last-write-wins; ADR-0260) ---
