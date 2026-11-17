@@ -879,7 +879,8 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
    *   the same account keeps the access it was given. When anything changed
    *   that agent's access here since (it was removed, say), what it holds now
    *   goes instead: nothing sent is ever wider than the owner's latest choice.
-   *   A disconnect still owed goes again even for an account removed from
+   *   A change the write upgrade set aside always goes as what the agent holds
+   *   now, never as the saved choice (DOR-4510). A disconnect still owed goes again even for an account removed from
    *   the owner's list, so DorkOS still ends its access at the service.
    * - `confirmed` — the owner confirmed who can use the account: every
    *   refused change is settled with exactly the access the owner was shown
@@ -1002,10 +1003,12 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
       // The owner's last saved choice goes again only after a relink, only
       // while nothing has changed this agent's access since, and only when
       // the service still offers its actions. Otherwise what the agent holds
-      // now goes: never more than the owner last saw.
+      // now goes: never more than the owner last saw. A choice the write
+      // upgrade set aside never goes again, whatever the clocks say (DOR-4510).
       const saved =
         input.why === 'relinked' &&
         command &&
+        scope.safeReason !== WRITE_UPGRADE_SET_ASIDE &&
         scope.rejectionCode !== 'revision_unavailable' &&
         (command.kind === 'replace_agent_grants' ||
           command.kind === 'replace_every_agent_grants') &&
@@ -2101,7 +2104,6 @@ function sendAgain(
   scope: {
     readonly state: 'pending' | 'applied' | 'rejected' | 'superseded';
     readonly rejectionCode: string | null;
-    readonly safeReason: string | null;
     readonly generation: number;
   },
   why: 'relinked' | 'confirmed',
@@ -2111,10 +2113,11 @@ function sendAgain(
   if (why === 'confirmed') return scope.state === 'rejected';
   if (scope.state === 'rejected') return RESENT_REFUSALS.has(scope.rejectionCode ?? '');
   // Staged under the old link and never applied: under the new one it would
-  // only be set aside as superseded, and the access it carried lost. What the
-  // write upgrade set aside it took away on purpose, so it stays aside (DOR-4510).
-  if (scope.state === 'superseded') return scope.safeReason !== WRITE_UPGRADE_SET_ASIDE;
-  return scope.state === 'pending' && scope.generation !== currentGeneration;
+  // only be set aside as superseded, and the access it carried lost.
+  return (
+    scope.state === 'superseded' ||
+    (scope.state === 'pending' && scope.generation !== currentGeneration)
+  );
 }
 
 /** Hosted refusals a new link can cure, so the refused command is sent again. */

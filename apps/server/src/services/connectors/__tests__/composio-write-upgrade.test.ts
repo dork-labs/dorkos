@@ -247,10 +247,19 @@ describe('one-time Composio write upgrade', () => {
       await h.applyPending();
       expect(storedLevels(h.db)).toEqual(['reader:read', 'writer:read']);
       expect(liveActions(h.db, { agentId: 'writer' })).toEqual(['gmail.list:read']);
-      const resent = JSON.stringify(h.submitted.slice(sent));
-      for (const slug of ['gmail.send', 'gmail.delete']) {
-        expect(resent).not.toContain(hostedRef(slug, 'write'));
-        expect(resent).not.toContain(hostedRef(slug, 'destructive'));
+      // The relink still narrows the hosted side: it sends what Writer holds
+      // now, read only, never the selection the upgrade set aside.
+      const resent = h.submitted
+        .slice(sent)
+        .filter(
+          (command) => command.kind === 'replace_agent_grants' && command.agentId === 'writer'
+        );
+      expect(resent).not.toEqual([]);
+      for (const command of resent) {
+        if (command.kind !== 'replace_agent_grants') continue;
+        expect(command.revisions.map((revision) => revision.hostedRevisionId)).toEqual([
+          hostedRef('gmail.list', 'read'),
+        ]);
       }
     }
   );
