@@ -452,7 +452,7 @@ const MONEY_TOOLKIT_NAME =
   /(?:^|_)(?:pay|billing|invoic|wallet|checkout|crypto|coin|bank|remit|refund|money|treasury|merchant)|(?:pay|payments?|billing|invoices?|wallet|checkout|crypto|coin|bank|money)(?:_|$)/;
 
 /** A new MCP, API or versioned copy of a listed money app ("square_mcp", "freshbooks_v2") is one too. */
-const MONEY_SIBLING_SUFFIX = /_(?:mcp|api|connect|online|v\d+)$/;
+const MONEY_SIBLING_SUFFIX = /(?:_(?:mcp|api|connect|online|v\d+))+$/;
 
 /**
  * Whether an app's every change is a one-by-one pick because it moves money.

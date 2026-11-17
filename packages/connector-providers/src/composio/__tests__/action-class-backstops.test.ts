@@ -28,6 +28,7 @@ describe('money apps by name (DOR-4505)', () => {
     ['square_mcp', 'SQUARE_MCP_CREATE_NOTE'],
     ['freshbooks_v2', 'FRESHBOOKS_V2_CREATE_NOTE'],
     ['stripe_connect', 'STRIPE_CONNECT_UPDATE_LABEL'],
+    ['square_mcp_v2', 'SQUARE_MCP_V2_CREATE_NOTE'],
     ['open-banking', 'OPEN_BANKING_CREATE_NOTE'],
   ])('treats %s, a copy or spelling of a money app, as one', (toolkit, slug) => {
     expect(classifyComposioAction(toolkit, slug, WRITE)).toBe('destructive');

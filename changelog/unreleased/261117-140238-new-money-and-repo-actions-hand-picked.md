@@ -2,6 +2,7 @@
 covers:
   - 'fix(connections): new money apps, OAuth actions and repository merges, tags and releases stay one-by-one picks by name (DOR-4505, DOR-4506, DOR-4509)'
   - "fix(connections): Bitbucket's branch and merge are pinned picks, and the name backstops cover more real shapes (DOR-4505, DOR-4509)"
+  - "fix(connections): a stacked copy of a money app, like square_mcp_v2, counts as one too (DOR-4505)"
 ---
 
 ### Fixed
