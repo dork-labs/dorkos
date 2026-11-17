@@ -55,6 +55,8 @@ import { ConnectorExecutionAuthorizationService } from '../authorization-service
 import type { ConnectorExecutionBroker } from '../execution-broker.js';
 import type { ConnectorAccessQueryService } from '../access-query-service.js';
 import { connectorExecutionDomain } from '../execution-capabilities.js';
+import { recordToolUse } from '../../../audit/record-tool-use.js';
+import { outsideTextHookMatcher } from '../../../runtimes/claude-code/tool-gate/outside-text-hook.js';
 
 const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
 const CONNECTION_ID = 'connection-a';
@@ -356,5 +358,90 @@ describe('a connected-app read marks the turn it ran in, at Full', () => {
     await ranAtFull(chat);
     const after = await send(undefined);
     expect(after.outcome).toBe('ran');
+  });
+  describe('a read through a tool marks the turn too (PR 2)', () => {
+    /** Claude Code's hook firing for one call in this chat, as the CLI fires it before the tool. */
+    async function toolCall(sessionId: string, toolName: string) {
+      const matcher = outsideTextHookMatcher(() => sessionId, AGENT.agentPath);
+      if (!new RegExp(matcher.matcher!).test(toolName)) return;
+      await matcher.hooks[0]!(
+        { hook_event_name: 'PreToolUse', tool_name: toolName, tool_input: {} } as never,
+        'call-1',
+        { signal: new AbortController().signal }
+      );
+    }
+
+    it('cards a send after a WebFetch in the same turn, and nothing is sent', async () => {
+      const chat = fresh();
+      await ranAtFull(chat);
+      await toolCall(chat, 'WebFetch');
+      expect(await send(chat)).toEqual({ outcome: 'approval_required', cards: 1 });
+      expect(sent).not.toHaveBeenCalled();
+    });
+
+    it("cards a send after another MCP server's tool", async () => {
+      const chat = fresh();
+      await ranAtFull(chat);
+      await toolCall(chat, 'mcp__notion__search');
+      expect(await send(chat)).toEqual({ outcome: 'approval_required', cards: 1 });
+    });
+
+    it('lets a send from a turn that only read local files through', async () => {
+      const chat = fresh();
+      await ranAtFull(chat);
+      for (const name of ['Read', 'Grep', 'Glob']) await toolCall(chat, name);
+      expect(await send(chat)).toEqual({ outcome: 'ran', cards: 0 });
+    });
+
+    /**
+     * A runtime with no hook that runs first (Codex, OpenCode): its read starts in the stream, its
+     * result comes back, and the model's next step is a send, made after the stream moved on.
+     */
+    async function streamTurn(runtimeType: string, toolName: string) {
+      const chat = fresh();
+      let outcome: Awaited<ReturnType<typeof send>> | undefined;
+      const runtime = recordToolUse(
+        recordTurnLevels(
+          {
+            type: runtimeType,
+            getCapabilities: () => CLAUDE_CODE_CAPABILITIES,
+            async *sendMessage(): AsyncGenerator<StreamEvent> {
+              const data = { toolCallId: 'read-1', toolName };
+              yield { type: 'tool_call_start', data: { ...data, input: '{}', status: 'running' } };
+              yield {
+                type: 'tool_result',
+                data: { ...data, result: 'made up', status: 'complete' },
+              };
+              outcome = await send(chat);
+              yield { type: 'done', data: {} } as StreamEvent;
+            },
+          } as unknown as AgentRuntime,
+          () => 'bypassPermissions'
+        )
+      );
+      for await (const _event of runtime.sendMessage(chat, 'hi')) {
+        // drain
+      }
+      return outcome;
+    }
+
+    it("holds the next step's send after a Codex web search", async () => {
+      expect(await streamTurn('codex', 'WebSearch')).toEqual({
+        outcome: 'approval_required',
+        cards: 1,
+      });
+      expect(sent).not.toHaveBeenCalled();
+    });
+
+    it("holds the next step's send after an OpenCode turn used another server's tool", async () => {
+      expect(await streamTurn('opencode', 'notion_search')).toEqual({
+        outcome: 'approval_required',
+        cards: 1,
+      });
+    });
+
+    it('lets the send through after a Codex turn that only ran a shell command', async () => {
+      expect(await streamTurn('codex', 'Shell')).toEqual({ outcome: 'ran', cards: 0 });
+    });
   });
 });

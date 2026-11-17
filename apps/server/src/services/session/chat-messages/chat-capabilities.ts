@@ -54,6 +54,9 @@ import {
   readChat,
   type ChatReadDeps,
 } from './chat-read.js';
+import { markCallerTurnOutsider } from '../../core/capabilities/mark-caller-turn.js';
+import { chatHeldOutsideWords } from '../../core/turn-power/continuation-hold.js';
+import { marksOf } from '../../core/turn-power/turn-levels.js';
 
 declare module '../../core/capabilities/capability-definition.js' {
   interface CapabilityDeps {
@@ -65,6 +68,16 @@ declare module '../../core/capabilities/capability-definition.js' {
       read: ChatReadDeps;
     };
   }
+}
+
+/**
+ * Whether a chat's messages may hold words from outside the team (DOR-3969): it ever held them, or
+ * its running turn read them.
+ *
+ * @param chatId - The chat read.
+ */
+function chatHoldsOutsideText(chatId: string): boolean {
+  return chatHeldOutsideWords(chatId) || marksOf(chatId, undefined).outsider === true;
 }
 
 /** A refusal, as every chat tool answers one. */
@@ -329,10 +342,14 @@ export const chatDomain: CapabilityDomain = {
       invoke: async (deps, input, context) => {
         const caller = chatCallerOf(context);
         if (!caller) return NO_CHAT;
-        return answer(async () => ({
-          ok: true as const,
-          ...(await readChat(requireChatDeps(deps).read, caller, input)),
-        }));
+        return answer(async () => {
+          const read = await readChat(requireChatDeps(deps).read, caller, input);
+          // Another chat's words, when that chat ever held outside text (DOR-3969).
+          if (input.include !== 'status' && chatHoldsOutsideText(input.chat)) {
+            markCallerTurnOutsider(context);
+          }
+          return { ok: true as const, ...read };
+        });
       },
     }),
     defineCapability({

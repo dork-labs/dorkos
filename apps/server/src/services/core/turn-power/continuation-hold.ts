@@ -157,6 +157,36 @@ export function bridgedSenderVouched(sessionId: string): boolean {
 }
 
 /**
+ * Whether a chat ever held words from outside the team (DOR-3969): its record says a stranger's,
+ * which a marked turn of any kind writes and nothing clears, so a chat that read a page or a mail
+ * once stays one. `true` when the record cannot be read; `false` with no database.
+ *
+ * @param sessionId - The chat.
+ */
+export function chatHeldOutsideWords(sessionId: string): boolean {
+  const keys = chatKeys(sessionId);
+  const handle = db;
+  if (keys.some((key) => strangers.has(key))) return true;
+  if (!handle) return false;
+  try {
+    return keys.some(
+      (key) =>
+        handle
+          .select({ sender: sessionMetadata.bridgedSender })
+          .from(sessionMetadata)
+          .where(eq(sessionMetadata.sessionId, key))
+          .get()?.sender === 'stranger'
+    );
+  } catch (err) {
+    logger.warn('[continuation-hold] could not read whose words a chat holds', {
+      sessionId,
+      err: err instanceof Error ? err.message : String(err),
+    });
+    return true;
+  }
+}
+
+/**
  * Carry a chat's bridged-sender record from the id it was filed under to the id it is now known
  * by, when this process learns the link (DOR-4593). A bridged turn after a restart is sent under
  * the chat's born id before the link is learned, so its record lands on that id alone; without

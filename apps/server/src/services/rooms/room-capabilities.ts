@@ -207,7 +207,8 @@ import type { AuthorRecord } from './author-registry.js';
 import { RoomError } from './room-errors.js';
 import { registerRoomPreGateChecks } from './attachments/protected-file-checks.js';
 import { callerAuthor, toolCallerOf } from './service/room-caller-author.js';
-import { projectEntry, UNTRUSTED_NOTE } from './service/room-entry-projection.js';
+import { UNTRUSTED_NOTE } from './service/room-entry-projection.js';
+import { projectMemberMatches, projectRead } from './service/room-read-marks.js';
 import { projectDetail } from './service/room-detail-projection.js';
 import {
   POST_HANDED_OFF_NOTE,
@@ -712,7 +713,7 @@ export const roomsDomain: CapabilityDomain = {
         noteHistoryRead(input.roomId, readerId, input, entries);
         return Promise.resolve({
           note: UNTRUSTED_NOTE,
-          entries: entries.map((entry) => projectEntry(rooms, entry)),
+          entries: projectRead(rooms, context, input.roomId, entries),
         });
       },
     }),
@@ -760,7 +761,7 @@ export const roomsDomain: CapabilityDomain = {
         );
         return Promise.resolve({
           note: UNTRUSTED_NOTE,
-          matches: entries.map((entry) => projectEntry(rooms, entry)),
+          matches: projectRead(rooms, context, input.roomId, entries),
         });
       },
     }),
@@ -853,11 +854,7 @@ export const roomsDomain: CapabilityDomain = {
         );
         return Promise.resolve({
           note: UNTRUSTED_NOTE,
-          matches: matches.map((match) => ({
-            roomId: match.roomId,
-            room: sanitizeIdentity(match.name),
-            ...projectEntry(rooms, match.entry),
-          })),
+          matches: projectMemberMatches(rooms, context, matches),
         });
       },
     }),

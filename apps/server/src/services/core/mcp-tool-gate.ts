@@ -136,6 +136,7 @@ import { CapabilityToolError } from './capabilities/mcp-envelope.js';
 import { gatedActionForMcpTool } from './mcp-tool-tiers.js';
 import { runWithAuditActor } from '../audit/audit-context.js';
 import { auditTrail, recordAudit } from '../audit/audit-trail.js';
+import { markAfterDorkosTool } from './capabilities/dorkos-tool-reads.js';
 
 /**
  * The MCP text envelope the hand-registered handlers already return, reused here
@@ -364,15 +365,24 @@ interface AuditedCall {
  * @param call - Who called which tool.
  * @param allowed - What the gate allowed: the call's subject, and the approval
  *   a spent token came from.
- * @param invoke - The real handler.
+ * @param handler - The real handler.
  * @returns The handler's result, unchanged.
  */
 async function invokeAudited(
   call: AuditedCall,
   allowed: { subject?: ApprovalSubject; approvalId?: string },
-  invoke: () => Promise<CallToolResult>
+  handler: () => Promise<CallToolResult>
 ): Promise<CallToolResult> {
   const { subject, approvalId } = allowed;
+  // A tool that hands an agent someone else's text marks the turn it ran in (DOR-3969).
+  const invoke = async (): Promise<CallToolResult> => {
+    const result = await handler();
+    markAfterDorkosTool(call.name, {
+      ...(call.sessionId ? { sessionId: call.sessionId } : {}),
+      ...(call.identity ? { identity: call.identity } : {}),
+    });
+    return result;
+  };
   const trail = auditTrail();
   const scope =
     trail && (call.identity || call.inSession)

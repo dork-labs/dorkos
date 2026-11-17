@@ -65,6 +65,7 @@ import {
   EXTENSION_TOOLS_AREA,
   type ExtensionContribution,
 } from './extension-contribution.js';
+import { markAfterDorkosTool } from './dorkos-tool-reads.js';
 
 /**
  * What a transport adapter supplies to {@link CapabilityRegistry.invoke}.
@@ -978,13 +979,19 @@ export function composeRegistry(
       // Run as the caller (spec `audit-trail` PR2): an identified agent's call
       // runs inside its own audit scope, so a write the capability makes further
       // down names the agent, never the person whose message started the turn.
-      const run = () =>
-        runAsAgent(
+      // A tool that hands an agent someone else's text marks the turn it ran in (DOR-3969). A
+      // person's call on the HTTP API or the CLI names no agent's turn, so it marks nothing.
+      const byAgent = supplied.mcpServer !== undefined || invocationContext.identity !== undefined;
+      const run = async () => {
+        const result = await runAsAgent(
           invocationContext.identity,
           supplied.sessionId,
           () => capability.invoke(deps, parsed, invocationContext),
           { inSession: supplied.mcpServer === 'in-session' }
         );
+        if (byAgent) markAfterDorkosTool(capability.id, invocationContext);
+        return result;
+      };
 
       // Reads with nobody named stay silent: there is nothing to attribute and a
       // read changes nothing. Every other call reaches the observer, identified
