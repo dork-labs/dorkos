@@ -79,6 +79,23 @@ describe('mini app access confirmation', () => {
     expect(access.approve).not.toHaveBeenCalled();
   });
 
+  it('lets no other session open or confirm that held yes from its link', async () => {
+    const held = await owner.call('post', DECISION, 'own-tunnel').send(APPROVE);
+    expect(held.status).toBe(428);
+    // The same owner, signed in from another browser, follows `/?confirm=<id>`.
+    const confirmed = await owner.confirm(held.body.heldActionId, 'own-tunnel', true);
+    expect(confirmed.body.code).toBe('not-your-action');
+    const view = await owner.call(
+      'get',
+      `/api/step-up/${held.body.heldActionId}`,
+      'own-tunnel',
+      true
+    );
+    expect(view.body.code).toBe('not-your-action');
+    expect(view.body.requestCode).toBeUndefined();
+    expect(access.approve).not.toHaveBeenCalled();
+  });
+
   it('keeps a yes from Wi-Fi refused', async () => {
     const res = await owner.call('post', DECISION, 'wifi').send(APPROVE);
     expect(res.status).toBe(403);
