@@ -108,6 +108,7 @@ import { protectedFileMatcher } from '../tool-gate/protected-file-hook.js';
 import { turnReadRoots } from '../tool-gate/held-turn-reads.js';
 import { shellGuardMatcher } from '../shell-guard/shell-guard-launch.js';
 import { createNeverAskHook } from '../tool-gate/never-ask-hook.js';
+import { extensionWriteMatcher } from '../tool-gate/extension-write-note.js';
 import { marksHold } from '../../../core/turn-power/turn-marks.js';
 import { marksOf } from '../../../core/turn-power/turn-levels.js';
 import { applyFolderAllowsToLaunch } from '../folder-settings/launch-folder-allows.js';
@@ -870,6 +871,8 @@ export async function resolveLaunch(args: {
           ),
         ],
       },
+      // Who wrote a mini app's files, so path trust runs only its author's unheld edits (DOR-4528).
+      extensionWriteMatcher(session, { sessionId, cwd: effectiveCwd, agentHome: turnAgentPath }),
       {
         matcher: 'Edit|Write|MultiEdit|NotebookEdit',
         hooks: [

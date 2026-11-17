@@ -64,6 +64,7 @@ vi.mock('../../../core/auth/session-gate.js', async (importOriginal) => ({
 
 import { ExtensionManager } from '../../extension-manager.js';
 import { grantsDigestOf } from '../../pin/extension-path-trust.js';
+import { noteExtensionWrite, resetPathTrustWriters } from '../../pin/path-trust-writers.js';
 import { createExtensionApiRoutes } from '../../../../routes/extension-api.js';
 import { honoGroupListener } from '../../../../http/__tests__/hono-group-listener.js';
 import type { ApiEnv } from '../../../../http/api-chain.js';
@@ -123,9 +124,15 @@ const sends = {
 };
 const inbox = { stopped: [] as string[], running: [] as string[] };
 
-/** Write the extension's files; `allow` widens or narrows what it declares. */
+/**
+ * Write the extension's files; `allow` widens or narrows what it declares. Each write is noted as
+ * its author's own unheld one, as the agent's file tools note it (DOR-4528).
+ */
 async function install(version = 'v1', net: string[] = []): Promise<void> {
   await fs.mkdir(extDir, { recursive: true });
+  for (const file of ['extension.json', 'index.ts', 'server.ts']) {
+    noteExtensionWrite({ file: path.join(extDir, file), agentHome, held: false });
+  }
   await fs.writeFile(
     path.join(extDir, 'extension.json'),
     JSON.stringify({
@@ -248,6 +255,7 @@ beforeEach(async () => {
   // kind whose server edits keep running without a person (path trust, DOR-3068).
   agentHome = path.join(dorkHome, 'agents', 'live-agent');
   extDir = path.join(agentHome, '.dork', 'extensions', ID);
+  resetPathTrustWriters();
   announced = [];
   shownAtBroadcast = [];
   sends.held = [];

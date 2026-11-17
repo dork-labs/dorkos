@@ -13,6 +13,11 @@
  * agent makes a new edit at Full, which lifts the pin, runs and logs. The last-seen digests are kept
  * on disk, so the first scan after a restart still sees an edit made while the server was down.
  *
+ * At Full, an edit runs only when it can be tied to the author's own turn that held no mark and
+ * ran under no ceiling (`path-trust-writers.ts`, DOR-4528). One that cannot (a marked turn's, a
+ * shell's, one made while the server was down) is pinned to the files last seen, and stays held
+ * until a person approves it: a later edit by the author does not lift that pin.
+ *
  * @module services/extensions/pin/path-trust-edits
  */
 import fs from 'node:fs/promises';
@@ -28,6 +33,7 @@ import { resolveAgentLaunchLevel } from '../../session/resolution/agent-launch-l
 import { readAgentExecutionDefaults } from '../../session/resolution/resolve-session-defaults.js';
 import { logger } from '../../../lib/logger.js';
 import { keepsPathTrust } from './extension-path-trust.js';
+import { editedByAuthor } from './path-trust-writers.js';
 
 /** What a scan needs from the rest of the server (tests pass their own). */
 export interface PathTrustEditDeps {
@@ -37,6 +43,11 @@ export interface PathTrustEditDeps {
   pin: (id: string, digest: string) => void;
   /** Take the pin off one copy's approval. */
   unpin: (id: string) => void;
+  /**
+   * Whether the copy's edit since it was last asked about came only from its author's own unheld
+   * turn. Defaults to the server's own write record (`path-trust-writers.ts`).
+   */
+  editedByAuthor?: (copy: { id: string; realPath?: string }, authorHome: string) => boolean;
 }
 
 /**
@@ -80,25 +91,34 @@ const LIVE: PathTrustEditDeps = {
   agentAtFull: agentAtFullNow,
   pin: (id, digest) => writeSource(id, (source) => ({ ...source, digest })),
   unpin: (id) => writeSource(id, ({ digest: _pinned, ...source }) => source),
+  editedByAuthor,
 };
 
 /** The file the last-seen digests are kept in. */
 const seenFile = (dorkHome: string) =>
   path.join(dorkHome, 'extension-data', 'path-trust-seen.json');
 
-/** What the last scan saw: each copy's digest, and the copies whose agent was below Full. */
+/**
+ * What the last scan saw: each copy's digest, the copies whose agent was below Full, and the
+ * copies whose edit could not be tied to their author's own unheld turn.
+ */
 interface SeenState {
   digests: Record<string, string>;
   below: string[];
+  untied: string[];
 }
 
 /** What the last scan saw; unreadable reads as nothing. */
 async function readSeen(dorkHome: string): Promise<SeenState> {
   try {
     const parsed = JSON.parse(await fs.readFile(seenFile(dorkHome), 'utf8')) as Partial<SeenState>;
-    return { digests: parsed.digests ?? {}, below: parsed.below ?? [] };
+    return {
+      digests: parsed.digests ?? {},
+      below: parsed.below ?? [],
+      untied: parsed.untied ?? [],
+    };
   } catch {
-    return { digests: {}, below: [] };
+    return { digests: {}, below: [], untied: [] };
   }
 }
 
@@ -121,6 +141,8 @@ export async function notePathTrustEdits(
     const state = await readSeen(dorkHome);
     const seen = state.digests;
     const below = new Set(state.below);
+    const untied = new Set(state.untied);
+    const byAuthor = deps.editedByAuthor ?? editedByAuthor;
     let changed = false;
     for (const record of records) {
       const source = approvals?.approvedSources?.[record.id];
@@ -152,11 +174,22 @@ export async function notePathTrustEdits(
       // The scan that finds the agent raised: whatever changed was made while it was below Full.
       const raisedNow = below.delete(record.id);
       if (raisedNow) changed = true;
-      // Pinned and back at Full: a raise alone runs nothing. Only an edit made now does.
-      if (source.digest) {
-        if (raisedNow || !edited || digest === source.digest) continue;
-        deps.unpin(record.id);
+      if (untied.has(record.id)) {
+        // Held until a person approves; approving a path-trust copy writes no digest.
+        if (source.digest) continue;
+        untied.delete(record.id);
+        changed = true;
       }
+      // Pinned and back at Full: a raise alone runs nothing. Only an edit made now does.
+      if (source.digest && (raisedNow || !edited || digest === source.digest)) continue;
+      if (edited && !byAuthor(record, source.authorHome)) {
+        // Not the author's own unheld turn, or not known to be: the files last seen stay.
+        if (!source.digest) deps.pin(record.id, before ?? digest);
+        untied.add(record.id);
+        changed = true;
+        continue;
+      }
+      if (source.digest) deps.unpin(record.id);
       if (edited) {
         recordFullAction({
           actionId: 'extension.edit',
@@ -168,7 +201,10 @@ export async function notePathTrustEdits(
     }
     if (changed) {
       await fs.mkdir(path.dirname(seenFile(dorkHome)), { recursive: true });
-      await fs.writeFile(seenFile(dorkHome), JSON.stringify({ digests: seen, below: [...below] }));
+      await fs.writeFile(
+        seenFile(dorkHome),
+        JSON.stringify({ digests: seen, below: [...below], untied: [...untied] })
+      );
     }
   } catch (err) {
     logger.warn('[Extensions] could not check path-trust copies', {

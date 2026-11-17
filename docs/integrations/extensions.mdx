@@ -132,7 +132,7 @@ The host discovers extensions from two directories: `.dork/extensions/<id>/` in 
 
 **When more than one plugin carries the same extension**, DorkOS uses one copy, and the warning in the server log names it. It picks the copy you approved, or the newest one when several come from the same approved or trusted source. With none approved, a plugin installed for all your projects comes before a project's, then folders and plugin names go in alphabetical order, and the copy it picks still waits for your yes before it runs. The other copies run nothing.
 
-A mini app an agent makes lives in that agent's own folder, at `.dork/extensions/<id>/`, and shows in the app whichever agent or folder you have open. If it runs separately, the agent can change its behind-the-scenes code and it keeps running. A change to what it shows on screen waits for you to approve it again.
+A mini app an agent makes lives in that agent's own folder, at `.dork/extensions/<id>/`, and shows in the app whichever agent or folder you have open. If it runs separately, the agent can change its behind-the-scenes code from its own chat with its file tools, and it keeps running. A change made any other way, such as from a command line, waits for you to approve it. So does a change to what it shows on screen.
 
 An extension that saves files into its own folder changes the files you approved, so it stops and waits for you. Save data with `loadData`/`saveData` instead.
 

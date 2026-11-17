@@ -19,6 +19,10 @@
  * placed in a session carries every mark its agent's running turns do. That can mark a note one of the agent's other turns would not have, never
  * the other way round.
  *
+ * It also keeps when each agent's last marked turn ended, so a reader can ask whether one ran at
+ * any point since a moment, not only now: path trust asks it of an edit that landed between two
+ * scans (`extensions/pin/path-trust-writers.ts`).
+ *
  * ## Fails toward marking
  *
  * A turn whose agent cannot be resolved is kept under no agent at all, and
@@ -38,6 +42,28 @@ const UNPLACED = '';
 
 /** Agent home (or {@link UNPLACED}) → the marks of each of its marked turns running now. */
 const running = new Map<string, Set<{ readonly marks: TurnMarks }>>();
+
+/** When a marked turn ended, and the marks it carried. */
+interface EndedTurn {
+  readonly at: number;
+  readonly marks: TurnMarks;
+}
+
+/**
+ * Agent home (or {@link UNPLACED}) → its most recently ended marked turn, per kind of mark it
+ * carried, so a reader asking "since when" never loses an older kind to a newer one.
+ */
+const lastEnded = new Map<string, Partial<Record<keyof TurnMarks, EndedTurn>>>();
+
+/** Note that a marked turn under this key just ended. */
+function noteEnded(key: string, marks: TurnMarks): void {
+  const ended = lastEnded.get(key) ?? {};
+  const at = Date.now();
+  for (const kind of Object.keys(marks) as (keyof TurnMarks)[]) {
+    if (marks[kind] !== undefined) ended[kind] = { at, marks };
+  }
+  lastEnded.set(key, ended);
+}
 
 /** The home a folder belongs to, or `undefined` when none can be resolved. */
 function homeKey(dir: string | undefined, forAgent?: string): string | undefined {
@@ -75,6 +101,7 @@ export function countWhileRunning(
     } finally {
       turns.delete(token);
       if (turns.size === 0 && running.get(key) === turns) running.delete(key);
+      noteEnded(key, marks);
     }
   })();
 }
@@ -91,10 +118,26 @@ export function runningMarksOf(agentPath: string): readonly TurnMarks[] {
 }
 
 /**
- * Forget every running turn.
+ * The marks of the agent's marked turns that ended at or after `since`, and of every one no agent
+ * could be found for: one entry per kind of mark, from the latest turn that carried it. With
+ * {@link runningMarksOf}, it says whether any marked turn of the agent ran in a window.
+ *
+ * @param agentPath - The agent's home.
+ * @param since - Epoch ms; a turn that ended at that very moment counts.
+ */
+export function marksEndedSince(agentPath: string, since: number): readonly TurnMarks[] {
+  const key = homeKey(agentPath) ?? path.resolve(agentPath);
+  return [lastEnded.get(UNPLACED), lastEnded.get(key)].flatMap((ended) =>
+    Object.values(ended ?? {}).flatMap((turn) => (turn.at >= since ? [turn.marks] : []))
+  );
+}
+
+/**
+ * Forget every running turn, and every ended one.
  *
  * @internal Exported for testing only — the record outlives one test.
  */
 export function resetLiveOutsiderTurns(): void {
   running.clear();
+  lastEnded.clear();
 }
