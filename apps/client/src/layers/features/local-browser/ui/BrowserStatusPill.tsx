@@ -263,6 +263,7 @@ export function BrowserStatusPill({
                 />
               )}
               <span
+                data-slot="browser-status-pill-label"
                 className={cn(
                   'min-w-0 truncate',
                   !yourTurn && '@max-[479px]/browser-chrome:sr-only',

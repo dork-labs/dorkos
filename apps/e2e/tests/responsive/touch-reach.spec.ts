@@ -267,7 +267,7 @@ test.describe('Touch reach — the surfaces batch 07 fixed @smoke', () => {
  * chip and, with the pill and ⋯ touching, swallowed taps on ⋯'s left edge. So
  * this asks the browser what a tap at each inner edge would land on.
  */
-test.describe('Touch reach — the browser row on a phone (DOR-4436)', () => {
+test.describe('Touch reach — the browser row on a phone (DOR-4436) @smoke', () => {
   test.use({ viewport: PHONE });
 
   /** What a tap at (x, y) lands on: the pill, the ⋯ menu, or something else. */
@@ -326,7 +326,7 @@ test.describe('Touch reach — the browser row on a phone (DOR-4436)', () => {
     await expect(pill).toHaveText('Your turn');
     // Nothing cut off: the words fit inside the chip.
     const clipped = await pill.evaluate((el) => {
-      const words = el.querySelector('span:last-child') as HTMLElement;
+      const words = el.querySelector('[data-slot="browser-status-pill-label"]') as HTMLElement;
       return words.scrollWidth > words.clientWidth;
     });
     expect(clipped, '"Your turn" must never be cut short').toBe(false);
