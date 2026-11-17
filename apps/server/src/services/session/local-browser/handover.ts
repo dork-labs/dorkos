@@ -34,7 +34,7 @@ export interface HandoverBrowser {
   profileExists(id: string): boolean;
   open(input: LocalBrowserOpen): Promise<LocalBrowserState>;
   selectTab(id: string): Promise<LocalBrowserState>;
-  navigate(url: string): Promise<LocalBrowserState>;
+  navigate(url: string, options?: { httpFallback?: boolean }): Promise<LocalBrowserState>;
   stepHistory(direction: LocalBrowserHistoryDirection): Promise<LocalBrowserState>;
   pause(): Promise<LocalBrowserState>;
   handToPerson(): Promise<LocalBrowserState>;
@@ -572,11 +572,15 @@ export class BrowserHandover {
    * the card names. Using it takes the page from an agent sharing it, first.
    *
    * @param url - The address to open.
+   * @param options - Whether a bare host the person typed may try HTTP once.
    */
-  async navigate(url: string): Promise<LocalBrowserPersonState> {
+  async navigate(
+    url: string,
+    options?: { httpFallback?: boolean }
+  ): Promise<LocalBrowserPersonState> {
     this.refuseDuringHandoff();
     await this.takeOver();
-    await this.browser.navigate(url);
+    await this.browser.navigate(url, options);
     return this.state();
   }
 

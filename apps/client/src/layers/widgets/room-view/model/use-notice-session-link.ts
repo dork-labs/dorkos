@@ -19,6 +19,7 @@ import {
   useRoomSessions,
   type RoomEntry,
 } from '@/layers/entities/room';
+import { beginSessionNavigation, useLiveLocation } from '@/layers/entities/session';
 import type { NoticeSessionLink } from '@/layers/features/conversation';
 
 /**
@@ -57,6 +58,7 @@ export function useNoticeSessionLink(roomId: string, entry: RoomEntry): NoticeSe
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const transport = useTransport();
+  const readLocation = useLiveLocation();
 
   const sessionId = points
     ? (sessions.data?.bindings.find((binding) => binding.authorId === authorId)?.sessionId ?? null)
@@ -70,8 +72,12 @@ export function useNoticeSessionLink(roomId: string, entry: RoomEntry): NoticeSe
       }
       event.preventDefault();
       if (sessionId === null || authorId === undefined) return;
+      // The re-read takes a round trip; a person who opened something else
+      // meanwhile is not pulled back to this session (DOR-4622).
+      const isStillWanted = beginSessionNavigation(readLocation);
       void resolveRoomSessionForAuthor({ queryClient, transport }, roomId, authorId).then(
         (fresh) => {
+          if (!isStillWanted()) return;
           // The room let the session go since the row drew. Opening the old id
           // lands on "Session not found"; the fresh read has already refilled
           // the cache, so the row redraws as a plain sentence instead.
@@ -84,7 +90,7 @@ export function useNoticeSessionLink(roomId: string, entry: RoomEntry): NoticeSe
         }
       );
     },
-    [authorId, navigate, queryClient, roomId, sessionId, transport]
+    [authorId, navigate, queryClient, readLocation, roomId, sessionId, transport]
   );
 
   return useMemo(

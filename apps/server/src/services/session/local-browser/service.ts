@@ -376,13 +376,13 @@ export class LocalBrowserService {
   }
 
   /** Human navigation remains available while the agent is paused. */
-  async navigate(url: string): Promise<LocalBrowserState> {
+  async navigate(url: string, options?: { httpFallback?: boolean }): Promise<LocalBrowserState> {
     assertLocalBrowserUrl(url, 'person');
     this.invalidate();
     const revision = this.revision;
     const page = this.page();
     if (revision !== this.revision) throw this.stale();
-    await this.moves.open(page, url);
+    await this.moves.open(page, url, options);
     return this.state();
   }
 
