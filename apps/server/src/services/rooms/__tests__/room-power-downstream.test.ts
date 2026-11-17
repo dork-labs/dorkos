@@ -8,7 +8,7 @@ import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
-import { entryLevelOf, recordTurnLevels } from '../../core/turn-power/turn-levels.js';
+import { entryLevelOf, entryMarksOf, recordTurnLevels } from '../../core/turn-power/turn-levels.js';
 import {
   answersOutsideWords,
   answersUntrustedText,
@@ -305,8 +305,8 @@ describe('an agent post from a chat that read outside words', () => {
 });
 
 // DOR-4587 (QA's relay row): a mini app's reply wakes one agent, which relays the ask to another
-// in the room. The first turn carries the outsider mark; its post carries the words on, so the
-// second turn is noted too, and the send and destructive gates read that note.
+// in the room. The first turn carries the outsider mark, its post is kept with that mark, and the
+// turn the post wakes carries it too.
 describe('an agent relaying a mini app’s reply to another agent', () => {
   afterEach(() => vi.restoreAllMocks());
 
@@ -344,6 +344,9 @@ describe('an agent relaying a mini app’s reply to another agent', () => {
     const ana = seen.find((r) => r.agentPath === '/agents/ana')!;
     const bo = seen.find((r) => r.agentPath === '/agents/bo')!;
     expect(ana.carriedOutsider).toBe(true);
+    // Ana's relay is kept with the outsider mark on its own row, so Bo's turn is marked too.
+    expect(entryMarksOf(bo.entry.id, channel.id)?.outsider).toBe(true);
+    expect(bo.carriedOutsider).toBe(true);
     expect(bo.outsideWords).toBe(true);
     expect(roomTurnReadOutsideWords(bo.sessionId!)).toBe(true);
   });
