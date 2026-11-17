@@ -186,9 +186,10 @@ export const serverEnvSchema = z.object({
   // refused. The turn keeps its level. On by default since DOR-4453; 'false' turns it off. The
   // owner's own Telegram and Slack accounts belong on each connection's approver allowlist, or the
   // owner's phone is marked too (a room always marks it until DOR-4318). A mini app's post or
-  // forward in a room marks the turns that read it whatever this flag says (DOR-4587); text an
-  // agent reads through a connected app or a web page carries no mark yet (DOR-3969), so no check
-  // may rely on the mark covering it. The owner's own phone
+  // forward in a room marks the turns that read it whatever this flag says (DOR-4587). A mini
+  // app's direct message to an agent (`ctx.agent.send`) and a chat it starts still carry no mark,
+  // nor does text an agent reads through a connected app or a web page (DOR-3969), so no check
+  // may rely on the mark covering those. The owner's own phone
   // posts in a bridged room mark most turns that show them, not only the turns that answer them,
   // until DOR-4318.
   DORKOS_MARK_STRANGER_TURNS: boolFlagDefaultOn,

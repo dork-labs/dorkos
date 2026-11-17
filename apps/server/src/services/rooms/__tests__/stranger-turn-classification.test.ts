@@ -12,6 +12,7 @@ import {
   lastTurnLevelOf,
   noteEntryMarks,
   recordTurnLevels,
+  setEntryMarksStore,
 } from '../../core/turn-power/turn-levels.js';
 import { carryRoomPostWords } from '../../core/turn-power/outside-words.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
@@ -164,5 +165,28 @@ describe('a mini app post only in the ambient window the turn is shown (DOR-4587
     expect(strangerMarkForShown(false, deps, room, [{ authorId: owner.id }], context)).toEqual({
       carriedOutsider: true,
     });
+  });
+});
+
+describe('a relayed post after a restart (DOR-4587)', () => {
+  const room = 'room-classification-restart';
+
+  it('marks the turn from the mark kept on the post’s row, with nothing in memory', () => {
+    // A restart empties the in-memory record; only the `turn_marks` column is left.
+    setEntryMarksStore({
+      write: () => {},
+      read: (roomId, entryId) =>
+        roomId === room && entryId === 'entry-relay-before-restart' ? { outsider: true } : null,
+    });
+    try {
+      const read = [{ id: 'entry-relay-before-restart', authorId: agent.id }];
+      expect(strangerMarkForEntries(true, authors, read, isOwner, room)).toEqual({
+        carriedOutsider: true,
+      });
+      const clean = [{ id: 'entry-plain-agent-post', authorId: agent.id }];
+      expect(strangerMarkForEntries(true, authors, clean, isOwner, room)).toEqual({});
+    } finally {
+      setEntryMarksStore(null);
+    }
   });
 });

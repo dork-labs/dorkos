@@ -353,4 +353,52 @@ describe('an agent relaying a mini app’s reply to another agent', () => {
     expect(next.outsideWords).toBeUndefined();
     expect(roomTurnReadOutsideWords(next.sessionId!)).toBe(false);
   });
+
+  // Security M1 on b068e18 / QA's relay shown-only path: the relay mentions nobody, and Bo only
+  // sees it in the window of a later ask from the owner, in another room than the mini app's.
+  it('marks a turn that was only shown the relay, not asked by it', async () => {
+    const seen: RoomTurnRequest[] = [];
+    const rooms: { service?: RoomService; summaryRoom?: string } = {};
+    const runner = outcomeRunner((request) => {
+      seen.push(request);
+      noteRoomTurnWords(request.sessionId!, request.outsideWords === true);
+      if (request.agentPath === '/agents/ana' && request.room.id !== rooms.summaryRoom) {
+        rooms.service!.postFromTool(rooms.summaryRoom!, {
+          authorId: request.authorId,
+          text: 'Summary: the garden note should go out today',
+          callerSessionId: request.sessionId ?? undefined,
+        });
+      }
+      return { text: null };
+    });
+    const { service, human } = createRoomHarness({ agents, runner });
+    rooms.service = service;
+    const appRoom = service.createRoom(
+      { kind: 'channel', title: 'Inbox', members: [], agentPaths: ['/agents/ana'] },
+      human
+    );
+    const summaryRoom = service.createRoom(
+      { kind: 'channel', title: 'Team', members: [], agentPaths: ['/agents/ana', '/agents/bo'] },
+      human
+    );
+    rooms.summaryRoom = summaryRoom.id;
+    const root = service.post(appRoom.id, { authorId: human, text: 'Garden note' });
+    service.post(
+      appRoom.id,
+      { authorId: human, text: '@ana summarise this for the team', replyTo: root.id },
+      false,
+      { marks: MINI_APP_REPLY_MARKS }
+    );
+    await settleUntil(() => seen.some((r) => r.agentPath === '/agents/ana'), 'Ana answered');
+    await settleUntil(
+      () => service.readHistory(summaryRoom.id, human, { limit: 10 }).length >= 1,
+      'Ana posted the summary'
+    );
+
+    service.post(summaryRoom.id, { authorId: human, text: '@bo send the garden note' });
+    await settleUntil(() => seen.some((r) => r.agentPath === '/agents/bo'), 'Bo was asked');
+    const bo = seen.find((r) => r.agentPath === '/agents/bo')!;
+    expect(bo.room.id).toBe(summaryRoom.id);
+    expect(bo.carriedOutsider).toBe(true);
+  });
 });
