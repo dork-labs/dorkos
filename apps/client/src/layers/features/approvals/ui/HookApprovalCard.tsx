@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
-import { Button } from '@/layers/shared/ui';
+import { ApprovalStepUpNote } from './ApprovalStepUpNote';
+import { Button, RequestCode } from '@/layers/shared/ui';
 import { useNow } from '@/layers/shared/model';
 import { AskCard, askExitTransition, formatTimeLeft } from '@/layers/features/ask';
 import { useGrantApproval, useDenyApproval } from '../model/use-approval-decision';
@@ -35,11 +36,26 @@ export function HookApprovalCard({ approval, onDecided, focusOnOpen = true }: Ap
     return () => cancelAnimationFrame(frame);
   }, [focusOnOpen]);
   function answer(kind: ApprovalDecision) {
-    onDecided?.(approval.approvalId);
-    holdDecidedApproval(approval, kind);
-    const onError = () => releaseDecidedApproval(approval.approvalId);
-    if (kind === 'denied') deny.mutate({ approvalId: approval.approvalId }, { onError });
-    else grant.mutate({ approvalId: approval.approvalId }, { onError });
+    const deferred = kind !== 'denied' && approval.answerNeedsStepUp !== false;
+    const openedFrom =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const record = () => {
+      onDecided?.(approval.approvalId);
+      holdDecidedApproval(approval, kind);
+    };
+    if (!deferred) record();
+    const callbacks = {
+      onError: () => {
+        releaseDecidedApproval(approval.approvalId);
+        if (deferred) requestAnimationFrame(() => openedFrom?.isConnected && openedFrom.focus());
+      },
+    };
+    if (kind === 'denied') deny.mutate({ approvalId: approval.approvalId }, callbacks);
+    else
+      grant.mutate(
+        { approvalId: approval.approvalId, ...(deferred ? { receipt: approval, onDecided } : {}) },
+        callbacks
+      );
   }
   const time =
     Date.parse(approval.expiresAt) - now > 365 * 86400000
@@ -90,6 +106,9 @@ export function HookApprovalCard({ approval, onDecided, focusOnOpen = true }: Ap
             )}
             <span aria-hidden>·</span>
             <span className="tabular-nums">{time}</span>
+            {approval.answerNeedsStepUp && approval.requestCode && (
+              <RequestCode code={approval.requestCode} />
+            )}
           </div>
         </header>
         {complete ? (
@@ -108,6 +127,7 @@ export function HookApprovalCard({ approval, onDecided, focusOnOpen = true }: Ap
           </p>
         )}
         <footer className="border-border bg-background shrink-0 border-t p-4 pt-3">
+          {!decision && <ApprovalStepUpNote approval={approval} />}
           {decision ? (
             <AskCard.Receipt
               data-slot="approval-resolved"
@@ -123,6 +143,7 @@ export function HookApprovalCard({ approval, onDecided, focusOnOpen = true }: Ap
                     data-slot="approval-allow"
                     className="min-h-11 flex-1"
                     disabled={deciding}
+                    aria-busy={deciding || undefined}
                     onClick={() => answer('granted')}
                   >
                     {count === 1 ? 'Allow this hook' : `Allow these ${count} hooks`}
@@ -133,6 +154,7 @@ export function HookApprovalCard({ approval, onDecided, focusOnOpen = true }: Ap
                   variant="outline"
                   className="min-h-11 flex-1"
                   disabled={deciding}
+                  aria-busy={deciding || undefined}
                   onClick={() => answer('denied')}
                 >
                   Decline

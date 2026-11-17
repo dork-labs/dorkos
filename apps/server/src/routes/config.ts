@@ -1,3 +1,4 @@
+import { approvalAnswerContext } from '../services/core/auth/sessions/remote-answer-device.js';
 import { Hono, type Context } from 'hono';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
@@ -148,6 +149,7 @@ router.get('/', async (c) => {
     onTrustedConnection:
       isAtThisComputer(honoRequestFacts(c)) || isOnEncryptedConnection(honoRequestFacts(c)),
     callerRoute: requestSessionRoute(honoRequestFacts(c)),
+    approvalAnswerContext: await approvalAnswerContext(honoRequestFacts(c)),
     serverRole: currentServerRole(),
     capacity: await describeCapacity(process.env.DORK_HOME!),
     dismissedUpgradeVersions:

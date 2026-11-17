@@ -99,6 +99,31 @@ describe('ActionStepUpHost', () => {
     expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 
+  it('shows the server request code with a read-aloud label', async () => {
+    heldWith({ ...VIEW, requestCode: 'K7MR-4XQ9-HT3W' }, [
+      200,
+      { ok: true, status: 200, result: {} },
+    ]);
+    render(<ActionStepUpHost />);
+    void ask();
+    expect(await screen.findByText('K7MR-4XQ9-HT3W')).toBeVisible();
+    expect(screen.getByRole('group', { name: 'Request K 7 M R, 4 X Q 9, H T 3 W' })).toBeVisible();
+  });
+
+  it('re-holds after a confirmation for a different request', async () => {
+    heldWith(VIEW, [
+      409,
+      {
+        code: 'different-request',
+        error: 'That confirmation was for a different request. Confirm this one.',
+      },
+    ]);
+    render(<ActionStepUpHost />);
+    const outcome = ask();
+    await confirmWith('the-password');
+    await expect(outcome).resolves.toEqual({ kind: 'ask-again', reason: 'different-request' });
+  });
+
   it('shows the server’s own sentence about what will run', async () => {
     heldWith(VIEW, [200, { ok: true, status: 201, result: {} }]);
     render(<ActionStepUpHost />);
@@ -210,7 +235,7 @@ describe('ActionStepUpHost', () => {
     const LINKED = '01M7M696Q8GA7H8MQ7WVRZ1K4P';
 
     it('opens the sheet for that held action once, and takes the id out of the address', async () => {
-      heldWith({ ...VIEW, heldActionId: LINKED, requestCode: 'K7Q2M9XD4HTN' }, [
+      heldWith({ ...VIEW, heldActionId: LINKED, requestCode: 'K7MR-4XQ9-HT3W' }, [
         200,
         { ok: true, status: 200, result: {} },
       ]);
@@ -224,12 +249,10 @@ describe('ActionStepUpHost', () => {
       });
       expect(replaceState).toHaveBeenCalledExactlyOnceWith(null, '', '/#top');
       expect(getActionStepUpShowing()).toBe(LINKED);
-      // Three groups of four on screen; the plain 12 for copying and screen readers.
-      const code = await screen.findByTestId('step-up-request-code');
-      expect(code.textContent).toBe('K7Q2M9XD4HTN');
-      expect(code.getAttribute('aria-label')).toBe('K7Q2M9XD4HTN');
-      expect(code.querySelectorAll('span')).toHaveLength(3);
-      expect(screen.getByText('Request code')).toBeTruthy();
+      // The same code the page that sent the person here shows.
+      expect(
+        await screen.findByRole('group', { name: 'Request K 7 M R, 4 X Q 9, H T 3 W' })
+      ).toBeVisible();
     });
 
     it('opens nothing for an id that is not a held action’s', () => {
@@ -241,17 +264,6 @@ describe('ActionStepUpHost', () => {
       expect(opened).toBe(false);
       expect(replaceState).toHaveBeenCalledOnce();
       expect(getActionStepUpShowing()).toBeNull();
-    });
-
-    it('shows no request code on a sheet the app itself asked for', async () => {
-      heldWith({ ...VIEW, requestCode: 'K7Q2M9XD4HTN' }, [
-        200,
-        { ok: true, status: 200, result: {} },
-      ]);
-      render(<ActionStepUpHost />);
-      void ask();
-      await screen.findByText(VIEW.reason);
-      expect(screen.queryByTestId('step-up-request-code')).toBeNull();
     });
   });
 
@@ -340,6 +352,17 @@ describe('ActionStepUpHost', () => {
       ([, init]) => (init as RequestInit)?.method === 'DELETE'
     );
     expect(String(dropped?.[0])).toMatch(/\/step-up\/held-1$/);
+  });
+
+  it('keeps terminal commands off a remote sheet with no password', async () => {
+    heldWith(
+      { ...VIEW, methods: [], answeringRemotely: true, passwordUnavailable: 'no-password' },
+      [200, { ok: true, status: 200, result: {} }]
+    );
+    render(<ActionStepUpHost />);
+    void ask();
+    expect(await screen.findByText('Set one on the computer running DorkOS.')).toBeVisible();
+    expect(screen.queryByText('dorkos auth reset-password')).not.toBeInTheDocument();
   });
 
   it('says how to set a password when the owner has none', async () => {

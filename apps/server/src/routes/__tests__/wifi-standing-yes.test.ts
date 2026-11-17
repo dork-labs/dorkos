@@ -1,12 +1,12 @@
 /**
- * From Wi-Fi an answer is Allow once or Deny, never a standing yes (DOR-2969
+ * From Wi-Fi an approval may only be denied (DOR-3648; earlier DOR-2969
  * part 3): a tool prompt's always-allow and an extension's "next time, on its
- * own" are refused with `NOT_FROM_WIFI`, while a one-time yes and a no still
- * land. The capability approvals' `answer: 'always'` is covered beside the
+ * own" are refused with `NOT_FROM_WIFI`, while a denial still lands. The capability approvals' `answer: 'always'` is covered beside the
  * other Wi-Fi approval cases in `capabilities-invoke.test.ts`.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
+import type { SessionEvent } from '@dorkos/shared/session-stream';
 
 let fakeRuntime: FakeAgentRuntime;
 const inbox = vi.hoisted(() => ({
@@ -31,12 +31,15 @@ import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { markIngress, type IngressKind } from '../../services/core/remote/ingress-mark.js';
+import { NOT_FROM_WIFI } from '../../services/core/auth/sessions/wifi-level.js';
 import {
-  NOT_FROM_WIFI,
-  WIFI_STANDING_YES_REFUSAL,
-} from '../../services/core/auth/sessions/wifi-level.js';
+  getOrCreateProjector,
+  disposeProjector,
+} from '../../services/session/session-state-projector.js';
+import { resetHeldStepUpsForTests } from '../../services/core/auth/step-up/step-up-holds.js';
 import { createSessionAnswerRoutes } from '../session-answers.js';
 import { createExtensionDecisionsRoutes } from '../extension-decisions.js';
+import { setTestOwner } from './test-owner.js';
 
 const target = swappableServer();
 const SESSION_ID = '00000000-0000-4000-8000-000000000001';
@@ -53,7 +56,7 @@ function app(via: IngressKind | 'direct') {
       {
         before: async (c, next) => {
           if (via !== 'direct') markIngress(c.env.incoming, via);
-          c.set('user', { userId: 'owner', credential: 'cookie' });
+          c.set('user', { userId: 'owner', credential: 'cookie', sessionId: 'browser' });
           await next();
         },
       }
@@ -73,26 +76,52 @@ describe('a tool prompt in a chat', () => {
       .post(`/api/sessions/${SESSION_ID}/approve`)
       .send({ toolCallId: 'tc-1', alwaysAllow: true });
     expect(res.status).toBe(403);
-    expect(res.body).toEqual({ error: WIFI_STANDING_YES_REFUSAL, code: NOT_FROM_WIFI });
+    expect(res.body).toEqual({
+      error: 'Answer at your computer or over Remote Access.',
+      code: NOT_FROM_WIFI,
+    });
     expect(fakeRuntime.approveTool).not.toHaveBeenCalled();
   });
 
-  it('takes Allow once and Deny from Wi-Fi', async () => {
+  it('refuses Allow once with guidance but accepts Deny from Wi-Fi', async () => {
     const once = await request(app('wifi'))
       .post(`/api/sessions/${SESSION_ID}/approve`)
       .send({ toolCallId: 'tc-1' });
-    expect(once.status).toBe(200);
+    expect(once.status).toBe(403);
+    expect(once.body).toMatchObject({
+      code: NOT_FROM_WIFI,
+      error: 'Answer at your computer or over Remote Access.',
+    });
+    expect(once.body.heldActionId).toBeUndefined();
+    expect(fakeRuntime.approveTool).not.toHaveBeenCalled();
     const deny = await request(app('wifi'))
       .post(`/api/sessions/${SESSION_ID}/deny`)
       .send({ toolCallId: 'tc-2' });
     expect(deny.status).toBe(200);
   });
 
-  it('takes always-allow at this computer', async () => {
+  it('holds always-allow at this computer before the runtime hears it', async () => {
+    resetHeldStepUpsForTests();
+    setTestOwner('owner');
+    const event = {
+      type: 'approval_required',
+      id: 'tc-1',
+      toolName: 'Bash',
+      input: '{}',
+      startedAt: Date.now(),
+      remainingMs: 600000,
+      timeoutMs: 600000,
+      hasSuggestions: true,
+    } satisfies Omit<Extract<SessionEvent, { type: 'approval_required' }>, 'seq'>;
+    getOrCreateProjector(SESSION_ID, '/made-up').ingest(event);
     const res = await request(app('direct'))
       .post(`/api/sessions/${SESSION_ID}/approve`)
       .send({ toolCallId: 'tc-1', alwaysAllow: true });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(428);
+    expect(fakeRuntime.approveTool).not.toHaveBeenCalled();
+    setTestOwner(null);
+    disposeProjector(SESSION_ID);
+    resetHeldStepUpsForTests();
   });
 });
 

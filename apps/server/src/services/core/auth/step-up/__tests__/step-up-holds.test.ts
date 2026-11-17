@@ -90,6 +90,25 @@ describe('holdStepUp', () => {
     expect(parseLocalStepUpStatement(statement)).toEqual(statement);
   });
 
+  it('binds a stored request to its full server-owned hash', () => {
+    const binding = { hash: 'a'.repeat(64), currentHash: () => 'a'.repeat(64) };
+    const statement = holdStepUp(action({ binding }), 'session-a', NOW);
+    expect(statement.inputSha256).toBe(binding.hash);
+    expect(peekHeldStepUp(statement.heldActionId, NOW)?.binding?.currentHash()).toBe(binding.hash);
+    binding.hash = 'b'.repeat(64);
+    expect(peekHeldStepUp(statement.heldActionId, NOW)?.binding?.hash).toBe('a'.repeat(64));
+  });
+
+  it('refuses a stored binding that is not a full SHA-256 hash', () => {
+    expect(() =>
+      holdStepUp(
+        action({ binding: { hash: 'K7MR-4XQ9-HT3W', currentHash: () => '' } }),
+        'session-a',
+        NOW
+      )
+    ).toThrow();
+  });
+
   it('removes a held action when its time is up, with nothing else asking about it', () => {
     vi.useFakeTimers();
     try {
@@ -140,6 +159,25 @@ describe('holdStepUp', () => {
     expect(peekHeldStepUp(first.heldActionId, NOW)).toBeUndefined();
     expect(peekHeldStepUp(second.heldActionId, NOW)).toBeDefined();
     expect(peekHeldStepUp(other.heldActionId, NOW)).toBeDefined();
+  });
+
+  it('keeps distinct actions with the same bound display hash independent', () => {
+    const binding = { hash: 'a'.repeat(64), currentHash: () => 'a'.repeat(64) };
+    const offer = holdStepUp(
+      action({ target: 'offer', input: { offerId: 'next' }, binding }),
+      'session-a',
+      NOW
+    );
+    const put = holdStepUp(
+      action({ target: 'settings', input: { value: { autonomy: 'always' } }, binding }),
+      'session-a',
+      NOW
+    );
+    expect(offer.inputSha256).toBe(put.inputSha256);
+    expect(peekHeldStepUp(offer.heldActionId, NOW)).toBeDefined();
+    expect(peekHeldStepUp(put.heldActionId, NOW)).toBeDefined();
+    takeHeldStepUp(offer.heldActionId, NOW);
+    expect(peekHeldStepUp(put.heldActionId, NOW)).toBeDefined();
   });
 
   it('refuses a new hold at the browser cap without dropping any older action', () => {

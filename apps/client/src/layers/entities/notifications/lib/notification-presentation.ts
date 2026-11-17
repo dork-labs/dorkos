@@ -77,6 +77,7 @@ export interface NotificationLink {
  * than one it appears to mint.
  */
 export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
+  'step-up.remote-refused': ShieldAlert,
   'ask.pending': ShieldQuestion,
   'schedule.parked': Clock,
   // The same mark: it is the same thing, a schedule, live this time.
@@ -317,6 +318,8 @@ const BURST_VERB: Record<GroupableNotificationKind, (count: number) => string> =
 export function notificationLink(notification: NotificationDTO): NotificationLink | null {
   const { subject, kind, sessionId } = notification;
 
+  if (kind === 'step-up.remote-refused')
+    return { ...appRoutes.home(), search: { settings: 'security' } };
   if (kind === 'agent.unreachable') {
     return { ...appRoutes.home(), search: { detail: 'offline-agent', itemId: subject.id } };
   }

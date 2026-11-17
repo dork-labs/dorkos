@@ -32,7 +32,6 @@ import {
   LOCAL_STEP_UP_STATEMENT_TYPE,
   LocalStepUpStatementV1Schema,
   STEP_UP_MAX_PASSWORD_TRIES,
-  STEP_UP_REQUEST_CODE_ALPHABET,
   STEP_UP_TTL_MS,
   type LocalStepUpStatementV1,
   type StepUpActionKind,
@@ -68,6 +67,8 @@ export interface StepUpActionInput {
   target: string;
   /** Exactly what will run, as plain JSON; its hash binds the statement. */
   input: unknown;
+  /** A server-owned request snapshot, re-read immediately before committing. */
+  binding?: { hash: string; currentHash: () => string | undefined };
   /** The sheet's sentence, built by the server from `input`, never from a name an agent chose alone. */
   reason: string;
   /** Quiet extra lines for the sheet. */
@@ -90,27 +91,17 @@ export interface StepUpActionInput {
 export interface HeldStepUp {
   onDiscard?: StepUpActionInput['onDiscard'];
   statement: LocalStepUpStatementV1;
+  /** Full action identity for replacement; a display binding may be shared by distinct actions. */
+  canonicalHash: string;
   reason: string;
   notes: readonly string[];
   warnings: readonly string[];
   /** The browser session that held it, or `null` when the caller had none. */
   sessionId: string | null;
   commit: StepUpActionInput['commit'];
+  binding?: StepUpActionInput['binding'];
   /** Wrong passwords it will still take. */
   triesLeft: number;
-  /** What the 428 and the sheet both show, so a page outside the app can name this action. */
-  requestCode: string;
-}
-
-/**
- * A fresh request code: 12 characters from the shared alphabet. Not a secret:
- * it only lets a person check the sheet is for the page they came from.
- */
-export function newStepUpRequestCode(): string {
-  const bytes = randomBytes(12);
-  return [...bytes]
-    .map((byte) => STEP_UP_REQUEST_CODE_ALPHABET[byte % STEP_UP_REQUEST_CODE_ALPHABET.length])
-    .join('');
 }
 
 /** By held-action id, oldest first. */
@@ -158,13 +149,10 @@ export function stepUpActionHash(
 }
 
 /** Drop what expired, and the live one this same browser held for the same action. */
-function prune(now: number, sessionId: string | null, kind: string, inputSha256: string): void {
+function prune(now: number, sessionId: string | null, canonicalHash: string): void {
   for (const [id, entry] of held) {
     const { statement } = entry;
-    const sameAction =
-      entry.sessionId === sessionId &&
-      statement.kind === kind &&
-      statement.inputSha256 === inputSha256;
+    const sameAction = entry.sessionId === sessionId && entry.canonicalHash === canonicalHash;
     if (sameAction || now >= Date.parse(statement.expiresAt)) drop(id);
   }
 }
@@ -186,7 +174,10 @@ export function holdStepUp(
   sessionId: string | null,
   now = Date.now()
 ): LocalStepUpStatementV1 {
-  const inputSha256 = stepUpActionHash(action);
+  // Still validate the input even when a stored request supplies its own binding.
+  const canonicalHash = stepUpActionHash(action);
+  const inputSha256 = action.binding?.hash ?? canonicalHash;
+  if (!/^[0-9a-f]{64}$/.test(inputSha256)) throw new Error('Step-up binding must be SHA-256');
   // Expiration may free space; a new request never evicts a live confirmation,
   // including a duplicate from the same browser when that browser is full.
   for (const [id, entry] of held) {
@@ -195,7 +186,7 @@ export function holdStepUp(
   const ownCount = [...held.values()].filter((entry) => entry.sessionId === sessionId).length;
   if (ownCount >= MAX_HELD_STEP_UPS_PER_SESSION || held.size >= MAX_HELD_STEP_UPS)
     throw new HeldStepUpCapacityError();
-  prune(now, sessionId, action.kind, inputSha256);
+  prune(now, sessionId, canonicalHash);
   const statement: LocalStepUpStatementV1 = {
     t: LOCAL_STEP_UP_STATEMENT_TYPE,
     purpose: 'step-up',
@@ -209,14 +200,15 @@ export function holdStepUp(
   };
   held.set(statement.heldActionId, {
     statement,
+    canonicalHash,
     reason: action.reason,
     notes: action.notes ?? [],
     warnings: action.warnings ?? [],
     sessionId,
     commit: action.commit,
     onDiscard: action.onDiscard,
+    ...(action.binding ? { binding: { ...action.binding } } : {}),
     triesLeft: STEP_UP_MAX_PASSWORD_TRIES,
-    requestCode: newStepUpRequestCode(),
   });
   const expiry = setTimeout(() => drop(statement.heldActionId), STEP_UP_TTL_MS);
   expiry.unref?.();

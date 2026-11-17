@@ -147,6 +147,13 @@ export const STEP_UP_ACTION_KINDS = [
    * person gives it (DOR-3234): each approves or resolves that setting.
    */
   'connection.use-setting',
+  /** Answer one remote approval, bound to the whole request. */
+  'approval.grant',
+  'approval.grant-always',
+  /** Approve a mini app, or widen what it may reach (rooms, agents, an "Allow all" set). */
+  'extension.grant',
+  /** Change a mini app's project settings. */
+  'extension.settings-change',
 ] as const;
 
 /** One kind of guarded action. */
@@ -186,11 +193,13 @@ export const LocalStepUpStatementV1Schema = z
 /** What a held action is bound to. */
 export type LocalStepUpStatementV1 = z.infer<typeof LocalStepUpStatementV1Schema>;
 
-/** Letters and digits a request code uses: no I, L, O or U, so none reads as another. */
-export const STEP_UP_REQUEST_CODE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
-
-/** A held action's request code: 12 of those characters, shown as three groups of four. */
-export const StepUpRequestCodeSchema = z.string().regex(/^[0-9A-HJKMNP-TV-Z]{12}$/);
+/**
+ * A held action's request code: a read-aloud fingerprint of its binding hash,
+ * three groups of four (`requestCodeForHash` on the server). Display only.
+ */
+export const StepUpRequestCodeSchema = z
+  .string()
+  .regex(/^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$/);
 
 /** What a guarded action answers while it waits for a step-up. */
 export const StepUpRequiredBodySchema = z.object({
@@ -244,7 +253,11 @@ export type StepUpExtensionRisk = z.infer<typeof StepUpExtensionRiskSchema>;
 /** A held action, as the sheet shows it. Every sentence is the server's. */
 export const HeldStepUpViewSchema = z.object({
   heldActionId: z.string().min(1),
+  /** Display only; the server always checks the full binding hash. Optional for older servers. */
+  requestCode: StepUpRequestCodeSchema.optional(),
   kind: StepUpActionKindSchema,
+  /** This sheet is being answered away from the desk, from the server's request facts. */
+  answeringRemotely: z.boolean().optional(),
   /** What will actually run, e.g. "Add github (`@modelcontextprotocol/server-github`) for all your agents." */
   reason: z.string().min(1),
   /** Quiet extra lines, e.g. "Not pinned to a version. What runs can change later." */
@@ -260,8 +273,6 @@ export const HeldStepUpViewSchema = z.object({
   blockedBy: z.array(StepUpExtensionRiskSchema).optional(),
   /** Wrong passwords left before the held action is dropped. */
   triesLeft: z.number().int().min(0),
-  /** The code the guarded route answered with. This server always sends one. */
-  requestCode: StepUpRequestCodeSchema.optional(),
 });
 
 /** A held action, as the sheet shows it. */
@@ -325,7 +336,19 @@ export const STEP_UP_REFUSAL_CODES = [
   'not-a-person',
   /** Another browser held this action. */
   'not-your-action',
+  /** The stored request changed after this confirmation was held. */
+  'different-request',
 ] as const;
 
 /** Why a step-up was refused. */
 export type StepUpRefusalCode = (typeof STEP_UP_REFUSAL_CODES)[number];
+
+/** Per-response facts used to explain a remote approval before a person taps Allow. */
+export const ApprovalAnswerContextSchema = z.object({
+  answerNeedsStepUp: z.boolean(),
+  answeringFrom: z.string().optional(),
+  onWifi: z.boolean(),
+});
+
+/** Server-owned origin and confirmation requirement for this browser session. */
+export type ApprovalAnswerContext = z.infer<typeof ApprovalAnswerContextSchema>;

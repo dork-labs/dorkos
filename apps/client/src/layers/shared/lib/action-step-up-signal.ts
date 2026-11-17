@@ -23,7 +23,7 @@ export type ActionStepUpOutcome =
   /** Cancelled, refused or failed: nothing ran. */
   | { kind: 'not-confirmed' }
   /** It expired: ask for the action again, which holds it afresh. */
-  | { kind: 'ask-again' }
+  | { kind: 'ask-again'; reason?: 'different-request' }
   /**
    * A mini app ran since this sign-in: sign in again, then ask for the action
    * again, which holds it afresh in the new session (M1 on #3401).
@@ -37,8 +37,7 @@ interface Ask {
   openedFrom: HTMLElement | null;
   /** Whether the last ask for this same call expired, so the sheet says so. */
   afterExpiry: boolean;
-  /** Opened from a link a page outside the app gave, so the sheet shows its request code. */
-  fromLink: boolean;
+  afterDifferent: boolean;
 }
 
 /** The asks waiting, the first one showing. */
@@ -54,12 +53,11 @@ function notify(): void {
  *
  * @param heldActionId - The id the guarded route answered with.
  * @param options - `afterExpiry`: the last ask for this same call expired.
- *   `fromLink`: a page outside the app sent the person here to confirm it.
  * @returns How the sheet ended.
  */
 export function requestActionStepUp(
   heldActionId: string,
-  options: { afterExpiry?: boolean; fromLink?: boolean } = {}
+  options: { afterExpiry?: boolean; afterDifferent?: boolean } = {}
 ): Promise<ActionStepUpOutcome> {
   return new Promise((resolve) => {
     const openedFrom =
@@ -71,7 +69,7 @@ export function requestActionStepUp(
       resolve,
       openedFrom,
       afterExpiry: options.afterExpiry ?? false,
-      fromLink: options.fromLink ?? false,
+      afterDifferent: options.afterDifferent ?? false,
     });
     if (queue.length === 1) notify();
   });
@@ -102,7 +100,7 @@ export function openActionStepUpFromLink(
   url.searchParams.delete(CONFIRM_LINK_PARAM);
   history.replaceState(history.state, '', `${url.pathname}${url.search}${url.hash}`);
   if (!HELD_ACTION_ID.test(id)) return false;
-  void requestActionStepUp(id, { fromLink: true });
+  void requestActionStepUp(id);
   return true;
 }
 
@@ -136,13 +134,13 @@ export function getActionStepUpAfterExpiry(): boolean {
   return queue[0]?.afterExpiry ?? false;
 }
 
-/** Whether the sheet that is showing was opened from a link, so it shows the request code. */
-export function getActionStepUpFromLink(): boolean {
-  return queue[0]?.fromLink ?? false;
-}
-
 /** Subscribe to the sheet opening, changing and closing; returns an unsubscribe function. */
 export function subscribeActionStepUp(listener: Listener): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+/** Whether the previous confirmation named a different stored request. */
+export function getActionStepUpAfterDifferent(): boolean {
+  return queue[0]?.afterDifferent ?? false;
 }

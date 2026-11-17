@@ -3,6 +3,7 @@
  *
  * @module widgets/inbox-bell/ui/ExtensionApprovalList
  */
+import { useConfig } from '@/layers/entities/config';
 import { Puzzle } from 'lucide-react';
 import type { PendingExtensionApproval } from '@dorkos/shared/extension-approval-schemas';
 import {
@@ -163,6 +164,7 @@ export function ExtensionApprovalList({
   focusId,
   onFocusSpent,
 }: ExtensionApprovalListProps) {
+  const answerContext = useConfig().data?.approvalAnswerContext;
   const { approve, dismiss, pending } = useExtensionApprovalActions();
   if (approvals.length === 0) return null;
 
@@ -190,6 +192,8 @@ export function ExtensionApprovalList({
                 titleId={titleId}
                 icon={Puzzle}
                 title={words.title}
+                requestCode={approval.requestCode}
+                answerContext={answerContext}
                 why={words.why}
                 // What it gives agents, on the row itself, so it is read before the
                 // yes; each tool and its tier is in the ⓘ panel (DOR-2685).

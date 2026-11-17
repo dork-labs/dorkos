@@ -2,6 +2,10 @@
 import type { StepUpActionKind } from '@dorkos/shared/step-up';
 
 const LABELS: Partial<Record<StepUpActionKind, string>> = {
+  'approval.grant': 'Allow',
+  'extension.grant': 'Allow',
+  'extension.settings-change': 'Save settings',
+  'approval.grant-always': 'Always allow',
   'connection.confirm-setting': 'Confirm setting',
   'connection.use-setting': 'Allow sending',
   'api-key.create': 'Create key',

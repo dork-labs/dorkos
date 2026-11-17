@@ -1,3 +1,10 @@
+/**
+ * The content width of the header marker's popover: 30rem panel less its 16px
+ * padding either side and the scroll gutter. The number matters because the card
+ * inside it still switches to a horizontal row at the 640px VIEWPORT breakpoint,
+ * so on a desktop screen it lays out wide inside a narrow column.
+ */
+import { RemoteApprovalShowcase } from './RemoteApprovalShowcase';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -6,12 +13,6 @@ import { ApprovalList, ApprovalsUnavailable } from '@/layers/features/approvals'
 import { AgentRequestApprovalShowcase } from './AgentRequestApprovalShowcase';
 import { INSTALL_SUMMARY, UPDATE_SUMMARY } from './marketplace-summary-samples';
 
-/**
- * The content width of the header marker's popover: 30rem panel less its 16px
- * padding either side and the scroll gutter. The number matters because the card
- * inside it still switches to a horizontal row at the 640px VIEWPORT breakpoint,
- * so on a desktop screen it lays out wide inside a narrow column.
- */
 const POPOVER_CONTENT_PX = 424;
 
 /** Roughly what the home tab's triage header gets on a normal window. */
@@ -42,6 +43,7 @@ function sample(overrides: Partial<PendingApproval> = {}): PendingApproval {
     hasAgentPath: true,
     area: null,
     alwaysOffered: false,
+    answerNeedsStepUp: false,
     requestedAt: new Date(LOADED_AT).toISOString(),
     expiresAt: expiresIn(105),
     ...overrides,
@@ -160,6 +162,11 @@ export function ApprovalCardShowcase() {
             <ApprovalList approvals={[sample()]} />
           </WidthColumn>
         </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Remote approval at phone width</ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <RemoteApprovalShowcase />
       </ShowcaseDemo>
 
       <ShowcaseLabel>The three answers, and the floor line</ShowcaseLabel>

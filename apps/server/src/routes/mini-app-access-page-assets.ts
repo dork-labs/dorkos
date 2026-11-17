@@ -216,7 +216,9 @@ export const MINI_APP_ACCESS_PAGE_SCRIPT = `'use strict';
   // shows the same request code the sheet will, and a way there (DOR-4355).
   function confirmInDorkOS(held) {
     var id = String(held.heldActionId);
-    var code = String(held.requestCode || '');
+    // Sent as three groups joined by dashes; the plain 12 is what is copied and read out.
+    var groups = String(held.requestCode || '').split('-');
+    var code = groups.join('');
     var actions = form.querySelector('.actions');
     var step = el('section', 'step-up');
     step.setAttribute('data-testid', 'mini-app-step-up');
@@ -227,7 +229,7 @@ export const MINI_APP_ACCESS_PAGE_SCRIPT = `'use strict';
       var shown = el('code', 'request-code');
       shown.setAttribute('aria-label', code);
       shown.setAttribute('data-testid', 'mini-app-request-code');
-      [code.slice(0, 4), code.slice(4, 8), code.slice(8, 12)].forEach(function (group) {
+      groups.forEach(function (group) {
         shown.appendChild(el('span', '', group));
       });
       step.appendChild(shown);

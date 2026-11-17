@@ -43,6 +43,31 @@ afterEach(() => {
 });
 
 describe('InboxDecisionRow', () => {
+  it('keeps the remote yes and follow-up offer tied to their codes and origin', () => {
+    const answerContext = {
+      answerNeedsStepUp: true,
+      answeringFrom: 'Safari on a phone over Remote Access',
+      onWifi: false,
+    };
+    renderRow({
+      requestCode: 'K7MR-4XQ9-HT3W',
+      answerContext,
+      followUp: {
+        text: 'Do this next time?',
+        requestCode: '7PEX-RHN2-VNWE',
+        answerContext,
+        onAccept: vi.fn(),
+        onDismiss: vi.fn(),
+      },
+    });
+    expect(
+      screen.getAllByText('You’re answering from Safari on a phone over Remote Access.')
+    ).toHaveLength(2);
+    expect(screen.getAllByText('Allowing asks you to confirm it’s you.')).toHaveLength(2);
+    expect(screen.getByText('K7MR-4XQ9-HT3W')).toBeInTheDocument();
+    expect(screen.getByText('7PEX-RHN2-VNWE')).toBeInTheDocument();
+  });
+
   it('says what it asks and why, and where it came from', () => {
     renderRow();
 

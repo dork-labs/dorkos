@@ -396,6 +396,15 @@ export type ApprovalFullDetailResponse = z.infer<typeof ApprovalFullDetailRespon
  */
 export const PendingApprovalSchema = z
   .object({
+    /** Server-derived display code; absent only on older servers. Never accepted as proof. */
+    requestCode: z
+      .string()
+      .regex(/^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$/)
+      .optional(),
+    /** Per response: false only for the desk. Absent on session-neutral events. */
+    answerNeedsStepUp: z.boolean().optional(),
+    /** The server's label for the answering browser's stored device and route. */
+    answeringFrom: z.string().optional(),
     /** ULID identifying the approval. Carries no secret. */
     approvalId: z.string(),
     /** Capability the request would invoke, e.g. `marketplace.uninstall`. */
@@ -677,3 +686,8 @@ export const DeclinedHookApprovalsResponseSchema = z.object({
   approvals: z.array(DeclinedHookApprovalSchema),
 });
 export type DeclinedHookApprovalsResponse = z.infer<typeof DeclinedHookApprovalsResponseSchema>;
+
+/** The same requester label on cards, chats and confirmation sheets. */
+export function approvalRequesterLabel(requestedBy: string): string {
+  return requestedBy.split('/').filter(Boolean).pop() ?? requestedBy;
+}

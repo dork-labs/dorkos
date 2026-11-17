@@ -27,6 +27,7 @@ export function approvalFieldsOf(event: Extract<SessionEvent, { type: 'approval_
     approvalDescription: event.description,
     approvalBlockedPath: event.blockedPath,
     approvalDecisionReason: event.decisionReason,
+    approvalRequestCode: event.requestCode,
     approvalHasSuggestions: event.hasSuggestions,
     approvalAlwaysAllowScope: event.alwaysAllowScope,
     approvalAlwaysAllowBreadth: event.alwaysAllowBreadth,

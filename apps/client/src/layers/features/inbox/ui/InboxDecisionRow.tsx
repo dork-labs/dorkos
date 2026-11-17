@@ -4,6 +4,8 @@
  *
  * @module features/inbox/ui/InboxDecisionRow
  */
+import type { ApprovalAnswerContext } from '@dorkos/shared/step-up';
+import { RequestCode, ApprovalAnswerNote } from '@/layers/shared/ui';
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Info, ThumbsDown, ThumbsUp, type LucideIcon } from 'lucide-react';
@@ -11,6 +13,7 @@ import { Button, Textarea, TooltipProvider } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { IconAction } from './IconAction';
 import { InboxAnswerButtons } from './InboxAnswerButtons';
+import { InboxDecisionOffer, type InboxDecisionOfferProps } from './InboxDecisionOffer';
 import { InboxWordButton } from './InboxWordButton';
 
 /**
@@ -122,7 +125,11 @@ export interface InboxDecisionRowProps {
   /** A chat started about it: "Sorting 12 ideas… · Watch". */
   watch?: { label: string; onWatch(): void } | null;
   /** The one-time green "next time, on its own?" line under an answered row (V9). */
-  followUp?: { text: string; onAccept(): void; onDismiss(): void } | null;
+  followUp?: InboxDecisionOfferProps | null;
+  /** Server-owned explanation for a remote yes. */
+  answerContext?: ApprovalAnswerContext;
+  /** Server-derived code for a pending remote grant. */
+  requestCode?: string;
   /** A history row the person has not seen yet ("Tell me after"): draws the unread dot. */
   unread?: boolean;
   /**
@@ -284,6 +291,8 @@ export function InboxDecisionRow({
   onOpen,
   watch,
   followUp,
+  requestCode,
+  answerContext,
   unread = false,
   draftKey,
   titleId,
@@ -305,6 +314,7 @@ export function InboxDecisionRow({
   const reducedMotion = useReducedMotion();
   const busy = pending !== null;
   const history = actions === undefined;
+  const wifiGrant = answerContext?.onWifi === true && requestCode !== undefined;
 
   const titleText = onOpen ? (
     <button
@@ -373,6 +383,7 @@ export function InboxDecisionRow({
               </span>
             ))}
           </p>
+          {requestCode && <RequestCode code={requestCode} />}
           {why && (
             <p className="text-foreground mt-0.5 text-xs leading-snug break-words">
               <bdi>{why}</bdi>
@@ -394,8 +405,12 @@ export function InboxDecisionRow({
               {sourceLine}
             </p>
           )}
+          {(actions?.kind === 'yes-no' || (actions && requestCode)) && (
+            <ApprovalAnswerNote context={answerContext} />
+          )}
           {actions?.kind === 'yes-no' && actions.words && (
             <InboxAnswerButtons
+              canApprove={!wifiGrant}
               approveLabel={actions.approveLabel}
               rejectLabel={actions.rejectLabel}
               onApprove={actions.onApprove}
@@ -405,7 +420,7 @@ export function InboxDecisionRow({
               {...(actions.rejectNote ? { rejectExpanded: answering === 'note' } : {})}
             />
           )}
-          {actions?.kind === 'word' && actions.block && (
+          {actions?.kind === 'word' && actions.block && !wifiGrant && (
             <InboxWordButton
               block
               reachesInfo={more !== undefined}
@@ -417,7 +432,7 @@ export function InboxDecisionRow({
               working={pending === 'word'}
             />
           )}
-          {actions?.kind === 'choice' && (
+          {actions?.kind === 'choice' && !wifiGrant && (
             <div className="mt-1.5" data-slot="inbox-decision-choices">
               <div className="flex flex-wrap gap-1.5">
                 {actions.choices.map((choice) => {
@@ -521,15 +536,17 @@ export function InboxDecisionRow({
                     buttonRef={rejectRef}
                     disabled={busy}
                   />
-                  <IconAction
-                    label={actions.approveLabel}
-                    icon={ThumbsUp}
-                    onClick={actions.onApprove}
-                    disabled={busy}
-                  />
+                  {!wifiGrant && (
+                    <IconAction
+                      label={actions.approveLabel}
+                      icon={ThumbsUp}
+                      onClick={actions.onApprove}
+                      disabled={busy}
+                    />
+                  )}
                 </>
               )}
-              {actions.kind === 'word' && !actions.block && (
+              {actions.kind === 'word' && !actions.block && !wifiGrant && (
                 <InboxWordButton
                   label={actions.label}
                   description={actions.description}
@@ -564,36 +581,7 @@ export function InboxDecisionRow({
           </motion.div>
         )}
       </AnimatePresence>
-      {followUp && (
-        <div
-          data-slot="inbox-decision-follow-up"
-          className="bg-status-success-bg text-status-success-fg border-status-success-border mx-2 mb-1.5 ml-9 flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-xs"
-        >
-          <span className="min-w-0">{followUp.text}</span>
-          <span className="flex shrink-0 items-center gap-1">
-            <Button
-              type="button"
-              variant="outline"
-              size="xs"
-              responsive={false}
-              onClick={followUp.onAccept}
-            >
-              Always do this
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="xs"
-              responsive={false}
-              aria-label="No thanks"
-              onClick={followUp.onDismiss}
-              className="text-muted-foreground"
-            >
-              No thanks
-            </Button>
-          </span>
-        </div>
-      )}
+      {followUp && <InboxDecisionOffer offer={followUp} />}
     </div>
   );
 }

@@ -179,6 +179,8 @@ export interface ToolCallState {
   approvalBlockedPath?: string;
   /** Why this permission request was triggered */
   approvalDecisionReason?: string;
+  /** Server-derived display code for this exact approval request. */
+  approvalRequestCode?: string;
   /** Whether "Always Allow" permission updates are available */
   approvalHasSuggestions?: boolean;
   /**

@@ -78,6 +78,7 @@ export const notifications = sqliteTable(
         'shell.check_down',
         'report.undelivered',
         'todo.changed',
+        'step-up.remote-refused',
       ],
     }).notNull(),
 

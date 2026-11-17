@@ -71,6 +71,10 @@ const FACTS_PARAMETERS: Record<string, string> = {
   // The add route binds `const caller = honoRequestFacts(c)` before a held add
   // waits for "Confirm it's you", and spreads it when the add runs.
   'relay-adapter-setting-routes.ts': 'caller',
+  // A held approval runs as `run(facts)`: the facts of the person who confirmed
+  // it (`holdExtensionPowerChange`), or the request's own when nothing was held.
+  'extensions-approval.ts': 'facts',
+  'extensions-approval-set.ts': 'facts',
   // Each handler binds `const caller = honoRequestFacts(c)` and spreads it.
   'runtimes-account-eligibility.ts': 'caller',
   'tasks.ts': 'caller',
