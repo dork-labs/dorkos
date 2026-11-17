@@ -33,7 +33,8 @@ export function handoffStep(
     Date.parse(signIn.startedAt) >= Date.parse(handoff.askedAt);
   if (ours && signIn.status !== 'failed')
     return signIn.status === 'open' ? 'sign-in-open' : signIn.status;
-  if (embedded && hasWindow) return 'person';
+  // A site that refused the in-app browser can't be finished there (DOR-4097).
+  if (embedded && hasWindow) return handoff.refused ? 'sign-in' : 'person';
   if (!hasWindow) return 'window-closed';
   if (ours) return 'failed';
   return handoff.reason === 'wall' ? 'wall' : 'sign-in';

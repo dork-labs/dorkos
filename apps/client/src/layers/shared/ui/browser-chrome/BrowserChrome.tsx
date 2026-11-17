@@ -69,6 +69,11 @@ export interface BrowserChromeProps {
   retry?: { draft: string; attempt: number } | null;
   /** One line under the chrome saying why something did not open. */
   notice?: string | null;
+  /**
+   * A richer notice for the same line, with its own controls (DOR-4097). One notice at
+   * a time: while it is here, it replaces `notice`.
+   */
+  pageNotice?: ReactNode;
   /** Whether an agent is driving the page right now. */
   agentDriving?: boolean;
   /**
@@ -117,6 +122,7 @@ export function BrowserChrome({
   onSubmit,
   retry = null,
   notice = null,
+  pageNotice,
   agentDriving = false,
   tooltipStill,
   status,
@@ -179,17 +185,18 @@ export function BrowserChrome({
               agentDriving && SEAM_SHOWS_AGENT_DRIVING ? 'bg-brand' : 'bg-foreground/5'
             )}
           />
-          {notice && (
-            <p
-              role="alert"
-              className="text-foreground flex min-h-7 shrink-0 items-center gap-1.5 px-2.5 py-1 text-xs"
-            >
-              {/* The glyph is what makes it read as a refusal rather than a hint (spec §6).
+          {pageNotice ??
+            (notice && (
+              <p
+                role="alert"
+                className="text-foreground flex min-h-7 shrink-0 items-center gap-1.5 px-2.5 py-1 text-xs"
+              >
+                {/* The glyph is what makes it read as a refusal rather than a hint (spec §6).
                   Only it is red: muted words would read weaker than the refusal is (spec §2). */}
-              <CircleAlert aria-hidden className="text-destructive size-4 shrink-0" />
-              <span className="min-w-0">{notice}</span>
-            </p>
-          )}
+                <CircleAlert aria-hidden className="text-destructive size-4 shrink-0" />
+                <span className="min-w-0">{notice}</span>
+              </p>
+            ))}
         </div>
       </TooltipStillContext.Provider>
     </TooltipProvider>
