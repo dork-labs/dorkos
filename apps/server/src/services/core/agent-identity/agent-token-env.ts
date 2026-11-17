@@ -154,7 +154,7 @@ export async function ensureInSessionAgentIdentity(
  *
  * @param anchor - The session's resolved home, or `undefined` when the
  *   server is built without a session (the external/introspection path).
- * @returns A memoized resolver for `capabilityMcpTools`.
+ * @returns A memoized resolver for `registerClaudeCapabilityTools`.
  */
 export function createInSessionContextResolver(
   anchor: HomeResolution | undefined

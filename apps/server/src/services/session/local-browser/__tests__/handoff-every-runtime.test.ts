@@ -10,7 +10,7 @@ import type { LocalBrowserState } from '@dorkos/shared/local-browser';
 import { noopLogger } from '@dorkos/shared/logger';
 import { composeRegistry } from '../../../core/capabilities/index.js';
 import { createServerPrincipal } from '../../../connectors/principal/server-principal.js';
-import { capabilityMcpTools } from '../../../runtimes/claude-code/mcp-tools/capability-mcp-tools.js';
+import { createCapabilityMcpClient } from '../../../runtimes/claude-code/mcp-tools/__tests__/capability-mcp-client.js';
 import { createAgentRuntimeMcpServer } from '../../../runtimes/connector-mcp/agent-runtime-server.js';
 import { createLocalBrowserDomain } from '../capabilities.js';
 import { BrowserHandover } from '../handover.js';
@@ -94,7 +94,9 @@ function resultText(result: unknown): string {
 describe('a browser handed to a person refuses its agent on every runtime', () => {
   it('Claude Code: every in-session browser tool is refused', async () => {
     const { service, registry } = await handedOver();
-    const tools = capabilityMcpTools(registry, 'in-session', async () => ({ sessionId: CHAT }));
+    const { tools } = await createCapabilityMcpClient(registry, 'in-session', async () => ({
+      sessionId: CHAT,
+    }));
     for (const [name, input] of Object.entries(TOOL_INPUTS)) {
       const tool = tools.find((item) => (item as { name?: string }).name === name);
       expect(tool, name).toBeDefined();

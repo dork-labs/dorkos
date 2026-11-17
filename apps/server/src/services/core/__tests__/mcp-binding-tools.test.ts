@@ -13,33 +13,13 @@ vi.mock('@dorkos/shared/manifest', () => ({
   readManifest: vi.fn(),
 }));
 
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
-  // The real factory returns `{ type, name, instance }` where `instance` is a live
-  // `McpServer`; `createDorkOsToolServer` registers the `dorkos://` resources on
-  // it. The stub carries just enough of that shape to record the registrations.
-  createSdkMcpServer: vi.fn((config: Record<string, unknown>) => ({
-    ...config,
-    instance: {
-      registerResource: vi.fn(),
-      server: { registerCapabilities: vi.fn() },
-    },
-  })),
-  tool: vi.fn(
-    (
-      name: string,
-      desc: string,
-      schema: Record<string, unknown>,
-      handler: (...args: unknown[]) => unknown
-    ) => ({
-      name,
-      description: desc,
-      schema,
-      handler,
-    })
-  ),
-}));
+vi.mock('@anthropic-ai/claude-agent-sdk', async () => {
+  const { sdkMcpFactoryMock } =
+    await import('../../runtimes/claude-code/mcp-tools/__tests__/sdk-mcp-factory-mock.js');
+  return sdkMcpFactoryMock();
+});
 
-/** Passthrough shape returned by mocked createSdkMcpServer */
+/** Recorded tool surface returned by the adapter-owned SDK factory fixture. */
 interface MockServer {
   name: string;
   version: string;
@@ -432,6 +412,9 @@ describe('Binding MCP Tools', () => {
       const store = makeMockBindingStore();
       const server = createDorkOsToolServer(makeMockDeps(store)) as unknown as MockServer;
       const toolNames = server.tools.map((t) => t.name);
+      expect(toolNames).toContain('ping');
+      expect(toolNames).toContain('list_capabilities');
+      expect(new Set(toolNames).size).toBe(toolNames.length);
       expect(toolNames).toContain('binding_list');
       expect(toolNames).toContain('binding_create');
       expect(toolNames).toContain('binding_delete');

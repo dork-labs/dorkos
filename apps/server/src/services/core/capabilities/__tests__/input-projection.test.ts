@@ -4,7 +4,7 @@ import { OpenAPIRegistry, OpenApiGeneratorV31 } from '@asteasolutions/zod-to-ope
 import { noopLogger } from '@dorkos/shared/logger';
 import { defineCapability, composeRegistry } from '../index.js';
 import { capabilityInputObject } from '../input-projection.js';
-import { capabilityInputShape } from '../mcp-projection.js';
+import { capabilityMcpInputObject } from '../mcp-projection.js';
 import { registerCapabilitiesInOpenApi } from '../openapi-projection.js';
 
 function fixture(method: 'get' | 'post' = 'post') {
@@ -46,11 +46,11 @@ function fixture(method: 'get' | 'post' = 'post') {
 }
 
 describe('preprocessed capability input projection', () => {
-  it('advertises nested pipe output fields and portable defaults while execution retains the full bound', async () => {
+  it('advertises nested pipe output fields and defaults while execution retains the full bound', async () => {
     const { capability, registry, handler } = fixture();
     expect(Object.keys(capabilityInputObject(capability).shape)).toEqual(['text', 'limit']);
-    const projected = z.object(capabilityInputShape(capability));
-    expect(projected.parse({ text: 'hello' })).toEqual({ text: 'hello' });
+    const projected = capabilityMcpInputObject(capability);
+    expect(projected.parse({ text: 'hello' })).toEqual({ text: 'hello', limit: 5 });
     await registry.invoke('demo.bounded', { text: 'hello' });
     expect(handler).toHaveBeenCalledOnce();
     expect(handler.mock.calls[0]).toEqual(
@@ -96,5 +96,81 @@ describe('preprocessed capability input projection', () => {
     expect(() =>
       capabilityInputObject({ ...capability, input: z.preprocess((raw) => raw, z.string()) })
     ).toThrow('demo.bounded');
+  });
+});
+
+describe('full ordinary MCP input object', () => {
+  const project = capabilityMcpInputObject;
+
+  it.each(['extra', 'ownerId'])(
+    'refuses top-level %s while preserving nested maps',
+    async (key) => {
+      const { capability, registry, handler } = fixture();
+      const input = z.object({
+        values: z.record(z.string(), z.unknown()),
+        limit: z.coerce.number().default(5),
+      });
+      const subject = { ...capability, input };
+      const projected = project(subject);
+      const valid = { values: { ownerId: 'nested data', extra: { enabled: true } }, limit: '3' };
+      expect(projected.parse(valid)).toEqual({ ...valid, limit: 3 });
+      expect(projected.safeParse({ ...valid, [key]: 'untrusted' }).success).toBe(false);
+      expect(projected.parse({ values: {} })).toEqual({ values: {}, limit: 5 });
+      expect(projected).not.toBe(input);
+      expect(subject.input).toBe(input);
+      expect(input.safeParse({ ...valid, [key]: 'untrusted' }).success).toBe(true);
+      // Original executable preprocessors remain authoritative, independent of projection.
+      await registry.invoke('demo.bounded', { text: 'hello' });
+      await expect(registry.invoke('demo.bounded', { text: 'x'.repeat(50) })).rejects.toThrow(
+        'Envelope too large'
+      );
+      expect(handler).toHaveBeenCalledExactlyOnceWith(
+        expect.anything(),
+        { text: 'hello', limit: 5 },
+        expect.anything()
+      );
+    }
+  );
+
+  it('keeps object refinements when adding an eligible approval token without changing the original', () => {
+    const { capability } = fixture();
+    const input = z
+      .object({ start: z.number(), end: z.number().default(5) })
+      .refine(({ start, end }) => start < end, 'Start must precede end');
+    const subject = { ...capability, tier: 'destructive' as const, input };
+    const projected = project(subject);
+    expect(Object.keys(projected.shape)).toEqual(['start', 'end', 'approvalToken']);
+    expect(projected.parse({ start: 1, approvalToken: 'granted' })).toEqual({
+      start: 1,
+      end: 5,
+      approvalToken: 'granted',
+    });
+    const refused = projected.safeParse({ start: 6, approvalToken: 'granted' });
+    expect(refused.success).toBe(false);
+    if (!refused.success)
+      expect(refused.error.issues).toEqual([
+        expect.objectContaining({ message: 'Start must precede end' }),
+      ]);
+    expect(Object.keys(input.shape)).toEqual(['start', 'end']);
+    expect(input.parse({ start: 1 })).toEqual({ start: 1, end: 5 });
+    expect(input.safeParse({ start: 6 }).success).toBe(false);
+  });
+
+  it('advertises approval tokens for exactly the existing ordinary eligibility rules', () => {
+    const { capability } = fixture();
+    const cases = [
+      { tier: 'observe', area: null, expected: false },
+      { tier: 'act', area: null, expected: false },
+      { tier: 'act', area: 'tasks', expected: true },
+      { tier: 'destructive', area: null, expected: true },
+      { tier: 'observe', area: null, forwardsApproval: true, expected: true },
+    ] as const;
+    expect(cases).toHaveLength(5);
+    for (const { expected, ...policy } of cases) {
+      const projected = project({ ...capability, ...policy });
+      expect('approvalToken' in projected.shape).toBe(expected);
+      expect(projected.safeParse({ text: 'hello' }).success).toBe(true);
+      expect(projected.safeParse({ text: 'hello', approvalToken: 'token' }).success).toBe(expected);
+    }
   });
 });
