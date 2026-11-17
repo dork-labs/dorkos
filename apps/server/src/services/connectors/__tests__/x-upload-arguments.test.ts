@@ -169,9 +169,42 @@ describe('an X upload shared with other accounts needs the agent’s own grant',
       ).rejects.toMatchObject(SHARED_UPLOAD);
     }
   );
+
+  it.each([
+    { params: { shared: true } },
+    [{ additional_owners: ['2244994945'] }],
+    { media: { additionalOwners: ['2244994945'] } },
+    { additional_owners: ['0'] },
+  ])('reads nested and unusual arguments: refuses %o', async (args) => {
+    const run = await setup();
+    await expect(
+      run('writer', UPLOADS[0], Array.isArray(args) ? { items: args } : args)
+    ).rejects.toMatchObject(SHARED_UPLOAD);
+  });
+
+  it('lets the every-agent share run a clean upload, so its refusals above are real', async () => {
+    const run = await setup();
+    await expect(run('reader', UPLOADS[0], { media: '/tmp/a.png' })).resolves.toMatchObject({
+      agentId: 'reader',
+    });
+  });
 });
 
-describe('a promoted-only X post needs the agent’s own grant', () => {
+describe('an ad-only X post needs the agent’s own grant', () => {
+  it.each(['true', 1, {}])('refuses nullcast %o under a level', async (nullcast) => {
+    const run = await setup();
+    await expect(run('writer', POST, { text: 'Hello', nullcast })).rejects.toMatchObject(
+      HIDDEN_POST
+    );
+  });
+
+  it('lets the every-agent share run an ordinary post', async () => {
+    const run = await setup();
+    await expect(run('reader', POST, { text: 'Hello' })).resolves.toMatchObject({
+      agentId: 'reader',
+    });
+  });
+
   it.each(BROAD)('refuses a nullcast post for %s', async (agentId) => {
     const run = await setup();
     await expect(run(agentId, POST, { text: 'Hello', nullcast: true })).rejects.toMatchObject(

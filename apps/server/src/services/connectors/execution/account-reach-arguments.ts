@@ -11,6 +11,9 @@
  * The check reads the arguments before schema cleaning, which only drops
  * nulls, and a null here already counts as off; the broker runs it again
  * right before the request is sent. A value it can't read counts as on.
+ * Leaving a flag out is safe because X's schemas default none of them on
+ * (`nullcast` defaults false; `shared` and `additional_owners` have no
+ * default; Composio catalog, 2026-11-17).
  *
  * @module services/connectors/execution/account-reach-arguments
  */
@@ -22,7 +25,7 @@ const X_TOOLKITS = new Set(['twitter']);
 export const X_SHARED_UPLOAD_NEEDS_OWN_GRANT =
   'This X upload shares your media with another account, so it needs to be given to this agent on its own.';
 
-/** Why a promoted-only post needs its own grant. */
+/** Why an ad-only post needs its own grant. */
 export const X_HIDDEN_POST_NEEDS_OWN_GRANT =
   'This X post goes out only as an ad, not on your timeline, so it needs to be given to this agent on its own.';
 
@@ -42,10 +45,15 @@ function flagIsOff(value: unknown): boolean {
   );
 }
 
+/** Whether an owners entry is plainly empty: missing, null or blank. Anything else names someone. */
+function isBlank(value: unknown): boolean {
+  return value === undefined || value === null || (typeof value === 'string' && !value.trim());
+}
+
 /** Whether an owners argument names anyone: any entry that isn't plainly empty. */
 function namesSomeone(value: unknown): boolean {
-  if (Array.isArray(value)) return value.some((entry) => !flagIsOff(entry));
-  return !flagIsOff(value);
+  if (Array.isArray(value)) return value.some((entry) => !isBlank(entry));
+  return !isBlank(value);
 }
 
 /** Whether any nested argument with one of these loose keys is set. */
