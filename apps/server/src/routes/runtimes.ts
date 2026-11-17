@@ -245,7 +245,15 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
   router.post('/opencode/openrouter/oauth/start', (c) => {
     const refused = refuseCredentialChange(c);
     if (refused) return refused;
-    return c.json(startOpenRouterOAuth(openRouterCallbackBase(c)));
+    const callbackBase = openRouterCallbackBase(c);
+    // The sign-in ends in a key that decides where prompts go, so the link is only
+    // minted once the owner confirms it's them (Security S6 on DOR-4355 M3).
+    return holdCredentialSave(c, {
+      target: 'opencode-provider:openrouter',
+      input: { op: 'openrouter-oauth-start' },
+      reason: 'Sign OpenCode in to OpenRouter, so its prompts go to your OpenRouter account.',
+      run: async () => c.json(startOpenRouterOAuth(callbackBase)),
+    });
   });
 
   /**

@@ -52,7 +52,11 @@ import {
 } from '../services/relay/binding-store.js';
 import { RoomError } from '../services/rooms/room-errors.js';
 import { ADAPTER_EVENTS_KEPT, type TraceStore } from '../services/relay/trace-store.js';
-import { registerConfirmReferencesRoute, sendAdapterError } from './relay-adapter-http.js';
+import {
+  registerConfirmReferencesRoute,
+  registerEnableRoute,
+  sendAdapterError,
+} from './relay-adapter-http.js';
 import { registerSettingRoutes } from './relay-adapter-setting-routes.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
@@ -242,14 +246,7 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
 
   registerConfirmReferencesRoute(router, adapterManager);
 
-  router.post('/adapters/:id/enable', async (c) => {
-    try {
-      await adapterManager.enable(c.req.param('id'));
-      return c.json({ ok: true });
-    } catch (err) {
-      return c.json({ error: err instanceof Error ? err.message : 'Enable failed' }, 400);
-    }
-  });
+  registerEnableRoute(router, adapterManager);
 
   router.post('/adapters/:id/disable', async (c) => {
     try {

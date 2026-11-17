@@ -3,6 +3,7 @@ covers:
   - 'fix(auth): confirm the remaining lasting grants (DOR-4355, DOR-4595)'
   - "fix(auth): an agent's change to a task on credits asks first, and the mini app page links to its confirm (DOR-4609, DOR-4355)"
   - 'fix(auth): hold opening DMs to anyone, confirming access as it stands, and runtime keys (DOR-4355, DOR-4595)'
+  - 'fix(auth): turning a chat connection back on and signing OpenCode in to OpenRouter wait for a yes (DOR-4355)'
 ---
 
 ### Security
@@ -17,3 +18,5 @@ covers:
 - Confirm before you keep a connected app's access as it stands after a review, since that can turn paused access back on.
 - Confirm before you save a key or a provider address for a runtime, since it decides where your agents' prompts go.
 - An agent working from a message DorkOS can't vouch for can no longer change an extension's secret.
+- Confirm before you turn a chat connection back on, since its people can reach your agents again. An agent asks you on a card first.
+- Confirm before you sign OpenCode in to OpenRouter.

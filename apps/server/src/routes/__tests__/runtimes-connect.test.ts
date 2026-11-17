@@ -143,6 +143,7 @@ import {
 } from '../../services/runtimes/opencode/providers/ollama.js';
 import type { OllamaPullResult } from '@dorkos/shared/runtime-connect';
 import { signInLandings } from '../../services/core/sign-in-landing/sign-in-landings.js';
+import { resetHeldStepUpsForTests } from '../../services/core/auth/step-up/step-up-holds.js';
 
 const admission = new MainRequestAdmission();
 const app = composedListener(admission);
@@ -397,6 +398,8 @@ describe('runtime connect endpoints', () => {
   // to confirm it's them. The key never rides in what is held.
   describe('saving a runtime key once an owner exists', () => {
     const OWNER_BROWSER = 'dorkos-test-browser=owner';
+    // One browser may hold only a few actions at once; each case starts clear.
+    beforeEach(() => resetHeldStepUpsForTests());
     it.each([
       ['a runtime key', '/api/runtimes/claude-code/credential', { secret: SECRET }],
       ['an OpenRouter key', '/api/runtimes/opencode/openrouter/key', { key: SECRET }],
@@ -413,6 +416,16 @@ describe('runtime connect endpoints', () => {
       expect(storeRuntimeCredential).not.toHaveBeenCalled();
       expect(storeProviderCredential).not.toHaveBeenCalled();
       expect(storeOpenRouterKeyReference).not.toHaveBeenCalled();
+    });
+
+    it('holds the OpenRouter sign-in before any sign-in link exists', async () => {
+      const res = await request(server)
+        .post('/api/runtimes/opencode/openrouter/oauth/start')
+        .set('Cookie', OWNER_BROWSER);
+      expect(res.status).toBe(428);
+      expect(res.body.code).toBe('step_up_required');
+      expect(res.body.authorizeUrl).toBeUndefined();
+      expect(res.body.state).toBeUndefined();
     });
 
     it('names the address on the sheet', async () => {
@@ -652,6 +665,13 @@ describe('runtime connect endpoints', () => {
   });
 
   describe('OpenRouter OAuth-PKCE', () => {
+    // Before an owner exists, a sign-in starts at once, as it always has.
+    beforeEach(() => {
+      owner.exists = false;
+    });
+    afterEach(() => {
+      owner.exists = true;
+    });
     it('starts a flow and returns the authorize URL + a pollable state', async () => {
       const res = await request(server).post('/api/runtimes/opencode/openrouter/oauth/start');
       expect(res.status).toBe(200);

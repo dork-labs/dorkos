@@ -14,6 +14,7 @@ import { honoRequestFacts } from '../http/request-facts.js';
 import { readJsonBody } from '../http/request-body.js';
 import { errorRefusalUnlessOwner } from './cloud-owner-bar.js';
 import { holdForStepUp } from './step-up-guard.js';
+import { runFrontDoorWrite } from './front-door-step-up.js';
 import {
   presentsProgramCredential,
   refuseUnlessAccountOwner,
@@ -249,4 +250,36 @@ export function registerConfirmReferencesRoute(
   };
   router.post('/adapters/:id/confirm-references', (c) => handle(c, false));
   router.delete('/adapters/:id/confirm-references', (c) => handle(c, true));
+}
+
+/**
+ * Register `POST /adapters/:id/enable`. Turning a chat connection back on lets
+ * its people reach your agents again (Security S7 on DOR-4355 M3): the owner
+ * confirms it's them, and no agent turns one on over HTTP. One that is on
+ * already answers at once.
+ *
+ * @param router - The connection routes.
+ * @param adapterManager - The connections.
+ */
+export function registerEnableRoute(router: Hono<ApiEnv>, adapterManager: AdapterManager): void {
+  router.post('/adapters/:id/enable', async (c) => {
+    const id = c.req.param('id');
+    const enable = async () => {
+      try {
+        await adapterManager.enable(id);
+        return c.json({ ok: true });
+      } catch (err) {
+        return c.json({ error: err instanceof Error ? err.message : 'Enable failed' }, 400);
+      }
+    };
+    if (adapterManager.getAdapter(id)?.config.enabled === true) return enable();
+    return runFrontDoorWrite(c, {
+      kind: 'relay.binding',
+      target: id,
+      input: { op: 'enable-adapter', id },
+      reason: `Turn ${quotedName(adapterManager.resolveAdapterName(id))} back on, so its people can reach your agents again.`,
+      subject: 'what a chat connection may do',
+      run: enable,
+    });
+  });
 }

@@ -33,7 +33,10 @@ import { CREDITS_SCHEDULE_AGENT_REFUSAL } from '../../../../tasks/task-write-pol
 import { runtimeRegistry } from '../../../../core/runtime-registry.js';
 import { creditsClaudeRoot } from '../../credits-root.js';
 import type { TurnMarks } from '../../../../core/turn-power/turn-marks.js';
-import { CREDITS_EDIT_NEEDS_YES } from '../../../../tasks/credits/credits-work.js';
+import {
+  CREDITS_EDIT_NEEDS_YES,
+  creditsPromptNote,
+} from '../../../../tasks/credits/credits-work.js';
 import {
   escalateToolCall,
   noteEscalatedGrant,
@@ -349,5 +352,19 @@ describe('a credits raise the person must see in full', () => {
     expect(isError).toBe(true);
     expect(payload).toEqual(CREDITS_EDIT_NEEDS_YES);
     expect(workOf(store.getTask(task.id)!)).toEqual(workOf(off));
+  });
+});
+
+// Security's nit on DOR-4355 M3: a cut quote says it was cut.
+describe('the prompt line on the credits sheet', () => {
+  it('quotes a short prompt whole, on one line', () => {
+    expect(creditsPromptNote('Check\n  stock.')).toBe('Check stock.');
+  });
+
+  it('says it was shortened when it cuts a long one, and stays within the limit', () => {
+    const note = creditsPromptNote(`Check stock. ${'and then more '.repeat(40)}`);
+    expect(note.endsWith('… (shortened)')).toBe(true);
+    expect(note.length).toBeLessThanOrEqual(280);
+    expect(note.startsWith('Check stock. and then more')).toBe(true);
   });
 });
