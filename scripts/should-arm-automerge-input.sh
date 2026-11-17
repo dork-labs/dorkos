@@ -48,6 +48,25 @@
 # not match `headRefOid` (a push landed between the reads) gives `headSince:
 # null`, and a timeline that is not a list gives `queueRemovals: null`; the gate
 # reads both as unknown history and skips.
+#
+# The one answer this script re-reads itself is a `mergeStateStatus` of
+# UNKNOWN. GitHub computes mergeability lazily: every merge to main resets it
+# to UNKNOWN on every open pull request, and only a query starts it computing
+# again. merge-tail ticks hours apart, so the status it reads is almost always
+# the reset one, and passing it straight through held nearly every pull request
+# on nearly every tick (run 44136162869: 10 held as mergeability-unknown, 0
+# armed). So once every other answer has been accepted, an UNKNOWN pull request
+# is asked about again with `gh pr view --json headRefOid,mergeStateStatus`,
+# after a pause, up to three times. Only a status about the same head commit
+# replaces UNKNOWN; a failed or odd answer uses up a try, and an answer about a
+# new head ends the asking. Still UNKNOWN after that stays UNKNOWN, and the gate
+# skips it as before. Nothing else is taken from the new answer.
+#
+#   REPO                     owner/name to ask in; unset or empty, nobody is asked
+#   MERGE_STATE_RETRIES      how many times to ask (default 3, never more; 0 asks nobody)
+#   MERGE_STATE_RETRY_DELAY  whole seconds before each ask (default 3)
+#
+# Anything but whole numbers in the last two falls back to the default.
 
 set -uo pipefail
 
@@ -96,12 +115,49 @@ jq -e '.data.repository.pullRequest | has("mergeQueueEntry")' "$graphql" >/dev/n
 jq -e '(.data.repository.pullRequest.reviewThreads.nodes | type) == "array"' "$graphql" >/dev/null 2>&1 \
   || { echo "SKIP could-not-read-review-threads"; exit 1; }
 
+# Ask again while GitHub is still computing mergeability (see the header).
+# Only a JSON answer about the same head commit, with a non-empty status
+# string, replaces UNKNOWN; anything else uses up a try. An answer about a new
+# head stops the asking: the checks and threads above were read for the old
+# one, and no later answer can be about it again.
+resolved=
+if jq -e '.mergeStateStatus == "UNKNOWN"' "$meta" >/dev/null 2>&1 && [[ -n "${REPO:-}" ]]; then
+  retries=${MERGE_STATE_RETRIES:-3}
+  [[ "$retries" =~ ^[0-9]+$ ]] || retries=3
+  # A hard ceiling: no setting asks more than three times.
+  (( 10#$retries <= 3 )) || retries=3
+  delay=${MERGE_STATE_RETRY_DELAY:-3}
+  [[ "$delay" =~ ^[0-9]+$ ]] || delay=3
+  number=$(jq -r '.number // empty' "$meta" 2>/dev/null) || number=
+  head=$(jq -r '.headRefOid // empty' "$meta" 2>/dev/null) || head=
+  [[ "$number" =~ ^[0-9]+$ && -n "$head" ]] || retries=0
+  for (( try = 1; try <= retries; try++ )); do
+    sleep "$delay"
+    answer=$(gh pr view "$number" --repo "$REPO" --json headRefOid,mergeStateStatus 2>/dev/null) || answer=
+    # Slurped, so an empty or doubled answer is one wrong-shaped value.
+    asked=$(jq -rs --arg head "$head" '
+        if length != 1 or (.[0] | type) != "object" then "retry"
+        elif .[0].headRefOid != $head then "moved"
+        elif (.[0].mergeStateStatus | type) != "string" then "retry"
+        elif (.[0].mergeStateStatus | test("^[A-Z_]+$") | not) then "retry"
+        elif .[0].mergeStateStatus == "UNKNOWN" then "retry"
+        else .[0].mergeStateStatus end' <<<"$answer" 2>/dev/null) || asked=retry
+    case "$asked" in
+      retry) ;;
+      moved) break ;;
+      *) resolved=$asked; break ;;
+    esac
+  done
+fi
+
 # The queue's memory is flattened into the two fields the gate reads; see the
 # gate's header for what `headSince` and `queueRemovals` mean and why.
-jq -s '
+jq -s --arg resolved "$resolved" '
   .[0] as $meta | .[1] as $checks | .[2].data.repository.pullRequest as $p
   | ($p.commits.nodes[0].commit? // null) as $head
-  | $meta + {
+  | $meta
+  + (if $resolved != "" then {mergeStateStatus: $resolved} else {} end)
+  + {
       checks: $checks,
       mergeQueueEntry: $p.mergeQueueEntry,
       unresolvedThreads: ([$p.reviewThreads.nodes[] | select(.isResolved == false)] | length),
