@@ -297,6 +297,14 @@ describe('a connected-app read marks the turn it ran in, at Full', () => {
     expect(sent).not.toHaveBeenCalled();
   });
 
+  it('the card says it asks because the turn read outside words', async () => {
+    const chat = fresh();
+    await ranAtFull(chat);
+    await read(chat);
+    await send(chat);
+    expect(approvals.listPending()[0]?.serviceAction?.keptCardBecause).toBe('outside-words');
+  });
+
   it('cards a send after a read the app answered with an error', async () => {
     const chat = fresh();
     await ranAtFull(chat);

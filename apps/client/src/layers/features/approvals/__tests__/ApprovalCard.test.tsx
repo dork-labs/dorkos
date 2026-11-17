@@ -27,7 +27,7 @@ import {
 } from '../model/settling-approvals';
 import { discardDismissedSuggestions } from '../model/use-dismiss-suggestion';
 import { ApprovalCard } from '../ui/ApprovalCard';
-import { WIFI_KEPT_CARD_LINE } from '../ui/ApprovalServiceAction';
+import { OUTSIDE_WORDS_KEPT_CARD_LINE, WIFI_KEPT_CARD_LINE } from '../ui/ApprovalServiceAction';
 
 /** Build a pending approval, overriding only what a test cares about. */
 function buildApproval(overrides: Partial<PendingApproval> = {}): PendingApproval {
@@ -580,6 +580,18 @@ describe('a connected-app action says what it does (DOR-2504)', () => {
   it('says nothing about Wi-Fi on an ordinary card', () => {
     renderCard(connectorApproval(GMAIL_DELETE));
     expect(screen.queryByText(WIFI_KEPT_CARD_LINE)).not.toBeInTheDocument();
+  });
+
+  // DOR-3969: a card a turn's outside words raised says why.
+  it('says it asks because the turn read words from outside the team', () => {
+    renderCard(connectorApproval({ ...GMAIL_DELETE, keptCardBecause: 'outside-words' }));
+    expect(screen.getByText(OUTSIDE_WORDS_KEPT_CARD_LINE)).toBeInTheDocument();
+    expect(screen.queryByText(WIFI_KEPT_CARD_LINE)).not.toBeInTheDocument();
+  });
+
+  it('says nothing about outside words on an ordinary card', () => {
+    renderCard(connectorApproval(GMAIL_DELETE));
+    expect(screen.queryByText(OUTSIDE_WORDS_KEPT_CARD_LINE)).not.toBeInTheDocument();
   });
 
   it('never shows the jargon title, the ids, or the summary sentence on top of it', () => {

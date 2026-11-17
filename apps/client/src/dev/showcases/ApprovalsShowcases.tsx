@@ -433,6 +433,27 @@ export function ApprovalCardShowcase() {
                 keptCardBecause: 'wifi-open',
               },
             }),
+            // Asks at Full because the turn read words from outside the team, and says so (DOR-3969).
+            sample({
+              approvalId: '01JZ0000000000000000000064',
+              capabilityId: 'connectors.execute_write',
+              capabilityTitle: 'Make a change in a connected app',
+              requestedBy: 'DorkBot',
+              area: null,
+              alwaysOffered: false,
+              summary: '"DorkBot" wants to run "Send email" in Gmail on "Work (work@acme.com)"',
+              serviceAction: {
+                serviceId: 'gmail',
+                serviceName: 'Gmail',
+                accountLabel: 'Work (work@acme.com)',
+                actionName: 'Send email',
+                details: [
+                  { label: 'To', value: 'ann@example.com' },
+                  { label: 'Subject', value: 'Garden club' },
+                ],
+                keptCardBecause: 'outside-words',
+              },
+            }),
             // Six lines is the most a card lists; long values are already
             // shortened by the server and wrap rather than widen the card.
             sample({
