@@ -3,7 +3,7 @@
 PRAGMA foreign_keys=OFF;
 BEGIN IMMEDIATE;
 CREATE TEMP TABLE seat_route_down_guard (ok INTEGER CHECK(ok = 1));
-INSERT INTO seat_route_down_guard SELECT CASE WHEN MAX(created_at) = 1794916545269 THEN 1 ELSE 0 END FROM __drizzle_migrations;
+INSERT INTO seat_route_down_guard SELECT CASE WHEN MAX(created_at) = 1794951501012 THEN 1 ELSE 0 END FROM __drizzle_migrations;
 UPDATE chat_messages SET status='failed', failure_reason='Private seat delivery interrupted by downgrade.' WHERE delivery_route='seat' AND status IN ('queued','working');
 CREATE TABLE `__new_chat_messages` (
 	`id` text PRIMARY KEY NOT NULL,
@@ -33,7 +33,7 @@ ALTER TABLE __new_chat_messages RENAME TO chat_messages;
 CREATE INDEX chat_messages_to_idx ON chat_messages(to_session_id,created_at);
 CREATE INDEX chat_messages_from_idx ON chat_messages(from_session_id,created_at);
 CREATE INDEX chat_messages_queue_idx ON chat_messages(queue_message_id);
-DELETE FROM __drizzle_migrations WHERE created_at = 1794916545269;
+DELETE FROM __drizzle_migrations WHERE created_at = 1794951501012;
 DROP TABLE seat_route_down_guard;
 COMMIT;
 PRAGMA foreign_keys=ON;
