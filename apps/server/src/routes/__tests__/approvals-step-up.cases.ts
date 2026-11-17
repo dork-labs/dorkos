@@ -13,6 +13,19 @@ import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { createApprovalsRoutes, type ApprovalsRouterOptions } from '../approvals.js';
 import { createStepUpRoutes } from '../step-up.js';
 import { setTestOwner } from './test-owner.js';
+import { composeCapabilityRegistryForDocs } from '../../services/core/self-description/dorkos-registry.js';
+import {
+  enforceCapabilityTier,
+  initCapabilityTierGate,
+  resetCapabilityTierGate,
+  type GatedAction,
+} from '../../services/core/capabilities/tier-enforcement.js';
+import {
+  initPermissionGate,
+  resetPermissionGate,
+  resolveCallPermission,
+  type PermissionGatedAction,
+} from '../../services/core/capabilities/permission-enforcement.js';
 import {
   noteConfigPatchCard,
   resetFrontDoorCardsForTests,
@@ -151,6 +164,45 @@ export function registerApprovalStepUpCases(): void {
       expect(approvals.answerScope(ticket.approvalId)?.state).toBe('pending');
     });
 
+    describe('Always allow on a capability card at this computer', () => {
+      const alwaysCard = () =>
+        approvals.request({
+          capabilityId: 'rooms.create',
+          inputHash: hashApprovalInput({ title: 'notes' }),
+          summary: 'Open a room.',
+          requestedBy: 'Kestrel',
+          requestedByPath: '/made-up/kestrel',
+          area: 'rooms',
+        });
+      const deskAlways = (id: string) =>
+        request(app())
+          .post(`/api/approvals/${id}/grant`)
+          .set('Origin', ORIGIN)
+          .send({ answer: 'always' });
+      afterEach(() => setTestOwner(null));
+
+      it('holds it once an owner exists, like the tool prompt and offers, then saves it', async () => {
+        setTestOwner('owner');
+        const ticket = alwaysCard();
+        const held = await deskAlways(ticket.approvalId);
+        expect(held.status).toBe(428);
+        expect(setAgent).not.toHaveBeenCalled();
+        const confirmed = await request(app())
+          .post(`/api/step-up/${held.body.heldActionId}/password`)
+          .set('Origin', ORIGIN)
+          .send({ password: PASSWORD });
+        expect(confirmed.body).toMatchObject({ ok: true, status: 200 });
+        expect(setAgent).toHaveBeenCalledTimes(1);
+      });
+
+      it('saves it at once while no owner exists, with no password to ask for', async () => {
+        const ticket = alwaysCard();
+        const res = await deskAlways(ticket.approvalId);
+        expect(res.status).toBe(200);
+        expect(setAgent).toHaveBeenCalledTimes(1);
+      });
+    });
+
     describe('a settings card that changes a front-door setting (Security M1 on #3878)', () => {
       const settingsCard = (patch?: unknown) => {
         const ticket = approvals.request({
@@ -159,7 +211,8 @@ export function registerApprovalStepUpCases(): void {
           summary: 'Update configuration.',
           requestedBy: 'Kestrel',
         });
-        if (patch !== undefined) noteConfigPatchCard(ticket.approvalId, patch);
+        if (patch !== undefined)
+          noteConfigPatchCard(ticket.approvalId, 'operator.config_patch', { patch });
         return ticket;
       };
       const deskGrant = (id: string, ingress?: IngressKind) =>
@@ -204,6 +257,68 @@ export function registerApprovalStepUpCases(): void {
           expect(events).toEqual([]);
         }
       );
+
+      it.each([
+        [{ tunnel: { auth: { mode: 'open' } } }, 428],
+        [{ ui: { theme: 'dark' } }, 200],
+      ] as const)(
+        'answers a card the real gate raised for %o with %i at this computer',
+        async (patch, status) => {
+          initCapabilityTierGate({ approvals });
+          initPermissionGate({
+            // Careful blocks Reach & secrets outright; ask, so the gate raises a card.
+            readConfig: () => ({
+              preset: 'careful',
+              defaults: { areas: { reach: 'ask', settings: 'ask' }, actions: {} },
+            }),
+            readAgentPermissions: async () => undefined,
+          });
+          try {
+            const action = composeCapabilityRegistryForDocs().capabilities.find(
+              (c) => c.id === 'operator.config_patch'
+            ) as unknown as GatedAction & PermissionGatedAction;
+            const identity = {
+              agentPath: '/made-up/kestrel',
+              displayName: 'Kestrel',
+              createdAt: new Date().toISOString(),
+            };
+            const input = { patch };
+            const permission = await resolveCallPermission({
+              action,
+              identity,
+              sessionId: 'made-up-session',
+              input,
+            });
+            const decision = await enforceCapabilityTier({
+              action,
+              input,
+              permission,
+              identity,
+              retryChannel: 'mcp-argument',
+            });
+            expect(decision.outcome, JSON.stringify(decision)).toBe('approval_required');
+            if (decision.outcome !== 'approval_required') return;
+            expect((await deskGrant(decision.payload.approvalId)).status).toBe(status);
+          } finally {
+            resetCapabilityTierGate();
+            resetPermissionGate();
+          }
+        }
+      );
+
+      it('tells the desk card ahead that a front-door change asks to confirm', async () => {
+        const door = settingsCard({ tunnel: { auth: { mode: 'open' } } });
+        const plain = settingsCard({ ui: { theme: 'dark' } });
+        const pending = await request(app()).get('/api/approvals/pending');
+        const byId = (id: string) =>
+          (pending.body.approvals as { approvalId: string }[]).find((a) => a.approvalId === id);
+        expect(byId(door.approvalId)).toMatchObject({
+          answerNeedsStepUp: true,
+          answeringFrom: 'this computer',
+        });
+        expect(byId(plain.approvalId)).toMatchObject({ answerNeedsStepUp: false });
+        expect(byId(plain.approvalId)).not.toHaveProperty('answeringFrom');
+      });
 
       it('leaves an ordinary settings card immediate at this computer', async () => {
         const ticket = settingsCard({ ui: { theme: 'dark' } });

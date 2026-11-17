@@ -551,11 +551,24 @@ export function createApprovalsRoutes(
     const facts = honoRequestFacts(c);
     const from = await answeringFrom(facts);
     return c.json({
-      approvals: approvals.listPending().map((card) => ({
-        ...card,
-        answerNeedsStepUp: !isAtThisComputer(facts),
-        ...(from ? { answeringFrom: from } : {}),
-      })),
+      approvals: approvals.listPending().map((card) => {
+        // A front-door settings card is confirmed at this computer too, so its
+        // card says so there rather than springing the sheet (Security M1 on #3878).
+        const deskConfirms =
+          isAtThisComputer(facts) &&
+          card.capabilityId === CONFIG_PATCH_CAPABILITY &&
+          configPatchCardTouchesFrontDoor(card.approvalId) &&
+          !deskGoesOnWithoutSheet(facts);
+        return {
+          ...card,
+          answerNeedsStepUp: !isAtThisComputer(facts) || deskConfirms,
+          ...(from
+            ? { answeringFrom: from }
+            : deskConfirms
+              ? { answeringFrom: 'this computer' }
+              : {}),
+        };
+      }),
     });
   });
 
@@ -596,15 +609,17 @@ export function createApprovalsRoutes(
       const run = () => grantAnswer(id, person, answer, expectedHash);
       return key ? serializedAlways(key, run) : run();
     };
-    // A settings card that changes a front-door setting is confirmed at this
-    // computer too, the bar the settings page's own write meets (Security M1 on #3878).
-    const frontDoorAtDesk =
-      first?.capabilityId === CONFIG_PATCH_CAPABILITY &&
-      configPatchCardTouchesFrontDoor(id) &&
-      !deskGoesOnWithoutSheet(authority.facts);
+    // At this computer two answers are confirmed too: Always allow, which saves a
+    // standing rule like the tool prompt's, and a settings card that changes a
+    // front-door setting, the bar the settings page's own write meets (Security
+    // M1 on #3878). With no owner yet there is no password, so the desk goes on.
+    const holdsAtDesk =
+      !deskGoesOnWithoutSheet(authority.facts) &&
+      (answer === 'always' ||
+        (first?.capabilityId === CONFIG_PATCH_CAPABILITY && configPatchCardTouchesFrontDoor(id)));
     if (
       !grantsPower({ kind: 'capability-approve' }) ||
-      (isAtThisComputer(authority.facts) && !frontDoorAtDesk)
+      (isAtThisComputer(authority.facts) && !holdsAtDesk)
     ) {
       const result = await apply(authority);
       return c.json(result.body as never, result.status as ContentfulStatusCode);

@@ -4,6 +4,7 @@ covers:
   - 'fix(approvals): confirm remote answers per request'
   - 'fix(approvals): preserve streamed request cards'
   - 'fix(approvals): confirm lasting decision effects'
+  - 'fix(approvals): confirm Always allow on a capability card at the desk'
 ---
 
 ### Security

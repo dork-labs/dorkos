@@ -26,12 +26,20 @@ const MAX_NOTED_CARDS = 500;
 const noted = new Map<string, readonly string[]>();
 
 /**
- * Note the front-door paths a settings card's patch changes.
+ * Note the front-door paths a settings card's patch changes. The gate calls
+ * this for every card it raises; any other capability is ignored here.
  *
  * @param approvalId - The card's approval id.
- * @param patch - The patch the agent asked to apply.
+ * @param capabilityId - The capability the card asks for.
+ * @param input - The call's input; a settings card's carries `patch`.
  */
-export function noteConfigPatchCard(approvalId: string, patch: unknown): void {
+export function noteConfigPatchCard(
+  approvalId: string,
+  capabilityId: string,
+  input: unknown
+): void {
+  if (capabilityId !== CONFIG_PATCH_CAPABILITY) return;
+  const patch = (input as { patch?: unknown } | null)?.patch;
   noted.delete(approvalId);
   noted.set(approvalId, frontDoorPathsOf(findOperatorOnlyPaths(patch)));
   while (noted.size > MAX_NOTED_CARDS) {
