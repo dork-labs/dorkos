@@ -4,8 +4,7 @@ title: credential-free-build's PR leg, now always cold, must not slow past a cei
 kind: experiment
 status: proposed
 actor: agent
-gates:
-  - wf.credential-free-build.credential-free-build
+gates: []
 prs: []
 hypothesis:
   metric: 'gate.wf.credential-free-build.credential-free-build.duration_p90@pull_request'
@@ -32,3 +31,5 @@ minutes over today, which is what losing the warm restore could plausibly cost.
 **Revert** the turbo half of 261117-141554 (put back a restore, and a save only `main` can
 make, never the old per-PR save) if the PR leg's p90 sits above 18.0 minutes over the after
 window, or its p50 rises by more than 2 minutes.
+
+**Why `gates: []`.** 261117-141554 lists the same gate and lands in the same PR, so listing it here too would make that entry a confounder of this one and the ceiling would always come out `inconclusive` (the confounder filter in `packages/ci-steward/src/verdicts.ts`). The guard 260927-170236 does the same.
