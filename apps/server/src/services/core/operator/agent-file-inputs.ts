@@ -17,6 +17,15 @@ import { marksOf } from '../turn-power/turn-levels.js';
 import { marksHold } from '../turn-power/turn-marks.js';
 import { choseFullAutonomy } from '../turn-power/full-autonomy.js';
 
+/** Agent selector shared by capabilities that address one agent by id or directory. */
+export const agentSelectorSchema = {
+  agent_id: z.string().optional().describe('Agent ULID to target (mutually exclusive with cwd)'),
+  cwd: z
+    .string()
+    .optional()
+    .describe('Agent project directory to target (mutually exclusive with agent_id)'),
+};
+
 /** `update_agent_boundaries`' fields, spread into its input schema. */
 export const AGENT_BOUNDARY_INPUTS = {
   nopeContent: z

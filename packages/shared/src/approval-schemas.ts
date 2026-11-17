@@ -40,10 +40,22 @@ export const APPROVAL_CONSEQUENCE_MAX_LENGTH = 40;
  * that is `NOPE_MAX_CHARS` (2,000), and the headroom is deliberate: a detail
  * that arrived truncated would recreate the very defect the field exists to fix,
  * so the cap has to sit clear of the largest declared payload rather than at it.
- * `ApprovalService.request` truncates to this, and a capability whose detail
- * field could exceed it must lower its own bound first.
+ * Card builders that write their own detail (Marketplace, dev links, doc
+ * routes) aim at this. A capability's `approvalDetailField` may run to
+ * {@link APPROVAL_DETAIL_STORED_MAX_LENGTH} instead.
  */
 export const APPROVAL_DETAIL_MAX_LENGTH = 4000;
+
+/**
+ * Longest detail an approval stores and a card parses (DOR-4266).
+ *
+ * Past {@link APPROVAL_DETAIL_MAX_LENGTH} because an agent's setup file is the
+ * decision itself and a real hook runs past 4,000 characters: cutting it would
+ * recreate the defect the field exists to fix. `ApprovalService.request`
+ * truncates to this, so a capability whose detail field could exceed it must
+ * lower its own bound first, with room for redaction markers.
+ */
+export const APPROVAL_DETAIL_STORED_MAX_LENGTH = 16_000;
 
 /**
  * Longest a resolved subject label may be.
@@ -491,18 +503,18 @@ export const PendingApprovalSchema = z
     /**
      * The one argument a person has to read IN FULL before answering, verbatim.
      *
-     * Present only for a capability that declares `approvalDetailField` — one
-     * today, the boundaries write, whose whole point is the text. Everything
+     * Present only for a capability that declares `approvalDetailField` — the
+     * boundaries write and the setup-file write, whose whole point is the text. Everything
      * else says what it needs to say in {@link summary}, and a card with no
      * detail renders exactly as it always has.
      *
      * Rendered as-is rather than as part of a sentence, so it carries no claim
      * about itself: it is the argument, shown, and the summary above says what
      * would be done with it. Like the summary it is swept for token-shaped runs
-     * and capped ({@link APPROVAL_DETAIL_MAX_LENGTH}) where it is stored, never
-     * at render time.
+     * and capped ({@link APPROVAL_DETAIL_STORED_MAX_LENGTH}) where it is stored,
+     * never at render time.
      */
-    detail: z.string().max(APPROVAL_DETAIL_MAX_LENGTH).optional(),
+    detail: z.string().max(APPROVAL_DETAIL_STORED_MAX_LENGTH).optional(),
     /**
      * A Marketplace install or update whose full list is too long for
      * {@link detail} (DOR-3070): the card renders this instead of the detail,

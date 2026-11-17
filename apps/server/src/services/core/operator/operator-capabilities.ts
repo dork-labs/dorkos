@@ -27,8 +27,10 @@ import { EFFORT_LEVELS } from '@dorkos/shared/constants';
 import {
   AGENT_BOUNDARY_INPUTS,
   AGENT_FILE_INPUTS,
+  agentSelectorSchema,
   refuseOutsiderAgentFiles,
 } from './agent-file-inputs.js';
+import { defineUpdateAgentConfig } from './agent-config.js';
 import { isSecretInputKey } from '@dorkos/shared/capabilities';
 
 import { defineCapability, type CapabilityDomain } from '../capabilities/index.js';
@@ -209,15 +211,6 @@ function sidebarItemsSchema(what: string) {
         'anything is written, and a name DorkOS does not know refuses the whole call.'
     );
 }
-
-/** Agent selector shared by capabilities that address one agent by id or directory. */
-const agentSelectorSchema = {
-  agent_id: z.string().optional().describe('Agent ULID to target (mutually exclusive with cwd)'),
-  cwd: z
-    .string()
-    .optional()
-    .describe('Agent project directory to target (mutually exclusive with agent_id)'),
-};
 
 /**
  * The self-service & observability domain: read-only observability capabilities
@@ -678,6 +671,7 @@ export const operatorDomain: CapabilityDomain = {
           )
         ),
     }),
+    defineUpdateAgentConfig(requireOperatorDeps),
     defineCapability({
       id: 'operator.config_patch',
       title: 'Update configuration',
