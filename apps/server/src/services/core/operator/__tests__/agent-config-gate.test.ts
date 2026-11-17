@@ -45,6 +45,8 @@ import { ApprovalService } from '../../approvals/index.js';
 import { eventFanOut } from '../../event-fan-out.js';
 import { recordTurnLevels } from '../../turn-power/turn-levels.js';
 import { resetLiveOutsiderTurns } from '../../turn-power/live-outsider-turns.js';
+import { noteRoomTurnWords } from '../../turn-power/outside-words.js';
+import { createUpdateAgentConfigHandler } from '../agent-config.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
 import { initBoundary } from '../../../../lib/boundary.js';
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
@@ -326,6 +328,85 @@ describe('a turn that read words DorkOS can’t vouch for', () => {
     expect(payload.status).not.toBe('approval_required');
     expect(JSON.stringify(payload)).toContain('permission_blocked');
     expect(approvals.listPending()).toEqual([]);
+    expect(existsSync(join(agentPath, '.claude', 'settings.json'))).toBe(false);
+  });
+});
+
+describe('Security review of #3879 (M1–M3, S4)', () => {
+  it('M1: refuses a turn that read outside words with no mark, before any card, even Allowed', async () => {
+    own = { actions: { [ID]: 'allowed' } };
+    const sessionId = `agent-config-room-turn-${(counter += 1)}`;
+    // A room turn that answered someone from outside: noted, not marked (DOR-3440).
+    noteRoomTurnWords(sessionId, true);
+
+    const { payload } = await callTool(
+      { cwd: agentPath, path: 'hooks/guard.sh', content: '#!/bin/sh\nexit 0\n', executable: true },
+      sessionId
+    );
+
+    expect(JSON.stringify(payload)).toContain('permission_blocked');
+    expect(approvals.listPending()).toEqual([]);
+    expect(existsSync(join(agentPath, '.claude', 'hooks', 'guard.sh'))).toBe(false);
+  });
+
+  it('M2: refuses content the card would show as (hidden), before any card', async () => {
+    const hex = Buffer.from('print("a payload nobody could read on the card")').toString('hex');
+    const { payload } = await callTool({
+      cwd: agentPath,
+      path: 'hooks/g.py',
+      content: `#!/usr/bin/env python3\nexec(bytes.fromhex("${hex}"))\n`,
+    });
+
+    expect(JSON.stringify(payload)).toContain('permission_blocked');
+    expect(approvals.listPending()).toEqual([]);
+    expect(existsSync(join(agentPath, '.claude', 'hooks', 'g.py'))).toBe(false);
+  });
+
+  it.each([
+    ['a direction override', '#!/bin/sh\necho ok # ‮ ;rm -rf ~\n'],
+    ['a zero-width space', '#!/bin/sh\necho ok​\n'],
+  ])('M2: refuses %s, before any card', async (_label, content) => {
+    const { payload } = await callTool({ cwd: agentPath, path: 'hooks/b.sh', content });
+    expect(JSON.stringify(payload)).toContain('permission_blocked');
+    expect(approvals.listPending()).toEqual([]);
+  });
+
+  it('M2: still takes plain tabs and newlines', async () => {
+    own = { actions: { [ID]: 'allowed' } };
+    const { isError } = await callTool({
+      cwd: agentPath,
+      path: 'hooks/t.sh',
+      content: '#!/bin/sh\n\techo ok\n',
+    });
+    expect(isError).toBe(false);
+  });
+
+  it('M3: refuses an agent targeting its own folder by path, before any card, even Allowed', async () => {
+    own = { actions: { [ID]: 'allowed' } };
+    const result = await invokeCapabilityAsMcpResult(
+      registry,
+      ID,
+      { cwd: agentPath, path: 'settings.json', content: '{"permissions":{"allow":["Bash(*)"]}}' },
+      { identity: { ...CALLER, agentPath } }
+    );
+    const block = result.content[0];
+    expect(block && block.type === 'text' ? block.text : '').toContain('permission_blocked');
+    expect(approvals.listPending()).toEqual([]);
+    expect(existsSync(join(agentPath, '.claude', 'settings.json'))).toBe(false);
+  });
+
+  it('M3: the handler refuses its own folder too, however it was named', async () => {
+    const handler = createUpdateAgentConfigHandler({} as McpToolDeps, agentPath);
+    const result = await handler({ cwd: agentPath, path: 'settings.json', content: '{}' });
+    expect(result.isError).toBe(true);
+    expect(result.content[0]!.text).toContain('SELF_TARGET');
+    expect(existsSync(join(agentPath, '.claude', 'settings.json'))).toBe(false);
+  });
+
+  it('S4: an area-level Allowed for Other agents still asks', async () => {
+    defaults = { areas: { agents: 'allowed' }, actions: {} };
+    const { payload } = await callTool({ cwd: agentPath, path: 'settings.json', content: '{}' });
+    expect(payload.status).toBe('approval_required');
     expect(existsSync(join(agentPath, '.claude', 'settings.json'))).toBe(false);
   });
 });

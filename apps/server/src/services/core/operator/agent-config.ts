@@ -27,7 +27,7 @@
  * @module services/core/operator/agent-config
  */
 import { randomBytes } from 'node:crypto';
-import { lstat, mkdir, rename, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 import { readManifest } from '@dorkos/shared/manifest';
@@ -36,6 +36,9 @@ import { unwrapMcpEnvelope } from '../capabilities/mcp-envelope.js';
 import { registerPreGateRefusal } from '../capabilities/pre-gate-refusals.js';
 import { marksOf } from '../turn-power/turn-levels.js';
 import { marksHold } from '../turn-power/turn-marks.js';
+import { chatReadOutsideWords } from '../turn-power/chat-outside-words.js';
+import { redactSecretsInText } from '../approvals/approval-summary.js';
+import { hasHiddenCardCharacters } from '../../harness/hook-card.js';
 import { validateBoundaryOrDorkHome } from '../../../lib/boundary.js';
 import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js';
 import { agentSelectorSchema } from './agent-file-inputs.js';
@@ -103,12 +106,64 @@ export function agentConfigSegments(relPath: unknown): string[] | string {
   return segments;
 }
 
+/** What a person reads when the file holds something the card can't show as written. */
+const HIDDEN_CONTENT_REFUSAL =
+  'The card would hide part of this file: a long hex or token-shaped run, or an invisible ' +
+  'character. Write it out plainly so a person can read every byte.';
+
+/** What an agent reads when it targets its own setup. */
+export const SELF_TARGET_REFUSAL =
+  "An agent can't change its own setup files through DorkOS. Ask the person to change them " +
+  "in this agent's settings.";
+
+/**
+ * Why the card would not show `content` exactly as it is written, or `null`.
+ * The card's detail is swept for token-shaped runs (`redactSecretsInText`), so a
+ * hex-encoded payload would read as "(hidden)" while the raw bytes land on disk;
+ * invisible and direction-changing characters reach the card unseen. Package
+ * cards refuse both the same way (`cannotAllowCard`).
+ *
+ * @param content - The file content.
+ */
+export function agentConfigContentProblem(content: unknown): string | null {
+  if (typeof content !== 'string') return null;
+  if (redactSecretsInText(content) !== content) return HIDDEN_CONTENT_REFUSAL;
+  if (hasHiddenCardCharacters(content.replace(/[\n\t]/g, ''))) return HIDDEN_CONTENT_REFUSAL;
+  return null;
+}
+
+/** Whether a folder the caller named by path is its own agent folder. */
+function isOwnFolder(target: unknown, ownAgentPath: string | undefined): boolean {
+  if (typeof target !== 'string' || !path.isAbsolute(target) || !ownAgentPath) return false;
+  return path.resolve(target) === path.resolve(ownAgentPath);
+}
+
+/** A folder's real path, or its resolved path when it can't be read (a test's made-up home). */
+async function realOrResolved(p: string): Promise<string> {
+  try {
+    return await realpath(p);
+  } catch {
+    return path.resolve(p);
+  }
+}
+
 // Before the gate, so no level, card or saved Allowed reaches a write that
-// could leave the folder or that a stranger's words asked for (DOR-4060).
+// could leave the folder, that outside words asked for, that the card would
+// not show whole, or that is the caller raising its own power (DOR-4060).
 registerPreGateRefusal(ID, (input, caller) => {
-  if (marksHold(marksOf(caller.sessionId, caller.agentPath))) return OUTSIDER_REFUSAL;
-  const segments = agentConfigSegments((input as { path?: unknown } | null)?.path);
-  return typeof segments === 'string' ? segments : null;
+  // The wider signal DOR-4587 reads: a mark, a room turn that answered a
+  // stranger, an outside launch origin, or a hop from any of those.
+  if (
+    marksHold(marksOf(caller.sessionId, caller.agentPath)) ||
+    chatReadOutsideWords(caller.sessionId, caller.agentPath)
+  ) {
+    return OUTSIDER_REFUSAL;
+  }
+  const args = (input ?? {}) as { path?: unknown; content?: unknown; cwd?: unknown };
+  if (isOwnFolder(args.cwd, caller.agentPath)) return SELF_TARGET_REFUSAL;
+  const segments = agentConfigSegments(args.path);
+  if (typeof segments === 'string') return segments;
+  return agentConfigContentProblem(args.content);
 });
 
 /** A typed refusal the handler returns. */
@@ -143,12 +198,15 @@ async function ensureRealDir(dir: string): Promise<string | null> {
  * and replace it atomically.
  *
  * @param deps - Tool deps (`meshCore` for `agent_id` resolution).
+ * @param callerAgentPath - The calling agent's verified home, when one called.
  */
-export function createUpdateAgentConfigHandler(deps: McpToolDeps) {
+export function createUpdateAgentConfigHandler(deps: McpToolDeps, callerAgentPath?: string) {
   return async (args: UpdateAgentConfigArgs): Promise<OperatorToolResult> => {
     try {
       const segments = agentConfigSegments(args.path);
       if (typeof segments === 'string') return refuse('VALIDATION', segments);
+      const hidden = agentConfigContentProblem(args.content);
+      if (hidden) return refuse('VALIDATION', hidden);
       if (args.path.endsWith('.json')) {
         try {
           JSON.parse(args.content);
@@ -157,6 +215,10 @@ export function createUpdateAgentConfigHandler(deps: McpToolDeps) {
         }
       }
       const agentPath = await validateBoundaryOrDorkHome(resolveAgentPath(deps, args));
+      // The backstop for a target named by agent_id, which the pre-gate can't resolve.
+      if (callerAgentPath && agentPath === (await realOrResolved(callerAgentPath))) {
+        return refuse('SELF_TARGET', SELF_TARGET_REFUSAL);
+      }
       const manifest = await readManifest(agentPath);
       if (!manifest) return refuse('NOT_FOUND', `No agent at ${agentPath}.`);
 
@@ -213,7 +275,8 @@ export function createUpdateAgentConfigHandler(deps: McpToolDeps) {
 export function defineUpdateAgentConfig(requireDeps: (deps: CapabilityDeps) => McpToolDeps) {
   return defineCapability({
     id: ID,
-    title: "Change an agent's setup file",
+    // The card's first line, so it says what the file does once written.
+    title: "Change another agent's setup file, which runs as that agent",
     description:
       "Write one setup file under an agent's .claude folder: a hook, settings.json or a skill. " +
       'Use it for another agent, whose setup your own file tools and shell can’t change. path ' +
@@ -245,6 +308,8 @@ export function defineUpdateAgentConfig(requireDeps: (deps: CapabilityDeps) => M
     }),
     output: z.unknown(),
     approvalDisplayFields: ['path', 'agent_id', 'cwd', 'executable'],
+    // The card names the agent, not its id (DOR-1929).
+    approvalSubject: { field: 'agent_id', kind: 'agent' },
     // The file itself is the decision, so it rides the card's detail whole,
     // never the sentence's 80-character preview.
     approvalDetailField: 'content',
@@ -255,9 +320,12 @@ export function defineUpdateAgentConfig(requireDeps: (deps: CapabilityDeps) => M
         annotations: { idempotentHint: true },
       },
     },
-    invoke: async (deps, input) =>
+    invoke: async (deps, input, context) =>
       unwrapMcpEnvelope(
-        await createUpdateAgentConfigHandler(requireDeps(deps))(input as UpdateAgentConfigArgs)
+        await createUpdateAgentConfigHandler(
+          requireDeps(deps),
+          context.identity?.agentPath
+        )(input as UpdateAgentConfigArgs)
       ),
   });
 }
