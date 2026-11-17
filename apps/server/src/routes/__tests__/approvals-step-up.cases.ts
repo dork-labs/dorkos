@@ -186,10 +186,17 @@ export function registerApprovalStepUpCases(): void {
         expect(approvals.answerScope(ticket.approvalId)?.state).toBe('granted');
       });
 
-      it.each([undefined, 'own-tunnel', 'managed'] as const)(
-        'holds an Allow-once of a front-door settings card (%s) and writes nothing',
-        async (via) => {
-          const ticket = settingsCard({ mcp: { apiKey: 'made-up-key-value' } });
+      it.each([
+        [undefined, { tunnel: { auth: { mode: 'open' } } }],
+        ['own-tunnel', { tunnel: { auth: { mode: 'open' } } }],
+        ['managed', { tunnel: { auth: { mode: 'open' } } }],
+        [undefined, { mcp: { apiKey: 'made-up-key-value' } }],
+        ['own-tunnel', { mcp: { apiKey: 'made-up-key-value' } }],
+        ['managed', { mcp: { apiKey: 'made-up-key-value' } }],
+      ] as const)(
+        'holds an Allow-once of a front-door settings card (%s, %o) and writes nothing',
+        async (via, patch) => {
+          const ticket = settingsCard(patch);
           const held = await deskGrant(ticket.approvalId, via);
           expect(held.status).toBe(428);
           expect(held.body.heldActionId).toEqual(expect.any(String));
