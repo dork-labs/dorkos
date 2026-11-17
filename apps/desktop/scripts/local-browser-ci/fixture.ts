@@ -103,37 +103,45 @@ async function main(): Promise<void> {
     const popup = extras ? receiptFor(`${phase}-popup`) : undefined;
     // Native host navigation is the test witness, never a production agent channel.
     await guest.loadURL(`${origin}/?phase=${phase}${extras ? '&extras=1' : ''}`);
-    assertIdentity(await receipt, attached ? 'agent' : 'person');
+    assertIdentity(`${phase}/page`, await receipt, attached ? 'agent' : 'person');
     assert.equal(guest.debugger.isAttached(), attached);
     // A worker and a popup are never driven: the agent's transport is the page's only.
-    if (worker) assertIdentity(await worker, 'worker');
-    if (popup) assertIdentity(await popup, 'person');
+    if (worker) assertIdentity(`${phase}/worker`, await worker, 'worker');
+    if (popup) assertIdentity(`${phase}/popup`, await popup, 'person');
   };
   const assertIdentity = (
+    leg: string,
     found: { headers: Record<string, unknown>; js: Record<string, unknown> },
     who: 'agent' | 'person' | 'worker'
   ) => {
+    // A failure names its leg and shows only the user agent and the Sec-CH-UA* hints:
+    // other request headers can carry cookies or the bridge's token.
+    const hints = Object.fromEntries(
+      Object.entries(found.headers).filter(([name]) => name.startsWith('sec-ch-ua'))
+    );
+    const seen = `${leg}: ua=${JSON.stringify(found.headers['user-agent'])} js.ua=${JSON.stringify(found.js.ua)} hints=${JSON.stringify(hints)} brands=${JSON.stringify(found.js.brands)}`;
+    const major = process.versions.chrome.split('.')[0];
     for (const ua of [found.headers['user-agent'], found.js.ua]) {
-      assert.equal(typeof ua, 'string');
-      assert.doesNotMatch(String(ua), /electron|dorkos/i);
-      assert.match(
-        String(ua),
-        new RegExp(`Chrome/${process.versions.chrome.split('.')[0]}\\.0\\.0\\.0`)
-      );
+      assert.equal(typeof ua, 'string', seen);
+      assert.doesNotMatch(String(ua), /electron|dorkos/i, seen);
+      assert.match(String(ua), new RegExp(`Chrome/${major}\\.0\\.0\\.0`), seen);
     }
     const brands = found.js.brands as { brand: string; version: string }[];
     assert(
-      brands?.some(
-        (item) =>
-          item.brand === 'Chromium' && item.version === process.versions.chrome.split('.')[0]
-      )
+      brands?.some((item) => item.brand === 'Chromium' && item.version === major),
+      seen
     );
-    assert(!brands.some((item) => /electron|dorkos|Google Chrome/i.test(item.brand)));
-    const hint = String(found.headers['sec-ch-ua']);
-    assert(hint.includes(`"Chromium";v="${process.versions.chrome.split('.')[0]}"`));
-    assert.doesNotMatch(hint, /electron|dorkos|Google Chrome/i);
-    assert.equal(found.js.platform, 'macOS');
-    if (who === 'person') assert.equal(found.js.webdriver, false);
+    assert(!brands.some((item) => /electron|dorkos|Google Chrome/i.test(item.brand)), seen);
+    const hint = found.headers['sec-ch-ua'];
+    // Chromium sends no Sec-CH-UA* on a service worker's own fetch (Desktop Smoke run
+    // 44184242443: hints={} there, a plain UA and brands). An absent hint can't name the
+    // app, so a worker's must only be clean when present; a page's must be present too.
+    if (who !== 'worker' || hint !== undefined) {
+      assert(String(hint).includes(`"Chromium";v="${major}"`), seen);
+      assert.doesNotMatch(String(hint), /electron|dorkos|Google Chrome/i, seen);
+    }
+    assert.equal(found.js.platform, 'macOS', seen);
+    if (who === 'person') assert.equal(found.js.webdriver, false, seen);
   };
   await observe('agent-before', true);
   await call('detach');
