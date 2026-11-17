@@ -31,6 +31,8 @@ export function registerCurrentInputContractTests({ payloadOf }: McpContractHarn
     it('enumerates the complete current MCP declarations and every default node', () => {
       // These are measured source-census baselines, not a production allowlist.
       // A declaration change must explain its real census drift here.
+      // +1 total/relevant/ordinary/inSession/external for
+      // `operator.update_agent_config` (DOR-4266), which has no defaults.
       const topDefaults = relevant.map(
         (cap) =>
           Object.values(capabilityInputObject(cap).shape).filter(
@@ -48,11 +50,11 @@ export function registerCurrentInputContractTests({ payloadOf }: McpContractHarn
         topDefaultFields: topDefaults.reduce((a, b) => a + b, 0),
         topDefaultCapabilities: topDefaults.filter(Boolean).length,
       }).toEqual({
-        total: 131,
-        relevant: 129,
-        ordinary: 117,
-        inSession: 116,
-        external: 84,
+        total: 132,
+        relevant: 130,
+        ordinary: 118,
+        inSession: 117,
+        external: 85,
         private: 12,
         defaultNodes: 29,
         topDefaultFields: 15,
