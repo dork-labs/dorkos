@@ -61,9 +61,9 @@ const buttonVariants = cva(
       variant: {
         primary: PRIMARY,
         secondary: SECONDARY,
-        /** @deprecated Use `primary`. */
+        /** @deprecated since 0.135, remove in 0.155. Use `primary`. */
         default: PRIMARY,
-        /** @deprecated Use `secondary`. */
+        /** @deprecated since 0.135, remove in 0.155. Use `secondary`. */
         outline: SECONDARY,
         destructive:
           'bg-dui-destructive-fill text-dui-destructive-foreground hover:bg-dui-destructive-fill-hover aria-disabled:hover:bg-dui-destructive-fill',
