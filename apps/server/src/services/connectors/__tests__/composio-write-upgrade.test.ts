@@ -4,16 +4,22 @@ import {
   activityEvents,
   connectionAccessLevels,
   connectionOperationGrants,
+  connectorManagedAuthorityOutbox,
   connectorOperationRevisions,
   connections,
   eq,
   notifications,
 } from '@dorkos/db';
+import { ConnectorProviderInstanceIdSchema } from '@dorkos/shared/connector-schemas';
 import { createConnectorAccess } from '../access/connector-access.js';
-import { upgradeComposioWriteLevels } from '../access/composio-write-upgrade.js';
+import {
+  upgradeComposioWriteLevels,
+  WRITE_UPGRADE_SET_ASIDE,
+} from '../access/composio-write-upgrade.js';
 import {
   CONNECTION_ID,
   grantLevels,
+  hostedRef,
   levelHarness,
   liveActions,
   NOW,
@@ -201,6 +207,65 @@ describe('one-time Composio write upgrade', () => {
     await h.applyPending();
     expect(storedLevels(h.db)).toEqual(['reader:read', 'writer:read']);
     expect(liveActions(h.db, { agentId: 'writer' })).toEqual(['gmail.list:read']);
+  });
+  // A relink resends commands the old link never applied. What the upgrade set
+  // aside it took away on purpose, so a resend must not bring it back, whether
+  // the upgrade's clock reads later, the same or earlier than the command's
+  // (DOR-4510). Before the fix only a strict timestamp comparison stopped it.
+  it.each([
+    ['later than', '2026-11-15T23:00:00.000Z'],
+    ['the same as', NOW.toISOString()],
+    ['earlier than', '2026-09-29T11:00:00.000Z'],
+  ])(
+    'keeps writes away after a relink, with the upgrade clock %s the command',
+    async (_when, upgradedAt) => {
+      const h = await setup('linear', 'dorkos-managed', true);
+      h.answer('pending');
+      h.db
+        .update(connections)
+        .set({ toolkit: 'gmail' })
+        .where(eq(connections.id, CONNECTION_ID))
+        .run();
+      await grantLevels(h);
+      h.db
+        .update(connections)
+        .set({ toolkit: 'linear' })
+        .where(eq(connections.id, CONNECTION_ID))
+        .run();
+      expect(upgradeComposioWriteLevels(h.db, upgradedAt)).toBe(1);
+      h.answer('applied');
+      const sent = h.submitted.length;
+      const { providerInstanceId } = h.db
+        .select({ providerInstanceId: connections.providerInstanceId })
+        .from(connections)
+        .where(eq(connections.id, CONNECTION_ID))
+        .get()!;
+      await h.sync!.restageAfterRelink(
+        ConnectorProviderInstanceIdSchema.parse(providerInstanceId),
+        new AbortController().signal
+      );
+      await h.applyPending();
+      expect(storedLevels(h.db)).toEqual(['reader:read', 'writer:read']);
+      expect(liveActions(h.db, { agentId: 'writer' })).toEqual(['gmail.list:read']);
+      const resent = JSON.stringify(h.submitted.slice(sent));
+      for (const slug of ['gmail.send', 'gmail.delete']) {
+        expect(resent).not.toContain(hostedRef(slug, 'write'));
+        expect(resent).not.toContain(hostedRef(slug, 'destructive'));
+      }
+    }
+  );
+  it('marks each hosted command it sets aside with its own reason', async () => {
+    const h = await setup('linear', 'dorkos-managed', true);
+    h.answer('pending');
+    await grantLevels(h);
+    upgradeComposioWriteLevels(h.db, NOW.toISOString());
+    const setAside = h.db
+      .select({ safeReason: connectorManagedAuthorityOutbox.safeReason })
+      .from(connectorManagedAuthorityOutbox)
+      .where(eq(connectorManagedAuthorityOutbox.state, 'superseded'))
+      .all();
+    expect(setAside.length).toBeGreaterThan(0);
+    expect(setAside.every((row) => row.safeReason === WRITE_UPGRADE_SET_ASIDE)).toBe(true);
   });
   it('leaves other ways of connecting untouched', async () => {
     const h = await setup('linear', 'nango');

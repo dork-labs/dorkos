@@ -52,6 +52,7 @@ import {
   isFollowerCommand,
 } from '../execution/access-levels.js';
 import { everyAgentGrantSubject } from '../every-agent-grants.js';
+import { WRITE_UPGRADE_SET_ASIDE } from '../access/composio-write-upgrade.js';
 import { rejectionReason } from './managed-authority-rejection.js';
 import type {
   ConnectorManagedLifecyclePort,
@@ -937,6 +938,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
         subjectId: connectorManagedAuthorityOutbox.subjectId,
         state: connectorManagedAuthorityOutbox.state,
         rejectionCode: connectorManagedAuthorityOutbox.rejectionCode,
+        safeReason: connectorManagedAuthorityOutbox.safeReason,
         generation: connectorManagedAuthorityOutbox.executionConfigGeneration,
         requestJson: connectorManagedAuthorityOutbox.requestJson,
         compactedAt: connectorManagedAuthorityOutbox.compactedAt,
@@ -2099,6 +2101,7 @@ function sendAgain(
   scope: {
     readonly state: 'pending' | 'applied' | 'rejected' | 'superseded';
     readonly rejectionCode: string | null;
+    readonly safeReason: string | null;
     readonly generation: number;
   },
   why: 'relinked' | 'confirmed',
@@ -2106,19 +2109,16 @@ function sendAgain(
 ): boolean {
   if (scope.state === 'rejected' && scope.rejectionCode === 'connection_unavailable') return false;
   if (why === 'confirmed') return scope.state === 'rejected';
-  if (scope.state === 'rejected') {
-    return (
-      scope.rejectionCode === 'unauthorized' ||
-      scope.rejectionCode === 'permission_upgrade_required'
-    );
-  }
+  if (scope.state === 'rejected') return RESENT_REFUSALS.has(scope.rejectionCode ?? '');
   // Staged under the old link and never applied: under the new one it would
-  // only be set aside as superseded, and the access it carried lost.
-  return (
-    scope.state === 'superseded' ||
-    (scope.state === 'pending' && scope.generation !== currentGeneration)
-  );
+  // only be set aside as superseded, and the access it carried lost. What the
+  // write upgrade set aside it took away on purpose, so it stays aside (DOR-4510).
+  if (scope.state === 'superseded') return scope.safeReason !== WRITE_UPGRADE_SET_ASIDE;
+  return scope.state === 'pending' && scope.generation !== currentGeneration;
 }
+
+/** Hosted refusals a new link can cure, so the refused command is sent again. */
+const RESENT_REFUSALS = new Set(['unauthorized', 'permission_upgrade_required']);
 
 /** Whether a stored lifecycle command asked to resume the account. */
 function isResume(requestJson: string): boolean {
