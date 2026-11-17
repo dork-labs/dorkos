@@ -88,6 +88,11 @@ describe('pay-per-use apps, by their Composio toolkit names (DOR-4597)', () => {
     const known = new Set([...catalog.toolkits.map((t) => t.slug), ...keptOffCatalog]);
     expect([...PAID_BY_DEFAULT_TOOLKITS].filter((toolkit) => !known.has(toolkit))).toEqual([]);
   });
+
+  it('keeps every toolkit the catalog snapshot records as paid', () => {
+    const dropped = catalog.toolkits.filter((t) => !PAID_BY_DEFAULT_TOOLKITS.has(t.slug));
+    expect(dropped.map((t) => t.slug)).toEqual([]);
+  });
 });
 
 describe('accessLevelRevisionIds with a paid operation', () => {
