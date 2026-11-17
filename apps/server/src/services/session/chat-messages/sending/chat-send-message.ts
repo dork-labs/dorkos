@@ -17,6 +17,7 @@ import { resolveChatTarget, replyTargetOf, type ChatTarget } from '../chat-targe
 import { resolveChatSeatTarget } from './chat-seat-target.js';
 import { renderSeatMessage, seatCarryOf } from '../../../rooms/handoff/seat-message-prompt.js';
 import { CHAT_SUMMARY_MAX } from './chat-message-limits.js';
+import { redirectedChatReceipt } from '../chat-message-receipt.js';
 
 interface SendOptions {
   deps: ChatMessageServiceDeps;
@@ -127,12 +128,7 @@ export async function sendChatMessage(options: SendOptions): Promise<ChatSendRec
   deps.emitActivity(receipt.chatId);
   if (target.redirectedReplyTo) {
     const asker = deps.store.get(target.redirectedReplyTo)?.fromAgentName ?? 'that agent';
-    return {
-      ...receipt,
-      note:
-        `That chat was a scheduled run, so your answer went to ${asker}'s direct chat ` +
-        'with you, where it will see it.',
-    };
+    return redirectedChatReceipt(receipt, asker);
   }
   return receipt;
 }

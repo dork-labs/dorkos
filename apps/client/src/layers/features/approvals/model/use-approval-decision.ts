@@ -37,6 +37,8 @@ export function useGrantApproval() {
       ),
     meta: { suppressErrorToast: true },
     onError: (error, variables) => {
+      // A paid run the monthly limit stopped says so on its own card (DOR-4204).
+      if ((error as { code?: unknown } | null)?.code === 'SPEND_LIMIT') return;
       toast.error(describeDecisionRefusal(error, variables.answer === 'always').message);
     },
     onSettled: (_data, _error, variables) => {

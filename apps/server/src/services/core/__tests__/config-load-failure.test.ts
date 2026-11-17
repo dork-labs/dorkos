@@ -13,8 +13,8 @@
  *
  * 1. A genuinely bad FILE is still replaced, and still salvaged from.
  * 2. A file the OS refused is never touched, however long the refusal lasts.
- * 3. A deterministic failure that is neither still recovers, rather than
- *    blocking every boot from here on.
+ * 3. A deterministic failure that reaches Conf and is neither still recovers,
+ *    rather than blocking every boot from here on.
  */
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import fs from 'fs';
@@ -296,16 +296,16 @@ describe('a genuinely damaged config is still replaced', () => {
 /**
  * `conf` runs the migration chain inside its constructor, and feeds the file's
  * own `__internal__.migrations.version` straight into `semver`
- * (`_shouldPerformMigration`). Nothing validates that value first: it sits
- * outside the Ajv schema, and `conf` skips validation while migrating. So one
- * damaged byte in a file that is still valid JSON and still schema-valid throws
- * a bare `TypeError` from a place the load-failure allowlist never sees.
+ * (`_shouldPerformMigration`). The release upgrade guard validates it first
+ * and refuses an unreadable stamp without changing the file (DOR-4341).
  *
- * Treating that as "could not read" would block every future boot while telling
- * the person their file was fine and to try again. These are the three shapes
- * that reproduce it.
+ * This suite uses the raw dev-tree version, 0.0.0, which skips that guard.
+ * The 0.115 intermediate release skips it too. In those cases, the stamp sits
+ * outside Ajv validation and an unreadable one reaches Conf's semver check,
+ * throwing a bare `TypeError`. The fallback still backs up and recovers these
+ * files; this is not the policy for a current release above 0.115.
  */
-describe('a file that breaks the migration chain is recovered, not left to block boot', () => {
+describe('dev-tree migration recovery when the release upgrade guard is skipped', () => {
   const BROKEN_VERSIONS: Array<[string, unknown]> = [
     ['one flipped byte', '0.5@.0'],
     ['a number instead of a version', 57],

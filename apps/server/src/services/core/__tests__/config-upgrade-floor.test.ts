@@ -9,6 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { ConfigBootError, ConfigManager, ConfigUnreadableError } from '../config-manager.js';
 import { ConfigUpgradeRequiredError } from '../config/upgrade-floor.js';
+import { ConfigRetiredSettingsError, ConfigVersionUnreadableError } from '../config/boot-errors.js';
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -17,7 +18,7 @@ afterEach(() => {
 });
 
 function seed(
-  version?: string,
+  version?: unknown,
   extra: Record<string, unknown> = {}
 ): { dir: string; file: string; before: Buffer } {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-config-floor-'));
@@ -79,14 +80,84 @@ describe('config upgrade floor through a real manager', () => {
     expect(fs.readdirSync(dir)).toEqual(['config.json']);
   });
 
+  it.each(
+    [null, 135, false, {}, ['0.135.5'], '', '0.57', 'not-a-version'].map((version) => ({ version }))
+  )('preserves settings with an unreadable version stamp: $version', ({ version }) => {
+    const { dir, file, before } = seed(version);
+    let thrown: unknown;
+    try {
+      new ConfigManager(dir);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(ConfigBootError);
+    expect(thrown).toBeInstanceOf(ConfigVersionUnreadableError);
+    expect((thrown as Error).message).toContain(
+      'DorkOS cannot read the version saved in your settings.'
+    );
+    expect((thrown as Error).message).toContain('Your settings have not been changed.');
+    expect((thrown as Error).message).not.toContain('Upgrade to 0.115');
+    expect((thrown as ConfigBootError).configPath).toBe(file);
+    expect((thrown as ConfigBootError).advice).toBe(
+      'Fix the "version" value in this file, or restore a saved copy, then restart DorkOS.'
+    );
+    expect(fs.readFileSync(file)).toEqual(before);
+    expect(fs.readdirSync(dir)).toEqual(['config.json']);
+  });
+
   it.each<[string, Record<string, unknown>]>([
-    ['a root sessionSecret', { sessionSecret: 'made-up-secret' }],
-    ['a tunnel passcode', { tunnel: { enabled: false, passcodeHash: 'made-up-hash' } }],
+    ['sessionSecret', { sessionSecret: 'made-up-secret' }],
+    ['tunnel.passcodeEnabled', { tunnel: { passcodeEnabled: false } }],
+    ['tunnel.passcodeHash', { tunnel: { passcodeHash: 'made-up-hash' } }],
+    ['tunnel.passcodeSalt', { tunnel: { passcodeSalt: 'made-up-salt' } }],
     ['telemetry.enabled', { telemetry: { enabled: false, userHasDecided: true } }],
-    ['a retired onboarding step', { onboarding: { completedSteps: ['adapters'] } }],
-  ])('refuses an unstamped file with %s, which only a pre-0.115 release wrote', (_, extra) => {
+    ['onboarding.completedSteps: "adapters"', { onboarding: { completedSteps: ['adapters'] } }],
+    ['onboarding.skippedSteps: "tasks"', { onboarding: { skippedSteps: ['tasks'] } }],
+  ])('names the retired key %s in an unstamped file', (key, extra) => {
     const { dir, file, before } = seed(undefined, extra);
-    expect(() => new ConfigManager(dir)).toThrow(ConfigUpgradeRequiredError);
+    let thrown: unknown;
+    try {
+      new ConfigManager(dir);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(ConfigBootError);
+    expect(thrown).toBeInstanceOf(ConfigRetiredSettingsError);
+    expect((thrown as Error).message).toContain(key);
+    expect((thrown as Error).message).toContain('Remove');
+    expect((thrown as Error).message).toContain('Your settings have not been changed.');
+    expect((thrown as Error).message).not.toContain('Upgrade to 0.115');
+    expect(fs.readFileSync(file)).toEqual(before);
+    expect(fs.readdirSync(dir)).toEqual(['config.json']);
+  });
+
+  it('names all retired keys without showing their values', () => {
+    const { dir, file, before } = seed(undefined, {
+      sessionSecret: 'made-up-secret',
+      tunnel: { passcodeEnabled: false, passcodeHash: 'made-up-hash' },
+      telemetry: { enabled: false },
+      onboarding: { completedSteps: ['welcome', 'adapters', 'tasks'] },
+    });
+    let thrown: unknown;
+    try {
+      new ConfigManager(dir);
+    } catch (error) {
+      thrown = error;
+    }
+    const message = (thrown as Error).message;
+    for (const key of [
+      'sessionSecret',
+      'tunnel.passcodeEnabled',
+      'tunnel.passcodeHash',
+      'telemetry.enabled',
+      'onboarding.completedSteps: "adapters"',
+      'onboarding.completedSteps: "tasks"',
+    ]) {
+      expect(message).toContain(key);
+    }
+    expect(message).not.toContain('made-up-secret');
+    expect(message).not.toContain('made-up-hash');
+    expect(message).not.toContain('welcome');
     expect(fs.readFileSync(file)).toEqual(before);
     expect(fs.readdirSync(dir)).toEqual(['config.json']);
   });

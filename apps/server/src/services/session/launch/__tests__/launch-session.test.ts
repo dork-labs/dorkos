@@ -585,6 +585,63 @@ describe('a message for a paused agent (spec audit-trail PR5)', () => {
     resetAgentPause();
   });
 
+  it('accepts another chat’s message into the pause hold instead of refusing it', async () => {
+    const { initAgentPause } = await import('../../../mesh/pause/agent-pause.js');
+    initAgentPause({
+      pausedAgentOfTurn: () => ({ id: 'agent-1', name: 'Scout' }),
+      recordHeld: vi.fn(),
+    } as never);
+    vi.mocked(dispatchMessage).mockClear();
+    const result = await dispatchSessionMessage({
+      sessionId: SESSION,
+      request: { content: 'Keep this message' },
+      clientId: 'chat:sender',
+      meshCore: mesh,
+      roomSessionPlace: undefined,
+      origin: { kind: 'chat-message' },
+    });
+    expect(result).not.toHaveProperty('refused');
+    expect(dispatchMessage).toHaveBeenCalledOnce();
+  });
+
+  it('refuses an interactive caller with a chat-shaped client id while paused', async () => {
+    const { initAgentPause } = await import('../../../mesh/pause/agent-pause.js');
+    initAgentPause({
+      pausedAgentOfTurn: () => ({ id: 'agent-1', name: 'Scout' }),
+      recordHeld: vi.fn(),
+    } as never);
+    vi.mocked(dispatchMessage).mockClear();
+    const result = await dispatchSessionMessage({
+      sessionId: SESSION,
+      request: { content: 'Caller-chosen chat client id' },
+      clientId: 'chat:caller-chosen',
+      meshCore: mesh,
+      roomSessionPlace: undefined,
+      origin: { kind: 'interactive' },
+    });
+    expect(result).toMatchObject({ refused: 'AGENT_PAUSED' });
+    expect(dispatchMessage).not.toHaveBeenCalled();
+  });
+
+  it('keeps a to-do refused even when it uses the chat-message origin', async () => {
+    const { initAgentPause } = await import('../../../mesh/pause/agent-pause.js');
+    initAgentPause({
+      pausedAgentOfTurn: () => ({ id: 'agent-1', name: 'Scout' }),
+      recordHeld: vi.fn(),
+    } as never);
+    vi.mocked(dispatchMessage).mockClear();
+    const result = await dispatchSessionMessage({
+      sessionId: SESSION,
+      request: { content: 'A queued to-do' },
+      clientId: 'todos',
+      meshCore: mesh,
+      roomSessionPlace: undefined,
+      origin: { kind: 'chat-message' },
+    });
+    expect(result).toMatchObject({ refused: 'AGENT_PAUSED' });
+    expect(dispatchMessage).not.toHaveBeenCalled();
+  });
+
   it('is refused with AGENT_PAUSED before anything is bound or queued, and recorded', async () => {
     const { initAgentPause } = await import('../../../mesh/pause/agent-pause.js');
     vi.clearAllMocks();

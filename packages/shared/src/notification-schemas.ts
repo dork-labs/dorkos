@@ -129,6 +129,15 @@ export const NOTIFICATION_KINDS = [
    */
   'community.teammate-limits-reset',
   /**
+   * Agents used 80% of this month's spend limit on paid app actions (DOR-4204 PR 2). Once per
+   * month and limit.
+   */
+  'spending.near-limit',
+  /** Agents reached this month's spend limit; paid actions stop (DOR-4204 PR 2). */
+  'spending.limit-reached',
+  /** This month's spend meter couldn't be read; paid actions ask (DOR-4204 PR 2). */
+  'spending.meter-reset',
+  /**
    * An agent handed the Agent browser to a person and stopped (DOR-3218). One row per
    * handoff, with no buttons: it's the only word a phone gets, and the live card answers it.
    */

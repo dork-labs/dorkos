@@ -201,7 +201,7 @@ describe('the census can see the files it reads', () => {
     const base = turbo().tasks?.test;
     const override = turbo().tasks?.[TASK];
 
-    // The base also depends on `//#heavy-slot`, the host-wide heavy-run cap
+    // The base also depends on `@dorkos/heavy-slot#slot`, the host-wide heavy-run cap
     // (DOR-3274), so only `^build` is pinned here; the override must match the
     // base whole either way.
     expect(base?.dependsOn).toContain('^build');

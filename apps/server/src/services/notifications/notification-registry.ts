@@ -28,6 +28,7 @@
  */
 import { runtimeSigninTitle, runtimeSigninBody } from './runtime-signin-copy.js';
 import type { ScheduleSubject } from './emitters/schedule-subject.js';
+import type { ApprovalPendingPayload } from './emitters/approval-pending-payload.js';
 import {
   NOTIFICATION_KINDS,
   signinSubjectId,
@@ -109,40 +110,8 @@ export interface NotificationPayloads extends DeclaredPayloads {
    * nothing waits on them.
    */
   'schedule.armed_by_agent': ScheduleArmedPayload;
-  /**
-   * An agent asked to do something irreversible and is waiting on a yes.
-   *
-   * The `approvals` table's own pending row is the state; this describes it to
-   * the operator. Deliberately carries NO argument values — the approval card
-   * shows those, and this payload is what a phone push and a desktop banner are
-   * built from.
-   */
-  'approval.pending': {
-    /** ULID of the pending approval. */
-    approvalId: string;
-    /** The capability or tool that would run, e.g. `tasks_delete`. */
-    capabilityId: string;
-    /**
-     * Its human-facing title, from the capability registry — never from the
-     * requester (`approval-service.ts`'s `CapabilityDescriptorLookup`). For a
-     * connected-app action it is the action and app instead ("Delete message
-     * in Gmail", `approvalHeading`), which the server read from its own
-     * records; still no argument values.
-     */
-    capabilityTitle: string;
-    /**
-     * The Mesh agent that asked, when its project path resolves to one. The
-     * lens key, and what routes the escalation's chat leg.
-     */
-    agentId?: string;
-    /** What to call whoever asked. */
-    requestedBy: string;
-    /**
-     * A row under Needs you that nothing waits on (DOR-3427): `notable`, so it
-     * never escalates, with words that say so.
-     */
-    passive?: true;
-  };
+  /** An agent asked to do something irreversible, or to spend money, and waits on a yes. */
+  'approval.pending': ApprovalPendingPayload;
   /** A session stopped on an error. */
   'session.error': {
     sessionId: string;

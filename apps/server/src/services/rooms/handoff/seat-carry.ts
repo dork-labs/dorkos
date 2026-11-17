@@ -58,10 +58,16 @@ export function withRoomMarks(
   );
   const teammate = carried.teammate ?? teammateOf(authors, read, inSpaceRoom, room.id).teammate;
   // A non-owner person's post among them marks the seat turn as it marks a triggered turn
-  // answering it (`run-turn.ts`), behind the same flag (DOR-3858).
+  // answering it (`run-turn.ts`), behind the same flag (DOR-3858); a mini app's post marks it
+  // whatever the flag (DOR-4587).
   const strangerRead =
-    strangerMarkForEntries(env.DORKOS_MARK_STRANGER_TURNS, authors, read, core.isOwnerAuthor)
-      .carriedOutsider === true;
+    strangerMarkForEntries(
+      env.DORKOS_MARK_STRANGER_TURNS,
+      authors,
+      read,
+      core.isOwnerAuthor,
+      room.id
+    ).carriedOutsider === true;
   return {
     // A mini app's post among them reaches the seat as a stranger's does (DOR-4023).
     externalAuthor: carried.externalAuthor || answersOutsideWords(authors, read, room.id),

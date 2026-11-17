@@ -319,6 +319,8 @@ export interface ResponsiveDropdownMenuItemProps {
   className?: string;
   /** Invoked when the item is activated. The menu/drawer closes afterwards. */
   onSelect?: () => void;
+  /** Keep the item in place but refuse pointer and keyboard activation. */
+  disabled?: boolean;
 }
 
 /** Plain action item (non-radio) with optional icon and description. */
@@ -328,12 +330,13 @@ function ResponsiveDropdownMenuItem({
   description,
   className,
   onSelect,
+  disabled,
 }: ResponsiveDropdownMenuItemProps) {
   const { isDesktop, close } = React.useContext(ResponsiveDropdownMenuContext);
 
   if (isDesktop) {
     return (
-      <DropdownMenuItem className={className} onSelect={() => onSelect?.()}>
+      <DropdownMenuItem className={className} disabled={disabled} onSelect={() => onSelect?.()}>
         {Icon || description ? (
           <div className="flex items-center gap-2">
             {Icon && <Icon className="size-(--size-icon-xs) shrink-0" />}
@@ -352,8 +355,10 @@ function ResponsiveDropdownMenuItem({
   return (
     <button
       type="button"
+      disabled={disabled}
       className={cn(MENU_ITEM_DRAWER, className)}
       onClick={() => {
+        if (disabled) return;
         onSelect?.();
         close();
       }}

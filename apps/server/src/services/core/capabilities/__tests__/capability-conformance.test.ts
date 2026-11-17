@@ -594,6 +594,9 @@ capabilityConformance(registry, {
     // Zod parse before the gate ever runs, which would read as "the gate did not
     // refuse this" (DOR-1698).
     'operator.update_agent_boundaries': { cwd: SANDBOX_CWD, nopeContent: 'Never do that.' },
+    // Destructive, and `path` and `content` are required for the same reason
+    // (DOR-4266).
+    'operator.update_agent_config': { cwd: SANDBOX_CWD, path: 'settings.json', content: '{}' },
     'operator.config_patch': { patch: { ui: { sidebar: { collapsed: true } } } },
     // Both sidebar verbs need a PARSEABLE fixture — `group` and `items` are
     // required, so `{}` would raise a ZodError and read as a wiring failure. The

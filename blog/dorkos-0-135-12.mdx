@@ -1,0 +1,96 @@
+---
+title: DorkOS 0.135.12
+description: Read and write can change things in every app connected through Composio, each app's screens run in a frame of their own, a message from someone else limits what an agent can do, and agents start promises before they are due.
+date: 2026-11-16
+author: DorkOS Team
+category: release
+tags: [release, security, connections, apps, agents]
+---
+
+DorkOS 0.135.12 lets "Read and write" change things in every app connected through Composio, while deletes, sharing, money and other risky actions stay one-by-one picks. It also runs each app's screens in a frame of their own, limits what an agent can do when someone else writes in a chat, and wakes agents before their promises are due.
+
+## All Changes
+
+### Note for people upgrading
+
+- **"Read and write" on an app drops to Read once.** It used to give only Read on every app except Gmail and Google Calendar. Now it can change things, so DorkOS lowers each saved "Read and write" on other apps connected through Composio to Read, one time, and shows a notice for each account. To let an agent change things there, open **Connections** and choose Read and write again. Gmail and Google Calendar keep their level, and actions you picked one by one stay as you chose. (DOR-4194, DOR-4461)
+- **On Gmail, moving mail to trash now needs a one-by-one pick.** Read and write no longer covers it. To let an agent do it, open **Connections** and pick that action. (DOR-4194)
+- **If you connect mail:** an agent with Read and write on a mail app can send mail without asking you. A message from someone else on Telegram, Slack or in a room makes that turn ask you first or refuse the send, but mail and web pages the agent reads, and replies a mini app posts in a room, don't count yet. Give a mail app Read unless you need your agents to send. A check before mail to someone new comes in a later release. (DOR-4446)
+- **Apps built for an older version of DorkOS need a rebuild before their screens run again.** This includes apps other people made. Until then, the app shows that it needs an update, and its screens don't load. Its server part and its agent tools keep working. If you build apps, the [update guide](/docs/integrations/extension-frame-migration) lists the few changes: add `"clientApiVersion": 2` to the app's `extension.json`, and call your app's own server through `api.request` instead of `fetch`. Apps made by your agents from now on are built the new way. (DOR-3293)
+- **If you use /flow:** the Flow app's screens show "Needs an update" until a Flow update comes out. It's on its way. Flow's tools and its background work keep working. (DOR-3293)
+- **Check your Approvers list.** DorkOS knows a Telegram or Slack message is from you only when your own ID is on that connection's **Approvers** list. If it isn't, your own messages count as someone else's, and your agent won't send through a connected app for you from there. Open **Connections**, open the chat app's settings, and add your ID under **Access Control**. If you can already message the bot privately, your ID is in the **DM Allowlist** right above it. This only helps in a private chat with the bot: in a group chat, every message counts as someone else's, yours too. (DOR-4453)
+- In a room bridged to Telegram or Slack, your own phone's posts still count as someone else's for now. (DOR-4453)
+- If you run DorkOS from the command line, you can go back to the old behavior: set `DORKOS_MARK_STRANGER_TURNS=false` and restart. The Mac app has no setting for this yet. (DOR-4453)
+- If a file you opened on a chat's canvas earlier still won't save, open it again. (DOR-4442)
+- On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
+- On a Mac, Codex chats can't delete or move folders (rm -r, rmdir, mv). We're fixing it (DOR-4358).
+- Known issue: offline, OpenCode's first turn in a new folder can take about a minute. Online, the first turn waits about 10 seconds once. A fix is coming in a later release (DOR-4422).
+- Known issue: Codex won't start in a folder whose Git path has `* ? [ ] { }` in its name, like `site [old]`, or in a worktree whose Git folder is gone, at any level. Use another folder for now. We're fixing it (DOR-4542).
+
+### Security
+
+- **"Read and write" now lets an agent create and edit in every app connected through Composio that offers those actions**, like a Linear issue or a Notion page. These still need you to pick them one by one (DOR-4194, DOR-4270):
+  - reaching more people or accounts: sharing, forwarding, webhooks, keys, adding users;
+  - money: payments, ads, crypto and shopping apps;
+  - things that can't be undone;
+  - deletes, including moving to trash or archiving.
+- In a repository, merging, creating branches, creating or changing a release, and writing CI or workflow files also need a one-by-one pick for that agent. (DOR-4194, DOR-4461)
+- Asking a GitHub model for an answer can bill you, so Read and Read and write don't include it. It runs only for an agent you picked it for. Reading issues and listing models still work under Read. (DOR-4460)
+- Each app's screens now run in a frame of their own. An app's screens can't see your sign-in or the rest of the DorkOS window, and reach DorkOS only through the actions DorkOS lets them use. (DOR-3293)
+- A message from someone else on Telegram, Slack or in a room now limits what your agent can do in that turn, even at **Full**. A send through a connected app has to ask you first, and the agent can't raise a task above **Don't ask**. DorkOS can't ask you from a Telegram or Slack chat, so there the send is refused. (DOR-4453)
+- In a room, a message from someone else marks the turn even when it only sits in what your agent reads, not just when it names your agent. (DOR-4453)
+- An agent in a marked turn can't change a chat app's settings once it holds a saved password or key. A person has to. (DOR-4453)
+- In a room bridged to a Telegram or Slack group, your agents no longer see the group's name: not in the room, the room lists, search, hand-offs, chat summaries, saved notes or the room's shared notes. They call the room "Bridged channel" until you rename the room in DorkOS. (DOR-4453)
+- A bridged group's shared notes no longer start with the group's name. Notes made before this release are fixed the next time DorkOS starts and the notes have no unsaved changes. If you changed the heading yourself, it stays as you left it. (DOR-4453)
+- A schedule an agent makes now runs in that agent's own folder, even when the agent asks for a "global" one or names no place. DorkOS refuses the schedule up front if that folder is the DorkOS data folder, or, below Full autonomy, your home folder. Schedules you make yourself work as before. (DOR-4067)
+- When an agent proposes a schedule, the approval card shows what it asked to be allowed to do, and approving gives it exactly that, only for that schedule's runs. Giving it more than it asked for or had, letting it run programs, change files outside its folder or read files by a broad pattern each take a separate, clear choice. Rules for commands apply only to schedules that run on Claude Code. A test run before approval never runs looser than one click could approve. (DOR-3637)
+- Each schedule now records who approved it, when, and where, and the approval card says so. The record clears when the schedule changes and waits for a new yes. Schedules that were on before this release carry a record too. (DOR-3641)
+- Each kind of agent (Claude Code, Codex, OpenCode and the DorkOS runtime) now states which safety checks it enforces, and DorkOS treats one that states nothing as having none. Named browser profiles still work only on Claude Code, and other agents are told their runtime can't use them yet. (DOR-3596)
+- Back and Forward in the Agent browser, and, in the Mac app, Go back on a page that didn't load, follow the same address rules as typing an address. A page you go back or forward to that now redirects somewhere refused is stopped before it loads. (DOR-4449)
+- Below Full access, Codex can't change Git's own files, even in temporary folders. Saved sign-ins inside Git's own folders stay protected at every level. (DOR-4485)
+
+### Added
+
+- An agent is now woken to start a promise before it is due, not at the due time. It can say roughly how long the work takes and is woken a bit more than that before, and once more partway through. With no guess it is woken an hour before. This needs the agent's heartbeat on. (DOR-3034)
+- When an agent moves or drops a promise it made to you, your Inbox tells you, with its reason. When it says it kept one, your Inbox asks you to confirm: **Yes** or **Not yet**. Not yet reopens it and wakes the agent. With no answer in a day, it shows "Kept · unconfirmed". (DOR-3034)
+- An agent's Heartbeat page now says how many of its promises moved and how many it missed, under "Supporting measures". (DOR-3034)
+- The Team page lists every schedule and heartbeat that is switched off or waiting, since when, and who can turn it back on. (DOR-3641)
+- New agents, and agents DorkOS keeps in its own folder, now come with a guide to building a small app inside DorkOS, like an Activity card or a tab beside the chat. Agents set up in your own project folders before this release don't get it yet. (DOR-4061)
+- Back and Forward work in the Agent browser. They follow the page's own history, and pressing one while an agent uses the page pauses the agent first. (DOR-4449)
+- When you chat with an OpenCode agent in a project that has its own OpenCode plugins, tools or MCP servers, the chat says how many DorkOS kept off, once per chat.
+- A Claude Code chat now shows the work its agent left running after it stops talking, like helpers, background commands and watchers, in the task strip above the message box. Each one shows its name and can be stopped. The status line says "background tasks" instead of "subagents", and agents see that work in the running chats list. (DOR-2065)
+
+### Changed
+
+- A message another agent sends to a busy chat now waits as its own row in the queue, with **Send now** and **Don't deliver**. When you don't deliver it, the other agent's chat says so by name. (DOR-3060)
+- A to-do whose date moved says so under its title, with its first date. Moving a date after it has passed keeps the to-do late in the agent's on-time score, and a dropped to-do counts as not kept. (DOR-3034)
+- A promise still open 15 minutes after its due time is marked missed then. (DOR-3034)
+- The canvas browser and the Agent browser share one set of controls: Back, Forward, Reload and an address field that says "Not secure" for plain http pages. The address field reads what you type like a browser does: words become a DuckDuckGo search, `example.com` opens over https, and `localhost:3000` opens over plain http. (DOR-4427, DOR-4419)
+- In the Mac app, when a page won't load in the Agent browser, DorkOS says why where the page would be, with one button to fix it, and the agent is told the same. A thin line shows while a page loads. There is no way past a certificate error. (DOR-4430, DOR-4431)
+- In the desktop app, when a menu, notice or Settings opens over a web page in the browser panel, you see a picture of the page in its place instead of an empty box. The picture is never saved or sent. (DOR-4438)
+- An app update's approval card lists each new thing it asks for, like a new website or program, instead of only saying its files changed. (DOR-4504)
+- New schedules run in your time zone when you don't pick one, including ones your agents make, and each schedule shows when it runs in your time. A schedule set in another zone that runs overnight for you offers to move to your zone. (DOR-4120)
+
+### Fixed
+
+- The Connections page says when an app offers Read only, shows Read there even if you saved Read and write, and never changes your saved choice on its own. (DOR-4444)
+- A Claude Code agent still working on a long task is no longer stopped after about four hours. Its turn now ends after 16 hours of nonstop work, and the message says why it ended. (DOR-2705)
+- When a schedule fails twice in a row, the notice says why in plain words, and its card opens the schedule. A switched-off schedule, or failures from before its last change, no longer raise that card. (DOR-4121, DOR-4127)
+- A file you open yourself on a chat's canvas can now be edited and saved, as long as it sits in that agent's folder. (DOR-4442)
+- An account's usage percent no longer goes blank after a limit notice with no number. (DOR-3589)
+- An agent on OpenCode can read the skills of a package you installed for all your projects, even in a scheduled run. The new access only lets it read that folder. (DOR-4386)
+- In the desktop app, a web page in the browser panel no longer vanishes when a tooltip opens elsewhere, and dialogs show above it. (DOR-4417, DOR-4418)
+- Rest the pointer on Back, Forward or Reload in the Agent browser and a label names the button. (DOR-4427)
+- Project discovery and Git status work again in worktrees Codex creates, and scheduled tasks whose folders arrive together are picked up. (DOR-4486, DOR-4495)
+- Room instructions no longer describe a posting limit that no longer exists, and agents are told how to check a handed-off room post when their chat can't receive replies. (DOR-3817)
+
+### Going back
+
+0.135.12 adds new columns to the database for schedules, to-dos and canvas documents, and two database rules that note when a schedule turns off. To go back, install 0.135.11. It ignores all of these and starts normally. Settings need no change.
+
+- Notices about promises, and about access changing to Read, don't show in the 0.135.11 Inbox. The bell can still count them until you mark everything read.
+- Access that 0.135.12 lowered to Read stays at Read. On 0.135.11, Read and write changes things only in Gmail and Google Calendar again.
+- If you update to 0.135.12 again later, the one-time drop to Read doesn't run again. Every saved Read and write then lets agents change things in that app, including one you chose while on 0.135.11.
+- Apps you didn't rebuild run their screens again, but no app's screens run in a frame of their own. An app rebuilt for 0.135.12 still loads, but its calls to `api.request` fail.
+- A message from someone else on Telegram, Slack or in a room no longer limits what your agent can do, and your agents see bridged group names again. A shared notes heading DorkOS already changed to "Bridged channel" stays changed.
+- Schedules run without the extra actions you approved for them, and agents are woken for promises at the due time again. A date moved while on 0.135.11 isn't recorded as a move.

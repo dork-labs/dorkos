@@ -58,6 +58,7 @@ import type {
   SentChatMessage,
 } from '@dorkos/shared/chat-messages';
 import { logError, logger } from '../../../lib/logger.js';
+import { pausedChatMessageNote } from './chat-message-receipt.js';
 import { recordAudit } from '../../audit/audit-trail.js';
 import {
   dispatchSessionMessage,
@@ -374,6 +375,7 @@ export class ChatMessageService {
       const stopped = await this.deps.interruptTurn(chatId).catch(() => false);
       if (!stopped) note = 'Nothing was running there, so it simply runs next.';
     }
+    note = pausedChatMessageNote({ status, chatId, cwd, agentPath: target.agent?.path }) ?? note;
     return {
       messageId: row.id,
       chatId,

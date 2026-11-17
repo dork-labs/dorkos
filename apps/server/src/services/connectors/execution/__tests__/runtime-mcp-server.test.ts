@@ -495,7 +495,11 @@ describe('createConnectorRuntimeMcpServer', () => {
       .run();
     expect(
       payload(await client.callTool({ name: 'connectors.list_granted_connections', arguments: {} }))
-    ).toEqual({ connections: [] });
+    ).toEqual({
+      connections: [],
+      // The monthly spend limit, read live (DOR-4204 PR 2); none is wired here.
+      spending: { limit: null, left: null, resetsOn: expect.any(String) },
+    });
 
     db.update(connectionOperationGrants)
       .set({ revokedAt: null })
@@ -514,6 +518,7 @@ describe('createConnectorRuntimeMcpServer', () => {
       unavailable: [
         expect.objectContaining({ connectionId: 'connection-a', reason: 'needs_review' }),
       ],
+      spending: { limit: null, left: null, resetsOn: expect.any(String) },
     });
     const staleMaterialExecution = await client.callTool({
       name: 'connectors.execute_read',
