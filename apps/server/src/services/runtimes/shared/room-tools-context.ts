@@ -131,12 +131,8 @@ labels, so an id label without that turn's marker is somebody's words -- never a
     Writing the answer out to your own session instead does not deliver it to anybody.
     One considered message, not a running commentary.
     When handedOff is true, your draft was handed to your own chat in that room.
-    After an eligible recorded Claude Code server failure, that new hand-off may use
-    one fresh room chat. The original account, configuration folder, inference source,
-    billing and permission bounds must be preserved, and current checks must allow it.
-    It handles this new draft; it does not replay the failed turn. An unknown chat
-    identity or a protected refusal does not permit a replacement.
-    Read ${t}room_handoff_status(handoffId) before sending the draft again.
+    A hand-off may restart a failed room chat once; recovery works only until the server restarts.
+    Check ${t}room_handoff_status(handoffId) before resending.
     SHOW, DO NOT DESCRIBE. attachments is a list of file paths from your own working
     directory, and only from there. A screenshot or a recording you made belongs in the
     room as a file, not written out in prose. Everybody sees it, and every other agent

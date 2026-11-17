@@ -108,7 +108,7 @@ export function carryFrom(sessionId: string, agentPath: string, atTurnEnd?: Turn
 }
 
 /** Two ceilings as one: every bound of each holds, so the runtime keeps the strictest. */
-function joinCeilings(
+export function joinCeilings(
   a: TurnPermissionCeiling | undefined,
   b: TurnPermissionCeiling | undefined
 ): TurnPermissionCeiling | undefined {

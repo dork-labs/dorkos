@@ -4,6 +4,20 @@ import { declineReason } from '../decline-reason.js';
 import { buildHandoffNotice } from '../../notices/notice-copy.js';
 const room = { archived: false } as Room;
 describe('handoff decline safety', () => {
+  it('uses fixed copy for a reply from an outsider-marked turn', () => {
+    const reason = declineReason(room, {
+      outcome: 'quiet',
+      text: 'token=secret /private/account',
+      replyOutsider: true,
+    });
+    expect(reason).toBe('it did not post. Open its chat to see why.');
+    expect(buildHandoffNotice('Bo', 'author-bo', '#room', reason).text).not.toMatch(
+      /token=|secret|private/
+    );
+  });
+  it('retains a clean unmarked reply as the reason', () => {
+    expect(declineReason(room, { outcome: 'quiet', text: 'Already done.' })).toBe('Already done.');
+  });
   it('retains a protected refusal even when the adapter also says busy', () => {
     expect(
       declineReason(room, {
@@ -24,7 +38,7 @@ describe('handoff decline safety', () => {
       text: null,
       failure: { refusal: 'unknown-private-code', detail: 'token=secret /private/account' },
     });
-    expect(reason).toBe('it could not start. Open its chat to see what needs attention.');
+    expect(reason).toBe("it couldn't start. Open its chat to see what needs attention.");
     expect(reason).not.toMatch(/private|secret|token=/);
   });
   it('keeps the complete safe failure explanation in the actual room notice', () => {

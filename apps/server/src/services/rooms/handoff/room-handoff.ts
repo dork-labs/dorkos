@@ -1,4 +1,3 @@
-import { logHandoffFailure, type HandoffTrace } from './failure-trace.js';
 /**
  * One seat per agent per room, and the hand-off between them (DOR-3397, room coordination item 4).
  *
@@ -29,6 +28,7 @@ import { logHandoffFailure, type HandoffTrace } from './failure-trace.js';
  *
  * @module server/services/rooms/handoff/room-handoff
  */
+import { logHandoffFailure, type HandoffTrace } from './failure-trace.js';
 import { randomUUID } from 'node:crypto';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
@@ -409,7 +409,13 @@ export class RoomHandoffs {
           (claim) => claim.authorId === handoff.authorId
         );
       }
-    } catch {
+    } catch (err) {
+      // Server diagnostics stay in the local log, never in the shared decline reason.
+      logger.warn('[rooms] handoff dispatch threw', {
+        roomId: handoff.roomId,
+        authorId: handoff.authorId,
+        error: err instanceof Error ? err.message : String(err),
+      });
       result = {
         outcome: 'failed',
         text: null,

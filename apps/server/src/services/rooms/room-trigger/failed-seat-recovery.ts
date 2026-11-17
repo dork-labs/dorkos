@@ -1,12 +1,11 @@
-import { carryFrom } from '../handoff/seat-carry.js';
+/** Admission-bound new-work recovery; no current-turn replay and no second fallback. */
+import { carryFrom, joinCeilings } from '../handoff/seat-carry.js';
 import { lastTurnLevelOf } from '../../core/turn-power/turn-levels.js';
 import type { AsideCarry } from './aside.js';
-import type { TurnPermissionBound } from '@dorkos/shared/agent-runtime';
 import { logRecoveredHandoff } from '../handoff/failure-trace.js';
 import { stat } from 'node:fs/promises';
 import { claudeTranscriptPath } from '../../session/fleet/carry-over-summary.js';
 import type { RecoveryAuthority } from '../reseat/required-launch-store.js';
-/** Admission-bound new-work recovery; no current-turn replay and no second fallback. */
 import { getRoomSeatMover } from '../reseat/create-seat-mover.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import type { AsideRun } from './aside.js';
@@ -25,7 +24,11 @@ export async function prepareFailedHandoffSeat(
   const prior = carryFrom(old, input.agentPath);
   const level = lastTurnLevelOf(old);
   if (!level) return false;
-  const preserved: AsideCarry = { ...prior, ...(level ? { permissionCeiling: level } : {}) };
+  const ceiling = joinCeilings(prior.permissionCeiling, level);
+  const preserved: AsideCarry = {
+    ...prior,
+    ...(ceiling !== undefined ? { permissionCeiling: ceiling } : {}),
+  };
   const currentAllowed = () => {
     const room = self.deps.store.getRoom(input.room.id);
     const member = self.deps.store.getMember(input.room.id, input.authorId);
@@ -113,13 +116,10 @@ export async function endFailedHandoffAttempt(
 
 /** Keep every actual source bound while joining current carried provenance. */
 function joinRecoveryCarry(prior: AsideCarry, current?: AsideCarry): AsideCarry {
-  const bounds = [prior.permissionCeiling, current?.permissionCeiling].flatMap(
-    (value): TurnPermissionBound[] =>
-      value === undefined ? [] : Array.isArray(value) ? [...value] : [value as TurnPermissionBound]
-  );
+  const ceiling = joinCeilings(prior.permissionCeiling, current?.permissionCeiling);
   return {
     externalAuthor: prior.externalAuthor || current?.externalAuthor === true,
-    ...(bounds.length ? { permissionCeiling: bounds } : {}),
+    ...(ceiling !== undefined ? { permissionCeiling: ceiling } : {}),
     ...(prior.teammate || current?.teammate ? { teammate: true as const } : {}),
     ...(prior.outsider || current?.outsider ? { outsider: true as const } : {}),
     ...(prior.outsideWords || current?.outsideWords ? { outsideWords: true as const } : {}),

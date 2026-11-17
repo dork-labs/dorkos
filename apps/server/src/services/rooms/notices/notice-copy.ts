@@ -469,8 +469,7 @@ export function buildAgentReseatedNotice(
     notice: 'agent_reseated',
     subjectAuthorId,
   });
-  if (reason.kind === 'failed')
-    return body(`${agentName} started a fresh room chat after a server error.`);
+  if (reason.kind === 'failed') return body(`${agentName} started a new chat here after an error.`);
   if (reason.kind === 'stranded') {
     return body(`${agentName} started a fresh chat here. Its earlier one had expired.`);
   }

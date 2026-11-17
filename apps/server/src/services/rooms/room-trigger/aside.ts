@@ -1,5 +1,3 @@
-import type { HandoffTrace } from '../handoff/failure-trace.js';
-import { prepareFailedHandoffSeat, endFailedHandoffAttempt } from './failed-seat-recovery.js';
 /**
  * A private aside: one agent answers one person without posting to the room.
  *
@@ -9,10 +7,14 @@ import { prepareFailedHandoffSeat, endFailedHandoffAttempt } from './failed-seat
  *
  * @module server/services/rooms/room-trigger/aside
  */
+import type { HandoffTrace } from '../handoff/failure-trace.js';
+import { prepareFailedHandoffSeat, endFailedHandoffAttempt } from './failed-seat-recovery.js';
 import { randomUUID } from 'node:crypto';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { logger } from '../../../lib/logger.js';
+import { marksOf } from '../../core/turn-power/turn-levels.js';
+import { marksHold } from '../../core/turn-power/turn-marks.js';
 import { runInDispatch } from '../../../lib/dispatch-context.js';
 import { recordDispatchStart } from '../../observability/dispatch-buffers.js';
 import { agentKey, type ClaimOutcome } from '../room-claims.js';
@@ -96,6 +98,8 @@ export interface AsideRun extends AsideInput {
  * `busy` and `refused` ran no turn at all; `refused` says which bound stopped it.
  */
 export interface AsideResult {
+  /** A reply produced under outsider provenance is never quoted into another room/chat. */
+  replyOutsider?: true;
   /** How it ended. */
   outcome: ClaimOutcome | 'busy' | 'refused';
   /** Which bound refused it, on `refused`. */
@@ -318,6 +322,14 @@ export async function runAsideInDispatch(
       onActivity: (activity) => self.noteActivity(key, activity),
       onSessionBound: (id) => self.noteSessionBound(room.id, authorId, id),
     };
+    // Read marks again after the runtime settles: tool-read provenance can arrive mid-turn.
+    const replyProvenance = (): Pick<AsideResult, 'replyOutsider'> =>
+      request.externalAuthor ||
+      request.carriedOutsider ||
+      request.outsideWords ||
+      marksHold(marksOf(input.sessionId, input.agentPath))
+        ? { replyOutsider: true }
+        : {};
     if (input.validateTarget?.() === false) return refusedAside('gone');
     if (self.wasHalted(input.dispatchId)) {
       outcome = 'halted';
@@ -372,7 +384,12 @@ export async function runAsideInDispatch(
     }
     if (settled.unanswered) {
       outcome = recovered && settled.unanswered === 'busy' ? 'failed' : settled.unanswered;
-      return { outcome, text, ...(settled.failure ? { failure: settled.failure } : {}) };
+      return {
+        outcome,
+        text,
+        ...replyProvenance(),
+        ...(settled.failure ? { failure: settled.failure } : {}),
+      };
     }
     // **The same three terminals `deliver` reads, minus the notice.** An offer
     // that posted or reacted has put something in front of the person and
@@ -384,7 +401,11 @@ export async function runAsideInDispatch(
     const spoke = self.takeSpokeViaTool(room.id, authorId);
     const reacted = self.takeReactedViaTool(room.id, authorId);
     outcome = spoke || reacted ? 'answered' : 'quiet';
-    return { outcome, text };
+    return {
+      outcome,
+      text,
+      ...replyProvenance(),
+    };
   } catch (err) {
     if (pausedRefusalOf(err)) return refusedAside('paused');
     outcome = 'failed';
@@ -392,6 +413,7 @@ export async function runAsideInDispatch(
       roomId: room.id,
       authorId,
       typedCause: 'exception',
+      error: err instanceof Error ? err.message : String(err),
     });
     return {
       outcome,
