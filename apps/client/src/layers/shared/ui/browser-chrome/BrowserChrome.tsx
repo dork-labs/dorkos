@@ -37,6 +37,8 @@ const TooltipStillContext = createContext<ChromeTooltipStill | null>(null);
 export interface BrowserChromeProps {
   /** The address open now, drawn simply at rest. */
   url: string;
+  /** Whether the one HTTP fallback opened this page and it is still on HTTP. */
+  openedOverHttp?: boolean;
   /** A new number opens the address field, all selected: ⌘L. */
   focusAddress?: number;
   /** Whether there is a page to go back to. */
@@ -102,6 +104,7 @@ export interface BrowserChromeProps {
  */
 export function BrowserChrome({
   url,
+  openedOverHttp = false,
   focusAddress,
   canBack,
   canForward,
@@ -156,6 +159,7 @@ export function BrowserChrome({
             <AddressField
               key={retry === null ? 'address' : `retry:${retry.attempt}`}
               url={url}
+              openedOverHttp={openedOverHttp}
               focusRequest={focusAddress}
               startEditing={retry !== null}
               initialDraft={retry?.draft}

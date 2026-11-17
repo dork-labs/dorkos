@@ -122,24 +122,15 @@ export function LocalBrowserView({
   const [stepNotice, setStepNotice] = useState<{ tabId: string; text: string } | null>(null);
   const shownStepNotice = stepNotice && tab && stepNotice.tabId === tab.id ? stepNotice.text : null;
 
-  /** Navigate, and answer whether it failed: an action a newer one replaced did not. */
-  const go = async (url: string, fallback?: string) => {
+  /** Navigate once, asking the server for the bare-host fallback when allowed. */
+  const go = async (url: string, fallback = false) => {
     let failed = false;
     await action(async () => {
       try {
-        return await transport.navigateLocalBrowser(url);
+        return await (fallback
+          ? transport.navigateLocalBrowser(url, { httpFallback: true })
+          : transport.navigateLocalBrowser(url));
       } catch (cause) {
-        // Only a bare host the person typed carries a fallback, and only a page
-        // that could not connect at all tries it, once (DOR-4419).
-        const code = (cause as { code?: string } | null)?.code;
-        if (fallback && code === 'navigation_unreachable') {
-          try {
-            return await transport.navigateLocalBrowser(fallback);
-          } catch (again) {
-            failed = true;
-            throw again;
-          }
-        }
         failed = true;
         throw cause;
       }
@@ -186,7 +177,7 @@ export function LocalBrowserView({
     if (input.kind === 'open') setTyped({ text: text.trim(), host: new URL(input.url).host });
     // Only a real failure reopens the field: a navigation that Pause, Disconnect
     // or another tab replaced must not take focus back from where the person went.
-    void go(input.url, input.kind === 'open' ? input.httpFallback : undefined).then((failed) => {
+    void go(input.url, input.kind === 'open' && Boolean(input.httpFallback)).then((failed) => {
       if (failed) holdTyped(tabId, text, null);
     });
   };
@@ -244,6 +235,7 @@ export function LocalBrowserView({
         <BrowserChrome
           // A failed load keeps its address in the bar, so Reload retries it (DOR-4430).
           url={page.failure?.url || tab.url}
+          openedOverHttp={tab.openedOverHttp}
           focusAddress={focusAddress}
           canBack={!busy && (tab.canGoBack ?? false)}
           canForward={canForward}
