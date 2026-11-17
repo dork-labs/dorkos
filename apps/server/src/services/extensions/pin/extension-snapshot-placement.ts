@@ -21,6 +21,7 @@
  */
 import path from 'path';
 import type { ExtensionRecord } from '@dorkos/extension-api';
+import type { ExtensionApprovedSource } from '@dorkos/shared/config-schema';
 import { logger } from '../../../lib/logger.js';
 import {
   isApprovedByDigest,
@@ -71,6 +72,19 @@ export async function runFromSnapshot(
 }
 
 /**
+ * Whether a copy's approval still keeps path trust after its files were judged: the stored one, or
+ * the one passed in when nothing is stored. One that cannot be read does not.
+ */
+function stillPathTrust(id: string, passed: ExtensionApprovedSource): boolean {
+  try {
+    const stored = configManager.get('extensions').approvedSources?.[id];
+    return isPathTrustApproval(stored ?? passed);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * For a copy that keeps path trust, read its live files now and point it at
  * a verified snapshot of exactly them, so the next build reads the bytes that
  * were hashed. A no-op for any other copy.
@@ -92,6 +106,16 @@ export async function refreshPathTrustRun(
   if (live && live === record.pinnedDigest && record.runPath) return true;
   if (!live) {
     // A folder DorkOS cannot read whole, or one that links outside itself.
+    record.runPath = undefined;
+    record.pinnedDigest = undefined;
+    record.originProblem = 'changed';
+    return true;
+  }
+  // Judge exactly the files about to run (DOR-4528): an edit that landed after the scan read its
+  // digest is judged here, from a verified snapshot of these same files, before anything builds.
+  await notePathTrustEdits([{ ...record, currentDigest: live }], approvals, dorkHome);
+  if (!stillPathTrust(record.id, source)) {
+    // Held for a person now: these files do not run.
     record.runPath = undefined;
     record.pinnedDigest = undefined;
     record.originProblem = 'changed';

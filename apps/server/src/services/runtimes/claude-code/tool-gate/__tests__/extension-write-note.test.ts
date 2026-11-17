@@ -1,90 +1,121 @@
-/** The file-tool hook notes mini app writes by real path, with the turn's agent and hold (DOR-4528). */
+/** The file-tool hooks note mini app writes by real path, with the turn's agent and hold (DOR-4528). */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {
-  editedByAuthor,
+  contentOf,
   resetPathTrustWriters,
+  tiedToAuthor,
 } from '../../../../extensions/pin/path-trust-writers.js';
-import { createExtensionWriteNote, extensionWriteMatcher } from '../extension-write-note.js';
+import { NOTE_WRITES_AFTER, expectedAfterOf, noteWritesBefore } from '../extension-write-note.js';
 
-describe('createExtensionWriteNote', () => {
+const signal = { signal: new AbortController().signal };
+
+describe('extension write hooks', () => {
   let root: string;
   let home: string;
-  let copy: { id: string; realPath: string };
+  let folder: string;
+  let trusted: Record<string, string>;
+
+  /** Run one tool call through the hooks a launch adds, writing what the tool would. */
+  async function call(
+    matcher: ReturnType<typeof noteWritesBefore>,
+    id: string,
+    tool: string,
+    input: Record<string, unknown>,
+    write: () => Promise<void>,
+    fails = false
+  ) {
+    const base = { tool_name: tool, tool_input: input, tool_use_id: id };
+    await matcher.hooks[0]!({ ...base, hook_event_name: 'PreToolUse' } as never, id, signal);
+    if (!fails) await write();
+    const event = fails ? 'PostToolUseFailure' : 'PostToolUse';
+    await NOTE_WRITES_AFTER.hooks[0]!({ ...base, hook_event_name: event } as never, id, signal);
+  }
+  const check = async () => {
+    const next: Record<string, string> = {};
+    for (const name of await fs.readdir(folder))
+      next[name] = await contentOf(path.join(folder, name));
+    return tiedToAuthor({ id: 'desk', folder, authorHome: home, trusted, next });
+  };
 
   beforeEach(async () => {
     root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'ext-write-note-')));
     home = path.join(root, 'ana');
-    copy = { id: 'desk', realPath: path.join(home, '.dork', 'extensions', 'desk') };
-    await fs.mkdir(copy.realPath, { recursive: true });
+    folder = path.join(home, '.dork', 'extensions', 'desk');
+    await fs.mkdir(folder, { recursive: true });
+    await fs.writeFile(path.join(folder, 'server.ts'), 'const a = 1;\n');
+    trusted = { 'server.ts': await contentOf(path.join(folder, 'server.ts')) };
   });
   afterEach(async () => {
     resetPathTrustWriters();
     await fs.rm(root, { recursive: true, force: true });
   });
 
-  it('notes a relative write, a new file included, as the turn’s agent', () => {
-    const note = createExtensionWriteNote({ cwd: home, agentHome: home, held: () => false });
-    note('Write', { file_path: '.dork/extensions/desk/new/server.ts', content: '' });
-    expect(editedByAuthor(copy, home)).toBe(true);
-  });
-
-  it('a write through a link to the folder is noted at its real path', async () => {
-    const link = path.join(root, 'link');
-    await fs.symlink(copy.realPath, link);
-    const note = createExtensionWriteNote({ cwd: root, agentHome: home, held: () => false });
-    note('Edit', { file_path: path.join(link, 'server.ts'), old_string: 'a', new_string: 'b' });
-    expect(editedByAuthor(copy, home)).toBe(true);
-  });
-
-  it('reads the hold on each call', () => {
-    let held = false;
-    const note = createExtensionWriteNote({ cwd: home, agentHome: home, held: () => held });
-    held = true;
-    note('Edit', { file_path: path.join(copy.realPath, 'server.ts') });
-    expect(editedByAuthor(copy, home)).toBe(false);
-  });
-
-  it('a hold it cannot read notes the write as no one’s', () => {
-    const note = createExtensionWriteNote({
-      cwd: home,
-      agentHome: home,
-      held: () => {
-        throw new Error('unreadable');
-      },
-    });
-    note('Edit', { file_path: path.join(copy.realPath, 'server.ts') });
-    expect(editedByAuthor(copy, home)).toBe(false);
-  });
-
-  it('the launch matcher notes a write, and a ceilinged turn’s write as held', async () => {
-    const input = (file: string) =>
-      ({
-        hook_event_name: 'PreToolUse',
-        tool_name: 'Write',
-        tool_input: { file_path: file, content: '' },
-      }) as never;
-    const signal = { signal: new AbortController().signal };
-    const open = extensionWriteMatcher({}, { sessionId: 's1', cwd: home, agentHome: home });
+  it('notes a relative Write, a new file included, as the turn’s agent', async () => {
+    const open = noteWritesBefore({}, { sessionId: 's1', cwd: home, agentHome: home });
     expect(open.matcher).toBe('Edit|Write|MultiEdit|NotebookEdit');
-    expect(await open.hooks[0]!(input('.dork/extensions/desk/a.ts'), 't1', signal)).toEqual({
-      continue: true,
-    });
-    expect(editedByAuthor(copy, home)).toBe(true);
+    await call(
+      open,
+      't1',
+      'Write',
+      { file_path: '.dork/extensions/desk/new.ts', content: 'n' },
+      () => fs.writeFile(path.join(folder, 'new.ts'), 'n')
+    );
+    expect(await check()).toBe(true);
+  });
 
-    const ceilinged = extensionWriteMatcher(
+  it('notes an Edit through a link to the folder at its real path', async () => {
+    const link = path.join(root, 'link');
+    await fs.symlink(folder, link);
+    const open = noteWritesBefore({}, { sessionId: 's1', cwd: root, agentHome: home });
+    const input = { file_path: path.join(link, 'server.ts'), old_string: '1', new_string: '2' };
+    await call(open, 't1', 'Edit', input, () =>
+      fs.writeFile(path.join(folder, 'server.ts'), 'const a = 2;\n')
+    );
+    expect(await check()).toBe(true);
+  });
+
+  it('a ceilinged turn’s write is held', async () => {
+    const ceilinged = noteWritesBefore(
       { turnPermissionCeiling: { asks: 'always', reach: 'edit' } },
       { sessionId: 's2', cwd: home, agentHome: home }
     );
-    await ceilinged.hooks[0]!(input('.dork/extensions/desk/b.ts'), 't2', signal);
-    expect(editedByAuthor(copy, home)).toBe(false);
+    const input = { file_path: path.join(folder, 'server.ts'), content: 'x' };
+    await call(ceilinged, 't2', 'Write', input, () =>
+      fs.writeFile(path.join(folder, 'server.ts'), 'x')
+    );
+    expect(await check()).toBe(false);
   });
 
-  it('ignores tools that do not write files', () => {
-    const note = createExtensionWriteNote({ cwd: home, agentHome: home, held: () => false });
-    note('Read', { file_path: path.join(copy.realPath, 'server.ts') });
-    expect(editedByAuthor(copy, home)).toBe(false);
+  it('a write that failed is dropped', async () => {
+    const open = noteWritesBefore({}, { sessionId: 's1', cwd: home, agentHome: home });
+    const input = { file_path: path.join(folder, 'server.ts'), content: 'x' };
+    await call(open, 't3', 'Write', input, async () => undefined, true);
+    await fs.writeFile(path.join(folder, 'server.ts'), 'x');
+    expect(await check()).toBe(false);
+  });
+
+  it('works out what each tool should leave, and nothing it cannot', () => {
+    const before = Buffer.from('a b a');
+    const after = (tool: string, input: Record<string, unknown>, from: Buffer | null = before) =>
+      expectedAfterOf(tool, input)(from)?.toString('utf8') ?? null;
+    expect(after('Write', { content: 'x' })).toBe('x');
+    expect(after('Edit', { old_string: 'b', new_string: 'c' })).toBe('a c a');
+    // Not found exactly once: the tool would fail, or leave something else.
+    expect(after('Edit', { old_string: 'a', new_string: 'c' })).toBeNull();
+    expect(after('Edit', { old_string: 'a', new_string: 'c', replace_all: true })).toBe('c b c');
+    expect(after('Edit', { old_string: '', new_string: 'new' }, null)).toBe('new');
+    expect(
+      after('MultiEdit', {
+        edits: [
+          { old_string: 'b', new_string: 'x' },
+          { old_string: 'x', new_string: 'y' },
+        ],
+      })
+    ).toBe('a y a');
+    expect(after('MultiEdit', { edits: [{ old_string: 'zzz', new_string: 'y' }] })).toBeNull();
+    expect(after('NotebookEdit', { new_source: 'x' })).toBeNull();
   });
 });

@@ -13,10 +13,14 @@
  * agent makes a new edit at Full, which lifts the pin, runs and logs. The last-seen digests are kept
  * on disk, so the first scan after a restart still sees an edit made while the server was down.
  *
- * At Full, an edit runs only when it can be tied to the author's own turn that held no mark and
- * ran under no ceiling (`path-trust-writers.ts`, DOR-4528). One that cannot (a marked turn's, a
- * shell's, one made while the server was down) is pinned to the files last seen, and stays held
- * until a person approves it: a later edit by the author does not lift that pin.
+ * At Full, an edit runs only when every file it changed can be traced, by content, to the
+ * author's own turn that held no mark and ran under no ceiling (`path-trust-writers.ts`,
+ * DOR-4528). The files it is traced from are the ones last TRUSTED: first seen, last run after
+ * such an edit, or last approved by a person. They never move while the agent is below Full, so a
+ * change made then is traced too. Both sides are read from verified snapshots, never the live
+ * folder. An edit that cannot be traced (a marked turn's, a shell's, one made while the server
+ * was down) is pinned to the trusted files, and stays held until a person approves it: a later
+ * edit by the author does not lift that pin.
  *
  * @module services/extensions/pin/path-trust-edits
  */
@@ -32,8 +36,9 @@ import { recordFullAction, isFullLevel } from '../../core/turn-power/full-autono
 import { resolveAgentLaunchLevel } from '../../session/resolution/agent-launch-level.js';
 import { readAgentExecutionDefaults } from '../../session/resolution/resolve-session-defaults.js';
 import { logger } from '../../../lib/logger.js';
+import { verifiedFilesOf } from './extension-content-pin.js';
 import { keepsPathTrust } from './extension-path-trust.js';
-import { editedByAuthor } from './path-trust-writers.js';
+import { markTrusted, tiedToAuthor, type AuthorCheck } from './path-trust-writers.js';
 
 /** What a scan needs from the rest of the server (tests pass their own). */
 export interface PathTrustEditDeps {
@@ -44,10 +49,14 @@ export interface PathTrustEditDeps {
   /** Take the pin off one copy's approval. */
   unpin: (id: string) => void;
   /**
-   * Whether the copy's edit since it was last asked about came only from its author's own unheld
-   * turn. Defaults to the server's own write record (`path-trust-writers.ts`).
+   * The content of the files a digest names, by relative path, or null when they cannot be read.
+   * Defaults to a verified snapshot of them (`verifiedFilesOf`).
    */
-  editedByAuthor?: (copy: { id: string; realPath?: string }, authorHome: string) => boolean;
+  filesOf?: (record: ExtensionRecord, digest: string) => Promise<Record<string, string> | null>;
+  /** Whether a change is the author's own unheld work. Defaults to the server's write record. */
+  tiedToAuthor?: (check: AuthorCheck) => boolean;
+  /** Note a copy's files trusted as of now. Defaults to the server's write record. */
+  markTrusted?: (id: string) => void;
 }
 
 /**
@@ -91,21 +100,27 @@ const LIVE: PathTrustEditDeps = {
   agentAtFull: agentAtFullNow,
   pin: (id, digest) => writeSource(id, (source) => ({ ...source, digest })),
   unpin: (id) => writeSource(id, ({ digest: _pinned, ...source }) => source),
-  editedByAuthor,
 };
 
 /** The file the last-seen digests are kept in. */
 const seenFile = (dorkHome: string) =>
   path.join(dorkHome, 'extension-data', 'path-trust-seen.json');
 
+/** The files a copy may run as without a person: their digest and each file's content. */
+interface TrustedFiles {
+  digest: string;
+  files: Record<string, string>;
+}
+
 /**
- * What the last scan saw: each copy's digest, the copies whose agent was below Full, and the
- * copies whose edit could not be tied to their author's own unheld turn.
+ * What the last scan saw: each copy's digest, the copies whose agent was below Full, the copies
+ * whose edit could not be traced to their author, and each copy's trusted files.
  */
 interface SeenState {
   digests: Record<string, string>;
   below: string[];
   untied: string[];
+  trusted: Record<string, TrustedFiles>;
 }
 
 /** What the last scan saw; unreadable reads as nothing. */
@@ -116,9 +131,10 @@ async function readSeen(dorkHome: string): Promise<SeenState> {
       digests: parsed.digests ?? {},
       below: parsed.below ?? [],
       untied: parsed.untied ?? [],
+      trusted: parsed.trusted ?? {},
     };
   } catch {
-    return { digests: {}, below: [], untied: [] };
+    return { digests: {}, below: [], untied: [], trusted: {} };
   }
 }
 
@@ -142,8 +158,19 @@ export async function notePathTrustEdits(
     const seen = state.digests;
     const below = new Set(state.below);
     const untied = new Set(state.untied);
-    const byAuthor = deps.editedByAuthor ?? editedByAuthor;
+    const trusted = state.trusted;
+    const filesOf = deps.filesOf ?? ((r, d) => verifiedFilesOf(dorkHome, r, d));
+    const tied = deps.tiedToAuthor ?? tiedToAuthor;
+    const noteTrusted = deps.markTrusted ?? markTrusted;
     let changed = false;
+    /** Trust a copy's files as they are now. Unreadable files are not trusted. */
+    const trust = async (record: ExtensionRecord, digest: string): Promise<void> => {
+      const files = await filesOf(record, digest);
+      if (!files) return;
+      trusted[record.id] = { digest, files };
+      noteTrusted(record.id);
+      changed = true;
+    };
     for (const record of records) {
       const source = approvals?.approvedSources?.[record.id];
       const digest = record.currentDigest;
@@ -162,6 +189,9 @@ export async function notePathTrustEdits(
         seen[record.id] = digest;
         changed = true;
       }
+      // First sight, or a copy seen before trusted files were kept, unchanged and running freely.
+      const settled = !edited && !source.digest && !untied.has(record.id) && !below.has(record.id);
+      if (!trusted[record.id] && (before === undefined || settled)) await trust(record, digest);
       if (!atFull) {
         if (!below.has(record.id)) {
           below.add(record.id);
@@ -177,33 +207,50 @@ export async function notePathTrustEdits(
       if (untied.has(record.id)) {
         // Held until a person approves; approving a path-trust copy writes no digest.
         if (source.digest) continue;
+        // Approved as it is: those files are the trusted ones now.
         untied.delete(record.id);
         changed = true;
+        await trust(record, digest);
+        continue;
       }
       // Pinned and back at Full: a raise alone runs nothing. Only an edit made now does.
       if (source.digest && (raisedNow || !edited || digest === source.digest)) continue;
-      if (edited && !byAuthor(record, source.authorHome)) {
-        // Not the author's own unheld turn, or not known to be: the files last seen stay.
-        if (!source.digest) deps.pin(record.id, before ?? digest);
+      if (!edited) continue;
+      const base = trusted[record.id];
+      const next = base ? await filesOf(record, digest) : null;
+      const traced =
+        !!base &&
+        !!next &&
+        tied({
+          id: record.id,
+          folder: record.realPath!,
+          authorHome: source.authorHome,
+          trusted: base.files,
+          next,
+        });
+      if (!traced) {
+        // Not traced to the author's own unheld turn: the trusted files stay.
+        if (!source.digest) deps.pin(record.id, base?.digest ?? before ?? digest);
         untied.add(record.id);
         changed = true;
         continue;
       }
+      trusted[record.id] = { digest, files: next! };
+      noteTrusted(record.id);
+      changed = true;
       if (source.digest) deps.unpin(record.id);
-      if (edited) {
-        recordFullAction({
-          actionId: 'extension.edit',
-          did: `edited the extension ${record.id}, and its server code runs as edited`,
-          limit: 'an edit to an extension waits for a person',
-          agentPath: source.authorHome,
-        });
-      }
+      recordFullAction({
+        actionId: 'extension.edit',
+        did: `edited the extension ${record.id}, and its server code runs as edited`,
+        limit: 'an edit to an extension waits for a person',
+        agentPath: source.authorHome,
+      });
     }
     if (changed) {
       await fs.mkdir(path.dirname(seenFile(dorkHome)), { recursive: true });
       await fs.writeFile(
         seenFile(dorkHome),
-        JSON.stringify({ digests: seen, below: [...below], untied: [...untied] })
+        JSON.stringify({ digests: seen, below: [...below], untied: [...untied], trusted })
       );
     }
   } catch (err) {
