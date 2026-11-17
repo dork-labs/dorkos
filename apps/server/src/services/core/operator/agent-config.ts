@@ -60,6 +60,9 @@ const CONFIG_DIR = '.claude';
  */
 export const AGENT_CONFIG_MAX_CHARS = 12_000;
 
+/** The card's line on what the file does once written. */
+const AGENT_CONFIG_RISK = "It runs as that agent, with that agent's access.";
+
 /** Longest relative path accepted. */
 const PATH_MAX_CHARS = 512;
 
@@ -275,8 +278,7 @@ export function createUpdateAgentConfigHandler(deps: McpToolDeps, callerAgentPat
 export function defineUpdateAgentConfig(requireDeps: (deps: CapabilityDeps) => McpToolDeps) {
   return defineCapability({
     id: ID,
-    // The card's first line, so it says what the file does once written.
-    title: "Change another agent's setup file, which runs as that agent",
+    title: "Change another agent's setup file",
     description:
       "Write one setup file under an agent's .claude folder: a hook, settings.json or a skill. " +
       'Use it for another agent, whose setup your own file tools and shell can’t change. path ' +
@@ -307,7 +309,10 @@ export function defineUpdateAgentConfig(requireDeps: (deps: CapabilityDeps) => M
         .describe('true makes the file runnable (a hook), false not; left out keeps what is there'),
     }),
     output: z.unknown(),
-    approvalDisplayFields: ['path', 'agent_id', 'cwd', 'executable'],
+    approvalDisplayFields: ['agent_id', 'cwd', 'path', 'executable', 'risk'],
+    // The risk gets its own line on the card rather than a clause in the title
+    // (designer, #3879). Fixed text, so nothing the caller sends can change it.
+    approvalView: (input) => ({ ...(input as object), risk: AGENT_CONFIG_RISK }),
     // The card names the agent, not its id (DOR-1929).
     approvalSubject: { field: 'agent_id', kind: 'agent' },
     // The file itself is the decision, so it rides the card's detail whole,

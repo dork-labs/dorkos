@@ -2,6 +2,7 @@
 covers:
   - "feat(agents): an agent can change another agent's setup files through DorkOS (DOR-4266)"
   - 'fix(agents): setup-file writes refuse outside words, hidden content and self-targets (DOR-4266)'
+  - 'fix(agents): the setup-file card says what the file does on its own line (DOR-4266)'
 ---
 
 ### Added

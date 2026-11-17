@@ -410,3 +410,13 @@ describe('Security review of #3879 (M1–M3, S4)', () => {
     expect(existsSync(join(agentPath, '.claude', 'settings.json'))).toBe(false);
   });
 });
+
+describe('the card (designer review of #3879)', () => {
+  it('says on its own line that the file runs as that agent', async () => {
+    await callTool({ cwd: agentPath, path: 'hooks/guard.py', content: 'print("ok")\n' });
+    const [pending] = approvals.listPending();
+    expect(pending!.summary).toContain("Change another agent's setup file");
+    expect(pending!.summary).toContain("It runs as that agent, with that agent's access.");
+    expect(pending!.summary).toContain('hooks/guard.py');
+  });
+});
