@@ -10,7 +10,7 @@ beforeEach(() => {
 afterEach(() => db.$client.close());
 const downSql = () =>
   readFileSync(
-    new URL('../down/20261116223501_room_seat_launch_requirements.down.sql', import.meta.url),
+    new URL('../down/20261117123918_room_seat_launch_requirements.down.sql', import.meta.url),
     'utf8'
   ).replace(/^\.bail on\n/u, '');
 const insert = (id: string, destination: string, dispatch: string, source = 'old', end = 8) =>
