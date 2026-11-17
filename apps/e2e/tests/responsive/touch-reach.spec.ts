@@ -1,4 +1,4 @@
-import type { Locator } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { test, expect } from '../../fixtures';
 import { openInCanvasBrowser, startDevServer } from '../../pages/canvas-dev-server';
 import { borderHeight, touchHeight } from '../../pages/touch-reach';
@@ -255,5 +255,80 @@ test.describe('Touch reach — the surfaces batch 07 fixed @smoke', () => {
         minReach: CHEVRON_MIN_REACH_PX,
       });
     }
+  });
+});
+
+/**
+ * The browser row at 390px (DOR-4436, spec §12), measured in the Dev Playground's
+ * phone cases, which draw the real `BrowserChrome`, status pill and ⋯ menu.
+ *
+ * The unit suites can only read class lists, and the defect this guards was
+ * invisible to them: the icon-only pill's `::after` reached about 6px past its
+ * chip and, with the pill and ⋯ touching, swallowed taps on ⋯'s left edge. So
+ * this asks the browser what a tap at each inner edge would land on.
+ */
+test.describe('Touch reach — the browser row on a phone (DOR-4436)', () => {
+  test.use({ viewport: PHONE });
+
+  /** What a tap at (x, y) lands on: the pill, the ⋯ menu, or something else. */
+  async function tapLandsOn(page: Page, x: number, y: number): Promise<string> {
+    return page.evaluate(
+      ([px, py]) => {
+        const hit = document.elementFromPoint(px, py);
+        if (hit?.closest('[data-slot="browser-status-pill"]')) return 'pill';
+        if (hit?.closest('button[aria-label="Browser menu"]')) return 'menu';
+        return hit ? `other: ${hit.tagName.toLowerCase()}` : 'nothing';
+      },
+      [x, y] as const
+    );
+  }
+
+  test('the pill and ⋯ each own their 44px, and the address reads at 16px', async ({ page }) => {
+    await page.goto('/dev/features');
+    const demo = page.getByTestId('browser-chrome-phone-driving');
+    await expect(demo, 'the Playground must draw the 390px browser row').toBeVisible({
+      timeout: 15_000,
+    });
+    await demo.scrollIntoViewIfNeeded();
+
+    const slot = demo.locator('[data-slot="browser-status-pill-slot"]');
+    const menu = demo.getByRole('button', { name: 'Browser menu', exact: true });
+    const slotBox = (await slot.boundingBox())!;
+    const menuBox = (await menu.boundingBox())!;
+    const y = menuBox.y + menuBox.height / 2;
+
+    expect(slotBox.width, 'the pill must hold at least 44px of the row').toBeGreaterThanOrEqual(
+      43.5
+    );
+    expect(menuBox.width, 'the ⋯ menu must be 44px wide').toBeGreaterThanOrEqual(43.5);
+    // Side by side: ⋯ starts where the pill's slot ends.
+    expect(Math.abs(menuBox.x - (slotBox.x + slotBox.width))).toBeLessThan(1);
+
+    expect(await tapLandsOn(page, menuBox.x + 1, y), 'a tap on ⋯’s left edge').toBe('menu');
+    expect(
+      await tapLandsOn(page, slotBox.x + slotBox.width - 1, y),
+      'a tap on the pill slot’s right edge'
+    ).toBe('pill');
+    expect(await tapLandsOn(page, slotBox.x + 1, y), 'a tap on the pill slot’s left edge').toBe(
+      'pill'
+    );
+
+    // 16px at rest, the same as the text box, so iOS never zooms and a tap never resizes it.
+    await expect(demo.getByRole('button', { name: /^Address:/ })).toHaveCSS('font-size', '16px');
+  });
+
+  test('Your turn shows its full words on a phone', async ({ page }) => {
+    await page.goto('/dev/features');
+    const demo = page.getByTestId('browser-chrome-phone-your-turn');
+    await expect(demo).toBeVisible({ timeout: 15_000 });
+    await demo.scrollIntoViewIfNeeded();
+    const pill = demo.locator('[data-slot="browser-status-pill"]');
+    await expect(pill).toHaveText('Your turn');
+    // Nothing cut off: the words fit inside the chip.
+    const clipped = await pill.evaluate((el) => {
+      const words = el.querySelector('span:last-child') as HTMLElement;
+      return words.scrollWidth > words.clientWidth;
+    });
+    expect(clipped, '"Your turn" must never be cut short').toBe(false);
   });
 });

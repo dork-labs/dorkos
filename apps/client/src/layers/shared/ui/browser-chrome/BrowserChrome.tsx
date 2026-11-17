@@ -127,7 +127,8 @@ export function BrowserChrome({
 }: BrowserChromeProps) {
   const stopping = loading && onStop !== undefined;
   // On a phone, Reload sits inside the field's right end rather than taking a
-  // 44px slot of its own (spec §12).
+  // 44px slot of its own (spec §12). Crossing `md` moves it to the other parent,
+  // which remounts it and drops an open tooltip; that is fine, and intended.
   const phone = useIsMobile();
   const reload = (
     <ChromeButton
@@ -183,7 +184,9 @@ export function BrowserChrome({
             {end && (
               <div
                 data-slot="browser-chrome-end"
-                className="flex shrink-0 items-center gap-0 md:gap-1"
+                // `empty:hidden`: a menu with nothing in it renders nothing, and an
+                // empty group must not add a gap of its own to the row.
+                className="flex shrink-0 items-center gap-0 empty:hidden md:gap-1"
               >
                 {status}
                 {trailing}

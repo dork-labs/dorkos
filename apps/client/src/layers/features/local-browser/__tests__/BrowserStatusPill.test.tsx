@@ -295,6 +295,22 @@ describe('BrowserStatusPill', () => {
     }
   });
 
+  it('holds a slot at least 44 wide in the row on a phone, the chip centred in it', () => {
+    // So the tap area fills the slot and never reaches the ⋯ beside it (DOR-4436 review).
+    // jsdom lays nothing out; the 390px measure lives in e2e touch-reach.spec.ts.
+    for (const kind of BROWSER_PILL_KINDS) {
+      const { unmount } = render(
+        <BrowserStatusPill state={EVERY_STATE[kind]} agentName="Atlas" now={NOW} />
+      );
+      const slot = document.querySelector('[data-slot="browser-status-pill-slot"]');
+      expect(slot).toContainElement(pill());
+      expect(slot).toHaveClass('flex', 'shrink-0', 'justify-center', 'max-md:min-w-11');
+      // The drawn chip itself is not widened.
+      expect(pill().className).not.toMatch(/(^|\s)(max-md:)?(min-)?w-11(\s|$)/);
+      unmount();
+    }
+  });
+
   it('shows Your turn’s full words on a phone and never shrinks', () => {
     render(<BrowserStatusPill state={EVERY_STATE['your-turn']} agentName="Atlas" now={NOW} />);
     // As wide as its words on a phone; the desktop's reserved width stays.

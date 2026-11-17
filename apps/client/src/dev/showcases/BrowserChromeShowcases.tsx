@@ -11,11 +11,19 @@ import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 
-/** One chrome at a fixed width over a blank page, with made-up addresses. */
-function ChromeDemo({ width, ...props }: Partial<BrowserChromeProps> & { width: number }) {
+/**
+ * One chrome at a fixed width over a blank page, with made-up addresses. `testId`
+ * marks the cases e2e measures (`apps/e2e/tests/responsive/touch-reach.spec.ts`).
+ */
+function ChromeDemo({
+  width,
+  testId,
+  ...props
+}: Partial<BrowserChromeProps> & { width: number; testId?: string }) {
   const [url, setUrl] = useState(props.url ?? 'https://www.example.com/docs/getting-started');
   return (
     <div
+      data-testid={testId}
       className="bg-background overflow-hidden rounded-lg border"
       style={{ width, maxWidth: '100%' }}
     >
@@ -103,6 +111,7 @@ export function BrowserChromeShowcases() {
       <ShowcaseDemo>
         <ChromeDemo
           width={390}
+          testId="browser-chrome-phone-driving"
           status={<BrowserStatusPill state={{ kind: 'driving' }} agentName="Atlas" />}
           menu={<DemoMenu />}
         />
@@ -113,6 +122,7 @@ export function BrowserChromeShowcases() {
       <ShowcaseDemo>
         <ChromeDemo
           width={390}
+          testId="browser-chrome-phone-your-turn"
           status={
             <BrowserStatusPill
               state={{

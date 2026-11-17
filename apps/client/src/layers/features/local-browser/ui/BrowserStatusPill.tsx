@@ -64,8 +64,18 @@ export function askedAgo(askedAt: string, now: number): string {
  * 44 wide, centred on it. `100%` is the chip's width, so a chip already 44 or
  * wider keeps its own edges. Same modifiers as the chip's hit area, so it
  * replaces that `inset-x-0` when merged.
+ *
+ * It never reaches a neighbour: the chip sits centred in a slot at least 44 wide
+ * in the row's own layout ({@link PILL_SLOT}), so this fills that slot exactly.
  */
 const PILL_PHONE_HIT_WIDTH = 'max-md:after:inset-x-[min(0px,calc((100%_-_2.75rem)/2))]';
+
+/**
+ * The pill's place in the row: on a phone at least 44 wide, with the drawn chip
+ * centred in it, so the ⋯ beside it starts where the pill's tap area ends (spec
+ * §12: the chip may look smaller than its 44 × 44 target).
+ */
+const PILL_SLOT = 'flex shrink-0 justify-center max-md:min-w-11';
 
 /** Words the pill says on its own, which an agent's name must not pass for. */
 const PILL_WORDS = new Set([
@@ -218,76 +228,81 @@ export function BrowserStatusPill({
       <span role="status" className="sr-only">
         {copy.status}
       </span>
-      <ResponsivePopover open={open} onOpenChange={onOpenChange}>
-        <ResponsivePopoverTrigger asChild>
-          <button
-            type="button"
-            data-slot="browser-status-pill"
-            data-state-kind={state.kind}
-            aria-label={copy.lines[0]}
-            className={cn(
-              chipVariants({ size: 'sm' }),
-              // Reserved: the address field never moves when the words change.
-              'w-32 justify-start',
-              !yourTurn && '@max-[479px]/browser-chrome:w-auto @max-[479px]/browser-chrome:px-2',
-              // On a phone the tap area is never under 44 wide, whatever the drawn
-              // chip's width: an icon-only chip's grows to each side (spec §12).
-              PILL_PHONE_HIT_WIDTH,
-              // On a phone, Your turn is as wide as its words, never cut; the field
-              // gives up the room. (The chip never shrinks: `shrink-0` is its own.)
-              yourTurn && 'max-md:w-auto',
-              // Orange means "this is about you": only Your turn wears it.
-              yourTurn && 'bg-brand/15 text-foreground hover:bg-brand/25'
-            )}
-          >
-            <copy.icon aria-hidden className={cn(yourTurn && 'text-brand')} />
-            {state.kind === 'driving' && (
-              <span
-                aria-hidden
-                data-slot="browser-status-pill-live"
-                className={cn('bg-status-success size-1.5 shrink-0 rounded-full', STATUS_DOT_PULSE)}
-              />
-            )}
-            <span
+      <span data-slot="browser-status-pill-slot" className={PILL_SLOT}>
+        <ResponsivePopover open={open} onOpenChange={onOpenChange}>
+          <ResponsivePopoverTrigger asChild>
+            <button
+              type="button"
+              data-slot="browser-status-pill"
+              data-state-kind={state.kind}
+              aria-label={copy.lines[0]}
               className={cn(
-                'min-w-0 truncate',
-                !yourTurn && '@max-[479px]/browser-chrome:sr-only',
-                yourTurn && 'max-md:min-w-max'
+                chipVariants({ size: 'sm' }),
+                // Reserved: the address field never moves when the words change.
+                'w-32 justify-start',
+                !yourTurn && '@max-[479px]/browser-chrome:w-auto @max-[479px]/browser-chrome:px-2',
+                // On a phone the tap area is never under 44 wide, whatever the drawn
+                // chip's width: an icon-only chip's grows to each side (spec §12).
+                PILL_PHONE_HIT_WIDTH,
+                // On a phone, Your turn is as wide as its words, never cut; the field
+                // gives up the room. (The chip never shrinks: `shrink-0` is its own.)
+                yourTurn && 'max-md:w-auto',
+                // Orange means "this is about you": only Your turn wears it.
+                yourTurn && 'bg-brand/15 text-foreground hover:bg-brand/25'
               )}
             >
-              {copy.label}
-            </span>
-          </button>
-        </ResponsivePopoverTrigger>
-        <ResponsivePopoverContent align="end" className="w-72 space-y-3 p-3 text-sm">
-          {/* The sheet's body already has its inset, so the title takes none of its own. */}
-          <ResponsivePopoverTitle headerClassName="px-0">
-            {copy.title ?? copy.label}
-          </ResponsivePopoverTitle>
-          <div className="space-y-1">
-            {copy.lines.map((line, index) => (
-              <p key={line} className={cn(index > 0 && 'text-muted-foreground')}>
-                {line}
-              </p>
-            ))}
-          </div>
-          {buttons.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {buttons.map((button, index) => (
-                <Button
-                  key={button.label}
-                  size="sm"
-                  variant={index === 0 ? 'default' : 'outline'}
-                  disabled={busy}
-                  onClick={run(button.action)}
-                >
-                  {button.label}
-                </Button>
+              <copy.icon aria-hidden className={cn(yourTurn && 'text-brand')} />
+              {state.kind === 'driving' && (
+                <span
+                  aria-hidden
+                  data-slot="browser-status-pill-live"
+                  className={cn(
+                    'bg-status-success size-1.5 shrink-0 rounded-full',
+                    STATUS_DOT_PULSE
+                  )}
+                />
+              )}
+              <span
+                className={cn(
+                  'min-w-0 truncate',
+                  !yourTurn && '@max-[479px]/browser-chrome:sr-only',
+                  yourTurn && 'max-md:min-w-max'
+                )}
+              >
+                {copy.label}
+              </span>
+            </button>
+          </ResponsivePopoverTrigger>
+          <ResponsivePopoverContent align="end" className="w-72 space-y-3 p-3 text-sm">
+            {/* The sheet's body already has its inset, so the title takes none of its own. */}
+            <ResponsivePopoverTitle headerClassName="px-0">
+              {copy.title ?? copy.label}
+            </ResponsivePopoverTitle>
+            <div className="space-y-1">
+              {copy.lines.map((line, index) => (
+                <p key={line} className={cn(index > 0 && 'text-muted-foreground')}>
+                  {line}
+                </p>
               ))}
             </div>
-          )}
-        </ResponsivePopoverContent>
-      </ResponsivePopover>
+            {buttons.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {buttons.map((button, index) => (
+                  <Button
+                    key={button.label}
+                    size="sm"
+                    variant={index === 0 ? 'default' : 'outline'}
+                    disabled={busy}
+                    onClick={run(button.action)}
+                  >
+                    {button.label}
+                  </Button>
+                ))}
+              </div>
+            )}
+          </ResponsivePopoverContent>
+        </ResponsivePopover>
+      </span>
     </>
   );
 }

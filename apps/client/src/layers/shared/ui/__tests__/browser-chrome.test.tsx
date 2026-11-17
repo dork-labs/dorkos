@@ -325,6 +325,17 @@ describe('BrowserChrome', () => {
     });
   });
 
+  it('adds no gap for an end group whose menu renders nothing', () => {
+    function NothingToOffer() {
+      return null;
+    }
+    const { container } = renderChrome({ menu: <NothingToOffer /> });
+    const end = container.querySelector('[data-slot="browser-chrome-end"]');
+    // jsdom applies no `:empty`; the class is what hides it in a real browser.
+    expect(end).toBeEmptyDOMElement();
+    expect(end).toHaveClass('empty:hidden');
+  });
+
   it('keeps Reload its own button before the field off a phone', () => {
     const { container } = renderChrome();
     const reload = screen.getByRole('button', { name: 'Reload' });
