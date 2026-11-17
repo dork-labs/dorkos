@@ -82,8 +82,28 @@ export function changesRepositoryControlFiles(args: Record<string, unknown>): bo
 /** Argument names that replace history when set; any value but an explicit "off" counts. */
 const FORCE_KEYS = new Set(['force', 'forcepush']);
 
-/** Argument names that create a branch when given a name. */
-const NEW_BRANCH_KEYS = new Set(['newbranch', 'startbranch', 'basebranch']);
+/**
+ * Argument names that create a branch when given a value. GitLab's
+ * `start_sha` and `start_project` start a branch from another commit or
+ * project, like `start_branch` (DOR-4507).
+ */
+const NEW_BRANCH_KEYS = new Set([
+  'newbranch',
+  'startbranch',
+  'basebranch',
+  'startsha',
+  'startproject',
+]);
+
+/** Values that plainly name no branch, commit or project. Anything else fails closed, numbers included. */
+function namesNothing(value: unknown): boolean {
+  return (
+    value === undefined ||
+    value === null ||
+    value === false ||
+    (typeof value === 'string' && value.trim().length === 0)
+  );
+}
 
 /** Values that plainly leave a force argument off. Anything else fails closed. */
 function forceIsOff(value: unknown): boolean {
@@ -110,7 +130,7 @@ export function changesRepositoryHistory(args: Record<string, unknown>): boolean
       const loose = looseKey(key);
       return (
         (FORCE_KEYS.has(loose) && !forceIsOff(entry)) ||
-        (NEW_BRANCH_KEYS.has(loose) && typeof entry === 'string' && entry.trim().length > 0) ||
+        (NEW_BRANCH_KEYS.has(loose) && !namesNothing(entry)) ||
         changes(entry)
       );
     });

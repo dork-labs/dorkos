@@ -304,6 +304,9 @@ const historyChanges = [
   ['github', MULTIPLE, { base_branch: 'main' }],
   ['gitlab', 'GITLAB_CREATE_COMMIT', { force: true }],
   ['gitlab', 'GITLAB_CREATE_COMMIT', { start_branch: 'main' }],
+  ['gitlab', 'GITLAB_CREATE_COMMIT', { start_sha: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2' }],
+  ['gitlab', 'GITLAB_CREATE_COMMIT', { start_project: 10 }],
+  ['gitlab', 'GITLAB_CREATE_COMMIT', { start_project: 'acme/other-project' }],
   ['gitlab', 'GITLAB_CREATE_FILE', { start_branch: 'main' }],
   ['gitea', 'GITEA_CHANGE_REPOSITORY_FILES', { force_push: true }],
   ['gitea', 'GITEA_CHANGE_REPOSITORY_FILES', { new_branch: 'topic' }],
@@ -346,6 +349,10 @@ describe('repository history and branch arguments need exact grants', () => {
     { Force_Push: 'TRUE' },
     { newBranch: 'topic' },
     { START_BRANCH: ' main ' },
+    { startSha: ' a1b2 ' },
+    { start_project: 0 },
+    { start_project: { id: 10 } },
+    { actions: [{ start_project: 10 }] },
   ])('fails closed on a loosely spelled history argument %j', async (args) => {
     const run = await setup();
     await expect(run('writer', MULTIPLE, args)).rejects.toMatchObject({
@@ -357,6 +364,8 @@ describe('repository history and branch arguments need exact grants', () => {
     { new_branch: '', start_branch: '', base_branch: '' },
     { force: 'false', force_push: '0', new_branch: null, start_branch: false },
     { new_branch: '   ' },
+    { start_sha: '', start_project: null },
+    { start_sha: '   ', start_project: false },
     { content: 'force: true', branch: 'main', forceful: true },
   ])('allows ordinary file changes with %j', async (args) => {
     const run = await setup();
