@@ -207,11 +207,10 @@ describe('the launch options every Claude Code turn is given', () => {
   it('registers the hooks that note who wrote a mini app’s files, before and after', async () => {
     // DOR-4528. Unregistered, every edit to an agent's own mini app is tied to no one and waits.
     const options = await captureSdkOptions();
-    const pre = (options.hooks?.PreToolUse ?? []).filter(
-      (m) => m.matcher === 'Edit|Write|MultiEdit|NotebookEdit'
-    );
-    // The diff baseline's and this one.
-    expect(pre).toHaveLength(2);
+    // On every tool, beside the held turn's ask, so a held turn that only starts later work still
+    // sets the launch's hold.
+    const everyTool = (options.hooks?.PreToolUse ?? []).filter((m) => m.matcher === undefined);
+    expect(everyTool).toHaveLength(2);
     expect(options.hooks?.PostToolUse).toContain(NOTE_WRITES_AFTER);
     expect(options.hooks?.PostToolUseFailure).toContain(NOTE_WRITES_AFTER);
   });
@@ -221,8 +220,9 @@ describe('the launch options every Claude Code turn is given', () => {
     const session = makeSession();
     const options = await captureSdkOptions(undefined, session);
     const unmatched = (options.hooks?.PreToolUse ?? []).filter((m) => m.matcher === undefined);
-    // The only hook on every tool: there is no teammate fence (DOR-3440).
-    expect(unmatched).toHaveLength(1);
+    // The held turn's ask comes first; the other hook on every tool only notes who wrote a mini
+    // app's files (DOR-4528). There is no teammate fence (DOR-3440).
+    expect(unmatched).toHaveLength(2);
     const hook = unmatched[0]!.hooks[0]!;
     const call = {
       hook_event_name: 'PreToolUse' as const,

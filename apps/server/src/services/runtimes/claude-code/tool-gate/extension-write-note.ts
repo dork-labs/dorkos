@@ -103,7 +103,7 @@ export function createExtensionWriteNote(turn: {
 }
 
 /**
- * The `PreToolUse` matcher a launch adds: notes each file-tool write as it starts, with the
+ * The `PreToolUse` matcher a launch adds, on every tool: notes each file-tool write as it starts, with the
  * turn's agent and whether it is held (a ceiling, or a mark that holds, read through the
  * session's current id as the other hooks read it). Once the launch has been held at all, at its
  * start or on any write since, every later write it notes stays held until the process ends: a
@@ -133,10 +133,12 @@ export function noteWritesBefore(
   };
   held();
   const note = createExtensionWriteNote({ cwd: turn.cwd, agentHome, held });
+  // On every tool, not only the file tools: a held turn may write nothing itself and only start
+  // the work that writes later (a helper, a timer), so any call it makes sets the latch.
   return {
-    matcher: FILE_TOOLS,
     hooks: [
       async (hookInput, toolUseId) => {
+        if (hookInput.hook_event_name === 'PreToolUse') held();
         const callId =
           hookInput.hook_event_name === 'PreToolUse' && (hookInput.tool_use_id || toolUseId);
         // A write with no id cannot be matched to its result, so it is not noted: it vouches for nothing.

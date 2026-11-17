@@ -55,7 +55,8 @@ describe('extension write hooks', () => {
 
   it('notes a relative Write, a new file included, as the turn’s agent', async () => {
     const open = noteWritesBefore({}, { sessionId: 's1', cwd: home, agentHome: home });
-    expect(open.matcher).toBe('Edit|Write|MultiEdit|NotebookEdit');
+    // On every tool, so any call a held turn makes sets the launch's hold.
+    expect(open.matcher).toBeUndefined();
     await call(
       open,
       't1',
@@ -103,6 +104,33 @@ describe('extension write hooks', () => {
     const input = { file_path: path.join(folder, 'server.ts'), content: 'later' };
     await call(launch, 't4', 'Write', input, () =>
       fs.writeFile(path.join(folder, 'server.ts'), 'later')
+    );
+    expect(await check()).toBe(false);
+  });
+
+  it('a held turn that only starts later work, with no write, still holds that work’s writes', async () => {
+    const session: { turnPermissionCeiling?: { asks: 'always'; reach: 'edit' } } = {};
+    const launch = noteWritesBefore(session as never, {
+      sessionId: 's5',
+      cwd: home,
+      agentHome: home,
+    });
+    // A held turn in this process calls only Task, then the hold lifts.
+    session.turnPermissionCeiling = { asks: 'always', reach: 'edit' };
+    await launch.hooks[0]!(
+      {
+        hook_event_name: 'PreToolUse',
+        tool_name: 'Task',
+        tool_input: {},
+        tool_use_id: 't5',
+      } as never,
+      't5',
+      signal
+    );
+    delete session.turnPermissionCeiling;
+    const input = { file_path: path.join(folder, 'server.ts'), content: 'helper' };
+    await call(launch, 't6', 'Write', input, () =>
+      fs.writeFile(path.join(folder, 'server.ts'), 'helper')
     );
     expect(await check()).toBe(false);
   });

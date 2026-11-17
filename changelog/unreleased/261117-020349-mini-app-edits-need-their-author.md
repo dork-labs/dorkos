@@ -4,6 +4,7 @@ covers:
   - 'fix(extensions): every changed file of a mini app is traced by content, and judged again before it runs (DOR-4528)'
   - "fix(extensions): a person's yes trusts exactly the files they approved, and only DorkOS keeps that record (DOR-4528)"
   - 'fix(extensions): a launch that was ever held keeps its later mini app writes held (DOR-4528)'
+  - "fix(extensions): any tool call a held turn makes sets its launch's hold (DOR-4528)"
 ---
 
 ### Changed
