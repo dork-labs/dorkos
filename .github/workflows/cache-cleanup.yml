@@ -1,0 +1,134 @@
+# Deletes the Actions caches of pull requests that are closed or merged.
+#
+# WHY (ledger 261117-141554). GitHub scopes caches by ref, a pull request's run
+# saves under `refs/pull/<n>/merge`, and that scope is readable by the same
+# pull request and nothing else. GitHub never deletes it when the PR closes;
+# it only ages out after 7 days unread, or sooner by LRU once the repo passes
+# its 10 GB budget, and LRU takes `main`'s entries as readily as anyone's. On
+# 2026-11-17 the repo held 10.5 GB in 20 entries, most of it on PR refs, and
+# main's `turbo-test-builds-*` entry, which every queue shard restores, kept
+# being evicted. Every workflow now saves only on `refs/heads/main` (DOR-4537
+# and this ledger), but a PR stacked on an old base still runs the old
+# workflow files and still saves, so this deletes what those leave behind.
+#
+# TWO LEGS, because neither covers the other:
+#
+#   * `pull_request: closed` deletes that PR's caches the moment it closes.
+#     A `pull_request` run uses the workflow files of the PR's own merge ref,
+#     so a PR whose base predates this file never runs this leg at all.
+#   * `schedule` (twice a day) and `workflow_dispatch` run from `main`: they
+#     list every cache on a `refs/pull/<n>/merge` ref, look up each PR, and
+#     delete only those whose PR is closed (merged is closed too). An open PR,
+#     a PR that cannot be read, and every ref that is not a PR merge ref
+#     (`main`, queue refs, tags) are kept and named in the log.
+#
+# SAFETY. It checks out nothing and runs no code from any pull request: every
+# step is `gh` against the REST API with this run's own token, and the only
+# value taken from the event is the PR number, passed through `env:`. Never
+# `pull_request_target`. A fork's `pull_request` run gets a read-only token,
+# so the closed leg skips forks and the sweep deletes theirs. The token has
+# `actions: write` (deleting caches) and nothing else: this repository is
+# public, so reading a PR's state needs no scope. If that ever stops being
+# true, every lookup warns, nothing is deleted, and the summary counts them.
+#
+# NOT A REQUIRED CHECK, and it must never become one: it reports on closed PRs
+# and on main, never on a PR head or a merge group.
+#
+# A failed delete (usually a cache another run already deleted) is a warning,
+# not a red; a failed listing is a red, and deletes nothing.
+name: cache-cleanup
+
+on:
+  pull_request:
+    types: [closed]
+  schedule:
+    - cron: '41 4,16 * * *'
+  workflow_dispatch:
+
+# The closed leg groups per PR; the sweep has one group, so two sweeps never
+# race each other's deletes. Nothing is cancelled: a half-run sweep deletes
+# less, never the wrong thing, but there is no reason to cut one short.
+concurrency:
+  group: cache-cleanup-${{ github.event.pull_request.number || 'sweep' }}
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+
+jobs:
+  cache-cleanup:
+    # Same-repository PRs only on the closed leg (a fork's token is read-only);
+    # the sweep catches the forks.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    # A run is a few dozen API calls, seconds. The ceiling bounds a hung `gh`.
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Delete the caches of closed pull requests
+        run: |
+          set -euo pipefail
+
+          deleted=0
+          bytes=0
+          failed=0
+          unread=0
+
+          # Every cache on one ref, all pages (the API returns at most 100 per
+          # page and `--paginate` follows the Link header to the last). The
+          # whole list is read before the first delete, so a delete cannot
+          # shift a page under the listing.
+          delete_ref() {
+            local ref=$1 entries id size key
+            entries=$(gh api --paginate "repos/$GH_REPO/actions/caches?per_page=100&ref=$ref" \
+              --jq '.actions_caches[] | "\(.id)\t\(.size_in_bytes)\t\(.key)"')
+            if [ -z "$entries" ]; then
+              echo "$ref: no caches"
+              return
+            fi
+            while IFS=$'\t' read -r id size key; do
+              if gh cache delete "$id" < /dev/null; then
+                echo "deleted $ref $key ($((size / 1048576)) MB)"
+                deleted=$((deleted + 1))
+                bytes=$((bytes + size))
+              else
+                echo "::warning title=Cache not deleted::$ref $key (id $id) could not be deleted; another run may have deleted it first."
+                failed=$((failed + 1))
+              fi
+            done <<< "$entries"
+          }
+
+          if [ "$GITHUB_EVENT_NAME" = 'pull_request' ]; then
+            case "$PR_NUMBER" in
+              '' | *[!0-9]*) echo "::error::not a pull request number: '$PR_NUMBER'"; exit 1 ;;
+            esac
+            delete_ref "refs/pull/$PR_NUMBER/merge"
+          else
+            # Every distinct ref with a cache, all pages, then only PR merge refs.
+            refs=$(gh api --paginate "repos/$GH_REPO/actions/caches?per_page=100" \
+              --jq '.actions_caches[].ref' | sort -u)
+            for ref in $refs; do
+              if ! [[ "$ref" =~ ^refs/pull/([0-9]+)/merge$ ]]; then
+                echo "keep $ref (not a pull request merge ref)"
+                continue
+              fi
+              number=${BASH_REMATCH[1]}
+              if ! state=$(gh api "repos/$GH_REPO/pulls/$number" --jq .state); then
+                echo "::warning title=Pull request not read::#$number could not be read, so its caches on $ref are kept."
+                unread=$((unread + 1))
+                continue
+              fi
+              if [ "$state" != 'closed' ]; then
+                echo "keep $ref (#$number is $state)"
+                continue
+              fi
+              delete_ref "$ref"
+            done
+          fi
+
+          summary="Deleted $deleted cache(s), $((bytes / 1048576)) MB; $failed could not be deleted; $unread pull request(s) could not be read, so their caches were kept."
+          echo "$summary"
+          echo "$summary" >> "$GITHUB_STEP_SUMMARY"
