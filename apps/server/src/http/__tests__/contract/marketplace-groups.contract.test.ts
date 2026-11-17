@@ -1134,13 +1134,16 @@ describe('contract: the marketplace groups with login on', () => {
     );
     expect(refused.status).toBe(403);
     expect(refused.json.code).toBe('marketplace_source_needs_app');
-    const added = await call(
+    // The owner's session adds it once they confirm it's them (DOR-4355).
+    const asked = await call(
       server,
       'POST',
       '/api/marketplace/sources',
       { name: 'contract', source: pathToFileURL(MARKET).href },
       cookie
     );
+    expect(asked.status).toBe(428);
+    const added = await confirmSetupAnswer(server!.baseUrl, asked, OWNER.password, cookie);
     expect(added.status).toBe(201);
     await check(server, {
       method: 'DELETE',

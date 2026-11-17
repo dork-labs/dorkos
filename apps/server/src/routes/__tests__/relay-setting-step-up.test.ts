@@ -41,7 +41,7 @@ import { Hono } from 'hono';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { StepUpRequiredBodySchema } from '@dorkos/shared/step-up';
-import { WEBHOOK_MANIFEST } from '@dorkos/relay';
+import { SLACK_MANIFEST, WEBHOOK_MANIFEST } from '@dorkos/relay';
 import type { StreamEvent } from '@dorkos/shared/types';
 
 import type { ApiEnv } from '../../http/api-chain.js';
@@ -401,12 +401,16 @@ describe('a marked agent turn typing secrets into a connection (DOR-3858, DOR-44
     expect(manager.updateConfig).toHaveBeenCalledOnce();
   });
 
-  it('allows the person writer to use a new address', async () => {
-    const res = await withStrangerMarkFlag(true, () =>
+  // A typed secret the connection keeps waits for the owner to confirm it's them (DOR-4355).
+  it('lets the person writer use a new address once they confirm the typed secrets', async () => {
+    const held = await withStrangerMarkFlag(true, () =>
       request(app()).patch('/api/relay/adapters/wh/config').send({ config: TYPED_SECRETS })
     );
+    expect(held.status).toBe(428);
+    expect(manager.updateConfig).not.toHaveBeenCalled();
 
-    expect(res.status).toBe(200);
+    const res = await confirmWith(held.body.heldActionId, PASSWORD);
+    expect(res.body).toMatchObject({ ok: true, status: 200 });
     expect(manager.updateConfig).toHaveBeenCalledOnce();
   });
 
@@ -618,5 +622,91 @@ describe('personSettingsIn', () => {
         e: 'secret:not-a-person-kind',
       })
     ).toEqual(['ONE', 'TWO']);
+  });
+});
+
+// DOR-4595: an id on a chat connection's approver or DM list counts as the owner there.
+describe('adding someone to a chat connection’s approver or DM list', () => {
+  /** A Slack connection that already lets one made-up teammate approve. */
+  function slackConnection() {
+    manager.resolveAdapterName.mockReturnValue('Northwind Slack');
+    manager.getManifest.mockReturnValue(SLACK_MANIFEST);
+    manager.getAdapter.mockReturnValue({
+      config: {
+        id: 'sl',
+        type: 'slack',
+        enabled: true,
+        builtin: false,
+        config: { approverAllowlist: 'U0OWNER01', dmAllowlist: [] },
+      },
+      status: { state: 'connected' },
+    });
+  }
+  const save = (
+    r: ReturnType<typeof request>,
+    config: Record<string, unknown>,
+    headers: Record<string, string> = {}
+  ) =>
+    r
+      .patch('/api/relay/adapters/sl/config')
+      .set('Origin', OWN_ORIGIN)
+      .set(headers)
+      .send({ config });
+
+  it.each([
+    ['approver', { approverAllowlist: 'U0OWNER01\nU0STRANGR', dmAllowlist: [] }],
+    ['DM', { approverAllowlist: 'U0OWNER01', dmAllowlist: ['U0STRANGR'] }],
+  ])('holds the owner’s %s addition, naming the id and the connection', async (_list, config) => {
+    slackConnection();
+    const held = await save(request(app()), config);
+    expect(held.status).toBe(428);
+    expect(manager.updateConfig).not.toHaveBeenCalled();
+    const view = await request(app())
+      .get(`/api/step-up/${held.body.heldActionId}`)
+      .set('Origin', OWN_ORIGIN);
+    expect(view.body.reason).toContain('U0STRANGR');
+    expect(view.body.reason).toContain('Northwind Slack');
+
+    const confirmed = await confirmWith(held.body.heldActionId, PASSWORD);
+    expect(confirmed.body).toMatchObject({ ok: true, status: 200 });
+    expect(manager.updateConfig).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['a marked agent turn', true],
+    ['an unmarked agent', false],
+  ])('refuses %s adding an approver, and applies nothing', async (_label, marked) => {
+    slackConnection();
+    const send = () =>
+      save(
+        request(app(null)),
+        { approverAllowlist: 'U0OWNER01\nU0STRANGR', dmAllowlist: [] },
+        { [AGENT[0]]: AGENT[1] }
+      );
+    const res = await withStrangerMarkFlag(true, () => (marked ? duringMarkedTurn(send) : send()));
+    expect(res.status).toBe(403);
+    expect(res.body.heldActionId).toBeUndefined();
+    expect(manager.updateConfig).not.toHaveBeenCalled();
+  });
+
+  it('refuses an unidentified caller adding a DM id, and applies nothing', async () => {
+    slackConnection();
+    const res = await withStrangerMarkFlag(true, () =>
+      save(
+        request(app(null)),
+        { approverAllowlist: 'U0OWNER01', dmAllowlist: ['U0STRANGR'] },
+        { 'X-DorkOS-Agent': 'made-up-unknown-token' }
+      )
+    );
+    expect(res.status).toBe(403);
+    expect(manager.updateConfig).not.toHaveBeenCalled();
+  });
+
+  it('removes someone at once', async () => {
+    slackConnection();
+    const res = await save(request(app()), { approverAllowlist: '', dmAllowlist: [] });
+    expect(res.status).toBe(200);
+    expect(res.body.heldActionId).toBeUndefined();
+    expect(manager.updateConfig).toHaveBeenCalledOnce();
   });
 });

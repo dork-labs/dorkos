@@ -521,14 +521,27 @@ describe('operator-only task fields on the REST routes', () => {
       expect(store.getTask(existing.id)!.permissionMode).toBe('acceptEdits');
     });
 
-    it('allows a signed-in person', async () => {
+    it('allows a signed-in person to lower the mode', async () => {
+      signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
+      const res = await request(fixtureServer)
+        .patch(`/api/tasks/${existing.id}`)
+        .send({ permissionMode: 'default' });
+
+      expect(res.status).toBe(200);
+      expect(store.getTask(existing.id)!.permissionMode).toBe('default');
+    });
+
+    // The owner's confirmed raise is proved with a real sign-in in tasks-arm-step-up.test.ts.
+    it('refuses a raise from a signed-in person who is not the owner (DOR-4355)', async () => {
       signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
       const res = await request(fixtureServer)
         .patch(`/api/tasks/${existing.id}`)
         .send({ permissionMode: 'bypassPermissions' });
 
-      expect(res.status).toBe(200);
-      expect(store.getTask(existing.id)!.permissionMode).toBe('bypassPermissions');
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
+      expect(res.body.heldActionId).toBeUndefined();
+      expect(store.getTask(existing.id)!.permissionMode).toBe('acceptEdits');
     });
 
     it('still refuses a signed-in caller that names itself an agent', async () => {

@@ -82,6 +82,34 @@ export const STEP_UP_ACTION_KINDS = [
   'extensions.trust-source',
   /** Turn on an extension (DOR-4355). */
   'extensions.enable',
+  /** Give an agent a standing page-event route (DOR-4355). */
+  'canvas.route-approve',
+  /** Widen what agents may do with a connected app (DOR-4355). */
+  'connection.grant',
+  /** Save a key or secret a connected app uses (DOR-4355). */
+  'connection.credential',
+  /** Install, update or link code that runs in DorkOS (DOR-4355). */
+  'marketplace.install',
+  /** Add a place packages are installed from (DOR-4355). */
+  'marketplace.source',
+  /** Apply a Shape, which turns on its extensions and schedules (DOR-4355). */
+  'shapes.apply',
+  /** Run a workspace’s setup or removal commands (DOR-4355). */
+  'workspace.setup',
+  /** Let a schedule run with more permission (DOR-4355). */
+  'tasks.arm',
+  /** Widen which Claude accounts may run where (DOR-4355). */
+  'accounts.eligibility',
+  /** Connect a space account (DOR-4355). */
+  'community.connect',
+  /** Widen who in a space can wake your agents (DOR-4355). */
+  'community.wake',
+  /** Give an extension a secret (DOR-4355). */
+  'extensions.secret',
+  /** Raise what a chat connection may do, or point it elsewhere (DOR-4355). */
+  'relay.binding',
+  /** Let someone approve or message your agents on a chat app (DOR-4355). */
+  'relay.allowlist',
   /** Link this computer to an account. */
   'cloud.link',
   /** Open an account billing action. */

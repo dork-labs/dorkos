@@ -962,6 +962,15 @@ describe('contract: the connector groups, driven by hand (login off)', () => {
     if (agent) rmSync(agent.agentDir, { recursive: true, force: true });
   }, 30_000);
 
+  /**
+   * A write that gives access or saves a key, which waits for the owner now
+   * that one exists (DOR-4355), confirmed through the real step-up route.
+   */
+  async function confirmed(held: Answer): Promise<Answer> {
+    expect(held.status).toBe(428);
+    return confirmSetupAnswer(server!.baseUrl, held, OWNER_PASSWORD, personCookie);
+  }
+
   it('reports the saved key as configured, and never echoes it', async () => {
     const listed = await call(server, 'GET', '/api/connectors/providers');
     expect(listed.status).toBe(200);
@@ -970,9 +979,11 @@ describe('contract: the connector groups, driven by hand (login off)', () => {
       (provider) => provider.type === 'composio'
     );
     expect(composio?.configured).toBe(true);
-    const saved = await call(server, 'PUT', '/api/connectors/providers/composio/credential', {
+    const held = await call(server, 'PUT', '/api/connectors/providers/composio/credential', {
       secret: OFFLINE_KEY,
     });
+    expect(JSON.stringify(held.json)).not.toContain(OFFLINE_KEY);
+    const saved = await confirmed(held);
     expect(saved.status).toBe(200);
     expect(saved.json).toMatchObject({ type: 'composio', configured: true, registered: true });
     expect(JSON.stringify(saved.json)).not.toContain(OFFLINE_KEY);
@@ -1057,12 +1068,14 @@ describe('contract: the connector groups, driven by hand (login off)', () => {
         body: { setupMode: 'byo_webhook', configured: false, endpoint: null, reason: null },
       },
     });
-    const saved = await call(
+    const held = await call(
       server,
       'PUT',
       `/api/connectors/connections/${connectionId}/events/source`,
       { publicOrigin: 'https://offline-events.example', webhookSecret: OFFLINE_SIGNING_SECRET }
     );
+    expect(JSON.stringify(held.json)).not.toContain(OFFLINE_SIGNING_SECRET);
+    const saved = await confirmed(held);
     expect(saved.status).toBe(200);
     expect(saved.json).toEqual({
       setupMode: 'byo_webhook',
@@ -1096,23 +1109,31 @@ describe('contract: the connector groups, driven by hand (login off)', () => {
       body: { requestId: randomUUID(), ...scope },
       expect: { status: 403, body: OWNER_REQUIRED },
     });
-    await check(server, {
-      method: 'POST',
-      path: `/api/connectors/connections/${connectionId}/events/subscriptions`,
-      body: { requestId: randomUUID(), ...scope, definitionId: 'not-a-definition' },
-      expect: {
-        status: 409,
-        body: {
-          code: 'definition_changed',
-          error: 'These notification settings changed. Review them again.',
-        },
-      },
+    // A definition that no longer fits is found once the owner confirms, and nothing is set up.
+    const changed = await confirmed(
+      await call(
+        server,
+        'POST',
+        `/api/connectors/connections/${connectionId}/events/subscriptions`,
+        {
+          requestId: randomUUID(),
+          ...scope,
+          definitionId: 'not-a-definition',
+        }
+      )
+    );
+    expect(changed.status).toBe(409);
+    expect(changed.json).toEqual({
+      code: 'definition_changed',
+      error: 'These notification settings changed. Review them again.',
     });
-    const created = await call(
-      server,
-      'POST',
-      `/api/connectors/connections/${connectionId}/events/subscriptions`,
-      { requestId: randomUUID(), ...scope }
+    const created = await confirmed(
+      await call(
+        server,
+        'POST',
+        `/api/connectors/connections/${connectionId}/events/subscriptions`,
+        { requestId: randomUUID(), ...scope }
+      )
     );
     expect(created.status).toBe(201);
     expect(created.json).toMatchObject({ connectionId, agentId: agent.agentId, state: 'active' });
@@ -1225,31 +1246,26 @@ describe('contract: the connector groups, driven by hand (login off)', () => {
       body: { previewId: preview.json.previewId, grants },
       expect: { status: 403, body: OWNER_REQUIRED },
     });
-    await check(server, {
-      method: 'POST',
-      path: '/api/connectors/reconciliation/apply',
-      body: { previewId: preview.json.previewId, grants },
-      expect: {
-        status: 200,
-        body: {
-          connectionId,
-          reconciliationStatus: 'ready',
-          authoritySync: { status: 'ready' },
+    const apply = async () =>
+      confirmed(
+        await call(server, 'POST', '/api/connectors/reconciliation/apply', {
+          previewId: preview.json.previewId,
           grants,
-        },
-      },
+        })
+      );
+    const applied = await apply();
+    expect(applied.status).toBe(200);
+    expect(applied.json).toEqual({
+      connectionId,
+      reconciliationStatus: 'ready',
+      authoritySync: { status: 'ready' },
+      grants,
     });
-    await check(server, {
-      method: 'POST',
-      path: '/api/connectors/reconciliation/apply',
-      body: { previewId: preview.json.previewId, grants },
-      expect: {
-        status: 409,
-        body: {
-          error: 'This permission review is stale. Refresh and review the current actions.',
-          code: 'preview_stale',
-        },
-      },
+    const stale = await apply();
+    expect(stale.status).toBe(409);
+    expect(stale.json).toEqual({
+      error: 'This permission review is stale. Refresh and review the current actions.',
+      code: 'preview_stale',
     });
     await check(server, {
       path: `/api/connectors/agents/${agent.agentId}/connections`,
@@ -1429,12 +1445,19 @@ describe('contract: the connector groups, driven by hand (login off)', () => {
     const preview = await setup(server, 'POST', '/api/connectors/reconciliation/previews', {
       connectionId,
     });
-    await setup(server, 'POST', '/api/connectors/reconciliation/apply', {
-      previewId: preview.json.previewId,
-      grants: [
-        { agentId: agent.agentId, operationRevisionIds: [revisions.read, revisions.destructive] },
-      ],
-    });
+    await setup(
+      server,
+      'POST',
+      '/api/connectors/reconciliation/apply',
+      {
+        previewId: preview.json.previewId,
+        grants: [
+          { agentId: agent.agentId, operationRevisionIds: [revisions.read, revisions.destructive] },
+        ],
+      },
+      personCookie,
+      OWNER_PASSWORD
+    );
     const target = {
       agentId: agent.agentId,
       connectionId,
@@ -1493,26 +1516,26 @@ describe('contract: the connector groups, driven by hand (login off)', () => {
       path: `/api/connectors/connections/${connectionId}/pause`,
       expect: { status: 200, schema: LIFECYCLE('paused') },
     });
-    await check(server, {
-      method: 'POST',
-      path: `/api/connectors/connections/${connectionId}/resume`,
-      expect: { status: 200, schema: LIFECYCLE('connected') },
-    });
+    const resumed = await confirmed(
+      await call(server, 'POST', `/api/connectors/connections/${connectionId}/resume`)
+    );
+    expect(resumed.status).toBe(200);
+    LIFECYCLE('connected').parse(resumed.json);
     await check(server, {
       method: 'PATCH',
       path: `/api/connectors/connections/${connectionId}`,
       body: { label: 'renamed' },
       expect: { status: 200, schema: LIFECYCLE('connected') },
     });
-    await check(server, {
-      method: 'POST',
-      path: `/api/connectors/connections/${connectionId}/reconnect`,
-      body: { idempotencyKey: randomUUID() },
-      expect: {
-        status: 201,
-        schema: z.object({ flowId: z.string(), state: z.literal('pending') }).loose(),
-      },
-    });
+    const reconnecting = await confirmed(
+      await call(server, 'POST', `/api/connectors/connections/${connectionId}/reconnect`, {
+        idempotencyKey: randomUUID(),
+      })
+    );
+    expect(reconnecting.status).toBe(201);
+    z.object({ flowId: z.string(), state: z.literal('pending') })
+      .loose()
+      .parse(reconnecting.json);
     await check(server, {
       method: 'POST',
       path: `/api/connectors/connections/${connectionId}/remove`,

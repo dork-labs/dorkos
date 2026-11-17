@@ -8,7 +8,8 @@
  * (`{ capAt, hash }`, `Task.fileCap.at` and `.hash`), and the approval holds
  * only while the file still hashes to exactly that. A person's action only, behind the bar `PATCH /api/tasks/:id`
  * holds `status` to (`clearsTheAgentBar`), and refused from Wi-Fi like any
- * approval of a schedule (DOR-3037).
+ * approval of a schedule (DOR-3037). It then waits for the owner to confirm
+ * it's them (DOR-4355), since the approval lasts for every later run.
  *
  * @module routes/task-file-approve
  */
@@ -22,6 +23,7 @@ import { readJsonBody } from '../http/request-body.js';
 import { broadcastTasksChanged } from '../services/tasks/task-sse-events.js';
 import { operatorOnlyTaskRefusal } from './task-route-answers.js';
 import { wifiScheduleRefusal } from './task-wifi-guard.js';
+import { holdTaskArm } from './task-arm-raise.js';
 import type { TaskModeUndoDeps } from './task-mode-undo.js';
 
 /** What a request that names no cap reads. */
@@ -51,20 +53,30 @@ export function mountTaskFileApprove(router: Hono<ApiEnv>, deps: TaskModeUndoDep
     if (typeof body?.capAt !== 'string' || typeof body.hash !== 'string') {
       return c.json(APPROVE_NEEDS_ITS_CAP, 400);
     }
-    const outcome = await approveCappedFile(deps.store, c.req.param('id'), body.capAt, body.hash);
-    if (!outcome.ok) return c.json(outcome.body, outcome.status);
-    const { task } = outcome;
-    broadcastTasksChanged();
-    deps.activity?.emit({
-      ...readActivityActor(honoRequestFacts(c)),
-      category: 'tasks',
-      eventType: 'tasks.task_approved',
-      resourceType: 'schedule',
-      resourceId: task.id,
-      resourceLabel: task.displayName ?? task.name,
-      summary: `Approved the changed file of scheduled task ${task.displayName ?? task.name}`,
-      linkPath: '/',
+    const id = c.req.param('id');
+    const { capAt, hash } = body;
+    // Lifting the cap lets the file's runs go on unwatched, so it waits for the owner (DOR-4355).
+    return holdTaskArm(c, {
+      target: `scheduled-task:${id}`,
+      input: { capAt, hash },
+      reason: 'Approve this scheduled task’s changed file.',
+      run: async (confirming) => {
+        const outcome = await approveCappedFile(deps.store, id, capAt, hash);
+        if (!outcome.ok) return c.json(outcome.body, outcome.status);
+        const { task } = outcome;
+        broadcastTasksChanged();
+        deps.activity?.emit({
+          ...readActivityActor(confirming),
+          category: 'tasks',
+          eventType: 'tasks.task_approved',
+          resourceType: 'schedule',
+          resourceId: task.id,
+          resourceLabel: task.displayName ?? task.name,
+          summary: `Approved the changed file of scheduled task ${task.displayName ?? task.name}`,
+          linkPath: '/',
+        });
+        return c.json(task);
+      },
     });
-    return c.json(task);
   });
 }

@@ -32,6 +32,7 @@ import { UpdateTaskRequestSchema } from '@dorkos/shared/schemas';
 import type { PermissionMode, Task } from '@dorkos/shared/schemas';
 import { describeScheduleProblem } from '../services/tasks/cron-validation.js';
 import { wifiScheduleRefusal } from './task-wifi-guard.js';
+import { holdTaskRaise, taskEditRaises } from './task-arm-raise.js';
 import { prepareTaskApprovalRequest } from './task-approval-request.js';
 import { applyTaskFileUpdate } from '../services/tasks/lifecycle/update-task-file.js';
 import { conflictingTimingRequest } from '../services/tasks/timing/effective-timing.js';
@@ -78,7 +79,7 @@ import { marksHold } from '../services/core/turn-power/turn-marks.js';
 import * as taskApprovalActor from './task-approval-actor.js';
 import type { TasksRouterDeps } from './tasks-deps.js';
 
-/** Update a schedule, confirming persistent credits first. */
+/** Update a schedule, confirming persistent credits and a person's raise first. */
 export async function updateTaskHttp(
   c: Context<ApiEnv>,
   deps: TasksRouterDeps,
@@ -230,6 +231,15 @@ export async function updateTaskHttp(
     if (problem) {
       return c.json({ error: problem }, 400);
     }
+  }
+
+  // A person's raise of what the unattended run may do waits for the owner (DOR-4355).
+  if (trusted && !confirming && taskEditRaises(data, existing)) {
+    return holdTaskRaise(c, store, existing, {
+      input: { id, data },
+      reason: 'Let this scheduled task run with more permission.',
+      run: (verified) => updateTaskHttp(c, deps, present, verified),
+    });
   }
 
   // A caller that cannot NAME `bypassPermissions` must not be able to KEEP one

@@ -26,7 +26,9 @@
  * route has: with Require login off, a local caller that omits its
  * `X-DorkOS-Agent` header passes, and an approved extension's own browser code
  * shares the app's page and so passes in either posture. Each write records an
- * Activity entry naming who changed what.
+ * Activity entry naming who changed what. A write that widens where an account
+ * may work waits for the owner to confirm it's them (DOR-4355); narrowing one
+ * stays immediate.
  *
  * Every write goes through `account-eligibility-writes.ts`, which rewrites the
  * whole `runtimes.claudeCode` block: project roots contain dots, and a dotted
@@ -87,34 +89,14 @@ import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { assessPerson, type PersonBarCopy } from './extensions-person-bar.js';
 import { writerForPosture } from './permissions.js';
-
-/** What the person bar says when anything but a person tries to change a rule. */
-const ACCOUNT_RULES_BAR: PersonBarCopy = {
-  error: 'Only a person can change where an account may be used.',
-  code: 'operator_only_config',
-  subject: 'where each Claude account may be used',
-  crossSite: (origin) =>
-    `DorkOS changed nothing. This request came from ${origin}, which is not DorkOS. ` +
-    `Which projects an account may work in is something a person sets in their own copy ` +
-    `of the app, not something another site can change for them.`,
-  agent:
-    'DorkOS changed nothing. Which projects a Claude account may work in is a decision ' +
-    'only a person makes. Ask them to change it in Settings → Runtimes.',
-};
-
-/** What the person bar says when anything but a person flips an account's automatic-move switch. */
-const NO_AUTO_MOVE_BAR: PersonBarCopy = {
-  error: 'Only a person can choose whether agents move here automatically.',
-  code: 'operator_only_config',
-  subject: 'whether agents move to each Claude account automatically',
-  crossSite: (origin) =>
-    `DorkOS changed nothing. This request came from ${origin}, which is not DorkOS. ` +
-    `Whether agents move to an account automatically is something a person sets in their ` +
-    `own copy of the app, not something another site can change for them.`,
-  agent:
-    'DorkOS changed nothing. Whether agents move to a Claude account automatically is a ' +
-    'decision only a person makes. Ask them to change it in Settings → Runtimes.',
-};
+import {
+  ACCOUNT_RULES_BAR,
+  NO_AUTO_MOVE_BAR,
+  NO_AUTO_MOVE_FAILED,
+  ONLY_PROJECTS_FAILED,
+  PROJECT_ACCOUNTS_FAILED,
+  holdAccountWidening,
+} from './account-eligibility-hold.js';
 
 /** The refusal for a folder outside the directory boundary. */
 const OUTSIDE_BOUNDARY = {
@@ -324,35 +306,49 @@ export function mountAccountEligibilityRoutes(
           );
         }
       }
-      const before = configManager.get('runtimes');
-      writeProjectAccounts(configManager, project.root, allow);
-      logConfigWrite(
-        'the project-accounts route',
-        'runtimes',
-        before,
-        configManager.get('runtimes')
-      );
-      const names = allow?.map((id) => accountDisplayName(configManager, id)) ?? [];
-      await activity?.emit({
-        ...readActivityActor(caller),
-        category: 'config',
-        eventType: 'config.accounts_updated',
-        resourceType: 'project',
-        resourceId: project.root,
-        resourceLabel: project.name,
-        summary:
-          allow === null
-            ? `${project.name} may use every account again`
-            : names.length === 0
-              ? `${project.name} may use no account`
-              : `${project.name} may use only ${joinNames(names)}`,
-        linkPath: '/?settings=runtimes',
-        metadata: { project: project.root, allow },
+      const rules = readEligibilityRules(configManager.get('runtimes')?.claudeCode);
+      const current = rules.projectAllow.get(project.root) ?? null;
+      const widens =
+        current !== null && (allow === null || allow.some((id) => !current.includes(id)));
+      const run = async (caller: RequestFacts) => {
+        const before = configManager.get('runtimes');
+        writeProjectAccounts(configManager, project.root, allow);
+        logConfigWrite(
+          'the project-accounts route',
+          'runtimes',
+          before,
+          configManager.get('runtimes')
+        );
+        const names = allow?.map((id) => accountDisplayName(configManager, id)) ?? [];
+        await activity?.emit({
+          ...readActivityActor(caller),
+          category: 'config',
+          eventType: 'config.accounts_updated',
+          resourceType: 'project',
+          resourceId: project.root,
+          resourceLabel: project.name,
+          summary:
+            allow === null
+              ? `${project.name} may use every account again`
+              : names.length === 0
+                ? `${project.name} may use no account`
+                : `${project.name} may use only ${joinNames(names)}`,
+          linkPath: '/?settings=runtimes',
+          metadata: { project: project.root, allow },
+        });
+        return c.json(eligibilityFor(project));
+      };
+      if (!widens) return await run(caller);
+      return await holdAccountWidening(c, {
+        target: `project:${project.root}`,
+        input: { project: project.root, allow },
+        reason: `Let more Claude accounts work in ${project.name}.`,
+        failure: PROJECT_ACCOUNTS_FAILED,
+        run,
       });
-      return c.json(eligibilityFor(project));
     } catch (err) {
       logger.error('[Runtimes] could not save a project account list', { err: String(err) });
-      return c.json({ error: 'Could not save which accounts this project may use.' }, 500);
+      return c.json({ error: PROJECT_ACCOUNTS_FAILED }, 500);
     }
   });
 
@@ -467,31 +463,49 @@ export function mountAccountEligibilityRoutes(
           roots.push(project.root);
         }
       }
-      const before = configManager.get('runtimes');
-      if (!writeOnlyProjects(configManager, accountId, roots)) return c.json(unknownAccount, 404);
-      logConfigWrite('the only-projects route', 'runtimes', before, configManager.get('runtimes'));
-      const onlyProjects = onlyProjectsOf(configManager, accountId);
-      const name = accountDisplayName(configManager, accountId);
-      await activity?.emit({
-        ...readActivityActor(caller),
-        category: 'config',
-        eventType: 'config.accounts_updated',
-        resourceType: 'account',
-        resourceId: accountId,
-        resourceLabel: name,
-        summary:
-          onlyProjects === null
-            ? `${name} may work in any project again`
-            : onlyProjects.length === 0
-              ? `${name} is now ${NOT_USED_IN_ANY_PROJECT.toLowerCase()}`
-              : `${name} is now only for ${joinNames(onlyProjects.map((p) => p.name))}`,
-        linkPath: '/?settings=runtimes',
-        metadata: { account: accountId, onlyProjects: roots },
+      const current = onlyProjectsOf(configManager, accountId)?.map((p) => p.root) ?? null;
+      const next = roots;
+      const widens = current !== null && (next === null || next.some((r) => !current.includes(r)));
+      const run = async (caller: RequestFacts) => {
+        const before = configManager.get('runtimes');
+        if (!writeOnlyProjects(configManager, accountId, next)) return c.json(unknownAccount, 404);
+        logConfigWrite(
+          'the only-projects route',
+          'runtimes',
+          before,
+          configManager.get('runtimes')
+        );
+        const onlyProjects = onlyProjectsOf(configManager, accountId);
+        const name = accountDisplayName(configManager, accountId);
+        await activity?.emit({
+          ...readActivityActor(caller),
+          category: 'config',
+          eventType: 'config.accounts_updated',
+          resourceType: 'account',
+          resourceId: accountId,
+          resourceLabel: name,
+          summary:
+            onlyProjects === null
+              ? `${name} may work in any project again`
+              : onlyProjects.length === 0
+                ? `${name} is now ${NOT_USED_IN_ANY_PROJECT.toLowerCase()}`
+                : `${name} is now only for ${joinNames(onlyProjects.map((p) => p.name))}`,
+          linkPath: '/?settings=runtimes',
+          metadata: { account: accountId, onlyProjects: next },
+        });
+        return c.json({ onlyProjects });
+      };
+      if (!widens) return await run(caller);
+      return await holdAccountWidening(c, {
+        target: `claude-account:${accountId}`,
+        input: { account: accountId, projects: next },
+        reason: `Let ${accountDisplayName(configManager, accountId)} work in more projects.`,
+        failure: ONLY_PROJECTS_FAILED,
+        run,
       });
-      return c.json({ onlyProjects });
     } catch (err) {
       logger.error('[Runtimes] could not save an account project list', { err: String(err) });
-      return c.json({ error: 'Could not save which projects this account may use.' }, 500);
+      return c.json({ error: ONLY_PROJECTS_FAILED }, 500);
     }
   });
 
@@ -515,15 +529,17 @@ export function mountAccountEligibilityRoutes(
     // not one, so it answers like an account that does not exist.
     const before = configAutoMoveFlagPort(configManager).flagOf(accountId);
     if (before === 'gone') return c.json(unknownAccount, 404);
-    try {
-      const { noAutoMove } = parsed.data;
+    const { noAutoMove } = parsed.data;
+    const run = async (caller: RequestFacts) => {
       const stored = configManager.get('runtimes');
-      if (!writeNoAutoMove(configManager, accountId, noAutoMove)) {
+      // Read again: a confirmation can come after the flag moved.
+      const prior = configAutoMoveFlagPort(configManager).flagOf(accountId);
+      if (prior === 'gone' || !writeNoAutoMove(configManager, accountId, noAutoMove)) {
         return c.json(unknownAccount, 404);
       }
       logConfigWrite('the no-auto-move route', 'runtimes', stored, configManager.get('runtimes'));
       const after = noAutoMove ? KEPT_FROM_AUTO_MOVES : null;
-      if (after !== before) {
+      if (after !== prior) {
         // The person bar passed, so this is a person: the history names them
         // the way every permission write does, and its Undo flips the flag back.
         const authority = resolveDecisionAuthority(readCallerAuthority(caller));
@@ -536,7 +552,7 @@ export function mountAccountEligibilityRoutes(
                 accountId,
                 accountName: accountDisplayName(configManager, accountId),
               },
-              before,
+              before: prior,
               after,
             },
           ],
@@ -548,11 +564,22 @@ export function mountAccountEligibilityRoutes(
         });
       }
       return c.json({ noAutoMove });
+    };
+    try {
+      // Letting agents move here on their own again widens where they run.
+      if (noAutoMove || before === null) return await run(caller);
+      return await holdAccountWidening(c, {
+        target: `claude-account:${accountId}`,
+        input: { account: accountId, noAutoMove },
+        reason: `Let agents move to ${accountDisplayName(configManager, accountId)} on their own.`,
+        failure: NO_AUTO_MOVE_FAILED,
+        run,
+      });
     } catch (err) {
       logger.error('[Runtimes] could not save an account automatic-move flag', {
         err: String(err),
       });
-      return c.json({ error: 'Could not save whether agents move to this account.' }, 500);
+      return c.json({ error: NO_AUTO_MOVE_FAILED }, 500);
     }
   });
 }

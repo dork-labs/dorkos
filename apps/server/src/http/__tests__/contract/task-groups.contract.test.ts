@@ -1219,19 +1219,30 @@ describe('contract: the same groups with login on', () => {
         },
       },
     });
-    await check(server, {
+    // Arming it above Default waits for the owner's password (DOR-4355).
+    const held = await fetch(new URL(`/api/tasks/${id}`, server!.baseUrl), {
       method: 'PATCH',
-      path: `/api/tasks/${id}`,
-      headers: cookie,
-      body: { status: 'active', expectedApprovalRevision: proposed.json.approvalRevision },
-      expect: {
-        status: 200,
-        schema: TASK.extend({
-          status: z.literal('active'),
-          permissionMode: z.literal('acceptEdits'),
-        }),
-      },
+      headers: { ...cookie, origin: server!.baseUrl, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        status: 'active',
+        expectedApprovalRevision: proposed.json.approvalRevision,
+      }),
     });
+    expect(held.status).toBe(428);
+    const armed = await setup(
+      server,
+      'PATCH',
+      `/api/tasks/${id}`,
+      { status: 'active', expectedApprovalRevision: proposed.json.approvalRevision },
+      { ...cookie, origin: server!.baseUrl },
+      OWNER.password
+    );
+    expect(
+      TASK.extend({
+        status: z.literal('active'),
+        permissionMode: z.literal('acceptEdits'),
+      }).parse(armed.json)
+    ).toMatchObject({ id });
     await check(server, {
       method: 'DELETE',
       path: `/api/tasks/${id}`,

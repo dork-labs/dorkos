@@ -30,6 +30,7 @@ import { type Context } from 'hono';
 import type { CreateTaskInput, Task } from '@dorkos/shared/schemas';
 import { createScheduledTask } from '../services/tasks/lifecycle/create-task.js';
 import { wifiScheduleRefusal } from './task-wifi-guard.js';
+import { holdTaskArm, taskCreateRaises } from './task-arm-raise.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import { clearsTheAgentBar } from '../lib/caller-authority.js';
 import { errorRefusalUnlessOwner, runAccountWrite } from './cloud-owner-bar.js';
@@ -41,7 +42,7 @@ import { marksOf } from '../services/core/turn-power/turn-levels.js';
 import * as taskApprovalActor from './task-approval-actor.js';
 import type { TasksRouterDeps } from './tasks-deps.js';
 
-/** Create a schedule, confirming persistent credits first. */
+/** Create a schedule, confirming persistent credits and a person's raise first. */
 export async function createTaskHttp(
   c: Context<ApiEnv>,
   deps: TasksRouterDeps,
@@ -67,6 +68,15 @@ export async function createTaskHttp(
       target: 'scheduled-task-create',
       input: body,
       reason: 'Run this scheduled task on DorkOS credits.',
+      run: (verified) => createTaskHttp(c, deps, present, verified),
+    });
+  }
+  // A person's new schedule looser than its runtime's default waits for the owner (DOR-4355).
+  if (trusted && !confirming && taskCreateRaises(body)) {
+    return holdTaskArm(c, {
+      target: 'scheduled-task-create',
+      input: body,
+      reason: 'Let this new scheduled task run with more permission.',
       run: (verified) => createTaskHttp(c, deps, present, verified),
     });
   }

@@ -70,7 +70,8 @@ const OTHER_FRONT_DOOR_CALLERS: Record<string, string> = {
   'cloud-community-move-http.ts': 'Delegated cloud-communities POST /moves hold, checked below.',
   'account-signin.ts': 'Runtime account sign-in is N.',
   'computers.ts': 'Computer naming and removal; own separate owner checks.',
-  'connector-providers.ts': 'Connected-app operations retain their own approval flow.',
+  'connector-providers.ts':
+    'Holds saving a provider key; removing one is free. connector-providers-step-up.test.ts covers it.',
   'heartbeats.ts': 'Beat preferences and schedule ownership; no front-door credentials.',
   'local-browser.ts': 'Browser actions retain their existing person checks.',
   'local-browser-profiles.ts': 'Browser profiles retain their existing person checks.',
@@ -84,16 +85,109 @@ const OTHER_FRONT_DOOR_CALLERS: Record<string, string> = {
   'tasks-create-http.ts':
     'Holds credits create before dispatch; task-credits-step-up.test.ts covers each route.',
   'tasks-update-http.ts':
-    'Holds credits grants and live work edits, binds the task revision and revalidates before dispatch.',
+    'Holds credits grants, live work edits and raising what a task may do (a looser mode, approved tools, arming above Default); binds the task revision and revalidates before dispatch.',
   'sessions.ts':
     'Session Runs on ends with that session; session-tools/task-tools credits tests prove children do not inherit it (N).',
   'session-continue.ts':
     'Per-session Runs on is N; limit-plans-eligibility proves automatic carry-over uses its independently allowed target.',
-  'relay-adapter-setting-routes.ts': 'Connection settings retain their separate approval flow.',
+  'relay-adapter-setting-routes.ts':
+    'Holds a person’s setting, typed key, or approver/DM addition; anything else adding to those lists is refused. relay-setting-step-up.test.ts covers each.',
   'mesh-agent-patch-http.ts':
     'Delegated mesh PATCH holds credits-on and rechecks the agent and manifest; mesh-credits-step-up.test.ts covers it.',
   'front-door-step-up.ts': 'The shared helper itself rechecks the bar.',
+  // Shared bars and helpers: their callers are classified here one by one.
+  'agent-instructions.ts': 'Reads an agent’s instructions; no write route.',
+  'extension-write-binding.ts': 'Shared extension write bar; its callers are classified here.',
+  'extensions-person-bar.ts': 'Shared extension person bar; its callers are classified here.',
+  'remote-community-http.ts': 'Shared space request helper; no write route.',
+  'community-space-settings.ts': 'Reads a space’s settings; no write route.',
+  'community-administer.ts': 'Space administration answers; no lasting grant here.',
+  'debug.ts': 'Reads which owner-only views to show; no write route.',
+  'team.ts': 'Reads the team; no write route.',
+  'session-workspace-caller.ts': 'Shared workspace check for a chat turn; no write route.',
+  'marketplace/context.ts': 'Shared marketplace bars; its routes are classified here.',
+  'harness.ts': 'Copies already-installed files into a project and moves a skill file (N).',
+  // Writes that only narrow, answer once, or touch the person's own records (N).
+  'canvas-doc-work-review.ts': 'Replays or clears one batch of a page’s events (N).',
+  'connector-execution.ts': 'Runs a call under grants already given; grants nothing (N).',
+  'connector-mini-app-access.ts': 'Only revokes a mini app’s account access (N).',
+  'extensions-removal.ts': 'Only removes or forgets an extension (N).',
+  'extensions-start-work.ts': 'Starts one chat, capped from Wi-Fi; grants nothing lasting (N).',
+  'extensions-step-up.ts': 'Moves an extension out; the moved copy is never re-trusted (N).',
+  'hook-review-routes.ts': 'Asks about a hook again; grants nothing (N).',
+  'read-cursors.ts': 'Moves a read marker (N).',
+  'remote-communities.ts':
+    'The person’s own messages and memberships in a space; halts only lower (N).',
+  'remote-community-conduct.ts': 'The person’s own rules answer, name and reports in a space (N).',
+  'session-queue-handler.ts': 'Edits, removes or steers one queued message (N).',
+  // Held in this PR: raises wait for the owner, lowering stays free.
+  'permissions.ts': 'Holds raises and Undo; permissions-step-up.test.ts covers each route.',
+  'community-teammate-spend.ts':
+    'Holds raising or removing the limit; teammate-spend-step-up.test.ts covers it.',
+  // Held in DOR-3648 (remote approval step-up), which merges first or in the same release.
+  'approvals.ts': 'Card answers are held in DOR-3648.',
+  'session-answers.ts': 'Always allow on a chat’s tool request is held in DOR-3648.',
+  'extensions-approval.ts': 'Approving an extension to run is held in DOR-3648.',
+  'extensions-approval-set.ts': 'Approving several extensions to run is held in DOR-3648.',
+  'extension-decisions.ts': 'An extension’s standing offer accept is held in DOR-3648.',
+  'extensions-forward.ts': 'Widening who an extension forwards to is held in DOR-3648.',
+  'extensions-rooms.ts': 'Widening an extension’s rooms is held in DOR-3648.',
+  'extensions-inbox.ts': 'Project settings writes from another device are held in DOR-3648.',
+  // DOR-4355 M3: each holds its raises; the reverse of each answers at once.
+  'connector-management.ts':
+    'Holds approvals, access grants, connecting, letting an agent back in and widening applies; connector-management-step-up.test.ts.',
+  'connector-resources.ts':
+    'Holds connecting, reconnecting and resuming an account; pausing and removing are free. connector-resources-step-up.test.ts.',
+  'connector-events.ts':
+    'Holds event subscriptions and the webhook secret; removing one is free. connector-events-step-up.test.ts.',
+  'mini-app-access-page.ts':
+    'Holds a mini app’s account access approval; Not now is free. mini-app-access-page-step-up.test.ts.',
+  'connector-access-changes.ts':
+    'Holds undoing a narrowing, which restores wider access. connector-access-changes-step-up.test.ts.',
+  'connector-step-up.ts': 'Shared connector hold helpers, used by the files above.',
+  'marketplace/package-actions.ts':
+    'Holds a person’s install and keep-files; preview, check and uninstall are free. marketplace-install-step-up.test.ts.',
+  'marketplace/updates.ts':
+    'Holds a person applying updates; the check is free. marketplace-install-step-up.test.ts.',
+  'marketplace/dev-links.ts':
+    'Holds a person linking a folder’s code; unlinking is free. marketplace-dev-link-step-up.test.ts.',
+  'marketplace/held-back.ts':
+    'Holds allowing a held-back package; refusing is free. marketplace-held-back-step-up.test.ts.',
+  'marketplace/sources.ts':
+    'Holds adding a package source; removing one is free. marketplace-source-step-up.test.ts.',
+  'shapes.ts': 'Holds a person applying a Shape; fork is free. shapes-apply-step-up.test.ts.',
+  'workspaces.ts':
+    'Holds create and remove only when their commands will run. workspaces-setup-step-up.test.ts.',
+  'task-file-approve.ts': 'Holds approving a capped SKILL file. tasks-arm-step-up.test.ts.',
+  'task-mode-undo.ts':
+    'Holds an Undo that would put back a looser mode; a stricter one is free. tasks-arm-step-up.test.ts.',
+  'task-arm-raise.ts': 'The task raise rules and hold, used by the task routes.',
+  'runtimes-account-eligibility.ts':
+    'Holds widening where Claude accounts may run; narrowing is free. account-eligibility-step-up.test.ts.',
+  'account-eligibility-hold.ts':
+    'The account widening hold, used by runtimes-account-eligibility.ts.',
+  'community-connections.ts':
+    'Holds connecting a space account; cancel, remove and moves are free. community-wake-step-up.test.ts.',
+  'community-answer-in.ts':
+    'Holds widening where a space wakes your agents (answer-in, wake from members); narrowing is free. community-wake-step-up.test.ts.',
+  'canvas-doc-route-controls.ts':
+    'Holds a person approving a standing page-event route; review and revoke are free. canvas-route-approve-step-up.test.ts.',
+  'extensions.ts':
+    'Holds turning an extension on and a person giving it a secret; disable, data and removals are free. extensions-enable-step-up.test.ts, extensions-secret-step-up.test.ts.',
+  // Not held: decided writes that are not a lasting grant, each a call for Security to confirm.
+  'agents.ts':
+    'Creates an agent only from the template or package review the person was shown (DOR-2325); no mode, credential or access.',
+  'runtimes.ts':
+    'Runtime sign-in, model settings and checking or hiding an account are N, as in runtimes-http.ts.',
+  'system-shell-check.ts': 'Continues past a shell check in memory until the next restart (N).',
+  'relay-adapters.ts':
+    'Holds a chat route raise, a move to another agent, or a wider chat filter through relay-binding-step-up.ts; relay-binding-step-up.test.ts covers each.',
+  'relay-binding-step-up.ts': 'The chat-route raise rules and hold, used by relay-adapters.ts.',
+  'relay-adapter-grants.ts': 'The approver/DM list rules, used by relay-adapter-setting-routes.ts.',
 };
+
+/** Writes that grant lasting access without calling any person bar, so named here. */
+const ALWAYS_DECIDED = new Set(['relay-adapters.ts']);
 
 function parse(name: string) {
   const text = fs.readFileSync(path.join(ROUTES, `${name}.ts`), 'utf8');
@@ -169,9 +263,11 @@ const rows = GROUPS.flatMap((name) => {
       const method = node.expression.name.text;
       const [route, ...handlers] = node.arguments;
       if (['post', 'put', 'patch', 'delete'].includes(method) && route) {
-        if (!ts.isStringLiteral(route))
+        // A template path is named as written, `${action}` and all, so each one still needs a row.
+        if (!ts.isStringLiteral(route) && !ts.isTemplateLiteral(route))
           throw new Error(`${name}: a write route needs a literal census path`);
-        const id = `${name} ${method.toUpperCase()} ${route.text}`;
+        const literal = ts.isStringLiteral(route) ? route.text : route.getText().slice(1, -1);
+        const id = `${name} ${method.toUpperCase()} ${literal}`;
         if (
           handlers.length === 1 &&
           ts.isIdentifier(handlers[0]!) &&
@@ -197,6 +293,7 @@ describe('front-door write census', () => {
     const guarded =
       calls.has('runFrontDoorWrite') ||
       calls.has('runAccountWrite') ||
+      calls.has('holdForStepUp') ||
       (id === 'config PATCH /' && calls.has('patchConfig')) ||
       (id === 'cloud-communities POST /moves' && calls.has('startHostedSpaceMove')) ||
       (id === 'tasks POST /' && calls.has('createTaskHttp')) ||
@@ -340,6 +437,18 @@ describe('front-door write census', () => {
       'refuseUnlessAccountOwner',
       'errorRefusalUnlessOwner',
       'envelopeRefusalUnlessOwner',
+      // Every other person bar: a write a person may make can be a lasting grant (DOR-4355 M3).
+      'requirePerson',
+      'refusedNotAPerson',
+      'personOrRefuse',
+      'clearsTheAgentBar',
+      'resolveConnectorOperator',
+      'resolveCommunityOwner',
+      'requireOperatorCookieUnderLogin',
+      'decisionAuthority',
+      'resolveDecisionAuthority',
+      'readCallerAuthority',
+      'trustedCaller',
     ]);
     const callers = fs
       .readdirSync(ROUTES, { recursive: true })
@@ -354,14 +463,15 @@ describe('front-door write census', () => {
           ts.ScriptTarget.Latest,
           true
         );
-        return [...callsFrom(source, new Map())].some((name) => bars.has(name));
+        return (
+          ALWAYS_DECIDED.has(file) ||
+          [...callsFrom(source, new Map())].some((name) => bars.has(name))
+        );
       });
-    for (const file of callers) {
-      expect(
-        GROUPS.includes(file.replace(/\.ts$/, '')) || file in OTHER_FRONT_DOOR_CALLERS,
-        `${file} must join the front-door step-up census`
-      ).toBe(true);
-    }
+    const undecided = callers.filter(
+      (file) => !GROUPS.includes(file.replace(/\.ts$/, '')) && !(file in OTHER_FRONT_DOOR_CALLERS)
+    );
+    expect(undecided, 'each of these must join the front-door step-up census').toEqual([]);
   });
 
   it('keeps the general settings write and API key writes behind the same hold', () => {

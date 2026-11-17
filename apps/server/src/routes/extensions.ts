@@ -12,7 +12,9 @@
  * extension's own per-extension data rather than a leaf of `extensions` in
  * `~/.dork/config.json` — so an agent may legitimately write them. They, and
  * the data route, are bound to the caller instead (DOR-3066,
- * {@link module:routes/extension-write-binding}). Every route
+ * {@link module:routes/extension-write-binding}). A person setting a secret
+ * waits for the owner to confirm it's them (DOR-4355); an agent's goes on, and
+ * removing one stays immediate. Every route
  * here that records an Activity event therefore reads WHO asked
  * (`readActivityActor`) instead of asserting it was the person; they all claimed
  * `user` / `'You'` before DOR-1801, so an agent setting an API key showed up in
@@ -486,23 +488,43 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
         return c.json({ error: `Secret '${key}' not declared in extension manifest` }, 400);
       }
 
-      const store = new ExtensionSecretStore(id, dorkHome);
-      await store.set(key, parsed.data.value);
-
-      await activity?.emit({
-        // No person bar on this route, so this genuinely varies: an agent that
-        // identified itself is named, and the feed stops crediting the person
-        // with a machine's write (DOR-1801).
-        ...readActivityActor(honoRequestFacts(c)),
-        category: 'config',
-        eventType: 'config.extension_updated',
-        resourceType: 'extension',
-        resourceId: id,
-        resourceLabel: record.manifest.name,
-        summary: `Updated secret "${key}" for extension ${record.manifest.name}`,
+      const { value } = parsed.data;
+      const run = async () => {
+        await new ExtensionSecretStore(id, dorkHome).set(key, value);
+        await activity?.emit({
+          // No person bar on this route, so this genuinely varies: an agent that
+          // identified itself is named, and the feed stops crediting the person
+          // with a machine's write (DOR-1801). A held write is confirmed by the
+          // same browser that asked, so the asking request names who acted.
+          ...readActivityActor(honoRequestFacts(c)),
+          category: 'config',
+          eventType: 'config.extension_updated',
+          resourceType: 'extension',
+          resourceId: id,
+          resourceLabel: record.manifest.name,
+          summary: `Updated secret "${key}" for extension ${record.manifest.name}`,
+        });
+        return c.json({ ok: true });
+      };
+      // An agent may still set one (DOR-1801); a person's waits for the owner (DOR-4355).
+      // The value stays out of the held input, so the sheet never carries it.
+      const caller = honoRequestFacts(c);
+      if (caller.agentIdentity !== undefined) return await run();
+      return await runFrontDoorWrite(c, {
+        kind: 'extensions.secret',
+        target: id,
+        input: { key },
+        reason: `Save the secret ${key} for the extension ${id}.`,
+        subject: 'the secrets extensions hold',
+        run: async () => {
+          try {
+            return await run();
+          } catch (err) {
+            logger.error(`[Extensions] Failed to set secret for ${id}`, err);
+            return c.json({ error: 'Failed to set secret' }, 500);
+          }
+        },
       });
-
-      return c.json({ ok: true });
     } catch (err) {
       logger.error(`[Extensions] Failed to set secret for ${id}`, err);
       return c.json({ error: 'Failed to set secret' }, 500);

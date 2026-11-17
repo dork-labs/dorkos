@@ -45,6 +45,8 @@ import {
 } from '../services/connectors/agent-request-service.js';
 import { ConnectorSubscriptionError } from '../services/connectors/events/subscription-store.js';
 import { managedCloudErrorResponse } from './managed-cloud-error.js';
+import { CONNECTED_APPS, onlyRemovesAccess } from './connector-step-up.js';
+import { runFrontDoorWrite } from './front-door-step-up.js';
 import {
   migrationHealthGate,
   ownerRefusal,
@@ -305,11 +307,24 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
       readJsonBody(c, { emptyAs: {} })
     );
     if (!input.success) return c.json(validationFailureBody(input.error), 400);
-    try {
-      return c.json(await deps.reviews.resolve(owner, c.req.param('reviewRequestId'), input.data));
-    } catch (error) {
-      return managementErrorResponse(c, error);
-    }
+    const reviewRequestId = c.req.param('reviewRequestId');
+    const decide = async () => {
+      try {
+        return c.json(await deps.reviews.resolve(owner, reviewRequestId, input.data));
+      } catch (error) {
+        return managementErrorResponse(c, error);
+      }
+    };
+    // A no is immediate; a yes waits for the owner to confirm it's them (DOR-4355).
+    if (input.data.decision === 'denied') return decide();
+    return runFrontDoorWrite(c, {
+      kind: 'connection.grant',
+      target: reviewRequestId,
+      input: { op: 'approve-review', reviewRequestId },
+      reason: 'Approve this change to your connected apps.',
+      subject: CONNECTED_APPS,
+      run: decide,
+    });
   });
 
   router.get('/agent-requests', (c) => {
@@ -349,16 +364,27 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
     if (requests instanceof Response) return requests;
     const input = ConnectorAgentRequestDecisionSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!input.success) return c.json(validationFailureBody(input.error), 400);
-    const active = requestAbortSignal(c);
-    try {
-      return c.json(
-        await requests.resolve(owner, c.req.param('requestId'), input.data, active.signal)
-      );
-    } catch (error) {
-      return managementErrorResponse(c, error);
-    } finally {
-      active.dispose();
-    }
+    const requestId = c.req.param('requestId');
+    const decide = async () => {
+      const active = requestAbortSignal(c);
+      try {
+        return c.json(await requests.resolve(owner, requestId, input.data, active.signal));
+      } catch (error) {
+        return managementErrorResponse(c, error);
+      } finally {
+        active.dispose();
+      }
+    };
+    // A no is immediate; answering with access waits for the owner (DOR-4355).
+    if (input.data.decision === 'denied') return decide();
+    return runFrontDoorWrite(c, {
+      kind: 'connection.grant',
+      target: requestId,
+      input: { op: 'answer-agent-request', requestId, decision: input.data },
+      reason: 'Give an agent the access it asked for.',
+      subject: CONNECTED_APPS,
+      run: decide,
+    });
   });
 
   router.post('/agent-requests/:requestId/authentication-flows', async (c) => {
@@ -370,14 +396,22 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
       readJsonBody(c, { emptyAs: {} })
     );
     if (!input.success) return c.json(validationFailureBody(input.error), 400);
-    try {
-      return c.json(
-        await requests.startAuthentication(owner, c.req.param('requestId'), input.data),
-        201
-      );
-    } catch (error) {
-      return managementErrorResponse(c, error);
-    }
+    const requestId = c.req.param('requestId');
+    // Connecting an account for an agent waits for the owner (DOR-4355).
+    return runFrontDoorWrite(c, {
+      kind: 'connection.grant',
+      target: requestId,
+      input: { op: 'connect-for-agent-request', requestId, ...input.data },
+      reason: 'Connect an account for the agent that asked.',
+      subject: CONNECTED_APPS,
+      run: async () => {
+        try {
+          return c.json(await requests.startAuthentication(owner, requestId, input.data), 201);
+        } catch (error) {
+          return managementErrorResponse(c, error);
+        }
+      },
+    });
   });
 
   router.get('/agent-requests/:requestId/authentication-flows/:flowId', async (c) => {
@@ -460,22 +494,31 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
     }
   });
 
+  // Letting an agent back in gives it the shared access again, so it waits for
+  // the owner (DOR-4355); leaving one out above stays immediate.
   router.delete('/connections/:connectionId/exclusions/:agentId', async (c) => {
     const owner = resolveConnectorOperator(c, deps);
     if (owner instanceof Response) return owner;
-    try {
-      return c.json(
-        ConnectorGrantExclusionChangeSchema.parse(
-          await deps.exclusions.letBackIn(
-            owner,
-            c.req.param('connectionId'),
-            c.req.param('agentId')
-          )
-        )
-      );
-    } catch (error) {
-      return managementErrorResponse(c, error);
-    }
+    const connectionId = c.req.param('connectionId');
+    const agentId = c.req.param('agentId');
+    return runFrontDoorWrite(c, {
+      kind: 'connection.grant',
+      target: connectionId,
+      input: { op: 'let-agent-back-in', connectionId, agentId },
+      reason: 'Let this agent use the app again, like every other agent.',
+      subject: CONNECTED_APPS,
+      run: async () => {
+        try {
+          return c.json(
+            ConnectorGrantExclusionChangeSchema.parse(
+              await deps.exclusions.letBackIn(owner, connectionId, agentId)
+            )
+          );
+        } catch (error) {
+          return managementErrorResponse(c, error);
+        }
+      },
+    });
   });
 
   router.post('/reconciliation/apply', async (c) => {
@@ -485,14 +528,26 @@ export function createConnectorManagementRoutes(deps: ConnectorManagementRouterD
       readJsonBody(c, { emptyAs: {} })
     );
     if (!input.success) return c.json(validationFailureBody(input.error), 400);
-    const active = requestAbortSignal(c);
-    try {
-      return c.json(await deps.reconciliation.apply(owner, input.data, active.signal));
-    } catch (error) {
-      return managementErrorResponse(c, error);
-    } finally {
-      active.dispose();
-    }
+    const apply = async () => {
+      const active = requestAbortSignal(c);
+      try {
+        return c.json(await deps.reconciliation.apply(owner, input.data, active.signal));
+      } catch (error) {
+        return managementErrorResponse(c, error);
+      } finally {
+        active.dispose();
+      }
+    };
+    // Taking every action away is immediate; anything that may give more waits (DOR-4355).
+    if (onlyRemovesAccess(input.data)) return apply();
+    return runFrontDoorWrite(c, {
+      kind: 'connection.grant',
+      target: input.data.previewId,
+      input: { op: 'apply-grants', ...input.data },
+      reason: 'Change what your agents may do with this app.',
+      subject: CONNECTED_APPS,
+      run: apply,
+    });
   });
 
   return router;

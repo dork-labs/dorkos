@@ -19,9 +19,14 @@
  * bindings live in Relay's own store. Barring the HTTP door would refuse what
  * the MCP door grants, which is a policy change rather than an attribution fix.
  *
+ * What the MCP door cannot do is raise a route: `binding_create` takes no mode,
+ * start-chats switch or bridge. So a chat-route write that raises what a route
+ * may do, or points it at another chat or agent, waits for the owner to confirm
+ * it's them (DOR-4355, `relay-binding-step-up.ts`); everything else runs at once.
+ *
  * @module routes/relay-adapters
  */
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { honoRateLimit } from '../http/rate-limiter.js';
 import type { ApiEnv } from '../http/api-chain.js';
@@ -46,6 +51,7 @@ import { registerConfirmReferencesRoute, sendAdapterError } from './relay-adapte
 import { registerSettingRoutes } from './relay-adapter-setting-routes.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
+import { registerBindingWrites } from './relay-binding-step-up.js';
 
 /** Resolve a human-readable name for an adapter, falling back to its ID. */
 function resolveAdapterName(adapterManager: AdapterManager, adapterId: string): string {
@@ -287,7 +293,7 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
     return c.json({ binding });
   });
 
-  router.post('/bindings', async (c) => {
+  const createBinding = async (c: Context<ApiEnv>): Promise<Response> => {
     const bindingStore = adapterManager.getBindingStore();
     if (!bindingStore) return c.json({ error: 'Binding subsystem not available' }, 503);
     const result = CreateBindingRequestSchema.safeParse(readJsonBody(c));
@@ -362,7 +368,7 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
       const message = err instanceof Error ? err.message : 'Create failed';
       return c.json({ error: message }, 500);
     }
-  });
+  };
 
   /**
    * Re-point an existing binding to a different agent (connection-scoping
@@ -371,7 +377,7 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
    * mappings (created under the OLD agent's project) so the next inbound
    * message starts fresh under the new one.
    */
-  router.post('/bindings/:id/move', async (c) => {
+  const moveBinding = async (c: Context<ApiEnv>): Promise<Response> => {
     const bindingStore = adapterManager.getBindingStore();
     if (!bindingStore) return c.json({ error: 'Binding subsystem not available' }, 503);
     const result = MoveBindingRequestSchema.safeParse(readJsonBody(c));
@@ -389,7 +395,7 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
       );
     }
 
-    const moved = await bindingStore.moveToAgent(c.req.param('id'), result.data.agentId);
+    const moved = await bindingStore.moveToAgent(c.req.param('id') ?? '', result.data.agentId);
     if (!moved) return c.json({ error: 'Binding not found' }, 404);
 
     const bindingRouter = adapterManager.getBindingRouter();
@@ -412,9 +418,9 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
     }
 
     return c.json({ binding: moved });
-  });
+  };
 
-  router.patch('/bindings/:id', async (c) => {
+  const updateBinding = async (c: Context<ApiEnv>): Promise<Response> => {
     const bindingStore = adapterManager.getBindingStore();
     if (!bindingStore) {
       return c.json({ error: 'Binding subsystem not available' }, 503);
@@ -430,7 +436,7 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
     // clear `chatId` without touching `bridge`. Checked against the MERGED
     // state, which `AdapterBindingSchema`'s own refinement cannot see because
     // it only ever validates a full object.
-    const existing = bindingStore.getById(c.req.param('id'));
+    const existing = bindingStore.getById(c.req.param('id') ?? '');
     if (existing) {
       const mergedBridge = result.data.bridge ?? existing.bridge;
       const mergedChatId = result.data.chatId !== undefined ? result.data.chatId : existing.chatId;
@@ -551,7 +557,7 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
       updated = bindingStore.getById(existing.id);
     } else {
       try {
-        updated = await bindingStore.update(c.req.param('id'), updates as BindingUpdate);
+        updated = await bindingStore.update(c.req.param('id') ?? '', updates as BindingUpdate);
       } catch (err) {
         // "One chat, one agent": changing `chatId` onto a value another binding
         // already owns is the same 409 the create path gives (see above).
@@ -600,7 +606,8 @@ export function createAdapterRoutes(deps: AdapterRouteDeps): Hono<ApiEnv> {
     }
 
     return c.json({ binding: updated });
-  });
+  };
+  registerBindingWrites(router, adapterManager, { createBinding, moveBinding, updateBinding });
 
   router.delete('/bindings/:id', async (c) => {
     const bindingStore = adapterManager.getBindingStore();

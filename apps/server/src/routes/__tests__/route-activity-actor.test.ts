@@ -80,6 +80,9 @@ const FACTS_PARAMETERS: Record<string, string> = {
   'tasks-update-http.ts': 'caller',
   // The held source addition records the browser that confirmed the write.
   'extensions-trusted-sources.ts': 'confirming',
+  // Held task raises record the browser that confirmed the write (DOR-4355).
+  'task-file-approve.ts': 'confirming',
+  'task-mode-undo.ts': 'who',
 };
 
 /** The `routes/` directory this guard walks. */

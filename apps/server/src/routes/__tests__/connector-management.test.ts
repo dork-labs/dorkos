@@ -428,9 +428,8 @@ describe('connector management routes', () => {
         .expect(403);
     }
     expect(reconciliation.apply).not.toHaveBeenCalled();
-    await request(app).post('/api/connectors/reconciliation/apply').send(body).expect(200);
-    expect(reconciliation.apply).toHaveBeenCalledTimes(1);
-    expect(reconciliation.apply).toHaveBeenCalledWith(OWNER, body, expect.any(AbortSignal));
+    // The owner's own widen waits for them to confirm it's them, proven with a real
+    // sign-in in connector-management-step-up.test.ts (DOR-4355).
   });
 
   it('lets only the owner turn on "every agent" (ADR 260926-192625)', async () => {
@@ -608,9 +607,11 @@ describe('connector management routes', () => {
     )
       .post('/api/connectors/reviews/review-a/decision')
       .set('Origin', 'http://localhost:4242')
-      .send({ decision: 'approved' });
+      .send({ decision: 'denied' });
+    // A denial answers at once; an approval waits for the owner to confirm it's them
+    // (connector-management-step-up.test.ts, DOR-4355).
     expect(response.status).toBe(200);
-    expect(reviews.resolve).toHaveBeenCalledWith(OWNER, 'review-a', { decision: 'approved' });
+    expect(reviews.resolve).toHaveBeenCalledWith(OWNER, 'review-a', { decision: 'denied' });
 
     await request(fixtureTarget.mount(buildApp()))
       .post('/api/connectors/reconciliation/apply')

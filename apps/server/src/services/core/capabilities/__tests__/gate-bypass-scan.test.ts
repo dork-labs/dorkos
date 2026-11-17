@@ -791,6 +791,91 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
       'services/tasks/task-store.ts': 'the definition itself',
     },
   },
+  // Grant and level writers behind the person's own doors (DOR-4355 M3): each door holds a
+  // raise for the owner's confirmation, or names here why it does not need to.
+  {
+    what: 'changes the permission preset, which can raise what every agent may do',
+    call: 'setPreset(',
+    allowed: {
+      'routes/permissions.ts':
+        "`PUT /api/permissions/preset`: a raise waits for the owner to confirm it's them, judged by effect and refused (409) if permissions changed meanwhile (DOR-4355); Wi-Fi refuses a raise",
+      'services/core/permissions/permission-service.ts': 'the definition itself',
+    },
+  },
+  {
+    what: "changes everyone's permission defaults, which can raise what agents may do",
+    call: 'setDefaults(',
+    allowed: {
+      'routes/permissions.ts':
+        "`PATCH /api/permissions/defaults`: a raise waits for the owner to confirm it's them (DOR-4355); Wi-Fi refuses a raise",
+      'services/core/permissions/permission-capabilities.ts':
+        "an agent's own permission change, decided by the tool gate as a card a person answers",
+      'services/core/permissions/permission-service.ts': 'the definition itself',
+    },
+  },
+  {
+    what: "changes one agent's permissions, which can raise what it may do",
+    call: 'setAgent(',
+    allowed: {
+      'routes/permissions.ts':
+        "`PATCH /api/agents/:id/permissions`: a raise waits for the owner to confirm it's them (DOR-4355); Wi-Fi refuses a raise",
+      'routes/approvals.ts':
+        'Always allow on a card writes the standing rule; that answer is held in DOR-3648 (remote approval step-up), which merges first or in the same release',
+      'services/core/permissions/permission-capabilities.ts':
+        "an agent's own permission change, decided by the tool gate as a card a person answers",
+      'services/core/permissions/permission-service.ts': 'the definition itself',
+    },
+  },
+  {
+    what: 'turns an extension on, so its code may load again',
+    call: 'extensionManager.enable(',
+    allowed: {
+      'routes/extensions.ts':
+        "`POST /api/extensions/:id/enable`: waits for the owner to confirm it's them (DOR-4355)",
+      'services/marketplace/flows/install-plugin.ts':
+        "the install flow; the person's install request is held at `POST /api/marketplace/packages/:name/install` (DOR-4355), an agent's asks on a card",
+      'services/shapes/apply-shape.ts':
+        "applying a Shape; the person's apply is held at `POST /api/shapes/:name/apply` (DOR-4355), an agent's asks on a card",
+    },
+  },
+  {
+    what: "approves an extension's code to run in the server",
+    call: 'approveToRun(',
+    allowed: {
+      'routes/extensions-approval.ts':
+        '`POST /api/extensions/:id/approve`: held in DOR-3648 (remote approval step-up), which merges first or in the same release',
+      'services/extensions/groups/extension-approval-set.ts':
+        '`POST /api/extensions/approve-set`: held in DOR-3648, which merges first or in the same release',
+      'services/extensions/extension-manager.ts': 'the definition itself',
+    },
+  },
+  {
+    what: 'creates a chat route, which decides what an outside chat may make an agent do',
+    call: 'bindingStore.create(',
+    allowed: {
+      'routes/relay-adapters.ts':
+        "`POST /api/relay/bindings`: a route that starts looser than the defaults waits for the owner to confirm it's them (DOR-4355)",
+      'routes/unclaimed-chats.ts':
+        "`POST /api/relay/unclaimed-chats/:id/claim`: a claim that starts looser than the default mode waits for the owner to confirm it's them (DOR-4355)",
+    },
+  },
+  {
+    what: 'points a chat route at another agent',
+    call: 'moveToAgent(',
+    allowed: {
+      'routes/relay-adapters.ts':
+        "`POST /api/relay/bindings/:id/move`: always waits for the owner to confirm it's them (DOR-4355)",
+      'services/relay/binding-store.ts': 'the definition itself',
+    },
+  },
+  {
+    what: "sets what teammates' turns in a space may cost each month",
+    call: '.setLimit(',
+    allowed: {
+      'routes/community-teammate-spend.ts':
+        "`PUT /api/community-connections/:ref/teammate-spend`: raising or removing the limit waits for the owner to confirm it's them (DOR-4355)",
+    },
+  },
   {
     // Watched from DOR-1611, when a roster write stopped being operator-only.
     // Until then `requireOperator` was the whole story and there was nothing to

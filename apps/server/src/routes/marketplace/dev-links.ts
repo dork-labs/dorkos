@@ -3,9 +3,10 @@
  * computer, list what runs that way, and switch back (DOR-2696).
  *
  * Making a link answers to the `marketplace.link` tier gate (destructive, no
- * permission area): the person in the app or their terminal runs it, an agent
- * gets an approval card naming the folder. Unlinking is the person's alone, on
- * the same bar as deciding an approval card.
+ * permission area): the person in the app or their terminal runs it once the
+ * owner confirms it's them (DOR-4355), an agent gets an approval card naming
+ * the folder. Unlinking is the person's alone, on the same bar as deciding an
+ * approval card, and stays immediate.
  *
  * @module routes/marketplace/dev-links
  */
@@ -16,12 +17,14 @@ import { trustedCaller } from '../../services/core/capabilities/index.js';
 import { resolveDecisionAuthority } from '../../services/core/approvals/index.js';
 import { OPERATOR_COOKIE_REQUIRED_CODE, readCallerAuthority } from '../../lib/caller-authority.js';
 import { DevLinkError } from '../../services/marketplace/dev-links/errors.js';
+import type { DevLinkService } from '../../services/marketplace/dev-links/index.js';
 import { readJsonBody } from '../../http/request-body.js';
 import { honoRequestFacts } from '../../http/request-facts.js';
 import type { MarketplaceRouteDeps, MarketplaceRoutes } from '../marketplace.js';
 import type { MarketplaceContext, MarketplaceRouteContext } from './context.js';
 import { validationFailed } from './shared.js';
 import { DEV_LINK_PATH_MAX } from '../../services/marketplace-mcp/tool-link.js';
+import { runFrontDoorWrite } from '../front-door-step-up.js';
 
 /** The folder field: required, and capped like the capability's own input. */
 const PathField = z.string().min(1).max(DEV_LINK_PATH_MAX);
@@ -186,7 +189,7 @@ export function mountDevLinkRoutes(
       );
       if (decision.outcome !== 'allowed') return ctx.gateResponse(c, decision);
       const person = !!trustedCaller(readCallerAuthority(honoRequestFacts(c)));
-      const status = await devLinks.link({
+      const request: Parameters<DevLinkService['link']>[0] = {
         ...target,
         via: person ? (body.via ?? 'app') : 'agent-card',
         // A person's yes was given to the preview they read, possibly long
@@ -194,8 +197,25 @@ export function mountDevLinkRoutes(
         // card the gate just honoured, bound to `change`; what an agent sends
         // here never replaces it.
         expectedChange: person && body.expectedChange !== undefined ? body.expectedChange : change,
+      };
+      const makeLink = async (): Promise<Response> => {
+        try {
+          return c.json(await devLinks.link(request), 201);
+        } catch (err) {
+          return fail(c, err, 'link the folder');
+        }
+      };
+      // An agent's link already cleared the card the gate just honoured.
+      if (!person) return await makeLink();
+      // A person's link runs code from that folder, so the owner confirms it's them (DOR-4355).
+      return await runFrontDoorWrite(c, {
+        kind: 'marketplace.install',
+        target: body.path,
+        input: request,
+        reason: `Run code from the folder ${body.path}.`,
+        subject: 'which code runs here',
+        run: makeLink,
       });
-      return c.json(status, 201);
     } catch (err) {
       return fail(c, err, 'link the folder');
     }

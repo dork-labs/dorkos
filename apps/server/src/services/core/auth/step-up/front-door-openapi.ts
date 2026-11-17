@@ -59,6 +59,27 @@ export const HELD_WRITES = new Set([
   'post /api/extensions/{id}/enable',
   // Raising or removing the limit; lowering it answers at once.
   'put /api/community-connections/{ref}/teammate-spend',
+  // DOR-4355 M3: raises only; the reverse of each answers at once. Routes with no
+  // documented operation yet are held in code and covered by their own tests.
+  'put /api/connectors/providers/{provider}/credential',
+  'post /api/connectors/reviews/{reviewRequestId}/decision',
+  'delete /api/connectors/connections/{connectionId}/exclusions/{agentId}',
+  'post /api/connectors/reconciliation/apply',
+  'post /api/connectors/connections',
+  'post /api/connectors/connections/{connectionId}/reconnect',
+  'post /api/connectors/connections/{connectionId}/resume',
+  'post /api/connectors/connections/{connectionId}/events/subscriptions',
+  'put /api/connectors/connections/{connectionId}/events/source',
+  'post /api/connectors/access-changes/{changeId}/undo',
+  'post /api/marketplace/packages/{name}/install',
+  'post /api/marketplace/packages/{name}/keep-files',
+  'post /api/marketplace/updates',
+  'post /api/marketplace/dev-links',
+  'post /api/marketplace/held-back/{name}/decision',
+  'post /api/marketplace/sources',
+  'post /api/shapes/{name}/apply',
+  'post /api/relay/bindings/{id}/move',
+  'post /api/relay/unclaimed-chats/{id}/claim',
 ]);
 
 /** Bodies for newly documented native writes; auth and the general patch validate flexible JSON. */
