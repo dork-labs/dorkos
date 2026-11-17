@@ -8,7 +8,7 @@
  *
  * @module connector-providers/paid-operations
  */
-import { normalizeSlug } from './composio/action-classes.js';
+import { normalizeSlug } from './composio/slug.js';
 import type { ConnectorReconciliationCandidate } from './connector-schemas.js';
 
 /** Composio toolkits whose operations spend money unless Security reviewed an exception. */

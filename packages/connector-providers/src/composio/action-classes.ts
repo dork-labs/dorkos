@@ -1,4 +1,5 @@
 import type { ConnectorOperationClassification } from '../connector-schemas.js';
+import { normalizeSlug } from './slug.js';
 
 /**
  * Whether otherwise clean deletes belong to Read and write. Flipping this
@@ -129,20 +130,6 @@ export const MONEY_TOOLKITS: ReadonlySet<string> = new Set([
   'shipengine',
   'shippo',
 ]);
-
-/**
- * Canonical spelling used for every action-name policy match.
- *
- * @param slug - An action name in any casing or separator style.
- */
-export function normalizeSlug(slug: string): string {
-  return slug
-    .replace(/([A-Z])([A-Z][a-z])/g, '$1_$2')
-    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '');
-}
 
 /**
  * Composio's safety verdicts are its tags that end in `Hint`. The same `tags`
