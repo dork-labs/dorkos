@@ -16,7 +16,8 @@
  * 3. The same runtime in a clean project reaches the model, so case 2's
  *    silence is the gate and not a broken sidecar.
  *
- * Nothing here can spend or reach the internet: a fake model on 127.0.0.1,
+ * Setup installs a locked public npm dependency closure before native startup.
+ * Native calls cannot spend or reach the internet: a fake model on 127.0.0.1,
  * every other address sent to a proxy that does not answer, HOME and every
  * XDG folder throwaway, the model catalog fetch and self-update off.
  */
@@ -31,6 +32,9 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import { buildSidecarSpawnEnv } from '../server-manager.js';
 import { OPENCODE_OWN_PLAN } from '../credits-sidecar.js';
 import { PROJECT_PLUGINS_CODE } from '../messaging/project-plugin-guard.js';
+import { preparePluginDependencies } from './project-plugin-settlement/prepare-plugin-dependencies.js';
+import { observeAfterProjectCalls } from './project-plugin-settlement/observe-after-project-calls.js';
+import { createPluginProofDiagnostics } from './project-plugin-settlement/plugin-proof-diagnostics.js';
 import {
   OFFLINE_PROXY_ENV,
   pinnedOpenCode,
@@ -45,6 +49,9 @@ vi.mock('node:child_process', async (importOriginal) => {
 });
 
 const BINARY = pinnedOpenCode();
+const diagnostics = createPluginProofDiagnostics((line) =>
+  console.info(`[opencode-plugin-proof] ${line}`)
+);
 
 /** One streamed chat-completions chunk. */
 function chunk(delta: object, finish: string | null = null): string {
@@ -130,6 +137,7 @@ describe.skipIf(BINARY === null)('a project plugin on the real OpenCode (DOR-439
   let model: Awaited<ReturnType<typeof fakeModel>>;
   let manager: { shutdown: () => Promise<void> } | undefined;
 
+  let dependencies: Awaited<ReturnType<typeof preparePluginDependencies>> | undefined;
   const integrityChecks: Promise<void>[] = [];
   beforeAll(async () => {
     const realSpawn = vi.mocked(childProcess.spawn).getMockImplementation()!;
@@ -137,6 +145,8 @@ describe.skipIf(BINARY === null)('a project plugin on the real OpenCode (DOR-439
       if (binary !== BINARY) return realSpawn(binary, args ?? [], options ?? {});
       const result = guardedOpenCodeSpawn(realSpawn, binary, args ?? [], options ?? {});
       integrityChecks.push(result.verified);
+      const role = args?.[0];
+      diagnostics.native(result.child, role === 'run' || role === 'serve' ? role : 'other');
       return result.child;
     }) as typeof childProcess.spawn);
     root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'oc-plugin-guard-live-')));
@@ -145,6 +155,11 @@ describe.skipIf(BINARY === null)('a project plugin on the real OpenCode (DOR-439
     for (const dir of ['home', 'config/opencode', 'data', 'cache', 'state', 'dork']) {
       fs.mkdirSync(path.join(root, dir), { recursive: true });
     }
+    dependencies = await preparePluginDependencies(
+      path.join(root, 'config', 'opencode'),
+      path.join(root, 'npm-preparation')
+    );
+    console.info(`[opencode-plugin-proof] dependency-seal ${dependencies.seal}`);
     // The fake model lives in the throwaway GLOBAL config, which the sidecar
     // still reads; the person's own config is where their own plugins load.
     fs.writeFileSync(
@@ -196,8 +211,14 @@ describe.skipIf(BINARY === null)('a project plugin on the real OpenCode (DOR-439
 
   afterAll(async () => {
     try {
-      await manager?.shutdown();
-      await Promise.all(integrityChecks);
+      try {
+        await manager?.shutdown();
+      } finally {
+        await Promise.all(integrityChecks);
+        await dependencies?.verifyUnchanged();
+        if (dependencies)
+          console.info(`[opencode-plugin-proof] dependency-seal-after-close ${dependencies.seal}`);
+      }
     } finally {
       vi.restoreAllMocks();
       vi.unstubAllEnvs();
@@ -281,21 +302,21 @@ describe.skipIf(BINARY === null)('a project plugin on the real OpenCode (DOR-439
       (manager as InstanceType<typeof OpenCodeServerManager> | undefined) ??
       new OpenCodeServerManager();
     manager = live;
-    const client = await live.getClient(project);
+    const client = await diagnostics.call('getClient', () => live.getClient(project));
     const query = { query: { directory: project } };
     // The four calls DorkOS sends with a project folder outside a turn: a new
     // session's bind, MCP status, the config read beside it, and the model list.
-    // Each call is capped: what is under test is whether the plugin's code
-    // runs, not how fast a busy sidecar opens a second folder (it can take
-    // longer than a test's budget under load). A call that never answers
-    // still had every chance to import the plugin.
-    const capped = (call: Promise<unknown>) =>
-      Promise.race([call, new Promise((resolve) => setTimeout(resolve, 20_000))]);
-    await capped(client.session.create({ ...query, body: {} }));
-    await capped(client.mcp.status(query));
-    await capped(client.config.get(query));
-    await capped(client.provider.list(query));
-    await new Promise((resolve) => setTimeout(resolve, 3_000));
-    expect(fs.existsSync(marker)).toBe(false);
+    // An unanswered call is not evidence of absence: its instance may still
+    // be loading. The row deadline fails a stalled load rather than passing it.
+    await observeAfterProjectCalls(
+      {
+        createSession: () =>
+          diagnostics.call('session.create', () => client.session.create({ ...query, body: {} })),
+        mcpStatus: () => diagnostics.call('mcp.status', () => client.mcp.status(query)),
+        getConfig: () => diagnostics.call('config.get', () => client.config.get(query)),
+        listProviders: () => diagnostics.call('provider.list', () => client.provider.list(query)),
+      },
+      () => expect(fs.existsSync(marker)).toBe(false)
+    );
   }, 120_000);
 });
