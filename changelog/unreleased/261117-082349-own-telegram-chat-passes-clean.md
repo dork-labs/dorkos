@@ -4,6 +4,7 @@ covers:
   - "fix(rooms): a relayed post's outside-words mark is saved with the post itself (DOR-4593)"
   - "fix(turn-power): a bridged chat that ever held a stranger's words keeps handing them on (DOR-4593)"
   - "fix(turn-power): a bridged chat's stranger record follows every id it goes by, and old chats stay held (DOR-4593)"
+  - "fix(turn-power): a bridged chat's stranger record follows the id link when it is learned again (DOR-4593)"
 ---
 
 ### Fixed

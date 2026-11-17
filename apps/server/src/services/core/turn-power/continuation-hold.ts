@@ -157,6 +157,55 @@ export function bridgedSenderVouched(sessionId: string): boolean {
 }
 
 /**
+ * Carry a chat's bridged-sender record from the id it was filed under to the id it is now known
+ * by, when this process learns the link (DOR-4593). A bridged turn after a restart is sent under
+ * the chat's born id before the link is learned, so its record lands on that id alone; without
+ * this, a later restart reads the newer id's older record. The newer id keeps the stricter of the
+ * two: a stranger's if either was, not known if either is, vouched only if both were. A born id
+ * with no record carries nothing. Never throws.
+ *
+ * @param fromId - The id the chat was filed under.
+ * @param toId - The id it is now known by.
+ */
+export function carryBridgedSender(fromId: string, toId: string): void {
+  if (!db || fromId === toId) return;
+  try {
+    const senderOf = (id: string) =>
+      db!
+        .select({ sender: sessionMetadata.bridgedSender })
+        .from(sessionMetadata)
+        .where(eq(sessionMetadata.sessionId, id))
+        .get();
+    const from = senderOf(fromId);
+    if (!from) return;
+    const to = senderOf(toId);
+    const merged = to
+      ? mergedHolds(
+          { lastTurnHeld: null, bridgedSender: from.sender },
+          { lastTurnHeld: null, bridgedSender: to.sender }
+        ).bridgedSender
+      : from.sender;
+    if (to && to.sender === merged) return;
+    db.insert(sessionMetadata)
+      .values({
+        sessionId: toId,
+        runtime: null,
+        createdAt: new Date().toISOString(),
+        bridgedSender: merged,
+      })
+      .onConflictDoUpdate({ target: sessionMetadata.sessionId, set: { bridgedSender: merged } })
+      .run();
+    if (merged === 'stranger') strangers.add(toId);
+  } catch (err) {
+    logger.warn('[continuation-hold] could not carry whose words a bridged chat holds', {
+      fromId,
+      toId,
+      err: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+/**
  * What a merged chat row keeps of the holds (DOR-4593): held if either row was, and a stranger's
  * if either was, or if either is not known. Only two vouched rows stay vouched.
  *

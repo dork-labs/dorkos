@@ -13,13 +13,17 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { sessionMetadata, type Db } from '@dorkos/db';
+import { eq, sessionMetadata, type Db } from '@dorkos/db';
 import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
 import { RuntimeRegistry, runtimeRegistry } from '../../runtime-registry.js';
 import { chatReadOutsideWords } from '../chat-outside-words.js';
-import { noteBridgedSender, setContinuationHoldDb } from '../continuation-hold.js';
+import {
+  carryBridgedSender,
+  noteBridgedSender,
+  setContinuationHoldDb,
+} from '../continuation-hold.js';
 import { recordTurnLevels } from '../turn-levels.js';
 import { resetChosenTurns } from '../full-autonomy.js';
 import {
@@ -231,6 +235,38 @@ describe('a renamed bridged chat', () => {
     await renameLive('second', 'third');
     restart();
     expect(carries('third')).toBe(true);
+  });
+
+  /** The rename event as a later turn re-learns it: link the ids, then carry the record over. */
+  function relearn(fromId: string, toId: string) {
+    linkSessionId(fromId, toId);
+    carryBridgedSender(fromId, toId);
+  }
+
+  it('a stranger turn sent under the born id after a restart still carries after a second restart', async () => {
+    seed('k3c-born');
+    await turn('k3c-born', vouched);
+    await renameLive('k3c-born', 'k3c-sdk');
+    restart();
+    // Bindings send under the born id; the link is not learned again until the turn starts.
+    await turn('k3c-born', stranger);
+    relearn('k3c-born', 'k3c-sdk');
+    expect(carries('k3c-sdk')).toBe(true);
+    restart();
+    expect(carries('k3c-sdk')).toBe(true);
+  });
+
+  it('carries only when every id the chat goes by says vouched', async () => {
+    seed('every-born');
+    await turn('every-born', vouched);
+    await renameLive('every-born', 'every-sdk');
+    // Both rows say vouched; then only the newer id's says stranger.
+    noteBridgedSender('every-born', { marked: false, bridged: true }, true);
+    db.update(sessionMetadata)
+      .set({ bridgedSender: 'stranger' })
+      .where(eq(sessionMetadata.sessionId, 'every-sdk'))
+      .run();
+    expect(carries('every-born')).toBe(true);
   });
 
   it("the owner's own chat stays clean through a rename and a restart", async () => {
