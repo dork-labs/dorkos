@@ -317,8 +317,14 @@ export const auditDomain: CapabilityDomain = {
         mcp: { toolName: 'running_chats', ...READ_TOOL, servers: [...READ_TOOL.servers] },
         http: { method: 'get', path: '/api/sessions/running' },
       },
+      // A Never ask turn reads no titles: a stranger can set one (DOR-3971).
       invoke: async (deps, _input, context) =>
-        listRunningChats(deps.operatorDeps?.meshCore, readerFor(requireAuditDeps(deps), context)),
+        listRunningChats(
+          deps.operatorDeps?.meshCore,
+          readerFor(requireAuditDeps(deps), context),
+          undefined,
+          { withoutTitles: context?.neverAsks === true }
+        ),
     }),
   ],
 };

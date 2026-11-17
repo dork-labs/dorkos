@@ -114,6 +114,7 @@ export async function neverAskAllows(
   // own-connection-reads bound: never in a turn that carries an outsider's words, a stranger's own,
   // one our agents passed on, or one marked by a line it read. A teammate's turn still gets them.
   if (NEVER_ASK_STATUS_READS_QUALIFIED.has(toolName)) {
+    // `carriesOutsiderMark` covers a stranger's ceiling too; the first check states it outright.
     return (
       ceilingOn(session) !== 'stranger' &&
       !carriesOutsiderMark(session) &&

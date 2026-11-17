@@ -383,6 +383,7 @@ function invokeThroughRegistry(
     ...(context?.userId ? { userId: context.userId } : {}),
     ...(context?.sessionId ? { sessionId: context.sessionId } : {}),
     ...(context?.cwd ? { cwd: context.cwd } : {}),
+    ...(context?.neverAsks ? { neverAsks: true as const } : {}),
     ...(context?.serverPrincipal ? { serverPrincipal: context.serverPrincipal } : {}),
     ...(context?.mcpServer ? { mcpServer: context.mcpServer } : {}),
     ...((signal ?? context?.signal) ? { signal: signal ?? context?.signal } : {}),
