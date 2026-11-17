@@ -232,11 +232,19 @@ afterEach(async () => {
 describe('a chat_send from a chat that read outside words', () => {
   it.each([
     ['a room turn that answered a stranger', () => noteRoomTurnWords(ana, true)],
-    ['a Telegram chat', () => origins.set(ana, 'relay-binding')],
+    ['an outside agent’s chat', () => origins.set(ana, 'outside-sender')],
   ])('from %s: the turn it wakes is noted before it runs', async (_label, mark) => {
     mark();
     await anaSendsBo();
     expect(notedAtSend).toEqual([true]);
+  });
+
+  // While the bridge marks strangers (the default), a stranger's Telegram turn carries the mark
+  // itself; an unmarked Telegram chat is the owner's own linked account (DOR-4587).
+  it("from the owner's own Telegram chat: the turn it wakes carries nothing", async () => {
+    origins.set(ana, 'relay-binding');
+    await anaSendsBo();
+    expect(notedAtSend).toEqual([false]);
   });
 
   it('wakes a turn that cannot rewrite or remove a note (memory)', async () => {

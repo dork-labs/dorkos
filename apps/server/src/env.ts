@@ -185,8 +185,10 @@ export const serverEnvSchema = z.object({
   // outsider mark, so raises, grants, connector sends and destructive actions ask a person or are
   // refused. The turn keeps its level. On by default since DOR-4453; 'false' turns it off. The
   // owner's own Telegram and Slack accounts belong on each connection's approver allowlist, or the
-  // owner's phone is marked too (a room always marks it until DOR-4318). Text an extension posts
-  // or relays carries no mark, so no check may rely on the mark covering it. The owner's own phone
+  // owner's phone is marked too (a room always marks it until DOR-4318). A mini app's post or
+  // forward in a room marks the turns that read it whatever this flag says (DOR-4587); text an
+  // agent reads through a connected app or a web page carries no mark yet (DOR-3969), so no check
+  // may rely on the mark covering it. The owner's own phone
   // posts in a bridged room mark most turns that show them, not only the turns that answer them,
   // until DOR-4318.
   DORKOS_MARK_STRANGER_TURNS: boolFlagDefaultOn,
