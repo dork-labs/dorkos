@@ -2,6 +2,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test, { describe } from 'node:test';
+import { checkMergeGroup } from './security-gate.mjs';
+import { REQUIRED_RULESET_NAME } from './security-required-checks.mjs';
 import { trustedLists, verdictForMergeGroup, verdictForPullRequest } from './security-verdict.mjs';
 
 const lists = {
@@ -14,6 +16,7 @@ const DEEP = 'apps/server/src/services/tasks/create-task.ts';
 const SHA = 'head1';
 const REF = 'fix/thing';
 const EARLY = '2026-11-02T10:00:00Z';
+const CHECKED = '2026-11-02T10:30:00Z';
 const LATE = '2026-11-02T11:00:00Z';
 const event = {
   pull_request: { number: 1, head: { sha: SHA }, base: { ref: 'main', sha: 'base' } },
@@ -46,6 +49,8 @@ function fakeGitHub({
   failOn,
   texts = {},
   statuses = [],
+  state = 'open',
+  mergedAt = null,
 } = {}) {
   const written = [];
   let reads = 0;
@@ -57,6 +62,8 @@ function fakeGitHub({
         number: 1,
         head: { sha, ref: REF },
         base: { ref: base, sha: 'base' },
+        state,
+        merged_at: mergedAt,
         changed_files: files.length,
         labels: labels.map((name) => ({ name })),
       };
@@ -95,6 +102,19 @@ function fakeGitHub({
       merge_base_commit: { sha: base },
       files: files.map((filename) => ({ filename })),
     }),
+    // The gate's required-check reads: one required check, finished before LATE.
+    rulesets: async () => [{ id: 7, name: REQUIRED_RULESET_NAME }],
+    ruleset: async () => ({
+      rules: [
+        {
+          type: 'required_status_checks',
+          parameters: { required_status_checks: [{ context: 'test' }] },
+        },
+      ],
+    }),
+    checkRuns: async () => [
+      { name: 'test', status: 'completed', conclusion: 'success', completed_at: CHECKED },
+    ],
     queue: async () => [
       {
         baseCommit: { oid: 'base' },
@@ -126,12 +146,12 @@ describe('the base-copy verdict on a pull request', () => {
     assert.equal(verdictOf(gh.written).state, 'success');
   });
 
-  test('no label is failure, after the initializer pending', async () => {
+  test('no label is pending, after the initializer pending (DOR-4459)', async () => {
     const gh = fakeGitHub({ labels: [], timeline: [] });
     await verdictForPullRequest(gh.api, event, lists);
     assert.deepEqual(
       gh.written.map((w) => w.state),
-      ['pending', 'failure']
+      ['pending', 'pending']
     );
     assert.match(verdictOf(gh.written).description, /no security-reviewed label/);
   });
@@ -150,16 +170,18 @@ describe('the base-copy verdict on a pull request', () => {
     assert.match(verdictOf(gh.written).description, /not from a person/);
   });
 
-  test('hold is failure, even with a fresh label', async () => {
+  test('hold is pending, never success, even with a fresh label', async () => {
     const gh = fakeGitHub({ labels: ['security-reviewed', 'hold'] });
     await verdictForPullRequest(gh.api, event, lists);
-    assert.equal(verdictOf(gh.written).state, 'failure');
+    assert.equal(verdictOf(gh.written).state, 'pending');
+    assert.equal(verdictOf(gh.written).description, 'the hold label is on');
   });
 
   test('a P0 path needs security-deep-reviewed too', async () => {
     const only = fakeGitHub({ files: [DEEP] });
     await verdictForPullRequest(only.api, event, lists);
-    assert.equal(verdictOf(only.written).state, 'failure');
+    assert.equal(verdictOf(only.written).state, 'pending');
+    assert.match(verdictOf(only.written).description, /no security-deep-reviewed label/);
     const both = fakeGitHub({
       files: [DEEP],
       labels: ['security-reviewed', 'security-deep-reviewed'],
@@ -234,7 +256,9 @@ describe('any workflow edit needs security-deep-reviewed (interim, until the App
       timeline: [],
     });
     await verdictForPullRequest(gh.api, event, { ...lists, pattern: '^apps/server/src/http/' });
-    assert.equal(verdictOf(gh.written).state, 'failure');
+    // Unlabelled, so only waiting; a workflow still never reads as no security paths.
+    assert.equal(verdictOf(gh.written).state, 'pending');
+    assert.match(verdictOf(gh.written).description, /lint\.yml is a workflow/);
   });
 });
 
@@ -404,12 +428,154 @@ describe('only a PR into main is judged (Security, 2026-11-02 17:25Z)', () => {
   test('an old base (like #3425 at 526b745025) still gets a written verdict from current rules', async () => {
     for (const [labels, timeline, state] of [
       [['security-reviewed'], [labelled(LATE)], 'success'],
-      [[], [], 'failure'],
+      [[], [], 'pending'],
     ]) {
       const gh = fakeGitHub({ labels, timeline });
       await verdictForPullRequest(gh.api, into('main', '526b745025'), lists);
       assert.equal(verdictOf(gh.written).sha, SHA);
       assert.equal(verdictOf(gh.written).state, state);
     }
+  });
+});
+
+/**
+ * DOR-4459: on an open PR's head, a state that is only waiting for Security posts
+ * `pending`; a state that is wrong still posts `failure`. Each fixture is one
+ * PR head; `why` is the description the status must carry.
+ */
+const WAITING = {
+  'no label yet': { labels: [], timeline: [], why: /^no security-reviewed label$/ },
+  'hold on, fresh label': {
+    labels: ['security-reviewed', 'hold'],
+    why: /^the hold label is on$/,
+  },
+  'hold on, no label': { labels: ['hold'], timeline: [], why: /^the hold label is on$/ },
+  'hold on, label older than the last push': {
+    labels: ['security-reviewed', 'hold'],
+    timeline: [labelled(EARLY)],
+    activity: [push(LATE)],
+    why: /^the hold label is on$/,
+  },
+  'P0 path, fresh label, no deep label yet': {
+    files: [DEEP],
+    why: /^no security-deep-reviewed label$/,
+  },
+  'P0 path plus a workflow, no deep label yet': {
+    files: [DEEP, '.github/workflows/lint.yml'],
+    why: /^no security-deep-reviewed label; .*lint\.yml is a workflow$/,
+  },
+  'a workflow edit, no label yet': {
+    files: ['.github/workflows/lint.yml'],
+    labels: [],
+    timeline: [],
+    why: /^no security-reviewed label; .*lint\.yml is a workflow$/,
+  },
+};
+
+const WRONG = {
+  'label older than the last push, no hold': {
+    timeline: [labelled(EARLY)],
+    activity: [push(LATE)],
+    why: /older than the last push/,
+  },
+  'a label a bot added': {
+    timeline: [labelled(LATE, 'security-reviewed', 'Bot')],
+    why: /not from a person/,
+  },
+  'hold on, but a bot added the label': {
+    labels: ['security-reviewed', 'hold'],
+    timeline: [labelled(LATE, 'security-reviewed', 'Bot')],
+    why: /^the hold label is on$/,
+  },
+  'a label with no labelled event': { timeline: [], why: /no security-reviewed event/ },
+  'an unreadable push time (a fork)': { activity: [], why: /cannot read the push time/ },
+  'P0 path, deep label older than the last push': {
+    files: [DEEP],
+    labels: ['security-reviewed', 'security-deep-reviewed'],
+    timeline: [labelled(LATE), labelled(EARLY, 'security-deep-reviewed')],
+    activity: [push(CHECKED)],
+    why: /security-deep-reviewed is older than the last push/,
+  },
+  'a workflow edit with only security-reviewed': {
+    files: ['.github/workflows/lint.yml'],
+    why: /security-deep-reviewed.*lint\.yml is a workflow/,
+  },
+  'a judge-file edit with only security-reviewed': {
+    files: ['.github/scripts/security-verdict.mjs'],
+    why: /security-verdict\.mjs judges this PR/,
+  },
+  'a closed PR with no label': { labels: [], timeline: [], state: 'closed', why: /no security/ },
+  'a merged PR with no label': {
+    labels: [],
+    timeline: [],
+    state: 'closed',
+    mergedAt: LATE,
+    why: /no security/,
+  },
+};
+
+describe('waiting posts pending, wrong posts failure (DOR-4459)', () => {
+  for (const [what, { why, ...fixture }] of Object.entries(WAITING)) {
+    test(`waiting, ${what}: pending`, async () => {
+      const gh = fakeGitHub(fixture);
+      await verdictForPullRequest(gh.api, event, lists);
+      assert.equal(verdictOf(gh.written).sha, SHA);
+      assert.equal(verdictOf(gh.written).state, 'pending');
+      assert.match(verdictOf(gh.written).description, why);
+      assert.ok(gh.written.every((w) => w.state === 'pending'));
+    });
+  }
+  for (const [what, { why, ...fixture }] of Object.entries(WRONG)) {
+    test(`wrong, ${what}: failure`, async () => {
+      const gh = fakeGitHub(fixture);
+      await verdictForPullRequest(gh.api, event, lists);
+      assert.equal(verdictOf(gh.written).state, 'failure');
+      assert.match(verdictOf(gh.written).description, why);
+    });
+  }
+});
+
+describe('the merge queue is unchanged by pending (DOR-4459)', () => {
+  for (const [what, { why, ...fixture }] of Object.entries(WAITING)) {
+    test(`waiting, ${what}: the group SHA still gets failure`, async () => {
+      const head = fakeGitHub(fixture);
+      await verdictForPullRequest(head.api, event, lists);
+      const gh = fakeGitHub(fixture);
+      await verdictForMergeGroup(gh.api, group, lists);
+      assert.equal(verdictOf(gh.written).sha, 'group1');
+      assert.equal(verdictOf(gh.written).state, 'failure');
+      // The reason the PR head shows as pending is the reason the group fails.
+      assert.match(verdictOf(head.written).description, why);
+      const reason = verdictOf(head.written).description.split('; ')[0];
+      assert.match(verdictOf(gh.written).description, /^PR #1: /);
+      assert.ok(verdictOf(gh.written).description.includes(reason), reason);
+    });
+
+    test(`waiting, ${what}: security-gate's queue leg still refuses the pending head`, async () => {
+      for (const requiredChecks of [true, false]) {
+        const gh = fakeGitHub(fixture);
+        // The head carries the pending verdict this change now writes.
+        await verdictForPullRequest(gh.api, event, lists);
+        assert.equal(verdictOf(gh.written).state, 'pending');
+        await assert.rejects(
+          checkMergeGroup(gh.api, group, lists.pattern, lists.botUserId, lists.deepPattern, {
+            requiredChecks,
+          }),
+          /no security-review success/
+        );
+      }
+    });
+  }
+
+  test('control: the same fake queue passes a fully labelled PR in both legs', async () => {
+    const gh = fakeGitHub();
+    await verdictForPullRequest(gh.api, event, lists);
+    assert.equal(verdictOf(gh.written).state, 'success');
+    assert.match(
+      await checkMergeGroup(gh.api, group, lists.pattern, lists.botUserId, lists.deepPattern),
+      /PR #1: Security status verified/
+    );
+    await verdictForMergeGroup(gh.api, group, lists);
+    assert.equal(verdictOf(gh.written).state, 'success');
   });
 });

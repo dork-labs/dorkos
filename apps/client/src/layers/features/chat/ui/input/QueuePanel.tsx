@@ -64,6 +64,8 @@ interface QueuePanelProps {
    * now or Don't deliver, so a keyboard user never lands on the page itself.
    */
   onFocusComposer?: () => void;
+  /** Why messages from other chats wait during a pause. */
+  pausedLine?: string;
 }
 
 /**
@@ -98,6 +100,7 @@ export function QueuePanel({
   onSwitchNow,
   agentActions,
   onFocusComposer,
+  pausedLine,
 }: QueuePanelProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const leaving = useRef<{ id: string; index: number; last: boolean } | null>(null);
@@ -229,6 +232,7 @@ export function QueuePanel({
                   actions={rowActions}
                   onSwitchNow={onSwitchNow}
                   onLeaving={noteLeaving}
+                  pausedLine={pausedLine}
                 />
               ) : (
                 <div

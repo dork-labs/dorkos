@@ -34,7 +34,7 @@ export interface HandoverBrowser {
   profileExists(id: string): boolean;
   open(input: LocalBrowserOpen): Promise<LocalBrowserState>;
   selectTab(id: string): Promise<LocalBrowserState>;
-  navigate(url: string): Promise<LocalBrowserState>;
+  navigate(url: string, options?: { httpFallback?: boolean }): Promise<LocalBrowserState>;
   stepHistory(direction: LocalBrowserHistoryDirection): Promise<LocalBrowserState>;
   pause(): Promise<LocalBrowserState>;
   handToPerson(): Promise<LocalBrowserState>;
@@ -125,6 +125,9 @@ export class BrowserHandover {
   // After Stop task the browser stays open for the person (2FA, a payment), so that
   // chat reads nothing until a person opens or resumes the browser for it again.
   private stoppedFor: string | null = null;
+  // A person took the page from this chat (DOR-4428): its agent can't read or use it
+  // until a person resumes, opens or closes the browser.
+  private takenFrom: string | null = null;
   // Fails closed until startup says how to read a turn's marks.
   private outsideTurn: OutsideTurnCheck = async () => true;
   // The registry id of the agent in a folder; none until startup wires the mesh.
@@ -188,7 +191,49 @@ export class BrowserHandover {
    */
   async state(): Promise<LocalBrowserPersonState> {
     const state = this.trimmed(await this.browser.state());
-    return { ...state, handoff: this.record, signIn: this.signIns.current };
+    return {
+      ...state,
+      handoff: this.record,
+      signIn: this.signIns.current,
+      takenOver: this.takenFrom !== null,
+    };
+  }
+
+  /**
+   * A person takes the page from the chat it is shared with, in one step and with no
+   * confirm (DOR-4428). The agent is paused and refused every browser call, reads
+   * included, until a person resumes, opens or closes the browser. Nothing to take
+   * while no chat shares the page, or while an agent's own handoff already gave it.
+   */
+  async takeOver(): Promise<LocalBrowserPersonState> {
+    if (this.preparingHandoff || this.answeringHandoff)
+      throw new LocalBrowserError('busy', 'The browser handoff is changing. Wait a moment.');
+    const state = await this.browser.state();
+    // Checked again after the read: a handoff that began meanwhile already gave the
+    // person the page, and one lock on top of it would outlive its hand back.
+    if (
+      this.takenFrom === null &&
+      !this.preparingHandoff &&
+      !this.answeringHandoff &&
+      this.record?.outcome !== null &&
+      state.status === 'connected' &&
+      state.sessionId
+    ) {
+      // Locked before the pause is awaited, so no agent call slips in between. If the
+      // pause fails the lock stays on: failing closed, and Resume clears it.
+      this.takenFrom = state.sessionId;
+      await this.browser.pause();
+      logger.info('[Browser] A person took the browser', { sessionId: state.sessionId });
+      this.changed();
+    }
+    return this.state();
+  }
+
+  /** The agent may use the page again: the person resumed, reopened or closed it. */
+  private giveBack(): void {
+    if (this.takenFrom === null) return;
+    this.takenFrom = null;
+    this.changed();
   }
 
   /** A person's Pause, answered with the same trimmed tabs as {@link state}. */
@@ -210,6 +255,7 @@ export class BrowserHandover {
    */
   async requireAgentMayUse(sessionId: string): Promise<void> {
     this.refuseStopped(sessionId);
+    this.refuseTaken();
     if (this.preparingHandoff || (this.record && this.record.outcome === null)) {
       // QA reads these: every browser call an agent tried while a person had the browser.
       logger.info('[Browser] Refused an agent call during a handoff', {
@@ -254,6 +300,7 @@ export class BrowserHandover {
         'This turn read words from outside your team, so it can’t hand the browser to a person.'
       );
     this.refuseStopped(sessionId);
+    this.refuseTaken();
     if (this.preparingHandoff || this.answeringHandoff)
       throw new LocalBrowserError('busy', 'The browser handoff is changing. Wait a moment.');
     const open = this.record?.outcome === null ? this.record : null;
@@ -483,6 +530,7 @@ export class BrowserHandover {
       await this.browser.open(input);
     }
     this.stoppedFor = null;
+    this.giveBack();
     return this.state();
   }
 
@@ -503,6 +551,7 @@ export class BrowserHandover {
       throw new LocalBrowserError('signing_in', 'Close the sign-in window first.');
     await this.browser.resume();
     this.stoppedFor = null;
+    this.giveBack();
     return this.state();
   }
 
@@ -520,24 +569,34 @@ export class BrowserHandover {
 
   /**
    * A person's address bar, refused during a handoff so the page can't leave the site
-   * the card names.
+   * the card names. Using it takes the page from an agent sharing it, first.
    *
    * @param url - The address to open.
+   * @param options - Whether a bare host the person typed may try HTTP once.
    */
-  async navigate(url: string): Promise<LocalBrowserState> {
+  async navigate(
+    url: string,
+    options?: { httpFallback?: boolean }
+  ): Promise<LocalBrowserPersonState> {
     this.refuseDuringHandoff();
-    return this.browser.navigate(url);
+    await this.takeOver();
+    await this.browser.navigate(url, options);
+    return this.state();
   }
 
   /**
    * A person's Back or Forward, refused during a handoff for the same reason as
-   * {@link navigate}: the page must not leave the site the card names.
+   * {@link navigate}: the page must not leave the site the card names. Like the
+   * address bar, it takes the page from an agent sharing it first, so the agent is
+   * shut out even when the step itself is refused (DOR-4428).
    *
    * @param direction - Back or Forward.
    */
-  async stepHistory(direction: LocalBrowserHistoryDirection): Promise<LocalBrowserState> {
+  async stepHistory(direction: LocalBrowserHistoryDirection): Promise<LocalBrowserPersonState> {
     this.refuseDuringHandoff();
-    return this.browser.stepHistory(direction);
+    await this.takeOver();
+    await this.browser.stepHistory(direction);
+    return this.state();
   }
 
   /**
@@ -548,6 +607,7 @@ export class BrowserHandover {
     if (this.preparingHandoff || this.answeringHandoff)
       throw new LocalBrowserError('busy', 'The browser handoff is changing. Wait a moment.');
     await this.browser.disconnect();
+    this.giveBack();
     if (this.record?.outcome === null) {
       this.stoppedFor = this.record.sessionId;
       this.end(this.record, 'window-closed');
@@ -566,6 +626,14 @@ export class BrowserHandover {
       throw new LocalBrowserError(
         'task_stopped',
         'The person stopped this task. They can open the browser for you again.'
+      );
+  }
+
+  private refuseTaken(): void {
+    if (this.takenFrom !== null)
+      throw new LocalBrowserError(
+        'taken_by_person',
+        'A person took the browser. Wait until they hand it back.'
       );
   }
 

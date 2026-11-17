@@ -222,6 +222,11 @@ export class WorkspaceService implements WorkspaceManager {
     }
   }
 
+  /** {@inheritDoc WorkspaceManager.getByKey} The key is sanitized as `ensure` sanitizes it. */
+  async getByKey(projectKey: string, key: string): Promise<Workspace | null> {
+    return this.deps.store.getByKey(projectKey, sanitizeWorkspaceKey(key));
+  }
+
   async list(filter?: { projectKey?: string }): Promise<WorkspaceWithSessions[]> {
     const items = this.deps.store.list(filter);
     return Promise.all(

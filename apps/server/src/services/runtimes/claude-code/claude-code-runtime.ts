@@ -132,7 +132,7 @@ export type PluginReloadActivityPort = (entry: PaidPluginReload) => void;
 import type { SessionStateProjector } from '../../session/index.js';
 import type { ConnectorRuntimeTools } from '../connector-tools.js';
 import type { RevokeConnectorTurnReason } from '../../connectors/runtime-principal-port.js';
-import { ClaudeConnectorTurnContext } from './connector-turn-context.js';
+import { claudeConnectorTurn } from './connector-turn-context.js';
 import { broadcastCommandsChanged } from './tooling/commands-changed-broadcast.js';
 import { overlayClaudeCodeHistory } from './history/claude-code-history-overlays.js';
 
@@ -655,15 +655,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     const connectorAgent = this.connectorAgentFor(cwdKey, turnAgentOf(opts));
     const meshAgent = connectorAgent?.meshAgent;
 
-    const connectorTurn =
-      this.connectorRuntimeTools && connectorAgent
-        ? new ClaudeConnectorTurnContext({
-            tools: this.connectorRuntimeTools,
-            canonicalSessionId: () => session.sdkSessionId || sessionId,
-            agentPath: connectorAgent.agentPath,
-            cwd: cwdKey,
-          })
-        : undefined;
+    const connectorTurn = claudeConnectorTurn(this.connectorRuntimeTools, connectorAgent, {
+      session,
+      sessionId,
+      cwd: cwdKey,
+    });
     session.connectorTurn = connectorTurn;
     // Who may be asked, how far the turn reaches, and which room a teammate's
     // turn is fenced to: all per turn, all assigned on every send.

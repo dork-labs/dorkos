@@ -14,8 +14,8 @@
  *
  * @module services/connectors/access/turn-gate
  */
-import { marksOf, lastTurnLevelOf } from '../../core/turn-power/turn-levels.js';
-import { roomTurnReadOutsideWords } from '../../core/turn-power/outside-words.js';
+import { lastTurnLevelOf } from '../../core/turn-power/turn-levels.js';
+import { turnReadOutsideWords } from '../../core/turn-power/outsider-turn.js';
 import { choseFullAutonomy, recordMarkedFullAction } from '../../core/turn-power/full-autonomy.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import {
@@ -83,8 +83,7 @@ export interface TurnGateSources {
 /** The live sources. */
 export const LIVE_TURN_GATE_SOURCES: TurnGateSources = {
   hasTurnRecord: (sessionId) => lastTurnLevelOf(sessionId) !== undefined,
-  marked: (sessionId, agentPath) =>
-    marksOf(sessionId, agentPath).outsider === true || roomTurnReadOutsideWords(sessionId),
+  marked: turnReadOutsideWords,
   agentSenders: (sessionId) => [
     ...chatTurnSendersOf(sessionId),
     ...steeredTurnSendersOf(sessionId),

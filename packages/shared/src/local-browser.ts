@@ -86,6 +86,11 @@ export interface LocalBrowserTab {
   url: string;
   title: string;
   /**
+   * The tab is on a site the one http:// fallback opened for a bare host the
+   * person typed, over http (DOR-4450). Absent otherwise.
+   */
+  openedOverHttp?: boolean;
+  /**
    * Whether Back has a page to go to: an earlier page in this tab's own history
    * that the address rules still allow. Only the selected tab, and only in a
    * person's state; absent elsewhere.
@@ -120,12 +125,19 @@ export interface LocalBrowserState {
 export interface LocalBrowserPersonState extends LocalBrowserState {
   handoff: LocalBrowserHandoff | null;
   signIn: LocalBrowserSignIn | null;
+  /**
+   * The person took the page from the chat it is shared with (DOR-4428). Until they
+   * hand it back, that chat's agent can't read or use it, as during a handoff.
+   */
+  takenOver: boolean;
 }
 export interface LocalBrowserObservation {
   revision: number;
   snapshot: string;
   url: string;
   tabId: string;
+  /** The selected page was opened by the one HTTP fallback and is still on HTTP. */
+  openedOverHttp?: boolean;
 }
 export interface LocalBrowserCapabilities {
   platform: string;
@@ -149,6 +161,12 @@ export const LocalBrowserStateSchema = z.object({
       id: z.string(),
       url: z.string(),
       title: z.string(),
+      openedOverHttp: z
+        .boolean()
+        .optional()
+        .describe(
+          'True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details.'
+        ),
       canGoBack: z.boolean().optional(),
       canGoForward: z.boolean().optional(),
     })
@@ -231,6 +249,7 @@ export const LocalBrowserAskPersonSchema = z
 export const LocalBrowserPersonStateSchema = LocalBrowserStateSchema.extend({
   handoff: LocalBrowserHandoffSchema.nullable(),
   signIn: LocalBrowserSignInSchema.nullable(),
+  takenOver: z.boolean(),
 });
 
 /** What the agent hears back. */
@@ -245,6 +264,12 @@ export const LocalBrowserObservationSchema = z.object({
   snapshot: z.string(),
   url: z.string(),
   tabId: z.string(),
+  openedOverHttp: z
+    .boolean()
+    .optional()
+    .describe(
+      'True while this page is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details.'
+    ),
 });
 
 export const LocalBrowserCapabilitiesSchema = z.object({

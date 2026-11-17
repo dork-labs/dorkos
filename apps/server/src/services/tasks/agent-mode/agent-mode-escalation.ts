@@ -20,8 +20,7 @@ import {
   type ToolCallContext,
   type ToolCallEscalation,
 } from '../../core/capabilities/tool-call-escalation.js';
-import { marksOf } from '../../core/turn-power/turn-levels.js';
-import { marksHold } from '../../core/turn-power/turn-marks.js';
+import { turnReadOutsideWords } from '../../core/turn-power/outsider-turn.js';
 import { liveRunOriginSources, withRunOrigin } from './agent-mode-run-origin.js';
 import type { TaskStore } from '../task-store.js';
 import {
@@ -66,9 +65,10 @@ export function gateCallerOf(context: ToolCallContext): AgentModeCaller {
     ...(identity ? { agentPath: identity.agentPath } : {}),
     ...(context.sessionId ? { sessionId: context.sessionId } : {}),
     // A caller off the chat that DorkOS cannot name is held as an outsider's, as
-    // the external server holds it everywhere else (DOR-3036).
+    // the external server holds it everywhere else (DOR-3036). The outside-words
+    // note counts as the mark does (DOR-4587): a hop from a chat that read them.
     marked:
-      marksHold(marksOf(context.sessionId, identity?.agentPath)) ||
+      turnReadOutsideWords(context.sessionId, identity?.agentPath) ||
       (context.origin !== 'session' && identity === undefined),
   };
 }

@@ -72,6 +72,10 @@ export const STEP_UP_ACTION_KINDS = [
   'extension.grant',
   /** Change a mini app's project settings. */
   'extension.settings-change',
+  /** Set a monthly spend limit, or raise it (DOR-4204 PR 2). */
+  'spending.raise',
+  /** Set a price per run for an app, or lower it (DOR-4204 PR 2). */
+  'spending.price',
 ] as const;
 
 /** One kind of guarded action. */

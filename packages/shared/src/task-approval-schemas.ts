@@ -73,9 +73,38 @@ export const TaskFolderRulesSchema = z.object({
   pending: z.array(z.string()),
 });
 
+/**
+ * Where a parked schedule's runs would stand, read with the run's own guard
+ * (`execution/run-place-guard.ts`) after the same folder chain (`execution/run-placement.ts`).
+ */
+export const TaskRunPlaceSchema = z
+  .discriminatedUnion('kind', [
+    /** The agent's own folder. */
+    z.object({ kind: z.literal('agent'), path: z.string() }),
+    /**
+     * The agent's managed checkout. `ready` is false when it is not made yet:
+     * a run makes it first, or works in the agent's own folder while making it
+     * waits on a person's OK.
+     */
+    z.object({ kind: z.literal('agent_checkout'), ready: z.boolean() }),
+    /**
+     * A fixed folder that is not the agent's own: DorkOS's default folder for an
+     * agent set to use it, or the folder the server runs in for a run with no agent.
+     */
+    z.object({ kind: z.literal('folder'), path: z.string(), of: z.enum(['default', 'server']) }),
+    /** A new, empty, private folder for each run. */
+    z.object({ kind: z.literal('private') }),
+  ])
+  .openapi('TaskRunPlace');
+
+/** {@link TaskRunPlaceSchema}. */
+export type TaskRunPlace = z.infer<typeof TaskRunPlaceSchema>;
+
 /** Read-only facts shown beside the approval; the revision binds the person's answer. */
 export const TaskReviewPresentationSchema = z.object({
   folderRules: TaskFolderRulesSchema.optional(),
+  /** Person-only, and only on a parked schedule. Absent when no run could start. */
+  runPlace: TaskRunPlaceSchema.optional(),
   runsAsName: z.string().nullable().optional(),
   fileCapNext: z.boolean().optional(),
   approvalRevision: z.string().optional(),

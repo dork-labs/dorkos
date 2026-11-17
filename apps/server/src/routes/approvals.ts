@@ -151,6 +151,7 @@ import { NOT_FROM_WIFI } from '../services/core/auth/sessions/wifi-level.js';
 import { wifiTurnHeld } from '../services/core/auth/sessions/wifi-turn-ceiling.js';
 import { WIFI_DENY_REASON_REFUSAL } from './session-answer-wifi.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
+import { refusePaidRunAnswer } from './approval-spend-guard.js';
 import { deskGoesOnWithoutSheet, holdForStepUp } from './step-up-guard.js';
 import { CHANGE_PERMISSION_ID } from '../services/core/permissions/permission-capabilities.js';
 import {
@@ -191,6 +192,12 @@ export interface ApprovalsRouterOptions {
    * hand-registered tool table and then to its own id.
    */
   describeCapability?: (capabilityId: string) => { title: string } | undefined;
+  /**
+   * The monthly spend limit's check at the tap (DOR-4204 PR 2, spec §4.4):
+   * the receipt to answer with when a paid-run card no longer fits the limit,
+   * or `null` when it does. Omitted where no limit is wired.
+   */
+  spending?: { tapRefusal: (approvalId: string) => string | null };
 }
 
 /**
@@ -585,8 +592,12 @@ export function createApprovalsRoutes(
   router.post('/:id/grant', async (c) => {
     const authority = personOrRefuse(c);
     if (authority instanceof Response) return authority;
+    // Wi-Fi may only deny (DOR-3648). That covers every narrower Wi-Fi bar:
+    // destructive (DOR-2969), raising what agents may do (DOR-3037) and a
+    // paid run (DOR-4204 PR 2, Security Must 2).
     const wifi = refuseApprovalYesFromWifi(honoRequestFacts(c));
     if (wifi) return c.json(wifi, 403);
+    const spend = approvals.answerScope(c.req.param('id'))?.spend === true;
 
     // An empty POST reads as `{}`, as Express 5's undefined `req.body` did, and
     // `answer` defaults to `once`, so an absent body is a plain one-time yes.
@@ -597,6 +608,19 @@ export function createApprovalsRoutes(
     }
     const { answer } = parsed.data;
     const id = c.req.param('id');
+    // A paid run's bars, at the tap and again at a held answer's confirmation.
+    const refuseSpend = (facts: RequestFacts) =>
+      spend
+        ? refusePaidRunAnswer(facts, {
+            approvalId: id,
+            answer,
+            isLoginEnabled: options.isLoginEnabled,
+            tapRefusal: options.spending?.tapRefusal,
+            deny: (approvalId, receipt) => approvals.deny(approvalId, receipt),
+          })
+        : null;
+    const spendRefused = refuseSpend(authority.facts);
+    if (spendRefused) return c.json(spendRefused.body, spendRefused.status);
 
     // Two Always allows for the same agent and action run one after the other:
     // run side by side, both would read "not set" before either wrote, and the
@@ -666,6 +690,8 @@ export function createApprovalsRoutes(
         // The same Wi-Fi rule as the request: a confirmation finished on Wi-Fi allows nothing.
         const wifi = refuseApprovalYesFromWifi(confirming);
         if (wifi) return { status: 403, body: wifi };
+        const spendAtConfirm = refuseSpend(confirming);
+        if (spendAtConfirm) return spendAtConfirm;
         return apply({ ...person, answeringFrom: from, confirmedWith: 'password' }, hash);
       },
     });

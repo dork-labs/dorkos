@@ -46,6 +46,7 @@ import {
 import { isTrustedCaller, type TrustedCaller } from './trusted-caller.js';
 import { resolveCallPermission } from './permission-enforcement.js';
 import { principalTurnOf } from './marked-turn-holds.js';
+import { refuseSpend, spendPermission, type SpendPreflight } from './spend-permission.js';
 import { agentComputerActionRefusal } from '../agent-computer/hub-owned.js';
 import { preGateRefusal } from './pre-gate-refusals.js';
 import { resolveApprovalSubject } from '../approvals/approval-subject.js';
@@ -176,6 +177,12 @@ export interface CapabilityInvocationContext {
    * authorization: it says where the caller is, not what it may do.
    */
   cwd?: string;
+  /**
+   * The invoking session's turn runs at Never ask right now, set only by the in-session server
+   * from the live session (DOR-3971). It only narrows what a read returns, never what may run, so
+   * a handler that hands back words a stranger may have chosen leaves them out.
+   */
+  neverAsks?: true;
   /** Process-authenticated caller resolved by a server-owned boundary. */
   /**
    * Which MCP server's tool list this call arrived through, set by the MCP
@@ -221,6 +228,12 @@ export interface CapabilityPreflightResult {
    * asks a person before one even at Full; absent counts as yes.
    */
   readonly outward?: boolean;
+  /**
+   * Set when the call is a paid app action an agent runs (DOR-4204 PR 2): the
+   * monthly limit's answer. `refuse` is refused with no card, `ask` raises a
+   * card at every level, `run` changes nothing.
+   */
+  readonly spend?: SpendPreflight;
 }
 
 /**
@@ -336,6 +349,8 @@ export interface CapabilityHandlerContext {
    * a restart still resumes the agent in the right place (DOR-981).
    */
   cwd?: string;
+  /** See {@link CapabilityInvocationContext.neverAsks}. */
+  neverAsks?: true;
   /** Process-authenticated caller resolved by the server boundary. */
   /** See {@link CapabilityInvocationContext.mcpServer}. */
   mcpServer?: McpServerId;
@@ -835,6 +850,7 @@ export function composeRegistry(
         ...(supplied.userId ? { userId: supplied.userId } : {}),
         ...(supplied.sessionId ? { sessionId: supplied.sessionId } : {}),
         ...(supplied.cwd ? { cwd: supplied.cwd } : {}),
+        ...(supplied.neverAsks ? { neverAsks: true as const } : {}),
         ...(supplied.serverPrincipal ? { serverPrincipal: supplied.serverPrincipal } : {}),
         ...(supplied.mcpServer ? { mcpServer: supplied.mcpServer } : {}),
         ...(supplied.signal ? { signal: supplied.signal } : {}),
@@ -854,6 +870,9 @@ export function composeRegistry(
         );
       }
       if (preflight) invocationContext.preflight = preflight;
+      // Past the monthly limit, or on an outsider-marked turn: refused, no card.
+      if (!supplied.trusted) refuseSpend(preflight?.spend);
+      const spendAsks = !supplied.trusted && preflight?.spend?.kind === 'ask';
       // Only the request tool forwards a token, to the action it asks for; see
       // `CapabilityDefinition.forwardsApproval`.
       if (capability.forwardsApproval) {
@@ -867,16 +886,25 @@ export function composeRegistry(
       // runs only if nobody cancels, on a `hold` approval bound to the
       // preflight's authority; a cancel throws, and nothing runs.
       const windowed =
-        preflight && !supplied.approvalToken && capability.cancelWindow
+        preflight && !spendAsks && !supplied.approvalToken && capability.cancelWindow
           ? await capability.cancelWindow(deps, parsed, supplied, preflight)
           : undefined;
       const cancelWindow = typeof windowed === 'function' ? windowed : undefined;
       if (cancelWindow) invocationContext.approval = await cancelWindow();
       // Kept to the card for one reason only, which the card says (DOR-3242).
-      const keptCardBecause = typeof windowed === 'object' ? windowed.keptCardBecause : undefined;
+      const keptCardBecause = spendAsks
+        ? ('spend' as const)
+        : typeof windowed === 'object'
+          ? windowed.keptCardBecause
+          : undefined;
+      const spendCard = preflight?.spend?.kind === 'ask' ? preflight.spend.card : undefined;
       const serviceAction =
         preflight?.approvalServiceAction && keptCardBecause
-          ? { ...preflight.approvalServiceAction, keptCardBecause }
+          ? {
+              ...preflight.approvalServiceAction,
+              keptCardBecause,
+              ...(spendAsks && spendCard ? { spend: spendCard } : {}),
+            }
           : preflight?.approvalServiceAction;
 
       // Existing trusted callers retain their ordinary bypass. A capability with
@@ -886,7 +914,7 @@ export function composeRegistry(
         // The permission, resolved fresh for THIS call (spec `agent-permissions`
         // D6). A trusted caller is a person, whom no agent permission governs, so
         // it passes `null` and the tier alone decides, exactly as before.
-        const permission = supplied.trusted
+        const resolved = supplied.trusted
           ? null
           : await resolveCallPermission({
               action: capability,
@@ -896,6 +924,8 @@ export function composeRegistry(
               ...principalTurnOf(supplied.serverPrincipal),
               ...(preflight?.outward === false ? { outward: false } : {}),
             });
+        // A paid run that must ask does so at every level (DOR-4204 PR 2).
+        const permission = spendAsks ? spendPermission(resolved) : resolved;
         // Named here rather than in the gate, which is synchronous (DOR-1929):
         // an action that can raise a card and declares its subject gets a card
         // that says WHICH thing it is about.
@@ -906,7 +936,11 @@ export function composeRegistry(
           ? await capability.describeApprovalChange(deps, parsed, supplied)
           : undefined;
         const decision = enforceCapabilityTier({
-          action: capability,
+          // A read raises no card by its tier; a paid one that must ask does.
+          action:
+            spendAsks && capability.tier === 'observe'
+              ? { ...capability, tier: 'act' }
+              : capability,
           input: parsed,
           permission,
           ...(subject ? { subject } : {}),

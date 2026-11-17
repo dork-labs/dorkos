@@ -44,20 +44,17 @@ DorkOS has one identity core — [Better Auth](https://better-auth.com) — embe
 
 ### The one gate, read per request
 
-When `config.auth.enabled` is `true`, a single app-wide middleware (`sessionGate`) protects everything under `/api/*` and `/mcp`. When it is `false`, the gate is a zero-overhead pass-through — the flag is read **per request** via `configManager`, so the enable-login flow flips it without a server restart.
+The gate is decided per request, not by one global login flag. `gateAccessFor` in `apps/server/src/services/core/auth/gate-policy.ts` classifies where the caller came from, then `decideSessionGate` applies that answer to gated paths:
 
-```typescript
-// apps/server/src/services/core/auth/session-gate.ts (shape)
-export async function decideSessionGate(method, path, request) {
-  if (!configManager.get('auth')?.enabled) return { allowed: true }; // zero-config: transparent
+| Request                                            | Gate policy                                                                           |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| This computer                                      | Open unless `auth.enabled` asks for a password here too                               |
+| Another device, including Wi-Fi, a tunnel or proxy | Credential required; the ownerless container exception is defined in `gate-policy.ts` |
+| Hub                                                | Credential required                                                                   |
+| Agent computer                                     | A local caller needs an agent credential; other callers are refused                   |
+| Session relay                                      | Refused by this gate; the relay has its own chat-only path                            |
 
-  const lowered = path.toLowerCase(); // normalize case before the gate checks
-  if (!isSessionGatedPath(lowered) || isExemptPath(lowered)) return { allowed: true }; // static SPA assets + /api/auth/* + /api/health pass
-
-  const user = await verifyRequestAuth(request);
-  return user ? { allowed: true, user } : { allowed: false }; // chain answers 401 with AUTH_REQUIRED_BODY and sets c.var.user
-}
-```
+`session-gate.ts` also keeps exempt login/health/static paths reachable. On an open request it can still record a verified browser session with the app's person proof; open does not mean that every program is the person. Person-only writes use `personSessionRequired`, which requires a browser session once an owner exists even on this computer with `auth.enabled: false`. An API key is not that browser session. Changing the local password setting is read per request and needs no restart.
 
 The gate runs as one step in the Hono chain (`http/api-chain.ts`), **after** body parsing, **before** the first API route, setting `c.var.user` on success. Better Auth answers before it, from the same chain. Every request runs the chain — `/mcp`, `/a2a`, `/.well-known`, and the app's own files, not only `/api` — so `/mcp`'s auth is covered by the same gate.
 
@@ -141,13 +138,15 @@ Do not confuse it with a locality check. `Host` says which name the caller asked
 1. `env.MCP_API_KEY` — static override for headless deployments (exact match, constant-time, un-revocable from the UI).
 2. A per-user Better Auth API key (or session cookie) via `verifyRequestAuth`.
 3. Legacy compat: a not-yet-seeded `config.mcp.apiKey`, accepted until seeding retires it.
-4. The per-instance local MCP token (`getMcpLocalToken()`), **only while login is off** — the replacement for the deleted zero-config pass-through (`specs/mcp-local-auth-posture`). It yields to per-user keys once login is on, per ADR-0320.
+4. The per-instance local MCP token (`getMcpLocalToken()`), **only where the request policy permits it** (an open request on this computer, or a local agent-computer request) — the replacement for the deleted zero-config pass-through (`specs/mcp-local-auth-posture`). It yields to per-user keys once login is on, per ADR-0320.
 
-**When nothing matches it fails closed** — there is no unauthenticated path left:
+**The request policy decides the tokenless path.** `decideMcpAuth` first refuses callers whose `gateAccessFor` answer is `refused`. Its credential acceptors then run in the priority order above.
 
-- **Login off, `/mcp`:** only the read-only carve-out passes tokenless, and it is a closed allowlist — exactly `initialize`, `ping`, `tools/list`, `resources/list`, `resources/templates/list`, `prompts/list`, any `notifications/*` method, and `tools/call`s naming a tool in `READ_ONLY_MCP_TOOL_NAMES` (`services/core/external-mcp/tool-security.ts`). Mutating tools, unknown tools, `resources/read`, unknown methods, a batch with any guarded element, and an unparseable body are all `401`.
-- **Login off, `/a2a`:** `GET` (agent-card discovery) passes; `POST` (JSON-RPC execution) is `401` without a credential.
-- **Login on:** no tokenless path on either surface. On `/mcp` the app-wide `sessionGate` answers before this middleware ever runs, so a session cookie or per-user API key is the only credential that gets through — **the local token and the `MCP_API_KEY` override alone are both refused there** (pinned by `middleware/__tests__/mcp-auth.integration.test.ts`). `/a2a` is not a gated path, so the override still works on it.
+- **Open request on this computer, `/mcp`:** a closed read-only allowlist can pass tokenless (`isAllowedMcpMessage` in `apps/server/src/services/core/external-mcp/tool-security.ts`). Mutation tools, `resources/read`, unknown methods, a mixed guarded batch and an unparseable body require a credential.
+- **Open request on this computer, `/a2a`:** `GET` agent-card discovery can pass without a token; `POST` execution needs one.
+- **Credential-required or sealed agent-computer request:** no tokenless access on either surface. Another device cannot use this computer's local token. A sealed agent computer can accept its local token, but not anonymous reads.
+
+The earlier app-wide session gate covers `/mcp`. Where that gate requires a person credential, a session cookie or per-user API key must pass it before the MCP acceptors run; the static override alone cannot satisfy that earlier gate. A2A is authorized by its own MCP-auth path. On the Wi-Fi route, `verifyRequestAuth` ignores session cookies for these tool surfaces and requires a bearer key. See `apps/server/src/middleware/mcp-auth.ts`; do not infer any of these rules solely from `auth.enabled`.
 
 The old global `dork_mcp_*` key is folded into a per-user key by `seedLegacyMcpApiKey(db)`, run on the owner-creation seam and at startup. It inserts the exact key value as an owner-owned Better Auth key (via the plugin's `defaultKeyHasher`) and clears `config.mcp.apiKey` in the same operation — idempotent, so existing MCP clients keep working without a restart. The removed `POST /api/config/mcp/generate-key` and `DELETE /api/config/mcp/api-key` endpoints are replaced by the Better Auth `/api/auth/*` API-key endpoints (client UI in `features/auth`). `GET /api/config` reports the MCP `authSource` as `'env' | 'user-keys' | 'local-token' | 'none'` — `'local-token'` being the normal login-off answer, and `'none'` only the degenerate case where no token could be generated. `authConfigured` is `authSource !== 'none'`, so a default install reports the surface as gated, because it is.
 

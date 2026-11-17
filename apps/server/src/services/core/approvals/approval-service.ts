@@ -52,9 +52,12 @@ import { requestCodeForHash } from '../auth/step-up/request-code.js';
 import { purgeExpiredApprovals } from './approval-retention.js';
 import { and, asc, count, desc, eq, gte, isNotNull, isNull, approvals, type Db } from '@dorkos/db';
 import type { ApprovalVerdictData } from '@dorkos/shared/additional-context';
-import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import type { ProjectRef } from '@dorkos/shared/project-schemas';
-import { type ApprovalOutcome, type PendingApproval } from '@dorkos/shared/approval-schemas';
+import {
+  type ApprovalOutcome,
+  type ApprovalServiceAction,
+  type PendingApproval,
+} from '@dorkos/shared/approval-schemas';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import { broadcastApprovalPending, broadcastApprovalResolved } from './approval-events.js';
 import { cannotAllowCard } from './approval-completeness.js';
@@ -75,7 +78,7 @@ import {
 } from './approval-card.js';
 
 export { isAlwaysOffered };
-import { ownAnswerInput, storedFullDetail } from './approval-storable.js';
+import { ownAnswerInput, storedFullDetail, withServiceAction } from './approval-storable.js';
 import {
   raiseCapabilityApproval,
   resolveCapabilityApproval,
@@ -984,6 +987,16 @@ export class ApprovalService {
       });
       return undefined;
     }
+  }
+
+  /**
+   * The app and action a card is about, as stored with it (DOR-4204 PR 2).
+   *
+   * @param approvalId - The card.
+   */
+  serviceActionOf(approvalId: string): ApprovalServiceAction | undefined {
+    const row = this.db.select().from(approvals).where(eq(approvals.id, approvalId)).get();
+    return row ? withServiceAction(row.serviceAction).serviceAction : undefined;
   }
 
   /**
