@@ -1415,6 +1415,13 @@
       "when": 1794799948000,
       "tag": "20261116033228_dor3641_waker_off_since",
       "breakpoints": true
+    },
+    {
+      "idx": 202,
+      "version": "6",
+      "when": 1794854650053,
+      "tag": "20261116184410_dor4204_spending",
+      "breakpoints": true
     }
   ]
 }
