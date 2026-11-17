@@ -3,8 +3,32 @@
   "checkedAt": "2026-11-17",
   "toolkits": [
     {
+      "slug": "agenty",
+      "name": "Agenty"
+    },
+    {
+      "slug": "ai_ark",
+      "name": "AI Ark"
+    },
+    {
       "slug": "ai_ml_api",
       "name": "AI/ML API"
+    },
+    {
+      "slug": "aivoov",
+      "name": "Aivoov"
+    },
+    {
+      "slug": "all_images_ai",
+      "name": "All Images AI"
+    },
+    {
+      "slug": "allmodels",
+      "name": "AllModels"
+    },
+    {
+      "slug": "anakin_io",
+      "name": "Anakin"
     },
     {
       "slug": "apiframe",
@@ -51,6 +75,10 @@
       "name": "Bland AI"
     },
     {
+      "slug": "blitz_api",
+      "name": "Blitz API"
+    },
+    {
       "slug": "bouncer",
       "name": "Bouncer"
     },
@@ -65,6 +93,10 @@
     {
       "slug": "brightdata",
       "name": "Bright Data"
+    },
+    {
+      "slug": "browseract",
+      "name": "BrowserAct"
     },
     {
       "slug": "browserbase_mcp",
@@ -107,6 +139,10 @@
       "name": "Castingwords"
     },
     {
+      "slug": "ceramic",
+      "name": "Ceramic"
+    },
+    {
       "slug": "clay",
       "name": "Clay"
     },
@@ -117,6 +153,10 @@
     {
       "slug": "clicksend",
       "name": "ClickSend"
+    },
+    {
+      "slug": "cloro",
+      "name": "Cloro"
     },
     {
       "slug": "cohere",
@@ -133,6 +173,10 @@
     {
       "slug": "contactout",
       "name": "ContactOut"
+    },
+    {
+      "slug": "context_dev",
+      "name": "Context.dev"
     },
     {
       "slug": "countdown_api",
@@ -183,12 +227,20 @@
       "name": "Dropcontact"
     },
     {
+      "slug": "dropleads",
+      "name": "Dropleads"
+    },
+    {
       "slug": "easy_email_verification",
       "name": "Easy Email Verification"
     },
     {
       "slug": "eden_ai",
       "name": "Eden AI"
+    },
+    {
+      "slug": "elai",
+      "name": "Elai"
     },
     {
       "slug": "elevenlabs",
@@ -201,6 +253,10 @@
     {
       "slug": "emaillistverify",
       "name": "Emaillistverify"
+    },
+    {
+      "slug": "enrich",
+      "name": "Enrich"
     },
     {
       "slug": "enrich_layer",
@@ -219,6 +275,10 @@
       "name": "Fal.ai"
     },
     {
+      "slug": "fiber",
+      "name": "Fiber"
+    },
+    {
       "slug": "findymail",
       "name": "Findymail"
     },
@@ -229,6 +289,10 @@
     {
       "slug": "fireworks_ai",
       "name": "Fireworks AI"
+    },
+    {
+      "slug": "firmable",
+      "name": "Firmable"
     },
     {
       "slug": "fish_audio",
@@ -251,12 +315,20 @@
       "name": "Gemini"
     },
     {
+      "slug": "get_transcribe",
+      "name": "GetTranscribe"
+    },
+    {
       "slug": "getprospect",
       "name": "Getprospect"
     },
     {
       "slug": "gladia",
       "name": "Gladia"
+    },
+    {
+      "slug": "gradium",
+      "name": "Gradium"
     },
     {
       "slug": "grok",
@@ -285,6 +357,10 @@
     {
       "slug": "hunter",
       "name": "Hunter"
+    },
+    {
+      "slug": "hystruct",
+      "name": "Hystruct"
     },
     {
       "slug": "icypeas",
@@ -319,6 +395,10 @@
       "name": "JoggAI"
     },
     {
+      "slug": "keenable",
+      "name": "Keenable"
+    },
+    {
       "slug": "kickbox",
       "name": "Kickbox"
     },
@@ -327,12 +407,28 @@
       "name": "Kieai"
     },
     {
+      "slug": "kitt",
+      "name": "Kitt AI"
+    },
+    {
       "slug": "labsmobile",
       "name": "LabsMobile"
     },
     {
+      "slug": "leadiq",
+      "name": "LeadIQ"
+    },
+    {
       "slug": "leadmagic",
       "name": "LeadMagic"
+    },
+    {
+      "slug": "leadsforge",
+      "name": "Leadsforge"
+    },
+    {
+      "slug": "limadata",
+      "name": "LimaData"
     },
     {
       "slug": "listclean",
@@ -375,6 +471,10 @@
       "name": "Meshy"
     },
     {
+      "slug": "minelead",
+      "name": "Minelead.io"
+    },
+    {
       "slug": "minimax",
       "name": "MiniMax"
     },
@@ -385,6 +485,14 @@
     {
       "slug": "mocean",
       "name": "Mocean"
+    },
+    {
+      "slug": "moltsets",
+      "name": "MoltSets"
+    },
+    {
+      "slug": "mrscraper",
+      "name": "MrScraper"
     },
     {
       "slug": "msg91",
@@ -399,8 +507,20 @@
       "name": "NeverBounce"
     },
     {
+      "slug": "ngram",
+      "name": "Ngram"
+    },
+    {
+      "slug": "ocean_io",
+      "name": "Ocean.io"
+    },
+    {
       "slug": "olostep",
       "name": "Olostep"
+    },
+    {
+      "slug": "onepage",
+      "name": "Onepage"
     },
     {
       "slug": "openai",
@@ -423,12 +543,28 @@
       "name": "Parallel Task MCP"
     },
     {
+      "slug": "parse_bot",
+      "name": "Parse.bot"
+    },
+    {
+      "slug": "parsehub",
+      "name": "Parsehub"
+    },
+    {
+      "slug": "parsera",
+      "name": "Parsera"
+    },
+    {
       "slug": "peopledatalabs",
       "name": "People Data Labs"
     },
     {
       "slug": "perplexityai",
       "name": "Perplexity AI"
+    },
+    {
+      "slug": "phantombuster",
+      "name": "PhantomBuster"
     },
     {
       "slug": "photoroom",
@@ -443,12 +579,20 @@
       "name": "Plivo"
     },
     {
+      "slug": "ploid",
+      "name": "Ploid"
+    },
+    {
       "slug": "prospeo",
       "name": "Prospeo"
     },
     {
       "slug": "purechecker",
       "name": "PureChecker"
+    },
+    {
+      "slug": "quickenrich",
+      "name": "QuickEnrich"
     },
     {
       "slug": "recallai",
@@ -547,6 +691,18 @@
       "name": "Seven.io"
     },
     {
+      "slug": "signalbase",
+      "name": "Signalbase"
+    },
+    {
+      "slug": "simplescraper_mcp",
+      "name": "Simplescraper MCP"
+    },
+    {
+      "slug": "sixtyfour",
+      "name": "Sixtyfour"
+    },
+    {
       "slug": "slazzer",
       "name": "Slazzer"
     },
@@ -559,6 +715,10 @@
       "name": "SMS Alert"
     },
     {
+      "slug": "smtping",
+      "name": "SMTPing"
+    },
+    {
       "slug": "speechmatics",
       "name": "Speechmatics"
     },
@@ -569,6 +729,10 @@
     {
       "slug": "studio_by_ai21_labs",
       "name": "Studio By Ai21 Labs"
+    },
+    {
+      "slug": "sumble",
+      "name": "Sumble"
     },
     {
       "slug": "supadata",
@@ -591,12 +755,24 @@
       "name": "Telnyx"
     },
     {
+      "slug": "teltel",
+      "name": "Teltel"
+    },
+    {
+      "slug": "textcortex",
+      "name": "Textcortex"
+    },
+    {
       "slug": "thecompaniesapi",
       "name": "The Companies API"
     },
     {
       "slug": "tik_hub",
       "name": "TikHub"
+    },
+    {
+      "slug": "tinyfish",
+      "name": "TinyFish"
     },
     {
       "slug": "trestle",
@@ -627,12 +803,20 @@
       "name": "Vercel AI Gateway"
     },
     {
+      "slug": "verifi_email",
+      "name": "Verifi.Email"
+    },
+    {
       "slug": "verifiedemail",
       "name": "Verifiedemail"
     },
     {
       "slug": "webcrawlerapi",
       "name": "WebCrawlerAPI"
+    },
+    {
+      "slug": "webscraper_io",
+      "name": "Webscraper io"
     },
     {
       "slug": "webscraping_ai",
@@ -653,6 +837,10 @@
     {
       "slug": "zenserp",
       "name": "Zenserp"
+    },
+    {
+      "slug": "zoominfo",
+      "name": "Zoominfo"
     },
     {
       "slug": "zyte_api",
