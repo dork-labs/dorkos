@@ -382,6 +382,72 @@ describe('ApprovalCard', () => {
     expect(screen.queryByRole('button', { name: 'Always allow' })).not.toBeInTheDocument();
   });
 
+  describe('confirming at this computer', () => {
+    /** A desk card: the server marks the card itself as needing no confirmation. */
+    const desk = (overrides: Partial<PendingApproval> = {}) =>
+      buildApproval({
+        capabilityId: 'rooms.create',
+        capabilityTitle: 'Open a room',
+        tier: 'act',
+        requestedBy: 'DorkBot',
+        area: 'rooms',
+        alwaysOffered: true,
+        answerNeedsStepUp: false,
+        ...overrides,
+      });
+
+    /** A grant the server is holding for a password, settled by the test. */
+    function heldGrant(approvalId: string) {
+      let settle: () => void = () => {};
+      let cancel: () => void = () => {};
+      const grantApproval = vi.fn(
+        () =>
+          new Promise<ApprovalDecisionResponse>((resolve, reject) => {
+            settle = () => resolve({ ok: true, approvalId, outcome: 'granted' });
+            cancel = () =>
+              reject(Object.assign(new Error('cancelled'), { code: 'step_up_required' }));
+          })
+      );
+      return { grantApproval, settle: () => settle(), cancel: () => cancel() };
+    }
+
+    it('draws no Always allow receipt while the password sheet is open', async () => {
+      const held = heldGrant(desk().approvalId);
+      renderCard(desk(), { grantApproval: held.grantApproval });
+      await userEvent.click(screen.getByRole('button', { name: 'Always allow' }));
+      expect(screen.queryByText('Always allowed for DorkBot: Open a room')).not.toBeInTheDocument();
+      await act(async () => held.cancel());
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Always allow' })).toBeEnabled()
+      );
+      expect(screen.queryByText('Always allowed for DorkBot: Open a room')).not.toBeInTheDocument();
+    });
+
+    it('draws no receipt for a permission change allowed once until the server confirms', async () => {
+      const change = desk({
+        capabilityId: 'permissions.change',
+        capabilityTitle: 'Change an agent’s permissions',
+        alwaysOffered: false,
+      });
+      const held = heldGrant(change.approvalId);
+      renderCard(change, { grantApproval: held.grantApproval });
+      await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
+      expect(screen.queryByText('Allowed once')).not.toBeInTheDocument();
+      await act(async () => held.settle());
+      expect(await screen.findByText('Allowed once')).toBeVisible();
+    });
+
+    it('with no owner, shows the Always allow receipt as soon as the server answers', async () => {
+      const grantApproval = vi
+        .fn()
+        .mockResolvedValue({ ok: true, approvalId: desk().approvalId, outcome: 'granted' });
+      renderCard(desk(), { grantApproval });
+      await userEvent.click(screen.getByRole('button', { name: 'Always allow' }));
+      expect(grantApproval).toHaveBeenCalledWith(desk().approvalId, { answer: 'always' });
+      expect(await screen.findByText('Always allowed for DorkBot: Open a room')).toBeVisible();
+    });
+  });
+
   describe('the three answers (spec agent-permissions D7)', () => {
     /** A Rooms request DorkBot made, on which Always allow is offered. */
     const ROOMS = buildApproval({

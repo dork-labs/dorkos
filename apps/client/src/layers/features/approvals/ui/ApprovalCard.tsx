@@ -201,6 +201,28 @@ export function ApprovalCard(props: ApprovalCardProps) {
   );
 }
 
+/** The permission-change capability; allowing one lasts, so the desk confirms it too. */
+const CHANGE_PERMISSION_CAPABILITY = 'permissions.change';
+
+/**
+ * Whether the card must wait for the server before drawing its receipt.
+ *
+ * `answerNeedsStepUp` describes the card, not each answer: at this computer it
+ * is false for an ordinary card, yet once an owner exists the server still holds
+ * Always allow, and any allow on a permission change, for a password. A receipt
+ * drawn at the click would sit behind that sheet and claim a change that may
+ * never happen. Waiting costs the owner-less desk one round trip: its 200 comes
+ * straight back and the receipt is drawn then.
+ */
+function waitsForServer(approval: PendingApproval, kind: ApprovalDecision): boolean {
+  if (kind === 'denied') return false;
+  return (
+    approval.answerNeedsStepUp !== false ||
+    kind === 'granted-always' ||
+    approval.capabilityId === CHANGE_PERMISSION_CAPABILITY
+  );
+}
+
 function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardProps) {
   const now = useNow(30_000);
   const grant = useGrantApproval();
@@ -224,7 +246,7 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
    * sentence to be actionable.
    */
   const answer = (kind: ApprovalDecision, send: (callbacks: { onError: () => void }) => void) => {
-    const deferred = kind !== 'denied' && approval.answerNeedsStepUp !== false;
+    const deferred = waitsForServer(approval, kind);
     const openedFrom =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (!deferred) {
@@ -506,7 +528,7 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
                         grant.mutate(
                           {
                             approvalId: approval.approvalId,
-                            ...(approval.answerNeedsStepUp !== false
+                            ...(waitsForServer(approval, 'granted')
                               ? { receipt: approval, onDecided }
                               : {}),
                           },
@@ -536,7 +558,7 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
                           {
                             approvalId: approval.approvalId,
                             answer: 'always',
-                            ...(approval.answerNeedsStepUp !== false
+                            ...(waitsForServer(approval, 'granted-always')
                               ? { receipt: approval, onDecided }
                               : {}),
                           },

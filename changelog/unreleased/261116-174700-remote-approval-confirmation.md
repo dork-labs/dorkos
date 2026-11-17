@@ -7,6 +7,7 @@ covers:
   - 'fix(approvals): confirm Always allow on a capability card at the desk'
   - 'fix(approvals): confirm a settings card that turns spending up at the desk'
   - 'fix(approvals): confirm a permission change card at the desk'
+  - "fix(approvals): the card waits for the server before saying it's allowed"
 ---
 
 ### Security

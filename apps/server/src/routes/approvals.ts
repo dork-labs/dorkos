@@ -656,7 +656,9 @@ export function createApprovalsRoutes(
       binding: { hash, currentHash: () => approvals.stepUpHash(id) },
       reason: card.summary,
       notes: card.requestedBy
-        ? [`Asked by ${approvalRequesterLabel(card.requestedBy)}. Matches the card you tapped.`]
+        ? [
+            `Asked by ${approvalRequesterLabel(card.requestedBy)}. Check that the card shows the same code.`,
+          ]
         : [],
       commit: async (confirming) => {
         const person = personFromFacts(confirming);
