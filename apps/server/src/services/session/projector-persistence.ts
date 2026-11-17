@@ -47,8 +47,8 @@ export type ProjectorPersistenceMode = 'history' | 'record';
  * (`turn_end.terminalReason`); `error` carries the fault itself. Model request timing is kept too: JSONL does not retain first-token observations.
  * The remaining content between them is in the JSONL transcript already.
  *
- * `interaction_resolved` is the one exception to "it is in the transcript
- * already", and it is why an ordinary cockpit session records too. A permission
+ * `interaction_resolved` records a decision absent from the transcript,
+ * and it is why an ordinary chat session records too. A permission
  * prompt is asked and answered entirely inside DorkOS — the SDK's JSONL knows
  * only that a tool ran or did not — so these rows are the ONLY durable record
  * that a person was asked anything. Without them the transcript's receipt lived
@@ -56,27 +56,30 @@ export type ProjectorPersistenceMode = 'history' | 'record';
  * tool with no sign it had ever been gated. A handful of bytes per decision,
  * against the one record a person most wants when reviewing what an agent did.
  *
- * The three PROMPT events ride along for the mirror-image reason (DOR-1439): a
+ * The PROMPT events ride along for the mirror-image reason (DOR-1439): a
  * resolution is only ever written for an ask that ended, so an ask still parked
  * when the process died left no row at all and the tool came back looking as
  * though nobody had ever been asked. The prompt row is what
  * {@link EAGERLY_RECORDED_EVENT_TYPES} makes durable in time to matter, and what
  * the boot sweep in `expire-orphaned-asks` reads to close the ask out.
  *
- * `permission_denied` is the second exception, and it is the OPPOSITE of a
+ * Capability approval cards have separate request and resolution events. Neither
+ * is in the runtime transcript, so both belong in the chat's durable record.
+ *
+ * `permission_denied` is the OPPOSITE of a
  * receipt: a decision nobody was allowed to make (DOR-795). The JSONL cannot
  * answer for it either — for a BACKGROUNDED subagent the denied call is written
  * into a child transcript no reader ever opens, so the parent conversation comes
  * back showing an agent that simply stopped making progress. The row is what
  * `permission-denial-overlay` puts back.
  *
- * `model_substituted` is the third (DOR-2636): a turn that ran on another model
+ * `model_substituted` records (DOR-2636) a turn that ran on another model
  * than its session names, because DorkOS credits do not cover that model. The
  * transcript names the model that ran and never the one it replaced, so the row
  * is what `model-substitution-overlay` puts back as a lasting notice. Eager for
  * the same reason a denial is: the turn it opens may never reach `turn_end`.
  *
- * `work_left_running` and `work_left_ended` are the fourth and fifth (DOR-3285):
+ * `work_left_running` and `work_left_ended` record (DOR-3285)
  * background commands a Stop could not end, and each one's later end. The
  * transcript records neither, so the rows are what `work-left-overlay` puts
  * back as the line under the stopped turn. Eager because both arrive AFTER the
@@ -91,6 +94,8 @@ export const RECORDED_EVENT_TYPES: ReadonlySet<string> = new Set([
   'question_prompt',
   'elicitation_prompt',
   'interaction_resolved',
+  'capability_approval_required',
+  'capability_approval_resolved',
   'permission_denied',
   'model_substituted',
   'project_addons_off',
@@ -136,6 +141,9 @@ export function isRecordedEvent(event: { type: string; requestedBy?: unknown }):
  * answered-then-interrupted ask would be re-closed as expired over the top of a
  * real decision.
  *
+ * Capability requests and answers follow the same rule: keep both before an
+ * unfinished turn can lose them, or mistake an answered ask for a pending one.
+ *
  * Cheap by construction: at most two extra transactions per ask, on a path that
  * has just stopped to wait for a human being.
  *
@@ -161,6 +169,8 @@ export const EAGERLY_RECORDED_EVENT_TYPES: ReadonlySet<string> = new Set([
   'question_prompt',
   'elicitation_prompt',
   'interaction_resolved',
+  'capability_approval_required',
+  'capability_approval_resolved',
   'permission_denied',
   'model_substituted',
   'project_addons_off',
