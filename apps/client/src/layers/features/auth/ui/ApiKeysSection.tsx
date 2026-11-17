@@ -214,7 +214,9 @@ function ApiKeyRow({
   return (
     <div
       role="group"
-      aria-label={exactRemoteTime ? `${label}. Last used remotely ${exactRemoteTime}` : label}
+      aria-label={
+        exactRemoteTime ? `${label}. Last used remotely for tools ${exactRemoteTime}` : label
+      }
       className="flex items-center justify-between gap-2 rounded-md border px-3 py-2"
     >
       <div className="min-w-0">
@@ -225,9 +227,10 @@ function ApiKeyRow({
             ? ` · expires ${new Date(apiKey.expiresAt).toLocaleDateString()}`
             : ' · no expiry'}
         </p>
+        {/* Only MCP (tool) sessions from another device record this; other API calls don't. */}
         {remoteUse && (
           <p className="text-muted-foreground text-xs">
-            Last used remotely{' '}
+            Last used remotely for tools ·{' '}
             <time dateTime={remoteUse} title={exactRemoteTime ?? undefined}>
               {formatRelativeTime(remoteUse).replace(/^(Just now|Yesterday)/, (word) =>
                 word.toLowerCase()
