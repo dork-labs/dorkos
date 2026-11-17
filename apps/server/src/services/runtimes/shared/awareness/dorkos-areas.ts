@@ -105,7 +105,7 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
     name: 'Agent browser',
     // One default profile, said here because an agent holding other browser
     // tools (a person's Chrome MCP servers) called those "profiles" (DOR-4633).
-    can: "drive real sites a person shares, ask for one, never send them to a terminal. One default profile; other browser tools aren't profiles.",
+    can: "drive shared pages (Browser, + menu); ask for one, never send them to a terminal. One default profile; other browser tools aren't profiles.",
     covers: ['local_browser.', 'mcp.browser_preset'],
     areas: [],
     gate: 'a person shares it',
@@ -196,7 +196,7 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
   },
   {
     name: 'Settings',
-    can: 'change settings, see your permissions, ask for more.',
+    can: 'change settings, see permissions, ask for more.',
     covers: [
       'operator.config_',
       'operator.check_update',

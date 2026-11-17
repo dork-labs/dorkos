@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(server): agents know the Agent browser has one default profile, and other browser tools aren't profiles (DOR-4633)"
+  - 'fix(server): the Agent browser line keeps where a person opens it (DOR-4633)'
 ---
 
 ### Fixed
