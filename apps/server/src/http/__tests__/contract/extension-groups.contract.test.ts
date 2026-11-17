@@ -1363,15 +1363,14 @@ describe('contract: the extension routes with login on', () => {
       body: { source: 'dork-labs/marketplace' },
       expect: { status: 403, schema: COOKIE_REQUIRED },
     });
+    // Turning one on waits for the owner to confirm it's them (DOR-4355), even one that
+    // turns out to be missing; the manager answers that after the confirmation.
     await check(server, {
       method: 'POST',
       path: `/api/extensions/${MISSING}/enable`,
       headers: { ...cookie, origin: server!.baseUrl },
       body: {},
-      expect: {
-        status: 404,
-        body: { error: `Extension '${MISSING}' not found or cannot be enabled` },
-      },
+      expect: { status: 428, body: expect.objectContaining({ code: 'step_up_required' }) },
     });
     await check(server, {
       method: 'POST',
