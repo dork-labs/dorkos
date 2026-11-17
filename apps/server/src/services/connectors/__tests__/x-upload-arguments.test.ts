@@ -20,6 +20,8 @@ const UPLOADS = [
 ] as const;
 const APPEND = 'TWITTER_APPEND_MEDIA_UPLOAD';
 const POST = 'TWITTER_CREATION_OF_A_POST';
+/** A made-up X action the catalog might add later: the rule keys on the flag, not the slug. */
+const FUTURE = 'TWITTER_CREATE_A_REPLY';
 const opened: ReturnType<typeof levelHarness>[] = [];
 /** The database and revision ids of the last {@link setup}, for grants the harness can't make. */
 let latest: { db: ReturnType<typeof levelHarness>['db']; revisionOf: (slug: string) => string };
@@ -34,7 +36,7 @@ async function setup(toolkit = 'twitter') {
   h.catalog.splice(
     0,
     h.catalog.length,
-    ...[...UPLOADS, APPEND, POST, 'GOOGLEDRIVE_UPLOAD_FILE'].map((slug) => ({
+    ...[...UPLOADS, APPEND, POST, FUTURE, 'GOOGLEDRIVE_UPLOAD_FILE'].map((slug) => ({
       slug,
       classification: 'write' as const,
     }))
@@ -141,6 +143,9 @@ describe('an X upload shared with other accounts needs the agent’s own grant',
           [slug, { media: '/tmp/a.png' }],
           [slug, { media: '/tmp/a.png', additional_owners: [], shared: false }],
           [slug, { media: '/tmp/a.png', additional_owners: [''], shared: 'false' }],
+          // "Plainly off" ignores case and surrounding spaces.
+          [slug, { media: '/tmp/a.png', additional_owners: [' '], shared: 'False' }],
+          [slug, { media: '/tmp/a.png', shared: ' no ' }],
         ] as const
     )
   )('runs %s at write with %o', async (slug, args) => {
@@ -154,12 +159,29 @@ describe('an X upload shared with other accounts needs the agent’s own grant',
       run('writer', APPEND, { id: '1146654567674912769', media: 'AAAA', segment_index: 0 })
     ).resolves.toMatchObject({ agentId: 'writer' });
   });
+
+  it.each([APPEND, FUTURE])(
+    'keys on the flag, so %s with other owners is refused',
+    async (slug) => {
+      const run = await setup();
+      await expect(
+        run('writer', slug, { id: '1146654567674912769', additional_owners: ['2244994945'] })
+      ).rejects.toMatchObject(SHARED_UPLOAD);
+    }
+  );
 });
 
 describe('a promoted-only X post needs the agent’s own grant', () => {
   it.each(BROAD)('refuses a nullcast post for %s', async (agentId) => {
     const run = await setup();
     await expect(run(agentId, POST, { text: 'Hello', nullcast: true })).rejects.toMatchObject(
+      HIDDEN_POST
+    );
+  });
+
+  it('keys on the flag, so another X action marked nullcast is refused', async () => {
+    const run = await setup();
+    await expect(run('writer', FUTURE, { text: 'Hi', nullcast: 'True' })).rejects.toMatchObject(
       HIDDEN_POST
     );
   });
@@ -176,6 +198,9 @@ describe('a promoted-only X post needs the agent’s own grant', () => {
     await expect(run('writer', POST, { text: 'Hello', nullcast: false })).resolves.toMatchObject({
       agentId: 'writer',
     });
+    await expect(
+      run('writer', POST, { text: 'Hello', nullcast: ' FALSE ' })
+    ).resolves.toMatchObject({ agentId: 'writer' });
   });
 });
 

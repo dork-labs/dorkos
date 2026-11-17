@@ -4,6 +4,9 @@
  * that lets other accounts use the media, or a promoted-only post that stays
  * off the owner's timeline, is something a person picks for one agent on
  * purpose (a brand account, an ad). Those need the agent's own exact grant.
+ * The rule keys on the flags, not on action names, so every X action that
+ * carries one is covered, including ones the catalog adds later. X's only
+ * Composio toolkit is `twitter` (catalog checked 2026-11-17: no `x` alias).
  *
  * The check reads the arguments before schema cleaning, which only drops
  * nulls, and a null here already counts as off; the broker runs it again
