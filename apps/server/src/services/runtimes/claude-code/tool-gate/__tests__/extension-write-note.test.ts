@@ -89,6 +89,24 @@ describe('extension write hooks', () => {
     expect(await check()).toBe(false);
   });
 
+  it('a launch that was ever held keeps every later write held', async () => {
+    // Held when it starts; the hold has lifted by the time something it started writes.
+    const session: { turnPermissionCeiling?: { asks: 'always'; reach: 'edit' } } = {
+      turnPermissionCeiling: { asks: 'always', reach: 'edit' },
+    };
+    const launch = noteWritesBefore(session as never, {
+      sessionId: 's4',
+      cwd: home,
+      agentHome: home,
+    });
+    delete session.turnPermissionCeiling;
+    const input = { file_path: path.join(folder, 'server.ts'), content: 'later' };
+    await call(launch, 't4', 'Write', input, () =>
+      fs.writeFile(path.join(folder, 'server.ts'), 'later')
+    );
+    expect(await check()).toBe(false);
+  });
+
   it('a write that failed is dropped', async () => {
     const open = noteWritesBefore({}, { sessionId: 's1', cwd: home, agentHome: home });
     const input = { file_path: path.join(folder, 'server.ts'), content: 'x' };

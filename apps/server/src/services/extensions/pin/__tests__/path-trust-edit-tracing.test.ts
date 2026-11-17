@@ -9,7 +9,11 @@ import os from 'node:os';
 import path from 'node:path';
 import type { ExtensionRecord } from '@dorkos/extension-api';
 import { setMarkedFullActivity } from '../../../core/turn-power/full-autonomy.js';
-import { resetLiveOutsiderTurns } from '../../../core/turn-power/live-outsider-turns.js';
+import type { StreamEvent } from '@dorkos/shared/types';
+import {
+  countWhileRunning,
+  resetLiveOutsiderTurns,
+} from '../../../core/turn-power/live-outsider-turns.js';
 import { isApprovedByPath } from '../../extension-load-policy.js';
 import { grantsDigestOf } from '../extension-path-trust.js';
 import { notePathTrustEdits, notePersonApproval } from '../path-trust-edits.js';
@@ -127,6 +131,26 @@ describe('path-trust edits traced file by file', () => {
       expect(runs(`sha256:${v}`)).toBe(true);
     }
     expect(emit).toHaveBeenCalledTimes(3);
+  });
+
+  it('a clean, traced edit still waits when a marked turn of the author ran meanwhile', async () => {
+    // The write itself is noted unheld (a helper the marked turn started, say): only the record
+    // of the marked turn holds it.
+    await scan('sha256:1');
+    let end!: () => void;
+    const ended = new Promise<void>((resolve) => (end = resolve));
+    async function* events(): AsyncGenerator<StreamEvent> {
+      yield { type: 'text_delta', data: { text: 'hi' } } as StreamEvent;
+      await ended;
+    }
+    const turn = countWhileRunning({}, { outsider: true }, events());
+    await turn.next();
+    end();
+    for await (const _ of turn) void _;
+    await toolWrite('server.ts', 'v2');
+    await scan('sha256:2');
+    expect(runs('sha256:2')).toBe(false);
+    expect(emit).not.toHaveBeenCalled();
   });
 
   it('an edit from the author’s held turn waits', async () => {

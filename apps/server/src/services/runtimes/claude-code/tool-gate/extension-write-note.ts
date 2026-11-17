@@ -104,8 +104,11 @@ export function createExtensionWriteNote(turn: {
 
 /**
  * The `PreToolUse` matcher a launch adds: notes each file-tool write as it starts, with the
- * turn's agent and whether the turn is held right then (a ceiling, or a mark that holds, read
- * through the session's current id as the other hooks read it). Always answers `continue`.
+ * turn's agent and whether it is held (a ceiling, or a mark that holds, read through the
+ * session's current id as the other hooks read it). Once the launch has been held at all, at its
+ * start or on any write since, every later write it notes stays held until the process ends: a
+ * helper or timer a held turn started may still write after a newer, unheld turn begins.
+ * Always answers `continue`.
  *
  * @param session - The session's ceilings and its runtime id once known.
  * @param turn - The launching session's id, the folder it stands in and its agent's home.
@@ -115,13 +118,21 @@ export function noteWritesBefore(
   turn: { sessionId: string; cwd: string; agentHome: string | null | undefined }
 ): HookCallbackMatcher {
   const agentHome = turn.agentHome ?? undefined;
-  const note = createExtensionWriteNote({
-    cwd: turn.cwd,
-    agentHome,
-    held: () =>
-      heldToACeiling(session) ||
-      marksHold(marksOf(session.sdkSessionId || turn.sessionId, agentHome)),
-  });
+  const heldNow = () =>
+    heldToACeiling(session) ||
+    marksHold(marksOf(session.sdkSessionId || turn.sessionId, agentHome));
+  let latched = false;
+  /** Held now, or ever before in this launch; a hold that cannot be read counts as held. */
+  const held = (): boolean => {
+    try {
+      latched ||= heldNow();
+    } catch {
+      latched = true;
+    }
+    return latched;
+  };
+  held();
+  const note = createExtensionWriteNote({ cwd: turn.cwd, agentHome, held });
   return {
     matcher: FILE_TOOLS,
     hooks: [

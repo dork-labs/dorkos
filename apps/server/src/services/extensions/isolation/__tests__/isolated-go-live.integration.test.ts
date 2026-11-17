@@ -64,6 +64,7 @@ vi.mock('../../../core/auth/session-gate.js', async (importOriginal) => ({
 
 import { ExtensionManager } from '../../extension-manager.js';
 import { grantsDigestOf } from '../../pin/extension-path-trust.js';
+import { placeSnapshots } from '../../pin/extension-snapshot-placement.js';
 import {
   noteWriteDone,
   noteWriteStarting,
@@ -584,6 +585,22 @@ describe('an isolated extension goes live through the real lifecycle', () => {
       expect((await get(`/api/ext/${ID}/ping`)).body.version).not.toBe('v2');
       await manager.reload();
       expect((await get(`/api/ext/${ID}/ping`)).body.version).not.toBe('v2');
+    },
+    TEST_MS
+  );
+
+  // Purpose: what runs is what was judged. Files that change after the scan read them are judged
+  // again, from the snapshot about to run, before anything builds (DOR-4528).
+  it(
+    'judges the files about to run, even when they changed after the scan read them',
+    async () => {
+      await install('v1');
+      await boot();
+      const record = manager.get(ID)!;
+      await fs.writeFile(path.join(extDir, 'server.ts'), serverSource('v2'));
+      await placeSnapshots(dorkHome, [record], stored.value);
+      expect(record.originProblem).toBe('changed');
+      expect(record.runPath).toBeUndefined();
     },
     TEST_MS
   );
