@@ -1329,6 +1329,11 @@ export const QueuedMessageSchema = z
     /** The client that enqueued it, so a window can tell its own from another's. */
     enqueuedBy: z.string(),
     /**
+     * True for a `web-` queue row not marked `heldToDefault`
+     * in the store. Missing means no.
+     */
+    canRestoreToComposer: z.boolean().optional(),
+    /**
      * Present while this message is held for the agent's background work
      * (DOR-2065). The rows behind it wait too, in order.
      */

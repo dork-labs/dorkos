@@ -43,10 +43,9 @@ agent's \`.agents/skills/\`, so every new agent knows how to run DorkOS too.
 
 ## Register a directory that already exists
 
-\`mesh_register\` adds a directory on this machine to DorkOS as an agent. Give it
-\`path\`. A directory that already holds a \`.dork/agent.json\` is adopted exactly as
-it is, and everything else you send is ignored, so the agent that comes back is
-the answer, not the one you asked for.
+\`mesh_register\` adds a directory on this machine to DorkOS as an agent. Give it \`path\`. A
+directory that already holds a \`.dork/agent.json\` is adopted exactly as it is, and everything else
+you send is ignored, so the agent that comes back is the answer, not the one you asked for.
 
 For a directory with no manifest yet, four fields shape who the new agent is:
 
@@ -59,16 +58,14 @@ For a directory with no manifest yet, four fields shape who the new agent is:
 - \`icon\` is exactly one emoji.
 - \`color\` is a hex colour, like "#ec4899".
 
-Leave \`icon\` and \`color\` out and DorkOS picks a face. Send something that is not
-one emoji, or a colour that is not hex, and the call is refused and tells you
-what it wanted, so nothing broken is stored.
+Leave \`icon\` and \`color\` out and DorkOS picks a face. Send something that is not one emoji, or a
+colour that is not hex, and the call is refused and tells you what it wanted.
 
 ## Edit an agent (tier: act)
 
-Use \`update_agent\` (in-session), \`dorkos agent update\` (CLI), or
-\`dorkos call operator.update_agent --input '<json>'\` from any runtime. Editing an
-agent is \`act\` tier: it runs without an approval and DorkOS records it in the
-activity feed under your name. Editable fields:
+Use \`update_agent\` (in-session), \`dorkos agent update\` (CLI), or \`dorkos call operator.update_agent
+--input '<json>'\` from any runtime. Editing an agent is \`act\` tier: it runs without an approval and
+DorkOS records it in the activity feed under your name. Editable fields:
 
 - \`displayName\`: human-facing name.
 - \`description\`: one-line summary.
@@ -84,9 +81,8 @@ Target the agent with \`agent_id\` OR \`cwd\` (the tool and the capability input
 
 The slug (\`name\`) is immutable. You cannot rename an agent by editing it.
 
-NOPE.md is NOT on this list, and neither is \`conventions.nope\`. \`update_agent\`
-refuses a patch that names either one and changes nothing at all. The same goes
-for \`runtime\`, \`model\` and \`effort\`. See the next two sections.
+NOPE.md is NOT on this list, and neither is \`conventions.nope\`. \`update_agent\` refuses a patch that
+names either one and changes nothing at all. The same goes for \`runtime\`, \`model\` and \`effort\`.
 
 ## Change safety boundaries (tier: destructive)
 
@@ -117,26 +113,31 @@ person, for your own agent too. Send only what changes (\`null\` resets
 \`model\`/\`effort\`); the card shows old → new. The HTTP API refuses these three
 from an agent with \`NEEDS_APPROVAL\`.
 
+## Change an agent's setup files (tier: destructive)
+
+Your shell and file tools can't write another agent's \`.claude/\` folder (hooks, \`settings.json\`,
+skills); \`update_agent_config\` can. \`path\` is relative to that folder, \`content\` is the whole new
+file (read the old one first), \`executable: true\` makes a hook runnable. It waits for a person's
+approval, whole file on the card, unless they set it to Allowed. Outside words in the turn: refused.
+
 ## Self-edit etiquette
 
-Editing YOUR OWN agent is fine and expected: when a person says "be more concise"
-or "stop doing X", update your own SOUL.md or traits directly. Any change to your
-boundaries (the text, or whether you are given them) goes through
-\`update_agent_boundaries\` and waits for a person.
+Editing YOUR OWN agent is fine and expected: when a person says "be more concise" or "stop doing X",
+update your own SOUL.md or traits directly. Any change to your boundaries (the text, or whether you
+are given them) goes through \`update_agent_boundaries\` and waits for a person.
 
 Before editing a DIFFERENT agent's manifest or personality, confirm with the user
 first. Changing another agent's identity is a bigger action than tuning your own.
 
 ## Remove an agent (tier: destructive)
 
-\`mesh_unregister\` is the only tool you have for removing an agent (a person can
-also do it from the DorkOS app), and it takes more than its name suggests: it
-deletes the agent's \`.dork/agent.json\` from disk, tears down its
-message endpoint (undelivered messages included), and turns off its scheduled
-tasks. It is \`destructive\` tier, so it does NOT run until a person approves it. The
-first call returns the \`approval_required\` payload described in operating-dorkos;
-say plainly which agent would go and what goes with it, wait, then retry the same
-call with an \`approvalToken\` argument. There is no CLI verb for this.
+\`mesh_unregister\` is the only tool you have for removing an agent (a person can also do it from
+the DorkOS app), and it takes more than its name suggests: it deletes the agent's
+\`.dork/agent.json\` from disk, tears down its message endpoint (undelivered messages included), and
+turns off its scheduled tasks. It is \`destructive\` tier, so it does NOT run until a person approves
+it. The first call returns the \`approval_required\` payload described in operating-dorkos; say
+plainly which agent would go and what goes with it, wait, then retry the same call with an
+\`approvalToken\` argument. There is no CLI verb for this.
 
 ## System agents are protected
 
@@ -154,9 +155,8 @@ work around the guard: it is enforced server-side and will return an error.
 Report what changed in plain terms ("Renamed the review bot to 'Critic' and made
 it terser").
 
-**Never tell anyone to refresh the page.** Registering, renaming or removing an
-agent updates the DorkOS app on its own, in every window that is open. The
-sidebar, the Team page and the agent's own card all follow within about a
-second. If you have just done one of those and someone says they cannot see it,
-something is wrong and the honest answer is to say so, not to suggest a reload.`,
+**Never tell anyone to refresh the page.** Registering, renaming or removing an agent updates the
+DorkOS app on its own, in every window that is open. The sidebar, the Team page and the agent's own
+card all follow within about a second. If you have just done one of those and someone says they
+cannot see it, something is wrong and the honest answer is to say so, not to suggest a reload.`,
 };

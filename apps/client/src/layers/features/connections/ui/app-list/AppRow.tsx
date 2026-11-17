@@ -1,9 +1,15 @@
 import { ChevronRight } from 'lucide-react';
 import type { ConnectorCatalogService } from '@dorkos/shared/connector-resource-schemas';
-import { ServiceMark, serviceLogo, type ServiceLogo } from '@/layers/entities/connectors';
+import {
+  PaidActionMarker,
+  ServiceMark,
+  serviceLogo,
+  type ServiceLogo,
+} from '@/layers/entities/connectors';
 import { cn } from '@/layers/shared/lib';
 import { Badge, Button, Spinner, STATUS_TONE_DOT } from '@/layers/shared/ui';
 import type { AppRowAction, YourAppRow } from '../../lib/app-list';
+import { isPaidToolkit } from '../../lib/paid-actions';
 
 /** What each row action is called on its button. */
 const ACTION_LABELS: Record<AppRowAction, string> = {
@@ -38,6 +44,7 @@ function RowBody({
   deprecated = false,
   wrapDetail = false,
   detailClassName,
+  paid = false,
 }: {
   name: string;
   iconKey: string;
@@ -50,6 +57,8 @@ function RowBody({
   /** Let the line wrap to two lines (a description) instead of cutting it off. */
   wrapDetail?: boolean;
   detailClassName?: string;
+  /** The app's actions spend money (DOR-4204 spec §6). */
+  paid?: boolean;
 }) {
   return (
     <>
@@ -77,6 +86,7 @@ function RowBody({
             {detail}
           </span>
         </span>
+        {paid && <PaidActionMarker variant="line" label="Actions spend money" />}
       </span>
     </>
   );
@@ -134,6 +144,7 @@ export function YourAppRowView({
             detail={row.detail}
             chat={row.kind === 'chat'}
             deprecated={row.deprecated}
+            paid={row.toolkit !== undefined && isPaidToolkit(row.toolkit)}
             // What broke, or what waits on you, is the one line worth reading in full.
             wrapDetail={row.tone === 'broken' || row.detailTone === 'warning'}
             detailClassName={
@@ -224,6 +235,7 @@ export function CatalogAppRowView({
       detail={detail}
       chat={chat}
       wrapDetail
+      paid={isPaidToolkit(service.serviceSlug)}
     />
   );
   if (!onConnect) {

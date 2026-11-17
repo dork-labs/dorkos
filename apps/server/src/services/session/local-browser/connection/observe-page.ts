@@ -1,6 +1,7 @@
 import type { Page } from 'playwright-core';
 import type { LocalBrowserObservation } from '@dorkos/shared/local-browser';
 import { LocalBrowserError } from '../errors.js';
+import { openedOverHttp } from '../history/opened-over-http.js';
 import { observationNodes } from '../observation-nodes.js';
 import { boundedPageSnapshot, boundedPageScreenshot } from '../observation-limits.js';
 import { responseDeadline, PAGE_READ_RESPONSE_TIMEOUT_MS } from '../lifecycle.js';
@@ -34,7 +35,14 @@ export async function observeSelectedPage(
     const snapshot = await boundedPageSnapshot(page, 750);
     if (revision !== owner.revision() || frames !== owner.frames()) throw owner.stale();
     owner.refuse();
-    const observation: LocalBrowserObservation = { revision, snapshot, url: page.url(), tabId };
+    const observation: LocalBrowserObservation = {
+      revision,
+      snapshot,
+      url: page.url(),
+      tabId,
+      // The agent hears a page the http:// fallback opened is not secure (DOR-4450).
+      ...(openedOverHttp(page) ? { openedOverHttp: true } : {}),
+    };
     return { nodes, observation };
   } catch (error) {
     void nodes.dispose().catch(() => undefined);

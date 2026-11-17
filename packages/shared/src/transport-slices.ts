@@ -44,6 +44,7 @@ import type { TaskModeUndoTransport } from './transport-task-mode.js';
 import type { GlobalMcpTransport } from './transport-global-mcp.js';
 import type { ShellCheckTransport } from './transport-shell-check.js';
 import type { QueuedChatTransport } from './transport-queued-chat.js';
+import type { ConnectorSpendingTransport } from './transport-connector-spending.js';
 
 /** Every Transport slice declared outside `transport.ts`. */
 export interface TransportSlices
@@ -82,4 +83,5 @@ export interface TransportSlices
     TaskModeUndoTransport,
     GlobalMcpTransport,
     ShellCheckTransport,
-    QueuedChatTransport {}
+    QueuedChatTransport,
+    ConnectorSpendingTransport {}

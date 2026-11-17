@@ -16,15 +16,18 @@ import {
   appUses,
   ConnectDialog,
   ConnectionAccessDialog,
+  isPaidToolkit,
   ManagementReviewDialog,
   NeedsYou,
   remainingUses,
+  SPENDING_SECTION,
+  SpendingBlock,
   useAppList,
   type PendingSignIn,
   type YourAppRow,
 } from '@/layers/features/connections';
 import { McpServersTab } from '@/layers/features/global-mcp-servers';
-import { useSettingsDeepLink } from '@/layers/shared/model';
+import { useDeepLinkScroll, useSettingsDeepLink } from '@/layers/shared/model';
 import {
   Button,
   focusPageHeading,
@@ -111,6 +114,7 @@ export function ConnectionsPage() {
 
   const data = useAppList(deferredQuery, pendingSignIn);
   const { relay } = data;
+  useDeepLinkScroll(search.section ? SPENDING_SECTION : null);
 
   const reconnect = useReconnectConnectorConnection();
   const resume = useResumeConnectorConnection();
@@ -255,6 +259,12 @@ export function ConnectionsPage() {
                 {accountChangeError(rowActionError)}
               </p>
             )}
+
+            <SpendingBlock
+              canSpend={data.yours.some((row) => row.toolkit && isPaidToolkit(row.toolkit))}
+              nameOf={(toolkit) => data.services.get(toolkit)?.displayName ?? toolkit}
+              focusLimit={search.section === 'spending-limit'}
+            />
 
             <AppList
               query={query}

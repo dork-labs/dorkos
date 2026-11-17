@@ -79,6 +79,7 @@ const EXPECTED_MEMBERS: Record<string, readonly string[]> = {
     'operator.sidebar_add_to_group',
     'operator.sidebar_remove_from_group',
     'operator.update_agent',
+    'operator.update_agent_config',
     'operator.update_agent_execution',
     'session_start',
     'work-queue.add',

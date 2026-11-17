@@ -188,6 +188,9 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'PUT /api/connectors/connections/:connectionId/events/source',
       'PUT /api/connectors/providers/:provider/credential',
       'PUT /api/connectors/sessions/:sessionId/connections/:connectionId',
+      // The monthly spend limit and app prices are the person's, set at the hub (DOR-4204).
+      'PUT /api/connectors/spending/limit',
+      'PUT /api/connectors/spending/prices/:toolkit',
       'PUT /api/community-connections/:ref/teammate-spend',
     ],
   ],

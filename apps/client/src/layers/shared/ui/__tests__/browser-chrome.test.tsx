@@ -52,6 +52,31 @@ describe('BrowserChrome', () => {
     expect(screen.queryByText('Not secure')).not.toBeInTheDocument();
   });
 
+  // DOR-4450: a page the http:// fallback opened keeps "Not secure" and says why.
+  const WHY = 'This site didn’t answer over https, so it opened over http.';
+
+  it('keeps Not secure for a fallback page, and its tooltip and description say why', () => {
+    renderChrome({ url: 'http://nas.example:5000/', openedOverHttp: true });
+    expect(screen.getByText('Not secure')).toHaveAttribute('title', WHY);
+    expect(screen.queryByText('Opened over http')).not.toBeInTheDocument();
+    const field = screen.getByRole('button', { name: /^Address: nas\.example/ });
+    expect(field).toHaveAccessibleDescription(WHY);
+  });
+
+  it('gives a plain http page no new tooltip or description', () => {
+    renderChrome({ url: 'http://shop.example/' });
+    expect(screen.getByText('Not secure')).not.toHaveAttribute('title');
+    expect(
+      screen.getByRole('button', { name: /^Address: shop\.example/ })
+    ).not.toHaveAccessibleDescription();
+  });
+
+  it('ignores the fallback mark once the address is no longer http://', () => {
+    renderChrome({ url: 'https://nas.example/', openedOverHttp: true });
+    expect(screen.queryByText('Not secure')).not.toBeInTheDocument();
+    expect(screen.queryByText(WHY)).not.toBeInTheDocument();
+  });
+
   it('opens the full address, all selected, and Enter commits what was typed', () => {
     const { onSubmit } = renderChrome();
     fireEvent.click(screen.getByRole('button', { name: /^Address:/ }));
@@ -361,6 +386,60 @@ describe('BrowserChrome', () => {
       expect(await screen.findByRole('tooltip')).toBeInTheDocument();
       view.unmount();
       expect(still.release).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe('focusAddress (⌘L, DOR-4432)', () => {
+    it('each new request opens the field on the address, all selected', () => {
+      const { rerender } = renderChrome({ focusAddress: 0 });
+      // A request of 0 is no request: the field stays at rest.
+      expect(screen.queryByRole('textbox', { name: 'Address' })).not.toBeInTheDocument();
+      rerender(
+        <BrowserChrome
+          url="https://www.example.com/docs/guide?x=1"
+          canBack
+          canForward
+          onReload={vi.fn()}
+          onSubmit={vi.fn()}
+          focusAddress={1}
+        />
+      );
+      const input = screen.getByRole('textbox', { name: 'Address' }) as HTMLInputElement;
+      expect(input).toHaveValue('https://www.example.com/docs/guide?x=1');
+      expect(input).toHaveFocus();
+      expect(input.selectionStart).toBe(0);
+      expect(input.selectionEnd).toBe(input.value.length);
+    });
+
+    it('a request while typing selects everything again, keeping what was typed', () => {
+      const props = {
+        url: 'https://www.example.com/',
+        canBack: true,
+        canForward: true,
+        onReload: vi.fn(),
+        onSubmit: vi.fn(),
+      };
+      const { rerender } = render(<BrowserChrome {...props} focusAddress={0} />);
+      rerender(<BrowserChrome {...props} focusAddress={1} />);
+      const input = screen.getByRole('textbox', { name: 'Address' }) as HTMLInputElement;
+      fireEvent.change(input, { target: { value: 'contoso.example' } });
+      input.setSelectionRange(3, 3);
+      rerender(<BrowserChrome {...props} focusAddress={2} />);
+      expect(input).toHaveValue('contoso.example');
+      expect(input).toHaveFocus();
+      expect(input.selectionStart).toBe(0);
+      expect(input.selectionEnd).toBe('contoso.example'.length);
+    });
+
+    it('a request already made when the field appears is old: it stays at rest, focus stays put', () => {
+      // A refused address remounts the field (it is keyed on the retry) while an old ⌘L
+      // is still counted; that count must not reopen it or pull focus.
+      render(<button type="button">Elsewhere</button>);
+      const elsewhere = screen.getByRole('button', { name: 'Elsewhere' });
+      elsewhere.focus();
+      renderChrome({ focusAddress: 3 });
+      expect(screen.queryByRole('textbox', { name: 'Address' })).not.toBeInTheDocument();
+      expect(elsewhere).toHaveFocus();
     });
   });
 });

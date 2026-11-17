@@ -975,6 +975,35 @@ describe('a person takes the page (DOR-4428)', () => {
     });
   });
 
+  // DOR-4450: the http:// fallback runs inside the browser's navigate, so it can only
+  // start once the take-over has paused the agent driving the page.
+  it('takes the page before a navigate that may fall back to http runs, and passes the ask on', async () => {
+    const { handover, browser } = setup();
+    const next = await handover.navigate('https://shop.example/', { httpFallback: true });
+    expect(next.takenOver).toBe(true);
+    expect(browser.pause.mock.invocationCallOrder[0]).toBeLessThan(
+      browser.navigate.mock.invocationCallOrder[0]!
+    );
+    expect(browser.navigate).toHaveBeenCalledWith('https://shop.example/', { httpFallback: true });
+    await expect(handover.requireAgentMayUse('chat-1')).rejects.toMatchObject({
+      code: 'taken_by_person',
+    });
+  });
+
+  it('keeps the agent shut out when the navigate and its http try both fail', async () => {
+    const { handover, browser } = setup();
+    browser.navigate.mockRejectedValueOnce(
+      Object.assign(new Error('Couldn’t reach that site.'), { code: 'navigation_unreachable' })
+    );
+    await expect(
+      handover.navigate('https://shop.example/', { httpFallback: true })
+    ).rejects.toMatchObject({ code: 'navigation_unreachable' });
+    expect(browser.pause).toHaveBeenCalled();
+    await expect(handover.requireAgentMayUse('chat-1')).rejects.toMatchObject({
+      code: 'taken_by_person',
+    });
+  });
+
   it.each(['back', 'forward'] as const)(
     'takes the page before %s moves it, and shuts the agent out',
     async (direction) => {

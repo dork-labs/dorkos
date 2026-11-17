@@ -758,7 +758,7 @@ describe('MCP Tool Handlers', () => {
       expect(server.version).toBe('1.0.0');
     });
 
-    it('registers 55 tools including the five document-channel verbs', () => {
+    it('registers 56 tools including the five document-channel verbs', () => {
       // Purpose: regression guard against accidental tool omissions or additions.
       // This count changes intentionally when new MCP tools are added. 32 legacy
       // (4 core + 5 tasks + 8 relay + 1 agent + 2 ui + 3 devtools + 6 browser
@@ -807,8 +807,9 @@ describe('MCP Tool Handlers', () => {
       // 52 -> 53 for `heartbeat_status` (spec `heartbeats` §10 PR 6), every agent's.
       // 53 -> 54 for `memory_read` (ADR 261017-153539), every agent's.
       // 54 -> 55 for `agent_instructions` (spec `context-viewer` phase 3), every agent's.
+      // 55 -> 56 for `update_agent_config` (DOR-4266), an agent's setup files.
       const server = createDorkOsToolServer(makeMockDeps()) as unknown as MockServer;
-      expect(server.tools).toHaveLength(55);
+      expect(server.tools).toHaveLength(56);
       for (const name of [
         'configure_doc_channel',
         'approve_doc_route',

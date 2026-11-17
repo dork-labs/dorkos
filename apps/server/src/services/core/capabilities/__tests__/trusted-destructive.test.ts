@@ -48,6 +48,7 @@ const STILL_ASKS: Record<string, string> = {
   'work-queue.requeue': 'a new start always asks',
   'operator.update_agent_boundaries': 'Safety limits is a floor',
   'operator.update_agent_execution': 'its card shows old and new (alwaysAsks)',
+  'operator.update_agent_config': 'third-party code: a hook the target agent runs every turn',
   'marketplace.link': 'no area: runs code from a folder',
   'connectors.execute_destructive': 'no area: an irreversible act in an outside account',
   'mcp.add': 'third-party code: a command every session runs',

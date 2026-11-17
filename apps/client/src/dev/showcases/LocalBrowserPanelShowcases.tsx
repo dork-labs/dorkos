@@ -52,7 +52,10 @@ const IN_USE_WORKING: LocalBrowserPersonState = {
 const CONNECTED_HERE: LocalBrowserPersonState = {
   ...IN_USE_ELSEWHERE,
   sessionId: 'chat-atlas',
-  tabs: [{ id: 'demo-tab', title: 'Pricing', url: 'https://www.example.com/pricing?plan=team' }],
+  tabs: [
+    { id: 'demo-tab', title: 'Pricing', url: 'https://www.example.com/pricing?plan=team' },
+    { id: 'demo-popup', title: 'Sign in to Example', url: 'https://accounts.example.com/signin' },
+  ],
 };
 
 /**
@@ -186,7 +189,8 @@ function PanelDemo({
   open,
   afterOpen,
 }: {
-  state: LocalBrowserPersonState;
+  /** What the browser reports, or `null` for a browser DorkOS can't reach. */
+  state: LocalBrowserPersonState | null;
   open?: () => Promise<never>;
   /** What the browser reports once Open browser was pressed: a handoff that began meanwhile. */
   afterOpen?: LocalBrowserPersonState;
@@ -194,7 +198,10 @@ function PanelDemo({
   const [transport] = useState<Transport>(() => {
     let current = state;
     return browserTransport(
-      () => current,
+      () => {
+        if (!current) throw new Error('The browser didn’t answer.');
+        return current;
+      },
       undefined,
       open &&
         (() => {
@@ -204,12 +211,12 @@ function PanelDemo({
     );
   });
   useEffect(() => {
-    if (state.sessionId !== IN_USE_WORKING.sessionId) return;
+    if (state?.sessionId !== IN_USE_WORKING.sessionId) return;
     // A live status is how the app knows a chat's agent is working right now.
     useSessionListStore.setState((store) => ({
       statuses: { ...store.statuses, [IN_USE_WORKING.sessionId!]: {} as SessionStatus },
     }));
-  }, [state.sessionId]);
+  }, [state?.sessionId]);
   const [queryClient] = useState(
     () => new QueryClient({ defaultOptions: { queries: { retry: false } } })
   );
@@ -290,6 +297,10 @@ export function LocalBrowserPanelShowcases() {
       <ShowcaseLabel>Before the browser was ever opened</ShowcaseLabel>
       <ShowcaseDemo>
         <PanelDemo state={NOT_OPEN} />
+      </ShowcaseDemo>
+      <ShowcaseLabel>DorkOS can’t reach the browser: Reconnect</ShowcaseLabel>
+      <ShowcaseDemo>
+        <PanelDemo state={null} />
       </ShowcaseDemo>
       <ShowcaseLabel>Shared with this chat’s agent: the browser chrome over the page</ShowcaseLabel>
       <ShowcaseDemo>
