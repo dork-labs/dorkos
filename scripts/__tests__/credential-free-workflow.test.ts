@@ -266,27 +266,35 @@ describe('credential-free-build workflow', () => {
   // This job keeps NO cross-run turbo cache (ledger 261117-141554). It used
   // to save `.turbo/cache` on `pull_request` only, under the PR's merge ref:
   // a scope only that PR's later pushes can read, since the workflow has no
-  // run on `main` to save one every ref could restore. On 2026-11-17 those
-  // per-PR entries held ~3.9 GB of the 10 GB budget and helped evict main's
-  // `turbo-test-builds-*` entry, which every queue shard reads. Putting the
-  // save back leaves a green workflow and an evicted build cache, so it is
-  // pinned here.
-  it('saves no turbo cache of its own under a pull request ref', () => {
+  // run on `main` to save one every ref could restore. At about 14:20Z on
+  // 2026-11-17, 13 of those entries across 10 PRs held 4.3 GB of the 10 GB
+  // budget and helped evict main's `turbo-test-builds-*` entry, which every
+  // queue shard reads. Putting the save back leaves a green workflow and an
+  // evicted build cache, so it is pinned here, whatever the key or the path's
+  // spelling: any turbo-path save must be main-only.
+  it('saves no turbo cache of its own except on refs/heads/main', () => {
     // Comments name the removed key on purpose; only code lines count.
     const code = workflow
       .split('\n')
       .filter((line) => !/^\s*#/.test(line))
       .join('\n');
-    expect(
-      code.includes('turbo-credential-free-'),
-      `${WORKFLOW_REL} carries a \`turbo-credential-free-*\` cache key again. A turbo cache ` +
-        `saved here lands on a PR merge ref, which no other ref can read.`
-    ).toBe(false);
-    expect(
-      /^\s+path:\s*\.turbo\/cache\s*$/m.test(code),
-      `${WORKFLOW_REL} caches \`.turbo/cache\` again. Only a cache \`main\` saves is ` +
-        `readable by every ref; this workflow has no run on \`main\`.`
-    ).toBe(false);
+    // A save is `actions/cache/save`, or the combined `actions/cache`, which
+    // saves in its post step. A turbo one is any step naming `.turbo` (in a
+    // path of any spelling, one line or a `|` block) or a `turbo` key.
+    const turboSaves = code
+      .split(/\n(?= {6}- )/)
+      .filter((step) => /uses: actions\/cache(?:\/save)?@/.test(step))
+      .filter((step) => /\.turbo\b/.test(step) || /^\s+key:\s*['"]?turbo/m.test(step));
+    for (const step of turboSaves) {
+      // The step's own `if:`, folded continuation lines included.
+      const condition = step.match(/^ {8}if:(.*(?:\n {10,}.*)*)/m)?.[1] ?? '';
+      expect(
+        condition.includes("github.ref == 'refs/heads/main'") && !condition.includes('||'),
+        `${WORKFLOW_REL} saves a turbo cache in a step that is not limited to ` +
+          `\`refs/heads/main\` (its \`if:\` is ${JSON.stringify(condition.trim())}). Saved on ` +
+          `any other ref, it lands where no other ref can read it.\n${step}`
+      ).toBe(true);
+    }
   });
 
   // setup-node's `cache: pnpm` shares one store per lockfile across every Linux
@@ -311,8 +319,10 @@ describe('credential-free-build workflow', () => {
   // (DOR-4537, ledger 261116-114104): a plain `actions/cache` saved a 735 MB
   // copy under every queue ref and PR merge ref, scopes nothing else can read,
   // and that pushed the repo past its 10 GB cache budget. So the key appears
-  // twice per install, once in the restore and once in the save. A save in a
-  // job whose install is itself conditional carries that condition first,
+  // once in each install's restore and once in each save. A workflow that
+  // never runs on `main` by itself (site-build, docs-openapi-check,
+  // desktop-renderer) restores only: a save there could never run. A save in
+  // a job whose install is itself conditional carries that condition first,
   // joined by `&&`, so it can only narrow the main-only rule.
   it('keys the pnpm store on the runner image, in every workflow that installs', () => {
     const STORE_KEY =
@@ -323,22 +333,23 @@ describe('credential-free-build workflow', () => {
     // main-only rule as the last two terms.
     const SAVE_IF =
       /^ {8}if: \$\{\{ (?:[^|\n]+ && )?github\.ref == 'refs\/heads\/main' && steps\.pnpm-store-restore\.outputs\.cache-hit != 'true' \}\}$/m;
-    for (const [rel, installs] of [
-      [WORKFLOW_REL, 1],
-      [TEST_WORKFLOW_REL, 3],
-      [BROWSER_WORKFLOW_REL, 4],
-      [APP_FRAME_WORKFLOW_REL, 1],
-      [HARNESS_WINDOWS_WORKFLOW_REL, 1],
-      ['.github/workflows/cli-smoke-test.yml', 1],
-      ['.github/workflows/db-check.yml', 1],
-      ['.github/workflows/desktop-renderer.yml', 1],
-      ['.github/workflows/desktop-smoke.yml', 1],
-      ['.github/workflows/docs-openapi-check.yml', 1],
-      ['.github/workflows/evals.yml', 2],
-      ['.github/workflows/lint.yml', 1],
-      ['.github/workflows/scripts-test.yml', 1],
-      ['.github/workflows/site-build.yml', 1],
-      ['.github/workflows/typecheck.yml', 1],
+    // [workflow, installs (each with one restore), main-only saves]
+    for (const [rel, installs, saveCount] of [
+      [WORKFLOW_REL, 1, 1],
+      [TEST_WORKFLOW_REL, 3, 3],
+      [BROWSER_WORKFLOW_REL, 4, 4],
+      [APP_FRAME_WORKFLOW_REL, 1, 1],
+      [HARNESS_WINDOWS_WORKFLOW_REL, 1, 1],
+      ['.github/workflows/cli-smoke-test.yml', 1, 1],
+      ['.github/workflows/db-check.yml', 1, 1],
+      ['.github/workflows/desktop-renderer.yml', 1, 0],
+      ['.github/workflows/desktop-smoke.yml', 1, 1],
+      ['.github/workflows/docs-openapi-check.yml', 1, 0],
+      ['.github/workflows/evals.yml', 2, 2],
+      ['.github/workflows/lint.yml', 1, 1],
+      ['.github/workflows/scripts-test.yml', 1, 1],
+      ['.github/workflows/site-build.yml', 1, 0],
+      ['.github/workflows/typecheck.yml', 1, 1],
     ] as const) {
       const text = readFileSync(path.join(repoRoot, rel), 'utf8');
       expect(
@@ -359,8 +370,8 @@ describe('credential-free-build workflow', () => {
       expect(
         text.split(STORE_KEY).length - 1,
         `${rel} should key its pnpm store on the image its \`pnpm-store\` step read, in ` +
-          `the restore and the save of each of its ${installs} job(s) that install the workspace.`
-      ).toBe(installs * 2);
+          `its ${installs} restore(s) and ${saveCount} save(s).`
+      ).toBe(installs + saveCount);
       // Every step carrying the store key is a restore or a main-only save;
       // a plain `actions/cache` would save under queue and PR refs again.
       const storeSteps = code.split(/\n(?= {6}- )/).filter((step) => step.includes(STORE_KEY));
@@ -368,9 +379,10 @@ describe('credential-free-build workflow', () => {
       const saves = storeSteps.filter((s) => /uses: actions\/cache\/save@/.test(s));
       expect(
         [restores.length, saves.length, storeSteps.length],
-        `${rel} should restore its pnpm store with actions/cache/restore and save it with ` +
-          `actions/cache/save, once each per install, and nothing else may carry the key.`
-      ).toEqual([installs, installs, installs * 2]);
+        `${rel} should restore its pnpm store with actions/cache/restore once per install ` +
+          `(${installs}) and save it with actions/cache/save ${saveCount} time(s), and nothing ` +
+          `else may carry the key.`
+      ).toEqual([installs, saveCount, installs + saveCount]);
       for (const step of saves) {
         expect(
           step,

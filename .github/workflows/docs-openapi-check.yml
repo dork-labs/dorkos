@@ -136,11 +136,13 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         with:
           node-version: 22
-      # THE PNPM STORE: every ref restores it, only `refs/heads/main` saves it
-      # (DOR-4537, ledger 261117-141554). setup-node's `cache: pnpm` saved a
-      # store under any ref whose restore missed, PR merge refs included, where
-      # no other ref can read it. Same key as test.yml's test-shard, which has
-      # the full reasoning, so on Linux this restores the store main saved.
+      # THE PNPM STORE, RESTORE ONLY (DOR-4537, ledger 261117-141554).
+      # setup-node's `cache: pnpm` saved a store under any ref whose restore
+      # missed, PR merge refs included, where no other ref can read it. Same
+      # key as test.yml's test-shard, which has the full reasoning, so this
+      # restores the store main's canary saved. No save step: this workflow
+      # does not run on `main` on its own, so a save here could only write
+      # where nothing else reads.
       - name: Find the pnpm store
         id: pnpm-store
         if: steps.scope.outputs.run == 'true'
@@ -156,13 +158,6 @@ jobs:
       - name: Install dependencies
         if: steps.scope.outputs.run == 'true'
         run: pnpm install --frozen-lockfile
-      # main only, after a good install: test.yml's test-shard says why (DOR-4537).
-      - name: Save the pnpm store for the queue and pull requests
-        if: ${{ steps.scope.outputs.run == 'true' && github.ref == 'refs/heads/main' && steps.pnpm-store-restore.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ steps.pnpm-store.outputs.path }}
-          key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       # The generator (scripts/export-openapi.ts) runs via tsx but imports the
       # workspace libraries through their published `exports` (dist/), so those

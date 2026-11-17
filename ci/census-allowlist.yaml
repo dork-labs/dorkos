@@ -37,14 +37,14 @@ entries:
     job: typecheck
     step: Save the pnpm store for the queue and pull requests
     kind: step-if
-    reason: Saves the pnpm store only on refs/heads/main (the canary) and only on a restore miss, right after the install (DOR-4537, ledger 261117-141554). It asserts nothing; on pull_request and merge_group the job restores main's store and saves none, because a PR merge ref's or a queue ref's cache scope is unreadable by any other ref.
+    reason: Saves the pnpm store only on refs/heads/main (this workflow's own scheduled runs there) and only on a restore miss, right after the install (DOR-4537, ledger 261117-141554). It asserts nothing; on pull_request and merge_group the job restores main's store and saves none, because a PR merge ref's or a queue ref's cache scope is unreadable by any other ref.
 
   # --- lint.yml ---
   - workflow: lint.yml
     job: lint
     step: Save the pnpm store for the queue and pull requests
     kind: step-if
-    reason: Saves the pnpm store only on refs/heads/main (the canary) and only on a restore miss, right after the install (DOR-4537, ledger 261117-141554). It asserts nothing; on pull_request and merge_group the job restores main's store and saves none, because a PR merge ref's or a queue ref's cache scope is unreadable by any other ref.
+    reason: Saves the pnpm store only on refs/heads/main (this workflow's own scheduled runs there) and only on a restore miss, right after the install (DOR-4537, ledger 261117-141554). It asserts nothing; on pull_request and merge_group the job restores main's store and saves none, because a PR merge ref's or a queue ref's cache scope is unreadable by any other ref.
 
   # --- db-check.yml ---
   - workflow: db-check.yml
@@ -106,11 +106,6 @@ entries:
     step: Restore the pnpm store built on this runner image
     kind: step-if
     reason: Restores main's pnpm store for the install (DOR-4537, ledger 261117-141554); same scope decision as the install, always run in the merge queue. It asserts nothing.
-  - workflow: docs-openapi-check.yml
-    job: openapi-fresh
-    step: Save the pnpm store for the queue and pull requests
-    kind: step-if
-    reason: Saves the pnpm store only on refs/heads/main and only on a restore miss (DOR-4537, ledger 261117-141554). This workflow has no run on main, so it never saves; it is the same step every installing job carries, so a later main leg saves correctly. It asserts nothing.
   - workflow: docs-openapi-check.yml
     job: openapi-fresh
     step: Install dependencies

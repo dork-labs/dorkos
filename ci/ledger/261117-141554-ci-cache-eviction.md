@@ -41,25 +41,35 @@ merge refs, a scope only that PR can read back:
    restore missed. Every real use in a workflow that runs on `pull_request` or `merge_group`
    (cli-smoke-test, db-check, desktop-renderer, desktop-smoke, docs-openapi-check, evals x2,
    lint, scripts-test harness, site-build, typecheck) now uses the DOR-4537 shape: an
-   image-keyed `actions/cache/restore` on every ref and an `actions/cache/save` only on
-   `refs/heads/main`, both pinned to v6.1.0. The Linux key is test.yml's, so these jobs
-   restore the store main's canary saved. Left on `cache: pnpm`: schedule- and dispatch-only
-   workflows (ci-steward, coverage-unique, community-two-desktop, browser-native-release-artifact,
-   mutation-pilot) and tag-only ones (desktop-release, publish-community), which never run on a
-   PR ref. A new drift test fails if any PR or queue workflow uses `cache: pnpm` again.
+   image-keyed `actions/cache/restore` on every ref, pinned to v6.1.0, and an
+   `actions/cache/save` only on `refs/heads/main`. site-build, docs-openapi-check and
+   desktop-renderer never run on `main` by themselves, so they restore only. The Linux key is
+   test.yml's, so these jobs restore the store main's canary saved. Left on `cache: pnpm`:
+   schedule- and dispatch-only workflows (ci-steward, coverage-unique, community-two-desktop,
+   browser-native-release-artifact, mutation-pilot) and tag-only ones (desktop-release,
+   publish-community), which never run on a PR ref. A new drift test fails if any PR or queue
+   workflow uses `cache: pnpm` again. After this, every pnpm store and turbo cache save runs
+   only on `refs/heads/main`. Not every save does: the combined `actions/cache` Playwright steps
+   (browser-test.yml x3, app-frame-browser.yml) still save on any ref, and are out of scope here.
 3. PRs on old bases still run the old workflow files. New `cache-cleanup.yml` deletes a PR's
    caches when it closes, and twice a day sweeps every `refs/pull/<n>/merge` cache whose PR is
-   closed or merged. It never deletes a `main`, queue, tag or open-PR entry.
+   closed or merged. It never deletes a `main`, queue, tag or open-PR entry, and goes red when
+   it had PR refs to look up and could read none.
 
-Expected, and how to read it beside the computed verdict: `main` keeps a `turbo-test-builds-*`
-entry for 7 straight days, total cache on `refs/pull/*` refs stays under 3 GB, and queue shards'
-turbo restore logs a hit (`gh api repos/dork-labs/dorkos/actions/caches` and the shards' logs).
-main's `node-cache-*` entries (735 MB Linux, 687 MB macOS) stop being written and age out after 7
-days unread; macOS moves to `pnpm-store-macOS-<image>-ARM64-*`, saved by desktop-smoke's push leg.
-Watch beside it: `gate.wf.credential-free-build.credential-free-build.duration_p90`, now always
-cold, and the install step on PR runs right after a lockfile change, before the canary saves.
+**The computed verdict will likely be `inconclusive`.** `tracked.cache-hit-rate` is not computed
+by the collector yet, and this entry confounds with 261116-114104: same metric, overlapping
+window, and both list credential-free-build. Read the result from the cache numbers below.
 
-Revert (1) if credential-free-build's p90 grows past 15 minutes. Revert or rework (2) if PR
-install times rise by more than a minute at p50 for a week with main holding a store for the
-lockfile. Revert (3) if it ever deletes an entry on `refs/heads/main` or an open PR's ref, or if
-cache use is still over 10 GB after 7 days (then the cause is elsewhere).
+Expected, and how to read it: `main` keeps a `turbo-test-builds-*` entry for 7 straight days,
+total cache on `refs/pull/*` refs stays under 3 GB, and queue shards' turbo restore logs a hit
+(`gh api repos/dork-labs/dorkos/actions/caches` and the shards' logs). main's `node-cache-*`
+entries (735 MB Linux, 687 MB macOS) stop being written and age out after 7 days unread; macOS
+moves to `pnpm-store-macOS-<image>-ARM64-*`, saved by desktop-smoke's push leg. The metric this
+could make worse, credential-free-build's PR leg now always cold, has its own ceiling in
+261117-143945. Watch beside it: the install step on PR runs right after a lockfile change,
+before the canary saves.
+
+Revert (1) on 261117-143945's terms. Revert or rework (2) if PR install times rise by more than
+a minute at p50 for a week while main holds a store for the lockfile. Revert (3) if it ever
+deletes an entry on `refs/heads/main` or an open PR's ref. If cache use is still over 10 GB
+after 7 days, keep all three and look elsewhere for what fills it (the Playwright saves first).
