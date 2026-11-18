@@ -223,6 +223,18 @@ describe('PATCH /api/tasks/:id — a live schedule on DorkOS credits (DOR-2678)'
     expect(store.getTask(task.id)?.enabled).toBe(false);
   });
 
+  it('refuses switching it back on at this computer with no browser session (DOR-3330)', async () => {
+    const task = await approvedOnCredits();
+    expect((await patch(task.id, { enabled: false })).status).toBe(200);
+    // With an owner, a program here that names no agent is not the person.
+    signedInAs = undefined;
+    posture.loginOn = false;
+    const res = await request(target.server).patch(`/api/tasks/${task.id}`).send({ enabled: true });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('person_only');
+    expect(store.getTask(task.id)?.enabled).toBe(false);
+  });
+
   it('lets the owner switch it back on', async () => {
     const task = await approvedOnCredits();
     expect((await patch(task.id, { enabled: false })).status).toBe(200);

@@ -866,6 +866,18 @@ describe('Mesh routes', () => {
       expect(meshCore.update).toHaveBeenCalledWith('agent-1', { displayName: 'Ana' });
     });
 
+    it('refuses a model change at this computer with no browser session once an owner exists (DOR-3330)', async () => {
+      // A program here that names no agent is not the person: with an owner,
+      // only the owner's proved session may change what an agent runs.
+      const res = await request(fixtureServer)
+        .patch('/api/mesh/agents/agent-1')
+        .send({ model: 'opus' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('NEEDS_APPROVAL');
+      expect(meshCore.update).not.toHaveBeenCalled();
+    });
+
     it('lets a person change an agent’s model here', async () => {
       meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, model: 'opus' });
 
