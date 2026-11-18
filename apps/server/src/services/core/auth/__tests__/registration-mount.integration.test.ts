@@ -14,6 +14,7 @@ import path from 'node:path';
 import { Hono } from 'hono';
 import request from '@dorkos/test-utils/supertest';
 import { honoListener, swappableServer } from '@dorkos/test-utils/listening-server';
+import { loadCeilingMs } from '@dorkos/shared/test-budget';
 import { createDb, runMigrations, user, type Db } from '@dorkos/db';
 
 const role = vi.hoisted(() => ({ value: 'computer' as 'computer' | 'hub' }));
@@ -38,6 +39,15 @@ type IngressKind = import('../../remote/ingress-mark.js').IngressKind;
 const target = swappableServer();
 const DOMAIN = 'dork.test';
 const ORIGIN = `http://localhost:${env.DORKOS_PORT}`;
+
+/**
+ * The timeout for a case that hashes more than one real password (and, for
+ * one, migrates a second database). About a second on an idle machine, so a
+ * loaded one stretches it past vitest's 5-second default with nothing wrong.
+ * Sized from the worst load stretch (20 s today); the 60 s cap does nothing now
+ * and only guards a future rise of `LOAD_SCALE_MAX`.
+ */
+const MULTI_HASH_TIMEOUT_MS = Math.min(60_000, loadCeilingMs(5_000));
 
 /** The marked listener the next request should appear to arrive through. */
 let viaIngress: IngressKind | null = null;
@@ -102,15 +112,19 @@ describe('the sign-up hook, through the /api/auth mount', () => {
     expect(db.select().from(user).all()).toHaveLength(0);
   });
 
-  it('lets another device create the owner with the printed setup code', async () => {
-    viaIngress = 'own-tunnel';
-    await signUp('tunnel');
-    const code = fs.readFileSync(path.join(tmpDir, 'setup-code'), 'utf8').trim();
+  it(
+    'lets another device create the owner with the printed setup code',
+    async () => {
+      viaIngress = 'own-tunnel';
+      await signUp('tunnel');
+      const code = fs.readFileSync(path.join(tmpDir, 'setup-code'), 'utf8').trim();
 
-    const res = await signUp('tunnel').set('X-DorkOS-Setup-Code', code);
-    expect(res.status).toBe(200);
-    expect(db.select().from(user).all()).toHaveLength(1);
-  });
+      const res = await signUp('tunnel').set('X-DorkOS-Setup-Code', code);
+      expect(res.status).toBe(200);
+      expect(db.select().from(user).all()).toHaveLength(1);
+    },
+    MULTI_HASH_TIMEOUT_MS
+  );
 
   it('refuses a wrong setup code', async () => {
     viaIngress = 'own-tunnel';
@@ -148,35 +162,43 @@ describe('the sign-up hook, through the /api/auth mount', () => {
   // code in this process; were the scope ever defaulted to something else,
   // this would change. On a hub only provisioning may create the owner, which
   // is the seam A2 (DOR-2934) uses.
-  it('treats a direct call as in-process, and lets only provisioning create a hub owner', async () => {
-    const auth = createAuth(db, tmpDir);
-    const body = (local: string) => ({
-      body: {
-        email: `${local}@${DOMAIN}`,
-        password: 'correct-horse-battery-staple',
-        name: 'Owner',
-      },
-    });
+  it(
+    'treats a direct call as in-process, and lets only provisioning create a hub owner',
+    async () => {
+      const auth = createAuth(db, tmpDir);
+      const body = (local: string) => ({
+        body: {
+          email: `${local}@${DOMAIN}`,
+          password: 'correct-horse-battery-staple',
+          name: 'Owner',
+        },
+      });
 
-    role.value = 'hub';
-    await expect(auth.api.signUpEmail(body('direct-hub'))).rejects.toThrow();
-    expect(db.select().from(user).all()).toHaveLength(0);
-    await withRegistrationCaller('provisioning', () => auth.api.signUpEmail(body('provisioned')));
-    expect(db.select().from(user).get()?.role).toBe('owner');
+      role.value = 'hub';
+      await expect(auth.api.signUpEmail(body('direct-hub'))).rejects.toThrow();
+      expect(db.select().from(user).all()).toHaveLength(0);
+      await withRegistrationCaller('provisioning', () => auth.api.signUpEmail(body('provisioned')));
+      expect(db.select().from(user).get()?.role).toBe('owner');
 
-    role.value = 'computer';
-    const fresh = createDb(path.join(tmpDir, `auth-direct-${Date.now()}.db`));
-    runMigrations(fresh);
-    await createAuth(fresh, tmpDir).api.signUpEmail(body('direct-computer'));
-    expect(fresh.select().from(user).get()?.role).toBe('owner');
-  });
+      role.value = 'computer';
+      const fresh = createDb(path.join(tmpDir, `auth-direct-${Date.now()}.db`));
+      runMigrations(fresh);
+      await createAuth(fresh, tmpDir).api.signUpEmail(body('direct-computer'));
+      expect(fresh.select().from(user).get()?.role).toBe('owner');
+    },
+    MULTI_HASH_TIMEOUT_MS
+  );
 
   // Purpose: once an owner exists, registration is closed, as before.
-  it('refuses a second account', async () => {
-    expect((await signUp('first')).status).toBe(200);
-    const res = await signUp('second');
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe('REGISTRATION_CLOSED');
-    expect(db.select().from(user).all()).toHaveLength(1);
-  });
+  it(
+    'refuses a second account',
+    async () => {
+      expect((await signUp('first')).status).toBe(200);
+      const res = await signUp('second');
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('REGISTRATION_CLOSED');
+      expect(db.select().from(user).all()).toHaveLength(1);
+    },
+    MULTI_HASH_TIMEOUT_MS
+  );
 });
