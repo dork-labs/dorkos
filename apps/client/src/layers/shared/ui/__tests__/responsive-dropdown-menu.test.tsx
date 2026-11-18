@@ -23,6 +23,7 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
 import {
   ResponsiveDropdownMenu,
   ResponsiveDropdownMenuContent,
+  ResponsiveDropdownMenuItem,
   ResponsiveDropdownMenuRadioGroup,
   ResponsiveDropdownMenuRadioItem,
   ResponsiveDropdownMenuTrigger,
@@ -125,5 +126,37 @@ describe('ResponsiveDropdownMenuContent — drawer height', () => {
     expect(drawer).toHaveClass('max-h-[85vh]');
     const body = screen.getByRole('button', { name: 'First row' }).parentElement!;
     expect(body).toHaveClass('min-h-0', 'overflow-y-auto');
+  });
+});
+
+describe('ResponsiveDropdownMenuItem — disabled', () => {
+  function DisabledItem({ onSelect }: { onSelect: () => void }) {
+    return (
+      <ResponsiveDropdownMenu open>
+        <ResponsiveDropdownMenuTrigger>open</ResponsiveDropdownMenuTrigger>
+        <ResponsiveDropdownMenuContent>
+          <ResponsiveDropdownMenuItem disabled onSelect={onSelect}>
+            Close browser
+          </ResponsiveDropdownMenuItem>
+        </ResponsiveDropdownMenuContent>
+      </ResponsiveDropdownMenu>
+    );
+  }
+  it('stays in place and refuses selection on desktop', async () => {
+    const onSelect = vi.fn();
+    render(<DisabledItem onSelect={onSelect} />);
+    const item = await screen.findByRole('menuitem', { name: 'Close browser' });
+    expect(item).toHaveAttribute('data-disabled');
+    item.click();
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+  it('stays in place and refuses selection in the drawer', async () => {
+    mockUseIsMobile.mockReturnValue(true);
+    const onSelect = vi.fn();
+    render(<DisabledItem onSelect={onSelect} />);
+    const item = await screen.findByRole('button', { name: 'Close browser' });
+    expect(item).toBeDisabled();
+    item.click();
+    expect(onSelect).not.toHaveBeenCalled();
   });
 });

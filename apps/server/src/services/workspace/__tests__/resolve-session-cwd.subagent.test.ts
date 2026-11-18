@@ -46,7 +46,11 @@ const SERVER_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.
  *   re-arming a queued message (both reach it before a turn starts;
  *   `POST /api/sessions/:id/messages` calls the launch service, while the
  *   route only names the port's type now);
- * - the task scheduler — a cron tick starting a scheduled run;
+ * - the scheduled-run placement — a cron tick starting a scheduled run
+ *   (`tasks/execution/run-placement.ts`, which the scheduler calls);
+ * - the schedule approval card's read of that same placement
+ *   (`tasks/execution/run-place-preview.ts`, DOR-4067): a person's task list
+ *   read, which starts no turn and runs inside none;
  * - the relay binding router — an inbound chat message opening or feeding a
  *   session;
  * - the relay adapter factory — the desk guard the claude-code adapter asks
@@ -68,7 +72,8 @@ const SERVER_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.
  */
 const ALLOWED = new Set([
   'services/session/launch/resolve-chat-place.ts',
-  'services/tasks/task-scheduler-service.ts',
+  'services/tasks/execution/run-placement.ts',
+  'services/tasks/execution/run-place-preview.ts',
   'services/relay/binding-router.ts',
   'services/relay/adapter-factory.ts',
   'services/heartbeats/beat-launch.ts',

@@ -1,6 +1,11 @@
 import { useState } from 'react';
-import { ExternalLink, MoreHorizontal } from 'lucide-react';
-import { BrowserChrome, ChromeButton, type BrowserChromeProps } from '@/layers/shared/ui';
+import {
+  BrowserChrome,
+  BrowserMenu,
+  type BrowserChromeProps,
+  type BrowserMenuOtherChat,
+  type BrowserMenuPage,
+} from '@/layers/shared/ui';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -28,8 +33,47 @@ function ChromeDemo({ width, ...props }: Partial<BrowserChromeProps> & { width: 
   );
 }
 
-/** The ⋯ menu's place, held by a plain button until the menu is built. */
-const MENU_PLACEHOLDER = <ChromeButton label="More" icon={MoreHorizontal} onClick={() => {}} />;
+/** Made-up pages open in one chat: the page and a sign-in popup it opened. */
+const PAGES: BrowserMenuPage[] = [
+  { id: 'docs', title: 'Getting started · Example Docs', url: 'https://www.example.com/docs' },
+  { id: 'popup', title: 'Sign in to Example', url: 'https://accounts.example.com/signin' },
+];
+
+/** Made-up chats with a page open; the menu shows only each one's site. */
+const OTHER_CHATS: BrowserMenuOtherChat[] = [
+  {
+    sessionId: 'demo-venue',
+    chatTitle: 'Book the venue',
+    address: 'https://northwind.example/bookings/42',
+    status: 'agent',
+  },
+  {
+    sessionId: 'demo-invoices',
+    chatTitle: 'Pay the March invoices',
+    address: 'https://billing.example/invoices',
+    status: 'waiting',
+  },
+];
+
+/** The ⋯ menu with every group that can apply, on made-up pages and chats. */
+function DemoMenu() {
+  const [page, setPage] = useState('docs');
+  return (
+    <BrowserMenu
+      url="https://www.example.com/docs/getting-started"
+      pages={PAGES}
+      selectedPageId={page}
+      onSelectPage={setPage}
+      onForward={() => {}}
+      canForward
+      onOpenExternally={() => {}}
+      otherChats={OTHER_CHATS}
+      onOpenChat={() => {}}
+      onForgetSignIns={() => {}}
+      onClose={() => {}}
+    />
+  );
+}
 
 /**
  * The shared browser chrome (DOR-4427): the canvas browser and the Agent
@@ -44,21 +88,19 @@ export function BrowserChromeShowcases() {
     >
       <ShowcaseLabel>Wide: everything shows (640px)</ShowcaseLabel>
       <ShowcaseDemo>
-        <ChromeDemo
-          width={640}
-          trailing={
-            <ChromeButton label="Open in system browser" icon={ExternalLink} onClick={() => {}} />
-          }
-          menu={MENU_PLACEHOLDER}
-        />
+        <ChromeDemo width={640} menu={<DemoMenu />} />
       </ShowcaseDemo>
       <ShowcaseLabel>Narrow: host only, Forward moves into ⋯ (400px)</ShowcaseLabel>
       <ShowcaseDemo>
-        <ChromeDemo width={400} menu={MENU_PLACEHOLDER} />
+        <ChromeDemo width={400} menu={<DemoMenu />} />
       </ShowcaseDemo>
       <ShowcaseLabel>Plain http:// off this machine says Not secure</ShowcaseLabel>
       <ShowcaseDemo>
         <ChromeDemo width={640} url="http://printer.example/status" />
+      </ShowcaseDemo>
+      <ShowcaseLabel>Opened by the http fallback says why it is not secure</ShowcaseLabel>
+      <ShowcaseDemo>
+        <ChromeDemo width={640} url="http://printer.example/status" openedOverHttp />
       </ShowcaseDemo>
       <ShowcaseLabel>A dev server on this machine keeps its port</ShowcaseLabel>
       <ShowcaseDemo>

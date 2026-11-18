@@ -138,6 +138,19 @@ describe('StreamManager', () => {
     expect(manager.getAttachedSessionId()).toBe('sess-a');
   });
 
+  it("tells each chat's stream which chat it is for, and leaves the list stream unchecked (DOR-4552)", () => {
+    // The socket drops a frame named for another chat only when it knows its own.
+    const { manager, connections } = setup();
+    manager.attachSession('sess-a');
+    manager.pinSession('sess-b');
+    manager.connectList();
+
+    const byUrl = (url: string) => connections.find((c) => c.url === url)!.opts.resourceId;
+    expect(byUrl('/api/sessions/sess-a/events')).toBe('sess-a');
+    expect(byUrl('/api/sessions/sess-b/events')).toBe('sess-b');
+    expect(byUrl('/api/events')).toBeUndefined();
+  });
+
   it('recoverSession reports the miss and rebuilds only the attached session', () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
     vi.stubGlobal('fetch', fetchMock);

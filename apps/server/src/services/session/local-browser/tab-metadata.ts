@@ -1,5 +1,6 @@
 import type { Page } from 'playwright-core';
 import type { LocalBrowserTab } from '@dorkos/shared/local-browser';
+import { openedOverHttp } from './history/opened-over-http.js';
 
 /** Event-refreshed tab labels; polling never evaluates an unrelated page's document. */
 export class LocalBrowserTabMetadata {
@@ -44,6 +45,8 @@ export class LocalBrowserTabMetadata {
       id,
       url: page.url(),
       title: this.entries.get(page)?.url === page.url() ? this.entries.get(page)!.title : '',
+      // A page the http:// fallback opened says so while it stays on http (DOR-4450).
+      ...(openedOverHttp(page) ? { openedOverHttp: true } : {}),
     }));
   }
 

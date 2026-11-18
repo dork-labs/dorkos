@@ -2,11 +2,11 @@
 id: 261116-091832
 title: queue shards restore main's newest build cache even after a lockfile change
 kind: experiment
-status: proposed
+status: active
 actor: agent
 gates:
   - wf.test.test-shard
-prs: []
+prs: [3849]
 hypothesis:
   metric: 'gate.wf.test.test-shard.duration_p50@merge_group'
   slo: 'queue-build'

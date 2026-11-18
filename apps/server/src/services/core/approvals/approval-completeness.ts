@@ -2,6 +2,7 @@
 import { z } from 'zod';
 import {
   APPROVAL_DETAIL_MAX_LENGTH,
+  APPROVAL_DETAIL_STORED_MAX_LENGTH,
   APPROVAL_FULL_DETAIL_MAX_LENGTH,
 } from '@dorkos/shared/approval-schemas';
 import type { ApprovalRow } from './approval-card.js';
@@ -154,7 +155,11 @@ export function storablePackageDetail(input: ApprovalRequestInput): string | nul
   ) {
     return clampForStorage(input.detail, APPROVAL_DETAIL_MAX_LENGTH);
   }
-  return storableDetail(input.detail);
+  // A package card is checked for wholeness against the builders' bound; a
+  // capability's own detail field (a setup file, DOR-4266) may run longer.
+  return input.packageRequest
+    ? storableDetail(input.detail)
+    : storableDetail(input.detail, APPROVAL_DETAIL_STORED_MAX_LENGTH);
 }
 
 /** Read a saved hook request for a person-only re-ask; never scrape a summary. */

@@ -130,9 +130,10 @@
     },
     {
       "guide": "configuration.md",
-      "description": "Config file system, upgrade floor, settings reference, Codex transport compatibility, CLI commands, precedence",
+      "description": "Config file system, upgrade refusals, settings reference, Codex transport compatibility, CLI commands, precedence",
       "patterns": [
         "config-manager",
+        "config/upgrade-floor",
         "codex/transport",
         "config-migrations",
         "config-schema",
@@ -337,6 +338,13 @@
       ]
     },
     {
+      "guide": "prioritization.md",
+      "description": "Filing and prioritizing DOR issues: MoSCoW mapped to Linear priority, the at-filing fields, the duplicate check, where each bucket goes, the Could expiry",
+      "patterns": [
+        "contributing/prioritization"
+      ]
+    },
+    {
       "guide": "observability.md",
       "description": "The dispatch correlation id, log conventions and the refusal rule, the `/api/debug` read surfaces, and the doctor split",
       "patterns": [
@@ -504,12 +512,13 @@
     },
     {
       "guide": "agent-operator-surface.md",
-      "description": "Agent-facing capability surface: operator + marketplace MCP tools (in-session vs external `/mcp`), CLI operator verbs, the read-only carve-out, tier enforcement + approvals, how to add a tool/verb, compiled upgrade facts",
+      "description": "Agent-facing capability surface: operator + marketplace MCP tools (in-session vs external `/mcp`), CLI operator verbs, the read-only carve-out, full MCP input objects and verification, tier enforcement + approvals, how to add a tool/verb, compiled upgrade facts",
       "patterns": [
         "services/session/new-since/",
         "services/runtimes/shared/awareness/",
         "services/core/operator/",
         "services/core/capabilities/",
+        "services/runtimes/claude-code/mcp-tools/",
         "services/core/approvals/",
         "services/core/agent-identity/",
         "services/core/mcp-tool-",

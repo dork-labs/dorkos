@@ -60,6 +60,7 @@ function person(overrides: Partial<LocalBrowserPersonState> = {}): LocalBrowserP
     preparation: null,
     handoff,
     signIn: null,
+    takenOver: false,
     ...overrides,
   };
 }
@@ -501,6 +502,27 @@ describe('BrowserHandoffCard', () => {
       ).toBeVisible();
       expect(screen.queryByRole('button', { name: 'Open sign-in window' })).toBeNull();
       expect(screen.getByRole('button', { name: 'Continue' })).toBeVisible();
+    });
+
+    // DOR-4097: a site that refused the in-app browser can't be finished there, so the
+    // card offers the plain window, and the site goes on in its own window after.
+    it('offers the sign-in window on an in-app page the site refused', async () => {
+      const refused = { ...handoff, reason: 'password' as const, refused: true };
+      transport.getLocalBrowserState.mockResolvedValue(
+        person({ mode: 'embedded', handoff: refused })
+      );
+      transport.openLocalBrowser.mockResolvedValue(person({ mode: 'embedded', handoff: refused }));
+      mount();
+      fireEvent.click(await button('Open sign-in window'));
+      await waitFor(() =>
+        expect(transport.openLocalBrowser).toHaveBeenCalledExactlyOnceWith({
+          mode: 'new-window',
+          sessionId: refused.sessionId,
+          profileId: refused.profileId,
+        })
+      );
+      expect(transport.signInLocalBrowser).not.toHaveBeenCalled();
+      expect(screen.queryByText('Finish in Atlas’s window, then press Continue.')).toBeNull();
     });
 
     it('says nothing about moving in a new window', async () => {

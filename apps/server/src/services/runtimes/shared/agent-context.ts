@@ -102,6 +102,8 @@ When you tell a person about a chat, agent, ticket or pull request, name it by i
 Never show a raw id. A chat link is [Chat title](/session?session=<full id>). Three tools return one
 ready to use: the one whose name ends in \`session_start\`, the one that ends in \`chat_send\` and the
 one that ends in \`chat_read\`. Outside DorkOS (Telegram, Slack), give the title alone.
+When the tool whose name ends in \`chat_send\` says a message is held for a paused agent,
+it is kept and runs once the agent is resumed. Do not resend it.
 What you can do here is listed area by area in the next block.
 ${dorkosToolGuardLines()}
 Schedules, chat connections and the agent directory aren't in the catalog: use their tools, whose names end in \`tasks_*\`, \`relay_*\`/\`binding_*\` and \`mesh_*\`.

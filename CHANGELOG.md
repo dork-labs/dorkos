@@ -13,6 +13,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only /system:release compiles fragments into a version section below.
 -->
 
+## [0.135.13] - 2026-11-17
+
+> DorkOS 0.135.13 adds a monthly spend limit for apps that charge per use, and makes a mini app's messages limit what an agent can do, like anyone else's. The Agent browser gets one ⋯ menu, a label that says who has the page, and the usual browser keys.
+
+### Note for people upgrading
+
+- **An agent's paid app actions now ask you first, at every level, Full included, even ones you picked for that agent.** This covers apps that charge per use, such as Apify, OpenAI, Twilio or Firecrawl, and GitHub Models calls. They run without asking only once you set a monthly limit and a price per run for that app. Set the limit in **Connections**, under **Spending**, and the price on the app's page. (DOR-4204)
+- **A mini app's messages now limit the turn they start, like a message from someone else.** This also covers messages you write through a mini app, for now. (DOR-4587, DOR-4594)
+- **If DorkOS can't read the version saved in your settings, it now stops and leaves the file unchanged.** It shows the file's path. Fix the `version` value in that file, or put back a saved copy, then restart DorkOS. If DorkOS names retired settings in your settings file, remove only those, then restart. (DOR-4341, DOR-4479)
+- In the Agent browser, Disconnect is now called **Close browser**, in the new ⋯ menu. (DOR-4429)
+- **If you connect mail:** an agent with Read and write on a mail app can send mail without asking you. A message from someone else on Telegram, Slack, in a room or from a mini app makes that turn ask you first or refuse the send, but mail and web pages the agent reads don't count yet. Give a mail app Read unless you need your agents to send. A check before mail to someone new comes in a later release. (DOR-4446)
+- **Check your Approvers list.** DorkOS knows a Telegram or Slack message is from you only when your own ID is on that connection's **Approvers** list. If it isn't, your own messages count as someone else's, and your agent won't send through a connected app for you from there. Open **Connections**, open the chat app's settings, and add your ID under **Access Control**. If you can already message the bot privately, your ID is in the **DM Allowlist** right above it. This only helps in a private chat with the bot: in a group chat, every message counts as someone else's, yours too. (DOR-4453)
+- In a room bridged to Telegram or Slack, your own phone's posts still count as someone else's for now. (DOR-4453)
+- If you run DorkOS from the command line, you can go back to the old behavior: set `DORKOS_MARK_STRANGER_TURNS=false` and restart. A mini app's messages still limit the turn either way. The Mac app has no setting for this yet. (DOR-4453)
+- On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
+- On a Mac, Codex chats can't delete or move folders (rm -r, rmdir, mv). We're fixing it (DOR-4358).
+- Known issue: offline, OpenCode's first turn in a new folder can take about a minute. Online, the first turn waits about 10 seconds once. A fix is coming in a later release (DOR-4422).
+- Known issue: Codex won't start in a folder whose Git path has `* ? [ ] { }` in its name, like `site [old]`, or in a worktree whose Git folder is gone, at any level. Use another folder for now. We're fixing it (DOR-4542).
+
+### Security
+
+- A mini app's reply in a room, a message it sends to one of your agents, and a chat it starts now limit the turn they start, like a message from someone else. In that turn, a send or delete through a connected app asks you first, and the agent can't raise its own access. (DOR-4587, DOR-4594)
+- In a room, when an agent passes on words from someone else or from a mini app, the turn its post starts is limited too, even after DorkOS restarts. (DOR-4587)
+- You can set a monthly limit on what agents spend through apps that charge per use. A paid action you picked for an agent runs without asking when you've set that app's price and the run fits the limit. At the limit, paid actions your agents run stop until you raise the limit or the month resets. (DOR-4204)
+- Setting or raising the limit, and setting or lowering an app's price, asks you to confirm it's you. Only you can change them. Agents can't, and a device signed in over Wi-Fi can't either. (DOR-4204)
+- A paid action never runs in a turn that read a message from someone else. When one waits on your yes, Telegram or Slack only tells you to answer in DorkOS. There's nothing to tap there. (DOR-4204)
+- An agent can now change another agent's setup files, such as a hook or its settings, without you opening a terminal. You see the whole file on a card and say yes first, unless you set this one action to Allowed. It only writes inside that agent's `.claude` folder, and a turn that read a message from someone else can't use it. (DOR-4266)
+- In a one-on-one chat, the canvas only shows files from the agent's own folder. An agent that tries to open another file there is told so by name, and that it can read the file and show you what's in it, or copy it into its folder. (DOR-3519)
+- When a site you typed without https:// doesn't answer in time, the Agent browser says it didn't respond instead of trying plain http. When it does open a site over plain http, "Not secure" in the address bar says why, and the agent is told the page isn't secure. (DOR-4450)
+
+### Added
+
+- **Connections has a Spending section.** Set the monthly limit there, and see how much agents spent this month and which apps it went to. You get a notice when agents have used 80% of the limit, and another when they reach it. (DOR-4204)
+- Actions that cost money say "Spends money", with a coins icon, in the app's action list and on its row in Connections. For an app that charges per use, you can set your best guess of what one run costs on its page. The limit counts each run at that price. (DOR-4204)
+- When an agent's paid action needs your yes, the card shows what one run costs, or that the price is unknown, and how much is left this month, or that no limit is set. It has **Allow once** and **Don't allow**. Only you can allow it, and not from Wi-Fi. (DOR-4204)
+- **Login & security shows when a remote tool last used each API key.** It counts tool (MCP) use from another device. Other API calls with the key aren't counted yet. (DOR-4206)
+- **The Agent browser knows the usual browser keys.** ⌘L, ⌘R and ⌘⇧C work in the browser's bar, and inside the page in the Mac app. ⌘[ and ⌘] go back and forward, and Esc stops a load, from the browser's bar. Inside the page those keys stay the page's, as in Chrome. Esc in the browser never closes the side panel around it. The matching Windows and Linux keys work too. (DOR-4432)
+- Reloading, stopping or typing an address in the Agent browser while an agent uses it takes the page for you in one step. The agent can't see or use the page until you hand it back. (DOR-4428)
+
+### Changed
+
+- **The Agent browser has a ⋯ menu at the end of its controls.** It lists the chat's pages, copies the address, opens the page in your own browser, forgets saved sign-ins and closes the browser. On a phone it opens as a sheet. The tab list and the Saved sign-ins row no longer sit above the page, so the page has more room. (DOR-4429)
+- The browser on the canvas has the same ⋯ menu. For a web page it copies the address and opens the page in your own browser, and its notices use the same words: Open in your browser. (DOR-4435)
+- The Agent browser shows who has the page in one small label beside the address: the agent, Paused, Your turn, You or Only you. Press it for Take over, Pause agent, Resume agent or Hand back. When an agent asks you to sign in or finish a step, the label turns orange and says Your turn. Press it to see the real site the page is on. (DOR-4428)
+- When the Agent browser has no page to show, it says why in one short block in the middle of the panel, instead of a pile of notes at the top. A new empty page says "Type an address or a search above." With the browser closed, forgetting saved sign-ins is one small link. (DOR-4433)
+- Before you approve a schedule, its card says where it will run: the agent's folder and its path, a private copy of the agent's project, DorkOS's default folder, or a fresh private folder for each run. (DOR-4067)
+- A Claude Code schedule set to Never ask can now see which chats are running, read a schedule's past runs, see when each agent last worked, and read an agent's heartbeat. It sees no chat titles, run summaries or heartbeat summaries, and it can't use these in a turn that read a message from someone else. Everything else stays refused. (DOR-3971)
+
+### Fixed
+
+- When an agent is paused, your message stays in the box until you resume it and press Send. Messages from other chats leave it there. Held messages name the pause in the queue, in Activity and on the sender's receipt. (DOR-4348)
+- An agent named "You" or "Your turn" shows in quotes in the Agent browser's label, so its name never reads like the label's own words. (DOR-4428)
+- A mini app no longer loses the error reply when a request is too large. (DOR-4152)
+- A Codex agent calls the page you share with it the Agent browser, like every other agent. The Agent browser guide uses the app's names, says when it uses your installed Google Chrome, and lists the versions this release pins. (DOR-3219)
+
+### Going back
+
+0.135.13 adds three database tables for the spend limit. To go back, install 0.135.12. It ignores them and starts normally. Settings need no change.
+
+- There is no spend limit. A paid action you gave an agent runs without the paid-action card again, nothing counts what it spends, and the Spending section and "Spends money" marks are gone.
+- Answer any waiting paid-action card before you go back.
+- Spend-limit notices don't show in the 0.135.12 Inbox. The bell can still count them until you mark everything read.
+- A mini app's messages no longer limit the turn they start.
+- If 0.135.12 can't read the version saved in your settings, it saves a copy of the file and starts with default settings, keeping only your privacy and permission choices.
+- If you come back to 0.135.13 later, the limit and prices you set are still there. Paid actions run while you were on 0.135.12 aren't counted in that month's total.
+
 ## [0.135.12] - 2026-11-16
 
 > DorkOS 0.135.12 lets "Read and write" change things in every app connected through Composio, while deletes, sharing, money and other risky actions stay one-by-one picks. It also runs each app's screens in a frame of their own, limits what an agent can do when someone else writes in a chat, and wakes agents before their promises are due.
@@ -21,7 +87,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **"Read and write" on an app drops to Read once.** It used to give only Read on every app except Gmail and Google Calendar. Now it can change things, so DorkOS lowers each saved "Read and write" on other apps connected through Composio to Read, one time, and shows a notice for each account. To let an agent change things there, open **Connections** and choose Read and write again. Gmail and Google Calendar keep their level, and actions you picked one by one stay as you chose. (DOR-4194, DOR-4461)
 - **On Gmail, moving mail to trash now needs a one-by-one pick.** Read and write no longer covers it. To let an agent do it, open **Connections** and pick that action. (DOR-4194)
-- **If you connect mail:** an agent with Read and write on a mail app can send mail without asking you. A message from someone else on Telegram, Slack or in a room makes that turn ask you first or refuse the send, but mail and web pages the agent reads don't count yet. Give a mail app Read unless you need your agents to send. A check before mail to someone new comes in a later release. (DOR-4446)
+- **If you connect mail:** an agent with Read and write on a mail app can send mail without asking you. A message from someone else on Telegram, Slack or in a room makes that turn ask you first or refuse the send, but mail and web pages the agent reads, and replies a mini app posts in a room, don't count yet. Give a mail app Read unless you need your agents to send. A check before mail to someone new comes in a later release. (DOR-4446)
 - **Apps built for an older version of DorkOS need a rebuild before their screens run again.** This includes apps other people made. Until then, the app shows that it needs an update, and its screens don't load. Its server part and its agent tools keep working. If you build apps, the [update guide](/docs/integrations/extension-frame-migration) lists the few changes: add `"clientApiVersion": 2` to the app's `extension.json`, and call your app's own server through `api.request` instead of `fetch`. Apps made by your agents from now on are built the new way. (DOR-3293)
 - **If you use /flow:** the Flow app's screens show "Needs an update" until a Flow update comes out. It's on its way. Flow's tools and its background work keep working. (DOR-3293)
 - **Check your Approvers list.** DorkOS knows a Telegram or Slack message is from you only when your own ID is on that connection's **Approvers** list. If it isn't, your own messages count as someone else's, and your agent won't send through a connected app for you from there. Open **Connections**, open the chat app's settings, and add your ID under **Access Control**. If you can already message the bot privately, your ID is in the **DM Allowlist** right above it. This only helps in a private chat with the bot: in a group chat, every message counts as someone else's, yours too. (DOR-4453)
@@ -419,53 +485,10 @@ DorkOS still saves a backup before it changes the database, in `~/.dork/backups/
 
 0.135.4 doesn't change the database. To go back, install 0.135.3.
 
-## [0.135.3] - 2026-11-10
+Older releases (v0.1.0 – v0.135.3) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.135.3.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.135.3.md).
 
-> DorkOS 0.135.3 lets you see what every agent is told, lets scheduled tasks use their agent's connected apps, and tells you when a schedule misses runs or keeps failing. This release changes the database, so read Going back before downgrading.
-
-### Note for people upgrading
-
-- This release changes the database. Read Going back below before downgrading.
-- On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
-
-### Security
-
-- DorkOS's own database backups never keep the text of what your agents were told. A backup keeps each record's details and a fingerprint of each text, never the words. And when a Claude Code chat was deleted while DorkOS was closed, its record is now removed the next time DorkOS starts. (DOR-4001, DOR-4002)
-- The Permissions, Securing your instance and Threat model guides now explain where DorkOS keeps the key that protects your saved secrets, and which programs on your computer can read it. (DOR-3053)
-
-### Added
-
-- **See what every agent is told.** Settings › Agent instructions lists each part of the instructions DorkOS gives agents, in the order the model reads it. Each part says where it comes from, when it is included, roughly how long it is, and whether it is locked. Spots that differ per agent, like its name, show as small chips.
-- **Switch runtime, place and level.** Pick Claude Code, Codex, OpenCode or Doe, and a direct chat, a room or a scheduled task. Notes say what each runtime adds that DorkOS can't show, like Claude Code's own built-in instructions.
-- **Preview as an agent.** "Preview as…" fills the chips in for one agent.
-- **The profile of each agent you manage has What this agent is told.** It shows that agent's own result, for its own runtime and level. The Instructions, Boundaries and Memory pages link to it.
-- **Agents can read the template too.** A new tool shows an agent the same list, with chips and no one's details, or only the parts its own next turn gets.
-- DorkOS now keeps a private record of exactly what each agent was told on every turn: the instructions it started with and the notes added to that turn. The saved copy stays in your local database, and DorkOS never sends it anywhere. For Claude Code chats the text is deleted with the chat (at the latest the next time DorkOS starts) or after 30 days, whichever comes first. For Codex, OpenCode and Doe chats it is deleted after 30 days. The details around it, like when and which runtime, are kept. Common password and key formats, and your DorkOS secrets, are replaced before saving. This is best effort.
-- Live chat updates now include when models reply on every runtime, and when tools start where the runtime reports it.
-
-### Changed
-
-- **The small preview under the Instructions and Boundaries editors is gone.** It rebuilt part of the instructions in the app and could fall out of step. The new page is written by the same code a real chat uses.
-- **A long agent name no longer runs into the close button on a phone.** The name shortens with "…", and its status gets its own line.
-
-### Fixed
-
-- **Scheduled tasks can use the connected apps their agent has access to.** (DOR-4027)
-- **A schedule that misses runs or keeps failing tells you.** When runs were missed because this computer was likely asleep, a line says so in the room the schedule came from, or in its agent's direct chat. When it fails twice in a row, a line says so there too, and the schedule shows in Needs you until a run succeeds. (DOR-4078, DOR-4073)
-- Settings now says plainly that scheduled tasks can't run while the computer sleeps, even with keep-awake on. Agents say the same if they're asked to wake it. (DOR-4064)
-- When a spin-off chat hasn't started within five minutes, the chat that started it is told why, and its status reads "never-started". (DOR-3351)
-
-### Going back
-
-0.135.3 adds three tables to the database, and 0.135.2 starts on it as it is. To go back, install 0.135.2.
-
-On 0.135.2, the saved record of what agents were told is no longer deleted after 30 days or when a chat is deleted, and backups made on 0.135.2 include its text. To remove it, restore the backup below. Lines about missed or failed scheduled runs show there as a plain notice, with no link to the run.
-
-DorkOS still saves a backup before it changes the database, in `~/.dork/backups/`. If you came from 0.135.2, it's named `dork-<date>-<time>-pre-20261109151737_turn_context.db` (the time is UTC). To restore it, quit DorkOS, delete `dork.db-wal` and `dork.db-shm` from `~/.dork/`, copy the backup over `~/.dork/dork.db`, then install 0.135.2. You lose anything written since the upgrade, so if you removed access or revoked a connection since then, do it again.
-
-Older releases (v0.1.0 – v0.135.2) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.135.2.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.135.2.md).
-
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.135.12...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.135.13...HEAD
+[0.135.13]: https://github.com/dork-labs/dorkos/compare/v0.135.12...v0.135.13
 [0.135.12]: https://github.com/dork-labs/dorkos/compare/v0.135.11...v0.135.12
 [0.135.11]: https://github.com/dork-labs/dorkos/compare/v0.135.10...v0.135.11
 [0.135.10]: https://github.com/dork-labs/dorkos/compare/v0.135.9...v0.135.10
@@ -475,4 +498,3 @@ Older releases (v0.1.0 – v0.135.2) are archived in [changelog/archive/CHANGELO
 [0.135.6]: https://github.com/dork-labs/dorkos/compare/v0.135.5...v0.135.6
 [0.135.5]: https://github.com/dork-labs/dorkos/compare/v0.135.4...v0.135.5
 [0.135.4]: https://github.com/dork-labs/dorkos/compare/v0.135.3...v0.135.4
-[0.135.3]: https://github.com/dork-labs/dorkos/compare/v0.135.2...v0.135.3

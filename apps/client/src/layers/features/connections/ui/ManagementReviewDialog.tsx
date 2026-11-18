@@ -11,6 +11,7 @@ import {
   useConnectorManagementReview,
   useConnectorReviewAuthentication,
   useResolveConnectorManagementReview,
+  PaidActionMarker,
 } from '@/layers/entities/connectors';
 import {
   Badge,
@@ -31,6 +32,7 @@ import {
   presentManagementReview,
 } from '../lib/management-review-presentation';
 import { olderVersionIds } from '../lib/older-versions';
+import { isPaidAction } from '../lib/paid-actions';
 
 /**
  * A tool or program's request to change a connection, with the owner's
@@ -353,6 +355,9 @@ function ReviewContext({ context }: { context: ConnectorManagementReviewContext 
                 >
                   {OPERATION_CLASSIFICATION_LABELS[operation.capabilityClassification]}
                 </Badge>
+                {isPaidAction(context.connection.toolkit, operation.operationSlug) && (
+                  <PaidActionMarker />
+                )}
               </li>
             ))}
           </ul>

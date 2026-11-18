@@ -1,0 +1,8 @@
+{
+  "name": "dorkos-opencode-plugin-offline-preparation",
+  "version": "0.0.0",
+  "private": true,
+  "dependencies": {
+    "@opencode-ai/plugin": "1.19.3"
+  }
+}

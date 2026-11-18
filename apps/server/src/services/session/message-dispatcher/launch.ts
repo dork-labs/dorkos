@@ -14,6 +14,7 @@ import { triggerTurn, type TriggerTurnResult } from '../trigger-turn.js';
 import { emitQueueUpdate } from '../queue-stream-events.js';
 import { TURN_NO_ANSWER } from '../launch/turn-not-started.js';
 import { noteRoomTurnWords } from '../../core/turn-power/outside-words.js';
+import { isExtensionClientId } from '../../extensions/agent-send/extension-client-id.js';
 import {
   getPrivateSessionMessageAcceptanceService,
   PrivateSessionMessageRefusalError,
@@ -247,7 +248,10 @@ export function launchDispatchInner(
         ? { continuationHold: true as const }
         : {}),
       // A mark the turn carries on from work it continues: it marks, and lowers nothing (DOR-3561).
-      ...(turn.carriedMarks?.outsider === true || launchCarriesHold(clientId, messageId)
+      // A mini app's message carries one too, read from who queued the row (DOR-4594).
+      ...(turn.carriedMarks?.outsider === true ||
+      launchCarriesHold(clientId, messageId) ||
+      isExtensionClientId(clientId)
         ? { carriedMarks: { outsider: true as const } }
         : {}),
       ...(turn.stallTimeoutMs !== undefined ? { stallTimeoutMs: turn.stallTimeoutMs } : {}),

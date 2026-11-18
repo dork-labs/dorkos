@@ -28,6 +28,7 @@ import {
   READ_ONLY_LEVEL,
 } from '@dorkos/shared/permission-semantics';
 import { lastTurnLevelOf, marksOf } from '../../core/turn-power/turn-levels.js';
+import { turnReadOutsideWords } from '../../core/turn-power/outsider-turn.js';
 import {
   ceilingCarrying,
   hasMarks,
@@ -103,9 +104,13 @@ export function crossAgentRefusal(caller: CrossAgentCaller): CrossAgentRefusal |
  * @param caller - The calling turn, as the server resolved it.
  */
 export function turnMarksOf(caller: CrossAgentCaller): TurnMarks {
-  return turnIdsOf(caller)
+  const marks = turnIdsOf(caller)
     .map((id) => marksOfLevel(lastTurnLevelOf(id)))
     .reduce(mergeMarks, marksOf(caller.sessionId, caller.agentPath));
+  // A turn noted as having read outside words is held as one carrying the mark (DOR-4587): a hop
+  // from a chat that read them.
+  const noted = turnIdsOf(caller).some((id) => turnReadOutsideWords(id, caller.agentPath));
+  return noted ? mergeMarks(marks, { outsider: true }) : marks;
 }
 
 /** Every id a calling turn's level may be kept under. */
