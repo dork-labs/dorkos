@@ -149,7 +149,13 @@ export async function moveToDontAskWithList(
     { existing, data: { permissionMode: ALLOW_LIST_MODE }, reviewStillMatches: stillSo }
   );
   if (!fileOutcome.ok) {
-    auditAllowListAborted(existing, write, who.caller, fileOutcome.code ?? 'file_not_written');
+    auditAllowListAborted(
+      existing,
+      write,
+      who.caller,
+      fileOutcome.code ?? 'file_not_written',
+      ALLOW_LIST_MODE
+    );
     return jsonContent(
       {
         error: fileOutcome.error,

@@ -1776,6 +1776,10 @@ describe('tasks_* and an agent’s mode or approval', () => {
           approvedAllow: null,
         });
         expect(listAudits().map((row) => row.outcome)).toEqual(['ok', 'failed']);
+        // The failed row also says the mode it audited first never landed.
+        const failed = JSON.stringify(listAudits()[1]);
+        expect(failed).toContain('modeNotWritten');
+        expect(failed).toContain('schedule_review_changed');
       });
 
       it('refuses an agent whose own level asks before commands', async () => {

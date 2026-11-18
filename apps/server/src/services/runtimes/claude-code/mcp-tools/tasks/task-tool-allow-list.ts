@@ -305,12 +305,14 @@ export function auditAllowListChange(
  * @param write - The change that was audited.
  * @param caller - Who tried it.
  * @param reason - Why it stopped, as a code.
+ * @param modeNotWritten - The mode an audited move would have set, when its file was not written.
  */
 export function auditAllowListAborted(
-  task: Pick<Task, 'id' | 'name' | 'displayName'>,
+  task: Pick<Task, 'id' | 'name' | 'displayName' | 'permissionMode'>,
   write: AllowListWrite,
   caller: AgentModeCaller,
-  reason: string
+  reason: string,
+  modeNotWritten?: string
 ): void {
   const label = task.displayName ?? task.name;
   recordAudit({
@@ -321,11 +323,21 @@ export function auditAllowListAborted(
     change: [
       { field: 'allowList', before: write.before, after: write.before },
       { field: 'notWritten', after: write.after },
+      // The mode row audited first never landed either: said here, so the pair reads true.
+      ...(modeNotWritten
+        ? [
+            { field: 'permissionMode', before: task.permissionMode, after: task.permissionMode },
+            { field: 'modeNotWritten', after: modeNotWritten },
+          ]
+        : []),
       { field: 'reason', after: reason },
       { field: 'setterAgentPath', after: caller.agentPath ?? null },
       { field: 'via', after: write.via },
     ],
-    summary: `Allow list not written: ${label} changed while it was being set`,
+    summary:
+      reason === 'task_changed'
+        ? `Allow list not written: ${label} changed while it was being set`
+        : `Allow list not written: ${label} could not be changed (${reason})`,
   });
 }
 
