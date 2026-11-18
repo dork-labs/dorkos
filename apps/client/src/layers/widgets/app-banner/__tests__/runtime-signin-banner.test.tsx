@@ -449,15 +449,34 @@ describe('account-targeted sign-in', () => {
   });
   it('says why signing in did not work, and what to do (DOR-4426)', async () => {
     const reason = 'Sign-in timed out. Finish it in the browser within 3 minutes, then try again.';
+    const login = vi.fn().mockResolvedValue({ ok: false, error: reason });
     const transport = createMockTransport({
-      delegateRuntimeLogin: vi.fn().mockResolvedValue({ ok: false, error: reason }),
+      delegateRuntimeLogin: login,
+      // A listed account, so the sign-in reaches the server and gets its answer.
+      getConfig: vi.fn().mockResolvedValue({
+        claudeCode: {
+          resolvedAccount: '/accounts/main',
+          inherited: true,
+          accounts: [
+            {
+              id: 'five',
+              path: '/accounts/five',
+              label: 'Claude5',
+              color: '#aabbcc',
+              colorIsDefault: true,
+              isAccountRoot: true,
+            },
+          ],
+        },
+      }),
     });
-    rtlRender(<RuntimeSigninBanner runtimes={['claude-code:/accounts/Claude5']} />, {
+    rtlRender(<RuntimeSigninBanner runtimes={['claude-code:/accounts/five']} />, {
       wrapper: harness(transport),
     });
     fireEvent.click(await screen.findByRole('button', { name: 'Sign in to Claude5' }));
     expect(await screen.findByText('Couldn’t sign in to Claude5.')).toBeInTheDocument();
-    expect(screen.getByText(reason)).toBeInTheDocument();
+    expect(login).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(reason)).toBeInTheDocument();
     expect(screen.queryByText('Try again.')).not.toBeInTheDocument();
   });
 });
