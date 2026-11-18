@@ -77,6 +77,7 @@ export const notifications = sqliteTable(
         'mcp-server.reserved_name',
         'web.new_device',
         'agent.secret_files',
+        'agent.folder_rules_too_long',
         'account.signin_review',
         'shell.check_down',
         'report.undelivered',

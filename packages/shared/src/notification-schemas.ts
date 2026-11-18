@@ -184,6 +184,12 @@ export const NOTIFICATION_KINDS = [
    */
   'agent.secret_files',
   /**
+   * An agent's folder allow list changed and is too long to show whole on its
+   * approval card, so it never applies and no card is raised (DOR-4455). Once
+   * per agent and list.
+   */
+  'agent.folder_rules_too_long',
+  /**
    * A Claude account folder holds a sign-in DorkOS has not seen there before,
    * or a different one than it had (DOR-3245). Nothing pauses: DorkOS just
    * stops picking that folder on its own until the person confirms it.

@@ -93,4 +93,14 @@ export const SAMPLE_INBOX_ROWS: NotificationDTO[] = [
     actions: [{ id: 'open-chat', label: 'Open chat', style: 'primary' }],
     createdAt: minutesAgo(11),
   },
+  {
+    id: '01JZB0000000000000000008',
+    kind: 'agent.folder_rules_too_long',
+    tier: 'notable',
+    subject: { type: 'agent', id: 'tangerines' },
+    agentId: 'tangerines',
+    title: "tangerines's folder rules are too long to approve",
+    body: "Shorten the allow lists in its folder's .claude settings files. Then a card asks you.",
+    createdAt: minutesAgo(14),
+  },
 ];

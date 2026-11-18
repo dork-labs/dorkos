@@ -231,6 +231,7 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     total: 1,
     fingerprint: 'fp-1',
   },
+  'agent.folder_rules_too_long': { agentId: 'agent-1', agentName: 'Scout', hash: 'h-1' },
   'browser.handoff': {
     handoffId: 'h-1',
     sessionId: 'sess-1',
@@ -307,6 +308,7 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
   'mcp-server.reserved_name': 'notable',
   'web.new_device': 'notable',
   'agent.secret_files': 'notable',
+  'agent.folder_rules_too_long': 'notable',
   // A notice with a way to act, never a hold: nothing waits on it (DOR-3245).
   'account.signin_review': 'notable',
   'browser.handoff': 'notable',
@@ -389,6 +391,7 @@ describe('notification registry', () => {
       'account.limited',
       'account.reset',
       'account.signin_review',
+      'agent.folder_rules_too_long',
       'agent.note',
       'agent.secret_files',
       'agent.unreachable',

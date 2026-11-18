@@ -131,6 +131,8 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   'web.new_device': MonitorSmartphone,
   // Files in an agent's folder whose names say they are secrets (DOR-3292).
   'agent.secret_files': ShieldAlert,
+  // An agent's folder allow list too long for its approval card (DOR-4455).
+  'agent.folder_rules_too_long': ShieldAlert,
   'shell.check_down': ShieldAlert,
   'report.undelivered': MailX,
   // An agent moved or dropped a promise it made to the person (DOR-3034).
@@ -393,9 +395,11 @@ export function notificationLink(notification: NotificationDTO): NotificationLin
     // Who can use which app, where the change shows and can be put back.
     return { ...appRoutes.connections(), search: {} };
   }
-  if (kind === 'agent.secret_files') {
+  if (kind === 'agent.secret_files' || kind === 'agent.folder_rules_too_long') {
     // The agent's own Permissions page, where its rules and the line about
-    // files in its folder sit, rather than the whole Team (DOR-3292).
+    // files in its folder sit, rather than the whole Team (DOR-3292). The
+    // same page for folder rules too long to approve (DOR-4455): the agent's
+    // own permissions, while the body names the files that hold the rules.
     return { ...appRoutes.team(), search: { profile: subject.id, profilePage: 'permissions' } };
   }
   if (kind === 'mcp-server.tool_added' || kind === 'mcp-server.reserved_name') {
