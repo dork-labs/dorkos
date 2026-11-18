@@ -15,6 +15,11 @@ Accepted (operator decision, 2026-09-19). Builds on
 [260728-112203](260728-112203-merge-queue-replaces-branch-currency.md), which made arming a
 merge an automated job; this ADR states the policy that ADR's mechanism already implied.
 
+Amended by [261118-135124](261118-135124-releases-cut-from-a-release-branch-not-a-frozen-main.md)
+(proposed): "Nothing lands outside the merge queue" now covers `main` only. A PR into a
+`release/vX.Y.Z` branch lands without a queue, on the same required checks plus
+`release-cherry-picks`. Every other rule here still governs.
+
 ## Context
 
 About 780 PRs a month merge into `main`, almost all written by agents, and no rule requires a
