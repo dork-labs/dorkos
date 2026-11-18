@@ -116,21 +116,21 @@ describe('TaskRow viewer-local timing', () => {
     expect(document.body.textContent).not.toContain(':00 AM CST');
   });
 
-  it('uses short viewer-local day labels for the next run', () => {
+  it('words the next run the way the Needs you card does (DOR-4483)', () => {
     const now = new Date('2026-11-13T12:00:00.000Z');
 
-    expect(formatNextRun('2026-11-13T18:00:00.000Z', 'America/Chicago', now)).toBe(
-      'Next today 12:00 PM'
-    );
+    // Today has no day word, and "at" joins a day to its time.
+    expect(formatNextRun('2026-11-13T18:00:00.000Z', 'America/Chicago', now)).toBe('Next 12:00 PM');
     expect(formatNextRun('2026-11-14T08:30:00.000Z', 'America/Chicago', now)).toBe(
-      'Next tomorrow 2:30 AM'
+      'Next tomorrow at 2:30 AM'
     );
     expect(formatNextRun('2026-11-16T15:00:00.000Z', 'America/Chicago', now)).toBe(
-      'Next Mon 9:00 AM'
+      'Next Mon at 9:00 AM'
     );
     expect(formatNextRun('2026-11-20T15:00:00.000Z', 'America/Chicago', now)).toBe(
-      'Next Nov 20 9:00 AM'
+      'Next Nov 20 at 9:00 AM'
     );
+    expect(formatNextRun('not a time', 'America/Chicago', now)).toBeNull();
   });
 
   it('uses a compact 12-hour cron description when the zones match', () => {
