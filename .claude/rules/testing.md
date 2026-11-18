@@ -309,16 +309,22 @@ Failures that blame the wrong thing, each measured on this machine:
   a broken handler from a dropped event, and a case resting on it reds on
   somebody else's branch (DOR-2012). Use `watchWithPolling`
   (`packages/relay/src/__tests__/fake-watcher.ts`, and its twin in
-  `apps/server/src/services/harness/__tests__/skills-watcher.test.ts` — one copy
-  per package, because each spies on its own resolved `chokidar`): it spreads
+  `apps/server/src/__tests__/watch-with-polling.ts` — one copy per package,
+  because each spies on its own resolved `chokidar`; the server one also has
+  `fsWatchWithPolling` for a raw `fs.watch`, DOR-2021): it spreads
   PRODUCTION's options and adds only `usePolling`, so the real file, real
   chokidar, real event names and real handlers are all still under test and only
-  the OS notification source is substituted. Exactly one case keeps a NATIVE
-  watch — `watcher-manager.test.ts`'s real-filesystem smoke — so the suite still
-  exercises kernel delivery somewhere; it re-arms its watch on any empty window,
-  exits at once when the watch reports `EMFILE`/`ENOSPC` at arming, and skips
-  LOUDLY (never passes) when every window came back exhausted. Do not add a
-  second native one.
+  the OS notification source is substituted. `fsWatchWithPolling` is the one
+  exception to "real event names": no library sits behind it, so its choice of
+  `rename` or `change` for a difference is hand-written (`poll()` in that file),
+  and it never sends the platform's "events dropped" signals. Exactly one case
+  WAITS ON native delivery — `watcher-manager.test.ts`'s real-filesystem smoke —
+  so the suite still exercises kernel delivery somewhere; it re-arms its watch on
+  any empty window, exits at once when the watch reports `EMFILE`/`ENOSPC` at
+  arming, and skips LOUDLY (never passes) when every window came back exhausted.
+  A case may keep a native watch it waits on no event from (the descriptor count
+  in `session-tree-watch.test.ts`); do not add a second one that waits on
+  delivery.
 - **Budgets for those waits come from `@dorkos/shared/test-budget`.** Fixed
   millisecond ceilings are a claim about how fast the machine is, and this repo
   runs several agents' suites at once. `loadScaledMs(base)` widens a ceiling by

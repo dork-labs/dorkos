@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, onTestFinished, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -13,6 +13,8 @@ import { CONFIG_UNREADABLE, readConfigFile } from '../account-usage-reconcile.js
 import { ledgerDir, readLedger, writeLedger } from '../ledger-file.js';
 import { DEFAULT_ACCOUNT_LABEL, defaultAccountFolder } from '../runtime-accounts.js';
 import { logger } from '../../../../lib/logger.js';
+import { loadCeilingMs, loadScaledMs } from '@dorkos/shared/test-budget';
+import { fsWatchWithPolling } from '../../../../__tests__/watch-with-polling.js';
 
 let root: string;
 let dorkHome: string;
@@ -782,28 +784,41 @@ describe('AccountUsageStore: review round 3', () => {
 });
 
 describe('AccountUsageStore: the folder watch', () => {
-  it('picks up a reading flow writes and emits it', async () => {
-    await writeConfig(
-      claudeConfig([{ id: 'work', path: path.join(home, '.claude3'), label: null }])
-    );
-    await writeLedger(claudeDir(), 'work', [obs('five_hour', 1)], new Date(clock));
-    const broadcast = vi.fn();
-    const store = makeStore({
-      broadcast,
-      timings: { watchDebounceMs: 20, broadcastThrottleMs: 20, scanIntervalMs: 3_600_000 },
-    });
-    await store.load();
-    expect(broadcast).not.toHaveBeenCalled();
-    await writeLedger(claudeDir(), 'work', [obs('seven_day', 81, clock + 1)], new Date(clock));
-    await vi.waitFor(
-      () =>
-        expect(store.peek('claude-code', ['work'])[0]!.windows.map((w) => w.key)).toContain(
-          'seven_day'
-        ),
-      { timeout: 3_000 }
-    );
-    await vi.waitFor(() => expect(broadcast).toHaveBeenCalled(), { timeout: 3_000 });
-  });
+  // The folder watch POLLS (`fsWatchWithPolling`): macOS drops native events
+  // under load, and this case reddened healthy code on exactly that
+  // (DOR-2021). The real `fs.watch` call, its filename filter and the debounce
+  // are production's; only how a change is noticed differs.
+  it(
+    'picks up a reading flow writes and emits it',
+    { timeout: Math.min(loadCeilingMs(6_000), 60_000) },
+    async () => {
+      const polling = fsWatchWithPolling(50);
+      onTestFinished(() => polling.restore());
+      await writeConfig(
+        claudeConfig([{ id: 'work', path: path.join(home, '.claude3'), label: null }])
+      );
+      await writeLedger(claudeDir(), 'work', [obs('five_hour', 1)], new Date(clock));
+      const broadcast = vi.fn();
+      const store = makeStore({
+        broadcast,
+        timings: { watchDebounceMs: 20, broadcastThrottleMs: 20, scanIntervalMs: 3_600_000 },
+      });
+      await store.load();
+      expect(broadcast).not.toHaveBeenCalled();
+      await writeLedger(claudeDir(), 'work', [obs('seven_day', 81, clock + 1)], new Date(clock));
+      await vi.waitFor(
+        () =>
+          expect(store.peek('claude-code', ['work'])[0]!.windows.map((w) => w.key)).toContain(
+            'seven_day'
+          ),
+        { timeout: loadScaledMs(3_000) }
+      );
+      await vi.waitFor(() => expect(broadcast).toHaveBeenCalled(), {
+        timeout: loadScaledMs(3_000),
+      });
+      expect(polling.opened.length).toBeGreaterThan(0);
+    }
+  );
 });
 
 describe('AccountUsageStore.peekByRoot (spec claude-account-fleet §6 U)', () => {
