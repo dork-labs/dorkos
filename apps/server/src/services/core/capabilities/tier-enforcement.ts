@@ -959,7 +959,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
     // A turn nobody is watching (a scheduled run, an automatic carry-over) fails
     // at once with a reason instead of raising a card nobody can answer (DOR-3394).
     if (turnHasNobodyToAsk(requestingSession?.sessionId)) {
-      return refuse('enforcement_unavailable', nobodyToAskMessage(action.title));
+      return refuse('enforcement_unavailable', nobodyToAskMessage(action.title, permission));
     }
     // A request past Blocked is rate-limited from the approvals store BEFORE
     // anything is minted, so a looping agent gets one card, never a stack of

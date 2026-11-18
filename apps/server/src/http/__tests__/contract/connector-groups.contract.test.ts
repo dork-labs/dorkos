@@ -120,6 +120,14 @@ const GRANT_REQUIRED = {
   error: 'This agent is not granted the selected operation.',
   code: 'CONNECTOR_GRANT_REQUIRED',
 };
+// No level includes a destructive action, so its refusal says how to get it (DOR-4678).
+const OUTSIDE_LEVELS_GRANT_REQUIRED = {
+  error:
+    'No access level includes this action, so "Read and write" doesn\'t cover it. It has to ' +
+    'be given to this agent on its own: the person chooses it under exact actions for Gmail ' +
+    'on the Connections page.',
+  code: 'CONNECTOR_GRANT_REQUIRED',
+};
 const PROVIDER_LIST = z
   .object({
     providers: z.array(
@@ -1390,7 +1398,7 @@ describe('contract: the connector groups, driven by hand (login off)', () => {
       path: '/api/connectors/executions',
       headers: apiKey,
       body: target(revisions.destructive),
-      expect: { status: 403, body: GRANT_REQUIRED },
+      expect: { status: 403, body: OUTSIDE_LEVELS_GRANT_REQUIRED },
     });
     await check(server, {
       method: 'POST',

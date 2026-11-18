@@ -1833,7 +1833,11 @@ describe('ConnectorAgentRequestService', () => {
       });
       expect(resolved).toMatchObject({
         notGranted: [],
-        note: 'You can now read and change things in Gmail. Carry on with what you were doing.',
+        note:
+          'You can now read and change things in Gmail. Some actions, such as trashing or ' +
+          'deleting, are never part of an access level, so "Read and write" doesn\'t cover them. ' +
+          'If you need one, ask the person to choose it for you under exact actions for Gmail on ' +
+          'the Connections page. Carry on with what you were doing.',
       });
     });
 
@@ -1881,6 +1885,8 @@ describe('ConnectorAgentRequestService', () => {
         ]);
         const resolved = await answeredOnSecond(service(), ['read-2', 'create-2']);
 
+        // Only one-at-a-time changes, in an app with no "Read and write": the
+        // note names no level the agent doesn't hold (DOR-4678).
         expect(resolved).toMatchObject({
           notGranted: [],
           note: 'You can now read and change things in Gmail. Carry on with what you were doing.',

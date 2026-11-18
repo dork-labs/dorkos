@@ -47,6 +47,7 @@ import { connectorThreadKeys } from '../../services/connectors/principal/thread-
 import { agentRequestSubjectName } from '../../services/connectors/access/approval-requests.js';
 import { getExtensionConnectionServices } from '../../services/connectors/extensions/extension-connections-seam.js';
 import { isConnectorRuntimeCapabilityId } from '../../services/connectors/runtime-capability-scope.js';
+import { operationsListNote } from '../../services/connectors/access/level-gap-lines.js';
 import { env } from '../../env.js';
 import { createDocFrameSdkProbe } from '../../services/runtimes/test-mode/doc-frame/doc-frame-sdk-probe.js';
 import { configureDocFrameSdkProbe } from '../../services/runtimes/test-mode/doc-frame/doc-frame-sdk-scenario.js';
@@ -222,6 +223,8 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
         access: connectorAccess,
         ...(refs.connectorAgentRequests && { requests: refs.connectorAgentRequests }),
         holds: connectorHolds,
+        operationsNote: (agentId, connectionId, toolkit) =>
+          operationsListNote(db, agentId, connectionId, toolkit),
       },
       // Agents changing connection access (spec `agent-grant-autonomy` phases 2-3).
       accessChangeDeps: {

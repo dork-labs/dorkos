@@ -38,9 +38,14 @@ import {
   REFUSED_STATUS_DESCRIPTION,
   STATUS_DESCRIPTION,
   TASKS_CREATE_DESCRIPTION,
+  TASKS_LIST_DESCRIPTION,
   TASKS_UPDATE_DESCRIPTION,
 } from './task-tool-copy.js';
-import { CREATE_TASK_INPUT, UPDATE_TASK_INPUT } from './task-tool-inputs.js';
+import {
+  CREATE_TASK_INPUT,
+  type CreateScheduleArgs,
+  UPDATE_TASK_INPUT,
+} from './task-tool-inputs.js';
 import {
   finishOneShotCreate,
   LIST_ALONE_REFUSAL,
@@ -152,48 +157,7 @@ export function createCreateScheduleHandler(
   callerMarks?: CallerMarksResolver,
   callerAgent?: CallerAgentResolver
 ) {
-  return async (args: {
-    name: string;
-    prompt: string;
-    /** Left out only for a one-shot task (DOR-4315). */
-    cron?: string;
-    /** A one-shot task (DOR-4315); see `task-tool-allow-list.ts`. */
-    runOnce?: true;
-    /** A one-shot task's exact commands (DOR-4315); see `task-tool-allow-list.ts`. */
-    allowList?: string[];
-    reason: string;
-    /** Left out means `global`, which files it under the caller (DOR-4067). */
-    target?: string;
-    description?: string;
-    timezone?: string;
-    maxRuntime?: string;
-    /** Whether every run resumes one session; see {@link STICKY_DESCRIPTION}. */
-    sticky?: boolean;
-    /** Whether the task reads outside text; see {@link READS_OUTSIDE_TEXT_DESCRIPTION}. */
-    readsOutsideText?: boolean;
-    /** Which runtime the runs execute on; see {@link RUNTIME_DESCRIPTION}. */
-    runtime?: string;
-    /** Which model the runs execute on; see {@link MODEL_DESCRIPTION}. */
-    model?: string;
-    /** How hard the model thinks; see {@link EFFORT_DESCRIPTION}. */
-    effort?: EffortLevel;
-    /** Which Claude account the runs start on; see {@link ACCOUNT_DESCRIPTION}. */
-    account?: string;
-    /** Mode requested for person approval; never applied by this tool. */
-    requestedPermissionMode?: PermissionMode;
-    /** Task-run rules requested for person approval; never applied by this tool. */
-    requestedAllow?: string[];
-    /** Refused: only a person applies task-run rules. */
-    approvedAllow?: string[];
-    /** Refused: only a person confirms a looser grant. */
-    acceptLooserThanRequested?: true;
-    /** Refused, or decided as `tasks.set_mode` (DOR-3703); see {@link REFUSED_PERMISSION_MODE_DESCRIPTION}. */
-    permissionMode?: string;
-    /** Refused: a new task never approves itself; see {@link REFUSED_STATUS_DESCRIPTION}. */
-    status?: string;
-    /** Advertised so it can be REFUSED; see {@link REFUSED_AGENT_ID_DESCRIPTION}. */
-    agentId?: string;
-  }) => {
+  return async (args: CreateScheduleArgs) => {
     // Defaulted here, not in the schema: a `.default()` never reaches the Agent SDK's raw
     // field map, so an agent that left `target` out would fail outright (DOR-2053).
     const target = args.target ?? 'global';
@@ -751,7 +715,7 @@ export function getTasksTools(
   return [
     tool(
       'tasks_list',
-      'List every scheduled task on this DorkOS. Returns each one with its status and settings.',
+      TASKS_LIST_DESCRIPTION,
       { enabled_only: z.boolean().optional().describe('Only return enabled schedules') },
       createListSchedulesHandler(deps)
     ),

@@ -520,7 +520,7 @@ export async function decideAgentModeCall(
     setsMode && !approves && !!caller.agentPath && !sameHome(owner, caller.agentPath);
   if (!othersTask && !fits(declared, mode, ceiling)) {
     const highest = clampModeToCeiling(declared, mode, ceiling);
-    return refuse('above_ceiling', aboveCeilingMessage(highest), highest);
+    return refuse('above_ceiling', aboveCeilingMessage(highest, caller.marked), highest);
   }
 
   const asks: AgentModeAskReason[] = [];
