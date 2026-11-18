@@ -17,6 +17,16 @@ import type { CallPermission } from './permission-enforcement.js';
 /** Why a paid run asks a person. */
 export type SpendAskReason = 'no-limit' | 'unknown-price' | 'meter-unreadable';
 
+/**
+ * Why a paid run's card was raised, for the words the agent reads (DOR-4447).
+ * `only` is true when nothing but the spend limit would have raised it, so
+ * setting a limit and a price is what would stop the asking.
+ */
+export interface SpendAsk {
+  reason: SpendAskReason;
+  only: boolean;
+}
+
 /** What the connector preflight tells the gate about one paid run. */
 export type SpendPreflight =
   | { kind: 'run' }

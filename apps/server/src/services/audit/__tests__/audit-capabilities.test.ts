@@ -389,4 +389,13 @@ describe('audit.running_chats at Never ask (DOR-3971)', () => {
     const read = (await registry.invoke('audit.running_chats', {}, {})) as RunningChatsResponse;
     expect(read.unassigned.chats[0]!.title).toBe(PLANTED);
   });
+
+  it('tells the agent in the tool description what a null title means (DOR-4447)', () => {
+    const description = registry.get('audit.running_chats')?.description ?? '';
+    expect(description).toContain(
+      "A `title` is null when the chat has no title yet or it can't be read, or in a Never ask " +
+        'run, which leaves every title out because anyone in a bridged chat can set one; the ' +
+        'link still opens the chat.'
+    );
+  });
 });

@@ -311,7 +311,10 @@ export const auditDomain: CapabilityDomain = {
         'runs, and absent when nothing says so. ' +
         'Every registered agent is listed, zero included, so you ' +
         'can see who is free. `total` is the live count for this server. A person’s own chat ' +
-        'is counted in `privateCount` and never named. Use the link, never the id, when you ' +
+        'is counted in `privateCount` and never named. A `title` is null when the chat has ' +
+        "no title yet or it can't be read, or in a Never ask run, which leaves every title out " +
+        'because anyone in a bridged chat can set one; the link still opens the chat. ' +
+        'Use the link, never the id, when you ' +
         'tell a person about a chat. `capacity` reports each capped backend’s live records ' +
         'and available starts, including reclaimable idle records. When every record is busy, ' +
         'its message says to wait for a chat to finish; restarting is not needed.',
