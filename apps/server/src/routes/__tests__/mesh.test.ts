@@ -25,12 +25,6 @@ vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => {
   return { ...actual, decideSessionGate: vi.fn(actual.decideSessionGate) };
 });
 
-// The account that owns this install, for the credits-consent owner bar (DOR-2652).
-vi.mock('../../services/core/auth/index.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../services/core/auth/index.js')>()),
-  readOwnerAccount: () => ({ id: 'user_owner', name: 'Owner' }),
-}));
-
 vi.mock('../../services/core/cloud/credits-defaults.js', () => ({
   setCreditsAllowedForAgent: vi.fn(),
   creditsAllowedForAgent: vi.fn(() => false),
@@ -87,6 +81,7 @@ import { validateBoundary, validateBoundaryOrDorkHome, BoundaryError } from '../
 import { removeDorkDirectory } from '@dorkos/shared/manifest';
 import { logOrphanedInstalls } from '../../services/mesh/orphaned-installs.js';
 import { setOnAgentCreated } from '../../services/core/agent-created-hook.js';
+import { setTestOwner } from './test-owner.js';
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -169,6 +164,9 @@ describe('Mesh routes', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // A real owner account, for the credits-consent owner bar (DOR-2652). Every
+    // reader agrees there is one, so a change here needs the person's session.
+    setTestOwner('user_owner');
     // Reset validateBoundary to default passthrough
     vi.mocked(validateBoundary).mockImplementation(async (p: string) => p);
 
@@ -779,6 +777,16 @@ describe('Mesh routes', () => {
   // --- PATCH /agents/:id ---
 
   describe('PATCH /api/mesh/agents/:id', () => {
+    /**
+     * The next request comes from the owner in a browser session the gate
+     * proved: with an owner, a change at this computer needs one (DOR-3330).
+     */
+    const asThePerson = () =>
+      vi.mocked(decideSessionGate).mockResolvedValueOnce({
+        allowed: true,
+        user: { userId: 'user_owner', credential: 'cookie', sessionId: 'fixture-owner-browser' },
+      });
+
     it('updates agent and returns updated manifest', async () => {
       const updated = { ...MOCK_MANIFEST, name: 'Updated Agent' };
       meshCore.update.mockReturnValue(updated);
@@ -861,6 +869,7 @@ describe('Mesh routes', () => {
     it('lets a person change an agent’s model here', async () => {
       meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, model: 'opus' });
 
+      asThePerson();
       const res = await request(fixtureServer)
         .patch('/api/mesh/agents/agent-1')
         .send({ model: 'opus' });
@@ -939,6 +948,7 @@ describe('Mesh routes', () => {
     it("carries an agent's model and effort through to the manifest write", async () => {
       meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, model: 'sonnet', effort: 'low' });
 
+      asThePerson();
       const res = await request(fixtureServer)
         .patch('/api/mesh/agents/agent-1')
         .send({ model: 'sonnet', effort: 'low' });
@@ -956,6 +966,7 @@ describe('Mesh routes', () => {
       // edits — a refusal here fails for reasons they cannot see or fix.
       meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, model: 'gpt-5.3-codex' });
 
+      asThePerson();
       const res = await request(fixtureServer)
         .patch('/api/mesh/agents/agent-1')
         .send({ model: 'gpt-5.3-codex' });
@@ -998,6 +1009,7 @@ describe('Mesh routes', () => {
       meshCore.update.mockReturnValue(MOCK_MANIFEST);
       vi.mocked(setCreditsAllowedForAgent).mockClear();
 
+      asThePerson();
       await request(fixtureServer).patch('/api/mesh/agents/agent-1').send({ account: null });
 
       expect(setCreditsAllowedForAgent).toHaveBeenCalledExactlyOnceWith('agent-1', false);
@@ -1035,6 +1047,7 @@ describe('Mesh routes', () => {
         meshCore.get.mockReturnValue({ ...MOCK_MANIFEST, account: 'dorkos-credits' });
         vi.mocked(creditsAllowedForAgent).mockReturnValue(true);
 
+        asThePerson();
         const res = await request(fixtureServer)
           .patch('/api/mesh/agents/agent-1')
           .send({ model: 'sonnet' });
@@ -1049,6 +1062,7 @@ describe('Mesh routes', () => {
         vi.mocked(creditsAllowedForAgent).mockReturnValue(true);
         meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, model: 'md_served' });
 
+        asThePerson();
         const res = await request(fixtureServer)
           .patch('/api/mesh/agents/agent-1')
           .send({ model: 'md_served' });
@@ -1058,12 +1072,14 @@ describe('Mesh routes', () => {
 
       it('judges by credits when the same request puts the agent on them, or credits are the default', async () => {
         meshCore.get.mockReturnValue(MOCK_MANIFEST);
+        asThePerson();
         const both = await request(fixtureServer)
           .patch('/api/mesh/agents/agent-1')
           .send({ account: 'dorkos-credits', model: 'sonnet' });
         expect(both.status).toBe(400);
 
         vi.mocked(creditsIsDefaultFor).mockReturnValue(true);
+        asThePerson();
         const inherited = await request(fixtureServer)
           .patch('/api/mesh/agents/agent-1')
           .send({ model: 'sonnet' });
@@ -1073,6 +1089,7 @@ describe('Mesh routes', () => {
       it('keeps the runtime’s own menu for an agent on its own sign-in, or one nobody allowed', async () => {
         meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, model: 'sonnet' });
         meshCore.get.mockReturnValue({ ...MOCK_MANIFEST, account: 'acme-corp' });
+        asThePerson();
         const own = await request(fixtureServer)
           .patch('/api/mesh/agents/agent-1')
           .send({ model: 'sonnet' });
@@ -1080,6 +1097,7 @@ describe('Mesh routes', () => {
 
         // A file naming credits nobody allowed runs on the default instead.
         meshCore.get.mockReturnValue({ ...MOCK_MANIFEST, account: 'dorkos-credits' });
+        asThePerson();
         const unallowed = await request(fixtureServer)
           .patch('/api/mesh/agents/agent-1')
           .send({ model: 'sonnet' });
@@ -1156,6 +1174,7 @@ describe('Mesh routes', () => {
     it('reads null as "go back to inheriting the server default"', async () => {
       meshCore.update.mockReturnValue(MOCK_MANIFEST);
 
+      asThePerson();
       const res = await request(fixtureServer)
         .patch('/api/mesh/agents/agent-1')
         .send({ model: null, effort: null });

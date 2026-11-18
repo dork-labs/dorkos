@@ -45,7 +45,9 @@ const CREDENTIAL_GATED_ALLOWED: Record<string, string> = {
 
 /** Each route the step-up protects, and the session-aware bar it must run. */
 const ROUTE_BARS: Record<string, readonly string[]> = {
-  'routes/approvals.ts': ['requireOperatorCookieUnderLogin', 'readCallerAuthority'],
+  // The two bars moved out of routes/approvals.ts, which runs both (DOR-4355).
+  'routes/approvals.ts': ['decisionAuthority', 'requirePersonToDecide'],
+  'routes/approval-person-bars.ts': ['requireOperatorCookieUnderLogin', 'readCallerAuthority'],
   'routes/session-answers.ts': ['requireOperatorCookieUnderLogin', 'readCallerAuthority'],
   'routes/permissions.ts': ['requireOperatorCookieUnderLogin', 'readCallerAuthority'],
   'middleware/agent-execution-gate.ts': ['clearsTheAgentBar'],

@@ -29,6 +29,7 @@ import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
+import { setTestOwner } from './test-owner.js';
 
 // The session gate lets every request through: these cases are about the
 // route's own bars, and each one sets the user the gate would have proved
@@ -47,10 +48,6 @@ vi.mock('../../services/core/config-manager.js', () => ({
 vi.mock('../../services/notifications/standing-events.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../services/notifications/standing-events.js')>()),
   raiseStanding: vi.fn(),
-}));
-vi.mock('../../services/core/auth/index.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../services/core/auth/index.js')>()),
-  readOwnerAccount: () => ({ id: 'user_owner', name: 'Owner' }),
 }));
 
 taskRuntimeCapabilitiesFixture();
@@ -92,6 +89,8 @@ describe('PATCH /api/tasks/:id — a live schedule on DorkOS credits (DOR-2678)'
   beforeEach(async () => {
     posture.loginOn = false;
     signedInAs = undefined;
+    // A real owner account, so every reader agrees who owns this DorkOS.
+    setTestOwner('user_owner');
     const scheduler = {
       isStarted: true,
       registerTask: vi.fn(),
