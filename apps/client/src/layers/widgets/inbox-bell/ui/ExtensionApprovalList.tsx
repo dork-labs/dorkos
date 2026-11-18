@@ -118,7 +118,9 @@ const RUNS_AS_YOU_TAIL = / ?It runs as you\.$/;
 
 /**
  * The row's words, as Security wrote them (Nov 8). A copy allowed before whose
- * files changed says so, with what changed and when; a first run asks to run.
+ * files changed says so, with what changed and when; one that also wants a
+ * power the last yes did not cover says that first, in the Designer's words
+ * (DOR-4531); a first run asks to run.
  *
  * @param approval - The waiting copy.
  */
@@ -126,7 +128,9 @@ function wordsOf(approval: PendingExtensionApproval) {
   if (isChangedSinceAllowed(approval)) {
     return {
       changed: true,
-      title: `${approval.name}’s files changed since you allowed it. Its screens are paused until you look.`,
+      title: approval.added
+        ? `${approval.name} was updated and wants more. Its screens are paused until you look.`
+        : `${approval.name}’s files changed since you allowed it. Its screens are paused until you look.`,
       why: approvalChangeLine(approval),
       approveLabel: 'Allow the new version',
       rejectLabel: 'Keep paused',
