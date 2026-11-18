@@ -25,7 +25,6 @@
  * @module services/runtimes/claude-code/accounts/signin-credential-watch
  */
 import fs from 'node:fs';
-import path from 'node:path';
 import { logger } from '../../../../lib/logger.js';
 import { getAccountUsageStore } from '../../../core/usage/current-usage-store.js';
 import {
@@ -34,6 +33,7 @@ import {
   type RuntimeAccount,
 } from '../../../core/usage/runtime-accounts.js';
 import { onAccountSigninChange } from '../../../observability/index.js';
+import { claudeCliConfigFile } from '../claude-config-dir.js';
 import { PROBE_FLOOR_MS, probeAccount, type AccountProbeOutcome } from './account-probe.js';
 
 /** The CLI config file the watch looks at, inside an account's folder. */
@@ -80,6 +80,12 @@ export interface SigninCredentialWatchDeps {
   watch?: CliConfigWatchFactory;
   /** Reads the file's metadata without following a symlink, or `null` when it is missing. */
   lstat?: (file: string) => CliConfigFileFacts | null;
+  /**
+   * The CLI config file for a registry folder (default: `claudeCliConfigFile`,
+   * which mirrors the CLI: inside a named folder, but `~/.claude.json` for the
+   * default `~/.claude`).
+   */
+  cliConfigFileOf?: (folder: string) => string;
   /** Asks for one probe of an account (default: {@link probeAccount}). */
   probe?: (accountId: string) => Promise<{ probe: AccountProbeOutcome }>;
   /** Clock in ms (default: `Date.now`). */
@@ -141,6 +147,7 @@ export function startSigninCredentialWatch(deps: SigninCredentialWatchDeps): () 
   const listAccounts = deps.listAccounts ?? registeredAccounts;
   const watchFile = deps.watch ?? watchWithFs;
   const lstat = deps.lstat ?? lstatWithFs;
+  const cliConfigFileOf = deps.cliConfigFileOf ?? claudeCliConfigFile;
   const probe = deps.probe ?? ((accountId: string) => probeAccount(accountId));
   const now = deps.now ?? Date.now;
   const debounceMs = deps.debounceMs ?? CREDENTIAL_CHANGE_DEBOUNCE_MS;
@@ -271,7 +278,7 @@ export function startSigninCredentialWatch(deps: SigninCredentialWatchDeps): () 
     if (!account || !folder) return;
     if (watched.has(folder)) return;
     try {
-      arm(folder, account.id, path.join(folder, CLI_CONFIG_FILE_NAME));
+      arm(folder, account.id, cliConfigFileOf(folder));
     } catch (err) {
       quietly('could not watch an account', err, { accountId: account.id });
       stop(folder);
