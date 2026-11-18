@@ -293,11 +293,35 @@ describe('ScheduleApprovalCard — what it says', () => {
   });
 
   it('names the agent once when it proposed the schedule and its runs act as it (DOR-4572)', async () => {
-    renderCard(proposal({ agentId: 'agent-a', runsAsName: 'DorkBot' }));
+    // Same agent: its runs stand in the very folder the proposal was stamped with.
+    renderCard(
+      proposal({
+        agentId: 'agent-a',
+        runsAsName: 'DorkBot',
+        runPlace: { kind: 'agent', path: '/Users/dev/agents/dorkbot' },
+      })
+    );
 
     await screen.findByText('Nightly sweep');
-    expect(card().textContent!.match(/DorkBot/g)).toHaveLength(1);
     expect(screen.queryByText(/^Agent:/)).toBeNull();
+    expect(slot('ask-detail')).not.toHaveTextContent('DorkBot');
+  });
+
+  it('still says who the runs act as when another agent shares the proposer’s name', async () => {
+    // A display name proves nothing: any agent can take another's. Two folders.
+    renderCard(
+      proposal({
+        agentId: 'agent-b',
+        runsAsName: 'DorkBot',
+        runPlace: { kind: 'agent', path: '/Users/dev/agents/impostor' },
+      })
+    );
+    expect(await screen.findByText('Agent: DorkBot')).toBeVisible();
+  });
+
+  it('still says who the runs act as when the folder is not known', async () => {
+    renderCard(proposal({ agentId: 'agent-a', runsAsName: 'DorkBot' }));
+    expect(await screen.findByText('Agent: DorkBot')).toBeVisible();
   });
 
   it('quotes the agent’s reason in full, never clamped', async () => {

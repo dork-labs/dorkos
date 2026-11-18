@@ -222,13 +222,16 @@ function ScheduleApprovalContent({
   // review, residual 2).
   const dorkosWrote = foundInFile || task.reasonSource === 'dorkos';
   // The header names the proposer when an agent's own case is shown (an agent
-  // path stamped, and words not DorkOS's), so the byline and the Agent line do
-  // not say the same name again (DOR-4572). The Agent line stays when the runs
-  // act as a different agent. Compared by display name, because the task
-  // carries no proposer id: two agents sharing a name would read the same to a
-  // person on this card anyway.
+  // path stamped, and words not DorkOS's), so the byline does not say the name
+  // again (DOR-4572). The Agent line is left off only when the runs provably
+  // act as that same agent: its folder is the proposer's stamped path. Never by
+  // display name, which any agent can set to match another's, and shown
+  // whenever either path is missing.
   const headerNamesProposer = !dorkosWrote && task.proposedByAgentPath !== null;
-  const agentLine = runsAs && !(headerNamesProposer && runsAs === task.proposedByName);
+  const runsInFolder = task.runPlace?.kind === 'agent' ? task.runPlace.path : null;
+  const runsAsProposer =
+    headerNamesProposer && runsInFolder !== null && runsInFolder === task.proposedByAgentPath;
+  const agentLine = runsAs && !runsAsProposer;
   const firstRuns = formatFirstRuns(task.nextRuns, now);
   const power = useScheduleApprovalPower(task);
   const requested = task.requestedPermissionMode

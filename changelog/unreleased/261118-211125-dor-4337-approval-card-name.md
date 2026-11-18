@@ -2,6 +2,7 @@
 covers:
   - 'fix(schedule-approval): the approval card names the agent once, by its name (DOR-4337, DOR-4572)'
   - 'fix(schedule-approval): what the picked mode does sits under the picker (DOR-4572)'
+  - "fix(schedule-approval): leave off the Agent line only when the runs share the proposer's folder (DOR-4572)"
 ---
 
 ### Fixed
