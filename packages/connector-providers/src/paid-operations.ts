@@ -244,6 +244,8 @@ export const PAID_BY_DEFAULT_TOOLKITS: ReadonlySet<string> = new Set([
   'zoominfo',
   // Pay per call from a prepaid wallet, reads included (DOR-4624, Security Nov 17).
   'strale',
+  // Plants trees at a price each (DOR-4624, Security Nov 18).
+  'digital_humani',
   // Not in the Composio catalog today; kept so a matching name never reads as free.
   'anthropic',
   'browserbase',

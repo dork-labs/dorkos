@@ -58,6 +58,8 @@ describe('pay-per-use apps, by their Composio toolkit names (DOR-4597)', () => {
     'dreamstudio',
     // Every Strale action, reads included, is charged to a prepaid wallet (DOR-4624).
     'strale',
+    // Digital Humani charges for each tree planted (DOR-4624).
+    'digital_humani',
   ];
 
   it.each(MISSED)('marks a %s read paid, so no level covers it', (toolkit) => {
