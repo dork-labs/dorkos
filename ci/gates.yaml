@@ -220,6 +220,11 @@ gates:
     source: .github/workflows/publish-community.yml
     purpose: Publishes and attests the immutable Community image and its strict version-to-digest release manifest.
 
+  # --- arm-door.yml ---
+  - id: wf.arm-door.door
+    source: .github/workflows/arm-door.yml
+    purpose: On every merge-queue entry, takes a PR back out when its head has no success arm-record status from the local arm script, and tells the author once.
+
   # --- queue-repeat-guard.yml ---
   - id: wf.queue-repeat-guard.door
     source: .github/workflows/queue-repeat-guard.yml

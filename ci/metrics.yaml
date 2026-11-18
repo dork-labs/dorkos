@@ -178,6 +178,14 @@ tracked:
       armed on the logged `--no-verify-proof` escape or a coordinator
       override. Hand-audited from the arm log and escapes.jsonl in the common
       git dir; not computed by the daily collector, which cannot see either.
+  - id: tracked.unarmed-queue-entries
+    unit: count
+    definition: >-
+      Merge-queue entries per 7 days whose head carried no `success`
+      `arm-record` status from the local arm script when they were queued
+      (bare `gh pr merge`, a GraphQL enqueue, merge-tail). Read by hand from
+      arm-door.yml's "taken out of the queue" lines and the arm log; not
+      computed by the daily collector.
   - id: tracked.merge-tail-unknown-skips
     unit: count
     definition: >-
