@@ -71,6 +71,8 @@ const OTHER_FRONT_DOOR_CALLERS: Record<string, string> = {
   'account-signin.ts': 'Runtime account sign-in is N.',
   'computers.ts': 'Computer naming and removal; own separate owner checks.',
   'connector-providers.ts': 'Connected-app operations retain their own approval flow.',
+  'connector-spending.ts':
+    'Holds raising the spend limit or lowering a price (DOR-4204); lowering or clearing is free. connector-spending.test.ts.',
   'heartbeats.ts': 'Beat preferences and schedule ownership; no front-door credentials.',
   'local-browser.ts': 'Browser actions retain their existing person checks.',
   'local-browser-profiles.ts': 'Browser profiles retain their existing person checks.',
