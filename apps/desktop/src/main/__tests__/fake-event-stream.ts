@@ -22,13 +22,26 @@ export class FakeEventStream {
   private connectionWaiters: { at: number; resolve: () => void }[] = [];
   port = 0;
   status = 200;
+  /**
+   * The `name=value` sign-in cookie this server asks for, as the session gate
+   * does when "Ask for a password on this computer too" is on. Anything else
+   * answers `401`. `null` asks for nothing.
+   */
+  requiredCookie: string | null = null;
+  /** The `Cookie` header each connection carried, in order (`undefined` for none). */
+  readonly cookiesSeen: (string | undefined)[] = [];
   /** How many times a client has connected — proves reconnection, and that two watchers share one connection. */
   connections = 0;
 
   constructor() {
-    this.server = http.createServer((_req, res) => {
+    this.server = http.createServer((req, res) => {
       this.connections += 1;
+      this.cookiesSeen.push(req.headers.cookie);
       this.settleConnectionWaiters();
+      if (this.requiredCookie !== null && !hasCookie(req.headers.cookie, this.requiredCookie)) {
+        res.writeHead(401).end();
+        return;
+      }
       if (this.status !== 200) {
         res.writeHead(this.status).end();
         return;
@@ -116,6 +129,11 @@ export class FakeEventStream {
     this.dropClients();
     await new Promise<void>((resolve) => this.server.close(() => resolve()));
   }
+}
+
+/** Whether a `Cookie` header carries this exact `name=value` pair. */
+function hasCookie(header: string | undefined, pair: string): boolean {
+  return (header ?? '').split(';').some((part) => part.trim() === pair);
 }
 
 /** One subscription made through {@link FakeEventSource}, as the source sees it. */
