@@ -1588,5 +1588,169 @@ describe('tasks_* and an agent’s mode or approval', () => {
       expect((await backfill({ cron: '0 3 * * *' })).isError).toBe(true);
       expect((await backfill({ runOnce: undefined })).isError).toBe(true);
     });
+
+    describe('a live Bypass task moves to Don’t ask with its own list (PR 2)', () => {
+      /** Agent A's own recurring task, live at Bypass, as Media Manager's hourly one is. */
+      async function bypassTask(): Promise<string> {
+        const id = await ownTask();
+        await call(toolsOfA().tasks_update!, { id, permissionMode: 'bypassPermissions' });
+        expect(store.getTask(id)).toMatchObject({
+          status: 'active',
+          permissionMode: 'bypassPermissions',
+        });
+        return id;
+      }
+
+      async function narrow(id: string, allowList: unknown[], as = toolsOfA()) {
+        return call(as.tasks_update!, { id, permissionMode: 'dontAsk', allowList });
+      }
+
+      it('narrows with no card: Don’t ask, the exact list, every program pinned, audited as the agent’s', async () => {
+        const id = await bypassTask();
+        const { isError, payload } = await narrow(id, [check, run, verify]);
+        expect(isError, JSON.stringify(payload)).toBe(false);
+        expect(store.getTask(id)).toMatchObject({
+          status: 'active',
+          permissionMode: 'dontAsk',
+          approvedAllow: [check, run, verify],
+          cron: '0 3 * * *',
+        });
+        expect(approvals.listPending()).toEqual([]);
+        expect(Object.keys(store.runControls.pinsOf(id).programs).sort()).toEqual(
+          [check, run, verify].sort()
+        );
+        const [row] = listAudits();
+        const change = JSON.stringify(row);
+        expect(change).toContain('narrow_from_bypass');
+        expect(change).toContain('setBy');
+      });
+
+      it('then removes its own commands with no card, as in PR 1', async () => {
+        const id = await bypassTask();
+        await narrow(id, [check, run, verify]);
+        const cleared = await call(toolsOfA().tasks_update!, { id, allowList: [verify] });
+        expect(cleared.isError).toBe(false);
+        expect(store.getTask(id)?.approvedAllow).toEqual([verify]);
+      });
+
+      it('changes nothing when a person lowers the task to Default while the call is in flight', async () => {
+        const id = await bypassTask();
+        let lowered = false;
+        hooks.onRead = async () => {
+          if (lowered) return;
+          lowered = true;
+          store.updateTask(id, { permissionMode: 'default' });
+        };
+        const { isError } = await narrow(id, [check, run, verify]);
+        hooks.onRead = undefined;
+        expect(isError).toBe(true);
+        expect(store.getTask(id)).toMatchObject({ permissionMode: 'default', approvedAllow: null });
+        expect(store.runControls.pinsOf(id).programs).toEqual({});
+      });
+
+      it('asks a person for a task already at Default', async () => {
+        const id = await ownTask();
+        store.updateTask(id, { permissionMode: 'default' });
+        const refused = await narrow(id, [run]);
+        expect(refused).toMatchObject({
+          isError: true,
+          payload: { code: 'allow_list_ask_person' },
+        });
+        expect(store.getTask(id)).toMatchObject({ permissionMode: 'default', approvedAllow: null });
+      });
+
+      it('asks a person for a parked Bypass task', async () => {
+        const id = await bypassTask();
+        store.updateTask(id, { status: 'pending_approval' });
+        const refused = await narrow(id, [run]);
+        expect(refused).toMatchObject({
+          isError: true,
+          payload: { code: 'allow_list_ask_person' },
+        });
+        expect(store.getTask(id)).toMatchObject({
+          permissionMode: 'bypassPermissions',
+          approvedAllow: null,
+        });
+      });
+
+      it('refuses another agent’s Bypass task', async () => {
+        const id = await bypassTask();
+        const raw = getTasksTools(deps, () => ({ sessionId: 'ses-b', agentPath: homeB }));
+        const tools = Object.fromEntries((raw as unknown as SessionTool[]).map((t) => [t.name, t]));
+        const refused = await narrow(id, [run], tools);
+        expect(refused.isError).toBe(true);
+        expect(store.getTask(id)).toMatchObject({
+          permissionMode: 'bypassPermissions',
+          approvedAllow: null,
+        });
+      });
+
+      it('does not narrow from a turn that read outside words', async () => {
+        const id = await bypassTask();
+        await ranTurn('ses-marked', 'bypassPermissions', { carriedMarks: { outsider: true } });
+        const marked = await narrow(id, [run], toolsOfA({ sessionId: 'ses-marked' }));
+        expect(marked.isError || marked.payload.status === 'approval_required').toBe(true);
+        expect(store.getTask(id)).toMatchObject({
+          permissionMode: 'bypassPermissions',
+          approvedAllow: null,
+        });
+      });
+
+      it('asks a person when a Don’t ask task’s list grows', async () => {
+        const id = await bypassTask();
+        await narrow(id, [check]);
+        const grown = await narrow(id, [check, run]);
+        expect(grown).toMatchObject({ isError: true, payload: { code: 'allow_list_ask_person' } });
+        expect(store.getTask(id)?.approvedAllow).toEqual([check]);
+      });
+
+      it('refuses a Codex task', async () => {
+        const id = await bypassTask();
+        store.updateTask(id, { runtime: 'codex' });
+        const refused = await narrow(id, [run]);
+        expect(refused.isError).toBe(true);
+        expect(store.getTask(id)?.approvedAllow ?? null).toBeNull();
+      });
+
+      it('refuses an agent whose own level asks before commands', async () => {
+        const id = await bypassTask();
+        hooks.level = 'acceptEdits';
+        await ranTurn('ses-a', 'acceptEdits');
+        const refused = await narrow(id, [run]);
+        expect(refused.isError).toBe(true);
+        expect(store.getTask(id)).toMatchObject({
+          permissionMode: 'bypassPermissions',
+          approvedAllow: null,
+        });
+      });
+
+      it('pins QA’s script run as its own program, and refuses `python3` in front of it', async () => {
+        const publish = path.join(homeA, 'bin', 'publish');
+        await fs.writeFile(publish, '#!/usr/bin/env python3\nprint("dry run")\n', { mode: 0o755 });
+        const id = await bypassTask();
+        const viaPython = await narrow(id, [`Bash(/usr/bin/python3 ${publish} --dry-run)`]);
+        expect(viaPython).toMatchObject({
+          isError: true,
+          payload: { code: 'allow_list_not_exact' },
+        });
+        const direct = `Bash(${publish} --dry-run)`;
+        expect((await narrow(id, [direct])).isError).toBe(false);
+        expect(store.runControls.pinsOf(id).programs[direct]).toMatchObject({ path: publish });
+      });
+
+      it('refuses the move beside any other change, or with an empty list', async () => {
+        const id = await bypassTask();
+        const both = await call(toolsOfA().tasks_update!, {
+          id,
+          permissionMode: 'dontAsk',
+          allowList: [run],
+          prompt: 'other',
+        });
+        expect(both).toMatchObject({ isError: true, payload: { code: 'list_alone' } });
+        const empty = await narrow(id, []);
+        expect(empty).toMatchObject({ isError: true, payload: { code: 'allow_list_empty' } });
+        expect(store.getTask(id)?.permissionMode).toBe('bypassPermissions');
+      });
+    });
   });
 });

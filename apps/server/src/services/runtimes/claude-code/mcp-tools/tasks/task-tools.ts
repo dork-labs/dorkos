@@ -52,6 +52,7 @@ import {
   settleAllowListCall,
   updateAllowListAlone,
 } from './task-tool-allow-list.js';
+import { moveToDontAskWithList, namesMoveToDontAsk } from './task-tool-narrow-bypass.js';
 import {
   clampSchedulePermissionMode,
   taskWorkOf,
@@ -419,12 +420,16 @@ export function createUpdateScheduleHandler(
     if (err) return err;
     const refusal = refuseOperatorOnlyTaskFields(args);
     if (refusal) return refusal;
-    // An allow list narrows in a call of its own, with no card (DOR-4315).
+    // An allow list narrows in a call of its own, with no card (DOR-4315), or rides
+    // its own live Bypass task's move to Don't ask (PR 2).
     if (args.allowList !== undefined) {
-      return updateAllowListAlone(deps, args, {
+      const who = {
         caller: agentModeCallerOf(resolveProvenance, callerMarks, callerAgent, deps.taskStore),
         ...callerAgentPathOf(resolveProvenance?.() ?? {}, callerAgent),
-      });
+      };
+      return namesMoveToDontAsk(args)
+        ? moveToDontAskWithList(deps, args, who)
+        : updateAllowListAlone(deps, args, who);
     }
 
     // `id` is a tool ARGUMENT, not a field of the task, so it is stripped before

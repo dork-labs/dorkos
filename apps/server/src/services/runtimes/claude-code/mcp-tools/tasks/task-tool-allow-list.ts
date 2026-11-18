@@ -37,7 +37,9 @@ import {
   ALLOW_LIST_MODE,
   decideAllowList,
   narrowingOf,
+  runsAnyCommandUnasked,
 } from '../../../../tasks/allow-list/allow-list-rule.js';
+import { levelOfMode, type DeclaredModes } from '@dorkos/shared/permission-semantics';
 import { allowListChange } from '../../../../tasks/allow-list/task-allow-list.js';
 import {
   mergePins,
@@ -54,7 +56,12 @@ export interface AllowListWrite {
   removed: string[];
   /** The pins after the change: kept entries keep theirs, added ones are new. */
   pins: AllowListPins;
+  /** How the agent may set it: narrowing a list, a one-shot's first list, or off Bypass. */
+  via: AllowListVia;
 }
+
+/** How an agent-set list change was allowed, as its audit row records it. */
+export type AllowListVia = 'narrowing' | 'one_shot' | 'narrow_from_bypass';
 
 /** A refusal, in the envelope every task tool answers with. */
 export interface AllowListRefusal {
@@ -79,6 +86,8 @@ export interface AllowListCall {
   /** The create's target: an agent id or `global`. */
   target?: string;
   caller: AgentModeCaller;
+  /** The call moves the task to Don't ask with this list (`task-tool-narrow-bypass.ts`). */
+  movesToDontAsk?: true;
 }
 
 /** What an agent reads about `allowList`. */
@@ -89,8 +98,9 @@ export const ALLOW_LIST_DESCRIPTION =
   'program that runs another (a shell, a language runtime, `env`, `timeout`, `git`, `make`, or a ' +
   'link to one). Up to 20, Claude Code only, and only commands your own level already ' +
   'runs without asking. DorkOS records each program and refuses the run if it changes. On ' +
-  'tasks_update, send a shorter list (or `[]`) in a call of its own to remove commands. Every ' +
-  'change is recorded.';
+  'tasks_update, send a shorter list (or `[]`) in a call of its own to remove commands, or, ' +
+  'for your own task that is on at Bypass, send it with only `id` and `permissionMode: ' +
+  '"dontAsk"` to move it to Don’t ask with those commands. Every change is recorded.';
 
 /** What an agent reads about `runOnce`. */
 export const RUN_ONCE_DESCRIPTION =
@@ -120,14 +130,21 @@ export async function settleAllowListCall(
   if (!Object.hasOwn(call.body, 'allowList')) return { kind: 'none' };
   const previous = call.task ? deps.taskStore!.runControls.pinsOf(call.task.id) : null;
   const before = call.task?.approvedAllow ?? [];
-  // Removing only narrows: no switch, level or mode is asked about it.
-  const narrowed = narrowingOf(call.body.allowList, before);
+  // Removing only narrows: no switch, level or mode is asked about it. A move off
+  // Bypass is judged whole below, so no entry rides it unpinned.
+  const narrowed = call.movesToDontAsk ? null : narrowingOf(call.body.allowList, before);
   if (narrowed) {
     if (narrowed.length === before.length) return { kind: 'none' };
     const pins = mergePins(previous, {}, narrowed, new Date().toISOString());
     return {
       kind: 'write',
-      write: { before, after: narrowed, ...allowListChange(before, narrowed), pins },
+      write: {
+        before,
+        after: narrowed,
+        ...allowListChange(before, narrowed),
+        pins,
+        via: 'narrowing',
+      },
     };
   }
   if (!agentModeControlOn()) {
@@ -152,11 +169,21 @@ export async function settleAllowListCall(
     (typeof call.body.permissionMode === 'string' ? call.body.permissionMode : undefined) ??
     call.task?.permissionMode ??
     '';
+  const narrowsFromBypass = movesOffBypass(call, declared, mode);
+  if (call.movesToDontAsk && !narrowsFromBypass) {
+    return refusal(
+      'allow_list_ask_person',
+      'Only your own task that is on and runs every command without asking (Bypass) moves to ' +
+        'Don’t ask with a list on its own. For any other task, put the commands in ' +
+        '`requestedAllow` and a person approves them on its card.'
+    );
+  }
   const verdict = decideAllowList({
     body: call.body,
     before,
     createsOneShot: call.door === 'create' && call.body.runOnce === true,
     listEverSet: previous?.firstSetAt != null || before.length > 0,
+    narrowsFromBypass,
     mode,
     ceiling: await ceilingOf(call.caller, owner, runtime, declared, sources),
     runtime,
@@ -170,12 +197,35 @@ export async function settleAllowListCall(
   if (verdict.kind === 'refused') return refusal(verdict.code, verdict.message);
   const { after, added, removed } = verdict;
   // Each added program, pinned now: a run on other bytes is refused (Security's ruling).
-  const pinned = await pinPrograms(added);
+  // Off Bypass, every entry is the agent's and pinned now, a person's old ones included.
+  const pinned = await pinPrograms(narrowsFromBypass ? after : added);
   if (!pinned.ok) {
     return refusal('allow_list_program', `DorkOS can’t read the program in ${pinned.rule}.`);
   }
-  const pins = mergePins(previous, pinned.programs, after, new Date().toISOString());
-  return { kind: 'write', write: { before: verdict.before, after, added, removed, pins } };
+  const now = new Date().toISOString();
+  const pins = narrowsFromBypass
+    ? mergePins(previous ? { ...previous, programs: {} } : null, pinned.programs, after, now)
+    : mergePins(previous, pinned.programs, after, now);
+  const via: AllowListVia = narrowsFromBypass ? 'narrow_from_bypass' : 'one_shot';
+  return { kind: 'write', write: { before: verdict.before, after, added, removed, pins, via } };
+}
+
+/**
+ * Whether a call moves a live task that runs every command without asking to
+ * Don't ask: the one existing task an agent's own list only narrows. Read from
+ * the task as stored; the write checks it again (`task-tool-narrow-bypass.ts`).
+ *
+ * @param call - The call.
+ * @param declared - The runtime's declared modes.
+ * @param mode - The mode the task runs at once the call lands.
+ */
+function movesOffBypass(call: AllowListCall, declared: DeclaredModes, mode: string): boolean {
+  const task = call.task;
+  if (!call.movesToDontAsk || call.door !== 'update' || !task || mode !== ALLOW_LIST_MODE) {
+    return false;
+  }
+  const level = levelOfMode(declared, task.permissionMode);
+  return task.status === 'active' && level !== undefined && runsAnyCommandUnasked(level);
 }
 
 /**
@@ -222,6 +272,9 @@ export function auditAllowListChange(
       { field: 'setterAgentPath', after: caller.agentPath ?? null },
       { field: 'identityResolvedVia', after: caller.resolved ?? 'unidentified' },
       { field: 'scheduledRun', after: caller.scheduledRun === true || caller.heartbeat === true },
+      // Agent-set, never a person's: how the agent was allowed to set it.
+      { field: 'setBy', after: 'agent' },
+      { field: 'via', after: write.via },
     ],
     summary:
       write.added.length > 0
