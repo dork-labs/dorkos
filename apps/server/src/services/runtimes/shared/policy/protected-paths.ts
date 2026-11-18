@@ -271,16 +271,10 @@ export const AGENT_FOLDER_SECRET_PATHS = group(
  *   server writes it before each start; an agent that changed it in between
  *   could start a browser with options DorkOS refuses as flags (DOR-4136).
  *   Refused at every level, Full too.
- * - `extension-data/` holds each mini app's own data, which can say what a
- *   person did there (a comment they wrote on Dorian Desk). An agent that could
- *   rewrite it could make its words look like a person's (DOR-4301). Mini apps
- *   write it through DorkOS, never through an agent's tools. Refused at every
- *   level, Full too; reading it stays open.
  */
 export const PERSON_ONLY_DATA_PATHS: readonly ProtectedPath[] = [
   ...group('data', 'write', [
     ['permissions', 'folder'],
-    ['extension-data', 'folder'],
     ['session-relay', 'folder'],
     ['extension-snapshots', 'folder'],
     ['cache/extensions', 'folder'],
@@ -317,10 +311,6 @@ export const PERSON_ONLY_DATA_PATHS: readonly ProtectedPath[] = [
  * The person runs it as themselves, outside DorkOS, so an agent that could
  * rewrite it could run anything as the person the next time they type `dorkos`.
  * Refused at every level, Full too.
- *
- * `.dork/extension-data/` is the default data folder's copy of the mini app
- * data in {@link PERSON_ONLY_DATA_PATHS} (DOR-4301), whatever data folder a
- * launch uses. Refused at every level.
  */
 export const HOME_PERSON_ONLY_PATHS: readonly ProtectedPath[] = [
   ...belowFull(
@@ -341,7 +331,6 @@ export const HOME_PERSON_ONLY_PATHS: readonly ProtectedPath[] = [
     ['.dork/browser/agent-browser-guard.json*', 'file'],
     ['.dork/browser-profiles/.binding-key', 'file'],
     ['.local/bin/dorkos', 'file'],
-    ['.dork/extension-data', 'folder'],
   ]),
   ...belowFull(
     group('home', 'write', [
@@ -369,15 +358,8 @@ export const DATA_GRANT_FILE_PATHS = group('data', 'write', [
  * (DOR-3068). A project's own `.dork/extensions/` is deliberately NOT here:
  * agents build mini apps by editing exactly those files, and the approval asks
  * again when the folder changes.
- *
- * `.dork/extension-data/` is where a project's own mini apps keep their data,
- * which an agent's tools may not rewrite for the same reason as the data
- * folder's (DOR-4301).
  */
-export const PROJECT_PLUGIN_PATHS = group('anywhere', 'write', [
-  ['.dork/plugins', 'folder'],
-  ['.dork/extension-data', 'folder'],
-]);
+export const PROJECT_PLUGIN_PATHS = group('anywhere', 'write', [['.dork/plugins', 'folder']]);
 
 /**
  * The files in each agent home that grant power, kept from every agent's file

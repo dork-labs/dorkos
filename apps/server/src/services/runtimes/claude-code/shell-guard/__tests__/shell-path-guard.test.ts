@@ -893,46 +893,6 @@ describe('shell writes to the Terminal command', () => {
   });
 });
 
-// DOR-4301: a mini app's data folder holds what it recorded a person doing. A command that
-// rewrites it could make an agent's words look like a person's, so it is refused at every level.
-describe('shell writes to a mini app’s data folder', () => {
-  it.each([
-    [
-      'a redirect into its data file',
-      () => `echo '{}' > $DORK_HOME/extension-data/made-up-app/data.json`,
-    ],
-    ['copying over it', () => `cp /tmp/x ${roots.dorkHome}/extension-data/made-up-app/data.json`],
-    [
-      'editing it in place',
-      () => `sed -i '' 's/a/b/' $DORK_HOME/extension-data/made-up-app/data.json`,
-    ],
-    [
-      'sqlite3 on its database',
-      () => `sqlite3 $DORK_HOME/extension-data/made-up-app/store.db "DELETE FROM t"`,
-    ],
-    ['removing the whole folder', () => `rm -rf $DORK_HOME/extension-data`],
-    [
-      'a python script',
-      () =>
-        `python3 -c "open('${roots.dorkHome}/extension-data/made-up-app/data.json','w').write('x')"`,
-    ],
-    [
-      'the default data folder’s copy',
-      () => `cp /tmp/x ~/.dork/extension-data/made-up-app/data.json`,
-    ],
-  ])('refuses %s, at every level', (_label, command) => {
-    expect(shellWriteVerdict(command(), roots)).toBe('writes');
-    expect(shellWriteVerdict(command(), { ...roots, full: true })).toBe('writes');
-  });
-
-  it.each([
-    ['reading its data file', `cat $DORK_HOME/extension-data/made-up-app/data.json`],
-    ['a folder named like it in the working folder', `echo x > extension-data.json`],
-  ])('leaves %s alone', (_label, command) => {
-    expect(shellWriteVerdict(command, roots)).toBe('none');
-  });
-});
-
 describe('commandWritesAgentSetup', () => {
   it.each([
     ['a redirect', () => `echo '{}' > ${agent}/.claude/settings.json`],

@@ -274,21 +274,6 @@ describe.each(adapters)('%s native file protection', (adapter) => {
     expect(await refused(adapter, file, entry.deny, true)).toBe(true);
   });
 
-  // DOR-4301: a mini app's data can say what a person did, so an agent's file
-  // tools never write it, at any level, and may still read it.
-  it.each([
-    ['the data folder’s', () => path.join(roots.data, 'extension-data/made-up-app/data.json')],
-    [
-      'a project’s',
-      () => path.join(roots.cwd, 'nested/.dork/extension-data/made-up-app/data.json'),
-    ],
-    ['the default data folder’s', () => path.join(roots.home, '.dork/extension-data/x/store.db')],
-  ])('refuses a write to %s mini app data, at every level', async (_label, file) => {
-    expect(await refused(adapter, file(), 'write')).toBe(true);
-    expect(await refused(adapter, file(), 'write', true)).toBe(true);
-    expect(await refused(adapter, file(), 'read')).toBe(false);
-  });
-
   it('still lets an agent write its own files beside the browser folders', async () => {
     expect(await refused(adapter, path.join(roots.cwd, 'storage-state.json'), 'write')).toBe(false);
     expect(await refused(adapter, path.join(roots.data, 'browser-notes.txt'), 'write')).toBe(false);
