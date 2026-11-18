@@ -1,6 +1,9 @@
 ---
 covers:
   - 'fix(rooms): preserve chat settings during recovery (DOR-4328)'
+  - d35370a
+  - 12140a8
+  - 72dd46c
 ---
 
 ### Fixed
