@@ -223,6 +223,30 @@ describe('SessionPumpRegistry reclaim grace', () => {
     await Promise.allSettled([first, second]);
   });
 
+  // Purpose: a waiter whose answer flips from "skip" to "wait" stops jumping.
+  // Left in the jumping set, it would hold every launch, itself included,
+  // until the slot wait ran out.
+  it('drops a waiter from the jump when it stops skipping the grace', async () => {
+    const registry = new SessionPumpRegistry(identity);
+    const launched: FakeQuery[] = [];
+    // Mid-turn and no grace of its own, so it frees a slot when its turn ends.
+    const busy = registry.acquire('busy', launchOpts(launched, { reclaimGraceMs: undefined }));
+    await busy.dispatch([{ content: 'a', messageId: 'msg-a' }]);
+
+    let skips = true;
+    const flipping = registry
+      .acquire('flipping', launchOpts(launched, { slotWaitMs: 500, skipReclaimGrace: () => skips }))
+      .warm();
+    await sleep(10);
+    expect(registry.isWaitingForSlot('flipping')).toBe(true);
+
+    skips = false;
+    busy.endTurn();
+
+    await flipping;
+    expect(registry.warmth('flipping')).toBe('warm');
+  });
+
   // Purpose: a reclaim closes the process it takes. DorkOS's part of "no orphan
   // MCP child" is reaching the forceful close on the CLI, whose own exit takes
   // its stdio servers with it (0 orphans found after 57 reclaims, 2026-11-18).

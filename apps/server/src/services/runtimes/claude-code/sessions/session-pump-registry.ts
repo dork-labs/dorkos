@@ -612,7 +612,10 @@ export class SessionPumpRegistry {
         // reaching for a slot the agents step aside, so the slot it frees is the
         // one it gets. Agents keep their first-come order among themselves.
         const jumps = this.entries.get(sessionId)?.skipReclaimGrace?.() === true;
+        // Re-read every pass: an answer that flips to "wait" must leave the set,
+        // or it would hold every launch, itself included, until the deadline.
         if (jumps) this.jumping.add(sessionId);
+        else this.jumping.delete(sessionId);
         const myTurn =
           jumps ||
           (this.jumping.size === 0 &&
