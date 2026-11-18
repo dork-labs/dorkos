@@ -95,7 +95,8 @@ export function addingEntriesAsksAPerson(change: {
   narrowsFromBypass?: boolean;
   adder: AllowListAdder;
 }): boolean {
-  if (change.added.length === 0) return false;
+  // A move off Bypass is held to every rule, even when it adds nothing new.
+  if (change.added.length === 0 && change.narrowsFromBypass !== true) return false;
   const { ownChatOwnTask, marked, scheduledRun } = change.adder;
   if (scheduledRun || marked || !ownChatOwnTask) return true;
   if (change.narrowsFromBypass === true) return false;

@@ -37,7 +37,9 @@ import {
   recordToolModeOutcome,
   settleToolModeCall,
 } from './task-tool-mode.js';
+import { agentModeControlOn } from '../../../../tasks/agent-mode/agent-mode-actions.js';
 import {
+  auditAllowListAborted,
   auditAllowListChange,
   settleAllowListCall,
   type AllowListUpdateCaller,
@@ -113,10 +115,7 @@ export async function moveToDontAskWithList(
   });
   if (mode.refusal) return jsonContent(mode.refusal, true);
   if (!mode.grant?.decision.setsMode) {
-    return jsonContent(
-      { error: AGENT_MODE_REFUSAL_ERROR, code: 'allow_list_off', message: OFF_MESSAGE },
-      true
-    );
+    return jsonContent(agentModeControlOn() ? NO_MODE_REFUSAL : OFF_REFUSAL, true);
   }
   // The list, judged as a move off Bypass (or refused, naming `requestedAllow`).
   const settled = await settleAllowListCall(deps, {
@@ -150,6 +149,7 @@ export async function moveToDontAskWithList(
     { existing, data: { permissionMode: ALLOW_LIST_MODE }, reviewStillMatches: stillSo }
   );
   if (!fileOutcome.ok) {
+    auditAllowListAborted(existing, write, who.caller, fileOutcome.code ?? 'file_not_written');
     return jsonContent(
       {
         error: fileOutcome.error,
@@ -176,20 +176,18 @@ export async function moveToDontAskWithList(
       return store.getTask(now.id);
     });
   } catch {
-    // The file says Don't ask and the row was left alone: the next sync reads the
-    // file back, which only narrows what the task runs.
-    return jsonContent(NARROW_CHANGED_REFUSAL, true);
+    // The file already says Don't ask and the row was left as the person set it. Not
+    // put back to Bypass, which could undo the person's change; the next sync reads the
+    // file, which only narrows what the task runs. Said plainly, and recorded.
+    auditAllowListAborted(existing, write, who.caller, 'task_changed');
+    return jsonContent(CHANGED_AFTER_FILE_REFUSAL, true);
   }
   if (!updated) return jsonContent({ error: `Schedule ${args.id} not found` }, true);
 
-  // The mode change alone is the mode's record; the list's is its own audit row.
-  const stands = await recordToolModeOutcome(
-    deps,
-    mode,
-    existing,
-    { ...existing, permissionMode: ALLOW_LIST_MODE },
-    who.caller
-  );
+  // The task as written: its list is the agent's, and the record says so (Must 2).
+  const stands = await recordToolModeOutcome(deps, mode, existing, updated, who.caller, false, {
+    allowListSetBy: 'agent',
+  });
   if (!stands) return jsonContent(NOT_TOLD_REFUSAL, true);
   deps.resolveTaskRegistrar?.()?.syncTask(updated.id);
   broadcastTasksChanged();
@@ -201,7 +199,28 @@ export async function moveToDontAskWithList(
   });
 }
 
-const OFF_MESSAGE = 'Agents can’t change a task’s mode on this DorkOS.';
+/** The refusal when agents can't change a task's mode on this install. */
+const OFF_REFUSAL = {
+  error: AGENT_MODE_REFUSAL_ERROR,
+  code: 'allow_list_off',
+  message: 'Agents can’t change a task’s mode on this DorkOS.',
+} as const;
+
+/** The refusal when the mode change settled to nothing to set. */
+const NO_MODE_REFUSAL = {
+  error: AGENT_MODE_REFUSAL_ERROR,
+  code: 'mode_not_set',
+  message: 'DorkOS could not settle the move to Don’t ask, so nothing changed.',
+} as const;
+
+/** The refusal when the task changed after its file was already moved to Don't ask. */
+export const CHANGED_AFTER_FILE_REFUSAL = {
+  error: AGENT_MODE_REFUSAL_ERROR,
+  code: 'task_changed',
+  message:
+    'The task changed while DorkOS was moving it. Its file now says Don’t ask with no ' +
+    'commands, so it runs no commands without asking. Read it again before you change it.',
+} as const;
 
 /** What the move was decided against: {@link agentModeSnapshotOf}, mode included. */
 function snapshotOf(deps: McpToolDeps, task: Task): string {

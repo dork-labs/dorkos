@@ -13,6 +13,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs/promises';
+import { appendFileSync } from 'node:fs';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { MeshCore } from '@dorkos/mesh';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -1708,8 +1709,73 @@ describe('tasks_* and an agent’s mode or approval', () => {
         const id = await bypassTask();
         store.updateTask(id, { runtime: 'codex' });
         const refused = await narrow(id, [run]);
-        expect(refused.isError).toBe(true);
+        expect(refused).toMatchObject({ isError: true, payload: { code: 'allow_list_runtime' } });
         expect(store.getTask(id)?.approvedAllow ?? null).toBeNull();
+      });
+
+      it('says in Activity that the list is the agent’s', async () => {
+        const id = await bypassTask();
+        emit.mockClear();
+        await narrow(id, [run]);
+        const line = emit.mock.calls.find(
+          ([event]) => (event as { eventType?: string }).eventType === 'tasks.task_mode_changed'
+        )?.[0] as { metadata?: Record<string, unknown> } | undefined;
+        expect(line?.metadata).toMatchObject({
+          permissionMode: 'dontAsk',
+          approvedAllow: [run],
+          allowListSetBy: 'agent',
+        });
+      });
+
+      it('writes nothing to the row when a person lowers it after its file was written', async () => {
+        const id = await bypassTask();
+        const real = store.approvals.inTransaction.bind(store.approvals);
+        vi.spyOn(store.approvals, 'inTransaction').mockImplementationOnce((fn) => {
+          store.updateTask(id, { permissionMode: 'default' });
+          return real(fn);
+        });
+        const { isError, payload } = await narrow(id, [run]);
+        expect(isError).toBe(true);
+        expect(payload).toMatchObject({ code: 'task_changed' });
+        expect(String(payload.message)).toContain('no commands');
+        expect(store.getTask(id)).toMatchObject({ permissionMode: 'default', approvedAllow: null });
+        expect(store.runControls.pinsOf(id).programs).toEqual({});
+        // The log says the list was not written, beside the row that said it would be.
+        expect(listAudits().map((row) => row.outcome)).toEqual(['ok', 'failed']);
+      });
+
+      it('writes nothing when the SKILL file changes after the decision', async () => {
+        const id = await bypassTask();
+        const file = store.getTask(id)!.filePath!;
+        const log = new AuditLog(auditDb);
+        const record = log.record.bind(log);
+        let touched = false;
+        vi.spyOn(log, 'record').mockImplementation((input) => {
+          // The list's audit row is written after the first check, before the file write.
+          if (input.action === 'tasks.set_allow_list' && !touched) {
+            touched = true;
+            appendFileSync(file, '\n');
+          }
+          return record(input);
+        });
+        resetAuditTrail();
+        initAuditTrail({
+          log,
+          accounts: new AccountIds({
+            db: auditDb,
+            installId: 'inst-test',
+            readOwnerAccount: () => null,
+          }),
+        });
+        const { isError, payload } = await narrow(id, [run]);
+        expect(touched).toBe(true);
+        expect(isError).toBe(true);
+        expect(payload).toMatchObject({ code: 'schedule_review_changed' });
+        expect(store.getTask(id)).toMatchObject({
+          permissionMode: 'bypassPermissions',
+          approvedAllow: null,
+        });
+        expect(listAudits().map((row) => row.outcome)).toEqual(['ok', 'failed']);
       });
 
       it('refuses an agent whose own level asks before commands', async () => {

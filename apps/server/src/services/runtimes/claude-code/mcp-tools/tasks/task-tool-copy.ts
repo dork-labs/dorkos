@@ -325,5 +325,5 @@ export const TASKS_UPDATE_DESCRIPTION =
   "Another agent's task, its prompt included, can be changed only from a chat at Full autonomy " +
   `whose turn ${unmarkedTurnClause()}, and never above that agent's own level. ` +
   'Send allowList alone with id to remove commands from a task; that needs no approval. ' +
-  'To move your own running Bypass task to dontAsk with the exact commands it needs, send ' +
+  'To move your own Bypass task that is on to dontAsk with the exact commands it needs, send ' +
   'only id, permissionMode "dontAsk" and allowList; that narrows it and needs no approval.';

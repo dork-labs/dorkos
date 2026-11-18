@@ -40,6 +40,8 @@ import {
   runsAnyCommandUnasked,
 } from '../../../../tasks/allow-list/allow-list-rule.js';
 import { levelOfMode, type DeclaredModes } from '@dorkos/shared/permission-semantics';
+import { taskRunRuntime } from '../../../../tasks/execution/run-runtime.js';
+import { runtimeRegistry } from '../../../../core/runtime-registry.js';
 import { allowListChange } from '../../../../tasks/allow-list/task-allow-list.js';
 import {
   mergePins,
@@ -151,8 +153,15 @@ export async function settleAllowListCall(
     return refusal('allow_list_off', 'Agents can’t set a task’s allow list on this DorkOS.');
   }
   const sources = liveAgentModeSources(deps.meshCore);
+  // A task that names no runtime runs on its agent's, or the default: judged on that one.
   const runtime =
-    (typeof call.body.runtime === 'string' ? call.body.runtime : undefined) ?? call.task?.runtime;
+    (typeof call.body.runtime === 'string' ? call.body.runtime : undefined) ??
+    call.task?.runtime ??
+    (await taskRunRuntime(
+      { runtime: null, agentId: call.task?.agentId ?? agentIdOfTarget(call.target) },
+      runtimeRegistry,
+      deps.meshCore
+    ));
   const declared = sources.declaredModes(runtime);
   if (!declared) return refusal('unknown_mode', 'DorkOS can’t tell how this task’s runs work.');
   const owner = taskOwnerOf(
@@ -256,6 +265,8 @@ export function auditAllowListChange(
   caller: AgentModeCaller
 ): boolean {
   const label = task.displayName ?? task.name;
+  // Off Bypass every entry was pinned now, a person's old ones too, so all are logged.
+  const pinnedNow = write.via === 'narrow_from_bypass' ? write.after : write.added;
   const event = recordAudit({
     action: 'tasks.set_allow_list',
     operation: 'modify',
@@ -267,7 +278,7 @@ export function auditAllowListChange(
       { field: 'removed', after: write.removed },
       {
         field: 'pinnedPrograms',
-        after: write.added.map((rule) => ({ rule, ...write.pins.programs[rule] })),
+        after: pinnedNow.map((rule) => ({ rule, ...write.pins.programs[rule] })),
       },
       { field: 'setterAgentPath', after: caller.agentPath ?? null },
       { field: 'identityResolvedVia', after: caller.resolved ?? 'unidentified' },
@@ -277,11 +288,45 @@ export function auditAllowListChange(
       { field: 'via', after: write.via },
     ],
     summary:
-      write.added.length > 0
-        ? `Allow list set: ${label}, ${write.after.length} command(s)`
-        : `Allow list narrowed: ${label}, ${write.after.length} command(s) left`,
+      write.via === 'narrow_from_bypass'
+        ? `Moved off Bypass to Don’t ask: ${label}, ${write.after.length} command(s)`
+        : write.added.length > 0
+          ? `Allow list set: ${label}, ${write.after.length} command(s)`
+          : `Allow list narrowed: ${label}, ${write.after.length} command(s) left`,
   });
   return event !== undefined;
+}
+
+/**
+ * Record that an audited list change was not written after all, so the log
+ * never shows a list that never landed as if it had.
+ *
+ * @param task - The task, as it will be named in the log.
+ * @param write - The change that was audited.
+ * @param caller - Who tried it.
+ * @param reason - Why it stopped, as a code.
+ */
+export function auditAllowListAborted(
+  task: Pick<Task, 'id' | 'name' | 'displayName'>,
+  write: AllowListWrite,
+  caller: AgentModeCaller,
+  reason: string
+): void {
+  const label = task.displayName ?? task.name;
+  recordAudit({
+    action: 'tasks.set_allow_list',
+    operation: 'modify',
+    target: { type: 'task', id: task.id, name: label },
+    outcome: 'failed',
+    change: [
+      { field: 'allowList', before: write.before, after: write.before },
+      { field: 'notWritten', after: write.after },
+      { field: 'reason', after: reason },
+      { field: 'setterAgentPath', after: caller.agentPath ?? null },
+      { field: 'via', after: write.via },
+    ],
+    summary: `Allow list not written: ${label} changed while it was being set`,
+  });
 }
 
 /**
@@ -468,6 +513,11 @@ export function oneShotCreateRefusal(args: {
     return { error: 'Send `allowList` or `requestedAllow`, not both.' };
   }
   return null;
+}
+
+/** A create's target as an agent id, or `null` for `global` and no target. */
+function agentIdOfTarget(target: string | undefined): string | null {
+  return target && target !== 'global' ? target : null;
 }
 
 function refusal(code: string, message: string): AllowListSettlement {
