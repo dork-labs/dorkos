@@ -367,7 +367,7 @@ export async function delegateRuntimeLogin(
         ? confirmInFlow(signedInAccount(type, deps.accountRoot))
         : undefined;
     if (confirmed && !confirmed.ok) return confirmed;
-    if (result.ok) noteSigninRepaired(type, signedInAccount(type, deps.accountRoot));
+    if (result.ok) noteSigninRepaired(type, signedInAccount(type, deps.accountRoot), 'login');
     return confirmed ?? result;
   })();
 

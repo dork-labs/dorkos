@@ -461,7 +461,7 @@ describe('delegateRuntimeLogin', () => {
         spawn,
       });
 
-      expect(noteSigninRepaired).toHaveBeenCalledWith('claude-code', '/Users/x/.claude2');
+      expect(noteSigninRepaired).toHaveBeenCalledWith('claude-code', '/Users/x/.claude2', 'login');
     });
 
     it('falls back to the account DorkOS runs new sessions on', async () => {
@@ -479,7 +479,7 @@ describe('delegateRuntimeLogin', () => {
         spawn,
       });
 
-      expect(noteSigninRepaired).toHaveBeenCalledWith('claude-code', '/Users/x/.claude');
+      expect(noteSigninRepaired).toHaveBeenCalledWith('claude-code', '/Users/x/.claude', 'login');
     });
 
     it('names no account for a runtime that has none', async () => {
@@ -494,7 +494,7 @@ describe('delegateRuntimeLogin', () => {
         spawn,
       });
 
-      expect(noteSigninRepaired).toHaveBeenCalledWith('codex', undefined);
+      expect(noteSigninRepaired).toHaveBeenCalledWith('codex', undefined, 'login');
     });
 
     it('says nothing when the login did not complete', async () => {
@@ -693,7 +693,7 @@ describe('a Claude sign-in finished here is confirmed in the same step (DOR-3245
     });
     expect(after.state).toBe('confirmed');
     expect(mayAutoPick(after.state)).toBe(true);
-    expect(noteSigninRepaired).toHaveBeenCalledWith('claude-code', '/fake/main');
+    expect(noteSigninRepaired).toHaveBeenCalledWith('claude-code', '/fake/main', 'login');
   });
 
   it('never binds a sign-in in an organization the person ruled out', async () => {
