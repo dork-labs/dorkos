@@ -43,10 +43,17 @@ describe('warmPoolOptions', () => {
     const options = warmPoolOptions(bundle);
     let told = 0;
 
+    bundle.slotWait = { notify: () => (told += 1), personTurn: false };
     expect(options.skipReclaimGrace()).toBe(false);
     bundle.slotWait = { notify: () => (told += 1), personTurn: true };
     expect(options.skipReclaimGrace()).toBe(true);
     options.onWaitingForSlot();
     expect(told).toBe(1);
+  });
+
+  // Purpose: a launch outside a turn's opening window (a warm-up nobody's turn
+  // is waiting on) is unmarked, and unmarked never waits the grace.
+  it('skips the grace when no turn is opening', () => {
+    expect(warmPoolOptions({}).skipReclaimGrace()).toBe(true);
   });
 });

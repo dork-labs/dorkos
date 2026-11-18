@@ -47,7 +47,8 @@ export function waitsBehindReclaimGrace(
 
 /**
  * The acquire options a production session is held to. The two closures read
- * `bundle.slotWait` at call time, so they answer for the turn opening now.
+ * `bundle.slotWait` at call time, so they answer for the turn opening now; with
+ * no turn opening, a launch skips the grace like any unmarked one.
  *
  * @param bundle - The session's bundle, whose `slotWait` the dispatch sets
  */
@@ -58,6 +59,7 @@ export function warmPoolOptions(bundle: { slotWait?: OpeningTurnSlotWait }) {
     slotWaitMs: SESSIONS.WARM_SLOT_WAIT_MS,
     reclaimGraceMs: SESSIONS.RECLAIM_GRACE_MS,
     onWaitingForSlot: () => bundle.slotWait?.notify(),
-    skipReclaimGrace: () => bundle.slotWait?.personTurn === true,
+    // No turn opening (a warm-up) is unmarked, and unmarked never waits.
+    skipReclaimGrace: () => bundle.slotWait?.personTurn ?? true,
   };
 }

@@ -2,6 +2,7 @@
 covers:
   - 'fix(runtime): a busy chat keeps its process between turns, so its tools stop dropping (DOR-4498)'
   - "fix(runtime): a person's turn never waits behind the reclaim grace, and memory decides the warm ceiling (DOR-4498)"
+  - 'fix(runtime): a launch with no turn opening skips the reclaim grace (DOR-4498)'
 ---
 
 ### Fixed
