@@ -87,6 +87,18 @@ Use synthetic requests that resemble the decisions a confused or prompt-injected
 
 These checks prove the DorkOS path. They do not make a process running as the same operating-system user into an untrusted sandbox.
 
+## Money List Snapshot
+
+`packages/connector-providers/src/composio/__tests__/money-word-pin.test.ts` keeps the money list in `composio/action-classes.ts` complete (DOR-4624). It reads a dated snapshot of every Composio action whose name or description says it may move money and that is not a read. Each one must be a one-by-one pick already, or be listed in `__tests__/fixtures/money-word-reviewed.ts` with why it moves no money. The test and the refresh script share one matcher, `__tests__/helpers/money-words.ts`.
+
+Refresh the snapshot with the `composio` CLI signed in:
+
+```bash
+pnpm exec tsx scripts/composio-money-word-candidates.mjs
+```
+
+It makes read-only catalog calls only (`composio dev toolkits list`, `composio tools list`) and never runs an action. Pass `--from <catalog.json> --checked-at YYYY-MM-DD` to rebuild from a saved catalog instead. A new match that is neither a pick nor reviewed fails the test. If it charges, pays, transfers funds, buys or issues spendable value, pin it in `action-classes.ts` and ask Security to rule on it; never give it a reason. Remove any reason the test reports as stale.
+
 ## Runtime Security Contract
 
 Apply this contract only to the exact merged build that contains the reviewed changes. Historical rollout observations are recorded below; obtain a fresh target from the current verification record.
