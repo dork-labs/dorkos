@@ -210,10 +210,20 @@ function ScheduleApprovalContent({
   // Who its runs act as, resolved from the agent roster by the server. An id
   // alone is not a name, so an unresolved or absent agent draws no claim.
   const runsAs = task.agentId ? task.runsAsName : null;
+  // The header names the proposer whenever a path was stamped, so the byline
+  // and the Agent line do not say the same name again (DOR-4572). The Agent
+  // line stays when the runs act as a different agent.
+  const headerNamesProposer = task.proposedByAgentPath !== null;
+  const agentLine = runsAs && !(headerNamesProposer && runsAs === task.proposedByName);
+
   // A schedule DorkOS found on disk, rather than one anybody asked for. Nobody
   // proposed it, so every part of this card that credits a proposer has to say
   // something else — the file it came from (ADR `260823-200726`).
   const misplacedMode = hasMisplacedSchedulePermissions(task);
+  // The Run permissions picker is on the card, and it names the mode, so no
+  // other line beside it says it again (DOR-4572). The phone's pinned row stays:
+  // the picker scrolls away under it.
+  const pickerShown = answered === null && !misplacedMode;
   const foundInFile = task.origin === 'file';
   // Whether the words in `reason` are DorkOS's own. True for a discovered
   // schedule, and ALSO for a schedule a person made themselves whose file has
@@ -419,14 +429,14 @@ function ScheduleApprovalContent({
         className
       )}
     >
-      {pinActions && !reviewHeader && (
+      {pinActions && !reviewHeader && !pickerShown && (
         <p
           className={cn(
             'shrink-0 px-1 text-xs',
             isBypassPermissionMode(selectedMode) && 'text-status-warning-fg'
           )}
         >
-          {misplacedMode ? <ScheduleFileProblem /> : <>Runs as: {currentLabel}</>}
+          {misplacedMode ? <ScheduleFileProblem /> : <>Run permissions: {currentLabel}</>}
         </p>
       )}
       <div
@@ -445,7 +455,7 @@ function ScheduleApprovalContent({
               isBypassPermissionMode(selectedMode) && 'text-status-warning-fg'
             )}
           >
-            {misplacedMode ? <ScheduleFileProblem /> : <>Runs as: {currentLabel}</>}
+            {misplacedMode ? <ScheduleFileProblem /> : <>Run permissions: {currentLabel}</>}
           </p>
         )}
         <div className="flex min-w-0 items-center gap-2">
@@ -476,13 +486,14 @@ function ScheduleApprovalContent({
               // This branch is only reached once DorkOS itself and a file on disk
               // are ruled out, so an agent asked even when no path was stamped.
               attributedToAgent
+              name={task.proposedByName ?? undefined}
               className="shrink-0"
             />
           )}
         </div>
 
         <AskCard.Headline className="min-w-0 break-words">{name}</AskCard.Headline>
-        {runsAs && <p className="text-muted-foreground text-xs">Agent: {runsAs}</p>}
+        {agentLine && <p className="text-muted-foreground text-xs">Agent: {runsAs}</p>}
 
         <AskCard.Detail className="text-xs">
           <p className="min-w-0 break-words">
@@ -490,7 +501,9 @@ function ScheduleApprovalContent({
               ? 'Found in a file on this computer'
               : dorkosWrote
                 ? 'Waiting for you'
-                : `Proposed by ${proposer}`}
+                : headerNamesProposer
+                  ? 'Proposed'
+                  : `Proposed by ${proposer}`}
             {!dorkosWrote && task.proposedBySessionId && sessionTitle && (
               <>
                 {' · from '}
@@ -578,9 +591,10 @@ function ScheduleApprovalContent({
           flowing={pinActions}
           selectedMode={selectedMode}
           currentLabel={currentLabel}
+          pickerShown={pickerShown}
         />
 
-        {answered === null && !misplacedMode && (
+        {pickerShown && (
           <SchedulePermissionChoice
             task={task}
             modes={power.modes}

@@ -138,6 +138,7 @@ function renderCard(
     compact?: boolean;
     turnOnApproval?: boolean;
     initialPickedMode?: string;
+    reviewHeader?: ReactNode;
   } = {}
 ) {
   const base = createMockTransport();
@@ -239,8 +240,37 @@ describe('ScheduleApprovalCard — what it says', () => {
     renderCard();
 
     expect(await screen.findByText('Nightly sweep')).toBeInTheDocument();
-    expect(slot('ask-detail')).toHaveTextContent('Proposed by DorkBot');
-    expect(slot('ask-detail')).toHaveTextContent('waiting 20m');
+    // The header names the proposer, so the byline does not say it again (DOR-4572).
+    expect(slot('ask-detail')).toHaveTextContent('Proposed · waiting 20m');
+  });
+
+  it('says the mode once: the picker on a desktop review, the pinned row on a phone (DOR-4572)', async () => {
+    renderCard(proposal(), {}, { pinActions: true });
+    await screen.findByRole('button', { name: 'Approve Nightly sweep' });
+    expect(screen.queryByText(/^(Runs as|Run permissions):/)).toBeNull();
+    cleanup();
+
+    // The phone's sheet: the picker scrolls away under the pinned row, so it stays.
+    renderCard(proposal(), {}, { pinActions: true, reviewHeader: <h2>Review schedule</h2> });
+    expect(await screen.findByText('Run permissions: Accept edits')).toBeVisible();
+    expect(screen.queryByText(/^Runs as:/)).toBeNull();
+  });
+
+  it('heads the card with the agent’s display name, not its folder name (DOR-4337)', async () => {
+    renderCard();
+
+    await screen.findByText('Nightly sweep');
+    expect(slot('requesting-agent-name')).toHaveTextContent('DorkBot');
+    // Case-sensitive: the folder name the header used to show.
+    expect(card()).not.toHaveTextContent(/dorkbot/);
+  });
+
+  it('names the agent once when it proposed the schedule and its runs act as it (DOR-4572)', async () => {
+    renderCard(proposal({ agentId: 'agent-a', runsAsName: 'DorkBot' }));
+
+    await screen.findByText('Nightly sweep');
+    expect(card().textContent!.match(/DorkBot/g)).toHaveLength(1);
+    expect(screen.queryByText(/^Agent:/)).toBeNull();
   });
 
   it('quotes the agent’s reason in full, never clamped', async () => {
@@ -338,8 +368,12 @@ describe('ScheduleApprovalCard — what it says', () => {
     // `findByText`: the fallback renders first and a query that returns on its
     // first match would settle on it.
     await waitFor(() =>
-      expect(slot('schedule-permission-mode')).toHaveTextContent('Runs as: Accept edits')
+      expect(
+        screen.getByRole('option', { name: 'Accept edits', selected: true })
+      ).toBeInTheDocument()
     );
+    // The picker names the mode, so the line beside it does not (DOR-4572).
+    expect(slot('schedule-permission-mode')).not.toHaveTextContent('Run permissions:');
   });
 
   it('shows a long prompt whole, with nothing cut off, faded or behind “show more”', () => {
@@ -430,10 +464,8 @@ describe('ScheduleApprovalCard — what it says', () => {
 
   it('names the agent the schedule runs as (DOR-3640)', async () => {
     renderCard(proposal({ agentId: 'agent-b', runsAsName: 'Scout' }));
-    await waitFor(() =>
-      expect(slot('schedule-permission-mode')).toHaveTextContent('Runs as: Accept edits')
-    );
-    expect(screen.getByText('Agent: Scout')).toBeVisible();
+    // A different agent from the proposer, so the line stays (DOR-4572).
+    expect(await screen.findByText('Agent: Scout')).toBeVisible();
   });
 
   it.each([
@@ -1736,7 +1768,10 @@ describe('ScheduleApprovalCard — choosing the run permissions', () => {
     expect(screen.getByRole('combobox')).toHaveValue('default');
     await userEvent.selectOptions(screen.getByRole('combobox'), 'acceptEdits');
     expect(screen.getByRole('combobox')).toHaveValue('acceptEdits');
-    expect(slot('schedule-permission-mode')).toHaveTextContent('Workspace write');
+    // The runtime's own word, said by the picker (DOR-4572).
+    expect(
+      screen.getByRole('option', { name: 'Workspace write', selected: true })
+    ).toBeInTheDocument();
   });
 
   it('quotes a teammate’s name and shows any hidden characters in it', async () => {
@@ -1913,9 +1948,9 @@ describe('stale schedule approval', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Approve Nightly sweep' })).toBeEnabled()
     );
-    expect(document.querySelector('[data-slot="schedule-permission-mode"]')).toHaveTextContent(
-      'Runs as: Allowed commands'
-    );
+    expect(
+      screen.getByRole('option', { name: 'Allowed commands', selected: true })
+    ).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Approve Nightly sweep' }));
     await waitFor(() =>
       expect(updateTask).toHaveBeenLastCalledWith(

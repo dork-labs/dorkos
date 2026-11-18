@@ -23,6 +23,7 @@ export function ScheduleInstructions({
   currentLabel,
   flowing = false,
   hidePermissions = false,
+  pickerShown = false,
 }: {
   task: Task;
   attestsFile: boolean;
@@ -33,6 +34,8 @@ export function ScheduleInstructions({
   currentLabel: string;
   flowing?: boolean;
   hidePermissions?: boolean;
+  /** The mode picker is on the card, so the mode's name is not said again here (DOR-4572). */
+  pickerShown?: boolean;
 }) {
   return (
     <>
@@ -54,7 +57,11 @@ export function ScheduleInstructions({
               fallback for the frames before the runtime's profile lands; it
               knows every bypass mode the shipped runtimes have. */}
           {!hidePermissions && (
-            <ScheduleRunPermissions mode={selectedMode} label={currentLabel} showLabel={!flowing} />
+            <ScheduleRunPermissions
+              mode={selectedMode}
+              label={currentLabel}
+              showLabel={!flowing && !pickerShown}
+            />
           )}
           <pre
             data-slot="schedule-prompt"
@@ -109,7 +116,7 @@ export function ScheduleInstructions({
               <ScheduleRunPermissions
                 mode={selectedMode}
                 label={currentLabel}
-                showLabel={!flowing}
+                showLabel={!flowing && !pickerShown}
               />
             )}
           </div>

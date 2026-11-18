@@ -243,7 +243,11 @@ for (const surface of ['light', 'dark', 'phone'] as const) {
     await page.keyboard.press('ArrowDown');
     await expect(title).toBeFocused();
     await expect(review.locator('select')).toHaveValue('acceptEdits');
-    await expect(review.getByText('Runs as: Accept edits', { exact: true })).toBeVisible();
+    // The picker names the mode; only the phone's pinned row says it again,
+    // because the picker scrolls away under it (DOR-4572).
+    const modeLine = review.getByText('Run permissions: Accept edits', { exact: true });
+    if (surface === 'phone') await expect(modeLine).toBeVisible();
+    else await expect(modeLine).toHaveCount(0);
     await expect(review.getByText(/^Agent:/)).toHaveCount(0);
     const approve = review.getByRole('button', { name: 'Approve Sample ledger', exact: true });
     await expect(approve).toBeEnabled();
@@ -256,7 +260,7 @@ for (const surface of ['light', 'dark', 'phone'] as const) {
       element.scrollTop = element.scrollHeight;
     });
     await expect(review.locator('select')).toBeInViewport();
-    await expect(review.getByText('Runs as: Accept edits', { exact: true })).toBeInViewport();
+    if (surface === 'phone') await expect(modeLine).toBeInViewport();
     await expect(approve).toBeInViewport();
     await expect(review.getByRole('button', { name: 'Reject Sample ledger' })).toBeInViewport();
     await page.screenshot({ path: testInfo.outputPath(`${surface}-review-scrolled.png`) });
@@ -406,7 +410,9 @@ test('dark schedule review shows the Full access warning @smoke', async ({
   await tasksPage.open();
   await tasksPage.dialog.getByRole('button', { name: 'Review Sample ledger', exact: true }).click();
   const review = page.getByRole('dialog', { name: 'Review schedule', exact: true });
-  const full = review.getByText('Runs as: Full access', { exact: true });
+  // The picker names the mode (DOR-4572); the warning is on its explanation.
+  await expect(review.locator('select')).toHaveValue('bypassPermissions');
+  const full = review.locator('[data-slot="schedule-permission-mode"]');
   await expect(full).toHaveClass(/text-status-warning-fg/);
   await page.screenshot({ path: testInfo.outputPath('dark-full-review.png') });
 });

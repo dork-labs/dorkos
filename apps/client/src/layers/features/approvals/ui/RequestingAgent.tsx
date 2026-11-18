@@ -40,6 +40,13 @@ export interface RequestingAgentProps {
    * with no identity may equally be a person on the CLI.
    */
   attributedToAgent?: boolean;
+  /**
+   * The asker's display name, when the caller has it ("DorkBot"). Shown in
+   * place of the label `requestedBy` yields, which for an agent path is its
+   * folder name ("dorkbot"), so one card never names one agent two ways
+   * (DOR-4337).
+   */
+  name?: string;
   className?: string;
 }
 
@@ -123,6 +130,7 @@ export function RequestingAgent({
   hasAgentPath,
   origin,
   attributedToAgent,
+  name,
   className,
 }: RequestingAgentProps) {
   if (!requestedBy) {
@@ -133,7 +141,7 @@ export function RequestingAgent({
     );
   }
 
-  const label = agentLabelFrom(requestedBy);
+  const label = name ?? agentLabelFrom(requestedBy);
 
   return (
     <span className={cn('flex min-w-0 items-center gap-1.5', className)}>
@@ -145,7 +153,12 @@ export function RequestingAgent({
         fallback={initialOf(label)}
         kind={hasAgentPath ? 'agent' : undefined}
       />
-      <span className="text-muted-foreground min-w-0 truncate text-xs">{label}</span>
+      <span
+        data-slot="requesting-agent-name"
+        className="text-muted-foreground min-w-0 truncate text-xs"
+      >
+        {label}
+      </span>
     </span>
   );
 }
