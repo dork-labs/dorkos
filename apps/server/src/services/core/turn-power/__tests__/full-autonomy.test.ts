@@ -28,6 +28,7 @@ import {
 import {
   choseFullAutonomy,
   isFullLevel,
+  nobodyToAskMessage,
   ownLevelBounds,
   resetChosenTurns,
   setMarkedFullActivity,
@@ -299,7 +300,29 @@ describe('a turn nobody is watching, below Full', () => {
     expect(decision.outcome === 'denied' && decision.payload.message).toContain(
       'nobody is watching this run'
     );
+    // The turn carries the outsider mark, and the mark is why it asks: the refusal says so (DOR-4678).
+    expect(decision.outcome === 'denied' && decision.payload.message).toContain(
+      "because this turn read words DorkOS can't vouch for"
+    );
+    expect(decision.outcome === 'denied' && decision.payload.message).not.toContain(
+      'ask them to allow it'
+    );
     expect(approvals.listPending()).toEqual([]);
+  });
+
+  it('names the mark only when the mark is why it asks (DOR-4678)', () => {
+    const marked = nobodyToAskMessage('Send a message', { forOutsideWords: true });
+    expect(marked).toContain("because this turn read words DorkOS can't vouch for");
+    // No standing permission lets a marked call through, so it never says to ask for one.
+    expect(marked).toMatch(/Leave it for a run a person is watching\.$/);
+    expect(marked).not.toContain('ask them to allow it');
+    for (const unmarked of [
+      nobodyToAskMessage('Send a message', {}),
+      nobodyToAskMessage('Send a message'),
+    ]) {
+      expect(unmarked).not.toContain('vouch');
+      expect(unmarked).toContain('or ask them to allow it.');
+    }
   });
 
   it('still raises the card when a person is there', async () => {

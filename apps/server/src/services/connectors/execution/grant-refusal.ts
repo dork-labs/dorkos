@@ -21,9 +21,27 @@ import {
   isNull,
   type Db,
 } from '@dorkos/db';
-import { isPaidOperation } from '@dorkos/shared/connector-schemas';
+import {
+  isPaidOperation,
+  type ConnectorOperationClassification,
+} from '@dorkos/shared/connector-schemas';
 import { accountReachArguments } from './account-reach-arguments.js';
 import { changesRepositoryControlFiles, changesRepositoryHistory } from './workflow-files.js';
+import {
+  isOutsideLevels,
+  loweredWriteLine,
+  outsideLevelsRefusalFor,
+} from '../access/level-gap-lines.js';
+
+/** The action being run: its app, its id and its stored classification. */
+export interface GrantRefusalOperation {
+  readonly toolkit: string;
+  readonly operationSlug: string;
+  readonly classification: ConnectorOperationClassification;
+}
+
+/** Why an action the agent holds no grant for was refused, when nothing more is known. */
+const NOT_GRANTED = 'This agent is not granted the selected operation.';
 
 /** Why a paid operation was refused. */
 export const PAID_NEEDS_OWN_GRANT =
@@ -36,14 +54,14 @@ export const PAID_NEEDS_OWN_GRANT =
  * @param agentId - The agent running it.
  * @param target - The connection it runs on.
  * @param granted - Which live grants matched: its own, and the every-agent one.
- * @param operation - The service and operation being run.
+ * @param operation - The service, operation and classification being run.
  */
 export function grantRefusal(
   db: Db,
   agentId: string,
   target: { connectionId: string; operationRevisionId: string; arguments: Record<string, unknown> },
   granted: { named: boolean; everyAgent: boolean },
-  operation: { toolkit: string; operationSlug: string }
+  operation: GrantRefusalOperation
 ): string | null {
   if (
     (changesRepositoryControlFiles(target.arguments) ||
@@ -54,15 +72,36 @@ export function grantRefusal(
   }
   const reach = accountReachArguments(operation, target.arguments);
   if (reach && !holdsOwnExactAction(db, agentId, target)) return reach;
-  if (!isPaidOperation(operation)) {
-    return granted.named || granted.everyAgent
-      ? null
-      : 'This agent is not granted the selected operation.';
+  if (!granted.named && !granted.everyAgent) {
+    return notGrantedRefusal(db, agentId, target, operation);
   }
+  if (!isPaidOperation(operation)) return null;
   if (granted.named && !agentHoldsLevel(db, agentId, target.connectionId)) return null;
-  return granted.named || granted.everyAgent
-    ? PAID_NEEDS_OWN_GRANT
-    : 'This agent is not granted the selected operation.';
+  return PAID_NEEDS_OWN_GRANT;
+}
+
+/**
+ * Why an action the agent holds no grant for was refused, with the reason a
+ * level could not have covered it, or the one-time lowering that took its
+ * writes, when either is true (DOR-4678).
+ */
+function notGrantedRefusal(
+  db: Db,
+  agentId: string,
+  target: { connectionId: string; operationRevisionId: string },
+  operation: GrantRefusalOperation
+): string {
+  if (isOutsideLevels(operation)) {
+    return (
+      outsideLevelsRefusalFor(db, target.connectionId, target.operationRevisionId, operation) ??
+      NOT_GRANTED
+    );
+  }
+  const lowered =
+    operation.classification === 'write'
+      ? loweredWriteLine(db, agentId, target.connectionId)
+      : null;
+  return lowered ? `${NOT_GRANTED} ${lowered}` : NOT_GRANTED;
 }
 
 /**

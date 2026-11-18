@@ -21,10 +21,12 @@ import { getSessionTools } from './session-tools.js';
 import { runningPermissionMode } from './session-start-permission.js';
 import {
   chosenFullAutonomy,
+  gatePermissionMode,
   heldToACeiling,
   isPersonOnlyMode,
   neverAsks,
 } from '../turn-permission.js';
+import { STATUS_READ_MODES } from '../tool-gate/never-ask-status-reads.js';
 import { getTasksTools } from './tasks/task-tools.js';
 import { getRelayTools } from './relay-tools.js';
 import { resolveSenderIdentity } from './relay-helpers.js';
@@ -120,13 +122,17 @@ export {
 } from './extension-tools.js';
 
 /**
- * Whether the session's turn runs at Never ask right now, read at call time (DOR-3971). A read that
- * hands back words a stranger may have chosen leaves them out when it does.
+ * Whether the session's reads answer narrowed right now, read at call time: its turn runs where the
+ * status reads run unasked (Never ask, Ask first, Accept edits: DOR-3971, DOR-4601), or it is set
+ * to Never ask under a stricter hold. A read that hands back words a stranger may have chosen
+ * leaves them out when it does.
  *
  * @param session - The live session, when the server has one.
  */
-function turnNeverAsks(session: McpToolSession | undefined): boolean {
-  return session !== undefined && neverAsks({ ...session, permissionMode: session.permissionMode });
+function turnNarrowsReads(session: McpToolSession | undefined): boolean {
+  if (session === undefined) return false;
+  const live = { ...session, permissionMode: session.permissionMode };
+  return neverAsks(live) || STATUS_READ_MODES.has(gatePermissionMode(live) ?? '');
 }
 
 /**
@@ -220,8 +226,8 @@ export function handRegisteredInSessionToolSet(
           // and read the turn's real level (DOR-3703).
           ...(session?.cwd ? { cwd: session.cwd } : {}),
           turnSessionIds: [session?.sdkSessionId, sessionId].filter((id): id is string => !!id),
-          // Read live, so run history leaves out what a Never ask turn must not read (DOR-3971).
-          ...(turnNeverAsks(session) ? { neverAsks: true } : {}),
+          // Read live, so run history leaves out what an unasked read must not (DOR-3971, DOR-4601).
+          ...(turnNarrowsReads(session) ? { narrowedReads: true } : {}),
         })
       : undefined;
 
@@ -435,8 +441,8 @@ export function createDorkOsToolServer(
       ...(base ?? {}),
       ...(invokingSessionId ? { sessionId: invokingSessionId } : {}),
       ...(session?.cwd ? { cwd: session.cwd } : {}),
-      // Read live: a Never ask turn's reads leave out words a stranger may have chosen (DOR-3971).
-      ...(turnNeverAsks(session) ? { neverAsks: true as const } : {}),
+      // Read live: an unasked read leaves out words a stranger may have chosen (DOR-4601).
+      ...(turnNarrowsReads(session) ? { narrowedReads: true as const } : {}),
       ...(signal ? { signal } : {}),
       // Forwarded by the registry only to the request tool. Read at call time,
       // so the set built below (after the hold) is the one handed on.

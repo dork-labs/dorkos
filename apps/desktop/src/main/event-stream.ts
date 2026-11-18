@@ -2,6 +2,7 @@ import http from 'node:http';
 import type { IncomingMessage } from 'node:http';
 import log from 'electron-log';
 import { serverDialHost } from '../shared/server-address';
+import { onServerCookiesChanged, serverCookieHeader } from './sign-in/server-cookies';
 
 /**
  * The one connection to the server's global event stream (`GET /api/events`),
@@ -112,6 +113,22 @@ type ConnectionAttempt = ReturnType<typeof http.get>;
  * was gone (DOR-1730).
  */
 let request: ConnectionAttempt | null = null;
+/**
+ * The attempt being prepared: set while {@link connect} reads the window's
+ * sign-in, before there is a request to fence. A teardown clears it, so an
+ * attempt that finishes reading after its subscriber left dials nothing.
+ */
+let preparing: symbol | null = null;
+/**
+ * The window's sign-in changed while an attempt was already out, carrying the
+ * old one. If that attempt fails, the next one goes at once (see
+ * {@link scheduleReconnect}).
+ */
+let signInChangedMidAttempt = false;
+/** Whether the live connection answered `200` and is streaming, rather than still being asked. */
+let streaming = false;
+/** Stops the sign-in watch {@link subscribeEventStream} started; `null` while nobody listens. */
+let stopWatchingSignIn: (() => void) | null = null;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let retryDelayMs = RECONNECT_BASE_MS;
 
@@ -195,7 +212,10 @@ export function subscribeEventStream(
 ): EventStreamSubscription {
   activeGetPort = options.getPort;
   subscribers.add(handlers);
-  if (subscribers.size === 1) connect();
+  if (subscribers.size === 1) {
+    stopWatchingSignIn = onServerCookiesChanged(reconnectOnSignIn);
+    connect();
+  }
 
   return {
     unsubscribe(): void {
@@ -231,6 +251,11 @@ function teardown(): void {
   retryTimer = null;
   request?.destroy();
   request = null;
+  preparing = null;
+  signInChangedMidAttempt = false;
+  streaming = false;
+  stopWatchingSignIn?.();
+  stopWatchingSignIn = null;
   activeGetPort = null;
   retryDelayMs = RECONNECT_BASE_MS;
   outage.reset();
@@ -266,6 +291,14 @@ function notifyFrame(frame: ServerEventFrame): void {
 
 function scheduleReconnect(): void {
   if (subscribers.size === 0 || retryTimer) return;
+  if (signInChangedMidAttempt) {
+    // The attempt that just failed carried a sign-in the window has since
+    // replaced: try the new one now, not after the backoff.
+    signInChangedMidAttempt = false;
+    retryDelayMs = RECONNECT_BASE_MS;
+    setImmediate(connect);
+    return;
+  }
   retryTimer = setTimeout(() => {
     retryTimer = null;
     connect();
@@ -284,17 +317,62 @@ function scheduleReconnect(): void {
 function dropConnection(): void {
   request?.destroy();
   request = null;
+  streaming = false;
   notifyConnectionLost();
 }
 
+/**
+ * The window's sign-in changed: if the stream is down, try again now rather
+ * than at the end of the backoff, so the tray comes back the moment the
+ * person signs in, not up to fifteen seconds later. A live stream is left
+ * alone; the server ends it if the sign-in it was opened with ends. An
+ * attempt still out is marked, so if it fails the retry does not wait.
+ */
+function reconnectOnSignIn(): void {
+  if (subscribers.size === 0 || streaming) return;
+  if (request || preparing) {
+    signInChangedMidAttempt = true;
+    return;
+  }
+  if (retryTimer) clearTimeout(retryTimer);
+  retryTimer = null;
+  retryDelayMs = RECONNECT_BASE_MS;
+  connect();
+}
+
 function connect(): void {
-  if (subscribers.size === 0 || request || !activeGetPort) return;
+  if (subscribers.size === 0 || request || preparing || !activeGetPort) return;
   const port = activeGetPort();
   if (!port) {
     scheduleReconnect();
     return;
   }
+  const token = Symbol('attempt');
+  preparing = token;
+  // Read fresh on every attempt: after a restart or a new sign-in, the
+  // cookie the window holds now is the one that works.
+  void serverCookieHeader(port).then((cookie) => {
+    if (preparing !== token) return;
+    preparing = null;
+    try {
+      dial(port, cookie);
+    } catch (err) {
+      // `http.get` throws on a header it cannot send. Unhandled, nothing
+      // would ever try again and the tray would stay silent for good.
+      request = null;
+      outage.failed(err instanceof Error ? err.message : String(err));
+      scheduleReconnect();
+    }
+  });
+}
 
+/**
+ * Open one attempt at the stream.
+ *
+ * @param port - The server's port.
+ * @param cookie - The window's sign-in for the server, or `null` for none.
+ */
+function dial(port: number, cookie: string | null): void {
   // The host the server actually bound, never a fixed literal: on macOS the
   // server's `localhost` is routinely `::1` alone, and `127.0.0.1` was refused
   // forever (DOR-4294). The server's Host guard (DOR-532) allows it, and Node
@@ -309,7 +387,9 @@ function connect(): void {
       host: serverDialHost(),
       port,
       path: '/api/events',
-      headers: { accept: 'text/event-stream' },
+      // With "Ask for a password on this computer too" on, the session gate
+      // wants a sign-in, and the window's is the only one there is (DOR-4691).
+      headers: { accept: 'text/event-stream', ...(cookie ? { cookie } : {}) },
     },
     (response) => {
       if (!isCurrent(attempt)) {
@@ -350,11 +430,14 @@ function connect(): void {
  */
 function handleResponse(response: IncomingMessage, attempt: ConnectionAttempt): void {
   if (response.statusCode !== 200) {
-    // The one real case: the person turned sign-in on, so `/api` now wants
-    // credentials the shell does not hold. Every subscriber degrades
-    // together — there is one stream, so one outage.
+    // A 401 is the server asking for a sign-in the window does not hold yet:
+    // the stream comes back when it signs in (`reconnectOnSignIn`). Every
+    // subscriber degrades together — there is one stream, so one outage.
     outage.failed(
-      `It answered ${response.statusCode}; agent activity and notifications will not be shown.`
+      response.statusCode === 401
+        ? 'It answered 401: the window is not signed in, so agent activity and notifications ' +
+            'will not be shown until it is.'
+        : `It answered ${response.statusCode}; agent activity and notifications will not be shown.`
     );
     response.resume();
     dropConnection();
@@ -364,6 +447,8 @@ function handleResponse(response: IncomingMessage, attempt: ConnectionAttempt): 
 
   outage.recovered();
   retryDelayMs = RECONNECT_BASE_MS;
+  signInChangedMidAttempt = false;
+  streaming = true;
   response.setEncoding('utf-8');
 
   let buffer = '';

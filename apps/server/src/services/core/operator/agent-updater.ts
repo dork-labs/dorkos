@@ -44,6 +44,7 @@ import {
   type ReportsToMesh,
 } from '../../heartbeats/reports-to-writes.js';
 import { recordHeartbeatConfigChange } from '../../heartbeats/heartbeat-file.js';
+import { clearAgentByPerson, declareAgent } from '../turn-power/declared-readers.js';
 
 /**
  * Identity fields that cannot be changed on a system agent (`isSystem: true`).
@@ -56,6 +57,10 @@ import { recordHeartbeatConfigChange } from '../../heartbeats/heartbeat-file.js'
  * them before this one is reached; a row here would never fire.
  */
 const SYSTEM_PROTECTED_FIELDS = ['displayName', 'description', 'isSystem'] as const;
+
+/** The refusal an agent reads when it tries to turn off reading outside text (DOR-3969). */
+export const READS_OUTSIDE_TEXT_PERSON_ONLY =
+  'DorkOS changed nothing. Only a person can turn this off: readsOutsideText.';
 
 /** Discriminating code for {@link AgentUpdateError}, mapped to HTTP status by the route. */
 export type AgentUpdateErrorCode =
@@ -253,6 +258,8 @@ interface MeshSyncLike extends Partial<ReportsToMesh> {
  *   keys before parsing, so a refusal never depends on the rest of the patch
  *   being well-formed).
  * @param opts.meshCore - Optional MeshCore for the post-write DB sync.
+ * @param opts.byPerson - Whether the door checked that a person is asking
+ *   (`clearsTheAgentBar`). Only a person may turn `readsOutsideText` off.
  * @returns The updated manifest as written to disk.
  * @throws {AgentUpdateError} On validation, missing agent, or a blocked field.
  */
@@ -260,8 +267,9 @@ export async function updateAgentManifest(opts: {
   agentPath: string;
   body: unknown;
   meshCore?: MeshSyncLike;
+  byPerson?: boolean;
 }): Promise<AgentManifest> {
-  const { agentPath, body, meshCore } = opts;
+  const { agentPath, body, meshCore, byPerson = false } = opts;
 
   const rawBody = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>;
 
@@ -295,6 +303,11 @@ export async function updateAgentManifest(opts: {
   const refusedPaths = findOperatorOnlyAgentPaths(rawBody);
   if (refusedPaths.length > 0) {
     throw new AgentUpdateError('OPERATOR_ONLY', describeAgentOperatorOnlyRefusal(refusedPaths));
+  }
+  // Reading outside text is the one field an agent may only turn ON (DOR-3969):
+  // anything but `true` is a person's.
+  if ('readsOutsideText' in rawBody && rawBody.readsOutsideText !== true && !byPerson) {
+    throw new AgentUpdateError('OPERATOR_ONLY', READS_OUTSIDE_TEXT_PERSON_ONLY);
   }
 
   const parsed = UpdateAgentRequestSchema.safeParse(body);
@@ -465,6 +478,11 @@ export async function updateAgentManifest(opts: {
   // (DOR-2337). The callers that reach here with those fields are a person's,
   // or an approved `update_agent_execution` (DOR-2328).
   await writeAgentManifest(rawBody, agentPath, () => writeManifest(agentPath, updated));
+
+  // Said in DorkOS's own record too, where no edit of the file can clear it, and
+  // taken back there only for a person (checked above) (DOR-3969).
+  if (updated.readsOutsideText === true) declareAgent(existing.id, agentPath);
+  else if (rawBody.readsOutsideText === false) clearAgentByPerson(existing.id, agentPath);
 
   // ADR-0043: sync to Mesh DB cache (best-effort).
   try {

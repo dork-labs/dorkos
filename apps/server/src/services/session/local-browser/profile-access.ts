@@ -104,6 +104,15 @@ export class BrowserProfileAccessGate {
 }
 
 /**
+ * What an agent reads when its chat's runtime is not one DorkOS can confirm keeps its file tools
+ * off the saved sign-ins (DOR-3596's `protectedPaths` guard, DOR-4678): true both for a runtime
+ * that declares no such guard and for a chat whose runtime is only inferred, never launched.
+ */
+export const PROFILE_RUNTIME_MESSAGE =
+  'Named browser profiles need a runtime DorkOS confirms keeps file tools out of saved ' +
+  'sign-ins. It can’t confirm this chat’s runtime does.';
+
+/**
  * Build the check run before and after every agent tool call on a named profile.
  *
  * @param deps - The profile records and the session's launch facts.
@@ -117,10 +126,7 @@ export function createLocalBrowserProfileAccess(
     // and put a shell read of it to a person below Full. Read from what the runtime declares,
     // which fails closed (DOR-3596).
     if (!runtime.bound || !declaresGuard({ guards: deps.guardsOf(runtime.type) }, 'protectedPaths'))
-      throw new LocalBrowserError(
-        'profile_runtime',
-        'Named browser profiles aren’t available on this agent’s runtime yet.'
-      );
+      throw new LocalBrowserError('profile_runtime', PROFILE_RUNTIME_MESSAGE);
     const agentPath = await deps.getSessionAgentPath(sessionId);
     const agentId = agentPath ? deps.agentIdAtPath(agentPath) : undefined;
     const folder = agentPath ? deps.realFolder(agentPath) : undefined;

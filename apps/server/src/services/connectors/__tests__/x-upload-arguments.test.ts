@@ -260,7 +260,7 @@ describe('a per-chat grant doesn’t cover these either', () => {
       'chatty',
       { connectionId: CONNECTION_ID, operationRevisionId, arguments: args },
       { named: true, everyAgent: false },
-      { toolkit: 'twitter', operationSlug: slug }
+      { toolkit: 'twitter', operationSlug: slug, classification: 'write' }
     );
   }
 

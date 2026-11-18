@@ -6,6 +6,6 @@ covers:
   - "fix(turn-power): running_chats reads titles' outside words like chat_read, and the audit reads mark (DOR-3969)"
 ---
 
-### Fixed
+### Security
 
 - After an agent reads a web page, uses another app's tool, or reads a room or chat that holds outside words, a send in that same turn asks you first.
