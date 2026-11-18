@@ -3,6 +3,7 @@ covers:
   - "feat(tasks): an agent moves its own running Bypass task to Don't ask with the exact commands it needs, with no card (DOR-4315)"
   - "fix(tasks): a move off Bypass that stops part-way says so, and its list is recorded as the agent's (DOR-4315)"
   - 'fix(tasks): a refused file write records that the mode never changed either (DOR-4315)'
+  - 'refactor(tasks): the allow-list route of tasks_update lives with the move off Bypass, so task-tools.ts stays under 500 lines (DOR-4315)'
 ---
 
 ### Changed

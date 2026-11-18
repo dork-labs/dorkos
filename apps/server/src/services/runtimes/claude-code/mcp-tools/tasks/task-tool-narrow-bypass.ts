@@ -42,6 +42,7 @@ import {
   auditAllowListAborted,
   auditAllowListChange,
   settleAllowListCall,
+  updateAllowListAlone,
   type AllowListUpdateCaller,
 } from './task-tool-allow-list.js';
 
@@ -74,6 +75,24 @@ export function namesMoveToDontAsk(args: Record<string, unknown>): boolean {
     args.allowList !== undefined &&
     keys.every((key) => key === 'id' || key === 'permissionMode' || key === 'allowList')
   );
+}
+
+/**
+ * `tasks_update` with `allowList`: a move off Bypass when the call names the
+ * mode with it, otherwise a narrowing in a call of its own (PR 1).
+ *
+ * @param deps - The tool dependencies.
+ * @param args - The call's own arguments object, the one the tool gate saw.
+ * @param who - Who is calling.
+ */
+export function updateTaskAllowList(
+  deps: McpToolDeps,
+  args: { id: string } & Record<string, unknown>,
+  who: AllowListUpdateCaller
+): Promise<ReturnType<typeof jsonContent>> {
+  return namesMoveToDontAsk(args)
+    ? moveToDontAskWithList(deps, args, who)
+    : updateAllowListAlone(deps, args, who);
 }
 
 /**
