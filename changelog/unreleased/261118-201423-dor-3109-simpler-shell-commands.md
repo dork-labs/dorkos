@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(runtimes): agents write simpler shell commands, so fewer approval cards reach you (DOR-3109)'
+  - 'fix(runtimes): agents write simpler shell commands, so Claude Code can check routine commands itself (DOR-3109)'
 ---
 
 ### Fixed
