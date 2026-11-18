@@ -5,6 +5,7 @@ import path from 'node:path';
 import { validateBoundaryOrDorkHome } from '../../../../lib/boundary.js';
 import { SessionDiscoveryUnavailableError } from '../../../session/resolution/session-lookup-error.js';
 import { CodexNativeSessionReader } from '../native-session-reader.js';
+import { buildCodexPrompt } from '../turn-input.js';
 vi.mock('../../../../lib/boundary.js', () => ({
   validateBoundaryOrDorkHome: vi.fn().mockResolvedValue(undefined),
 }));
@@ -47,6 +48,40 @@ describe('Codex native sessions', () => {
         SessionDiscoveryUnavailableError
       );
       expect(await missing.readHistory(id)).toEqual([]);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it('titles a chat with the person’s words when a load notice rode along (DOR-4447)', async () => {
+    const home = await mkdtemp(path.join(tmpdir(), 'codex-notice-title-'));
+    const id = '0195bfa1-e000-7000-8000-000000000002';
+    try {
+      await mkdir(path.join(home, 'sessions'), { recursive: true });
+      const text = buildCodexPrompt(
+        'Fix the flaky test',
+        undefined,
+        undefined,
+        "This project's own Codex settings did not load in this chat."
+      );
+      const records = [
+        {
+          type: 'session_meta',
+          timestamp: '2026-01-01T00:00:00Z',
+          payload: { id, cwd: '/project' },
+        },
+        {
+          type: 'response_item',
+          timestamp: '2026-01-01T00:00:01Z',
+          payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] },
+        },
+      ];
+      await writeFile(
+        path.join(home, 'sessions', `rollout-2026-01-01T00-00-00-${id}.jsonl`),
+        records.map((r) => JSON.stringify(r)).join('\n')
+      );
+      const reader = new CodexNativeSessionReader(() => home);
+      await expect(reader.findSession(id)).resolves.toMatchObject({ title: 'Fix the flaky test' });
     } finally {
       await rm(home, { recursive: true, force: true });
     }
