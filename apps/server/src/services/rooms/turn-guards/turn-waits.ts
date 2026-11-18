@@ -86,6 +86,7 @@ export function noteTurnWait(
     arm(`${CARD_WAIT_PREFIX}${event.approval.approvalId}`, {
       kind: 'approval',
       toolName: event.approval.capabilityId,
+      ...(event.approval.roomId !== undefined ? { cardRoomId: event.approval.roomId } : {}),
     });
   }
   if (event.type === 'capability_approval_resolved') end(`${CARD_WAIT_PREFIX}${event.approvalId}`);

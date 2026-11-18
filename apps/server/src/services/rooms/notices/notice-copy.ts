@@ -199,14 +199,20 @@ export type WaitingKind = RoomWaitingKind;
  * @param agentName - Display name of the agent that stopped.
  * @param subjectAuthorId - Author id of that agent, for rendering.
  * @param kind - What sort of answer it stopped for.
+ * @param where.cardHere - The approval card is shown in this room (DOR-4610),
+ *   so the line points at it rather than away from it.
  */
 export function buildWaitingNotice(
   agentName: string,
   subjectAuthorId: string,
-  kind: WaitingKind
+  kind: WaitingKind,
+  where: { cardHere?: boolean } = {}
 ): RoomEntryBody {
   return {
-    text: WAITING_LINES[kind](agentName),
+    text:
+      where.cardHere === true && kind === 'approval'
+        ? cardHereLine(agentName)
+        : WAITING_LINES[kind](agentName),
     notice: 'awaiting_approval',
     subjectAuthorId,
     waitingKind: kind,
@@ -271,6 +277,17 @@ const BRIDGE_WAITING_LINES: Record<WaitingKind, (agentName: string) => string> =
  * the prompt, so the one line a park writes says where to answer (the agent's chat,
  * which the app links, or Needs you) and that new messages wait too.
  */
+/**
+ * The approval line when the card itself is shown in this room (DOR-4610,
+ * designer's copy). It points at the card instead of away from it, and leaves
+ * out "It will wait, but not forever" because the card shows its time left.
+ *
+ * @param agentName - Display name of the agent that is waiting.
+ */
+function cardHereLine(agentName: string): string {
+  return `${agentName} is waiting for your approval. Answer the card here or in Needs you. New messages for ${agentName} wait with it.`;
+}
+
 const WAITING_LINES: Record<WaitingKind, (agentName: string) => string> = {
   approval: (agentName) =>
     `${agentName} is waiting for your approval before it can answer. Open ${agentName}'s chat or Needs you to answer. New messages for ${agentName} wait with it. It will wait, but not forever.`,

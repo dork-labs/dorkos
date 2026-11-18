@@ -94,7 +94,7 @@ describe('noteTurnWait', () => {
         type: 'capability_approval_required',
         startedAt: 0,
         capMs: 600_000,
-        approval: { approvalId, capabilityId: 'connectors.execute_write' },
+        approval: { approvalId, capabilityId: 'connectors.execute_write', roomId: 'room-demo' },
       }) as unknown as SessionEvent;
     noteTurnWait(card('approval-answered'), waits, { graceMs: GRACE, onWaiting });
     noteTurnWait(
@@ -117,6 +117,7 @@ describe('noteTurnWait', () => {
     expect(onWaiting).toHaveBeenCalledWith({
       kind: 'approval',
       toolName: 'connectors.execute_write',
+      cardRoomId: 'room-demo',
     });
   });
 

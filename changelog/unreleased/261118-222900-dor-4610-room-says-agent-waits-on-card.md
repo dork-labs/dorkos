@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(rooms): a room says when an agent is waiting on your approval card (DOR-4610)'
+  - 'fix(rooms): the waiting line points at the card when the card is in the room (DOR-4610)'
 ---
 
 ### Fixed
