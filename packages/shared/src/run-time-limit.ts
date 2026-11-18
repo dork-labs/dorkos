@@ -43,7 +43,7 @@
  * @module run-time-limit
  */
 import type { PausableAwakeTimeout } from './awake-clock.js';
-import { SLOT_WAIT_STATUS } from './schemas.js';
+import { SLOT_WAIT_STATUS, SLOT_WAIT_TEXT } from './schemas.js';
 
 /**
  * How every time-limit line opens. The fails-twice notice reads a run line back
@@ -66,46 +66,55 @@ export function runTimeLimitError(limit?: string): string {
 }
 
 /**
- * What the turn says while it waits to start, or null when `event` is anything
- * else.
+ * The longest a run's turn may wait to start before its limit counts anyway.
+ * The claude-code runtime refuses a turn that waited this long for a slot
+ * (`SESSIONS.WARM_SLOT_WAIT_MS`), so a longer pause never means a real wait.
+ */
+export const MAX_START_WAIT_MS = 45 * 60 * 1000;
+
+/**
+ * Whether `event` is the server saying the turn is waiting for a free agent
+ * slot: that exact status AND that exact text. Nothing else pauses a limit, so
+ * no words a model or a tool produces can (DOR-4576).
  *
  * @param event - One event from the run's stream.
  */
-export function waitingToStartMessage(event: { type: string; data?: unknown }): string | null {
-  if (event.type !== 'system_status') return null;
+export function isWaitingToStart(event: { type: string; data?: unknown }): boolean {
+  if (event.type !== 'system_status') return false;
   const data = event.data as { message?: unknown; status?: unknown } | undefined;
-  if (data?.status !== SLOT_WAIT_STATUS) return null;
-  return typeof data.message === 'string' ? data.message : '';
+  return data?.status === SLOT_WAIT_STATUS && data.message === SLOT_WAIT_TEXT;
 }
 
 /**
  * Watch a run's stream and pause its limit while the turn waits to start.
  *
- * A wait is the slot-wait status; any other event means the turn is running,
- * so the limit counts again. `onWaiting` hears the wait's own words when it
- * begins and `null` when it ends, so the run row can say "still waiting"
- * rather than look stuck.
+ * One pause only, and only before the turn starts: the first event that is
+ * not a wait means it is running, the limit counts again, and no later wait
+ * can pause it. `onWaiting` hears {@link SLOT_WAIT_TEXT} when the wait begins
+ * and `null` when it ends, so the run row can say "still waiting" rather than
+ * look stuck.
  *
  * @param limit - The run's time limit, already counting.
- * @param onWaiting - Told when a wait begins (its words) and ends (`null`).
+ * @param onWaiting - Told when the wait begins (the fixed text) and ends (`null`).
  * @returns The observer to call with every event of the run's stream.
  */
 export function pauseWhileWaitingToStart(
   limit: Pick<PausableAwakeTimeout, 'pause' | 'resume'>,
   onWaiting: (message: string | null) => void
 ): (event: { type: string; data?: unknown }) => void {
-  let waiting = false;
+  let state: 'before' | 'waiting' | 'started' = 'before';
   return (event) => {
-    const message = waitingToStartMessage(event);
-    if (message !== null) {
-      if (waiting) return;
-      waiting = true;
+    if (isWaitingToStart(event)) {
+      if (state !== 'before') return;
+      state = 'waiting';
       limit.pause();
-      onWaiting(message);
-    } else if (waiting) {
-      waiting = false;
+      onWaiting(SLOT_WAIT_TEXT);
+      return;
+    }
+    if (state === 'waiting') {
       limit.resume();
       onWaiting(null);
     }
+    state = 'started';
   };
 }

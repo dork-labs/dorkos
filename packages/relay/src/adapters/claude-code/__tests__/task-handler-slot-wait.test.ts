@@ -86,8 +86,11 @@ async function runUnder(
 
 describe('a relay-dispatched run queued behind a full computer', () => {
   it('still runs when it waited longer than its limit, and gets its full limit once started', async () => {
-    // 900ms in line under a 500ms limit, then 300ms of work; the TTL covers the wait.
-    const writes = await runUnder(agentQueuedFor(900, 300), { ttlMs: 5_000, timeLimitMs: 500 });
+    // 1.8s in line under a 1.5s limit, then 300ms of work; the TTL covers the wait.
+    const writes = await runUnder(agentQueuedFor(1_800, 300), {
+      ttlMs: 8_000,
+      timeLimitMs: 1_500,
+    });
     expect(writes[writes.length - 1]).toMatchObject({ status: 'completed' });
     expect(writes[writes.length - 1]!.error).toBeUndefined();
     // While it waited, the row said so; once it started, the line was cleared.
@@ -115,6 +118,11 @@ describe('a relay-dispatched run queued behind a full computer', () => {
   it('keeps counting the TTL while the limit is paused for a wait', async () => {
     // A wait longer than the whole envelope: the TTL stops it mid-wait.
     const writes = await runUnder(agentQueuedFor(2_000, 100), { ttlMs: 500, timeLimitMs: 300 });
+    expect(writes[writes.length - 1]).toMatchObject({ status: 'cancelled' });
+  });
+
+  it('counts the TTL alone for a bad limit, never no limit', async () => {
+    const writes = await runUnder(agentQueuedFor(900, 300), { ttlMs: 500, timeLimitMs: -1 });
     expect(writes[writes.length - 1]).toMatchObject({ status: 'cancelled' });
   });
 

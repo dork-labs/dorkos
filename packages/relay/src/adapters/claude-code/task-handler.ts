@@ -21,7 +21,11 @@ import {
 } from '@dorkos/shared/run-refusals';
 // The one sentence a run stopped by a clock is described with, written by this
 // path and by the direct-dispatch twin in `apps/server` (DOR-1786).
-import { pauseWhileWaitingToStart, runTimeLimitError } from '@dorkos/shared/run-time-limit';
+import {
+  MAX_START_WAIT_MS,
+  pauseWhileWaitingToStart,
+  runTimeLimitError,
+} from '@dorkos/shared/run-time-limit';
 import {
   awakeTimeout,
   getAwakeClock,
@@ -391,7 +395,12 @@ export async function handleTasksMessage(
     // 2^31-1 ms (which a bare Node timer fires at once) holds too (DOR-3033).
     cancelDeadline = awakeTimeout(awakeClock, ttlRemaining, () => controller.abort());
     if (payload.timeLimitMs !== undefined) {
-      limit = pausableAwakeTimeout(awakeClock, payload.timeLimitMs, () => controller.abort());
+      limit = pausableAwakeTimeout(
+        awakeClock,
+        payload.timeLimitMs,
+        () => controller.abort(),
+        MAX_START_WAIT_MS
+      );
     }
   }
   const observeStart = limit

@@ -129,7 +129,7 @@ export function runDeadline(
   const limit = new AbortController();
   const expire = () =>
     limit.abort(new DOMException('The run reached its time limit.', 'TimeoutError'));
-  const timer = pausableAwakeTimeout(clock, maxRuntime, expire);
+  const timer = pausableAwakeTimeout(clock, maxRuntime, expire, RUN_START_WAIT_MS);
   // The hard cap, which never pauses: a runtime that kept saying it was waiting
   // must not hold a run open for ever.
   const cancelCap = awakeTimeout(clock, maxRuntime + RUN_START_WAIT_MS, expire);

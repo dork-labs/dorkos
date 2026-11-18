@@ -11,6 +11,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { SLOT_WAIT_STATUS } from '@dorkos/shared/schemas';
+import { MAX_START_WAIT_MS } from '@dorkos/shared/run-time-limit';
+import { SESSIONS } from '../../../config/constants.js';
 import { createAwakeClock, type AwakeClock, type AwakeTimers } from '@dorkos/shared/awake-clock';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { initBoundary } from '../../../lib/boundary.js';
@@ -235,8 +237,8 @@ function agentQueuedFor(waitMs: number, workMs: number, onWaiting: () => void = 
 describe('a run queued behind a full computer (direct path, DOR-4576)', () => {
   it('still runs when it waited longer than its limit, and gets its full limit once started', async () => {
     let summaryWhileWaiting: string | null | undefined;
-    // 900ms in line under a 500ms limit, then 300ms of work: inside the limit.
-    const agent = agentQueuedFor(900, 300, () => {
+    // 1.8s in line under a 1.5s limit, then 300ms of work: inside the limit.
+    const agent = agentQueuedFor(1_800, 300, () => {
       summaryWhileWaiting = store.getRun(run!.id)!.outputSummary;
     });
     const service = new TaskSchedulerService({
@@ -244,7 +246,7 @@ describe('a run queued behind a full computer (direct path, DOR-4576)', () => {
       runtimes: singleRuntimeSource(agent as never),
       config: CONFIG,
     });
-    const run = await service.triggerManualRun(newTask(500).id);
+    const run = await service.triggerManualRun(newTask(1_500).id);
 
     await vi.waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true), {
       timeout: 5_000,
@@ -272,6 +274,12 @@ describe('a run queued behind a full computer (direct path, DOR-4576)', () => {
       error: expect.stringContaining('time limit'),
     });
     await service.stop();
+  });
+
+  it('allows exactly the wait the runtime does before it refuses a turn', () => {
+    // The pause cap the relay path uses must match the runtime's own wait.
+    expect(RUN_START_WAIT_MS).toBe(SESSIONS.WARM_SLOT_WAIT_MS);
+    expect(RUN_START_WAIT_MS).toBe(MAX_START_WAIT_MS);
   });
 
   it('never waits past the hard cap: its limit plus the longest wait to start', () => {

@@ -167,6 +167,11 @@ export interface PausableAwakeTimeout {
   cancel(): void;
 }
 
+/** Awake time since a mark, sleep left out. */
+function awakeSince(clock: AwakeClock, mark: { at: number; slept: number }): number {
+  return Math.max(0, clock.now() - mark.at - (clock.sleptMs() - mark.slept));
+}
+
 /**
  * {@link awakeTimeout}, with time spent paused left out as well as sleep. A
  * scheduled run's limit is paused while its turn waits for a free agent slot,
@@ -175,62 +180,56 @@ export interface PausableAwakeTimeout {
  * @param clock - The clock that sees sleep.
  * @param ms - The awake, unpaused time allowed.
  * @param onExpire - Called once, when that time is used up.
+ * @param maxPausedMs - The most awake time it may spend paused in all. Past it,
+ *   it counts again on its own, so no pause can hold a deadline off for ever.
  */
 export function pausableAwakeTimeout(
   clock: AwakeClock,
   ms: number,
-  onExpire: () => void
+  onExpire: () => void,
+  maxPausedMs: number
 ): PausableAwakeTimeout {
   let used = 0;
+  let paused = 0;
   let done = false;
-  // The leg running now, and where it started; null while paused.
-  let leg: { cancel: () => void; startedAt: number; sleptAtStart: number } | null = null;
-  const start = (): void => {
-    const startedAt = clock.now();
-    const sleptAtStart = clock.sleptMs();
+  const mark = () => ({ at: clock.now(), slept: clock.sleptMs() });
+  // The counting leg, or the paused one: exactly one is set until it is done.
+  let counting: { cancel: () => void; from: { at: number; slept: number } } | null = null;
+  let pausing: { cancel: () => void; from: { at: number; slept: number } } | null = null;
+  const count = (): void => {
+    const from = mark();
     const cancel = awakeTimeout(clock, ms - used, () => {
       done = true;
-      leg = null;
+      counting = null;
       onExpire();
     });
-    leg = { cancel, startedAt, sleptAtStart };
+    counting = { cancel, from };
   };
-  start();
+  const resume = (): void => {
+    if (done || !pausing) return;
+    pausing.cancel();
+    paused += awakeSince(clock, pausing.from);
+    pausing = null;
+    if (used < ms) return count();
+    done = true;
+    onExpire();
+  };
+  count();
   return {
     pause: () => {
-      if (done || !leg) return;
-      leg.cancel();
-      used += Math.max(0, clock.now() - leg.startedAt - (clock.sleptMs() - leg.sleptAtStart));
-      leg = null;
+      if (done || !counting || paused >= maxPausedMs) return;
+      counting.cancel();
+      used += awakeSince(clock, counting.from);
+      counting = null;
+      pausing = { cancel: awakeTimeout(clock, maxPausedMs - paused, resume), from: mark() };
     },
-    resume: () => {
-      if (done || leg) return;
-      if (used < ms) return start();
-      done = true;
-      onExpire();
-    },
+    resume,
     cancel: () => {
       done = true;
-      leg?.cancel();
-      leg = null;
+      counting?.cancel();
+      pausing?.cancel();
+      counting = null;
+      pausing = null;
     },
   };
-}
-
-/**
- * An `AbortSignal` that aborts with a `TimeoutError` after `ms` of awake time:
- * `AbortSignal.timeout`, minus the sleep.
- *
- * @param clock - The clock that sees sleep.
- * @param ms - The awake time allowed.
- */
-export function awakeTimeoutSignal(
-  clock: AwakeClock,
-  ms: number
-): { signal: AbortSignal; cancel: () => void } {
-  const controller = new AbortController();
-  const cancel = awakeTimeout(clock, ms, () =>
-    controller.abort(new DOMException('The run reached its time limit.', 'TimeoutError'))
-  );
-  return { signal: controller.signal, cancel };
 }

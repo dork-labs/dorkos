@@ -538,9 +538,10 @@ export const TaskDispatchPayloadSchema = z
      * slot first, and that wait must not spend the limit (DOR-4576). The
      * envelope's TTL stays the outer bound, so this can never lengthen a run
      * past it. Absent counts the TTL alone, as every envelope before this
-     * field did.
+     * field did, and so does a value that is not a positive whole number: a bad
+     * value falls back to today's behaviour, never to no limit.
      */
-    timeLimitMs: z.number().int().positive().optional(),
+    timeLimitMs: z.number().int().positive().optional().catch(undefined),
     /**
      * The home of the task's agent, when it has one (spec `agent-home-desk`
      * §3.2 row 12). The receiver hands it to the runtime as
