@@ -37,25 +37,15 @@ jobs:
 
       - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v7.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
 
-      # Restore only (DOR-4635). This runs on a tag push, and a tag ref's
-      # Actions cache is readable only by that same tag, so setup-node's
-      # `cache: pnpm` saved a ~700 MB store per OS per release that no later
-      # run could read (2.1 GB on refs/tags/v0.136.0). A tag can read main's
-      # cache, so this restores the store main saves, under the same key as
-      # test.yml's test-shard, and saves nothing.
-      - name: Find the pnpm store
-        id: pnpm-store
-        shell: bash
-        run: echo "image=${ImageOS:?ImageOS is not set on this runner}" >> "$GITHUB_OUTPUT" && echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
-      - name: Restore the pnpm store built on this runner image
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ steps.pnpm-store.outputs.path }}
-          key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
+      # NO dependency cache, restored or saved (DOR-4635, DOR-4695). This job runs
+      # on a tag push and holds release credentials, so it installs cold from the
+      # registry, checked against pnpm-lock.yaml's integrity hashes. (Saving into
+      # a tag's scope was also waste: a tag's cache is readable only by that tag.)
+      # Cost: one cold install per job per release.
 
       - name: Install manifest generator dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
