@@ -184,7 +184,7 @@ tracked:
       Merge-queue entries per 7 days whose head carried no `success`
       `arm-record` status from the local arm script when they were queued
       (bare `gh pr merge`, a GraphQL enqueue, merge-tail). Read by hand from
-      arm-door.yml's "taken out of the queue" lines and the arm log; not
+      arm-door.yml's "queued without the arm script" warnings and the arm log; not
       computed by the daily collector.
   - id: tracked.merge-tail-unknown-skips
     unit: count

@@ -412,8 +412,8 @@ jobs:
         run: bash scripts/test-queue-repeat-guard.sh
 
       # arm-door.yml's decision (DOR-4648): an entry the local arm script never
-      # stamped is taken back out of the queue. Both mistakes are pinned: an
-      # unstamped head let in, and a stamped or unreadable one taken out.
+      # stamped is named on its PR (comment only). Both mistakes are pinned: an
+      # unstamped head missed, and a stamped or unreadable one flagged.
       - name: Arm-door fixtures
         run: bash scripts/test-arm-door.sh
 

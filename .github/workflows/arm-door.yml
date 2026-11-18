@@ -1,35 +1,38 @@
 name: arm-door
 
-# The merge queue's door for the arm rule (DOR-4648): a pull request may enter
-# the queue only through the local arm script, which runs every gate first and
-# then stamps the head with an `arm-record` commit status naming the agent and
-# session. An entry whose head has no `success` stamp was queued some other way
-# (a bare `gh pr merge --auto`, a GraphQL enqueue, merge-tail), so this takes it
-# back out and tells the author once. The decision is scripts/arm-door.sh
+# The merge queue's door for the arm rule (DOR-4648): a pull request should
+# enter the queue only through the local arm script, which runs every gate first
+# and then stamps the head with an `arm-record` commit status naming the agent
+# and session. An entry whose head has no `success` stamp was queued some other
+# way (a bare `gh pr merge --auto`, a GraphQL enqueue, merge-tail), so this says
+# so on the pull request, once per head. The decision is scripts/arm-door.sh
 # (fixtures: scripts/test-arm-door.sh). Ledger: ci/ledger/261118-183332-arm-door.md.
 #
+# COMMENT ONLY. It never takes an entry out of the queue. Doing that would
+# change how a person merging from the GitHub page and outside contributors
+# merge, and every doc that says "arm with `gh pr merge --auto`" with it; that
+# is a separate decision. Its comments and log lines are what measure how often
+# the arm script is skipped.
+#
 # A stamp is not a signature: every agent acts on GitHub as one login, so a
-# session can post one by hand. This stops the mistakes seen so far (#3913
+# session can post one by hand. This catches the mistakes seen so far (#3913
 # and #3934 on 2026-11-17 and 11-18), not a session set on lying; per-role
 # GitHub Apps are the real fix (DOR-3183).
 #
 # Not a required check, and it must stay GREEN whatever happens, for the reason
 # queue-repeat-guard.yml gives: a red run on the merge-group commit is listed
 # among that build's failed checks. So every failure here is a `::warning::`,
-# never an exit code. It dequeues only on proof: statuses it cannot read keep
-# the entry, and the queue still runs every required check on it.
+# never an exit code, and every step is `continue-on-error`.
 #
-# WHOSE KEY: the `dorkos-merge-tail` GitHub App, as in queue-repeat-guard.yml.
-# Its pull-requests and contents write cover dequeueing and commenting; it has
-# no Administration permission.
+# WHOSE KEY: the workflow's own token reads the head's statuses; the
+# `dorkos-merge-tail` GitHub App's token (as in queue-repeat-guard.yml) posts
+# the comment, scoped to pull requests write. It has no Administration
+# permission.
 
 on:
   merge_group:
     types: [checks_requested]
 
-# The workflow's own token reads the head's statuses (the app may not hold
-# Commit statuses, and naming a permission it lacks fails the mint); the app
-# token only dequeues and comments.
 permissions:
   contents: read
   statuses: read
@@ -40,11 +43,8 @@ env:
 jobs:
   door:
     runs-on: ubuntu-latest
-    # Three GitHub reads and at most two writes; a minute is generous.
+    # Three GitHub reads and at most one write; a minute is generous.
     timeout-minutes: 5
-    # Every step is `continue-on-error`: a failed step still shows as failed in
-    # the log, but the job, and so the check run on the merge-group commit,
-    # stays green (see the header for why it must).
     steps:
       # The queue's base, not this entry's own tree: the scripts below run with
       # a write token, so they must not be ones the pull request being judged
@@ -62,26 +62,23 @@ jobs:
         with:
           client-id: ${{ secrets.MERGE_TAIL_APP_CLIENT_ID }}
           private-key: ${{ secrets.MERGE_TAIL_APP_PRIVATE_KEY }}
-          # Scoped down to what this job uses, both grants the app already holds
-          # (merge-tail.yml's token comment lists them): pull requests to
-          # comment, contents for the dequeue.
-          permission-contents: write
+          # Scoped down to the one grant this job uses, which the app already
+          # holds (merge-tail.yml's token comment lists them): commenting.
           permission-pull-requests: write
 
-      - name: Take an entry the arm script never stamped back out of the queue
+      - name: Say so on an entry the arm script never stamped
         continue-on-error: true
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          READ_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          COMMENT_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO: ${{ github.repository }}
           HEAD_REF: ${{ github.event.merge_group.head_ref }}
         run: |
           # Not -e (GitHub's default shell sets it): every failure is handled.
           set +e -uo pipefail
           warn() { echo "::warning::arm-door: $*"; exit 0; }
-          [[ -n "$GH_TOKEN" ]] || warn "no app token; the rule is not enforced on this entry"
           [[ -f scripts/arm-door.sh && -f scripts/queue-repeat-guard.sh ]] \
-            || warn "the queue base has no scripts/arm-door.sh; the rule is not enforced on this entry"
+            || warn "the queue base has no scripts/arm-door.sh; nothing checked on this entry"
 
           pr=$(bash scripts/queue-repeat-guard.sh pr-from-ref "$HEAD_REF") \
             || warn "not a queue ref: $HEAD_REF"
@@ -89,7 +86,7 @@ jobs:
 
           head_sha=$(gh pr view "$pr" --repo "$REPO" --json headRefOid --jq .headRefOid 2>/dev/null)
           [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]] || warn "PR #$pr: could not read the head"
-          GH_TOKEN=$READ_TOKEN gh api --paginate "repos/$REPO/commits/$head_sha/statuses?per_page=100" > "$work/pages.json" 2>/dev/null \
+          gh api --paginate "repos/$REPO/commits/$head_sha/statuses?per_page=100" > "$work/pages.json" 2>/dev/null \
             || warn "PR #$pr: could not read the statuses at ${head_sha:0:10}"
           jq -s 'add // []' "$work/pages.json" > "$work/statuses.json" 2>/dev/null \
             || warn "PR #$pr: could not read the statuses at ${head_sha:0:10}"
@@ -98,24 +95,17 @@ jobs:
           verdict=$(head -n 1 "$work/verdict.txt")
           echo "PR #$pr at ${head_sha:0:10} -> ${verdict:-KEEP no-verdict}"
 
-          [[ "$verdict" == DEQUEUE* ]] || exit 0
-          reason=${verdict#DEQUEUE }
+          [[ "$verdict" == UNARMED* ]] || exit 0
+          reason=${verdict#UNARMED }
+          echo "::warning::arm-door: PR #$pr at ${head_sha:0:10} was queued without the arm script ($reason)"
 
-          node_id=$(gh pr view "$pr" --repo "$REPO" --json id --jq .id 2>/dev/null)
-          [[ -n "$node_id" ]] || warn "PR #$pr: could not read its node id; left in the queue"
-          if gh api graphql -f id="$node_id" \
-               -f query='mutation($id:ID!){ dequeuePullRequest(input:{id:$id}){ clientMutationId } }' \
-               >/dev/null 2>"$work/dequeue-err.txt"; then
-            echo "PR #$pr -> taken out of the queue: $reason"
-          else
-            warn "PR #$pr: could not dequeue: $(tr '\n' ' ' < "$work/dequeue-err.txt" | cut -c1-200)"
-          fi
-
+          [[ -n "$COMMENT_TOKEN" ]] || warn "PR #$pr: no app token; not telling the author"
           # Once per head.
           marker="<!-- arm-door head=$head_sha -->"
           gh api --paginate "repos/$REPO/issues/$pr/comments?per_page=100" --jq '.[].body' \
             > "$work/comments.txt" 2>/dev/null || warn "PR #$pr: could not read comments; not telling the author"
           grep -qF -- "$marker" "$work/comments.txt" && exit 0
           bash scripts/arm-door.sh comment "$pr" "$head_sha" "$reason" > "$work/comment.md"
-          gh pr comment "$pr" --repo "$REPO" --body-file "$work/comment.md" >/dev/null 2>&1 \
+          GH_TOKEN=$COMMENT_TOKEN gh pr comment "$pr" --repo "$REPO" --body-file "$work/comment.md" >/dev/null 2>&1 \
             || warn "PR #$pr: could not post the note"
+          exit 0

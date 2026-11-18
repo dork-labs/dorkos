@@ -3,7 +3,7 @@
 # (.github/workflows/arm-door.yml).
 #
 # Both ways it can be wrong are pinned. A KEEP that matches too much lets a pull
-# request queued past every gate merge. A DEQUEUE that matches too much takes a
+# request queued past every gate merge. An UNARMED that matches too much tells a
 # properly armed pull request out of the queue, or one whose statuses nobody
 # could read.
 #
@@ -41,13 +41,13 @@ stamp='{"id":2,"context":"arm-record","state":"success","created_at":"2026-11-18
 other='{"id":1,"context":"security-review","state":"success","created_at":"2026-11-18T09:00:00Z","description":"ok"}'
 
 check "stamped head is kept"                   "KEEP armed armed by dorkos-2 session 0d4a1afe proof=ci-green" "[$other,$stamp]"
-check "no statuses at all: dequeue"            "DEQUEUE no-arm-record" '[]'
-check "other contexts only: dequeue"           "DEQUEUE no-arm-record" "[$other]"
-check "a pending stamp: dequeue"               "DEQUEUE arm-record-pending" '[{"id":3,"context":"arm-record","state":"pending","created_at":"2026-11-18T10:00:00Z"}]'
-check "a later failure undoes a success"       "DEQUEUE arm-record-failure" "[$stamp,{\"id\":5,\"context\":\"arm-record\",\"state\":\"failure\",\"created_at\":\"2026-11-18T11:00:00Z\"}]"
+check "no statuses at all: unarmed"            "UNARMED no-arm-record" '[]'
+check "other contexts only: unarmed"           "UNARMED no-arm-record" "[$other]"
+check "a pending stamp: unarmed"               "UNARMED arm-record-pending" '[{"id":3,"context":"arm-record","state":"pending","created_at":"2026-11-18T10:00:00Z"}]'
+check "a later failure undoes a success"       "UNARMED arm-record-failure" "[$stamp,{\"id\":5,\"context\":\"arm-record\",\"state\":\"failure\",\"created_at\":\"2026-11-18T11:00:00Z\"}]"
 check "a later success after a failure: keep"  "KEEP armed again" "[{\"id\":1,\"context\":\"arm-record\",\"state\":\"failure\",\"created_at\":\"2026-11-18T09:00:00Z\"},{\"id\":9,\"context\":\"arm-record\",\"state\":\"success\",\"created_at\":\"2026-11-18T12:00:00Z\",\"description\":\"again\"}]"
-check "same time, higher id wins"              "DEQUEUE arm-record-error" "[$stamp,{\"id\":3,\"context\":\"arm-record\",\"state\":\"error\",\"created_at\":\"2026-11-18T10:00:00Z\"}]"
-check "a look-alike context doesn't count"     "DEQUEUE no-arm-record" '[{"id":4,"context":"arm-record-x","state":"success","created_at":"2026-11-18T10:00:00Z"}]'
+check "same time, higher id wins"              "UNARMED arm-record-error" "[$stamp,{\"id\":3,\"context\":\"arm-record\",\"state\":\"error\",\"created_at\":\"2026-11-18T10:00:00Z\"}]"
+check "a look-alike context doesn't count"     "UNARMED no-arm-record" '[{"id":4,"context":"arm-record-x","state":"success","created_at":"2026-11-18T10:00:00Z"}]'
 check "not JSON: keep (unreadable)"            "KEEP unreadable-statuses" 'not json'
 check "an object, not a list: keep"            "KEEP unreadable-statuses" '{"state":"success"}'
 
