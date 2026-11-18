@@ -7,6 +7,14 @@
  *
  * @module routes/session-answers
  */
+import { refuseApprovalYesFromWifi } from '../services/core/approvals/model/approval-answer-policy.js';
+import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
+import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import {
+  holdRemoteToolApproval,
+  pendingToolApprovalHash,
+  DIFFERENT_TOOL_APPROVAL,
+} from './tool-approval-step-up.js';
 import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import {
@@ -45,14 +53,14 @@ import { resolveAnswererName } from '../services/identity/operator-profile.js';
  * a person: it says WHERE the answer has to happen, not which header was
  * missing. A refusal that names a header reads as a hint about how to get around
  * it. The same reasoning, and nearly the same sentence, as the capability
- * approvals' `DECIDE_NEEDS_COCKPIT`.
+ * approvals' `DECIDE_NEEDS_APP`.
  */
-const ANSWERING_NEEDS_COCKPIT =
+const ANSWERING_NEEDS_APP =
   'Answering an agent has to happen inside DorkOS, by a person who is signed in. ' +
   'A program holding an API key cannot answer for you. Open DorkOS and answer it there.';
 
 /**
- * Refuse anything that is not a person in the cockpit answering for themselves.
+ * Refuse anything that is not a person in the app answering for themselves.
  *
  * These six routes were protected by the session gate alone, which was defensible
  * while the only way to reach them was the session you were looking at.
@@ -99,7 +107,7 @@ function requirePersonToAnswer(facts: RequestFacts): OperatorCookieRefusal | und
     return { status: authority.status, code: authority.code, error: authority.error };
   }
   const notAPerson = requireOperatorCookieUnderLogin(facts, 'whether a tool runs');
-  return notAPerson ? { ...notAPerson, error: ANSWERING_NEEDS_COCKPIT } : undefined;
+  return notAPerson ? { ...notAPerson, error: ANSWERING_NEEDS_APP } : undefined;
 }
 
 /**
@@ -120,7 +128,7 @@ function requirePersonToAnswer(facts: RequestFacts): OperatorCookieRefusal | und
  * falls back to the unnamed sentence.
  *
  * **This install has exactly one person in it** (ADR 260727-184933 D6), so the
- * name is that person's however they reached the cockpit. It becomes a real
+ * name is that person's however they reached the app. It becomes a real
  * lookup the day DorkOS has more than one, which is the same day the Ask needs
  * a per-caller entitlement filter.
  *
@@ -186,12 +194,16 @@ const ALREADY_RESOLVED = errorBody('Interaction already resolved', 'INTERACTION_
  * The six answer routes, each behind {@link requirePersonToAnswer}, and behind
  * the session read guard `routes/sessions.ts` puts in front of every path under
  * `/:id` before it mounts these: the Ask is reachable from every route in the
- * cockpit, so who may answer it is a property of the endpoint rather than of
+ * app, so who may answer it is a property of the endpoint rather than of
  * where the card happened to be drawn.
  *
  * @returns The routes, for `routes/sessions.ts` to mount at its root.
  */
-export function createSessionAnswerRoutes(): Hono<ApiEnv> {
+export function createSessionAnswerRoutes(
+  deps: { resolveRuntime: (sessionId: string) => Promise<AgentRuntime> } = {
+    resolveRuntime: (sessionId) => runtimeRegistry.resolveForSession(sessionId),
+  }
+): Hono<ApiEnv> {
   const router = new Hono<ApiEnv>();
 
   // POST /api/sessions/:id/approve - Approve pending tool call
@@ -202,9 +214,34 @@ export function createSessionAnswerRoutes(): Hono<ApiEnv> {
     const parsed = ApprovalRequestSchema.safeParse(readJsonBody(c));
     if (!parsed.success) return c.json(INVALID_REQUEST, 400);
     const { toolCallId, alwaysAllow, alwaysAllowBreadth } = parsed.data;
-    const standing = refuseStandingYesFromWifi(facts, alwaysAllow === true);
-    if (standing) return c.json(standing, 403);
-    const runtime = await runtimeRegistry.resolveForSession(sessionId);
+    const wifi = refuseApprovalYesFromWifi(facts);
+    if (wifi) return c.json(wifi, 403);
+    const held = holdRemoteToolApproval(
+      c,
+      { sessionId, ids: [toolCallId], always: alwaysAllow, breadth: alwaysAllowBreadth },
+      async (confirming, hash) => {
+        const refused = requirePersonToAnswer(confirming);
+        if (refused)
+          return { status: refused.status, body: { error: refused.error, code: refused.code } };
+        const standing = refuseStandingYesFromWifi(confirming, alwaysAllow === true);
+        if (standing) return { status: 403, body: standing };
+        const runtime = await deps.resolveRuntime(sessionId);
+        if (pendingToolApprovalHash(sessionId, [toolCallId]) !== hash)
+          return DIFFERENT_TOOL_APPROVAL;
+        const approved = runtime.approveTool(sessionId, toolCallId, true, {
+          alwaysAllow,
+          ...(alwaysAllowBreadth ? { alwaysAllowBreadth } : {}),
+          ...answeredBy(confirming),
+        });
+        return approved
+          ? { status: 200, body: { ok: true } }
+          : runtime.hasSession(sessionId)
+            ? { status: 409, body: ALREADY_RESOLVED }
+            : { status: 404, body: errorBody('No pending approval', 'NO_PENDING_APPROVAL') };
+      }
+    );
+    if (held) return held;
+    const runtime = await deps.resolveRuntime(sessionId);
     const approved = runtime.approveTool(sessionId, toolCallId, true, {
       alwaysAllow,
       ...(alwaysAllowBreadth ? { alwaysAllowBreadth } : {}),
@@ -229,7 +266,7 @@ export function createSessionAnswerRoutes(): Hono<ApiEnv> {
     const parsed = ApprovalRequestSchema.safeParse(readJsonBody(c));
     if (!parsed.success) return c.json(INVALID_REQUEST, 400);
     const { toolCallId, reason } = parsed.data;
-    const runtime = await runtimeRegistry.resolveForSession(sessionId);
+    const runtime = await deps.resolveRuntime(sessionId);
     // A blank field is not a reason. Normalising here keeps every runtime and the
     // receipt copy from having to re-decide what an empty string means.
     const denyReason = reason?.trim() ? reason.trim() : undefined;
@@ -263,7 +300,23 @@ export function createSessionAnswerRoutes(): Hono<ApiEnv> {
       const { sessionId, facts } = answering;
       const parsed = BatchApprovalRequestSchema.safeParse(readJsonBody(c));
       if (!parsed.success) return c.json(INVALID_REQUEST, 400);
-      const runtime = await runtimeRegistry.resolveForSession(sessionId);
+      if (approved) {
+        const wifi = refuseApprovalYesFromWifi(facts);
+        if (wifi) return c.json(wifi, 403);
+        // A remote batch of two or more is refused whole, before anything runs;
+        // the app sends remote answers one card at a time. Each is a one-time
+        // Allow, which goes straight through like the single route's.
+        if (parsed.data.toolCallIds.length > 1 && !isAtThisComputer(facts)) {
+          return c.json(
+            {
+              error: 'Confirm each request separately.',
+              code: 'APPROVALS_REQUIRE_SEPARATE_CONFIRMATION',
+            },
+            403
+          );
+        }
+      }
+      const runtime = await deps.resolveRuntime(sessionId);
       const answerer = answeredBy(facts);
       const results = parsed.data.toolCallIds.map((id) => ({
         toolCallId: id,
@@ -283,7 +336,7 @@ export function createSessionAnswerRoutes(): Hono<ApiEnv> {
     const parsed = SubmitAnswersRequestSchema.safeParse(readJsonBody(c));
     if (!parsed.success) return c.json(INVALID_REQUEST, 400);
     const { toolCallId, answers } = parsed.data;
-    const runtime = await runtimeRegistry.resolveForSession(sessionId);
+    const runtime = await deps.resolveRuntime(sessionId);
     const typed = refuseTypedAnswers(facts, runtime, sessionId, toolCallId, answers);
     if (typed) return c.json(typed, 403);
     const ok = runtime.submitAnswers(sessionId, toolCallId, answers, answeredBy(facts));
@@ -302,7 +355,7 @@ export function createSessionAnswerRoutes(): Hono<ApiEnv> {
     const parsed = SubmitElicitationRequestSchema.safeParse(readJsonBody(c));
     if (!parsed.success) return c.json(INVALID_REQUEST, 400);
     const { interactionId, action, content } = parsed.data;
-    const runtime = await runtimeRegistry.resolveForSession(sessionId);
+    const runtime = await deps.resolveRuntime(sessionId);
     const typed = refuseTypedElicitation(facts, runtime, sessionId, interactionId, action, content);
     if (typed) return c.json(typed, 403);
     const ok = runtime.submitElicitation(

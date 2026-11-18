@@ -6,6 +6,7 @@
  *
  * @module startup/steps/connector-events-approvals
  */
+import { describeAgentRaiseCapability } from '../../services/core/approvals/agent-raise/agent-raise-cards.js';
 import { ConnectorSubscriptionStore } from '../../services/connectors/events/subscription-store.js';
 import { ConnectorEventInboxStore } from '../../services/connectors/event-inbox-store.js';
 import { ConnectorEventSettingsService } from '../../services/connectors/events/settings-service.js';
@@ -191,7 +192,8 @@ export async function wireConnectorEventsAndApprovals(
         describeRepoConfigCapability(capabilityId) ??
         describeGlobalActivationCapability(capabilityId) ??
         describeTemplateCreationCapability(capabilityId) ??
-        describeWorkspaceCreationCapability(capabilityId)
+        describeWorkspaceCreationCapability(capabilityId) ??
+        describeAgentRaiseCapability(capabilityId)
       );
     },
   });

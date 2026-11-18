@@ -432,6 +432,42 @@ function namesCloudRemote(patch: unknown): boolean {
   );
 }
 
+/** Refuse settings that only their dedicated consent routes may write. */
+export function refuseDedicatedConfigPaths(requested: unknown): ConfigWriteRefusal | undefined {
+  // Step 0, before either bar: what agents may do is never written through a
+  // general config door (spec `agent-permissions` D10). Every permission change
+  // must carry a person's yes AND one audit event, and only the permission
+  // routes write both, so this refuses outright rather than asking who is
+  // calling. `CONFIG_WRITE_POLICY` marks the same paths operator-only as a
+  // second line.
+  if (namesPermissions(requested)) {
+    return {
+      status: 400,
+      code: USE_PERMISSIONS_API_CODE,
+      error: USE_PERMISSIONS_API_MESSAGE,
+      message: USE_PERMISSIONS_API_MESSAGE,
+      paths: ['permissions'],
+    };
+  }
+
+  // Step 0, again: managed remote access is never written here either
+  // (DOR-2086). Its record is a person's consent, an enrolment Cloud holds, and
+  // references to stored secrets, and they only make sense together, so one
+  // module (`services/core/remote/remote-state.ts`) writes them, behind the
+  // local enrolment and withdrawal routes. Refused for every caller, the
+  // operator included: a hand-written `mode: 'managed'` with no enrolment
+  // behind it would be a selection nobody consented to.
+  if (namesCloudRemote(requested)) {
+    return {
+      status: 400,
+      code: USE_REMOTE_ACCESS_API_CODE,
+      error: USE_REMOTE_ACCESS_API_MESSAGE,
+      message: USE_REMOTE_ACCESS_API_MESSAGE,
+      paths: ['cloud.remote'],
+    };
+  }
+}
+
 /**
  * Apply a general-purpose config write: the policy bar, the write itself, and
  * the audit line — in that order, once.
@@ -454,46 +490,8 @@ function namesCloudRemote(patch: unknown): boolean {
 export function applyGuardedConfigWrite(write: GuardedConfigWrite): GuardedConfigWriteResult {
   const { patch: requested, authority, source, writer } = write;
 
-  // Step 0, before either bar: what agents may do is never written through a
-  // general config door (spec `agent-permissions` D10). Every permission change
-  // must carry a person's yes AND one audit event, and only the permission
-  // routes write both, so this refuses outright rather than asking who is
-  // calling. `CONFIG_WRITE_POLICY` marks the same paths operator-only as a
-  // second line.
-  if (namesPermissions(requested)) {
-    return {
-      ok: false,
-      kind: 'refused',
-      refusal: {
-        status: 400,
-        code: USE_PERMISSIONS_API_CODE,
-        error: USE_PERMISSIONS_API_MESSAGE,
-        message: USE_PERMISSIONS_API_MESSAGE,
-        paths: ['permissions'],
-      },
-    };
-  }
-
-  // Step 0, again: managed remote access is never written here either
-  // (DOR-2086). Its record is a person's consent, an enrolment Cloud holds, and
-  // references to stored secrets, and they only make sense together, so one
-  // module (`services/core/remote/remote-state.ts`) writes them, behind the
-  // local enrolment and withdrawal routes. Refused for every caller, the
-  // operator included: a hand-written `mode: 'managed'` with no enrolment
-  // behind it would be a selection nobody consented to.
-  if (namesCloudRemote(requested)) {
-    return {
-      ok: false,
-      kind: 'refused',
-      refusal: {
-        status: 400,
-        code: USE_REMOTE_ACCESS_API_CODE,
-        error: USE_REMOTE_ACCESS_API_MESSAGE,
-        message: USE_REMOTE_ACCESS_API_MESSAGE,
-        paths: ['cloud.remote'],
-      },
-    };
-  }
+  const dedicated = refuseDedicatedConfigPaths(requested);
+  if (dedicated) return { ok: false, kind: 'refused', refusal: dedicated };
 
   const operatorOnly = findOperatorOnlyPaths(requested);
   if (operatorOnly.length > 0) {

@@ -68,6 +68,7 @@ let waiting: PendingExtensionApproval[];
 let approveStatus: number;
 let posts: Array<{ url: string; body: unknown }>;
 let staleReplacement: PendingExtensionApproval | null;
+let approvalGate: Promise<void> | null = null;
 
 /** A fake of the four extension routes the bell reaches. */
 async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
@@ -96,6 +97,7 @@ async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
         );
       }
       if (approveStatus !== 200) return json({ error: 'Nope' }, approveStatus);
+      if (approvalGate) await approvalGate;
       waiting = [];
       return json({ extension: { id: 'flow' } });
     }
@@ -155,6 +157,7 @@ describe('InboxBell — an extension waiting to be turned on', () => {
   });
 
   beforeEach(() => {
+    approvalGate = null;
     waiting = [FLOW];
     approveStatus = 200;
     posts = [];
@@ -482,6 +485,25 @@ describe('InboxBell — an extension waiting to be turned on', () => {
 
       expect(within(row).queryByText(/give agents|Gives agents/)).not.toBeInTheDocument();
     });
+  });
+
+  it('keeps the coded approval row while confirmation waits', async () => {
+    waiting = [{ ...FLOW, requestCode: 'K7MR-4XQ9-HT3W' }];
+    let confirm!: () => void;
+    approvalGate = new Promise<void>((resolve) => {
+      confirm = resolve;
+    });
+    renderBell();
+    const { user, row } = await openRow();
+    expect(within(row).getByText('K7MR-4XQ9-HT3W')).toBeInTheDocument();
+    await user.click(within(row).getByRole('button', { name: 'Allow' }));
+    await waitFor(() => expect(posts).toHaveLength(1));
+    expect(screen.getByText('Flow wants to run on this computer.')).toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: 'Allow' })).toBeDisabled();
+    confirm();
+    await waitFor(() =>
+      expect(screen.queryByText('Flow wants to run on this computer.')).not.toBeInTheDocument()
+    );
   });
 
   it('turns it on from 👍, and the row leaves', async () => {

@@ -1,13 +1,8 @@
+import { approvalAnswerContext } from '../services/core/auth/sessions/remote-answer-device.js';
 import { Hono, type Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
-import { isFromWifi } from '../services/core/auth/sessions/wifi-level.js';
-import {
-  trustStopPatchRaises,
-  wifiRaiseRefusal,
-} from '../services/core/auth/sessions/wifi-raise-guard.js';
 import { tunnelManager } from '../services/core/tunnel-manager.js';
 import { resolveTunnelSettings } from '../services/core/config/tunnel-settings.js';
 import { remoteAccessOn } from '../middleware/remote-access-switch.js';
@@ -43,9 +38,8 @@ import { describeCompanyCertificates } from '../services/core/config/company-cer
 import { describeCapacity } from '../services/core/config/describe-capacity.js';
 import { officialSpaceUrl } from '../services/communities/spaces-config.js';
 import { usableOfficialLink } from '../services/communities/official-space.js';
-import { deepMerge, sanitizedConfigSnapshot } from '../services/core/operator/config-patch.js';
+import { deepMerge } from '../services/core/operator/config-patch.js';
 import {
-  applyGuardedConfigWrite,
   logConfigWrite,
   type ConfigWriteAuthority,
 } from '../services/core/operator/config-write.js';
@@ -79,7 +73,8 @@ import { getMcpLocalToken, rotateMcpLocalToken } from '../services/core/auth/mcp
 import { resolveDorkHome } from '../lib/dork-home.js';
 import { resolveAgentsDirectory } from '../lib/agents-home.js';
 import { currentServerRole } from '../lib/server-role.js';
-import { getAccountUsageStore } from '../services/core/usage/current-usage-store.js';
+import { patchConfig } from './config-patch-http.js';
+import { runFrontDoorWrite } from './front-door-step-up.js';
 import {
   gateAccessFor,
   isAtThisComputer,
@@ -154,6 +149,7 @@ router.get('/', async (c) => {
     onTrustedConnection:
       isAtThisComputer(honoRequestFacts(c)) || isOnEncryptedConnection(honoRequestFacts(c)),
     callerRoute: requestSessionRoute(honoRequestFacts(c)),
+    approvalAnswerContext: await approvalAnswerContext(honoRequestFacts(c)),
     serverRole: currentServerRole(),
     capacity: await describeCapacity(process.env.DORK_HOME!),
     dismissedUpgradeVersions:
@@ -161,12 +157,12 @@ router.get('/', async (c) => {
         ?.dismissedUpgradeVersions ?? [],
     // The sidebar's bottom slot reads this to know which promo cards the person
     // has already waved away. Flattened to match `dismissedUpgradeVersions`
-    // above: the cockpit's config DTO is curated, not a mirror of the file.
+    // above: the app's config DTO is curated, not a mirror of the file.
     dismissedPromoIds:
       (configManager.get('ui') as { promos?: { dismissedIds?: string[] } } | undefined)?.promos
         ?.dismissedIds ?? [],
     // Sent whole, not flattened like the two dismissal lists above: a settings
-    // screen reads all four of these together, and the cockpit's sound and
+    // screen reads all four of these together, and the app's sound and
     // browser-notification code reads three of them on the same render.
     notifications: configManager.get('notifications') ?? NOTIFICATION_PREFS_DEFAULTS,
     port: env.DORKOS_PORT,
@@ -185,7 +181,7 @@ router.get('/', async (c) => {
     runtimes: configuredRuntimes((key) => configManager.getDot(key)),
     // Which Claude account new work will run and bill on, RESOLVED, plus the
     // accounts registered here (spec claude-code-accounts). Resolved for the same
-    // reason `claudeCliPath` is: the cockpit cannot see the server process's
+    // reason `claudeCliPath` is: the app cannot see the server process's
     // `CLAUDE_CONFIG_DIR`, so it would otherwise show an empty field where the
     // effective default belongs. The reader falls back to the section defaults on
     // its own, which covers the pre-migration read window.
@@ -204,7 +200,7 @@ router.get('/', async (c) => {
     },
     // What a new session starts with — the runtime, and the model and effort per
     // runtime. Writable through PATCH already; this is the read the Defaults card
-    // needs, because a curated view is the only config the cockpit ever sees.
+    // needs, because a curated view is the only config the app ever sees.
     executionDefaults: describeExecutionDefaults(runtimeRegistry.getAllCapabilities()),
     boundary: getBoundary(),
     // Set by index.ts at startup before routes are registered — always present at request time
@@ -234,7 +230,7 @@ router.get('/', async (c) => {
     // boot, so a setting changed while the server is up does not move `enabled`
     // until the next start. A settings screen that showed only `enabled` would
     // appear to discard the change; one that showed only the setting would claim
-    // an effect it has not had. Both go out, and the cockpit says which is which.
+    // an effect it has not had. Both go out, and the app says which is which.
     tasks: {
       enabled: isTasksEnabled(),
       enabledInConfig: configManager.get('scheduler')?.enabled ?? true,
@@ -291,7 +287,7 @@ router.get('/', async (c) => {
     // Who the user is, in their own words (spec user-profile-onboarding).
     // Local-only; the fallback covers the pre-migration read window.
     profile: configManager.get('profile') ?? USER_PROFILE_DEFAULTS,
-    // `defaultDirectory` goes out RESOLVED: the cockpit shows a person where a
+    // `defaultDirectory` goes out RESOLVED: the app shows a person where a
     // new agent will live and probes that path for a `.dork` conflict, so it has
     // to be the directory the server will actually use. The stored value is the
     // portable `~/.dork/agents` spelling, which is not the data directory once
@@ -359,7 +355,7 @@ router.get('/', async (c) => {
     auth: { ...(configManager.get('auth') ?? { enabled: false }), ownerEmail: readOwnerEmail() },
     // The two engaged-window ceilings, and the five automatic-reply limits.
     //
-    // The ceilings are READ-ONLY here: the cockpit prints them inside the
+    // The ceilings are READ-ONLY here: the app prints them inside the
     // sentence that describes the `engaged` response mode — "keeps answering for
     // 10 more minutes or 5 more messages" — so an operator who tuned them would
     // otherwise be reading a sentence about somebody else's install.
@@ -369,7 +365,7 @@ router.get('/', async (c) => {
     // whatever is set HERE (DOR-1430). So does how many conversations one agent
     // may work in at once, which Settings → Room limits offers too (DOR-2104). Writing them is still operator-only —
     // `config-write-policy.ts` decides that, not this read. The rest of the
-    // block (reply waits) is nothing the cockpit says out loud, so it stays off
+    // block (reply waits) is nothing the app says out loud, so it stays off
     // the wire.
     rooms: (() => {
       const rooms = configManager.get('rooms') ?? USER_CONFIG_DEFAULTS.rooms;
@@ -437,7 +433,7 @@ router.get('/', async (c) => {
     },
     // The staged opt-ins, RESOLVED (DOR-1304). This is the block that exists
     // because curation is not free: `runtimes.claudeCode.persistentSession`
-    // shipped behind a config flag and was unreachable from the cockpit, because
+    // shipped behind a config flag and was unreachable from the app, because
     // nothing above listed it. Anything registered as an experiment is listed
     // here automatically, so the next flag cannot go missing the same way.
     experiments: describeExperiments(),
@@ -485,7 +481,7 @@ function requestConfigWriteAuthority(caller: RequestFacts): ConfigWriteAuthority
     // more specific answer wins, since "sign in first" is more use to a caller
     // than "only a person can change those" when both are true.
     refuseOperatorOnly(paths) {
-      // ## THE COOKIE BAR — with login on, prove you are a person in the cockpit
+      // ## THE COOKIE BAR — with login on, prove you are a person in the app
       // (DOR-505)
       //
       // The agent bar is cleared by omitting two headers, which anything
@@ -524,9 +520,9 @@ function requestConfigWriteAuthority(caller: RequestFacts): ConfigWriteAuthority
       // ## THE AGENT BAR — anything that names itself an agent is refused, in
       // every posture, and with no owner yet it is the only bar left
       //
-      // The cockpit must keep working: its own enable-login and disable-login
+      // The app must keep working: its own enable-login and disable-login
       // flows legitimately write `auth.enabled` through here, and under
-      // `local-trust` nothing distinguishes the cockpit's request from any other
+      // `local-trust` nothing distinguishes the app's request from any other
       // loopback caller. So this bar is skipped for a caller that presents no
       // agent identity and no approval token, and applied to everyone else.
       //
@@ -595,144 +591,7 @@ function requestConfigWriteAuthority(caller: RequestFacts): ConfigWriteAuthority
   };
 }
 
-/**
- * How long a save that changed Claude Code's accounts waits for the usage store
- * to catch up before answering anyway. A reference move after a rename can be
- * slow, and the save itself has already landed.
- */
-const ACCOUNT_RECONCILE_WAIT_MS = 2_000;
-
-/**
- * The Claude Code fields that decide which accounts the usage store lists, and
- * whether `default` stands alone, as one comparable string.
- */
-function claudeAccountFields(): string {
-  const claudeCode = configManager.get('runtimes')?.claudeCode;
-  return JSON.stringify([
-    claudeCode?.accounts ?? null,
-    claudeCode?.defaultAccount ?? null,
-    claudeCode?.defaultAccountColor ?? null,
-  ]);
-}
-
-/**
- * Wait, bounded, for the usage store to re-read the accounts after a save that
- * changed them (spec `claude-account-ui` §6.5, "Main's own row").
- *
- * The config listener in `index.ts` starts a reconcile without waiting, and it
- * can join the 60 s scan's pass, which read the config BEFORE this save. The
- * client refetches usage the moment this route answers, so answering first let
- * it read that stale list: a standalone `default` beside the row that now owns
- * its folder, for up to a minute. `fresh` waits out any pass in flight and runs
- * one that reads the saved file. A reconcile that writes config itself (moving
- * references off a renamed account) fires the listener again, which joins this
- * pass rather than starting another, so the wait cannot loop.
- *
- * Never fails the request: the save has landed, so a reconcile that throws or
- * runs past {@link ACCOUNT_RECONCILE_WAIT_MS} is logged and the route answers
- * as it would have. Without a running store there is nothing to wait for.
- */
-async function awaitAccountReconcile(): Promise<void> {
-  const store = getAccountUsageStore();
-  if (!store) return;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timedOut = new Promise<'timeout'>((resolve) => {
-    timer = setTimeout(() => resolve('timeout'), ACCOUNT_RECONCILE_WAIT_MS);
-    timer.unref?.();
-  });
-  try {
-    const outcome = await Promise.race([store.reconcileAccounts({ fresh: true }), timedOut]);
-    if (outcome === 'timeout') {
-      logger.warn(
-        '[Config] account usage did not catch up with the save in time; answering anyway'
-      );
-    }
-  } catch (err) {
-    logger.warn('[Config] account usage reconcile after the save failed', logError(err));
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-router.patch('/', async (c) => {
-  try {
-    const accountsBefore = claudeAccountFields();
-    const patch = readJsonBody(c);
-    // From Wi-Fi, a Files & commands stop may tighten, never loosen (DOR-3037).
-    if (
-      isFromWifi(honoRequestFacts(c)) &&
-      trustStopPatchRaises(patch, configManager.get('runtimes'))
-    ) {
-      return c.json(wifiRaiseRefusal(), 403);
-    }
-    // The bars, the autonomy consent door, the write, and the audit line — the
-    // sequence `dorkos config set` and the `config_patch` tool also run, so the
-    // three doors cannot drift into meaning different things. What this route
-    // adds is who the caller is and what a refusal looks like over HTTP.
-    const result = applyGuardedConfigWrite({
-      patch,
-      authority: requestConfigWriteAuthority(honoRequestFacts(c)),
-      source: 'PATCH /api/config',
-      // This route cannot say WHO is calling it, and does not pretend to. With
-      // local login off — the default — the server cannot tell the app from any
-      // other process running as the same user, so claiming `operator` here
-      // would let an agent `curl` its own suggestion back through this door and
-      // launder the stamp. `display-name-provenance.ts` carries the full
-      // reasoning; the door a person's name-save actually uses is
-      // `PATCH /api/profile`, which refuses agents.
-      writer: { kind: 'unattributed' },
-    });
-
-    if (!result.ok) {
-      if (result.kind === 'invalid') {
-        return c.json(
-          { error: result.error, ...(result.details && { details: result.details }) },
-          400
-        );
-      }
-      const { status, error, code, paths, message } = result.refusal;
-      return c.json({ error, code, paths, message }, status as ContentfulStatusCode);
-    }
-
-    for (const warning of result.warnings) {
-      logger.warn(`[Config] ${warning}`);
-    }
-
-    if (claudeAccountFields() !== accountsBefore) await awaitAccountReconcile();
-
-    return c.json({
-      success: true,
-      // ## The answer is the CURATED snapshot, never the stored file (DOR-1740)
-      //
-      // This used to be `result.config` — everything on disk — so saving an ngrok
-      // token got that token straight back in the response body, and after that
-      // EVERY unrelated patch carried it too, along with `tunnel.auth`,
-      // `mcp.apiKey` and `cloud.instanceToken`.
-      //
-      // A response body is not a private channel. It is logged by whatever sits
-      // in front of the server, it lands in caches and devtools history, and when
-      // a person uses DorkOS from their phone it crosses the public internet over
-      // the built-in tunnel. That is the same reasoning that keeps the local MCP
-      // token off `GET /api/config` and behind a POST-only reveal (see that route
-      // below), and the reason the `config_patch` operator tool already answers
-      // with this projection rather than the raw config. This door was the one
-      // that never caught up, and it is the door the cockpit uses.
-      //
-      // The projection is an ALLOWLIST (`config-disclosure.ts`), so a
-      // secret-bearing field added tomorrow is withheld until somebody classifies
-      // it, rather than exposed until somebody remembers to hide it. Each
-      // withheld credential comes back as a boolean `…Configured` sibling, so a
-      // caller can still tell that the write landed without being told what
-      // landed — which `null` could not do, since it cannot be told apart from
-      // "nothing is set".
-      config: sanitizedConfigSnapshot(result.config),
-      ...(result.warnings.length > 0 && { warnings: result.warnings }),
-    });
-  } catch (err) {
-    logger.error('[Config] PATCH failed', logError(err));
-    return c.json({ error: 'Internal server error' }, 500);
-  }
-});
+router.patch('/', (c) => patchConfig(c, requestConfigWriteAuthority));
 
 /** PUT /api/config/agents/defaultAgent — set the default agent by name. */
 router.put('/agents/defaultAgent', (c) => {
@@ -793,7 +652,7 @@ function refuseLocalTokenToAProgram(c: Context<ApiEnv>): Response | undefined {
  * config DTO read, and returns it so the settings tab can show the new value.
  * Rotating invalidates every previously configured client until it re-pastes.
  */
-router.post('/mcp/rotate-token', (c) => {
+router.post('/mcp/rotate-token', async (c) => {
   try {
     if (env.MCP_API_KEY?.trim()) {
       return c.json(
@@ -819,9 +678,20 @@ router.post('/mcp/rotate-token', (c) => {
     const notYou = refuseLocalTokenToAProgram(c);
     if (notYou) return notYou;
 
-    const dorkHome = resolveDorkHome();
-    const localToken = rotateMcpLocalToken(dorkHome);
-    return c.json({ localToken });
+    return await runFrontDoorWrite(c, {
+      kind: 'mcp-token.rotate',
+      target: 'mcp-local-token-rotate',
+      input: { action: 'rotate' },
+      reason: 'Replace the local MCP token and disconnect its existing clients.',
+      subject: 'the local MCP token',
+      run: async (confirming) => {
+        if (env.MCP_API_KEY?.trim() || gateAccessFor(confirming) !== 'open')
+          return c.json({ error: 'The local token settings changed. Try again.' }, 409);
+        const dorkHome = resolveDorkHome();
+        const localToken = rotateMcpLocalToken(dorkHome);
+        return c.json({ localToken });
+      },
+    });
   } catch (err) {
     logger.error('[Config] POST mcp/rotate-token failed', logError(err));
     return c.json({ error: 'Internal server error' }, 500);
@@ -841,7 +711,7 @@ router.post('/mcp/rotate-token', (c) => {
  * Only the person may call it (`refuseLocalTokenToAProgram`, DOR-3330); once
  * an owner exists that takes their session at this computer.
  */
-router.post('/mcp/reveal-token', (c) => {
+router.post('/mcp/reveal-token', async (c) => {
   try {
     if (env.MCP_API_KEY?.trim()) {
       return c.json(
@@ -877,7 +747,24 @@ router.post('/mcp/reveal-token', (c) => {
         404
       );
     }
-    return c.json({ localToken });
+    return await runFrontDoorWrite(c, {
+      kind: 'mcp-token.reveal',
+      target: 'mcp-local-token-reveal',
+      input: { action: 'reveal' },
+      reason: 'Show the local MCP token.',
+      subject: 'the local MCP token',
+      run: async (confirming) => {
+        if (env.MCP_API_KEY?.trim() || gateAccessFor(confirming) !== 'open')
+          return c.json({ error: 'The local token settings changed. Try again.' }, 409);
+        const current = getMcpLocalToken();
+        if (current !== localToken)
+          return c.json(
+            { error: 'The local token changed. Try again.', code: 'TOKEN_CHANGED' },
+            409
+          );
+        return c.json({ localToken: current });
+      },
+    });
   } catch (err) {
     logger.error('[Config] POST mcp/reveal-token failed', logError(err));
     return c.json({ error: 'Internal server error' }, 500);

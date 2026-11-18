@@ -1,3 +1,5 @@
+import { isInstallOwner } from '../../services/core/auth/install-owner.js';
+import { readOwnerAccount } from '../../services/core/auth/index.js';
 import { taskReviewRevision } from '../../services/tasks/approvals/person-review.js';
 /**
  * A schedule on DorkOS credits spends the DorkOS account's money on every run,
@@ -96,7 +98,7 @@ describe('schedules on DorkOS credits are the owner’s alone', () => {
         {
           // Stands in for what the session gate and the agent-identity step resolved.
           before: (c, next) => {
-            if (signedInUser) c.set('user', signedInUser);
+            if (signedInUser) c.set('user', { ...signedInUser, sessionId: 'owner-test-browser' });
             return next();
           },
         }
@@ -173,6 +175,8 @@ describe('schedules on DorkOS credits are the owner’s alone', () => {
 
     it('lets the owner signed in to the app run it', async () => {
       signedInUser = { userId: OWNER_ID, credential: 'cookie' };
+      expect(readOwnerAccount()).toMatchObject({ id: OWNER_ID });
+      expect(isInstallOwner(signedInUser)).toBe(true);
       await request(server).post(`/api/tasks/${onCredits.id}/trigger`).expect(201);
       expect(scheduler.triggerManualRun).toHaveBeenCalledWith(onCredits.id);
     });

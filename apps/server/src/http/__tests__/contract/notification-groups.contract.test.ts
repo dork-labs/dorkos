@@ -53,6 +53,7 @@ import {
   type ComposedServer,
   type ContractCase,
   stepUpAt,
+  confirmSetupAt,
 } from './harness.js';
 
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
@@ -668,13 +669,16 @@ async function setup(
   method: string,
   path: string,
   body?: unknown,
-  headers: Record<string, string> = {}
+  headers: Record<string, string> = {},
+  confirmationPassword?: string
 ): Promise<{ json: Record<string, unknown>; headers: Headers }> {
-  const res = await fetch(new URL(path, server!.baseUrl), {
+  let res = await fetch(new URL(path, server!.baseUrl), {
     method,
     headers: { ...(body === undefined ? {} : { 'content-type': 'application/json' }), ...headers },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
+  if (confirmationPassword)
+    res = await confirmSetupAt(server!.baseUrl, res, confirmationPassword, headers);
   const text = await res.text();
   if (!res.ok) throw new Error(`${method} ${path} answered ${res.status}: ${text.slice(0, 300)}`);
   return { json: text ? (JSON.parse(text) as Record<string, unknown>) : {}, headers: res.headers };
@@ -932,7 +936,8 @@ describe('contract: the same groups with login on', () => {
       'PATCH',
       '/api/config',
       { auth: { enabled: true } },
-      { ...person, ...origin }
+      { ...person, ...origin },
+      OWNER.password
     );
     const created = await setup(
       server,
@@ -942,7 +947,8 @@ describe('contract: the same groups with login on', () => {
       {
         ...cookie,
         ...origin,
-      }
+      },
+      OWNER.password
     );
     apiKey = { authorization: `Bearer ${created.json.key as string}` };
   }, BOOT_HOOK_TIMEOUT_MS);

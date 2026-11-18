@@ -440,6 +440,15 @@ export type ApprovalFullDetailResponse = z.infer<typeof ApprovalFullDetailRespon
  */
 export const PendingApprovalSchema = z
   .object({
+    /** Server-derived display code; absent only on older servers. Never accepted as proof. */
+    requestCode: z
+      .string()
+      .regex(/^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$/)
+      .optional(),
+    /** Per response: false only for the desk. Absent on session-neutral events. */
+    answerNeedsStepUp: z.boolean().optional(),
+    /** The server's label for the answering browser's stored device and route. */
+    answeringFrom: z.string().optional(),
     /** ULID identifying the approval. Carries no secret. */
     approvalId: z.string(),
     /** Capability the request would invoke, e.g. `marketplace.uninstall`. */
@@ -547,6 +556,12 @@ export const PendingApprovalSchema = z
      * never at render time.
      */
     detail: z.string().max(APPROVAL_DETAIL_STORED_MAX_LENGTH).optional(),
+    /**
+     * One plain line under {@link detail}, outside its box: on an agent's raise
+     * card (DOR-4355 M4), the connection's name, which an agent can set, quoted
+     * and cut short. The box holds only what changes.
+     */
+    detailNote: z.string().max(200).optional(),
     /**
      * A Marketplace install or update whose full list is too long for
      * {@link detail} (DOR-3070): the card renders this instead of the detail,
@@ -721,3 +736,8 @@ export const DeclinedHookApprovalsResponseSchema = z.object({
   approvals: z.array(DeclinedHookApprovalSchema),
 });
 export type DeclinedHookApprovalsResponse = z.infer<typeof DeclinedHookApprovalsResponseSchema>;
+
+/** The same requester label on cards, chats and confirmation sheets. */
+export function approvalRequesterLabel(requestedBy: string): string {
+  return requestedBy.split('/').filter(Boolean).pop() ?? requestedBy;
+}

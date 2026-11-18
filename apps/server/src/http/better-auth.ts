@@ -17,6 +17,7 @@
  * @module http/better-auth
  */
 import type { IncomingHttpHeaders } from 'node:http';
+import type { StepUpActionKind } from '@dorkos/shared/step-up';
 import type { TLSSocket } from 'node:tls';
 import type { Context, Hono } from 'hono';
 import type { Auth } from '../services/core/auth/index.js';
@@ -27,6 +28,7 @@ import { classifyRequest, type RequestClass } from '../lib/request-classifier.js
 import {
   decideGateAccess,
   isContainerPortClass,
+  isOnEncryptedConnection,
   readGatePosture,
 } from '../services/core/auth/gate-policy.js';
 import { personProofMatches } from '../services/core/auth/person-proof.js';
@@ -46,6 +48,7 @@ import { publicComputerSessionExpired } from '../services/core/hub/public-comput
 import { isLoopbackHostHeader } from '../lib/trusted-origins.js';
 import { SETUP_CODE_HEADER, withSetupCodeAttempt } from '../services/core/auth/setup-code.js';
 import { annotateRemoteMcpKeyList } from '../services/core/auth/remote-mcp-audit.js';
+import { confirmAuthWrite } from './better-auth-step-up.js';
 
 /** Options for {@link mountBetterAuth}. */
 export interface BetterAuthOptions {
@@ -75,7 +78,18 @@ export function mountBetterAuth(app: Hono<ApiEnv>, options: BetterAuthOptions): 
     // it: a header must not be able to make the two disagree.
     const probe = requestForBetterAuth(c);
     if (!probe) return c.json({ error: 'Bad request' }, 400);
-    if (writesApiKey(new URL(probe.url).pathname) && !mayWriteApiKeys(requestClass)) {
+    const authPath = new URL(probe.url).pathname
+      .toLowerCase()
+      .replace(/\/{2,}/g, '/')
+      .replace(/\/$/, '');
+    const apiKeyWrite = c.req.method === 'POST' && writesApiKey(authPath);
+    const signOutKinds: Readonly<Record<string, StepUpActionKind>> = {
+      '/api/auth/revoke-session': 'devices.sign-out-one',
+      '/api/auth/revoke-other-sessions': 'devices.sign-out-others',
+      '/api/auth/revoke-sessions': 'devices.sign-out-all',
+    };
+    const signOutKind = c.req.method === 'POST' ? signOutKinds[authPath] : undefined;
+    if (apiKeyWrite && !mayWriteApiKeys(requestClass) && !isOnEncryptedConnection(facts)) {
       return c.json({ code: API_KEY_NEEDS_THIS_COMPUTER, message: API_KEY_REFUSAL }, 403);
     }
     // A session made on another route is nobody here, at these endpoints too.
@@ -88,6 +102,18 @@ export function mountBetterAuth(app: Hono<ApiEnv>, options: BetterAuthOptions): 
     );
     // Built from the same facts as `probe`, so it names the same address.
     const forHandler = headers === facts.headers ? probe : requestForBetterAuth(c, headers)!;
+    if (apiKeyWrite || signOutKind) {
+      return confirmAuthWrite({
+        c,
+        auth: options.auth,
+        forHandler,
+        facts,
+        headers,
+        authPath,
+        apiKeyWrite,
+        signOutKind,
+      });
+    }
     // The sign-up hook asks where this request came from (registration-policy.ts)
     // and, from another device, which setup code it carried (setup-code.ts).
     const response = await withRegistrationCaller(requestClass, () =>
@@ -109,11 +135,11 @@ export function mountBetterAuth(app: Hono<ApiEnv>, options: BetterAuthOptions): 
   });
 }
 
-/** Refusal code for making or changing an API key anywhere but this computer. */
+/** Refusal code for making or changing an API key over an unencrypted remote route. */
 export const API_KEY_NEEDS_THIS_COMPUTER = 'API_KEY_NEEDS_THIS_COMPUTER';
 
 /** What a person reads when that is refused. */
-const API_KEY_REFUSAL = 'API keys can only be made on this computer.';
+const API_KEY_REFUSAL = 'Use this computer or encrypted Remote Access to change API keys.';
 
 /**
  * Whether a path makes or changes an API key. Matched the way a router might
@@ -130,9 +156,7 @@ function writesApiKey(path: string): boolean {
 }
 
 /**
- * Whether a request may make or change an API key (DOR-2969). A key is not
- * bound to a route: one made from Wi-Fi or a tunnel would work from anywhere,
- * for as long as it lives, so keys are made at this computer. A hub has no
+ * Whether a classified route may reach API key confirmation. A hub has no
  * "this computer" (every request is remote), so its owner makes them there. A
  * browser reaching a container through its published port counts as this
  * computer, as everywhere else (`isAtThisComputer`). With
@@ -144,6 +168,8 @@ function writesApiKey(path: string): boolean {
 export function mayWriteApiKeys(requestClass: RequestClass): boolean {
   return (
     requestClass.route === 'local' ||
+    requestClass.route === 'own-tunnel' ||
+    requestClass.route === 'managed' ||
     requestClass.route === 'hub' ||
     isContainerPortClass(requestClass)
   );

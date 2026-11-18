@@ -46,11 +46,12 @@
  *
  * @module routes/session-relay
  */
+import { createHash } from 'node:crypto';
 import { Hono, type Context } from 'hono';
+import { runFrontDoorWrite } from './front-door-step-up.js';
 import {
   SessionRelayLevelBodySchema,
   SessionRelayLinkBodySchema,
-  SessionRelayResumeBodySchema,
   type SessionRelayDevice,
   type SessionRelayLinkRefusal,
   type SessionRelayPresence,
@@ -208,6 +209,15 @@ function audit(
   });
 }
 
+/** Identify the exact pinned link without putting its credential in a held action. */
+function relayLinkHash(pin: RelayPin | null): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify(pin ? [pin.computerId, pin.hubOrigin, pin.pinnedAt, pin.relaySecret] : null)
+    )
+    .digest('hex');
+}
+
 /**
  * Build the routes mounted at `/api/session-relay`.
  *
@@ -283,21 +293,36 @@ export function createSessionRelayRoutes(deps: SessionRelayRouteDeps = liveDeps)
         409
       );
     }
-    const passwordRefusal = await refusePassword(c, parsed.data.password);
-    if (passwordRefusal) return passwordRefusal;
-    const result = await withRelayPinLock(() =>
-      deps.link({
-        linkCode: parsed.data.linkCode,
-        computerName: parsed.data.computerName ?? deps.suggestedName(),
-      })
-    );
-    if (!result.ok) {
-      audit('link', 'create', 'Could not link this computer to a hub', 'refused', result.reason);
-      const { status: code, error } = LINK_REFUSALS[result.reason];
-      return c.json(errorBody(error, result.reason), code);
-    }
-    audit('link', 'create', `Linked this computer to ${result.pin.hubOrigin}`, 'ok');
-    return c.json(status());
+    const input = {
+      linkCode: parsed.data.linkCode,
+      computerName: parsed.data.computerName ?? deps.suggestedName(),
+    };
+    return runFrontDoorWrite(c, {
+      kind: 'session-relay.link',
+      target: 'web-access',
+      input,
+      reason: 'Create a link for chatting from the web.',
+      subject: 'chatting from the web',
+      run: async () => {
+        if (!deps.enabled() || deps.isHub() || !deps.ownerExists()) {
+          return c.json(errorBody('Chat from the web is unavailable.', 'NOT_AVAILABLE'), 409);
+        }
+        const result = await withRelayPinLock(() => deps.link(input));
+        if (!result.ok) {
+          audit(
+            'link',
+            'create',
+            'Could not link this computer to a hub',
+            'refused',
+            result.reason
+          );
+          const { status: code, error } = LINK_REFUSALS[result.reason];
+          return c.json(errorBody(error, result.reason), code);
+        }
+        audit('link', 'create', `Linked this computer to ${result.pin.hubOrigin}`, 'ok');
+        return c.json(status());
+      },
+    });
   });
 
   router.patch('/level', async (c) => {
@@ -307,44 +332,73 @@ export function createSessionRelayRoutes(deps: SessionRelayRouteDeps = liveDeps)
     if (!parsed.success) {
       return c.json(errorBody('Choose chat or full.', 'INVALID_LEVEL'), 400);
     }
-    const { level, password } = parsed.data;
-    // Raising what the web may do needs the password; lowering it does not.
-    if (level === 'full') {
-      const passwordRefusal = await refusePassword(c, password);
-      if (passwordRefusal) return passwordRefusal;
+    const { level } = parsed.data;
+    const requestedLink = relayLinkHash(deps.readPin());
+    if (level === 'full' && !deps.ownerExists()) {
+      return c.json(errorBody('Create an owner account first.', AUTH_REQUIRED_FOR_EXPOSURE), 409);
     }
-    const pin = await withRelayPinLock(() => deps.updatePin({ level }));
-    if (!pin) return c.json(errorBody('This computer isn’t linked.', 'NOT_LINKED'), 409);
-    audit('level', 'modify', `Set what the web may do here to ${pin.level}`, 'ok');
-    return c.json(status());
+    const run = async () => {
+      let linkChanged = false;
+      const pin = await withRelayPinLock(() => {
+        if (level === 'full' && relayLinkHash(deps.readPin()) !== requestedLink) {
+          linkChanged = true;
+          return null;
+        }
+        return deps.updatePin({ level });
+      });
+      if (linkChanged)
+        return c.json(errorBody('The link changed. Try again.', 'LINK_CHANGED'), 409);
+      if (!pin) return c.json(errorBody('This computer isn’t linked.', 'NOT_LINKED'), 409);
+      audit('level', 'modify', `Set what the web may do here to ${pin.level}`, 'ok');
+      return c.json(status());
+    };
+    if (level !== 'full' || deps.readPin()?.level === 'full') return run();
+    return runFrontDoorWrite(c, {
+      kind: 'session-relay.level',
+      target: 'web-access',
+      input: { level, linkHash: requestedLink },
+      reason: 'Allow Full control from the web.',
+      subject: 'chatting from the web',
+      run,
+    });
   });
 
   /** Pause or resume: the pin's flag, and pausing closes the live connection. */
   async function setPaused(c: Context<ApiEnv>, paused: boolean): Promise<Response> {
     const refusal = refusePerson(c);
     if (refusal) return refusal;
-    if (!paused) {
-      const parsed = SessionRelayResumeBodySchema.safeParse(readJsonBody(c) ?? {});
-      const passwordRefusal = await refusePassword(
-        c,
-        parsed.success ? parsed.data.password : undefined
-      );
-      if (passwordRefusal) return passwordRefusal;
+    if (!paused && !deps.ownerExists()) {
+      return c.json(errorBody('Create an owner account first.', AUTH_REQUIRED_FOR_EXPOSURE), 409);
     }
-    const pin = await withRelayPinLock(async () => {
-      const next = await deps.updatePin({ paused });
-      // Inside the lock, so no resume can open a relay after this pause.
-      if (next && paused) deps.closeRelay();
-      return next;
+    const requestedLink = relayLinkHash(deps.readPin());
+    const run = async () => {
+      const pin = await withRelayPinLock(async () => {
+        if (!paused && relayLinkHash(deps.readPin()) !== requestedLink) return 'changed' as const;
+        const next = await deps.updatePin({ paused });
+        // Inside the lock, so no resume can open a relay after this pause.
+        if (next && paused) deps.closeRelay();
+        return next;
+      });
+      if (pin === 'changed')
+        return c.json(errorBody('The link changed. Try again.', 'LINK_CHANGED'), 409);
+      if (!pin) return c.json(errorBody('This computer isn’t linked.', 'NOT_LINKED'), 409);
+      audit(
+        paused ? 'pause' : 'resume',
+        'modify',
+        paused ? 'Paused chatting from the web' : 'Resumed chatting from the web',
+        'ok'
+      );
+      return c.json(status());
+    };
+    if (paused) return run();
+    return runFrontDoorWrite(c, {
+      kind: 'session-relay.resume',
+      target: 'web-access',
+      input: { paused: false, linkHash: requestedLink },
+      reason: 'Resume chatting from the web.',
+      subject: 'chatting from the web',
+      run,
     });
-    if (!pin) return c.json(errorBody('This computer isn’t linked.', 'NOT_LINKED'), 409);
-    audit(
-      paused ? 'pause' : 'resume',
-      'modify',
-      paused ? 'Paused chatting from the web' : 'Resumed chatting from the web',
-      'ok'
-    );
-    return c.json(status());
   }
 
   /** The browsers using this computer are the owner's to see, never an agent's. */

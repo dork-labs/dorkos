@@ -46,14 +46,14 @@ export interface WebAccess {
   error: string | null;
   /** Whether a change is on its way. */
   busy: boolean;
-  /** Link to a hub with a pasted code and the owner's password. */
+  /** Link to a hub with a pasted code; confirmation uses the shared sheet. */
   link: (body: SessionRelayLinkBody) => void;
-  /** Choose what the web may do here; raising it needs the owner's password. */
-  setLevel: (level: SessionRelayLevel, password?: string) => void;
+  /** Choose what the web may do here; raising it uses the confirmation sheet. */
+  setLevel: (level: SessionRelayLevel) => void;
   /** Pause chatting from the web. */
   pause: () => void;
-  /** Resume chatting from the web, with the owner's password. */
-  resume: (password: string) => void;
+  /** Resume chatting from the web through the confirmation sheet. */
+  resume: () => void;
   /** Forget the hub. */
   unlink: () => void;
 }
@@ -98,10 +98,9 @@ export function useWebAccess(): WebAccess {
     error,
     busy: change.isPending,
     link: (body) => change.mutate(() => transport.linkSessionRelay(body)),
-    setLevel: (level, password) =>
-      change.mutate(() => transport.setSessionRelayLevel(level, password)),
+    setLevel: (level) => change.mutate(() => transport.setSessionRelayLevel(level)),
     pause: () => change.mutate(() => transport.pauseSessionRelay()),
-    resume: (password) => change.mutate(() => transport.resumeSessionRelay(password)),
+    resume: () => change.mutate(() => transport.resumeSessionRelay()),
     unlink: () => change.mutate(() => transport.unlinkSessionRelay()),
   };
 }

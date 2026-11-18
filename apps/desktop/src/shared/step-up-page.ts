@@ -42,6 +42,7 @@ export const STEP_UP_WINDOW_SIGN_IN_CHANNEL = 'step-up-window:sign-in-again';
 /** What the window shows: the server's own words. */
 export interface StepUpWindowView {
   reason: string;
+  requestCode?: string;
   notes: string[];
   /** Why no password is offered, when it is not. */
   unavailable?: 'insecure-connection' | 'no-password' | 'extension-risk';
@@ -69,6 +70,6 @@ export type StepUpWindowAnswer =
 export type StepUpWindowOutcome =
   | { kind: 'confirmed'; status: number; result: unknown }
   | { kind: 'not-confirmed' }
-  | { kind: 'ask-again' }
+  | { kind: 'ask-again'; reason?: 'different-request' }
   /** A mini app ran since this sign-in: the app signs in again, then asks afresh. */
   | { kind: 'sign-in-again' };

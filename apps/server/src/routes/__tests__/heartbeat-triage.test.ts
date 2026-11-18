@@ -17,7 +17,9 @@ import { swappableServer } from '@dorkos/test-utils/listening-server';
 const refusal = vi.hoisted(() => ({
   value: undefined as undefined | 'not-a-person' | 'not-the-owner',
 }));
-vi.mock('../../lib/caller-authority.js', () => ({
+// The front-door bar the confirmation step runs stays real; only the owner answer is set here.
+vi.mock('../../lib/caller-authority.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/caller-authority.js')>()),
   refuseUnlessAccountOwner: () => refusal.value,
 }));
 

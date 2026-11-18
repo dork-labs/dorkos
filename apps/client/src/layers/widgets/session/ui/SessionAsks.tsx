@@ -153,6 +153,7 @@ export function SessionAsks({
               approvalHasSuggestions={activeInteraction.approvalHasSuggestions}
               approvalAlwaysAllowScope={activeInteraction.approvalAlwaysAllowScope}
               approvalAlwaysAllowBreadth={activeInteraction.approvalAlwaysAllowBreadth}
+              approvalRequestCode={activeInteraction.approvalRequestCode}
               agentName={agentName}
               allowsDenyReason={allowsDenyReason}
             />

@@ -24,6 +24,11 @@
  *
  * @module services/notifications/declared-entries
  */
+
+import {
+  REMOTE_STEP_UP_ENTRIES,
+  type RemoteStepUpPayloads,
+} from './emitters/remote-step-up-notifications.js';
 import {
   CONNECTOR_HOLD_ENTRIES,
   type ConnectorHoldPayloads,
@@ -75,6 +80,7 @@ import {
 /** The payloads of every declared kind, joined into `NotificationPayloads`. */
 export interface DeclaredPayloads
   extends
+    RemoteStepUpPayloads,
     ConnectorHoldPayloads,
     WebDevicePayloads,
     CommunityNotificationPayloads,
@@ -92,6 +98,7 @@ export interface DeclaredPayloads
 
 /** Every declared entry, spread into the registry's `ENTRIES`. */
 export const DECLARED_ENTRIES = {
+  ...REMOTE_STEP_UP_ENTRIES,
   ...CONNECTOR_HOLD_ENTRIES,
   ...WEB_DEVICE_ENTRIES,
   ...COMMUNITY_NOTIFICATION_ENTRIES,
@@ -113,6 +120,7 @@ export const DECLARED_ENTRIES = {
  * `WIRED_NOTIFICATION_KINDS`.
  */
 export const DECLARED_WIRED_KINDS = [
+  'step-up.remote-refused',
   ...COMMUNITY_NOTIFICATION_KINDS,
   'connector.destructive_pending',
   'connector.destructive_executed',

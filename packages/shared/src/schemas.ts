@@ -5,6 +5,7 @@ export {
   type ErrorCategory,
   type ErrorEvent,
 } from './error-event-schemas.js';
+import { ApprovalAnswerContextSchema } from './step-up.js';
 import {
   TimingFields,
   ModelRequestEventSchema,
@@ -1954,6 +1955,10 @@ export const ApprovalEventSchema = z
     toolCallId: z.string(),
     toolName: z.string(),
     input: z.string(),
+    requestCode: z
+      .string()
+      .optional()
+      .describe('Server-derived display code for the exact request'),
     timeoutMs: z.number().describe('Server-side approval timeout in milliseconds'),
     startedAt: z.number().describe('Server timestamp when the approval timer started'),
     // SDK-provided rich context for the approval UI
@@ -2033,6 +2038,10 @@ export const PendingInteractionDTOSchema = z
       parked: z.boolean().optional(),
       toolName: z.string(),
       input: z.string(),
+      requestCode: z
+        .string()
+        .optional()
+        .describe('Server-derived display code for the exact request'),
       title: z.string().optional(),
       displayName: z.string().optional(),
       description: z.string().optional(),
@@ -3366,6 +3375,10 @@ export const ToolCallPartSchema = z
       .string()
       .optional()
       .describe('Why this permission request was triggered'),
+    approvalRequestCode: z
+      .string()
+      .optional()
+      .describe('Server-derived display code for the pending request'),
     approvalHasSuggestions: z.boolean().optional().describe('Whether "Always Allow" is available'),
     /**
      * How far this card's "Always Allow" reaches, carried through so the button
@@ -4886,6 +4899,7 @@ export const ServerConfigSchema = z
       description:
         'Whether THIS request reached DorkOS at the machine it runs on or over an encrypted connection (the own tunnel or managed remote access; DorkOS`s own https listener counts only on a test home for now. Decided by the listener, never a header). Where it is true, the owner may change the front-door settings and the session relay, as at the desk. False over plain-`http` Wi-Fi and a bare network bind. Absent from an older server',
     }),
+    approvalAnswerContext: ApprovalAnswerContextSchema.optional(),
     callerRoute: z
       .enum(['local', 'wifi', 'tunnel', 'managed', 'network', 'hub'])
       .nullable()

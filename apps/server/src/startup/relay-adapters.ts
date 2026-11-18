@@ -31,6 +31,7 @@ import { createRelayRefusedAskEmitter } from '../services/tasks/run-activity.js'
 import type { TaskStore } from '../services/tasks/task-store.js';
 import type { RegisteredRuntimes } from './runtimes.js';
 import { currentServerRole } from '../lib/server-role.js';
+import { registerAdapterEnableEscalator } from '../services/runtimes/claude-code/mcp-tools/adapter-tools.js';
 import { isPersonalComputer } from '../services/core/server-role/role-checks.js';
 
 /** The rooms the bridge writes through, as `createRoomSubsystem` built them. */
@@ -281,6 +282,8 @@ export async function startRelayAdapters(
         relayCore.setChatNoticeTargetResolver(makeChatNoticeTargetResolver(bindingStore));
       }
 
+      // An agent's call to turn a connection back on waits for a person (DOR-4355 M3 S7).
+      registerAdapterEnableEscalator(adapterManager);
       logger.info('[Relay] AdapterManager initialized');
     } catch (err) {
       const errInfo = logError(err);

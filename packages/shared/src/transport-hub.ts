@@ -41,24 +41,22 @@ export interface SessionRelayTransport {
   /**
    * Link this computer to a hub with a code copied from it. At this computer only.
    *
-   * @param body - The code, the name to link with, and the owner's password.
+   * @param body - The code and the name to link with.
    */
   linkSessionRelay(body: SessionRelayLinkBody): Promise<SessionRelayStatus>;
   /**
    * Choose what the web may do here. At this computer only.
    *
    * @param level - Chat or Full control.
-   * @param password - The owner's password; needed to raise it to Full control.
    */
-  setSessionRelayLevel(level: SessionRelayLevel, password?: string): Promise<SessionRelayStatus>;
+  setSessionRelayLevel(level: SessionRelayLevel): Promise<SessionRelayStatus>;
   /** Stop chatting from the web for now, keeping the link. At this computer only. */
   pauseSessionRelay(): Promise<SessionRelayStatus>;
   /**
    * Allow chatting from the web again. At this computer only.
    *
-   * @param password - The owner's password.
    */
-  resumeSessionRelay(password: string): Promise<SessionRelayStatus>;
+  resumeSessionRelay(): Promise<SessionRelayStatus>;
   /** Forget the hub. Works with the network off. At this computer only. */
   unlinkSessionRelay(): Promise<SessionRelayStatus>;
   /** Whether someone is using this computer from the web now, and from which browsers. */
@@ -73,7 +71,7 @@ export interface SessionRelayTransport {
    * Begin adding an approvals passkey: answers the approve page to open. At
    * this computer only.
    *
-   * @param body - The label, the owner's password, and a self-hoster's own approve page.
+   * @param body - The label and a self-hoster's own approve page.
    */
   startSessionRelayPasskey(body: SessionRelayPasskeyStartBody): Promise<SessionRelayPasskeyStart>;
   /**

@@ -49,19 +49,18 @@ export function createHubMethods(baseUrl: string) {
         timeout: 30_000,
       });
     },
-    setSessionRelayLevel(level: SessionRelayLevel, password?: string): Promise<SessionRelayStatus> {
+    setSessionRelayLevel(level: SessionRelayLevel): Promise<SessionRelayStatus> {
       return fetchJSON(baseUrl, '/session-relay/level', {
         method: 'PATCH',
-        body: JSON.stringify(password === undefined ? { level } : { level, password }),
+        body: JSON.stringify({ level }),
       });
     },
     pauseSessionRelay(): Promise<SessionRelayStatus> {
       return fetchJSON(baseUrl, '/session-relay/pause', { method: 'POST' });
     },
-    resumeSessionRelay(password: string): Promise<SessionRelayStatus> {
+    resumeSessionRelay(): Promise<SessionRelayStatus> {
       return fetchJSON(baseUrl, '/session-relay/resume', {
         method: 'POST',
-        body: JSON.stringify({ password }),
       });
     },
     unlinkSessionRelay(): Promise<SessionRelayStatus> {

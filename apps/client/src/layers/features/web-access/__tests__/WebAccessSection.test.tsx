@@ -115,14 +115,11 @@ describe('WebAccessSection', () => {
     const name = screen.getByLabelText('Name for this computer');
     expect(name).toHaveValue('Studio Mac');
     await userEvent.type(screen.getByLabelText('Link code'), '7K3M-Q9TD-X2HV-8RNB@me.dorkos.app');
-    // Link waits for the owner's password.
-    expect(screen.getByRole('button', { name: 'Link' })).toBeDisabled();
-    await userEvent.type(screen.getByLabelText('Your password for this computer'), 'hunter22');
+    expect(screen.queryByLabelText('Your password for this computer')).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Link' }));
     expect(linkSessionRelay).toHaveBeenCalledWith({
       linkCode: '7K3M-Q9TD-X2HV-8RNB@me.dorkos.app',
       computerName: 'Studio Mac',
-      password: 'hunter22',
     });
     expect(await screen.findByText('me.dorkos.app')).toBeInTheDocument();
   });
@@ -136,7 +133,6 @@ describe('WebAccessSection', () => {
       linkSessionRelay: vi.fn().mockRejectedValue(refusal),
     });
     await userEvent.type(await screen.findByLabelText('Link code'), 'ABCD-EFGH-JKMN-PQRS@hub.test');
-    await userEvent.type(screen.getByLabelText('Your password for this computer'), 'pw');
     await userEvent.click(screen.getByRole('button', { name: 'Link' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'That hub belongs to a different DorkOS account.'
@@ -153,7 +149,7 @@ describe('WebAccessSection', () => {
     expect(screen.getByText('Coming soon')).toBeInTheDocument();
   });
 
-  it('pauses with no password, and resumes only with one', async () => {
+  it('pauses and sends resume through the shared confirmation flow', async () => {
     const pauseSessionRelay = vi.fn().mockResolvedValue({ ...LINKED, paused: true });
     const resumeSessionRelay = vi.fn().mockResolvedValue(LINKED);
     renderSection({
@@ -165,11 +161,7 @@ describe('WebAccessSection', () => {
     expect(pauseSessionRelay).toHaveBeenCalledTimes(1);
     expect(await screen.findByText('Paused')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Resume' }));
-    const dialog = await screen.findByRole('alertdialog');
-    expect(resumeSessionRelay).not.toHaveBeenCalled();
-    await userEvent.type(within(dialog).getByLabelText('Password'), 'hunter22');
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Resume' }));
-    expect(resumeSessionRelay).toHaveBeenCalledWith('hunter22');
+    await waitFor(() => expect(resumeSessionRelay).toHaveBeenCalledWith());
     expect(await screen.findByText('Connected')).toBeInTheDocument();
   });
 

@@ -48,6 +48,8 @@ import { resolveConnectReturnTo } from '../services/connectors/resources/connect
 import { resolveTrustedOrigins } from '../lib/trusted-origins.js';
 import { logError, logger } from '../lib/logger.js';
 import { managedCloudErrorResponse } from './managed-cloud-error.js';
+import { CONNECTED_APPS } from './connector-step-up.js';
+import { runFrontDoorWrite } from './front-door-step-up.js';
 
 const CatalogQuerySchema = z
   .object({
@@ -261,14 +263,22 @@ export function createConnectorResourcesRoutes(deps: ConnectorResourcesRouterDep
     if (!body.success) return c.json(validationFailureBody(body.error), 400);
     const { returnTo: requestedReturnTo, ...request } = body.data;
     const kept = returnTo(requestedReturnTo);
-    try {
-      return c.json(
-        await deps.authentication.start(operator, { ...request, ...(kept && { returnTo: kept }) }),
-        201
-      );
-    } catch (error) {
-      return resourceErrorResponse(c, error);
-    }
+    const start = { ...request, ...(kept && { returnTo: kept }) };
+    // Connecting an account waits for the owner to confirm it's them (DOR-4355).
+    return runFrontDoorWrite(c, {
+      kind: 'connection.grant',
+      target: request.toolkit,
+      input: { op: 'connect', ...start },
+      reason: `Connect your ${request.toolkit} account to DorkOS.`,
+      subject: CONNECTED_APPS,
+      run: async () => {
+        try {
+          return c.json(await deps.authentication.start(operator, start), 201);
+        } catch (error) {
+          return resourceErrorResponse(c, error);
+        }
+      },
+    });
   });
 
   router.get('/authentication-flows/:flowId', async (c) => {
@@ -296,33 +306,57 @@ export function createConnectorResourcesRoutes(deps: ConnectorResourcesRouterDep
     if (operator instanceof Response) return operator;
     const body = ConnectorReconnectRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!body.success) return c.json(validationFailureBody(body.error), 400);
-    try {
-      const connectionId = ConnectionIdSchema.parse(c.req.param('connectionId'));
-      const kept = returnTo(body.data.returnTo);
-      return c.json(
-        await deps.authentication.reconnect(operator, connectionId, body.data.idempotencyKey, {
-          ...(kept && { returnTo: kept }),
-        }),
-        201
-      );
-    } catch (error) {
-      return resourceErrorResponse(c, error);
-    }
+    const parsedId = ConnectionIdSchema.safeParse(c.req.param('connectionId'));
+    if (!parsedId.success) return resourceErrorResponse(c, parsedId.error);
+    const connectionId = parsedId.data;
+    const { idempotencyKey } = body.data;
+    const kept = returnTo(body.data.returnTo);
+    // Signing an account back in waits for the owner (DOR-4355).
+    return runFrontDoorWrite(c, {
+      kind: 'connection.grant',
+      target: connectionId,
+      input: { op: 'reconnect', connectionId, idempotencyKey, ...(kept && { returnTo: kept }) },
+      reason: 'Sign this connected account back in to DorkOS.',
+      subject: CONNECTED_APPS,
+      run: async () => {
+        try {
+          return c.json(
+            await deps.authentication.reconnect(operator, connectionId, idempotencyKey, {
+              ...(kept && { returnTo: kept }),
+            }),
+            201
+          );
+        } catch (error) {
+          return resourceErrorResponse(c, error);
+        }
+      },
+    });
   });
 
   for (const action of ['pause', 'resume'] as const) {
     router.post(`/connections/:connectionId/${action}`, async (c) => {
       const operator = owner(c);
       if (operator instanceof Response) return operator;
-      try {
-        return c.json(
-          await withSignal(c, (signal) =>
-            deps.lifecycle[action](operator, c.req.param('connectionId'), signal)
-          )
-        );
-      } catch (error) {
-        return resourceErrorResponse(c, error);
-      }
+      const connectionId = c.req.param('connectionId');
+      const change = async () => {
+        try {
+          return c.json(
+            await withSignal(c, (signal) => deps.lifecycle[action](operator, connectionId, signal))
+          );
+        } catch (error) {
+          return resourceErrorResponse(c, error);
+        }
+      };
+      // Pausing only takes access away; turning one back on waits for the owner (DOR-4355).
+      if (action === 'pause') return change();
+      return runFrontDoorWrite(c, {
+        kind: 'connection.grant',
+        target: connectionId,
+        input: { op: 'resume', connectionId },
+        reason: 'Turn this connected account back on for your agents.',
+        subject: CONNECTED_APPS,
+        run: change,
+      });
     });
   }
 

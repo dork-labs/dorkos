@@ -211,14 +211,17 @@ export class RemoteWakePolicy implements RemoteWakeGate {
    * @param ref - The local connection ref.
    * @param ownerKey - The local owner the connection belongs to.
    * @param channels - Channel names, already normalised by `CommunityAnswerInSchema`.
+   * @param expect - When given, what must still be true of the stored channels inside
+   *   the write (`AnswerInChangedError` otherwise).
    */
   async setAnswerIn(
     ref: CommunityRef,
     ownerKey: string,
-    channels: readonly string[]
+    channels: readonly string[],
+    expect?: (current: readonly string[]) => boolean
   ): Promise<void> {
     if (!this.answerIn) throw new Error('Answering without a mention is not available here');
-    await this.answerIn.set(ref, ownerKey, channels);
+    await this.answerIn.set(ref, ownerKey, channels, expect);
   }
 
   /** @inheritdoc */

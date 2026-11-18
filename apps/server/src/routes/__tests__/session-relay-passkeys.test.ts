@@ -8,6 +8,7 @@
  * `none`).
  */
 import fs from 'node:fs';
+import { env } from '../../env.js';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
@@ -63,6 +64,12 @@ vi.mock('../../services/audit/audit-trail.js', async (importOriginal) => ({
   recordAudit: vi.fn(),
 }));
 
+import {
+  stepUpFixtureRoutes,
+  confirmFixtureRequest,
+  FIXTURE_BROWSER_HEADER,
+  FIXTURE_SESSION,
+} from './step-up-fixture.js';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { SoftAuthenticator, type SoftAttestation } from '@dorkos/test-utils/soft-authenticator';
@@ -101,7 +108,11 @@ import { RELAY_PASSKEY_CSP, createRelayPasskeyPageRoutes } from '../relay-passke
 
 const PASSWORD = 'correct horse';
 const APPROVE = 'https://approve.dorkos.ai';
-const OWNER_COOKIE: RequestUser = { userId: 'user_owner', credential: 'cookie' };
+const OWNER_COOKIE: RequestUser = {
+  userId: 'user_owner',
+  credential: 'cookie',
+  sessionId: FIXTURE_SESSION,
+};
 
 const PIN: RelayPin = {
   v: 2,
@@ -161,16 +172,23 @@ function makeDeps(): SessionRelayRouteDeps {
 let port = 0;
 
 /** The routes and the return page behind the chain, as the gate would have seen the caller. */
-function app(options: { user?: RequestUser; ingress?: IngressKind } = {}) {
+function app(options: { user?: RequestUser; ingress?: IngressKind; bare?: boolean } = {}) {
   const server = target.mount(
     honoGroupListener(
       [
         { path: '/api/session-relay', routes: createSessionRelayRoutes(deps) },
         { path: '/', routes: createRelayPasskeyPageRoutes() },
+        stepUpFixtureRoutes({
+          ownerId: () => 'user_owner',
+          checkPassword: (password) => deps.checkPassword(password),
+        }),
       ],
       {
         before: async (c, next) => {
           if (options.user) c.set('user', options.user);
+          else if (c.req.header(FIXTURE_BROWSER_HEADER))
+            c.set('user', { ...OWNER_COOKIE, sessionId: c.req.header(FIXTURE_BROWSER_HEADER)! });
+          else if (!options.bare) c.set('user', OWNER_COOKIE);
           if (options.ingress) markIngress(c.env.incoming, options.ingress);
           await next();
         },
@@ -181,11 +199,16 @@ function app(options: { user?: RequestUser; ingress?: IngressKind } = {}) {
   return server;
 }
 
+const complete = (ask: Parameters<typeof confirmFixtureRequest>[0], password = PASSWORD) =>
+  confirmFixtureRequest(ask, target.server, password);
+
 /** A started enrolment: the statement as sent, its bytes, and what it says. */
 async function start(body: Record<string, unknown> = {}) {
-  const res = await request(app())
-    .post('/api/session-relay/passkeys/start')
-    .send({ password: PASSWORD, label: 'MacBook passkey', ...body });
+  const res = await complete(
+    request(app())
+      .post('/api/session-relay/passkeys/start')
+      .send({ password: PASSWORD, label: 'MacBook passkey', ...body })
+  );
   expect(res.status).toBe(200);
   const bytes = decodeStepUpBase64url(res.body.statement);
   const statement = decodeStepUpStatement(bytes) as PasskeyEnrolStatementV1;
@@ -275,12 +298,12 @@ describe('POST /api/session-relay/passkeys/start', () => {
     expect(statement.userHandle).not.toBe(approvalUserHandle('acct_owner', 'computer-2'));
   });
 
-  it('refuses without the owner’s password, and opens nothing', async () => {
-    const res = await request(app())
+  it('refuses a bare caller even with login off, and opens nothing', async () => {
+    const res = await request(app({ bare: true }))
       .post('/api/session-relay/passkeys/start')
       .send({ label: 'MacBook passkey' });
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('SESSION_RELAY_PASSWORD');
+    expect(res.body.code).toBe('SESSION_RELAY_NEEDS_THIS_COMPUTER');
     expect(deps.passkeys.enrolment.open).toBe(false);
   });
 
@@ -292,33 +315,41 @@ describe('POST /api/session-relay/passkeys/start', () => {
     ['managed remote access', { user: OWNER_COOKIE, ingress: 'managed' }],
     ['the relay', { user: OWNER_COOKIE, ingress: 'relay' }],
   ])('refuses from %s, password or not', async (_, caller) => {
-    const res = await request(app(caller))
-      .post('/api/session-relay/passkeys/start')
-      .send({ password: PASSWORD, label: 'MacBook passkey' });
+    const res = await complete(
+      request(app(caller))
+        .post('/api/session-relay/passkeys/start')
+        .send({ password: PASSWORD, label: 'MacBook passkey' })
+    );
     expect(res.status).toBe(403);
     expect(deps.passkeys.enrolment.open).toBe(false);
   });
 
   it('refuses an agent at this computer', async () => {
-    const res = await request(app())
-      .post('/api/session-relay/passkeys/start')
-      .set('x-dorkos-agent', 'agent-token')
-      .send({ password: PASSWORD, label: 'MacBook passkey' });
+    const res = await complete(
+      request(app())
+        .post('/api/session-relay/passkeys/start')
+        .set('x-dorkos-agent', 'agent-token')
+        .send({ password: PASSWORD, label: 'MacBook passkey' })
+    );
     expect(res.status).toBe(403);
   });
 
   it('refuses when this computer is not linked, or its hub named no account', async () => {
     fs.rmSync(path.join(home, 'session-relay', 'pin.json'));
-    const unlinked = await request(app())
-      .post('/api/session-relay/passkeys/start')
-      .send({ password: PASSWORD, label: 'MacBook passkey' });
+    const unlinked = await complete(
+      request(app())
+        .post('/api/session-relay/passkeys/start')
+        .send({ password: PASSWORD, label: 'MacBook passkey' })
+    );
     expect(unlinked.status).toBe(409);
     expect(unlinked.body.error).toBe('Link this computer to your hub first.');
     const { accountId: _account, ...noAccount } = PIN;
     await writeRelayPin(noAccount, home);
-    const res = await request(app())
-      .post('/api/session-relay/passkeys/start')
-      .send({ password: PASSWORD, label: 'MacBook passkey' });
+    const res = await complete(
+      request(app())
+        .post('/api/session-relay/passkeys/start')
+        .send({ password: PASSWORD, label: 'MacBook passkey' })
+    );
     expect(res.status).toBe(409);
   });
 
@@ -333,9 +364,11 @@ describe('POST /api/session-relay/passkeys/start', () => {
       { origin: 'https://hub.example.test/enrol' },
       { origin: 'https://hub.example.test', rpId: 'example.test' },
     ]) {
-      const res = await request(app())
-        .post('/api/session-relay/passkeys/start')
-        .send({ password: PASSWORD, label: 'MacBook passkey', ...body });
+      const res = await complete(
+        request(app())
+          .post('/api/session-relay/passkeys/start')
+          .send({ password: PASSWORD, label: 'MacBook passkey', ...body })
+      );
       expect(res.status).toBe(400);
     }
   });
@@ -350,9 +383,11 @@ describe('POST /api/session-relay/passkeys/start', () => {
         )
       ).status
     ).toBe(200);
-    const other = await request(app())
-      .post('/api/session-relay/passkeys/start')
-      .send({ password: PASSWORD, label: 'Other', origin: 'https://hub.example.test' });
+    const other = await complete(
+      request(app())
+        .post('/api/session-relay/passkeys/start')
+        .send({ password: PASSWORD, label: 'Other', origin: 'https://hub.example.test' })
+    );
     expect(other.status).toBe(409);
     expect(other.body.error).toBe('Your passkeys use another approve page. Remove them to switch.');
     const second = await start();
@@ -553,9 +588,11 @@ describe('POST /api/session-relay/passkeys/finish', () => {
     expect(res.body.error).toMatch(/damaged/);
     expect(lastRefusal()).toBe('store');
     expect(fs.readFileSync(approvalKeysPath(home), 'utf8')).toBe('{"v":1,');
-    const again = await request(app())
-      .post('/api/session-relay/passkeys/start')
-      .send({ password: PASSWORD, label: 'MacBook passkey' });
+    const again = await complete(
+      request(app())
+        .post('/api/session-relay/passkeys/start')
+        .send({ password: PASSWORD, label: 'MacBook passkey' })
+    );
     expect(again.status).toBe(409);
   });
 
@@ -733,10 +770,12 @@ describe('finishing with no session, while this computer asks for a password', (
 
   it('keeps every other passkey route behind the login gate', async () => {
     state.login = true;
-    const started = await request(app())
-      .post('/api/session-relay/passkeys/start')
-      .set('Origin', pageOrigin())
-      .send({ password: PASSWORD, label: 'MacBook passkey' });
+    const started = await complete(
+      request(app())
+        .post('/api/session-relay/passkeys/start')
+        .set('Origin', pageOrigin())
+        .send({ password: PASSWORD, label: 'MacBook passkey' })
+    );
     expect(started.status).toBe(401);
     const removed = await request(app())
       .delete('/api/session-relay/passkeys/cred-1')
@@ -863,18 +902,22 @@ describe('the link the statement was written for', () => {
 
 describe('approve pages a start may not name', () => {
   it('refuses the hub itself as the approve page', async () => {
-    const res = await request(app())
-      .post('/api/session-relay/passkeys/start')
-      .send({ password: PASSWORD, label: 'MacBook passkey', origin: PIN.hubOrigin });
+    const res = await complete(
+      request(app())
+        .post('/api/session-relay/passkeys/start')
+        .send({ password: PASSWORD, label: 'MacBook passkey', origin: PIN.hubOrigin })
+    );
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('The approve page can’t be your hub itself.');
   });
 
   it('refuses any other approve page for a DorkOS Cloud account', async () => {
     await writeRelayPin({ ...PIN, issuer: 'https://cloud.dorkos.ai' }, home);
-    const res = await request(app())
-      .post('/api/session-relay/passkeys/start')
-      .send({ password: PASSWORD, label: 'MacBook passkey', origin: 'https://hub.example.test' });
+    const res = await complete(
+      request(app())
+        .post('/api/session-relay/passkeys/start')
+        .send({ password: PASSWORD, label: 'MacBook passkey', origin: 'https://hub.example.test' })
+    );
     expect(res.status).toBe(400);
     const { statement } = await start();
     expect(statement.origin).toBe(APPROVE);
@@ -883,9 +926,11 @@ describe('approve pages a start may not name', () => {
   it('says the hub names no account, for a self-hosted link without one', async () => {
     const { accountId: _account, ...noAccount } = PIN;
     await writeRelayPin(noAccount, home);
-    const res = await request(app())
-      .post('/api/session-relay/passkeys/start')
-      .send({ password: PASSWORD, label: 'MacBook passkey' });
+    const res = await complete(
+      request(app())
+        .post('/api/session-relay/passkeys/start')
+        .send({ password: PASSWORD, label: 'MacBook passkey' })
+    );
     expect(res.status).toBe(409);
     expect(res.body.error).toBe('This hub doesn’t name an account yet.');
   });
@@ -967,10 +1012,22 @@ describe('a server listening on ::1, as a default install on macOS does', () => 
 
   it('names [::1] in returnTo, serves the page there, and the passkey finishes from it', async () => {
     const server = http.createServer(
-      honoGroupListener([
-        { path: '/api/session-relay', routes: createSessionRelayRoutes(deps) },
-        { path: '/', routes: createRelayPasskeyPageRoutes() },
-      ])
+      honoGroupListener(
+        [
+          { path: '/api/session-relay', routes: createSessionRelayRoutes(deps) },
+          { path: '/', routes: createRelayPasskeyPageRoutes() },
+          stepUpFixtureRoutes({
+            ownerId: () => 'user_owner',
+            checkPassword: (password) => deps.checkPassword(password),
+          }),
+        ],
+        {
+          before: async (c, next) => {
+            c.set('user', OWNER_COOKIE);
+            await next();
+          },
+        }
+      )
     );
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject);
@@ -979,12 +1036,26 @@ describe('a server listening on ::1, as a default install on macOS does', () => 
     try {
       const { port: p } = server.address() as AddressInfo;
       // The owner's browser is on `localhost`, which on macOS reaches `::1`.
-      const started = await send(server, {
+      const held = await send(server, {
         method: 'POST',
         pathname: '/api/session-relay/passkeys/start',
         host: 'localhost',
         body: { password: PASSWORD, label: 'MacBook passkey' },
       });
+      expect(held.status).toBe(428);
+      const confirmation = await send(
+        server,
+        {
+          method: 'POST',
+          pathname: `/api/step-up/${JSON.parse(held.text).heldActionId}/password`,
+          host: 'localhost',
+          body: { password: PASSWORD },
+        },
+        { Origin: `http://localhost:${env.DORKOS_PORT}` }
+      );
+      expect(confirmation.status).toBe(200);
+      const applied = JSON.parse(confirmation.text);
+      const started = { status: applied.status, text: JSON.stringify(applied.result) };
       expect(started.status).toBe(200);
       const body = JSON.parse(started.text) as { statement: string; challenge: string };
       const statement = decodeStepUpStatement(
@@ -1120,9 +1191,11 @@ describe('a passkeys file that cannot be read just now', () => {
 describe('an issuer written as a fully qualified host', () => {
   it('is still DorkOS Cloud: any other approve page is refused', async () => {
     await writeRelayPin({ ...PIN, issuer: 'https://cloud.dorkos.ai.' }, home);
-    const res = await request(app())
-      .post('/api/session-relay/passkeys/start')
-      .send({ password: PASSWORD, label: 'MacBook passkey', origin: 'https://hub.example.test' });
+    const res = await complete(
+      request(app())
+        .post('/api/session-relay/passkeys/start')
+        .send({ password: PASSWORD, label: 'MacBook passkey', origin: 'https://hub.example.test' })
+    );
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('A DorkOS account uses the DorkOS approve page. Leave it unset.');
   });

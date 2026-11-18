@@ -18,7 +18,6 @@ import {
   SessionRelayPasskeyStartBodySchema,
   SessionRelayPasskeyStartSchema,
   SessionRelayPresenceSchema,
-  SessionRelayResumeBodySchema,
   SessionRelayStatusSchema,
 } from '@dorkos/shared/session-relay-link';
 
@@ -136,7 +135,7 @@ export function registerSessionRelayOpenApi(registry: OpenAPIRegistry): void {
     'Link this computer to a hub',
     'Sends a signed link request to the hub the code names (https only, no redirects, 15 s), ' +
       "checks the hub's signed answer, and pins the hub's key. Needs an owner account and the " +
-      "owner's password. A code naming this computer or a private address is refused, and a " +
+      "owner's confirmation in a separate sheet. A code naming this computer or a private address is refused, and a " +
       'computer linked to a DorkOS account accepts only a hub naming that account as its owner.',
     {
       400: json(ErrorSchema, 'Not a link code, or it names a private address'),
@@ -156,7 +155,7 @@ export function registerSessionRelayOpenApi(registry: OpenAPIRegistry): void {
     'patch',
     '/level',
     'Choose what the web may do here',
-    "Chat or Full control. Raising to Full control needs the owner's password; lowering does " +
+    'Chat or Full control. Raising to Full control asks for confirmation; lowering does ' +
       'not. Stored in the relay pin; every relayed turn is held to Chat today.',
     { 400: json(ErrorSchema, 'Not a level'), 403: PASSWORD, 409: NOT_LINKED, 429: THROTTLED },
     SessionRelayLevelBodySchema
@@ -176,9 +175,8 @@ export function registerSessionRelayOpenApi(registry: OpenAPIRegistry): void {
     'post',
     '/resume',
     'Resume chatting from the web',
-    "Lets the relay dial its hub again. Needs the owner's password.",
-    { 403: PASSWORD, 409: NOT_LINKED, 429: THROTTLED },
-    SessionRelayResumeBodySchema
+    'Lets the relay dial its hub again after confirmation in the app.',
+    { 409: NOT_LINKED }
   );
 
   registerWrite(
@@ -213,7 +211,7 @@ function registerPasskeyOpenApi(registry: OpenAPIRegistry): void {
     'post',
     '/passkeys/start',
     'Begin adding an approvals passkey',
-    "Needs the owner's password and a linked computer. Writes a single-use enrol statement " +
+    'Needs confirmation in the app and a linked computer. Writes a single-use enrol statement ' +
       '(two minutes, one live at a time; a new start replaces it) for the approve page ' +
       `(\`${links.approve}\` unless a self-hoster names their own https origin, and ` +
       'always the one already pinned once a passkey exists; never the hub itself, and only ' +

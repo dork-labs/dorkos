@@ -10,14 +10,16 @@
  * A person's action only, behind the same bar as `PATCH /api/tasks/:id`'s
  * `permissionMode` (`clearsTheAgentBar`): an agent, an agent token or an
  * approval token is refused with the same envelope, so an agent can never
- * undo, or redo, a mode through this door.
+ * undo, or redo, a mode through this door. Putting back a mode looser than
+ * the one now, or one whose direction cannot be told, waits for the owner to
+ * confirm it's them (DOR-4355).
  *
  * @module routes/task-mode-undo
  */
 import type { Hono } from 'hono';
 import type { MeshCore } from '@dorkos/mesh';
 import type { ApiEnv } from '../http/api-chain.js';
-import { honoRequestFacts } from '../http/request-facts.js';
+import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { clearsTheAgentBar } from '../lib/caller-authority.js';
 import { readActivityActor } from '../services/activity/activity-actor.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
@@ -34,6 +36,7 @@ import { broadcastTasksChanged } from '../services/tasks/task-sse-events.js';
 import { operatorOnlyTaskRefusal } from './task-route-answers.js';
 import { wifiScheduleRefusal } from './task-wifi-guard.js';
 import { mountTaskFileApprove } from './task-file-approve.js';
+import { holdTaskRaise, undoRaisesMode } from './task-arm-raise.js';
 
 /** What a request that names no notice reads: an Undo acts only on what its notice named (M9). */
 const UNDO_NEEDS_ITS_NOTICE = {
@@ -101,21 +104,33 @@ export function mountTaskModeUndo(router: Hono<ApiEnv>, deps: TaskModeUndoDeps):
 
     const named = namedChangeOf(readJsonBody(c), c.req.param('id'));
     if (!named) return c.json(UNDO_NEEDS_ITS_NOTICE, 400);
-    const outcome = await undoAgentModeChange(deps, c.req.param('id'), named, true);
-    if (!outcome.ok) return c.json(outcome.body, outcome.status);
-    const { task } = outcome;
-    deps.registrar.syncTask(task.id);
-    broadcastTasksChanged();
-    deps.activity?.emit({
-      ...readActivityActor(honoRequestFacts(c)),
-      category: 'tasks',
-      eventType: 'tasks.task_mode_changed',
-      resourceType: 'schedule',
-      resourceId: task.id,
-      resourceLabel: task.displayName ?? task.name,
-      summary: `Put scheduled task ${task.displayName ?? task.name} back to ${outcome.restored}`,
-      linkPath: '/',
+    const run = async (who: RequestFacts) => {
+      const outcome = await undoAgentModeChange(deps, c.req.param('id'), named, true);
+      if (!outcome.ok) return c.json(outcome.body, outcome.status);
+      const { task } = outcome;
+      deps.registrar.syncTask(task.id);
+      broadcastTasksChanged();
+      deps.activity?.emit({
+        ...readActivityActor(who),
+        category: 'tasks',
+        eventType: 'tasks.task_mode_changed',
+        resourceType: 'schedule',
+        resourceId: task.id,
+        resourceLabel: task.displayName ?? task.name,
+        summary: `Put scheduled task ${task.displayName ?? task.name} back to ${outcome.restored}`,
+        linkPath: '/',
+      });
+      return c.json(task);
+    };
+    // Putting back a looser mode is a raise, so it waits for the owner (DOR-4355); a
+    // prompt or a file cap put back, or a mode no looser than now, goes on at once.
+    // With no mode to put back, the Undo itself answers that nothing changed.
+    if (!existing || named.modeAt === undefined || !previous || !undoRaisesMode(existing, previous))
+      return run(caller);
+    return holdTaskRaise(c, deps.store, existing, {
+      input: named,
+      reason: 'Put back this scheduled task’s earlier, looser mode.',
+      run,
     });
-    return c.json(task);
   });
 }

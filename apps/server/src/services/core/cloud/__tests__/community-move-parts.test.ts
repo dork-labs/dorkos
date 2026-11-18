@@ -10,9 +10,18 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { CONFLICT_WAIT_SECONDS, fitsInParts, MAX_WAIT_SECONDS } from '../community-move-parts.js';
-import { CommunityMoveUploads, type StagedArchive } from '../community-move-upload.js';
+import {
+  CommunityMoveUploads,
+  initMoveStaging,
+  moveStagingRoot,
+  type StagedArchive,
+} from '../community-move-upload.js';
+
+/** A data directory whose staging folder holds this file's made-up exports. */
+const MOVE_HOME = mkdtempSync(path.join(tmpdir(), 'dorkos-move-parts-test-'));
+beforeAll(() => initMoveStaging(MOVE_HOME));
 
 const GIB = 1024 ** 3;
 const MIB = 1024 ** 2;
@@ -155,9 +164,12 @@ async function fakeServer(): Promise<Fake> {
   return fake;
 }
 
-/** A staged copy of `bytes` (a sparse file of zeros, or the given content), in its own folder. */
+/**
+ * A staged copy of `bytes` (a sparse file of zeros, or the given content), in its own folder
+ * where staging makes them, so discarding it may remove it.
+ */
 async function staged(content: number | Buffer): Promise<StagedArchive> {
-  const dir = mkdtempSync(path.join(tmpdir(), 'dorkos-move-parts-test-'));
+  const dir = mkdtempSync(path.join(moveStagingRoot(MOVE_HOME), 'move-'));
   const filePath = path.join(dir, 'export.zip');
   if (typeof content === 'number') {
     writeFileSync(filePath, '');

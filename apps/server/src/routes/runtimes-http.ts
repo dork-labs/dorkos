@@ -13,6 +13,10 @@ import { honoRequestFacts } from '../http/request-facts.js';
 import { logger } from '../lib/logger.js';
 import { refuseFrontDoorChange } from '../lib/caller-authority.js';
 import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
+import { runFrontDoorWrite } from './front-door-step-up.js';
+
+/** What a refused runtime credential change names, as the front-door bar words it. */
+const RUNTIME_SIGN_IN = "a runtime's sign-in";
 
 /**
  * Refuse non-local requests with 403: the refusal to return, or `undefined`
@@ -45,8 +49,34 @@ export function refuseNonLoopback(c: Context<ApiEnv>): Response | undefined {
 export function refuseCredentialChange(c: Context<ApiEnv>): Response | undefined {
   const notLocal = refuseNonLoopback(c);
   if (notLocal) return notLocal;
-  const refusal = refuseFrontDoorChange(honoRequestFacts(c), "a runtime's sign-in");
+  const refusal = refuseFrontDoorChange(honoRequestFacts(c), RUNTIME_SIGN_IN);
   return refusal ? c.json({ error: refusal.error, code: refusal.code }, 403) : undefined;
+}
+
+/**
+ * Save a runtime's key, or the address its prompts go to, once the owner at
+ * this computer confirms it's them (Security S6 on DOR-4355 M3): the key and a
+ * provider's `baseURL` choose where every agent prompt is sent. Local only,
+ * then the front-door bar, as before. The key stays out of `input`, so the
+ * sheet and the held statement never carry it.
+ *
+ * @param c - The request.
+ * @param save - What it saves, without the key, and the write itself.
+ */
+export function holdCredentialSave(
+  c: Context<ApiEnv>,
+  save: { target: string; input: unknown; reason: string; run: () => Promise<Response> }
+): Promise<Response> {
+  const notLocal = refuseNonLoopback(c);
+  if (notLocal) return Promise.resolve(notLocal);
+  return runFrontDoorWrite(c, {
+    kind: 'connection.credential',
+    target: save.target,
+    input: save.input,
+    reason: save.reason,
+    subject: RUNTIME_SIGN_IN,
+    run: save.run,
+  });
 }
 
 /**
