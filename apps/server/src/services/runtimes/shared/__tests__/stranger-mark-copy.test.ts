@@ -37,6 +37,16 @@ describe('marked-turn copy (DOR-3858)', () => {
     );
   });
 
+  // DOR-4593 and DOR-4587: "anyone but the owner" alone was false for group chats, unlisted
+  // senders, mini apps and agent hand-ons, so the flag-on note names each of them.
+  it('names group chats, the Approvers list, mini apps and agent hand-ons with the flag on', () => {
+    const note = outsideWordsNote(true);
+    expect(note).toContain('a group chat or a sender not on that connection');
+    expect(note).toContain('Approvers list marks it even when the owner wrote it');
+    expect(note).toContain('A mini app’s message');
+    expect(note).toContain('words another agent passes on from a marked turn');
+  });
+
   it('never claims pages or mail mark a turn', () => {
     for (const enabled of [false, true]) {
       expect(outsideWordsNote(enabled)).toMatch(/mail or web pages.*isn't tracked/);
