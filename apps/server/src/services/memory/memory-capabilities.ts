@@ -17,6 +17,7 @@ import {
   MEMORY_NOTE_MAX_CHARS,
   MEMORY_NOTES_FENCE_LABEL,
   MEMORY_NOTES_FENCE_PREAMBLE,
+  OUTSIDER_PROVENANCE_PHRASE,
 } from '@dorkos/shared/convention-files';
 import {
   MemoryCapExceededError,
@@ -38,6 +39,7 @@ import { getMemoryProvider } from './index.js';
 import { marksOf } from '../core/turn-power/turn-levels.js';
 import { chatReadOutsideWords } from '../core/turn-power/chat-outside-words.js';
 import { MEMORY_READ_TOOL_NAME, MEMORY_WRITE_TOOL_NAME } from './tool-names.js';
+import { markCallerTurnOutsider } from '../core/capabilities/mark-caller-turn.js';
 
 // The tool names live in a leaf module so the tool lists can import them
 // without this file's dependencies; re-exported for prose that names one.
@@ -469,6 +471,9 @@ export const memoryDomain: CapabilityDomain = {
             if (snapshot.status === 'error') {
               return { ok: false, error: NOTES_READ_FAILED_MESSAGE, code: 'io' as const };
             }
+            // A note saved in a turn that read outside words hands them on (DOR-3969).
+            if (snapshot.content.includes(OUTSIDER_PROVENANCE_PHRASE))
+              markCallerTurnOutsider(context);
             return {
               ok: true,
               text: fenceNotes(snapshot.content, snapshot.warning ? [snapshot.warning] : []),

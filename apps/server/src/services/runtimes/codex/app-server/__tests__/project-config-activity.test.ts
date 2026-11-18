@@ -71,6 +71,15 @@ describe('a folder’s own Codex settings', () => {
     expect(lines).toEqual([]);
   });
 
+  it('follows a symlinked config, as Codex does, and names the link', () => {
+    const real = path.join(root, 'shared-config.toml');
+    fs.writeFileSync(real, SERVER);
+    const dir = repo('linked-repo');
+    fs.symlinkSync(real, path.join(dir, '.codex', 'config.toml'));
+    loadTrust('person', 'danger-full-access', undefined, dir);
+    expect(lines.map((l) => l.files)).toEqual([[path.join(dir, '.codex', 'config.toml')]]);
+  });
+
   it('says nothing for a folder with no settings of its own', () => {
     expect(loadTrust('person', 'danger-full-access', undefined, repo('plain-repo'))).toBe(
       'trusted'

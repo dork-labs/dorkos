@@ -1015,7 +1015,7 @@ export class CodexRuntime implements AgentRuntime {
         cwd,
         settings,
         writableDirectories,
-        prompt: codexTurnPrompt(content, turnOpts, agentContext, sessionId, settings, selection),
+        ...codexTurnPrompt(content, turnOpts, agentContext, sessionId, settings, selection),
         // What a wake from this turn's leftover work runs with: the same
         // agent, folder, grants and settings. A wake's own turn passes its
         // context on, so a chain of wakes stays the same agent.

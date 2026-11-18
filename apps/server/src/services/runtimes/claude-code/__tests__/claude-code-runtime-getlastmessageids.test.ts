@@ -1,4 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+// Imported once, under the hoisted mocks below. The runtime's module graph is
+// large enough that importing it fresh per case (`vi.resetModules()` in
+// `beforeEach`) ran past the hook timeout on a loaded machine, and nothing here
+// needs a fresh graph: every mock is a file-level `vi.mock`, and the state a
+// case touches (tracked sessions, the transcript reader) lives on the instance
+// each case constructs.
+import { ClaudeCodeRuntime } from '../claude-code-runtime.js';
 
 // Hoist mock functions so they are accessible inside vi.mock() factory closures.
 const { mockReadTranscript, mockLoggerWarn, transcriptReaderFactory } = vi.hoisted(() => {
@@ -53,15 +60,12 @@ type HistoryMessage = {
 };
 
 describe('ClaudeCodeRuntime.getLastMessageIds', () => {
-  let runtime: InstanceType<typeof import('../claude-code-runtime.js').ClaudeCodeRuntime>;
+  let runtime: ClaudeCodeRuntime;
 
-  beforeEach(async () => {
-    vi.resetModules();
+  beforeEach(() => {
     mockReadTranscript.mockReset();
     mockLoggerWarn.mockReset();
-
-    const mod = await import('../claude-code-runtime.js');
-    runtime = new mod.ClaudeCodeRuntime('/tmp/dorkos-test', '/mock/cwd');
+    runtime = new ClaudeCodeRuntime('/tmp/dorkos-test', '/mock/cwd');
   });
 
   it('returns last user and assistant IDs from a multi-turn transcript', async () => {

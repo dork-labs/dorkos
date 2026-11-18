@@ -7,6 +7,7 @@ import type { IngressKind } from '../../services/core/remote/ingress-mark.js';
 import type { ApiEnv } from '../../http/api-chain.js';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
+import { loadCeilingMs } from '@dorkos/shared/test-budget';
 import { preloadConfigRouteModules } from './fixtures/config-cold-imports.js';
 import { confirmFixtureRequest, FIXTURE_BROWSER_HEADER } from './step-up-fixture.js';
 import type { Test } from '@dorkos/test-utils/supertest';
@@ -57,6 +58,22 @@ vi.mock('../../lib/boundary.js', () => ({
   // below measure the dork-home mapping, not a stub.
   expandTilde: (p: string) => (p.startsWith('~/') ? `/Users/test-user/${p.slice(2)}` : p),
 }));
+
+/**
+ * The budget for a hook or case that imports a FRESH module graph (the config
+ * router and everything under it, after `vi.resetModules()`). About a second
+ * on an idle machine; a loaded one (several agents' suites at once) took it past
+ * vitest's 10-second hook default with nothing wrong. Sized from the worst load
+ * stretch (40 s today); the 60 s cap does nothing now and only guards a future
+ * rise of `LOAD_SCALE_MAX`.
+ *
+ * Why a budget and not one import for the file: the fresh graph is what this
+ * file tests. `routes/config.ts` reads the `DORKOS_*_ENABLED` locks at module
+ * load, the restart cases re-import to restart, and the case bodies import the
+ * config manager themselves, which only matches the router's while both come
+ * from the same graph.
+ */
+const FRESH_GRAPH_TIMEOUT_MS = Math.min(60_000, loadCeilingMs(10_000));
 
 function createTempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-config-route-test-'));
@@ -235,7 +252,7 @@ describe('PATCH /api/config', () => {
 
     const configRouter = (await import('../config.js')).default;
     target.mount(await configApp(configRouter));
-  });
+  }, FRESH_GRAPH_TIMEOUT_MS);
 
   afterEach(() => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -963,22 +980,26 @@ describe('PATCH /api/config', () => {
       expect(res.body.todos).toEqual({ enabled: false });
     });
 
-    it('reports to-dos as on when DORKOS_TODOS_ENABLED is set at boot', async () => {
-      process.env.DORKOS_TODOS_ENABLED = 'true';
-      try {
-        vi.resetModules();
-        const { initConfigManager } = await import('../../services/core/config-manager.js');
-        initConfigManager(tmpDir);
-        const configRouter = (await import('../config.js')).default;
-        target.mount(await configApp(configRouter));
-        const res = await request(server).get('/api/config').expect(200);
-        expect(res.body.todos).toEqual({ enabled: true });
-      } finally {
-        delete process.env.DORKOS_TODOS_ENABLED;
-        // Drop the graph that captured the environment override before another fixture imports it.
-        vi.resetModules();
-      }
-    });
+    it(
+      'reports to-dos as on when DORKOS_TODOS_ENABLED is set at boot',
+      async () => {
+        process.env.DORKOS_TODOS_ENABLED = 'true';
+        try {
+          vi.resetModules();
+          const { initConfigManager } = await import('../../services/core/config-manager.js');
+          initConfigManager(tmpDir);
+          const configRouter = (await import('../config.js')).default;
+          target.mount(await configApp(configRouter));
+          const res = await request(server).get('/api/config').expect(200);
+          expect(res.body.todos).toEqual({ enabled: true });
+        } finally {
+          delete process.env.DORKOS_TODOS_ENABLED;
+          // Drop the graph that captured the environment override before another fixture imports it.
+          vi.resetModules();
+        }
+      },
+      FRESH_GRAPH_TIMEOUT_MS
+    );
   });
 
   describe('a default account written with ~ (runtimes.claudeCode.defaultAccount)', () => {
@@ -1511,7 +1532,7 @@ describe('GET /api/config', () => {
     const configRouter = (await import('../config.js')).default;
     await registerDeclaringRuntimes();
     target.mount(await configApp(configRouter));
-  });
+  }, FRESH_GRAPH_TIMEOUT_MS);
 
   afterEach(() => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -2011,68 +2032,80 @@ describe('GET /api/config', () => {
       vi.resetModules();
     });
 
-    it('flags each subsystem whose environment variable is set, whatever its value', async () => {
-      // `false` on purpose: presence is the question, because that is what
-      // `index.ts` branches on.
-      process.env.DORKOS_TASKS_ENABLED = 'false';
-      process.env.DORKOS_RELAY_ENABLED = 'true';
-      vi.resetModules();
+    it(
+      'flags each subsystem whose environment variable is set, whatever its value',
+      async () => {
+        // `false` on purpose: presence is the question, because that is what
+        // `index.ts` branches on.
+        process.env.DORKOS_TASKS_ENABLED = 'false';
+        process.env.DORKOS_RELAY_ENABLED = 'true';
+        vi.resetModules();
 
-      const { initConfigManager } = await import('../../services/core/config-manager.js');
-      initConfigManager(tmpDir);
-      const configRouter = (await import('../config.js')).default;
-      await registerDeclaringRuntimes();
-      target.mount(await configApp(configRouter));
+        const { initConfigManager } = await import('../../services/core/config-manager.js');
+        initConfigManager(tmpDir);
+        const configRouter = (await import('../config.js')).default;
+        await registerDeclaringRuntimes();
+        target.mount(await configApp(configRouter));
 
-      const res = await request(server).get('/api/config').expect(200);
+        const res = await request(server).get('/api/config').expect(200);
 
-      expect(res.body.tasks.lockedByEnv).toBe(true);
-      expect(res.body.relay.lockedByEnv).toBe(true);
-    });
+        expect(res.body.tasks.lockedByEnv).toBe(true);
+        expect(res.body.relay.lockedByEnv).toBe(true);
+      },
+      FRESH_GRAPH_TIMEOUT_MS
+    );
 
-    it('keeps explicit false locks separate from running and configured state', async () => {
-      process.env.DORKOS_TASKS_ENABLED = 'false';
-      process.env.DORKOS_RELAY_ENABLED = 'false';
-      vi.resetModules();
+    it(
+      'keeps explicit false locks separate from running and configured state',
+      async () => {
+        process.env.DORKOS_TASKS_ENABLED = 'false';
+        process.env.DORKOS_RELAY_ENABLED = 'false';
+        vi.resetModules();
 
-      const { initConfigManager } = await import('../../services/core/config-manager.js');
-      initConfigManager(tmpDir);
-      const configRouter = (await import('../config.js')).default;
-      await registerDeclaringRuntimes();
-      target.mount(await configApp(configRouter));
+        const { initConfigManager } = await import('../../services/core/config-manager.js');
+        initConfigManager(tmpDir);
+        const configRouter = (await import('../config.js')).default;
+        await registerDeclaringRuntimes();
+        target.mount(await configApp(configRouter));
 
-      const res = await request(server).get('/api/config').expect(200);
+        const res = await request(server).get('/api/config').expect(200);
 
-      expect(res.body.tasks).toMatchObject({
-        enabled: false,
-        enabledInConfig: true,
-        lockedByEnv: true,
-      });
-      expect(res.body.relay).toMatchObject({
-        enabled: false,
-        enabledInConfig: true,
-        lockedByEnv: true,
-      });
-    });
+        expect(res.body.tasks).toMatchObject({
+          enabled: false,
+          enabledInConfig: true,
+          lockedByEnv: true,
+        });
+        expect(res.body.relay).toMatchObject({
+          enabled: false,
+          enabledInConfig: true,
+          lockedByEnv: true,
+        });
+      },
+      FRESH_GRAPH_TIMEOUT_MS
+    );
 
-    it('flags only the one whose variable is set, leaving the other switchable', async () => {
-      // The two are read independently, and a lock reported on both would take
-      // away a switch the person can still use.
-      process.env.DORKOS_RELAY_ENABLED = 'true';
-      delete process.env.DORKOS_TASKS_ENABLED;
-      vi.resetModules();
+    it(
+      'flags only the one whose variable is set, leaving the other switchable',
+      async () => {
+        // The two are read independently, and a lock reported on both would take
+        // away a switch the person can still use.
+        process.env.DORKOS_RELAY_ENABLED = 'true';
+        delete process.env.DORKOS_TASKS_ENABLED;
+        vi.resetModules();
 
-      const { initConfigManager } = await import('../../services/core/config-manager.js');
-      initConfigManager(tmpDir);
-      const configRouter = (await import('../config.js')).default;
-      await registerDeclaringRuntimes();
-      target.mount(await configApp(configRouter));
+        const { initConfigManager } = await import('../../services/core/config-manager.js');
+        initConfigManager(tmpDir);
+        const configRouter = (await import('../config.js')).default;
+        await registerDeclaringRuntimes();
+        target.mount(await configApp(configRouter));
 
-      const res = await request(server).get('/api/config').expect(200);
+        const res = await request(server).get('/api/config').expect(200);
 
-      expect(res.body.relay.lockedByEnv).toBe(true);
-      expect(res.body.tasks.lockedByEnv).toBe(false);
-    });
+        expect(res.body.relay.lockedByEnv).toBe(true);
+        expect(res.body.tasks.lockedByEnv).toBe(false);
+      },
+      FRESH_GRAPH_TIMEOUT_MS
+    );
   });
 
   // The block that exists because curation is not free (DOR-1304). A flag
@@ -2504,7 +2537,7 @@ describe('PUT /api/config/agents/defaultAgent', () => {
 
     const configRouter = (await import('../config.js')).default;
     target.mount(await configApp(configRouter));
-  });
+  }, FRESH_GRAPH_TIMEOUT_MS);
 
   afterEach(() => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -2575,7 +2608,7 @@ describe('PATCH /api/config, the front-door settings (DOR-2969)', () => {
     initConfigManager(tmpDir);
     const configRouter = (await import('../config.js')).default;
     target.mount(await configApp(configRouter));
-  });
+  }, FRESH_GRAPH_TIMEOUT_MS);
 
   afterEach(() => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -2646,7 +2679,7 @@ describe('PATCH /api/config, a Files & commands stop from Wi-Fi (DOR-3037)', () 
     initConfigManager(tmpDir);
     const configRouter = (await import('../config.js')).default;
     target.mount(await configApp(configRouter));
-  });
+  }, FRESH_GRAPH_TIMEOUT_MS);
 
   afterEach(() => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -2775,7 +2808,7 @@ describe('the Remote Access switch (DOR-3650)', () => {
     dorkHome = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-remote-off-'));
     process.env.DORK_HOME = dorkHome;
     await mount();
-  });
+  }, FRESH_GRAPH_TIMEOUT_MS);
 
   afterEach(async () => {
     unwatch();
@@ -2824,15 +2857,19 @@ describe('the Remote Access switch (DOR-3650)', () => {
       expect(res.body.remoteAccess).toEqual({ enabled: false });
     });
 
-    it('stays off after a restart', async () => {
-      await turnOff();
-      vi.resetModules();
-      await mount();
-      const onDisk = JSON.parse(fs.readFileSync(path.join(dorkHome, 'config.json'), 'utf-8'));
-      expect(onDisk.remoteAccess).toEqual({ enabled: false });
-      await request(server).get('/api/probe').set(VIA, 'wifi').expect(403);
-      await request(server).get('/api/probe').expect(200);
-    });
+    it(
+      'stays off after a restart',
+      async () => {
+        await turnOff();
+        vi.resetModules();
+        await mount();
+        const onDisk = JSON.parse(fs.readFileSync(path.join(dorkHome, 'config.json'), 'utf-8'));
+        expect(onDisk.remoteAccess).toEqual({ enabled: false });
+        await request(server).get('/api/probe').set(VIA, 'wifi').expect(403);
+        await request(server).get('/api/probe').expect(200);
+      },
+      FRESH_GRAPH_TIMEOUT_MS
+    );
 
     it('turns back on for the person at this computer', async () => {
       await turnOff();

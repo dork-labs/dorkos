@@ -18,6 +18,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import type { PackageType, SourceKey } from '@dorkos/marketplace';
+import { PERSONAL_MARKETPLACE_NAME } from '../marketplace-mcp/personal-marketplace.js';
 
 /** Path to the install-metadata sidecar relative to an install root. */
 export const INSTALL_METADATA_PATH = path.join('.dork', 'install-metadata.json');
@@ -263,4 +264,16 @@ export async function writeInstallMetadata(
   const metadataPath = path.join(installRoot, INSTALL_METADATA_PATH);
   await mkdir(path.dirname(metadataPath), { recursive: true });
   await writeFile(metadataPath, JSON.stringify(metadata, null, 2) + '\n', 'utf-8');
+}
+
+/**
+ * Whether the package installed at this root came from somewhere but the person's own marketplace
+ * (DOR-3969): its manifest and README are text someone outside the team wrote. `false` with no
+ * install record, which is something a person or an agent here made.
+ *
+ * @param installRoot - The installed package's folder (an agent's home, say).
+ */
+export async function installedFromOutside(installRoot: string): Promise<boolean> {
+  const metadata = await readInstallMetadata(installRoot);
+  return metadata !== null && metadata.installedFrom !== PERSONAL_MARKETPLACE_NAME;
 }

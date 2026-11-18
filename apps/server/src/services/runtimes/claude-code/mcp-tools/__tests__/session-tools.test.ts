@@ -1434,6 +1434,11 @@ describe("session_start runs at the calling chat's level or lower (spec inherite
       permissionMode: 'plan',
     });
     expect(body).toMatchObject({ code: 'UNKNOWN_PERMISSION_MODE' });
+    // The agent reads which modes it can name instead (DOR-4447).
+    expect(body.error).toMatch(
+      /^The codex runtime has no permission mode called plan\. It supports: .+\.$/
+    );
+    expect(body.error).not.toMatch(/It supports: .*\bplan\b/);
   });
 
   it('holds a chat SET to Never ask whose turn runs at Plan to chats that cannot ask', async () => {

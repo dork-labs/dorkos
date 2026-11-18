@@ -1,4 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import {
   createMeshDiscoverHandler,
   createMeshRegisterHandler,
@@ -48,6 +51,8 @@ function createMockDeps(meshEnabled = true): McpToolDeps {
     get: vi.fn(),
     getByPath: vi.fn(),
     getSubject: vi.fn((agentId: string) => `relay.agent.ns.${agentId}`),
+    // No agent here was installed from a package (DOR-3969 `fromPackage`).
+    getProjectPath: vi.fn(() => undefined),
     unregister: vi.fn(),
     deny: vi.fn(),
     undeny: vi.fn(),
@@ -723,5 +728,55 @@ describe('Mesh MCP Tools', () => {
       expect(result.isError).toBe(true);
       expect(JSON.parse(result.content[0].text)).toMatchObject({ code: 'MESH_DISABLED' });
     });
+  });
+});
+
+// DOR-3969: an agent installed from a marketplace package carries text its author wrote, so the
+// list says so (`fromPackage`) and the call marks the turn. One the person made says nothing.
+describe('mesh_list and mesh_inspect name an agent installed from a package', () => {
+  /** An agent home with an install record from `installedFrom`, or none. */
+  async function homeInstalledFrom(installedFrom: string | null): Promise<string> {
+    const home = await mkdtemp(path.join(os.tmpdir(), 'dorkos-from-package-'));
+    if (installedFrom !== null) {
+      await mkdir(path.join(home, '.dork'), { recursive: true });
+      await writeFile(
+        path.join(home, '.dork', 'install-metadata.json'),
+        JSON.stringify({
+          name: 'garden-helper',
+          version: '1.0.0',
+          type: 'agent',
+          installedFrom,
+          installedAt: '2026-11-17T12:00:00.000Z',
+        })
+      );
+    }
+    return home;
+  }
+
+  async function listed(installedFrom: string | null) {
+    const home = await homeInstalledFrom(installedFrom);
+    try {
+      const deps = createMockDeps();
+      const mesh = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+      mesh.list!.mockReturnValue([{ id: 'a1', name: 'garden-helper' }]);
+      mesh.getProjectPath!.mockReturnValue(home);
+      mesh.inspect!.mockReturnValue({ agent: { id: 'a1', name: 'garden-helper' }, health: {} });
+      const list = JSON.parse((await createMeshListHandler(deps)({})).content[0].text);
+      const inspect = JSON.parse(
+        (await createMeshInspectHandler(deps)({ agentId: 'a1' })).content[0].text
+      );
+      return { list: list.agents[0].fromPackage, inspect: inspect.agent.fromPackage };
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  }
+
+  it('says fromPackage for an agent installed from a third-party marketplace', async () => {
+    expect(await listed('garden-market')).toEqual({ list: true, inspect: true });
+  });
+
+  it("says nothing for one from the person's own marketplace, or one made here", async () => {
+    expect(await listed('personal')).toEqual({ list: undefined, inspect: undefined });
+    expect(await listed(null)).toEqual({ list: undefined, inspect: undefined });
   });
 });

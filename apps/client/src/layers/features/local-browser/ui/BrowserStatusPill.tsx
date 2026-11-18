@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import {
   ArrowUpRight,
   Clock,
@@ -57,6 +57,56 @@ export function askedAgo(askedAt: string, now: number): string {
   if (minutes < 60) return `Asked ${minutes} minute${minutes === 1 ? '' : 's'} ago.`;
   const hours = Math.floor(minutes / 60);
   return `Asked ${hours} hour${hours === 1 ? '' : 's'} ago.`;
+}
+
+/**
+ * The pill's tap area on a phone: the chip's own hit area (44 tall) made at least
+ * 44 wide, centred on it. `100%` is the chip's width, so a chip already 44 or
+ * wider keeps its own edges. Same modifiers as the chip's hit area, so it
+ * replaces that `inset-x-0` when merged.
+ *
+ * It never reaches a neighbour: the chip sits centred in a slot at least 44 wide
+ * in the row's own layout ({@link PILL_SLOT}), so this fills that slot exactly.
+ */
+const PILL_PHONE_HIT_WIDTH = 'max-md:after:inset-x-[min(0px,calc((100%_-_2.75rem)/2))]';
+
+/**
+ * The pill's place in the row: on a phone at least 44 wide, with the drawn chip
+ * centred in it, so the ⋯ beside it starts where the pill's tap area ends (spec
+ * §12: the chip may look smaller than its 44 × 44 target).
+ */
+const PILL_SLOT = 'flex shrink-0 justify-center max-md:min-w-11';
+
+/**
+ * Below this many pixels of chrome, Your turn shows only its icon: the same
+ * number as its `@max-[359px]/browser-chrome` classes, which hide the words.
+ */
+const YOUR_TURN_WORDS_MIN_PX = 360;
+
+/** What Your turn's name starts with while its words show (WCAG 2.5.3, label in name). */
+const YOUR_TURN_NAME_PREFIX = 'Your turn: ';
+
+/**
+ * Whether the browser chrome around `ref` is at least `min` pixels wide, kept
+ * current as the panel resizes. An accessible name can't follow a container
+ * query, so the name reads the same width the query does. No chrome, or no
+ * layout yet (a width of 0), counts as wide.
+ */
+function useChromeAtLeast(ref: RefObject<HTMLElement | null>, min: number): boolean {
+  const [wide, setWide] = useState(true);
+  useLayoutEffect(() => {
+    const chrome = ref.current?.closest('[data-slot="browser-chrome"]');
+    if (!chrome) return;
+    const read = () => {
+      const width = chrome.getBoundingClientRect().width;
+      setWide(width === 0 || width >= min);
+    };
+    read();
+    const observer = new ResizeObserver(read);
+    observer.observe(chrome);
+    return () => observer.disconnect();
+  }, [ref, min]);
+  return wide;
 }
 
 /** Words the pill says on its own, which an agent's name must not pass for. */
@@ -197,6 +247,11 @@ export function BrowserStatusPill({
   };
   const copy = browserPillCopy(state, agentName, now ?? openedAt);
   const yourTurn = state.kind === 'your-turn';
+  const slot = useRef<HTMLSpanElement>(null);
+  const showsYourTurnWords = useChromeAtLeast(slot, YOUR_TURN_WORDS_MIN_PX);
+  // A fixed prefix of DorkOS's own words; the sentence keeps the host the page reported.
+  const name =
+    yourTurn && showsYourTurnWords ? `${YOUR_TURN_NAME_PREFIX}${copy.lines[0]}` : copy.lines[0];
   const agent = pillAgentName(agentName) ?? 'the agent';
   const run = (action: (() => void) | undefined) =>
     action &&
@@ -210,66 +265,89 @@ export function BrowserStatusPill({
       <span role="status" className="sr-only">
         {copy.status}
       </span>
-      <ResponsivePopover open={open} onOpenChange={onOpenChange}>
-        <ResponsivePopoverTrigger asChild>
-          <button
-            type="button"
-            data-slot="browser-status-pill"
-            data-state-kind={state.kind}
-            aria-label={copy.lines[0]}
-            className={cn(
-              chipVariants({ size: 'sm' }),
-              // Reserved: the address field never moves when the words change.
-              'w-32 justify-start',
-              !yourTurn && '@max-[479px]/browser-chrome:w-auto @max-[479px]/browser-chrome:px-2',
-              // Orange means "this is about you": only Your turn wears it.
-              yourTurn && 'bg-brand/15 text-foreground hover:bg-brand/25'
-            )}
-          >
-            <copy.icon aria-hidden className={cn(yourTurn && 'text-brand')} />
-            {state.kind === 'driving' && (
-              <span
-                aria-hidden
-                data-slot="browser-status-pill-live"
-                className={cn('bg-status-success size-1.5 shrink-0 rounded-full', STATUS_DOT_PULSE)}
-              />
-            )}
-            <span
-              className={cn('min-w-0 truncate', !yourTurn && '@max-[479px]/browser-chrome:sr-only')}
+      <span ref={slot} data-slot="browser-status-pill-slot" className={PILL_SLOT}>
+        <ResponsivePopover open={open} onOpenChange={onOpenChange}>
+          <ResponsivePopoverTrigger asChild>
+            <button
+              type="button"
+              data-slot="browser-status-pill"
+              data-state-kind={state.kind}
+              aria-label={name}
+              // Your turn can go icon-only on a narrow row; a pointer still gets its
+              // words. A native hint draws above the page, so it never blanks it (DOR-4438).
+              title={yourTurn ? copy.label : undefined}
+              className={cn(
+                chipVariants({ size: 'sm' }),
+                // Reserved: the address field never moves when the words change.
+                'w-32 justify-start',
+                !yourTurn && '@max-[479px]/browser-chrome:w-auto @max-[479px]/browser-chrome:px-2',
+                // On a phone the tap area is never under 44 wide, whatever the drawn
+                // chip's width: an icon-only chip's grows to each side (spec §12).
+                PILL_PHONE_HIT_WIDTH,
+                // On a phone, Your turn is as wide as its words, never cut; the field
+                // gives up the room. (The chip never shrinks: `shrink-0` is its own.)
+                yourTurn && 'max-md:w-auto',
+                // Below 360px of chrome its words would squeeze the field under its
+                // floor, so Your turn goes icon-only too, in the same tone (DOR-4436).
+                yourTurn && '@max-[359px]/browser-chrome:w-auto @max-[359px]/browser-chrome:px-2',
+                // Orange means "this is about you": only Your turn wears it.
+                yourTurn && 'bg-brand/15 text-foreground hover:bg-brand/25'
+              )}
             >
-              {copy.label}
-            </span>
-          </button>
-        </ResponsivePopoverTrigger>
-        <ResponsivePopoverContent align="end" className="w-72 space-y-3 p-3 text-sm">
-          {/* The sheet's body already has its inset, so the title takes none of its own. */}
-          <ResponsivePopoverTitle headerClassName="px-0">
-            {copy.title ?? copy.label}
-          </ResponsivePopoverTitle>
-          <div className="space-y-1">
-            {copy.lines.map((line, index) => (
-              <p key={line} className={cn(index > 0 && 'text-muted-foreground')}>
-                {line}
-              </p>
-            ))}
-          </div>
-          {buttons.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {buttons.map((button, index) => (
-                <Button
-                  key={button.label}
-                  size="sm"
-                  variant={index === 0 ? 'default' : 'outline'}
-                  disabled={busy}
-                  onClick={run(button.action)}
-                >
-                  {button.label}
-                </Button>
+              <copy.icon aria-hidden className={cn(yourTurn && 'text-brand')} />
+              {state.kind === 'driving' && (
+                <span
+                  aria-hidden
+                  data-slot="browser-status-pill-live"
+                  className={cn(
+                    'bg-status-success size-1.5 shrink-0 rounded-full',
+                    STATUS_DOT_PULSE
+                  )}
+                />
+              )}
+              <span
+                data-slot="browser-status-pill-label"
+                className={cn(
+                  'min-w-0 truncate',
+                  !yourTurn && '@max-[479px]/browser-chrome:sr-only',
+                  yourTurn &&
+                    '@max-[359px]/browser-chrome:sr-only max-md:@min-[360px]/browser-chrome:min-w-max'
+                )}
+              >
+                {copy.label}
+              </span>
+            </button>
+          </ResponsivePopoverTrigger>
+          <ResponsivePopoverContent align="end" className="w-72 space-y-3 p-3 text-sm">
+            {/* The sheet's body already has its inset, so the title takes none of its own. */}
+            <ResponsivePopoverTitle headerClassName="px-0">
+              {copy.title ?? copy.label}
+            </ResponsivePopoverTitle>
+            <div className="space-y-1">
+              {copy.lines.map((line, index) => (
+                <p key={line} className={cn(index > 0 && 'text-muted-foreground')}>
+                  {line}
+                </p>
               ))}
             </div>
-          )}
-        </ResponsivePopoverContent>
-      </ResponsivePopover>
+            {buttons.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {buttons.map((button, index) => (
+                  <Button
+                    key={button.label}
+                    size="sm"
+                    variant={index === 0 ? 'default' : 'outline'}
+                    disabled={busy}
+                    onClick={run(button.action)}
+                  >
+                    {button.label}
+                  </Button>
+                ))}
+              </div>
+            )}
+          </ResponsivePopoverContent>
+        </ResponsivePopover>
+      </span>
     </>
   );
 }

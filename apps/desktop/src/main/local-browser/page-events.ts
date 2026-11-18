@@ -30,8 +30,43 @@ export function isGuestPageAction(value: unknown): value is GuestPageAction {
 
 type Contents = Pick<
   WebContents,
-  'on' | 'removeListener' | 'stop' | 'reload' | 'loadURL' | 'isLoading' | 'navigationHistory'
+  | 'on'
+  | 'removeListener'
+  | 'stop'
+  | 'reload'
+  | 'loadURL'
+  | 'isLoading'
+  | 'navigationHistory'
+  | 'executeJavaScriptInIsolatedWorld'
 >;
+
+/**
+ * DOR-4662: "Access Denied" is any site's 403 title; only Akamai's reference host on the
+ * page makes it a block. The shell asks that one question in a script world of its own,
+ * which the page's scripts can't reach (999 is Electron's own), and hears only yes or no.
+ */
+const AKAMAI_TITLE = /^access denied$/i;
+const PROBE_WORLD = 1407;
+const PROBE_TIMEOUT_MS = 500;
+const AKAMAI_PROBE =
+  "document.documentElement !== null && document.documentElement.textContent.includes('errors.edgesuite.net')";
+
+/** Whether the page names Akamai's reference: true only for a real true, in time. */
+async function namesAkamaiReference(contents: Contents): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<boolean>((resolve) => {
+    timer = setTimeout(() => resolve(false), PROBE_TIMEOUT_MS);
+  });
+  try {
+    const asked = contents
+      .executeJavaScriptInIsolatedWorld(PROBE_WORLD, [{ code: AKAMAI_PROBE }])
+      .then((answer: unknown) => answer === true)
+      .catch(() => false);
+    return await Promise.race([asked, late]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /**
  * Follow one guest page's loads for the app's loading bar and error blocks (DOR-4430,
@@ -64,9 +99,14 @@ export function watchGuestPage(
   // The page a crash would take down, so the crash block can name it.
   let committed = '';
   let title = '';
+  // The Akamai check's answer, for this page only: any commit starts a new page.
+  let akamaiReference = false;
+  let page = 0;
   // Re-read the refusal from the committed page; publish only when it changed.
   const recheck = (): boolean => {
-    const next = isWebLink(committed) ? classifyRefusal({ url: committed, title }) : null;
+    const next = isWebLink(committed)
+      ? classifyRefusal({ url: committed, title, akamaiReference })
+      : null;
     if (next?.kind === state.refusal?.kind && next?.host === state.refusal?.host) return false;
     state.refusal = next;
     return true;
@@ -76,6 +116,8 @@ export function watchGuestPage(
   const onNavigate = (_event: unknown, url: string) => {
     committed = url;
     title = '';
+    akamaiReference = false;
+    page += 1;
     const refusalChanged = recheck();
     if (!state.failure && !refusalChanged) return;
     state.failure = null;
@@ -84,11 +126,21 @@ export function watchGuestPage(
   const onInPage = (_event: unknown, url: string, isMainFrame: boolean) => {
     if (!isMainFrame) return;
     committed = url;
+    akamaiReference = false;
+    page += 1;
     if (recheck()) send();
   };
   const onTitle = (_event: unknown, next: string) => {
     title = next;
     if (recheck()) send();
+    if (!AKAMAI_TITLE.test(next.trim()) || !isWebLink(committed)) return;
+    const asking = page;
+    void namesAkamaiReference(contents).then((names) => {
+      // An answer for a page the browser has since left belongs to nobody.
+      if (asking !== page || !names) return;
+      akamaiReference = true;
+      if (recheck()) send();
+    });
   };
   const onFail = (
     _event: unknown,

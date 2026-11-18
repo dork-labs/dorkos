@@ -263,9 +263,11 @@ export const ApprovalServiceActionSchema = z
      * Why this asks when it would otherwise have waited out the 60-second
      * cancel window, so the extra card does not read as a bug. `wifi-open`:
      * Wi-Fi access is on over plain `http`, where a copied sign-in could be
-     * anyone (DOR-3242). Absent when the card is the ordinary one.
+     * anyone (DOR-3242). `outside-words`: this turn read words from outside the team (a connected
+     * app's mail, a web page), so it asks before acting where it would otherwise have run
+     * (DOR-3969). Absent when the card is the ordinary one.
      */
-    keptCardBecause: z.enum(['wifi-open', 'spend']).optional(),
+    keptCardBecause: z.enum(['wifi-open', 'spend', 'outside-words']).optional(),
     /**
      * Set when the action spends money and this card is the person's yes to
      * one paid run (DOR-4204 PR 2, `spend`): its price and what is left this
