@@ -43,8 +43,10 @@ import {
 } from '../core/capabilities/index.js';
 import {
   listRunningChats,
+  runningChatsHandOutsideWords,
   type RunningChatSources,
 } from '../session/running-chats/running-chats.js';
+import { markCallerTurnOutsider } from '../core/capabilities/mark-caller-turn.js';
 import type { AuditLog } from './audit-log.js';
 import type { AccountIds } from './account-ids.js';
 import { isPlainSessionId } from './plain-session-id.js';
@@ -309,7 +311,10 @@ export const auditDomain: CapabilityDomain = {
         'runs, and absent when nothing says so. ' +
         'Every registered agent is listed, zero included, so you ' +
         'can see who is free. `total` is the live count for this server. A person’s own chat ' +
-        'is counted in `privateCount` and never named. Use the link, never the id, when you ' +
+        'is counted in `privateCount` and never named. A `title` is null when the chat has ' +
+        "no title yet or it can't be read, or in a Never ask run, which leaves every title out " +
+        'because anyone in a bridged chat can set one; the link still opens the chat. ' +
+        'Use the link, never the id, when you ' +
         'tell a person about a chat. `capacity` reports each capped backend’s live records ' +
         'and available starts, including reclaimable idle records. When every record is busy, ' +
         'its message says to wait for a chat to finish; restarting is not needed.',
@@ -325,12 +330,16 @@ export const auditDomain: CapabilityDomain = {
       // A Never ask turn reads no titles: a stranger can set one (DOR-3971).
       invoke: async (deps, _input, context) => {
         const audit = requireAuditDeps(deps);
-        return listRunningChats(
+        const withoutTitles = context?.neverAsks === true;
+        const running = await listRunningChats(
           deps.operatorDeps?.meshCore,
           readerFor(audit, context),
           audit.runningChatSources,
-          { withoutTitles: context?.neverAsks === true }
+          { withoutTitles }
         );
+        // A title from a chat that holds outside words may quote them (DOR-3969).
+        if (runningChatsHandOutsideWords(running, withoutTitles)) markCallerTurnOutsider(context);
+        return running;
       },
     }),
   ],

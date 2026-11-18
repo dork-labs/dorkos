@@ -109,8 +109,14 @@ REPEATS_DEF='
         | select($since != null and ((.at // "") > $since))
         | [(.failedChecks // [])[] | tostring] | unique ]
     | [ .[][] ] | group_by(.) | map(select(length >= $n) | .[0]);
+  # A removal that names failed checks but has no readable time, or whose
+  # failedChecks is not a list, cannot be placed before or after the push, so
+  # it is unknown history, not "no failure" (DOR-3871).
   def history_known:
     ((.queueRemovals | type) == "array")
+    and all(.queueRemovals[] | select(type == "object");
+            ((.failedChecks // []) | type) == "array"
+            and ((((.failedChecks // []) | length) == 0) or ((.at | type) == "string")))
     and ( (.headSince // null) != null
           or ([.queueRemovals[] | select(type == "object")
                | select(((.failedChecks // []) | length) > 0)] | length) == 0 );
@@ -146,14 +152,30 @@ verdict=$(jq -r --argjson hold "$HOLD_LABELS" --argjson repeat "$REPEAT_EJECTION
   # gh emits labels as objects; some callers pass bare strings. Indexing a
   # string with .name is a jq error, not a null, so it must be branched on type
   # or the whole gate returns unreadable-payload and arms nothing.
-  def labels: [(.labels // [])[]
-               | (if type == "object" then (.name // "") else tostring end)
+  # Absent, null or not a list is NOT "no labels": a partial or garbled answer
+  # from GitHub would otherwise read a held PR as unheld (DOR-3871). So is a
+  # label that is neither a string nor an object with a string name, since it
+  # could be the hold. `labels` is only read after `labels_readable`.
+  def labels_readable:
+    (.labels | type) == "array"
+    and all(.labels[]; type == "string"
+                       or (type == "object" and (.name | type) == "string"));
+  def labels: [.labels[] | (if type == "object" then .name else . end)
                | ascii_downcase];
-  def buckets: [(.checks // [])[] | (.bucket // "") | ascii_downcase];
+  # The same for checks: a list of objects, or unknown. A bucket that is not a
+  # string reads as "", which the bucket rules below refuse.
+  def checks_readable:
+    (.checks | type) == "array" and all(.checks[]; type == "object");
+  def buckets: [.checks[] | (.bucket // "")
+                | (if type == "string" then ascii_downcase else "" end)];
 
   if (.state // "") != "OPEN"                       then "SKIP not-open"
-  elif (.isDraft // false)                          then "SKIP draft"
-  elif (.autoMergeRequest // null) != null          then "SKIP already-armed"
+  # Absent or null is not "not a draft" (DOR-3871).
+  elif (.isDraft | type) != "boolean"               then "SKIP draft-unknown"
+  elif .isDraft                                     then "SKIP draft"
+  # Absent is not "unarmed": gh pr view always reports it, null when unarmed.
+  elif (has("autoMergeRequest") | not)              then "SKIP auto-merge-unknown"
+  elif .autoMergeRequest != null                    then "SKIP already-armed"
 
   # A pull request sitting in the merge queue reports `autoMergeRequest: null`,
   # so the branch above does NOT catch it. Without this one, the bot re-arms
@@ -166,6 +188,7 @@ verdict=$(jq -r --argjson hold "$HOLD_LABELS" --argjson repeat "$REPEAT_EJECTION
   # queued PR unqueued (DOR-2271).
   elif (has("mergeQueueEntry") | not)               then "SKIP queue-entry-unknown"
   elif .mergeQueueEntry != null                     then "SKIP already-queued"
+  elif (labels_readable | not)                      then "SKIP labels-unreadable"
   elif ((labels) as $l | any($hold[]; . as $h | $l | index($h)))
                                                     then "SKIP held-by-label"
 
@@ -181,23 +204,33 @@ verdict=$(jq -r --argjson hold "$HOLD_LABELS" --argjson repeat "$REPEAT_EJECTION
   # A conflicting PR gets no CI at all (GitHub cannot build its test-merge
   # commit), so its checks are stale or absent and mean nothing. Arming here is
   # the trap the creating-pull-requests skill documents.
-  elif (.mergeStateStatus // "") == "DIRTY"         then "SKIP conflicting"
+  elif (.mergeStateStatus | type) != "string"       then "SKIP mergeability-unknown"
+  elif .mergeStateStatus == "DIRTY"                 then "SKIP conflicting"
 
   # GitHub computes mergeability lazily and reports UNKNOWN until it finishes.
   # UNKNOWN is not "probably clean": a PR that turns out to be DIRTY runs no CI,
   # so arming on UNKNOWN can arm exactly the case the branch above refuses. The
   # next scheduled run sees a resolved value, so waiting costs nothing.
-  elif (.mergeStateStatus // "") == "UNKNOWN"       then "SKIP mergeability-unknown"
-  elif (.mergeStateStatus // "") == ""              then "SKIP mergeability-unknown"
+  elif .mergeStateStatus == "UNKNOWN"               then "SKIP mergeability-unknown"
+  elif .mergeStateStatus == ""                      then "SKIP mergeability-unknown"
 
-  elif (.reviewDecision // "") == "CHANGES_REQUESTED" then "SKIP changes-requested"
-  # Zero means "counted, none open"; a missing or non-numeric count means the
-  # threads were never counted, which is not zero.
+  # GitHub reports null when no review is required, so null is an answer; an
+  # absent field or a non-string is not, and must not read as "no changes
+  # requested" (DOR-3871).
+  elif (has("reviewDecision") | not)                then "SKIP review-decision-unknown"
+  elif ((.reviewDecision | type) | IN("null", "string") | not)
+                                                    then "SKIP review-decision-unknown"
+  elif .reviewDecision == "CHANGES_REQUESTED"       then "SKIP changes-requested"
+  # Zero means "counted, none open"; a missing, non-numeric or negative count
+  # means the threads were never counted, which is not zero.
   elif (.unresolvedThreads | type) != "number"      then "SKIP review-threads-unknown"
+  elif .unresolvedThreads < 0                       then "SKIP review-threads-unknown"
   elif .unresolvedThreads > 0                       then "SKIP unresolved-threads"
 
   # No checks at all means the suite has not been created yet, or path filters
   # excluded everything. Either way there is nothing to stand on.
+  # Absent, null, not a list, or a row that is not an object (DOR-3871).
+  elif (checks_readable | not)                      then "SKIP checks-unreadable"
   elif ((buckets) | length) == 0                    then "SKIP no-checks"
 
   # The approval of Security, as the security-gate job decides it for this head: on
@@ -206,10 +239,11 @@ verdict=$(jq -r --argjson hold "$HOLD_LABELS" --argjson repeat "$REPEAT_EJECTION
   # nothing else stops the queue merging a PR whose label predates its head.
   # The job is the one source of that rule, so it is required here by name,
   # affirmatively: no row (not created yet, or renamed) arms nothing.
-  elif ([(.checks // [])[] | select(.name == "security-gate")] | length) == 0
+  elif ([.checks[] | select(.name == "security-gate")] | length) == 0
                                                     then "SKIP security-gate-missing"
-  elif ([(.checks // [])[] | select(.name == "security-gate")
-         | (.bucket // "") | ascii_downcase] | any(. != "pass"))
+  elif ([.checks[] | select(.name == "security-gate")
+         | (.bucket // "") | (if type == "string" then ascii_downcase else "" end)]
+        | any(. != "pass"))
                                                     then "SKIP security-gate-not-passed"
 
   # The verdict from main at this head (DOR-3686). `security-gate` runs the PR copy
@@ -221,12 +255,17 @@ verdict=$(jq -r --argjson hold "$HOLD_LABELS" --argjson repeat "$REPEAT_EJECTION
   # all refuse here, before the bucket rules below, so a pending verdict is never
   # read as an ordinary check still in flight. A workflow a PR adds can still
   # forge this status until the Security App exists; arm.sh stays the arming path.
-  elif ([(.checks // [])[] | select(.name == "security-review")
-         | (.bucket // "") | ascii_downcase] | (length == 0 or any(. != "pass")))
+  elif ([.checks[] | select(.name == "security-review")
+         | (.bucket // "") | (if type == "string" then ascii_downcase else "" end)]
+        | (length == 0 or any(. != "pass")))
                                                     then "SKIP security-review-not-passed"
   elif ((buckets) | any(. == "fail"))               then "SKIP failing-checks"
   elif ((buckets) | any(. == "cancel"))             then "SKIP cancelled-checks"
   elif ((buckets) | any(. == "pending"))            then "SKIP checks-in-flight"
+  # The buckets gh reports are pass, fail, pending, skipping and cancel. Anything else,
+  # including a row with no bucket, is not green (DOR-3871).
+  elif ((buckets) | any(. != "pass" and . != "skipping"))
+                                                    then "SKIP checks-state-unknown"
 
   # Last, because it is the one refusal a fully green PR can earn: the PR
   # checks above cannot see the queue, where the browser suite runs. Unknown

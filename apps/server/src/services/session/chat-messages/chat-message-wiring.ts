@@ -52,7 +52,11 @@ import { logError, logger } from '../../../lib/logger.js';
 import type { ChatCaller } from './chat-message-service.js';
 import { ChatMessageService } from './chat-message-service.js';
 import { rowsCarryHold, rowsCarryWords } from './chat-message-ceiling.js';
-import { getRoomSeatReports, setChatMessageService } from './chat-message-current.js';
+import {
+  wireRoomSeatMessageLifetime,
+  getRoomSeatReports,
+  setChatMessageService,
+} from './chat-message-current.js';
 import { setChatMessageStore, type ChatMessageStore } from './chat-message-store.js';
 import { stampHistory } from './chat-message-stamps.js';
 import { ChatReportBack, type RoomSeatReport } from './chat-report-back.js';
@@ -264,8 +268,11 @@ export function wireChatMessaging(deps: WireChatMessagingDeps): {
   read: ChatReadDeps;
 } {
   setChatMessageStore(deps.store);
+  const seatMessages = wireRoomSeatMessageLifetime(deps.store, emitChatActivity);
   const service = new ChatMessageService({
     store: deps.store,
+    seatMessages: seatMessages.get,
+    stopSeatMessages: seatMessages.stop,
     meshCore: deps.meshCore,
     roomSessionPlace: deps.roomSessionPlace,
     describeSession: describeSessionFor(deps.roomSessionPlace),

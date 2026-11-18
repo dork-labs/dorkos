@@ -336,9 +336,11 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
       await result.current.handleSubmit();
     });
 
-    // URL rewritten to the canonical id exactly once, in place.
+    // URL rewritten to the canonical id exactly once, in place — naming the id
+    // it renames FROM, so the rewrite can refuse to land on another chat
+    // (DOR-4622).
     expect(onSessionIdChangeReplace).toHaveBeenCalledTimes(1);
-    expect(onSessionIdChangeReplace).toHaveBeenCalledWith('sdk-canonical');
+    expect(onSessionIdChangeReplace).toHaveBeenCalledWith('sdk-canonical', 'client-uuid');
     // Durable stream re-attached to the canonical id (same cwd).
     expect(attachSession).toHaveBeenCalledWith('sdk-canonical', '/test/cwd');
     const canonicalAttach = attachSession.mock.calls.findIndex(([id]) => id === 'sdk-canonical');
@@ -360,6 +362,81 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
       queryClient.getQueryData<{ id: string }[]>(sessionKeys.list('/test/cwd')) ?? [];
     expect(sessions.some((s) => s.id === 'sdk-canonical')).toBe(true);
     expect(sessions.some((s) => s.id === 'client-uuid')).toBe(false);
+  });
+
+  it('DOR-4622: a send to an existing chat names that chat as the one the URL commit renames from', async () => {
+    // The commit runs after EVERY send, once the POST resolves — by which time
+    // the person may be looking at a different chat (another tab, or the
+    // sidebar). The from-id is what lets the setter tell "rename the chat on
+    // screen" from "rewrite whatever is on screen into this one".
+    const postMessage = vi
+      .fn()
+      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
+    const transport = createMockTransport({ postMessage });
+    const onSessionIdChangeReplace = vi.fn();
+
+    const { result } = renderHook(() => useChatSession('s1', { onSessionIdChangeReplace }), {
+      wrapper: createWrapper(transport),
+    });
+
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+
+    act(() => {
+      result.current.setInput('Hello');
+    });
+    await waitFor(() => expect(result.current.input).toBe('Hello'));
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    expect(onSessionIdChangeReplace).toHaveBeenCalledTimes(1);
+    expect(onSessionIdChangeReplace).toHaveBeenCalledWith('s1', 's1');
+  });
+
+  it('DOR-4622: a first send that resolves after a switch to another chat leaves that chat its live stream', async () => {
+    // A new chat can wait a long time for its 202 (a warm slot, a slow
+    // runtime). Meanwhile the person switches tabs and this panel shows B.
+    let resolvePost: (value: { sessionId: string }) => void = () => {};
+    const postMessage = vi.fn().mockImplementation(
+      () =>
+        new Promise<{ sessionId: string }>((resolve) => {
+          resolvePost = resolve;
+        })
+    );
+    const transport = createMockTransport({ postMessage });
+    const onSessionIdChangeReplace = vi.fn();
+
+    const { result, rerender } = renderHook(
+      ({ id }) => useChatSession(id, { onSessionIdChangeReplace }),
+      { wrapper: createWrapper(transport), initialProps: { id: 'client-uuid' } }
+    );
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+    act(() => {
+      result.current.setInput('First message');
+    });
+    await waitFor(() => expect(result.current.input).toBe('First message'));
+
+    let submitted: Promise<void> = Promise.resolve();
+    act(() => {
+      submitted = result.current.handleSubmit();
+    });
+    await waitFor(() => expect(postMessage).toHaveBeenCalledTimes(1));
+
+    rerender({ id: 'B' });
+    attachSession.mockClear();
+    await act(async () => {
+      resolvePost({ sessionId: 'sdk-canonical' });
+      await submitted;
+    });
+
+    // The foreground stream stays with B; A re-attaches when it is shown again.
+    expect(attachSession).not.toHaveBeenCalledWith('sdk-canonical', expect.anything());
+    // The rename still names A, so the setter can refuse to land it on B.
+    expect(onSessionIdChangeReplace).toHaveBeenCalledWith('sdk-canonical', 'client-uuid');
+    // A's own state still moves to its canonical id.
+    expect(
+      useSessionStreamStore.getState().getSession('sdk-canonical').optimisticUserMessage?.content
+    ).toBe('First message');
   });
 
   it('reconciles on turn_end: reloads canonical history and clears the optimistic message', async () => {

@@ -155,8 +155,15 @@ test.describe('Agent browser status pill', () => {
     }));
     await expect(pill(page)).toHaveAttribute('data-state-kind', 'your-turn');
     await expect(pill(page)).toHaveText('Your turn');
+    // Showing its words, it says them first (WCAG 2.5.3, DOR-4436). The prefix is
+    // DorkOS's own literal; the host is still the one the page itself reported.
     await expect(pill(page)).toHaveAccessibleName(
-      'your-bank.example needs you to sign in to attacker.example.'
+      'Your turn: your-bank.example needs you to sign in to attacker.example.'
+    );
+    const name = (await pill(page).getAttribute('aria-label'))!;
+    expect(name.startsWith('Your turn: '), 'the prefix is the literal "Your turn: "').toBe(true);
+    expect(name, 'the host comes from the page, never the agent').toMatch(
+      /sign in to attacker\.example\.$/
     );
     await pill(page).click();
     await page.getByRole('button', { name: 'Hand back to your-bank.example' }).click();

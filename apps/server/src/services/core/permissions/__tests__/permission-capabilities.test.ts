@@ -30,7 +30,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { registerCapabilitiesAsMcpTools } from '../../external-mcp/capability-mcp-tools.js';
-import { capabilityMcpTools } from '../../../runtimes/claude-code/mcp-tools/capability-mcp-tools.js';
+import { createCapabilityMcpClient } from '../../../runtimes/claude-code/mcp-tools/__tests__/capability-mcp-client.js';
 
 const DORKBOT_PATH = '/agents/dorkbot';
 
@@ -419,7 +419,7 @@ describe('permissions.request_access and permissions.list', () => {
     });
 
     it('is told its surface by the Claude Code in-session projection', async () => {
-      const tools = capabilityMcpTools(registry, 'in-session', async () => ({
+      const { tools } = await createCapabilityMcpClient(registry, 'in-session', async () => ({
         identity: dorkbot(),
         sessionId: 'session-1',
       }));

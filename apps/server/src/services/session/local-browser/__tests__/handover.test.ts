@@ -5,7 +5,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { LocalBrowserState } from '@dorkos/shared/local-browser';
+import { LocalBrowserAskPersonSchema, type LocalBrowserState } from '@dorkos/shared/local-browser';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { logger } from '../../../../lib/logger.js';
 import { BrowserHandover, assertSignInUrl, type HandoverBrowser } from '../handover.js';
@@ -975,6 +975,35 @@ describe('a person takes the page (DOR-4428)', () => {
     });
   });
 
+  // DOR-4450: the http:// fallback runs inside the browser's navigate, so it can only
+  // start once the take-over has paused the agent driving the page.
+  it('takes the page before a navigate that may fall back to http runs, and passes the ask on', async () => {
+    const { handover, browser } = setup();
+    const next = await handover.navigate('https://shop.example/', { httpFallback: true });
+    expect(next.takenOver).toBe(true);
+    expect(browser.pause.mock.invocationCallOrder[0]).toBeLessThan(
+      browser.navigate.mock.invocationCallOrder[0]!
+    );
+    expect(browser.navigate).toHaveBeenCalledWith('https://shop.example/', { httpFallback: true });
+    await expect(handover.requireAgentMayUse('chat-1')).rejects.toMatchObject({
+      code: 'taken_by_person',
+    });
+  });
+
+  it('keeps the agent shut out when the navigate and its http try both fail', async () => {
+    const { handover, browser } = setup();
+    browser.navigate.mockRejectedValueOnce(
+      Object.assign(new Error('Couldn’t reach that site.'), { code: 'navigation_unreachable' })
+    );
+    await expect(
+      handover.navigate('https://shop.example/', { httpFallback: true })
+    ).rejects.toMatchObject({ code: 'navigation_unreachable' });
+    expect(browser.pause).toHaveBeenCalled();
+    await expect(handover.requireAgentMayUse('chat-1')).rejects.toMatchObject({
+      code: 'taken_by_person',
+    });
+  });
+
   it.each(['back', 'forward'] as const)(
     'takes the page before %s moves it, and shuts the agent out',
     async (direction) => {
@@ -1023,5 +1052,80 @@ describe('a person takes the page (DOR-4428)', () => {
         ? await handover.disconnect()
         : await handover.open({ mode: 'embedded', sessionId: 'chat-1' });
     expect(next.takenOver).toBe(false);
+  });
+});
+
+// DOR-4097 (c): a site that refuses the in-app browser goes on in its own window. The
+// person signs in in the plain window on the same default profile, and Hand back
+// opens the site in its own window, where that sign-in is.
+describe('continuing a refused in-app handoff in its own window (DOR-4097)', () => {
+  it('signs in in the plain window, then hands back into its own window on that page', async () => {
+    const { handover, browser, signIns, setProfile, finish } = setup();
+    setProfile(null);
+    const asked = 'https://accounts.example.com/login?next=%2Fhome';
+    const { handoffId } = await handover.ask('chat-1', 'password');
+    await handover.open({ mode: 'new-window', sessionId: 'chat-1' });
+    expect(browser.disconnect).toHaveBeenCalledOnce();
+    expect(signIns.start).toHaveBeenCalledWith(
+      path.join(dataDirectory, 'browser-profiles', 'default'),
+      null,
+      asked
+    );
+    await expect(handover.handBack(handoffId)).rejects.toMatchObject({ code: 'signing_in' });
+    finish('saved');
+    await handover.handBack(handoffId);
+    expect(browser.open).toHaveBeenLastCalledWith({
+      mode: 'new-window',
+      sessionId: 'chat-1',
+      url: asked,
+    });
+    expect((await handover.state()).handoff?.outcome).toBe('handed-back');
+  });
+
+  it('keeps every agent out until the person hands back', async () => {
+    const { handover, finish } = setup();
+    const { handoffId } = await handover.ask('chat-1', 'password');
+    await handover.open({ mode: 'new-window', sessionId: 'chat-1' });
+    finish('saved');
+    await expect(handover.requireAgentMayUse('chat-1')).rejects.toMatchObject({
+      code: 'handed_to_person',
+    });
+    await handover.handBack(handoffId);
+    await expect(handover.requireAgentMayUse('chat-1')).resolves.toBeUndefined();
+  });
+});
+
+// DOR-4097: the card offers the sign-in window only when DorkOS's own last reading of
+// that same site was a refusal. The agent's words can't set it.
+describe('a handoff on a refused site (DOR-4097)', () => {
+  it('marks the handoff refused from the server’s own reading of the same site', async () => {
+    const { handover, browser } = setup();
+    const lastRefusalHost = vi.fn(() => 'accounts.example.com');
+    Object.assign(browser, { lastRefusalHost });
+    const order: string[] = [];
+    lastRefusalHost.mockImplementation(() => (order.push('read'), 'accounts.example.com'));
+    browser.handToPerson.mockImplementationOnce(async () => {
+      order.push('hand');
+      return { ...connected(), mode: 'embedded' as const, paused: true };
+    });
+    await handover.ask('chat-1', 'password');
+    expect((await handover.state()).handoff?.refused).toBe(true);
+    // Handing over clears the reading, so it is read first.
+    expect(order).toEqual(['read', 'hand']);
+  });
+
+  it('leaves it unmarked when the refusal was another site, or there was none', async () => {
+    for (const host of ['elsewhere.example', null]) {
+      const { handover, browser } = setup();
+      Object.assign(browser, { lastRefusalHost: () => host });
+      await handover.ask('chat-1', 'password');
+      expect((await handover.state()).handoff?.refused).toBeUndefined();
+    }
+  });
+
+  it('refuses an agent’s own claim that the site refused it', () => {
+    expect(
+      LocalBrowserAskPersonSchema.safeParse({ reason: 'password', refused: true }).success
+    ).toBe(false);
   });
 });

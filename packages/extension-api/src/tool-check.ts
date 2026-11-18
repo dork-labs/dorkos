@@ -9,8 +9,7 @@
  * - {@link checkToolInputSchema}: the closed JSON Schema subset an input may
  *   use, converted with Zod's `fromJSONSchema`. An open object,
  *   `patternProperties`, `propertyNames` and `$ref` each convert to a record
- *   (or a cycle), and one record anywhere in any in-session tool empties the
- *   whole `dorkos` tool list on the current Claude SDK.
+ *   (or a cycle); these forms remain outside the supported closed subset.
  * - {@link checkContributionShape}: the id, display name and per-tool rules
  *   (name, one-line title, tier, card fields, a schema every tool list can
  *   render).
@@ -29,7 +28,6 @@ import {
   type CapabilityTier,
 } from '@dorkos/shared/capabilities';
 import { EXTENSION_ID_REGEX } from '@dorkos/shared/extension-id';
-import { portableInputShape } from '@dorkos/shared/portable-input-shape';
 
 import {
   EXTENSION_TOOL_TIMEOUT_DEFAULT_SECONDS,
@@ -128,10 +126,9 @@ function isCardText(value: unknown, max: number): value is string {
 /**
  * Find the first JSON Schema construct an agent tool list cannot carry.
  *
- * `propertyNames` is what `z.record` (and `z.json`) render to, and a record
- * anywhere in any in-session tool's input empties the whole `dorkos` tool list
- * on the current Claude SDK (`tool-exposure.ts`). `$ref` and `patternProperties`
- * come from the same family, and an `additionalProperties` that is anything but
+ * `propertyNames` is what `z.record` (and `z.json`) render to. Records,
+ * references and open maps stay outside the supported extension subset even
+ * when an SDK can render them. An `additionalProperties` value other than
  * `false` is an open map (catchall, loose) the spec refuses as well (§2).
  *
  * @returns The offending keyword, or `undefined` when the schema is closed.
@@ -161,8 +158,7 @@ function openSchemaKeyword(node: unknown): string | undefined {
 
 /**
  * The first open-ended or self-referencing schema anywhere inside `schema`:
- * a `z.record` (which one tool would use to empty the whole `dorkos` tool list
- * on the current Claude SDK, `tool-exposure.ts`) or a `z.lazy`. Walks the Zod
+ * a `z.record` or a `z.lazy`, both outside the supported subset. Walks the Zod
  * tree itself rather than its JSON rendering, so a record the renderer happened
  * to spell some other way is still found.
  *
@@ -193,15 +189,14 @@ function openZodNode(schema: unknown, seen = new Set<unknown>()): string | undef
 }
 
 /**
- * Check that an input schema renders as closed JSON Schema, and that the exact
- * field map an agent tool list advertises renders too.
+ * Check that an input schema renders as closed JSON Schema, and that its full
+ * strict object, used by ordinary MCP registration, renders too.
  *
  * Rendering here, once, is what keeps one tool from breaking everyone else's:
  * the catalog renders every capability's schema on every read, and an
  * unrepresentable type (`z.date()`, a `.transform()`) throws there. The second
- * rendering is of the field map the MCP projection hands a tool list
- * ({@link portableInputShape}), so a schema accepted here is one the in-session
- * server can list.
+ * rendering keeps the full strict object rather than reconstructing a field
+ * map, retaining the same object checks and defaults as MCP registration.
  *
  * The one implementation for every caller: the registry runs it at contribute
  * time, and discovery and `dorkos marketplace validate` run it (through
@@ -222,7 +217,7 @@ function checkSchema(name: string, input: z.ZodObject): string | undefined {
   if (node)
     return `tool "${name}" input uses a ${node} schema, which agent tool lists cannot carry`;
   try {
-    z.toJSONSchema(z.object(portableInputShape(input.shape)));
+    z.toJSONSchema(input.strict());
   } catch (err) {
     const why = err instanceof Error ? err.message : String(err);
     return `tool "${name}" input can't be listed: ${why}`;

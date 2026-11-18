@@ -1,3 +1,4 @@
+import { isolatedRequiredLaunchOwner } from './required-launch-fixture.js';
 /**
  * Every launch for an agent home denies the file tools its self-grant files,
  * a teammate's turn too, and a launch after the agent changed its own hooks,
@@ -20,6 +21,8 @@ import {
 } from '../../folder-settings/folder-allow-approval.js';
 import { _internal as configCards } from '../../folder-settings/folder-config-approval.js';
 import { setMarkedFullActivity } from '../../../../core/turn-power/full-autonomy.js';
+
+const requiredLaunches = isolatedRequiredLaunchOwner();
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({ query: vi.fn() }));
 vi.mock('../context-builder.js', () => ({
@@ -103,6 +106,7 @@ const launch = (extra: { teammate?: boolean } = {}) =>
     session: makeSession(),
     opts: {
       cwd: home,
+      requiredLaunches,
       onSdkSessionRebind: async () => {},
       meshCore: {
         getByPath: (dir: string) => (dir === home ? agent : undefined),

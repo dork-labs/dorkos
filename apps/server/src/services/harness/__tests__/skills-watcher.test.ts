@@ -88,7 +88,7 @@ import {
 } from '../skills-watcher.js';
 import { projectLockQueueDepth, withProjectLock } from '../project-with-consent.js';
 import { initBoundary } from '../../../lib/boundary.js';
-import chokidar, { type FSWatcher } from 'chokidar';
+import { watchWithPolling } from '../../../__tests__/watch-with-polling.js';
 import { loadCeilingMs, loadScaledMs } from '@dorkos/shared/test-budget';
 
 // Real chokidar on macOS reports a deletion up to two seconds after it happens
@@ -102,50 +102,6 @@ vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 /** How often the one polling watch re-stats, and how long its case waits. */
 const LIVE_POLL_MS = 50;
 const LIVE_WAIT_BASE_MS = 10_000;
-
-/**
- * Make `chokidar.watch()` use its POLLING backend, for one case, until restored.
- *
- * The twin of `watchWithPolling` in `packages/relay/src/__tests__/fake-watcher.ts`
- * — a separate copy because each package spies on its own resolved `chokidar`
- * module object, so a shared one would patch the wrong instance.
- *
- * Everything about the path under test stays real: a real tree on disk, real
- * chokidar, the real `armWatch` wiring and the real projector. The only
- * substitution is how chokidar NOTICES a change — `stat` on an interval instead
- * of FSEvents — and the events it then emits, their names and the paths they
- * carry come from the same chokidar code either way.
- *
- * That substitution is what makes the one case below a fact rather than a wager.
- * macOS drops filesystem events silently: measured on this machine on
- * 2026-09-12/13, five fresh skills written under a live native watch delivered
- * NOTHING and reported no error, in a full-suite run of healthy code, and the
- * case that read that as "the watch is broken" went red. Widening it to three
- * fresh watches did not settle it either — on a machine whose FSEvents is
- * flapping, one window reports EMFILE and the next says nothing at all, and any
- * rule that has to tell those two apart is guessing. Polling removes the
- * question: a `stat` on an interval does not drop anything, so a projection that
- * did not happen did not happen (DOR-2012).
- *
- * @param intervalMs - How often chokidar re-stats.
- * @returns A handle whose `restore()` puts the untouched `chokidar.watch` back.
- */
-function watchWithPolling(intervalMs: number): { restore(): void } {
-  const real = chokidar.watch.bind(chokidar) as typeof chokidar.watch;
-  const spy = vi
-    .spyOn(chokidar, 'watch')
-    .mockImplementation((paths: unknown, options?: unknown): FSWatcher =>
-      real(paths as string, {
-        ...((options ?? {}) as Record<string, unknown>),
-        usePolling: true,
-        interval: intervalMs,
-        binaryInterval: intervalMs,
-      })
-    );
-  return {
-    restore: () => spy.mockRestore(),
-  };
-}
 
 let repo = '';
 let dorkHome = '';

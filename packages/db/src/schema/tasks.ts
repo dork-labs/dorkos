@@ -74,8 +74,27 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
   requestedPermissionMode: text('requested_permission_mode'),
   /** JSON array of exact Claude Code rules the proposer asks a person to approve. */
   requestedAllow: text('requested_allow'),
-  /** JSON array of task-run rules a person approved; never folder settings. */
+  /**
+   * JSON array of task-run rules a person approved; never folder settings. Its
+   * own agent may also set exact commands here for a one-shot task (DOR-4315),
+   * each pinned in `allow_list_pins`.
+   */
   approvedAllow: text('approved_allow'),
+  /**
+   * What each program an agent put in `approved_allow` was when it was set
+   * (DOR-4315): its real path and sha256, and when the task's first list was
+   * set. A run whose program no longer matches is refused. Kept when the list
+   * is cleared, so a later list is never mistaken for a first one.
+   */
+  allowListPins: text('allow_list_pins'),
+  /**
+   * A one-shot task (DOR-4315): it has no cron and runs once, as soon as it is
+   * armed. `ran_once_at` records the run, so it never fires again, even after
+   * a restart. Kept in DorkOS only, never in the SKILL.md.
+   */
+  runOnce: integer('run_once', { mode: 'boolean' }).notNull().default(false),
+  /** When a one-shot task's one run started; NULL until it has. */
+  ranOnceAt: text('ran_once_at'),
   /**
    * The working directory of the agent that last changed this schedule (DOR-3703),
    * written on every agent edit through either door. Together with

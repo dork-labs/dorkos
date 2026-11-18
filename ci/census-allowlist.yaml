@@ -33,6 +33,25 @@ entries:
     step: CI Steward ledger coverage
     kind: step-if
     reason: Coverage needs the PR's diff and branch name, which only pull_request carries, and it cannot change between the PR and the queue, where ledger validity re-runs. Dependabot PRs skip it too; Dependabot cannot write a ledger entry, and its PRs would otherwise stay red forever.
+  - workflow: typecheck.yml
+    job: typecheck
+    step: Save the pnpm store for the queue and pull requests
+    kind: step-if
+    reason: Saves the pnpm store only on refs/heads/main (this workflow's own scheduled runs there) and only on a restore miss, right after the install (DOR-4537, ledger 261117-141554). It asserts nothing; on pull_request and merge_group the job restores main's store and saves none, because a PR merge ref's or a queue ref's cache scope is unreadable by any other ref.
+
+  # --- lint.yml ---
+  - workflow: lint.yml
+    job: lint
+    step: Save the pnpm store for the queue and pull requests
+    kind: step-if
+    reason: Saves the pnpm store only on refs/heads/main (this workflow's own scheduled runs there) and only on a restore miss, right after the install (DOR-4537, ledger 261117-141554). It asserts nothing; on pull_request and merge_group the job restores main's store and saves none, because a PR merge ref's or a queue ref's cache scope is unreadable by any other ref.
+
+  # --- db-check.yml ---
+  - workflow: db-check.yml
+    job: db-check
+    step: Save the pnpm store for the queue and pull requests
+    kind: step-if
+    reason: Saves the pnpm store only on refs/heads/main (the push leg) and only on a restore miss, right after the install (DOR-4537, ledger 261117-141554). It asserts nothing; on pull_request and merge_group the job restores main's store and saves none, because a PR merge ref's or a queue ref's cache scope is unreadable by any other ref.
 
   # --- changelog-fragment-check.yml ---
   - workflow: changelog-fragment-check.yml
@@ -63,7 +82,7 @@ entries:
     reason: Same scope decision as the version comparison; runs on both events whenever the seeded pack content changed.
 
   # --- docs-openapi-check.yml ---
-  # One scope step decides for all seven: on merge_group it always says run, so
+  # One scope step decides for every step below: on merge_group it always says run, so
   # the queue regenerates unconditionally; on pull_request it skips the steps
   # only when the diff touches none of the generators, their inputs or docs/api.
   # A skipped STEP leaves the job green and the context reported (#1655).
@@ -77,6 +96,16 @@ entries:
     step: actions/setup-node
     kind: step-if
     reason: Toolchain for the regeneration; same scope decision as the steps below, always run in the merge queue.
+  - workflow: docs-openapi-check.yml
+    job: openapi-fresh
+    step: Find the pnpm store
+    kind: step-if
+    reason: Reads the pnpm store path for the restore; same scope decision as the install, always run in the merge queue.
+  - workflow: docs-openapi-check.yml
+    job: openapi-fresh
+    step: Restore the pnpm store built on this runner image
+    kind: step-if
+    reason: Restores main's pnpm store for the install (DOR-4537, ledger 261117-141554); same scope decision as the install, always run in the merge queue. It asserts nothing.
   - workflow: docs-openapi-check.yml
     job: openapi-fresh
     step: Install dependencies
@@ -158,6 +187,16 @@ entries:
 
   # --- browser-test.yml ---
   - workflow: browser-test.yml
+    job: browser-shard
+    step: Keep only this run's build entries in the turbo cache
+    kind: step-if
+    reason: Runs only on refs/heads/main for shard 1 (the scheduled canary or a dispatch) because only main's cache scope is readable by later queue builds and pull requests (DOR-4634, ledger 261117-184500; same shape as test.yml test-shard, ledger 261115-201939). It asserts nothing; it trims turbo's cache to this run's build entries before the save, and every gating step after it still runs.
+  - workflow: browser-test.yml
+    job: browser-shard
+    step: Save the builds for the queue and pull requests
+    kind: step-if
+    reason: Saves the build-only turbo cache from main's shard 1 when the trim succeeded (DOR-4634, ledger 261117-184500). It asserts nothing; skipping it on pull_request and merge_group only means those runs save no cache, whose scope nothing else could read.
+  - workflow: browser-test.yml
     job: browser-test
     step: Refuse a PR whose smoke specs did not pass
     kind: step-if
@@ -237,13 +276,23 @@ entries:
     step: Save the pnpm store for the queue and pull requests
     kind: step-if
     reason: Saves the pnpm store only on refs/heads/main and only on a restore miss, right after the install (DOR-4537, ledger 261116-114104). It asserts nothing; on pull_request and merge_group the job restores main's store and saves none, because a queue ref's or a PR merge ref's cache scope is unreadable by any other ref and those copies pushed the repo past its 10 GB cache budget.
+  - workflow: browser-test.yml
+    job: browser-smoke
+    step: Save the Chromium browser for the queue and pull requests
+    kind: step-if
+    reason: Saves the Playwright Chromium cache only on refs/heads/main and only on a restore miss, after the install step succeeded (DOR-4190, ledger 261117-170155). It asserts nothing; on pull_request and merge_group the job restores main's browser and saves none, because a queue ref's or a PR merge ref's cache scope is unreadable by any other ref.
+  - workflow: browser-test.yml
+    job: browser-shard
+    step: Save the Chromium browser for the queue and pull requests
+    kind: step-if
+    reason: Saves the Playwright Chromium cache only on refs/heads/main and only on a restore miss, after the install step succeeded (DOR-4190, ledger 261117-170155). It asserts nothing; on pull_request and merge_group the job restores main's browser and saves none, because a queue ref's or a PR merge ref's cache scope is unreadable by any other ref.
+  - workflow: browser-test.yml
+    job: first-run
+    step: Save the Chromium browser for the queue and pull requests
+    kind: step-if
+    reason: Saves the Playwright Chromium cache only on refs/heads/main and only on a restore miss, after the install step succeeded (DOR-4190, ledger 261117-170155). It asserts nothing; on pull_request and merge_group the job restores main's browser and saves none, because a queue ref's or a PR merge ref's cache scope is unreadable by any other ref.
 
   # --- credential-free-build.yml ---
-  - workflow: credential-free-build.yml
-    job: credential-free-build
-    step: Save turbo's local cache
-    kind: step-if
-    reason: Saves the turbo cache on pull_request only, because a cache saved under a merge-queue ref can never be read by any other ref; it asserts nothing.
   - workflow: credential-free-build.yml
     job: credential-free-build
     step: Save the pnpm store for the queue and pull requests

@@ -153,6 +153,27 @@ describe('the dorkos tool-surface digest', () => {
     second.remove();
   });
 
+  it('moves when the same registered extension tool changes its full input schema', () => {
+    const registry = composeCapabilityRegistryForDocs();
+    const contribution = fixtureContribution();
+    expect(contribution.tools.length).toBeGreaterThan(0);
+    const first = registry.contribute(contribution);
+    if (!first.ok) throw new Error(first.reason);
+    const before = surfaceOf(registry);
+    first.remove();
+    const changed = registry.contribute({
+      ...contribution,
+      tools: contribution.tools.map((tool) => ({
+        ...tool,
+        input: tool.input.safeExtend({ revision: z.number().default(2) }),
+      })),
+    });
+    if (!changed.ok) throw new Error(changed.reason);
+    expect(surfaceOf(registry)).not.toBe(before);
+    expect(surfaceOf(registry)).toBe(surfaceOf(registry));
+    changed.remove();
+  });
+
   it('moves when a permission hides one tool from the list', () => {
     // Purpose: `hiddenToolNames` is applied before the digest, so a Blocked
     // tool leaves a warm process's list too (the "next turn" promise of
