@@ -76,7 +76,6 @@ import { transcriptIdTaken } from '../sessions/session-root-index.js';
 import { narrowToClaudeCodeMode } from '../runtime-constants.js';
 import { applyDirectoryGrants, applyPersonOnlyDataDeny } from './directory-grants.js';
 import { applyBrowserToolDeny, mcpToolHookMatchers } from '../tool-gate/mcp-tool-guards.js';
-import { outsideTextHookMatcher } from '../tool-gate/outside-text-hook.js';
 import { applySecretReadDeny } from '../secret-files/secret-read-deny.js';
 import { heldRuntimeNotice } from '../folder-settings/held-runtime-notice.js';
 import { applyLaunchExtensionsDeny } from '../folder-settings/agent-extensions-deny.js';
@@ -839,10 +838,9 @@ export async function resolveLaunch(args: {
   const auditHooks = auditToolHookMatchers(auditTurn);
   sdkOptions.hooks = {
     PreToolUse: [
-      // A page, a search or another server's answer marks the turn before it runs (DOR-3969).
-      outsideTextHookMatcher(() => session.sdkSessionId || sessionId, turnAgentPath),
-      // Withheld browser tools, and a server the agent no longer gets (DOR-3872).
-      ...mcpToolHookMatchers(turnAgentPath),
+      // A read of outside text marks the turn first (DOR-3969); then withheld browser tools, and a
+      // server the agent no longer gets (DOR-3872).
+      ...mcpToolHookMatchers(turnAgentPath, () => session.sdkSessionId || sessionId),
       // DorkOS's own tools and protected files (DOR-4060): refused before any card.
       protectedFileMatcher({
         sessionId: () => session.sdkSessionId || sessionId,

@@ -18,6 +18,7 @@ import {
 } from '../../../shared/tools/outside-text-tools.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../runtime-constants.js';
 import { UNMARKED_REFUSAL, outsideTextHookMatcher } from '../outside-text-hook.js';
+import { mcpToolHookMatchers } from '../mcp-tool-guards.js';
 
 const AGENT = '/agents/wren';
 let counter = 0;
@@ -131,6 +132,11 @@ describe("Claude Code's hook marks the turn before the tool runs", () => {
   });
 
   const held = (chat: string) => marksHold(marksOf(chat, AGENT));
+
+  it("runs first among the launch's MCP guards, so a refused read is still marked", () => {
+    const [first] = mcpToolHookMatchers(AGENT, () => 'chat-1');
+    expect(first?.matcher).toBe(CLAUDE_CODE_OUTSIDE_TEXT_MATCHER);
+  });
 
   it('is a pattern the CLI reads as one, not a list of exact names', () => {
     expect(/^[a-zA-Z0-9_|, -]+$/.test(CLAUDE_CODE_OUTSIDE_TEXT_MATCHER)).toBe(false);
