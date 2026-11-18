@@ -72,8 +72,14 @@ export interface CodexTurnRequest {
   readonly settings: SessionSettings;
   /** Validated write grants (folders Codex may write besides the project). */
   readonly writableDirectories: readonly string[];
-  /** The prompt `buildCodexPrompt` assembled, unchanged. */
+  /** The prompt `buildCodexPrompt` assembled, with no load notice. */
   readonly prompt: string;
+  /**
+   * From the runtime: the prompt as sent, with the load's notice placed, and
+   * recorded as what the thread was handed (`codexTurnPrompt`). Absent in a
+   * request built without the runtime.
+   */
+  readonly sendPrompt?: (notice: string | undefined) => string;
   /** The `clientUserMessageId` Codex echoes on the user message, when known. */
   readonly messageId?: string;
   /** Who pays. */
