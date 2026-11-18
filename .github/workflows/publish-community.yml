@@ -40,7 +40,22 @@ jobs:
       - uses: actions/setup-node@v7.1.0
         with:
           node-version: 24
-          cache: pnpm
+
+      # Restore only (DOR-4635). This runs on a tag push, and a tag ref's
+      # Actions cache is readable only by that same tag, so setup-node's
+      # `cache: pnpm` saved a ~700 MB store per OS per release that no later
+      # run could read (2.1 GB on refs/tags/v0.136.0). A tag can read main's
+      # cache, so this restores the store main saves, under the same key as
+      # test.yml's test-shard, and saves nothing.
+      - name: Find the pnpm store
+        id: pnpm-store
+        shell: bash
+        run: echo "image=${ImageOS:?ImageOS is not set on this runner}" >> "$GITHUB_OUTPUT" && echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - name: Restore the pnpm store built on this runner image
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Install manifest generator dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
