@@ -57,6 +57,7 @@ import {
   type CapabilityAuthorityBindingProof,
 } from '../../connectors/principal/capability-authority-binding.js';
 import { CapabilityToolError } from './mcp-envelope.js';
+import { withOutsideWordsReason } from './marked-turn-holds.js';
 import {
   buildExtensionDefinitions,
   checkExtensionContribution,
@@ -64,6 +65,7 @@ import {
   EXTENSION_TOOLS_AREA,
   type ExtensionContribution,
 } from './extension-contribution.js';
+import { markAfterDorkosTool } from './dorkos-tool-reads.js';
 
 /**
  * What a transport adapter supplies to {@link CapabilityRegistry.invoke}.
@@ -177,6 +179,12 @@ export interface CapabilityInvocationContext {
    * authorization: it says where the caller is, not what it may do.
    */
   cwd?: string;
+  /**
+   * The invoking session's turn runs at Never ask right now, set only by the in-session server
+   * from the live session (DOR-3971). It only narrows what a read returns, never what may run, so
+   * a handler that hands back words a stranger may have chosen leaves them out.
+   */
+  neverAsks?: true;
   /** Process-authenticated caller resolved by a server-owned boundary. */
   /**
    * Which MCP server's tool list this call arrived through, set by the MCP
@@ -343,6 +351,8 @@ export interface CapabilityHandlerContext {
    * a restart still resumes the agent in the right place (DOR-981).
    */
   cwd?: string;
+  /** See {@link CapabilityInvocationContext.neverAsks}. */
+  neverAsks?: true;
   /** Process-authenticated caller resolved by the server boundary. */
   /** See {@link CapabilityInvocationContext.mcpServer}. */
   mcpServer?: McpServerId;
@@ -842,6 +852,7 @@ export function composeRegistry(
         ...(supplied.userId ? { userId: supplied.userId } : {}),
         ...(supplied.sessionId ? { sessionId: supplied.sessionId } : {}),
         ...(supplied.cwd ? { cwd: supplied.cwd } : {}),
+        ...(supplied.neverAsks ? { neverAsks: true as const } : {}),
         ...(supplied.serverPrincipal ? { serverPrincipal: supplied.serverPrincipal } : {}),
         ...(supplied.mcpServer ? { mcpServer: supplied.mcpServer } : {}),
         ...(supplied.signal ? { signal: supplied.signal } : {}),
@@ -863,7 +874,9 @@ export function composeRegistry(
       if (preflight) invocationContext.preflight = preflight;
       // Past the monthly limit, or on an outsider-marked turn: refused, no card.
       if (!supplied.trusted) refuseSpend(preflight?.spend);
-      const spendAsks = !supplied.trusted && preflight?.spend?.kind === 'ask';
+      const spendAsk =
+        !supplied.trusted && preflight?.spend?.kind === 'ask' ? preflight.spend : undefined;
+      const spendAsks = spendAsk !== undefined;
       // Only the request tool forwards a token, to the action it asks for; see
       // `CapabilityDefinition.forwardsApproval`.
       if (capability.forwardsApproval) {
@@ -888,13 +901,12 @@ export function composeRegistry(
         : typeof windowed === 'object'
           ? windowed.keptCardBecause
           : undefined;
-      const spendCard = preflight?.spend?.kind === 'ask' ? preflight.spend.card : undefined;
       const serviceAction =
         preflight?.approvalServiceAction && keptCardBecause
           ? {
               ...preflight.approvalServiceAction,
               keptCardBecause,
-              ...(spendAsks && spendCard ? { spend: spendCard } : {}),
+              ...(spendAsk ? { spend: spendAsk.card } : {}),
             }
           : preflight?.approvalServiceAction;
 
@@ -954,7 +966,26 @@ export function composeRegistry(
               }
             : {}),
           ...(preflight ? { connectorAuthority: preflight.authorityBinding.approvalScope } : {}),
-          ...(serviceAction ? { serviceAction } : {}),
+          // A card the turn's outside words raised says so, unless it names a reason (DOR-3969).
+          ...(serviceAction
+            ? { serviceAction: withOutsideWordsReason(serviceAction, permission?.forOutsideWords) }
+            : {}),
+          // So the agent reads that it costs money, not only "set to ask" (DOR-4447).
+          // `only` when nothing but the spend limit would raise this card: a read
+          // (Ask lets reads through), or an `act` call its permission does not ask
+          // about, and never a turn whose outside words would ask anyway. Only then
+          // can a limit stop the asking.
+          ...(spendAsk
+            ? {
+                spendAsk: {
+                  reason: spendAsk.reason,
+                  only:
+                    !resolved?.forOutsideWords &&
+                    (capability.tier === 'observe' ||
+                      (capability.tier === 'act' && resolved?.state !== 'ask')),
+                },
+              }
+            : {}),
           ...(supplied.blockedRequest ? { blockedRequest: supplied.blockedRequest } : {}),
         });
         if (decision.outcome !== 'allowed') throw new CapabilityGateRefusal(decision);
@@ -965,13 +996,19 @@ export function composeRegistry(
       // Run as the caller (spec `audit-trail` PR2): an identified agent's call
       // runs inside its own audit scope, so a write the capability makes further
       // down names the agent, never the person whose message started the turn.
-      const run = () =>
-        runAsAgent(
+      // A tool that hands an agent someone else's text marks the turn it ran in (DOR-3969). A
+      // person's call on the HTTP API or the CLI names no agent's turn, so it marks nothing.
+      const byAgent = supplied.mcpServer !== undefined || invocationContext.identity !== undefined;
+      const run = async () => {
+        const result = await runAsAgent(
           invocationContext.identity,
           supplied.sessionId,
           () => capability.invoke(deps, parsed, invocationContext),
           { inSession: supplied.mcpServer === 'in-session' }
         );
+        if (byAgent) markAfterDorkosTool(capability.id, invocationContext, result);
+        return result;
+      };
 
       // Reads with nobody named stay silent: there is nothing to attribute and a
       // read changes nothing. Every other call reaches the observer, identified

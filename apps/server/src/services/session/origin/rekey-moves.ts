@@ -5,7 +5,7 @@
  *
  * @module services/session/origin/rekey-moves
  */
-import type { Db } from '@dorkos/db';
+import type { Db, DbTransaction } from '@dorkos/db';
 import { logger } from '../../../lib/logger.js';
 import { moveBeatChats } from '../../heartbeats/heartbeat-store.js';
 import { moveRunSessions } from '../../tasks/session/active-run-sessions.js';
@@ -19,7 +19,7 @@ import { moveRunSessions } from '../../tasks/session/active-run-sessions.js';
  * @param fromId - The id the chat was known by.
  * @param toId - Its canonical id.
  */
-export function moveScheduledChats(db: Db, fromId: string, toId: string): void {
+export function moveScheduledChats(db: Db | DbTransaction, fromId: string, toId: string): void {
   moveRunSessions(db, fromId, toId);
   moveBeatChats(db, fromId, toId);
 }

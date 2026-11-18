@@ -6,6 +6,7 @@
  * @module services/connectors/spending/spend-copy
  */
 import { SPEND_CURRENCY, spendLimitMoney, spendMoney } from '@dorkos/shared/connector-spending';
+import type { SpendAskReason } from '../../core/capabilities/spend-permission.js';
 
 export { SPEND_CURRENCY };
 
@@ -53,6 +54,49 @@ export const EXTENSION_SPEND_COPY = {
   unreadable: "Spending can't be checked right now, so this paid read didn't run.",
   outsideLimit: "This paid read doesn't fit this month's spending limit. Nothing ran.",
 } as const;
+
+/**
+ * Why a paid run that asks is waiting, and what the person can change so the
+ * next one does not (DOR-4447). The labels match the Connections page: its
+ * Monthly limit and each app's Price per run. A run past the limit never asks;
+ * it is refused with {@link limitRefusal} instead.
+ */
+const SPEND_ASK: Record<SpendAskReason, { why: string; fix?: string }> = {
+  'no-limit': {
+    why: 'No monthly spending limit is set, so each paid action needs a yes.',
+    fix:
+      "They can set a monthly limit and this app's price per run in Connections, " +
+      'so paid actions inside the limit stop asking about cost.',
+  },
+  'unknown-price': {
+    why: "This app has no price per run set, so the monthly limit can't count it.",
+    fix: "They can set this app's price per run in Connections, so it counts against the limit instead of asking.",
+  },
+  'meter-unreadable': { why: "This month's spending can't be read right now." },
+};
+
+/**
+ * What an agent reads when its paid action is waiting on a person: that it
+ * costs money, why that needs a yes, and, when spending is the only reason,
+ * what the person can do about it.
+ *
+ * @param title - The action's title.
+ * @param reason - Why the paid run asks.
+ * @param alsoBecause - The other reason the card would be raised anyway, like
+ *   `is high risk`. With one, the fix is left out: a limit would not stop it.
+ */
+export function spendAskMessage(
+  title: string,
+  reason: SpendAskReason,
+  alsoBecause?: string
+): string {
+  const { why, fix } = SPEND_ASK[reason];
+  const subject = alsoBecause
+    ? `"${title}" ${alsoBecause} and costs money.`
+    : `"${title}" costs money.`;
+  const head = `${subject} ${why} DorkOS has asked the person to allow it.`;
+  return fix && !alsoBecause ? `${head} ${fix}` : head;
+}
 
 /** The full refusal an agent gets past the limit: the case, then what to do. */
 export function limitRefusal(

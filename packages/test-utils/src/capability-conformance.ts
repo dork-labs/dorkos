@@ -238,7 +238,7 @@ export interface CapabilityConformanceFixtures {
   expectedInvokeRefusal?: Record<string, (error: Error) => boolean>;
   /**
    * The tool names each MCP server ACTUALLY registers for the capability
-   * surface, obtained by running the real adapters (`capabilityMcpTools` for
+   * surface, obtained by running the real adapters (`registerClaudeCapabilityTools` for
    * in-session; `registerCapabilitiesAsMcpTools` onto a real `McpServer` for
    * external). Compared for exact equality against the registry's declared
    * per-server surface.

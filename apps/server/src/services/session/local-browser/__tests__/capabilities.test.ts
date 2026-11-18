@@ -4,11 +4,12 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import type { LocalBrowserState } from '@dorkos/shared/local-browser';
+import { localBrowserRefusalNext } from '@dorkos/shared/local-browser-refusal';
 import { noopLogger } from '@dorkos/shared/logger';
 import { composeRegistry } from '../../../core/capabilities/index.js';
 import {
   capabilitiesForMcpServer,
-  capabilityInputShape,
+  capabilityMcpInputObject,
   invokeCapabilityAsMcpResult,
 } from '../../../core/capabilities/mcp-projection.js';
 import type { CapabilityDeps, CapabilityHandlerContext } from '../../../core/capabilities/index.js';
@@ -102,7 +103,7 @@ describe('local browser scoped tool projection', () => {
     const tools = capabilitiesForMcpServer(registry, 'in-session');
     const schemas = tools.map((tool) => ({
       id: tool.id,
-      input: z.object(capabilityInputShape(tool)),
+      input: capabilityMcpInputObject(tool),
     }));
     expect(schemas).toHaveLength(5);
     expect(capabilitiesForMcpServer(registry, 'external')).toEqual([]);
@@ -548,6 +549,21 @@ describe('local browser scoped tool projection', () => {
     // The always-on instructions say the same: a direct chat opens it, and how to move it.
     expect(_UI_TOOLS_CONTEXT).toContain('direct chat with you:\nOpen browser in its right panel');
     expect(_UI_TOOLS_CONTEXT).toContain('Take it here if another chat has it');
+  });
+  // DOR-4662: a refused page's reading and the handoff tool give one instruction.
+  it('lets an agent hand a refused site to the person, and never get past it itself', () => {
+    const { domain } = setup();
+    const ask = domain.capabilities.find((item) => item.id === 'local_browser.ask_person')!;
+    expect(ask.description).toContain('When a page reading reports a refusal');
+    expect(ask.description).toContain('hand the site to the person with this tool');
+    expect(ask.description).toContain('to get yourself past');
+    // The old line forbade the very handoff the reading asks for.
+    expect(ask.description).not.toContain('never use this to get past a refusal');
+    for (const kind of ['sign-in', 'blocked'] as const) {
+      const next = localBrowserRefusalNext(kind);
+      expect(next).toContain('local_browser_ask_person');
+      expect(next).toContain('get yourself past');
+    }
   });
   it('lets no agent name the site it hands over', () => {
     const { domain } = setup();

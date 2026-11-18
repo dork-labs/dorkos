@@ -52,6 +52,18 @@ export function useBrowserHandoff(sessionId?: string | null) {
   };
 
   const selectedTabId = state?.selectedTabId ?? null;
+  // The server opens the plain window and, after Continue, the site in its own window.
+  const openWindow = () => {
+    // The server puts it back on the page saved when the agent asked, never one named here.
+    if (handoff)
+      void run(() =>
+        transport.openLocalBrowser({
+          mode: 'new-window',
+          sessionId: handoff.sessionId,
+          ...(handoff.profileId ? { profileId: handoff.profileId } : {}),
+        })
+      );
+  };
   return {
     handoff,
     ended,
@@ -72,19 +84,12 @@ export function useBrowserHandoff(sessionId?: string | null) {
     continueAgent: () =>
       handoff ? run(() => transport.handBackLocalBrowser(handoff.id)) : Promise.resolve(false),
     signIn: () => {
-      if (handoff) void run(() => transport.signInLocalBrowser({ handoffId: handoff.id }));
+      if (!handoff) return;
+      // A refused in-app page goes on in its own window, where the sign-in lands (DOR-4097).
+      if (handoff.refused && state?.mode === 'embedded') openWindow();
+      else void run(() => transport.signInLocalBrowser({ handoffId: handoff.id }));
     },
-    openWindow: () => {
-      // The server puts it back on the page saved when the agent asked, never one named here.
-      if (handoff)
-        void run(() =>
-          transport.openLocalBrowser({
-            mode: 'new-window',
-            sessionId: handoff.sessionId,
-            ...(handoff.profileId ? { profileId: handoff.profileId } : {}),
-          })
-        );
-    },
+    openWindow,
     showWindow: () => {
       // A plain browser answer says nothing about the handoff, so nothing is cached from it.
       if (selectedTabId)

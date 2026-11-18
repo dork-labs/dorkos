@@ -189,7 +189,7 @@ export interface AdapterManagerDeps {
    */
   agentRuntimes?: Map<string, AgentRuntimeLike>;
   /**
-   * @deprecated Provide `agentRuntimes` (a map) instead. When supplied, this
+   * @deprecated since 0.135, remove in 0.155. Provide `agentRuntimes` (a map) instead. When supplied, this
    * single runtime is registered under its own `type` (falling back to
    * `'claude-code'` for doubles that declare none) so existing callers
    * continue to work while they migrate.

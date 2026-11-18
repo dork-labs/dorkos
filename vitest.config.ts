@@ -103,6 +103,9 @@ const LOCAL_MAX_WORKERS = 4;
 export default defineConfig({
   test: {
     ...(process.env.CI ? {} : { maxWorkers: LOCAL_MAX_WORKERS }),
+    // A whole-workspace or multi-file run waits while the load is over 16; one
+    // file never does, and CI never does (DOR-4646). See the file's header.
+    globalSetup: ['scripts/lib/load-wait.ts'],
     projects: [
       'apps/client',
       'apps/space',

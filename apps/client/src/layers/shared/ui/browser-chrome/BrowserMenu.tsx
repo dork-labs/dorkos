@@ -1,5 +1,15 @@
 import { useRef, useState } from 'react';
-import { ArrowRight, Copy, Ellipsis, ExternalLink, KeyRound, MessageSquare, X } from 'lucide-react';
+import { siteName } from '@dorkos/shared/site-name';
+import {
+  ArrowRight,
+  Copy,
+  Ellipsis,
+  ExternalLink,
+  KeyRound,
+  LogIn,
+  MessageSquare,
+  X,
+} from 'lucide-react';
 import { useCopyFeedback } from '@/layers/shared/lib/use-copy-feedback';
 import { cn } from '@/layers/shared/lib/utils';
 import { useIsMobile, useMenuCloseFocusGuard } from '../../model';
@@ -68,6 +78,11 @@ export interface BrowserMenuProps {
   onForward?: () => void;
   /** Open the address in the person's own browser. The item shows only with it. */
   onOpenExternally?: () => void;
+  /**
+   * Open the plain sign-in window on this site (DOR-4097). The item shows only with
+   * it, on a web page, and names the site from the address.
+   */
+  onSignInSeparately?: () => void;
   /** Other chats with a page open. The group shows only when there is one. */
   otherChats?: BrowserMenuOtherChat[];
   /** Go to another chat. */
@@ -116,8 +131,8 @@ function chatLine(chat: BrowserMenuOtherChat): string {
 /**
  * The browser's ⋯ menu, at the end of the chrome: browser and page actions,
  * each group shown only when it applies. In order: Forward (only while the row
- * is too narrow to show it), Pages, Copy address, Open in your browser, Also
- * open in other chats, Forget saved sign-ins…, and the closing item (plain,
+ * is too narrow to show it), Pages, Copy address, Open in your browser, Sign in
+ * to a site in its own window, Also open in other chats, Forget saved sign-ins…, and the closing item (plain,
  * never red: closing loses nothing saved). A bottom sheet on a phone.
  *
  * Agent controls (Pause, Take over, Hand back) are the status pill's, not this
@@ -134,6 +149,7 @@ export function BrowserMenu({
   canForward = false,
   onForward,
   onOpenExternally,
+  onSignInSeparately,
   otherChats = [],
   onOpenChat,
   onForgetSignIns,
@@ -192,6 +208,11 @@ export function BrowserMenu({
         {onOpenExternally && (
           <ResponsiveDropdownMenuItem icon={ExternalLink} onSelect={onOpenExternally}>
             Open in your browser
+          </ResponsiveDropdownMenuItem>
+        )}
+        {onSignInSeparately && (
+          <ResponsiveDropdownMenuItem icon={LogIn} disabled={busy} onSelect={onSignInSeparately}>
+            {`Sign in to ${siteName(new URL(url).host)} in its own window`}
           </ResponsiveDropdownMenuItem>
         )}
       </div>

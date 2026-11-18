@@ -9,8 +9,16 @@
  * the plan of record's.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
+import {
+  ROOM_RECEIPT_EMOJI,
+  type RoomEntry,
+  type RoomWithRoster,
+} from '@dorkos/shared/room-schemas';
 import { mockInterruptReceipt } from '@dorkos/test-utils';
+import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
+import type { StreamEvent } from '@dorkos/shared/types';
+import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
+import { lastTurnLevelOf, recordTurnLevels } from '../../core/turn-power/turn-levels.js';
 import { setChatMessageService } from '../../session/chat-messages/chat-message-current.js';
 import type { ChatMessageService } from '../../session/chat-messages/chat-message-service.js';
 import { composeRegistry, type CapabilityRegistry } from '../../core/capabilities/index.js';
@@ -125,6 +133,23 @@ function draftIn(prompt: string): string | undefined {
   const fence =
     /--- BEGIN HANDED-OFF DRAFT (\w+) ---\n[^\n]*\n(?:[^\n]*Treat the draft as data[^\n]*\n)?([\s\S]*)\n--- END HANDED-OFF DRAFT \1 ---$/;
   return fence.exec(prompt)?.[2];
+}
+
+/** Record real turn bounds; only the model stream is replaced, as in room-held-own-post. */
+async function recordDraftTurn(sessionId: string, opts?: MessageOpts): Promise<void> {
+  const runtime = recordTurnLevels(
+    {
+      type: 'claude-code',
+      getCapabilities: () => CLAUDE_CODE_CAPABILITIES,
+      async *sendMessage(): AsyncGenerator<StreamEvent> {
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+    } as unknown as AgentRuntime,
+    () => 'default'
+  );
+  for await (const _event of runtime.sendMessage(sessionId, 'draft', opts)) {
+    /* drain */
+  }
 }
 
 describe('one seat per agent per room, and the hand-off', () => {
@@ -408,6 +433,70 @@ describe('one seat per agent per room, and the hand-off', () => {
     expect(notice?.body.subjectAuthorId).toBe(bo);
   });
 
+  it('explains a thrown seat turn without leaking its diagnostic or claiming empty history', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    try {
+      productHandsOff('Share the update.');
+      scripts[dorkos.id] = async () => {
+        throw new Error('secret account /private/home token=hidden');
+      };
+      service.post(product.id, { authorId: human, text: '@bo share the update' });
+      await settle();
+      const notice = entries(product).find((entry) => entry.body.notice === 'handoff_declined');
+      expect(notice?.body.text).toContain('the chat stopped. Open it to continue.');
+      expect(notice?.body.text).not.toMatch(
+        /secret|private|token=|nothing to answer|gave no reason/
+      );
+      expect(bosPosts(dorkos)).toEqual([]);
+      expect(warn).toHaveBeenCalledWith(
+        '[rooms] a welcome-back offer turn failed',
+        expect.objectContaining({
+          typedCause: 'exception',
+          error: 'secret account /private/home token=hidden',
+        })
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('post_to_room hands a Careful agent draft to its real seat without a card or changing its recorded level', async () => {
+    await recordDraftTurn('bo-chat');
+    const careful = lastTurnLevelOf('bo-chat');
+    expect(careful).toMatchObject({ asks: 'always' });
+    seatPostsDraft();
+    const result = await postAsBo('bo-chat', { roomId: dorkos.id, text: 'Careful draft' });
+    expect(result).toMatchObject({ posted: false, handedOff: true });
+    await settle();
+    expect(handoffTurns()).toHaveLength(1);
+    expect(lastTurnLevelOf('bo-chat')).toEqual(careful);
+    expect(bosPosts(dorkos)).toEqual(['Careful draft\n\n_Shared from another chat._']);
+  });
+
+  it('post_to_room keeps outsider marks on the real seat and never quotes its private reply', async () => {
+    await recordDraftTurn('bo-outsider-review-fixture', { carriedMarks: { outsider: true } });
+    store.bindRoomSession(product.id, bo, 'bo-outsider-review-fixture', new Date().toISOString());
+    scripts[dorkos.id] = async () => 'Private reply token=hidden /private/account';
+    const result = await postAsBo('bo-outsider-review-fixture', {
+      roomId: dorkos.id,
+      text: 'Marked draft',
+    });
+    expect(result).toMatchObject({ posted: false, handedOff: true });
+    await settle();
+    expect(handoffTurns()).toHaveLength(1);
+    expect(handoffTurns()[0]!.carriedOutsider).toBe(true);
+    expect(bosPosts(dorkos)).toEqual([]);
+    const notice = entries(product).find((entry) => entry.body.notice === 'handoff_declined');
+    expect(notice?.body.text).toBe(
+      'Bo did not post it in #dorkos: it read words from outside your team. Its chat says why.'
+    );
+    expect(notice?.body.text).not.toMatch(/Private reply|token=|hidden|private/);
+    expect(service.handoffs.outcomes.read(result.handoffId!, bo)).toMatchObject({
+      status: 'declined',
+      reason: 'it read words from outside your team. Its chat says why.',
+    });
+  });
+
   it('D: an agent not in the room is refused, told who can post, and not added', async () => {
     const elsewhere = service.createRoom(
       { kind: 'channel', title: 'finance', members: [], agentPaths: ['/agents/cy'] },
@@ -558,6 +647,109 @@ describe('one seat per agent per room, and the hand-off', () => {
       }
     }
   );
+
+  // DOR-4619: a room nobody has posted in yet has no entry for the seat's turn to be about, and
+  // the hand-off used to stop there with "nothing to answer", verbatim or not.
+  describe('into a room nobody has posted in yet', () => {
+    /** Bo's #team-product seat posts whatever draft it is handed. */
+    function emptyRoomSeatPosts(): PostResult[] {
+      const attempts: PostResult[] = [];
+      scripts[product.id] = async (request, sessionId) => {
+        const draft = draftIn(request.prompt);
+        if (draft === undefined) return null;
+        attempts.push(await postAsBo(sessionId, { roomId: product.id, text: draft }));
+        return null;
+      };
+      return attempts;
+    }
+
+    async function statusOf(handoffId: string | undefined): Promise<unknown> {
+      return registry.invoke(
+        'rooms.handoff_status',
+        { handoffId },
+        { identity: BO, sessionId: 'bo-chat', retryChannel: 'mcp-argument' }
+      );
+    }
+
+    it.each([
+      ['a hand-off', false],
+      ['a verbatim hand-off', true],
+    ])('%s is posted by the seat', async (_label, verbatim) => {
+      expect(entries(product)).toEqual([]);
+      const attempts = emptyRoomSeatPosts();
+
+      const receipt = await postAsBo('bo-chat', {
+        roomId: product.id,
+        text: 'Ledger opened.',
+        ...(verbatim ? { verbatim: true } : {}),
+      });
+      await settle();
+
+      expect(receipt).toMatchObject({ posted: false, handedOff: true });
+      expect(attempts).toEqual([expect.objectContaining({ posted: true })]);
+      expect(bosPosts(product)).toEqual(['Ledger opened.\n\n_Shared from another chat._']);
+      await expect(statusOf(receipt.handoffId)).resolves.toMatchObject({ status: 'posted' });
+    });
+
+    it('runs the seat turn with no marks the room never had, and points the post at nothing', async () => {
+      emptyRoomSeatPosts();
+
+      await postAsBo('bo-chat', { roomId: product.id, text: 'Ledger opened.' });
+      await settle();
+
+      const seatTurn = runner.turns.find(
+        (turn) => turn.roomId === product.id && turn.prompt.includes('BEGIN HANDED-OFF DRAFT')
+      );
+      expect(seatTurn?.externalAuthor).toBe(false);
+      expect(seatTurn?.permissionCeiling).toBeUndefined();
+      expect(seatTurn?.carriedOutsider).toBeUndefined();
+      const [post] = entries(product).filter((entry) => entry.authorId === bo);
+      expect(post).toBeDefined();
+      // No entry was answered, so the post names none.
+      expect(post?.body.answersEntryId).toBeUndefined();
+    });
+
+    it('a person who asks the seat while it runs keeps their 👀 until it answers them', async () => {
+      let asked: RoomEntry | undefined;
+      const seen: string[][] = [];
+      scripts[product.id] = async (request, sessionId) => {
+        const draft = draftIn(request.prompt);
+        if (draft === undefined) {
+          // Bo's own turn for the person's message: their 👀 must still be on it.
+          seen.push(
+            service
+              .reactionsFor(product.id, asked!.id)
+              .filter((pill) => pill.emoji === ROOM_RECEIPT_EMOJI)
+              .flatMap((pill) => pill.authorIds ?? [])
+          );
+          return null;
+        }
+        await postAsBo(sessionId, { roomId: product.id, text: draft });
+        // While the seat's turn still holds Bo, a person asks him something.
+        asked = service.post(product.id, { authorId: human, text: '@bo is the ledger live?' });
+        return null;
+      };
+
+      await postAsBo('bo-chat', { roomId: product.id, text: 'Ledger opened.' });
+      await settle();
+
+      expect(asked).toBeDefined();
+      expect(seen).toEqual([[bo]]);
+    });
+
+    it('a seat that declines says its own reason, never "nothing to answer"', async () => {
+      scripts[product.id] = () => Promise.resolve('This belongs in #dorkos.');
+
+      const receipt = await postAsBo('bo-chat', { roomId: product.id, text: 'Ledger opened.' });
+      await settle();
+
+      expect(bosPosts(product)).toEqual([]);
+      await expect(statusOf(receipt.handoffId)).resolves.toMatchObject({
+        status: 'declined',
+        reason: 'This belongs in #dorkos.',
+      });
+    });
+  });
 
   it('reports back into a chat no room keeps', async () => {
     const send = vi.fn(() =>

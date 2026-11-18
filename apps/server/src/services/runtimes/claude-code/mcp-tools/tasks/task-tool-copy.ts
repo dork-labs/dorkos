@@ -304,7 +304,9 @@ export const TASKS_CREATE_DESCRIPTION =
   'Create a scheduled task. It is live at once and the person is told, unless DorkOS asks ' +
   'them first: then it waits at pending_approval and never runs until they approve it. ' +
   'The schedule returned says which. From a chat at Full autonomy whose turn ' +
-  `${unmarkedTurnClause()}, target can be another agent: the task runs at that agent's level at most.`;
+  `${unmarkedTurnClause()}, target can be another agent: the task runs at that agent's level at most. ` +
+  'With runOnce and no cron it runs once, as soon as it is live; at dontAsk it can carry the ' +
+  'exact commands that one run needs (allowList). Remove them after it runs.';
 
 /** The zone argument defaults to the person's saved time zone. */
 export const TIMEZONE_DESCRIPTION =
@@ -321,4 +323,5 @@ export const TASKS_UPDATE_DESCRIPTION =
   'can still be switched on or off and given a new cron or timezone — DorkOS keeps those, ' +
   "the package is not edited — and resetTiming puts it back on the package's own timing. " +
   "Another agent's task, its prompt included, can be changed only from a chat at Full autonomy " +
-  `whose turn ${unmarkedTurnClause()}, and never above that agent's own level.`;
+  `whose turn ${unmarkedTurnClause()}, and never above that agent's own level. ` +
+  'Send allowList alone with id to remove commands from a task; that needs no approval.';
