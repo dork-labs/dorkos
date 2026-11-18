@@ -60,6 +60,14 @@
  * has no agent level, and runs as before. A `levelPermissionMode` a caller sent
  * is always dropped: only this seam sets it.
  *
+ * ## An agent that reads outside text
+ *
+ * Every turn of an agent that said it reads outside text (`readsOutsideText`, DOR-3969) carries
+ * the outsider mark (`MessageOpts.carriedMarks`), whatever its level and wherever it runs: a chat,
+ * a room seat, a schedule. Read here because this seam sees every turn. The mark lowers nothing;
+ * the turn-level record notes it, so what the turn posts is kept marked and a send in it asks
+ * first. Who said so, and who may take it back, is `declared-readers.ts`.
+ *
  * Out of scope: a turn already running when the level changes (DOR-3177).
  *
  * @module services/core/turn-power/agent-level-bound
@@ -88,6 +96,7 @@ import {
 } from '../../session/resolution/agent-launch-level.js';
 import { isChosenMode, isKept } from '../permissions/existing-chats-raise.js';
 import { chatRiseFacts } from './chat-rise-facts.js';
+import { agentReadsOutsideText } from './declared-readers.js';
 import { logger } from '../../../lib/logger.js';
 
 /** Chats on another computer, which this one cannot vouch for. */
@@ -104,6 +113,8 @@ export interface AgentLevelBoundDeps {
     agentPath: string;
     capabilities: RuntimeCapabilities | undefined;
   }) => Promise<AgentLaunchLevel>;
+  /** Whether the agent at a folder said it reads outside text (tests pass their own). */
+  readsOutsideText?: (agentPath: string) => Promise<boolean>;
 }
 
 /** The ceiling a turn is sent with, plus one more bound that also holds. */
@@ -279,7 +290,8 @@ function rises(
 /**
  * The send's options with the agent's level added to its ceiling when that
  * level holds the turn down, and the level as the mode it starts from when the
- * chat follows its agent up; the options unchanged otherwise.
+ * chat follows its agent up, and the outsider mark when its agent said it
+ * reads outside text; the options unchanged otherwise.
  *
  * @param runtime - The runtime the turn runs on.
  * @param sessionId - The session.
@@ -296,13 +308,6 @@ export async function boundTurnOpts(
   // sent is dropped, whatever happens below, so nothing upstream can skip the
   // stored mode, a person's cap, the schedule rule or the marks.
   const opts = withoutLevelMode(incoming);
-  let capabilities: RuntimeCapabilities;
-  try {
-    capabilities = runtime.getCapabilities();
-  } catch {
-    return opts;
-  }
-  const declared = capabilities.permissionModes;
   let agent: LevelAgent;
   try {
     agent = await agentOfTurn(runtime, sessionId, opts, deps.recordedAgentOf);
@@ -310,6 +315,64 @@ export async function boundTurnOpts(
     // A recorded agent could not be read: held to the default, not let through.
     agent = 'unmatched';
   }
+  const bounded = await boundToLevel(runtime, sessionId, opts, agent, deps);
+  return (await readsOutsideText(agent, sessionId, deps))
+    ? { ...(bounded ?? {}), carriedMarks: { ...bounded?.carriedMarks, outsider: true } }
+    : bounded;
+}
+
+/**
+ * Whether the turn's agent said it reads outside text. Both agents count when a chat of one
+ * stands in the other's folder; a turn whose agent is unknown has nobody to ask. A failed read is
+ * logged and reads as not declared: the mark adds care, and a broken file must not stop the turn.
+ *
+ * @param agent - The turn's agent.
+ * @param sessionId - The session, for the log line.
+ * @param deps - Where the answer comes from.
+ */
+async function readsOutsideText(
+  agent: LevelAgent,
+  sessionId: string,
+  deps: AgentLevelBoundDeps
+): Promise<boolean> {
+  if (agent === undefined || agent === 'unmatched') return false;
+  const read = deps.readsOutsideText ?? agentReadsOutsideText;
+  try {
+    for (const agentPath of [agent.agentPath, agent.alsoBoundBy]) {
+      if (agentPath !== undefined && (await read(agentPath))) return true;
+    }
+  } catch (err) {
+    logger.warn('[agent-level] could not read whether the agent reads outside text', {
+      sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+  return false;
+}
+
+/**
+ * {@link boundTurnOpts} once the turn's agent is known: the level half.
+ *
+ * @param runtime - The runtime the turn runs on.
+ * @param sessionId - The session.
+ * @param opts - The send's options, without a caller's level mode.
+ * @param agent - The turn's agent.
+ * @param deps - Where the stored mode and the level come from.
+ */
+async function boundToLevel(
+  runtime: AgentRuntime,
+  sessionId: string,
+  opts: MessageOpts | undefined,
+  agent: LevelAgent,
+  deps: AgentLevelBoundDeps
+): Promise<MessageOpts | undefined> {
+  let capabilities: RuntimeCapabilities;
+  try {
+    capabilities = runtime.getCapabilities();
+  } catch {
+    return opts;
+  }
+  const declared = capabilities.permissionModes;
   if (agent === undefined) return opts;
   if (agent === 'unmatched') {
     const held = levelOfMode(declared, declared.default);

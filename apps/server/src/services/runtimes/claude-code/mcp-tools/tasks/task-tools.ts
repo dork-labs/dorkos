@@ -30,6 +30,7 @@ import {
   REFUSED_AGENT_ID_DESCRIPTION,
   REFUSED_UPDATE_TARGET_DESCRIPTION,
   STICKY_DESCRIPTION,
+  READS_OUTSIDE_TEXT_DESCRIPTION,
   RUNTIME_DESCRIPTION,
   MODEL_DESCRIPTION,
   EFFORT_DESCRIPTION,
@@ -105,6 +106,7 @@ import { updateRunRefusal } from './task-tool-run-refusals.js';
 import { attestNewTask, attestToolWrite, fileStateBefore } from './task-tool-file-cap.js';
 import { marksOf } from '../../../../core/turn-power/turn-levels.js';
 import { marksHold } from '../../../../core/turn-power/turn-marks.js';
+import { settleDeclaredTask } from '../../../../core/turn-power/declared-readers.js';
 import {
   callingTurnIsFull,
   capPatch,
@@ -168,6 +170,8 @@ export function createCreateScheduleHandler(
     maxRuntime?: string;
     /** Whether every run resumes one session; see {@link STICKY_DESCRIPTION}. */
     sticky?: boolean;
+    /** Whether the task reads outside text; see {@link READS_OUTSIDE_TEXT_DESCRIPTION}. */
+    readsOutsideText?: boolean;
     /** Which runtime the runs execute on; see {@link RUNTIME_DESCRIPTION}. */
     runtime?: string;
     /** Which model the runs execute on; see {@link MODEL_DESCRIPTION}. */
@@ -252,6 +256,7 @@ export function createCreateScheduleHandler(
         target,
         reason: args.reason,
         ...(args.sticky !== undefined && { sticky: args.sticky }),
+        ...(args.readsOutsideText === true && { readsOutsideText: true }),
         ...(args.runtime !== undefined && { runtime: args.runtime }),
         ...(args.model !== undefined && { model: args.model }),
         ...(args.effort !== undefined && { effort: args.effort }),
@@ -384,6 +389,8 @@ export function createUpdateScheduleHandler(
     maxRuntime?: string;
     /** Whether every run resumes one session; see {@link STICKY_DESCRIPTION}. */
     sticky?: boolean;
+    /** Whether the task reads outside text; see {@link READS_OUTSIDE_TEXT_DESCRIPTION}. */
+    readsOutsideText?: boolean;
     /** Which runtime the runs execute on, or `null` to clear the override. */
     runtime?: string | null;
     /** Which model the runs execute on, or `null` to clear the override. */
@@ -527,6 +534,8 @@ export function createUpdateScheduleHandler(
       ...(args.timezone !== undefined && { timezone: args.timezone }),
       ...(args.maxRuntime !== undefined && { maxRuntime: args.maxRuntime }),
       ...(args.sticky !== undefined && { sticky: args.sticky }),
+      // Only `true` gets here: the policy refused anything else above (DOR-3969).
+      ...(args.readsOutsideText === true && { readsOutsideText: true }),
       ...(args.runtime !== undefined && { runtime: args.runtime }),
       ...(args.model !== undefined && { model: args.model }),
       ...(args.effort !== undefined && { effort: args.effort }),
@@ -618,6 +627,8 @@ export function createUpdateScheduleHandler(
       timingLandsOn: fileOutcome.timingLandsOn,
     });
     if (!updated) return jsonContent({ error: `Schedule ${args.id} not found` }, true);
+    // An agent may only turn it on; turning it off is a person's (DOR-3969).
+    settleDeclaredTask(updated, patch.readsOutsideText, false);
     // An approval is armed here, all at once or not at all (DOR-3703).
     const armed = await armToolApproval(deps, mode, existing, caller);
     if (armed === null) return jsonContent(NOT_ARMED_REFUSAL, true);

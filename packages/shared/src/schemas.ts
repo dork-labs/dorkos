@@ -6089,6 +6089,14 @@ export const TaskSchema = z
      * same growing transcript.
      */
     sticky: z.boolean().default(false),
+    /**
+     * True when this task reads mail, web pages or another app's text (DOR-3969). Every turn of
+     * its runs is then treated as one that read outside words: what it posts is kept marked, and
+     * a send in it asks first. Present only when true. Anyone may set it; only a person sets it
+     * back to false, and DorkOS keeps its own record of it, so editing the file back cannot clear
+     * it.
+     */
+    readsOutsideText: z.boolean().optional(),
     maxRuntime: z.number().int().nullable(),
     permissionMode: PermissionModeSchema,
     /** The mode the proposer asked a person to approve; never an applied grant. */
@@ -6478,6 +6486,11 @@ export const CreateTaskRequestSchema = z
      */
     sticky: z.boolean().optional(),
     /**
+     * Set true when this task reads mail, web pages or another app's text (DOR-3969). See
+     * {@link TaskSchema.readsOutsideText}. An agent may send only `true`.
+     */
+    readsOutsideText: z.boolean().optional(),
+    /**
      * Which agent runtime this task's runs execute on (DOR-1615).
      *
      * Omitted or `null` means "the agent's runtime" — the default every task
@@ -6671,6 +6684,12 @@ export const UpdateTaskRequestSchema = z
      * {@link TaskSchema.sticky}.
      */
     sticky: z.boolean().optional(),
+    /**
+     * Set true when this task reads mail, web pages or another app's text, or (a person only)
+     * set it back to false (DOR-3969). See {@link TaskSchema.readsOutsideText}. An agent sending
+     * `false` is refused.
+     */
+    readsOutsideText: z.boolean().optional(),
     /**
      * Change which runtime this task's runs execute on, or send `null` to clear
      * the override and go back to following the agent (DOR-1615). See
