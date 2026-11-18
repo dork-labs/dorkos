@@ -828,8 +828,9 @@ export async function resolveLaunch(args: {
   const auditHooks = auditToolHookMatchers(auditTurn);
   sdkOptions.hooks = {
     PreToolUse: [
-      // Withheld browser tools, and a server the agent no longer gets (DOR-3872).
-      ...mcpToolHookMatchers(turnAgentPath),
+      // A read of outside text marks the turn first (DOR-3969); then withheld browser tools, and a
+      // server the agent no longer gets (DOR-3872).
+      ...mcpToolHookMatchers(turnAgentPath, () => session.sdkSessionId || sessionId),
       // DorkOS's own tools and protected files (DOR-4060): refused before any card.
       protectedFileMatcher({
         sessionId: () => session.sdkSessionId || sessionId,

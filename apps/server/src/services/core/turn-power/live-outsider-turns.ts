@@ -97,6 +97,7 @@ const readMarks = new Map<string, { key: string; token: { readonly marks: TurnMa
  * @param agentPath - The agent's home, from its verified identity.
  */
 export function noteReadMark(sessionId: string, agentPath: string | undefined): void {
+  noteEverRead(sessionId);
   if (readMarks.has(sessionId)) return;
   const key = agentPath !== undefined ? homeKey(agentPath) : undefined;
   if (key === undefined) {
@@ -108,6 +109,31 @@ export function noteReadMark(sessionId: string, agentPath: string | undefined): 
   turns.add(token);
   running.set(key, turns);
   readMarks.set(sessionId, { key, token });
+}
+
+/** The most chats remembered as having read outside text; the oldest is forgotten first. */
+const EVER_READ_MAX = 20_000;
+
+/** Every chat a read handed outside text in any turn, this process (DOR-3969). */
+const everRead = new Set<string>();
+
+/** Remember a chat as one that read outside text, newest last. */
+function noteEverRead(sessionId: string): void {
+  everRead.delete(sessionId);
+  everRead.add(sessionId);
+  if (everRead.size > EVER_READ_MAX) everRead.delete(everRead.values().next().value as string);
+}
+
+/**
+ * Whether a read in any turn of this chat handed it outside text, so what the chat says may quote
+ * it (DOR-3969): `chat_read` of it marks the reader. Unlike {@link sessionReadOutsideText}, a later
+ * clean turn does not end it. Kept for this process; the chat's stored hold covers its latest turn
+ * across a restart.
+ *
+ * @param sessionId - The chat, by its first id.
+ */
+export function chatEverReadOutsideText(sessionId: string): boolean {
+  return everRead.has(sessionId);
 }
 
 /**
@@ -155,4 +181,5 @@ export function runningMarksOf(agentPath: string): readonly TurnMarks[] {
 export function resetLiveOutsiderTurns(): void {
   running.clear();
   readMarks.clear();
+  everRead.clear();
 }

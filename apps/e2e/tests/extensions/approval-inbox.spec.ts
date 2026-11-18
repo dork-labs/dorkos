@@ -92,8 +92,12 @@ test.describe('An extension waiting to run asks in the inbox', () => {
     await expect(page.getByTestId(`extension-access-facts-${EXT_ID}`)).toContainText('Runs asYou');
     await expect(page.getByText(/full access to this computer/)).toHaveCount(0);
 
-    await page.getByRole('button', { name: 'Allow', exact: true }).click();
-    await expect(page.getByText('Flow wants to run on this computer.')).toHaveCount(0);
+    // Flow's own row: another spec on this server can leave its own Allow waiting.
+    const flowRow = page
+      .locator('[data-slot="inbox-decision-row"]')
+      .filter({ hasText: 'Flow wants to run on this computer.' });
+    await flowRow.getByRole('button', { name: 'Allow', exact: true }).click();
+    await expect(flowRow).toHaveCount(0);
 
     await page.keyboard.press('Escape');
     await rightPanel.open();

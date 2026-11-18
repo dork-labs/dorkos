@@ -208,7 +208,13 @@ import { RoomError } from './room-errors.js';
 import { POST_TO_ROOM_DESCRIPTION } from './handoff/room-post-description.js';
 import { registerRoomPreGateChecks } from './attachments/protected-file-checks.js';
 import { callerAuthor, toolCallerOf } from './service/room-caller-author.js';
-import { projectEntry, UNTRUSTED_NOTE } from './service/room-entry-projection.js';
+import { UNTRUSTED_NOTE } from './service/room-entry-projection.js';
+import {
+  projectMemberMatches,
+  projectMemberRoomList,
+  projectRead,
+  projectRoomsRead,
+} from './service/room-read-marks.js';
 import { projectDetail } from './service/room-detail-projection.js';
 import { POST_REPLY_TO_INPUT, POST_VERBATIM_INPUT } from './service/room-post-reply-to.js';
 import { holdIfStale, noteHistoryRead, noteSeen } from './messages/room-freshness.js';
@@ -699,7 +705,7 @@ export const roomsDomain: CapabilityDomain = {
         noteHistoryRead(input.roomId, readerId, input, entries);
         return Promise.resolve({
           note: UNTRUSTED_NOTE,
-          entries: entries.map((entry) => projectEntry(rooms, entry)),
+          entries: projectRead(rooms, context, input.roomId, entries),
         });
       },
     }),
@@ -747,7 +753,7 @@ export const roomsDomain: CapabilityDomain = {
         );
         return Promise.resolve({
           note: UNTRUSTED_NOTE,
-          matches: entries.map((entry) => projectEntry(rooms, entry)),
+          matches: projectRead(rooms, context, input.roomId, entries),
         });
       },
     }),
@@ -775,20 +781,9 @@ export const roomsDomain: CapabilityDomain = {
       },
       invoke: (deps, _input, context) => {
         const rooms = requireRoomDeps(deps);
-        const listed = answering(() => rooms.listMemberRooms(callerAuthor(rooms, context).id));
-        return Promise.resolve({
-          rooms: listed.map((room) => ({
-            roomId: room.roomId,
-            kind: room.kind,
-            // A room's name is typed by a person and read by a model, so it goes
-            // through the same sanitizer every other label in this file does —
-            // and lands on `null` rather than vanishing when nothing survives
-            // it, exactly as `projectDetail` does. One domain, one answer.
-            name: sanitizeIdentity(room.name) ?? null,
-            joined: room.joinedAt,
-            lastActivity: room.lastActivityAt,
-          })),
-        });
+        const viewer = answering(() => callerAuthor(rooms, context).id);
+        const listed = answering(() => rooms.listMemberRooms(viewer));
+        return Promise.resolve({ rooms: projectMemberRoomList(rooms, context, viewer, listed) });
       },
     }),
     defineCapability({
@@ -840,11 +835,7 @@ export const roomsDomain: CapabilityDomain = {
         );
         return Promise.resolve({
           note: UNTRUSTED_NOTE,
-          matches: matches.map((match) => ({
-            roomId: match.roomId,
-            room: sanitizeIdentity(match.name),
-            ...projectEntry(rooms, match.entry),
-          })),
+          matches: projectMemberMatches(rooms, context, matches),
         });
       },
     }),
@@ -884,7 +875,7 @@ export const roomsDomain: CapabilityDomain = {
         const detail = answering(() =>
           rooms.describeRoom(input.roomId, callerAuthor(rooms, context).id)
         );
-        return Promise.resolve(projectDetail(rooms, detail));
+        return Promise.resolve(projectRoomsRead(rooms, context, [detail])[0]);
       },
     }),
     defineCapability({
@@ -961,7 +952,7 @@ export const roomsDomain: CapabilityDomain = {
             ...(members.length > 0 ? { memberHandles: members } : {}),
           })
         );
-        return Promise.resolve({ rooms: found.map((room) => projectDetail(rooms, room)) });
+        return Promise.resolve({ rooms: projectRoomsRead(rooms, context, found) });
       },
     }),
     defineCapability({
