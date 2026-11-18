@@ -150,8 +150,19 @@ jobs:
           case "$verdict" in
             "PULL "*)
               reasons=${verdict#PULL }
-              warn "PR #$pr at ${head:0:10} is missing a gate ($reasons); taking it out of the queue"
-              if [[ -z "$APP_TOKEN" ]]; then
+              warn "PR #$pr at ${head:0:10} is missing a gate ($reasons)"
+              # The verdict judged the PR's head as read above, not the entry's
+              # own SHA (GitHub doesn't expose that). GitHub refuses pushes to a
+              # queued PR and drops an entry whose head moves, so the two agree
+              # while it is queued; re-read both right before acting, and act only
+              # if the head is unchanged and the PR is still in the queue.
+              recheck=$(gh api graphql -F number="$pr" -F owner="${REPO%/*}" -F name="${REPO#*/}" \
+                -f query='query($owner:String!,$name:String!,$number:Int!){ repository(owner:$owner,name:$name){
+                  pullRequest(number:$number){ headRefOid isInMergeQueue } } }' \
+                --jq '.data.repository.pullRequest | "\(.headRefOid) \(.isInMergeQueue)"' 2>/dev/null) || recheck=
+              if [[ "$recheck" != "$head true" ]]; then
+                warn "PR #$pr: head or queue state changed since it was read (${recheck:-unreadable}); left as it is"
+              elif [[ -z "$APP_TOKEN" ]]; then
                 warn "PR #$pr: no app token, so it stays in the queue"
               else
                 node_id=$(GH_TOKEN=$APP_TOKEN gh pr view "$pr" --repo "$REPO" --json id --jq .id 2>/dev/null)
