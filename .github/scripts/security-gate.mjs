@@ -484,19 +484,80 @@ export async function queuedSensitiveDiff(api, base, sha, pattern) {
   return touchesSecurity(await queuedFiles(api, base, sha, pattern), pattern);
 }
 
-/** The files a queued entry changes, compared between its pinned base and head. */
+/** How many files compare lists at most; at this count it may have cut the list short. */
+const COMPARE_FILE_CAP = 300;
+/** Files per page of a commit's list, and the most pages GitHub serves (3,000 files). */
+const COMMIT_PAGE_SIZE = 100;
+const COMMIT_MAX_PAGES = 30;
+
+/**
+ * The files a queued entry changes, compared between its pinned base and head.
+ * Compare lists at most 300; at that cap the entry's own commit is read in full.
+ */
 async function queuedFiles(api, base, sha, pattern) {
   if (!base || !sha || !pattern) throw new Error('Missing immutable comparison input');
   const comparison = await api.compare(base, sha);
-  // Compare files appear only on page 1 and are capped at 300, independently
-  // of commit pagination. At the cap completeness is unknown, so refuse.
-  const files = validateFiles(comparison.files);
-  if (
-    comparison.base_commit?.sha !== base ||
-    comparison.merge_base_commit?.sha !== base ||
-    files.length >= 300
-  )
+  // Compare files appear only on page 1, independently of commit pagination.
+  const files = strictFiles(comparison.files, 'Incomplete queued-head comparison');
+  if (comparison.base_commit?.sha !== base || comparison.merge_base_commit?.sha !== base)
     throw new Error('Incomplete queued-head comparison');
+  if (files.length < COMPARE_FILE_CAP) return files;
+  return queuedCommitFiles(api, base, sha, files);
+}
+
+/** Same checks as {@link validateFiles}, plus: a rename must name the file it came from. */
+function strictFiles(files, message) {
+  if (
+    !Array.isArray(files) ||
+    files.some((file) => file?.status === 'renamed' && typeof file.previous_filename !== 'string')
+  )
+    throw new Error(message);
+  try {
+    return validateFiles(files);
+  } catch {
+    throw new Error(message);
+  }
+}
+
+/**
+ * Every file a queued squash commit changes, page by page from `/commits/{sha}`.
+ * The merge queue squashes, so an entry's head is one commit whose only parent is
+ * the entry's base, and that commit's diff is the entry's diff. Each page must
+ * name the same commit and that one parent. A short or empty page ends the list;
+ * a full 30th page refuses, because GitHub stops at 3,000 and a list that long
+ * cannot be told from a cut-off one. The full list must hold every file compare
+ * already showed. Logs counts only, never names.
+ */
+async function queuedCommitFiles(api, base, sha, compared) {
+  const refuse = (reason) => new Error(`Incomplete queued-head file list (${reason})`);
+  const files = [];
+  let pages = 0;
+  for (;;) {
+    if (pages === COMMIT_MAX_PAGES) throw refuse('cap');
+    pages += 1;
+    const commit = await api.commitPage(sha, pages);
+    if (commit?.sha !== sha) throw refuse('sha');
+    if (
+      !Array.isArray(commit.parents) ||
+      commit.parents.length !== 1 ||
+      commit.parents[0]?.sha !== base
+    )
+      throw refuse('parent');
+    if (!Array.isArray(commit.files)) throw refuse('page');
+    files.push(...commit.files);
+    if (commit.files.length < COMMIT_PAGE_SIZE) break;
+  }
+  // Duplicates across pages (a repeated page) refuse here too.
+  strictFiles(files, refuse('file').message);
+  const listed = new Map(files.map((file) => [file.filename, file.previous_filename]));
+  if (
+    files.length < compared.length ||
+    compared.some(
+      (file) => !listed.has(file.filename) || listed.get(file.filename) !== file.previous_filename
+    )
+  )
+    throw refuse('superset');
+  console.log(`Queued commit ${sha}: ${files.length} files over ${pages} pages`);
   return files;
 }
 
@@ -554,6 +615,13 @@ async function resolveGroup(api, group, poll) {
 export async function checkMergeGroup(api, event, pattern, botUserId, deepPattern, options = {}) {
   const group = event.merge_group;
   const members = await resolveGroup(api, group, { ...QUEUE_POLL, ...options.poll });
+  // The walk starts at the event's head and ends at its base. Every SHA judged
+  // below is bound to those two, never taken from queue state alone.
+  if (
+    members.at(-1).headCommit.oid !== group.head_sha ||
+    members[0].baseCommit.oid !== group.base_sha
+  )
+    throw new Error('Merge group does not match its event');
   const results = [];
   for (const entry of members) {
     const { number, headRefOid: sha } = entry.pullRequest;
@@ -647,6 +715,13 @@ export function githubApi(repository, token, apiUrl = 'https://api.github.com') 
       (
         await request(
           `${root}/compare/${encodeURIComponent(base)}...${encodeURIComponent(sha)}?per_page=1&page=1`
+        )
+      ).data,
+    // One numbered page of a commit's files; the caller pages and checks the cap.
+    commitPage: async (sha, page) =>
+      (
+        await request(
+          `${root}/commits/${encodeURIComponent(sha)}?per_page=100&page=${encodeURIComponent(page)}`
         )
       ).data,
     statuses: (sha) => pages(`/commits/${sha}/statuses`),
