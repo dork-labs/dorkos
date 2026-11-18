@@ -168,6 +168,61 @@ describe('SessionPumpRegistry reclaim grace', () => {
     await next;
   });
 
+  // Purpose: a person does not queue behind agent work that is waiting on a
+  // grace. Only the front of the line tries to reclaim, so without this a
+  // person who arrived second would wait the whole grace too.
+  it('lets a person launch past an agent launch waiting on a grace', async () => {
+    const registry = new SessionPumpRegistry(identity);
+    const launched: FakeQuery[] = [];
+    await oneTurn(registry, 'busy', launchOpts(launched), 'msg-a');
+
+    const agent = registry
+      .acquire('agent', launchOpts(launched, { skipReclaimGrace: () => false }))
+      .warm();
+    let agentDone = false;
+    // The agent is still waiting at shutdown, which refuses it: expected.
+    void agent.then(
+      () => (agentDone = true),
+      () => undefined
+    );
+    await sleep(10);
+    expect(registry.isWaitingForSlot('agent')).toBe(true);
+
+    const started = Date.now();
+    await registry.acquire('person', launchOpts(launched, { skipReclaimGrace: () => true })).warm();
+
+    expect(Date.now() - started).toBeLessThan(GRACE_MS / 2);
+    expect(registry.warmth('person')).toBe('warm');
+    expect(agentDone).toBe(false);
+    await shutdownSessionPumps();
+    await agent.catch(() => undefined);
+  });
+
+  // Purpose: the queue jump is for people only. Two agent launches waiting on a
+  // grace still start in the order they arrived.
+  it('keeps agent launches in first-come order', async () => {
+    const registry = new SessionPumpRegistry(identity);
+    const launched: FakeQuery[] = [];
+    await oneTurn(registry, 'busy', launchOpts(launched), 'msg-a');
+
+    const order: string[] = [];
+    const agentOpts = () => launchOpts(launched, { skipReclaimGrace: () => false });
+    const first = registry
+      .acquire('first', agentOpts())
+      .dispatch([{ content: 'a', messageId: 'msg-first' }])
+      .then(() => order.push('first'));
+    await sleep(5);
+    const second = registry
+      .acquire('second', agentOpts())
+      .dispatch([{ content: 'b', messageId: 'msg-second' }])
+      .then(() => order.push('second'));
+
+    await Promise.race([first, second]);
+    expect(order).toEqual(['first']);
+    await shutdownSessionPumps();
+    await Promise.allSettled([first, second]);
+  });
+
   // Purpose: a reclaim closes the process it takes. DorkOS's part of "no orphan
   // MCP child" is reaching the forceful close on the CLI, whose own exit takes
   // its stdio servers with it (0 orphans found after 57 reclaims, 2026-11-18).

@@ -18,6 +18,8 @@ export interface SessionBundle {
    * The turn whose launch may wait for a warm slot: how to say so, and whether
    * it may skip another chat's reclaim grace. Set only while a dispatch is
    * opening its window (`slot-wait/open-turn-window.ts`, DOR-3012, DOR-4498).
+   * Absent at launch means `stage()` is warming a cold chat for a person's
+   * staged message, which skips the grace (`slot-wait/warm-pool-options.ts`).
    */
   slotWait?: OpeningTurnSlotWait;
   windows: SessionTurnWindows;

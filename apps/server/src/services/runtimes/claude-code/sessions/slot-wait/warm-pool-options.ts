@@ -47,8 +47,9 @@ export function waitsBehindReclaimGrace(
 
 /**
  * The acquire options a production session is held to. The two closures read
- * `bundle.slotWait` at call time, so they answer for the turn opening now; with
- * no turn opening, a launch skips the grace like any unmarked one.
+ * `bundle.slotWait` at call time, so they answer for the turn opening now. With
+ * no turn opening the launch is a person's staged message warming a cold chat,
+ * and it skips the grace like any person action.
  *
  * @param bundle - The session's bundle, whose `slotWait` the dispatch sets
  */
@@ -59,7 +60,9 @@ export function warmPoolOptions(bundle: { slotWait?: OpeningTurnSlotWait }) {
     slotWaitMs: SESSIONS.WARM_SLOT_WAIT_MS,
     reclaimGraceMs: SESSIONS.RECLAIM_GRACE_MS,
     onWaitingForSlot: () => bundle.slotWait?.notify(),
-    // No turn opening (a warm-up) is unmarked, and unmarked never waits.
+    // No `slotWait` means no turn is opening, and the only launch like that is
+    // `stage()` warming a cold chat for a PERSON's staged message
+    // (`deliverStage`). It is not anonymous background work: keep it skipping.
     skipReclaimGrace: () => bundle.slotWait?.personTurn ?? true,
   };
 }

@@ -189,6 +189,8 @@ export class SessionPumpRegistry {
   private readonly closing = new Set<Promise<boolean>>();
   /** Sessions whose wait a Stop has ended, read once by the waiting launch. */
   private readonly stoppedWaits = new Set<string>();
+  /** Launches that may skip the reclaim grace and are reaching for a slot now. */
+  private readonly jumping = new Set<string>();
   /** Wakes waiting launches when the soonest reclaim grace ends (DOR-4498). */
   private graceWake?: ReturnType<typeof setTimeout>;
 
@@ -605,7 +607,16 @@ export class SessionPumpRegistry {
     try {
       for (;;) {
         const seen = this.slotChanges;
-        const myTurn = this.slotQueue.length === 0 || this.slotQueue[0] === sessionId;
+        // A launch that may skip the reclaim grace (a person's) does not wait in
+        // line behind agent launches held by one (DOR-4498), and while it is
+        // reaching for a slot the agents step aside, so the slot it frees is the
+        // one it gets. Agents keep their first-come order among themselves.
+        const jumps = this.entries.get(sessionId)?.skipReclaimGrace?.() === true;
+        if (jumps) this.jumping.add(sessionId);
+        const myTurn =
+          jumps ||
+          (this.jumping.size === 0 &&
+            (this.slotQueue.length === 0 || this.slotQueue[0] === sessionId));
         if (myTurn) {
           if (grant()) return;
           // A process still closing frees its slot in seconds, and its close
@@ -655,12 +666,11 @@ export class SessionPumpRegistry {
       }
     } finally {
       this.stoppedWaits.delete(sessionId);
-      if (queued) {
-        this.slotQueue.splice(this.slotQueue.indexOf(sessionId), 1);
-        // The next launch in line may go now, whether this one got a slot or
-        // left without one.
-        this.wakeSlotWaiters();
-      }
+      const jumped = this.jumping.delete(sessionId);
+      if (queued) this.slotQueue.splice(this.slotQueue.indexOf(sessionId), 1);
+      // The next launch in line may go now, whether this one got a slot or
+      // left without one.
+      if (queued || jumped) this.wakeSlotWaiters();
     }
   }
 

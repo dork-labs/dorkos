@@ -51,9 +51,10 @@ describe('warmPoolOptions', () => {
     expect(told).toBe(1);
   });
 
-  // Purpose: a launch outside a turn's opening window (a warm-up nobody's turn
-  // is waiting on) is unmarked, and unmarked never waits the grace.
-  it('skips the grace when no turn is opening', () => {
+  // Purpose: the one production launch with no turn opening is
+  // `PersistentDispatch.stage()` warming a cold chat for a person's staged
+  // message. A person never waits behind the grace, so neither does it.
+  it('a staged warm-up skips the grace', () => {
     expect(warmPoolOptions({}).skipReclaimGrace()).toBe(true);
   });
 });
