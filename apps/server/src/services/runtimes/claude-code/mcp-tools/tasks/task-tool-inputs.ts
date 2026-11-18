@@ -25,6 +25,7 @@ import {
   RUNTIME_DESCRIPTION,
   STATUS_DESCRIPTION,
   STICKY_DESCRIPTION,
+  READS_OUTSIDE_TEXT_DESCRIPTION,
   TARGET_DESCRIPTION,
   TIMEZONE_DESCRIPTION,
 } from './task-tool-copy.js';
@@ -67,6 +68,7 @@ export const CREATE_TASK_INPUT = {
   timezone: z.string().optional().describe(TIMEZONE_DESCRIPTION),
   maxRuntime: durationArgument.describe('Maximum run time (e.g., "5m", "1h")'),
   sticky: z.boolean().optional().describe(STICKY_DESCRIPTION),
+  readsOutsideText: z.boolean().optional().describe(READS_OUTSIDE_TEXT_DESCRIPTION),
   runtime: z.string().min(1).optional().describe(RUNTIME_DESCRIPTION),
   model: z.string().min(1).optional().describe(MODEL_DESCRIPTION),
   effort: EffortLevelSchema.optional().describe(EFFORT_DESCRIPTION),
@@ -87,6 +89,7 @@ export const UPDATE_TASK_INPUT = {
   timezone: z.string().optional().describe('New timezone'),
   maxRuntime: durationArgument.describe('New max runtime (e.g., "5m", "1h")'),
   sticky: z.boolean().optional().describe(STICKY_DESCRIPTION),
+  readsOutsideText: z.boolean().optional().describe(READS_OUTSIDE_TEXT_DESCRIPTION),
   runtime: z.string().min(1).nullable().optional().describe(RUNTIME_DESCRIPTION),
   model: z.string().min(1).nullable().optional().describe(MODEL_DESCRIPTION),
   effort: EffortLevelSchema.nullable().optional().describe(EFFORT_DESCRIPTION),

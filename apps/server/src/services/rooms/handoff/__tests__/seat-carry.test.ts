@@ -13,7 +13,7 @@ import {
 } from '../../__tests__/room-test-harness.js';
 import type { RoomCore } from '../../service/room-core.js';
 import { env } from '../../../../env.js';
-import { withRoomMarks } from '../seat-carry.js';
+import { joinCeilings, withRoomMarks } from '../seat-carry.js';
 
 function roomWith(marked: boolean) {
   const { service, human, authors } = createRoomHarness({
@@ -95,5 +95,25 @@ describe('withRoomMarks with stranger marking off', () => {
     expect(
       withRoomMarks(core, 'seat-agent', { externalAuthor: false }, room, posted).outsider
     ).toBeUndefined();
+  });
+});
+
+// The shared join retains records, not merely the computed effective power axes.
+describe('joinCeilings', () => {
+  it('keeps a teammate origin and every prior/current bound without mutating the inputs', () => {
+    const teammate = {
+      asks: 'never',
+      reach: 'everything',
+      teammate: [{ roomId: 'room-fixture', authorId: 'member-fixture' }],
+    } as const;
+    const level = { asks: 'always', reach: 'read' } as const;
+    const current = { asks: 'always', reach: 'edit', outsider: true } as const;
+    expect(joinCeilings(joinCeilings(teammate, level), current)).toEqual([
+      teammate,
+      level,
+      current,
+    ]);
+    expect(joinCeilings(undefined, undefined)).toBeUndefined();
+    expect(joinCeilings(teammate, undefined)).toBe(teammate);
   });
 });

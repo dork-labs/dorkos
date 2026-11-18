@@ -111,6 +111,18 @@ export interface AgentSession {
    * distinction, never the notice.
    */
   launchedAccountRoot?: string;
+  /** Billing observed from this SDK process's init, never a preference/env prediction. */
+  sdkReportedBilling?: { root: string; perToken: boolean };
+  /** Positively validated final default/credits route for this launch; other routes stay unknown. */
+  validatedRecoveryRoute?: { root: string; inference: 'credits' | 'own-account' };
+  /** Exact terminal dispatch authority; cleared before the next dispatched turn. */
+  priorServerFailure?: {
+    dispatchId: string;
+    entryId: string;
+    root: string;
+    inference: 'credits' | 'own-account';
+    billing: 'subscription' | 'per-token';
+  };
   /**
    * How many session timers (CronCreate, ScheduleWakeup, /loop) the CLI said
    * were pending at its last turn end, read off the Stop hook's
@@ -319,6 +331,8 @@ export interface AgentSession {
    * `claude-account-fleet` D4: one limit status per turn). Reset at turn start.
    */
   limitReportedThisTurn?: boolean;
+  /** Structured SDK evidence for this turn only; never a recovery authorization. */
+  serverErrorEvidence?: { notices: string[]; vetoed: boolean };
   /**
    * The window a `rejected` `rate_limit_event` named during this turn, whether
    * or not extra usage covered it, so a `rate_limit` error that follows reports

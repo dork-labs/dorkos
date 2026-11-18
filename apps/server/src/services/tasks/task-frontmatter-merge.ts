@@ -89,6 +89,11 @@ export interface TaskFrontmatterWrite {
    * `task-file-update.ts`, not the top-level {@link FRONTMATTER_KEY} table here.
    */
   sticky?: boolean;
+  /**
+   * Whether the task reads mail, web pages or another app's text (DOR-3969). Block-scoped like
+   * {@link TaskFrontmatterWrite.sticky}; a `false` is left out of the file.
+   */
+  readsOutsideText?: boolean;
   /** How long a run may take, as `30s`/`10m`/`2h30m`. Clearable — no cap. */
   maxRuntime?: string | null;
   /** How much an unattended run may do without asking. */

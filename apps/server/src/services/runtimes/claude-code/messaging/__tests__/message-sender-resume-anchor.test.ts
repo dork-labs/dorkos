@@ -1,3 +1,4 @@
+import { isolatedRequiredLaunchOwner } from './required-launch-fixture.js';
 /**
  * Phantom "Continue from where you left off." regression.
  *
@@ -19,6 +20,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
 import type { AgentSession } from '../../agent-types.js';
 import { query, type Options, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+
+const requiredLaunches = isolatedRequiredLaunchOwner();
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
@@ -74,7 +77,12 @@ function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
 }
 
 function makeOpts(overrides: Partial<MessageSenderOpts> = {}): MessageSenderOpts {
-  return { cwd: '/mock/project', onSdkSessionRebind: async () => {}, ...overrides };
+  return {
+    cwd: '/mock/project',
+    requiredLaunches,
+    onSdkSessionRebind: async () => {},
+    ...overrides,
+  };
 }
 
 /** A minimal main-thread assistant SDK message carrying `uuid`. */

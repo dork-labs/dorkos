@@ -24,6 +24,8 @@ export const sessionMetadata = sqliteTable(
     // (DOR-812). Readers resolve an unbound row exactly like a row-less one — by
     // inference, unpersisted — so nothing is blocked in the meantime.
     runtime: text('runtime'),
+    // Immutable server-owned billing requirement; not native/runtime existence.
+    requiredLaunchId: text('required_launch_id'),
     agentPath: text('agent_path'),
     // What started the session (`TurnOrigin.kind`), written by the same
     // first-write-wins statement that binds the runtime and never overwritten.

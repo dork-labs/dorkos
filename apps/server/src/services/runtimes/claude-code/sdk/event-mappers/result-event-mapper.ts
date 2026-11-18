@@ -1,3 +1,4 @@
+import { serverFailureWitness } from '../server-failure-witness.js';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent, TerminalReason, UsageStatus, UsageState } from '@dorkos/shared/types';
 import type { AgentSession } from '../../agent-types.js';
@@ -214,6 +215,7 @@ export async function* mapResultEvent(
 
   // Handle result messages
   if (message.type === 'result') {
+    session.priorServerFailure = undefined;
     const result = message as Record<string, unknown>;
     const modelUsageMap = result.modelUsage as Record<string, Record<string, unknown>> | undefined;
     const terminalReason = result.terminal_reason as TerminalReason | undefined;
@@ -410,6 +412,13 @@ export async function* mapResultEvent(
         data: {
           message,
           code: subtype,
+          ...serverFailureWitness(session, {
+            subtype,
+            terminalReason,
+            stopped: stopped || stopWasRequested === true,
+            auth: isAuthError,
+            errors: result.errors,
+          }),
           category: isAuthError ? 'auth_error' : mapErrorCategory(subtype),
           details: errors?.join('\n'),
         },
@@ -419,6 +428,7 @@ export async function* mapResultEvent(
     // The turn is over, so its once-per-turn limit report is spent. The turn
     // starts reset these too; this covers a turn the agent woke itself for,
     // which no dispatch opened.
+    session.serverErrorEvidence = undefined;
     session.limitReportedThisTurn = false;
     session.rejectedLimitThisTurn = undefined;
 

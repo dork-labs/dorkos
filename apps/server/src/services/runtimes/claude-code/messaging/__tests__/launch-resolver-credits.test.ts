@@ -1,3 +1,4 @@
+import { isolatedRequiredLaunchOwner } from './required-launch-fixture.js';
 /**
  * Who pays for a Claude Code turn, at the launch (ADR 261001-000811).
  *
@@ -27,6 +28,8 @@ import { __resetCreditsModelsForTests } from '../../../../core/cloud/credits-mod
 import { creditsClaudeRoot } from '../../credits-root.js';
 import { resolveClaudeCredentialEnv } from '../../../../core/credential-env.js';
 import { configManager } from '../../../../core/config-manager.js';
+
+const requiredLaunches = isolatedRequiredLaunchOwner();
 
 const link = vi.hoisted(() => ({ linked: true }));
 // What the fake service's `GET /v1/inference/models` answers, or null for no link context.
@@ -104,7 +107,12 @@ async function launch(
   extra: Partial<MessageSenderOpts> = {},
   messageOpts?: MessageOpts
 ): Promise<{ options: Options | undefined; events: StreamEvent[] }> {
-  const opts: MessageSenderOpts = { cwd, onSdkSessionRebind: async () => {}, ...extra };
+  const opts: MessageSenderOpts = {
+    cwd,
+    requiredLaunches,
+    onSdkSessionRebind: async () => {},
+    ...extra,
+  };
   let options: Options | undefined;
   vi.mocked(query).mockImplementation((args) => {
     options = args.options;

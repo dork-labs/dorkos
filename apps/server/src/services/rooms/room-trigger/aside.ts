@@ -7,10 +7,14 @@
  *
  * @module server/services/rooms/room-trigger/aside
  */
+import type { HandoffTrace } from '../handoff/failure-trace.js';
+import { prepareFailedHandoffSeat, endFailedHandoffAttempt } from './failed-seat-recovery.js';
 import { randomUUID } from 'node:crypto';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { logger } from '../../../lib/logger.js';
+import { marksOf } from '../../core/turn-power/turn-levels.js';
+import { marksHold } from '../../core/turn-power/turn-marks.js';
 import { runInDispatch } from '../../../lib/dispatch-context.js';
 import { recordDispatchStart } from '../../observability/dispatch-buffers.js';
 import { agentKey, type ClaimOutcome } from '../room-claims.js';
@@ -21,6 +25,7 @@ import { env } from '../../../env.js';
 import { roomLaunchStepFor } from '../repo/room-launch-step.js';
 import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import { pendingSeatLaunch, settleSeatLaunch } from './reseat.js';
+import type { TurnFailure } from '../turn-guards/turn-waits.js';
 import type { RoomTriggerDispatcher } from '../room-trigger.js';
 import type { RoomTurnRequest } from '../room-turn-port.js';
 import { refusePausedRoomTurn, pausedRefusalOf } from '../turn-guards/paused-turn.js';
@@ -50,6 +55,12 @@ export interface AsideCarry {
 
 /** One aside: the agent, the room, the entry it is about, and what it is asked. */
 export interface AsideInput {
+  /** Server-owned handoff admission, never a runtime/tool supplied recovery flag. */
+  handoffRecovery?: true;
+  /** Internal receipt/claim correlation created by RoomHandoffs, not tool input. */
+  handoffTrace?: HandoffTrace;
+  /** DOR3778 original admission deadline; scheduler author owns its checks/reservation. */
+  admissionDeadlineAt?: number;
   /** The room the turn runs in. */
   room: Room;
   /** The entry the turn is about; it frames the context and the working indicator. */
@@ -87,10 +98,14 @@ export interface AsideRun extends AsideInput {
  * `busy` and `refused` ran no turn at all; `refused` says which bound stopped it.
  */
 export interface AsideResult {
+  /** A reply produced under outsider provenance is never quoted into another room/chat. */
+  replyOutsider?: true;
   /** How it ended. */
   outcome: ClaimOutcome | 'busy' | 'refused';
   /** Which bound refused it, on `refused`. */
-  why?: 'gone' | 'budget' | 'session' | 'paused';
+  why?: 'gone' | 'budget' | 'session' | 'paused' | 'deadline';
+  /** Internal failure facts; raw detail is never shared copy. */
+  failure?: TurnFailure;
   /** What the turn wrote back to its own session, or `null`. */
   text: string | null;
 }
@@ -111,6 +126,8 @@ export async function askAside(
   input: AsideInput
 ): Promise<AsideResult> {
   const { room, entry, authorId } = input;
+  if (input.admissionDeadlineAt !== undefined && Date.now() >= input.admissionDeadlineAt)
+    return refusedAside('deadline');
   if (input.validateTarget?.() === false) return refusedAside('gone');
   const record = self.deps.authors.getMany([authorId]).get(authorId);
   // Only an agent takes a turn, and only a live one: a directory that no
@@ -202,6 +219,7 @@ export async function runAsideInDispatch(
   // Pre-run refusals did not complete a turn and must not announce quiet completion.
   let outcome: ClaimOutcome = 'unavailable';
   let text: string | null = null;
+  let recovered = false;
   recordDispatchStart({
     dispatchId: input.dispatchId,
     origin: 'room',
@@ -229,6 +247,7 @@ export async function runAsideInDispatch(
       input.sessionId = binding.sessionId;
       self.noteSessionBound(room.id, authorId, binding.sessionId);
     }
+    recovered = await prepareFailedHandoffSeat(self, input);
     const carried = input.prepareCarry?.() ?? input.carried;
     const { cwd } = place;
     const files = place.files ?? undefined;
@@ -303,11 +322,21 @@ export async function runAsideInDispatch(
       onActivity: (activity) => self.noteActivity(key, activity),
       onSessionBound: (id) => self.noteSessionBound(room.id, authorId, id),
     };
+    // Read marks again after the runtime settles: tool-read provenance can arrive mid-turn.
+    const replyProvenance = (): Pick<AsideResult, 'replyOutsider'> =>
+      request.externalAuthor ||
+      request.carriedOutsider ||
+      request.outsideWords ||
+      marksHold(marksOf(input.sessionId, input.agentPath))
+        ? { replyOutsider: true }
+        : {};
     if (input.validateTarget?.() === false) return refusedAside('gone');
     if (self.wasHalted(input.dispatchId)) {
       outcome = 'halted';
       return { outcome, text: null };
     }
+    if (input.admissionDeadlineAt !== undefined && Date.now() >= input.admissionDeadlineAt)
+      return refusedAside('deadline');
     // Reuse the runner's authoritative guard and held audit, not a second pause policy.
     refusePausedRoomTurn(request);
     // One synchronous reservation per admitted runner attempt. Later runtime/dispatch
@@ -354,8 +383,13 @@ export async function runAsideInDispatch(
       return { outcome, text };
     }
     if (settled.unanswered) {
-      outcome = settled.unanswered;
-      return { outcome, text };
+      outcome = recovered && settled.unanswered === 'busy' ? 'failed' : settled.unanswered;
+      return {
+        outcome,
+        text,
+        ...replyProvenance(),
+        ...(settled.failure ? { failure: settled.failure } : {}),
+      };
     }
     // **The same three terminals `deliver` reads, minus the notice.** An offer
     // that posted or reacted has put something in front of the person and
@@ -367,16 +401,25 @@ export async function runAsideInDispatch(
     const spoke = self.takeSpokeViaTool(room.id, authorId);
     const reacted = self.takeReactedViaTool(room.id, authorId);
     outcome = spoke || reacted ? 'answered' : 'quiet';
-    return { outcome, text };
+    return {
+      outcome,
+      text,
+      ...replyProvenance(),
+    };
   } catch (err) {
     if (pausedRefusalOf(err)) return refusedAside('paused');
     outcome = 'failed';
     logger.warn('[rooms] a welcome-back offer turn failed', {
       roomId: room.id,
       authorId,
+      typedCause: 'exception',
       error: err instanceof Error ? err.message : String(err),
     });
-    return { outcome, text };
+    return {
+      outcome,
+      text,
+      failure: { code: 'exception', detail: err instanceof Error ? err.message : String(err) },
+    };
   } finally {
     // Always, and last. An aside turn releases into the offer the agent
     // posted while it ran, or into the named exception every turn has — an
@@ -388,6 +431,8 @@ export async function runAsideInDispatch(
     // Guarded by dispatch like both triggered releases: an aside waits out its
     // own late answer, so a Stop and a fresh message can hand this key to a
     // real turn while it is still waiting.
+    if (recovered)
+      await endFailedHandoffAttempt(input.sessionId, outcome === 'answered' || outcome === 'quiet');
     self.releaseOwnClaim(key, input.dispatchId, outcome);
     // An aside waits out its own late answer inline, so this frame is always
     // the turn's last one and the halt mark always ends here.
