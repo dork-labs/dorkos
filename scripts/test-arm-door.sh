@@ -2,10 +2,10 @@
 # Fixture suite for scripts/arm-door.sh, the merge queue's door for the arm rule
 # (.github/workflows/arm-door.yml).
 #
-# Both ways it can be wrong are pinned. A KEEP that matches too much lets a pull
-# request queued past every gate merge. An UNARMED that matches too much tells a
-# properly armed pull request out of the queue, or one whose statuses nobody
-# could read.
+# Both ways it can be wrong are pinned. A KEEP that matches too much stays
+# quiet about a pull request queued past every gate. An UNARMED that matches
+# too much wrongly tells the author of a properly armed pull request, or of one
+# whose statuses nobody could read, that it skipped the arm script.
 #
 #   bash scripts/test-arm-door.sh
 

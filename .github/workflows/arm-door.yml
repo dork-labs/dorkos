@@ -36,6 +36,8 @@ on:
 permissions:
   contents: read
   statuses: read
+  pull-requests: read
+  issues: read
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
@@ -68,6 +70,9 @@ jobs:
 
       - name: Say so on an entry the arm script never stamped
         continue-on-error: true
+        # Under the job's 5: a hung `gh` call times out this step, which
+        # continue-on-error keeps green, instead of cancelling the job.
+        timeout-minutes: 3
         env:
           GH_TOKEN: ${{ github.token }}
           COMMENT_TOKEN: ${{ steps.app-token.outputs.token }}
