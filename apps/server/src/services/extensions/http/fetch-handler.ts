@@ -43,17 +43,11 @@ import { honoRequestFacts } from '../../../http/request-facts.js';
 import { personVerdict } from '../inbox/extension-inbox-context.js';
 import { PERSON_VERDICT_HEADER } from '../isolation/ipc-protocol.js';
 import { outboundWebHeaders } from './reply-headers.js';
-import {
-  MAX_FORWARDED_BODY_BYTES,
-  TOO_LARGE,
-  type ExtensionHttpHandler,
-} from './extension-http.js';
+import { rejectOversizedBody } from './oversized-body-response.js';
+import { MAX_FORWARDED_BODY_BYTES, type ExtensionHttpHandler } from './extension-http.js';
 
 /** Methods whose request carries no body. */
 const BODILESS = new Set(['GET', 'HEAD']);
-
-/** What {@link readBody} gives back for a body over the limit. */
-const OVER_LIMIT = Symbol('over limit');
 
 /**
  * The URL the handler is given: the path below the mount and the query, on
@@ -86,14 +80,16 @@ function extensionUrl(c: Context<ApiEnv>, subPath: string): URL {
  * Read a body the chain did not parse, up to {@link MAX_FORWARDED_BODY_BYTES}.
  *
  * @param incoming - The caller's request stream.
- * @returns The bytes, `null` for none, or {@link OVER_LIMIT}.
+ * @param refuse - Takes ownership of input and writes the oversized refusal.
+ * @returns The bytes, `null` for none, or the completed refusal marker.
  */
-function readBody(incoming: IncomingMessage): Promise<Buffer | null | typeof OVER_LIMIT> {
+function readBody(
+  incoming: IncomingMessage,
+  refuse: () => Promise<Response>
+): Promise<Buffer | null | Response> {
   const declared = Number(incoming.headers['content-length']);
   if (Number.isFinite(declared) && declared > MAX_FORWARDED_BODY_BYTES) {
-    // Drain it unread, so the 413 is not cut off by a reset.
-    incoming.resume();
-    return Promise.resolve(OVER_LIMIT);
+    return refuse();
   }
   if (incoming.readableEnded) return Promise.resolve(null);
   return new Promise((resolve, reject) => {
@@ -108,11 +104,12 @@ function readBody(incoming: IncomingMessage): Promise<Buffer | null | typeof OVE
     function onData(chunk: Buffer): void {
       seen += chunk.byteLength;
       if (seen > MAX_FORWARDED_BODY_BYTES) {
-        // Stop keeping it, and let the rest drain unread: destroying the
-        // request would cut the 413 off on its way out.
+        // Transfer ownership synchronously, before another read or error can
+        // escape. The refusal flushes now and owns the bounded remaining drain.
+        incoming.pause();
+        chunks.length = 0;
         stop();
-        incoming.resume();
-        resolve(OVER_LIMIT);
+        void refuse().then(resolve, reject);
         return;
       }
       chunks.push(chunk);
@@ -141,12 +138,12 @@ function readBody(incoming: IncomingMessage): Promise<Buffer | null | typeof OVE
  *
  * @param c - The request's context.
  * @param subPath - The path below the mount.
- * @returns The request, or `null` when its body is over the limit.
+ * @returns The request, or the raw refusal marker when its body is over the limit.
  */
 export async function extensionRequest(
   c: Context<ApiEnv>,
   subPath: string
-): Promise<Request | null> {
+): Promise<Request | Response> {
   // Read from the raw Node pair and Hono's request, never `c.req.raw.body` or
   // `.signal`: either builds the platform `Request` from the incoming stream,
   // which the chain's JSON parser may already have read to the end.
@@ -163,8 +160,8 @@ export async function extensionRequest(
     headers.delete('content-encoding');
     headers.delete('transfer-encoding');
   } else if (!BODILESS.has(c.req.method)) {
-    const read = await readBody(incoming);
-    if (read === OVER_LIMIT) return null;
+    const read = await readBody(incoming, () => rejectOversizedBody(c));
+    if (read instanceof Response) return read;
     body = read as BodyInit | null;
   }
   const left = new AbortController();
@@ -193,9 +190,7 @@ export function createFetchHandler(
 ): ExtensionHttpHandler {
   return async ({ c, mount, subPath }) => {
     const request = await extensionRequest(c, subPath);
-    // The rest of that body is never read, so the connection cannot carry
-    // another request: it closes once this answer is out.
-    if (!request) return c.json({ error: TOO_LARGE }, 413, { connection: 'close' });
+    if (request instanceof Response) return request;
     const caller: ExtensionCaller = Object.freeze({
       person: Object.freeze(personVerdict(honoRequestFacts(c), name)),
     });

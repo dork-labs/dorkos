@@ -73,7 +73,9 @@ export const APPROVAL_PENDING_COPY: Pick<
   title: (p) =>
     p.passive
       ? 'A package in a project is waiting for your OK'
-      : `${p.requestedBy} needs your approval`,
+      : p.spend
+        ? `${p.requestedBy} wants to run a paid action`
+        : `${p.requestedBy} needs your approval`,
   // The capability's TITLE and nothing else. The approval's own summary
   // carries the argument values an agent asked to run something with, and
   // this body reaches a lock screen and a Telegram thread — the card in the
@@ -81,5 +83,8 @@ export const APPROVAL_PENDING_COPY: Pick<
   body: (p) =>
     p.passive
       ? `${p.capabilityTitle}? DorkOS did not install it. Nothing waits on your answer.`
-      : `${p.capabilityTitle} cannot be undone, so it will not run until you decide.`,
+      : p.spend
+        ? // A paid run is answered only in the app (spec 1.1): no yes from a chat.
+          `${p.capabilityTitle} spends money. Answer in DorkOS.`
+        : `${p.capabilityTitle} cannot be undone, so it will not run until you decide.`,
 };

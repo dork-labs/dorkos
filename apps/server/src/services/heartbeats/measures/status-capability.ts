@@ -8,7 +8,7 @@
  *   blocked it would hide the record without stopping anything.
  * - **Summaries only.** It never returns the words of a held message or which
  *   chat a beat ran in: those are the owner's, in the app. Held messages are a
- *   count.
+ *   count. In a Never ask turn even the summaries are left out (DOR-3971).
  *
  * @module services/heartbeats/measures/status-capability
  */
@@ -26,6 +26,12 @@ import { MEASURE_WINDOW_DAYS, MEASURE_WINDOW_MAX_DAYS } from './measures.js';
 
 /** The MCP tool name, exported so prose that names it reads it from here. */
 export const HEARTBEAT_STATUS_TOOL = 'heartbeat_status';
+
+/**
+ * What a beat's summary reads as in a Never ask turn (DOR-3971, Security). A summary is the beat's
+ * own words about what it read, so it can carry an outsider's; its outcome and counts still show.
+ */
+export const BEAT_SUMMARY_LEFT_OUT_AT_NEVER_ASK = 'Left out at Never ask.';
 
 /** How many past beats it lists when the caller names no number. */
 const BEATS_DEFAULT = 10;
@@ -170,7 +176,7 @@ export const heartbeatStatusCapability = defineCapability({
         kind: beat.kind,
         wake: beat.wake,
         outcome: beat.outcome,
-        summary: beat.summary,
+        summary: context.neverAsks ? BEAT_SUMMARY_LEFT_OUT_AT_NEVER_ASK : beat.summary,
         raises: beat.raises,
       })),
       held: status.held.length,

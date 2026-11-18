@@ -181,12 +181,17 @@ function ResponsivePopoverContent({
 }
 ResponsivePopoverContent.displayName = 'ResponsivePopoverContent';
 
-/** Title shown only in the Drawer variant (mobile). Returns null on desktop. */
+/**
+ * Title shown only in the Drawer variant (mobile). Returns null on desktop.
+ * `headerClassName` styles its header row, e.g. `px-0` to line the title up with
+ * body text that already sits inside the sheet's own inset.
+ */
 function ResponsivePopoverTitle({
   className,
+  headerClassName,
   children,
   ...props
-}: React.HTMLAttributes<HTMLHeadingElement>) {
+}: React.HTMLAttributes<HTMLHeadingElement> & { headerClassName?: string }) {
   const { isDesktop, fullHeight } = useResponsivePopover();
   if (isDesktop) return null;
   return (
@@ -203,7 +208,8 @@ function ResponsivePopoverTitle({
         // the one case where 40px of heading is the difference between seeing
         // the matches you are typing to find and seeing none of them. The close
         // button is still there, so the sheet keeps a visible way out.
-        fullHeight && 'shrink-0 px-0 pt-1 pr-14 pb-3 [@media(max-height:450px)]:sr-only'
+        fullHeight && 'shrink-0 px-0 pt-1 pr-14 pb-3 [@media(max-height:450px)]:sr-only',
+        headerClassName
       )}
     >
       <DrawerTitle className={className} {...props}>

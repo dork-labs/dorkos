@@ -117,7 +117,8 @@ import {
 import { projectOfFolder } from '../../core/usage/account-eligibility.js';
 import { accountUnlessHeld, checkClaudeLaunchAccount } from './launch-account-check.js';
 import { predictLaunchBillsPerToken, readPerTokenSignals } from './messaging/per-token-billing.js';
-import { getOrCreateProjector, peekProjector, streamGenerationOf } from '../../session/index.js';
+import { getOrCreateProjector, streamGenerationOf } from '../../session/index.js';
+import { peekLiveProjector } from './live-projector.js';
 import type { SessionCapacity } from '@dorkos/shared/running-chats';
 import { mcpAuthEvidenceFrom } from '../../mesh/mcp-revocation.js';
 import type { McpAuthEvidencePort } from '../../mesh/mcp-revocation.js';
@@ -132,7 +133,7 @@ export type PluginReloadActivityPort = (entry: PaidPluginReload) => void;
 import type { SessionStateProjector } from '../../session/index.js';
 import type { ConnectorRuntimeTools } from '../connector-tools.js';
 import type { RevokeConnectorTurnReason } from '../../connectors/runtime-principal-port.js';
-import { ClaudeConnectorTurnContext } from './connector-turn-context.js';
+import { claudeConnectorTurn } from './connector-turn-context.js';
 import { broadcastCommandsChanged } from './tooling/commands-changed-broadcast.js';
 import { overlayClaudeCodeHistory } from './history/claude-code-history-overlays.js';
 
@@ -655,15 +656,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     const connectorAgent = this.connectorAgentFor(cwdKey, turnAgentOf(opts));
     const meshAgent = connectorAgent?.meshAgent;
 
-    const connectorTurn =
-      this.connectorRuntimeTools && connectorAgent
-        ? new ClaudeConnectorTurnContext({
-            tools: this.connectorRuntimeTools,
-            canonicalSessionId: () => session.sdkSessionId || sessionId,
-            agentPath: connectorAgent.agentPath,
-            cwd: cwdKey,
-          })
-        : undefined;
+    const connectorTurn = claudeConnectorTurn(this.connectorRuntimeTools, connectorAgent, {
+      session,
+      sessionId,
+      cwd: cwdKey,
+    });
     session.connectorTurn = connectorTurn;
     // Who may be asked, how far the turn reaches, and which room a teammate's
     // turn is fenced to: all per turn, all assigned on every send.
@@ -1273,12 +1270,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * one owns the registry entry (acceptance run 20260610-173202, F2: the
    * sidebar navigates by canonical id while the first turn streams under the
    * request UUID — and a pre-remap client URL holds the request UUID after the
-   * rekey lands). Returns `undefined` when neither key has a projector.
+   * rekey lands). Returns `undefined` when neither key has a projector, and
+   * reports one that belongs to another chat (DOR-4552, `live-projector.ts`).
    */
   private resolveLiveProjector(sessionId: string): SessionStateProjector | undefined {
-    return (
-      peekProjector(sessionId) ?? peekProjector(this.getInternalSessionId(sessionId) ?? sessionId)
-    );
+    return peekLiveProjector(sessionId, this.getInternalSessionId(sessionId), this.sessionStore);
   }
 
   /** @inheritdoc */
@@ -2053,7 +2049,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   /**
    * Backward-compatible alias for `getInternalSessionId`.
    *
-   * @deprecated Use `getInternalSessionId()` instead.
+   * @deprecated since 0.135, remove in 0.155. Use `getInternalSessionId()` instead.
    */
   getSdkSessionId(sessionId: string): string | undefined {
     return this.sessionStore.getSdkSessionId(sessionId);

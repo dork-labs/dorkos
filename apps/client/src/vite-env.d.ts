@@ -121,7 +121,15 @@ declare global {
     connectionId: string;
     loading: boolean;
     failure: { code: string; host: string; url: string } | null;
+    /** The site refuses this browser (DOR-4097); the host is from the page's address. */
+    refusal?: { kind: 'sign-in' | 'blocked'; host: string } | null;
   }
+
+  /**
+   * One browser key the desktop shell forwards from its native page: only the ones a
+   * browser takes before the page (mirrors `GuestShortcut` in the shell's `page-keys.ts`).
+   */
+  type DesktopBrowserShortcut = 'focus-address' | 'reload' | 'copy-address';
 
   /** API exposed by the Electron preload script via contextBridge. */
   interface ElectronAPI {
@@ -165,6 +173,10 @@ declare global {
       ): Promise<DesktopBrowserPageState | null>;
       /** Subscribe to guest pages this window shows starting, stopping or failing a load. */
       onPageChange?(cb: (state: DesktopBrowserPageState) => void): () => void;
+      /** Subscribe to native-page browser keys; absent on a shell older than DOR-4432. */
+      onShortcut?(
+        cb: (input: { connectionId: string; shortcut: DesktopBrowserShortcut }) => void
+      ): () => void;
       /**
        * A JPEG still of the page this window shows now, or `null` (DOR-4438). Absent
        * on a shell older than this call, where a covered page is simply hidden.

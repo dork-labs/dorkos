@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { runVerification } from '../verify-proof/cli.ts';
+import { readBinaryTestGlobs, runVerification } from '../verify-proof/cli.ts';
 
 const script = path.resolve(import.meta.dirname, '../verify-proof/cli.ts');
 let repo: string;
@@ -54,14 +54,70 @@ describe('verification proof', () => {
         // eslint-disable-next-line no-restricted-syntax -- scripts/ has no env.ts; child processes inherit PATH and git config
         env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, PROOF_TEST_EXIT: status },
       });
+    // The host-binary suites are left to CI: every glob in the data file rides as an exclude.
+    const globs = readBinaryTestGlobs(path.resolve(import.meta.dirname, '../..'));
+    const gateRun = `run verify:checks ${globs.map((glob) => `--exclude=${glob}`).join(' ')}\n`;
     expect(run('0').status).toBe(0);
     expect(check().status).toBe(0);
-    expect(readFileSync(path.join(repo, '.git/gate-runs'), 'utf8')).toBe('run verify:checks\n');
+    expect(readFileSync(path.join(repo, '.git/gate-runs'), 'utf8')).toBe(gateRun);
+    const proof = JSON.parse(
+      readFileSync(path.join(repo, '.git/dorkos-verify-proof', sha), 'utf8')
+    );
+    expect(proof.excluded).toEqual(globs);
     expect(run('8').status).toBe(8);
     expect(check().status).toBe(1);
-    expect(readFileSync(path.join(repo, '.git/gate-runs'), 'utf8')).toBe(
-      'run verify:checks\nrun verify:checks\n'
+    expect(readFileSync(path.join(repo, '.git/gate-runs'), 'utf8')).toBe(gateRun + gateRun);
+  });
+
+  it('records exactly the excludes it handed to the checks', () => {
+    const excluded = ['**/fixture/**/*.binary.test.ts', '**/other/*.binary.test.ts'];
+    let seen: readonly string[] | undefined;
+    expect(
+      runVerification(
+        repo,
+        (globs) => {
+          seen = globs;
+          return 0;
+        },
+        excluded
+      )
+    ).toBe(0);
+    expect(seen).toEqual(excluded);
+    const proof = JSON.parse(
+      readFileSync(path.join(repo, '.git/dorkos-verify-proof', sha), 'utf8')
     );
+    expect(proof).toEqual({
+      sha,
+      tree: git('rev-parse', `${sha}^{tree}`),
+      excluded,
+      passedAt: expect.any(String),
+    });
+    expect(check().status).toBe(0);
+  });
+
+  it('records an empty exclusion list when nothing was left out', () => {
+    expect(runVerification(repo, () => 0)).toBe(0);
+    const proof = JSON.parse(
+      readFileSync(path.join(repo, '.git/dorkos-verify-proof', sha), 'utf8')
+    );
+    expect(proof.excluded).toEqual([]);
+  });
+
+  it('accepts an older proof with no exclusion list, since it left nothing out', () => {
+    expect(runVerification(repo, () => 0)).toBe(0);
+    const proof = path.join(repo, '.git/dorkos-verify-proof', sha);
+    const { excluded: _excluded, ...older } = JSON.parse(readFileSync(proof, 'utf8'));
+    writeFileSync(proof, JSON.stringify(older));
+    expect(check().status).toBe(0);
+  });
+
+  it('reads globs one per line, skipping blank lines and comments', () => {
+    mkdirSync(path.join(repo, 'scripts/ci'), { recursive: true });
+    writeFileSync(
+      path.join(repo, 'scripts/ci/binary-test-glob.txt'),
+      '# why these are left to CI\n\n  **/a/*.binary.test.ts  \n**/b/*.binary.test.ts\n'
+    );
+    expect(readBinaryTestGlobs(repo)).toEqual(['**/a/*.binary.test.ts', '**/b/*.binary.test.ts']);
   });
 
   it('refuses extra arguments to run before any check starts', () => {
@@ -148,6 +204,10 @@ describe('verification proof', () => {
       (record: object) => JSON.stringify({ ...record, passedAt: 'soon' }),
     ],
     ['another commit', (record: object) => JSON.stringify({ ...record, sha: 'f'.repeat(40) })],
+    [
+      'an exclusion list that is not a list of globs',
+      (record: object) => JSON.stringify({ ...record, excluded: '**/*.binary.test.ts' }),
+    ],
   ])('refuses a proof file holding %s', (_label, contents) => {
     expect(runVerification(repo, () => 0)).toBe(0);
     const proof = path.join(repo, '.git/dorkos-verify-proof', sha);

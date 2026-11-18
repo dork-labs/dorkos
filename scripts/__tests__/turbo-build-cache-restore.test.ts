@@ -10,6 +10,11 @@
  * arch whatever its lockfile, because turbo's own task hashes decide what is
  * replayed. It also pins what made that fallback safe: only `main` saves, and
  * only after the build-only trim.
+ *
+ * Turbo hashes `turbo test`'s `--` arguments, `--shard=N/6` included, into
+ * every build in the run, so test-shard keys its entry by shard number
+ * (ledger 261117-142230): a queue shard can only replay the same shard's
+ * builds.
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -21,6 +26,8 @@ const workflow = readFileSync(path.join(root, '.github/workflows/test.yml'), 'ut
 const PREFIX = 'turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-';
 const LOCK = "${{ hashFiles('pnpm-lock.yaml') }}";
 const KEY = `${PREFIX}${LOCK}-\${{ github.sha }}`;
+const SHARD_PREFIX = `${PREFIX}shard\${{ matrix.shard }}-`;
+const SHARD_KEY = `${SHARD_PREFIX}${LOCK}-\${{ github.sha }}`;
 
 /** One job's text, from its key to the next top-level job key. */
 function jobText(id: string): string {
@@ -55,15 +62,18 @@ function restoreKeys(step: string): string[] {
 
 const RESTORE = 'Restore the builds the last main canary made';
 
-describe.each(['test-shard', 'test-binary'])('%s restores the build cache', (id) => {
+describe.each([
+  ['test-shard', SHARD_KEY, SHARD_PREFIX],
+  ['test-binary', KEY, PREFIX],
+])('%s restores the build cache', (id, key, prefix) => {
   const step = stepText(jobText(id), RESTORE);
 
   it('asks for the exact entry first', () => {
-    expect(step).toContain(`key: ${KEY}\n`);
+    expect(step).toContain(`key: ${key}\n`);
   });
 
   it('prefers the same lockfile, then takes the newest entry for this OS and arch', () => {
-    expect(restoreKeys(step)).toEqual([`${PREFIX}${LOCK}-`, PREFIX]);
+    expect(restoreKeys(step)).toEqual([`${prefix}${LOCK}-`, prefix]);
   });
 
   it('only restores, never saves', () => {
@@ -75,8 +85,14 @@ describe('only the main canary saves, and only build entries', () => {
   const shard = jobText('test-shard');
 
   it('has exactly one save of the build cache in the whole workflow', () => {
-    expect(workflow.split('actions/cache/save@').length - 1).toBe(1);
-    expect(workflow.split(`key: ${KEY}\n`).length - 1).toBe(3);
+    // The pnpm store has main-only saves of its own (DOR-4537); count only the
+    // steps that save this key.
+    const saves = workflow
+      .split(/\n(?= {6}- )/)
+      .filter((step) => step.includes('uses: actions/cache/save@'));
+    expect(saves.filter((step) => step.includes(`key: ${SHARD_KEY}\n`))).toHaveLength(1);
+    expect(saves.filter((step) => step.includes('turbo-test-builds-'))).toHaveLength(1);
+    expect(workflow.split(`key: ${SHARD_KEY}\n`).length - 1).toBe(2);
   });
 
   it('trims to build entries on refs/heads/main before the save', () => {
@@ -86,13 +102,19 @@ describe('only the main canary saves, and only build entries', () => {
 
     const save = stepText(shard, 'Save the builds for the queue and pull requests');
     expect(save).toContain("if: ${{ steps.trim.outputs.save == 'true' }}");
-    expect(save).toContain(`key: ${KEY}\n`);
+    expect(save).toContain(`key: ${SHARD_KEY}\n`);
     expect(shard.indexOf(save)).toBeGreaterThan(shard.indexOf(trim));
   });
 
   it('saves under the prefix every restore falls back to', () => {
     const save = stepText(shard, 'Save the builds for the queue and pull requests');
     const saved = /key: (.+)\n/.exec(save)?.[1] ?? '';
+    expect(saved.startsWith(SHARD_PREFIX)).toBe(true);
     expect(saved.startsWith(PREFIX)).toBe(true);
+  });
+
+  it('keys the sweep by shard, because its --shard argument is in every build hash', () => {
+    const sweep = stepText(shard, "Run every package's test suite (shard ${{ matrix.shard }}/6)");
+    expect(sweep).toContain('--shard=${{ matrix.shard }}/6');
   });
 });

@@ -41,7 +41,10 @@ import {
   type CapabilityDomain,
   type CapabilityInvocationContext,
 } from '../core/capabilities/index.js';
-import { listRunningChats } from '../session/running-chats/running-chats.js';
+import {
+  listRunningChats,
+  type RunningChatSources,
+} from '../session/running-chats/running-chats.js';
 import type { AuditLog } from './audit-log.js';
 import type { AccountIds } from './account-ids.js';
 import { isPlainSessionId } from './plain-session-id.js';
@@ -74,6 +77,8 @@ declare module '../core/capabilities/capability-definition.js' {
         sessionId: string,
         page: { offset: number; limit: number }
       ) => Promise<TranscriptPage | undefined>;
+      /** Where `running_chats` reads live chats; the server's own projectors when absent. */
+      runningChatSources?: RunningChatSources;
     };
   }
 }
@@ -317,8 +322,16 @@ export const auditDomain: CapabilityDomain = {
         mcp: { toolName: 'running_chats', ...READ_TOOL, servers: [...READ_TOOL.servers] },
         http: { method: 'get', path: '/api/sessions/running' },
       },
-      invoke: async (deps, _input, context) =>
-        listRunningChats(deps.operatorDeps?.meshCore, readerFor(requireAuditDeps(deps), context)),
+      // A Never ask turn reads no titles: a stranger can set one (DOR-3971).
+      invoke: async (deps, _input, context) => {
+        const audit = requireAuditDeps(deps);
+        return listRunningChats(
+          deps.operatorDeps?.meshCore,
+          readerFor(audit, context),
+          audit.runningChatSources,
+          { withoutTitles: context?.neverAsks === true }
+        );
+      },
     }),
   ],
 };

@@ -185,6 +185,36 @@ export type CapabilityDescriptorLookup = (capabilityId: string) =>
     }
   | undefined;
 
+/**
+ * What the grant route needs to answer one approval: the action, the agent that
+ * asked, and what the gate recorded about it. Never includes token material.
+ */
+export interface ApprovalAnswerScope {
+  /** The capability id or hand-registered tool name. */
+  capabilityId: string;
+  /** The agent's path, or `null` for an unidentified request. */
+  agentPath: string | null;
+  /** The recorded area, or `null` for an action with no area. */
+  area: PermissionAreaId | null;
+  /** Whether "Always allow" may be answered (see {@link isAlwaysOffered}). */
+  alwaysOffered: boolean;
+  /** Whether the agent asked past a Blocked permission. */
+  blockedRequest: boolean;
+  /** Whether granting it could raise what agents may do (DOR-3037). */
+  raisesPermissions: boolean;
+  /** Where the request stands right now. */
+  state: 'pending' | 'granted' | 'denied';
+  /** Whether it is spent, written off, or past its window. */
+  closed: boolean;
+  /** The recorded permission tier of the action. */
+  tier: CapabilityTier;
+  /**
+   * Whether this card is a person's yes to one paid run (DOR-4204 PR 2): it is
+   * answered only Allow once, by the owner in DorkOS, never from Wi-Fi.
+   */
+  spend: boolean;
+}
+
 /** The grant route's scope, from the same stored row the card renders. */
 export function toAnswerScope(row: ApprovalRow, expired: boolean): ApprovalAnswerScope {
   return {
@@ -197,5 +227,6 @@ export function toAnswerScope(row: ApprovalRow, expired: boolean): ApprovalAnswe
     state: row.state,
     closed: row.consumedAt !== null || expired,
     tier: row.tier,
+    spend: withServiceAction(row.serviceAction).serviceAction?.keptCardBecause === 'spend',
   };
 }

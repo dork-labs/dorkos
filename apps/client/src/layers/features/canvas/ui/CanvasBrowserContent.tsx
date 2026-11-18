@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ExternalLink } from 'lucide-react';
 import type { UiCanvasContent } from '@dorkos/shared/types';
 import { useFollowedView } from '@/layers/entities/room';
 import type { BrowserHistoryState } from '@/layers/shared/model';
 import { useAppStore } from '@/layers/shared/model';
-import { BrowserChrome, ChromeButton } from '@/layers/shared/ui';
+import { BrowserChrome, BrowserMenu } from '@/layers/shared/ui';
 import { normalizeAddressInput, openExternalLink } from '@/layers/shared/lib';
 import { useDevtoolsBridge } from '../model/use-devtools-bridge';
 import { useDocFrameChannel } from '../model/use-doc-frame-channel';
@@ -63,8 +62,8 @@ function seedHistory(
  * Honesty about embedding, in three parts:
  * - An external site's `X-Frame-Options` / `frame-ancestors` refusal cannot be
  *   reliably detected from the parent (a blocked frame still fires `load`
- *   cross-origin), so rather than guess, the browser always surfaces an "open in
- *   system browser" affordance for external pages.
+ *   cross-origin), so rather than guess, the ⋯ menu offers "Open in your
+ *   browser" for every web page, and the page's own banners keep theirs.
  * - A dev server is checked before it is framed — by DorkOS AND by this browser
  *   — so a port with nothing on it, or an origin this device cannot reach, is a
  *   sentence rather than a white rectangle.
@@ -202,6 +201,7 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
 
   const canBack = cursor > 0;
   const canForward = cursor < history.length - 1;
+  const goForward = () => setCursor((c) => c + 1);
 
   // Commit an address-bar entry.
   //
@@ -252,7 +252,7 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
   );
 
   // Always leaves the app, even for one of our own URLs — that is what the
-  // button says it does.
+  // action says it does.
   const openExternally = () => openExternalLink(currentUrl);
 
   return (
@@ -262,17 +262,20 @@ export function CanvasBrowserContent({ documentId, content }: CanvasBrowserConte
         canBack={canBack}
         canForward={canForward}
         onBack={() => setCursor((c) => c - 1)}
-        onForward={() => setCursor((c) => c + 1)}
+        onForward={goForward}
         onReload={() => setReloadNonce((n) => n + 1)}
         onSubmit={submitAddress}
         retry={refusedAddress && { draft: refusedAddress.url, attempt: refusedAddress.attempt }}
         notice={refusedAddress?.message ?? null}
-        trailing={
-          <ChromeButton
-            label="Open in system browser"
-            icon={ExternalLink}
-            onClick={openExternally}
-          />
+        menu={
+          target.mode === 'external' || target.mode === 'proxy' ? (
+            <BrowserMenu
+              url={currentUrl}
+              canForward={canForward}
+              onForward={goForward}
+              onOpenExternally={openExternally}
+            />
+          ) : undefined
         }
       />
 

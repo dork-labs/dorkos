@@ -1,5 +1,6 @@
 import { ApprovalStepUpNote } from './ApprovalStepUpNote';
 import { HookApprovalCard } from './HookApprovalCard';
+import { useId } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { Lock } from 'lucide-react';
 import { approvalHeading, type PendingApproval } from '@dorkos/shared/approval-schemas';
@@ -14,6 +15,7 @@ import {
   WIFI_ALWAYS_ALLOW_LINE,
 } from '@/layers/features/ask';
 import { useConfig, useOnWifi } from '@/layers/entities/config';
+import { PaidActionMarker } from '@/layers/entities/connectors';
 import { agentLabelFrom } from '../lib/agent-label';
 import { useGrantApproval, useDenyApproval } from '../model/use-approval-decision';
 import { useDismissSuggestion, useSuggestionDismissed } from '../model/use-dismiss-suggestion';
@@ -25,6 +27,7 @@ import {
 } from '../model/settling-approvals';
 import { ApprovalMarketplaceSummary } from './ApprovalMarketplaceSummary';
 import { ApprovalServiceAction } from './ApprovalServiceAction';
+import { ApprovalSpendLine, SPEND_LIMIT_CODE, spendReceipt } from './ApprovalSpend';
 import { ApprovalSubject } from './ApprovalSubject';
 import { RequestingAgent } from './RequestingAgent';
 
@@ -89,6 +92,7 @@ function receiptFor(
   title: string
 ): string {
   if (decision === 'granted-always') return `Always allowed for ${agentLabel}: ${title}`;
+  if (decision === 'spend-refused') return 'Not allowed';
   return decision === 'granted' ? 'Allowed once' : 'Not allowed';
 }
 
@@ -201,6 +205,28 @@ export function ApprovalCard(props: ApprovalCardProps) {
   );
 }
 
+/** The permission-change capability; allowing one lasts, so the desk confirms it too. */
+const CHANGE_PERMISSION_CAPABILITY = 'permissions.change';
+
+/**
+ * Whether the card must wait for the server before drawing its receipt.
+ *
+ * `answerNeedsStepUp` describes the card, not each answer: at this computer it
+ * is false for an ordinary card, yet once an owner exists the server still holds
+ * Always allow, and any allow on a permission change, for a password. A receipt
+ * drawn at the click would sit behind that sheet and claim a change that may
+ * never happen. Waiting costs the owner-less desk one round trip: its 200 comes
+ * straight back and the receipt is drawn then.
+ */
+function waitsForServer(approval: PendingApproval, kind: ApprovalDecision): boolean {
+  if (kind === 'denied') return false;
+  return (
+    approval.answerNeedsStepUp !== false ||
+    kind === 'granted-always' ||
+    approval.capabilityId === CHANGE_PERMISSION_CAPABILITY
+  );
+}
+
 function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardProps) {
   const now = useNow(30_000);
   const grant = useGrantApproval();
@@ -208,6 +234,9 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
   const dismissSuggestion = useDismissSuggestion();
   const suggestionDismissed = useSuggestionDismissed(approval.approvalId);
   const deciding = grant.isPending || deny.isPending;
+  // A desk answer the server may hold for a password: the sheet asks the person
+  // to check this card's code, so the card shows it while that answer is out.
+  const awaitingSheet = grant.isPending && grant.variables?.receipt !== undefined;
   const reducedMotion = useReducedMotion();
   // **The answer is read, never stored.** There is no local decision state here
   // on purpose: an answer belongs to the request, not to one mounted card, and
@@ -224,7 +253,7 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
    * sentence to be actionable.
    */
   const answer = (kind: ApprovalDecision, send: (callbacks: { onError: () => void }) => void) => {
-    const deferred = kind !== 'denied' && approval.answerNeedsStepUp !== false;
+    const deferred = waitsForServer(approval, kind);
     const openedFrom =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (!deferred) {
@@ -240,9 +269,14 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
   };
 
   const agentLabel = approval.requestedBy ? agentLabelFrom(approval.requestedBy) : 'this agent';
+  // A paid run (DOR-4204 spec §4): money on the card, Allow once only.
+  const spend = approval.serviceAction?.spend;
+  const spendLineId = useId();
   const heading = approval.cannotAllow
     ? `${approval.packageLabel ?? 'This package'} wants to run commands`
-    : (approval.serviceAction?.actionName ?? approval.capabilityTitle);
+    : spend
+      ? 'Run a paid action'
+      : (approval.serviceAction?.actionName ?? approval.capabilityTitle);
   const areaLabel = approval.area ? (getPermissionArea(approval.area)?.label ?? null) : null;
   // A floor area never offers Always allow, and says why; every other reason it
   // is absent needs no sentence (see the component docblock).
@@ -250,7 +284,7 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
   // From Wi-Fi an answer is Allow once or Deny (DOR-2969): Always allow is
   // neither offered nor suggested, and one line says where it lives.
   const onWifi = useOnWifi();
-  const offersAlways = approval.alwaysOffered && !onWifi && !approval.cannotAllow;
+  const offersAlways = approval.alwaysOffered && !onWifi && !approval.cannotAllow && !spend;
   const suggest =
     offersAlways && approval.suggestAlways === true && !suggestionDismissed && !decision;
 
@@ -306,7 +340,9 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
                 sentence naming the app (`ApprovalServiceAction`), so the badge
                 would only repeat it. Approving another agent's read request gives Read and
                 nothing more, so "Changes things" would only alarm (DOR-3959). */}
+            {spend && <PaidActionMarker className="shrink-0" />}
             {!approval.cannotAllow &&
+              !spend &&
               !(approval.serviceAction && approval.tier === 'destructive') &&
               approval.subject?.kind !== 'agent_request' && (
                 <Badge
@@ -356,12 +392,18 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
                 </p>
               )}
               {approval.subject && <ApprovalSubject subject={approval.subject} />}
+              {spend && approval.serviceAction && (
+                <p className="text-foreground mt-0.5 text-xs break-words">
+                  {approval.serviceAction.actionName}
+                </p>
+              )}
               {approval.serviceAction && (
                 <ApprovalServiceAction
                   action={approval.serviceAction}
                   destructive={approval.tier === 'destructive'}
                 />
               )}
+              {spend && <ApprovalSpendLine spend={spend} id={spendLineId} />}
               {/* Never clamped for an action that cannot be undone: truncating the
             consequence is how a padded argument used to push the real one out of
             view. The server caps each value and the whole sentence, so showing it
@@ -446,7 +488,7 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
             {inChat && !decision && (
               <span className="text-muted-foreground text-xs">Waiting for your yes</span>
             )}
-            {approval.answerNeedsStepUp && approval.requestCode && (
+            {(approval.answerNeedsStepUp || awaitingSheet) && approval.requestCode && (
               <RequestCode code={approval.requestCode} />
             )}
           </div>
@@ -459,10 +501,12 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
           {decision ? (
             <AskCard.Receipt
               data-slot="approval-resolved"
-              tone={decision === 'denied' ? 'denied' : 'allowed'}
+              tone={decision === 'denied' || decision === 'spend-refused' ? 'denied' : 'allowed'}
               className="shrink-0"
             >
-              {receiptFor(decision, agentLabel, approvalHeading(approval))}
+              {spend && decision !== 'granted-always'
+                ? spendReceipt(decision, spend)
+                : receiptFor(decision, agentLabel, approvalHeading(approval))}
             </AskCard.Receipt>
           ) : (
             <>
@@ -498,21 +542,28 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
                     className={ANSWER_BUTTON}
                     disabled={deciding}
                     aria-busy={deciding || undefined}
+                    aria-describedby={spend ? spendLineId : undefined}
                     onClick={() =>
                       answer('granted', (callbacks) =>
                         grant.mutate(
                           {
                             approvalId: approval.approvalId,
-                            ...(approval.answerNeedsStepUp !== false
+                            ...(waitsForServer(approval, 'granted')
                               ? { receipt: approval, onDecided }
                               : {}),
                           },
-                          callbacks
+                          {
+                            onError: (error) =>
+                              // The limit stopped it at the tap: the card is answered, nothing spent.
+                              (error as { code?: unknown } | null)?.code === SPEND_LIMIT_CODE
+                                ? holdDecidedApproval(approval, 'spend-refused')
+                                : callbacks.onError(),
+                          }
                         )
                       )
                     }
                   >
-                    Allow
+                    {spend ? 'Allow once' : 'Allow'}
                   </Button>
                 )}
                 {offersAlways && (
@@ -533,7 +584,7 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
                           {
                             approvalId: approval.approvalId,
                             answer: 'always',
-                            ...(approval.answerNeedsStepUp !== false
+                            ...(waitsForServer(approval, 'granted-always')
                               ? { receipt: approval, onDecided }
                               : {}),
                           },

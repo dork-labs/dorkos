@@ -188,6 +188,19 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     month: '2026-10',
   },
   'community.teammate-limits-reset': {},
+  'spending.near-limit': {
+    month: '2026-11',
+    limitMicro: '40000000',
+    leftMicro: '7900000',
+    resetsAt: '2026-12-01T00:00:00.000Z',
+  },
+  'spending.limit-reached': {
+    month: '2026-11',
+    limitMicro: '40000000',
+    leftMicro: '0',
+    resetsAt: '2026-12-01T00:00:00.000Z',
+  },
+  'spending.meter-reset': { month: '2026-11' },
   'heartbeat.credits-offer': {},
   'connector.destructive_pending': {
     holdId: 'hold-1',
@@ -281,6 +294,10 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
   // Teammates' posts wake nobody until next month or a higher limit; nothing is broken (DOR-2956).
   'community.teammate-limit': 'notable',
   'community.teammate-limits-reset': 'notable',
+  // Money: the person should see it, but nothing is broken (DOR-4204 PR 2).
+  'spending.near-limit': 'notable',
+  'spending.limit-reached': 'notable',
+  'spending.meter-reset': 'notable',
   // An offer, raised once per computer: never an alarm (spec heartbeats §6.3).
   'heartbeat.credits-offer': 'quiet',
   // Everyone sees it before it runs, but nothing waits on a person: never
@@ -409,6 +426,9 @@ describe('notification registry', () => {
       'session.error',
       'shell.check_down',
       'signin.required',
+      'spending.limit-reached',
+      'spending.meter-reset',
+      'spending.near-limit',
       'step-up.remote-refused',
       'todo.changed',
       'turn.completed',
@@ -469,7 +489,14 @@ describe('notification registry', () => {
     const leaves = NOTIFICATION_KINDS.filter(
       (k) => resolvePerKind(notificationEntry(k).relay, PAYLOADS[k]) !== 'never'
     );
-    expect([...leaves].sort()).toEqual(['agent.note', 'run.completed', 'step-up.remote-refused']);
+    // `spending.limit-reached`: agents stopped spending, and a person away from the desk should
+    // know (DOR-4204 PR 2, spec Q3). It names amounts only, never an app or its arguments.
+    expect([...leaves].sort()).toEqual([
+      'agent.note',
+      'run.completed',
+      'spending.limit-reached',
+      'step-up.remote-refused',
+    ]);
   });
 
   it('builds a stable dedupe key that does not change between calls', () => {

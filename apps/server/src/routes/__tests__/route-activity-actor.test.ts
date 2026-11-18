@@ -87,6 +87,9 @@ const FACTS_PARAMETERS: Record<string, string> = {
   // Held task raises record the browser that confirmed the write (DOR-4355).
   'task-file-approve.ts': 'confirming',
   'task-mode-undo.ts': 'who',
+  // The limit and price routes hand the request's facts to one `record`, or the
+  // confirming request's after "Confirm it's you" (DOR-4204 PR 2).
+  'connector-spending.ts': 'caller',
 };
 
 /** The `routes/` directory this guard walks. */

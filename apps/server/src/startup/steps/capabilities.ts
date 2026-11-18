@@ -277,11 +277,11 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
   // permission settings through the one permission writer (DOR-2685).
   refs.extensionManager?.attachAgentTools({
     registry: refs.capabilityRegistry,
-    forgetToolPermissions: (extensionId, extensionName) => {
+    forgetToolPermissions: (extensionId, extensionName, opts) => {
       // A removed extension reads nothing more: every connection approval and
       // grant it held is revoked with it (DOR-3547, Security M8/N3).
       getExtensionConnectionServices()?.approvals.revoke(extensionId);
-      return permissionService.forgetExtensionActions(extensionId, extensionName);
+      return permissionService.forgetExtensionActions(extensionId, extensionName, opts);
     },
   });
   // Arm tier enforcement (spec `agent-trust` §3.2) now that both the approval

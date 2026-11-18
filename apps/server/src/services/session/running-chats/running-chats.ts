@@ -133,6 +133,16 @@ function ownerFolder(
   return holding.sort((a, b) => b.length - a.length)[0] ?? null;
 }
 
+/** How a read is narrowed for who is asking. */
+export interface RunningChatsReadOptions {
+  /**
+   * Leave every title out, the starter's too (DOR-3971). A title is often a chat's opening words,
+   * and a stranger can set a bridged group's name, so a Never ask turn reads none of them. The link
+   * still opens the chat.
+   */
+  withoutTitles?: boolean;
+}
+
 /**
  * Read every running chat, grouped by agent, as `reader` may see them.
  *
@@ -142,12 +152,15 @@ function ownerFolder(
  * @param roster - The agent registry, or undefined when Mesh is off.
  * @param reader - Who is asking.
  * @param sources - Where the facts come from.
+ * @param options - How the read is narrowed.
  */
 export async function listRunningChats(
   roster: Roster | undefined,
   reader: AuditReader,
-  sources: RunningChatSources = LIVE_SOURCES
+  sources: RunningChatSources = LIVE_SOURCES,
+  options: RunningChatsReadOptions = {}
 ): Promise<RunningChatsResponse> {
+  const titleOf = options.withoutTitles ? async () => null : sources.titleOf;
   const live = sources.statuses().flatMap((entry) => {
     const turn = chatStateOf({
       status: entry.status,
@@ -180,7 +193,7 @@ export async function listRunningChats(
     live.map(async (chat) => {
       const folder = ownerFolder(folders, await sources.agentPathOf(chat.sessionId), chat.cwd);
       if (!readable.has(chat.sessionId)) return { folder, chat: null };
-      const title = await sources.titleOf(chat.sessionId);
+      const title = await titleOf(chat.sessionId);
       const starter = starters.get(chat.sessionId) ?? null;
       const row: RunningChat = {
         id: chat.sessionId,
@@ -190,9 +203,7 @@ export async function listRunningChats(
         ...(chat.backgroundWork !== undefined ? { backgroundWork: chat.backgroundWork } : {}),
         spinOff: starter !== null,
         startedBy:
-          starter && readable.has(starter)
-            ? { id: starter, title: await sources.titleOf(starter) }
-            : null,
+          starter && readable.has(starter) ? { id: starter, title: await titleOf(starter) } : null,
       };
       return { folder, chat: row };
     })

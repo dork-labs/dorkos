@@ -23,6 +23,7 @@ import { ScheduleApprovalShowcases } from '../showcases/ScheduleApprovalShowcase
 import { BrowserHandoffShowcases } from '../showcases/BrowserHandoffShowcases';
 import { LocalBrowserPanelShowcases } from '../showcases/LocalBrowserPanelShowcases';
 import { BrowserChromeShowcases } from '../showcases/BrowserChromeShowcases';
+import { BrowserStatusPillShowcases } from '../showcases/BrowserStatusPillShowcases';
 import { BrowserPageErrorShowcases } from '../showcases/BrowserPageErrorShowcases';
 import { TriageHeaderShowcases } from '../showcases/TriageHeaderShowcases';
 import { InboxShowcases } from '../showcases/InboxShowcases';
@@ -32,6 +33,7 @@ import { AccessChangeShowcases } from '../showcases/AccessChangeShowcases';
 import { PresenceStripShowcases } from '../showcases/PresenceStripShowcases';
 import { HomeStatesShowcases } from '../showcases/HomeStatesShowcases';
 import { ConnectionsShowcases } from '../showcases/ConnectionsShowcases';
+import { SpendingShowcases } from '../showcases/SpendingShowcases';
 import { PausedConnectionShowcases } from '../showcases/PausedConnectionShowcases';
 import { WorkLeftShowcases } from '../showcases/WorkLeftShowcases';
 import { TodosShowcases } from '../showcases/TodosShowcases';
@@ -107,6 +109,7 @@ export function HomeInboxPage() {
       <ScheduleApprovalShowcases />
       <BrowserHandoffShowcases />
       <BrowserChromeShowcases />
+      <BrowserStatusPillShowcases />
       <LocalBrowserPanelShowcases />
       <BrowserPageErrorShowcases />
       <TriageHeaderShowcases />
@@ -119,6 +122,7 @@ export function HomeInboxPage() {
       <WorkLeftShowcases />
       <TodosShowcases />
       <ConnectionsShowcases />
+      <SpendingShowcases />
       <PausedConnectionShowcases />
       <CommunityHostingShowcases />
       <McpServerCardShowcases />

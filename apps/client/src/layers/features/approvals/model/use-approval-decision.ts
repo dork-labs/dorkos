@@ -53,8 +53,11 @@ export function useGrantApproval() {
       );
     },
     onError: (error, variables) => {
+      const code = (error as { code?: unknown } | null)?.code;
       // The sheet already explained a cancelled or refused confirmation.
-      if ((error as { code?: string }).code === STEP_UP_REQUIRED_CODE) return;
+      if (code === STEP_UP_REQUIRED_CODE) return;
+      // A paid run the monthly limit stopped says so on its own card (DOR-4204).
+      if (code === 'SPEND_LIMIT') return;
       toast.error(describeDecisionRefusal(error, variables.answer === 'always').message);
     },
     onSettled: (_data, _error, variables) => {

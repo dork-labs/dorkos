@@ -34,6 +34,7 @@ import { fenceUntrustedBlock } from '../../runtimes/shared/untrusted-fence.js';
 import { defuseMarkers } from '../../session/chat-messages/chat-message-fence.js';
 import { agentKey } from '../room-claims.js';
 import type { AsideResult } from '../room-trigger/aside.js';
+import { roomStartAnchor } from '../room-trigger/room-start-anchor.js';
 import type { RoomCore } from '../service/room-core.js';
 import { carryFrom, withRoomMarks } from './seat-carry.js';
 
@@ -153,11 +154,12 @@ export class RoomSeatReports {
     try {
       for (;;) {
         const room = this.core.store.getRoom(seat.roomId);
+        if (room === null || room.archived) break;
+        // A room nobody has posted in yet still hears the report: the turn is about its start.
         const [latest] = this.core.store.listEntries(seat.roomId, { limit: 1 });
-        if (room === null || room.archived || latest === undefined) break;
         result = await this.core.triggers.askAside({
           room,
-          entry: latest,
+          entry: latest ?? roomStartAnchor(room, seat.authorId),
           authorId: seat.authorId,
           prompt: seatReportPrompt(report),
           carried: withRoomMarks(this.core, seat.authorId, carried, room, latest),

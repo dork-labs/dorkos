@@ -211,13 +211,14 @@ describe('the root heavy scripts take a host-wide slot (DOR-3274)', () => {
   // The same nesting rule as the lint gate: turbo must be an ARGUMENT of the
   // lock, with no command separator in between, or the slot is released before
   // the job starts.
+  // `--tests` is a `--job` with a lower load bar (DOR-4646); the test sweeps use it.
   const wraps = (cmd: string, task: string) =>
-    new RegExp(`bash ${LOCK_REL} --job[^;&|]*\\bturbo (run )?${task}\\b`).test(cmd);
+    new RegExp(`bash ${LOCK_REL} --(job|tests)[^;&|]*\\bturbo (run )?${task}\\b`).test(cmd);
 
   it.each(['build', 'typecheck', 'test'])('`pnpm %s` runs turbo under the lock', (name) => {
     expect(
       wraps(scripts[name] ?? '', name),
-      `package.json's \`${name}\` no longer runs turbo as an argument to ${LOCK_REL} --job. ` +
+      `package.json's \`${name}\` no longer runs turbo as an argument to ${LOCK_REL} --job (or --tests). ` +
         'Parallel full builds and typechecks from several agents panicked this host on 2026-10-24.'
     ).toBe(true);
   });

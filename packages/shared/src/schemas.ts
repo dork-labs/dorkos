@@ -25,11 +25,13 @@ export {
   ScheduleOriginMarksSchema,
   TaskApproverSchema,
   TaskApprovalViaSchema,
+  TaskRunPlaceSchema,
 } from './task-approval-schemas.js';
 export type {
   ScheduleOriginMarks,
   TaskApprover,
   TaskApprovalVia,
+  TaskRunPlace,
 } from './task-approval-schemas.js';
 import { CanvasChannelDeclarationSchema } from './canvas-channel-schemas.js';
 import {
@@ -775,11 +777,11 @@ export const SessionSchema = z
      * `id` is the item identifier; `stage` and `runStatus` are the run's own.
      * ABSENT when no run names this session.
      *
-     * @deprecated Read `trackerItems`, which lists every item, including work
-     *   this chat started in chats of their own. Kept for older flow installs;
-     *   removed in the first DorkOS minor release at least 60 days after a flow
-     *   release that reads only `trackerItems`, and only once the extension
-     *   seam contract records the removal (spec `flow-multiproject` §6.8).
+     * @deprecated since 0.135, remove in 0.155; remove earlier in the first minor release
+     *   at least 60 days after a flow release reads only `trackerItems`, once the
+     *   extension seam contract records removal (spec `flow-multiproject` §6.8).
+     * Read `trackerItems` for every item, including work this chat started in
+     * chats of their own; kept for older flow installs.
      */
     trackerItem: z
       .object({
@@ -1327,6 +1329,11 @@ export const QueuedMessageSchema = z
     enqueuedAt: z.number(),
     /** The client that enqueued it, so a window can tell its own from another's. */
     enqueuedBy: z.string(),
+    /**
+     * True for a `web-` queue row not marked `heldToDefault`
+     * in the store. Missing means no.
+     */
+    canRestoreToComposer: z.boolean().optional(),
     /**
      * Present while this message is held for the agent's background work
      * (DOR-2065). The rows behind it wait too, in order.

@@ -289,9 +289,9 @@ export const RelaySendMessageRequestSchema = z
 
 export type RelaySendMessageRequest = z.infer<typeof RelaySendMessageRequestSchema>;
 
-/** @deprecated Use `RelaySendMessageRequestSchema` — renamed to avoid collision with schemas.ts */
+/** @deprecated since 0.135, remove in 0.155. Use `RelaySendMessageRequestSchema` — renamed to avoid collision with schemas.ts */
 export const SendMessageRequestSchema = RelaySendMessageRequestSchema;
-/** @deprecated Use `RelaySendMessageRequest` — renamed to avoid collision with schemas.ts */
+/** @deprecated since 0.135, remove in 0.155. Use `RelaySendMessageRequest` — renamed to avoid collision with schemas.ts */
 export type SendMessageRequest = RelaySendMessageRequest;
 
 export const MessageListQuerySchema = z

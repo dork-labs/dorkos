@@ -134,12 +134,13 @@ function deferrableUnderHold(input, name) {
  *   is wrong (see {@link deferrableUnderHold}). Removing `hold` re-runs the gate,
  *   which then judges the head in full.
  * A stale label with no `hold`, or a bot's label, still fails.
+ * `security-verdict.mjs` uses the same rule to post `pending` rather than `failure`.
  *
  * @param {object} pr The PR, as `GET /pulls/{n}` returns it.
  * @param {object} input The label-at-head input.
  * @param {boolean} deep Whether the diff touches a P0 identity path.
  */
-function awaitingReview(pr, input, deep) {
+export function awaitingReview(pr, input, deep) {
   if (pr.merged_at || pr.state === 'closed') return null;
   const has = (name) => input.labels.some((label) => label.name === name);
   if (has(HOLD_LABEL))

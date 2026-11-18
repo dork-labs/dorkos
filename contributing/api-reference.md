@@ -84,27 +84,32 @@ See `contributing/marketplace-installs.md` for the full install pipeline, transa
 
 ### POST /api/sessions/:id/messages
 
-Trigger-only (ADR-0264). The endpoint validates the request, acquires the session write-lock, starts the turn server-side, and returns immediately — it does NOT stream tokens in-band. The turn's events are delivered solely on `GET /api/sessions/:id/events`.
+Trigger-only and accept-only. The server validates the request, accepts the message into its session queue, and returns `202`; it does not stream the turn in this response. A busy session accepts the message behind its current turn rather than returning `SESSION_LOCKED`. Only `turn_start` on the durable event stream proves that this message's turn began.
 
 **Headers:**
 
-- `X-Client-Id` (optional) - Client identifier for session locking. If another client holds the lock, returns 409 `SESSION_LOCKED`.
+- `X-Client-Id` (optional) - Identifies the originating client; it does not reserve an exclusive session write-lock.
 
-**Request body:** `SendMessageRequest` (from `@dorkos/shared/schemas`)
+**Request body:** `SendMessageRequest` in `packages/shared/src/schemas.ts`. Important fields include:
 
-- `content` (string, required) - User message text
-- `uiState` (optional) - `UiState` object describing the current client UI state (canvas visibility, content, dimensions). Passed to the agent runtime so agents can reason about UI context.
+- `content` (string, required) - Message text.
+- `cwd` (optional) - Working directory.
+- `create` (optional) - Allows first-message creation under an unknown id; without it, an unknown session returns `404 SESSION_NOT_FOUND`.
+- `clientMessageId` (optional) - Client correlation for the submitted message.
+- `context` (optional) - Neutral client signals, including UI state.
+- `runtime`, `account`, `agentPath` (optional) - First-message launch/provenance hints; later messages do not rebind the session.
+- `disposition` (optional) - Requested treatment of a message sent while work is running; see `SendMessageRequestSchema` for the current choices and remaining fields.
 
 **Responses:**
 
-- `202` - `{ sessionId: string }` — the canonical session id (for a brand-new session this is the SDK-assigned id, which differs from the client-supplied UUID; clients re-target the event stream to it)
-- `409` - Session locked by another client. Response body: `{ error: 'Session locked', code: 'SESSION_LOCKED', lockedBy: string, lockedAt: string }`
+- `202` - `SendMessageResponse`: `{ sessionId, messageId, outcome, queuePosition }`. Re-target to the returned canonical id when it differs. `queuePosition: 1` can mean an immediate start or the only waiting message; it is not a start signal.
+- `404` - `SESSION_NOT_FOUND` when no session exists and `create` was not requested.
 
-The lock is bound to the turn's real duration (released on completion AND error, 5-minute TTL backstop), not the HTTP response.
+The session stream carries queue changes and the eventual turn. `apps/server/src/routes/sessions.ts`, `packages/shared/src/schemas.ts` and `Transport.postMessage` define the contract.
 
 ### GET /api/sessions/:id/events
 
-Durable per-session SSE stream — the single delivery path for session state (snapshot → replay → live). Also the cross-client sync mechanism: every subscriber sees the same events, including turns triggered by other clients or the CLI.
+Durable per-session stream (snapshot → replay → live). A normal `GET` serves SSE; the app uses a WebSocket upgrade on the same path, with JSON `{ event, data, id? }` frames and the full opaque cursor in `?resume=`. See `packages/shared/src/stream-socket.ts`. Also the cross-client sync mechanism: every subscriber sees the same events, including turns triggered by other clients or the CLI.
 
 **Query params:**
 
@@ -211,7 +216,7 @@ Stop a running background task (subagent or bash command). Delegates to the acti
 
 ### POST /api/sessions/:id/interrupt
 
-Interrupt the active query for a session. Attempts a graceful SDK interrupt, falling back to a forceful close. Best-effort — `ok: false` when the query already finished is expected (race between natural completion and the interrupt arriving), not an error.
+Stop the active turn and clear the session's waiting-message queue before asking the runtime to interrupt. Cleared messages are returned so the client can put the person's words back in the composer, including when the interrupt fails.
 
 **Path params:**
 
@@ -219,9 +224,10 @@ Interrupt the active query for a session. Attempts a graceful SDK interrupt, fal
 
 **Responses:**
 
-- `200` - `{ ok: true }` — query interrupted, or `{ ok: false }` — no active query (race)
-- `400` - Invalid session ID
-- `500` - Runtime error interrupting query
+- `200` - `{ receipt: InterruptReceipt, cancelledQueued: QueuedMessage[] }`. The receipt carries `runtime`, `outcome` (`acked`, `closed`, `not-running`, `unconfirmed` or `failed`) and an optional `reason`.
+- `400` - Invalid session ID.
+
+An unexpected exception from the runtime becomes a `failed` receipt with `reason: 'delivery-failed'`; it does not discard `cancelledQueued` in a `500` response. Use `turnEnded(receipt)` and `worthRetrying(receipt)` from `@dorkos/shared/schemas` rather than treating every `200` as a confirmed stop. The old `{ ok: boolean }` response is retired.
 
 ### POST /api/sessions/:id/approve
 
@@ -591,7 +597,7 @@ Maximum 20 paths per request.
 
 ## Permissions Endpoints (`routes/permissions.ts`)
 
-What agents may do on their own, what waits for a person's yes, and what they cannot do at all (spec `agent-permissions` D10). Mounted at `/api`. Every mutating route requires a person: `resolveDecisionAuthority` refuses a caller presenting `X-DorkOS-Agent` (resolved or not) or holding an approval token, and `requireOperatorCookieUnderLogin` requires a browser session once login is on — see `contributing/agent-operator-surface.md`. The user guide is `docs/guides/permissions.mdx`; the schemas live in `@dorkos/shared/permissions`.
+What agents may do on their own, what waits for a person's yes, and what they cannot do at all (spec `agent-permissions` D10). Mounted at `/api`. Every mutating HTTP route in this group requires a person: `resolveDecisionAuthority` refuses a caller presenting `X-DorkOS-Agent` (resolved or not) or holding an approval token, and `requireOperatorCookieUnderLogin` requires a browser session wherever `personSessionRequired` applies, including local changes once an owner exists — see `contributing/agent-operator-surface.md`. The user guide is `docs/guides/permissions.mdx`; the schemas live in `@dorkos/shared/permissions`. On Wi-Fi, writes may lower permissions but cannot raise them, and Undo is refused. Agents use the separate `permissions.change` capability under its invocation-time permission and approval checks; HTTP person-only routes are not a statement that no agent-facing write exists.
 
 ### GET /api/permissions
 
@@ -1346,34 +1352,11 @@ No feature flag required — always mounted.
 
 **Responses:**
 
-- `200` - Runtime capabilities map:
+- `200` - `{ capabilities: Record<string, RuntimeCapabilities>, defaultRuntime: string }`.
 
-```json
-{
-  "capabilities": {
-    "claude-code": {
-      "type": "claude-code",
-      "supportsPermissionModes": true,
-      "supportedPermissionModes": [
-        "default",
-        "plan",
-        "acceptEdits",
-        "dontAsk",
-        "bypassPermissions",
-        "auto"
-      ],
-      "supportsToolApproval": true,
-      "supportsCostTracking": true,
-      "supportsResume": true,
-      "supportsMcp": true,
-      "supportsQuestionPrompt": true
-    }
-  },
-  "defaultRuntime": "claude-code"
-}
-```
+`RuntimeCapabilities` is declared in `packages/shared/src/agent-runtime.ts`. It includes feature flags such as `supportsMcp`, `supportsManagedMcpServers`, `supportsToolApproval` and `supportsAccounts`, plus structured `permissionModes: { supported, values }`. The old top-level `supportsPermissionModes` and `supportedPermissionModes` fields are not the current shape.
 
-The `capabilities` object is keyed by runtime type string. Each value is a `RuntimeCapabilities` object (defined in `@dorkos/shared/agent-runtime`). The `defaultRuntime` field indicates which runtime is currently active.
+The map is keyed by registered runtime type; it is not a fixed Claude-only inventory. `defaultRuntime` names the server's default for an unbound selection, not the runtime of every active session. Resolve an existing session's runtime before selecting its capability profile. See [adding a runtime](adding-a-runtime.md#runtimecapabilities) and the generated [runtime capability matrix](capabilities/runtimes.md).
 
 ## Discovery Endpoint
 
@@ -1495,7 +1478,7 @@ The `details` field contains Zod's formatted error output, mapping field names t
 
 ## MCP Server
 
-The DorkOS server embeds a standards-compliant MCP server at `/mcp` using Streamable HTTP transport. External agents (Claude Code, Cursor, Windsurf, custom Agent SDK apps) can connect and use all DorkOS tools.
+The DorkOS server embeds a standards-compliant MCP server at `/mcp` using Streamable HTTP transport. External MCP clients can connect and use the tools this server exposes to their caller, subject to permissions and feature availability.
 
 The MCP endpoint is a protocol endpoint, not a REST API. It speaks JSON-RPC and is mounted at `/mcp` (not under `/api/`).
 
@@ -1511,18 +1494,13 @@ The server operates in **stateless mode** — each POST request creates a fresh 
 
 ### Authentication
 
-`/mcp` is **fail-closed**, with or without `MCP_API_KEY`. `honoMcpAuth('mcp')` (`middleware/mcp-auth.ts`) tries four credentials in order and allows on the first match: the `MCP_API_KEY` env override, a per-user Better Auth API key or session cookie via `verifyRequestAuth`, the not-yet-seeded legacy `config.mcp.apiKey`, and — only while login is off — this instance's per-instance local MCP token. Each is sent the same way:
+`honoMcpAuth('mcp')` in `apps/server/src/middleware/mcp-auth.ts` uses `gateAccessFor` from `apps/server/src/services/core/auth/gate-policy.ts`. The caller's route and server role decide whether local-token or tokenless access is available; `auth.enabled` only controls the password requirement on this computer.
 
-```
-Authorization: Bearer <token>
-```
+The credential acceptors are the static `MCP_API_KEY` override, a per-user API key or browser session via `verifyRequestAuth`, the not-yet-seeded legacy config key, then the local MCP token where the request policy permits it. A refused request class cannot enter through any of them. On Wi-Fi, this verifier ignores session cookies for MCP and A2A and requires a bearer key.
 
-When none matches, the posture decides:
+Where the earlier app-wide session gate requires a credential on `/mcp`, a browser session or per-user API key must clear it before this middleware runs; a local token or static MCP override alone does not clear that gate. On an open local request, the parsed JSON-RPC body can use the closed read-only carve-out. Mutating or unknown calls still need a credential. Another device and a sealed agent computer get no tokenless carve-out.
 
-- **Login off** (the default): the read-only carve-out applies to the parsed JSON-RPC body. Tokenless access is a closed allowlist — exactly `initialize`, `ping`, `tools/list`, `resources/list`, `resources/templates/list`, `prompts/list`, any `notifications/*` method, and `tools/call`s naming a tool in `READ_ONLY_MCP_TOOL_NAMES`. Everything else — mutating tools, unknown tools, `resources/read`, unknown methods, a batch with any guarded element, an unparseable body — is a `401`. A tool is guarded until it is explicitly admitted to that set, so a newly added tool defaults to token-required.
-- **Login on**: no tokenless path. The app-wide `sessionGate` runs before the `/mcp` mount and answers first, so a session cookie or per-user API key is the only credential that reaches the router — the local token and the `MCP_API_KEY` override alone are both refused here (`middleware/__tests__/mcp-auth.integration.test.ts`). The `/a2a` gateway is not under `sessionGate`, so the override still works there.
-
-Which component answers decides the `401` shape. A refusal from this middleware — the login-off case — is a JSON-RPC 2.0 error envelope naming the local-token file path and the `Authorization: Bearer` header, never the token value. A refusal from `sessionGate` — the login-on case, which is reached first — is the app's REST shape, `{ error: 'Unauthorized', code: 'AUTH_REQUIRED' }`, and names no token path. Generate a static key with `openssl rand -hex 32`.
+A middleware refusal is a JSON-RPC error envelope. It names the local-token path only where that token would work, and never includes its value. A refusal from the earlier session gate uses `{ error: 'Unauthorized', code: 'AUTH_REQUIRED' }`. See [Authentication](authentication.md#mcp-4-tier-resolution--legacy-seeding) for the acceptor order and caller cases.
 
 ### Origin Validation
 
@@ -1536,15 +1514,15 @@ Requests to `/mcp` pass through this middleware chain in order:
 
 1. `validateMcpOrigin` — DNS rebinding protection (checks `Origin` header)
 2. `requireMcpEnabled` — clean `503` when the MCP surface is switched off
-3. `honoMcpAuth('mcp')` — credential resolution + the login-off carve-out (checks `Authorization` header, then the parsed body)
+3. `honoMcpAuth('mcp')` — credential resolution + the open-local read carve-out (checks credentials, then the parsed body)
 4. `mcpRateLimiter` — per-connection rate limiting
 5. `createMcpRouter(...)` — Streamable HTTP transport handler
 
-The app-wide `sessionGate` sits ahead of all five (one step in the Hono chain, `http/api-chain.ts`), which is why it, not `honoMcpAuth`, answers an uncredentialed request once login is on.
+The app-wide `sessionGate` sits ahead of all five (one step in the Hono chain, `http/api-chain.ts`), which is why it can answer an uncredentialed request before `honoMcpAuth` wherever the per-request policy requires a credential.
 
 ### Available Tools
 
-All DorkOS tools are registered on the external MCP server: core tools (ping, server info, session count, agent identity), Pulse scheduling tools, Relay messaging tools, adapter management tools, binding tools, trace/metrics tools, Mesh discovery tools, UI control tools (`controlUI` — opens/updates/closes the canvas panel), and extension management tools. Feature-guarded tools return descriptive errors when their service is disabled rather than being omitted from the tool list.
+Use `tools/list` for the current tool names and schemas. The server includes core, scheduling, messaging, marketplace and extension tools, but it is not an unconditional copy of every internal tool. `resolveToolVisibilityFor` filters Blocked actions for the caller when the per-request server is built (`apps/server/src/startup/steps/mcp-tasks-skills.ts`). Feature-specific tools can also depend on their service. Tool visibility does not replace invocation-time permission enforcement.
 
 The `open_canvas` UI command accepts an optional `content` field. When `content` is omitted, the canvas opens with a splash screen. When provided, `content` is a `UiCanvasContent` object (markdown, code, etc.) displayed immediately. `preferredWidth` (20-80, percentage) is also optional.
 
