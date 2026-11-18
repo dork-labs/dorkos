@@ -9,8 +9,8 @@ name: arm-door
 # (fixtures: scripts/test-arm-door.sh). Ledger: ci/ledger/261118-170000-arm-door.md.
 #
 # A stamp is not a signature: every agent acts on GitHub as one login, so a
-# session can post one by hand. This stops the mistakes seen so far (four
-# bypasses on 2026-11-17 and 11-18), not a session set on lying; per-role
+# session can post one by hand. This stops the mistakes seen so far (#3913
+# and #3934 on 2026-11-17 and 11-18), not a session set on lying; per-role
 # GitHub Apps are the real fix (DOR-3183).
 #
 # Not a required check, and it must stay GREEN whatever happens, for the reason

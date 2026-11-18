@@ -9,8 +9,9 @@
 #
 # Why this exists: every agent acts on GitHub as one login, so nothing on
 # GitHub told the arm script's queueing apart from any other. On 2026-11-17 and
-# 11-18 four pull requests reached the queue past it (#3903, #3904, #3913 by
-# hand, #3934 by merge-tail's schedule eight seconds before QA's label). A
+# 11-18 two pull requests reached the queue past it (#3913 by a bare
+# `gh pr merge`, #3934 by merge-tail's schedule eight seconds before QA's
+# label). A
 # stamp is not a signature: any session holding the same login can post one,
 # so this stops the mistakes seen so far, not a session set on lying. Per-role
 # GitHub Apps are the real fix (DOR-3183).
