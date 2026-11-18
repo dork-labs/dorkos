@@ -9,6 +9,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { loadCeilingMs } from '@dorkos/shared/test-budget';
 import { RelayCore } from '../relay-core.js';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 
@@ -443,45 +444,57 @@ describe('GC orphan maildir reaping', () => {
     await relay.close();
   });
 
-  it('a persistent inbox with unread messages survives a restart + immediate sweep with an empty registry', async () => {
-    // Endpoint registration is in-memory: after a restart every maildir looks
-    // unowned until its owner re-registers. A durable relay.inbox.* persistent
-    // inbox holding unread no-TTL mail must NEVER be reaped in that window —
-    // rm -rf here is permanent data loss.
-    const subject = 'relay.inbox.persist.survivor';
+  // Two real RelayCore boots, a publish and a full sweep on a real filesystem:
+  // under a loaded machine this outran vitest's 5s default (DOR-2021), so the
+  // timeout is sized from the worst case the load clamp allows.
+  it(
+    'a persistent inbox with unread messages survives a restart + immediate sweep with an empty registry',
+    { timeout: loadCeilingMs(5_000) },
+    async () => {
+      // Endpoint registration is in-memory: after a restart every maildir looks
+      // unowned until its owner re-registers. A durable relay.inbox.* persistent
+      // inbox holding unread no-TTL mail must NEVER be reaped in that window —
+      // rm -rf here is permanent data loss.
+      const subject = 'relay.inbox.persist.survivor';
 
-    const relay1 = new RelayCore({ dataDir: tmpDir, gcIntervalMs: NEVER_MS });
-    await relay1.registerEndpoint(subject);
-    await relay1.publish(subject, { keep: 'me' }, { from: 'relay.agent.sender' });
-    expect(await listDir(path.join(mailboxDir(subject), 'new'))).toHaveLength(1);
-    await relay1.close();
+      const relay1 = new RelayCore({ dataDir: tmpDir, gcIntervalMs: NEVER_MS });
+      try {
+        await relay1.registerEndpoint(subject);
+        await relay1.publish(subject, { keep: 'me' }, { from: 'relay.agent.sender' });
+        expect(await listDir(path.join(mailboxDir(subject), 'new'))).toHaveLength(1);
+      } finally {
+        await relay1.close();
+      }
 
-    // Backdate the whole maildir so even the age safety-margin would allow
-    // reaping — only the persistent-type exemption protects it.
-    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
-    for (const sub of ['', 'tmp', 'new', 'cur', 'failed']) {
-      await fs.utimes(path.join(mailboxDir(subject), sub), twoDaysAgo, twoDaysAgo);
+      // Backdate the whole maildir so even the age safety-margin would allow
+      // reaping — only the persistent-type exemption protects it.
+      const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+      for (const sub of ['', 'tmp', 'new', 'cur', 'failed']) {
+        await fs.utimes(path.join(mailboxDir(subject), sub), twoDaysAgo, twoDaysAgo);
+      }
+
+      // Restart: empty in-memory registry, construction sweep fires immediately
+      // (it skips reaping), then an explicit full sweep with reaping active.
+      const relay2 = new RelayCore({
+        dataDir: tmpDir,
+        gcIntervalMs: NEVER_MS,
+        orphanMaildirRetentionMs: 0,
+      });
+      try {
+        const result = await relay2.runGcSweep();
+        expect(result?.orphansReaped).toBe(0);
+
+        // The unread message is still on disk and readable after re-registration.
+        expect(await listDir(path.join(mailboxDir(subject), 'new'))).toHaveLength(1);
+        await relay2.registerEndpoint(subject);
+        const inbox = await relay2.readInbox(subject, { status: 'unread' });
+        expect(inbox.messages).toHaveLength(1);
+        expect(inbox.messages[0].payload).toEqual({ keep: 'me' });
+      } finally {
+        await relay2.close();
+      }
     }
-
-    // Restart: empty in-memory registry, construction sweep fires immediately
-    // (it skips reaping), then an explicit full sweep with reaping active.
-    const relay2 = new RelayCore({
-      dataDir: tmpDir,
-      gcIntervalMs: NEVER_MS,
-      orphanMaildirRetentionMs: 0,
-    });
-    const result = await relay2.runGcSweep();
-    expect(result?.orphansReaped).toBe(0);
-
-    // The unread message is still on disk and readable after re-registration.
-    expect(await listDir(path.join(mailboxDir(subject), 'new'))).toHaveLength(1);
-    await relay2.registerEndpoint(subject);
-    const inbox = await relay2.readInbox(subject, { status: 'unread' });
-    expect(inbox.messages).toHaveLength(1);
-    expect(inbox.messages[0].payload).toEqual({ keep: 'me' });
-
-    await relay2.close();
-  });
+  );
 
   it('the construction-time sweep defers orphan reaping (empty-registry grace)', async () => {
     // Ephemeral (non-persistent) maildirs must also survive the construction

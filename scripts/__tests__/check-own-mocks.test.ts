@@ -14,6 +14,12 @@ import {
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
+/**
+ * Time allowed for the test that reads every test file in the repo. The 5s
+ * default is a claim about disk speed that a loaded machine breaks (DOR-2021).
+ */
+const SCAN_TIMEOUT_MS = 30_000;
+
 // Spelled through constants so the samples below are not themselves counted by
 // the ratchet this file tests.
 const MOCK = 'vi' + '.mock';
@@ -113,16 +119,20 @@ describe('lowered', () => {
 // raised-by-hand check needs a base commit, so pre-push and `--base` do that
 // half; review is the other guard on the baseline file.
 describe('the repo', () => {
-  it('adds no own-module mock beyond the baseline, and has locked in every drop', () => {
-    const baseline = (
-      JSON.parse(readFileSync(join(ROOT, BASELINE_PATH), 'utf8')) as {
-        packages: Record<string, number>;
-      }
-    ).packages;
-    const findings = compare(measure(ROOT), baseline);
-    expect(
-      findings,
-      'Use the real module, or mock only at an edge. After removing mocks, run `pnpm check:own-mocks -- --update`.'
-    ).toEqual([]);
-  });
+  it(
+    'adds no own-module mock beyond the baseline, and has locked in every drop',
+    { timeout: SCAN_TIMEOUT_MS },
+    () => {
+      const baseline = (
+        JSON.parse(readFileSync(join(ROOT, BASELINE_PATH), 'utf8')) as {
+          packages: Record<string, number>;
+        }
+      ).packages;
+      const findings = compare(measure(ROOT), baseline);
+      expect(
+        findings,
+        'Use the real module, or mock only at an edge. After removing mocks, run `pnpm check:own-mocks -- --update`.'
+      ).toEqual([]);
+    }
+  );
 });
