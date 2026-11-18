@@ -33,6 +33,9 @@ import {
 /** The command that sets or resets the owner's password, run on the computer DorkOS runs on. */
 const RESET_PASSWORD_COMMAND = 'dorkos auth reset-password';
 
+/** The line that always travels with a request code (designer, DOR-4355). */
+const REQUEST_CODE_NOTE = 'Check that the request you came from shows the same code.';
+
 /**
  * App-shell host for "Confirm it's you" before one sensitive action
  * (DOR-3234). A guarded action answers `428` with a held-action id; the
@@ -114,6 +117,7 @@ function secondsUntil(until: number): number {
 function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
   const reasonId = useId();
   const codeId = useId();
+  const codeNoteId = useId();
   const passwordId = useId();
   const newPasswordId = useId();
   const failureId = useId();
@@ -244,7 +248,7 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
     <AlertDialog open onOpenChange={(next) => !next && cancel()}>
       <AlertDialogContent
         aria-modal="true"
-        aria-describedby={view?.requestCode ? `${reasonId} ${codeId}` : reasonId}
+        aria-describedby={view?.requestCode ? `${reasonId} ${codeId} ${codeNoteId}` : reasonId}
       >
         <AlertDialogHeader className="text-left">
           <AlertDialogTitle>Confirm it’s you</AlertDialogTitle>
@@ -254,7 +258,15 @@ function ActionStepUpSheet({ heldActionId }: { heldActionId: string }) {
           >
             {view?.reason ?? (stage.kind === 'loading' ? 'Checking what this will do…' : '')}
           </AlertDialogDescription>
-          {view?.requestCode && <RequestCode id={codeId} code={view.requestCode} />}
+          {/* The code never shows without its note (designer, DOR-4355). */}
+          {view?.requestCode && (
+            <>
+              <RequestCode id={codeId} code={view.requestCode} />
+              <p id={codeNoteId} className="text-muted-foreground text-sm">
+                {REQUEST_CODE_NOTE}
+              </p>
+            </>
+          )}
           {view?.notes.map((note) => (
             <p
               key={note}

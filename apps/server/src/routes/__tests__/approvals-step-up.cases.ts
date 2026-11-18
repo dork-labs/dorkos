@@ -591,5 +591,13 @@ export function registerApprovalStepUpCases(): void {
         requestCode: card.requestCode,
       });
     });
+
+    it('names who asked on the sheet, and leaves the code check to the sheet itself', async () => {
+      const ticket = ask();
+      const held = await grant(ticket.approvalId, 'own-tunnel');
+      const sheet = await request(app('own-tunnel')).get(`/api/step-up/${held.body.heldActionId}`);
+      expect(sheet.body.notes).toEqual(['Asked by Kestrel.']);
+      expect(JSON.stringify(sheet.body.notes)).not.toMatch(/same code/i);
+    });
   });
 }

@@ -110,6 +110,35 @@ describe('ActionStepUpHost', () => {
     expect(screen.getByRole('group', { name: 'Request K 7 M R, 4 X Q 9, H T 3 W' })).toBeVisible();
   });
 
+  const CODE_NOTE = 'Check that the request you came from shows the same code.';
+
+  it.each([
+    ['with no notes of its own', []],
+    ['with notes of its own', ['Asked by Porter.']],
+  ])('never shows a request code without its note, %s', async (_label, notes) => {
+    heldWith({ ...VIEW, notes, requestCode: 'K7MR-4XQ9-HT3W' }, [
+      200,
+      { ok: true, status: 200, result: {} },
+    ]);
+    render(<ActionStepUpHost />);
+    void ask();
+    await screen.findByText('K7MR-4XQ9-HT3W');
+    const note = screen.getByText(CODE_NOTE);
+    expect(note).toBeVisible();
+    expect(screen.getAllByText(CODE_NOTE)).toHaveLength(1);
+    expect(screen.getByRole('alertdialog')).toHaveAccessibleDescription(
+      expect.stringContaining(CODE_NOTE)
+    );
+  });
+
+  it('shows no code note when the server sends no code', async () => {
+    heldWith(VIEW, [200, { ok: true, status: 200, result: {} }]);
+    render(<ActionStepUpHost />);
+    void ask();
+    await screen.findByText(VIEW.reason);
+    expect(screen.queryByText(CODE_NOTE)).toBeNull();
+  });
+
   it('re-holds after a confirmation for a different request', async () => {
     heldWith(VIEW, [
       409,

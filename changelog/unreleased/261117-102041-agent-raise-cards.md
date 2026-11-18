@@ -8,6 +8,7 @@ covers:
   - "fix(auth): an agent raise card quotes a connection's name in full, as one inert line (DOR-4355)"
   - "fix(auth): a connection's name on an agent raise card turns look-alike double quotes into apostrophes too (DOR-4355)"
   - 'refactor(approvals): the two person bars move to approval-person-bars.ts, so approvals.ts stays under 500 lines (DOR-4355)'
+  - 'fix(auth): a request code on the "Confirm it''s you" sheet always comes with its note (DOR-4355)'
 ---
 
 ### Security

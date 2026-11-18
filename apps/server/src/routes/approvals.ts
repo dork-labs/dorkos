@@ -636,11 +636,8 @@ export function createApprovalsRoutes(
       input: { approvalId: id, answer, hash },
       binding: { hash, currentHash: () => approvals.stepUpHash(id) },
       reason: card.summary,
-      notes: card.requestedBy
-        ? [
-            `Asked by ${approvalRequesterLabel(card.requestedBy)}. Check that the card shows the same code.`,
-          ]
-        : [],
+      // The sheet says to check the code itself, under the code (designer, DOR-4355).
+      notes: card.requestedBy ? [`Asked by ${approvalRequesterLabel(card.requestedBy)}.`] : [],
       commit: async (confirming) => {
         const person = personFromFacts(confirming);
         if (!('facts' in person)) return person;
