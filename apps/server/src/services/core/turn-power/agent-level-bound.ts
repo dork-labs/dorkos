@@ -342,10 +342,12 @@ async function readsOutsideText(
       if (agentPath !== undefined && (await read(agentPath))) return true;
     }
   } catch (err) {
-    logger.warn('[agent-level] could not read whether the agent reads outside text', {
+    // Unreadable reads as declared: marking costs a card at most, missing a reader costs more.
+    logger.warn('[agent-level] could not read whether the agent reads outside text; marking it', {
       sessionId,
       error: err instanceof Error ? err.message : String(err),
     });
+    return true;
   }
   return false;
 }

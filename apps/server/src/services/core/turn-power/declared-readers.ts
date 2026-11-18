@@ -305,7 +305,9 @@ export function clearAgentByPerson(id: string, home: string | undefined): void {
 export async function agentReadsOutsideText(agentPath: string): Promise<boolean> {
   if (current?.has('agentHome', path.resolve(agentPath))) return true;
   const manifest = await readManifest(agentPath, logger);
-  if (!manifest) return false;
+  // A file that is there but cannot be read could belong to an agent the record holds only by id,
+  // so it reads as declared: marking costs a card at most. No file at all says nothing.
+  if (!manifest) return fs.existsSync(path.join(agentPath, '.dork', 'agent.json'));
   if (manifest.readsOutsideText === true || current?.has('agent', manifest.id)) {
     declareAgent(manifest.id, agentPath);
     return true;

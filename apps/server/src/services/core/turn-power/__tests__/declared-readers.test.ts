@@ -137,6 +137,16 @@ describe('an agent that says it reads outside text', () => {
     expect(await agentReadsOutsideText(agentPath)).toBe(true);
   });
 
+  it('reads as declared when its file is there but cannot be read, even if never declared', async () => {
+    await writeFile(path.join(agentPath, '.dork', 'agent.json'), '{ not json', 'utf-8');
+    expect(await agentReadsOutsideText(agentPath)).toBe(true);
+  });
+
+  it('says nothing for a folder with no file at all', async () => {
+    await rm(path.join(agentPath, '.dork', 'agent.json'));
+    expect(await agentReadsOutsideText(agentPath)).toBe(false);
+  });
+
   it('can turn it on through its own update, and cannot turn it off', async () => {
     await updateAgentManifest({ agentPath, body: { readsOutsideText: true } });
     expect((await readManifest(agentPath))?.readsOutsideText).toBe(true);
@@ -197,6 +207,17 @@ describe('every turn of a declared agent carries the outsider mark', () => {
     new DeclaredReaders({ file, logger }).declare('agent', AGENT_ID);
     setDeclaredReaders(new DeclaredReaders({ file, logger }));
     const sent = await boundTurnOpts(runtime, 'chat-1', { cwd: agentPath }, deps);
+    expect(sent?.carriedMarks).toEqual({ outsider: true });
+  });
+
+  it('marks the turn when whether the agent reads outside text cannot be read', async () => {
+    const failing = {
+      ...deps,
+      readsOutsideText: async () => {
+        throw new Error('the record could not be read');
+      },
+    };
+    const sent = await boundTurnOpts(runtime, 'chat-1', { cwd: agentPath }, failing);
     expect(sent?.carriedMarks).toEqual({ outsider: true });
   });
 

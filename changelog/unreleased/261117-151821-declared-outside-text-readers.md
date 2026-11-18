@@ -2,6 +2,7 @@
 covers:
   - 'fix(turn-power): a task or agent can say it reads outside text, and only a person can take that back (DOR-3969)'
   - 'fix(turn-power): a task or agent set as reading outside text marks every turn it runs (DOR-3969)'
+  - 'fix(turn-power): an agent whose reader status cannot be read is marked (DOR-3969)'
 ---
 
 ### Fixed
