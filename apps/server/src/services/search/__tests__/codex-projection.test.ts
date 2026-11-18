@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { projectCodexLines } from '../projections/codex.js';
+import { buildCodexPrompt } from '../../runtimes/codex/turn-input.js';
 
 /**
  * The projection is a pure function over lines, so this is a table test and not
@@ -201,6 +202,19 @@ describe('projecting Codex rollouts', () => {
     ]);
 
     expect(projection.messages.map((message) => message.body)).toEqual(['Reply with exactly: ok']);
+  });
+
+  it('keeps only the person’s words when a load notice rode along (DOR-4447)', () => {
+    const sent = buildCodexPrompt(
+      'Fix the flaky test\nin the parser',
+      undefined,
+      '<agent_identity>\nName: Made-up agent\n</agent_identity>',
+      "This project's own Codex settings did not load in this chat."
+    );
+    const projection = project([item('user', sent)]);
+    expect(projection.messages).toEqual([
+      expect.objectContaining({ role: 'user', body: 'Fix the flaky test\nin the parser' }),
+    ]);
   });
 
   it('drops a user record that is nothing but injected context', () => {

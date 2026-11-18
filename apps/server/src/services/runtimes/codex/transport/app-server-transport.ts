@@ -39,7 +39,7 @@ import type { CreditsRelay } from '../../../core/cloud/credits-relay.js';
 import { keepAwakeService } from '../../../core/keep-awake/index.js';
 import { CreditsUnavailableError } from '../../../core/cloud/credits-protocols.js';
 import { creditsCodexHome } from '../codex-home.js';
-import { buildSteerText, EFFORT_TO_REASONING } from '../turn-input.js';
+import { buildSteerText, EFFORT_TO_REASONING, promptToSend } from '../turn-input.js';
 import {
   CodexAppServerPool,
   codexAppServerPool,
@@ -541,10 +541,7 @@ export class AppServerCodexTransport implements CodexTransport {
       }
       let turnId: string;
       try {
-        const result = await process.client.request(
-          'turn/start',
-          this.turnParams(request, loaded.threadId)
-        );
+        const result = await process.client.request('turn/start', this.turnParams(request, loaded));
         turnId = result.turn.id;
       } catch (err) {
         yield* finish(failedStart(mapper, err));
@@ -1498,14 +1495,15 @@ export class AppServerCodexTransport implements CodexTransport {
     return !this.lingering.has(threadId);
   }
 
-  private turnParams(request: CodexTurnRequest, threadId: string): TurnStartParams {
+  private turnParams(request: CodexTurnRequest, loaded: LoadedThread): TurnStartParams {
     const effort =
       request.settings.effort !== undefined
         ? EFFORT_TO_REASONING[request.settings.effort]
         : undefined;
     return {
-      threadId,
-      input: [{ type: 'text', text: request.prompt, text_elements: [] }],
+      threadId: loaded.threadId,
+      // A fresh load's notice for the model rides with the prompt (DOR-4447).
+      input: [{ type: 'text', text: promptToSend(request, loaded.modelNote), text_elements: [] }],
       ...(request.messageId !== undefined ? { clientUserMessageId: request.messageId } : {}),
       // Sent every turn (they are sticky): a mode or model change between turns lands.
       cwd: request.cwd,

@@ -28,7 +28,7 @@ import {
   AGENT_BOUNDARY_INPUTS,
   AGENT_FILE_INPUTS,
   agentSelectorSchema,
-  refuseOutsiderAgentFiles,
+  refuseAgentToolFiles,
 } from './agent-file-inputs.js';
 import { defineUpdateAgentConfig } from './agent-config.js';
 import { isSecretInputKey } from '@dorkos/shared/capabilities';
@@ -558,7 +558,7 @@ export const operatorDomain: CapabilityDomain = {
         },
       },
       invoke: async (deps, input, context) =>
-        refuseOutsiderAgentFiles(input, context) ??
+        refuseAgentToolFiles(input, context) ??
         unwrapMcpEnvelope(
           await createUpdateAgentHandler(requireOperatorDeps(deps))(input as UpdateAgentArgs)
         ),

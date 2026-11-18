@@ -1,3 +1,4 @@
+import { isolatedRequiredLaunchOwner } from './required-launch-fixture.js';
 /**
  * DOR-132 — runtime-neutral context channel, Phase 1.
  *
@@ -8,10 +9,12 @@
  * the additional-context bag) then becomes the single source of truth, ending
  * the per-turn git double-injection (ADR-0273 decision A2).
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
 import type { AgentSession } from '../../agent-types.js';
 import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
+
+const requiredLaunches = isolatedRequiredLaunchOwner();
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
@@ -63,6 +66,7 @@ function makeSession(): AgentSession {
 function makeOpts(overrides: Partial<MessageSenderOpts> = {}): MessageSenderOpts {
   return {
     cwd: '/mock/project',
+    requiredLaunches,
     onSdkSessionRebind: async () => {},
     ...overrides,
   };
@@ -100,7 +104,11 @@ async function captureSdkOptions(
 describe('executeSdkQuery — system prompt (DOR-132)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv('CLAUDE_CONFIG_DIR', '/mock/claude-code-test-account');
+    for (const key of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN'])
+      vi.stubEnv(key, '');
   });
+  afterEach(() => vi.unstubAllEnvs());
 
   it('sets excludeDynamicSections: true on the claude_code preset', async () => {
     const options = await captureSdkOptions();

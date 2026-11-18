@@ -40,6 +40,7 @@ import { z } from 'zod';
 import {
   BOOT_HOOK_TIMEOUT_MS,
   bootComposedServer,
+  CASE_TIMEOUT_MS,
   checkContractCase,
   contractSuite,
   SERVER_ORIGIN,
@@ -770,292 +771,326 @@ describe('contract: the marketplace groups, driven by hand (login off)', () => {
     await server?.close();
   }, 30_000);
 
-  it('adds a source from a folder, lists it, refreshes it, browses it and removes it', async () => {
-    const created = await call(server, 'POST', '/api/marketplace/sources', {
-      name: 'contract',
-      source: pathToFileURL(MARKET).href,
-    });
-    expect(created.status).toBe(201);
-    expect(created.headers.get('content-type')).toMatch(/^application\/json\b/);
-    expect(created.json).toMatchObject({
-      name: 'contract',
-      source: pathToFileURL(MARKET).href,
-      enabled: true,
-      listing: { fetched: true, packageCount: 3 },
-    });
+  it(
+    'adds a source from a folder, lists it, refreshes it, browses it and removes it',
+    async () => {
+      const created = await call(server, 'POST', '/api/marketplace/sources', {
+        name: 'contract',
+        source: pathToFileURL(MARKET).href,
+      });
+      expect(created.status).toBe(201);
+      expect(created.headers.get('content-type')).toMatch(/^application\/json\b/);
+      expect(created.json).toMatchObject({
+        name: 'contract',
+        source: pathToFileURL(MARKET).href,
+        enabled: true,
+        listing: { fetched: true, packageCount: 3 },
+      });
 
-    const again = await call(server, 'POST', '/api/marketplace/sources', {
-      name: 'contract',
-      source: pathToFileURL(MARKET).href,
-    });
-    expect(again.status).toBe(409);
-    expect(again.json).toEqual({ error: expect.stringContaining('already exists') });
+      const again = await call(server, 'POST', '/api/marketplace/sources', {
+        name: 'contract',
+        source: pathToFileURL(MARKET).href,
+      });
+      expect(again.status).toBe(409);
+      expect(again.json).toEqual({ error: expect.stringContaining('already exists') });
 
-    await check(server, {
-      path: '/api/marketplace/sources',
-      expect: {
-        status: 200,
-        schema: SOURCE_LIST.refine((body) => body.sources.some((s) => s.name === 'contract')),
-      },
-    });
-    const refreshed = await call(server, 'POST', '/api/marketplace/sources/contract/refresh');
-    expect(refreshed.status).toBe(200);
+      await check(server, {
+        path: '/api/marketplace/sources',
+        expect: {
+          status: 200,
+          schema: SOURCE_LIST.refine((body) => body.sources.some((s) => s.name === 'contract')),
+        },
+      });
+      const refreshed = await call(server, 'POST', '/api/marketplace/sources/contract/refresh');
+      expect(refreshed.status).toBe(200);
 
-    const browsed = await call(server, 'GET', '/api/marketplace/packages');
-    expect(browsed.status).toBe(200);
-    expect(PACKAGE_LIST.parse(browsed.json).packages.map((p) => p.name)).toEqual(
-      expect.arrayContaining([AGENT_PACKAGE, SKILL_PACK])
-    );
-    const one = await call(
-      server,
-      'GET',
-      `/api/marketplace/packages/${SKILL_PACK}?marketplace=contract`
-    );
-    expect(one.status).toBe(200);
-    expect(one.json).toMatchObject({
-      manifest: { name: SKILL_PACK, type: 'skill-pack' },
-      contentHash: expect.any(String),
-    });
-    await check(server, {
-      path: `/api/marketplace/packages/not-listed?marketplace=contract`,
-      expect: { status: 404, schema: z.object({ error: z.string() }).strict() },
-    });
+      const browsed = await call(server, 'GET', '/api/marketplace/packages');
+      expect(browsed.status).toBe(200);
+      expect(PACKAGE_LIST.parse(browsed.json).packages.map((p) => p.name)).toEqual(
+        expect.arrayContaining([AGENT_PACKAGE, SKILL_PACK])
+      );
+      const one = await call(
+        server,
+        'GET',
+        `/api/marketplace/packages/${SKILL_PACK}?marketplace=contract`
+      );
+      expect(one.status).toBe(200);
+      expect(one.json).toMatchObject({
+        manifest: { name: SKILL_PACK, type: 'skill-pack' },
+        contentHash: expect.any(String),
+      });
+      await check(server, {
+        path: `/api/marketplace/packages/not-listed?marketplace=contract`,
+        expect: { status: 404, schema: z.object({ error: z.string() }).strict() },
+      });
 
-    await check(server, {
-      method: 'DELETE',
-      path: '/api/marketplace/sources/scratch-never-added',
-      expect: { status: 204, body: '' },
-    });
-  });
+      await check(server, {
+        method: 'DELETE',
+        path: '/api/marketplace/sources/scratch-never-added',
+        expect: { status: 204, body: '' },
+      });
+    },
+    CASE_TIMEOUT_MS
+  );
 
-  it('lets the person preview, install, check and uninstall a package', async () => {
-    const preview = await call(server, 'POST', `/api/marketplace/packages/${SKILL_PACK}/preview`, {
-      marketplace: 'contract',
-    });
-    expect(preview.status).toBe(200);
-    expect(preview.json).toMatchObject({
-      manifest: { name: SKILL_PACK },
-      contentHash: expect.any(String),
-    });
+  it(
+    'lets the person preview, install, check and uninstall a package',
+    async () => {
+      const preview = await call(
+        server,
+        'POST',
+        `/api/marketplace/packages/${SKILL_PACK}/preview`,
+        {
+          marketplace: 'contract',
+        }
+      );
+      expect(preview.status).toBe(200);
+      expect(preview.json).toMatchObject({
+        manifest: { name: SKILL_PACK },
+        contentHash: expect.any(String),
+      });
 
-    const installed = await call(
-      server,
-      'POST',
-      `/api/marketplace/packages/${SKILL_PACK}/install`,
-      {
+      const installed = await call(
+        server,
+        'POST',
+        `/api/marketplace/packages/${SKILL_PACK}/install`,
+        {
+          marketplace: 'contract',
+          approvedDisclosure: preview.json.disclosed,
+          approvedContentHash: preview.json.contentHash,
+        }
+      );
+      expect(installed.status).toBe(200);
+      expect(installed.json).toMatchObject({ packageName: SKILL_PACK, type: 'skill-pack' });
+
+      const listed = await call(server, 'GET', '/api/marketplace/installed');
+      expect(listed.status).toBe(200);
+      expect(PACKAGE_LIST.parse(listed.json).packages.map((p) => p.name)).toContain(SKILL_PACK);
+      const one = await call(server, 'GET', `/api/marketplace/installed/${SKILL_PACK}`);
+      expect(one.status).toBe(200);
+      expect(one.json).toMatchObject({ installations: [{ name: SKILL_PACK }] });
+
+      const checked = await call(server, 'POST', `/api/marketplace/packages/${SKILL_PACK}/update`);
+      expect(checked.status).toBe(200);
+      const updates = await call(server, 'GET', '/api/marketplace/updates');
+      expect(updates.status).toBe(200);
+
+      const removed = await call(
+        server,
+        'POST',
+        `/api/marketplace/packages/${SKILL_PACK}/uninstall`,
+        {}
+      );
+      expect(removed.status).toBe(200);
+      expect(removed.json).toMatchObject({ packageName: SKILL_PACK });
+      await check(server, {
+        path: `/api/marketplace/installed/${SKILL_PACK}`,
+        expect: { status: 404 },
+      });
+    },
+    CASE_TIMEOUT_MS
+  );
+
+  it(
+    'holds an agent’s install of an agent package until a person approves it, once',
+    async () => {
+      const asked = await call(
+        server,
+        'POST',
+        `/api/marketplace/packages/${AGENT_PACKAGE}/install`,
+        { marketplace: 'contract' },
+        AGENT
+      );
+      expect(asked.status).toBe(202);
+      const pending = REQUIRES_CONFIRMATION.parse(asked.json);
+
+      // Before a person answers, the token installs nothing.
+      const early = await call(
+        server,
+        'POST',
+        `/api/marketplace/packages/${AGENT_PACKAGE}/install`,
+        { marketplace: 'contract', confirmationToken: pending.confirmationToken },
+        AGENT
+      );
+      expect(early.status).toBe(202);
+      expect(REQUIRES_CONFIRMATION.parse(early.json).confirmationToken).toBe(
+        pending.confirmationToken
+      );
+
+      await grantCard(server);
+
+      // The token is bound to its package: it installs nothing else.
+      const elsewhere = await call(
+        server,
+        'POST',
+        `/api/marketplace/packages/${OTHER_AGENT_PACKAGE}/install`,
+        { marketplace: 'contract', confirmationToken: pending.confirmationToken },
+        AGENT
+      );
+      expect(elsewhere.status).toBe(202);
+      const reasked = REQUIRES_CONFIRMATION.parse(elsewhere.json);
+      expect(reasked.confirmationToken).not.toBe(pending.confirmationToken);
+      expect(reasked.message).toMatch(/^That approval does not cover this install/);
+
+      const done = await call(
+        server,
+        'POST',
+        `/api/marketplace/packages/${AGENT_PACKAGE}/install`,
+        { marketplace: 'contract', confirmationToken: pending.confirmationToken },
+        AGENT
+      );
+      expect(done.status).toBe(200);
+      expect(done.json).toMatchObject({ packageName: AGENT_PACKAGE, type: 'agent' });
+
+      // Single use: the same token does not install a second time.
+      const replay = await call(
+        server,
+        'POST',
+        `/api/marketplace/packages/${AGENT_PACKAGE}/install`,
+        { marketplace: 'contract', confirmationToken: pending.confirmationToken },
+        AGENT
+      );
+      expect(replay.status).toBe(403);
+      expect(replay.json).toEqual({ status: 'declined', reason: 'Unknown or expired token' });
+    },
+    CASE_TIMEOUT_MS
+  );
+
+  it(
+    'holds an agent’s uninstall for a person, then honours the granted token once',
+    async () => {
+      const preview = await setup(
+        server,
+        'POST',
+        `/api/marketplace/packages/${SKILL_PACK}/preview`,
+        {
+          marketplace: 'contract',
+        }
+      );
+      await setup(server, 'POST', `/api/marketplace/packages/${SKILL_PACK}/install`, {
         marketplace: 'contract',
         approvedDisclosure: preview.json.disclosed,
         approvedContentHash: preview.json.contentHash,
-      }
-    );
-    expect(installed.status).toBe(200);
-    expect(installed.json).toMatchObject({ packageName: SKILL_PACK, type: 'skill-pack' });
+      });
 
-    const listed = await call(server, 'GET', '/api/marketplace/installed');
-    expect(listed.status).toBe(200);
-    expect(PACKAGE_LIST.parse(listed.json).packages.map((p) => p.name)).toContain(SKILL_PACK);
-    const one = await call(server, 'GET', `/api/marketplace/installed/${SKILL_PACK}`);
-    expect(one.status).toBe(200);
-    expect(one.json).toMatchObject({ installations: [{ name: SKILL_PACK }] });
+      const asked = await call(
+        server,
+        'POST',
+        `/api/marketplace/packages/${SKILL_PACK}/uninstall`,
+        {},
+        AGENT
+      );
+      expect(asked.status).toBe(202);
+      const ticket = APPROVAL_REQUIRED.parse(asked.json);
+      await grantCard(server, ticket.approvalId);
 
-    const checked = await call(server, 'POST', `/api/marketplace/packages/${SKILL_PACK}/update`);
-    expect(checked.status).toBe(200);
-    const updates = await call(server, 'GET', '/api/marketplace/updates');
-    expect(updates.status).toBe(200);
+      // Bound to its arguments: the token does not remove a different package.
+      const elsewhere = await call(
+        server,
+        'POST',
+        `/api/marketplace/packages/${AGENT_PACKAGE}/uninstall`,
+        {},
+        { ...AGENT, 'X-DorkOS-Approval': ticket.approvalToken }
+      );
+      expect(elsewhere.status).toBe(202);
+      expect(TOKEN_ASKED('wrong_action').parse(elsewhere.json)).toBeTruthy();
 
-    const removed = await call(
-      server,
-      'POST',
-      `/api/marketplace/packages/${SKILL_PACK}/uninstall`,
-      {}
-    );
-    expect(removed.status).toBe(200);
-    expect(removed.json).toMatchObject({ packageName: SKILL_PACK });
-    await check(server, {
-      path: `/api/marketplace/installed/${SKILL_PACK}`,
-      expect: { status: 404 },
-    });
-  });
+      const done = await call(
+        server,
+        'POST',
+        `/api/marketplace/packages/${SKILL_PACK}/uninstall`,
+        {},
+        { ...AGENT, 'X-DorkOS-Approval': ticket.approvalToken }
+      );
+      expect(done.status).toBe(200);
+      expect(done.json).toMatchObject({ packageName: SKILL_PACK });
 
-  it('holds an agent’s install of an agent package until a person approves it, once', async () => {
-    const asked = await call(
-      server,
-      'POST',
-      `/api/marketplace/packages/${AGENT_PACKAGE}/install`,
-      { marketplace: 'contract' },
-      AGENT
-    );
-    expect(asked.status).toBe(202);
-    const pending = REQUIRES_CONFIRMATION.parse(asked.json);
+      const replay = await call(
+        server,
+        'POST',
+        `/api/marketplace/packages/${SKILL_PACK}/uninstall`,
+        {},
+        { ...AGENT, 'X-DorkOS-Approval': ticket.approvalToken }
+      );
+      expect(replay.status).toBe(202);
+      expect(TOKEN_ASKED('already_used').parse(replay.json)).toBeTruthy();
+    },
+    CASE_TIMEOUT_MS
+  );
 
-    // Before a person answers, the token installs nothing.
-    const early = await call(
-      server,
-      'POST',
-      `/api/marketplace/packages/${AGENT_PACKAGE}/install`,
-      { marketplace: 'contract', confirmationToken: pending.confirmationToken },
-      AGENT
-    );
-    expect(early.status).toBe(202);
-    expect(REQUIRES_CONFIRMATION.parse(early.json).confirmationToken).toBe(
-      pending.confirmationToken
-    );
+  it(
+    'previews, links, lists and unlinks a folder for the person',
+    async () => {
+      // An agent's link waits on a card the gate raises, naming the folder.
+      await check(server, {
+        method: 'POST',
+        path: '/api/marketplace/dev-links',
+        headers: AGENT,
+        body: { path: LINKABLE, scope: 'global' },
+        expect: { status: 202, headers: JSON_TYPE, schema: APPROVAL_REQUIRED },
+      });
 
-    await grantCard(server);
+      const preview = await call(server, 'POST', '/api/marketplace/dev-links/preview', {
+        path: LINKABLE,
+        scope: 'global',
+      });
+      expect(preview.status).toBe(200);
+      expect(preview.json).toMatchObject({ change: expect.any(String) });
 
-    // The token is bound to its package: it installs nothing else.
-    const elsewhere = await call(
-      server,
-      'POST',
-      `/api/marketplace/packages/${OTHER_AGENT_PACKAGE}/install`,
-      { marketplace: 'contract', confirmationToken: pending.confirmationToken },
-      AGENT
-    );
-    expect(elsewhere.status).toBe(202);
-    const reasked = REQUIRES_CONFIRMATION.parse(elsewhere.json);
-    expect(reasked.confirmationToken).not.toBe(pending.confirmationToken);
-    expect(reasked.message).toMatch(/^That approval does not cover this install/);
+      const linked = await call(server, 'POST', '/api/marketplace/dev-links', {
+        path: LINKABLE,
+        scope: 'global',
+        via: 'terminal',
+        expectedChange: preview.json.change,
+      });
+      expect(linked.status).toBe(201);
+      expect(linked.headers.get('content-type')).toMatch(/^application\/json\b/);
 
-    const done = await call(
-      server,
-      'POST',
-      `/api/marketplace/packages/${AGENT_PACKAGE}/install`,
-      { marketplace: 'contract', confirmationToken: pending.confirmationToken },
-      AGENT
-    );
-    expect(done.status).toBe(200);
-    expect(done.json).toMatchObject({ packageName: AGENT_PACKAGE, type: 'agent' });
+      const listed = await call(server, 'GET', '/api/marketplace/dev-links');
+      expect(listed.status).toBe(200);
+      expect(JSON.stringify(listed.json)).toContain(LINKED_PACK);
 
-    // Single use: the same token does not install a second time.
-    const replay = await call(
-      server,
-      'POST',
-      `/api/marketplace/packages/${AGENT_PACKAGE}/install`,
-      { marketplace: 'contract', confirmationToken: pending.confirmationToken },
-      AGENT
-    );
-    expect(replay.status).toBe(403);
-    expect(replay.json).toEqual({ status: 'declined', reason: 'Unknown or expired token' });
-  });
+      // A second link of the same package is refused by its own sentence.
+      const again = await call(
+        server,
+        'POST',
+        '/api/marketplace/dev-links',
+        { path: LINKABLE, scope: 'global', replaceInstalled: true },
+        AGENT
+      );
+      expect(again.status).toBe(409);
+      expect(again.json).toEqual({
+        code: 'dev_link_exists',
+        error: `${LINKED_PACK} already runs from a dev link here. Unlink it first.`,
+        name: LINKED_PACK,
+      });
 
-  it('holds an agent’s uninstall for a person, then honours the granted token once', async () => {
-    const preview = await setup(server, 'POST', `/api/marketplace/packages/${SKILL_PACK}/preview`, {
-      marketplace: 'contract',
-    });
-    await setup(server, 'POST', `/api/marketplace/packages/${SKILL_PACK}/install`, {
-      marketplace: 'contract',
-      approvedDisclosure: preview.json.disclosed,
-      approvedContentHash: preview.json.contentHash,
-    });
+      const unlinked = await call(
+        server,
+        'POST',
+        `/api/marketplace/dev-links/${LINKED_PACK}/unlink`,
+        { scope: 'global' }
+      );
+      expect(unlinked.status).toBe(200);
+    },
+    CASE_TIMEOUT_MS
+  );
 
-    const asked = await call(
-      server,
-      'POST',
-      `/api/marketplace/packages/${SKILL_PACK}/uninstall`,
-      {},
-      AGENT
-    );
-    expect(asked.status).toBe(202);
-    const ticket = APPROVAL_REQUIRED.parse(asked.json);
-    await grantCard(server, ticket.approvalId);
-
-    // Bound to its arguments: the token does not remove a different package.
-    const elsewhere = await call(
-      server,
-      'POST',
-      `/api/marketplace/packages/${AGENT_PACKAGE}/uninstall`,
-      {},
-      { ...AGENT, 'X-DorkOS-Approval': ticket.approvalToken }
-    );
-    expect(elsewhere.status).toBe(202);
-    expect(TOKEN_ASKED('wrong_action').parse(elsewhere.json)).toBeTruthy();
-
-    const done = await call(
-      server,
-      'POST',
-      `/api/marketplace/packages/${SKILL_PACK}/uninstall`,
-      {},
-      { ...AGENT, 'X-DorkOS-Approval': ticket.approvalToken }
-    );
-    expect(done.status).toBe(200);
-    expect(done.json).toMatchObject({ packageName: SKILL_PACK });
-
-    const replay = await call(
-      server,
-      'POST',
-      `/api/marketplace/packages/${SKILL_PACK}/uninstall`,
-      {},
-      { ...AGENT, 'X-DorkOS-Approval': ticket.approvalToken }
-    );
-    expect(replay.status).toBe(202);
-    expect(TOKEN_ASKED('already_used').parse(replay.json)).toBeTruthy();
-  });
-
-  it('previews, links, lists and unlinks a folder for the person', async () => {
-    // An agent's link waits on a card the gate raises, naming the folder.
-    await check(server, {
-      method: 'POST',
-      path: '/api/marketplace/dev-links',
-      headers: AGENT,
-      body: { path: LINKABLE, scope: 'global' },
-      expect: { status: 202, headers: JSON_TYPE, schema: APPROVAL_REQUIRED },
-    });
-
-    const preview = await call(server, 'POST', '/api/marketplace/dev-links/preview', {
-      path: LINKABLE,
-      scope: 'global',
-    });
-    expect(preview.status).toBe(200);
-    expect(preview.json).toMatchObject({ change: expect.any(String) });
-
-    const linked = await call(server, 'POST', '/api/marketplace/dev-links', {
-      path: LINKABLE,
-      scope: 'global',
-      via: 'terminal',
-      expectedChange: preview.json.change,
-    });
-    expect(linked.status).toBe(201);
-    expect(linked.headers.get('content-type')).toMatch(/^application\/json\b/);
-
-    const listed = await call(server, 'GET', '/api/marketplace/dev-links');
-    expect(listed.status).toBe(200);
-    expect(JSON.stringify(listed.json)).toContain(LINKED_PACK);
-
-    // A second link of the same package is refused by its own sentence.
-    const again = await call(
-      server,
-      'POST',
-      '/api/marketplace/dev-links',
-      { path: LINKABLE, scope: 'global', replaceInstalled: true },
-      AGENT
-    );
-    expect(again.status).toBe(409);
-    expect(again.json).toEqual({
-      code: 'dev_link_exists',
-      error: `${LINKED_PACK} already runs from a dev link here. Unlink it first.`,
-      name: LINKED_PACK,
-    });
-
-    const unlinked = await call(
-      server,
-      'POST',
-      `/api/marketplace/dev-links/${LINKED_PACK}/unlink`,
-      { scope: 'global' }
-    );
-    expect(unlinked.status).toBe(200);
-  });
-
-  it('clears the cache, last, since every install above read its listing from it', async () => {
-    await check(server, {
-      method: 'DELETE',
-      path: '/api/marketplace/cache',
-      expect: { status: 204, body: '' },
-    });
-    await check(server, {
-      path: '/api/marketplace/cache',
-      expect: { status: 200, schema: CACHE_STATUS },
-    });
-  });
+  it(
+    'clears the cache, last, since every install above read its listing from it',
+    async () => {
+      await check(server, {
+        method: 'DELETE',
+        path: '/api/marketplace/cache',
+        expect: { status: 204, body: '' },
+      });
+      await check(server, {
+        path: '/api/marketplace/cache',
+        expect: { status: 200, schema: CACHE_STATUS },
+      });
+    },
+    CASE_TIMEOUT_MS
+  );
 });
 
 describe('contract: the marketplace groups with login on', () => {
@@ -1104,99 +1139,115 @@ describe('contract: the marketplace groups with login on', () => {
   const AUTH_REQUIRED = z.object({ code: z.literal('AUTH_REQUIRED') }).loose();
   const COOKIE_REQUIRED = z.object({ code: z.literal('operator_cookie_required') }).loose();
 
-  it('refuses a caller with no credential at the session gate', async () => {
-    for (const [method, url] of [
-      ['GET', '/api/marketplace/sources'],
-      ['POST', '/api/marketplace/sources'],
-      ['GET', '/api/marketplace/installed'],
-      ['POST', '/api/marketplace/packages/anything/install'],
-      ['POST', '/api/marketplace/held-back/anything/decision'],
-      ['GET', '/api/marketplace/dev-links'],
-    ] as const) {
-      await check(server, { method, path: url, expect: { status: 401, schema: AUTH_REQUIRED } });
-    }
-  });
+  it(
+    'refuses a caller with no credential at the session gate',
+    async () => {
+      for (const [method, url] of [
+        ['GET', '/api/marketplace/sources'],
+        ['POST', '/api/marketplace/sources'],
+        ['GET', '/api/marketplace/installed'],
+        ['POST', '/api/marketplace/packages/anything/install'],
+        ['POST', '/api/marketplace/held-back/anything/decision'],
+        ['GET', '/api/marketplace/dev-links'],
+      ] as const) {
+        await check(server, { method, path: url, expect: { status: 401, schema: AUTH_REQUIRED } });
+      }
+    },
+    CASE_TIMEOUT_MS
+  );
 
-  it('refuses an API key the package sources, and says where in the app (DOR-3330)', async () => {
-    // A key is a program, never the person: the CLI is told where to go instead.
-    const refused = await call(
-      server,
-      'POST',
-      '/api/marketplace/sources',
-      { name: 'contract', source: pathToFileURL(MARKET).href },
-      apiKey
-    );
-    expect(refused.status).toBe(403);
-    expect(refused.json.code).toBe('marketplace_source_needs_app');
-    const added = await call(
-      server,
-      'POST',
-      '/api/marketplace/sources',
-      { name: 'contract', source: pathToFileURL(MARKET).href },
-      cookie
-    );
-    expect(added.status).toBe(201);
-    await check(server, {
-      method: 'DELETE',
-      path: '/api/marketplace/sources/contract',
-      headers: { ...apiKey, ...AGENT },
-      expect: { status: 403, schema: SOURCE_REFUSAL('remove') },
-    });
-    const removed = await call(
-      server,
-      'DELETE',
-      '/api/marketplace/sources/contract',
-      undefined,
-      cookie
-    );
-    expect(removed.status).toBe(204);
-  });
+  it(
+    'refuses an API key the package sources, and says where in the app (DOR-3330)',
+    async () => {
+      // A key is a program, never the person: the CLI is told where to go instead.
+      const refused = await call(
+        server,
+        'POST',
+        '/api/marketplace/sources',
+        { name: 'contract', source: pathToFileURL(MARKET).href },
+        apiKey
+      );
+      expect(refused.status).toBe(403);
+      expect(refused.json.code).toBe('marketplace_source_needs_app');
+      const added = await call(
+        server,
+        'POST',
+        '/api/marketplace/sources',
+        { name: 'contract', source: pathToFileURL(MARKET).href },
+        cookie
+      );
+      expect(added.status).toBe(201);
+      await check(server, {
+        method: 'DELETE',
+        path: '/api/marketplace/sources/contract',
+        headers: { ...apiKey, ...AGENT },
+        expect: { status: 403, schema: SOURCE_REFUSAL('remove') },
+      });
+      const removed = await call(
+        server,
+        'DELETE',
+        '/api/marketplace/sources/contract',
+        undefined,
+        cookie
+      );
+      expect(removed.status).toBe(204);
+    },
+    CASE_TIMEOUT_MS
+  );
 
-  it('refuses an API key what only a signed-in person decides; the owner’s cookie may', async () => {
-    const decision = { decision: 'refuse', effects: EMPTY_EFFECTS, bindsTo: 'x' };
-    for (const [url, body] of [
-      ['/api/marketplace/held-back/nothing-here/decision', decision],
-      ['/api/marketplace/packages/nothing-here/keep-files', { keepKey: 'k' }],
-      [`/api/marketplace/dev-links/${LINKED_PACK}/unlink`, { scope: 'global' }],
-    ] as const) {
+  it(
+    'refuses an API key what only a signed-in person decides; the owner’s cookie may',
+    async () => {
+      const decision = { decision: 'refuse', effects: EMPTY_EFFECTS, bindsTo: 'x' };
+      for (const [url, body] of [
+        ['/api/marketplace/held-back/nothing-here/decision', decision],
+        ['/api/marketplace/packages/nothing-here/keep-files', { keepKey: 'k' }],
+        [`/api/marketplace/dev-links/${LINKED_PACK}/unlink`, { scope: 'global' }],
+      ] as const) {
+        await check(server, {
+          method: 'POST',
+          path: url,
+          headers: apiKey,
+          body,
+          expect: { status: 403, schema: COOKIE_REQUIRED },
+        });
+      }
       await check(server, {
         method: 'POST',
-        path: url,
-        headers: apiKey,
-        body,
-        expect: { status: 403, schema: COOKIE_REQUIRED },
+        path: '/api/marketplace/held-back/nothing-here/decision',
+        headers: { ...cookie, origin: server!.baseUrl },
+        body: decision,
+        expect: { status: 409, schema: z.object({ code: z.literal('not_decidable') }).loose() },
       });
-    }
-    await check(server, {
-      method: 'POST',
-      path: '/api/marketplace/held-back/nothing-here/decision',
-      headers: { ...cookie, origin: server!.baseUrl },
-      body: decision,
-      expect: { status: 409, schema: z.object({ code: z.literal('not_decidable') }).loose() },
-    });
-    await check(server, {
-      method: 'POST',
-      path: '/api/marketplace/packages/nothing-here/keep-files',
-      headers: { ...cookie, origin: server!.baseUrl },
-      body: { keepKey: 'k' },
-      expect: { status: 404, schema: NOT_INSTALLED('nothing-here') },
-    });
-  });
+      await check(server, {
+        method: 'POST',
+        path: '/api/marketplace/packages/nothing-here/keep-files',
+        headers: { ...cookie, origin: server!.baseUrl },
+        body: { keepKey: 'k' },
+        expect: { status: 404, schema: NOT_INSTALLED('nothing-here') },
+      });
+    },
+    CASE_TIMEOUT_MS
+  );
 
-  it('asks a person before an API key uninstalls; the owner’s cookie is not asked', async () => {
-    await check(server, {
-      method: 'POST',
-      path: '/api/marketplace/packages/nothing-here/uninstall',
-      headers: apiKey,
-      body: {},
-      expect: { status: 202, schema: APPROVAL_REQUIRED },
-    });
-    await check(server, {
-      method: 'POST',
-      path: '/api/marketplace/packages/nothing-here/uninstall',
-      headers: { ...cookie, origin: server!.baseUrl },
-      body: {},
-      expect: { status: 404, schema: NOT_INSTALLED('nothing-here') },
-    });
-  });
+  it(
+    'asks a person before an API key uninstalls; the owner’s cookie is not asked',
+    async () => {
+      await check(server, {
+        method: 'POST',
+        path: '/api/marketplace/packages/nothing-here/uninstall',
+        headers: apiKey,
+        body: {},
+        expect: { status: 202, schema: APPROVAL_REQUIRED },
+      });
+      await check(server, {
+        method: 'POST',
+        path: '/api/marketplace/packages/nothing-here/uninstall',
+        headers: { ...cookie, origin: server!.baseUrl },
+        body: {},
+        expect: { status: 404, schema: NOT_INSTALLED('nothing-here') },
+      });
+    },
+    CASE_TIMEOUT_MS
+  );
 });

@@ -104,6 +104,7 @@ describe('turn failures', () => {
     const known = noteTurnFailure({}, refused);
     expect(settleTurnFailure(known, true)).toEqual({
       refusal: 'warm-ceiling',
+      code: TURN_NOT_STARTED_CODE,
       detail: 'Every agent here stayed busy too long, so this didn’t start. Send it again.',
     });
   });

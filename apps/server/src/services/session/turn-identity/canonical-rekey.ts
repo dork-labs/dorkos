@@ -37,6 +37,7 @@
  *
  * @module services/session/turn-identity/canonical-rekey
  */
+import { RequiredSessionIdentityError } from '../../../lib/replay/required-session-identity-error.js';
 import type { SseResponse } from '@dorkos/shared/agent-runtime';
 
 /**
@@ -96,12 +97,19 @@ export interface CanonicalRekeyOpts {
 export function createCanonicalRekey(opts: CanonicalRekeyOpts): () => void {
   const { sessionId, clientId, holder, lockToken, deps, chain } = opts;
   let resolved = false;
+  let refusal: RequiredSessionIdentityError | undefined;
   return () => {
+    if (refusal) throw refusal;
     if (resolved) return;
     const canonical = deps.getInternalSessionId(sessionId);
     if (!canonical || canonical === sessionId) return;
+    try {
+      deps.rekeyProjector(sessionId, canonical);
+    } catch (error) {
+      if (error instanceof RequiredSessionIdentityError) refusal = error;
+      throw error;
+    }
     resolved = true;
-    deps.rekeyProjector(sessionId, canonical);
     // The projector is not the only thing keyed by session id. The client is
     // about to start using this canonical id (a turn's 202 hands it over, and a
     // run row names it), and anything arriving under it has to meet THIS turn's

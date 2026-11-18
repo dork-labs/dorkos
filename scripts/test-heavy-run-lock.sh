@@ -53,7 +53,7 @@ CHECK="${CHECK:-$repo_root/scripts/heavy-run-lock.sh}"
 # CI sets these, and the wrapper rightly runs uncapped under them. Every case
 # below except the CI one is about the capped path.
 unset CI DORKOS_HEAVY_SLOT_HELD DORKOS_HEAVY_LOCK DORKOS_HEAVY_WAIT_SECONDS DORKOS_HEAVY_SLOTS \
-  DORKOS_HEAVY_MAX_LOAD DORKOS_HEAVY_LOAD_WAIT_SECONDS DORKOS_HEAVY_LOAD_POLL_SECONDS \
+  DORKOS_HEAVY_MAX_LOAD DORKOS_HEAVY_TEST_MAX_LOAD DORKOS_IGNORE_LOAD DORKOS_HEAVY_LOAD_WAIT_SECONDS DORKOS_HEAVY_LOAD_POLL_SECONDS \
   CI_STEWARD_TIMINGS_FILE CI_STEWARD_RUN_ID
 # This machine's real load must never decide a case: a busy host would make
 # every --job case below wait out the load bound. The load cases set their own.
@@ -587,6 +587,58 @@ check_eq '--hold over the max load still takes the slot' '0:' "$?:$out"
 check_le '--hold does not wait on the load' 2 "$(($(date +%s) - started))"
 kill -KILL "$owner" 2>/dev/null
 wait "$owner" 2>/dev/null
+
+echo ""
+echo "== a test run (--tests) waits under the lower bar of 16 (DOR-4646) =="
+
+test_env() { load_env DORKOS_HEAVY_TEST_MAX_LOAD=16 "$@"; }
+
+# 20 is under a job's 24 and over a test run's 16: the one reading that tells
+# the two bars apart.
+locks=$(new_locks)
+echo 20.00 >"$loadf"
+started=$(date +%s)
+out=$(test_env DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_LOAD_WAIT_SECONDS=20 \
+  bash "$CHECK" --job bash -c 'echo job-at-20' 2>&1)
+check_eq 'a plain job at load 20 runs at once' 'job-at-20' "$out"
+check_le 'a plain job at load 20 does not wait' 2 "$(($(date +%s) - started))"
+
+locks=$(new_locks)
+: >"$notes"
+echo 20.00 >"$loadf"
+(sleep 2 && echo 16.00 >"$loadf") &
+own_pids+=("$!")
+started=$(date +%s)
+out=$(test_env DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_LOAD_WAIT_SECONDS=20 DORKOS_HEAVY_LOAD_POLL_SECONDS=0.3 \
+  bash "$CHECK" --tests bash -c 'echo tests-ran-at-16' 2>&1)
+status=$?
+elapsed=$(($(date +%s) - started))
+check_eq 'a test run that waited out the load exits 0' 0 "$status"
+check_contains 'a test run at load 20 says it is waiting for load' 'waiting for load' "$out"
+check_contains 'and the load it waits on' '20.00' "$out"
+check_contains 'a test run runs once the load is 16 (at the bar, not over it)' 'tests-ran-at-16' "$out"
+if [ "$elapsed" -ge 2 ]; then ok "the test run waited for the load to drop (${elapsed}s)"; else not_ok "the test run ran over 16 (${elapsed}s)"; fi
+check_contains 'the test run wait is recorded as load_wait' '"o":"load_wait"' "$(cat "$notes")"
+
+locks=$(new_locks)
+echo 40.00 >"$loadf"
+started=$(date +%s)
+out=$(test_env CI=true DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_LOAD_WAIT_SECONDS=20 \
+  bash "$CHECK" --tests bash -c 'echo ci-tests' 2>&1)
+check_eq 'under CI a test run never waits' 'ci-tests' "$out"
+check_le 'under CI a test run starts at once' 2 "$(($(date +%s) - started))"
+
+# DORKOS_IGNORE_LOAD=1: a person's way past the load alone, said and recorded.
+locks=$(new_locks)
+: >"$notes"
+echo 40.00 >"$loadf"
+started=$(date +%s)
+out=$(test_env DORKOS_IGNORE_LOAD=1 DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_LOAD_WAIT_SECONDS=20 \
+  bash "$CHECK" --tests bash -c 'echo ignored-the-load' 2>&1)
+check_contains 'DORKOS_IGNORE_LOAD=1 runs a test run over the bar' 'ignored-the-load' "$out"
+check_contains 'DORKOS_IGNORE_LOAD=1 says so' 'DORKOS_IGNORE_LOAD=1' "$out"
+check_le 'DORKOS_IGNORE_LOAD=1 does not wait' 2 "$(($(date +%s) - started))"
+check_contains 'DORKOS_IGNORE_LOAD=1 is recorded as load_ignored' '"o":"load_ignored"' "$(cat "$notes")"
 
 echo ""
 printf '%s passed, %s failed\n' "$pass" "$fail"

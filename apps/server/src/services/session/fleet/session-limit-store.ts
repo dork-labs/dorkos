@@ -444,27 +444,27 @@ export class SessionLimitStore {
    */
   rekeySession(fromId: string, toId: string): void {
     if (fromId === toId) return;
-    this.db.transaction((tx) => {
-      // The history moves whether or not a live limit does.
-      rekeyLimitHistory(tx, fromId, toId);
-      const source = tx
-        .select()
-        .from(sessionLimits)
-        .where(eq(sessionLimits.sessionId, fromId))
-        .get();
-      if (!source) return;
-      const destination = tx
-        .select()
-        .from(sessionLimits)
-        .where(eq(sessionLimits.sessionId, toId))
-        .get();
-      tx.delete(sessionLimits).where(eq(sessionLimits.sessionId, fromId)).run();
-      if (destination && destination.since >= source.since) return;
-      if (destination) tx.delete(sessionLimits).where(eq(sessionLimits.sessionId, toId)).run();
-      tx.insert(sessionLimits)
-        .values({ ...source, sessionId: toId })
-        .run();
-    });
+    this.db.transaction((tx) => this.rekeyWithin(tx, fromId, toId));
+  }
+
+  /** Contribute to the caller's actual SQLite transaction; no global store lookup. */
+  rekeyWithin(tx: DbTransaction, fromId: string, toId: string): void {
+    if (fromId === toId) return;
+    // The history moves whether or not a live limit does.
+    rekeyLimitHistory(tx, fromId, toId);
+    const source = tx.select().from(sessionLimits).where(eq(sessionLimits.sessionId, fromId)).get();
+    if (!source) return;
+    const destination = tx
+      .select()
+      .from(sessionLimits)
+      .where(eq(sessionLimits.sessionId, toId))
+      .get();
+    tx.delete(sessionLimits).where(eq(sessionLimits.sessionId, fromId)).run();
+    if (destination && destination.since >= source.since) return;
+    if (destination) tx.delete(sessionLimits).where(eq(sessionLimits.sessionId, toId)).run();
+    tx.insert(sessionLimits)
+      .values({ ...source, sessionId: toId })
+      .run();
   }
 }
 

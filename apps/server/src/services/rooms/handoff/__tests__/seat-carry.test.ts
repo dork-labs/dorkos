@@ -13,7 +13,7 @@ import {
 } from '../../__tests__/room-test-harness.js';
 import type { RoomCore } from '../../service/room-core.js';
 import { env } from '../../../../env.js';
-import { withRoomMarks } from '../seat-carry.js';
+import { joinCeilings, withRoomMarks } from '../seat-carry.js';
 
 function roomWith(marked: boolean) {
   const { service, human, authors } = createRoomHarness({
@@ -54,6 +54,22 @@ describe('withRoomMarks', () => {
       withRoomMarks(core, 'seat-agent', { externalAuthor: false }, room, posted)
     ).toMatchObject({ externalAuthor: false });
   });
+
+  // DOR-4619: a room nobody has posted in yet adds no marks, and takes none of the drafting chat's.
+  it('keeps every mark the drafting chat carried in a room with no entries', () => {
+    const { core, room } = roomWith(false);
+    const empty = { ...core, store: { listEntries: () => [] } } as unknown as RoomCore;
+    const carried = {
+      externalAuthor: true,
+      permissionCeiling: 'runtime-default' as const,
+      outsider: true as const,
+      outsideWords: true as const,
+    };
+    expect(withRoomMarks(empty, 'seat-agent', carried, room, undefined)).toEqual(carried);
+    expect(withRoomMarks(empty, 'seat-agent', { externalAuthor: false }, room, undefined)).toEqual({
+      externalAuthor: false,
+    });
+  });
 });
 
 // DOR-4587 (Security S2): the seat's outsider mark comes from the post's own record, so it holds
@@ -79,5 +95,25 @@ describe('withRoomMarks with stranger marking off', () => {
     expect(
       withRoomMarks(core, 'seat-agent', { externalAuthor: false }, room, posted).outsider
     ).toBeUndefined();
+  });
+});
+
+// The shared join retains records, not merely the computed effective power axes.
+describe('joinCeilings', () => {
+  it('keeps a teammate origin and every prior/current bound without mutating the inputs', () => {
+    const teammate = {
+      asks: 'never',
+      reach: 'everything',
+      teammate: [{ roomId: 'room-fixture', authorId: 'member-fixture' }],
+    } as const;
+    const level = { asks: 'always', reach: 'read' } as const;
+    const current = { asks: 'always', reach: 'edit', outsider: true } as const;
+    expect(joinCeilings(joinCeilings(teammate, level), current)).toEqual([
+      teammate,
+      level,
+      current,
+    ]);
+    expect(joinCeilings(undefined, undefined)).toBeUndefined();
+    expect(joinCeilings(teammate, undefined)).toBe(teammate);
   });
 });

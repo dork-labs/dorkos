@@ -1361,4 +1361,232 @@ describe('tasks_* and an agent’s mode or approval', () => {
       });
     });
   });
+
+  describe('a task’s own allow list (DOR-4315)', () => {
+    let check: string;
+    let run: string;
+    let verify: string;
+
+    beforeEach(async () => {
+      flag.on = true;
+      config.defaults.actions['tasks.set_mode'] = 'allowed';
+      const bin = path.join(homeA, 'bin');
+      await fs.mkdir(bin, { recursive: true });
+      const script = path.join(bin, 'derive-sample');
+      await fs.writeFile(script, '#!/bin/sh\necho sample\n', { mode: 0o755 });
+      const checker = path.join(bin, 'check-sample');
+      await fs.writeFile(checker, '#!/bin/sh\necho ok\n', { mode: 0o755 });
+      check = `Bash(${checker} -c sample.sha256)`;
+      run = `Bash(${script} --backfill)`;
+      verify = `Bash(${script} --check)`;
+    });
+
+    /** The one-shot backfill, as the agent creates it. */
+    async function backfill(extra: Record<string, unknown> = {}, as = toolsOfA()) {
+      return call(as.tasks_create!, {
+        name: 'sample-backfill',
+        prompt: 'Run the sample backfill once.',
+        runOnce: true,
+        permissionMode: 'dontAsk',
+        allowList: [check, run, verify],
+        target: 'agent-a',
+        reason: 'A one-off backfill.',
+        ...extra,
+      });
+    }
+
+    /** The audit rows for list changes. */
+    function listAudits() {
+      return auditDb
+        .select()
+        .from(auditEvents)
+        .all()
+        .filter((row) => row.action === 'tasks.set_allow_list');
+    }
+
+    it('sets up the one-shot backfill with exactly three entries and no card', async () => {
+      const { isError, payload } = await backfill();
+      expect(payload, JSON.stringify(payload)).toBeDefined();
+      expect(isError, JSON.stringify(payload)).toBe(false);
+      const id = (payload.schedule as { id: string }).id;
+      expect(store.getTask(id)).toMatchObject({
+        approvedAllow: [check, run, verify],
+        requestedAllow: [check, run, verify],
+        runOnce: true,
+        permissionMode: 'dontAsk',
+        status: 'active',
+      });
+      expect(store.getTask(id)?.cron || null).toBeNull();
+      expect(approvals.listPending()).toEqual([]);
+      // Each program is pinned in DorkOS's own row, and the change is audited.
+      expect(Object.keys(store.runControls.pinsOf(id).programs).sort()).toEqual(
+        [check, run, verify].sort()
+      );
+      expect(listAudits()).toHaveLength(1);
+    });
+
+    it('clears its own list after the run, free and audited, with no card', async () => {
+      const { payload } = await backfill();
+      const id = (payload.schedule as { id: string }).id;
+      const cleared = await call(toolsOfA().tasks_update!, { id, allowList: [] });
+      expect(cleared.isError).toBe(false);
+      expect(store.getTask(id)?.approvedAllow).toBeNull();
+      expect(approvals.listPending()).toEqual([]);
+      expect(listAudits()).toHaveLength(2);
+    });
+
+    it('removes one entry, free', async () => {
+      const { payload } = await backfill();
+      const id = (payload.schedule as { id: string }).id;
+      const narrowed = await call(toolsOfA().tasks_update!, { id, allowList: [check, verify] });
+      expect(narrowed.isError).toBe(false);
+      expect(store.getTask(id)?.approvedAllow).toEqual([check, verify]);
+    });
+
+    it('asks a person for an entry added later, and changes nothing', async () => {
+      const { payload } = await backfill();
+      const id = (payload.schedule as { id: string }).id;
+      const other = `Bash(${path.join(homeA, 'bin', 'derive-sample')} --all)`;
+      const added = await call(toolsOfA().tasks_update!, {
+        id,
+        allowList: [check, run, verify, other],
+      });
+      expect(added).toMatchObject({ isError: true, payload: { code: 'allow_list_ask_person' } });
+      expect(store.getTask(id)?.approvedAllow).toEqual([check, run, verify]);
+    });
+
+    it('asks a person for an edited argument', async () => {
+      const { payload } = await backfill();
+      const id = (payload.schedule as { id: string }).id;
+      const edited = await call(toolsOfA().tasks_update!, {
+        id,
+        allowList: [check, `Bash(${path.join(homeA, 'bin', 'derive-sample')} --backfill --all)`],
+      });
+      expect(edited).toMatchObject({ isError: true, payload: { code: 'allow_list_ask_person' } });
+    });
+
+    it('asks a person when a turn that read injected text sets a list', async () => {
+      await ranTurn('ses-marked', 'bypassPermissions', { carriedMarks: { outsider: true } });
+      const marked = await backfill({}, toolsOfA({ sessionId: 'ses-marked' }));
+      // It asks a person, and nothing is written until they answer.
+      expect(marked.payload).toMatchObject({ status: 'approval_required' });
+      expect(store.getTasks()).toEqual([]);
+      // A Don't ask task the agent made from its own unmarked chat, with no list yet:
+      // a marked turn's first list for it still asks.
+      const plain = await call(toolsOfA().tasks_create!, {
+        name: 'sample-plain',
+        prompt: 'A plain task.',
+        cron: '0 3 * * *',
+        permissionMode: 'dontAsk',
+        target: 'agent-a',
+        reason: 'A plain task.',
+      });
+      const id = (plain.payload.schedule as { id: string }).id;
+      const list = await call(toolsOfA({ sessionId: 'ses-marked' }).tasks_update!, {
+        id,
+        allowList: [run],
+      });
+      // Adding to an existing task asks a person, through requestedAllow.
+      expect(list).toMatchObject({ isError: true, payload: { code: 'allow_list_ask_person' } });
+      expect(store.getTask(id)?.approvedAllow).toBeNull();
+    });
+
+    it('asks a person for a first list on an existing task, even from its own chat', async () => {
+      const id = await ownTask();
+      const list = await call(toolsOfA().tasks_update!, { id, allowList: [run] });
+      expect(list).toMatchObject({ isError: true, payload: { code: 'allow_list_ask_person' } });
+      expect(store.getTask(id)?.approvedAllow).toBeNull();
+    });
+
+    it('refuses a list beside any other change, and changes nothing', async () => {
+      const { payload } = await backfill();
+      const id = (payload.schedule as { id: string }).id;
+      const both = await call(toolsOfA().tasks_update!, { id, allowList: [], prompt: 'other' });
+      expect(both).toMatchObject({ isError: true, payload: { code: 'list_alone' } });
+      expect(store.getTask(id)?.approvedAllow).toEqual([check, run, verify]);
+    });
+
+    it('drops removed commands from the card’s request too', async () => {
+      const { payload } = await backfill();
+      const id = (payload.schedule as { id: string }).id;
+      await call(toolsOfA().tasks_update!, { id, allowList: [verify] });
+      expect(store.getTask(id)).toMatchObject({
+        approvedAllow: [verify],
+        requestedAllow: [verify],
+      });
+      expect(Object.keys(store.runControls.pinsOf(id).programs)).toEqual([verify]);
+    });
+
+    it('refuses another agent’s narrowing of A’s task', async () => {
+      const { payload } = await backfill();
+      const id = (payload.schedule as { id: string }).id;
+      const raw = getTasksTools(deps, () => ({ sessionId: 'ses-b', agentPath: homeB }));
+      const update = (raw as unknown as SessionTool[]).find((t) => t.name === 'tasks_update')!;
+      const refused = await call(update, { id, allowList: [] });
+      expect(refused.isError).toBe(true);
+      expect(store.getTask(id)?.approvedAllow).toEqual([check, run, verify]);
+    });
+
+    it('refuses an interpreter as the program, and creates nothing', async () => {
+      const refused = await backfill({ allowList: [`Bash(/bin/sh ${path.join(homeA, 'x')})`] });
+      expect(refused).toMatchObject({ isError: true, payload: { code: 'allow_list_not_exact' } });
+      expect(store.getTasks()).toEqual([]);
+    });
+
+    it('refuses a list on a recurring task', async () => {
+      const refused = await backfill({ runOnce: undefined, cron: '0 3 * * *' });
+      expect(refused.isError).toBe(true);
+      expect(store.getTasks()).toEqual([]);
+    });
+
+    it('refuses a list on a one-shot task for another agent, even from a Full chat', async () => {
+      // Refused before the list is read: a mode is set only on the caller's own task.
+      const refused = await backfill({ target: 'agent-b' });
+      expect(refused).toMatchObject({ isError: true, payload: { code: 'not_your_agent' } });
+      expect(store.getTasks()).toEqual([]);
+      // Without a mode in the call, the list itself is refused for another agent's task.
+      const listOnly = await backfill({ target: 'agent-b', permissionMode: undefined });
+      expect(listOnly.isError).toBe(true);
+      expect(store.getTasks().filter((t) => t.approvedAllow?.length)).toEqual([]);
+    });
+
+    it('refuses a cron on a one-shot task, so its one run never becomes every run', async () => {
+      const { payload } = await backfill();
+      const id = (payload.schedule as { id: string }).id;
+      const cron = await call(toolsOfA().tasks_update!, { id, cron: '*/5 * * * *' });
+      expect(cron).toMatchObject({ isError: true, payload: { code: 'one_shot_cron' } });
+      expect(store.getTask(id)?.cron || null).toBeNull();
+    });
+
+    it('refuses a list beside requestedAllow', async () => {
+      const refused = await backfill({ requestedAllow: [run] });
+      expect(refused.isError).toBe(true);
+      expect(store.getTasks()).toEqual([]);
+    });
+
+    it.each(['Bash', 'Bash(*)', 'Bash(derive-sample --backfill)', 'Bash(/bin/date; /bin/true)'])(
+      'refuses a first list holding %s, and creates nothing',
+      async (bad) => {
+        const refused = await backfill({ allowList: [check, bad] });
+        expect(refused).toMatchObject({
+          isError: true,
+          payload: { code: 'allow_list_not_exact' },
+        });
+        expect(store.getTasks()).toEqual([]);
+      }
+    );
+
+    it('refuses a list for an agent whose own level asks before commands', async () => {
+      hooks.level = 'acceptEdits';
+      await ranTurn('ses-a', 'acceptEdits');
+      const refused = await backfill();
+      expect(refused.isError).toBe(true);
+      expect(store.getTasks()).toEqual([]);
+    });
+
+    it('refuses a one-shot task with a cron, and an ordinary one without', async () => {
+      expect((await backfill({ cron: '0 3 * * *' })).isError).toBe(true);
+      expect((await backfill({ runOnce: undefined })).isError).toBe(true);
+    });
+  });
 });

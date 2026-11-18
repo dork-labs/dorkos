@@ -465,3 +465,20 @@ describe('an agent moving its own seat (byHand, byAgent)', () => {
     ]);
   });
 });
+
+describe('failed-seat recovery policy', () => {
+  it('does not invoke ranking or replace an unknown/protected failure', async () => {
+    const ranking = vi.fn();
+    const { m, bound } = mover({ ranking, recoveryCandidate: async () => null });
+    expect(await m.recoverFailedSeat(SEAT, 'new-work', () => true)).toBeNull();
+    expect(ranking).not.toHaveBeenCalled();
+    expect(bound.size).toBe(0);
+  });
+  it('will not recover after current admission is revoked', async () => {
+    const candidate = vi.fn();
+    const { m, bound } = mover({ recoveryCandidate: candidate });
+    expect(await m.recoverFailedSeat(SEAT, 'new-work', () => false)).toBeNull();
+    expect(candidate).not.toHaveBeenCalled();
+    expect(bound.size).toBe(0);
+  });
+});

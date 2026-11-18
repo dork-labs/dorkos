@@ -57,7 +57,7 @@ import { keepAwakeService } from './services/core/keep-awake/index.js';
 import { setAccountUsageStore } from './services/core/usage/current-usage-store.js';
 import { shutdownObservability } from './services/observability/index.js';
 import { sessionListBroadcaster } from './services/session/catalog/session-list-broadcaster.js';
-import { getAgentSendService } from './services/extensions/agent-send/agent-send.js';
+import { stopAgentMessageServices } from './startup/stop-agent-messages.js';
 import * as heartbeats from './services/heartbeats/index.js';
 import { aggregateSessionList } from './services/session/catalog/aggregate-session-list.js';
 import { env } from './env.js';
@@ -509,7 +509,7 @@ async function shutdownServices(reason: 'authority' | 'shutdown' = 'shutdown') {
   }
   refs.stopConnectorFreshness?.();
   refs.stopConnectorFreshness = undefined;
-  getAgentSendService()?.stop();
+  stopAgentMessageServices();
   // Kill any live PTYs so shutdown never leaves an orphaned shell.
   refs.terminalManager?.destroyAll();
   // A hub's linked computers redial on their next viewer.
@@ -628,6 +628,7 @@ start().catch(async (err) => {
       cleanupError
     );
   }
+  stopAgentMessageServices();
   // A later startup failure must not leave the owned offline listener running.
   await testComposioFixture?.close();
   testComposioFixture = undefined;

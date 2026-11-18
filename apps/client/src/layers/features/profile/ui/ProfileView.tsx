@@ -18,7 +18,11 @@ import { useCurrentAgent } from '@/layers/entities/agent';
 import { useDmViewEnabled } from '@/layers/entities/config';
 import { useInteractionStore } from '@/layers/entities/interactions';
 import { useOpenDirectChat, useRoomBoundSession } from '@/layers/entities/room';
-import { useSessionListStore } from '@/layers/entities/session';
+import {
+  beginSessionNavigation,
+  useLiveLocation,
+  useSessionListStore,
+} from '@/layers/entities/session';
 import { findTeamOwner, teamMemberFace, useMemberRooms } from '@/layers/entities/team';
 import { useTodoPromises } from '@/layers/entities/todo';
 import { useAgentHeartbeat } from '@/layers/entities/heartbeat';
@@ -138,6 +142,7 @@ export function ProfileView({
   // route that is not a room — resolving exactly as it always did.
   const resolveRoomSession = useRoomBoundSession();
   const openDirectChat = useOpenDirectChat();
+  const readLocation = useLiveLocation();
   // With the DM view on, Message is always the DM (DOR-3074): the agent's
   // session in this room moved to its card, behind Show sessions.
   const dmView = useDmViewEnabled();
@@ -177,12 +182,16 @@ export function ProfileView({
     // not a session, so the AGENT is the only honest thing to record — and it
     // is what ⌘K's ranking and the New menu's "last used" read.
     useInteractionStore.getState().recordOpened('agent', target.projectPath);
+    // Taken at the click: the room lookup is a round trip, and a person who
+    // opened another chat meanwhile stays there (DOR-4622).
+    const isStillWanted = beginSessionNavigation(readLocation);
     // Opened from inside a room, this button means "take me to what this agent
     // is doing HERE" (DOR-1974). Every other door into the profile from a room
     // — a mention pill, the face beside a message, a roster row — arrives
     // through this one button, so naming the room's session here is what fixes
     // all of them at once.
     const inRoom = dmView ? null : await resolveRoomSession(target.projectPath);
+    if (!isStillWanted()) return;
     if (inRoom !== null) {
       // The session id ALONE, no `dir` — the same shape the live lane's own
       // link uses. A room turn does not necessarily run in the agent's own
@@ -198,6 +207,9 @@ export function ProfileView({
     // you (rule S12, DOR-2997), never whichever chat happens to be newest.
     // The agent's own runtime, for a chat made now (a computer-placed agent).
     const runtime = member.agent?.effectiveRuntimeId;
+    // Checked above, right before this: the open takes the click over with its
+    // own claim, and goes quiet on its own if the person moves on while it
+    // waits (an overtaken open says nothing).
     await openDirectChat({ agentPath: target.projectPath }, runtime ? { runtime } : {});
   }
 

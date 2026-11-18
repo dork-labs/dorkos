@@ -170,6 +170,7 @@ import {
 import { SESSIONS } from '../../config/constants.js';
 import { isChatClientId } from './chat-messages/chat-client-id.js';
 import { logger } from '../../lib/logger.js';
+import { carryBridgedSender } from '../core/turn-power/continuation-hold.js';
 import { getPrivateSessionMessageAcceptanceService } from './private-messages/acceptance.js';
 import {
   dispatchMutex,
@@ -1037,4 +1038,6 @@ onProjectorTurnBoundary(noteTurnBoundary);
 // here for the same reason, and after the pump's listener, which only defers.
 onProjectorTurnBoundary(noteContextWarningBoundary);
 onProjectorRekey(linkSessionId);
+// A bridged chat's record of whose words it holds follows the link as it is learned (DOR-4593).
+onProjectorRekey(carryBridgedSender);
 onSessionRemoved(noteSessionOrphaned);

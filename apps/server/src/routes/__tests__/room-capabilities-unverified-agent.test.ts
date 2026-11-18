@@ -112,7 +112,7 @@ import {
 } from '../../services/core/capabilities/index.js';
 import { roomsDomain } from '../../services/rooms/room-capabilities.js';
 import { createExternalMcpServer } from '../../services/core/mcp-server.js';
-import { capabilityMcpTools } from '../../services/runtimes/claude-code/mcp-tools/capability-mcp-tools.js';
+import { createCapabilityMcpClient } from '../../services/runtimes/claude-code/mcp-tools/__tests__/capability-mcp-client.js';
 import type { AgentIdentity } from '../../services/core/agent-identity/agent-identity-service.js';
 import type { McpToolDeps } from '../../services/runtimes/claude-code/mcp-tools/types.js';
 import {
@@ -688,8 +688,8 @@ describe('a capability in the Rooms permission area, on the real surfaces', () =
      * than a presented token, which is why the resolver hands one in directly
      * instead of setting a header: an in-session agent cannot become anonymous.
      */
-    function inSessionProbe(identity?: AgentIdentity) {
-      const tools = capabilityMcpTools(
+    async function inSessionProbe(identity?: AgentIdentity) {
+      const { tools } = await createCapabilityMcpClient(
         registry,
         'in-session',
         identity ? async () => ({ identity }) : undefined
@@ -713,8 +713,8 @@ describe('a capability in the Rooms permission area, on the real surfaces', () =
       createdAt: new Date().toISOString(),
     };
 
-    it('registers the gated tool at all, so the rows below are not vacuous', () => {
-      const names = capabilityMcpTools(registry, 'in-session').map(
+    it('registers the gated tool at all, so the rows below are not vacuous', async () => {
+      const names = (await createCapabilityMcpClient(registry, 'in-session')).tools.map(
         (t) => (t as { name: string }).name
       );
       expect(names).toContain(PROBE_TOOL);

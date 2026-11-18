@@ -31,6 +31,18 @@ describe('the room tools block', () => {
     }
   );
 
+  it.each(['mcp__dorkos__', 'dorkos_'])(
+    'states the restart limit and prefixed recovery status check (%s)',
+    (prefix) => {
+      const words = buildRoomToolsBlock(prefix).replace(/\s+/g, ' ');
+      expect(words).toContain(
+        'A hand-off may restart a failed room chat once; recovery works only until the server restarts.'
+      );
+      expect(words).toContain(`Check ${prefix}room_handoff_status(handoffId) before resending.`);
+      expect(words).not.toContain('billing and permission bounds');
+    }
+  );
+
   it('says the answer the turn worked out is what goes in the tool call', () => {
     // The DOR-1643 inversion in one sentence: an agent that knows the tool is
     // "how you speak" can still decide it spoke by writing. This is the line

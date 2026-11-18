@@ -121,6 +121,8 @@ declare global {
     connectionId: string;
     loading: boolean;
     failure: { code: string; host: string; url: string } | null;
+    /** The site refuses this browser (DOR-4097); the host is from the page's address. */
+    refusal?: { kind: 'sign-in' | 'blocked'; host: string } | null;
   }
 
   /**

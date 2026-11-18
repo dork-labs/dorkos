@@ -340,6 +340,8 @@ export function createListExtensionsHandler(deps: McpToolDeps) {
       hasServerEntry: ext.hasServerEntry,
       hasDataProxy: ext.hasDataProxy,
       serverStatus: manager.getServerHandler(ext.id) ? ('active' as const) : ('inactive' as const),
+      // One that came inside a marketplace package carries text its author wrote (DOR-3969).
+      ...(ext.sourcePlugin !== undefined ? { fromPackage: true as const } : {}),
       ...extensionPartsForAgents(ext),
     }));
     return jsonContent({ note: EXTENSION_TEXT_NOTE, extensions, count: extensions.length });
