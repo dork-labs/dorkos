@@ -150,8 +150,7 @@ import type {
   MessageOpts,
   RuntimeDeliveryResult,
 } from '@dorkos/shared/agent-runtime';
-import type { AdditionalContext } from '@dorkos/shared/additional-context';
-import { enrichContent } from '../enrich-content.js';
+import { enrichDeliveredContent } from '../enrich-content.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import { turnNotStarted } from '../../../session/launch/turn-not-started.js';
 import { explainRefusedDispatch, openWindowWaitingForSlot } from './slot-wait/open-turn-window.js';
@@ -201,6 +200,7 @@ import {
 } from '../messaging/background-work-ledger.js';
 import { noteTaskTypes } from './diagnostics/task-type-log.js';
 import { readRequiredClaudeLaunch } from '../messaging/launch/required-launch.js';
+import { dropMissingResumeAnchor } from '../messaging/launch/resume-anchor.js';
 import { keySourceBillsPerToken } from '../messaging/per-token-billing.js';
 import type { SessionBundle, PersistentDispatchArgs } from './dispatch/state.js';
 export type { PersistentDispatchArgs } from './dispatch/state.js';
@@ -1323,6 +1323,8 @@ export class PersistentDispatch {
         bundle.recoveryBilling = undefined;
         // The relaunch is a new process, and "once per process" starts over.
         bundle.seenTaskTypes.clear();
+        // A resume point the CLI could not find would kill every relaunch (DOR-4590).
+        dropMissingResumeAnchor(session, crash.error, key);
         bundle.recovery.handleCrash(stopRequested ? { ...crash, stopRequested } : crash);
         // Only a restart wakes a chat. The CLI's own "stopped" notice reaches
         // the agent on its next turn.
@@ -1571,25 +1573,4 @@ export class PersistentDispatch {
     bundle.heldWork = false;
     this.backgroundWork().release(key);
   }
-}
-
-/**
- * Prepend a delivered message's context bag to its pristine content, the SAME
- * way a normal turn does it (`launch-resolver.ts`). Shared by {@link
- * PersistentDispatch.steer} and {@link PersistentDispatch.stage}: both carry the
- * person's words pristine and any context out of band, so both enrich the same
- * way.
- *
- * The person's `content` is never mutated: the render produces a separate
- * enriched string, the context blocks carry their own tags, and the adapter
- * strips those on render so injected context never shows as user-authored text
- * (ADR-0273). No context is the identity case — the pristine content, unchanged.
- *
- * @param content - The user's text, pristine
- * @param additionalContext - The neutral context bag, or undefined
- */
-function enrichDeliveredContent(content: string, additionalContext?: AdditionalContext): string {
-  // Context defused as a turn's is; the words as written, since this path does
-  // not know who wrote them and a person's steer must keep its `@` (DOR-2955).
-  return enrichContent(content, additionalContext, false);
 }

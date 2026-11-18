@@ -57,6 +57,9 @@ import { TURN_REOPENING_STREAM_EVENT_TYPES } from '../../../session/session-even
 import { describeAuthError, detectAuthError } from '@dorkos/shared/runtime-error-classification';
 import { CLAUDE_CODE_RUNTIME_TYPE } from '../sdk/sdk-error-mapping.js';
 import { isTurnActivity } from '../sessions/records/turn-activity.js';
+// Distinct from `isResumeFailure`: recovery drops the anchor and resumes
+// plainly, keeping history, rather than restarting as a brand-new session.
+import { isAnchorNotFound } from './launch/resume-anchor.js';
 
 // The vocabulary and the two small helpers both dispatch paths use. Re-exported
 // rather than moved-and-rewired: every import site in the tree names this
@@ -93,18 +96,6 @@ function isResumeFailure(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
   const msg = err.message.toLowerCase();
   return RESUME_FAILURE_PATTERNS.some((p) => msg.includes(p));
-}
-
-/**
- * Detect the CLI's hard failure when a `resumeSessionAt` anchor uuid is not in
- * the (possibly compacted or externally rewritten) transcript — it throws
- * `No message found with message.uuid of: <uuid>`. Distinct from
- * {@link isResumeFailure}: recovery drops the anchor and resumes plainly,
- * preserving history, rather than restarting as a brand-new session.
- */
-function isAnchorNotFound(err: unknown): boolean {
-  if (!(err instanceof Error)) return false;
-  return /no message found with message\.uuid/i.test(err.message);
 }
 
 /**
