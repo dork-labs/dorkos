@@ -223,7 +223,7 @@ gates:
   # --- arm-door.yml ---
   - id: wf.arm-door.door
     source: .github/workflows/arm-door.yml
-    purpose: On every merge-queue entry, warns and tells the author once when its head has no success arm-record status from the local arm script. Comment only; never dequeues.
+    purpose: On every merge-queue entry, takes a PR back out when its head lacks a security-reviewed label at or after it or a verify proof, and tells the author once when it was queued without the local arm script. Fails open.
 
   # --- queue-repeat-guard.yml ---
   - id: wf.queue-repeat-guard.door
