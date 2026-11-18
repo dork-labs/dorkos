@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, onTestFinished, vi } from 'vitest';
 import fs from 'node:fs/promises';
+import nativeFs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { AccountUsage, LedgerObservation } from '@dorkos/shared/account-usage';
@@ -10,7 +11,7 @@ import {
 import { AccountUsageStore } from '../account-usage-store.js';
 import { flushRetryDelayMs, type AccountUsageStoreOptions } from '../account-usage-types.js';
 import { CONFIG_UNREADABLE, readConfigFile } from '../account-usage-reconcile.js';
-import { ledgerDir, readLedger, writeLedger } from '../ledger-file.js';
+import { ledgerDir, ledgerIdOfFileName, readLedger, writeLedger } from '../ledger-file.js';
 import { DEFAULT_ACCOUNT_LABEL, defaultAccountFolder } from '../runtime-accounts.js';
 import { logger } from '../../../../lib/logger.js';
 import { loadCeilingMs, loadScaledMs } from '@dorkos/shared/test-budget';
@@ -848,5 +849,143 @@ describe('AccountUsageStore.peekByRoot (spec claude-account-fleet §6 U)', () =>
     });
     store.record('claude-code', { path: stray }, [obs('seven_day', 5)]);
     expect(store.peekByRoot('claude-code', stray).windows.map((w) => w.usedPct)).toEqual([5]);
+  });
+});
+
+describe('AccountUsageStore: native folder watch', () => {
+  let ready: {
+    store: AccountUsageStore;
+    broadcast: ReturnType<typeof vi.fn>;
+    nativeAckCount: number;
+    pulses: number;
+  };
+
+  beforeEach(async () => {
+    await writeConfig(
+      claudeConfig([{ id: 'work', path: path.join(home, '.claude3'), label: null }])
+    );
+    const initial = await writeLedger(claudeDir(), 'work', [obs('five_hour', 1)], new Date(clock));
+    expect(initial.written).toBe(true);
+    const broadcast = vi.fn();
+    const store = makeStore({
+      broadcast,
+      timings: { watchDebounceMs: 20, broadcastThrottleMs: 20, scanIntervalMs: 3_600_000 },
+    });
+    const captured: nativeFs.FSWatcher[] = [];
+    const actualWatch = nativeFs.watch.bind(nativeFs);
+    const constructor = vi.spyOn(nativeFs, 'watch').mockImplementation((...args) => {
+      const watcher: nativeFs.FSWatcher = Reflect.apply(actualWatch, nativeFs, args);
+      if (String(args[0]) === claudeDir()) captured.push(watcher);
+      return watcher;
+    });
+    try {
+      await store.load();
+    } finally {
+      constructor.mockRestore();
+    }
+    expect(captured).toHaveLength(1);
+    const actual = captured[0]!;
+    // A synchronous fs.watch return is not a macOS native registration ACK.
+    // An ignored probe confirms this exact watch before the business write.
+    const name = '.dorkos-native-ready.notledger';
+    expect(ledgerIdOfFileName(name)).toBeNull();
+    const probe = path.join(claudeDir(), name);
+    let nativeAckCount = 0;
+    let pulses = 0;
+    let nativeError: Error | undefined;
+    let closed = false;
+    let ownsProbe = false;
+    const changed = (event: string, filename: string | Buffer | null) => {
+      if ((event === 'change' || event === 'rename') && filename?.toString() === name)
+        nativeAckCount++;
+    };
+    const error = (value: Error) => {
+      nativeError = value;
+    };
+    const close = () => {
+      closed = true;
+    };
+    actual.on('change', changed);
+    actual.on('error', error);
+    actual.on('close', close);
+    try {
+      const handle = await fs.open(probe, 'wx');
+      ownsProbe = true;
+      try {
+        await handle.writeFile('0');
+        pulses++;
+      } finally {
+        await handle.close();
+      }
+      await vi.waitFor(
+        async () => {
+          if (nativeError) throw nativeError;
+          if (closed) throw new Error('The actual native watch closed before acknowledgement');
+          if (nativeAckCount === 0 && pulses < 61) {
+            await fs.writeFile(probe, String(pulses));
+            pulses++;
+          }
+          expect(nativeAckCount).toBeGreaterThan(0);
+        },
+        { timeout: 3_000, interval: 50 }
+      );
+      expect(pulses).toBeGreaterThan(0);
+      expect(pulses).toBeLessThanOrEqual(61);
+      expect(broadcast).not.toHaveBeenCalled();
+    } finally {
+      actual.off('change', changed);
+      actual.off('error', error);
+      actual.off('close', close);
+      if (ownsProbe) await fs.rm(probe, { force: true });
+    }
+    ready = { store, broadcast, nativeAckCount, pulses };
+  });
+
+  it('picks up a reading flow writes and emits it', async () => {
+    const { store, broadcast, nativeAckCount, pulses } = ready;
+    expect(nativeAckCount).toBeGreaterThan(0);
+    expect(broadcast).not.toHaveBeenCalled();
+    let phase = 'work-write';
+    let succeeded = false;
+    let written: boolean | undefined;
+    let diskSevenDay: number | null | undefined;
+    try {
+      const result = await writeLedger(
+        claudeDir(),
+        'work',
+        [obs('seven_day', 81, clock + 1)],
+        new Date(clock)
+      );
+      written = result.written;
+      expect(result.written).toBe(true);
+      phase = 'disk-read';
+      const disk = await readLedger(claudeDir(), 'work');
+      diskSevenDay = disk?.windows.seven_day?.usedPct;
+      expect(diskSevenDay).toBe(81);
+      phase = 'memory-wait';
+      await vi.waitFor(
+        () =>
+          expect(store.peek('claude-code', ['work'])[0]!.windows.map((w) => w.key)).toContain(
+            'seven_day'
+          ),
+        { timeout: 3_000 }
+      );
+      phase = 'broadcast-wait';
+      await vi.waitFor(() => expect(broadcast).toHaveBeenCalled(), { timeout: 3_000 });
+      succeeded = true;
+    } finally {
+      if (!succeeded)
+        console.error(
+          '[ACCOUNT_USAGE_WATCH_FAILURE]',
+          JSON.stringify({
+            phase,
+            fakeTimers: vi.isFakeTimers(),
+            nativeAckCount,
+            pulses,
+            written,
+            diskSevenDay,
+          })
+        );
+    }
   });
 });
