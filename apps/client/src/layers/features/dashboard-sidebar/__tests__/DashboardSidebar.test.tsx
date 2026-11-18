@@ -384,6 +384,10 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
     .agentChatTarget,
   beginSessionNavigation: (await importOriginal<typeof import('@/layers/entities/session')>())
     .beginSessionNavigation,
+  // Real: the Direct chat open reads the router's live location through it, so
+  // an open the person has moved on from stays quiet (DOR-4622).
+  useLiveLocation: (await importOriginal<typeof import('@/layers/entities/session')>())
+    .useLiveLocation,
   notifySessionLookupFailed: (await importOriginal<typeof import('@/layers/entities/session')>())
     .notifySessionLookupFailed,
   // Real too: it routes through `useSafeNavigate`, which resolves to the mocked

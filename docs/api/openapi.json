@@ -32877,6 +32877,9 @@
                         "askedAt": {
                           "type": "string"
                         },
+                        "refused": {
+                          "type": "boolean"
+                        },
                         "outcome": {
                           "type": [
                             "string",
@@ -33245,6 +33248,9 @@
                         },
                         "askedAt": {
                           "type": "string"
+                        },
+                        "refused": {
+                          "type": "boolean"
                         },
                         "outcome": {
                           "type": [
@@ -33852,6 +33858,9 @@
                         "askedAt": {
                           "type": "string"
                         },
+                        "refused": {
+                          "type": "boolean"
+                        },
                         "outcome": {
                           "type": [
                             "string",
@@ -34206,6 +34215,9 @@
                         },
                         "askedAt": {
                           "type": "string"
+                        },
+                        "refused": {
+                          "type": "boolean"
                         },
                         "outcome": {
                           "type": [
@@ -34562,6 +34574,9 @@
                         },
                         "askedAt": {
                           "type": "string"
+                        },
+                        "refused": {
+                          "type": "boolean"
                         },
                         "outcome": {
                           "type": [
@@ -35134,6 +35149,9 @@
                         },
                         "askedAt": {
                           "type": "string"
+                        },
+                        "refused": {
+                          "type": "boolean"
                         },
                         "outcome": {
                           "type": [
@@ -35896,6 +35914,9 @@
                         "askedAt": {
                           "type": "string"
                         },
+                        "refused": {
+                          "type": "boolean"
+                        },
                         "outcome": {
                           "type": [
                             "string",
@@ -36269,6 +36290,9 @@
                         },
                         "askedAt": {
                           "type": "string"
+                        },
+                        "refused": {
+                          "type": "boolean"
                         },
                         "outcome": {
                           "type": [
@@ -36645,6 +36669,9 @@
                         "askedAt": {
                           "type": "string"
                         },
+                        "refused": {
+                          "type": "boolean"
+                        },
                         "outcome": {
                           "type": [
                             "string",
@@ -37019,6 +37046,9 @@
                         },
                         "askedAt": {
                           "type": "string"
+                        },
+                        "refused": {
+                          "type": "boolean"
                         },
                         "outcome": {
                           "type": [

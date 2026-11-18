@@ -30,6 +30,8 @@ export interface HandoverBrowser {
   state(): Promise<LocalBrowserState>;
   capabilities(): { newWindow: boolean };
   currentProfileId(): string | null;
+  /** The host of the page DorkOS last read, when that reading was a refusal (DOR-4097). */
+  lastRefusalHost?(): string | null;
   /** Whether a named profile exists. False until startup wires the profile list. */
   profileExists(id: string): boolean;
   open(input: LocalBrowserOpen): Promise<LocalBrowserState>;
@@ -328,6 +330,8 @@ export class BrowserHandover {
     const site = new URL(tab.url).host;
     if (!site) throw new LocalBrowserError('no_site', 'Open the website first, then ask again.');
     if (state.mode === 'new-window') assertSignInUrl(tab.url);
+    // DorkOS's own reading, taken before handing over clears it; never the agent's word (DOR-4097).
+    const refused = this.browser.lastRefusalHost?.() === site;
     await this.browser.handToPerson();
     const profileId = this.browser.currentProfileId();
     this.record = {
@@ -340,6 +344,7 @@ export class BrowserHandover {
       reason,
       site,
       askedAt: new Date(this.now()).toISOString(),
+      ...(refused ? { refused: true } : {}),
       outcome: null,
     };
     this.reopenAt = undefined;

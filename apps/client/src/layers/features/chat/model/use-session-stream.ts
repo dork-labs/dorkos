@@ -114,6 +114,8 @@ export function useSessionRekeyRedirect(
     // announce has just retired (DOR-1156). Carried over here, before the URL
     // moves, so Today keeps a row for the conversation they just wrote in.
     carryInteractionForward(sessionId, canonicalId);
-    replaceRef.current?.(canonicalId);
+    // Names the retired id as the chat being renamed, so an announce that
+    // lands after the person moved to another chat leaves that chat alone.
+    replaceRef.current?.(canonicalId, sessionId);
   }, [canonicalId, sessionId]);
 }

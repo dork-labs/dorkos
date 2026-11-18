@@ -1422,6 +1422,20 @@
       "when": 1794854650053,
       "tag": "20261116184410_dor4204_spending",
       "breakpoints": true
+    },
+    {
+      "idx": 203,
+      "version": "6",
+      "when": 1794906876250,
+      "tag": "20261117091436_dor4593_bridged_sender",
+      "breakpoints": true
+    },
+    {
+      "idx": 204,
+      "version": "6",
+      "when": 1794951501012,
+      "tag": "20261117213820_seat_chat_delivery_route",
+      "breakpoints": true
     }
   ]
 }

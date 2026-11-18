@@ -2,6 +2,7 @@ import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 import jsdoc from 'eslint-plugin-jsdoc';
 import prettier from 'eslint-config-prettier';
+import deprecatedRemoval, { deprecatedRemovalSoon } from './rules/deprecated-removal.js';
 
 /** @type {import('eslint').Linter.Config[]} */
 export default [
@@ -34,6 +35,22 @@ export default [
 
   // TypeScript rules (syntax-only, no type-checking)
   ...tseslint.configs.recommended,
+
+  // Shared by every package and root scripts; a warning would not fail lint.
+  {
+    plugins: {
+      dorkos: {
+        rules: {
+          'deprecated-removal': deprecatedRemoval,
+          'deprecated-removal-soon': deprecatedRemovalSoon,
+        },
+      },
+    },
+    rules: {
+      'dorkos/deprecated-removal': 'error',
+      'dorkos/deprecated-removal-soon': 'warn',
+    },
+  },
 
   // General rule overrides (warn-first)
   {

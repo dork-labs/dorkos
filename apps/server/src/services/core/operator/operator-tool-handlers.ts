@@ -319,9 +319,9 @@ export function createUpdateAgentBoundariesHandler(deps: McpToolDeps) {
       // this repo's Zod 4: `.refine()` on a `ZodObject` returns a `ZodObject`,
       // keeps `.shape`, and still converts through `z.toJSONSchema` — the Zod 3
       // `ZodEffects` problem is gone). What it would cost is the answer's shape.
-      // The MCP surface rebuilds its arguments from `.shape` alone
-      // (`capabilityInputShape`), so a refine rides only the registry's own
-      // parse, and a failed parse propagates as a raw `ZodError` rather than the
+      // Both MCP surfaces preserve the full advertised object, so a refine
+      // would reject in SDK validation too. A failed registry parse propagates
+      // as a raw `ZodError` rather than the
       // `{ error, code }` envelope every other refusal on this surface returns —
       // `mcp-projection` re-wraps `CapabilityToolError` and nothing else.
       //

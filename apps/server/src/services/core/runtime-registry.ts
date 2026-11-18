@@ -59,6 +59,7 @@ import {
   launchColumns,
   pickSettings,
   keptPermissionMode,
+  mergedSessionRow,
   type SettingsUpdate,
 } from './runtime-seam/session-metadata-columns.js';
 
@@ -1050,17 +1051,7 @@ export class RuntimeRegistry {
         return;
       }
       tx.update(sessionMetadata)
-        .set({
-          runtime: destination.runtime ?? source.runtime,
-          permissionMode: destination.permissionMode ?? source.permissionMode,
-          model: destination.model ?? source.model,
-          effort: destination.effort ?? source.effort,
-          fastMode: destination.fastMode ?? source.fastMode,
-          agentPath: destination.agentPath ?? source.agentPath,
-          launchOrigin: destination.launchOrigin ?? source.launchOrigin,
-          launchedBy: destination.launchedBy ?? source.launchedBy,
-          lastAutoResumeFor: destination.lastAutoResumeFor ?? source.lastAutoResumeFor,
-        })
+        .set(mergedSessionRow(destination, source))
         .where(eq(sessionMetadata.sessionId, toId))
         .run();
     });

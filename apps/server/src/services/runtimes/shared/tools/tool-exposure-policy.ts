@@ -108,7 +108,7 @@ export const ALWAYS_LOADED_TOOLS: ReadonlySet<string> = new Set([
  *
  * Two of the four are hand-registered and two are capability-projected
  * (`chat_send`, `chat_read`), so every path that marks a tool eager reads this
- * set by bare name: the hand-registered wrap and `capabilityMcpTools` on Claude
+ * set by bare name: the hand-registered wrap and `registerClaudeCapabilityTools` on Claude
  * Code, and the host projection on Doe. `chat_stop` is not on the critical path
  * of asking a peer something, and stays deferred with the rest of the surface.
  */

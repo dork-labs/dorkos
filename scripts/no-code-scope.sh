@@ -20,7 +20,9 @@
 #
 #   CHANGELOG.md, VERSION       the release's compiled notes and version file
 #   changelog/, docs/, blog/    fragments, user docs and posts (prose)
-#   any package.json            whose ONLY change is its top-level "version" key
+#   research/                   research reports (prose no test reads; not
+#                               contributing/, which tests do read)
+#   any package.json           whose ONLY change is its top-level "version" key
 #                               (compared as parsed JSON with jq)
 #
 # Anything else, including a package.json that changes a dependency, a script,
@@ -44,7 +46,7 @@
 #
 # Prints exactly one line and exits 0:
 #   true    something testable may have changed; run the shards
-#   false   only changelog, docs or version lines changed; skip them
+#   false   only changelog, docs, research or version lines changed; skip them
 # Every way of failing to decide FAILS OPEN to `true`: wrong arguments, a
 # revision git cannot resolve, a diff that errors, or an empty diff. The reason
 # goes to stderr.
@@ -96,7 +98,7 @@ version_only() {
 
 while IFS= read -r path; do
   case $path in
-    CHANGELOG.md | VERSION | changelog/* | docs/* | blog/*) ;;
+    CHANGELOG.md | VERSION | changelog/* | docs/* | blog/* | research/*) ;;
     package.json | */package.json)
       version_only "$path" || run_shards "$path changes more than its version"
       ;;
@@ -104,5 +106,5 @@ while IFS= read -r path; do
   esac
 done <<<"$changed"
 
-echo 'only changelog, docs or version lines changed' >&2
+echo 'only changelog, docs, research or version lines changed' >&2
 echo false

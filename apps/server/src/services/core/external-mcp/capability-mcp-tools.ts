@@ -6,7 +6,7 @@
  * a thin walk over {@link capabilitiesForMcpServer} that replaces the former
  * hand-written descriptor loops (`registerOperatorTools`,
  * `registerMarketplaceTools`). All the transport-neutral work (server
- * selection, input-shape recovery, annotation derivation, invoke + envelope
+ * selection, full input-object projection, annotation derivation, invoke + envelope
  * re-wrap) lives in `core/capabilities/mcp-projection.ts`; this module only maps
  * it onto `server.registerTool()`.
  *
@@ -18,7 +18,7 @@ import type { McpServerId } from '@dorkos/shared/capabilities';
 import type { CapabilityInvocationContext, CapabilityRegistry } from '../capabilities/index.js';
 import {
   capabilitiesForMcpServer,
-  capabilityInputShape,
+  capabilityMcpInputObject,
   deriveMcpAnnotations,
   invokeCapabilityAsMcpResult,
 } from '../capabilities/mcp-projection.js';
@@ -30,7 +30,7 @@ import { abortSignalOf } from '../capabilities/index.js';
  *
  * Each tool's `annotations` (read/write/destructive/open-world hints) are
  * derived from the capability's tier + per-tool overrides, its input schema is
- * recovered as the SDK's field-map shape, and its handler runs the capability
+ * projected as a full strict object, and its handler runs the capability
  * through the registry and re-wraps the plain result into the MCP envelope.
  *
  * @param server - The `McpServer` instance to register tools against.
@@ -58,7 +58,7 @@ export function registerCapabilitiesAsMcpTools(
       mcp.toolName,
       {
         description: capability.description,
-        inputSchema: capabilityInputShape(capability),
+        inputSchema: capabilityMcpInputObject(capability),
         annotations: deriveMcpAnnotations(capability),
       },
       async (args: Record<string, unknown>, extra: unknown) =>

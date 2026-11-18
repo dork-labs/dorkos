@@ -1,5 +1,9 @@
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { LocalBrowserHistoryDirection, LocalBrowserState } from '@dorkos/shared/local-browser';
+import type {
+  LocalBrowserHistoryDirection,
+  LocalBrowserSignIn,
+  LocalBrowserState,
+} from '@dorkos/shared/local-browser';
 import { useOwnOrigins } from '@/layers/entities/config';
 import { isThisAppsAddress, normalizeAddressInput } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
@@ -9,7 +13,9 @@ import { useGuestPage } from '../model/use-guest-page';
 import type { NativeStillControls } from '../model/use-native-browser-surface';
 import { searchAddress } from '../lib/page-error';
 import { browserErrorMessage } from '../lib/browser-error-message';
+import { refusalNotice } from '../lib/refusal-notice';
 import { BrowserPageArea } from './BrowserPageArea';
+import { RefusalNotice } from './RefusalNotice';
 import { PageAreaBlock } from './PageAreaBlock';
 
 /** The address of a new empty page. */
@@ -52,6 +58,10 @@ export interface LocalBrowserViewProps {
    * while the row is too narrow to show it.
    */
   menu?: (forward: { canForward: boolean; onForward: () => void }) => ReactNode;
+  /** The latest plain-window sign-in, so a saved one can offer its own window (DOR-4097). */
+  signIn?: LocalBrowserSignIn | null;
+  /** Go on with this page in its own window, where a saved sign-in is (DOR-4097). */
+  onOpenOwnWindow?: (url: string) => void;
 }
 
 /**
@@ -80,12 +90,31 @@ export function LocalBrowserView({
   agentDriving = false,
   onTakeOver,
   menu,
+  signIn,
+  onOpenOwnWindow,
 }: LocalBrowserViewProps) {
   const transport = useTransport();
   const ownOrigins = useOwnOrigins();
   // The embedded page's loads and failures (DOR-4430, DOR-4431): Reload turns
   // into Stop while it loads, and a failed load keeps its address in the bar.
   const page = useGuestPage(embedded ? connectionId : null);
+  // A site refusing this browser (DOR-4097). Dismiss holds for this page only.
+  const [dismissed, setDismissed] = useState<string | null>(null);
+  const refused =
+    tab &&
+    refusalNotice({
+      refusal: page.refusal,
+      url: tab.url,
+      failure: page.failure,
+      signIn,
+      dismissed,
+    });
+  const answerRefusal = () => {
+    if (!refused || !tab) return;
+    if (refused.action.kind === 'own-window') onOpenOwnWindow?.(tab.url);
+    // The plain window opens on the site's origin, never the page's own path.
+    else void action(() => transport.signInLocalBrowser({ url: new URL(tab.url).origin }));
+  };
   const [focusAddress, setFocusAddress] = useState(0);
   // What the person last typed and went to: only their own words are ever searched for.
   const [typed, setTyped] = useState<{ text: string; host: string } | null>(null);
@@ -253,6 +282,16 @@ export function LocalBrowserView({
           tooltipStill={embedded ? tooltipStill : undefined}
           retry={shownRetry}
           notice={shownRetry?.notice ?? shownStepNotice}
+          pageNotice={
+            refused && (
+              <RefusalNotice
+                notice={refused}
+                onAction={answerRefusal}
+                onDismiss={() => setDismissed(refused.key)}
+                disabled={busy}
+              />
+            )
+          }
           status={status}
           agentDriving={agentDriving}
           menu={menu?.({ canForward, onForward })}

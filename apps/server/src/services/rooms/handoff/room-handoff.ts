@@ -48,6 +48,7 @@ import { buildHandoffNotice } from '../notices/notice-copy.js';
 import { nameForAgents } from '../room-context.js';
 import { RoomError } from '../room-errors.js';
 import type { AsideCarry, AsideResult } from '../room-trigger/aside.js';
+import { roomStartAnchor } from '../room-trigger/room-start-anchor.js';
 import type { RoomCore } from '../service/room-core.js';
 import { HandoffOutcomes } from './handoff-outcomes.js';
 import { carryFrom, withRoomMarks } from './seat-carry.js';
@@ -376,11 +377,12 @@ export class RoomHandoffs {
     try {
       for (let attempt = 0; ; attempt += 1) {
         const room = this.core.store.getRoom(handoff.roomId);
+        if (room === null || room.archived) break;
+        // A room nobody has posted in yet still takes the post: the turn is about its start.
         const [latest] = this.core.store.listEntries(handoff.roomId, { limit: 1 });
-        if (room === null || room.archived || latest === undefined) break;
         result = await this.core.triggers.askAside({
           room,
-          entry: latest,
+          entry: latest ?? roomStartAnchor(room, handoff.authorId),
           authorId: handoff.authorId,
           prompt: seatPrompt(handoff, roomLabel(room, this.core.bridges)),
           carried: withRoomMarks(this.core, handoff.authorId, handoff.carried, room, latest),
@@ -493,7 +495,8 @@ function logReportFailure(handoff: RoomHandoff, err: unknown): void {
 /** Why the seat did not post, in a line the sender can act on. */
 function declineReason(room: Room | null, result: AsideResult | null): string {
   if (room === null || room.archived) return 'the room is archived.';
-  if (result === null) return 'nobody has said anything there yet, so there is nothing to answer.';
+  // No try ran to the end: the hand-off failed before its turn did (logged above).
+  if (result === null) return 'it could not take a turn there.';
   if (result.outcome === 'busy') return 'it stayed busy for an hour.';
   if (result.outcome === 'halted') return 'somebody stopped it.';
   if (result.why === 'budget') return 'the room is out of automatic turns for now.';

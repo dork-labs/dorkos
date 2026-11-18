@@ -82,6 +82,7 @@ describe('watchGuestPage', () => {
       connectionId: 'owned',
       loading: false,
       failure: { code: 'CRASHED', host: 'northwind.example', url: 'https://northwind.example/app' },
+      refusal: null,
     });
   });
 
@@ -122,5 +123,54 @@ describe('isGuestPageAction', () => {
       expect(isGuestPageAction(action)).toBe(true);
     for (const other of ['navigate', '', 'constructor', 1, null])
       expect(isGuestPageAction(other)).toBe(false);
+  });
+});
+
+// DOR-4097, DOR-4650: a site refusing this browser shows the person a way out,
+// read from the address and title the browser already has, with nothing loaded.
+describe('a refusal page', () => {
+  it('reads a Google sign-in refusal from its address', () => {
+    const { events, watch, published } = fakePage();
+    events.emit('did-navigate', {}, 'https://accounts.google.com/v3/signin/rejected?made=up');
+    expect(watch.read().refusal).toEqual({ kind: 'sign-in', host: 'accounts.google.com' });
+    expect(published.at(-1)?.refusal).toEqual({ kind: 'sign-in', host: 'accounts.google.com' });
+  });
+
+  it('reads a bot check from its title, and names the host from the address', () => {
+    const { events, watch } = fakePage();
+    events.emit('did-navigate', {}, 'https://northwind.example/cart');
+    expect(watch.read().refusal).toBeNull();
+    events.emit('page-title-updated', {}, 'Just a moment...', true);
+    expect(watch.read().refusal).toEqual({ kind: 'blocked', host: 'northwind.example' });
+  });
+
+  it('follows an in-page move to the refusal', () => {
+    const { events, watch } = fakePage();
+    events.emit('did-navigate', {}, 'https://accounts.google.com/v3/signin/identifier');
+    events.emit('did-navigate-in-page', {}, 'https://accounts.google.com/v3/signin/rejected', true);
+    expect(watch.read().refusal?.kind).toBe('sign-in');
+  });
+
+  it('clears once the page moves on', () => {
+    const { events, watch } = fakePage();
+    events.emit('did-navigate', {}, 'https://northwind.example/');
+    events.emit('page-title-updated', {}, 'Access Denied', true);
+    expect(watch.read().refusal?.kind).toBe('blocked');
+    events.emit('did-navigate', {}, 'https://northwind.example/home');
+    expect(watch.read().refusal).toBeNull();
+  });
+
+  it('ignores a frame inside the page', () => {
+    const { events, watch } = fakePage();
+    events.emit('did-navigate', {}, 'https://northwind.example/');
+    events.emit('did-navigate-in-page', {}, 'https://accounts.google.com/signin/rejected', false);
+    expect(watch.read().refusal).toBeNull();
+  });
+
+  it('stops listening once disposed', () => {
+    const { events, watch } = fakePage();
+    watch.dispose();
+    expect(events.listenerCount('page-title-updated')).toBe(0);
+    expect(events.listenerCount('did-navigate-in-page')).toBe(0);
   });
 });
