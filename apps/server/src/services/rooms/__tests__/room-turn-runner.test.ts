@@ -1979,6 +1979,42 @@ describe('createSessionRoomTurnRunner', () => {
       }
     });
 
+    // DOR-4610: a marked turn's connector send waits on its own kind of card,
+    // and the room used to show only "working" for as long as it stood.
+    it('says so for an approval card the turn is held on, once it has stood a minute', async () => {
+      vi.useFakeTimers();
+      try {
+        const turn = openAndHold();
+        const answered = createSessionRoomTurnRunner({
+          waitMs: () => 10 * 60_000,
+          waitingGraceMs: () => 60_000,
+        }).run(request({ onWaiting: (waiting) => turn.waited.push(waiting) }));
+        await vi.advanceTimersByTimeAsync(1);
+
+        turn.call().projector.ingest({
+          type: 'capability_approval_required',
+          startedAt: Date.now(),
+          capMs: 10 * 60_000,
+          approval: { approvalId: 'approval-send', capabilityId: 'connectors.execute_write' },
+        });
+        await vi.advanceTimersByTimeAsync(61_000);
+        expect(turn.waited).toEqual([{ kind: 'approval', toolName: 'connectors.execute_write' }]);
+
+        turn.call().projector.ingest({
+          type: 'capability_approval_resolved',
+          approvalId: 'approval-send',
+          outcome: 'granted',
+        });
+        turn.call().projector.ingest({ type: 'turn_end' });
+        await vi.advanceTimersByTimeAsync(1);
+        await answered;
+        // Said once, and not again once the card was answered.
+        expect(turn.waited).toHaveLength(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('reports the wait first and the failure after, when a stall kills the turn', async () => {
       // Order matters to the reader: "it is waiting on you" and then "it fell
       // over" is a story; the other way round is a contradiction.
