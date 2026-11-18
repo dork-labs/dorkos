@@ -205,15 +205,18 @@ import {
 import { configManager } from '../core/config-manager.js';
 import type { AuthorRecord } from './author-registry.js';
 import { RoomError } from './room-errors.js';
+import { POST_TO_ROOM_DESCRIPTION } from './handoff/room-post-description.js';
 import { registerRoomPreGateChecks } from './attachments/protected-file-checks.js';
 import { callerAuthor, toolCallerOf } from './service/room-caller-author.js';
-import { projectEntry, UNTRUSTED_NOTE } from './service/room-entry-projection.js';
-import { projectDetail } from './service/room-detail-projection.js';
+import { UNTRUSTED_NOTE } from './service/room-entry-projection.js';
 import {
-  POST_HANDED_OFF_NOTE,
-  POST_REPLY_TO_INPUT,
-  POST_VERBATIM_INPUT,
-} from './service/room-post-reply-to.js';
+  projectMemberMatches,
+  projectMemberRoomList,
+  projectRead,
+  projectRoomsRead,
+} from './service/room-read-marks.js';
+import { projectDetail } from './service/room-detail-projection.js';
+import { POST_REPLY_TO_INPUT, POST_VERBATIM_INPUT } from './service/room-post-reply-to.js';
 import { holdIfStale, noteHistoryRead, noteSeen } from './messages/room-freshness.js';
 
 export { callerAuthor };
@@ -331,17 +334,7 @@ export const roomsDomain: CapabilityDomain = {
       // messages"; "posting suppresses your narration") was a clause that went
       // stale the moment that behaviour moved. The per-turn truth belongs in
       // `<room_tools>`, which is built per session, and in the refusals.
-      description:
-        'Say something in a room you are a member of, when you decide it is worth saying. ' +
-        'Use it to post an update while you work, to answer in a specific thread, or to say ' +
-        'something in a room other than the one you were just triggered from. ' +
-        'Posting into the room that triggered your turn is how you answer it; posting into a ' +
-        'different room leaves your answer here untouched. ' +
-        'You can show a file with it — a screenshot or a recording you made — by naming its ' +
-        "path in attachments; it has to be a file in your own folder or your own copy of a room's files. " +
-        'Everyone in the room sees it, so post like a colleague: one clear message, not a running commentary. ' +
-        'Only your own chat in a room posts there: from any other chat, the post goes to that chat, which re-reads the room, then posts it or says why not. ' +
-        POST_HANDED_OFF_NOTE,
+      description: POST_TO_ROOM_DESCRIPTION,
       tier: 'act',
       area: null,
       areaNote: 'conversation verbs never get a switch',
@@ -712,7 +705,7 @@ export const roomsDomain: CapabilityDomain = {
         noteHistoryRead(input.roomId, readerId, input, entries);
         return Promise.resolve({
           note: UNTRUSTED_NOTE,
-          entries: entries.map((entry) => projectEntry(rooms, entry)),
+          entries: projectRead(rooms, context, input.roomId, entries),
         });
       },
     }),
@@ -760,7 +753,7 @@ export const roomsDomain: CapabilityDomain = {
         );
         return Promise.resolve({
           note: UNTRUSTED_NOTE,
-          matches: entries.map((entry) => projectEntry(rooms, entry)),
+          matches: projectRead(rooms, context, input.roomId, entries),
         });
       },
     }),
@@ -788,20 +781,9 @@ export const roomsDomain: CapabilityDomain = {
       },
       invoke: (deps, _input, context) => {
         const rooms = requireRoomDeps(deps);
-        const listed = answering(() => rooms.listMemberRooms(callerAuthor(rooms, context).id));
-        return Promise.resolve({
-          rooms: listed.map((room) => ({
-            roomId: room.roomId,
-            kind: room.kind,
-            // A room's name is typed by a person and read by a model, so it goes
-            // through the same sanitizer every other label in this file does —
-            // and lands on `null` rather than vanishing when nothing survives
-            // it, exactly as `projectDetail` does. One domain, one answer.
-            name: sanitizeIdentity(room.name) ?? null,
-            joined: room.joinedAt,
-            lastActivity: room.lastActivityAt,
-          })),
-        });
+        const viewer = answering(() => callerAuthor(rooms, context).id);
+        const listed = answering(() => rooms.listMemberRooms(viewer));
+        return Promise.resolve({ rooms: projectMemberRoomList(rooms, context, viewer, listed) });
       },
     }),
     defineCapability({
@@ -853,11 +835,7 @@ export const roomsDomain: CapabilityDomain = {
         );
         return Promise.resolve({
           note: UNTRUSTED_NOTE,
-          matches: matches.map((match) => ({
-            roomId: match.roomId,
-            room: sanitizeIdentity(match.name),
-            ...projectEntry(rooms, match.entry),
-          })),
+          matches: projectMemberMatches(rooms, context, matches),
         });
       },
     }),
@@ -897,7 +875,7 @@ export const roomsDomain: CapabilityDomain = {
         const detail = answering(() =>
           rooms.describeRoom(input.roomId, callerAuthor(rooms, context).id)
         );
-        return Promise.resolve(projectDetail(rooms, detail));
+        return Promise.resolve(projectRoomsRead(rooms, context, [detail])[0]);
       },
     }),
     defineCapability({
@@ -974,7 +952,7 @@ export const roomsDomain: CapabilityDomain = {
             ...(members.length > 0 ? { memberHandles: members } : {}),
           })
         );
-        return Promise.resolve({ rooms: found.map((room) => projectDetail(rooms, room)) });
+        return Promise.resolve({ rooms: projectRoomsRead(rooms, context, found) });
       },
     }),
     defineCapability({

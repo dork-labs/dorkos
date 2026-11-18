@@ -300,7 +300,8 @@ export interface ApprovalGateDeps {
  * deny were both accepted (200) and both echoed back as `permission.replied`
  * (2026-08-11, DOR-1147). The sidecar has since grown a second spelling
  * (`POST /permission/{requestID}/reply`, also verified working) that the SDK
- * does not expose yet — no reason to hand-roll it while this one answers.
+ * does not expose yet. Only a refusal that must tell the model why uses it
+ * ({@link rejectPermissionWithReason}); everything else answers here.
  *
  * @param provider - Sidecar client source, routed by `target.cwd`
  * @param target - The OpenCode session that RAISED the request, and its cwd
@@ -321,6 +322,52 @@ export async function respondPermission(
   if (result.error !== undefined) {
     throw new Error(`OpenCode permission respond failed: ${JSON.stringify(result.error)}`);
   }
+}
+
+/**
+ * Refuse one permission request and tell the model why (DOR-4447), as the
+ * DorkOS runtime does: a bare reject reaches the model only as OpenCode's
+ * "The user rejected permission to use this specific tool call."
+ *
+ * The SDK's v1 route takes no message. The sidecar's own
+ * `POST /permission/{requestID}/reply` takes `{reply, message}` (verified on
+ * 1.18.15, typed in the pinned 1.19.3's v2 SDK), and OpenCode hands that
+ * message to the model as the tool's error. The v1 client has no method for
+ * it, so the route is named on the v1 method's request, whose options spread
+ * over its own URL. If the sidecar will not take it, the plain reject still
+ * lands: a refusal never turns into an approval or a hanging ask.
+ *
+ * @param provider - Sidecar client source, routed by `target.cwd`
+ * @param target - The OpenCode session that RAISED the request, and its cwd
+ * @param permissionID - `Permission.id` to answer (the reply route's `requestID`)
+ * @param message - Why it was refused, for the model
+ */
+export async function rejectPermissionWithReason(
+  provider: OpenCodeClientProvider,
+  target: { ocSessionId: string; cwd: string },
+  permissionID: string,
+  message: string
+): Promise<void> {
+  const client = await provider.getClient(target.cwd);
+  try {
+    const result = await client.postSessionIdPermissionsPermissionId({
+      url: '/permission/{requestID}/reply',
+      path: { requestID: permissionID },
+      body: { reply: 'reject', message },
+    } as never);
+    // The route answers `true` once it took the reply. Anything else (an
+    // error, a page some other route served) is not proof, so reject plainly.
+    if ((result as { data?: unknown }).data === true) return;
+    logger.warn('[OpenCodeRuntime] reject with a reason not confirmed; rejecting without one', {
+      error: JSON.stringify(result.error ?? (result as { data?: unknown }).data ?? null),
+    });
+  } catch (err) {
+    logger.warn(
+      '[OpenCodeRuntime] reject with a reason failed; rejecting without one',
+      logError(err)
+    );
+  }
+  await respondPermission(provider, target, permissionID, 'reject');
 }
 
 /**
@@ -451,15 +498,14 @@ export async function* enforceApprovals(
     if (approval.toolName === 'bash') {
       const verdict = await shellGuardVerdict(deps, turn, approval);
       if (!verdict.allowed) {
-        await respondPermission(
+        // The model reads the guard's words as the tool's error (DOR-4447);
+        // the person sees them on the event below.
+        await rejectPermissionWithReason(
           deps.provider,
           { ocSessionId: askedIn, cwd },
           approval.toolCallId,
-          'reject'
+          verdict.reason
         );
-        // The sidecar's reject carries no message, so the model sees only
-        // OpenCode's own "rejected" text. The person sees the guard's words
-        // here instead.
         yield {
           type: 'permission_denied',
           data: {

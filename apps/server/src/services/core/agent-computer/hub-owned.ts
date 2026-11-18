@@ -45,6 +45,7 @@ export const HUB_OWNED_ACTIONS: ReadonlyMap<string, string> = new Map([
   ['operator.update_agent', 'agents'],
   ['operator.update_agent_boundaries', 'agents'],
   ['operator.update_agent_execution', 'agents'],
+  ['operator.update_agent_config', 'agents'],
   ['mesh_register', 'agents'],
   ['mesh_unregister', 'agents'],
   ['mesh_deny', 'agents'],

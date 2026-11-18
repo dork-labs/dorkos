@@ -1,3 +1,10 @@
+import { ErrorCategorySchema, ErrorEventSchema } from './error-event-schemas.js';
+export {
+  ErrorCategorySchema,
+  ErrorEventSchema,
+  type ErrorCategory,
+  type ErrorEvent,
+} from './error-event-schemas.js';
 import {
   TimingFields,
   ModelRequestEventSchema,
@@ -776,11 +783,11 @@ export const SessionSchema = z
      * `id` is the item identifier; `stage` and `runStatus` are the run's own.
      * ABSENT when no run names this session.
      *
-     * @deprecated Read `trackerItems`, which lists every item, including work
-     *   this chat started in chats of their own. Kept for older flow installs;
-     *   removed in the first DorkOS minor release at least 60 days after a flow
-     *   release that reads only `trackerItems`, and only once the extension
-     *   seam contract records the removal (spec `flow-multiproject` §6.8).
+     * @deprecated since 0.135, remove in 0.155; remove earlier in the first minor release
+     *   at least 60 days after a flow release reads only `trackerItems`, once the
+     *   extension seam contract records removal (spec `flow-multiproject` §6.8).
+     * Read `trackerItems` for every item, including work this chat started in
+     * chats of their own; kept for older flow installs.
      */
     trackerItem: z
       .object({
@@ -1328,6 +1335,11 @@ export const QueuedMessageSchema = z
     enqueuedAt: z.number(),
     /** The client that enqueued it, so a window can tell its own from another's. */
     enqueuedBy: z.string(),
+    /**
+     * True for a `web-` queue row not marked `heldToDefault`
+     * in the store. Missing means no.
+     */
+    canRestoreToComposer: z.boolean().optional(),
     /**
      * Present while this message is held for the agent's background work
      * (DOR-2065). The rows behind it wait too, in order.
@@ -2073,37 +2085,6 @@ export const PendingInteractionDTOSchema = z
   .openapi('PendingInteractionDTO');
 
 export type PendingInteractionDTO = z.infer<typeof PendingInteractionDTOSchema>;
-
-export const ErrorCategorySchema = z
-  .enum([
-    'max_turns',
-    'execution_error',
-    'budget_exceeded',
-    'output_format_error',
-    'auth_error',
-    'model_unavailable',
-    'runtime_update_required',
-  ])
-  .openapi('ErrorCategory');
-
-export type ErrorCategory = z.infer<typeof ErrorCategorySchema>;
-
-export const ErrorEventSchema = z
-  .object({
-    message: z.string(),
-    code: z.string().optional(),
-    category: ErrorCategorySchema.optional(),
-    details: z.string().optional(),
-    /**
-     * Why, for a code that has more than one cause: a `credits_unavailable`
-     * refusal says which (`folder-sign-in`, `off`, …), so the chat offers only
-     * the ways on that fit it.
-     */
-    reason: z.string().optional(),
-  })
-  .openapi('ErrorEvent');
-
-export type ErrorEvent = z.infer<typeof ErrorEventSchema>;
 
 export const ApiRetryEventSchema = z
   .object({
@@ -6129,6 +6110,13 @@ export const TaskSchema = z
      * its conversation began on.
      */
     account: z.string().nullable().default(null),
+    /**
+     * A one-shot task: no cron, it runs once as soon as it is armed (DOR-4315).
+     * Absent reads as `false`. Only the task tools set it.
+     */
+    runOnce: z.boolean().optional(),
+    /** When a one-shot task's one run started, or `null` until it has. */
+    ranOnceAt: z.string().nullable().optional(),
     status: TaskStatusSchema,
     /** Who approved the current task content, when, and through which surface or policy. */
     ...TaskApprovalReceiptSchema.shape,

@@ -28,6 +28,7 @@ import {
   TARGET_DESCRIPTION,
   TIMEZONE_DESCRIPTION,
 } from './task-tool-copy.js';
+import { ALLOW_LIST_ARG, RUN_ONCE_ARG } from './task-tool-allow-list.js';
 
 const durationArgument = z
   .string()
@@ -52,7 +53,14 @@ const permissionProposalInputs = {
 export const CREATE_TASK_INPUT = {
   name: z.string().describe('Name for the scheduled task'),
   prompt: z.string().describe('The prompt to send to the agent on each run'),
-  cron: z.string().describe('Cron expression (e.g., "0 2 * * *" for daily at 2am)'),
+  cron: z
+    .string()
+    .optional()
+    .describe(
+      'Cron expression (e.g., "0 2 * * *" for daily at 2am). Left out only with `runOnce`.'
+    ),
+  runOnce: RUN_ONCE_ARG,
+  allowList: ALLOW_LIST_ARG,
   reason: z.string().describe(REASON_DESCRIPTION),
   target: z.string().min(1).optional().describe(TARGET_DESCRIPTION),
   description: z.string().optional().describe('Description of what this scheduled task does'),
@@ -84,6 +92,7 @@ export const UPDATE_TASK_INPUT = {
   effort: EffortLevelSchema.nullable().optional().describe(EFFORT_DESCRIPTION),
   account: z.string().min(1).nullable().optional().describe(ACCOUNT_DESCRIPTION),
   ...permissionProposalInputs,
+  allowList: ALLOW_LIST_ARG,
   resetTiming: z.literal(true).optional().describe(RESET_TIMING_DESCRIPTION),
   acceptFileHash: z.string().optional().describe(ACCEPT_FILE_HASH_DESCRIPTION),
   permissionMode: z.string().optional().describe(REFUSED_PERMISSION_MODE_DESCRIPTION),

@@ -27,7 +27,7 @@
  * `config-patch` (config snapshot/merge), `update-checker` (npm fetch), and the
  * filesystem boundary — are mocked so the `invoke` assertions touch no real
  * `~/.dork` and hit no network. The MCP tool-name fixtures come from the REAL
- * adapters (`capabilityMcpTools` for in-session; `registerCapabilitiesAsMcpTools`
+ * adapters (`registerClaudeCapabilityTools` for in-session; `registerCapabilitiesAsMcpTools`
  * onto a real `McpServer` for external), so a bug in either adapter is caught.
  *
  * @vitest-environment node
@@ -104,8 +104,8 @@ vi.mock('../../config-manager.js', async (importOriginal) => ({
 
 const { composeDorkOsCapabilityRegistry, composeCapabilityRegistryForDocs } =
   await import('../../self-description/dorkos-registry.js');
-const { capabilityMcpTools } =
-  await import('../../../runtimes/claude-code/mcp-tools/capability-mcp-tools.js');
+const { createCapabilityMcpClient } =
+  await import('../../../runtimes/claude-code/mcp-tools/__tests__/capability-mcp-client.js');
 const { registerCapabilitiesAsMcpTools } =
   await import('../../external-mcp/capability-mcp-tools.js');
 const { READ_ONLY_MCP_TOOL_NAMES } = await import('../../external-mcp/tool-security.js');
@@ -360,7 +360,7 @@ const registry = composeDorkOsCapabilityRegistry({
 });
 
 /** Tool names the real in-session adapter registers for the capability surface. */
-const inSessionToolNames = capabilityMcpTools(registry, 'in-session').map(
+const inSessionToolNames = (await createCapabilityMcpClient(registry, 'in-session')).tools.map(
   (t) => (t as { name: string }).name
 );
 
@@ -467,7 +467,7 @@ function routeProbe(identity?: typeof PROBE_IDENTITY) {
 function inSessionProbe(identity?: typeof PROBE_IDENTITY) {
   return () =>
     probe(async () => {
-      const tools = capabilityMcpTools(
+      const { tools } = await createCapabilityMcpClient(
         registry,
         'in-session',
         identity ? async () => ({ identity }) : undefined
@@ -594,6 +594,9 @@ capabilityConformance(registry, {
     // Zod parse before the gate ever runs, which would read as "the gate did not
     // refuse this" (DOR-1698).
     'operator.update_agent_boundaries': { cwd: SANDBOX_CWD, nopeContent: 'Never do that.' },
+    // Destructive, and `path` and `content` are required for the same reason
+    // (DOR-4266).
+    'operator.update_agent_config': { cwd: SANDBOX_CWD, path: 'settings.json', content: '{}' },
     'operator.config_patch': { patch: { ui: { sidebar: { collapsed: true } } } },
     // Both sidebar verbs need a PARSEABLE fixture — `group` and `items` are
     // required, so `{}` would raise a ZodError and read as a wiring failure. The

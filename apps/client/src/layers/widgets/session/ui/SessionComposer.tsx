@@ -20,6 +20,8 @@ import { turnEnded } from '@dorkos/shared/schemas';
 import type { ComposerInputHandle } from '@/layers/features/composer';
 import { Conversation, useConversation } from '@/layers/features/conversation';
 import { SessionAsks } from './SessionAsks';
+import { SessionPausedQueueNotice } from './SessionPausedQueueNotice';
+import { useSessionPausedComposer } from '../model/use-session-paused-composer';
 import {
   BackgroundTaskBar,
   ChatStatusSection,
@@ -133,6 +135,8 @@ interface SessionComposerProps {
    * has one source.
    */
   waiting: QueuedMessage[];
+  /** The agent is paused, read by the host with `waiting` (DOR-4348). */
+  agentPaused?: boolean;
   interaction: InteractionProps;
   sync: SyncPresenceProps;
 }
@@ -184,6 +188,7 @@ export function SessionComposer({
   sessionId,
   sessionStatus,
   waiting,
+  agentPaused = false,
   interaction,
   sync,
 }: SessionComposerProps) {
@@ -204,6 +209,14 @@ export function SessionComposer({
   // The box's own words, and how many are held behind it — both read off the
   // conversation's target, which is the one place either fact lives.
   const { target } = useConversation();
+  const pausedComposer = useSessionPausedComposer({
+    sessionId,
+    paused: agentPaused,
+    input,
+    setInput,
+    waiting,
+    dismissPalettes: autocomplete.dismissPalettes,
+  });
   const defaultPlaceholder = target?.placeholder ?? 'Send a message…';
   const awaitingDecision = useSessionAwaitingDecision(sessionId);
   // A quick lookup says nothing, so a chat that is set up doesn't flicker. Pressing
@@ -276,7 +289,7 @@ export function SessionComposer({
     setInput,
     sessionId,
     selectedCwd,
-    waiting,
+    waiting: pausedComposer.waiting,
     onEnqueue: holdForTurn,
     onSteer: steerContent,
     onStage: addContextContent,
@@ -590,44 +603,6 @@ export function SessionComposer({
   // than briefly the wrong field.
   const richText = useComposerRichText();
 
-  // Sending closes the palettes. It used to happen by accident: an open palette
-  // swallowed Enter, and `onCommandSelect` found no row and closed the panel on
-  // its way out. Now that Enter falls through to the send when there is nothing
-  // to pick, nothing else would take the "No commands found." card down —
-  // `detectTrigger` only runs on typing or a caret move — so it would float
-  // over the agent's reply until the next keystroke.
-  const submitAndDismiss = useCallback(() => {
-    autocomplete.dismissPalettes();
-    // Where the session's words actually go: `ConversationTarget.send`, the
-    // same port a channel's Enter ends in. Nothing is taken out of the box
-    // here — the send owns the clear, and empties it only once the attachment
-    // transform has succeeded (DOR-480), which is the one thing a session's
-    // send does that a room's does not.
-    //
-    // No `.catch` here, and that is deliberate rather than an omission: the
-    // session's submit turns a refused trigger into the composer's own error
-    // banner (with its Retry) instead of throwing, so nothing that reaches this
-    // line would be a refusal a person needs told about — it would be a bug
-    // worth seeing.
-    if (target === null || !target.canSend) return;
-    void target.send({ text: input });
-  }, [autocomplete, target, input]);
-
-  const queueAndDismiss = useCallback(() => {
-    autocomplete.dismissPalettes();
-    chatQueue.handleQueue();
-  }, [autocomplete, chatQueue]);
-
-  const steerAndDismiss = useCallback(() => {
-    autocomplete.dismissPalettes();
-    chatQueue.handleSteer();
-  }, [autocomplete, chatQueue]);
-
-  const addContextAndDismiss = useCallback(() => {
-    autocomplete.dismissPalettes();
-    chatQueue.handleStage();
-  }, [autocomplete, chatQueue]);
-
   return (
     <Conversation.Composer
       // `chat-input-container` is not decoration: it is the hook for the
@@ -642,7 +617,7 @@ export function SessionComposer({
       inputRef={chatInputRef}
       value={input}
       onChange={autocomplete.handleInputChange}
-      onSubmit={submitAndDismiss}
+      onSubmit={pausedComposer.submit}
       head={
         /* Chat-only, so it arrives as a slot rather than living in the card. */
         <AnimatePresence>
@@ -710,6 +685,11 @@ export function SessionComposer({
               onSwitchNow={handleSwitchNow}
               agentActions={agentQueueActions}
               onFocusComposer={() => chatInputRef.current?.focus()}
+              pausedLine={
+                agentPaused && agentName
+                  ? `Held while ${agentName} is paused. Runs when it's resumed.`
+                  : undefined
+              }
               // The server dispatches the head the moment the session frees up,
               // so what genuinely holds the line is the agent parked on a
               // person, or the head held for the agent's background work.
@@ -726,6 +706,13 @@ export function SessionComposer({
       }
       aboveInput={
         <>
+          {currentAgent && (
+            <SessionPausedQueueNotice
+              sessionId={sessionId}
+              agentId={currentAgent.id}
+              agentName={agentName}
+            />
+          )}
           <BrowserHandoffCard sessionId={sessionId} />
           <BackgroundTaskBar tasks={backgroundTasks} onStopTask={handleStopTask} />
         </>
@@ -770,6 +757,7 @@ export function SessionComposer({
             }
           : {}),
         ...(limitComposer.canSubmit ? {} : { canSubmit: false }),
+        ...(pausedComposer.blocked ? { canSubmit: false } : {}),
         onStop: handleStop,
         stopPending,
         onEscape: autocomplete.dismissPalettes,
@@ -793,12 +781,12 @@ export function SessionComposer({
         editingQueueItem: chatQueue.editingIndex !== null,
         ...(chatQueue.editingIndex === null ? {} : { editingPosition: chatQueue.editingIndex + 1 }),
         queueDepth: chatQueue.queue.length,
-        onQueue: queueAndDismiss,
+        onQueue: pausedComposer.delivery(chatQueue.handleQueue),
         // Present ONLY when the runtime can honour them, so the composer hides
         // Steer / Add context (never greys them) on a runtime that can only
         // queue. Presence of the callback IS the capability.
-        ...(canSteer ? { onSteer: steerAndDismiss } : {}),
-        ...(canAddContext ? { onStage: addContextAndDismiss } : {}),
+        ...(canSteer ? { onSteer: pausedComposer.delivery(chatQueue.handleSteer) } : {}),
+        ...(canAddContext ? { onStage: pausedComposer.delivery(chatQueue.handleStage) } : {}),
         onSaveEdit: chatQueue.handleQueueSaveEdit,
         onCancelEdit: chatQueue.handleQueueCancelEdit,
         onQueueNavigateUp: chatQueue.handleQueueNavigateUp,

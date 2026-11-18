@@ -527,7 +527,9 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // deferred, no prompt block names them.
     // 149 -> 152 for `work_claim`, `work_claim_check` and `work_claim_release` (DOR-4019):
     // no prompt block names them, so they stay deferred.
-    expect(advertised.size).toBe(152);
+    // 152 -> 153 for `update_agent_config` (DOR-4266): no prompt block names it,
+    // so it stays deferred.
+    expect(advertised.size).toBe(153);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',
@@ -636,7 +638,8 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     //
     // 74 -> 79 for the doc channel (DOR-3159): `<room_tools>` names each of the five
     // doc-channel tools once, prefixed. All five stay deferred: one ToolSearch hop.
-    expect(prefixed.length).toBe(79);
+    // 79 -> 80: room hand-off status is named before sending the draft again (DOR-4328).
+    expect(prefixed.length).toBe(80);
   });
 
   it('names only advertised tools in the agent-session variant of the prompt too', async () => {

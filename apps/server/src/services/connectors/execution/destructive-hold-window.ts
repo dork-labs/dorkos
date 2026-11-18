@@ -18,8 +18,9 @@
  *    of the two when the chat is known by two ids. A chat this process never
  *    ran a turn on has no level and keeps the card, so a restart errs toward
  *    asking.
- * 5. A Wi-Fi sign-in's hold did not bind the turn (`marksOf` and the level's own
- *    `outsider` mark). The 60-second window everyone is told about is what stands
+ * 5. The turn read no words from outside the team: neither its outsider mark (a Wi-Fi
+ *    sign-in's hold, a stranger, a mini app's post) nor its outside-words note is set
+ *    (`turnReadOutsideWords`, DOR-4587), and its level carries no `outsider` mark. The 60-second window everyone is told about is what stands
  *    between any other turn and an irreversible action.
  * 6. DorkOS can say what the action is, in the app's own words. A hold
  *    everyone is told about must be describable.
@@ -68,7 +69,8 @@ import {
   getAgentIdentityService,
   type AgentIdentity,
 } from '../../core/agent-identity/agent-identity-service.js';
-import { lastTurnLevelOf, marksOf } from '../../core/turn-power/turn-levels.js';
+import { lastTurnLevelOf } from '../../core/turn-power/turn-levels.js';
+import { turnReadOutsideWords } from '../../core/turn-power/outsider-turn.js';
 import { choseFullAutonomy } from '../../core/turn-power/full-autonomy.js';
 import { marksOfLevel } from '../../core/turn-power/turn-marks.js';
 import { isLanAccessOpen } from '../../core/lan-access/lan-trust.js';
@@ -86,8 +88,11 @@ export interface HoldEligibilitySources {
   describeAgent: (agentPath: string) => Promise<AgentIdentity | undefined>;
   /** The level a chat's latest turn ran at, or `undefined` when unknown. */
   turnLevel: (sessionId: string) => TurnPermissionLevel | undefined;
-  /** Whether a stranger started this chat's turn or the turn read a stranger's words. */
-  strangerTurn: (sessionId: string, agentPath: string) => boolean;
+  /**
+   * Whether a stranger started this chat's turn or the turn read words from outside the team;
+   * the live record (`turnReadOutsideWords`) when absent.
+   */
+  strangerTurn?: (sessionId: string, agentPath: string) => boolean;
   /** Whether Wi-Fi access is open over plain `http`. */
   plainWifiOpen: () => boolean;
   /** Whether the chat is set to Full autonomy (DOR-3394); the live record when absent. */
@@ -99,7 +104,6 @@ const LIVE_SOURCES: HoldEligibilitySources = {
   trusted: () => trustPosture(permissionGateSources().readConfig().preset) === 'trusted',
   describeAgent: async (agentPath) => getAgentIdentityService()?.describeAgent(agentPath),
   turnLevel: lastTurnLevelOf,
-  strangerTurn: (sessionId, agentPath) => marksOf(sessionId, agentPath).outsider === true,
   plainWifiOpen: isLanAccessOpen,
 };
 
@@ -146,7 +150,8 @@ export async function holdRequesterFor(
   const chosenFull = sources.chosenFull ?? choseFullAutonomy;
   const full = sessionIds.some((sessionId) => chosenFull(sessionId));
   if (!full && sources.plainWifiOpen()) return undefined;
-  if (sessionIds.some((sessionId) => sources.strangerTurn(sessionId, agentPath))) {
+  const strangerTurn = sources.strangerTurn ?? turnReadOutsideWords;
+  if (sessionIds.some((sessionId) => strangerTurn(sessionId, agentPath))) {
     return undefined;
   }
   const identity =

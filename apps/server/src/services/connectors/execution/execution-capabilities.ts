@@ -4,8 +4,6 @@ import {
   ConnectionIdSchema,
   ConnectorAgentConnectionRequestInputSchema,
   ConnectorAgentRequestStatusSchema,
-  ConnectorAccessibleConnectionsResponseSchema,
-  ConnectorAccessibleOperationsResponseSchema,
   ConnectorExecutionResponseSchema,
   ConnectorExecutionTargetSchema,
 } from '@dorkos/shared/connector-schemas';
@@ -28,6 +26,7 @@ import type { ConnectorExecutionBroker } from './execution-broker.js';
 import type { DestructiveHoldService } from './destructive-hold.js';
 import { cancelWindowFor } from './destructive-hold-window.js';
 import { outsideWordsNote } from '../../core/turn-power/marked-turn-copy.js';
+import { markCallerTurnOutsider } from '../../core/capabilities/mark-caller-turn.js';
 import type { HeldActionOutcome } from '../../notifications/connector-hold-notifications.js';
 import {
   CONNECTOR_REQUEST_LIVE_HOLD_MS,
@@ -39,6 +38,12 @@ import {
   type ConnectorAgentRequestService,
 } from '../agent-request-service.js';
 import { ACCESS_CHANGE_CAPABILITIES } from '../access/access-change-capabilities.js';
+import {
+  AgentConnectionsResponseSchema,
+  AgentOperationsResponseSchema,
+  withConnectionSpending,
+  withOperationSpending,
+} from '../spending/spend-tool-fields.js';
 
 /** Service handles required by the connector execution capability domain. */
 export interface ConnectorExecutionCapabilityDeps {
@@ -164,6 +169,9 @@ const EXECUTION_TITLES = {
  */
 export const OUTSIDE_WORDS_ASK = outsideWordsNote();
 
+/** What every run tool says about money (DOR-4204 PR 2, spec §5.1). */
+const PAID_ACTIONS_ASK = 'Paid actions ask a person first unless a monthly limit covers them.';
+
 function executionCapability(
   id: ConnectorRuntimeExecutionCapabilityId,
   classification: 'read' | 'write' | 'destructive'
@@ -179,7 +187,8 @@ function executionCapability(
     title: EXECUTION_TITLES[classification],
     description:
       `Execute one exact ${classification} operation revision against one already granted ` +
-      'connected account. Use only the account and revision ids listed for this agent.' +
+      'connected account. Use only the account and revision ids listed for this agent. ' +
+      PAID_ACTIONS_ASK +
       (classification === 'read' ? '' : OUTSIDE_WORDS_ASK),
     tier,
     area: null,
@@ -239,6 +248,9 @@ function executionCapability(
       } finally {
         // A held action's waiting row is replaced by how it came out.
         if (held) executionDeps.holds?.recordOutcome(held, outcome);
+        // A read hands the turn someone else's text, whatever came back (DOR-3969). Every read,
+        // not a list of apps: nearly every read carries text someone else wrote.
+        if (classification === 'read') markCallerTurnOutsider(context);
       }
     },
   });
@@ -257,14 +269,14 @@ const listGrantedConnections = defineCapability({
   area: null,
   areaNote: 'connected accounts have their own grant model',
   input: z.object({}).strict(),
-  output: ConnectorAccessibleConnectionsResponseSchema,
+  output: AgentConnectionsResponseSchema,
   surfaces: {},
   invoke: async (deps, _input, context) => {
     const connectorDeps = requireExecutionDeps(deps);
     const principal = requireRuntimePrincipal(context);
     connectorDeps.authorization.assertAvailable();
     try {
-      return await connectorDeps.access.listRuntimeConnections(principal);
+      return withConnectionSpending(await connectorDeps.access.listRuntimeConnections(principal));
     } catch (error) {
       return accessError(error);
     }
@@ -280,14 +292,16 @@ const listGrantedOperations = defineCapability({
   area: null,
   areaNote: 'connected accounts have their own grant model',
   input: ConnectorGrantedOperationsInputSchema,
-  output: ConnectorAccessibleOperationsResponseSchema,
+  output: AgentOperationsResponseSchema,
   surfaces: {},
   invoke: async (deps, input, context) => {
     const connectorDeps = requireExecutionDeps(deps);
     const principal = requireRuntimePrincipal(context);
     connectorDeps.authorization.assertAvailable();
     try {
-      return await connectorDeps.access.listRuntimeOperations(principal, input.connectionId);
+      return withOperationSpending(
+        await connectorDeps.access.listRuntimeOperations(principal, input.connectionId)
+      );
     } catch (error) {
       return accessError(error);
     }

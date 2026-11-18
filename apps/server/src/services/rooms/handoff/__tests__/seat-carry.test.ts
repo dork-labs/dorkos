@@ -3,7 +3,7 @@
  * the room's recent posts would be: a mini app's post among them counts as a stranger's
  * (DOR-4023), through the REAL room service, author registry and kept marks.
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { RoomEntry } from '@dorkos/shared/room-schemas';
 import { MINI_APP_REPLY_MARKS } from '../../../extensions/rooms/extension-room-threads.js';
 import {
@@ -12,7 +12,8 @@ import {
   outcomeRunner,
 } from '../../__tests__/room-test-harness.js';
 import type { RoomCore } from '../../service/room-core.js';
-import { withRoomMarks } from '../seat-carry.js';
+import { env } from '../../../../env.js';
+import { joinCeilings, withRoomMarks } from '../seat-carry.js';
 
 function roomWith(marked: boolean) {
   const { service, human, authors } = createRoomHarness({
@@ -52,5 +53,67 @@ describe('withRoomMarks', () => {
     expect(
       withRoomMarks(core, 'seat-agent', { externalAuthor: false }, room, posted)
     ).toMatchObject({ externalAuthor: false });
+  });
+
+  // DOR-4619: a room nobody has posted in yet adds no marks, and takes none of the drafting chat's.
+  it('keeps every mark the drafting chat carried in a room with no entries', () => {
+    const { core, room } = roomWith(false);
+    const empty = { ...core, store: { listEntries: () => [] } } as unknown as RoomCore;
+    const carried = {
+      externalAuthor: true,
+      permissionCeiling: 'runtime-default' as const,
+      outsider: true as const,
+      outsideWords: true as const,
+    };
+    expect(withRoomMarks(empty, 'seat-agent', carried, room, undefined)).toEqual(carried);
+    expect(withRoomMarks(empty, 'seat-agent', { externalAuthor: false }, room, undefined)).toEqual({
+      externalAuthor: false,
+    });
+  });
+});
+
+// DOR-4587 (Security S2): the seat's outsider mark comes from the post's own record, so it holds
+// with stranger marking switched off, and only for the room the post is in.
+describe('withRoomMarks with stranger marking off', () => {
+  const flags = env as { DORKOS_MARK_STRANGER_TURNS: boolean };
+  const saved = flags.DORKOS_MARK_STRANGER_TURNS;
+  afterEach(() => {
+    flags.DORKOS_MARK_STRANGER_TURNS = saved;
+  });
+
+  it('marks the seat turn for a mini app’s recent post', () => {
+    flags.DORKOS_MARK_STRANGER_TURNS = false;
+    const { core, room, posted } = roomWith(true);
+    expect(
+      withRoomMarks(core, 'seat-agent', { externalAuthor: false }, room, posted)
+    ).toMatchObject({ outsider: true });
+  });
+
+  it('leaves the seat turn unmarked for a person’s own post', () => {
+    flags.DORKOS_MARK_STRANGER_TURNS = false;
+    const { core, room, posted } = roomWith(false);
+    expect(
+      withRoomMarks(core, 'seat-agent', { externalAuthor: false }, room, posted).outsider
+    ).toBeUndefined();
+  });
+});
+
+// The shared join retains records, not merely the computed effective power axes.
+describe('joinCeilings', () => {
+  it('keeps a teammate origin and every prior/current bound without mutating the inputs', () => {
+    const teammate = {
+      asks: 'never',
+      reach: 'everything',
+      teammate: [{ roomId: 'room-fixture', authorId: 'member-fixture' }],
+    } as const;
+    const level = { asks: 'always', reach: 'read' } as const;
+    const current = { asks: 'always', reach: 'edit', outsider: true } as const;
+    expect(joinCeilings(joinCeilings(teammate, level), current)).toEqual([
+      teammate,
+      level,
+      current,
+    ]);
+    expect(joinCeilings(undefined, undefined)).toBeUndefined();
+    expect(joinCeilings(teammate, undefined)).toBe(teammate);
   });
 });

@@ -112,6 +112,13 @@ describe('buildDorkosAreasBlock', () => {
     expect(block).toContain('never send them to a terminal');
   });
 
+  it('says the Agent browser has one default profile, and other browser tools are not profiles (DOR-4633)', () => {
+    // QA's cold run: an agent holding its owner's Chrome MCP servers called them
+    // "profiles" and never named the Agent browser's default one.
+    const line = block.split('\n').find((text) => text.startsWith('- Agent browser:')) ?? '';
+    expect(line).toContain("One default profile; other browser tools aren't profiles.");
+  });
+
   it('stays small enough to ride in every session (DOR-3219 diet)', () => {
     // Design pass v1 row 14: at most 450 tokens, by the estimate the context
     // window fit uses, and no area line past about 25 words.

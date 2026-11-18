@@ -37,6 +37,7 @@ export * from './connectors/connector-local-state.js';
 export * from './connectors/extension-connection-approvals.js';
 export * from './connectors/connection-grant-exclusions.js';
 export * from './connectors/connection-grant-changes.js';
+export * from './connectors/spending.js';
 export * from './rooms.js';
 export * from './room-coordination.js';
 export * from './read-cursors.js';
@@ -64,3 +65,5 @@ export * from './todos/todo-turns.js';
 export * from './work-queue/work-queue.js';
 export * from './heartbeats/heartbeats.js';
 export * from './remote/remote-commands.js';
+
+export * from './session/room-seat-launch-requirements.js';

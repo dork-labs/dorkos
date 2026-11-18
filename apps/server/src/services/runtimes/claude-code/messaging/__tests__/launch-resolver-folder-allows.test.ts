@@ -1,3 +1,4 @@
+import { isolatedRequiredLaunchOwner } from './required-launch-fixture.js';
 /**
  * The launch hands an agent's own folder allow list to Claude Code only once a
  * person has approved it, and says why a Never ask chat refuses while it waits
@@ -18,6 +19,8 @@ import {
   setFolderAllowApprovalGateway,
   type FolderAllowApprovalGateway,
 } from '../../folder-settings/folder-allow-approval.js';
+
+const requiredLaunches = isolatedRequiredLaunchOwner();
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({ query: vi.fn() }));
 vi.mock('../context-builder.js', () => ({
@@ -76,6 +79,7 @@ function makeSession(permissionMode: AgentSession['permissionMode'] = 'dontAsk')
 function makeOpts(cwd: string): MessageSenderOpts {
   return {
     cwd,
+    requiredLaunches,
     onSdkSessionRebind: async () => {},
     meshCore: {
       getByPath: (dir: string) => (dir === home ? AGENT : undefined),

@@ -149,6 +149,9 @@ export const connectionsSearchSchema = mergeDialogSearch(
     // Opens one global MCP server's sheet on the MCP servers list (the Inbox's
     // Review on "added a tool", DOR-4118). Cleared once the sheet opens.
     mcpServer: z.string().min(1).max(200).optional().catch(undefined),
+    // Scrolls to Spending (DOR-4204); `spending-limit` also puts the cursor in
+    // the monthly limit, for a notice's Raise limit.
+    section: z.enum(['spending', 'spending-limit']).optional().catch(undefined),
   })
 );
 export const activitySearchSchema = mergeDialogSearch(

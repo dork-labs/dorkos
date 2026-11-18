@@ -9,8 +9,7 @@
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 import { resolveProposerName } from '../../../tasks/task-provenance.js';
-import { marksOf } from '../../../core/turn-power/turn-levels.js';
-import { marksHold } from '../../../core/turn-power/turn-marks.js';
+import { turnReadOutsideWords } from '../../../core/turn-power/outsider-turn.js';
 
 /**
  * Which session is creating an extension, read at CALL time (the SDK rekeys a
@@ -80,7 +79,7 @@ export function createCreateExtensionHandler(
       const approves =
         creator?.chosenFull === true &&
         creator.ceilinged !== true &&
-        !marksHold(marksOf(creator.sessionId, agentPath));
+        !turnReadOutsideWords(creator.sessionId, agentPath);
       const result = await manager.createExtension({
         name: args.name,
         description: args.description,

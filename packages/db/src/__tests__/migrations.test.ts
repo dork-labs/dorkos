@@ -321,6 +321,7 @@ describe('Database Migrations', () => {
       // rebuildable from it (migration 0081, DOR-1591).
       'room_repos',
       // The seat a session held before the seat moved, so a report can follow it (DOR-3720).
+      'room_seat_launch_requirements',
       'room_seat_moves',
       // The two coordination counters a restart used to erase: which session ids
       // a runtime has renamed away from, and the hour of automatic turns already
@@ -373,6 +374,10 @@ describe('Database Migrations', () => {
       // When the person last opened or wrote in each chat, so Today and the
       // agent click agree on every device (spec your-activity-first D1).
       'session_touches',
+      // The monthly spend limit on paid app actions (DOR-4204 PR 2).
+      'spending_prices',
+      'spending_runs',
+      'spending_settings',
       // What the to-do caps count (DOR-3088): each to-do an agent handed a person, and every
       // agent turn a to-do started, queued, held or will retry.
       'todo_person_asks',

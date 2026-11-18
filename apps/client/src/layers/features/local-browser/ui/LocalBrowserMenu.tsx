@@ -56,6 +56,15 @@ export function LocalBrowserMenu({
         selectedPageId={state.selectedTabId}
         onSelectPage={(id) => void action(() => transport.selectLocalBrowserTab(id))}
         onOpenExternally={selected ? () => openExternalLink(selected.url) : undefined}
+        // The plain window opens on the site's origin, never the page's own path (DOR-4097).
+        onSignInSeparately={
+          selected
+            ? () =>
+                void action(() =>
+                  transport.signInLocalBrowser({ url: new URL(selected.url).origin })
+                )
+            : undefined
+        }
         onForgetSignIns={
           canForgetSignIns
             ? (trigger) => {
