@@ -20,6 +20,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { codeOnly } from '../../../../../../scripts/lib/code-only.mjs';
 import { env } from '../../../env.js';
 import { mayReadOsKeychain } from '../os-keychain-policy.js';
 
@@ -77,11 +78,6 @@ const KEYCHAIN_READ =
 /** A call to the guard. */
 const GUARD_CALL = /\bmayReadOsKeychain\(\)/;
 
-/** Source with its comments removed, so a guard named only in a comment does not count. */
-function code(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
-}
-
 function sourceFiles(dir: string): string[] {
   const out: string[] = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -126,15 +122,15 @@ describe('mayReadOsKeychain', () => {
 });
 
 describe('Keychain call-site census', () => {
-  // Raw text for finding reads (a regex comment stripper can swallow code after
-  // a glob like 'src/**'); comment-free text for finding the guard call.
+  // Raw text for finding reads, so nothing a lexer blanks can hide one; code
+  // alone (comments and strings blanked) for finding the guard call.
   const raw = new Map(
     SCANNED.flatMap((root) => sourceFiles(path.join(REPO, root))).map((file) => [
       path.relative(REPO, file).split(path.sep).join('/'),
       fs.readFileSync(file, 'utf-8'),
     ])
   );
-  const sources = new Map([...raw].map(([file, text]) => [file, code(text)]));
+  const sources = new Map([...raw].map(([file, text]) => [file, codeOnly(text, file)]));
   const found = [...raw]
     .filter(([file]) => !(file in NAMES_ONLY))
     .filter(([, source]) => KEYCHAIN_READ.test(source))
@@ -158,11 +154,11 @@ describe('Keychain call-site census', () => {
   it.each(Object.entries(SELF_READING_COMMANDS))(
     '%s still starts the command it is listed for, guarded as listed',
     (file, entry) => {
-      const source = sources.get(file);
-      expect(source, `${file} is gone: update the list`).toBeDefined();
+      const text = raw.get(file);
+      expect(text, `${file} is gone: update the list`).toBeDefined();
       // The program is often a resolved path, so its arguments are what is literal.
-      for (const word of entry.command.split(' ').slice(1)) expect(source).toContain(`'${word}'`);
-      if (entry.guarded) expect(source).toMatch(GUARD_CALL);
+      for (const word of entry.command.split(' ').slice(1)) expect(text).toContain(`'${word}'`);
+      if (entry.guarded) expect(sources.get(file)).toMatch(GUARD_CALL);
     }
   );
 });
