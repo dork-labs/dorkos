@@ -329,7 +329,9 @@ export async function wireSessionServices(refs: ServerRefs, built: WireSessionSe
   // under the test runtime, whose accounts are not real folders to probe.
   if (!env.DORKOS_TEST_RUNTIME) {
     setSigninRecheck((runtime, accountRoot) =>
-      runtime === 'claude-code' ? recheckSigninByProbe(accountRoot) : Promise.resolve('unknown' as const)
+      runtime === 'claude-code'
+        ? recheckSigninByProbe(accountRoot)
+        : Promise.resolve('unknown' as const)
     );
   }
   // A signed-out Claude account signed in again from the command line is

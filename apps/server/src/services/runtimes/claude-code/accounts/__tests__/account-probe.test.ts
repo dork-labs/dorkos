@@ -15,6 +15,7 @@ import {
   resetSigninEpisodes,
   setRuntimeSigninSink,
   watchRuntimeSignin,
+  type RuntimeSigninSink,
 } from '../../../../observability/index.js';
 import { accountSigninState } from '../../../../observability/account-signin-state.js';
 import {
@@ -390,12 +391,12 @@ function laterThanNow(): Promise<void> {
 }
 
 describe('probeAccount: what a probe says about the sign-in', () => {
-  let sink: ReturnType<typeof vi.fn>;
+  let sink: ReturnType<typeof vi.fn<RuntimeSigninSink>>;
 
   beforeEach(() => {
     resetSigninEpisodes();
     // Installed, so a failure opens a real episode rather than only a state.
-    sink = vi.fn();
+    sink = vi.fn<RuntimeSigninSink>();
     setRuntimeSigninSink(sink);
   });
 

@@ -749,6 +749,8 @@ describe('claudeCliConfigFile', () => {
     expect(claudeCliConfigFile('/made-up/accounts/.claude-work')).toBe(
       '/made-up/accounts/.claude-work/.claude.json'
     );
-    expect(claudeCliConfigFile('~/.claude2')).toBe(path.join(os.homedir(), '.claude2', '.claude.json'));
+    expect(claudeCliConfigFile('~/.claude2')).toBe(
+      path.join(os.homedir(), '.claude2', '.claude.json')
+    );
   });
 });
