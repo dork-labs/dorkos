@@ -1,5 +1,5 @@
 import './security-path-parity.test.mjs';
-/* global URL, structuredClone, Response, process */
+/* global console, URL, structuredClone, Response, process */
 import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { execFileSync, spawn } from 'node:child_process';

@@ -514,8 +514,8 @@ function strictFiles(files, message) {
     throw new Error(message);
   try {
     return validateFiles(files);
-  } catch {
-    throw new Error(message);
+  } catch (error) {
+    throw new Error(message, { cause: error });
   }
 }
 
