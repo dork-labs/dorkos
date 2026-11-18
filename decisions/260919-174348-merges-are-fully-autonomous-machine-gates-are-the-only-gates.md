@@ -18,7 +18,7 @@ merge an automated job; this ADR states the policy that ADR's mechanism already 
 Amended by [261118-135124](261118-135124-releases-cut-from-a-release-branch-not-a-frozen-main.md)
 (proposed): "Nothing lands outside the merge queue" now covers `main` only. A PR into a
 `release/vX.Y.Z` branch lands without a queue, on the same required checks plus
-`release-cherry-picks`. Every other rule here still governs.
+`release-branch-contents`. Every other rule here still governs.
 
 ## Context
 
