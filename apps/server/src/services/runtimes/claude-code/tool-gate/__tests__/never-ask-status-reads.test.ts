@@ -104,7 +104,7 @@ function decide(
     options.resolveIdentity ?? IDENTITY,
     noopLog,
     options.isMarked,
-    options.readOutsideWords
+    options.readOutsideWords ?? (() => false)
   )(input, 'use-1', { signal: new AbortController().signal });
 }
 
@@ -124,6 +124,21 @@ describe('the Never ask status reads', () => {
       expect(tiers.get(name), `${name} is a real tool`).toBe('observe');
       expect(NEVER_ASK_STATUS_READS, name).not.toHaveProperty(name);
     }
+  });
+
+  it('fail closed: a hook built without the outside-words check runs none (Security S3)', async () => {
+    const input = {
+      hook_event_name: 'PreToolUse',
+      session_id: 's',
+      transcript_path: '/tmp/t.jsonl',
+      cwd: '/agents/ana',
+      tool_name: inSessionToolName('running_chats'),
+      tool_input: {},
+      tool_use_id: 'use-1',
+      mcp_server: SDK,
+    } as HookInput;
+    const bare = createNeverAskHook(NEVER_ASK, IDENTITY, noopLog);
+    expect(await bare(input, 'use-1', { signal: new AbortController().signal })).toEqual({});
   });
 
   it('share no name with the safe list, whose per-call checks they would skip', () => {
@@ -180,11 +195,82 @@ describe('a scheduled run at Never ask', () => {
     for (const name of STATUS_READS) expect(await decide(name, { mcpServer })).toEqual({});
   });
 
-  it('says nothing in every other mode, so the gate decides as before', async () => {
-    for (const permissionMode of ['default', 'acceptEdits', 'plan', 'bypassPermissions']) {
+  it('says nothing at Plan, Auto or Full, so the gate decides as before', async () => {
+    for (const permissionMode of ['plan', 'auto', 'bypassPermissions']) {
       const session = { permissionMode: permissionMode as PermissionModeId };
       for (const name of STATUS_READS) expect(await decide(name, { session })).toEqual({});
     }
+  });
+});
+
+// DOR-4601, PM ruling A: the same four reads run unasked at Ask first and Accept edits, with both
+// of Security's conditions, the outsider refusal and the narrowed answers.
+describe.each(['default', 'acceptEdits'] as const)('a scheduled run at %s', (permissionMode) => {
+  const AT = { permissionMode: permissionMode as PermissionModeId };
+
+  it.each(STATUS_READS)('runs %s with nobody there to answer a card', async (name) => {
+    expect(await decide(name, { session: AT })).toMatchObject(ALLOWED);
+  });
+
+  it.each([...PRIVATE_READS, ...ACT, ...DESTRUCTIVE])(
+    'says nothing about %s, so the gate decides as before',
+    async (name) => {
+      expect(await decide(name, { session: AT })).toEqual({});
+    }
+  );
+
+  it('gives nothing to a server that only calls itself dorkos', async () => {
+    const mcpServer = { name: 'dorkos', source: 'project' };
+    for (const name of STATUS_READS) {
+      expect(await decide(name, { session: AT, mcpServer })).toEqual({});
+    }
+  });
+
+  const OUTSIDER_TURNS: Array<[string, Parameters<typeof decide>[1]]> = [
+    ['a stranger’s own turn', { session: { ...AT, turnPermissionCeiling: 'runtime-default' } }],
+    [
+      'background work a stranger’s turn left running',
+      { session: { ...AT, backgroundPermissionCeiling: 'runtime-default' } },
+    ],
+    [
+      'a turn our agent passed an outsider’s words on to',
+      {
+        session: {
+          ...AT,
+          turnPermissionCeiling: {
+            asks: 'never',
+            reach: 'everything',
+            outsider: true,
+          } as unknown as TurnPermissionCeiling,
+        },
+      },
+    ],
+    ['a turn marked by a line it read', { session: AT, isMarked: () => true }],
+    [
+      'a chat that read outside words but carries no mark',
+      { session: AT, readOutsideWords: () => true },
+    ],
+    [
+      'a chat whose outside-words lookup throws',
+      {
+        session: AT,
+        readOutsideWords: () => {
+          throw new Error('no database');
+        },
+      },
+    ],
+  ];
+
+  it.each(OUTSIDER_TURNS)('runs no status read unasked in %s', async (_label, options) => {
+    for (const name of STATUS_READS) expect(await decide(name, options), name).toEqual({});
+  });
+
+  it('still runs them in a turn a teammate holds to this level', async () => {
+    // A teammate's level, as a level: Ask first asks always, Accept edits when risky.
+    const level = { asks: permissionMode === 'default' ? 'always' : 'when-risky', reach: 'edit' };
+    const session = { ...AT, turnPermissionCeiling: level as unknown as TurnPermissionCeiling };
+    for (const name of STATUS_READS)
+      expect(await decide(name, { session }), name).toMatchObject(ALLOWED);
   });
 });
 
