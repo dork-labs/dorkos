@@ -119,6 +119,12 @@ it('matches a clean pick whose hunk moved to other line numbers', () => {
   expect(patchFingerprint(at(3))).toBe(patchFingerprint(at(9)));
   expect(patchFingerprint(at(3))).not.toBe(patchFingerprint(at(3).replace('+c', '+c ')));
   expect(patchFingerprint('')).toBeUndefined();
+  // Different invalid UTF-8 bytes must not fold into one U+FFFD.
+  const withByte = (b: number) =>
+    Buffer.concat([Buffer.from(at(3).replace('+c', '+')), Buffer.from([b, 0x0a])]);
+  expect(patchFingerprint(withByte(0x80))).not.toBe(patchFingerprint(withByte(0xff)));
+  // The function name after @@ is context, not change.
+  expect(patchFingerprint(at(3))).toBe(patchFingerprint(at(3).replace('function f()', 'g()')));
 });
 
 it('knows a branch-only commit is not on main', async () => {

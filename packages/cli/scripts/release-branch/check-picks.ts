@@ -9,6 +9,7 @@
  * Prints one JSON object (`{ ok, findings }`) on stdout. Exit 0 = pass,
  * 1 = findings, 2 = bad arguments or a read error (fail closed).
  */
+import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gitIsAncestor, gitPatchId, readReleaseBranchCommits } from './proof.ts';
@@ -29,6 +30,14 @@ export function checkPicksInRepo(input: {
     throw Error('base, head and main must be full 40-character SHAs.');
   if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version))
     throw Error('version must be X.Y.Z.');
+  // A missing object would otherwise read as "not on main" (exit 1); it is a read error (exit 2).
+  for (const sha of [base, head, mainSha])
+    execFileSync('git', ['cat-file', '-e', `${sha}^{commit}`], { cwd: repoDir, stdio: 'ignore' });
+  const shallow = execFileSync('git', ['rev-parse', '--is-shallow-repository'], {
+    cwd: repoDir,
+    encoding: 'utf8',
+  }).trim();
+  if (shallow !== 'false') throw Error('The checkout is shallow; fetch full history first.');
   return checkReleaseCherryPicks({
     version,
     commits: readReleaseBranchCommits(repoDir, base, head),

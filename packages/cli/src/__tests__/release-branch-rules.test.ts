@@ -183,6 +183,7 @@ const fullRelease = releaseCommit([
   { path: 'changelog/unreleased/261118-000000-fix.md', status: 'D' },
   { path: 'blog/dorkos-1-2-3.mdx', status: 'A' },
   { path: 'apps/site/public/product/archive/v1.2.3/hero.png', status: 'A' },
+  { path: 'apps/site/public/product/archive/v1.2.3/scripts/step.png', status: 'A' },
   { path: 'changelog/archive/CHANGELOG-v0.1.0-to-v1.2.1.md', status: 'D' },
   { path: 'changelog/archive/CHANGELOG-v0.1.0-to-v1.2.2.md', status: 'A' },
 ]);
@@ -299,10 +300,13 @@ describe('cherry-pick rule', () => {
     ['a CLI release script', 'packages/cli/scripts/release-cli.ts', 'M'],
     ['an agent tool file', '.agents/skills/x/SKILL.md', 'M'],
     ['a renamed-in fragment', 'changelog/unreleased/x.md', 'R'],
+    ['a nested lockfile', 'apps/site/pnpm-lock.yaml', 'M'],
+    ['an app build script', 'apps/desktop/scripts/build.ts', 'M'],
     ['a changed archive file', 'changelog/archive/CHANGELOG-v0.1.0-to-v1.2.2.md', 'M'],
     ['another archive file', 'changelog/archive/notes.md', 'A'],
   ] as const)('refuses a release commit with %s', (_, path, status) => {
-    const forbidden = /^(\.github|\.agents|scripts|packages\/cli\/scripts)\/|^pnpm-lock/.test(path);
+    const forbidden =
+      /^(\.github|\.agents|scripts|(packages|apps)\/[^/]+\/scripts)\/|pnpm-lock/.test(path);
     expect(checkReleaseCherryPicks(input([releaseCommit([{ path, status }])]))[0]?.code).toBe(
       forbidden ? 'release-commit-forbidden-path' : 'non-release-file'
     );

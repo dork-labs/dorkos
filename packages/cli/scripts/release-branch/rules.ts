@@ -296,7 +296,7 @@ function commitProblem(
 
 // Never part of a release commit, even where another rule would match.
 const FORBIDDEN_PATH =
-  /^(\.github\/|\.claude\/|\.agents\/|patches\/|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|\.npmrc$|\.pnpmfile\.cjs$|lefthook\.yml$|turbo\.json$)|(^|\/)scripts\//;
+  /^(\.github\/|\.claude\/|\.agents\/|\.husky\/|patches\/|scripts\/|(apps|packages)\/[^/]+\/scripts\/|lefthook\.yml$|turbo\.json$|\.gitattributes$|\.nvmrc$|\.node-version$)|(^|\/)(pnpm-lock\.yaml|pnpm-workspace\.yaml|\.npmrc|\.pnpmfile\.c?m?js)$/;
 const PACKAGE_FILES = new Set([
   'package.json',
   'packages/cli/package.json',

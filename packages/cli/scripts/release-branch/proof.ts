@@ -7,6 +7,7 @@
  */
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
+import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -84,7 +85,9 @@ export function gitPatchId(cwd: string, sha: string): string | undefined {
         '--binary',
         sha,
       ],
-      { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
+      // Raw bytes: decoding as UTF-8 would fold different invalid bytes into one
+      // U+FFFD. The user's global git config is ignored, so every machine agrees.
+      { cwd, maxBuffer: 64 * 1024 * 1024, env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null' } }
     );
     return patchFingerprint(diff);
   } catch {
@@ -93,13 +96,25 @@ export function gitPatchId(cwd: string, sha: string): string | undefined {
 }
 
 /** Hash a unified diff with hunk line numbers and blob ids removed and every other byte kept. */
-export function patchFingerprint(diff: string): string | undefined {
-  const lines = diff
-    .split('\n')
-    .filter((line) => !line.startsWith('index '))
-    .map((line) => (line.startsWith('@@ ') ? '@@' : line));
-  if (!lines.some((line) => line.startsWith('diff --git '))) return undefined;
-  return createHash('sha256').update(lines.join('\n')).digest('hex');
+export function patchFingerprint(diff: Uint8Array | string): string | undefined {
+  const bytes = typeof diff === 'string' ? Buffer.from(diff, 'utf8') : Buffer.from(diff);
+  const hash = createHash('sha256');
+  let sawFile = false;
+  for (let start = 0; start <= bytes.length;) {
+    let end = bytes.indexOf(0x0a, start);
+    if (end < 0) end = bytes.length;
+    const line = bytes.subarray(start, end);
+    start = end + 1;
+    if (startsWith(line, 'index ')) continue;
+    if (startsWith(line, 'diff --git ')) sawFile = true;
+    hash.update(startsWith(line, '@@ ') ? Buffer.from('@@') : line);
+    hash.update(Buffer.from([0x0a]));
+  }
+  return sawFile ? hash.digest('hex') : undefined;
+}
+
+function startsWith(line: Uint8Array, prefix: string): boolean {
+  return Buffer.from(line).subarray(0, prefix.length).equals(Buffer.from(prefix, 'utf8'));
 }
 
 /** True only when `sha` is a commit that is an ancestor of (or equal to) `mainSha`; false on any error. */
@@ -162,7 +177,17 @@ export interface ReleaseBranchReads {
 export function liveReads(cwd: string): ReleaseBranchReads {
   return {
     api: (path) => JSON.parse(run(cwd, 'gh', ['api', path])),
-    npmView: (spec) => run(cwd, 'npm', ['view', spec, 'version', '--json']),
+    // From a neutral folder against the public registry: the checkout is not
+    // proven yet, and its own .npmrc could point npm somewhere else.
+    npmView: (spec) =>
+      run(tmpdir(), 'npm', [
+        'view',
+        spec,
+        'version',
+        '--json',
+        '--registry=https://registry.npmjs.org/',
+        '--userconfig=/dev/null',
+      ]),
     fetchMain: () => void run(cwd, 'git', ['fetch', '--no-tags', '--quiet', 'origin', 'main']),
   };
 }
