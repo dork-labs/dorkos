@@ -8,6 +8,7 @@
  *
  * @module connector-providers/paid-operations
  */
+import { normalizeSlug } from './composio/slug.js';
 import type { ConnectorReconciliationCandidate } from './connector-schemas.js';
 
 /**
@@ -266,16 +267,41 @@ export const PAID_OPERATION_PATTERNS: ReadonlyMap<string, RegExp> = new Map([
 ]);
 
 /**
+ * An app name with case, spaces and separators taken out, so "Perplexity AI",
+ * "perplexity_ai" and "perplexityai" are one app (Security, #3863). A variant
+ * spelling must never read as free.
+ *
+ * @param toolkit - The app's service id in any spelling.
+ */
+export function normalizeToolkit(toolkit: string): string {
+  return toolkit.toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+/** {@link PAID_BY_DEFAULT_TOOLKITS} and the pattern keys, in normalized spelling. */
+const PAID_TOOLKITS_NORMALIZED: ReadonlySet<string> = new Set(
+  [...PAID_BY_DEFAULT_TOOLKITS].map(normalizeToolkit)
+);
+const PAID_PATTERNS_NORMALIZED: ReadonlyMap<string, RegExp> = new Map(
+  [...PAID_OPERATION_PATTERNS].map(([toolkit, pattern]) => [normalizeToolkit(toolkit), pattern])
+);
+const REVIEWED_FREE_NORMALIZED: ReadonlySet<string> = new Set(
+  [...REVIEWED_FREE_OPERATIONS].map(normalizeSlug)
+);
+
+/**
  * Whether an operation spends money: every operation of a pay-per-use service,
  * unless Security reviewed it as free, and the paid operations of a free one.
+ * Names match in normalized spelling, so a variant name is never free.
  *
  * @param op - The service (toolkit) and operation, as the provider names them.
  */
 export function isPaidOperation(op: { toolkit: string; operationSlug: string }): boolean {
-  const toolkit = op.toolkit.toLowerCase();
-  const slug = op.operationSlug.toUpperCase();
-  if (PAID_OPERATION_PATTERNS.get(toolkit)?.test(slug)) return true;
-  return PAID_BY_DEFAULT_TOOLKITS.has(toolkit) && !REVIEWED_FREE_OPERATIONS.has(slug);
+  const toolkit = normalizeToolkit(op.toolkit);
+  const slug = normalizeSlug(op.operationSlug);
+  // Both spellings: splitting camel case can break a pattern the plain one matches.
+  const pattern = PAID_PATTERNS_NORMALIZED.get(toolkit);
+  if (pattern?.test(slug) || pattern?.test(op.operationSlug.toUpperCase())) return true;
+  return PAID_TOOLKITS_NORMALIZED.has(toolkit) && !REVIEWED_FREE_NORMALIZED.has(slug);
 }
 
 /** What an access level reads of one operation: its class, and whether it spends money. */

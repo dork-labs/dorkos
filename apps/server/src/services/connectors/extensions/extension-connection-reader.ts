@@ -17,6 +17,10 @@
  *    revision is `read` (M5, P4-2, P4-3);
  * 6. the arguments match the revision's input schema.
  *
+ * A read that spends money then reserves its price on the same monthly meter
+ * as agents' paid runs, in one transaction, or is refused: with no limit set
+ * it never runs, and it never raises a card (DOR-4575).
+ *
  * Each call is recorded under the extension (`actor_kind = 'extension'`,
  * `agent_id` null, with an arguments hash; S6, P4-5), and an answer over
  * 8 MB is refused, never truncated (Q5).
@@ -61,6 +65,7 @@ import type {
 } from '@dorkos/shared/connector-provider';
 import type { ConnectorRegistry } from '../registry.js';
 import type { ConnectorUsageStore } from '../execution/usage-store.js';
+import { releaseSpend, reserveExtensionSpend } from '../spending/spend-gate.js';
 import type { ConnectorOwnerAuthority } from '../principal/server-principal.js';
 import type { ExtensionConnectionApprovalStore } from './extension-connection-approvals.js';
 import type { LiveExtensionInstall } from './live-extension-install.js';
@@ -137,6 +142,13 @@ export class ExtensionConnectionReader {
     const authorized = this.authorize(install, operation, params);
     const logicalOperationId = ulid();
     const attemptId = ulid();
+    // A paid read reserves its price on the agents' own meter first (DOR-4575).
+    const spend = reserveExtensionSpend(
+      { extensionId: install.extensionId, operation: authorized.operation },
+      logicalOperationId,
+      this.now()
+    );
+    if (!spend.ok) return refuse('EXTENSION_CONNECTION_SPEND_REFUSED', spend.message);
     this.usage.recordIntent({
       attemptId,
       logicalOperationId,
@@ -178,6 +190,10 @@ export class ExtensionConnectionReader {
           message: 'The app did not answer.',
         };
       }
+    }
+    // A read that never left gives its reservation back; any other keeps it counted.
+    if ('code' in result && result.code === 'CANCELLED_BEFORE_DISPATCH') {
+      releaseSpend(spend.reservation);
     }
     // Access may have changed while the app answered: keep the data then (C2).
     const changed =
