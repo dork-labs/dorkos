@@ -529,6 +529,18 @@ export default function register(router: any, ctx: any) {
     req.on('end', () => res.json({ text, body: req.body === undefined ? 'none' : req.body }));
   });
   router.post('/person', ctx.requirePerson, (_req: any, res: any) => res.json({ ok: true }));
+  // DOR-4301: a record counts only behind the person bar; a check works anywhere.
+  router.post('/record', ctx.requirePerson, async (req: any, res: any) => {
+    await ctx.personRecord.record(req.body.text);
+    res.json({ recorded: true });
+  });
+  router.post('/record-unguarded', async (req: any, res: any) => {
+    const recorded = await ctx.personRecord.record(req.body.text).then(() => true, () => false);
+    res.json({ recorded });
+  });
+  router.post('/verify', async (req: any, res: any) =>
+    res.json({ verified: (await ctx.personRecord.verify(req.body.text)) !== null })
+  );
   router.get('/status', (_req: any, res: any) =>
     res.status(418).set('x-contract', 'yes').type('text/plain').send('short and stout')
   );
@@ -833,6 +845,44 @@ describe('contract: the extension routes, driven by hand (login off)', () => {
       body: {},
       expect: { status: 200, body: { ok: true } },
     });
+  });
+
+  // DOR-4301: what the host recorded for a signed-in person is what a check
+  // reads, so an agent's request, or a route without the bar, leaves nothing.
+  it('records only what a person’s request recorded, behind the person bar', async () => {
+    const ext = `/api/ext/${ROUTED}`;
+    await check(server, {
+      method: 'POST',
+      path: `${ext}/record`,
+      headers: AGENT,
+      body: { text: 'an agent’s words' },
+      expect: { status: 403, schema: refusal('extension_person_required') },
+    });
+    await check(server, {
+      method: 'POST',
+      path: `${ext}/record-unguarded`,
+      body: { text: 'words with no bar' },
+      expect: { status: 200, body: { recorded: false } },
+    });
+    await check(server, {
+      method: 'POST',
+      path: `${ext}/record`,
+      body: { text: 'a person’s words' },
+      expect: { status: 200, body: { recorded: true } },
+    });
+    for (const [text, verified] of [
+      ['a person’s words', true],
+      ['an agent’s words', false],
+      ['words with no bar', false],
+    ] as const) {
+      await check(server, {
+        method: 'POST',
+        path: `${ext}/verify`,
+        headers: AGENT,
+        body: { text },
+        expect: { status: 200, body: { verified } },
+      });
+    }
   });
 
   it('keeps an extension’s data, secrets and settings', async () => {

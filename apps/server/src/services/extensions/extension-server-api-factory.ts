@@ -42,6 +42,7 @@ import { logger } from '../../lib/logger.js';
 import { createToolBinding, type ToolBinding } from './agent-tools/tool-binding.js';
 import type { ExtensionToolCheck } from '@dorkos/extension-api/tool-check';
 import { isolatedFilesDir } from './isolation/grants.js';
+import { createPersonRecordApi } from './person-record/person-record.js';
 
 /** Minimum scheduling interval in seconds (prevents tight loops). */
 const MIN_INTERVAL_SECONDS = 5;
@@ -411,7 +412,7 @@ export function createDataProviderContext(deps: CreateContextDeps): {
     accounts: guardedAccounts,
     projects: guardedProjects,
     inbox: guardedInbox,
-    requirePerson: createRequirePerson(extensionName),
+    requirePerson: createRequirePerson(extensionId, extensionName),
     projectSettings: guardedProjectSettings,
     sessions: {
       start: async (input) => {
@@ -430,6 +431,7 @@ export function createDataProviderContext(deps: CreateContextDeps): {
     },
     agent: guardedAgent,
     tools: tools.api,
+    personRecord: createPersonRecordApi(extensionId),
     // A given-up instance reads nothing: the read would outlive the extension.
     ...(deps.connections && {
       connections: {

@@ -41,6 +41,8 @@ export {
   ExtensionConnectionError,
 } from './extension-connections.js';
 import type { ExtensionConnectionsApi } from './extension-connections.js';
+export type { PersonRecordApi, PersonRecordReceipt } from './person-record.js';
+import type { PersonRecordApi } from './person-record.js';
 
 /**
  * One account's usage as an extension sees it: identity, resolved color, the
@@ -363,6 +365,12 @@ export interface DataProviderContext {
    * Probe with `ctx.connections !== undefined`.
    */
   readonly connections?: ExtensionConnectionsApi;
+  /**
+   * DorkOS's own record of what this extension did for a signed-in person, to
+   * check a "a person did this" claim against instead of the data file
+   * (DOR-4301). Probe with `ctx.personRecord !== undefined`.
+   */
+  readonly personRecord?: PersonRecordApi;
 }
 
 /** `ctx.sessions`: starting work in a new chat without a person (spec §7.7). */
