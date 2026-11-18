@@ -73,7 +73,7 @@ describe('notification presentation', () => {
       tier: 'notable',
       subject: { type: 'agent', id: 'scout' },
       agentId: 'scout',
-      title: "Scout's folder rules are too long to approve",
+      title: 'Folder rules for Scout are too long to approve.',
       createdAt: '2026-10-27T12:00:00.000Z',
     };
     expect(notificationLink(row)).toEqual({

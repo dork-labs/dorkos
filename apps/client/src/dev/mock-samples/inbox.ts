@@ -99,8 +99,8 @@ export const SAMPLE_INBOX_ROWS: NotificationDTO[] = [
     tier: 'notable',
     subject: { type: 'agent', id: 'tangerines' },
     agentId: 'tangerines',
-    title: "tangerines's folder rules are too long to approve",
-    body: "Shorten the allow lists in its folder's .claude settings files. Then a card asks you.",
+    title: 'Folder rules for tangerines are too long to approve.',
+    body: "They don't apply until shortened. Edit the allow lists in its .claude settings files.",
     createdAt: minutesAgo(14),
   },
 ];

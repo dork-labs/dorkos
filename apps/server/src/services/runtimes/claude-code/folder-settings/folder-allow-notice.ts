@@ -49,12 +49,13 @@ export const FOLDER_RULES_TOO_LONG_ENTRIES: {
     storage: 'event',
     subjectType: 'agent',
     locate: (p) => ({ subjectId: p.agentId, agentId: p.agentId }),
-    // Draft words, pending the designer's (DOR-4455 opens with needs-design).
-    title: (p) => `${shownName(p.agentName)}'s folder rules are too long to approve`,
-    // No page shows these rules yet, so the body names where they live: both
-    // settings files in the folder's `.claude/` (`FOLDER_SETTINGS_FILES`).
+    // The designer's words (DOR-4455). No possessive, so no name ends in "s's".
+    title: (p) => `Folder rules for ${shownName(p.agentName)} are too long to approve.`,
+    // It leads with what is true now: the rules are off. No page shows them
+    // yet, so it names where they live: both settings files in the folder's
+    // `.claude/` (`FOLDER_SETTINGS_FILES`).
     body: () =>
-      "Shorten the allow lists in its folder's .claude settings files. Then a card asks you.",
+      "They don't apply until shortened. Edit the allow lists in its .claude settings files.",
     dedupeKey: (p) => `folder-rules-too-long:${p.agentId}:${p.hash}`,
     dedupeWindowMs: FOLDER_RULES_TOO_LONG_DEDUPE_MS,
     relay: 'never',
