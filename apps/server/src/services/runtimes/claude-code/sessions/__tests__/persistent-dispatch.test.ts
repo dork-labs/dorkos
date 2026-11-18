@@ -496,6 +496,77 @@ describe('warmth is answered honestly', () => {
     expect(cli.launches).toBe(2);
   });
 
+  // DOR-4590. A launch resumes at the last answer DorkOS saw. When the CLI's
+  // conversation no longer holds it (a summary, or a branch the CLI dropped),
+  // the CLI exits while booting, and every relaunch named the same message
+  // again: the chat failed every turn until DorkOS stopped restarting it.
+  /**
+   * A warm session whose last turn ended on a main-thread answer, as a real
+   * one does, then given back: its next launch resumes at that answer.
+   */
+  async function coldAfterAnAnswer(sessionId: string): Promise<void> {
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.goSilent();
+    const speaking = turn(sessionId, 'say something');
+    await vi.waitFor(() => expect(process.received).toHaveLength(2));
+    process.emit({
+      type: 'assistant',
+      parent_tool_use_id: null,
+      uuid: 'answer-on-a-dropped-branch',
+      session_id: process.sdkSessionId,
+      message: { role: 'assistant', content: [{ type: 'text', text: 'done' }] },
+    } as unknown as SDKMessage);
+    process.answer(process.received[1]);
+    await speaking;
+    await runtime.reapSession(sessionId);
+  }
+
+  it('drops a resume point the CLI cannot find, so the next message runs', async () => {
+    const sessionId = nextSession();
+    await coldAfterAnAnswer(sessionId);
+
+    cli.deferNextInit = true;
+    const failing = turn(sessionId, 'after the summary');
+    await vi.waitFor(() => expect(cli.launches).toBe(2));
+    const anchor = cli.latest!.options.resumeSessionAt;
+    expect(anchor).toBeDefined();
+    cli.latest!.crash(
+      new Error(
+        `Claude Code returned an error result: No message found with message.uuid of: ${anchor}`
+      )
+    );
+    await failing.catch(() => undefined);
+    await vi.waitFor(() => expect(runtime.getSessionWarmth(sessionId)).toBe('crashed'));
+
+    const recovered = await turn(sessionId, 'still there?');
+
+    expect(cli.launches).toBe(3);
+    expect(cli.latest!.options.resumeSessionAt).toBeUndefined();
+    expect(cli.latest!.options.resume).toBeDefined();
+    // Answered by the new process, not refused as a chat that keeps stopping.
+    expect(cli.latest!.answered).toBe(1);
+    expect(recovered.some((e) => e.type === 'done')).toBe(true);
+  });
+
+  it('keeps the resume point when a launch dies for any other reason', async () => {
+    const sessionId = nextSession();
+    await coldAfterAnAnswer(sessionId);
+
+    cli.deferNextInit = true;
+    const failing = turn(sessionId, 'after a blip');
+    await vi.waitFor(() => expect(cli.launches).toBe(2));
+    const anchor = cli.latest!.options.resumeSessionAt;
+    expect(anchor).toBe('answer-on-a-dropped-branch');
+    cli.latest!.crash(new Error('the CLI went away'));
+    await failing.catch(() => undefined);
+    await vi.waitFor(() => expect(runtime.getSessionWarmth(sessionId)).toBe('crashed'));
+
+    await turn(sessionId, 'still there?');
+
+    expect(cli.latest!.options.resumeSessionAt).toBe(anchor);
+  });
+
   it('a message after a mid-turn crash resumes on a new process', async () => {
     const sessionId = nextSession();
     await turn(sessionId);
