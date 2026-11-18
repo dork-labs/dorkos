@@ -6,6 +6,8 @@ covers:
   - "refactor(approvals): the card's outside-words reason is set where the card is built (DOR-3969)"
 ---
 
-### Fixed
+### Security
 
+- After an agent reads mail, a web page or another app, any send through a connected app in that turn now asks you first.
 - After an agent reads your mail or another connected app (Connections page), a send in that same turn asks you first, and the card says why. What it read was written by someone else, and could try to steer it.
+- Files an agent reads and commands it runs (such as curl or git) don't mark the turn yet.

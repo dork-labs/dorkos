@@ -232,10 +232,19 @@ export const REASON_DESCRIPTION =
 export const REQUESTED_PERMISSION_MODE_DESCRIPTION =
   'The permission mode you ask the person to approve. This request never changes the applied mode.';
 
+/**
+ * The most rules `requestedAllow` takes: `TaskPermissionRulesSchema`'s own `.max`, pinned equal
+ * by a test, so the description states the real cap (DOR-4678).
+ */
+export const TASK_PERMISSION_RULES_MAX = 20;
+
 /** The proposed task-run allow rules shown on both task tools. */
 export const REQUESTED_ALLOW_DESCRIPTION =
-  'Exact Claude Code permission rules you ask the person to approve for this task only. ' +
-  'They never change folder settings and do nothing until a person approves them.';
+  'Exact Claude Code permission rules you ask the person to approve for this task only: up to ' +
+  `${TASK_PERMISSION_RULES_MAX}, each naming one specific action. A rule that reaches a whole ` +
+  'tool, the home folder, any web domain, or any command an interpreter runs is refused. The ' +
+  'person sees them when they approve the task. They apply only to its runs, never change ' +
+  'folder settings, and do nothing until a person approves them.';
 
 /** Operator-only task-run rules stay advertised so an attempted write is refused whole. */
 export const REFUSED_APPROVED_ALLOW_DESCRIPTION =
@@ -308,6 +317,32 @@ export const STATUS_DESCRIPTION =
   'or off, use `enabled` instead.';
 
 /**
+ * How an agent asks for more power on a schedule than it may set itself (DOR-3637), shared by
+ * `tasks_create` and `tasks_update` so both state the same cap (DOR-4678).
+ */
+const REQUEST_SENTENCE =
+  'To ask the person for a mode or exact rules for its runs, send requestedPermissionMode or ' +
+  `requestedAllow (up to ${TASK_PERMISSION_RULES_MAX} rules); nothing applies until a person ` +
+  'approves it.';
+
+/**
+ * What `tasks_list` says it returns (DOR-4678): which tasks can wake, the rule the team page's
+ * "Off or waiting" list reads (`wakers-off.ts`), and the approval record DOR-3641 keeps on every
+ * row (`task-approval-receipt.ts`).
+ */
+export const TASKS_LIST_DESCRIPTION =
+  'List every scheduled task on this DorkOS. Returns each one with its status and settings. ' +
+  'Only a task with enabled true and status "active" can run; one switched off, paused or ' +
+  'waiting at pending_approval cannot wake until it is turned on, resumed or approved. ' +
+  'approvedAt, ' +
+  'approvedBy and approvedVia record the approval that stands: when, who (kind "person", ' +
+  '"agent", or "policy" for a DorkOS rule) and where (approvedVia, such as "created" for a task ' +
+  'live at once). approvedVia "unknown" means an approval stands but DorkOS did not record ' +
+  'where it was given; with it, kind "policy" also means DorkOS did not record who approved ' +
+  'it. All three are null when no approval is recorded, as while a task waits ' +
+  'or after an edit sent it back.';
+
+/**
  * What `tasks_create` says it does, including who it may file a task for (DOR-3938).
  */
 export const TASKS_CREATE_DESCRIPTION =
@@ -316,7 +351,8 @@ export const TASKS_CREATE_DESCRIPTION =
   'The schedule returned says which. From a chat at Full autonomy whose turn ' +
   `${unmarkedTurnClause()}, target can be another agent: the task runs at that agent's level at most. ` +
   'With runOnce and no cron it runs once, as soon as it is live; at dontAsk it can carry the ' +
-  'exact commands that one run needs (allowList). Remove them after it runs.';
+  'exact commands that one run needs (allowList). Remove them after it runs. ' +
+  REQUEST_SENTENCE;
 
 /** The zone argument defaults to the person's saved time zone. */
 export const TIMEZONE_DESCRIPTION =
@@ -336,4 +372,5 @@ export const TASKS_UPDATE_DESCRIPTION =
   `whose turn ${unmarkedTurnClause()}, and never above that agent's own level. ` +
   'Send allowList alone with id to remove commands from a task; that needs no approval. ' +
   'To move your own Bypass task that is on to dontAsk with the exact commands it needs, send ' +
-  'only id, permissionMode "dontAsk" and allowList; that narrows it and needs no approval.';
+  'only id, permissionMode "dontAsk" and allowList; that narrows it and needs no approval. ' +
+  REQUEST_SENTENCE;

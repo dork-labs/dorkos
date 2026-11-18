@@ -429,11 +429,15 @@ export interface OperatingSkill {
  *   own exact commands (`allowList` at `dontAsk`, no card), and taking them back
  *   with `allowList: []` after the run (DOR-4315). An agent seeded at 57 would
  *   still believe the tool needs a cron and would ask the person for a card.
- * - 59: `scheduling-tasks` teaches moving an agent's own live Bypass task to Don't
+ * - 59: `scheduling-tasks` teaches asking for more than an agent may set
+ *   (`requestedPermissionMode`, `requestedAllow`, up to 20 rules), which tasks can
+ *   wake, and the approval record on each task (DOR-4678). An agent seeded at 58
+ *   would not know the request fields exist or what `approvedBy` means.
+ * - 60: `scheduling-tasks` teaches moving an agent's own live Bypass task to Don't
  *   ask with its own exact commands, in one call and with no card (DOR-4315 PR 2).
- *   An agent seeded at 58 would leave a narrowable task at Bypass, or ask a person.
+ *   An agent seeded at 59 would leave a narrowable task at Bypass, or ask a person.
  */
-export const OPERATING_SKILLS_VERSION = 59;
+export const OPERATING_SKILLS_VERSION = 60;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

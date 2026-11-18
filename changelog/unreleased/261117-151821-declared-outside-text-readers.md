@@ -5,6 +5,6 @@ covers:
   - 'fix(turn-power): an agent whose reader status cannot be read is marked (DOR-3969)'
 ---
 
-### Fixed
+### Security
 
 - A task or agent can be set as one that reads outside text, like mail or web pages. Its posts are then treated as outside words, and an agent can't switch that off.
