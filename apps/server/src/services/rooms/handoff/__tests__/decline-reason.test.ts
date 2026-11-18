@@ -10,7 +10,7 @@ describe('handoff decline safety', () => {
       text: 'token=secret /private/account',
       replyOutsider: true,
     });
-    expect(reason).toBe('it did not post. Open its chat to see why.');
+    expect(reason).toBe('it read words from outside your team. Its chat says why.');
     expect(buildHandoffNotice('Bo', 'author-bo', '#room', reason).text).not.toMatch(
       /token=|secret|private/
     );
@@ -38,7 +38,7 @@ describe('handoff decline safety', () => {
       text: null,
       failure: { refusal: 'unknown-private-code', detail: 'token=secret /private/account' },
     });
-    expect(reason).toBe("it couldn't start. Open its chat to see what needs attention.");
+    expect(reason).toBe("it couldn't start. Open its chat to see what's wrong.");
     expect(reason).not.toMatch(/private|secret|token=/);
   });
   it('keeps the complete safe failure explanation in the actual room notice', () => {

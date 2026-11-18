@@ -488,12 +488,12 @@ describe('one seat per agent per room, and the hand-off', () => {
     expect(bosPosts(dorkos)).toEqual([]);
     const notice = entries(product).find((entry) => entry.body.notice === 'handoff_declined');
     expect(notice?.body.text).toBe(
-      'Bo did not post it in #dorkos: it did not post. Open its chat to see why.'
+      'Bo did not post it in #dorkos: it read words from outside your team. Its chat says why.'
     );
     expect(notice?.body.text).not.toMatch(/Private reply|token=|hidden|private/);
     expect(service.handoffs.outcomes.read(result.handoffId!, bo)).toMatchObject({
       status: 'declined',
-      reason: 'it did not post. Open its chat to see why.',
+      reason: 'it read words from outside your team. Its chat says why.',
     });
   });
 

@@ -9,20 +9,20 @@ export function declineReason(room: Room | null, result: AsideResult | null): st
     if (result.failure.refusal === 'pending-interaction') {
       return 'it needs an answer in its chat. Open the chat to continue.';
     }
-    return "it couldn't start. Open its chat to see what needs attention.";
+    return "it couldn't start. Open its chat to see what's wrong.";
   }
   if (result?.outcome === 'failed') {
     return 'the chat stopped. Open it to continue.';
   }
   // No try ran to the end: the hand-off failed before its turn did (logged by the caller).
-  if (result === null) return 'it could not take a turn there.';
+  if (result === null) return "it couldn't take a turn there.";
   if (result.outcome === 'busy') return 'it stayed busy for an hour.';
   if (result.outcome === 'halted') return 'somebody stopped it.';
   if (result.why === 'budget') return 'the room is out of automatic turns for now.';
-  if (result.outcome === 'refused') return 'it could not take a turn there.';
-  if (result.replyOutsider) return 'it did not post. Open its chat to see why.';
+  if (result.outcome === 'refused') return "it couldn't take a turn there.";
+  if (result.replyOutsider) return 'it read words from outside your team. Its chat says why.';
   const said = result.text?.trim();
-  if (!said) return 'it did not post or explain why. Ask in the room.';
+  if (!said) return "it didn't say why. Ask in the room.";
   const max = 280;
   return said.length > max ? `${said.slice(0, max - 1).trimEnd()}…` : said;
 }
