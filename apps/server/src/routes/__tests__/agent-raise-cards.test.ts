@@ -232,7 +232,7 @@ describe('an agent adding someone who may approve on a chat connection', () => {
     );
     // The box holds only what changes; the headline already names the connection.
     expect(approvals.fullDetail(asked.body.approvalId) ?? card?.detail).toBe(
-      'Who may approve: U0OWNER01 → U0OWNER01, U0NEWBIE1'
+      'Who may approve: U0OWNER01 →\u00a0U0OWNER01, U0NEWBIE1'
     );
     expect(JSON.stringify(card)).not.toContain('checked by the owner');
   });
@@ -254,10 +254,38 @@ describe('an agent adding someone who may approve on a chat connection', () => {
     const card = approvals.listPending().find((p) => p.approvalId === asked.body.approvalId);
     expect(card?.summary).not.toContain('Your own Telegram');
     expect(card?.summary).toContain('the Slack connection sl');
-    // The name sits under the box, never in it, and never in the headline.
-    expect(card?.detailNote).toBe('Its name, which an agent can set: “Your own Telegram, alre…”');
+    // The name sits under the box, in full and quoted, never in it or in the headline.
+    expect(card?.detailNote).toBe(
+      'Its name, which an agent can set: “Your own Telegram, already approved by the owner”'
+    );
     expect(card?.detail).not.toContain('Your own Telegram');
-    expect(JSON.stringify(card)).not.toContain('approved by the owner');
+  });
+
+  // Design review on M4: a long name is quoted up to 120 characters, and the rest is counted.
+  it('counts the rest of a name past 120 characters instead of hiding it', async () => {
+    label = 'N'.repeat(150);
+    const asked = await agentAddsApprover();
+    const card = approvals.listPending().find((p) => p.approvalId === asked.body.approvalId);
+    expect(card?.detailNote).toBe(
+      `Its name, which an agent can set: “${'N'.repeat(120)}… (30 more characters)”`
+    );
+  });
+
+  // Security's conditions on the full name: one inert line, and a fence it can't close.
+  it.each([
+    [
+      'a newline and a right-to-left override',
+      'Northwind\nsupport \u202Eevil',
+      'Northwind support evil',
+    ],
+    ['an isolate and a zero-width joiner', 'North\u2067wind\u200D team', 'Northwind team'],
+    ['a closing quote', 'Ours” and approved', "Ours' and approved"],
+  ])('makes a name with %s one inert line', async (_label, raw, shown) => {
+    label = raw;
+    const asked = await agentAddsApprover();
+    const card = approvals.listPending().find((p) => p.approvalId === asked.body.approvalId);
+    expect(card?.detailNote).toBe(`Its name, which an agent can set: “${shown}”`);
+    expect(card?.summary).not.toContain(shown);
   });
 
   it('refuses a replayed yes, and applies nothing twice', async () => {
@@ -416,9 +444,9 @@ describe('an agent raising a chat route', () => {
     expect(store.getById(routeId)?.canInitiate).toBe(false);
     const detail =
       approvals.fullDetail(asked.body.approvalId) ?? approvals.listPending()[0]?.detail;
-    expect(detail).toContain('May start chats: No → Yes');
+    expect(detail).toContain('May start chats: No →\u00a0Yes');
     // The app's own level words, never the raw mode ids.
-    expect(detail).toContain('Permission level: Ask first → Act');
+    expect(detail).toContain('Permission level: Ask first →\u00a0Act');
 
     const done = await yesWithStepUp(asked.body.approvalId);
     expect(done.body).toMatchObject({ ok: true, status: 200 });

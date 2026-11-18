@@ -106,14 +106,55 @@ export function settingNamesText(names: readonly string[]): string {
 /** The longest connection name the sheet shows before cutting it. */
 const MAX_SHOWN_NAME = 40;
 
-/** The longest connection name an agent's card quotes (Security N1 on DOR-4355 M4). */
-const MAX_CARD_NAME = 24;
+/**
+ * The longest connection name an agent's card quotes whole. Past it the rest is
+ * counted, not hidden (design review on DOR-4355 M4: a person should read what an
+ * agent called it, and the note stays under the 200-character card field).
+ */
+const MAX_CARD_NAME = 120;
+
+/** What the card's name line starts with; the name follows, inside the quotes. */
+const NOTE_LEAD = 'Its name, which an agent can set: “';
+/** The card field the note travels in (`PendingApproval.detailNote`). */
+const NOTE_MAX = 200;
+
+/**
+ * A connection's name made one inert line for an agent's card (Security on
+ * DOR-4355 M4): whitespace and newlines collapse to single spaces, then every
+ * format and control character goes (bidi overrides and isolates, direction
+ * marks, zero-width joiners, BOM), and quote marks that could close the card's
+ * fence become plain apostrophes. It is counted and cut by code point, so no
+ * emoji is split, and whatever is cut is counted on the card.
+ *
+ * @param label - The connection's name as stored.
+ */
+export function inertName(label: string): string {
+  const points = [
+    ...label
+      .replace(/\s+/g, ' ')
+      .replace(/[\p{Cf}\p{Cc}]/gu, '')
+      .replace(/[“”"]/g, "'")
+      .trim(),
+  ];
+  if (points.length <= MAX_CARD_NAME && NOTE_LEAD.length + points.join('').length + 1 <= NOTE_MAX)
+    return points.join('');
+  // Keep up to MAX_CARD_NAME code points, fewer when wide ones would pass the field's cap.
+  let keep = Math.min(points.length, MAX_CARD_NAME);
+  const fits = (n: number) =>
+    NOTE_LEAD.length +
+      points.slice(0, n).join('').length +
+      `… (${points.length - n} more characters)`.length +
+      1 <=
+    NOTE_MAX;
+  while (keep > 0 && !fits(keep)) keep -= 1;
+  return `${points.slice(0, keep).join('')}… (${points.length - keep} more characters)`;
+}
 
 /** How an agent's card names a connection: a headline, and its name kept apart. */
 export interface CardConnection {
   /** `the Slack connection northwind-sl`: its type and id, neither free text. */
   headline: string;
-  /** Its name, quoted, cut short and marked as a name an agent can set, when it has one. */
+  /** Its name, quoted in full up to a cap and marked as a name an agent can set, when it has one. */
   note?: string;
 }
 
@@ -121,8 +162,9 @@ export interface CardConnection {
  * A connection as an agent's card names it. Anyone who can save a connection, an
  * agent included, sets its name, and nothing records who did, so the headline
  * never shows it: it shows the connection's type and its id, which is lowercase
- * letters, digits and hyphens only. The name appears on its own line, quoted,
- * cut short and marked as one an agent can set.
+ * letters, digits and hyphens only. The name appears on its own line, quoted in
+ * full (past {@link MAX_CARD_NAME} characters the rest is counted) and marked as
+ * one an agent can set.
  *
  * @param adapterManager - Where the connection and its type are read.
  * @param id - The connection's id.
@@ -134,10 +176,9 @@ export function cardConnection(
   const config = adapterManager.getAdapter(id)?.config;
   const type = config ? (adapterManager.getManifest(config.type)?.displayName ?? config.type) : '';
   const headline = `the ${type ? `${type} ` : ''}connection ${id}`;
-  const label = typeof config?.label === 'string' ? config.label.replace(/\s+/g, ' ').trim() : '';
-  if (!label) return { headline };
-  const cut = label.length > MAX_CARD_NAME ? `${label.slice(0, MAX_CARD_NAME - 1)}…` : label;
-  return { headline, note: `Its name, which an agent can set: “${cut}”` };
+  const name = typeof config?.label === 'string' ? inertName(config.label) : '';
+  if (!name) return { headline };
+  return { headline, note: `${NOTE_LEAD}${name}”` };
 }
 
 /**

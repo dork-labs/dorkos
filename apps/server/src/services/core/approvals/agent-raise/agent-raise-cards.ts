@@ -143,7 +143,9 @@ function turnMarked(agentPath: string, sessionId?: string): boolean {
 
 /** The card's box: each change, from → to, and nothing else. */
 function detailOf(effect: AgentRaiseEffect): string {
-  return effect.changes.map((c) => `${c.what}: ${c.from} → ${c.to}`).join('\n');
+  // A no-break space after the arrow keeps "→ Yes" together, so a narrow card
+  // wraps before the arrow and never between it and the new value.
+  return effect.changes.map((c) => `${c.what}: ${c.from} →\u00a0${c.to}`).join('\n');
 }
 /** Turn a waiting card down and forget it. */
 function retire(raise: PendingRaise, reason: string): void {
