@@ -708,6 +708,78 @@ describe('an approval is for one copy of an extension (DOR-2383)', () => {
     expect(manager.getServerHandler('flow')).not.toBeNull();
   });
 
+  // Purpose: the rooms and agents a person picked were picked for the copy they
+  // had approved. A yes to another copy under the same id is a yes to its
+  // files, not to where the old copy reached, so it starts with none (DOR-4573).
+  it('clears the rooms and agents picked for the old copy when another copy is approved', async () => {
+    stored.value = {
+      enabled: ['flow'],
+      disabled: [],
+      approvedToRun: ['flow'],
+      approvedSources: { flow: { path: PLUGIN_COPY, plugin: 'flow', digest: D1 } },
+      roomAccess: { flow: ['room-1'], other: ['room-2'] },
+      forwardAgents: { flow: ['agent-1'], other: ['agent-2'] },
+    };
+    mockDiscover.mockResolvedValue([
+      makeRecord('flow', {
+        hasServerEntry: true,
+        path: OTHER_PLUGIN_COPY,
+        sourcePlugin: 'aaa-other',
+      }),
+    ]);
+    await manager.initialize(null);
+
+    await manager.approveToRun('flow');
+
+    expect(stored.value.approvedSources?.flow?.path).toBe(OTHER_PLUGIN_COPY);
+    expect(stored.value.roomAccess).toEqual({ other: ['room-2'] });
+    expect(stored.value.forwardAgents).toEqual({ other: ['agent-2'] });
+  });
+
+  it('clears them when the same folder is approved again with other files', async () => {
+    stored.value = {
+      enabled: ['flow'],
+      disabled: [],
+      approvedToRun: ['flow'],
+      approvedSources: { flow: { path: PLUGIN_COPY, plugin: 'flow', digest: D1 } },
+      roomAccess: { flow: ['room-1'] },
+      forwardAgents: { flow: ['agent-1'] },
+    };
+    folderDigest.value = D2;
+    mockDiscover.mockResolvedValue([
+      makeRecord('flow', { hasServerEntry: true, path: PLUGIN_COPY, sourcePlugin: 'flow' }),
+    ]);
+    await manager.initialize(null);
+
+    await manager.approveToRun('flow', { expectedDigest: D2 });
+
+    expect(stored.value.approvedSources?.flow?.digest).toBe(D2);
+    expect(stored.value.roomAccess).toEqual({});
+    expect(stored.value.forwardAgents).toEqual({});
+  });
+
+  it('keeps them when the same copy is approved again with the same files', async () => {
+    stored.value = {
+      enabled: ['flow'],
+      disabled: [],
+      approvedToRun: ['flow'],
+      approvedSources: { flow: { path: PLUGIN_COPY, plugin: 'flow', digest: D1 } },
+      roomAccess: { flow: ['room-1'] },
+      forwardAgents: { flow: ['agent-1'] },
+    };
+    mockDiscover.mockResolvedValue([
+      makeRecord('flow', { hasServerEntry: true, path: PLUGIN_COPY, sourcePlugin: 'flow' }),
+    ]);
+    await manager.initialize(null);
+
+    await manager.approveToRun('flow');
+
+    // The yes was written (it records the permission set), and the picks stay.
+    expect(mockConfigSet).toHaveBeenCalledWith('extensions', expect.anything());
+    expect(stored.value.roomAccess).toEqual({ flow: ['room-1'] });
+    expect(stored.value.forwardAgents).toEqual({ flow: ['agent-1'] });
+  });
+
   it('keeps an approval given before copies were recorded working for the direct install', async () => {
     stored.value = {
       enabled: ['my-ext'],
