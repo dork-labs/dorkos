@@ -48,6 +48,7 @@ import { logger } from '../../../lib/logger.js';
 import type { PausedAgentRef } from '../../mesh/pause/agent-pause.js';
 import type { DispatchPlan, InFlightTurn } from './types.js';
 import { joinWaitingChatRows } from './join-chat-rows.js';
+import { isOwnersCleanSend } from './owner-send.js';
 
 /** How many times a recovered row may fail to start before it is given up (DOR-3287). */
 export const RECOVERED_START_TRIES = 3;
@@ -198,9 +199,14 @@ export function launchDispatchInner(
   // call. Only ever adds: a refused launch leaves the chat noted, the stricter reading. Under the
   // runtime's own id too: a chat renamed on an earlier turn, sent to by its born id, runs its tool
   // calls under the id it was renamed to (Security M1 on #3587).
-  if (launchCarriesWords(clientId, messageId)) {
+  // The note is the turn's, not the chat's: the owner's own clean send ends it (DOR-4693). Every
+  // other turn keeps it, and a room turn sets and ends its own (`room-turn-runner.ts`).
+  const carriesWords = launchCarriesWords(clientId, messageId);
+  if (carriesWords || isOwnersCleanSend(plan)) {
     const canonical = plan.runtime.getInternalSessionId(plan.sessionId) ?? plan.sessionId;
-    for (const id of new Set([plan.sessionId, sessionKey, canonical])) noteRoomTurnWords(id, true);
+    for (const id of new Set([plan.sessionId, sessionKey, canonical])) {
+      noteRoomTurnWords(id, carriesWords);
+    }
   }
   let started: Promise<TriggerTurnResult>;
   try {

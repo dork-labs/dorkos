@@ -178,21 +178,20 @@ export interface RoomTurnRequest {
   /** Display-only provenance of the answered messages; never a permission input. */
   turnStarter?: TurnStarter;
   /**
-   * The loosest level this turn may run at, whatever the conversation is set
-   * to (spec `trusted-by-default-flip` §4, "power flows downstream, never up").
+   * What bounds this turn beyond the conversation's own level, as
+   * `ceilingForEntries` (`limits/turn-ceiling.ts`) computes it. A turn runs at
+   * its agent's set level whoever wrote what it answers (DOR-3440), so only two
+   * things set one:
    *
-   * `externalAuthor` only decides what a NEW conversation is seeded with; a
-   * room conversation is one per (room, agent) and is usually not new, so on
-   * its own a stranger's message into a conversation already at Full autonomy
-   * ran at Full autonomy. This bounds the turn itself:
+   * - a post held to the runtime's default for who was calling (a Wi-Fi
+   *   sign-in, DOR-3037): `'runtime-default'`;
+   * - a teammate's post in a shared space: a record of their chain for the
+   *   space's monthly limit, which lowers nothing.
    *
-   * - a message from off this machine (or an author nobody can resolve):
-   *   `'runtime-default'`, the mode the runtime starts in when nobody chose;
-   * - another agent's post: the level that agent's turn ran at when it wrote
-   *   the post, or `'runtime-default'` when that is not known;
-   * - a person on this machine, or the room's own voice: none.
-   *
-   * Never written to the conversation's stored settings.
+   * Another agent's post sets none, its level known or not (DOR-4693): what it
+   * read reaches the turn as a mark ({@link RoomTurnRequest.carriedOutsider})
+   * only when the post kept one. Never written to the conversation's stored
+   * settings.
    */
   permissionCeiling?: TurnPermissionCeiling;
   /**
