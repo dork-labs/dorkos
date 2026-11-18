@@ -5518,7 +5518,8 @@
             "type": "string",
             "enum": [
               "wifi-open",
-              "spend"
+              "spend",
+              "outside-words"
             ]
           },
           "spend": {
