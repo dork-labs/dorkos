@@ -127,6 +127,9 @@ export function canonicalClaudeAccountPath(dir: string): string {
   return canonicalAccountPath(dir, os.homedir());
 }
 
+/** The name of the CLI config file Claude Code keeps for each account. */
+export const CLAUDE_CLI_CONFIG_FILE_NAME = '.claude.json';
+
 /**
  * The CLI config file (`.claude.json`) Claude Code keeps for an account folder,
  * mirroring the CLI's own rule 1:1: inside `$CLAUDE_CONFIG_DIR` when that is
@@ -144,8 +147,8 @@ export function claudeCliConfigFile(root: string): string {
   const isDefaultRoot =
     canonicalAccountPath(root, home) === canonicalAccountPath(path.join(home, '.claude'), home);
   return isDefaultRoot
-    ? path.join(home, '.claude.json')
-    : path.join(expandClaudeAccountHome(root), '.claude.json');
+    ? path.join(home, CLAUDE_CLI_CONFIG_FILE_NAME)
+    : path.join(expandClaudeAccountHome(root), CLAUDE_CLI_CONFIG_FILE_NAME);
 }
 
 /**

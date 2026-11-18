@@ -3,8 +3,9 @@
  * (DOR-4425 step 2).
  *
  * While an account is signed out, this watches the metadata of one file: the
- * CLI config file `<account root>/.claude.json`, which the CLI rewrites when it
- * signs in. A change does not clear anything by itself. It asks for one probe
+ * CLI's config file for that account ({@link claudeCliConfigFile}), which the
+ * CLI rewrites when it signs in. It is `.claude.json` inside the account's
+ * folder, or `~/.claude.json` for the default `~/.claude`. A change does not clear anything by itself. It asks for one probe
  * ({@link probeAccount}), and only a probe that reads the account's plan limits
  * clears the signed-out state, through the probe's own proof path.
  *
@@ -35,9 +36,6 @@ import {
 import { onAccountSigninChange } from '../../../observability/index.js';
 import { claudeCliConfigFile } from '../claude-config-dir.js';
 import { PROBE_FLOOR_MS, probeAccount, type AccountProbeOutcome } from './account-probe.js';
-
-/** The CLI config file the watch looks at, inside an account's folder. */
-export const CLI_CONFIG_FILE_NAME = '.claude.json';
 
 /** How long after a burst's first file event the probe is asked for; the rest join it. */
 export const CREDENTIAL_CHANGE_DEBOUNCE_MS = 1_000;
@@ -98,7 +96,7 @@ export interface SigninCredentialWatchDeps {
 interface WatchedAccount {
   /** The registry id the probe is asked about. */
   accountId: string;
-  /** `<registry folder>/.claude.json`. */
+  /** The account's CLI config file: in its folder, or `~/.claude.json` for the default. */
   file: string;
   /** The running watch. */
   watch: CliConfigFileWatch;
@@ -213,6 +211,14 @@ export function startSigninCredentialWatch(deps: SigninCredentialWatchDeps): () 
       .catch((err: unknown) => quietly('a probe after a change failed', err))
       .finally(() => {
         entry.probing = false;
+        // The probe runs the CLI, which may rewrite this file itself. Take what
+        // it left as the new baseline, so its own write never asks for another.
+        try {
+          const facts = safeFacts(entry.file);
+          if (facts) entry.seen = { mtimeMs: facts.mtimeMs, size: facts.size };
+        } catch (err) {
+          quietly('could not read the file after a probe', err);
+        }
       });
   };
 
@@ -253,6 +259,9 @@ export function startSigninCredentialWatch(deps: SigninCredentialWatchDeps): () 
   const onEvent = (key: string, entry: WatchedAccount, eventType: string): void => {
     try {
       if (watched.get(key) !== entry) return;
+      // The probe's own CLI may be writing the file; what it leaves is the
+      // baseline once it settles (see `runProbe`).
+      if (entry.probing) return;
       const facts = safeFacts(entry.file);
       if (!facts) {
         stop(key);
@@ -291,6 +300,8 @@ export function startSigninCredentialWatch(deps: SigninCredentialWatchDeps): () 
       return;
     }
     if (change.runtime !== 'claude-code' || change.accountRoot === undefined) return;
+    // A healthy turn records `signed-in` every time: with nothing watched it costs nothing.
+    if (change.state === 'signed-in' && watched.size === 0) return;
     try {
       if (change.state === 'signed-out') {
         start(change.accountRoot);

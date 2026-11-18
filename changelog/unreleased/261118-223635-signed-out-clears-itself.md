@@ -10,6 +10,6 @@ covers:
   (DOR-4425).
 - If you sign in to a signed-out Claude account again from the command line, DorkOS notices,
   checks the account, and clears the notice once the check works (DOR-4425).
-- One failed sign-in no longer raises an alert right away. DorkOS waits 30 seconds and checks
-  the account once more. If it works, nothing is shown. If the check fails, or a second sign-in
-  fails in that time, you get the alert as before (DOR-4424).
+- One failed sign-in no longer raises an alert right away. DorkOS waits 30 seconds, and checks
+  a Claude account once more in that time. If the account works, nothing is shown. If it still
+  fails, or fails again in that time, you get the alert as before (DOR-4424).

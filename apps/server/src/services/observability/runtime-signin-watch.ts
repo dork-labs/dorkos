@@ -14,6 +14,7 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import { logger } from '../../lib/logger.js';
 import { canonicalAccountPath } from '../core/usage/runtime-accounts.js';
 import {
+  accountSignedOutAt,
   accountSigninState,
   recordAccountSignin,
   resetAccountSignins,
@@ -102,12 +103,14 @@ function noteCreditsRefused(runtime: string, sessionId: string, message: string)
  */
 export const SIGNIN_RECHECK_WINDOW_MS = 30_000;
 
-/** What one re-check learned: `ok` means the account works now. */
+/** What one re-check learned, for the log only: `ok` means its probe read the plan. */
 export type SigninRecheckResult = 'ok' | 'failed' | 'unknown';
 
 /**
- * Re-checks one account after its first failure, never inside the turn. A
- * re-check may clear the failure itself; resolving `ok` clears it too.
+ * Re-checks one account after its first failure, never inside the turn. What
+ * it resolves to clears nothing: a re-check clears only by proving the account
+ * through {@link noteSigninProven} with its own start time, so a shared probe
+ * that began before the failure cannot clear it.
  */
 export type SigninRecheck = (
   runtime: string,
@@ -212,7 +215,7 @@ function noteSigninFailure(runtimeType: string, account: string | undefined): vo
   entry.timer = setTimeout(() => announce(runtimeType, key, entry), recheckWindowMs);
   // A held notice must never keep the process alive.
   entry.timer.unref?.();
-  startRecheck(runtimeType, account, key, entry);
+  startRecheck(runtimeType, account);
 }
 
 /** Tell the sink about a held failure, unless it was repaired or reset since. */
@@ -233,13 +236,11 @@ function announce(runtimeType: string, key: string | null, entry: SigninEpisodeE
   if (!told) forget(runtimeType, key);
 }
 
-/** Run the one re-check a held failure gets. Its errors never reach the turn. */
-function startRecheck(
-  runtimeType: string,
-  account: string | undefined,
-  key: string | null,
-  entry: SigninEpisodeEntry
-): void {
+/**
+ * Run the one re-check a held failure gets. Its answer clears nothing here (see
+ * {@link SigninRecheck}); its errors never reach the turn.
+ */
+function startRecheck(runtimeType: string, account: string | undefined): void {
   const failed = (err: unknown): void =>
     logger.debug('[Runtimes] A sign-in re-check could not run', { err, runtime: runtimeType });
   let pending: Promise<SigninRecheckResult>;
@@ -250,12 +251,9 @@ function startRecheck(
     return;
   }
   pending
-    .then((result) => {
-      // Only this episode: an `ok` about one that ended and began again is stale.
-      if (result === 'ok' && liveEntry(runtimeType, key) === entry) {
-        noteSigninRepaired(runtimeType, account, 'probe');
-      }
-    })
+    .then((result) =>
+      logger.debug('[Runtimes] A sign-in re-check finished', { runtime: runtimeType, result })
+    )
     .catch(failed);
 }
 
@@ -276,7 +274,10 @@ export function noteSigninProven(
   startedAt: number,
   cause: SigninClearCause
 ): void {
-  const noticedAt = liveEntry(runtimeType, episodeKey(account))?.since;
+  // With no live episode (one nobody could be told about was given back), the
+  // signed-out mark still knows when the failure was seen.
+  const noticedAt =
+    liveEntry(runtimeType, episodeKey(account))?.since ?? accountSignedOutAt(runtimeType, account);
   if (noticedAt !== undefined && noticedAt >= startedAt) return;
   noteSigninRepaired(runtimeType, account, cause);
 }

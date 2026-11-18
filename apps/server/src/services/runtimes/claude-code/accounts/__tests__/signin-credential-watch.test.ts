@@ -24,9 +24,9 @@ import {
   noteSigninRepaired,
   resetSigninEpisodes,
 } from '../../../../observability/index.js';
+import { CLAUDE_CLI_CONFIG_FILE_NAME } from '../../claude-config-dir.js';
 import { PROBE_FLOOR_MS, type AccountProbeOutcome } from '../account-probe.js';
 import {
-  CLI_CONFIG_FILE_NAME,
   CREDENTIAL_CHANGE_DEBOUNCE_MS,
   startSigninCredentialWatch,
   type CliConfigFileFacts,
@@ -36,7 +36,7 @@ import {
 
 /** A made-up account folder. Nothing reads or writes it: every fs call is a fake. */
 const ROOT = '/nonexistent-dorkos-signin-watch/work';
-const FILE = path.join(ROOT, CLI_CONFIG_FILE_NAME);
+const FILE = path.join(ROOT, CLAUDE_CLI_CONFIG_FILE_NAME);
 
 /** One registered account, as the registry would return it. */
 function account(overrides: Partial<RuntimeAccount> = {}): RuntimeAccount {
@@ -279,13 +279,16 @@ describe('condition 1: the registry names the file, and a symlink is never follo
       start(real.deps);
 
       await fs.writeFile(path.join(dir, 'elsewhere.json'), '{"made":"up"}');
-      await fs.symlink(path.join(dir, 'elsewhere.json'), path.join(dir, CLI_CONFIG_FILE_NAME));
+      await fs.symlink(
+        path.join(dir, 'elsewhere.json'),
+        path.join(dir, CLAUDE_CLI_CONFIG_FILE_NAME)
+      );
       recordAccountSignin('claude-code', dir, 'signed-out');
       expect(real.watch).not.toHaveBeenCalled();
 
       recordAccountSignin('claude-code', dir, 'signed-in');
-      await fs.rm(path.join(dir, CLI_CONFIG_FILE_NAME));
-      await fs.writeFile(path.join(dir, CLI_CONFIG_FILE_NAME), '{"made":"up"}');
+      await fs.rm(path.join(dir, CLAUDE_CLI_CONFIG_FILE_NAME));
+      await fs.writeFile(path.join(dir, CLAUDE_CLI_CONFIG_FILE_NAME), '{"made":"up"}');
       recordAccountSignin('claude-code', dir, 'signed-out');
       expect(real.watch).toHaveBeenCalledOnce();
     });
@@ -337,6 +340,29 @@ describe('condition 2: at most one probe per floor window', () => {
     await vi.advanceTimersByTimeAsync(CREDENTIAL_CHANGE_DEBOUNCE_MS);
 
     expect(h.probe).not.toHaveBeenCalled();
+  });
+
+  it('never counts the probe’s own write to the file as a change', async () => {
+    const h = harness();
+    // The probe runs the CLI, which rewrites the file while it is up.
+    h.probe.mockImplementationOnce(async () => {
+      h.change();
+      h.change();
+      return { probe: 'failed' as const };
+    });
+    start(h.deps);
+    recordAccountSignin('claude-code', ROOT, 'signed-out');
+
+    h.change();
+    await vi.advanceTimersByTimeAsync(CREDENTIAL_CHANGE_DEBOUNCE_MS);
+    expect(h.probe).toHaveBeenCalledOnce();
+
+    // Well past the floor, and an event that finds the file as the probe left it.
+    await vi.advanceTimersByTimeAsync(2 * PROBE_FLOOR_MS);
+    h.touchless();
+    await vi.advanceTimersByTimeAsync(CREDENTIAL_CHANGE_DEBOUNCE_MS);
+
+    expect(h.probe).toHaveBeenCalledOnce();
   });
 
   it('asks once more after the floor when the probe was throttled', async () => {

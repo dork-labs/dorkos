@@ -51,12 +51,14 @@ import {
 import { EscalationService, setEscalationService } from '../escalation-service.js';
 import type { WebPushChannel } from '../channels/web-push.js';
 import {
+  noteSigninProven,
   noteSigninRepaired,
   resetSigninEpisodes,
   setRuntimeSigninSink,
   setSigninRecheck,
   SIGNIN_RECHECK_WINDOW_MS,
 } from '../../observability/index.js';
+import { accountSigninState } from '../../observability/account-signin-state.js';
 import { logger } from '../../../lib/logger.js';
 import { watchRuntimeSigninFailures } from '../emitters/runtime-signin.js';
 
@@ -474,9 +476,10 @@ describe('a single sign-in failure', () => {
 
   it('drops the notice when the re-check finds the account working', async () => {
     const recheck = vi.fn(async (runtime: string, accountRoot: string | undefined) => {
-      await Promise.resolve();
-      // What the probe does on `ok`: it clears the account itself.
-      noteSigninRepaired(runtime, accountRoot, 'probe');
+      // A probe that starts a second after the failure, as a fresh one does.
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      // What the probe does on `ok`: it proves the account through its own path.
+      noteSigninProven(runtime, accountRoot, Date.now(), 'probe');
       return 'ok' as const;
     });
     setSigninRecheck(recheck);
@@ -495,14 +498,26 @@ describe('a single sign-in failure', () => {
     expect(sendToAll).not.toHaveBeenCalled();
   });
 
-  it('drops the notice when the re-check only answers ok', async () => {
-    setSigninRecheck(async () => 'ok');
-    const registry = registryRunning('claude-code', [authErrorTurn]);
+  it('keeps the notice when the re-check shares a probe that began before the failure', async () => {
+    // Single flight: a probe already running when the turn failed is the one
+    // the re-check gets. Its `ok` is about the sign-in before it died.
+    const probeStartedAt = Date.now();
+    vi.advanceTimersByTime(1000);
+    setSigninRecheck(async (runtime, accountRoot) => {
+      noteSigninProven(runtime, accountRoot, probeStartedAt, 'probe');
+      return 'ok';
+    });
+    const registry = registryWithAccounts('claude-code', [authErrorTurn], {
+      'sess-1': '/home/dev/.claude',
+    });
 
     await drain(registry, 'claude-code', 'sess-1');
-    await pastRecheck();
+    await vi.advanceTimersByTimeAsync(SIGNIN_RECHECK_WINDOW_MS - 1);
+    expect(raisedRows()).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    await flush();
 
-    expect(signinRows()).toEqual([]);
+    expect(raisedRows()).toHaveLength(1);
   });
 
   it('still raises when the re-check learns nothing', async () => {
@@ -756,6 +771,38 @@ describe('the next clean turn on that runtime', () => {
     // An abandoned turn never reached its end, so nothing about it says the
     // credential works.
     expect(retired()).toEqual([]);
+  });
+
+  it('does not count a turn that began before a failure nobody could be told about', async () => {
+    // The notice could not be said, so the episode was given back — and with
+    // it the time the failure was noticed. The signed-out mark keeps its own.
+    setRuntimeSigninSink(() => {
+      throw new Error('the notification pipeline is down');
+    });
+    let release = (): void => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    /** A working turn that hangs until the test lets it finish. */
+    async function* heldCleanTurn(): AsyncGenerator<StreamEvent> {
+      yield { type: 'text_delta', data: { text: 'working' } } as StreamEvent;
+      await gate;
+    }
+    const registry = registryRunning('codex', [heldCleanTurn, authErrorTurn]);
+
+    const held = (async () => {
+      for await (const _ of registry.get('codex').sendMessage('sess-held', 'hi', {}));
+    })();
+    await flush();
+    vi.advanceTimersByTime(ONE_MINUTE_MS);
+    await drain(registry, 'codex', 'sess-fail');
+    await pastRecheck();
+
+    release();
+    await held;
+    await flush();
+
+    expect(accountSigninState('codex', undefined)).toBe('signed-out');
   });
 });
 

@@ -379,10 +379,6 @@ async function failSigninOn(accountRoot: string): Promise<void> {
 }
 
 /**
- * A probe that read the account's plan limits is proof its sign-in works, so it
- * clears a signed-out state the way a working turn does (DOR-4425).
- */
-/**
  * Let the wall clock move on by a few ms. A probe only proves a sign-in if it
  * began after the failure was noticed, and the two can share one millisecond.
  */
@@ -390,6 +386,10 @@ function laterThanNow(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 5));
 }
 
+/**
+ * A probe that read the account's plan limits is proof its sign-in works, so it
+ * clears a signed-out state the way a working turn does (DOR-4425).
+ */
 describe('probeAccount: what a probe says about the sign-in', () => {
   let sink: ReturnType<typeof vi.fn<RuntimeSigninSink>>;
 
