@@ -4,8 +4,9 @@
  * Its own grant (or its chat's, or its extension's) counts, and so does
  * the owner's every-agent share. Money actions cannot come through a share
  * or an access level. Repository-control changes require the agent's own exact
- * action, as do history replacement and new branches requested in arguments.
- * A level, a chat grant or a shared grant cannot replace it.
+ * action, as do history replacement and new branches requested in arguments,
+ * and X uploads or posts whose arguments reach past the owner's own account
+ * (DOR-4332). A level, a chat grant or a shared grant cannot replace it.
  *
  * A paid row under a level predates that rule and is kept only until the
  * next catalog read removes it.
@@ -24,6 +25,7 @@ import {
   isPaidOperation,
   type ConnectorOperationClassification,
 } from '@dorkos/shared/connector-schemas';
+import { accountReachArguments } from './account-reach-arguments.js';
 import { changesRepositoryControlFiles, changesRepositoryHistory } from './workflow-files.js';
 import {
   isOutsideLevels,
@@ -68,6 +70,8 @@ export function grantRefusal(
   ) {
     return 'Changing repository control files needs this action given to this agent on its own.';
   }
+  const reach = accountReachArguments(operation, target.arguments);
+  if (reach && !holdsOwnExactAction(db, agentId, target)) return reach;
   if (!granted.named && !granted.everyAgent) {
     return notGrantedRefusal(db, agentId, target, operation);
   }
