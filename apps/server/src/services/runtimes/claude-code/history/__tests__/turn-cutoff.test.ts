@@ -208,3 +208,54 @@ describe('a stall-guard cutoff on a turn with a tool in flight (DOR-3307)', () =
     expect(history.at(-1)).toMatchObject({ id: 'turn-cutoff-7', role: 'assistant' });
   });
 });
+
+describe('another chat stopping the turn (DOR-4668)', () => {
+  const stop = { createdAt: '2026-10-26T00:41:50.600Z', byLine: 'Stopped by Ana · Planning' };
+
+  it('tells the agent on its next turn that a chat stopped it, not a person', () => {
+    for (const via of ['interrupt', 'stop'] as const) {
+      const note = renderContextEntry({
+        kind: 'turn_cutoff',
+        scope: 'per-turn',
+        data: { stoppedBy: 'chat', via },
+      });
+      expect(note).toContain('<turn_cutoff>');
+      expect(note).toContain("Another chat's agent stopped your last turn");
+      expect(note).toContain('No person stopped it, and nobody declined anything.');
+    }
+    expect(
+      renderContextEntry({
+        kind: 'turn_cutoff',
+        scope: 'per-turn',
+        data: { stoppedBy: 'chat', via: 'interrupt' },
+      })
+    ).toContain('to deliver the message in this turn');
+  });
+
+  it('never shows the reopened transcript with the person-interrupt marker', () => {
+    const parsed = parseTranscript(CUT_TRANSCRIPT);
+    expect(shown(parsed)).toMatch(PERSON_WORDING);
+
+    const history = applyTurnCutoffs(parsed, [], [stop]);
+
+    expect(shown(history)).not.toMatch(PERSON_WORDING);
+    // The marker goes; the chat draws its own "Stopped by" line there.
+    expect(history.find((m) => m.id === 'u-marker')).toBeUndefined();
+    const tool = history.flatMap((m) => m.toolCalls ?? []).find((c) => c.toolCallId === 'tool-cut');
+    expect(tool).toMatchObject({ status: 'error', result: 'Stopped by Ana · Planning' });
+    expect(tool?.approvalOutcome).toBeUndefined();
+    expect(shown(parsed)).toMatch(PERSON_WORDING);
+  });
+
+  it("leaves a person's Stop alone when the chat stop was another turn's", () => {
+    const parsed = parseTranscript(CUT_TRANSCRIPT);
+    const history = applyTurnCutoffs(
+      parsed,
+      [],
+      [{ ...stop, createdAt: '2026-10-26T00:10:00.000Z' }]
+    );
+    expect(history.find((m) => m.id === 'u-marker')?.content).toBe(
+      '[Request interrupted by user for tool use]'
+    );
+  });
+});
