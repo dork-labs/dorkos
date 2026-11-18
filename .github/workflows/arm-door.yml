@@ -53,13 +53,14 @@ env:
 jobs:
   door:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 10
     steps:
       # The queue's base, not this entry's own tree: the scripts below run with
       # a write token, so they must not be ones the pull request being judged
       # could have edited. Same reason as security-gate.yml.
       - uses: actions/checkout@v7
         continue-on-error: true
+        timeout-minutes: 2
         with:
           ref: ${{ github.event.merge_group.base_sha }}
           persist-credentials: false
@@ -67,6 +68,7 @@ jobs:
       - name: Mint the merge-tail app token
         id: app-token
         continue-on-error: true
+        timeout-minutes: 1
         uses: actions/create-github-app-token@v3
         with:
           client-id: ${{ secrets.MERGE_TAIL_APP_CLIENT_ID }}
@@ -79,7 +81,7 @@ jobs:
 
       - name: Check the head's gates and the arm script's stamp
         continue-on-error: true
-        # Under the job's 8: a hung `gh` call times this step out, which
+        # Under the job's 10: a hung `gh` call times this step out, which
         # continue-on-error keeps green, instead of cancelling the job.
         timeout-minutes: 6
         env:
@@ -157,11 +159,12 @@ jobs:
                      -f query='mutation($id:ID!){ dequeuePullRequest(input:{id:$id}){ clientMutationId } }' \
                      >/dev/null 2>"$w/dequeue-err.txt"; then
                   echo "PR #$pr -> taken out of the queue: $reasons"
+                  # Only once it is really out: the note says it was taken out.
+                  say pull "$reasons"
                 else
                   warn "PR #$pr: could not dequeue: $(tr '\n' ' ' < "$w/dequeue-err.txt" 2>/dev/null | cut -c1-200)"
                 fi
               fi
-              say pull "$reasons"
               ;;
             "KEEP gates-met "*"stamp=no")
               proof=$(sed -E 's/.*(proof=[a-z-]+).*/\1/' <<<"$verdict")
