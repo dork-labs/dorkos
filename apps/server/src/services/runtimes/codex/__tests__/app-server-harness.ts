@@ -33,6 +33,8 @@ export interface AppServerHarnessOptions {
   interactionExpireMs?: number;
   /** Background-work timings. */
   backgroundWork?: { coalesceMs?: number; ceilingMs?: number };
+  /** The realpath seam; defaults to prefixing `/real`. */
+  realpath?: (path: string) => string;
 }
 
 /**
@@ -62,7 +64,7 @@ export function makeAppServerHarness(options: AppServerHarnessOptions = {}) {
       person: () => ({ PATH: '/usr/bin', CODEX_HOME: PERSON_HOME }),
       credits: () => ({ PATH: '/usr/bin', CODEX_HOME: CREDITS_ENV_HOME }),
     },
-    realpath: (path) => `/real${path}`,
+    realpath: options.realpath ?? ((path) => `/real${path}`),
     stopAckMs: options.stopAckMs ?? 300,
     ...(options.compactionStartMs !== undefined
       ? { compactionStartMs: options.compactionStartMs }

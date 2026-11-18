@@ -12,6 +12,7 @@ import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import { strictestTrustModeId } from '@dorkos/shared/permission-semantics';
 import { logger } from '../../../lib/logger.js';
 import type { TurnOrigin } from '../../session/origin/turn-origin.js';
+import { mergedHolds } from '../turn-power/continuation-hold.js';
 
 /** Reduce `SessionSettings` to only the explicitly-provided keys for an UPSERT patch. */
 export function pickSettings(
@@ -174,4 +175,32 @@ export function keptPermissionMode(declared: readonly PermissionModeDescriptor[]
   const ids = declared.map((descriptor) => descriptor.id);
   const stored = sessionMetadata.permissionMode;
   return sql`case when ${inArray(stored, ids)} then ${stored} when ${stored} is not null then ${strictest} end`;
+}
+
+type SessionRow = typeof sessionMetadata.$inferSelect;
+
+/**
+ * What a canonical rename keeps when both ids have a row: the destination's settings and binding
+ * win, the source's fill the gaps, and the holds join, held if either was and a stranger's if
+ * either was or is not known (DOR-4593), so a rename never loosens a chat.
+ *
+ * @param destination - The row under the id the session is renamed to.
+ * @param source - The row under the id it is renamed from.
+ */
+export function mergedSessionRow(
+  destination: SessionRow,
+  source: SessionRow
+): Partial<typeof sessionMetadata.$inferInsert> {
+  return {
+    runtime: destination.runtime ?? source.runtime,
+    permissionMode: destination.permissionMode ?? source.permissionMode,
+    model: destination.model ?? source.model,
+    effort: destination.effort ?? source.effort,
+    fastMode: destination.fastMode ?? source.fastMode,
+    agentPath: destination.agentPath ?? source.agentPath,
+    launchOrigin: destination.launchOrigin ?? source.launchOrigin,
+    launchedBy: destination.launchedBy ?? source.launchedBy,
+    lastAutoResumeFor: destination.lastAutoResumeFor ?? source.lastAutoResumeFor,
+    ...mergedHolds(destination, source),
+  };
 }

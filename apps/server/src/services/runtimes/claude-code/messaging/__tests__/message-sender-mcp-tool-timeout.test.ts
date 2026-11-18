@@ -1,3 +1,4 @@
+import { isolatedRequiredLaunchOwner } from './required-launch-fixture.js';
 /**
  * What the turn's SDK subprocess is told its per-call MCP tool timeout is.
  *
@@ -17,6 +18,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
 import type { AgentSession } from '../../agent-types.js';
 import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
+
+const requiredLaunches = isolatedRequiredLaunchOwner();
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
@@ -63,7 +66,12 @@ function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
 }
 
 function makeOpts(overrides: Partial<MessageSenderOpts> = {}): MessageSenderOpts {
-  return { cwd: '/mock/project', onSdkSessionRebind: async () => {}, ...overrides };
+  return {
+    cwd: '/mock/project',
+    requiredLaunches,
+    onSdkSessionRebind: async () => {},
+    ...overrides,
+  };
 }
 
 /** Drive one turn with a stream that yields nothing, and return the SDK options. */

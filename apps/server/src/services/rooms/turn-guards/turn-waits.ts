@@ -83,6 +83,8 @@ export function noteTurnWait(
  * failure (DOR-3012: most of the 2026-10-18 failures logged no reason at all).
  */
 export interface TurnFailure {
+  /** Structured runtime code for bounded server-side correlation, never raw copy. */
+  code?: string;
   /** The runtime's `TurnRefusal`, when it refused the turn before it started. */
   refusal?: string;
   /** What happened, for the log: the turn's own error, or how its read ended. */
@@ -102,7 +104,11 @@ export function noteTurnFailure(
 ): Partial<TurnFailure> {
   if (event.type !== 'error' || known.detail !== undefined) return known;
   const refused = event.code === TURN_NOT_STARTED_CODE && event.reason !== undefined;
-  return { detail: event.message, ...(refused ? { refusal: event.reason } : {}) };
+  return {
+    detail: event.message,
+    ...(event.code !== undefined ? { code: event.code } : {}),
+    ...(refused ? { refusal: event.reason } : {}),
+  };
 }
 
 /**

@@ -45,10 +45,11 @@ export class WakeSettle {
    * since its last wake. Checked again each time, so a computer that sleeps
    * again while a fire waits keeps it waiting.
    *
-   * @param fire - Called with the instant it actually runs.
+   * @param fire - Called with the instant it actually runs. What it resolves
+   *   to is not read here (a dispatch answers the run it opened, DOR-4315).
    * @param name - The task's name, for the log line if `fire` rejects.
    */
-  run(fire: (firedAt: Date) => Promise<void> | void, name: string): void {
+  run(fire: (firedAt: Date) => Promise<unknown> | void, name: string): void {
     const wokeAt = this.clock.lastWakeAt();
     const wait = wokeAt === null ? 0 : wokeAt + WAKE_SETTLE_MS - this.clock.now();
     if (wait <= 0) {

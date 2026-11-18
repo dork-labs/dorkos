@@ -10,6 +10,11 @@
  * bundle, the approvals on record, the skill link in `.claude/skills`, and the
  * installed copy coming back.
  *
+ * The watch POLLS (`watchWithPolling`): macOS drops native events under load,
+ * and this case reddened healthy code on exactly that (DOR-2021) — an edit or
+ * a new skill that was simply never reported. chokidar, production's options
+ * and every handler are the real ones; only how a change is noticed differs.
+ *
  * @vitest-environment node
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -18,7 +23,9 @@ import { lstat, mkdir, mkdtemp, readdir, realpath, rm, writeFile } from 'node:fs
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { DevLinkReloadedEvent } from '@dorkos/shared/marketplace-schemas';
+import { loadCeilingMs, loadScaledMs } from '@dorkos/shared/test-budget';
 import { initBoundary } from '../../../../lib/boundary.js';
+import { watchWithPolling, type PollingWatch } from '../../../../__tests__/watch-with-polling.js';
 
 /** The config the manager and the projection read, held in memory. */
 interface StoredExtensions {
@@ -114,9 +121,9 @@ async function treeOf(root: string): Promise<Map<string, string>> {
   return out;
 }
 
-/** Wait until `check` passes or the time runs out. */
-async function eventually(check: () => void, timeoutMs = 15_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
+/** Wait until `check` passes, on a budget widened by the load as the wait starts. */
+async function eventually(check: () => void, baseMs = 15_000): Promise<void> {
+  const deadline = Date.now() + loadScaledMs(baseMs);
   for (;;) {
     try {
       check();
@@ -130,6 +137,25 @@ async function eventually(check: () => void, timeoutMs = 15_000): Promise<void> 
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * Wait until `count()` has held still for `quietMs`, and return it. The quiet
+ * window is the claim ("nothing more follows"), so it is fixed; only the
+ * ceiling on reaching it is scaled.
+ */
+async function settledAt(count: () => number, quietMs: number): Promise<number> {
+  const deadline = Date.now() + loadScaledMs(10_000);
+  for (;;) {
+    const seen = count();
+    await sleep(quietMs);
+    if (count() === seen) return seen;
+    if (Date.now() > deadline) throw new Error(`still changing after ${seen}`);
+  }
+}
+
+/** The real esbuild compile in `beforeEach`, and the case's five waits, at their worst. */
+const SETUP_TIMEOUT_MS = Math.min(loadCeilingMs(10_000), 60_000);
+const CASE_TIMEOUT_MS = Math.min(loadCeilingMs(30_000), 120_000);
+
 describe('a dev link reloads when its folder changes', () => {
   let root: string;
   let dorkHome: string;
@@ -142,8 +168,14 @@ describe('a dev link reloads when its folder changes', () => {
   let events: DevLinkReloadedEvent[];
   /** Folders whose real chokidar watch was closed. */
   let closedWatches: string[];
+  /** Folders a watch was opened on, once per opening. */
+  let openedWatches: string[];
+  /** Every event a real watch reported, as `<kind> <path relative to its folder>`. */
+  let reported: string[];
+  let polling: PollingWatch<unknown>;
 
   beforeEach(async () => {
+    polling = watchWithPolling(50);
     root = await realpath(await mkdtemp(path.join(tmpdir(), 'dorkos-devlink-reload-')));
     dorkHome = path.join(root, 'dork');
     project = path.join(root, 'project');
@@ -155,6 +187,8 @@ describe('a dev link reloads when its folder changes', () => {
     announced = [];
     events = [];
     closedWatches = [];
+    openedWatches = [];
+    reported = [];
 
     // The installed copy the dev link sets aside, approved and turned on.
     await writePlugin(path.join(project, '.dork', 'plugins', PLUGIN), '1.0.0');
@@ -179,7 +213,14 @@ describe('a dev link reloads when its folder changes', () => {
       rearmMs: 0,
       // The real chokidar watch, wrapped only to see it close.
       watch: (folder, ignored, listeners) => {
-        const handle = chokidarDevLinkWatch(folder, ignored, listeners);
+        openedWatches.push(folder);
+        const handle = chokidarDevLinkWatch(folder, ignored, {
+          ...listeners,
+          onEvent: (kind, absPath) => {
+            reported.push(`${kind} ${path.relative(folder, absPath)}`);
+            listeners.onEvent(kind, absPath);
+          },
+        });
         return {
           close: async () => {
             closedWatches.push(folder);
@@ -206,10 +247,11 @@ describe('a dev link reloads when its folder changes', () => {
       reloads: watcher,
     });
     await watcher.start();
-  });
+  }, SETUP_TIMEOUT_MS);
 
   afterEach(async () => {
     await watcher.stop();
+    polling.restore();
     await rm(root, { recursive: true, force: true }).catch(() => undefined);
   });
 
@@ -219,94 +261,104 @@ describe('a dev link reloads when its folder changes', () => {
     return record !== undefined && mayRunExtensionCode(record, stored.value);
   }
 
-  it('rebuilds an edited extension on its existing yes, projects a new skill, asks about a new extension, and unlinks back', async () => {
-    const installedApproval = stored.value.approvedSources.dash;
-    expect(installedApproval?.devLink).toBeUndefined();
+  it(
+    'rebuilds an edited extension on its existing yes, projects a new skill, asks about a new extension, and unlinks back',
+    async () => {
+      const installedApproval = stored.value.approvedSources.dash;
+      expect(installedApproval?.devLink).toBeUndefined();
 
-    const status = await service.link({
-      path: work,
-      scope: 'project',
-      projectPath: project,
-      replaceInstalled: true,
-      via: 'app',
-    });
-    expect(status.state).toBe('active');
-    expect(status.lastReloadAt).toBeUndefined();
-    await manager.whenIdle();
-    await watcher.ready();
-    expect(manager.get('dash')?.devLink).toEqual({ path: work });
-    expect(runs('dash')).toBe(true);
-    const firstHash = manager.get('dash')?.sourceHash;
-    expect(firstHash).toBeTruthy();
-    const approvalsAfterLink = structuredClone(stored.value);
-    // The link's own projection put the first skill in place.
-    await eventually(() =>
-      expect(existsSync(path.join(project, '.claude', 'skills', `${PLUGIN}__first`))).toBe(true)
-    );
+      const status = await service.link({
+        path: work,
+        scope: 'project',
+        projectPath: project,
+        replaceInstalled: true,
+        via: 'app',
+      });
+      expect(status.state).toBe('active');
+      expect(status.lastReloadAt).toBeUndefined();
+      await manager.whenIdle();
+      await watcher.ready();
+      expect(manager.get('dash')?.devLink).toEqual({ path: work });
+      expect(runs('dash')).toBe(true);
+      const firstHash = manager.get('dash')?.sourceHash;
+      expect(firstHash).toBeTruthy();
+      const approvalsAfterLink = structuredClone(stored.value);
+      // The link's own projection put the first skill in place.
+      await eventually(() =>
+        expect(existsSync(path.join(project, '.claude', 'skills', `${PLUGIN}__first`))).toBe(true)
+      );
 
-    // 1. Edit the extension's source: it rebuilds, with nothing to approve.
-    const before = await treeOf(work);
-    await writeFile(
-      path.join(work, '.dork', 'extensions', 'dash', 'index.ts'),
-      'export const version = 2;\n'
-    );
-    await eventually(() => expect(announced).toContainEqual(['dash']));
-    expect(manager.get('dash')?.sourceHash).toBeTruthy();
-    expect(manager.get('dash')?.sourceHash).not.toBe(firstHash);
-    expect(runs('dash')).toBe(true);
-    expect(stored.value).toEqual(approvalsAfterLink);
-    await eventually(() => expect(events.length).toBeGreaterThan(0));
-    expect(events.at(-1)).toMatchObject({
-      name: PLUGIN,
-      scope: 'project',
-      projectPath: project,
-      actions: ['extension'],
-    });
-    expect((await service.list()).links[0]?.lastReloadAt).toBe(events.at(-1)?.at);
+      // 1. Edit the extension's source: it rebuilds, with nothing to approve.
+      const before = await treeOf(work);
+      await writeFile(
+        path.join(work, '.dork', 'extensions', 'dash', 'index.ts'),
+        'export const version = 2;\n'
+      );
+      await eventually(() => expect(announced).toContainEqual(['dash']));
+      expect(manager.get('dash')?.sourceHash).toBeTruthy();
+      expect(manager.get('dash')?.sourceHash).not.toBe(firstHash);
+      expect(runs('dash')).toBe(true);
+      expect(stored.value).toEqual(approvalsAfterLink);
+      await eventually(() => expect(events.length).toBeGreaterThan(0));
+      expect(events.at(-1)).toMatchObject({
+        name: PLUGIN,
+        scope: 'project',
+        projectPath: project,
+        actions: ['extension'],
+      });
+      expect((await service.list()).links[0]?.lastReloadAt).toBe(events.at(-1)?.at);
 
-    // The reload wrote nothing in the folder (only the edit changed), so it
-    // cannot set itself off: no further reload follows.
-    const after = await treeOf(work);
-    expect([...after.keys()].sort()).toEqual([...before.keys()].sort());
-    const changed = [...after].filter(([rel, sig]) => before.get(rel) !== sig).map(([rel]) => rel);
-    const editedPaths = [
-      path.join('.dork', 'extensions', 'dash'),
-      path.join('.dork', 'extensions', 'dash', 'index.ts'),
-    ];
-    for (const rel of changed) expect(editedPaths).toContain(rel);
-    expect(changed).toContain(path.join('.dork', 'extensions', 'dash', 'index.ts'));
-    const settledCount = announced.length;
-    const settledEvents = events.length;
-    await sleep(1_000);
-    expect(announced).toHaveLength(settledCount);
-    expect(events).toHaveLength(settledEvents);
+      // The reload wrote nothing in the folder (only the edit changed), so it
+      // cannot set itself off: no further reload follows.
+      const after = await treeOf(work);
+      expect([...after.keys()].sort()).toEqual([...before.keys()].sort());
+      const changed = [...after]
+        .filter(([rel, sig]) => before.get(rel) !== sig)
+        .map(([rel]) => rel);
+      const editedPaths = [
+        path.join('.dork', 'extensions', 'dash'),
+        path.join('.dork', 'extensions', 'dash', 'index.ts'),
+      ];
+      for (const rel of changed) expect(editedPaths).toContain(rel);
+      expect(changed).toContain(path.join('.dork', 'extensions', 'dash', 'index.ts'));
+      // One write, one watch, one rebuild — and it stays that way for a second.
+      // A second rebuild would be the reload setting itself off, or one edit
+      // acted on twice; either way the person's bundle reloads for nothing.
+      expect(openedWatches).toEqual([work]);
+      await settledAt(() => announced.length + events.length, 1_000);
+      expect(announced, JSON.stringify(reported)).toEqual([['dash']]);
+      expect(events).toHaveLength(1);
 
-    // 2. Add a skill: it reaches Claude Code's skills folder in the project.
-    await writeSkill(work, 'second');
-    await eventually(() =>
-      expect(existsSync(path.join(project, '.claude', 'skills', `${PLUGIN}__second`))).toBe(true)
-    );
+      // 2. Add a skill: it reaches Claude Code's skills folder in the project.
+      await writeSkill(work, 'second');
+      await eventually(() =>
+        expect(existsSync(path.join(project, '.claude', 'skills', `${PLUGIN}__second`))).toBe(true)
+      );
 
-    // 3. Add an extension: it is discovered, and waits for a person.
-    await writeExtension(work, 'sneaky');
-    await eventually(() => expect(manager.get('sneaky')?.devLink).toEqual({ path: work }));
-    await watcher.flush();
-    expect(runs('sneaky')).toBe(false);
-    expect(stored.value.approvedToRun).not.toContain('sneaky');
-    expect(stored.value.approvedSources.sneaky).toBeUndefined();
-    expect(announced.flat()).not.toContain('sneaky');
+      // 3. Add an extension: it is discovered, and waits for a person.
+      await writeExtension(work, 'sneaky');
+      await eventually(() => expect(manager.get('sneaky')?.devLink).toEqual({ path: work }));
+      await watcher.flush();
+      expect(runs('sneaky')).toBe(false);
+      expect(stored.value.approvedToRun).not.toContain('sneaky');
+      expect(stored.value.approvedSources.sneaky).toBeUndefined();
+      expect(announced.flat()).not.toContain('sneaky');
 
-    // 4. Unlink: the installed copy is back, with its own approval.
-    expect(await service.unlink({ name: PLUGIN, scope: 'project', projectPath: project })).toEqual({
-      restored: 'installed',
-    });
-    await manager.whenIdle();
-    expect(stored.value.approvedSources.dash).toEqual(installedApproval);
-    expect(manager.get('dash')?.devLink).toBeUndefined();
-    expect(runs('dash')).toBe(true);
-    // And the folder no longer reloads anything: its watch is closed, not
-    // merely quiet, so no later edit can reach a reload.
-    expect(watcher.watchedFolders()).toEqual([]);
-    expect(closedWatches).toContain(work);
-  }, 60_000);
+      // 4. Unlink: the installed copy is back, with its own approval.
+      expect(
+        await service.unlink({ name: PLUGIN, scope: 'project', projectPath: project })
+      ).toEqual({
+        restored: 'installed',
+      });
+      await manager.whenIdle();
+      expect(stored.value.approvedSources.dash).toEqual(installedApproval);
+      expect(manager.get('dash')?.devLink).toBeUndefined();
+      expect(runs('dash')).toBe(true);
+      // And the folder no longer reloads anything: its watch is closed, not
+      // merely quiet, so no later edit can reach a reload.
+      expect(watcher.watchedFolders()).toEqual([]);
+      expect(closedWatches).toContain(work);
+    },
+    CASE_TIMEOUT_MS
+  );
 });

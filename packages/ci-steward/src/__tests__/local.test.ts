@@ -521,6 +521,7 @@ describe('the heavy-run lock agrees with ci/config.yaml', () => {
     ['GATE_WAIT_SECONDS', 'heavy_lock_wait_seconds'],
     ['JOB_WAIT_SECONDS', 'heavy_job_wait_seconds'],
     ['MAX_LOAD', 'heavy_max_load'],
+    ['TEST_MAX_LOAD', 'heavy_test_max_load'],
     ['LOAD_WAIT_SECONDS', 'heavy_load_wait_seconds'],
     ['LOAD_POLL_SECONDS', 'heavy_load_poll_seconds'],
   ] as const)('%s falls back to the configured %s', (variable, key) => {
@@ -537,6 +538,7 @@ describe('the heavy-run lock agrees with ci/config.yaml', () => {
       'heavy_lock_wait_seconds',
       'heavy_job_wait_seconds',
       'heavy_max_load',
+      'heavy_test_max_load',
       'heavy_load_wait_seconds',
       'heavy_load_poll_seconds',
     ])

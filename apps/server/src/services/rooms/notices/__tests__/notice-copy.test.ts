@@ -231,6 +231,16 @@ describe('notices that send the reader to a session (DOR-2077)', () => {
 });
 
 describe('buildAgentReseatedNotice', () => {
+  it.each([false, true])(
+    'uses the designer-approved error restart line without account details (hidden=%s)',
+    (hide) => {
+      expect(copy.buildAgentReseatedNotice('Ana', 'author-ana', { kind: 'failed' }, hide)).toEqual({
+        text: 'Ana started a new chat here after an error.',
+        notice: 'agent_reseated',
+        subjectAuthorId: 'author-ana',
+      });
+    }
+  );
   const line = (reason: copy.ReseatNoticeReason, hide = false) =>
     copy.buildAgentReseatedNotice('dorkos-qa', 'author-qa', reason, hide);
 

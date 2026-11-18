@@ -22,6 +22,8 @@ Read the north-star set in `meta/` before you decide or write anything about wha
 
 ## Quality Standard
 
+**Upgrade support:** DorkOS supports upgrades from the 20 minor versions before the current `VERSION`. Each minor release advances the floor by one after verifying the supported upgrade path. Every JSDoc `@deprecated` tag must start with `since 0.x, remove in 0.y`; missing schedules fail lint, and lint warns two minor versions before the removal version, then fails at it.
+
 World-class UI/UX **and** world-class DX, neither negotiable. Every interaction is crafted; every surface works on mobile, tablet, and desktop. API surfaces are clean, types precise, errors helpful — internals must survive the scrutiny of an architect who reads source code before adopting tools.
 
 **Codebase excellence:** study existing patterns before writing new code and follow them — consistency is a feature; diverging needs justification. Never leave things incomplete: no lingering TODOs, no half-finished migrations, no dead code, no tolerated legacy patterns — when something is superseded, remove it. Have the courage to refactor even when it's hard. If something weird must stay, comment _why_; otherwise refactor it. Simplicity is an active pursuit — the codebase gets cleaner over time.

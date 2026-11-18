@@ -173,6 +173,7 @@ describe('external MCP structured-output tools (real tools/call pipeline)', () =
       meshCore: {
         list: () => [MANIFEST],
         getSubject: (agentId: string) => `relay.agent.demo.${agentId}`,
+        getProjectPath: () => undefined,
         getStatus: () => MESH_STATUS,
         inspect: () => MESH_INSPECT,
         getTopology: () => TOPOLOGY,

@@ -5,6 +5,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
+import { RequiredRoomLaunchStore } from '../required-launch-store.js';
 import { RoomSessionLedger } from '../../session-bindings/room-session-ledger.js';
 import { createRoomSeatMover } from '../create-seat-mover.js';
 import { setTestAccountWorld } from '../test-account-world.js';
@@ -12,6 +13,7 @@ import { setTestAccountWorld } from '../test-account-world.js';
 vi.mock('../../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
     has: () => false,
+    requiredLaunches: () => new RequiredRoomLaunchStore(createTestDb()),
     getSessionSettings: async () => null,
     saveSessionSettings: async () => {},
   },

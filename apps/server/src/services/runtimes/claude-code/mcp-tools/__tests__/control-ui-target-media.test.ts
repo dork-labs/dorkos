@@ -31,7 +31,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { noopLogger } from '@dorkos/shared/logger';
 import { isRoomCanvasMediaUrl } from '@dorkos/shared/canvas-media-url';
-import { capabilityMcpTools } from '../capability-mcp-tools.js';
+import { registerClaudeCapabilityTools } from '../capability-mcp-tools.js';
 import { composeRegistry } from '../../../../core/capabilities/index.js';
 import { initBoundary } from '../../../../../lib/boundary.js';
 import { uiDomain } from '../../../../session/browser-seat/ui-capabilities.js';
@@ -96,11 +96,11 @@ describe('control_ui putting a local file on a room', () => {
     const server = createSdkMcpServer({
       name: 'dorkos',
       version: '1.0.0',
-      tools: capabilityMcpTools(registry, 'in-session', async () => ({
-        sessionId: SESSION_ID,
-        cwd: anaPath,
-      })),
     });
+    registerClaudeCapabilityTools(server.instance, registry, 'in-session', async () => ({
+      sessionId: SESSION_ID,
+      cwd: anaPath,
+    }));
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     client = new Client({ name: 'media-probe', version: '0.0.0' });
     await Promise.all([server.instance.connect(serverTransport), client.connect(clientTransport)]);

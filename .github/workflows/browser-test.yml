@@ -189,7 +189,7 @@ jobs:
         run: echo "version=$(pnpm --filter @dorkos/e2e exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
       - name: Restore the Chromium browser Playwright drives
         id: pw-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
@@ -223,6 +223,22 @@ jobs:
             sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
           fi
           bash scripts/playwright-apt-debs.sh install "$RUNNER_TEMP/playwright-apt"
+      # main only, after a good install: the pnpm store's save says why (DOR-4537).
+      - name: Save the Chromium browser for the queue and pull requests
+        if: ${{ github.ref == 'refs/heads/main' && steps.pw-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      # Restore the builds the last main canary made (DOR-4634; see browser-shard).
+      - name: Restore the builds the last main canary made
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo/cache
+          key: turbo-browser-builds-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-browser-builds-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-
+            turbo-browser-builds-${{ runner.os }}-${{ runner.arch }}-
       - name: Build what the smoke projects boot from
         run: pnpm exec turbo run build --filter=@dorkos/server --filter=@dorkos/client
       # An inner deadline flushes reports before the step/job backstops.
@@ -519,7 +535,8 @@ jobs:
       # context only sees variables a workflow sets, never the runner's own, so
       # that key came out `pnpm-store-Linux--X64-…` (ledger 261031-071000). The
       # step fails if `ImageOS` is unset rather than key on an empty string.
-      # Back to `cache: pnpm` when the 24.04 pin is lifted.
+      # Never back to `cache: pnpm`, even once the 24.04 pin is lifted: it saves
+      # on any ref, PR merge refs included (ledger 261117-141554).
       - name: Find the pnpm store
         id: pnpm-store
         run: echo "image=${ImageOS:?ImageOS is not set on this runner}" >> "$GITHUB_OUTPUT" && echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
@@ -563,7 +580,7 @@ jobs:
         run: echo "version=$(pnpm --filter @dorkos/e2e exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
       - name: Restore the Chromium browser Playwright drives
         id: pw-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
@@ -623,6 +640,13 @@ jobs:
             sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
           fi
           bash scripts/playwright-apt-debs.sh install "$RUNNER_TEMP/playwright-apt"
+      # main only, after a good install: the pnpm store's save says why (DOR-4537).
+      - name: Save the Chromium browser for the queue and pull requests
+        if: ${{ github.ref == 'refs/heads/main' && steps.pw-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
       # The ONLY step that saves the OS-package cache: a scheduled run on main,
       # shard 1 alone (the other shards would race to save the same key), after
       # a miss, and only once the install step has checked every file against
@@ -634,6 +658,21 @@ jobs:
           path: ${{ runner.temp }}/playwright-apt/debs
           key: ${{ steps.apt-plan.outputs.key }}
 
+      # Restore the builds the last main canary made (DOR-4634). Before this,
+      # no browser job had a turbo cache, so every leg rebuilt server, client
+      # and their packages from nothing (~130 s each, 7 jobs per queue build).
+      # Only browser-shard (1/6) on main saves, after the build-only trim, so
+      # nothing here ever replays a test result. Same fallback as test.yml:
+      # the same lockfile first, then the newest entry for this OS and arch;
+      # turbo's own task hashes decide what is replayed.
+      - name: Restore the builds the last main canary made
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo/cache
+          key: turbo-browser-builds-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-browser-builds-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-
+            turbo-browser-builds-${{ runner.os }}-${{ runner.arch }}-
       # Warm the turbo cache with everything the webServer legs need, OUTSIDE
       # their readiness timeouts. The three Express legs each run
       # `turbo run build --filter=@dorkos/server` before booting, the Vite legs'
@@ -648,7 +687,33 @@ jobs:
       # legs it cannot boot without a built client. Everything else here stayed
       # `^...` because a dev server needs its dependencies and nothing more.
       - name: Build what the webServer legs boot from
-        run: pnpm exec turbo run build --filter=@dorkos/server --filter=@dorkos/client --filter=@dorkos/site^...
+        run: pnpm exec turbo run build --filter=@dorkos/server --filter=@dorkos/client --filter=@dorkos/site^... --summarize
+
+      # The other half of "Restore the builds the last main canary made": a
+      # scheduled or dispatched run on main saves this step's builds for the
+      # queue and pull requests. One shard saves, because every browser job
+      # builds the same tasks with the same hashes, and this step's filter is
+      # the widest of them. Straight after the build, so a red leg later still
+      # leaves the cache. scripts/keep-build-cache-only.sh keeps only this
+      # run's build entries (read from the --summarize record above), which
+      # also stops the saved entry growing run over run; if it cannot, it
+      # deletes the cache and nothing is saved.
+      - name: Keep only this run's build entries in the turbo cache
+        id: turbo-trim
+        if: ${{ github.ref == 'refs/heads/main' && matrix.shard == 1 }}
+        run: |
+          if bash scripts/keep-build-cache-only.sh; then
+            echo 'save=true' >> "$GITHUB_OUTPUT"
+          else
+            echo '::warning title=Browser build cache not saved::the turbo cache could not be trimmed to build entries, so this run saves none; the next run rebuilds.'
+            echo 'save=false' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Save the builds for the queue and pull requests
+        if: ${{ steps.turbo-trim.outputs.save == 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo/cache
+          key: turbo-browser-builds-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
 
       # No `--reporter` flag, deliberately: passing one REPLACES the config's
       # reporter list rather than adding to it, and the json reporter is what the
@@ -929,7 +994,7 @@ jobs:
         run: echo "version=$(pnpm --filter @dorkos/e2e exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
       - name: Restore the Chromium browser Playwright drives
         id: pw-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
@@ -959,6 +1024,22 @@ jobs:
             sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
           fi
           bash scripts/playwright-apt-debs.sh install "$RUNNER_TEMP/playwright-apt"
+      # main only, after a good install: the pnpm store's save says why (DOR-4537).
+      - name: Save the Chromium browser for the queue and pull requests
+        if: ${{ github.ref == 'refs/heads/main' && steps.pw-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      # Restore the builds the last main canary made (DOR-4634; see browser-shard).
+      - name: Restore the builds the last main canary made
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo/cache
+          key: turbo-browser-builds-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-browser-builds-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-
+            turbo-browser-builds-${{ runner.os }}-${{ runner.arch }}-
       - name: Build what the webServer legs boot from
         run: pnpm exec turbo run build --filter=@dorkos/server --filter=@dorkos/client
       # Both paths must have reached DorkBot's reply. Each leg is picked by a

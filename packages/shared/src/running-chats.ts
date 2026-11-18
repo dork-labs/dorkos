@@ -51,7 +51,11 @@ export type RunningChatState = z.infer<typeof RunningChatStateSchema>;
 export const RunningChatSchema = z.object({
   /** The chat's id. */
   id: z.string(),
-  /** Its title, or null when it has none yet. */
+  /**
+   * Its title, or null when it has none yet or it can't be read. The `running_chats` tool also
+   * leaves every title out (here and in `startedBy`) for a Never ask run, since
+   * anyone in a bridged chat can set one (DOR-3971).
+   */
   title: z.string().nullable(),
   /** A ready markdown link to the chat. */
   link: z.string(),

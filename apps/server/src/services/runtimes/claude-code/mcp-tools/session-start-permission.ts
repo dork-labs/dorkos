@@ -404,7 +404,7 @@ function grantMode(requested: string | undefined, ceiling: Ceiling, runtimeType:
     if (!mode) {
       return {
         ok: false,
-        error: `The ${runtimeType} runtime has no permission mode called ${requested}.`,
+        error: `The ${runtimeType} runtime has no permission mode called ${requested}. It supports: ${target.values.map((m) => m.id).join(', ')}.`,
         code: 'UNKNOWN_PERMISSION_MODE',
       };
     }
