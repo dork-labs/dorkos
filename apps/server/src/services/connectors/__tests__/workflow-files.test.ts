@@ -472,7 +472,7 @@ describe('moving where CI reads its config needs the agent’s own exact grant',
         'chatty',
         { connectionId: CONNECTION_ID, operationRevisionId, arguments: args },
         { named: true, everyAgent: false },
-        { toolkit: 'gitlab', operationSlug: 'GITLAB_UPDATE_PROJECT' }
+        { toolkit: 'gitlab', operationSlug: 'GITLAB_UPDATE_PROJECT', classification: 'write' }
       );
     expect(refusal({ id: 1, ci_config_path: 'ci/x.yml' })).toBe(
       'Changing repository control files needs this action given to this agent on its own.'
