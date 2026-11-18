@@ -6,6 +6,7 @@
  *
  * @module services/tasks/agent-mode/agent-mode-copy
  */
+import { MARKED_TURN_REASON } from '../../core/turn-power/marked-turn-copy.js';
 
 /** The `error` line every refusal here carries. */
 export const AGENT_MODE_REFUSAL_ERROR = 'DorkOS changed nothing on this scheduled task';
@@ -46,14 +47,19 @@ export const UNKNOWN_MODE_MESSAGE =
   'of: default, plan, dontAsk, acceptEdits, auto, bypassPermissions.';
 
 /**
- * A mode above the lower of the caller's level and the task's agent's level.
+ * A mode above the lower of the caller's level and the task's agent's level, and, in a marked
+ * turn, above the most a marked turn may set (`ceilingOf`: dontAsk on Claude Code, the runtime's
+ * read-only level where it has no dontAsk). A marked turn is told the mark caps it, so it does not
+ * take the refusal for its own level alone (DOR-4678); `highest` names the runtime's own mode.
  *
  * @param highest - The loosest mode that fits under that level.
+ * @param marked - The calling turn read words DorkOS cannot vouch for.
  */
-export function aboveCeilingMessage(highest: string): string {
+export function aboveCeilingMessage(highest: string, marked = false): string {
+  const cap = marked ? `, or above the most this turn may set, because ${MARKED_TURN_REASON}` : '';
   return (
-    `That mode is above what you, or the agent this task runs as, may use. The highest you can ` +
-    `set here is ${highest}. Send that or lower, or ask the person to choose a higher one.`
+    `That mode is above what you, or the agent this task runs as, may use${cap}. The highest ` +
+    `you can set here is ${highest}. Send that or lower, or ask the person to choose a higher one.`
   );
 }
 

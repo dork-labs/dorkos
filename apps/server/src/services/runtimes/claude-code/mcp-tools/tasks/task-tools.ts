@@ -40,6 +40,7 @@ import {
   REFUSED_STATUS_DESCRIPTION,
   STATUS_DESCRIPTION,
   TASKS_CREATE_DESCRIPTION,
+  TASKS_LIST_DESCRIPTION,
   TASKS_UPDATE_DESCRIPTION,
 } from './task-tool-copy.js';
 import { CREATE_TASK_INPUT, UPDATE_TASK_INPUT } from './task-tool-inputs.js';
@@ -748,7 +749,7 @@ export function getTasksTools(
   return [
     tool(
       'tasks_list',
-      'List every scheduled task on this DorkOS. Returns each one with its status and settings.',
+      TASKS_LIST_DESCRIPTION,
       { enabled_only: z.boolean().optional().describe('Only return enabled schedules') },
       createListSchedulesHandler(deps)
     ),
