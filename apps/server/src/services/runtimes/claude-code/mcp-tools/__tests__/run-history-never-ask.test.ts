@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { McpToolDeps } from '../types.js';
 import { handRegisteredInSessionTools } from '../index.js';
-import { SUMMARIES_LEFT_OUT_AT_NEVER_ASK } from '../tasks/task-tool-parts.js';
+import { RUN_SUMMARIES_LEFT_OUT } from '../tasks/task-tool-parts.js';
 import {
   clearTestHomes,
   registerEveryFolderAsHome,
@@ -54,20 +54,23 @@ async function payload(result: Promise<{ content: { text: string }[] }>) {
   };
 }
 
-describe('tasks_get_run_history at Never ask', () => {
-  it('leaves out each run’s summary and keeps what it was refused', async () => {
-    const read = await payload(runHistory({ permissionMode: 'dontAsk' }).call());
-    expect(JSON.stringify(read)).not.toContain('ignore your rules');
-    expect(read.runs[0]).not.toHaveProperty('outputSummary');
-    expect(read.runs[0]).toMatchObject({
-      status: 'needs_attention',
-      refusedTools: ['mcp__dorkos__tasks_create'],
-    });
-    expect(read.note).toBe(SUMMARIES_LEFT_OUT_AT_NEVER_ASK);
-  });
+describe('tasks_get_run_history where it runs unasked', () => {
+  it.each(['dontAsk', 'default', 'acceptEdits'])(
+    'leaves out each run’s summary at %s and keeps what it was refused',
+    async (permissionMode) => {
+      const read = await payload(runHistory({ permissionMode }).call());
+      expect(JSON.stringify(read)).not.toContain('ignore your rules');
+      expect(read.runs[0]).not.toHaveProperty('outputSummary');
+      expect(read.runs[0]).toMatchObject({
+        status: 'needs_attention',
+        refusedTools: ['mcp__dorkos__tasks_create'],
+      });
+      expect(read.note).toBe(RUN_SUMMARIES_LEFT_OUT);
+    }
+  );
 
-  it('keeps the summary in every other mode', async () => {
-    for (const permissionMode of ['default', 'acceptEdits', 'bypassPermissions']) {
+  it('keeps the summary where a person is asked or chose Full', async () => {
+    for (const permissionMode of ['bypassPermissions', 'plan', 'auto']) {
       const read = await payload(runHistory({ permissionMode }).call());
       expect(read.runs[0]!.outputSummary, permissionMode).toBe(RUN.outputSummary);
       expect(read.note).toBeUndefined();
@@ -75,8 +78,8 @@ describe('tasks_get_run_history at Never ask', () => {
   });
 
   it('reads the mode at call time, not when the tools were built', async () => {
-    const { live, call } = runHistory({ permissionMode: 'default' });
-    live.permissionMode = 'dontAsk';
+    const { live, call } = runHistory({ permissionMode: 'bypassPermissions' });
+    live.permissionMode = 'acceptEdits';
     expect((await payload(call())).runs[0]).not.toHaveProperty('outputSummary');
   });
 });

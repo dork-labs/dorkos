@@ -404,6 +404,8 @@ describe('a connected-app send from a bridged Telegram turn at Full (DOR-3858)',
         payload: { capabilityId: 'connectors.execute_write', approvable: false },
       },
     });
+    // The agent is told the mark is why, not just that a person's OK is needed (DOR-4678).
+    expect(JSON.stringify(result)).toContain("because this turn read words DorkOS can't vouch for");
     expect(sent).toEqual([]);
   });
 

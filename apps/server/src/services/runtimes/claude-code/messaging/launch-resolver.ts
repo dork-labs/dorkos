@@ -798,16 +798,23 @@ export async function resolveLaunch(args: {
   const resolveIdentity = createInSessionContextResolver(toolIdentity);
   const turnGrantPaths = (turnGrants ?? []).map((grant) => grant.path);
   const heldReadFolders = { cwd: effectiveCwd, roots: [effectiveCwd, ...turnGrantPaths] };
-  sdkOptions.canUseTool = createCanUseTool(session, logger, editBaselineCapture, resolveIdentity, {
+  // The status reads' outsider bound (DOR-3971, DOR-4601), shared by canUseTool and the hook.
+  const outsideChecks = turnOutsideChecks(session, sessionId, turnAgentPath);
+  const readRoots = turnReadRoots({
     cwd: effectiveCwd,
-    roots: turnReadRoots({
-      cwd: effectiveCwd,
-      agentHome: turnAgentPath,
-      grants: turnGrantPaths,
-      plugins: (opts.plugins ?? []).map((plugin) => plugin.path),
-      accountRoot,
-    }),
+    agentHome: turnAgentPath,
+    grants: turnGrantPaths,
+    plugins: (opts.plugins ?? []).map((plugin) => plugin.path),
+    accountRoot,
   });
+  sdkOptions.canUseTool = createCanUseTool(
+    session,
+    logger,
+    editBaselineCapture,
+    resolveIdentity,
+    { cwd: effectiveCwd, roots: readRoots },
+    outsideChecks
+  );
   // Pre-edit baseline capture must ALSO ride the SDK PreToolUse hook (DOR-212):
   // `canUseTool` is skipped entirely under `bypassPermissions`, but PreToolUse
   // hooks fire in every mode, before the tool runs. The matcher confines the
@@ -855,14 +862,7 @@ export async function resolveLaunch(args: {
       // per-call decision. Answers nothing in any other mode.
       {
         matcher: `^${IN_SESSION_TOOL_PREFIX}`,
-        hooks: [
-          createNeverAskHook(
-            session,
-            resolveIdentity,
-            logger,
-            ...turnOutsideChecks(session, sessionId, turnAgentPath)
-          ),
-        ],
+        hooks: [createNeverAskHook(session, resolveIdentity, logger, ...outsideChecks)],
       },
       {
         matcher: 'Edit|Write|MultiEdit|NotebookEdit',

@@ -6,7 +6,7 @@ import { MISPLACED_SCHEDULE_PERMISSIONS } from '@dorkos/shared/schedule-file-pro
 // permission modes, which live in the heavy module and are mirrored instead.
 import { EFFORT_LEVELS } from '@dorkos/shared/constants';
 import { DurationSchema } from './duration.js';
-import { coerceYamlBoolean } from './yaml-boolean.js';
+import { coerceYamlBoolean, OptionalYamlBoolean } from './yaml-boolean.js';
 
 /**
  * The permission modes a schedule may declare in its `permissions:`
@@ -129,6 +129,18 @@ export const ScheduleBlockSchema = z.object({
    * off, which is the same as leaving the field out.
    */
   sticky: z.preprocess(coerceYamlBoolean, z.boolean()).default(false).catch(false),
+
+  /**
+   * Set true when this schedule reads mail, web pages or another app's text (DOR-3969). Every
+   * turn of its runs is then treated as one that read outside words: what it posts is kept
+   * marked, and a send in it asks first.
+   *
+   * Setting it here is enough. Taking it back is not: DorkOS keeps its own record of every
+   * schedule that ever said so, and only a person clears that record. A file edited
+   * back to `false` stays declared. Reads the YAML 1.1 boolean words like `sticky`. Absent, or a
+   * value it cannot read, means off.
+   */
+  readsOutsideText: OptionalYamlBoolean,
 
   /**
    * Agent permission mode during a scheduled run. One of
@@ -460,6 +472,7 @@ export function scheduleToFrontmatter(schedule: ScheduleBlock): Record<string, u
   if (schedule.timezone !== DEFAULT_TIMEZONE) out.timezone = schedule.timezone;
   if (schedule.enabled !== true) out.enabled = schedule.enabled;
   if (schedule.sticky !== false) out.sticky = schedule.sticky;
+  if (schedule.readsOutsideText) out.readsOutsideText = true;
   if (schedule['max-runtime'] !== undefined) out['max-runtime'] = schedule['max-runtime'];
   if (schedule.permissions !== DEFAULT_PERMISSIONS) out.permissions = schedule.permissions;
   if (schedule.prompt !== undefined) out.prompt = schedule.prompt;
