@@ -7,6 +7,7 @@ covers:
   - 'fix(approvals): a card that grants access never cuts its title short, and an agent raise card shows only what changes (DOR-4355)'
   - "fix(auth): an agent raise card quotes a connection's name in full, as one inert line (DOR-4355)"
   - "fix(auth): a connection's name on an agent raise card turns look-alike double quotes into apostrophes too (DOR-4355)"
+  - 'refactor(approvals): the two person bars move to approval-person-bars.ts, so approvals.ts stays under 500 lines (DOR-4355)'
 ---
 
 ### Security
