@@ -67,15 +67,42 @@ graphql() {
 JSON
 }
 
+# A fake `gh` first on PATH, so no fixture can reach GitHub. The builder asks
+# again only about a pull request whose mergeability is UNKNOWN; each call
+# appends its arguments to gh-calls.txt and prints the next line of
+# gh-answers.txt, or fails like a dead API once the answers run out.
+mkdir -p "$tmp/bin"
+cat > "$tmp/bin/gh" <<'SH'
+#!/usr/bin/env bash
+echo "$*" >> "$FAKE_GH_DIR/gh-calls.txt"
+n=$(wc -l < "$FAKE_GH_DIR/gh-calls.txt" | tr -d ' ')
+line=$(sed -n "${n}p" "$FAKE_GH_DIR/gh-answers.txt" 2>/dev/null)
+if [[ -z "$line" ]]; then echo "HTTP 502: Bad Gateway" >&2; exit 1; fi
+printf '%s\n' "$line"
+SH
+chmod +x "$tmp/bin/gh"
+
+# answers <line>...: what the fake gh prints, one call per line; clears the
+# call log so each fixture counts only its own calls.
+answers() {
+  printf '%s\n' "$@" > "$tmp/gh-answers.txt"
+  : > "$tmp/gh-calls.txt"
+}
+calls() { wc -l < "$tmp/gh-calls.txt" | tr -d ' '; }
+
 # run <meta> <checks> <graphql>: the three answers as text, the builder's
-# stdout into $out and its exit status into $rc.
+# stdout into $out and its exit status into $rc. The pause between asks is
+# zero (no real sleeps here) and REPO is set as merge-tail sets it.
 run() {
   printf '%s' "$1" > "$tmp/meta.json"
   printf '%s' "$2" > "$tmp/checks.json"
   printf '%s' "$3" > "$tmp/gql.json"
-  out=$("$builder" "$tmp/meta.json" "$tmp/checks.json" "$tmp/gql.json" 2>/dev/null)
+  out=$(PATH="$tmp/bin:$PATH" FAKE_GH_DIR="$tmp" REPO="${REPO_FOR_RUN-example/repo}" \
+        MERGE_STATE_RETRY_DELAY=0 \
+        "$builder" "$tmp/meta.json" "$tmp/checks.json" "$tmp/gql.json" 2>/dev/null)
   rc=$?
 }
+answers
 
 ok()  { pass=$(( pass + 1 )); }
 bad() { fail=$(( fail + 1 )); printf 'FAIL  %-40s %s\n' "$1" "$2"; }
@@ -177,6 +204,114 @@ refuses "review thread nodes not a list" "SKIP could-not-read-review-threads" \
 # A list of the wrong things is refused whole, never counted around.
 refuses "review thread nodes not objects" "SKIP could-not-read-pull-request (unexpected shape)" \
   "$(meta)" "$(checks)" "$(graphql | jq -c '.data.repository.pullRequest.reviewThreads.nodes = ["x"]')"
+
+# ── mergeability GitHub is still computing ─────────────────────────────────
+# GitHub works out `mergeStateStatus` lazily: every merge to main turns it
+# back to UNKNOWN on every open pull request, and only a query sets it
+# computing again. merge-tail ticks hours apart, so a builder that passed
+# UNKNOWN straight through held nearly every PR on nearly every tick (run
+# 44136162869: 10 held as mergeability-unknown, 0 armed). The builder asks
+# again, a few seconds apart, up to three times; still UNKNOWN stays UNKNOWN,
+# and the gate skips it.
+unknown_meta=$(meta | jq -c '.mergeStateStatus = "UNKNOWN"')
+asked() { printf '{"headRefOid": "%s", "mergeStateStatus": "%s"}' "$HEAD" "$1"; }
+
+answers "$(asked CLEAN)"
+builds "unknown, then clean on the first ask" '.mergeStateStatus == "CLEAN"' \
+  "$unknown_meta" "$(checks)" "$(graphql)"
+if [[ $(calls) -eq 1 ]]; then ok; else bad "clean on first ask asks once" "gh called $(calls) times"; fi
+if grep -q -- "pr view 7 --repo example/repo --json headRefOid,mergeStateStatus" "$tmp/gh-calls.txt"; then ok; else
+  bad "asks about this PR in this repo" "got: $(cat "$tmp/gh-calls.txt")"; fi
+
+answers "$(asked CLEAN)"
+run "$unknown_meta" "$(checks)" "$(graphql)"
+verdict=$("$gate" - <<<"$out" 2>/dev/null)
+if [[ "$verdict" == "ARM" ]]; then ok; else bad "unknown then clean arms end to end" "got ${verdict:-<empty>}"; fi
+
+answers "$(asked UNKNOWN)" "$(asked UNKNOWN)" "$(asked CLEAN)"
+builds "clean on the third ask" '.mergeStateStatus == "CLEAN"' \
+  "$unknown_meta" "$(checks)" "$(graphql)"
+if [[ $(calls) -eq 3 ]]; then ok; else bad "clean on third ask asks three times" "gh called $(calls) times"; fi
+
+# Fail-closed: three asks and no answer leaves it UNKNOWN, and never a fourth.
+answers "$(asked UNKNOWN)" "$(asked UNKNOWN)" "$(asked UNKNOWN)" "$(asked CLEAN)"
+run "$unknown_meta" "$(checks)" "$(graphql)"
+verdict=$("$gate" - <<<"$out" 2>/dev/null)
+if [[ "$verdict" == "SKIP mergeability-unknown" ]]; then ok; else bad "still unknown after three asks skips" "got ${verdict:-<empty>}"; fi
+if [[ $(calls) -eq 3 ]]; then ok; else bad "never asks a fourth time" "gh called $(calls) times"; fi
+
+# The answer that resolves it can be the one that refuses it.
+answers "$(asked DIRTY)"
+run "$unknown_meta" "$(checks)" "$(graphql)"
+verdict=$("$gate" - <<<"$out" 2>/dev/null)
+if [[ "$verdict" == "SKIP conflicting" ]]; then ok; else bad "unknown then dirty is conflicting" "got ${verdict:-<empty>}"; fi
+
+# A failed ask is no answer: it uses up a try and changes nothing.
+answers 'HTTP 502' '' '{"message": "Server Error"}'
+builds "failed asks keep it unknown" '.mergeStateStatus == "UNKNOWN"' \
+  "$unknown_meta" "$(checks)" "$(graphql)"
+answers 'not json' "$(asked CLEAN)"
+builds "a failed ask, then a clean one" '.mergeStateStatus == "CLEAN"' \
+  "$unknown_meta" "$(checks)" "$(graphql)"
+
+# A push between the reads: the new answer is about a different commit than
+# the checks and review threads already read, so it is not used, and asking
+# again cannot bring the old commit back.
+answers '{"headRefOid": "fff", "mergeStateStatus": "CLEAN"}' "$(asked CLEAN)"
+builds "a new head's answer is not used" '.mergeStateStatus == "UNKNOWN"' \
+  "$unknown_meta" "$(checks)" "$(graphql)"
+if [[ $(calls) -eq 1 ]]; then ok; else bad "stops asking once the head moved" "gh called $(calls) times"; fi
+answers '{"headRefOid": "fff", "mergeStateStatus": "CLEAN"}' "$(asked CLEAN)"
+run "$unknown_meta" "$(checks)" "$(graphql)"
+verdict=$("$gate" - <<<"$out" 2>/dev/null)
+if [[ "$verdict" == "SKIP mergeability-unknown" ]]; then ok; else bad "head moved skips end to end" "got ${verdict:-<empty>}"; fi
+# Every ask reads the head again, so a push between two asks is caught too.
+answers "$(asked UNKNOWN)" '{"headRefOid": "fff", "mergeStateStatus": "CLEAN"}' "$(asked CLEAN)"
+run "$unknown_meta" "$(checks)" "$(graphql)"
+verdict=$("$gate" - <<<"$out" 2>/dev/null)
+if [[ "$verdict" == "SKIP mergeability-unknown" ]]; then ok; else bad "head moved between asks skips" "got ${verdict:-<empty>}"; fi
+if [[ $(calls) -eq 2 ]]; then ok; else bad "head moved between asks stops asking" "gh called $(calls) times"; fi
+# An answer with no head at all is not about this head either.
+answers '{"mergeStateStatus": "CLEAN"}' "$(asked UNKNOWN)" "$(asked UNKNOWN)"
+builds "an answer with no head is not used" '.mergeStateStatus == "UNKNOWN"' \
+  "$unknown_meta" "$(checks)" "$(graphql)"
+
+# Three asks is a ceiling, whatever the setting says.
+answers "$(asked UNKNOWN)" "$(asked UNKNOWN)" "$(asked UNKNOWN)" "$(asked UNKNOWN)" "$(asked CLEAN)"
+MERGE_STATE_RETRIES=9 builds "more than three is three" '.mergeStateStatus == "UNKNOWN"' \
+  "$unknown_meta" "$(checks)" "$(graphql)"
+if [[ $(calls) -eq 3 ]]; then ok; else bad "retries capped at three" "gh called $(calls) times"; fi
+answers "$(asked UNKNOWN)" "$(asked UNKNOWN)" "$(asked UNKNOWN)" "$(asked CLEAN)"
+MERGE_STATE_RETRIES=abc builds "a nonsense setting is three" '.mergeStateStatus == "UNKNOWN"' \
+  "$unknown_meta" "$(checks)" "$(graphql)"
+if [[ $(calls) -eq 3 ]]; then ok; else bad "nonsense setting asks three times" "gh called $(calls) times"; fi
+
+# Only the status is taken from the new answer, and only a word GitHub uses.
+answers '{"headRefOid": "'"$HEAD"'", "mergeStateStatus": "CLEAN", "isDraft": true, "labels": [{"name": "hold"}]}'
+builds "nothing but the status is taken" '.mergeStateStatus == "CLEAN" and .isDraft == false and .labels == []' \
+  "$unknown_meta" "$(checks)" "$(graphql)"
+answers '{"headRefOid": "'"$HEAD"'", "mergeStateStatus": null}' '{"headRefOid": "'"$HEAD"'", "mergeStateStatus": ""}' "$(asked UNKNOWN)"
+builds "null and empty are not answers" '.mergeStateStatus == "UNKNOWN"' \
+  "$unknown_meta" "$(checks)" "$(graphql)"
+
+# Nobody is asked when there is nothing to ask, or no way to ask it.
+answers "$(asked CLEAN)"
+builds "a resolved status is not asked about" '.mergeStateStatus == "BEHIND"' "$(meta)" "$(checks)" "$(graphql)"
+if [[ $(calls) -eq 0 ]]; then ok; else bad "resolved status asks nobody" "gh called $(calls) times"; fi
+answers "$(asked CLEAN)"
+MERGE_STATE_RETRIES=0 builds "retries off keeps unknown" '.mergeStateStatus == "UNKNOWN"' \
+  "$unknown_meta" "$(checks)" "$(graphql)"
+if [[ $(calls) -eq 0 ]]; then ok; else bad "retries off asks nobody" "gh called $(calls) times"; fi
+answers "$(asked CLEAN)"
+REPO_FOR_RUN='' builds "no repo keeps unknown" '.mergeStateStatus == "UNKNOWN"' \
+  "$unknown_meta" "$(checks)" "$(graphql)"
+if [[ $(calls) -eq 0 ]]; then ok; else bad "no repo asks nobody" "gh called $(calls) times"; fi
+# A refused answer is refused before anyone is asked.
+answers "$(asked CLEAN)"
+refuses "unknown with a graphql error" "SKIP graphql-error" \
+  "$unknown_meta" "$(checks)" '{"data": null, "errors": [{"type": "INTERNAL", "message": "x"}]}'
+if [[ $(calls) -eq 0 ]]; then ok; else bad "refusal asks nobody" "gh called $(calls) times"; fi
+answers
 
 # ── the other two reads ────────────────────────────────────────────────────
 # An unreadable check list is not "no checks": the workflow writes `[]` only
