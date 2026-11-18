@@ -144,6 +144,8 @@ describe('protected paths', () => {
   it('pins the protected-write lists', () => {
     expect(globs(PERSON_ONLY_DATA_PATHS)).toEqual([
       'permissions/**',
+      // DOR-4301: what a mini app recorded a person doing, at every level.
+      'extension-data/**',
       'session-relay/**',
       'extension-snapshots/**',
       'cache/extensions/**',
@@ -185,6 +187,7 @@ describe('protected paths', () => {
       '.dork/browser-profiles/.binding-key',
       // DOR-3105: the Terminal command the person runs as themselves, at every level.
       '.local/bin/dorkos',
+      '.dork/extension-data/**',
       '.dork/browser-profiles/**',
       '.dork/local-browser/saved-logins/**',
     ]);
@@ -201,7 +204,7 @@ describe('protected paths', () => {
       'better-auth-secret',
       'marketplaces.json',
     ]);
-    expect(globs(PROJECT_PLUGIN_PATHS)).toEqual(['.dork/plugins/**']);
+    expect(globs(PROJECT_PLUGIN_PATHS)).toEqual(['.dork/plugins/**', '.dork/extension-data/**']);
     expect(globs(AGENT_HOME_SELF_GRANT_PATHS)).toEqual([
       '.claude/settings.json',
       '.claude/settings.local.json',

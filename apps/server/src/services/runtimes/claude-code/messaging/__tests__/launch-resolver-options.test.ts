@@ -1016,6 +1016,8 @@ describe('folder grants on the launch (spec `agent-home-desk` §4.2)', () => {
       ...agentHomesSelfGrantRules(resolveDorkHome(), 'launch'),
       // And every project's installed plugins (DOR-3068).
       ...['Edit', 'Write', 'NotebookEdit'].map((tool) => `${tool}(//**/.dork/plugins/**)`),
+      // And every project's mini app data (DOR-4301).
+      ...['Edit', 'Write', 'NotebookEdit'].map((tool) => `${tool}(//**/.dork/extension-data/**)`),
       // And the browser sign-in stores in the home folder, on every launch (DOR-4136).
       ...HOME_PERSON_ONLY_RULES,
     ];

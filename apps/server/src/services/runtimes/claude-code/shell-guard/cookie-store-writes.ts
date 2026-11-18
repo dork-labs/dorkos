@@ -9,6 +9,10 @@
  * agent may save a sign-in (left to DOR-4102), but never rewrite the agent
  * browser's guard config.
  *
+ * A mini app's data folder (`extension-data/`, DOR-4301) is checked the same
+ * way, at every level: what it says a person did must not be an agent's
+ * writing.
+ *
  * @module services/runtimes/claude-code/shell-guard/cookie-store-writes
  */
 import path from 'node:path';
@@ -18,9 +22,11 @@ import {
   type ProtectedPath,
 } from '../../shared/policy/protected-paths.js';
 
-/** The data folder's person-only entries that hold a browser sign-in. */
+/** The data folder's person-only entries that hold a browser sign-in, or a mini app's data. */
 const DATA_COOKIE_STORES: readonly ProtectedPath[] = PERSON_ONLY_DATA_PATHS.filter((entry) =>
-  /^(browser\/|browser-profiles(\/\.binding-key)?$|local-browser\/saved-logins$)/.test(entry.path)
+  /^(browser\/|browser-profiles(\/\.binding-key)?$|local-browser\/saved-logins$|extension-data$)/.test(
+    entry.path
+  )
 );
 
 /** One cookie store, measured from a folder this launch knows. */
@@ -100,7 +106,7 @@ export function writesCookieStore(
 
 /** Whether a name could be part of a cookie store at all: a quick cut before any path is worked out. */
 export function namesCookieStore(name: string): boolean {
-  return /browser|storage-state|saved-logins|cookies|application support|appdata|\.config|dorkos/i.test(
+  return /browser|storage-state|saved-logins|cookies|application support|appdata|\.config|dorkos|extension-data/i.test(
     name
   );
 }

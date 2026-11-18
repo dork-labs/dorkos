@@ -48,6 +48,7 @@ export * from './notifications.js';
 export * from './projects.js';
 export * from './extensions/extension-decisions.js';
 export * from './extensions/extension-agent-sends.js';
+export * from './extensions/extension-person-records.js';
 export * from './canvas/channel.js';
 export * from './canvas/file-save-intents.js';
 export * from './browser/registry.js';

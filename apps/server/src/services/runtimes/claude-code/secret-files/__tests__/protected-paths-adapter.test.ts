@@ -116,6 +116,7 @@ describe('Claude Code protected-path adapter', () => {
   it('builds the protected-write lists it had before', () => {
     expect([...PERSON_ONLY_DATA_FOLDERS]).toEqual([
       'permissions',
+      'extension-data',
       'session-relay',
       'extension-snapshots',
       'cache/extensions',
@@ -140,6 +141,9 @@ describe('Claude Code protected-path adapter', () => {
       'Edit(//**/.dork/plugins/**)',
       'Write(//**/.dork/plugins/**)',
       'NotebookEdit(//**/.dork/plugins/**)',
+      'Edit(//**/.dork/extension-data/**)',
+      'Write(//**/.dork/extension-data/**)',
+      'NotebookEdit(//**/.dork/extension-data/**)',
     ]);
   });
 
