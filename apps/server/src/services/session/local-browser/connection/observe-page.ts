@@ -1,5 +1,6 @@
 import type { Page } from 'playwright-core';
 import type { LocalBrowserObservation } from '@dorkos/shared/local-browser';
+import { classifyRefusal, LOCAL_BROWSER_REFUSAL_NEXT } from '@dorkos/shared/local-browser-refusal';
 import { LocalBrowserError } from '../errors.js';
 import { openedOverHttp } from '../history/opened-over-http.js';
 import { observationNodes } from '../observation-nodes.js';
@@ -35,13 +36,17 @@ export async function observeSelectedPage(
     const snapshot = await boundedPageSnapshot(page, 750);
     if (revision !== owner.revision() || frames !== owner.frames()) throw owner.stale();
     owner.refuse();
+    const url = page.url();
+    // A site refusing this browser is read from what was already read, never a new load (DOR-4097).
+    const refused = classifyRefusal({ url, text: snapshot });
     const observation: LocalBrowserObservation = {
       revision,
       snapshot,
-      url: page.url(),
+      url,
       tabId,
       // The agent hears a page the http:// fallback opened is not secure (DOR-4450).
       ...(openedOverHttp(page) ? { openedOverHttp: true } : {}),
+      ...(refused ? { refusal: { ...refused, next: LOCAL_BROWSER_REFUSAL_NEXT } } : {}),
     };
     return { nodes, observation };
   } catch (error) {

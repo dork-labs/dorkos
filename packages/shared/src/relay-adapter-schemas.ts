@@ -162,7 +162,7 @@ export const TelegramAdapterConfigSchema = z
   .openapi('TelegramAdapterConfig');
 
 export type TelegramAdapterConfig = z.infer<typeof TelegramAdapterConfigSchema>;
-/** @deprecated Use {@link TelegramAdapterConfig} */
+/** @deprecated since 0.135, remove in 0.155. Use {@link TelegramAdapterConfig} */
 export type TelegramAdapterConfigZ = TelegramAdapterConfig;
 
 /**
@@ -289,7 +289,7 @@ export const WebhookAdapterConfigSchema = z
   .openapi('WebhookAdapterConfig');
 
 export type WebhookAdapterConfig = z.infer<typeof WebhookAdapterConfigSchema>;
-/** @deprecated Use {@link WebhookAdapterConfig} */
+/** @deprecated since 0.135, remove in 0.155. Use {@link WebhookAdapterConfig} */
 export type WebhookAdapterConfigZ = WebhookAdapterConfig;
 
 export const SlackAdapterConfigSchema = z
@@ -381,7 +381,7 @@ export const AdapterConfigSchema = z
   .openapi('AdapterConfig');
 
 export type AdapterConfig = z.infer<typeof AdapterConfigSchema>;
-/** @deprecated Use {@link AdapterConfig} */
+/** @deprecated since 0.135, remove in 0.155. Use {@link AdapterConfig} */
 export type AdapterConfigZ = AdapterConfig;
 
 export const AdapterStatusSchema = z
@@ -402,7 +402,7 @@ export const AdapterStatusSchema = z
   .openapi('AdapterStatus');
 
 export type AdapterStatus = z.infer<typeof AdapterStatusSchema>;
-/** @deprecated Use {@link AdapterStatus} */
+/** @deprecated since 0.135, remove in 0.155. Use {@link AdapterStatus} */
 export type AdapterStatusZ = AdapterStatus;
 
 export const AdaptersConfigFileSchema = z

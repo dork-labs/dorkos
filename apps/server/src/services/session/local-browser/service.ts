@@ -235,9 +235,10 @@ export class LocalBrowserService {
   }
 
   /** The profile the browser opened last, or null for the default one. */
-  currentProfileId(): string | null {
-    return this.profileId;
-  }
+  readonly currentProfileId = (): string | null => this.profileId;
+
+  /** The host of the page last read, when that reading was a refusal; cleared by any change. */
+  readonly lastRefusalHost = (): string | null => this.observation?.refusal?.host ?? null;
 
   /** Whether a named profile exists. False until startup wires the profile list, as for open. */
   readonly profileExists = (id: string): boolean => this.profileAuthorization.exists?.(id) ?? false;

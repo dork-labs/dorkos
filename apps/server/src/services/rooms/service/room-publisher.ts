@@ -115,7 +115,11 @@ export class RoomPublisher {
    *   the live frame and a reader who hydrated a moment later must see the same
    *   message.
    */
-  publishEntry(entry: RoomEntry, attachments: RoomAttachment[] = []): void {
+  publishEntry(
+    entry: RoomEntry,
+    attachments: RoomAttachment[] = [],
+    options?: { localOnly?: boolean }
+  ): void {
     // `reactions: []` rather than omitted: an entry a millisecond old genuinely
     // has none, and a reader that had to treat "absent" and "empty" as the same
     // thing on the live path but not on the others would have two rules.
@@ -137,7 +141,7 @@ export class RoomPublisher {
     // the broadcast and fan-out, and guarded, so a bridge delivery can never
     // fail a commit or stall the room's own readers. The listener itself is
     // fire-and-forget; this guard is only for a synchronous throw building it.
-    if (this.onEntryCommitted) {
+    if (this.onEntryCommitted && options?.localOnly !== true) {
       try {
         this.onEntryCommitted(entry);
       } catch (err) {

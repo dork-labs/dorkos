@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "a80c65e2-4726-48d9-9dbc-dc537cf9f1be",
-  "prevId": "750d443e-07c6-416e-ad4e-5106d3974668",
+  "id": "8219cba4-0a55-407b-b5c0-b50e08e89dd5",
+  "prevId": "e489a920-a3ae-4bf5-8f72-3abccfc955b0",
   "tables": {
     "a2a_tasks": {
       "name": "a2a_tasks",
@@ -4256,6 +4256,42 @@
           "notNull": true,
           "autoincrement": false
         },
+        "delivery_route": {
+          "name": "delivery_route",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'chat'"
+        },
+        "seat_room_id": {
+          "name": "seat_room_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "seat_author_id": {
+          "name": "seat_author_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "seat_joined_at": {
+          "name": "seat_joined_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "seat_session_id": {
+          "name": "seat_session_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "reply_to_id": {
           "name": "reply_to_id",
           "type": "text",
@@ -4307,6 +4343,14 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {
+        "chat_messages_delivery_route": {
+          "name": "chat_messages_delivery_route",
+          "value": "\"chat_messages\".\"delivery_route\" IN ('chat', 'seat')"
+        },
+        "chat_messages_seat_scope": {
+          "name": "chat_messages_seat_scope",
+          "value": "\"chat_messages\".\"delivery_route\" = 'chat' OR (\"chat_messages\".\"seat_room_id\" IS NOT NULL AND \"chat_messages\".\"seat_author_id\" IS NOT NULL AND \"chat_messages\".\"seat_joined_at\" IS NOT NULL AND \"chat_messages\".\"seat_session_id\" IS NOT NULL)"
+        },
         "chat_messages_kind": {
           "name": "chat_messages_kind",
           "value": "\"chat_messages\".\"kind\" IN ('message', 'report', 'start', 'stop')"
