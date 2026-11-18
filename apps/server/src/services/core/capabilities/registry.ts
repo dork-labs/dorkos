@@ -872,7 +872,9 @@ export function composeRegistry(
       if (preflight) invocationContext.preflight = preflight;
       // Past the monthly limit, or on an outsider-marked turn: refused, no card.
       if (!supplied.trusted) refuseSpend(preflight?.spend);
-      const spendAsks = !supplied.trusted && preflight?.spend?.kind === 'ask';
+      const spendAsk =
+        !supplied.trusted && preflight?.spend?.kind === 'ask' ? preflight.spend : undefined;
+      const spendAsks = spendAsk !== undefined;
       // Only the request tool forwards a token, to the action it asks for; see
       // `CapabilityDefinition.forwardsApproval`.
       if (capability.forwardsApproval) {
@@ -897,13 +899,12 @@ export function composeRegistry(
         : typeof windowed === 'object'
           ? windowed.keptCardBecause
           : undefined;
-      const spendCard = preflight?.spend?.kind === 'ask' ? preflight.spend.card : undefined;
       const serviceAction =
         preflight?.approvalServiceAction && keptCardBecause
           ? {
               ...preflight.approvalServiceAction,
               keptCardBecause,
-              ...(spendAsks && spendCard ? { spend: spendCard } : {}),
+              ...(spendAsk ? { spend: spendAsk.card } : {}),
             }
           : preflight?.approvalServiceAction;
 
@@ -964,6 +965,20 @@ export function composeRegistry(
             : {}),
           ...(preflight ? { connectorAuthority: preflight.authorityBinding.approvalScope } : {}),
           ...(serviceAction ? { serviceAction } : {}),
+          // So the agent reads that it costs money, not only "set to ask" (DOR-4447).
+          // `only` when nothing but the spend limit would raise this card: a read
+          // (Ask lets reads through), or an `act` call its permission does not ask
+          // about. Only then can a limit stop the asking.
+          ...(spendAsk
+            ? {
+                spendAsk: {
+                  reason: spendAsk.reason,
+                  only:
+                    capability.tier === 'observe' ||
+                    (capability.tier === 'act' && resolved?.state !== 'ask'),
+                },
+              }
+            : {}),
           ...(supplied.blockedRequest ? { blockedRequest: supplied.blockedRequest } : {}),
         });
         if (decision.outcome !== 'allowed') throw new CapabilityGateRefusal(decision);

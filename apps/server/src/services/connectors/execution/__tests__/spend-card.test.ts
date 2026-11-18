@@ -19,10 +19,11 @@ import {
   resetPermissionGate,
 } from '../../../core/capabilities/index.js';
 import { CapabilityToolError } from '../../../core/capabilities/mcp-envelope.js';
+import { approvalMessage } from '../../../core/capabilities/approval-wording.js';
 import { createCapabilityAuthorityBinding } from '../../principal/capability-authority-binding.js';
 import { createServerPrincipal } from '../../principal/server-principal.js';
 import { connectorExecutionDomain } from '../execution-capabilities.js';
-import type { SpendPreflight } from '../../spending/spend-decision.js';
+import { spendPreflightOf, type SpendPreflight } from '../../spending/spend-decision.js';
 import { spendCardLookupFrom } from '../../spending/spending-port.js';
 
 const TARGET = {
@@ -97,8 +98,8 @@ describe('a paid run at the permission gate', () => {
     });
   }
 
-  function call(approvalToken?: string) {
-    return registry().invoke('connectors.execute_read', TARGET, {
+  function call(approvalToken?: string, id = 'connectors.execute_read') {
+    return registry().invoke(id, TARGET, {
       identity: {
         agentPath: '/agents/kestrel',
         displayName: 'Kestrel',
@@ -151,6 +152,103 @@ describe('a paid run at the permission gate', () => {
     await expect(call()).rejects.toBeInstanceOf(CapabilityGateRefusal);
     expect(request).toHaveBeenCalledTimes(1);
     expect(execute).not.toHaveBeenCalled();
+  });
+
+  /** The message an agent reads when its call is held for a card. */
+  async function heldMessage(id?: string): Promise<string> {
+    const error = await call(undefined, id).catch((caught: unknown) => caught);
+    if (
+      !(error instanceof CapabilityGateRefusal) ||
+      error.decision.outcome !== 'approval_required'
+    ) {
+      throw error;
+    }
+    return (error.decision.payload as { message: string }).message;
+  }
+
+  describe('what the agent is told (DOR-4447)', () => {
+    const DOLLAR = 1_000_000;
+    const facts = {
+      paid: true,
+      outsider: false,
+      limitMicro: 40 * DOLLAR,
+      priceMicro: 300_000,
+      usedMicro: 12 * DOLLAR,
+      resetsAt: new Date('2026-12-01T00:00:00Z'),
+    } as const;
+
+    it('names spending and the monthly limit when no limit is set', async () => {
+      spend = spendPreflightOf({ ...facts, limitMicro: null });
+      expect(await heldMessage()).toBe(
+        '"Read from a connected app" costs money. No monthly spending limit is set, so each paid ' +
+          'action needs a yes. DorkOS has asked the person to allow it. They can set a monthly ' +
+          "limit and this app's price per run in Connections, so paid actions inside the limit " +
+          'stop asking about cost.'
+      );
+    });
+
+    it('names the missing price when the app has none', async () => {
+      spend = spendPreflightOf({ ...facts, priceMicro: null });
+      expect(await heldMessage()).toBe(
+        '"Read from a connected app" costs money. This app has no price per run set, so the ' +
+          "monthly limit can't count it. DorkOS has asked the person to allow it. They can set " +
+          "this app's price per run in Connections, so it counts against the limit instead of asking."
+      );
+    });
+
+    it('keeps the high-risk reason and leaves the fix out when a limit would not stop the card', async () => {
+      spend = spendPreflightOf({ ...facts, limitMicro: null });
+      expect(await heldMessage('connectors.execute_destructive')).toBe(
+        '"Take a high-risk action in a connected app" is high risk and costs money. No monthly ' +
+          'spending limit is set, so each paid action needs a yes. DorkOS has asked the person ' +
+          'to allow it.'
+      );
+    });
+
+    it('keeps "set to ask" and leaves the fix out when the permission asks anyway', () => {
+      expect(
+        approvalMessage('no_approval', 'Send a message', 'act', 'connectors.execute_write', false, {
+          reason: 'unknown-price',
+          only: false,
+        })
+      ).toBe(
+        '"Send a message" is set to ask a person first and costs money. This app has no price ' +
+          "per run set, so the monthly limit can't count it. DorkOS has asked the person to allow it."
+      );
+    });
+
+    it('names an unreadable meter without promising a fix', async () => {
+      spend = spendPreflightOf({ ...facts, usedMicro: 'unreadable' });
+      expect(await heldMessage()).toBe(
+        '"Read from a connected app" costs money. This month\'s spending can\'t be read right now. ' +
+          'DorkOS has asked the person to allow it.'
+      );
+    });
+
+    it('at the limit raises no card: the refusal names spending, the reset day and Connections', async () => {
+      spend = spendPreflightOf({ ...facts, usedMicro: 40 * DOLLAR, priceMicro: null });
+      const error = await call().catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(CapabilityToolError);
+      expect((error as CapabilityToolError).payload).toMatchObject({
+        code: 'SPEND_LIMIT',
+        error:
+          "This month's spending limit is reached. Paid actions stop until Dec 1. " +
+          'Ask the person to raise the limit in Connections, or wait.',
+      });
+      expect(request).not.toHaveBeenCalled();
+    });
+
+    it('leaves the card a person sees exactly as it was: the reason reaches only the agent', async () => {
+      spend = { kind: 'ask', reason: 'no-limit', card: CARD };
+      await heldMessage();
+      spend = { kind: 'ask', reason: 'unknown-price', card: CARD };
+      await heldMessage();
+      expect(request).toHaveBeenCalledTimes(2);
+      // Everything the card is built from: same request, whichever reason held it.
+      const [first, second] = request.mock.calls.map((call: unknown[]) => call[0]);
+      expect(second).toEqual(first);
+      expect(JSON.stringify(first)).not.toMatch(/costs money|Connections|price per run/);
+    });
   });
 
   it('refuses past the limit with no card (spec §4.1)', async () => {
