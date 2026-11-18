@@ -13,6 +13,7 @@ const M3_GROUPS = [
   'connector-resources',
   'connector-events',
   'connector-providers',
+  'connector-spending',
   'connector-access-changes',
   'mini-app-access-page',
   'marketplace/package-actions',
@@ -314,6 +315,9 @@ const NARROWING: Record<string, string[]> = {
   'heartbeat-triage PUT /': ['!useCredits'],
   // Not narrowing: an agent's link, which the tool gate already carded and decided.
   'marketplace/dev-links POST /dev-links': ['!person'],
+  // Main's DOR-4204 routes: lowering the limit, or raising a price, answers at once.
+  'connector-spending PUT /limit': ['!raises'],
+  'connector-spending PUT /prices/:toolkit': ['!loosens'],
 };
 const DELEGATES = new Map([
   ['patchConfig', exportedHandler(parse('config-patch-http'), 'patchConfig')],
@@ -519,6 +523,7 @@ describe('front-door write census', () => {
       'connector-access-changes': '/api/connectors',
       'mini-app-access-page': '/api/connectors',
       'connector-providers': '/api/connectors/providers',
+      'connector-spending': '/api/connectors/spending',
       'marketplace/package-actions': '/api/marketplace',
       'marketplace/updates': '/api/marketplace',
       'marketplace/dev-links': '/api/marketplace',
