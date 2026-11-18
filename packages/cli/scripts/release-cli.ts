@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { readBrowserNativeArtifactManifest } from './browser-native-artifact.ts';
 import {
   parseReleaseBranchArgs,
+  printUnescaped,
   proveReleaseBranch,
   type ReleaseBranchRequest,
 } from './release-branch/proof.ts';
@@ -219,7 +220,9 @@ function clean() {
     throw Error('Commit the release checkout changes before preparing or publishing the CLI.');
 }
 /** Explicit release command only. Preparation downloads verified originals and builds/packs;
- * --publish retains normal pnpm publication and its normal prepublishOnly/gitrelease checks. */
+ * --publish retains normal pnpm publication and its normal prepublishOnly/gitrelease checks.
+ * `branch` (DOR-4638) swaps only the main-ancestor proof for the release-branch proof, and
+ * then only prepares: the Release Publish workflow publishes what it packs. */
 export async function releaseCLI(
   publish: boolean,
   branch?: { request: ReleaseBranchRequest; root: string | undefined }
@@ -258,7 +261,7 @@ export async function releaseCLI(
       head,
       request: branch!.request,
     });
-    if (!logged) console.log(log);
+    if (!logged) printUnescaped(log);
     logged = true;
   };
   const proveMain = () => {
@@ -443,7 +446,7 @@ export async function releaseCLI(
     DORKOS_BROWSER_DARWIN_ARTIFACT_SHA256: pin,
   };
   // A release-branch build runs in CI; its build steps never need the GitHub token.
-  if (branch) for (const name of ['GH_TOKEN', 'GITHUB_TOKEN']) delete env[name];
+  if (branch) for (const name of ['GH_TOKEN', 'GITHUB_TOKEN']) Reflect.deleteProperty(env, name);
   clean();
   assertBrowserNativeReleaseBinding(
     pkg.version,

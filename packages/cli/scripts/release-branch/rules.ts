@@ -35,7 +35,7 @@ export interface ReleaseBranchCommit {
   parents: string[];
   /** The full commit message. */
   message: string;
-  /** `git patch-id --stable` of the commit, or undefined when it has no diff. */
+  /** The commit's patch fingerprint (`gitPatchId`), or undefined when it has no diff. */
   patchId: string | undefined;
   /** Every file the commit changes. */
   files: ReleaseBranchFile[];
@@ -54,7 +54,7 @@ export interface CherryPickInput {
   allowEmpty?: boolean;
   /** True only when the SHA is an ancestor of (or equal to) the trusted main tip. */
   isMainAncestor: (sha: string) => boolean;
-  /** `git patch-id --stable` of a commit on main, or undefined if it cannot be read. */
+  /** The patch fingerprint of a commit on main, or undefined if it cannot be read. */
   patchIdOf: (sha: string) => string | undefined;
 }
 
@@ -291,6 +291,9 @@ function isReleaseFileChange(file: ReleaseBranchFile, version: string): boolean 
   if (path === 'VERSION') return status === 'M' && file.after?.trim() === version;
   if (PACKAGE_FILES.has(path)) return status === 'M' && onlyVersionChanged(file, version);
   if (/^changelog\/unreleased\/[^/]+\.md$/.test(path)) return status === 'D';
+  // Every release renames the rolling archive (…-to-v<previous>.md) by delete and add.
+  if (/^changelog\/archive\/CHANGELOG-v0\.1\.0-to-v\d+\.\d+\.\d+\.md$/.test(path))
+    return status === 'D' || status === 'A';
   if (path === `blog/dorkos-${version.replaceAll('.', '-')}.mdx`)
     return status === 'A' || status === 'M';
   if (path.startsWith(`apps/site/public/product/archive/v${version}/`) && !path.includes('/../'))

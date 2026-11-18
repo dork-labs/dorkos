@@ -6,8 +6,11 @@ name: Release Publish
 # On a release/* ref the branch's own copy of this file would run, and a PR there
 # could change the checks without the approver seeing it (Security, 2026-11-17).
 #
-# prepare: proves the branch (tip, base, cherry-picks) with main's release-cli,
-#          builds and packs the three packages. No npm or deploy rights.
+# prove:   proves the branch (tip, base, cherry-picks) with main's scripts BEFORE
+#          anything from the branch is installed or run: node builtins, git, gh.
+# prepare: only after that passes, installs the release checkout, builds and
+#          packs the three packages with main's release-cli (which proves again).
+#          No npm or deploy rights.
 # publish: waits for a person's approval on npm-release, checks that approval
 #          inside the job, re-checks the tip, then publishes the exact packed
 #          tarballs with npm trusted publishing (OIDC, no npm token).
@@ -47,7 +50,52 @@ env:
   RELEASE_BASE: ${{ inputs.base }}
 
 jobs:
+  prove:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Refuse anything but main's copy and strict inputs
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/main ]]
+          [[ "$GITHUB_WORKFLOW_REF" == "$GITHUB_REPOSITORY/.github/workflows/release-publish.yml@refs/heads/main" ]]
+          [[ "$RELEASE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          [[ "$RELEASE_EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          case "$RELEASE_MODE" in
+            routine) [[ "$RELEASE_BASE" =~ ^[0-9a-f]{40}$ ]] ;;
+            hotfix) [[ "$RELEASE_BASE" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] ;;
+            *) exit 1 ;;
+          esac
+      - name: Check out main's proofs
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: trusted
+          persist-credentials: false
+      - name: Check out the release branch as data, at the named SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.RELEASE_EXPECTED_SHA }}
+          path: release
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: Prove the release branch before anything from it runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          node --experimental-strip-types trusted/packages/cli/scripts/release-branch/proof.ts \
+            release "$GITHUB_REPOSITORY" "$RELEASE_VERSION" "$RELEASE_EXPECTED_SHA" \
+            "release/v$RELEASE_VERSION" "$RELEASE_MODE" "$RELEASE_BASE" "$RELEASE_EXPECTED_SHA"
+
   prepare:
+    needs: prove
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -87,7 +135,8 @@ jobs:
           persist-credentials: false
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
         with:
-          package_json_file: release/package.json
+          # pnpm's version comes from main, not from the checkout being built.
+          package_json_file: trusted/package.json
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
@@ -162,6 +211,9 @@ jobs:
       # changing it takes a reviewed PR to main. PLACEHOLDER until Dorian names the
       # account: it is not a valid GitHub login, so every publish refuses until then.
       RELEASE_APPROVER: '<approver-not-named-yet>'
+      # The same account's numeric user id: a login can be renamed and reclaimed,
+      # an id cannot. PLACEHOLDER (0 is no account) until the account is named.
+      RELEASE_APPROVER_ID: '0'
       SHA_DORKOS: ${{ needs.prepare.outputs.dorkos_sha256 }}
       SHA_CLOUD_API: ${{ needs.prepare.outputs.cloud_api_sha256 }}
       SHA_CONNECTOR_PROVIDERS: ${{ needs.prepare.outputs.connector_providers_sha256 }}
@@ -174,6 +226,7 @@ jobs:
           [[ "$RELEASE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
           [[ "$RELEASE_EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$RELEASE_APPROVER" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,38}$ ]]
+          [[ "$RELEASE_APPROVER_ID" =~ ^[1-9][0-9]*$ ]]
           for sum in "$SHA_DORKOS" "$SHA_CLOUD_API" "$SHA_CONNECTOR_PROVIDERS"; do
             [[ "$sum" =~ ^[0-9a-f]{64}$ ]]
           done
@@ -192,8 +245,8 @@ jobs:
         run: |
           set -euo pipefail
           gate=trusted/packages/cli/scripts/release-branch/publish-gate.ts
-          node --experimental-strip-types "$gate" approval "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$RELEASE_APPROVER" "$GITHUB_ACTOR"
-          node --experimental-strip-types "$gate" approval "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$RELEASE_APPROVER" "$GITHUB_TRIGGERING_ACTOR"
+          node --experimental-strip-types "$gate" approval "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$RELEASE_APPROVER" "$RELEASE_APPROVER_ID" "$GITHUB_ACTOR"
+          node --experimental-strip-types "$gate" approval "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$RELEASE_APPROVER" "$RELEASE_APPROVER_ID" "$GITHUB_TRIGGERING_ACTOR"
           node --experimental-strip-types "$gate" tip "$GITHUB_REPOSITORY" "$RELEASE_VERSION" "$RELEASE_EXPECTED_SHA"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -216,14 +269,23 @@ jobs:
       - name: Publish dorkos, then the cloud contract, then connector providers
         run: |
           set -euo pipefail
+          gate=trusted/packages/cli/scripts/release-branch/publish-gate.ts
           # Order matters: connector-providers pins cloud-api at this exact version.
           for row in "dorkos:dorkos.tgz" \
                      "@dork-labs/cloud-api:dork-labs-cloud-api-$RELEASE_VERSION.tgz" \
                      "@dork-labs/connector-providers:dork-labs-connector-providers-$RELEASE_VERSION.tgz"; do
             IFS=: read -r name file <<< "$row"
-            if [[ "$(npm view "$name@$RELEASE_VERSION" version 2>/dev/null || true)" == "$RELEASE_VERSION" ]]; then
-              echo "$name@$RELEASE_VERSION is already on npm; never publishing twice."
+            tarball="$RUNNER_TEMP/packed/$file"
+            local_integrity=$(node --experimental-strip-types "$gate" integrity "$tarball")
+            published=$(npm view "$name@$RELEASE_VERSION" dist.integrity 2>/dev/null || true)
+            if [[ -n "$published" ]]; then
+              # Never publish twice. Skipping is safe only when npm holds these exact bytes.
+              if [[ "$published" != "$local_integrity" ]]; then
+                echo "::error::$name@$RELEASE_VERSION is already on npm with different contents."
+                exit 1
+              fi
+              echo "$name@$RELEASE_VERSION is already on npm with these exact bytes; skipping."
               continue
             fi
-            npm publish "$RUNNER_TEMP/packed/$file" --access public
+            npm publish "$tarball" --access public
           done

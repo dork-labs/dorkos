@@ -16,6 +16,7 @@ import { parseReleaseBranchArgs } from '../../scripts/release-branch/proof.js';
 import {
   assertPublishApproval,
   assertTarballManifest,
+  tarballIntegrity,
 } from '../../scripts/release-branch/publish-gate.js';
 
 // Made-up SHAs; shapes copied from real `gh api` responses.
@@ -182,6 +183,8 @@ const fullRelease = releaseCommit([
   { path: 'changelog/unreleased/261118-000000-fix.md', status: 'D' },
   { path: 'blog/dorkos-1-2-3.mdx', status: 'A' },
   { path: 'apps/site/public/product/archive/v1.2.3/hero.png', status: 'A' },
+  { path: 'changelog/archive/CHANGELOG-v0.1.0-to-v1.2.1.md', status: 'D' },
+  { path: 'changelog/archive/CHANGELOG-v0.1.0-to-v1.2.2.md', status: 'A' },
 ]);
 
 describe('cherry-pick rule', () => {
@@ -293,6 +296,8 @@ describe('cherry-pick rule', () => {
     ['a CLI release script', 'packages/cli/scripts/release-cli.ts', 'M'],
     ['an agent tool file', '.agents/skills/x/SKILL.md', 'M'],
     ['a renamed-in fragment', 'changelog/unreleased/x.md', 'R'],
+    ['a changed archive file', 'changelog/archive/CHANGELOG-v0.1.0-to-v1.2.2.md', 'M'],
+    ['another archive file', 'changelog/archive/notes.md', 'A'],
   ] as const)('refuses a release commit with %s', (_, path, status) => {
     const commit = releaseCommit([{ path, status }]);
     expect(checkReleaseCherryPicks(input([commit]))[0]?.code).toBe('non-release-file');
@@ -359,40 +364,60 @@ describe('release-cli flags', () => {
   });
 });
 
-const approval = (login: string, state = 'approved', env = 'npm-release') => ({
+const approval = (login: string, state = 'approved', env = 'npm-release', id = 7) => ({
   environments: [{ id: 1, name: env, url: 'https://api.github.com/repos/acme/app/environments/x' }],
   state,
-  user: { login, id: 7, type: 'User' },
+  user: { login, id, type: 'User' },
   comment: 'Ship it',
 });
+const approver = { login: 'release-approver', id: 7 };
 
 describe('publish approval', () => {
   it('accepts an npm-release approval by the named approver', () => {
     expect(() =>
-      assertPublishApproval([approval('Release-Approver')], 'release-approver', 'dev-account')
+      assertPublishApproval([approval('Release-Approver')], approver, 'dev-account')
     ).not.toThrow();
   });
   it.each([
     ['no approvals', []],
     ['an approval for another environment', [approval('release-approver', 'approved', 'staging')]],
-    ['an approval by someone else', [approval('dev-account')]],
+    ['an approval by someone else', [approval('dev-account', 'approved', 'npm-release', 8)]],
     ['a rejection', [approval('release-approver', 'rejected')]],
-    ['an extra approval by someone else', [approval('release-approver'), approval('dev-account')]],
+    [
+      'an extra approval by someone else',
+      [approval('release-approver'), approval('dev-account', 'approved', 'npm-release', 8)],
+    ],
+    [
+      'the right login on another account (a reclaimed login)',
+      [approval('release-approver', 'approved', 'npm-release', 99)],
+    ],
     ['not a list', { total_count: 0 }],
   ])('refuses %s', (_, value) => {
-    expect(() => assertPublishApproval(value, 'release-approver', 'dev-account')).toThrow();
+    expect(() => assertPublishApproval(value, approver, 'dev-account')).toThrow();
   });
   it('refuses when the run was started by the approver account', () => {
     expect(() =>
-      assertPublishApproval([approval('release-approver')], 'release-approver', 'Release-Approver')
+      assertPublishApproval([approval('release-approver')], approver, 'Release-Approver')
     ).toThrow('cannot also be its approver');
   });
-  it('refuses an empty or malformed approver', () => {
-    expect(() => assertPublishApproval([approval('x')], '', 'dev-account')).toThrow(
-      'GitHub logins'
-    );
-    expect(() => assertPublishApproval([approval('x')], 'a b', 'dev-account')).toThrow(
-      'GitHub logins'
+  it('refuses the placeholder and malformed approvers', () => {
+    for (const bad of [
+      { login: '<approver-not-named-yet>', id: 7 },
+      { login: 'release-approver', id: 0 },
+      { login: '', id: 7 },
+      { login: 'a b', id: 7 },
+    ])
+      expect(() =>
+        assertPublishApproval([approval('release-approver')], bad, 'dev-account')
+      ).toThrow('GitHub accounts');
+  });
+});
+
+describe('tarball integrity', () => {
+  it("matches npm's dist.integrity form", () => {
+    // sha512 of the empty input, base64, as npm prints it.
+    expect(tarballIntegrity(new Uint8Array())).toBe(
+      'sha512-z4PhNX7vuL3xVChQ1m2AB9Yg5AULVxXcg/SpIdNs6c5H0NE8XYXysP+DGNKHfuwvY7kxvUdBeoGlODJ6+SfaPg=='
     );
   });
 });

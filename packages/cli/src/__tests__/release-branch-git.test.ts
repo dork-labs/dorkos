@@ -6,6 +6,7 @@ import { beforeAll, afterAll, expect, it } from 'vitest';
 import {
   gitIsAncestor,
   gitPatchId,
+  patchFingerprint,
   readReleaseBranchCommits,
 } from '../../scripts/release-branch/proof.js';
 import { checkReleaseCherryPicks } from '../../scripts/release-branch/rules.js';
@@ -92,6 +93,32 @@ it('refuses a pick that was edited after picking (patch-id differs)', async () =
       patchIdOf: (sha) => gitPatchId(repo, sha),
     })[0]?.code
   ).toBe('patch-id-mismatch');
+});
+
+it('tells apart changes git patch-id would call equal: whitespace and binary contents', async () => {
+  // git patch-id --stable ignores whitespace and sees only "Binary files differ".
+  const start = git('rev-parse', 'HEAD');
+  const spaced = await commit('msg.ts', "export const m = 'a b';\n", 'feat: spaced');
+  git('reset', '-q', '--hard', start);
+  const unspaced = await commit('msg.ts', "export const m = 'ab';\n", 'feat: unspaced');
+  expect(gitPatchId(repo, spaced)).toBeDefined();
+  expect(gitPatchId(repo, spaced)).not.toBe(gitPatchId(repo, unspaced));
+
+  git('reset', '-q', '--hard', start);
+  const blobA = await commit('logo.bin', '\u0000\u0001A\u0000', 'feat: logo');
+  git('reset', '-q', '--hard', start);
+  const blobB = await commit('logo.bin', '\u0000\u0001B\u0000', 'feat: logo');
+  expect(gitPatchId(repo, blobA)).toBeDefined();
+  expect(gitPatchId(repo, blobA)).not.toBe(gitPatchId(repo, blobB));
+  git('reset', '-q', '--hard', start);
+});
+
+it('matches a clean pick whose hunk moved to other line numbers', () => {
+  const at = (line: number) =>
+    `diff --git a/x.ts b/x.ts\nindex ${'1'.repeat(40)}..${line}${'2'.repeat(39)} 100644\n--- a/x.ts\n+++ b/x.ts\n@@ -${line},3 +${line},3 @@ function f()\n a\n-b\n+c\n d\n`;
+  expect(patchFingerprint(at(3))).toBe(patchFingerprint(at(9)));
+  expect(patchFingerprint(at(3))).not.toBe(patchFingerprint(at(3).replace('+c', '+c ')));
+  expect(patchFingerprint('')).toBeUndefined();
 });
 
 it('knows a branch-only commit is not on main', async () => {

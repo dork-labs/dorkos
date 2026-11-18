@@ -1,4 +1,14 @@
+/**
+ * Reads the facts a release-branch publish rests on (local git, `gh api`, npm)
+ * and runs the pure rules in `rules.ts` over them (DOR-4638). Node builtins
+ * only, so the Release Publish workflow runs it with no install:
+ *
+ *   node proof.ts <root> <repo> <version> <head> <branch> <mode> <base> <expected-sha>
+ */
 import { execFileSync } from 'node:child_process';
+import { createHash, randomUUID } from 'node:crypto';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   assertBaseIsAncestor,
   assertHotfixBaseTag,
@@ -46,19 +56,50 @@ function gitOk(cwd: string, args: string[]): boolean {
   }
 }
 
-/** `git patch-id --stable` of one commit, or undefined when it has no diff or cannot be read. */
+/**
+ * A commit's patch fingerprint, or undefined when it has no diff or cannot be read.
+ *
+ * Like `git patch-id --stable` it ignores line numbers and blob ids, so a clean
+ * pick onto another base matches its source. Unlike it, it keeps whitespace
+ * (patch-id drops it, so a pick could change a string or a YAML indent and still
+ * match) and binary contents (patch-id sees only "Binary files differ").
+ */
 export function gitPatchId(cwd: string, sha: string): string | undefined {
   try {
-    const diff = execFileSync('git', ['diff-tree', '-p', '--no-color', '--full-index', sha], {
-      cwd,
-      encoding: 'utf8',
-      maxBuffer: 64 * 1024 * 1024,
-    });
-    const id = run(cwd, 'git', ['patch-id', '--stable'], diff).split(' ')[0];
-    return /^[a-f0-9]{40}$/.test(id ?? '') ? id : undefined;
+    const diff = execFileSync(
+      'git',
+      [
+        '-c',
+        'diff.noprefix=false',
+        '-c',
+        'diff.mnemonicPrefix=false',
+        'diff-tree',
+        '-p',
+        '--no-commit-id',
+        '--no-color',
+        '--no-ext-diff',
+        '--no-textconv',
+        '--no-renames',
+        '--full-index',
+        '--binary',
+        sha,
+      ],
+      { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }
+    );
+    return patchFingerprint(diff);
   } catch {
     return undefined;
   }
+}
+
+/** Hash a unified diff with hunk line numbers and blob ids removed and every other byte kept. */
+export function patchFingerprint(diff: string): string | undefined {
+  const lines = diff
+    .split('\n')
+    .filter((line) => !line.startsWith('index '))
+    .map((line) => (line.startsWith('@@ ') ? '@@' : line));
+  if (!lines.some((line) => line.startsWith('diff --git '))) return undefined;
+  return createHash('sha256').update(lines.join('\n')).digest('hex');
 }
 
 /** True only when `sha` is a commit that is an ancestor of (or equal to) `mainSha`; false on any error. */
@@ -107,14 +148,33 @@ export function readReleaseBranchCommits(
   });
 }
 
-function api(cwd: string, path: string): unknown {
-  return JSON.parse(run(cwd, 'gh', ['api', path]));
+/** The outside reads a proof makes; tests swap them for recorded `gh api` and npm answers. */
+export interface ReleaseBranchReads {
+  /** `gh api <path>`, parsed. */
+  api: (path: string) => unknown;
+  /** `npm view <spec> version --json`, raw. */
+  npmView: (spec: string) => string;
+  /** Fetch main from origin so the trusted main tip is in the checkout. */
+  fetchMain: () => void;
+}
+
+/** The real reads, run from `cwd`. */
+export function liveReads(cwd: string): ReleaseBranchReads {
+  return {
+    api: (path) => JSON.parse(run(cwd, 'gh', ['api', path])),
+    npmView: (spec) => run(cwd, 'npm', ['view', spec, 'version', '--json']),
+    fetchMain: () => void run(cwd, 'git', ['fetch', '--no-tags', '--quiet', 'origin', 'main']),
+  };
 }
 
 /** The trusted repository's current main tip, after its default branch is confirmed as main. */
-export function trustedMainTip(cwd: string, repository: string): string {
-  const repo = api(cwd, `repos/${repository}`) as { full_name?: unknown; default_branch?: unknown };
-  const main = api(cwd, `repos/${repository}/branches/main`) as {
+export function trustedMainTip(
+  cwd: string,
+  repository: string,
+  api: ReleaseBranchReads['api'] = liveReads(cwd).api
+): string {
+  const repo = api(`repos/${repository}`) as { full_name?: unknown; default_branch?: unknown };
+  const main = api(`repos/${repository}/branches/main`) as {
     name?: unknown;
     commit?: { sha?: unknown };
   };
@@ -140,17 +200,20 @@ export function proveReleaseBranch(input: {
   version: string;
   head: string;
   request: ReleaseBranchRequest;
+  reads?: ReleaseBranchReads;
 }): string {
   const { root, repository, version, head, request } = input;
+  const { api, npmView, fetchMain } = input.reads ?? liveReads(root);
   assertReleaseBranchName(request.branch, version);
+  // The name is regex-checked above; GitHub takes the slash in the path as is.
   assertReleaseBranchTip(
-    api(root, `repos/${repository}/branches/${encodeURIComponent(request.branch)}`),
+    api(`repos/${repository}/branches/${request.branch}`),
     request.branch,
     head,
     request.expectedSha
   );
-  const mainSha = trustedMainTip(root, repository);
-  run(root, 'git', ['fetch', '--no-tags', '--quiet', 'origin', 'main']);
+  const mainSha = trustedMainTip(root, repository, api);
+  fetchMain();
   if (!gitOk(root, ['cat-file', '-e', `${mainSha}^{commit}`]))
     throw Error('The trusted main tip is not in this checkout yet; fetch main and retry.');
   let base: string;
@@ -161,19 +224,16 @@ export function proveReleaseBranch(input: {
     baseLabel = "QA's pin on main";
   } else {
     assertHotfixBaseTag(request.base, version);
-    const ref = api(root, `repos/${repository}/git/ref/tags/${request.base}`) as {
+    const ref = api(`repos/${repository}/git/ref/tags/${request.base}`) as {
       object?: { type?: unknown; sha?: unknown };
     };
     const annotated =
       ref?.object?.type === 'tag'
-        ? api(root, `repos/${repository}/git/tags/${String(ref.object.sha)}`)
+        ? api(`repos/${repository}/git/tags/${String(ref.object.sha)}`)
         : undefined;
     base = resolveTagCommit(request.base, ref, annotated);
-    assertVersionOnNpm(
-      run(root, 'npm', ['view', `dorkos@${request.base.slice(1)}`, 'version', '--json']),
-      request.base.slice(1)
-    );
-    assertBaseIsAncestor(base, head, api(root, `repos/${repository}/compare/${base}...${head}`));
+    assertVersionOnNpm(npmView(`dorkos@${request.base.slice(1)}`), request.base.slice(1));
+    assertBaseIsAncestor(base, head, api(`repos/${repository}/compare/${base}...${head}`));
     baseLabel = `published tag ${request.base}`;
   }
   assertReleaseCherryPicks({
@@ -231,3 +291,42 @@ export function parseReleaseBranchArgs(
     throw Error('--base must be a vX.Y.Z tag in hotfix mode.');
   return { request: { branch, mode, base, expectedSha }, root: flags.get('--root'), rest };
 }
+
+function main(args: readonly string[]): void {
+  const [root, repository, version, head, ...flags] = args;
+  if (!root || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository ?? '') || !head)
+    throw Error(
+      'Usage: proof.ts <root> <repo> <version> <head> <branch> <mode> <base> <expected-sha>'
+    );
+  const [branch, mode, base, expectedSha] = flags;
+  const parsed = parseReleaseBranchArgs([
+    '--release-branch',
+    branch ?? '',
+    '--mode',
+    mode ?? '',
+    '--base',
+    base ?? '',
+    '--expected-sha',
+    expectedSha ?? '',
+  ]);
+  if (!parsed || flags.length !== 4) throw Error('The release-branch proof needs all four values.');
+  if (head !== run(root, 'git', ['rev-parse', 'HEAD']))
+    throw Error('The checkout is not at the release commit being proved.');
+  printUnescaped(proveReleaseBranch({ root, repository, version, head, request: parsed.request }));
+}
+
+/**
+ * Print text that quotes commit subjects. In GitHub Actions a subject could
+ * otherwise be read as a workflow command (`::error::`, `::add-mask::`), so
+ * command processing is paused around it with a one-time token.
+ */
+export function printUnescaped(text: string): void {
+  if (process.env.GITHUB_ACTIONS !== 'true') return void console.log(text);
+  const token = randomUUID();
+  console.log(`::stop-commands::${token}`);
+  console.log(text);
+  console.log(`::${token}::`);
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
+  main(process.argv.slice(2));

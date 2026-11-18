@@ -221,9 +221,12 @@ gates:
     purpose: Publishes and attests the immutable Community image and its strict version-to-digest release manifest.
 
   # --- release-publish.yml ---
+  - id: wf.release-publish.prove
+    source: .github/workflows/release-publish.yml
+    purpose: Before anything from the release branch is installed or run, refuses unless the tip is the SHA QA and the PM named, the base is QA's pin or a published tag, and every commit is a main cherry-pick or the release commit.
   - id: wf.release-publish.prepare
     source: .github/workflows/release-publish.yml
-    purpose: Refuses a release/vX.Y.Z publish unless the tip is the SHA QA and the PM named, the base is QA's pin or a published tag, and every commit is a main cherry-pick or the release commit; then packs the three packages.
+    purpose: After the proof passes, installs and builds the release commit with main's release-cli (which proves again) and packs the three packages.
   - id: wf.release-publish.publish
     source: .github/workflows/release-publish.yml
     purpose: Publishes the packed tarballs to npm by trusted publishing only after the named approver, not the dispatcher, approved npm-release and the tip is unchanged.
