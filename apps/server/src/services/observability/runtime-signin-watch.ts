@@ -274,10 +274,11 @@ export function noteSigninProven(
   startedAt: number,
   cause: SigninClearCause
 ): void {
-  // With no live episode (one nobody could be told about was given back), the
-  // signed-out mark still knows when the failure was seen.
+  // The LATEST failure, not the episode's first: a probe that began between
+  // two failures was already outrun by the second. The signed-out mark is
+  // stamped on every failure; the episode's `since` stands in only without it.
   const noticedAt =
-    liveEntry(runtimeType, episodeKey(account))?.since ?? accountSignedOutAt(runtimeType, account);
+    accountSignedOutAt(runtimeType, account) ?? liveEntry(runtimeType, episodeKey(account))?.since;
   if (noticedAt !== undefined && noticedAt >= startedAt) return;
   noteSigninRepaired(runtimeType, account, cause);
 }

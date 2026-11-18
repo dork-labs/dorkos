@@ -441,6 +441,28 @@ describe('probeAccount: what a probe says about the sign-in', () => {
     expect(isSigninFailing('claude-code', workPath)).toBe(true);
   });
 
+  it('leaves a failure standing when a later failure outran the probe', async () => {
+    await failSigninOn(workPath);
+    await laterThanNow();
+    let answer: ((value: ReturnType<typeof usageResponse>) => void) | undefined;
+    const { factory } = fakeQuery(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+    );
+    const probing = probeAccount('work', deps(factory));
+    while (!answer) await new Promise((resolve) => setTimeout(resolve, 1));
+    await laterThanNow();
+    // The probe began after the first failure, but the sign-in failed again after it began.
+    await failSigninOn(workPath);
+    answer(usageResponse());
+
+    expect((await probing).probe).toBe('ok');
+    expect(accountSigninState('claude-code', workPath)).toBe('signed-out');
+    expect(isSigninFailing('claude-code', workPath)).toBe(true);
+  });
+
   it('leaves the account signed out when the probe found no readings', async () => {
     await failSigninOn(workPath);
     const { factory } = fakeQuery(async () =>

@@ -259,18 +259,21 @@ export function startSigninCredentialWatch(deps: SigninCredentialWatchDeps): () 
   const onEvent = (key: string, entry: WatchedAccount, eventType: string): void => {
     try {
       if (watched.get(key) !== entry) return;
+      // A rewrite by rename replaces the file the watch was on: watch the new
+      // one FIRST, even while a probe runs, or the watch stays on the old,
+      // unlinked file and never hears another change.
+      if (eventType === 'rename') {
+        arm(key, entry.accountId, entry.file);
+        if (watched.get(key) !== entry) return;
+      }
       // The probe's own CLI may be writing the file; what it leaves is the
-      // baseline once it settles (see `runProbe`).
+      // baseline once it settles (see `runProbe`). A real change in that time
+      // is absorbed too, which fails safe: the notice simply stays up.
       if (entry.probing) return;
       const facts = safeFacts(entry.file);
       if (!facts) {
         stop(key);
         return;
-      }
-      // A rewrite by rename replaces the file the watch was on: watch the new one.
-      if (eventType === 'rename') {
-        arm(key, entry.accountId, entry.file);
-        if (watched.get(key) !== entry) return;
       }
       if (facts.mtimeMs === entry.seen.mtimeMs && facts.size === entry.seen.size) return;
       entry.seen = { mtimeMs: facts.mtimeMs, size: facts.size };

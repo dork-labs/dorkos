@@ -365,6 +365,29 @@ describe('condition 2: at most one probe per floor window', () => {
     expect(h.probe).toHaveBeenCalledOnce();
   });
 
+  it('follows a rewrite by rename that lands while a probe runs', async () => {
+    const h = harness();
+    // The probe's CLI saves the file by renaming a new one over it.
+    h.probe.mockImplementationOnce(async () => {
+      h.change('rename');
+      return { probe: 'failed' as const };
+    });
+    start(h.deps);
+    recordAccountSignin('claude-code', ROOT, 'signed-out');
+
+    h.change();
+    await vi.advanceTimersByTimeAsync(CREDENTIAL_CHANGE_DEBOUNCE_MS);
+    expect(h.probe).toHaveBeenCalledOnce();
+    // Re-armed on the new file, not left on the unlinked one.
+    expect(h.watch).toHaveBeenCalledTimes(2);
+
+    // A real sign-in later still asks for a probe.
+    await vi.advanceTimersByTimeAsync(2 * PROBE_FLOOR_MS);
+    h.change();
+    await vi.advanceTimersByTimeAsync(CREDENTIAL_CHANGE_DEBOUNCE_MS);
+    expect(h.probe).toHaveBeenCalledTimes(2);
+  });
+
   it('asks once more after the floor when the probe was throttled', async () => {
     const h = harness();
     h.probe.mockResolvedValueOnce({ probe: 'throttled' as const });
