@@ -243,11 +243,6 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
   const heading = approval.cannotAllow
     ? `${approval.packageLabel ?? 'This package'} wants to run commands`
     : (approval.serviceAction?.actionName ?? approval.capabilityTitle);
-  // A heading that is the action, or the question a consequence badge answers,
-  // wraps instead of truncating (see the heading row below).
-  const wrapsHeading = Boolean(
-    approval.cannotAllow || approval.serviceAction || approval.consequence
-  );
   const areaLabel = approval.area ? (getPermissionArea(approval.area)?.label ?? null) : null;
   // A floor area never offers Always allow, and says why; every other reason it
   // is absent needs no sentence (see the component docblock).
@@ -295,18 +290,13 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
         )}
       >
         <div className="min-w-0 flex-1">
-          {/* A connected-app action's heading IS the action ("Delete message"),
-              and a card that names its consequence asks a whole question
-              ("Allow a changed skill in "wt"?"). Either way, on a narrow card the
-              heading wraps and the badge moves under it, rather than cutting the
-              question short. */}
-          <div
-            className={cn('flex min-w-0 items-center gap-2', wrapsHeading && 'flex-wrap gap-y-0.5')}
-          >
+          {/* The heading names what a yes grants, so it is never cut short: on a
+              narrow card it wraps and the badge moves under it (design review on
+              DOR-4355 M4, after "Let someo…" at 390). */}
+          <div className="flex min-w-0 flex-wrap items-center gap-2 gap-y-0.5">
             <span
               className={cn(
-                'text-foreground text-sm font-medium',
-                wrapsHeading ? 'min-w-0 break-words' : 'truncate',
+                'text-foreground min-w-0 text-sm font-medium break-words',
                 approval.cannotAllow && 'break-all'
               )}
             >
@@ -434,6 +424,13 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
                     {approval.detail}
                   </pre>
                 )
+              )}
+              {/* Outside the box, which holds only what changes: a name an agent
+              can set, quoted and cut short by the server (DOR-4355 M4). */}
+              {approval.detailNote !== undefined && (
+                <p className="text-muted-foreground mt-1 text-xs break-words">
+                  {approval.detailNote}
+                </p>
               )}
             </>
           )}

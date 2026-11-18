@@ -513,6 +513,12 @@ export const PendingApprovalSchema = z
      */
     detail: z.string().max(APPROVAL_DETAIL_MAX_LENGTH).optional(),
     /**
+     * One plain line under {@link detail}, outside its box: on an agent's raise
+     * card (DOR-4355 M4), the connection's name, which an agent can set, quoted
+     * and cut short. The box holds only what changes.
+     */
+    detailNote: z.string().max(200).optional(),
+    /**
      * A Marketplace install or update whose full list is too long for
      * {@link detail} (DOR-3070): the card renders this instead of the detail,
      * and the full list is served by `GET /api/approvals/:id/full-detail`.

@@ -231,7 +231,14 @@ describe('ApprovalCard', () => {
     it('keeps the tier label on a card that names none', () => {
       renderCard(buildApproval());
       expect(screen.getByText('Cannot be undone')).toBeInTheDocument();
-      expect(screen.getByText('Uninstall a marketplace package')).toHaveClass('truncate');
+    });
+
+    // Design review on DOR-4355 M4: a heading names what a yes grants, so no card cuts it short.
+    it('wraps every heading instead of cutting it short', () => {
+      renderCard(buildApproval());
+      const heading = screen.getByText('Uninstall a marketplace package');
+      expect(heading).toHaveClass('break-words');
+      expect(heading).not.toHaveClass('truncate');
     });
   });
 
@@ -551,6 +558,19 @@ describe('ApprovalCard', () => {
       // an empty block under it would read as a missing value.
       renderCard(buildApproval());
       expect(document.querySelector('[data-slot="approval-detail"]')).toBeNull();
+    });
+
+    // DOR-4355 M4: the box holds only what changes; a name an agent can set sits under it.
+    it('draws the note under the box, outside it, in plain text', () => {
+      const note = 'Its name, which an agent can set: “Your own Telegram, alre…”';
+      renderCard(
+        buildApproval({ detail: 'Who may approve: U0OWNER01 → U0NEWBIE1', detailNote: note })
+      );
+      const block = document.querySelector('[data-slot="approval-detail"]');
+      expect(block!.textContent).not.toContain('Your own Telegram');
+      const line = screen.getByText(note);
+      expect(line.tagName).toBe('P');
+      expect(block!.contains(line)).toBe(false);
     });
   });
 });

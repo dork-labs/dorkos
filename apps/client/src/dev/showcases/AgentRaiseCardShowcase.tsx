@@ -26,10 +26,7 @@ function raiseCard(overrides: Partial<PendingApproval>): PendingApproval {
     answerNeedsStepUp: true,
     requestCode: 'K7QD-M2XP-9HTA',
     summary: 'Let U0NEWBIE1 approve your agents’ requests on the Slack connection northwind-sl.',
-    detail: [
-      'Who may approve your agents’ requests on the Slack connection northwind-sl: U0OWNER01 → U0OWNER01, U0NEWBIE1',
-      'Its name, which an agent can set: “Your own Telegram, alre…”',
-    ].join('\n'),
+    detail: 'Who may approve: U0OWNER01 → U0OWNER01, U0NEWBIE1',
     requestedAt: new Date(LOADED_AT).toISOString(),
     expiresAt: new Date(LOADED_AT + 10 * 60_000).toISOString(),
     ...overrides,
@@ -41,16 +38,15 @@ export function AgentRaiseCardShowcase() {
   return (
     <ApprovalList
       approvals={[
-        raiseCard({}),
+        // An agent named this connection, so its name sits under the box.
+        raiseCard({ detailNote: 'Its name, which an agent can set: “Your own Telegram, alre…”' }),
         raiseCard({
           approvalId: '01JZ0000000000000000000062',
           capabilityId: 'agent-raise.relay.binding',
           capabilityTitle: 'Let a chat connection do more',
           requestCode: 'R4WN-8CJE-T6YB',
           summary: 'Let a chat route on the Telegram connection support-tg do more.',
-          detail: ['May start chats: No → Yes', 'Permission mode: default → acceptEdits'].join(
-            '\n'
-          ),
+          detail: ['May start chats: No → Yes', 'Permission level: Ask first → Act'].join('\n'),
         }),
       ]}
     />

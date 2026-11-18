@@ -3,6 +3,7 @@
  *
  * @module services/core/approvals/approval-card
  */
+import { agentRaiseNote, isAgentRaiseCard } from './agent-raise/agent-raise-cards.js';
 import type { approvals } from '@dorkos/db';
 import {
   isExtensionCapabilityId,
@@ -113,6 +114,10 @@ export function toPendingApproval(
       ? { cannotAllow: true as const, packageLabel: incompletePackageLabel(row.packageRequest) }
       : {}),
     ...(row.detail === null ? {} : { detail: row.detail }),
+    // An agent's raise card keeps a name an agent can set out of its box (DOR-4355 M4).
+    ...(isAgentRaiseCard(row.capabilityId) && agentRaiseNote(row.id)
+      ? { detailNote: agentRaiseNote(row.id) }
+      : {}),
     ...(row.requestedBy ? { requestedBy: row.requestedBy } : {}),
     // Both halves or neither: a label with no id behind it is the shape this
     // field exists to avoid, since the id is what makes the name checkable.

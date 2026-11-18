@@ -55,7 +55,7 @@ export interface AgentRaiseEffect {
   summary: string;
   /** Each change, from → to. */
   changes: readonly AgentRaiseChange[];
-  /** Lines shown after the changes, such as a name an agent can set, already fenced. */
+  /** Lines shown under the box, outside it, such as a name an agent can set, already fenced. */
   notes?: readonly string[];
 }
 
@@ -100,6 +100,7 @@ interface PendingRaise {
   readonly kind: string;
   readonly target: string;
   readonly inputHash: string;
+  readonly note?: string;
   readonly expiresAt: number;
   readonly run: AgentRaiseWrite['run'];
   readonly timer: ReturnType<typeof setTimeout>;
@@ -140,14 +141,10 @@ function turnMarked(agentPath: string, sessionId?: string): boolean {
   return marksHold(marksOf(sessionId, agentPath)) || chatReadOutsideWords(sessionId, agentPath);
 }
 
-/** The card's full text: each change, from → to. */
+/** The card's box: each change, from → to, and nothing else. */
 function detailOf(effect: AgentRaiseEffect): string {
-  return [
-    ...effect.changes.map((c) => `${c.what}: ${c.from} → ${c.to}`),
-    ...(effect.notes ?? []),
-  ].join('\n');
+  return effect.changes.map((c) => `${c.what}: ${c.from} → ${c.to}`).join('\n');
 }
-
 /** Turn a waiting card down and forget it. */
 function retire(raise: PendingRaise, reason: string): void {
   clearTimeout(raise.timer);
@@ -234,6 +231,7 @@ export function raiseAgentCard(caller: AgentRaiseCaller, write: AgentRaiseWrite)
     kind: write.kind,
     target: write.target,
     inputHash,
+    ...(write.effect.notes?.length ? { note: write.effect.notes.join(' ') } : {}),
     expiresAt,
     run: write.run,
     timer,
@@ -396,4 +394,13 @@ export function describeAgentRaiseCapability(
   if (!isAgentRaiseCard(capabilityId)) return undefined;
   const kind = capabilityId.slice(AGENT_RAISE_PREFIX.length);
   return { title: AGENT_RAISE_TITLES[kind] ?? 'Let an agent do more', tier: 'act' };
+}
+
+/**
+ * The line a waiting card shows under its box, outside it, while the card waits.
+ *
+ * @param approvalId - The card.
+ */
+export function agentRaiseNote(approvalId: string): string | undefined {
+  return pending.get(approvalId)?.note;
 }

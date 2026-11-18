@@ -230,8 +230,9 @@ describe('an agent adding someone who may approve on a chat connection', () => {
     expect(card?.summary).toBe(
       'Let U0NEWBIE1 approve your agents’ requests on the Slack connection sl.'
     );
-    expect(approvals.fullDetail(asked.body.approvalId) ?? card?.detail).toContain(
-      'Who may approve your agents’ requests on the Slack connection sl: U0OWNER01 → U0OWNER01, U0NEWBIE1'
+    // The box holds only what changes; the headline already names the connection.
+    expect(approvals.fullDetail(asked.body.approvalId) ?? card?.detail).toBe(
+      'Who may approve: U0OWNER01 → U0OWNER01, U0NEWBIE1'
     );
     expect(JSON.stringify(card)).not.toContain('checked by the owner');
   });
@@ -253,9 +254,10 @@ describe('an agent adding someone who may approve on a chat connection', () => {
     const card = approvals.listPending().find((p) => p.approvalId === asked.body.approvalId);
     expect(card?.summary).not.toContain('Your own Telegram');
     expect(card?.summary).toContain('the Slack connection sl');
-    const detail = approvals.fullDetail(asked.body.approvalId) ?? card?.detail ?? '';
-    expect(detail).toContain('Its name, which an agent can set: “Your own Telegram, alre…”');
-    expect(detail).not.toContain('approved by the owner');
+    // The name sits under the box, never in it, and never in the headline.
+    expect(card?.detailNote).toBe('Its name, which an agent can set: “Your own Telegram, alre…”');
+    expect(card?.detail).not.toContain('Your own Telegram');
+    expect(JSON.stringify(card)).not.toContain('approved by the owner');
   });
 
   it('refuses a replayed yes, and applies nothing twice', async () => {
@@ -415,7 +417,8 @@ describe('an agent raising a chat route', () => {
     const detail =
       approvals.fullDetail(asked.body.approvalId) ?? approvals.listPending()[0]?.detail;
     expect(detail).toContain('May start chats: No → Yes');
-    expect(detail).toContain('Permission mode: default → acceptEdits');
+    // The app's own level words, never the raw mode ids.
+    expect(detail).toContain('Permission level: Ask first → Act');
 
     const done = await yesWithStepUp(asked.body.approvalId);
     expect(done.body).toMatchObject({ ok: true, status: 200 });

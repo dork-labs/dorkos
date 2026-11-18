@@ -23,6 +23,7 @@ import type { BindingChangedError } from '../services/relay/binding-store.js';
 import { readJsonBody } from '../http/request-body.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
 import { cardConnection, type CardConnection } from './relay-adapter-http.js';
+import { chatModeWord } from '@dorkos/shared/permissions';
 import type {
   AgentRaiseChange,
   AgentRaiseEffect,
@@ -160,8 +161,13 @@ export function bindingUpdateEffect(
   const add = (what: string, from: string, to: string) => {
     if (from !== to) changes.push({ what, from, to });
   };
+  // In the app's own level words ("Ask first → Act"), never the raw mode ids.
   if (next.permissionMode !== undefined)
-    add('Permission mode', existing.permissionMode, next.permissionMode);
+    add(
+      'Permission level',
+      chatModeWord(existing.permissionMode),
+      chatModeWord(next.permissionMode)
+    );
   const flags = [
     ['canInitiate', 'May start chats'],
     ['canReply', 'May reply'],

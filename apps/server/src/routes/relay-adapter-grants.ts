@@ -124,8 +124,8 @@ export function ownerListState(config: Record<string, unknown> | undefined): str
 
 /** The words for one owner list on a card. */
 const LIST_WHAT: Record<(typeof OWNER_LIST_KEYS)[number], string> = {
-  approverAllowlist: 'Who may approve your agents’ requests',
-  dmAllowlist: 'Who may message your agents directly',
+  approverAllowlist: 'Who may approve',
+  dmAllowlist: 'Who may message directly',
 };
 
 /** A list of ids for a card, or "Nobody". */
@@ -156,14 +156,15 @@ export function ownerGrantEffect(
   const opensDms = opensDirectMessages(incoming, existing);
   const changes = OWNER_LIST_KEYS.filter((list) => added.some((entry) => entry.list === list)).map(
     (list) => ({
-      what: `${LIST_WHAT[list]} on ${connection}`,
+      // The headline already names the connection; the box holds only what changes.
+      what: LIST_WHAT[list],
       from: idsText(toIdList(existing?.[list])),
       to: idsText(toIdList(incoming[list])),
     })
   );
   if (opensDms) {
     changes.push({
-      what: `Who may message your agents directly on ${connection}`,
+      what: LIST_WHAT.dmAllowlist,
       from: 'Only people on the DM list',
       to: 'Anyone',
     });

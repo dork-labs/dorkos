@@ -5281,6 +5281,10 @@
             "type": "string",
             "maxLength": 4000
           },
+          "detailNote": {
+            "type": "string",
+            "maxLength": 200
+          },
           "marketplaceSummary": {
             "$ref": "#/components/schemas/MarketplaceApprovalSummary"
           },
