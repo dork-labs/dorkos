@@ -1,8 +1,22 @@
 import { ApprovalList } from '@/layers/features/approvals';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
+import { ShowcaseLabel } from '../ShowcaseLabel';
+import { ShowcaseDemo } from '../ShowcaseDemo';
+
+/** The remote approval card at phone width, with its label, for the approvals showcase. */
+export function RemoteApprovalSection() {
+  return (
+    <>
+      <ShowcaseLabel>Remote approval at phone width</ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <RemoteApprovalShowcase />
+      </ShowcaseDemo>
+    </>
+  );
+}
 
 /** Made-up phone card for reviewing remote confirmation without a real request. */
-export function RemoteApprovalShowcase() {
+function RemoteApprovalShowcase() {
   const approval: PendingApproval = {
     approvalId: '01JZ0000000000000000000088',
     capabilityId: 'marketplace.install',

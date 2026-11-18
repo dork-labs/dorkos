@@ -13,6 +13,7 @@ import type { Task } from '@dorkos/shared/types';
 import { parseDuration } from '@dorkos/skills/duration';
 import { changesApprovedWork } from '../task-file-update.js';
 import { chatReadOutsideWords } from '../../core/turn-power/chat-outside-words.js';
+import { escalatedGrantFor } from '../../core/capabilities/tool-call-escalation.js';
 
 /** The fields of an edit these checks read: a route's body or a tool call's arguments. */
 export type CreditsEdit = Parameters<typeof changesApprovedWork>[0] & {
@@ -97,3 +98,24 @@ export const CREDITS_EDIT_NEEDS_YES = {
     'Changing what a scheduled task on DorkOS credits does, when it runs or how long it may run ' +
     'spends the owner’s money. Ask again from a chat a person can answer, or ask them to make it.',
 } as const;
+
+/**
+ * The refusal an agent's `tasks_update` gets when it would make a live credits
+ * task spend more without a person's yes on the card (DOR-4609): a marked turn
+ * gets no card, and a call no card escalated has no yes. `null` lets it go on.
+ * Asked in the order the tool asked it: the raise, the mark, then the card.
+ *
+ * @param data - The tool call's fields.
+ * @param existing - The task as it stands.
+ * @param caller - The caller as the tool resolved it.
+ */
+export function agentCreditsRaiseRefusal(
+  data: CreditsEdit,
+  existing: Task,
+  caller: Parameters<typeof readOutside>[0]
+): typeof CREDITS_EDIT_NEEDS_YES | null {
+  return agentEditRaisesCredits(data, existing) &&
+    (readOutside(caller) || escalatedGrantFor(data)?.via !== 'card')
+    ? CREDITS_EDIT_NEEDS_YES
+    : null;
+}
