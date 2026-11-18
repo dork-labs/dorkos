@@ -261,6 +261,10 @@ describe('InboxBell — an extension waiting to be turned on', () => {
   // the sentence, what changed and when, and its own two answers (Nov 8).
   const PAUSED_TITLE =
     'Flow’s files changed since you allowed it. Its screens are paused until you look.';
+  // The Designer's words for a changed copy that also wants a new power
+  // (DOR-4531): the title says so before the body lists each one.
+  const WANTS_MORE_TITLE =
+    'Flow was updated and wants more. Its screens are paused until you look.';
 
   it('says an update’s files changed, with both versions and when, and asks to allow it', async () => {
     waiting = [
@@ -326,16 +330,17 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     const user = userEvent.setup();
     await user.click(await screen.findByTestId('inbox-bell'));
 
-    const row = (await screen.findByText(PAUSED_TITLE)).closest(
+    const row = (await screen.findByText(WANTS_MORE_TITLE)).closest(
       '[data-slot="inbox-decision-row"]'
     ) as HTMLElement;
     expect(
       within(row).getByTestId('extension-permissions-flow').querySelector('li')
     ).toHaveTextContent('Now also wants to connect to: api.example.com');
+    expect(screen.queryByText(PAUSED_TITLE)).not.toBeInTheDocument();
   });
 
   // Purpose: an update that adds a power names each one as new on the row,
-  // beside "files changed" (DOR-4504).
+  // under a title that says it wants more (DOR-4504, DOR-4531).
   it.each([
     {
       power: 'a host',
@@ -365,7 +370,7 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     const user = userEvent.setup();
     await user.click(await screen.findByTestId('inbox-bell'));
 
-    const row = (await screen.findByText(PAUSED_TITLE)).closest(
+    const row = (await screen.findByText(WANTS_MORE_TITLE)).closest(
       '[data-slot="inbox-decision-row"]'
     ) as HTMLElement;
     const fresh = within(row)
@@ -394,7 +399,7 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     const user = userEvent.setup();
     await user.click(await screen.findByTestId('inbox-bell'));
 
-    const row = (await screen.findByText(PAUSED_TITLE)).closest(
+    const row = (await screen.findByText(WANTS_MORE_TITLE)).closest(
       '[data-slot="inbox-decision-row"]'
     ) as HTMLElement;
     const app = row.querySelector('li[data-app="planner"]') as HTMLElement;
@@ -414,6 +419,8 @@ describe('InboxBell — an extension waiting to be turned on', () => {
       '[data-slot="inbox-decision-row"]'
     ) as HTMLElement;
     expect(row.querySelector('li[data-tone="new"]')).toBeNull();
+    // Files only, so the title keeps today's words (DOR-4531).
+    expect(screen.queryByText(WANTS_MORE_TITLE)).not.toBeInTheDocument();
   });
 
   it('opens ⓘ in place with the consent sentence and the way to Settings', async () => {
