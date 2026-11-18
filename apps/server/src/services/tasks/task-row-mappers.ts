@@ -172,6 +172,8 @@ export function mapTaskRow(row: typeof pulseSchedules.$inferSelect): Task {
     // travelling as an `EffortLevel` into an adapter that cannot map it.
     effort: readEffort(row.effort),
     account: row.account ?? null,
+    runOnce: row.runOnce,
+    ranOnceAt: row.ranOnceAt ?? null,
     status: row.status as Task['status'],
     approvedAt: row.approvedAt,
     approvedBy: readApprover(row.approvedBy),

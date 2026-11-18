@@ -6134,6 +6134,13 @@ export const TaskSchema = z
      * its conversation began on.
      */
     account: z.string().nullable().default(null),
+    /**
+     * A one-shot task: no cron, it runs once as soon as it is armed (DOR-4315).
+     * Absent reads as `false`. Only the task tools set it.
+     */
+    runOnce: z.boolean().optional(),
+    /** When a one-shot task's one run started, or `null` until it has. */
+    ranOnceAt: z.string().nullable().optional(),
     status: TaskStatusSchema,
     /** Who approved the current task content, when, and through which surface or policy. */
     ...TaskApprovalReceiptSchema.shape,

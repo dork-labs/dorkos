@@ -124,6 +124,15 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      # Restore the builds the last main canary made (DOR-4634; see browser-test.yml browser-shard).
+      - name: Restore the builds the last main canary made
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .turbo/cache
+          key: turbo-browser-builds-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-browser-builds-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-
+            turbo-browser-builds-${{ runner.os }}-${{ runner.arch }}-
       - name: Build what the legs boot from
         run: pnpm exec turbo run build --filter=@dorkos/server --filter=@dorkos/client
       - name: Run the app frame gesture spec

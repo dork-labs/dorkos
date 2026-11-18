@@ -171,6 +171,16 @@ describe("test-shard-count's no-code scope decision", () => {
     expect(r.log).not.toContain('cannot diff');
   });
 
+  it('skips a pull request that changes only the root README.md', () => {
+    const repo = checkout({ changes: ['README.md'], depth: depth() });
+    expect(decide(repo, 'pull_request')).toMatchObject({ code: 0, run: 'false' });
+  });
+
+  it("runs a pull request that changes a package's README.md", () => {
+    const repo = checkout({ changes: ['packages/x/README.md'], depth: depth() });
+    expect(decide(repo, 'pull_request')).toMatchObject({ code: 0, run: 'true' });
+  });
+
   it('runs a pull request that changes code', () => {
     const repo = checkout({ changes: ['docs/x.md', 'apps/server/src/a.ts'], depth: depth() });
     expect(decide(repo, 'pull_request')).toMatchObject({ code: 0, run: 'true' });

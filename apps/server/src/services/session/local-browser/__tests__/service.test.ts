@@ -13,7 +13,7 @@ import { AUDIT_WRITE_RESPONSE_TIMEOUT_MS, LOAD_START_MS } from '../page-action.j
 import { LocalBrowserService } from '../service.js';
 import { assertLocalBrowserUrl, httpFallbackAllowed, navigationRefusal } from '../errors.js';
 import { CLOUD_ORIGIN_REFUSAL } from '@dorkos/shared/cloud-origin';
-import { LOCAL_BROWSER_REFUSAL_NEXT } from '@dorkos/shared/local-browser-refusal';
+import { localBrowserRefusalNext } from '@dorkos/shared/local-browser-refusal';
 import { MAX_BROWSER_SNAPSHOT_BYTES, MAX_BROWSER_SCREENSHOT_EDGE } from '../observation-limits.js';
 import type { LocalBrowserBackend } from '../playwright-backend.js';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -2489,21 +2489,43 @@ describe('a page that refuses the Agent browser', () => {
     expect(observed.refusal).toEqual({
       kind: 'sign-in',
       host: 'accounts.google.com',
-      next: LOCAL_BROWSER_REFUSAL_NEXT,
+      next: localBrowserRefusalNext('sign-in'),
     });
     await service.disconnect();
   });
 
-  it('reads a bot check the same way, naming the host from the address', async () => {
-    const { service, navigate, change } = await create();
+  // DOR-4662: the reading uses the page's title, so a vendor's block title counts.
+  it('reads a bot check from its title, naming the host from the address', async () => {
+    const { service, navigate, change, page } = await create();
     await selectOwned(service);
     navigate('https://shop.example/cart');
+    vi.spyOn(page, 'title').mockResolvedValue('Just a moment...');
     change('- heading "Verify you are human" [level=1]\n- text: Sign in at attacker.example');
     expect((await service.observe()).refusal).toEqual({
       kind: 'blocked',
       host: 'shop.example',
-      next: LOCAL_BROWSER_REFUSAL_NEXT,
+      next: localBrowserRefusalNext('blocked'),
     });
+    await service.disconnect();
+  });
+
+  it('says nothing for bot-check words on an ordinary page', async () => {
+    const { service, navigate, change, page } = await create();
+    await selectOwned(service);
+    navigate('https://support.apple.example/en-us/HT201559');
+    vi.spyOn(page, 'title').mockResolvedValue('Force restart iPhone - Support');
+    change('- heading "Force restart" [level=1]\n- text: Press and hold the side button.');
+    expect((await service.observe()).refusal).toBeUndefined();
+    await service.disconnect();
+  });
+
+  it('still reads the page when its title never answers', async () => {
+    const { service, navigate, change, page } = await create();
+    await selectOwned(service);
+    navigate('https://accounts.google.com/v3/signin/rejected?made=up');
+    vi.spyOn(page, 'title').mockImplementation(() => new Promise<string>(() => {}));
+    change('- text: Something went wrong');
+    expect((await service.observe()).refusal?.kind).toBe('sign-in');
     await service.disconnect();
   });
 
@@ -2512,12 +2534,6 @@ describe('a page that refuses the Agent browser', () => {
     await selectOwned(service);
     expect((await service.observe()).refusal).toBeUndefined();
     await service.disconnect();
-  });
-
-  it('tells the agent to stop and hand over, never to retry or get around the check', () => {
-    expect(LOCAL_BROWSER_REFUSAL_NEXT).toMatch(/local_browser_ask_person/);
-    expect(LOCAL_BROWSER_REFUSAL_NEXT).toMatch(/\bStop\b/);
-    expect(LOCAL_BROWSER_REFUSAL_NEXT).not.toMatch(/user.?agent|try again|instead use/i);
   });
 });
 

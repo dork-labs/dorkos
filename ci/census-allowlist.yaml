@@ -187,6 +187,16 @@ entries:
 
   # --- browser-test.yml ---
   - workflow: browser-test.yml
+    job: browser-shard
+    step: Keep only this run's build entries in the turbo cache
+    kind: step-if
+    reason: Runs only on refs/heads/main for shard 1 (the scheduled canary or a dispatch) because only main's cache scope is readable by later queue builds and pull requests (DOR-4634, ledger 261117-184500; same shape as test.yml test-shard, ledger 261115-201939). It asserts nothing; it trims turbo's cache to this run's build entries before the save, and every gating step after it still runs.
+  - workflow: browser-test.yml
+    job: browser-shard
+    step: Save the builds for the queue and pull requests
+    kind: step-if
+    reason: Saves the build-only turbo cache from main's shard 1 when the trim succeeded (DOR-4634, ledger 261117-184500). It asserts nothing; skipping it on pull_request and merge_group only means those runs save no cache, whose scope nothing else could read.
+  - workflow: browser-test.yml
     job: browser-test
     step: Refuse a PR whose smoke specs did not pass
     kind: step-if
