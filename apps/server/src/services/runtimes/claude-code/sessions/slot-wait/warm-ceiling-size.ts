@@ -6,7 +6,8 @@
  * it with about 5.5 GB in use, and one room post that named seven agents turned
  * every one of them into "ran into a problem". So it is now a setting,
  * `runtimes.claudeCode.maxWarmProcesses`, and left unset it is sized to the
- * machine's memory, and to at least the agent chat cap (DOR-4498).
+ * machine's memory. Either way, a ceiling below the agent chat cap is logged
+ * once per change (DOR-4498).
  *
  * Read at acquire time, like the rest of the registry's bounds, so a change
  * applies to the next process that starts rather than after a restart.
@@ -25,7 +26,7 @@ type ConfigReader = { get<K extends keyof UserConfig>(key: K): UserConfig[K] };
 /** Bytes in one gigabyte, as `os.totalmem()` counts them. */
 const GB = 1024 ** 3;
 
-/** The pin and chat cap last warned about, so a warning is said once per change. */
+/** The ceiling and chat cap last warned about, so a warning is said once per change. */
 let warnedFor: string | undefined;
 
 /**
@@ -46,27 +47,35 @@ function positiveInt(value: unknown): number | undefined {
 }
 
 /**
- * Say, once per change, that a pinned ceiling sits below the chat cap. More
- * busy chats than warm processes means chats take each other's processes, and
- * each one taken restarts every MCP server it ran (DOR-4498).
+ * Say, once per change, that the ceiling sits below the chat cap. More busy
+ * chats than warm processes means chats take each other's processes, and each
+ * one taken restarts every MCP server it ran (DOR-4498). The ceiling is never
+ * raised for it: a pin is the person's, and memory decides an automatic one.
  */
-function warnIfBelowChatCap(pinned: number, chats: number | undefined): void {
-  if (chats === undefined || pinned >= chats) return;
-  const key = `${pinned}/${chats}`;
+function warnIfBelowChatCap(
+  ceiling: number,
+  chats: number | undefined,
+  source: 'pinned' | 'memory'
+): void {
+  if (chats === undefined || ceiling >= chats) return;
+  const key = `${source}:${ceiling}/${chats}`;
   if (warnedFor === key) return;
   warnedFor = key;
-  logger.warn(
-    `[warm-ceiling-size] warm processes (${pinned}) is below agent chats (${chats}); expect restarts`,
-    { maxWarmProcesses: pinned, maxAgentChats: chats }
-  );
+  const what =
+    source === 'pinned'
+      ? `warm processes (${ceiling})`
+      : `the warm processes this machine fits (${ceiling})`;
+  logger.warn(`[warm-ceiling-size] ${what} is below agent chats (${chats}); expect restarts`, {
+    maxWarmProcesses: ceiling,
+    maxAgentChats: chats,
+    source,
+  });
 }
 
 /**
  * The warm ceiling in force right now: the person's number when they set one,
- * else {@link autoWarmCeiling} for this machine, raised to `runtimes.maxAgentChats`
- * so every chat agents may run can stay warm, within
- * `SESSIONS.MAX_WARM_SESSIONS_AUTO`. A pin is never raised; one below the chat
- * cap is logged.
+ * else {@link autoWarmCeiling} for this machine. Neither is raised to
+ * `runtimes.maxAgentChats`; a ceiling below it is logged.
  *
  * @param config - Where the setting is read from; the live config by default
  * @param memoryBytes - Total memory; this machine's by default
@@ -80,11 +89,8 @@ export function resolveMaxWarmSessions(
     const runtimes = config.get('runtimes');
     const chats = positiveInt(runtimes?.maxAgentChats);
     const pinned = positiveInt(runtimes?.claudeCode?.maxWarmProcesses);
-    if (pinned !== undefined) {
-      warnIfBelowChatCap(pinned, chats);
-      return pinned;
-    }
-    return Math.min(SESSIONS.MAX_WARM_SESSIONS_AUTO, Math.max(auto, chats ?? 0));
+    warnIfBelowChatCap(pinned ?? auto, chats, pinned === undefined ? 'memory' : 'pinned');
+    return pinned ?? auto;
   } catch (err) {
     logger.debug('[warm-ceiling-size] config unavailable, sizing to the machine', {
       err: String(err),

@@ -65,20 +65,24 @@ describe('resolveMaxWarmSessions', () => {
 });
 
 describe('resolveMaxWarmSessions and the agent chat cap (DOR-4498)', () => {
-  // Purpose: unset, the ceiling keeps a warm process for every chat agents may
-  // run, so chats under the cap do not take each other's processes.
-  it('rises to maxAgentChats when that is above the machine size', () => {
-    expect(resolveMaxWarmSessions(configWith(null, 28), 48 * GB)).toBe(28);
+  // Purpose: memory always wins. A chat cap above what the machine fits never
+  // raises the ceiling; it is said once instead.
+  it('keeps the machine size over a higher chat cap, and says so', () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+
+    expect(resolveMaxWarmSessions(configWith(null, 28), 48 * GB)).toBe(24);
+    expect(resolveMaxWarmSessions(configWith(null, 20), 16 * GB)).toBe(12);
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(warn.mock.calls[1]?.[0]).toContain(
+      'the warm processes this machine fits (12) is below agent chats (20)'
+    );
   });
 
-  // Purpose: the automatic bound still holds over a very high chat cap.
-  it('stays within the automatic bound', () => {
-    expect(resolveMaxWarmSessions(configWith(null, 40), 48 * GB)).toBe(32);
-  });
-
-  // Purpose: a chat cap below the machine size changes nothing.
+  // Purpose: a chat cap below the machine size never lowers it.
   it('keeps the machine size when the chat cap is lower', () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
     expect(resolveMaxWarmSessions(configWith(null, 8), 48 * GB)).toBe(24);
+    expect(warn).not.toHaveBeenCalled();
   });
 
   // Purpose: what a person set is never overridden. A pin below the chat cap is

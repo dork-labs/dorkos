@@ -139,6 +139,11 @@ export interface AcquirePumpOptions extends Omit<SessionPumpOptions, 'sessionId'
    * passes `SESSIONS.RECLAIM_GRACE_MS`; unset, a reclaim may take it at once.
    */
   reclaimGraceMs?: number;
+  /**
+   * Read when this session's launch needs a slot: true when a person is waiting
+   * on the turn, so it may take a process inside its grace rather than wait.
+   */
+  skipReclaimGrace?: () => boolean;
 }
 
 /** A pump plus the per-session bounds its acquire was held to. */
@@ -146,6 +151,7 @@ interface PumpEntry {
   pump: SessionPump;
   warmIdleMs: number;
   reclaimGraceMs: number;
+  skipReclaimGrace?: () => boolean;
   /** When the pump last went WARM, or undefined while it is not WARM. */
   warmSince?: number;
   /** The armed idle timer, or undefined when this session is not sitting warm. */
@@ -229,6 +235,7 @@ export class SessionPumpRegistry {
       slotWaitMs,
       onWaitingForSlot,
       reclaimGraceMs,
+      skipReclaimGrace,
       ...pumpOpts
     } = opts;
     const ceiling = typeof maxWarmSessions === 'function' ? maxWarmSessions : () => maxWarmSessions;
@@ -244,7 +251,12 @@ export class SessionPumpRegistry {
         pumpOpts.onStateChange?.(change);
       },
     });
-    this.entries.set(key, { pump, warmIdleMs, reclaimGraceMs: reclaimGraceMs ?? 0 });
+    this.entries.set(key, {
+      pump,
+      warmIdleMs,
+      reclaimGraceMs: reclaimGraceMs ?? 0,
+      skipReclaimGrace,
+    });
     liveRegistries.add(this);
     return pump;
   }
@@ -663,6 +675,15 @@ export class SessionPumpRegistry {
   }
 
   /**
+   * Make every waiting launch look again now, because something that decides
+   * whether it may take a slot changed without a state change: a person's turn
+   * joined a launch that was waiting, and may skip the reclaim grace (DOR-4498).
+   */
+  recheckSlotWaits(): void {
+    this.wakeSlotWaiters();
+  }
+
+  /**
    * End a launch's wait for a slot, because the person pressed Stop on the turn
    * it was for. The launch is refused as `process-gone`, which a dispatch that
    * knows it was stopped settles as interrupted rather than failed.
@@ -733,13 +754,16 @@ export class SessionPumpRegistry {
     const candidates: string[] = [];
     const now = Date.now();
     let graceLeft = Infinity;
+    // A person waiting on this turn never waits behind a grace: LRU still takes
+    // the process that has been quiet longest, which is the oldest grace.
+    const ignoresGrace = this.entries.get(asking)?.skipReclaimGrace?.() === true;
     for (const [sessionId, entry] of this.entries) {
       if (sessionId === asking || entry.pump.state !== 'warm') continue;
       // Inside its grace a process sits out (DOR-4498): it is most likely a busy
       // lane between two turns, and taking it costs a relaunch of every MCP
       // server it runs. The launch waits instead, at most until a grace ends.
       const left = (entry.warmSince ?? 0) + entry.reclaimGraceMs - now;
-      if (left > 0) graceLeft = Math.min(graceLeft, left);
+      if (left > 0 && !ignoresGrace) graceLeft = Math.min(graceLeft, left);
       else candidates.push(sessionId);
     }
     // A grace running out changes no state, so nothing else would wake a wait.

@@ -128,6 +128,46 @@ describe('SessionPumpRegistry reclaim grace', () => {
     expect(registry.warmth('busy')).toBe('cold');
   });
 
+  // Purpose: a person never stares at "waiting for a slot" because of the
+  // grace. Their launch takes the warm process at once, even inside its grace.
+  it('lets a person-started launch take a process inside its grace at once', async () => {
+    const registry = new SessionPumpRegistry(identity);
+    const launched: FakeQuery[] = [];
+    await oneTurn(registry, 'busy', launchOpts(launched), 'msg-a');
+
+    let waits = 0;
+    const started = Date.now();
+    await registry
+      .acquire(
+        'person',
+        launchOpts(launched, { skipReclaimGrace: () => true, onWaitingForSlot: () => (waits += 1) })
+      )
+      .warm();
+
+    expect(Date.now() - started).toBeLessThan(GRACE_MS);
+    expect(waits).toBe(0);
+    expect(registry.warmth('busy')).toBe('cold');
+  });
+
+  // Purpose: the other half of the same rule. Agent-started work, which reads
+  // false here, still waits for the grace.
+  it('keeps an agent-started launch waiting inside the grace', async () => {
+    const registry = new SessionPumpRegistry(identity);
+    const launched: FakeQuery[] = [];
+    await oneTurn(registry, 'busy', launchOpts(launched), 'msg-a');
+
+    const next = registry
+      .acquire('agent', launchOpts(launched, { skipReclaimGrace: () => false }))
+      .warm();
+    let done = false;
+    void next.then(() => (done = true));
+    await sleep(GRACE_MS / 3);
+
+    expect(done).toBe(false);
+    expect(registry.warmth('busy')).toBe('warm');
+    await next;
+  });
+
   // Purpose: a reclaim closes the process it takes. DorkOS's part of "no orphan
   // MCP child" is reaching the forceful close on the CLI, whose own exit takes
   // its stdio servers with it (0 orphans found after 57 reclaims, 2026-11-18).
