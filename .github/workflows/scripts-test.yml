@@ -360,6 +360,12 @@ jobs:
       - name: Build-only turbo cache trim fixtures
         run: bash scripts/test-keep-build-cache-only.sh
 
+      # build-test-deps.sh builds what test.yml's suites import in a turbo run
+      # with no test arguments, so one cached build serves every test job
+      # (DOR-4625). Its build set and its summary hand-off are pinned here.
+      - name: Test-dependency build fixtures
+        run: bash scripts/test-build-test-deps.sh
+
       # assert-shard-union.sh is the other half of the same gate: it restores
       # the zero-collected-files net that --passWithNoTests removes from the
       # sharded merge-queue sweep. A union check that stops discriminating
