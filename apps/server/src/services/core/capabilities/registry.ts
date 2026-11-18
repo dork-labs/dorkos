@@ -57,6 +57,7 @@ import {
   type CapabilityAuthorityBindingProof,
 } from '../../connectors/principal/capability-authority-binding.js';
 import { CapabilityToolError } from './mcp-envelope.js';
+import { withOutsideWordsReason } from './marked-turn-holds.js';
 import {
   buildExtensionDefinitions,
   checkExtensionContribution,
@@ -963,7 +964,10 @@ export function composeRegistry(
               }
             : {}),
           ...(preflight ? { connectorAuthority: preflight.authorityBinding.approvalScope } : {}),
-          ...(serviceAction ? { serviceAction } : {}),
+          // A card the turn's outside words raised says so, unless it names a reason (DOR-3969).
+          ...(serviceAction
+            ? { serviceAction: withOutsideWordsReason(serviceAction, permission?.forOutsideWords) }
+            : {}),
           ...(supplied.blockedRequest ? { blockedRequest: supplied.blockedRequest } : {}),
         });
         if (decision.outcome !== 'allowed') throw new CapabilityGateRefusal(decision);

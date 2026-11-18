@@ -1004,11 +1004,6 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
         return { outcome: 'denied', payload };
       }
     }
-    // A card the turn's outside words raised says so (DOR-3969), unless it already names a reason.
-    const shownAction =
-      serviceAction && permission?.forOutsideWords && !serviceAction.keptCardBecause
-        ? { ...serviceAction, keptCardBecause: 'outside-words' as const }
-        : serviceAction;
     let ticket: ApprovalTicket;
     try {
       const detail = change ?? detailFor(action, input);
@@ -1020,7 +1015,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
         ...(requestedBy ? { requestedBy } : {}),
         ...(subject ? { subject } : {}),
         ...(remaining !== undefined ? { otherArguments: remaining } : {}),
-        ...(shownAction ? { serviceAction: shownAction } : {}),
+        ...(serviceAction ? { serviceAction } : {}),
         // Recorded only when nothing named the caller, because that is the only
         // case it says anything a person does not already have.
         ...(!requestedBy && origin ? { origin } : {}),
