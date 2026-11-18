@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { TaskFailureReason } from '../types.js';
 import {
+  nextRunWhen,
   scheduleFailureClause,
   scheduleFailureSentence,
   scheduleFullName,
   scheduleNextTry,
-  nextRunWhen,
   scheduleNoticeName,
 } from '../schedule-notice-copy.js';
 import { runTimeLimitError } from '../run-time-limit.js';
@@ -141,7 +141,7 @@ describe('nextRunWhen (DOR-4483)', () => {
     expect(nextRunWhen(new Date('2026-11-20T15:00:00.000Z'), now, zone)).toBe('Nov 20 at 9:00 AM');
   });
 
-  it('reads calendar days in the zone, across a daylight-saving change', () => {
+  it('counts calendar days in the zone, not 24-hour spans, across a clock change', () => {
     // Sat Nov 1 2025, 11:00 PM Chicago, to Mon Nov 3 after the clocks went back.
     expect(
       nextRunWhen(
@@ -150,5 +150,11 @@ describe('nextRunWhen (DOR-4483)', () => {
         'America/Chicago'
       )
     ).toBe('Mon at 9:00 AM');
+  });
+
+  it('names the date of a run already past, so it never reads as today', () => {
+    expect(nextRunWhen(new Date('2026-11-12T15:00:00.000Z'), now, 'America/Chicago')).toBe(
+      'Nov 12 at 9:00 AM'
+    );
   });
 });

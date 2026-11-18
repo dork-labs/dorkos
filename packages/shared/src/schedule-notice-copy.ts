@@ -135,7 +135,8 @@ function calendarDay(instant: Date, timeZone?: string | null): number {
 /**
  * When a schedule runs next, in the one wording every surface uses
  * (DOR-4483): a 12-hour time, with a day when it isn't today ("12:00 PM",
- * "tomorrow at 9:00 AM", "Sat at 9:00 AM", "Nov 25 at 9:00 AM").
+ * "tomorrow at 9:00 AM", "Sat at 9:00 AM", "Nov 25 at 9:00 AM"). A past
+ * instant names its date.
  *
  * @param instant - When the schedule runs next.
  * @param now - The current time.
@@ -150,12 +151,14 @@ export function nextRunWhen(instant: Date, now: Date, timeZone?: string | null):
     ...zone,
   });
   const days = calendarDay(instant, timeZone) - calendarDay(now, timeZone);
+  // A time alone means today. A run already past (the computer slept, the
+  // server was down) names its date, so it never reads as later today.
   const day =
-    days <= 0
+    days === 0
       ? null
       : days === 1
         ? 'tomorrow'
-        : days < 7
+        : days > 1 && days < 7
           ? instant.toLocaleDateString('en-US', { weekday: 'short', ...zone })
           : instant.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...zone });
   return day ? `${day} at ${time}` : time;
