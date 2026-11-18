@@ -1,3 +1,4 @@
+import { isolatedRequiredLaunchOwner } from './required-launch-fixture.js';
 /**
  * Claude credential env-injection seam tests (ADR-0315,
  * effortless-runtime-switching T1 2.2).
@@ -13,6 +14,8 @@ import type { AgentSession } from '../../agent-types.js';
 import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
 import { resolveClaudeCredentialEnv } from '../../../../core/credential-env.js';
 import { logger } from '../../../../../lib/logger.js';
+
+const requiredLaunches = isolatedRequiredLaunchOwner();
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
@@ -58,7 +61,12 @@ function makeSession(): AgentSession {
 }
 
 function makeOpts(overrides: Partial<MessageSenderOpts> = {}): MessageSenderOpts {
-  return { cwd: '/mock/project', onSdkSessionRebind: async () => {}, ...overrides };
+  return {
+    cwd: '/mock/project',
+    requiredLaunches,
+    onSdkSessionRebind: async () => {},
+    ...overrides,
+  };
 }
 
 async function captureSdkOptions(): Promise<Options> {

@@ -205,6 +205,7 @@ import {
 import { configManager } from '../core/config-manager.js';
 import type { AuthorRecord } from './author-registry.js';
 import { RoomError } from './room-errors.js';
+import { POST_TO_ROOM_DESCRIPTION } from './handoff/room-post-description.js';
 import { registerRoomPreGateChecks } from './attachments/protected-file-checks.js';
 import { callerAuthor, toolCallerOf } from './service/room-caller-author.js';
 import { UNTRUSTED_NOTE } from './service/room-entry-projection.js';
@@ -215,11 +216,7 @@ import {
   projectRoomsRead,
 } from './service/room-read-marks.js';
 import { projectDetail } from './service/room-detail-projection.js';
-import {
-  POST_HANDED_OFF_NOTE,
-  POST_REPLY_TO_INPUT,
-  POST_VERBATIM_INPUT,
-} from './service/room-post-reply-to.js';
+import { POST_REPLY_TO_INPUT, POST_VERBATIM_INPUT } from './service/room-post-reply-to.js';
 import { holdIfStale, noteHistoryRead, noteSeen } from './messages/room-freshness.js';
 
 export { callerAuthor };
@@ -337,17 +334,7 @@ export const roomsDomain: CapabilityDomain = {
       // messages"; "posting suppresses your narration") was a clause that went
       // stale the moment that behaviour moved. The per-turn truth belongs in
       // `<room_tools>`, which is built per session, and in the refusals.
-      description:
-        'Say something in a room you are a member of, when you decide it is worth saying. ' +
-        'Use it to post an update while you work, to answer in a specific thread, or to say ' +
-        'something in a room other than the one you were just triggered from. ' +
-        'Posting into the room that triggered your turn is how you answer it; posting into a ' +
-        'different room leaves your answer here untouched. ' +
-        'You can show a file with it — a screenshot or a recording you made — by naming its ' +
-        "path in attachments; it has to be a file in your own folder or your own copy of a room's files. " +
-        'Everyone in the room sees it, so post like a colleague: one clear message, not a running commentary. ' +
-        'Only your own chat in a room posts there: from any other chat, the post goes to that chat, which re-reads the room, then posts it or says why not. ' +
-        POST_HANDED_OFF_NOTE,
+      description: POST_TO_ROOM_DESCRIPTION,
       tier: 'act',
       area: null,
       areaNote: 'conversation verbs never get a switch',

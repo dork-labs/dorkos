@@ -70,7 +70,8 @@ import { createGetAgentHandler } from '../runtimes/claude-code/mcp-tools/core-to
 import type { McpToolDeps } from '../runtimes/claude-code/mcp-tools/types.js';
 import { resolveSubjectLabel } from '../relay/subject-resolver.js';
 import { _resolveRuntimeTypeForNewSession } from '../session/launch/launch-session.js';
-import { runtimeRegistry } from '../core/runtime-registry.js';
+import { RuntimeRegistry, runtimeRegistry } from '../core/runtime-registry.js';
+import { createTestDb } from '@dorkos/test-utils/db';
 import { recordFolderConfigApproval } from '../runtimes/claude-code/folder-settings/folder-config-consent.js';
 import { readFolderConfigParts } from '../runtimes/claude-code/folder-settings/folder-config-pin.js';
 
@@ -176,26 +177,37 @@ describe('a worktree of a home repo reads the HOME identity', () => {
       cwd: tree,
     };
 
-    const resolved = await resolveLaunch({
-      sessionId: 'worktree-session',
-      content: 'hello',
-      session,
-      opts: { cwd: tree, onSdkSessionRebind: async () => {} },
-      messageOpts: { cwd: tree },
-      effectiveCwd: tree,
-    });
+    const db = createTestDb();
+    const owner = new RuntimeRegistry();
+    owner.setDb(db);
+    try {
+      const resolved = await resolveLaunch({
+        sessionId: 'worktree-session',
+        content: 'hello',
+        session,
+        opts: {
+          cwd: tree,
+          onSdkSessionRebind: async () => {},
+          requiredLaunches: owner.requiredLaunches.bind(owner),
+        },
+        messageOpts: { cwd: tree },
+        effectiveCwd: tree,
+      });
 
-    expect((resolved.sdkOptions.env as Record<string, string>).CLAUDE_CONFIG_DIR).toBe(
-      `/accounts/${HOME.account}`
-    );
-    const append = (resolved.sdkOptions.systemPrompt as { append: string }).append;
-    expect(append).toContain(HOME.soul);
-    expect(append).not.toContain(BRANCH.soul);
-    // What the agent's permissions hide follows the HOME too: the home blocks
-    // Tasks, the worktree's committed copy blocks nothing. The blocked-area
-    // line and the tool-doc gate both come from the home's manifest.
-    expect(append).toContain(renderBlockedAreaLines(HOME.blocked));
-    expect(renderBlockedAreaLines(HOME.blocked)).not.toBe('');
+      expect((resolved.sdkOptions.env as Record<string, string>).CLAUDE_CONFIG_DIR).toBe(
+        `/accounts/${HOME.account}`
+      );
+      const append = (resolved.sdkOptions.systemPrompt as { append: string }).append;
+      expect(append).toContain(HOME.soul);
+      expect(append).not.toContain(BRANCH.soul);
+      // What the agent's permissions hide follows the HOME too: the home blocks
+      // Tasks, the worktree's committed copy blocks nothing. The blocked-area
+      // line and the tool-doc gate both come from the home's manifest.
+      expect(append).toContain(renderBlockedAreaLines(HOME.blocked));
+      expect(renderBlockedAreaLines(HOME.blocked)).not.toBe('');
+    } finally {
+      db.$client.close();
+    }
   });
 
   it('row 6: a new session in the worktree runs on the home runtime', async () => {

@@ -174,7 +174,6 @@ import {
   withLiveSkillPlugins,
   withLiveToolSurface,
   withdrawnPluginPaths,
-  type LaunchFingerprint,
 } from './launch-fingerprint.js';
 import { extensionSkillPluginsDir } from '@dorkos/harness';
 import { resolveDorkHome } from '../../../../lib/dork-home.js';
@@ -192,8 +191,7 @@ import { streamTurnWindow } from './pump-turn-stream.js';
 import { SessionCrashRecovery } from './session-crash-recovery.js';
 import { isWaitingOnPerson } from './session-store.js';
 import { PumpRefusedError, type Quietness } from './session-pump-contract.js';
-import type { Query, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
-import type { SessionPump } from './session-pump.js';
+import type { Query } from '@anthropic-ai/claude-agent-sdk';
 import type { SessionPumpRegistry } from './session-pump-registry.js';
 import { SessionTurnWindows, type TurnWindow } from './session-turn-windows.js';
 import { recordSessionUsage } from '../accounts/account-usage-feed.js';
@@ -202,98 +200,11 @@ import {
   type BackgroundWorkLedger,
 } from '../messaging/background-work-ledger.js';
 import { noteTaskTypes } from './diagnostics/task-type-log.js';
-
-/** One session's pump, its windower, and its crash policy, wired together. */
-interface SessionBundle {
-  pump: SessionPump;
-  /**
-   * Told when this turn's launch starts waiting for a warm slot; set only while
-   * a dispatch is opening its window (`slot-wait/open-turn-window.ts`, DOR-3012).
-   */
-  onSlotWait?: () => void;
-  windows: SessionTurnWindows;
-  recovery: SessionCrashRecovery;
-  /**
-   * The running process's query, or `undefined` when this session holds none.
-   *
-   * Held here rather than on the session, because `session.activeQuery` means
-   * something narrower — see {@link SessionBundle.fingerprint}'s neighbour in
-   * `acquire`, where the two are kept apart.
-   */
-  live: Query | undefined;
-  /** What the live process was launched with; `undefined` until one boots. */
-  fingerprint: LaunchFingerprint | undefined;
-  /** The plan of the dispatch currently in flight, read by the launcher. */
-  plan: PumpLaunchPlan | undefined;
-  /**
-   * True while a turn is BOOTING on this session — the launch is in flight and
-   * the pump has not yet reached its `running` edge, so `session.activeQuery` is
-   * not armed. This is the one window where a Stop cannot reach the turn through
-   * the ordinary path, so {@link PersistentDispatch.bootingQuery} exposes
-   * {@link SessionBundle.live} to it (DOR-1191). Distinct from a merely-warm
-   * idle process, which is never booting a turn and must never be interrupted.
-   */
-  booting: boolean;
-  /**
-   * True when the process this bundle last lost was closed by a DorkOS Stop
-   * rather than lost to a crash — the same answer that rides
-   * {@link PumpCrash.stopRequested}, kept here for the one reader that arrives
-   * AFTER the crash seam has already cleared everything it could be re-derived
-   * from (DOR-1302).
-   *
-   * That reader is `explainRefusedDispatch` (`slot-wait/open-turn-window.ts`). A Stop
-   * during a turn's LAUNCH kills the process before `system/init`, so the
-   * dispatch that was waiting on it is refused rather than streamed — and by
-   * then {@link SessionBundle.live} is cleared, `session.activeQuery` was never
-   * armed (no `running` edge fired), and `session.lastQuery` names some earlier
-   * turn's query if it names anything. A flag is the only carrier left.
-   *
-   * Reset at the start of every dispatch, so it describes THIS launch and never
-   * a Stop two turns ago.
-   */
-  closedByStop: boolean;
-  /**
-   * Every background `task_type` the running process has reported, so each is
-   * logged once per process ({@link noteTaskTypes}). Which types a Monitor or a
-   * future task kind carries is not verified against a real CLI, and a real
-   * session's log is where that answer comes from (spec `warm-process-lifecycle`
-   * D1). Emptied when the process dies; a replacement process gets a fresh bundle.
-   */
-  seenTaskTypes: Set<string>;
-  /**
-   * The busy spell (its `busySince`) this process was already warned about for
-   * holding a stale tool list past the four-hour ceiling, so the warning is
-   * said once rather than on every message (DOR-2685). A replacement process
-   * gets a fresh bundle.
-   */
-  staleToolListWarnedFor?: number;
-  /**
-   * True while this process holds background work, mirroring its durable
-   * record in `background-work.json` (DOR-2065), so ending the process can
-   * tell whether there is a record to clear without reading the file.
-   */
-  heldWork?: boolean;
-  /**
-   * The person chose Switch now (DOR-2065): the next restart this session
-   * decides goes ahead although background work is still running. Consumed by
-   * the next dispatch, whatever it decides.
-   */
-  switchRequested?: boolean;
-  /**
-   * A message on this session was held for this process's background work
-   * and has not run since — what makes Switch now mean anything (DOR-2065).
-   */
-  holdOutstanding?: boolean;
-}
-
-/** What one dispatch needs beyond the session itself. */
-export interface PersistentDispatchArgs {
-  sessionId: string;
-  content: string;
-  session: AgentSession;
-  opts: MessageSenderOpts;
-  messageOpts?: MessageOpts;
-}
+import { readRequiredClaudeLaunch } from '../messaging/launch/required-launch.js';
+import { keySourceBillsPerToken } from '../messaging/per-token-billing.js';
+import type { SessionBundle, PersistentDispatchArgs } from './dispatch/state.js';
+export type { PersistentDispatchArgs } from './dispatch/state.js';
+import { drainUnprojected } from './dispatch/unprojected-window.js';
 
 /**
  * Clear what one turn leaves on the session, so the next starts clean. Run when
@@ -310,6 +221,8 @@ function resetPerTurnState(session: AgentSession): void {
   // The turn's own background work starts empty too, for a Stop to end (DOR-3285).
   Object.assign(session, { interruptRequestedAt: undefined, turnTaskIds: new Map() });
   // A usage limit is reported once per turn (spec claude-account-fleet D4).
+  session.priorServerFailure = undefined;
+  session.serverErrorEvidence = undefined;
   session.limitReportedThisTurn = false;
   session.rejectedLimitThisTurn = undefined;
   // And a Stop belongs to the turn it was pressed during, which the stop
@@ -563,6 +476,17 @@ export class PersistentDispatch {
     const bundle = this.bundles.get(key);
     if (bundle === undefined || this.registry.peek(key) !== bundle.pump) return false;
     return bundle.heldWork === true;
+  }
+
+  /** Read the existing crash policy; unknown/cold process cannot authorize a fresh-id escape. */
+  failedSeatCrashAllows(sessionId: string): boolean {
+    const key = this.sessionKeyOf(sessionId);
+    const bundle = this.bundles.get(key);
+    return (
+      bundle !== undefined &&
+      this.registry.peek(key) === bundle.pump &&
+      bundle.recovery.willAutoResume
+    );
   }
 
   /**
@@ -864,6 +788,8 @@ export class PersistentDispatch {
         // adjust and nothing stale to ride: the dispatch below relaunches.
         bundle.live = undefined;
         bundle.fingerprint = undefined;
+        bundle.recoveryRoute = undefined;
+        bundle.recoveryBilling = undefined;
       } else {
         try {
           // What the process HOLDS, which is not always what was wanted: a
@@ -1225,6 +1151,27 @@ export class PersistentDispatch {
       });
       return { delivered: false, reason: 'stream-closed' };
     }
+    // Warming can await a process launch. Re-read the exact owner at the final
+    // append boundary; stale/global authority cannot bless this retained query.
+    const required = readRequiredClaudeLaunch(sessionId, senderOpts.requiredLaunches);
+    if (required) {
+      const route = bundle.recoveryRoute;
+      const billing = bundle.recoveryBilling;
+      if (
+        !bundle.live ||
+        this.registry.peek(key) !== bundle.pump ||
+        !required.accountId ||
+        required.runtime !== 'claude-code' ||
+        bundle.fingerprint?.account.root !== required.root ||
+        route?.root !== required.root ||
+        route.inference !== required.inference ||
+        billing?.root !== required.root ||
+        billing.sessionId !== required.destinationSessionId ||
+        (billing.perToken ? 'per-token' : 'subscription') !== required.billing
+      ) {
+        throw new Error('The retained recovery account or billing choice cannot be preserved.');
+      }
+    }
     const outcome = bundle.pump.stage(enriched, opts.messageId);
     // `no-process` after a resolved `warm()` means the process went away between
     // the two — the same amnesiac race as a `stream-closed`, reported the same
@@ -1334,7 +1281,17 @@ export class PersistentDispatch {
         },
         bundle
       ),
-      onMessage: (message) => {
+      onMessage: (message, query) => {
+        if (query === bundle.live && message.type === 'system' && message.subtype === 'init') {
+          const source: unknown = (message as unknown as Record<string, unknown>).apiKeySource;
+          const root = bundle.fingerprint?.account.root;
+          bundle.recoveryBilling =
+            root !== undefined &&
+            typeof source === 'string' &&
+            ['none', 'oauth', 'ANTHROPIC_API_KEY', 'user', 'project', 'org'].includes(source)
+              ? { root, sessionId: message.session_id, perToken: keySourceBillsPerToken(source) }
+              : undefined;
+        }
         noteTaskTypes(key, bundle.seenTaskTypes, message);
         bundle.windows.onMessage(message);
       },
@@ -1361,6 +1318,8 @@ export class PersistentDispatch {
         // announces the crash, and that transition disarms it above.
         bundle.live = undefined;
         bundle.fingerprint = undefined;
+        bundle.recoveryRoute = undefined;
+        bundle.recoveryBilling = undefined;
         // The relaunch is a new process, and "once per process" starts over.
         bundle.seenTaskTypes.clear();
         bundle.recovery.handleCrash(stopRequested ? { ...crash, stopRequested } : crash);
@@ -1395,7 +1354,11 @@ export class PersistentDispatch {
         // for the stall watchdog (DOR-2681). Read through the bundle, not
         // through `this.bundles`: eviction forgets the bundle before it tears
         // the process down.
-        if (change.to === 'cold' || change.to === 'reaped') bundle.windows?.onRetired(change.to);
+        if (change.to === 'cold' || change.to === 'reaped') {
+          bundle.recoveryRoute = undefined;
+          bundle.recoveryBilling = undefined;
+          bundle.windows?.onRetired(change.to);
+        }
         // Session timers live in the process, so they end with it; the next
         // process has none until its own first Stop hook says otherwise.
         if (change.to === 'cold' || change.to === 'reaped' || change.to === 'crashed') {
@@ -1628,61 +1591,4 @@ function enrichDeliveredContent(content: string, additionalContext?: AdditionalC
   // Context defused as a turn's is; the words as written, since this path does
   // not know who wrote them and a person's steer must keep its `@` (DOR-2955).
   return enrichContent(content, additionalContext, false);
-}
-
-/**
- * Read a window nothing will project, so its buffer empties and its close can
- * settle. Never yields the messages anywhere: see the module doc.
- */
-async function drainUnprojected(sessionId: string, window: TurnWindow): Promise<void> {
-  const census: Record<string, number> = {};
-  let dropped = 0;
-  let content = 0;
-  try {
-    for await (const message of window.messages) {
-      dropped += 1;
-      census[message.type] = (census[message.type] ?? 0) + 1;
-      if (carriesContent(message)) content += 1;
-    }
-  } catch (err) {
-    logger.debug('[persistent-dispatch] a runtime window failed while draining', {
-      sessionId,
-      err,
-    });
-  }
-  // The two cases are genuinely different and must not read alike. A window
-  // holding only a `result` and a `system` line is bookkeeping the CLI
-  // volunteered — routine, and a warning about it is noise that trains people
-  // to ignore the log. A window holding model speech is words a person was owed
-  // and never saw, which is the DOR-1314 loss, and it says so at the level that
-  // gets read.
-  if (content === 0) {
-    logger.debug('[persistent-dispatch] drained a content-free turn nobody asked for', {
-      sessionId,
-      dropped,
-      census,
-    });
-    return;
-  }
-  logger.error('[persistent-dispatch] dropped model output nobody could project', {
-    sessionId,
-    dropped,
-    content,
-    census,
-  });
-}
-
-/**
- * Whether an SDK message carries something a person would have read — model
- * speech or tool traffic — as opposed to the process's own bookkeeping.
- *
- * Deliberately generous: anything that is not a `result` or a `system` line
- * counts. An over-count costs one log line at the wrong level; an under-count
- * would report data loss as routine, which is the failure this exists to
- * prevent.
- *
- * @param message - One message drained from a window nothing will project
- */
-function carriesContent(message: SDKMessage): boolean {
-  return message.type !== 'result' && message.type !== 'system';
 }
