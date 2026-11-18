@@ -15,7 +15,7 @@
  * @module services/tasks/session/active-run-sessions
  */
 import { eq } from 'drizzle-orm';
-import { pulseRuns, type Db } from '@dorkos/db';
+import { pulseRuns, type Db, type DbTransaction } from '@dorkos/db';
 import type { TaskStore } from '../task-store.js';
 import { logger } from '../../../lib/logger.js';
 import { primaryOf } from '../../session/resolution/session-key-registry.js';
@@ -85,7 +85,7 @@ function writeRunChat(store: Pick<TaskStore, 'updateRun'>, runId: string, sessio
  * @param fromId - The id the chat was known by.
  * @param toId - Its canonical id.
  */
-export function moveRunSessions(db: Db, fromId: string, toId: string): void {
+export function moveRunSessions(db: Db | DbTransaction, fromId: string, toId: string): void {
   if (fromId === toId) return;
   db.update(pulseRuns).set({ sessionId: toId }).where(eq(pulseRuns.sessionId, fromId)).run();
 }

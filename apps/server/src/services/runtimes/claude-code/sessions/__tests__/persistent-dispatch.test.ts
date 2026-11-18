@@ -1,3 +1,4 @@
+import { RuntimeRegistry } from '../../../../core/runtime-registry.js';
 /**
  * The composition: a claude-code message reaching a process that is already
  * running, and everything that must stay true when it does (spec
@@ -163,9 +164,20 @@ vi.mock('../../../../core/agent-identity/index.js', async () => ({
 // SESSIONS value is preserved, except that a full ceiling answers at once
 // rather than waiting for a slot (DOR-3012; that wait has its own suite).
 vi.mock('../slot-wait/warm-ceiling-size.js', () => ({ resolveMaxWarmSessions: () => 1 }));
+// How long a turn waits for a warm slot. Zero answers a full pool at once; a
+// case that needs the wait itself (DOR-4552) sets it and puts it back.
+const slotWait = vi.hoisted(() => ({ ms: 0 }));
 vi.mock('../../../../../config/constants.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../../../config/constants.js')>();
-  return { ...actual, SESSIONS: { ...actual.SESSIONS, WARM_SLOT_WAIT_MS: 0 } };
+  return {
+    ...actual,
+    SESSIONS: {
+      ...actual.SESSIONS,
+      get WARM_SLOT_WAIT_MS() {
+        return slotWait.ms;
+      },
+    },
+  };
 });
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
@@ -176,7 +188,12 @@ import { extensionSkillPluginRoots } from '../../../../extensions/agent-skills/r
 import { validateBoundaryOrDorkHome } from '../../../../../lib/boundary.js';
 import { SESSIONS } from '../../../../../config/constants.js';
 import { feedProjector } from '../../../../session/session-event-normalizer.js';
-import { SessionStateProjector } from '../../../../session/session-state-projector.js';
+import {
+  SessionStateProjector,
+  getOrCreateProjector,
+  rekeyProjector,
+} from '../../../../session/session-state-projector.js';
+import { logger } from '../../../../../lib/logger.js';
 import { ClaudeCodeRuntime } from '../../claude-code-runtime.js';
 import { STOP_ACK_TIMEOUT_MS } from '../bounded-control.js';
 import { FakeCli, resultMessage, type FakeCliProcess } from './fake-persistent-cli.js';
@@ -195,6 +212,7 @@ const CWD = '/projects/pump';
 const mockedQuery = vi.mocked(query);
 let cli: FakeCli;
 let runtime: ClaudeCodeRuntime;
+let settingsDb: ReturnType<typeof createTestDb> | undefined;
 let dorkHome: string;
 let sessionSeq = 0;
 
@@ -272,6 +290,10 @@ beforeEach(() => {
   // work record there (DOR-2065), and no case may write into a shared one.
   dorkHome = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'persistent-dispatch-'));
   runtime = new ClaudeCodeRuntime(dorkHome, CWD);
+  const settingsOwner = new RuntimeRegistry();
+  settingsDb = createTestDb();
+  settingsOwner.setDb(settingsDb);
+  runtime.setSessionSettings(settingsOwner);
 });
 
 afterEach(() => {
@@ -279,6 +301,8 @@ afterEach(() => {
   // prompt stream for the rest of the file.
   for (const process of cli.processes) process.endStream();
   fs.rmSync(dorkHome, { recursive: true, force: true });
+  settingsDb?.$client.close();
+  settingsDb = undefined;
 });
 
 describe('the opt-in decides which path a message takes', () => {
@@ -2064,6 +2088,7 @@ describe('deliverIntoTurn — a steer reaches the running turn (task 4.1)', () =
 
   it('degrades rather than throwing when the bundle points at a reaped pump (finding 2)', async () => {
     const a = nextSession();
+    cli.nextSdkSessionId = `${a}-native`;
     await turn(a);
     expect(runtime.getSessionWarmth(a)).toBe('warm');
 
@@ -2071,6 +2096,7 @@ describe('deliverIntoTurn — a steer reaches the running turn (task 4.1)', () =
     // and the registry does it WITHOUT telling PersistentDispatch — so A's bundle
     // lingers, pointing at a spent pump whose every method throws.
     const b = nextSession();
+    cli.nextSdkSessionId = `${b}-native`;
     await turn(b);
     expect(runtime.getSessionWarmth(a)).toBe('cold');
 
@@ -2092,6 +2118,7 @@ describe('deliverIntoTurn — a steer reaches the running turn (task 4.1)', () =
   it('logs at info when a dispatch relaunches after the registry reclaimed this session (DOR-1323)', async () => {
     const { logger } = await import('../../../../../lib/logger.js');
     const a = nextSession();
+    cli.nextSdkSessionId = `${a}-native`;
     vi.mocked(logger.info).mockClear();
     await turn(a);
     expect(
@@ -2101,10 +2128,12 @@ describe('deliverIntoTurn — a steer reaches the running turn (task 4.1)', () =
     // Warming a second session reclaims A's warm pump (the ceiling is 1 here),
     // WITHOUT telling PersistentDispatch — A's bundle now points at a spent pump.
     const b = nextSession();
+    cli.nextSdkSessionId = `${b}-native`;
     await turn(b);
     expect(runtime.getSessionWarmth(a)).toBe('cold');
 
     vi.mocked(logger.info).mockClear();
+    cli.nextSdkSessionId = `${a}-native`;
     await turn(a, 'again, after the reclaim');
 
     expect(cli.launches).toBe(3);
@@ -3838,5 +3867,164 @@ describe('the turn-context record on a warm process (sealed)', () => {
       expect(record.parts[1]!.body).toBe(process.inbox[i]!.content);
     }
     expect(records[1]!.parts[0]!.body).not.toContain('second render');
+  });
+});
+
+describe("a chat's snapshot carries only that chat (DOR-4552)", () => {
+  // Two chats of one agent share the warm pool. A window opened on the older
+  // chat after the newer one took its slot must read the older chat alone.
+  // These turns feed each session's projector as the trigger does, so the
+  // snapshot is what a real window opening on the chat would be handed.
+  beforeEach(() => {
+    optIn.persistentSession = true;
+  });
+  // A turn a case answers on a timer, cleared so it never fires into the next case.
+  let answerLater: ReturnType<typeof setTimeout> | undefined;
+  afterEach(() => {
+    slotWait.ms = 0;
+    clearTimeout(answerLater);
+    answerLater = undefined;
+  });
+
+  /** Run one turn to completion, feeding its projector. */
+  async function fedTurn(sessionId: string, content: string): Promise<void> {
+    await feedProjector(
+      getOrCreateProjector(sessionId),
+      runtime.sendMessage(sessionId, content, { cwd: CWD }),
+      { userMessage: content }
+    );
+  }
+
+  /** Wait until `check` holds, giving the runtime's own async work room to run. */
+  async function until(check: () => boolean, what: string): Promise<void> {
+    for (let i = 0; i < 200; i++) {
+      if (check()) return;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    throw new Error(`never happened: ${what}`);
+  }
+
+  /** Start a turn whose process reads the message and keeps working on it. */
+  async function openFedTurn(
+    sessionId: string,
+    content: string
+  ): Promise<{ process: FakeCliProcess; done: Promise<void> }> {
+    const before = cli.launches;
+    mockedQuery.mockImplementationOnce(((args: Parameters<typeof cli.query>[0]) => {
+      const process = cli.query(args);
+      process.goSilent();
+      return process;
+    }) as unknown as typeof query);
+    cli.nextSdkSessionId = sessionId;
+    const done = fedTurn(sessionId, content);
+    await until(
+      () => cli.launches > before && cli.latest!.received.length > 0,
+      'the turn reached its process'
+    );
+    return { process: cli.latest!, done };
+  }
+
+  /** Everything a cold window opening on `sessionId` is handed, as one string. */
+  async function snapshotText(sessionId: string): Promise<string> {
+    return JSON.stringify(
+      await runtime.getSessionSnapshot({ permissionMode: 'default', cwd: CWD }, sessionId)
+    );
+  }
+
+  it("keeps the newer chat's open turn out of the older chat whose warm process it took", async () => {
+    const older = nextSession();
+    cli.nextSdkSessionId = older;
+    await fedTurn(older, 'OLDER CHAT question');
+
+    const newer = nextSession();
+    const { process, done } = await openFedTurn(newer, 'NEWER CHAT question');
+    process.say('NEWER CHAT working on it');
+
+    // The newer chat's own window sees its turn, so the case is live.
+    expect(await snapshotText(newer)).toContain('NEWER CHAT working on it');
+    expect(await snapshotText(older)).not.toContain('NEWER CHAT');
+
+    process.answer(process.received.at(-1));
+    await done;
+  });
+
+  it('keeps it out when the newer chat waited for the slot the older chat was still using', async () => {
+    slotWait.ms = 5_000;
+    const older = nextSession();
+    const olderTurn = await openFedTurn(older, 'OLDER CHAT question');
+    olderTurn.process.say('OLDER CHAT working');
+    let olderAnswered = false;
+    answerLater = setTimeout(() => {
+      olderAnswered = true;
+      olderTurn.process.answer(olderTurn.process.received.at(-1));
+    }, 50);
+
+    const newer = nextSession();
+    const { process, done } = await openFedTurn(newer, 'NEWER CHAT question');
+    // The newer chat really waited: it launched only after the older chat's turn ended.
+    expect(olderAnswered).toBe(true);
+    process.say('NEWER CHAT working on it');
+
+    expect(await snapshotText(newer)).toContain('NEWER CHAT working on it');
+    expect(await snapshotText(older)).not.toContain('NEWER CHAT');
+
+    process.answer(process.received.at(-1));
+    await done;
+    await olderTurn.done;
+  });
+
+  it("reports a chat that resolves to another chat's live state", async () => {
+    const older = nextSession();
+    cli.nextSdkSessionId = older;
+    await fedTurn(older, 'OLDER CHAT question');
+    const newer = nextSession();
+    cli.nextSdkSessionId = newer;
+    await fedTurn(newer, 'NEWER CHAT question');
+    vi.mocked(logger.warn).mockClear();
+
+    // The state the report exists for, made by hand: the older chat's id
+    // redirected to the newer chat's projector.
+    rekeyProjector(older, newer);
+    await snapshotText(older);
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      "[ClaudeCodeRuntime] a chat resolved to another chat's live state",
+      expect.objectContaining({ sessionId: older, projectorSessionId: newer })
+    );
+  });
+
+  /** Whether the cross-chat report was logged since the last clear. */
+  function reportedCrossChat(): boolean {
+    return vi
+      .mocked(logger.warn)
+      .mock.calls.some(([message]) => String(message).includes("another chat's live state"));
+  }
+
+  it('stays quiet for a chat reading its own live state', async () => {
+    const chat = nextSession();
+    cli.nextSdkSessionId = chat;
+    await fedTurn(chat, 'question');
+    vi.mocked(logger.warn).mockClear();
+
+    await snapshotText(chat);
+
+    expect(reportedCrossChat()).toBe(false);
+  });
+
+  it('stays quiet across the SDK renaming a chat, under every id it has held', async () => {
+    const chat = nextSession();
+    const firstCanonical = `${chat}-sdk-1`;
+    const secondCanonical = `${chat}-sdk-2`;
+    cli.nextSdkSessionId = firstCanonical;
+    await fedTurn(chat, 'first');
+    // A relaunch re-mints the id a second time, as a resume does.
+    await runtime.reapSession(chat);
+    cli.nextSdkSessionId = secondCanonical;
+    await fedTurn(chat, 'second');
+    vi.mocked(logger.warn).mockClear();
+
+    for (const id of [chat, firstCanonical, secondCanonical]) await snapshotText(id);
+
+    expect(reportedCrossChat()).toBe(false);
   });
 });

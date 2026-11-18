@@ -106,9 +106,8 @@ export interface RunTurn {
    * Close the turn window, withdraw any ask nobody answered, and hand back the
    * lock and the chain slot.
    *
-   * Safe to call more than once and never rejects: a projection that failed has
-   * already been logged, and a run must be finalized on its own record whatever
-   * the session surfaces did.
+   * Safe to call more than once. Mandatory identity refusal is retained after
+   * original claim cleanup so the scheduler can write one truthful terminal.
    */
   finish: () => Promise<void>;
 }
@@ -283,9 +282,15 @@ export async function claimRunTurn(opts: {
     released = true;
     // `turnKey`, not the id we started with: a mid-turn rename moves the lock,
     // and the release has to target wherever it ended up.
-    runtime.releaseLock(turnKey, TASK_RUN_CLIENT_ID, lockToken);
-    lifecycle.close();
-    slot.release();
+    try {
+      runtime.releaseLock(turnKey, TASK_RUN_CLIENT_ID, lockToken);
+    } finally {
+      try {
+        lifecycle.close();
+      } finally {
+        slot.release();
+      }
+    }
   };
 
   try {
@@ -338,6 +343,7 @@ export async function claimRunTurn(opts: {
       source.abandon();
     });
 
+  let finishing: Promise<void> | undefined;
   return {
     observe: (event) => {
       source.push(event);
@@ -345,21 +351,32 @@ export async function claimRunTurn(opts: {
       // one read at the first event is not enough.
       tryRekey();
     },
-    finish: async (): Promise<void> => {
-      source.close();
-      await fed;
-      // One more try: a turn that yielded nothing at all still renamed the
-      // session, and the run row is about to name the id this settles on.
-      tryRekey();
-      // Withdraw anything the run was still being asked. A run halted, killed or
-      // failed mid-ask leaves its card standing in every fleet-wide ask surface
-      // for the four-hour park ceiling, pointing at a turn that is over — and
-      // `turn_end` does not clear it, because a card genuinely outliving its turn
-      // is the ordinary parked case. Nobody is coming back to THIS one.
-      for (const pending of projector.getPendingInteractions()) {
-        projector.resolveInteraction(pending.id);
-      }
-      releaseClaim();
-    },
+    finish: (): Promise<void> =>
+      (finishing ??= (async () => {
+        let failure: unknown;
+        try {
+          source.close();
+          await fed;
+          // A no-frame turn may first reveal its native identity here.
+          tryRekey();
+        } catch (error) {
+          failure = error;
+        } finally {
+          try {
+            for (const pending of projector.getPendingInteractions()) {
+              projector.resolveInteraction(pending.id);
+            }
+          } catch (error) {
+            failure ??= error;
+          } finally {
+            try {
+              releaseClaim();
+            } catch (error) {
+              failure ??= error;
+            }
+          }
+        }
+        if (failure !== undefined) throw failure;
+      })()),
   };
 }

@@ -20,6 +20,7 @@
  * @module http/__tests__/contract/harness
  */
 import { PERSON_PROOF_HEADER, PERSON_SESSION_PATH } from '@dorkos/shared/person-session';
+import { loadCeilingMs } from '@dorkos/shared/test-budget';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import http from 'node:http';
@@ -50,15 +51,44 @@ const TSX_CLI = path.join(SERVER_DIR, 'node_modules/tsx/dist/cli.mjs');
 /** How often a boot checks whether the server answers. */
 const HEALTH_POLL_MS = 50;
 
-/** How long a cold boot may take before the harness gives up. */
+/** How long a cold boot may take, once the server's build is in hand, before the harness gives up. */
 export const BOOT_TIMEOUT_MS = 180_000;
 
+/** How long a worker waits for this run's build (its own or another worker's) before it gives up. */
+const BUILD_WAIT_MS = 180_000;
+
 /**
- * The `beforeAll` budget for a boot: longer than {@link BOOT_TIMEOUT_MS}, so the
- * harness always gives up (and stops the child) before vitest abandons the
- * hook and leaves nobody to stop it.
+ * The whole of one {@link bootComposedServer} call, from its start: the build
+ * wait, then every boot attempt, all on one deadline. Each step on its own is
+ * also bounded, so whichever runs out first ends the boot.
  */
-export const BOOT_HOOK_TIMEOUT_MS = BOOT_TIMEOUT_MS + 30_000;
+const BOOT_BUDGET_MS = BUILD_WAIT_MS + BOOT_TIMEOUT_MS;
+
+/**
+ * The `beforeAll` budget for a boot: longer than {@link BOOT_BUDGET_MS}, so the
+ * harness always gives up (and stops the child) before vitest abandons the
+ * hook and leaves nobody to stop it. The slack is stopping the last child
+ * (`stop-server.ts`'s SIGTERM grace and SIGKILL wait, 15 s) plus what a hook
+ * does after it boots.
+ */
+export const BOOT_HOOK_TIMEOUT_MS = BOOT_BUDGET_MS + 30_000;
+
+/**
+ * The `afterAll` budget for {@link ComposedServer.close}: stopping the child can
+ * take `stop-server.ts`'s SIGTERM grace and SIGKILL wait (15 s), past vitest's
+ * 10-second hook default, and then the data folder is removed with retries.
+ */
+export const CLOSE_HOOK_TIMEOUT_MS = 30_000;
+
+/**
+ * The timeout for a case that drives the server through several requests in a
+ * row. Each request is quick alone, but a loaded machine (several agents'
+ * suites at once) stretches a handful of them past vitest's 5-second default
+ * with nothing wrong. Sized from the worst load stretch (60 s today); the
+ * 120 s cap does nothing now and only guards a future rise of
+ * `LOAD_SCALE_MAX`, so a hung case never waits longer than that.
+ */
+export const CASE_TIMEOUT_MS = Math.min(120_000, loadCeilingMs(15_000));
 
 /** Children still running, stopped if this process exits without closing them. */
 const running = new Set<ChildProcess>();
@@ -132,15 +162,21 @@ function serverEnv(
   };
 }
 
-/** Poll `/api/health` until the server answers, or the child dies. */
+/**
+ * Poll `/api/health` until the server answers, the child dies, or time runs
+ * out: {@link BOOT_TIMEOUT_MS} for this attempt, or `deadline` (the whole
+ * boot's, see {@link BOOT_BUDGET_MS}) if that comes first.
+ */
 async function waitUntilUp(
   baseUrl: string,
   version: string,
   child: ChildProcess,
-  output: () => string
+  output: () => string,
+  deadline: number
 ): Promise<void> {
-  const deadline = Date.now() + BOOT_TIMEOUT_MS;
-  while (Date.now() < deadline) {
+  const started = Date.now();
+  const until = Math.min(deadline, started + BOOT_TIMEOUT_MS);
+  while (Date.now() < until) {
     if (child.exitCode !== null) {
       throw new Error(`The server exited (${child.exitCode}) before it answered:\n${output()}`);
     }
@@ -159,14 +195,13 @@ async function waitUntilUp(
     }
     await new Promise((resolve) => setTimeout(resolve, HEALTH_POLL_MS));
   }
-  throw new Error(`The server did not answer /api/health in ${BOOT_TIMEOUT_MS} ms:\n${output()}`);
+  throw new Error(
+    `The server did not answer /api/health in ${Date.now() - started} ms:\n${output()}`
+  );
 }
 
 /** This worker's built entries, once a boot has asked for them. */
 let builtEntries: Promise<Map<string, string>> | undefined;
-
-/** How long a worker waits for another worker's build before it gives up. */
-const BUILD_WAIT_MS = 180_000;
 
 /** This run's folder, from `global-setup.ts`. */
 function runDir(): string {
@@ -246,8 +281,13 @@ function loadBuiltEntries(): Promise<Map<string, string>> {
  *
  * @param entrypoint - `src/index.ts`, or an absolute path to a test bootstrap.
  * @param forceTsx - Boot with tsx whatever the run's mode (the parity boot).
+ * @param deadline - The whole boot's deadline: waiting for the build stops there.
  */
-async function nodeArgs(entrypoint: string, forceTsx: boolean): Promise<string[]> {
+async function nodeArgs(
+  entrypoint: string,
+  forceTsx: boolean,
+  deadline: number
+): Promise<string[]> {
   const source = path.resolve(SERVER_DIR, entrypoint);
   const bundled =
     !forceTsx &&
@@ -255,7 +295,9 @@ async function nodeArgs(entrypoint: string, forceTsx: boolean): Promise<string[]
     Object.values(BUILT_ENTRIES).includes(source);
   await writeFile(path.join(runDir(), BOOTED_MARKER_PREFIX + (bundled ? 'bundle' : 'tsx')), '');
   if (!bundled) return [TSX_CLI, entrypoint];
-  const built = (await loadBuiltEntries()).get(source);
+  const built = (
+    await beforeDeadline(loadBuiltEntries(), deadline, 'the contract server build')
+  ).get(source);
   if (!built) {
     throw new Error(
       `The contract server build has no ${source}; set ${TSX_ESCAPE_FLAG}=1 to boot with tsx.`
@@ -263,6 +305,26 @@ async function nodeArgs(entrypoint: string, forceTsx: boolean): Promise<string[]
   }
   const prelude = built.replace(/\.mjs$/, '.argv.mjs');
   return ['--enable-source-maps', '--import', pathToFileURL(prelude).href, built];
+}
+
+/**
+ * `work`, or a rejection once `deadline` passes, whichever is first. The work
+ * itself goes on (the build is this worker's, shared by its later boots); only
+ * this boot stops waiting for it.
+ */
+async function beforeDeadline<T>(work: Promise<T>, deadline: number, what: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`The boot ran out of its ${BOOT_BUDGET_MS} ms waiting for ${what}`)),
+      Math.max(0, deadline - Date.now())
+    );
+  });
+  try {
+    return await Promise.race([work, late]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Options for {@link bootComposedServer}. */
@@ -280,7 +342,9 @@ const BOOT_ATTEMPTS = 3;
  * {@link freePort} releases its port before the server takes it, so another
  * socket in this worker (an outgoing request's own port, say) can take it in
  * between. A boot that loses that race is tried again on a new port; any
- * other failure is thrown as it is.
+ * other failure is thrown as it is. The build wait and every attempt share one
+ * deadline ({@link BOOT_BUDGET_MS}), so the boot always gives up inside
+ * {@link BOOT_HOOK_TIMEOUT_MS}.
  *
  * @param extra - More environment for the server, over the defaults.
  * @param entrypoint - A contract-specific test bootstrap, otherwise the real server entry.
@@ -293,9 +357,10 @@ export async function bootComposedServer(
   entrypoint = 'src/index.ts',
   options: BootOptions = {}
 ): Promise<ComposedServer> {
+  const deadline = Date.now() + BOOT_BUDGET_MS;
   for (let attempt = 1; ; attempt++) {
     try {
-      return await bootOnce(extra, entrypoint, options.tsx ?? false);
+      return await bootOnce(extra, entrypoint, options.tsx ?? false, deadline);
     } catch (error) {
       const lostPort = error instanceof Error && /Port \d+ is already in use/.test(error.message);
       if (!lostPort || attempt >= BOOT_ATTEMPTS) throw error;
@@ -307,12 +372,16 @@ export async function bootComposedServer(
  * One boot on one free port.
  *
  * @param extra - More environment for the server, over the defaults.
+ * @param deadline - The whole boot's deadline, shared with every other attempt.
  */
 async function bootOnce(
   extra: Record<string, string>,
   entrypoint: string,
-  forceTsx: boolean
+  forceTsx: boolean,
+  deadline: number
 ): Promise<ComposedServer> {
+  // First, so a build that fails or runs out of time leaves no data folder behind.
+  const args = await nodeArgs(entrypoint, forceTsx, deadline);
   const port = await freePort();
   const dorkHome = await mkdtemp(path.join(tmpdir(), 'dorkos-contract-'));
   await mkdir(path.join(dorkHome, 'home'));
@@ -321,7 +390,7 @@ async function bootOnce(
   // numbers with a leading zero are not a valid semver prerelease, and the
   // config store refuses to start on that version.
   const version = `0.0.0-contract.r${randomUUID().slice(0, 8)}`;
-  const child = spawn(process.execPath, await nodeArgs(entrypoint, forceTsx), {
+  const child = spawn(process.execPath, args, {
     cwd: SERVER_DIR,
     env: serverEnv(port, dorkHome, version, extra),
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -339,7 +408,7 @@ async function bootOnce(
   const baseUrl = `http://127.0.0.1:${port}`;
   const close = (): Promise<void> => stopServerAndRemove(child, exited, dorkHome);
   try {
-    await waitUntilUp(baseUrl, version, child, () => log);
+    await waitUntilUp(baseUrl, version, child, () => log, deadline);
   } catch (error) {
     await close();
     throw error;
@@ -487,7 +556,7 @@ export function contractSuite(
     }, BOOT_HOOK_TIMEOUT_MS);
     afterAll(async () => {
       await server?.close();
-    }, 30_000);
+    }, CLOSE_HOOK_TIMEOUT_MS);
 
     it.each(cases.map((c) => [c.name, c] as const))('%s', async (_name, testCase) => {
       await checkContractCase(server!.baseUrl, testCase);

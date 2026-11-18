@@ -235,9 +235,10 @@ export class LocalBrowserService {
   }
 
   /** The profile the browser opened last, or null for the default one. */
-  currentProfileId(): string | null {
-    return this.profileId;
-  }
+  readonly currentProfileId = (): string | null => this.profileId;
+
+  /** The host of the page last read, when that reading was a refusal; cleared by any change. */
+  readonly lastRefusalHost = (): string | null => this.observation?.refusal?.host ?? null;
 
   /** Whether a named profile exists. False until startup wires the profile list, as for open. */
   readonly profileExists = (id: string): boolean => this.profileAuthorization.exists?.(id) ?? false;
@@ -376,13 +377,13 @@ export class LocalBrowserService {
   }
 
   /** Human navigation remains available while the agent is paused. */
-  async navigate(url: string): Promise<LocalBrowserState> {
+  async navigate(url: string, options?: { httpFallback?: boolean }): Promise<LocalBrowserState> {
     assertLocalBrowserUrl(url, 'person');
     this.invalidate();
     const revision = this.revision;
     const page = this.page();
     if (revision !== this.revision) throw this.stale();
-    await this.moves.open(page, url);
+    await this.moves.open(page, url, options);
     return this.state();
   }
 

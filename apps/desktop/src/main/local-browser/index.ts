@@ -1,12 +1,12 @@
 /* eslint-disable no-restricted-syntax -- Private shell-to-child credentials are transient handoff state, not app configuration. */
-import { BrowserWindow, WebContentsView, ipcMain, session } from 'electron';
+import { BrowserWindow, WebContentsView, app, ipcMain, session } from 'electron';
 import { createServer } from 'node:http';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import type { ConnectOverCDPTransport } from 'playwright-core';
 import { isCockpitSender as isAppSender } from '../window-manager';
 import { forgetGuestSignIns } from './forget-sign-ins';
-import { chromeIdentity } from './browser-identity';
+import { applyGuestIdentity, chromeIdentity } from './browser-identity';
 import { pageTransport } from './page-transport';
 import { isGuestPageAction, watchGuestPage } from './page-events';
 import { createAgentInputGate, forwardGuestShortcuts } from './page-keys';
@@ -75,7 +75,7 @@ export async function startLocalBrowserBridge(
     process.arch,
     process.getSystemVersion()
   );
-  guestSession.setUserAgent(identity.userAgent);
+  applyGuestIdentity(app, guestSession, identity);
   guestSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   guestSession.setPermissionCheckHandler(() => false);
   const authorized = (value: string | string[] | undefined): boolean => {

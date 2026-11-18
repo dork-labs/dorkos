@@ -35,21 +35,22 @@ import type { RoomCore } from '../service/room-core.js';
  * @param authorId - The seat's agent.
  * @param carried - What the chat the turn came from carried.
  * @param room - The room.
- * @param latest - The room's latest entry, read when it holds no posts by others.
+ * @param latest - The room's latest entry, read when it holds no posts by others, or `undefined`
+ *   in a room nobody has posted in yet, which adds no marks of its own (DOR-4619).
  */
 export function withRoomMarks(
   core: RoomCore,
   authorId: string,
   carried: AsideCarry,
   room: Room,
-  latest: RoomEntry
+  latest: RoomEntry | undefined
 ): AsideCarry {
   // The same window the stale-post check hands the seat back when it re-reads, by the same
   // constant, so the posts that mark this turn and the posts it is shown cannot drift apart.
   const recent = core.store
     .listEntries(room.id, { limit: STALE_POST_SHOWN_MAX })
     .filter((entry) => entry.kind === 'post' && entry.authorId !== authorId);
-  const read = recent.length > 0 ? recent : [latest];
+  const read = recent.length > 0 ? recent : latest !== undefined ? [latest] : [];
   const inSpaceRoom = core.triggers.deps.isSpaceRoom?.(room.id) === true;
   const authors = core.authors;
   const ceiling = joinCeilings(
@@ -108,7 +109,7 @@ export function carryFrom(sessionId: string, agentPath: string, atTurnEnd?: Turn
 }
 
 /** Two ceilings as one: every bound of each holds, so the runtime keeps the strictest. */
-function joinCeilings(
+export function joinCeilings(
   a: TurnPermissionCeiling | undefined,
   b: TurnPermissionCeiling | undefined
 ): TurnPermissionCeiling | undefined {

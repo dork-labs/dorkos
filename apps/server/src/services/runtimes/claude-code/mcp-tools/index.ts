@@ -37,7 +37,7 @@ import { getMeshTools } from './mesh-tools.js';
 import { getAgentTools } from './agent-tools.js';
 import { getExtensionTools } from './extension-tools.js';
 import {
-  capabilityMcpTools,
+  registerClaudeCapabilityTools,
   registerClaudeConnectorCapabilityTools,
 } from './capability-mcp-tools.js';
 import {
@@ -377,7 +377,7 @@ function withToolExposure(tools: SdkMcpTool[], alwaysLoaded: ReadonlySet<string>
  * reach the attached client with its capture request.
  *
  * The operator, marketplace, and self-description tools are generated from the
- * Capability Registry via {@link capabilityMcpTools}: the shared boot-composed
+ * Capability Registry via {@link registerClaudeCapabilityTools}: the shared boot-composed
  * `registry` when passed, or one composed on the spot from `deps` +
  * `marketplaceDeps` when omitted (unit tests). The marketplace capabilities join
  * the registry only when `marketplaceDeps` is present — resolved lazily at the
@@ -403,7 +403,7 @@ function withToolExposure(tools: SdkMcpTool[], alwaysLoaded: ReadonlySet<string>
  * @param launchIdentity - Whose identity this session carries, as the launch resolved
  *   it (DOR-2091). Defaults to the anchor of `session.cwd`, which is right for
  *   every caller that is not a turn's launch.
- * @param connectorTools - Whether to list the five connector tools, decided by
+ * @param connectorTools - Whether to list the principal-bound connector tools, decided by
  *   the launch from session-long facts (DOR-2685). Defaults to whether the
  *   session holds a turn's connector context, for callers that are not a launch.
  */
@@ -505,18 +505,7 @@ export function createDorkOsToolServer(
     // agent uninformed (DOR-1930).
     ...(hold ? { hold } : {}),
   });
-  const listed = [
-    ...hand.tools,
-    // The same eager-loading set as the hand-registered half, so `chat_send`
-    // and `chat_read` load from turn 1 on an agent session like `mesh_list`.
-    ...capabilityMcpTools(
-      capabilityRegistry,
-      'in-session',
-      resolveCapabilityContext,
-      hold,
-      hand.alwaysLoaded
-    ),
-  ].filter((tool) => !hiddenToolNames.has(tool.name));
+  const listed = hand.tools.filter((tool) => !hiddenToolNames.has(tool.name));
   const server = createSdkMcpServer({
     // Not a label: Claude Code qualifies every tool on this server as
     // `mcp__<name>__<tool>`, so this string is half of what the model must type
@@ -532,6 +521,16 @@ export function createDorkOsToolServer(
     timeout: DORKOS_MCP_TOOL_TIMEOUT_MS,
     tools: listed,
   });
+
+  const ordinaryEntries = registerClaudeCapabilityTools(
+    server.instance,
+    capabilityRegistry,
+    'in-session',
+    resolveCapabilityContext,
+    hold,
+    hand.alwaysLoaded,
+    hiddenToolNames
+  );
 
   // Listed on a launch's session-long answer, not on whether THIS build sees a
   // turn's connector context: a process warmed for a staged note is built with
@@ -556,6 +555,7 @@ export function createDorkOsToolServer(
       description: definition.description,
       inputSchema: definition.inputSchema,
     })),
+    ...ordinaryEntries,
     ...connectorEntries,
   ]);
 

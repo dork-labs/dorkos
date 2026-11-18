@@ -1,4 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 
 const { queryMock } = vi.hoisted(() => ({ queryMock: vi.fn(() => ({}) as never) }));
@@ -26,8 +29,17 @@ import type { MessageSenderOpts } from '../../messaging/message-sender-shared.js
  * resume-per-message path, which is what makes the mutation check below
  * meaningful rather than a comparison of one path against itself.
  */
-function planWithSharedOptions(): { plan: PumpLaunchPlan; sharedOptions: Options } {
-  const sharedOptions: Options = { cwd: '/proj' };
+let ownedAccountRoot: string;
+
+function planWithSharedOptions(overrides: Partial<Options> = {}): {
+  plan: PumpLaunchPlan;
+  sharedOptions: Options;
+} {
+  const sharedOptions: Options = {
+    cwd: '/proj',
+    ...overrides,
+    env: { ...overrides.env, CLAUDE_CONFIG_DIR: ownedAccountRoot },
+  };
   return {
     sharedOptions,
     plan: {
@@ -36,7 +48,15 @@ function planWithSharedOptions(): { plan: PumpLaunchPlan; sharedOptions: Options
       meshAgentId: undefined,
       statusEvents: [],
       sdkOptions: sharedOptions,
-      fingerprint: {} as PumpLaunchPlan['fingerprint'],
+      fingerprint: captureLaunchFingerprint({
+        accountRoot: ownedAccountRoot,
+        options: sharedOptions,
+        systemPromptAppendStable: '',
+        credentialEnv: {},
+        agentIdentity: undefined,
+        effortInput: undefined,
+        capabilityResolved: true,
+      }),
     },
   };
 }
@@ -57,7 +77,12 @@ function launch(plan: PumpLaunchPlan): void {
 }
 
 beforeEach(() => {
+  ownedAccountRoot = mkdtempSync(join(tmpdir(), 'pump-launch-account-'));
   queryMock.mockClear();
+});
+
+afterEach(() => {
+  rmSync(ownedAccountRoot, { recursive: true, force: true });
 });
 
 describe('the persistent pump launch records its process', () => {
@@ -151,8 +176,7 @@ describe('the persistent launch keeps servers off the command line (DOR-3882)', 
     const setMcpServers = vi.fn(async () => ({}));
     queryMock.mockImplementationOnce(() => ({ setMcpServers }) as never);
     const stdio = { type: 'stdio', command: 'node', env: { TOKEN: 'CANARY' } } as never;
-    const { plan } = planWithSharedOptions();
-    plan.sdkOptions = { cwd: '/proj', mcpServers: { stdio } };
+    const { plan } = planWithSharedOptions({ mcpServers: { stdio } });
     launch(plan);
     const passed = (queryMock.mock.calls as unknown as Array<[{ options: Options }]>)[0]?.[0];
     expect(JSON.stringify(passed?.options)).not.toContain('CANARY');

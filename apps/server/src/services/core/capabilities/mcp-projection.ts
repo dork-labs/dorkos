@@ -2,15 +2,15 @@
  * Project registry capabilities onto MCP tool registrations (spec
  * `capability-registry`, task 2.2).
  *
- * Both MCP servers — the in-session `dorkos` server (Claude Agent SDK `tool()`)
- * and the external `/mcp` server (`McpServer.registerTool`) — generate their
- * tool surface from the same registry through these transport-neutral helpers:
+ * Both MCP servers — the SDK-created in-session `dorkos` server and the
+ * external `/mcp` server — register full objects with `McpServer.registerTool`.
+ * They generate their tool surface from the same registry through these
+ * transport-neutral helpers:
  *
  * - {@link capabilitiesForMcpServer} selects the capabilities a given server
  *   advertises (from each capability's `surfaces.mcp.servers`).
- * - {@link capabilityInputShape} recovers the Zod field-map both SDKs want, via
- *   {@link portableInputShape}, which keeps a `.default(…)` field readable as
- *   optional by a Zod copy that is not ours.
+ * - {@link capabilityMcpInputObject} retains the full advertised object,
+ *   defaults and refinements, rejecting unknown top-level arguments.
  * - {@link deriveMcpAnnotations} regenerates the four MCP tool-annotation hints
  *   from the permission tier plus the two per-tool overrides a tier can't
  *   express (`readOnlyHint`/`destructiveHint` from the tier; `idempotentHint`/
@@ -31,7 +31,6 @@ import type { CallToolResult, ToolAnnotations } from '@modelcontextprotocol/sdk/
 import type { McpServerId } from '@dorkos/shared/capabilities';
 
 import { capabilityInputObject } from './input-projection.js';
-import { portableInputShape } from '@dorkos/shared/portable-input-shape';
 import type { CapabilityDefinition } from './capability-definition.js';
 import type { CapabilityInvocationContext, CapabilityRegistry } from './registry.js';
 import { CapabilityImageResult, CapabilityToolError } from './mcp-envelope.js';
@@ -110,47 +109,32 @@ export function capabilitiesForMcpServer(
 }
 
 /**
- * Recover the Zod field-map (a `ZodRawShape`) both MCP SDKs expect as a tool's
- * input schema from a capability's `input` object schema. Every migrated
- * capability exposes an object, optionally behind preprocessing pipes. Its
- * projected `.shape` is the same
- * field map the phase-1 descriptors passed straight to `registerTool` / `tool`.
+ * Project the full ordinary MCP input object, closing top-level arguments while
+ * retaining refinements, defaults and nested maps. Outer preprocess pipes stay
+ * on the registry's original executable input; this clone never changes it.
  *
- * A capability that can raise an approval card (`destructive`, or an `act`
- * capability with a permission area, which a person may set to Ask) gains one
- * extra advertised argument,
- * `approvalToken`, which is how a retry carries the approval a person granted
- * (spec `agent-trust` §3.2). It is deliberately NOT part of the capability's own
- * input schema: the approval binds to a hash of the input, so a token carried
- * inside the input would change the hash it is checked against. The choke point
- * splits it back off before parsing ({@link splitApprovalToken}).
+ * Eligible tools advertise the retry token beside their declared input. The
+ * invocation wrapper removes it before registry parsing and approval binding.
  *
- * The map then goes through {@link portableInputShape}, which re-labels every
- * `.default(…)` field as an ordinary optional one so a foreign Zod cannot read it
- * as required (DOR-2053). The default still applies — the registry re-parses
- * against the capability's own schema.
- *
- * @param capability - The capability whose input schema to project.
- * @returns The field-map input schema for MCP tool registration.
+ * @param capability - The capability whose advertised input to project.
+ * @returns A strict full object for ordinary MCP registration.
  */
-export function capabilityInputShape(capability: CapabilityDefinition): z.ZodRawShape {
-  const shape = capabilityInputObject(capability).shape;
-  if (!canRaiseApproval(capability)) return portableInputShape(shape);
-  return portableInputShape({ ...shape, ...approvalTokenArgument() });
+export function capabilityMcpInputObject(capability: CapabilityDefinition): z.ZodObject {
+  const input = capabilityInputObject(capability).strict();
+  return canRaiseApproval(capability) ? input.safeExtend(approvalTokenArgument()) : input;
 }
 
 /**
- * The one extra MCP argument every `destructive` tool advertises, as a one-key
- * field map ready to spread into an input shape.
+ * The retry argument shared by approval-eligible ordinary capabilities and
+ * gated hand tools, as a one-key field map.
  *
- * Both the registry projection ({@link capabilityInputShape}) and the
- * hand-registered tool gate (`services/core/mcp-tool-gate.ts`) build their
- * destructive input shapes from this, because the failure it prevents is the same
- * on both paths and it is silent: an MCP argument that is not advertised is
- * stripped by the SDK before the handler sees it, so a destructive tool that
- * forgets this field tells the model to retry with a token the model has no way to
- * deliver. The gate then asks again, forever. One definition, so a surface cannot
- * advertise a token field the choke point does not read, or the reverse.
+ * Both {@link capabilityMcpInputObject} and `services/core/mcp-tool-gate.ts`
+ * advertise this field under their existing `canRaiseApproval` rule. A full
+ * ordinary object rejects an unadvertised token; a hand tool's raw SDK shape
+ * may strip it. Either would prevent a retry from presenting the approval.
+ * Keeping one definition makes the advertised field match
+ * {@link splitApprovalToken}, which removes it before registry parsing and
+ * input-hash binding.
  *
  * @returns A one-key field map declaring the `approvalToken` argument.
  */

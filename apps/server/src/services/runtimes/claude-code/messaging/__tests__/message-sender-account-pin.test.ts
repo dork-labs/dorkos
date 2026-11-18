@@ -1,3 +1,4 @@
+import { isolatedRequiredLaunchOwner } from './required-launch-fixture.js';
 /**
  * Which Claude Code account a turn runs and bills on (spec `claude-code-accounts`
  * §8 D8 + C2).
@@ -20,6 +21,8 @@ import os from 'os';
 import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
 import type { AgentSession } from '../../agent-types.js';
 import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
+
+const requiredLaunches = isolatedRequiredLaunchOwner();
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
@@ -71,7 +74,12 @@ function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
 }
 
 function makeOpts(overrides: Partial<MessageSenderOpts> = {}): MessageSenderOpts {
-  return { cwd: '/mock/project', onSdkSessionRebind: async () => {}, ...overrides };
+  return {
+    cwd: '/mock/project',
+    requiredLaunches,
+    onSdkSessionRebind: async () => {},
+    ...overrides,
+  };
 }
 
 /** The `CLAUDE_CONFIG_DIR` each `query()` call was handed, in call order. */
@@ -104,12 +112,15 @@ describe('executeSdkQuery — Claude account pin', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    for (const key of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN'])
+      vi.stubEnv(key, '');
     // A launching terminal that exported an account. Every assertion below is
     // about DorkOS deciding the account rather than inheriting this one.
     process.env.CLAUDE_CONFIG_DIR = ACTIVE;
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     if (ORIGINAL_CONFIG_DIR === undefined) delete process.env.CLAUDE_CONFIG_DIR;
     else process.env.CLAUDE_CONFIG_DIR = ORIGINAL_CONFIG_DIR;
   });

@@ -22,6 +22,8 @@
  * @module server/services/rooms/room-service
  */
 import type { ReseatOptions } from '@dorkos/shared/room-schemas';
+import { RoomSeatMessages } from './handoff/seat-messages.js';
+import type { RoomSeatMessageFactory } from './handoff/seat-message-types.js';
 import type { RoomHandoffs } from './handoff/room-handoff.js';
 import type { RoomTurnControl } from './manage/room-turn-control.js';
 import type { DbTransaction } from '@dorkos/db';
@@ -143,17 +145,26 @@ export class RoomService {
       publishPresence: (roomId, authorId, presence) =>
         this.publishSignal(roomId, 'progress', authorId, presence),
     });
+    // These collaborators are complete and stable once parts is constructed. Capturing their
+    // identities here keeps the private inbox factory and lifecycle composition on the same
+    // core, bridge store and publisher; no lazy resolution is needed.
     this.triggers = this.parts.core.triggers;
+    this.createSeatMessages = (store, emit) =>
+      new RoomSeatMessages(this.parts.core, this.parts.publisher, store, emit);
+    this.follow = this.parts.follow;
+    this.canvas = this.parts.canvas;
+    this.handoffs = this.parts.handoffs;
+    this.authorRegistry = this.parts.core.authors;
+    this.stream = this.parts.core.broadcaster;
   }
 
+  /** Build the private inbox over the same consolidated stores and publisher as this room service. */
+  readonly createSeatMessages: RoomSeatMessageFactory;
+
   /** The live subscription source behind `GET /api/rooms/:id/events`. */
-  get stream(): RoomBroadcaster {
-    return this.parts.core.broadcaster;
-  }
+  readonly stream: RoomBroadcaster;
   /** The author registry, for callers that need to resolve their own identity. */
-  get authorRegistry(): AuthorRegistry {
-    return this.parts.core.authors;
-  }
+  readonly authorRegistry: AuthorRegistry;
 
   /**
    * The name an AGENT is told for an author: the stored label, except the
@@ -173,9 +184,7 @@ export class RoomService {
    * is a room entry, and this class owns the single write path into a room's log
    * (spec `room-canvas` §3).
    */
-  get canvas(): RoomCanvasService {
-    return this.parts.canvas;
-  }
+  readonly canvas: RoomCanvasService;
 
   /**
    * Who is following whose browser in this room right now (spec
@@ -184,13 +193,9 @@ export class RoomService {
    * Live, memory-only state with no store behind it — the one part of a room
    * that is deliberately forgotten on restart.
    */
-  get follow(): RoomFollowService {
-    return this.parts.follow;
-  }
+  readonly follow: RoomFollowService;
   /** Each agent's seat per room, and the hand-off between them. See {@link RoomHandoffs}. */
-  get handoffs(): RoomHandoffs {
-    return this.parts.handoffs;
-  }
+  readonly handoffs: RoomHandoffs;
   /** Every room turn in flight right now. See {@link RoomTurnControl.listActiveClaims}. */
   listActiveClaims(): ActiveClaimView[] {
     return this.parts.turnControl.listActiveClaims();
