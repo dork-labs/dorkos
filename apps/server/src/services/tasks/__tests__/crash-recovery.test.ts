@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { sweepInterruptedRuns } from '../crash-recovery.js';
 import { TaskStore, type CreateTaskStoreInput } from '../task-store.js';
 import { SCHEDULER_LOCK_STALE_TTL_MS, type LeaderLock } from '../scheduler-lock.js';
+import { RUN_START_WAIT_MS } from '../timing/wake-settle.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { pulseRuns, type Db } from '@dorkos/db';
 import { eq } from 'drizzle-orm';
@@ -113,12 +114,16 @@ describe('sweepInterruptedRuns (DOR-1482)', () => {
       taskInput({ name: 'Bounded', cron: '0 * * * *', maxRuntime: 60_000 })
     );
     const overdue = store.createRun(task.id, 'manual');
-    startedAgo(overdue.id, 60_000 + SCHEDULER_LOCK_STALE_TTL_MS + 5_000);
+    startedAgo(overdue.id, 60_000 + RUN_START_WAIT_MS + SCHEDULER_LOCK_STALE_TTL_MS + 5_000);
     const withinLimit = store.createRun(task.id, 'manual');
+    // Past its own limit, but it may have waited in line to start (DOR-4576).
+    const queued = store.createRun(task.id, 'manual');
+    startedAgo(queued.id, 60_000 + SCHEDULER_LOCK_STALE_TTL_MS + 5_000);
 
     expect(sweepInterruptedRuns(store, leader).swept).toBe(1);
     expect(store.getRun(overdue.id)!.status).toBe('failed');
     expect(store.getRun(withinLimit.id)!.status).toBe('running');
+    expect(store.getRun(queued.id)!.status).toBe('running');
   });
 
   it('never ends a run THIS process is executing, whatever the rules say', () => {

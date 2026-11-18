@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import { RUN_START_WAIT_MS } from '../timing/wake-settle.js';
 import { RunAccounting } from '../run-accounting.js';
 import { TaskStore, type CreateTaskStoreInput } from '../task-store.js';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -117,7 +118,8 @@ describe('RunAccounting (DOR-1482)', () => {
     const run = store.createRun(taskId, 'scheduled');
     runs.addRelay(run.id, 60_000);
 
-    vi.advanceTimersByTime(60_000 + 30_000);
+    // Its limit, plus the longest wait to start (DOR-4576), plus the grace.
+    vi.advanceTimersByTime(60_000 + RUN_START_WAIT_MS + 30_000);
     expect(runs.count()).toBe(1); // deadline plus grace has not fully elapsed
 
     vi.advanceTimersByTime(60_000);

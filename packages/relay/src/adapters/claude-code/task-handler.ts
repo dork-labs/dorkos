@@ -21,8 +21,18 @@ import {
 } from '@dorkos/shared/run-refusals';
 // The one sentence a run stopped by a clock is described with, written by this
 // path and by the direct-dispatch twin in `apps/server` (DOR-1786).
-import { runTimeLimitError } from '@dorkos/shared/run-time-limit';
-import { awakeTimeout, getAwakeClock, type AwakeClock } from '@dorkos/shared/awake-clock';
+import {
+  MAX_START_WAIT_MS,
+  pauseWhileWaitingToStart,
+  runTimeLimitError,
+} from '@dorkos/shared/run-time-limit';
+import {
+  awakeTimeout,
+  getAwakeClock,
+  pausableAwakeTimeout,
+  type AwakeClock,
+  type PausableAwakeTimeout,
+} from '@dorkos/shared/awake-clock';
 import type { AdapterContext, DeliveryResult, TraceStoreLike } from '../../types.js';
 import type { AgentRuntimeLike, RefusedAskReporter, TasksStoreLike } from './types.js';
 import { OPERATOR_CANCEL } from './task-cancel-handler.js';
@@ -373,15 +383,31 @@ export async function handleTasksMessage(
   const ttlRemaining = ttlRemainingMs(envelope, clock);
   const controller = new AbortController();
   let cancelDeadline: (() => void) | undefined;
+  // The run's own limit, paused while its turn waits for a free agent slot, so
+  // a run that waited in line still gets all of it (DOR-4576). The TTL above
+  // stays the outer bound. Absent on an envelope that carries no limit.
+  let limit: PausableAwakeTimeout | undefined;
   if (isExpired(ttlRemaining)) {
     controller.abort();
   } else {
+    const awakeClock = deps.awakeClock ?? getAwakeClock();
     // Awake time only (DOR-3286). Re-armed in steps, so a time limit past
     // 2^31-1 ms (which a bare Node timer fires at once) holds too (DOR-3033).
-    cancelDeadline = awakeTimeout(deps.awakeClock ?? getAwakeClock(), ttlRemaining, () =>
-      controller.abort()
-    );
+    cancelDeadline = awakeTimeout(awakeClock, ttlRemaining, () => controller.abort());
+    if (payload.timeLimitMs !== undefined) {
+      limit = pausableAwakeTimeout(
+        awakeClock,
+        payload.timeLimitMs,
+        () => controller.abort(),
+        MAX_START_WAIT_MS
+      );
+    }
   }
+  const observeStart = limit
+    ? pauseWhileWaitingToStart(limit, (waiting) =>
+        deps.taskStore?.updateRun(runId, { outputSummary: waiting ?? '' })
+      )
+    : () => {};
 
   // From here until the `finally` below, this run can be stopped from the
   // app: the registry is what the stop-request subscription reaches for.
@@ -459,6 +485,7 @@ export async function handleTasksMessage(
       controller.signal,
       () => void interruptTurn(deps.agentManager, sessionId, `run ${runId}`, deps.logger),
       (event) => {
+        observeStart(event);
         outcome.observe(event);
         // `observe` answers only on a tool's FIRST refusal, so this is one
         // report per refused tool per run and the dedupe lives in one place.
@@ -583,6 +610,7 @@ export async function handleTasksMessage(
     };
   } finally {
     cancelDeadline?.();
+    limit?.cancel();
     // Nothing awaits between the run's terminal write above and this line, so
     // a stop request either reached a run that was genuinely still going or
     // finds it gone — never a half-finalized run it could stop twice.

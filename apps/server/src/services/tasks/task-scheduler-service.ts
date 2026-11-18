@@ -1270,11 +1270,14 @@ export class TaskSchedulerService {
     // and the deadline aborts with a DOMException named 'TimeoutError' — which
     // is how the finalized row below tells the two apart. The deadline counts
     // only time the computer was awake: a plain timer keeps counting through
-    // sleep, and stopped runs on wake as over their limit (DOR-3286).
-    const stop = runDeadline(this.wakeSettle.clock, task.maxRuntime, controller.signal);
+    // sleep, and stopped runs on wake as over their limit (DOR-3286). Nor does
+    // time the turn waited for a free agent slot; the row says it is waiting
+    // instead (DOR-4576).
+    const stop = runDeadline(this.wakeSettle.clock, task.maxRuntime, controller.signal, (waiting) =>
+      this.store.updateRun(run.id, { outputSummary: waiting ?? '' })
+    );
 
     const startTime = Date.now();
-    let outputChars = 0;
     let outputSummary = '';
     // Whether the turn behind this run SETTLED to a failure — the question the
     // run row asks and nothing on this path used to answer (DOR-1658). A run
@@ -1419,6 +1422,7 @@ export class TaskSchedulerService {
           // First, so the card reaches the app before anything else is done with
           // the event. Everything below only reads.
           turn?.observe(event);
+          stop.observe(event);
           outcome.observe(event);
           // Emitted as it happens rather than at the end, so the feed shows the
           // run losing a tool while the run is still going — the same live shape
@@ -1434,10 +1438,8 @@ export class TaskSchedulerService {
           const refused = refusals.observe(event);
           if (refused) emitRefusedAskActivity(this.activityService, task, run, refused);
           // Collect first 500 chars of text output as summary
-          if (event.type === 'text_delta' && outputChars < 500) {
-            const data = event.data as { text: string };
-            outputSummary += data.text;
-            outputChars += data.text.length;
+          if (event.type === 'text_delta' && outputSummary.length < 500) {
+            outputSummary += (event.data as { text: string }).text;
           }
         }
       );

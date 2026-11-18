@@ -533,6 +533,16 @@ export const TaskDispatchPayloadSchema = z
      */
     timeLimit: z.string().min(1).max(40).optional(),
     /**
+     * The run's time limit in milliseconds, counted from when its turn starts
+     * rather than from the dispatch: a turn can wait in line for a free agent
+     * slot first, and that wait must not spend the limit (DOR-4576). The
+     * envelope's TTL stays the outer bound, so this can never lengthen a run
+     * past it. Absent counts the TTL alone, as every envelope before this
+     * field did, and so does a value that is not a positive whole number: a bad
+     * value falls back to today's behaviour, never to no limit.
+     */
+    timeLimitMs: z.number().int().positive().optional().catch(undefined),
+    /**
      * The home of the task's agent, when it has one (spec `agent-home-desk`
      * §3.2 row 12). The receiver hands it to the runtime as
      * `MessageOpts.forAgent`, so identity is read from that home and a `cwd`

@@ -7,8 +7,8 @@ import { describe, expect, it } from 'vitest';
 import {
   AWAKE_TICK_MS,
   awakeTimeout,
-  awakeTimeoutSignal,
   createAwakeClock,
+  pausableAwakeTimeout,
   type AwakeTimers,
 } from '../awake-clock.js';
 
@@ -147,13 +147,89 @@ describe('awakeTimeout', () => {
     hand.advance(5 * MIN);
     expect(expired).toBe(false);
   });
+});
 
-  it('aborts its signal with a TimeoutError, the name the run row reads', () => {
+describe('pausableAwakeTimeout', () => {
+  it('leaves time spent paused out of the limit (DOR-4576)', () => {
     const hand = handClock();
     const clock = createAwakeClock({ now: hand.now, timers: hand.timers });
-    const { signal } = awakeTimeoutSignal(clock, MIN);
+    let expired = false;
+    const limit = pausableAwakeTimeout(clock, 5 * MIN, () => (expired = true), 45 * MIN);
+
+    hand.advance(1 * MIN);
+    limit.pause();
+    hand.advance(40 * MIN); // waiting in line for a free agent slot
+    expect(expired).toBe(false);
+
+    limit.resume();
+    hand.advance(3 * MIN);
+    expect(expired).toBe(false);
+    hand.advance(2 * MIN);
+    expect(expired).toBe(true);
+  });
+
+  it('still stops a run that used its whole limit, once', () => {
+    const hand = handClock();
+    const clock = createAwakeClock({ now: hand.now, timers: hand.timers });
+    let calls = 0;
+    pausableAwakeTimeout(clock, 5 * MIN, () => (calls += 1), 45 * MIN);
+    hand.advance(5 * MIN);
+    expect(calls).toBe(1);
+    hand.advance(30 * MIN);
+    expect(calls).toBe(1);
+  });
+
+  it('counts only awake time between pauses', () => {
+    const hand = handClock();
+    const clock = createAwakeClock({ now: hand.now, timers: hand.timers });
+    let expired = false;
+    pausableAwakeTimeout(clock, 30 * MIN, () => (expired = true), 45 * MIN);
+    hand.advance(5 * MIN);
+    hand.sleep(8 * HOUR);
+    hand.advance(24 * MIN);
+    expect(expired).toBe(false);
+    hand.advance(2 * MIN);
+    expect(expired).toBe(true);
+  });
+
+  it('ignores a pause or resume after it fired or was cancelled', () => {
+    const hand = handClock();
+    const clock = createAwakeClock({ now: hand.now, timers: hand.timers });
+    let calls = 0;
+    const limit = pausableAwakeTimeout(clock, MIN, () => (calls += 1), 45 * MIN);
+    limit.pause();
+    limit.pause();
+    limit.resume();
+    limit.resume();
     hand.advance(MIN);
-    expect(signal.aborted).toBe(true);
-    expect((signal.reason as { name?: string }).name).toBe('TimeoutError');
+    expect(calls).toBe(1);
+    limit.pause();
+    limit.resume();
+    expect(calls).toBe(1);
+
+    const cancelled = pausableAwakeTimeout(clock, MIN, () => (calls += 1), 45 * MIN);
+    cancelled.cancel();
+    cancelled.resume();
+    hand.advance(5 * MIN);
+    expect(calls).toBe(1);
+  });
+
+  it('caps the total pause, so no pause holds a limit off for ever', () => {
+    const hand = handClock();
+    const clock = createAwakeClock({ now: hand.now, timers: hand.timers });
+    let expired = false;
+    const limit = pausableAwakeTimeout(clock, 5 * MIN, () => (expired = true), 45 * MIN);
+    limit.pause(); // and never resumed
+    hand.advance(45 * MIN + 4 * MIN);
+    expect(expired).toBe(false);
+    hand.advance(2 * MIN);
+    expect(expired).toBe(true);
+    // A pause after the cap is spent does not pause at all.
+    const spent = pausableAwakeTimeout(clock, 5 * MIN, () => (expired = false), 1 * MIN);
+    spent.pause();
+    hand.advance(1 * MIN);
+    spent.pause();
+    hand.advance(5 * MIN);
+    expect(expired).toBe(false);
   });
 });

@@ -2571,6 +2571,13 @@ export type SystemStatusEvent = z.infer<typeof SystemStatusEventSchema>;
 export const SLOT_WAIT_STATUS = 'waiting_for_slot';
 
 /**
+ * The words that status carries, fixed by the server. A scheduled run pauses
+ * its time limit only for this exact status and text, and its run row shows
+ * this text while it waits, never words read off the stream (DOR-4576).
+ */
+export const SLOT_WAIT_TEXT = 'Waiting to start: every agent on this computer is busy.';
+
+/**
  * The named long-running operations a runtime can report progress for. An
  * extensible union: today only `compaction` (context-window summarization), but
  * a runtime that exposes indexing, cloning, or model-download progress adds its
