@@ -106,6 +106,9 @@ export const HELD_WRITES = new Set([
   'post /api/relay/adapters',
   'patch /api/relay/adapters/{id}/config',
   'post /api/relay/adapters/{id}/enable',
+  // Main's DOR-4204 spending routes: raising the limit, or lowering a price, holds.
+  'put /api/connectors/spending/limit',
+  'put /api/connectors/spending/prices/{toolkit}',
 ]);
 
 /** Bodies for newly documented native writes; auth and the general patch validate flexible JSON. */
