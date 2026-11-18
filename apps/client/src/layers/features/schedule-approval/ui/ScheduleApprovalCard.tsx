@@ -210,20 +210,10 @@ function ScheduleApprovalContent({
   // Who its runs act as, resolved from the agent roster by the server. An id
   // alone is not a name, so an unresolved or absent agent draws no claim.
   const runsAs = task.agentId ? task.runsAsName : null;
-  // The header names the proposer whenever a path was stamped, so the byline
-  // and the Agent line do not say the same name again (DOR-4572). The Agent
-  // line stays when the runs act as a different agent.
-  const headerNamesProposer = task.proposedByAgentPath !== null;
-  const agentLine = runsAs && !(headerNamesProposer && runsAs === task.proposedByName);
-
   // A schedule DorkOS found on disk, rather than one anybody asked for. Nobody
   // proposed it, so every part of this card that credits a proposer has to say
   // something else — the file it came from (ADR `260823-200726`).
   const misplacedMode = hasMisplacedSchedulePermissions(task);
-  // The Run permissions picker is on the card, and it names the mode, so no
-  // other line beside it says it again (DOR-4572). The phone's pinned row stays:
-  // the picker scrolls away under it.
-  const pickerShown = answered === null && !misplacedMode;
   const foundInFile = task.origin === 'file';
   // Whether the words in `reason` are DorkOS's own. True for a discovered
   // schedule, and ALSO for a schedule a person made themselves whose file has
@@ -231,6 +221,14 @@ function ScheduleApprovalContent({
   // agent" attributed our prose to an agent that never said it (DOR-1485
   // review, residual 2).
   const dorkosWrote = foundInFile || task.reasonSource === 'dorkos';
+  // The header names the proposer when an agent's own case is shown (an agent
+  // path stamped, and words not DorkOS's), so the byline and the Agent line do
+  // not say the same name again (DOR-4572). The Agent line stays when the runs
+  // act as a different agent. Compared by display name, because the task
+  // carries no proposer id: two agents sharing a name would read the same to a
+  // person on this card anyway.
+  const headerNamesProposer = !dorkosWrote && task.proposedByAgentPath !== null;
+  const agentLine = runsAs && !(headerNamesProposer && runsAs === task.proposedByName);
   const firstRuns = formatFirstRuns(task.nextRuns, now);
   const power = useScheduleApprovalPower(task);
   const requested = task.requestedPermissionMode
@@ -251,6 +249,12 @@ function ScheduleApprovalContent({
   // Structured proposal fields are requests, never grants. The person still approves below.
   const selectedMode = pickedMode ?? (startsAtBaseline ? baseline : task.permissionMode);
   const selected = power.modes.find((mode) => mode.id === selectedMode);
+  // The Run permissions picker is on the card. When it offers the selected mode
+  // it names it, so no other line beside it says it again (DOR-4572); a saved
+  // mode it cannot offer, or a list still loading, keeps the line. The phone's
+  // pinned row stays either way: the picker scrolls away under it.
+  const pickerShown = answered === null && !misplacedMode;
+  const pickerNamesMode = pickerShown && selected !== undefined;
   const looserMode = Boolean(selected && isLooserScheduleMode(selected.id, baseline));
   // A trial of a pending schedule runs at the baseline when the saved mode is
   // looser, as the trigger route does (`routes/task-trial-mode.ts`); one whose
@@ -429,7 +433,7 @@ function ScheduleApprovalContent({
         className
       )}
     >
-      {pinActions && !reviewHeader && !pickerShown && (
+      {pinActions && !reviewHeader && !pickerNamesMode && (
         <p
           className={cn(
             'shrink-0 px-1 text-xs',
@@ -591,7 +595,7 @@ function ScheduleApprovalContent({
           flowing={pinActions}
           selectedMode={selectedMode}
           currentLabel={currentLabel}
-          pickerShown={pickerShown}
+          pickerShown={pickerNamesMode}
         />
 
         {pickerShown && (

@@ -256,6 +256,26 @@ describe('ScheduleApprovalCard — what it says', () => {
     expect(screen.queryByText(/^Runs as:/)).toBeNull();
   });
 
+  it('still names the agent when DorkOS parked the agent’s edit and the header is quiet', async () => {
+    // An agent's edit parks with DorkOS's own reason: no header, no byline name,
+    // so the Agent line is where the agent is named.
+    renderCard(
+      proposal({
+        agentId: 'agent-a',
+        runsAsName: 'DorkBot',
+        reasonSource: 'dorkos',
+        reason: 'This schedule changed since you approved it.',
+      })
+    );
+    expect(await screen.findByText('Agent: DorkBot')).toBeVisible();
+  });
+
+  it('keeps the mode line when the picker cannot offer the saved mode', async () => {
+    renderCard(proposal({ runtime: 'not-installed' }));
+    await screen.findByRole('button', { name: 'Approve Nightly sweep' });
+    expect(slot('schedule-permission-mode')).toHaveTextContent('Run permissions:');
+  });
+
   it('heads the card with the agent’s display name, not its folder name (DOR-4337)', async () => {
     renderCard();
 

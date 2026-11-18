@@ -412,6 +412,7 @@ test('dark schedule review shows the Full access warning @smoke', async ({
   const review = page.getByRole('dialog', { name: 'Review schedule', exact: true });
   // The picker names the mode (DOR-4572); the warning is on its explanation.
   await expect(review.locator('select')).toHaveValue('bypassPermissions');
+  await expect(review.getByRole('option', { name: 'Full access', selected: true })).toBeAttached();
   const full = review.locator('[data-slot="schedule-permission-mode"]');
   await expect(full).toHaveClass(/text-status-warning-fg/);
   await page.screenshot({ path: testInfo.outputPath('dark-full-review.png') });
