@@ -5518,7 +5518,8 @@
             "type": "string",
             "enum": [
               "wifi-open",
-              "spend"
+              "spend",
+              "outside-words"
             ]
           },
           "spend": {
@@ -11412,6 +11413,15 @@
               "null"
             ],
             "default": null
+          },
+          "runOnce": {
+            "type": "boolean"
+          },
+          "ranOnceAt": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "status": {
             "$ref": "#/components/schemas/TaskStatus"

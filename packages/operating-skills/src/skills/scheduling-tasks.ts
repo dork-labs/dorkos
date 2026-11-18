@@ -28,7 +28,8 @@ Read current state before changing anything:
 ## Create a task
 
 - Tool: \`tasks_create\` with \`name\`, \`prompt\` (the instruction the agent runs each
-  time), \`cron\` (required, e.g. \`"0 2 * * *"\` for daily at 2am), \`reason\`
+  time), \`cron\` (e.g. \`"0 2 * * *"\` for daily at 2am; left out only for a
+  one-shot task, below), \`reason\`
   (required, see below), \`target\` (optional, see below), and optional
   \`description\`, \`timezone\` (IANA, e.g. \`"America/New_York"\`), \`maxRuntime\`
   (e.g. \`"5m"\`, \`"1h"\`) to cap how long a run may take, and \`runtime\`, \`model\`
@@ -37,7 +38,14 @@ Read current state before changing anything:
   --target <agent-id-or-global> [--cron <expr>] [--timezone <tz>]
   [--runtime <id>] [--model <id>] [--effort <level>]\`.
 
-Only the CLI can create a manual-only task (omit \`--cron\`); the tool requires a cron.
+Only the CLI can create a manual-only task (omit \`--cron\`).
+
+### A one-shot task, with its own exact commands
+
+For work that runs once (a backfill), send \`runOnce: true\` and no \`cron\`: it runs once, as soon as it is live, and never again. To let that run use commands without asking, also send \`permissionMode: "dontAsk"\` and \`allowList\`, each entry one exact command: \`Bash(/absolute/path/to/program --flags)\`.
+- Exact lines only: no wildcards, \`:*\`, shell characters (\`; | & $ < >\`, backticks, quotes) or \`..\`, and no program that runs another (\`sh\`, \`python3\`, \`env\`, \`timeout\`, \`git\`, \`make\`, a link to one). Up to 20, Claude Code only, and only if your own level runs commands without asking. One bad entry refuses the call.
+- No card, from your own chat, for your own new task. From a turn that read outside words, a scheduled run or another agent it is refused: use \`requestedAllow\` for the person's card. DorkOS records each program's bytes; if one changes, or your own level drops before it runs, the run fails and nothing runs. If it can't run when it turns on (parked, switched off), it runs once it is on again.
+- **When it is done, take them back:** \`tasks_update\` with only \`id\` and \`allowList: []\`. Removing needs no approval and is recorded. Adding to an existing task is not yours: use \`requestedAllow\`.
 
 ### Where it runs, and on what
 

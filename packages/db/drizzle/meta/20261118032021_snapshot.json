@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "f808a158-154b-4037-a365-d0111233e4b4",
+  "id": "8219cba4-0a55-407b-b5c0-b50e08e89dd5",
   "prevId": "e489a920-a3ae-4bf5-8f72-3abccfc955b0",
   "tables": {
     "a2a_tasks": {
@@ -1798,6 +1798,28 @@
           "notNull": false,
           "autoincrement": false
         },
+        "allow_list_pins": {
+          "name": "allow_list_pins",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "run_once": {
+          "name": "run_once",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "ran_once_at": {
+          "name": "ran_once_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "last_edited_by_agent_path": {
           "name": "last_edited_by_agent_path",
           "type": "text",
@@ -2872,13 +2894,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "required_launch_id": {
-          "name": "required_launch_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
         "agent_path": {
           "name": "agent_path",
           "type": "text",
@@ -3626,102 +3641,6 @@
         }
       },
       "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "room_seat_launch_requirements": {
-      "name": "room_seat_launch_requirements",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "destination_session_id": {
-          "name": "destination_session_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "source_session_id": {
-          "name": "source_session_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "source_dispatch_id": {
-          "name": "source_dispatch_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "start_seq": {
-          "name": "start_seq",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "end_seq": {
-          "name": "end_seq",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "payload": {
-          "name": "payload",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "state": {
-          "name": "state",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "room_seat_launch_requirements_destination_session_id_unique": {
-          "name": "room_seat_launch_requirements_destination_session_id_unique",
-          "columns": [
-            "destination_session_id"
-          ],
-          "isUnique": true
-        },
-        "room_seat_launch_requirements_source_dispatch_id_unique": {
-          "name": "room_seat_launch_requirements_source_dispatch_id_unique",
-          "columns": [
-            "source_dispatch_id"
-          ],
-          "isUnique": true
-        },
-        "room_seat_launch_source_once": {
-          "name": "room_seat_launch_source_once",
-          "columns": [
-            "source_session_id",
-            "end_seq"
-          ],
-          "isUnique": true
-        }
-      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},

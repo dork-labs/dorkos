@@ -308,6 +308,65 @@ async function levelOfAgent(
   return levelOfMode(declared, mode) ?? resolveCeilingLevel(declared, 'runtime-default');
 }
 
+/**
+ * THE CEILING for a call: the lower of the caller's real level and the task's
+ * agent's level, and Don't ask at most for a turn that read outside words. One
+ * function, so a task's mode and its allow list (DOR-4315) read one answer.
+ *
+ * @param caller - Who is calling.
+ * @param owner - The home of the agent the task belongs to, when known.
+ * @param runtime - The task's runtime.
+ * @param declared - The modes that runtime declares.
+ * @param sources - What the decision reads.
+ */
+export async function ceilingOf(
+  caller: AgentModeCaller,
+  owner: string | undefined,
+  runtime: string | null | undefined,
+  declared: DeclaredModes,
+  sources: AgentModeSources
+): Promise<TurnPermissionLevel> {
+  let ceiling = await levelOfCaller(caller, runtime, declared, sources);
+  if (owner)
+    ceiling = stricterLevel(ceiling, await levelOfAgent(owner, runtime, declared, sources));
+  if (caller.marked)
+    ceiling = stricterLevel(ceiling, levelOf(declared, AGENT_MODE_WITHOUT_A_PERSON));
+  return ceiling;
+}
+
+/**
+ * The level an agent's unattended chats run at now, on a task's runtime, for a
+ * caller outside this module: a task run re-checks it at fire time (DOR-4315).
+ *
+ * @param agentPath - The agent's home.
+ * @param runtime - The task's runtime.
+ * @param declared - The modes that runtime declares.
+ * @param sources - What the decision reads.
+ */
+export function agentLevelNow(
+  agentPath: string,
+  runtime: string | null | undefined,
+  declared: DeclaredModes,
+  sources: AgentModeSources
+): Promise<TurnPermissionLevel> {
+  return levelOfAgent(agentPath, runtime, declared, sources);
+}
+
+/**
+ * The home of the agent a task belongs to, for a caller outside this module.
+ *
+ * @param call - The write.
+ * @param caller - Who is making it.
+ * @param sources - What the decision reads.
+ */
+export function taskOwnerOf(
+  call: AgentModeCall,
+  caller: AgentModeCaller,
+  sources: AgentModeSources
+): string | undefined {
+  return ownerOf(call, caller, sources);
+}
+
 /** A declared mode's level, or reading only when the runtime does not declare it. */
 function levelOf(declared: DeclaredModes, mode: string): TurnPermissionLevel {
   return levelOfMode(declared, mode) ?? READ_ONLY_LEVEL;
@@ -454,11 +513,7 @@ export async function decideAgentModeCall(
   // real level and the task's agent's level; and a turn that read outside
   // words lands Don't ask at most.
   const owner = ownerOf(call, caller, sources);
-  let ceiling = await levelOfCaller(caller, runtime, declared, sources);
-  if (owner)
-    ceiling = stricterLevel(ceiling, await levelOfAgent(owner, runtime, declared, sources));
-  if (caller.marked)
-    ceiling = stricterLevel(ceiling, levelOf(declared, AGENT_MODE_WITHOUT_A_PERSON));
+  const ceiling = await ceilingOf(caller, owner, runtime, declared, sources);
   // Another agent's task is never refused a mode: a person decides it on a card,
   // whatever the mode (Security, Nov 2). The ceiling binds the caller's own.
   const othersTask =

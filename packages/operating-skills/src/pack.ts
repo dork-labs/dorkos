@@ -425,8 +425,12 @@ export interface OperatingSkill {
  * - 57: `managing-agents` teaches `update_agent_config`, the one way to change
  *   another agent's `.claude/` files (DOR-4266). An agent seeded at 56 would hand
  *   a hook or settings change to a person at a terminal instead.
+ * - 58: `scheduling-tasks` teaches the one-shot task (`runOnce`, no cron) and its
+ *   own exact commands (`allowList` at `dontAsk`, no card), and taking them back
+ *   with `allowList: []` after the run (DOR-4315). An agent seeded at 57 would
+ *   still believe the tool needs a cron and would ask the person for a card.
  */
-export const OPERATING_SKILLS_VERSION = 57;
+export const OPERATING_SKILLS_VERSION = 58;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

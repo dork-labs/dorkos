@@ -26,6 +26,8 @@ import type { ConnectorExecutionBroker } from './execution-broker.js';
 import type { DestructiveHoldService } from './destructive-hold.js';
 import { cancelWindowFor } from './destructive-hold-window.js';
 import { outsideWordsNote } from '../../core/turn-power/marked-turn-copy.js';
+import { markRunningTurnOutsider } from '../../core/turn-power/turn-levels.js';
+import { principalTurnOf } from '../../core/capabilities/marked-turn-holds.js';
 import type { HeldActionOutcome } from '../../notifications/connector-hold-notifications.js';
 import {
   CONNECTOR_REQUEST_LIVE_HOLD_MS,
@@ -247,9 +249,27 @@ function executionCapability(
       } finally {
         // A held action's waiting row is replaced by how it came out.
         if (held) executionDeps.holds?.recordOutcome(held, outcome);
+        // A read hands the turn someone else's text, whatever came back (DOR-3969).
+        if (classification === 'read') markReadTurn(context);
       }
     },
   });
+}
+
+/**
+ * Mark the turn a connector read ran in as one that read outside text (DOR-3969, spec §4.7): mail,
+ * a calendar invite, a shared file, an issue. Every read, not a list of apps, since nearly every
+ * read carries text someone else wrote. Placed from what the server verified, never from the
+ * call's arguments: the turn the runtime principal is bound to, and the session the surface named.
+ *
+ * @param context - The verified call.
+ */
+function markReadTurn(context: CapabilityInvocationContext): void {
+  const { principalTurn } = principalTurnOf(context.serverPrincipal);
+  if (principalTurn) markRunningTurnOutsider(principalTurn.sessionId, principalTurn.agentPath);
+  if (context.sessionId && context.sessionId !== principalTurn?.sessionId) {
+    markRunningTurnOutsider(context.sessionId, context.identity?.agentPath);
+  }
 }
 
 const listGrantedConnections = defineCapability({

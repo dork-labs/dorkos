@@ -1,7 +1,30 @@
-# Changelog archive: v0.1.0 – v0.135.3
+# Changelog archive: v0.1.0 – v0.135.4
 
 Released versions aged out of the top-level [CHANGELOG.md](../../CHANGELOG.md).
 See [changelog/README.md](../README.md) for the fragment workflow.
+
+## [0.135.4] - 2026-11-10
+
+> DorkOS 0.135.4 keeps DorkOS's own private files out of the canvas, room attachments and new chats an agent starts, and keeps scheduled runs out of your home folder.
+
+### Note for people upgrading
+
+- On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
+- A schedule with no agent that would have run in your home folder now runs in a new, private folder of its own each time. Give a schedule an agent if it needs a project's files. (DOR-4060)
+
+### Security
+
+- **The canvas, room attachments and new chats can't reach DorkOS's own private files.** These include its sign-in key, its settings and its saved secrets. The canvas, room attachments and new chats an agent starts now refuse them at every level, with nothing to approve. (DOR-4060)
+- **A scheduled run never runs in your home folder or DorkOS's data folder.** An agent's run that would have landed there runs in that agent's own folder instead. A run with no agent gets a new, private folder of its own. (DOR-4060)
+
+### Fixed
+
+- **An agent that forks a chat without naming a folder now works in its own folder.** A launch refused for its folder says to name one. (DOR-4060)
+- **An approval card for reading a canvas document names the file it reads.** (DOR-4060)
+
+### Going back
+
+0.135.4 doesn't change the database. To go back, install 0.135.3.
 
 ## [0.135.3] - 2026-11-10
 
@@ -8413,6 +8436,7 @@ save also made DorkOS reload that file. Now it writes only when something actual
 - Keyboard shortcuts for navigation
 - Directory picker for working directory selection
 
+[0.135.4]: https://github.com/dork-labs/dorkos/compare/v0.135.3...v0.135.4
 [0.135.3]: https://github.com/dork-labs/dorkos/compare/v0.135.2...v0.135.3
 [0.135.2]: https://github.com/dork-labs/dorkos/compare/v0.135.1...v0.135.2
 [0.135.1]: https://github.com/dork-labs/dorkos/compare/v0.135.0...v0.135.1

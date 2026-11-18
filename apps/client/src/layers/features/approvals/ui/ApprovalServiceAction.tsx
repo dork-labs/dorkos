@@ -22,6 +22,10 @@ const DEPTH_INDENT = ['pl-0', 'pl-3', 'pl-6', 'pl-9', 'pl-12', 'pl-15', 'pl-18',
 export const WIFI_KEPT_CARD_LINE =
   'Asks instead of waiting 60 seconds, because Wi-Fi access is on.';
 
+/** Why a card asks when the turn read words from outside the team (DOR-3969). */
+export const OUTSIDE_WORDS_KEPT_CARD_LINE =
+  'Asks first, because the agent just read words from outside your team.';
+
 /** "1 value is", "3 values are". */
 function cutLine(count: number): string {
   const values = count === 1 ? '1 value is' : `${count} values are`;
@@ -144,6 +148,11 @@ export function ApprovalServiceAction({
       {action.keptCardBecause === 'wifi-open' && (
         <p data-slot="approval-kept-card" className="text-muted-foreground mt-0.5 text-xs">
           {WIFI_KEPT_CARD_LINE}
+        </p>
+      )}
+      {action.keptCardBecause === 'outside-words' && (
+        <p data-slot="approval-kept-card" className="text-muted-foreground mt-0.5 text-xs">
+          {OUTSIDE_WORDS_KEPT_CARD_LINE}
         </p>
       )}
     </div>
