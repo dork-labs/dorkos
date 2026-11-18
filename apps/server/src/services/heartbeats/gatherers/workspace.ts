@@ -5,7 +5,9 @@
  *   than this checkout's configured author, read with `git log`. Never
  *   `fetch`: a beat reads what is on disk, it does not reach the network.
  * - A failing check on the agent's own branch, read with `gh pr checks` at most
- *   once per 30 minutes per checkout, cached between beats.
+ *   once per 30 minutes per checkout, cached between beats. Never on a Mac
+ *   whose Keychain this server may not read (the test runtime): `gh` keeps its
+ *   sign-in there and reads it itself (DOR-4423).
  *
  * An agent with no working directory skips it, and so does one whose working
  * directory is an agent folder: DorkOS never runs git or `gh` there (DOR-3343).
@@ -16,6 +18,7 @@
 import { execFile } from 'node:child_process';
 import { assertRepoConfigSafe, runSafeGit } from '@dorkos/shared/safe-git';
 import { mayRunGitHere } from '../../core/agent-identity/index.js';
+import { mayReadOsKeychain } from '../../../lib/keychain/os-keychain-policy.js';
 import type { Change, GatherContext, Gatherer } from './types.js';
 
 /** How often `gh pr checks` may run per checkout. */
@@ -86,6 +89,8 @@ async function readFailingChecks(
   cwd: string,
   signal: AbortSignal
 ): Promise<string[] | null> {
+  // `gh` reads its sign-in from the login Keychain on macOS (DOR-4423).
+  if (process.platform === 'darwin' && !mayReadOsKeychain()) return null;
   try {
     const output = await run('gh', ['pr', 'checks', '--json', 'name,bucket'], { cwd, signal });
     if (signal.aborted) return null;
