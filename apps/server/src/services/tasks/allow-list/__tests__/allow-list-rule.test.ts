@@ -213,4 +213,50 @@ describe('addingEntriesAsksAPerson', () => {
       })
     ).toBe(false);
   });
+
+  describe('a move off Bypass (PR 2)', () => {
+    const move = (adder: typeof OWN, added: string[] = [RUN]) =>
+      addingEntriesAsksAPerson({
+        added,
+        createsOneShot: false,
+        listEverSet: true,
+        narrowsFromBypass: true,
+        adder,
+      });
+
+    it('is the own agent’s call from its own unmarked chat, a list it had before included', () => {
+      expect(move(OWN)).toBe(false);
+    });
+
+    it.each([
+      ['a marked turn', { ...OWN, marked: true }],
+      ['a scheduled run', { ...OWN, scheduledRun: true }],
+      ['another chat or agent', { ...OWN, ownChatOwnTask: false }],
+    ])('asks a person from %s', (_name, adder) => {
+      expect(move(adder)).toBe(true);
+    });
+
+    it('asks a person from a marked turn even when it adds nothing new', () => {
+      expect(move({ ...OWN, marked: true }, [])).toBe(true);
+    });
+  });
+});
+
+describe('decideAllowList off Bypass (PR 2)', () => {
+  it('judges every entry, even one already on the list, and never as a narrowing', () => {
+    const verdict = decide({
+      body: { allowList: [RUN] },
+      before: [RUN, VERIFY],
+      createsOneShot: false,
+      listEverSet: true,
+      narrowsFromBypass: true,
+    });
+    expect(verdict).toMatchObject({ kind: 'ok', after: [RUN], removed: [VERIFY] });
+    const bad = decide({
+      body: { allowList: ['Bash(/usr/bin/python3 /home/sample/publish --dry-run)'] },
+      createsOneShot: false,
+      narrowsFromBypass: true,
+    });
+    expect(bad).toMatchObject({ kind: 'refused', code: 'allow_list_not_exact' });
+  });
 });

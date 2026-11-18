@@ -54,8 +54,8 @@ import {
   oneShotCreateRefusal,
   oneShotListNote,
   settleAllowListCall,
-  updateAllowListAlone,
 } from './task-tool-allow-list.js';
+import { updateTaskAllowList } from './task-tool-narrow-bypass.js';
 import {
   clampSchedulePermissionMode,
   taskWorkOf,
@@ -389,9 +389,10 @@ export function createUpdateScheduleHandler(
     if (err) return err;
     const refusal = refuseOperatorOnlyTaskFields(args);
     if (refusal) return refusal;
-    // An allow list narrows in a call of its own, with no card (DOR-4315).
+    // An allow list narrows in a call of its own, with no card (DOR-4315), or rides
+    // its own live Bypass task's move to Don't ask (PR 2).
     if (args.allowList !== undefined) {
-      return updateAllowListAlone(deps, args, {
+      return updateTaskAllowList(deps, args, {
         caller: agentModeCallerOf(resolveProvenance, callerMarks, callerAgent, deps.taskStore),
         ...callerAgentPathOf(resolveProvenance?.() ?? {}, callerAgent),
       });

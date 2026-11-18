@@ -107,6 +107,7 @@ export async function settleToolModeCall(
  * @param after - The task after it.
  * @param caller - Who made it.
  * @param vouched - Whether the task's own agent vouched for the write.
+ * @param list - Who set the task's allow list, when this call set it (DOR-4315).
  * @returns Whether the change stands.
  */
 export async function recordToolModeOutcome(
@@ -115,7 +116,8 @@ export async function recordToolModeOutcome(
   before: Task | null,
   after: Task,
   caller: AgentModeCaller,
-  vouched = false
+  vouched = false,
+  list?: { allowListSetBy: 'agent' }
 ): Promise<boolean> {
   const grant = mode.grant;
   if (!(await reportOwnPromptEdit(deps, before, after, caller, vouched))) return false;
@@ -128,6 +130,7 @@ export async function recordToolModeOutcome(
     meshCore: deps.meshCore,
     ...(deps.activityService ? { activity: deps.activityService } : {}),
     ...(caller.agentPath ? { agentPath: caller.agentPath } : {}),
+    ...(list ? { allowListSetBy: list.allowListSetBy } : {}),
   });
   if (!before && grant.via === 'card' && after.status === 'active') {
     deps.taskStore!.approvals.recordPersonApproval(after.id, scheduleContentKey(taskWorkOf(after)));

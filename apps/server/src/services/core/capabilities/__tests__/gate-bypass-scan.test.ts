@@ -792,6 +792,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         "the task's own agent lifting its file cap (DOR-3703, M4): runs only after `mayAttestFile` passes every same-agent condition (own agent and proposer, a home-vouched chat, an unmarked turn, not a scheduled run), and it writes only `prompt`, set to the body it just attested from the same read its diff came from (M-D): never a mode or a status",
       'services/runtimes/claude-code/mcp-tools/tasks/task-tool-mode.ts':
         'parks a schedule at pending_approval after an agent edit when its agent-set mode above Don’t ask has no person approval of the current content (DOR-3703, the run rule): it only ever takes running away, never grants a mode or an approval',
+      'services/runtimes/claude-code/mcp-tools/tasks/task-tool-narrow-bypass.ts':
+        "one write (DOR-4315 PR 2, Security's ruling of Nov 18): `permissionMode: 'dontAsk'`, with the agent's pinned allow list, on a task that is `active` at a mode that runs every command without asking, so it only narrows. Gated by `settleToolModeCall` (`tasks.set_mode`) and `settleAllowListCall` (its own chat, own task, unmarked, not a scheduled run, a level that runs any command unasked, Claude Code, exact pinned entries); both audited first; the SKILL file is written only while `agentModeSnapshotOf` still matches, and the row inside one transaction that re-checks the mode, status, work, agent and last editor. Never sets a status, an approval or any other mode",
       'services/tasks/task-store.ts': 'the definition itself',
     },
   },
