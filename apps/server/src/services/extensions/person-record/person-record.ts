@@ -57,6 +57,18 @@ export function runInPersonRequest<T>(extensionId: string, fn: (end: () => void)
   return personRequests.run(request, () => fn(end));
 }
 
+/**
+ * Run `fn` outside any person's request, so nothing it starts, now or later,
+ * records as that person. For work a request hands to an agent (a message, a
+ * new chat, an agent tool's handler), which is the agent's doing, not the
+ * person's, even while the person's response is still open.
+ *
+ * @param fn - The work to run outside.
+ */
+export function outsidePersonRequest<T>(fn: () => T): T {
+  return personRequests.exit(fn);
+}
+
 /** The words a refused record answers with. */
 const NOT_IN_PERSON_REQUEST =
   'DorkOS recorded nothing. personRecord.record works only while a signed-in person’s request ' +

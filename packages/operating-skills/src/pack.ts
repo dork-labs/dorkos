@@ -433,8 +433,11 @@ export interface OperatingSkill {
  *   (`requestedPermissionMode`, `requestedAllow`, up to 20 rules), which tasks can
  *   wake, and the approval record on each task (DOR-4678). An agent seeded at 58
  *   would not know the request fields exist or what `approvedBy` means.
+ * - 60: `scheduling-tasks` teaches moving an agent's own live Bypass task to Don't
+ *   ask with its own exact commands, in one call and with no card (DOR-4315 PR 2).
+ *   An agent seeded at 59 would leave a narrowable task at Bypass, or ask a person.
  */
-export const OPERATING_SKILLS_VERSION = 59;
+export const OPERATING_SKILLS_VERSION = 60;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the
