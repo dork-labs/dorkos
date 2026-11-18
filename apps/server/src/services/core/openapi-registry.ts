@@ -35,6 +35,7 @@ import { registerDomainOpenApi } from './openapi/domains.js';
 import { registerExtensionDecisionsOpenApi } from '../extensions/inbox/extension-decisions-openapi.js';
 import { registerExtensionRemovalOpenApi } from '../extensions/removal/extension-removal-openapi.js';
 import { registerExtensionApprovalSetOpenApi } from '../extensions/groups/extension-approval-set-openapi.js';
+import { registerExtensionMediaOpenApi } from '../extensions/http/media-openapi.js';
 import {
   PermissionModeSchema,
   SessionSchema,
@@ -8623,6 +8624,7 @@ registerCapabilitiesInOpenApi(composeCapabilityRegistryForDocs(), registry);
 registerExtensionDecisionsOpenApi(registry);
 registerExtensionRemovalOpenApi(registry);
 registerExtensionApprovalSetOpenApi(registry);
+registerExtensionMediaOpenApi(registry);
 
 documentFrontDoorStepUps(registry);
 

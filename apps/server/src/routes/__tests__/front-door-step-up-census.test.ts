@@ -174,6 +174,8 @@ const OTHER_FRONT_DOOR_CALLERS: Record<string, string> = {
   'admin.ts': 'Reset prepare creates only a one-use reset token; no lasting credential (N).',
   'extension-caller-token.ts':
     'Short-lived, session-bound frame identity only; no lasting credential (N).',
+  'extension-media.ts':
+    'Short-lived video link for one path of one app, as no person; no lasting credential (N).',
   'workbench-serve.ts':
     'Scoped serve/proxy URLs are transient preview grants, not front-door credentials (N).',
   'mcp-servers.ts': 'Already holds add, replace and widen; mcp-servers-step-up.test.ts covers it.',

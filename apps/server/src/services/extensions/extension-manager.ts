@@ -152,8 +152,6 @@ export interface ExtensionSkillDelivery {
  * Facade for the extension system.
  */
 export class ExtensionManager {
-  /** DorkOS's data directory, which every extension root is read relative to. */
-  readonly dorkHome: string;
   private discovery: ExtensionDiscovery;
   private compiler: ExtensionCompiler;
   private serverLifecycle: ExtensionServerLifecycle;
@@ -198,7 +196,8 @@ export class ExtensionManager {
   /**
    * Build the extension system rooted at one DorkOS data directory.
    *
-   * @param dorkHome - DorkOS's data directory.
+   * @param dorkHome - DorkOS's data directory, which every extension root is
+   *   read relative to.
    * @param coreExtensions - Tier metadata for the bundled core extensions.
    * @param options - Server lifecycle options (`ServerLifecycleOptions` in
    *   `extension-server-lifecycle.ts`): how long a server `register()` may
@@ -206,11 +205,10 @@ export class ExtensionManager {
    *   isolated extensions. Tests shorten them.
    */
   constructor(
-    dorkHome: string,
+    readonly dorkHome: string,
     coreExtensions: CoreExtensionInfo[] = [],
     options: Omit<ServerLifecycleOptions, 'recordOf' | 'onStatusChange'> = {}
   ) {
-    this.dorkHome = dorkHome;
     this.coreExtensions = new Map(coreExtensions.map((info) => [info.id, info]));
     this.discovery = new ExtensionDiscovery(dorkHome);
     this.compiler = new ExtensionCompiler(dorkHome);
@@ -1241,6 +1239,9 @@ export class ExtensionManager {
   getServerHandler(id: string): ExtensionHttpHandler | null {
     return this.serverLifecycle.getHandler(id);
   }
+
+  /** How the media route asks a running extension for a video (DOR-4321), or null. */
+  readonly getMediaFetch = (id: string) => this.serverLifecycle.mediaFetch(id);
 
   /**
    * Read a compiled bundle for serving to the client.

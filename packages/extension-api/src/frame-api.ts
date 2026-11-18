@@ -65,6 +65,17 @@ export interface FrameExtensionAPI extends Omit<
    * A failed reply rejects like {@link FrameExtensionAPI.request}.
    */
   media(path: string): Promise<Blob>;
+  /**
+   * A link to a video on this app's own server router, for `<video src>`.
+   * The browser streams it in ranges, so long videos play and seek with no
+   * size cap. Requires capabilities.http, and a `fetch` handler or a server
+   * half in its own process. The route must answer MP4 or WebM, and is told
+   * its caller is not a person. The link is for this app's frame: anyone
+   * holding it can play that video, so never show it as text. It lasts 10
+   * minutes after its last use and 2 hours at most. Use
+   * {@link FrameExtensionAPI.media} for pictures.
+   */
+  mediaUrl(path: string): Promise<string>;
   /** Read this app's non-secret manifest settings. */
   readonly settings: { get<T = unknown>(): Promise<T> };
   /**

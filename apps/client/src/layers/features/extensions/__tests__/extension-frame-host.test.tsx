@@ -184,6 +184,53 @@ describe('isolated app host', () => {
     expect(await call('media', ['/../quill/cover.png'])).toHaveProperty('error');
     expect(fetch).toHaveBeenCalledTimes(1);
   });
+  describe('a video link (DOR-4321)', () => {
+    const URL_PATH = `/api/extensions/media/${'a'.repeat(43)}`;
+    it('is refused without the declared capability, before asking the server', async () => {
+      await start();
+      expect(await call('mediaUrl', ['/videos/intro.mp4'])).toHaveProperty('error');
+      expect(fetch).not.toHaveBeenCalled();
+    });
+    it('refuses a path that leaves the app, before asking the server', async () => {
+      await start({ capabilities: { http: true } });
+      for (const path of ['../x', '/../quill/x.mp4', '/a//b.mp4', '/a%2Fb.mp4']) {
+        expect(await call('mediaUrl', [path])).toHaveProperty('error');
+      }
+      expect(fetch).not.toHaveBeenCalled();
+    });
+    it('asks for the path below the app and answers an absolute link', async () => {
+      await start({ capabilities: { http: true } });
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response(JSON.stringify({ url: URL_PATH }), { status: 201 })
+      );
+      const reply = (await call('mediaUrl', ['/videos/intro.mp4'])) as { value: string };
+      expect(reply.value).toBe(new URL(URL_PATH, window.location.origin).href);
+      expect(fetch).toHaveBeenCalledWith(
+        '/api/extensions/atlas/media-tickets',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ path: '/videos/intro.mp4' }),
+          headers: expect.objectContaining({ 'X-DorkOS-Extension': 'atlas' }),
+        })
+      );
+    });
+    it('rejects a refusal, and never hands over another address', async () => {
+      await start({ capabilities: { http: true } });
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ error: 'That app is not running, or cannot stream video.' }),
+          {
+            status: 404,
+          }
+        )
+      );
+      expect(await call('mediaUrl', ['/a.mp4'])).toHaveProperty('error');
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response(JSON.stringify({ url: 'https://elsewhere.example/x.mp4' }), { status: 201 })
+      );
+      expect(await call('mediaUrl', ['/a.mp4'])).toHaveProperty('error');
+    });
+  });
   describe('calling another app (DOR-3293)', () => {
     const ledger = {
       id: 'ledger',

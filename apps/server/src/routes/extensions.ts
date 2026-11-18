@@ -109,7 +109,7 @@ const SetSettingBodySchema = z.object({
 });
 
 /** Validates extension IDs match the manifest schema pattern (kebab-case alphanumeric). */
-const SAFE_EXT_ID = /^[a-z0-9][a-z0-9-]*$/;
+export const SAFE_EXT_ID = /^[a-z0-9][a-z0-9-]*$/;
 
 /**
  * What `/enable` and `/disable` say when a bar refuses them (DOR-1507).

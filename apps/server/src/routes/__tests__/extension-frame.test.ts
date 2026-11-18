@@ -6,7 +6,11 @@ import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 
 import { resolveAuthTrustedOrigins } from '../../lib/trusted-origins.js';
-import { createExtensionFrameRoutes, frameBootstrap } from '../extension-frame.js';
+import {
+  createExtensionFrameRoutes,
+  extensionFrameCsp,
+  frameBootstrap,
+} from '../extension-frame.js';
 
 async function load() {
   const res = await createExtensionFrameRoutes().request('/');
@@ -59,6 +63,28 @@ describe('GET /api/extension-frame', () => {
     const { csp } = await load();
     expect(csp).toContain('img-src data: blob:');
     expect(csp).toContain('media-src blob:');
+  });
+
+  it('lets video load by ticket from DorkOS’s own origins under the media path only (DOR-4321)', async () => {
+    const { csp } = await load();
+    const media = csp
+      .split(';')
+      .map((part) => part.trim())
+      .find((part) => part.startsWith('media-src '));
+    const origins = [...new Set(['http://localhost', ...resolveAuthTrustedOrigins()])];
+    expect(media).toBe(
+      ['media-src blob:', ...origins.map((origin) => `${origin}/api/extensions/media/`)].join(' ')
+    );
+    expect(media).not.toContain('*');
+    expect(media).not.toMatch(/ https?:\/\/[^/ ]+(?: |$)/);
+    // Fetching stays closed: the player loads the link, the app's code cannot.
+    expect(csp).toContain("connect-src 'none'");
+  });
+
+  it('keeps an origin that could end the directive out of the media list', () => {
+    expect(extensionFrameCsp('n', ['http://a;script-src *', 'http://ok'])).toContain(
+      'media-src blob: http://ok/api/extensions/media/;'
+    );
   });
 
   it('carries no app code or data, and is never cached', async () => {

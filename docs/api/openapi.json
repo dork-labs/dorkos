@@ -22023,6 +22023,31 @@
           "members",
           "setHash"
         ]
+      },
+      "ExtensionMediaTicket": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Where the video plays: `/api/extensions/media/<ticket>`, on this server."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "ExtensionMediaTicketRequest": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 4000,
+            "description": "The path below the app, e.g. `/videos/intro.mp4`. No query, no empty, `.` or `..` part, and no `%`, `\\`, `#` or control character."
+          }
+        },
+        "required": [
+          "path"
+        ]
       }
     },
     "parameters": {}
@@ -105433,6 +105458,172 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/extensions/{id}/media-tickets": {
+      "post": {
+        "tags": [
+          "Extensions"
+        ],
+        "summary": "Get a video link for an app’s frame",
+        "description": "What `api.mediaUrl(path)` asks for. Only a person’s DorkOS window may ask: the request must name a trusted `Origin`, and an agent or an API key is refused. The app must use the frame (`clientApiVersion: 2`), declare `capabilities.http`, and be running with a `fetch` handler or in its own process. The link works for 10 minutes after its last use and 2 hours at most, an app keeps 16, and every link of an app ends when it stops, reloads or updates. It plays that one path and acts as no person.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExtensionMediaTicketRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The video link",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExtensionMediaTicket"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid extension id, or a path that is not plainly inside the app",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login is enabled and the caller is not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a person’s DorkOS window, or a write stamped by another app",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The app is not running, does not use the frame, or cannot stream video",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/extensions/media/{ticket}": {
+      "get": {
+        "tags": [
+          "Extensions"
+        ],
+        "summary": "Play an app’s video by its link",
+        "description": "Needs no sign-in: the ticket is the credential. DorkOS asks the app’s own route for the ticket’s path with only `Range` and `If-Range`, tells the app its caller is not a person, and streams the answer. A query string is ignored. `HEAD` answers the headers only; any other method is answered `405`. Only `200`, `206` and `416` pass, a success must be `video/mp4` or `video/webm`, and only `Content-Type`, `Content-Length`, `Content-Range`, `Accept-Ranges`, `ETag` and `Last-Modified` cross from the app. Every answer carries `X-Content-Type-Options: nosniff`, `Content-Security-Policy: sandbox; default-src 'none'`, `Content-Disposition: inline`, `Cache-Control: private, no-store`, `Referrer-Policy: no-referrer` and `Cross-Origin-Resource-Policy: cross-origin`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "ticket",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "range",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "if-range",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The whole video",
+            "content": {
+              "video/mp4": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "video/webm": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "206": {
+            "description": "The range asked for"
+          },
+          "404": {
+            "description": "The link is unknown or has expired (the same answer for both)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Only GET and HEAD",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The app answered with something that is not MP4 or WebM"
+          },
+          "416": {
+            "description": "The range asked for is not in the video"
+          },
+          "502": {
+            "description": "The app did not answer, or answered with another status"
           }
         }
       }

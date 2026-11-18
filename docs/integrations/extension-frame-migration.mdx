@@ -179,6 +179,22 @@ const src = URL.createObjectURL(blob);
 
 `api.media` needs `capabilities.http`, and follows the same path rule as `api.request`. It takes PNG, JPEG, WebP, GIF, AVIF, MP4 and WebM, up to 32 MB. Your route must send the right `Content-Type`; DorkOS types the file from it. SVG is refused, because an SVG file can carry script. A failed reply rejects with its status and body, like `api.request`.
 
+### Long video
+
+`api.media` reads the whole file before it shows anything, so it suits pictures and short clips. For a long video, ask for a link instead and give it to `<video src>`:
+
+```tsx
+const src = await api.mediaUrl('/videos/intro.mp4');
+// <video src={src} controls />
+```
+
+The browser then loads the video in pieces as it plays, so it starts quickly, you can skip ahead, and there is no size limit. A few things to know:
+
+- `api.mediaUrl` needs `capabilities.http`, and your server half needs a `fetch` handler or `"runtime": "subprocess"`. An app with only an Express router can't stream video this way.
+- The path is a plain path inside your app: no query, no `#`, no empty part, no `.` or `..`, and no encoded characters such as `%2F`.
+- Your route must answer `video/mp4` or `video/webm`. It gets only the `Range` and `If-Range` headers, and is told its caller is not a person, so `requirePerson()` refuses it. Answer `206 Partial Content` for a range request if you can. Other statuses, redirects and other types are refused.
+- The link is for your app's frame. Anyone holding it can play that one video, so never show it as text or post it in a chat or room. It lasts 10 minutes after it was last used and 2 hours at most. Your app keeps 16 links at a time. Turning your app off, reloading it or updating it ends every link, so ask again when a video stops loading.
+
 ## Saving a file
 
 A link with `download` does nothing inside the frame. Ask DorkOS instead:

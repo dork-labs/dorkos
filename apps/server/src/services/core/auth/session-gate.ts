@@ -23,6 +23,13 @@
  *   block the credential-less frame. Dev-server previews need no exemption at
  *   all: they no longer ride this server's routes, they answer on a listener of
  *   their own (DOR-1260).
+ * - **`/api/extensions/media/<ticket>`, and only that exact shape** — a video an
+ *   app's frame plays (`routes/extension-media.ts`, DOR-4321). The frame is an
+ *   opaque origin and its `<video>` carries no cookie, so the 256-bit ticket in
+ *   the path, minted by the gated `POST /api/extensions/:id/media-tickets`, is
+ *   the capability. It names one path of one app and acts as no person. Only a
+ *   whole ticket is exempt, never a prefix, so every route of an app called
+ *   `media` stays gated.
  * - **On an agent computer, none of these.** Its gate decides every path,
  *   not only `/api` and `/mcp`: the liveness probe passes, `/mcp` and A2A go
  *   to their own authorizer, and everything else needs a live agent identity
@@ -143,6 +150,12 @@ function isGatedHealthPath(path: string): boolean {
 }
 
 /**
+ * A media URL with a whole ticket (43 base64url characters), lowercased as the
+ * gate sees every path.
+ */
+const MEDIA_TICKET_PATH = /^\/api\/extensions\/media\/[a-z0-9_-]{43}$/;
+
+/**
  * Paths that always pass while login is enabled: the Better Auth endpoints (so
  * sign-in is reachable), the health probe, and on a hub the link path.
  */
@@ -154,6 +167,8 @@ function isExemptPath(path: string): boolean {
     path.startsWith('/api/health/') ||
     // Signed-token-authorized embedded-browser content (see the module doc).
     path.startsWith('/api/workbench/serve/') ||
+    // A video an app's frame plays, by its ticket (see the module doc).
+    MEDIA_TICKET_PATH.test(path) ||
     // A computer redeeming a link code, on a hub only (see the module doc).
     (path === RELAY_LINK_PATH && currentServerRole() === 'hub') ||
     // A new approvals passkey coming back to this computer (see the module doc).
