@@ -105,7 +105,6 @@ import { conflictingTimingRequest } from '../../../../tasks/timing/effective-tim
 import { updateRunRefusal } from './task-tool-run-refusals.js';
 import { attestNewTask, attestToolWrite, fileStateBefore } from './task-tool-file-cap.js';
 import { marksOf } from '../../../../core/turn-power/turn-levels.js';
-import { marksHold } from '../../../../core/turn-power/turn-marks.js';
 import { settleDeclaredTask } from '../../../../core/turn-power/declared-readers.js';
 import {
   callingTurnIsFull,
@@ -113,6 +112,7 @@ import {
   decideCrossAgent,
   forWhomOf,
   isMarkedRefusal,
+  markedEditParks,
   recordOtherEdit,
 } from './task-tool-cross-agent.js';
 
@@ -661,11 +661,7 @@ export function createUpdateScheduleHandler(
     // An edit from a marked turn parks it for a person, whatever it changed, and keeps the marks
     // for its card (DOR-3036).
     const marks = callerMarks?.() ?? marksOf(caller.sessionId, caller.agentPath);
-    if (
-      mode.grant?.via !== 'card' &&
-      marksHold(marks) &&
-      deps.taskStore!.approvals.markOrigin(updated.id, marks)
-    ) {
+    if (markedEditParks(deps, updated.id, marks, mode.grant?.via === 'card')) {
       if (existing.status !== 'pending_approval') settled = 'parked';
     }
     // Who changed it; and an approval never covers a later version (DOR-3703).
