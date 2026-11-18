@@ -12,7 +12,9 @@
  * extension's own per-extension data rather than a leaf of `extensions` in
  * `~/.dork/config.json` — so an agent may legitimately write them. They, and
  * the data route, are bound to the caller instead (DOR-3066,
- * {@link module:routes/extension-write-binding}). Every route
+ * {@link module:routes/extension-write-binding}). A person setting a secret
+ * waits for the owner to confirm it's them (DOR-4355); an agent's goes on, and
+ * removing one stays immediate. Every route
  * here that records an Activity event therefore reads WHO asked
  * (`readActivityActor`) instead of asserting it was the person; they all claimed
  * `user` / `'You'` before DOR-1801, so an agent setting an API key showed up in
@@ -53,6 +55,8 @@ import { registerExtensionPrefsRoutes } from './extensions-prefs.js';
 import { liveForwardDeps, registerExtensionForwardRoutes } from './extensions-forward.js';
 import type { PersonForwardDeps } from '../services/extensions/forward/person-forward.js';
 import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
+import { runFrontDoorWrite } from './front-door-step-up.js';
+import { markedExtensionSecretRefusal } from './extension-secret-agent-gate.js';
 import {
   OPERATOR_ONLY_CONFIG_CODE,
   OPERATOR_ONLY_CONFIG_ERROR,
@@ -218,6 +222,24 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
       // so, rather than being told whether the extension exists.
       const refused = refusedNotAPerson(c, EXTENSION_TOGGLE_BAR);
       if (refused) return refused;
+      // The same lasting setting `PATCH /api/config` holds for `extensions.enabled` (DOR-4355).
+      return await runFrontDoorWrite(c, {
+        kind: 'extensions.enable',
+        target: id,
+        input: {},
+        reason: `Turn on the extension ${id}.`,
+        subject: 'which extensions run',
+        run: () => enableExtension(c, id),
+      });
+    } catch (err) {
+      logger.error(`[Extensions] Failed to enable ${id}`, err);
+      return c.json({ error: 'Failed to enable extension' }, 500);
+    }
+  });
+
+  /** Turn one extension on, once its bars and confirmation have passed. */
+  async function enableExtension(c: Context<ApiEnv>, id: string): Promise<Response> {
+    try {
       const result = await extensionManager.enable(id);
       if (!result) {
         return c.json({ error: `Extension '${id}' not found or cannot be enabled` }, 404);
@@ -247,7 +269,7 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
       logger.error(`[Extensions] Failed to enable ${id}`, err);
       return c.json({ error: 'Failed to enable extension' }, 500);
     }
-  });
+  }
 
   // POST /api/extensions/:id/disable -- Disable an extension
   router.post('/:id/disable', async (c) => {
@@ -467,23 +489,46 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
         return c.json({ error: `Secret '${key}' not declared in extension manifest` }, 400);
       }
 
-      const store = new ExtensionSecretStore(id, dorkHome);
-      await store.set(key, parsed.data.value);
-
-      await activity?.emit({
-        // No person bar on this route, so this genuinely varies: an agent that
-        // identified itself is named, and the feed stops crediting the person
-        // with a machine's write (DOR-1801).
-        ...readActivityActor(honoRequestFacts(c)),
-        category: 'config',
-        eventType: 'config.extension_updated',
-        resourceType: 'extension',
-        resourceId: id,
-        resourceLabel: record.manifest.name,
-        summary: `Updated secret "${key}" for extension ${record.manifest.name}`,
+      const { value } = parsed.data;
+      const run = async () => {
+        await new ExtensionSecretStore(id, dorkHome).set(key, value);
+        await activity?.emit({
+          // No person bar on this route, so this genuinely varies: an agent that
+          // identified itself is named, and the feed stops crediting the person
+          // with a machine's write (DOR-1801). A held write is confirmed by the
+          // same browser that asked, so the asking request names who acted.
+          ...readActivityActor(honoRequestFacts(c)),
+          category: 'config',
+          eventType: 'config.extension_updated',
+          resourceType: 'extension',
+          resourceId: id,
+          resourceLabel: record.manifest.name,
+          summary: `Updated secret "${key}" for extension ${record.manifest.name}`,
+        });
+        return c.json({ ok: true });
+      };
+      // An agent may still set one (DOR-1801); a person's waits for the owner (DOR-4355).
+      // The value stays out of the held input, so the sheet never carries it.
+      const caller = honoRequestFacts(c);
+      // Not from a turn that read outside words, or an agent DorkOS can't name (Security S3).
+      const marked = markedExtensionSecretRefusal(c);
+      if (marked) return c.json(marked, 403);
+      if (caller.agentIdentity !== undefined) return await run();
+      return await runFrontDoorWrite(c, {
+        kind: 'extensions.secret',
+        target: id,
+        input: { key },
+        reason: `Save the secret ${key} for the extension ${id}.`,
+        subject: 'the secrets extensions hold',
+        run: async () => {
+          try {
+            return await run();
+          } catch (err) {
+            logger.error(`[Extensions] Failed to set secret for ${id}`, err);
+            return c.json({ error: 'Failed to set secret' }, 500);
+          }
+        },
       });
-
-      return c.json({ ok: true });
     } catch (err) {
       logger.error(`[Extensions] Failed to set secret for ${id}`, err);
       return c.json({ error: 'Failed to set secret' }, 500);

@@ -29,8 +29,11 @@ const target = swappableServer();
 const REFUSED = { error: WIFI_RAISE_REFUSAL, code: NOT_FROM_WIFI };
 
 /** The real routes over an in-memory world on Full power, reached from Wi-Fi on `x-test-via`. */
-function build(): { app: Server; world: ReturnType<typeof createPermissionWorld> } {
-  const world = createPermissionWorld({ preset: 'full', agents: TWO_AGENTS });
+function build(options: Parameters<typeof createPermissionWorld>[0] = { preset: 'full' }): {
+  app: Server;
+  world: ReturnType<typeof createPermissionWorld>;
+} {
+  const world = createPermissionWorld({ ...options, agents: TWO_AGENTS });
   const built = honoGroupListener(
     {
       path: '/api',
@@ -76,6 +79,20 @@ describe('the preset from Wi-Fi', () => {
       .set('x-test-via', 'wifi')
       .send({ preset: 'careful', applyToAgents: ['agent-test'], surface: 'settings' });
     expect(along.status).toBe(403);
+    expect(world.events).toEqual([]);
+  });
+
+  it.each([
+    ['choosing Careful again would clear a Blocked', 'careful', { messages: 'blocked' }],
+    ['moving into Careful would drop an Ask Careful allows', 'trusted', { messages: 'ask' }],
+  ] as const)('refuses Careful when %s', async (_label, preset, areas) => {
+    const { app, world } = build({ preset, defaults: { areas: { ...areas }, actions: {} } });
+    const res = await request(app)
+      .put('/api/permissions/preset')
+      .set('x-test-via', 'wifi')
+      .send({ preset: 'careful', surface: 'settings' });
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual(REFUSED);
     expect(world.events).toEqual([]);
   });
 

@@ -80,6 +80,7 @@ import { readQuery } from '../http/request-query.js';
 import { mountAccountEligibilityRoutes } from './runtimes-account-eligibility.js';
 import {
   refuseNonLocalProvisioning,
+  holdCredentialSave,
   refuseCredentialChange,
   refuseNonLoopback,
   requestProtocol,
@@ -212,18 +213,28 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
     if (!parsed.success) {
       return c.json({ ok: false, error: 'An OpenRouter key is required.' }, 400);
     }
-    try {
-      await storeOpenRouterKeyReference(parsed.data.key);
-      return c.json({ ok: true });
-    } catch (err) {
-      // Invalid key / unreachable OpenRouter are expected outcomes — return an
-      // honest result, not an exception. Never surface the key.
-      if (err instanceof OpenRouterError) {
-        return c.json({ ok: false, error: err.message });
-      }
-      logger.error('[Runtimes] OpenRouter key store failed unexpectedly');
-      return c.json({ ok: false, error: 'Could not save the OpenRouter key.' }, 500);
-    }
+    const { key } = parsed.data;
+    // The same kind of key as a provider's: it chooses whose account every prompt
+    // is sent on (Security S6 on DOR-4355 M3).
+    return holdCredentialSave(c, {
+      target: 'opencode-provider:openrouter',
+      input: { op: 'openrouter-key' },
+      reason: "Send OpenCode's prompts to OpenRouter, with the key you typed.",
+      run: async () => {
+        try {
+          await storeOpenRouterKeyReference(key);
+          return c.json({ ok: true });
+        } catch (err) {
+          // Invalid key / unreachable OpenRouter are expected outcomes — return an
+          // honest result, not an exception. Never surface the key.
+          if (err instanceof OpenRouterError) {
+            return c.json({ ok: false, error: err.message });
+          }
+          logger.error('[Runtimes] OpenRouter key store failed unexpectedly');
+          return c.json({ ok: false, error: 'Could not save the OpenRouter key.' }, 500);
+        }
+      },
+    });
   });
 
   /**
@@ -234,7 +245,15 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
   router.post('/opencode/openrouter/oauth/start', (c) => {
     const refused = refuseCredentialChange(c);
     if (refused) return refused;
-    return c.json(startOpenRouterOAuth(openRouterCallbackBase(c)));
+    const callbackBase = openRouterCallbackBase(c);
+    // The sign-in ends in a key that decides where prompts go, so the link is only
+    // minted once the owner confirms it's them (Security S6 on DOR-4355 M3).
+    return holdCredentialSave(c, {
+      target: 'opencode-provider:openrouter',
+      input: { op: 'openrouter-oauth-start' },
+      reason: 'Sign OpenCode in to OpenRouter, so its prompts go to your OpenRouter account.',
+      run: async () => c.json(startOpenRouterOAuth(callbackBase)),
+    });
   });
 
   /**
@@ -434,21 +453,29 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
     if (!parsed.success) {
       return c.json({ error: 'A provider id and API key are required.' }, 400);
     }
-    try {
-      const { ref } = await storeProviderCredential({
-        providerId: parsed.data.providerId,
-        secret: parsed.data.secret,
-        baseURL: parsed.data.baseURL ?? null,
-      });
-      return c.json({ ref });
-    } catch (err) {
-      if (err instanceof ConnectError) {
-        return c.json({ error: err.message }, err.status as ContentfulStatusCode);
-      }
-      // Never include the secret or a raw stack in the response or log.
-      logger.error('[Runtimes] Provider credential store failed unexpectedly');
-      return c.json({ error: 'Could not save the provider key.' }, 500);
-    }
+    const { providerId, secret } = parsed.data;
+    const baseURL = parsed.data.baseURL ?? null;
+    // The key and the address choose where every prompt goes (Security S6 on DOR-4355 M3).
+    return holdCredentialSave(c, {
+      target: `opencode-provider:${providerId}`,
+      input: { op: 'provider-credential', providerId, baseURL },
+      reason: baseURL
+        ? `Send OpenCode's prompts to ${providerId} at ${baseURL}, with the key you typed.`
+        : `Send OpenCode's prompts to ${providerId}, with the key you typed.`,
+      run: async () => {
+        try {
+          const { ref } = await storeProviderCredential({ providerId, secret, baseURL });
+          return c.json({ ref });
+        } catch (err) {
+          if (err instanceof ConnectError) {
+            return c.json({ error: err.message }, err.status as ContentfulStatusCode);
+          }
+          // Never include the secret or a raw stack in the response or log.
+          logger.error('[Runtimes] Provider credential store failed unexpectedly');
+          return c.json({ error: 'Could not save the provider key.' }, 500);
+        }
+      },
+    });
   });
 
   // The DorkOS model setup, in its own module. Mounted before the generic
@@ -666,17 +693,26 @@ export function createRuntimesRoutes(deps: RuntimesRouterDeps = {}): Hono<ApiEnv
     if (!parsed.success) {
       return c.json({ error: 'An API key is required.' }, 400);
     }
-    try {
-      const { ref } = await storeRuntimeCredential(type, parsed.data.secret);
-      return c.json({ ref });
-    } catch (err) {
-      if (err instanceof ConnectError) {
-        return c.json({ error: err.message }, err.status as ContentfulStatusCode);
-      }
-      // Never include the secret or a raw stack in the response or log.
-      logger.error('[Runtimes] Credential store failed unexpectedly', { type });
-      return c.json({ error: 'Could not save the API key.' }, 500);
-    }
+    const { secret } = parsed.data;
+    // The key chooses whose account every prompt is sent on (Security S6 on DOR-4355 M3).
+    return holdCredentialSave(c, {
+      target: `runtime:${type}`,
+      input: { op: 'runtime-credential', type },
+      reason: `Run ${type} on the key you typed.`,
+      run: async () => {
+        try {
+          const { ref } = await storeRuntimeCredential(type, secret);
+          return c.json({ ref });
+        } catch (err) {
+          if (err instanceof ConnectError) {
+            return c.json({ error: err.message }, err.status as ContentfulStatusCode);
+          }
+          // Never include the secret or a raw stack in the response or log.
+          logger.error('[Runtimes] Credential store failed unexpectedly', { type });
+          return c.json({ error: 'Could not save the API key.' }, 500);
+        }
+      },
+    });
   });
 
   // Claude sign-ins require an owner and a server-resolved registry target.

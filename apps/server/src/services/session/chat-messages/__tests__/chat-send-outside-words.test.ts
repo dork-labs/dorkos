@@ -15,6 +15,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createTestDb } from '@dorkos/test-utils/db';
+import { sessionMetadata } from '@dorkos/db';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import { noopLogger } from '@dorkos/shared/logger';
 import type { StreamEvent } from '@dorkos/shared/types';
@@ -346,7 +347,16 @@ describe('a chat_send to a chat renamed on an earlier turn, by its born id', () 
 });
 
 describe('a chat_send from a clean chat (control)', () => {
+  afterEach(() => setContinuationHoldDb(undefined));
+
   it('wakes a turn that can still change memory and hand over the browser', async () => {
+    // Clean means known and clean: a sender nothing knows holds (DOR-4698), so Ana's chat has a
+    // stored record, as a live chat does, with nothing in it.
+    const db = createTestDb();
+    setContinuationHoldDb(db);
+    db.insert(sessionMetadata)
+      .values({ sessionId: ana, runtime: 'claude-code', createdAt: '2026-11-18' })
+      .run();
     await anaSendsBo();
     expect(notedAtSend).toEqual([false]);
     expect((await boWrites({ action: 'remove', old_text: 'deploys need' })).saved).toBe(true);

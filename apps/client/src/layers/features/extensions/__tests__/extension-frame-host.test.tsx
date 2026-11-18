@@ -147,9 +147,46 @@ describe('isolated app host', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(port.messages).toContainEqual({
       type: 'theme',
-      theme: { className: 'dark', style: '' },
+      theme: expect.objectContaining({ className: 'dark', style: '' }),
     });
     document.documentElement.className = '';
+  });
+  // Purpose: a frame is its own document, so it starts at the browser's 16 px.
+  // It is told the text size of the place it sits in, so a status item draws
+  // at the host's 12 px (DOR-4330).
+  it('tells the frame the text size of the place it sits in', async () => {
+    document.body.style.fontSize = '12px';
+    await start();
+    document.documentElement.className = 'dark';
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(port.messages).toContainEqual({
+      type: 'theme',
+      theme: expect.objectContaining({ className: 'dark', fontSize: '12px' }),
+    });
+    document.documentElement.className = '';
+    document.body.style.fontSize = '';
+  });
+  // Purpose: crossing the phone width changes the host's sizes through a media
+  // query, which no attribute watch sees, so the frame is told again (DOR-4330).
+  it('tells the frame again when the window crosses the phone width, until it closes', async () => {
+    const listeners = new Set<() => void>();
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({
+        addEventListener: (_: string, fn: () => void) => listeners.add(fn),
+        removeEventListener: (_: string, fn: () => void) => listeners.delete(fn),
+      }))
+    );
+    await start();
+    const before = port.messages.length;
+    for (const fn of listeners) fn();
+    expect(port.messages.slice(before)).toContainEqual({
+      type: 'theme',
+      theme: expect.objectContaining({ fontSize: expect.any(String) }),
+    });
+    stop?.();
+    stop = undefined;
+    expect(listeners.size).toBe(0);
   });
   it('hands an app its own route’s failure as status and body, with no headers', async () => {
     await start({ capabilities: { http: true } });

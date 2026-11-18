@@ -37,6 +37,7 @@ import {
   noteRoomTurnWords,
   roomTurnReadOutsideWords,
 } from '../../core/turn-power/outside-words.js';
+import { liveOutsideTurnCheck } from '../local-browser/outside-turn.js';
 import { MessageQueueStore, setMessageQueueStore } from '../message-queue-store.js';
 import { getOrCreateProjector, disposeProjector } from '../session-state-projector.js';
 
@@ -44,6 +45,8 @@ const PERSON = 'window-a';
 const CHAT_A = 'chat:chat-a';
 const CHAT_C = 'chat:chat-c';
 const RELAY = 'relay:connection-1';
+/** How the composer route sends the owner's own words (`launch-session.ts`). */
+const OWNER = { turnStarter: 'person' } as const;
 
 const TIGHT: TurnPermissionLevel = { asks: 'always', reach: 'edit' };
 const MIDDLE: TurnPermissionLevel = { asks: 'when-risky', reach: 'workspace' };
@@ -351,6 +354,81 @@ describe('the outside words a row another chat sent carries on (DOR-4029)', () =
     await settle();
     expect(resolver).toHaveBeenCalledTimes(1);
     expect(seen).toEqual([false, false]);
+  });
+
+  // DOR-4693: the note is the turn's, not the chat's. Only a room turn ever cleared it, so in a
+  // direct chat one agent message that carried outside words marked every owner turn after it.
+  it('clears for the owner’s own next send, which carries none', async () => {
+    setQueuedChatWordsResolver(() => true);
+    const seen: boolean[] = [];
+    runtime.withScenarios([noting(seen), noting(seen)]);
+    await send('from a marked chat', CHAT_A);
+    await settle();
+    await send('the owner, afterwards', PERSON, OWNER);
+    await settle();
+    expect(seen).toEqual([true, false]);
+  });
+
+  // Security's condition: only the owner's own clean send ends it.
+  it.each([
+    ['a chat message whose sender held a mark, even with no words', CHAT_A, {}],
+    ['a heartbeat', 'heartbeat', { turnStarter: 'agent', unattended: true }],
+    ['a mini app', 'extension:notes', { turnStarter: 'agent' }],
+    ['the web relay, which starts as a person', 'relay:web-1', OWNER],
+    ['the hand-back wake, which starts as a person', 'local-browser-hand-back', OWNER],
+    [
+      'a person’s send held to the default',
+      PERSON,
+      { ...OWNER, permissionCeiling: 'runtime-default' },
+    ],
+    ['a person’s send carrying a mark', PERSON, { ...OWNER, carriedMarks: { outsider: true } }],
+  ] as const)('keeps it for %s', async (_label, clientId, extra) => {
+    setQueuedChatWordsResolver(() => false);
+    setQueuedChatHoldResolver(() => true);
+    noteRoomTurnWords(session, true);
+    const seen: boolean[] = [];
+    runtime.withScenarios([noting(seen)]);
+    await send('next', clientId, extra);
+    await settle();
+    expect(seen).toEqual([true]);
+    setQueuedChatHoldResolver(undefined);
+  });
+
+  // The sequence Dorian hit (DOR-4693): owner DM, an agent's message carrying outside words, the
+  // owner's next turn, then the Agent browser handoff. The handoff reads the real note.
+  it('lets the owner’s later turn hand the browser over after an agent message carried words', async () => {
+    setQueuedChatWordsResolver(() => true);
+    const handoffCheck = liveOutsideTurnCheck({
+      agentPathOf: async () => null,
+      launchOriginOf: () => 'interactive',
+      marksOf: () => ({}),
+    });
+    const during: boolean[] = [];
+    const asking = () =>
+      async function* (): AsyncGenerator<StreamEvent> {
+        during.push(await handoffCheck(session));
+        yield { type: 'done', data: {} } as StreamEvent;
+      };
+    runtime.withScenarios([asking(), asking(), asking()]);
+    await send('the owner opens the browser', PERSON, OWNER);
+    await settle();
+    await send('a coordinator’s note', CHAT_A);
+    await settle();
+    await send('the owner: sign in to the site', PERSON, OWNER);
+    await settle();
+    expect(during).toEqual([false, true, false]);
+  });
+
+  it('stays for a turn whose own row carries them, after a clean one', async () => {
+    // A person's row never asks the resolver, so only the chat's row carries words.
+    setQueuedChatWordsResolver(() => true);
+    const seen: boolean[] = [];
+    runtime.withScenarios([noting(seen), noting(seen)]);
+    await send('the owner first', PERSON, OWNER);
+    await settle();
+    await send('from a marked chat', CHAT_A);
+    await settle();
+    expect(seen).toEqual([false, true]);
   });
 });
 

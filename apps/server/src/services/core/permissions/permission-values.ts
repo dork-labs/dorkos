@@ -221,3 +221,50 @@ export function keptOnPresetMove(
     ) as Record<string, PermissionState>;
   return { areas: keep(defaults.areas), actions: keep(defaults.actions) };
 }
+
+/** The changes on top of the preset, as stored. */
+type StoredDefaults = { areas: Record<string, string>; actions: Record<string, string> };
+
+/**
+ * Refuse a preset move judged against a preset or changes that differ now: what the move
+ * keeps depends on them, so a raise could pass as a lowering (DOR-4355).
+ *
+ * @param expect - What the caller judged the move against, when it says.
+ * @param config - The preset and changes as stored now.
+ * @throws {PermissionError} `PERMISSIONS_CHANGED` (409) when they differ.
+ */
+export function refuseStalePresetMove(
+  expect: { preset: string | null; defaults: unknown } | undefined,
+  config: { preset: string | null; defaults: StoredDefaults }
+): void {
+  if (!expect) return;
+  if (
+    expect.preset === config.preset &&
+    JSON.stringify(expect.defaults) === JSON.stringify(config.defaults)
+  )
+    return;
+  throw new PermissionError(
+    'PERMISSIONS_CHANGED',
+    'Permissions changed while you were choosing. Look again and choose once more.',
+    409
+  );
+}
+
+/**
+ * Whether moving to `preset` changes the stored settings at all.
+ *
+ * @param config - The preset and changes as stored now.
+ * @param preset - The preset being chosen.
+ * @param kept - The changes the move keeps.
+ */
+export function presetMoveChangesConfig(
+  config: { preset: string | null; defaults: StoredDefaults },
+  preset: string,
+  kept: StoredDefaults
+): boolean {
+  return (
+    config.preset !== preset ||
+    Object.keys(config.defaults.areas).length > Object.keys(kept.areas).length ||
+    Object.keys(config.defaults.actions).length > Object.keys(kept.actions).length
+  );
+}

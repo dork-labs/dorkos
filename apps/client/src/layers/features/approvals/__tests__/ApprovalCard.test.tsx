@@ -16,7 +16,7 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
-import type { PendingApproval } from '@dorkos/shared/approval-schemas';
+import type { ApprovalDecisionResponse, PendingApproval } from '@dorkos/shared/approval-schemas';
 import { APP_LOGO_MAP } from '@dorkos/icons/app-logos';
 import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
@@ -41,6 +41,7 @@ function buildApproval(overrides: Partial<PendingApproval> = {}): PendingApprova
     hasAgentPath: true,
     area: null,
     alwaysOffered: false,
+    answerNeedsStepUp: false,
     requestedAt: new Date().toISOString(),
     expiresAt: new Date(Date.now() + 90 * 60_000).toISOString(),
     ...overrides,
@@ -93,6 +94,115 @@ afterEach(() => {
 });
 
 describe('ApprovalCard', () => {
+  describe('remote confirmation', () => {
+    const remote = () =>
+      buildApproval({
+        answerNeedsStepUp: true,
+        requestCode: 'K7MR-4XQ9-HT3W',
+        answeringFrom: 'Safari on iPhone over Remote Access',
+        tier: 'act',
+      });
+
+    it('shows the request code and full summary before answering', () => {
+      renderCard(remote());
+      expect(screen.getByText('K7MR-4XQ9-HT3W')).toBeVisible();
+      expect(document.querySelector('[data-slot="approval-step-up-note"]')).toHaveTextContent(
+        'Allowing asks you to confirm it’s you.'
+      );
+      expect(screen.getByText(remote().summary)).not.toHaveClass('line-clamp-2');
+    });
+
+    it('waits for the answer before showing a receipt', async () => {
+      let settle: () => void = () => {};
+      renderCard(remote(), {
+        grantApproval: vi.fn(
+          () =>
+            new Promise<ApprovalDecisionResponse>((resolve) => {
+              settle = () =>
+                resolve({ ok: true, approvalId: remote().approvalId, outcome: 'granted' });
+            })
+        ),
+      });
+      await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
+      expect(screen.queryByText('Allowed once')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Allow' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Allow' })).toHaveAttribute('aria-busy', 'true');
+      await act(async () => settle());
+      expect(await screen.findByText('Allowed once')).toBeVisible();
+    });
+
+    it('records a confirmed receipt after the clicked card unmounts', async () => {
+      let settle: () => void = () => {};
+      const mounted = renderCard(remote(), {
+        grantApproval: vi.fn(
+          () =>
+            new Promise<ApprovalDecisionResponse>((resolve) => {
+              settle = () =>
+                resolve({ ok: true, approvalId: remote().approvalId, outcome: 'granted' });
+            })
+        ),
+      });
+      await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
+      mounted.unmount();
+      await act(async () => settle());
+      renderCard(remote());
+      expect(await screen.findByText('Allowed once')).toBeVisible();
+    });
+
+    it('keeps the card answerable when confirmation is cancelled', async () => {
+      renderCard(remote(), {
+        grantApproval: vi
+          .fn()
+          .mockRejectedValue(Object.assign(new Error('cancelled'), { code: 'step_up_required' })),
+      });
+      await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Allow' })).toBeEnabled());
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Allow' })).toHaveFocus());
+      expect(screen.queryByText('Allowed once')).not.toBeInTheDocument();
+    });
+
+    it('uses server context for a neutral card without another list read or an early receipt', async () => {
+      let settle: () => void = () => {};
+      const getConfig = vi.fn<Transport['getConfig']>().mockResolvedValue({
+        ...(await createMockTransport().getConfig()),
+        callerRoute: 'local',
+        approvalAnswerContext: {
+          answerNeedsStepUp: true,
+          answeringFrom: remote().answeringFrom,
+          onWifi: false,
+        },
+      });
+      const { transport } = renderCard(
+        { ...remote(), answerNeedsStepUp: undefined, answeringFrom: undefined },
+        {
+          getConfig,
+          grantApproval: vi.fn(
+            () =>
+              new Promise<ApprovalDecisionResponse>((resolve) => {
+                settle = () =>
+                  resolve({ ok: true, approvalId: remote().approvalId, outcome: 'granted' });
+              })
+          ),
+        }
+      );
+      expect(
+        await screen.findByText('You’re answering from Safari on iPhone over Remote Access.')
+      ).toBeVisible();
+      expect(getConfig).toHaveBeenCalled();
+      expect(transport.listPendingApprovals).not.toHaveBeenCalled();
+
+      await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
+      expect(screen.queryByText('Allowed once')).not.toBeInTheDocument();
+      await act(async () => settle());
+      expect(await screen.findByText('Allowed once')).toBeVisible();
+    });
+
+    it('keeps request codes off desk cards', () => {
+      renderCard(buildApproval({ requestCode: 'K7MR-4XQ9-HT3W' }));
+      expect(screen.queryByText('K7MR-4XQ9-HT3W')).not.toBeInTheDocument();
+      expect(document.querySelector('[data-slot="approval-step-up-note"]')).toBeNull();
+    });
+  });
   describe('a card that names what a yes does (DOR-3359)', () => {
     const repoPin = buildApproval({
       capabilityId: 'runtime.apply_repo_tools',
@@ -121,7 +231,14 @@ describe('ApprovalCard', () => {
     it('keeps the tier label on a card that names none', () => {
       renderCard(buildApproval());
       expect(screen.getByText('Cannot be undone')).toBeInTheDocument();
-      expect(screen.getByText('Uninstall a marketplace package')).toHaveClass('truncate');
+    });
+
+    // Design review on DOR-4355 M4: a heading names what a yes grants, so no card cuts it short.
+    it('wraps every heading instead of cutting it short', () => {
+      renderCard(buildApproval());
+      const heading = screen.getByText('Uninstall a marketplace package');
+      expect(heading).toHaveClass('break-words');
+      expect(heading).not.toHaveClass('truncate');
     });
   });
 
@@ -270,6 +387,83 @@ describe('ApprovalCard', () => {
     expect(screen.queryByRole('button', { name: 'Allow' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Don’t allow' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Always allow' })).not.toBeInTheDocument();
+  });
+
+  describe('confirming at this computer', () => {
+    /** A desk card: the server marks the card itself as needing no confirmation. */
+    const desk = (overrides: Partial<PendingApproval> = {}) =>
+      buildApproval({
+        capabilityId: 'rooms.create',
+        capabilityTitle: 'Open a room',
+        tier: 'act',
+        requestedBy: 'DorkBot',
+        area: 'rooms',
+        alwaysOffered: true,
+        answerNeedsStepUp: false,
+        ...overrides,
+      });
+
+    /** A grant the server is holding for a password, settled by the test. */
+    function heldGrant(approvalId: string) {
+      let settle: () => void = () => {};
+      let cancel: () => void = () => {};
+      const grantApproval = vi.fn(
+        () =>
+          new Promise<ApprovalDecisionResponse>((resolve, reject) => {
+            settle = () => resolve({ ok: true, approvalId, outcome: 'granted' });
+            cancel = () =>
+              reject(Object.assign(new Error('cancelled'), { code: 'step_up_required' }));
+          })
+      );
+      return { grantApproval, settle: () => settle(), cancel: () => cancel() };
+    }
+
+    it('draws no Always allow receipt while the password sheet is open', async () => {
+      const held = heldGrant(desk().approvalId);
+      renderCard(desk(), { grantApproval: held.grantApproval });
+      await userEvent.click(screen.getByRole('button', { name: 'Always allow' }));
+      expect(screen.queryByText('Always allowed for DorkBot: Open a room')).not.toBeInTheDocument();
+      await act(async () => held.cancel());
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Always allow' })).toBeEnabled()
+      );
+      expect(screen.queryByText('Always allowed for DorkBot: Open a room')).not.toBeInTheDocument();
+    });
+
+    it('shows the request code the sheet asks to check while the sheet holds the answer', async () => {
+      const coded = desk({ requestCode: 'K7MR-4XQ9-HT3W' });
+      const held = heldGrant(coded.approvalId);
+      renderCard(coded, { grantApproval: held.grantApproval });
+      expect(screen.queryByText('K7MR-4XQ9-HT3W')).not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole('button', { name: 'Always allow' }));
+      expect(screen.getByText('K7MR-4XQ9-HT3W')).toBeVisible();
+      await act(async () => held.cancel());
+      await waitFor(() => expect(screen.queryByText('K7MR-4XQ9-HT3W')).not.toBeInTheDocument());
+    });
+
+    it('draws no receipt for a permission change allowed once until the server confirms', async () => {
+      const change = desk({
+        capabilityId: 'permissions.change',
+        capabilityTitle: 'Change an agent’s permissions',
+        alwaysOffered: false,
+      });
+      const held = heldGrant(change.approvalId);
+      renderCard(change, { grantApproval: held.grantApproval });
+      await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
+      expect(screen.queryByText('Allowed once')).not.toBeInTheDocument();
+      await act(async () => held.settle());
+      expect(await screen.findByText('Allowed once')).toBeVisible();
+    });
+
+    it('with no owner, shows the Always allow receipt as soon as the server answers', async () => {
+      const grantApproval = vi
+        .fn()
+        .mockResolvedValue({ ok: true, approvalId: desk().approvalId, outcome: 'granted' });
+      renderCard(desk(), { grantApproval });
+      await userEvent.click(screen.getByRole('button', { name: 'Always allow' }));
+      expect(grantApproval).toHaveBeenCalledWith(desk().approvalId, { answer: 'always' });
+      expect(await screen.findByText('Always allowed for DorkBot: Open a room')).toBeVisible();
+    });
   });
 
   describe('the three answers (spec agent-permissions D7)', () => {
@@ -441,6 +635,19 @@ describe('ApprovalCard', () => {
       // an empty block under it would read as a missing value.
       renderCard(buildApproval());
       expect(document.querySelector('[data-slot="approval-detail"]')).toBeNull();
+    });
+
+    // DOR-4355 M4: the box holds only what changes; a name an agent can set sits under it.
+    it('draws the note under the box, outside it, in plain text', () => {
+      const note = 'Its name, which an agent can set: “Your own Telegram, alre…”';
+      renderCard(
+        buildApproval({ detail: 'Who may approve: U0OWNER01 → U0NEWBIE1', detailNote: note })
+      );
+      const block = document.querySelector('[data-slot="approval-detail"]');
+      expect(block!.textContent).not.toContain('Your own Telegram');
+      const line = screen.getByText(note);
+      expect(line.tagName).toBe('P');
+      expect(block!.contains(line)).toBe(false);
     });
   });
 });
@@ -721,21 +928,31 @@ describe('a connected-app action says what it does (DOR-2504)', () => {
 describe('on Wi-Fi (DOR-2969)', () => {
   const wifi = { getConfig: vi.fn().mockResolvedValue({ callerRoute: 'wifi' }) } as never;
 
-  it('offers Allow once and Deny, says where Always allow lives, and sends a one-time yes', async () => {
+  it('offers only Deny on Wi-Fi and explains where to allow', async () => {
     const { transport } = renderCard(
       buildApproval({ alwaysOffered: true, suggestAlways: true }),
       wifi
     );
-    await screen.findByText('Always allow is only available at this computer.');
-    expect(screen.queryByRole('button', { name: /always allow/i })).toBeNull();
-    const once = screen.getByRole('button', { name: 'Allow once' });
-    expect(once).toHaveAttribute('data-variant', 'secondary');
-    expect(screen.getByRole('button', { name: 'Deny' })).toBeInTheDocument();
-    await userEvent.click(once);
-    await waitFor(() => expect(transport.grantApproval).toHaveBeenCalled());
-    expect(vi.mocked(transport.grantApproval).mock.calls[0]![0]).not.toMatchObject({
-      answer: 'always',
-    });
+    await screen.findByText('Answer at your computer or over Remote Access.');
+    expect(screen.queryByRole('button', { name: /allow/i })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Deny' }));
+    await waitFor(() => expect(transport.denyApproval).toHaveBeenCalled());
+    expect(transport.grantApproval).not.toHaveBeenCalled();
+  });
+
+  it('keeps showing what is asked on Wi-Fi, hiding only Allow', async () => {
+    renderCard(buildApproval({ source: { name: 'Acme' } } as never), wifi);
+    await screen.findByText('Answer at your computer or over Remote Access.');
+    expect(screen.getByText('From Acme')).toBeVisible();
+    expect(screen.getByText('Uninstall "sentry-monitor"')).toBeVisible();
+    expect(screen.queryByRole('button', { name: /allow/i })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Deny' })).toBeVisible();
+  });
+
+  it('says where a Wi-Fi answer can be confirmed', async () => {
+    renderCard(buildApproval({ answerNeedsStepUp: true, requestCode: 'K7MR-4XQ9-HT3W' }), wifi);
+    expect(await screen.findByText('Answer at your computer or over Remote Access.')).toBeVisible();
+    expect(screen.queryByText('Allowing asks you to confirm it’s you.')).not.toBeInTheDocument();
   });
 
   it('keeps Always allow at this computer', async () => {
@@ -743,7 +960,7 @@ describe('on Wi-Fi (DOR-2969)', () => {
       getConfig: vi.fn().mockResolvedValue({ callerRoute: 'local' }),
     } as never);
     expect(await screen.findByRole('button', { name: 'Always allow' })).toBeInTheDocument();
-    expect(screen.queryByText('Always allow is only available at this computer.')).toBeNull();
+    expect(screen.queryByText('Answer at your computer or over Remote Access.')).toBeNull();
   });
 });
 

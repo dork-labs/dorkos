@@ -45,6 +45,17 @@ export const SPEND_COPY = {
 } as const;
 
 /**
+ * What a mini app reads when its paid read is refused (DOR-4575). A mini app
+ * can't answer a card, so each case that would ask a person is a refusal.
+ */
+export const EXTENSION_SPEND_COPY = {
+  noLimit: 'This read spends money. It runs only under a monthly limit, set in Connections.',
+  unknownPrice: 'This read spends money. Set its price per run in Connections first.',
+  unreadable: "Spending can't be checked right now, so this paid read didn't run.",
+  outsideLimit: "This paid read doesn't fit this month's spending limit. Nothing ran.",
+} as const;
+
+/**
  * Why a paid run that asks is waiting, and what the person can change so the
  * next one does not (DOR-4447). The labels match the Connections page: its
  * Monthly limit and each app's Price per run. A run past the limit never asks;

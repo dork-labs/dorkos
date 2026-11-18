@@ -139,6 +139,7 @@ export class StepUpConfirmation {
         : [];
     return {
       reason,
+      ...(typeof body?.requestCode === 'string' ? { requestCode: body.requestCode } : {}),
       notes,
       ...(unavailable ? { unavailable } : {}),
       ...(blockedLines.length > 0 ? { blockedLines } : {}),
@@ -210,6 +211,9 @@ export class StepUpConfirmation {
       case 'wrong-password':
       case 'new-password-invalid':
         return { kind: 'retry', message };
+      case 'different-request':
+        this.outcome = { kind: 'ask-again', reason: 'different-request' };
+        return { kind: 'ended', message };
       case 'expired':
         this.outcome = { kind: 'ask-again' };
         return { kind: 'ended', message };

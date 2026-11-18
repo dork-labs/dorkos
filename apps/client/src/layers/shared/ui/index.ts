@@ -496,6 +496,7 @@ export type {
   SidebarRowProps,
 } from './sidebar-row';
 export { SectionHeader, SECTION_HEADER_INSET, SIDEBAR_HOVER_REVEAL } from './section-header';
+export type { SectionHeaderProps } from './section-header';
 export { BottomSlot, type BottomSlotCandidate, type BottomSlotProps } from './bottom-slot';
 export { ListRow, type ListRowProps } from './list-row';
 export { ROW_FOCUS_CLASS, rowState, rowStateVariants, rowTintVariants, type RowState } from './row';
@@ -507,6 +508,6 @@ export { ROW_FOCUS_CLASS, rowState, rowStateVariants, rowTintVariants, type RowS
 export { OptionRow, type OptionRowProps } from './option-row';
 export { CompactResultRow, type CompactResultRowProps } from './compact-result-row';
 export { UnverifiedCatalogNotice } from './unverified-catalog-notice';
-export { TruncatedOutput } from './truncated-output';
-export type { TruncatedOutputProps } from './truncated-output';
-export type { SectionHeaderProps } from './section-header';
+export { TruncatedOutput, type TruncatedOutputProps } from './truncated-output';
+
+export { RequestCode, ApprovalAnswerNote } from './request-code';

@@ -26,6 +26,7 @@ import path from 'node:path';
 import type { DelegatedLoginResult } from '@dorkos/shared/runtime-connect';
 import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import { logger } from '../../../lib/logger.js';
+import { mayReadOsKeychain } from '../../../lib/keychain/os-keychain-policy.js';
 import { noteSigninRepaired } from '../../observability/index.js';
 import { resolveCodexBinaryPath } from '../codex/check-dependencies.js';
 import { resolveClaudeCliPath } from '../claude-code/sdk/sdk-utils.js';
@@ -138,6 +139,10 @@ export async function resolveLoginCommand(
       return binary ? { binary, args: ['login'], env: runtimeEnvironment('codex', 'login') } : null;
     }
     case 'claude-code': {
+      // `claude auth login` saves the sign-in to the login Keychain on macOS,
+      // which a test server never touches (DOR-4423). Only a test server gets
+      // here, so the caller's generic "not available" wording is good enough.
+      if (process.platform === 'darwin' && !mayReadOsKeychain()) return null;
       const binary = resolveClaudeCliPath();
       if (!binary) return null;
       const root = opts.accountRoot ?? resolveActiveClaudeRoot();

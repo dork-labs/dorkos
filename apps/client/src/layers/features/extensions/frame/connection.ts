@@ -6,15 +6,12 @@ import {
 import { z } from 'zod';
 import runtime from 'virtual:dorkos-extension-frame';
 import { resolveApiBaseUrl } from '@/layers/shared/lib';
-import {
-  args,
-  FrameCallSchema,
-  json,
-  text,
-  type FrameRegistration,
-  type FrameTheme,
-} from './protocol';
+import { args, FrameCallSchema, json, text, type FrameRegistration } from './protocol';
 import { AppRequestFailure } from './app-request';
+import { readHostTheme } from './theme';
+
+/** Where the host's phone sizes start (`index.css`), so a crossing resends the theme. */
+const PHONE_WIDTH_QUERY = '(max-width: 767px)';
 
 /** The sandbox grants scripts only: no origin, popups, downloads, forms, or parent navigation. */
 export const EXTENSION_FRAME_SANDBOX = 'allow-scripts';
@@ -95,12 +92,6 @@ interface FrameOptions {
       send(key: string, data: unknown): void;
     }
   ): Promise<unknown>;
-}
-
-/** The host root's classes and inline style, which carry light or dark mode and the font choice. */
-function hostTheme(): FrameTheme {
-  const root = document.documentElement;
-  return { className: root.className, style: root.getAttribute('style') ?? '' };
 }
 
 /** Create an opaque document and give it one private, revocable host connection. */
@@ -212,12 +203,16 @@ export function createFrameConnection(options: FrameOptions): FrameConnection {
     (state) => state,
     (state) => send({ type: 'state', state })
   );
-  // A theme or font change on the host reaches every open frame.
-  const themeWatch = new MutationObserver(() => send({ type: 'theme', theme: hostTheme() }));
+  // A theme or font change on the host reaches every open frame, and so does
+  // the window crossing the phone width, which changes the host's sizes.
+  const sendTheme = () => send({ type: 'theme', theme: readHostTheme(options.parent) });
+  const themeWatch = new MutationObserver(sendTheme);
   themeWatch.observe(document.documentElement, {
     attributes: true,
     attributeFilter: ['class', 'style'],
   });
+  const phoneWidth = window.matchMedia?.(PHONE_WIDTH_QUERY);
+  phoneWidth?.addEventListener('change', sendTheme);
   iframe.onload = () => {
     if (closed) return;
     // A navigation loses its port; never give a replacement document another one.
@@ -251,7 +246,7 @@ export function createFrameConnection(options: FrameOptions): FrameConnection {
           fit: options.fit,
           props: encode(options.props),
           css,
-          theme: hostTheme(),
+          theme: readHostTheme(options.parent),
         },
       },
       '*',
@@ -272,6 +267,7 @@ export function createFrameConnection(options: FrameOptions): FrameConnection {
       clearTimeout(timeout);
       unsubState();
       themeWatch.disconnect();
+      phoneWidth?.removeEventListener('change', sendTheme);
       options.onClose();
       for (const stop of subscriptions.values()) stop();
       subscriptions.clear();

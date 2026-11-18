@@ -181,9 +181,15 @@ export class RemoteAnswerIn {
    * @param ref - The local connection ref.
    * @param ownerKey - The local owner the connection belongs to.
    * @param channels - Channel names, already normalised by `CommunityAnswerInSchema`.
+   * @param expect - See {@link AnswerInStore.set}.
    */
-  async set(ref: CommunityRef, ownerKey: string, channels: readonly string[]): Promise<void> {
-    await this.store.set(ref, ownerKey, channels);
+  async set(
+    ref: CommunityRef,
+    ownerKey: string,
+    channels: readonly string[],
+    expect?: (current: readonly string[]) => boolean
+  ): Promise<void> {
+    await this.store.set(ref, ownerKey, channels, expect);
     this.applied = ++this.started;
     const next = new Map(this.channels);
     if (channels.length) next.set(key(ref, ownerKey), new Set(channels));

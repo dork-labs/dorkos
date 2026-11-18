@@ -39,9 +39,18 @@ import {
 
 import type { RequestFacts } from '../../../../http/request-facts.js';
 import { hashApprovalInput } from '../../approvals/approval-input-hash.js';
+import { logger, logError } from '../../../../lib/logger.js';
 
-/** The most actions held at once; past it the oldest is dropped. */
+/** The most actions held at once; new callers wait when the pool is full. */
 export const MAX_HELD_STEP_UPS = 16;
+/** New actions are refused once one browser reaches this cap. */
+export const MAX_HELD_STEP_UPS_PER_SESSION = 4;
+/** A browser or the shared pool has reached its hold cap. */
+export class HeldStepUpCapacityError extends Error {
+  constructor() {
+    super('Too many actions are waiting. Try again shortly.');
+  }
+}
 
 /** What committing a held action answered: its own status and body. */
 export interface StepUpCommitResult {
@@ -51,11 +60,15 @@ export interface StepUpCommitResult {
 
 /** What a guarded route holds. */
 export interface StepUpActionInput {
+  /** Release resources if this action is discarded without committing. */
+  onDiscard?: () => void;
   kind: StepUpActionKind;
   /** What it acts on, in the server's words. */
   target: string;
   /** Exactly what will run, as plain JSON; its hash binds the statement. */
   input: unknown;
+  /** A server-owned request snapshot, re-read immediately before committing. */
+  binding?: { hash: string; currentHash: () => string | undefined };
   /** The sheet's sentence, built by the server from `input`, never from a name an agent chose alone. */
   reason: string;
   /** Quiet extra lines for the sheet. */
@@ -76,13 +89,17 @@ export interface StepUpActionInput {
 
 /** One held action. */
 export interface HeldStepUp {
+  onDiscard?: StepUpActionInput['onDiscard'];
   statement: LocalStepUpStatementV1;
+  /** Full action identity for replacement; a display binding may be shared by distinct actions. */
+  canonicalHash: string;
   reason: string;
   notes: readonly string[];
   warnings: readonly string[];
   /** The browser session that held it, or `null` when the caller had none. */
   sessionId: string | null;
   commit: StepUpActionInput['commit'];
+  binding?: StepUpActionInput['binding'];
   /** Wrong passwords it will still take. */
   triesLeft: number;
 }
@@ -98,11 +115,19 @@ const held = new Map<string, HeldStepUp>();
 const expiries = new Map<string, ReturnType<typeof setTimeout>>();
 
 /** Drop one held action and its timer. */
-function drop(heldActionId: string): void {
+function drop(heldActionId: string, discard = true): void {
+  const entry = held.get(heldActionId);
   const expiry = expiries.get(heldActionId);
   if (expiry !== undefined) clearTimeout(expiry);
   expiries.delete(heldActionId);
   held.delete(heldActionId);
+  if (discard && entry?.onDiscard) {
+    try {
+      entry.onDiscard();
+    } catch (error) {
+      logger.warn('[StepUp] Could not release a discarded action', logError(error));
+    }
+  }
 }
 
 /**
@@ -124,13 +149,10 @@ export function stepUpActionHash(
 }
 
 /** Drop what expired, and the live one this same browser held for the same action. */
-function prune(now: number, sessionId: string | null, kind: string, inputSha256: string): void {
+function prune(now: number, sessionId: string | null, canonicalHash: string): void {
   for (const [id, entry] of held) {
     const { statement } = entry;
-    const sameAction =
-      entry.sessionId === sessionId &&
-      statement.kind === kind &&
-      statement.inputSha256 === inputSha256;
+    const sameAction = entry.sessionId === sessionId && entry.canonicalHash === canonicalHash;
     if (sameAction || now >= Date.parse(statement.expiresAt)) drop(id);
   }
 }
@@ -143,6 +165,7 @@ function prune(now: number, sessionId: string | null, kind: string, inputSha256:
  * @param sessionId - The browser session asking, or `null`.
  * @param now - The current time, for tests.
  * @returns The statement it is bound to.
+ * @throws HeldStepUpCapacityError when the browser or shared pool is full.
  * @throws ApprovalInputNotBindableError when the input is not plain JSON, so
  *   nothing is held that its hash would not really bind.
  */
@@ -151,13 +174,19 @@ export function holdStepUp(
   sessionId: string | null,
   now = Date.now()
 ): LocalStepUpStatementV1 {
-  const inputSha256 = stepUpActionHash(action);
-  prune(now, sessionId, action.kind, inputSha256);
-  while (held.size >= MAX_HELD_STEP_UPS) {
-    const oldest = held.keys().next().value;
-    if (oldest === undefined) break;
-    drop(oldest);
+  // Still validate the input even when a stored request supplies its own binding.
+  const canonicalHash = stepUpActionHash(action);
+  const inputSha256 = action.binding?.hash ?? canonicalHash;
+  if (!/^[0-9a-f]{64}$/.test(inputSha256)) throw new Error('Step-up binding must be SHA-256');
+  // Expiration may free space; a new request never evicts a live confirmation,
+  // including a duplicate from the same browser when that browser is full.
+  for (const [id, entry] of held) {
+    if (now >= Date.parse(entry.statement.expiresAt)) drop(id);
   }
+  const ownCount = [...held.values()].filter((entry) => entry.sessionId === sessionId).length;
+  if (ownCount >= MAX_HELD_STEP_UPS_PER_SESSION || held.size >= MAX_HELD_STEP_UPS)
+    throw new HeldStepUpCapacityError();
+  prune(now, sessionId, canonicalHash);
   const statement: LocalStepUpStatementV1 = {
     t: LOCAL_STEP_UP_STATEMENT_TYPE,
     purpose: 'step-up',
@@ -171,11 +200,14 @@ export function holdStepUp(
   };
   held.set(statement.heldActionId, {
     statement,
+    canonicalHash,
     reason: action.reason,
     notes: action.notes ?? [],
     warnings: action.warnings ?? [],
     sessionId,
     commit: action.commit,
+    onDiscard: action.onDiscard,
+    ...(action.binding ? { binding: { ...action.binding } } : {}),
     triesLeft: STEP_UP_MAX_PASSWORD_TRIES,
   });
   const expiry = setTimeout(() => drop(statement.heldActionId), STEP_UP_TTL_MS);
@@ -209,7 +241,7 @@ export function peekHeldStepUp(heldActionId: string, now = Date.now()): HeldStep
  */
 export function takeHeldStepUp(heldActionId: string, now = Date.now()): HeldStepUp | undefined {
   const entry = peekHeldStepUp(heldActionId, now);
-  drop(heldActionId);
+  drop(heldActionId, false);
   return entry;
 }
 

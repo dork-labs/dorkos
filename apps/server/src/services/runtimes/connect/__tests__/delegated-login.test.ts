@@ -49,6 +49,7 @@ import {
 import { noteSigninRepaired } from '../../../observability/index.js';
 import { logger } from '../../../../lib/logger.js';
 import { loginFailureMessage } from '../login-failure.js';
+import { env } from '../../../../env.js';
 
 /**
  * Minimal ChildProcess double: an EventEmitter (for `once('exit'|'error')`) plus
@@ -79,6 +80,18 @@ function fakeSpawn(child: FakeChild): {
   }) as unknown as SpawnFn;
   return { spawn, calls };
 }
+
+// The Keychain guard on `claude auth login` (DOR-4423) reads the test-runtime
+// flag from the startup snapshot and live, and a developer's shell may export it.
+const AMBIENT_TEST_RUNTIME = env.DORKOS_TEST_RUNTIME;
+beforeEach(() => {
+  env.DORKOS_TEST_RUNTIME = false;
+  vi.stubEnv('DORKOS_TEST_RUNTIME', '');
+});
+afterEach(() => {
+  env.DORKOS_TEST_RUNTIME = AMBIENT_TEST_RUNTIME;
+  vi.unstubAllEnvs();
+});
 
 describe('runDelegatedLogin', () => {
   it('resolves ok when the login CLI exits 0', async () => {
@@ -281,6 +294,21 @@ describe('resolveLoginCommand (claude-code)', () => {
     // in this file, and a plain clear would let that leak forward/backward
     // across tests that share this module-level mock.
     vi.resetAllMocks();
+  });
+
+  it('offers no sign-in on a Mac while the test runtime is on, so nothing saves to the Keychain (DOR-4423)', async () => {
+    const realPlatform = process.platform;
+    const realTestRuntime = env.DORKOS_TEST_RUNTIME;
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
+    env.DORKOS_TEST_RUNTIME = true;
+    try {
+      vi.mocked(resolveClaudeCliPath).mockReturnValue('/bin/claude');
+      expect(await resolveLoginCommand('claude-code')).toBeNull();
+      expect(resolveClaudeCliPath).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(process, 'platform', { value: realPlatform, configurable: true });
+      env.DORKOS_TEST_RUNTIME = realTestRuntime;
+    }
   });
 
   it('returns null when the claude CLI cannot be resolved, without consulting an account', async () => {

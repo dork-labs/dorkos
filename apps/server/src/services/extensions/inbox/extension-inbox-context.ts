@@ -23,6 +23,7 @@ import {
 import { projectRegistry } from '../../projects/project-registry.js';
 import { getExtensionInbox, type ExtensionInboxService } from './extension-inbox.js';
 import { projectSettingsStore } from './extension-project-settings.js';
+import { runInPersonRequest } from '../person-record/person-record.js';
 
 /** The inbox, or a plain error when boot has not wired one. */
 function inboxOrThrow(): ExtensionInboxService {
@@ -141,16 +142,26 @@ function extensionPersonRefusal(request: RequestFacts, extensionName: string) {
  * owner exists it needs their session at this computer too (DOR-3330); the
  * extension's own page code, in the person's window, still passes.
  *
+ * The rest of an admitted request runs as that person's request until its
+ * response ends, so `ctx.personRecord.record` works inside it and nowhere else
+ * (DOR-4301).
+ *
+ * @param extensionId - The extension whose route it guards.
  * @param extensionName - The extension's manifest name.
  */
-export function createRequirePerson(extensionName: string): RequestHandler {
+export function createRequirePerson(extensionId: string, extensionName: string): RequestHandler {
   return (req, res, next) => {
     const refusal = extensionPersonRefusal(expressRequestFacts(req, res), extensionName);
     if (refusal) {
       res.status(refusal.status).json(refusal.body);
       return;
     }
-    next();
+    runInPersonRequest(extensionId, (end) => {
+      // Either ends the request: `finish` once it is answered, `close` if the socket goes first.
+      res.once('finish', end);
+      res.once('close', end);
+      next();
+    });
   };
 }
 

@@ -7,9 +7,12 @@
  *    audited like every other change. It is judged only as a subset, so a rule
  *    a person approved on a card can be dropped whatever its shape.
  * 2. **Exact entries only** (`task-allow-list.ts`); one bad entry refuses all.
- * 3. **Only a new one-shot task's first list** is the agent's own call. Every
- *    other addition, from any caller, asks a person: `requestedAllow` puts it on
- *    the task's approval card. {@link addingEntriesAsksAPerson} holds every case.
+ * 3. **Only two additions are the agent's own call:** a new one-shot task's
+ *    first list, and the list a live task that already runs every command
+ *    without asking (Bypass) takes as it moves to Don't ask, which only narrows
+ *    what its runs can do (PR 2, Security's ruling of Nov 18). Every other
+ *    addition, from any caller, asks a person: `requestedAllow` puts it on the
+ *    task's approval card. {@link addingEntriesAsksAPerson} holds every case.
  * 4. **Don't ask only.** A list is the set of commands a Don't ask run may run
  *    without asking; set beside another mode it would mean nothing or something
  *    wider, so it is refused rather than stored idle.
@@ -62,6 +65,8 @@ export interface AllowListInput {
   createsOneShot: boolean;
   /** Whether the task has ever had a list (its pins keep the first-set time). */
   listEverSet: boolean;
+  /** Whether the call moves a live task that runs every command unasked to Don't ask. */
+  narrowsFromBypass?: boolean;
   /** The mode the task will run at once this call lands. */
   mode: string;
   /** The caller's ceiling: the lower of its own level and the task's agent's. */
@@ -74,9 +79,10 @@ export interface AllowListInput {
 
 /**
  * Whether adding entries needs a person, within the agent's level. Security's
- * ruling, every case here: the first exact list of a new one-shot task is the
- * agent's own call, from its own unmarked chat, about its own task. Any other
- * addition asks: on an existing task, from a scheduled run (the narrowed run
+ * rulings, every case here: the first exact list of a new one-shot task, and
+ * the list a live Bypass task takes as it moves to Don't ask, are the agent's
+ * own call, from its own unmarked chat, about its own task. Any other addition
+ * asks: on any other existing task, from a scheduled run (the narrowed run
  * itself), from another chat or agent, or from a marked turn. An entry whose
  * arguments changed is a new entry, so editing one is adding.
  *
@@ -86,11 +92,15 @@ export function addingEntriesAsksAPerson(change: {
   added: readonly string[];
   createsOneShot: boolean;
   listEverSet: boolean;
+  narrowsFromBypass?: boolean;
   adder: AllowListAdder;
 }): boolean {
-  if (change.added.length === 0) return false;
+  // A move off Bypass is held to every rule, even when it adds nothing new.
+  if (change.added.length === 0 && change.narrowsFromBypass !== true) return false;
   const { ownChatOwnTask, marked, scheduledRun } = change.adder;
-  return !change.createsOneShot || change.listEverSet || scheduledRun || marked || !ownChatOwnTask;
+  if (scheduledRun || marked || !ownChatOwnTask) return true;
+  if (change.narrowsFromBypass === true) return false;
+  return !change.createsOneShot || change.listEverSet;
 }
 
 /**
@@ -126,7 +136,8 @@ export function narrowingOf(proposed: unknown, before: readonly string[]): strin
 export function decideAllowList(input: AllowListInput): AllowListVerdict {
   if (!Object.hasOwn(input.body, 'allowList')) return { kind: 'none' };
   const proposed = input.body.allowList;
-  const narrowed = narrowingOf(proposed, input.before);
+  // Moving off Bypass re-judges and re-pins every entry, so none is kept as a person's.
+  const narrowed = input.narrowsFromBypass ? null : narrowingOf(proposed, input.before);
   if (narrowed) {
     const change = allowListChange(input.before, narrowed);
     return { kind: 'ok', before: [...input.before], after: narrowed, ...change };
@@ -144,8 +155,9 @@ export function decideAllowList(input: AllowListInput): AllowListVerdict {
   if (addingEntriesAsksAPerson({ ...input, added })) {
     return refused(
       'allow_list_ask_person',
-      'Only a new one-shot task’s first list is yours to set. To add commands, put them in ' +
-        '`requestedAllow` and a person approves them on the task’s card.'
+      'You set a list yourself only on a new one-shot task, or as your own running Bypass task ' +
+        'moves to Don’t ask. To add commands, put them in `requestedAllow` and a person ' +
+        'approves them on the task’s card.'
     );
   }
   if (input.mode !== ALLOW_LIST_MODE) {

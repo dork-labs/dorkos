@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { accessLevelRevisionIds } from '../connector-schemas.js';
-import { isPaidOperation, PAID_BY_DEFAULT_TOOLKITS } from '../paid-operations.js';
+import { isPaidOperation, normalizeToolkit, PAID_BY_DEFAULT_TOOLKITS } from '../paid-operations.js';
 
 /** What Composio's catalog answered for each listed toolkit, on the date it records. */
 const catalog = JSON.parse(
@@ -31,6 +31,24 @@ describe('isPaidOperation', () => {
 
   it('reads the service name the way providers write it', () => {
     expect(isPaidOperation({ toolkit: 'APIFY', operationSlug: 'APIFY_RUN_ACTOR' })).toBe(true);
+  });
+
+  it.each([
+    ['Perplexity AI', 'PERPLEXITYAI_SEARCH'],
+    ['perplexity_ai', 'perplexityai_search'],
+    [' Apify ', 'apifyRunActor'],
+    ['People-Data-Labs', 'PEOPLEDATALABS_ENRICH'],
+    ['GitHub', 'githubRunInference'],
+    ['github', 'GitHub_Run_Inference'],
+  ])('never reads a variant spelling as free: %s', (toolkit, operationSlug) => {
+    expect(isPaidOperation({ toolkit, operationSlug })).toBe(true);
+  });
+
+  it('marks every paid app paid in its normalized spelling', () => {
+    for (const toolkit of PAID_BY_DEFAULT_TOOLKITS) {
+      expect(isPaidOperation({ toolkit: toolkit.toUpperCase(), operationSlug: '' })).toBe(true);
+      expect(isPaidOperation({ toolkit: normalizeToolkit(toolkit), operationSlug: '' })).toBe(true);
+    }
   });
 
   it('leaves an ordinary service alone', () => {

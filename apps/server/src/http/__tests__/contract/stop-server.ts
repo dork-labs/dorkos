@@ -14,7 +14,7 @@ import { rm } from 'node:fs/promises';
 /** How long a child gets to exit on SIGTERM before it is killed. */
 export const STOP_GRACE_MS = 10_000;
 
-/** How long to wait for `exit` after SIGKILL before removing the folder anyway. */
+/** How long to wait for confirmed `exit` after SIGKILL before refusing cleanup. */
 const KILL_WAIT_MS = 5_000;
 
 /**
@@ -65,8 +65,17 @@ export async function stopServerAndRemove(
     child.kill('SIGTERM');
     if (!(await exitedWithin(exited, graceMs))) {
       child.kill('SIGKILL');
-      await exitedWithin(exited, KILL_WAIT_MS);
+      if (!(await exitedWithin(exited, KILL_WAIT_MS)) && !hasExited(child)) {
+        throw new Error(
+          `Contract server ${child.pid ?? 'without a PID'} did not confirm exit; its data folder was retained.`
+        );
+      }
     }
+  }
+  if (!hasExited(child)) {
+    throw new Error(
+      `Contract server ${child.pid ?? 'without a PID'} did not confirm exit; its data folder was retained.`
+    );
   }
   await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }

@@ -8,6 +8,7 @@ import type { HeldStepUpView } from '@dorkos/shared/step-up';
 import {
   finishActionStepUp,
   getActionStepUpShowing,
+  openActionStepUpFromLink,
   requestActionStepUp,
   type ActionStepUpOutcome,
 } from '@/layers/shared/lib';
@@ -75,9 +76,81 @@ async function confirmWith(password: string): Promise<void> {
 }
 
 describe('ActionStepUpHost', () => {
+  it.each([
+    ['api-key.create', 'Create key'],
+    ['api-key.update', 'Save key'],
+    ['devices.sign-out-one', 'Sign it out'],
+    ['devices.sign-out-others', 'Sign out others'],
+    ['devices.sign-out-all', 'Sign out everywhere'],
+    ['extensions.trust-source', 'Trust source'],
+    ['session-relay.link', 'Create link'],
+    ['relay-passkey.enrol', 'Add passkey'],
+  ] as const)('names the confirmation for %s', async (kind, label) => {
+    heldWith({ ...VIEW, kind }, [200, { ok: true, status: 200, result: {} }]);
+    render(<ActionStepUpHost />);
+    const outcome = ask();
+    const button = await screen.findByRole('button', { name: label });
+    await userEvent.type(await screen.findByLabelText('DorkOS password'), 'made-up-password');
+    await userEvent.click(button);
+    await expect(outcome).resolves.toEqual({ kind: 'confirmed', status: 200, result: {} });
+  });
   it('shows nothing until an action is held', () => {
     render(<ActionStepUpHost />);
     expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('shows the server request code with a read-aloud label', async () => {
+    heldWith({ ...VIEW, requestCode: 'K7MR-4XQ9-HT3W' }, [
+      200,
+      { ok: true, status: 200, result: {} },
+    ]);
+    render(<ActionStepUpHost />);
+    void ask();
+    expect(await screen.findByText('K7MR-4XQ9-HT3W')).toBeVisible();
+    expect(screen.getByRole('group', { name: 'Request K 7 M R, 4 X Q 9, H T 3 W' })).toBeVisible();
+  });
+
+  const CODE_NOTE = 'Check that the request you came from shows the same code.';
+
+  it.each([
+    ['with no notes of its own', []],
+    ['with notes of its own', ['Asked by Porter.']],
+  ])('never shows a request code without its note, %s', async (_label, notes) => {
+    heldWith({ ...VIEW, notes, requestCode: 'K7MR-4XQ9-HT3W' }, [
+      200,
+      { ok: true, status: 200, result: {} },
+    ]);
+    render(<ActionStepUpHost />);
+    void ask();
+    await screen.findByText('K7MR-4XQ9-HT3W');
+    const note = screen.getByText(CODE_NOTE);
+    expect(note).toBeVisible();
+    expect(screen.getAllByText(CODE_NOTE)).toHaveLength(1);
+    expect(screen.getByRole('alertdialog')).toHaveAccessibleDescription(
+      expect.stringContaining(CODE_NOTE)
+    );
+  });
+
+  it('shows no code note when the server sends no code', async () => {
+    heldWith(VIEW, [200, { ok: true, status: 200, result: {} }]);
+    render(<ActionStepUpHost />);
+    void ask();
+    await screen.findByText(VIEW.reason);
+    expect(screen.queryByText(CODE_NOTE)).toBeNull();
+  });
+
+  it('re-holds after a confirmation for a different request', async () => {
+    heldWith(VIEW, [
+      409,
+      {
+        code: 'different-request',
+        error: 'That confirmation was for a different request. Confirm this one.',
+      },
+    ]);
+    render(<ActionStepUpHost />);
+    const outcome = ask();
+    await confirmWith('the-password');
+    await expect(outcome).resolves.toEqual({ kind: 'ask-again', reason: 'different-request' });
   });
 
   it('shows the server’s own sentence about what will run', async () => {
@@ -187,6 +260,42 @@ describe('ActionStepUpHost', () => {
     await expect(outcome).resolves.toEqual({ kind: 'ask-again' });
   });
 
+  describe('opened from a link a page outside the app gave', () => {
+    const LINKED = '01M7M696Q8GA7H8MQ7WVRZ1K4P';
+
+    it('opens the sheet for that held action once, and takes the id out of the address', async () => {
+      heldWith({ ...VIEW, heldActionId: LINKED, requestCode: 'K7MR-4XQ9-HT3W' }, [
+        200,
+        { ok: true, status: 200, result: {} },
+      ]);
+      const replaceState = vi.fn();
+      render(<ActionStepUpHost />);
+      act(() => {
+        openActionStepUpFromLink(
+          { href: `https://dorkos.example/?confirm=${LINKED}#top` },
+          { replaceState, state: null }
+        );
+      });
+      expect(replaceState).toHaveBeenCalledExactlyOnceWith(null, '', '/#top');
+      expect(getActionStepUpShowing()).toBe(LINKED);
+      // The same code the page that sent the person here shows.
+      expect(
+        await screen.findByRole('group', { name: 'Request K 7 M R, 4 X Q 9, H T 3 W' })
+      ).toBeVisible();
+    });
+
+    it('opens nothing for an id that is not a held action’s', () => {
+      const replaceState = vi.fn();
+      const opened = openActionStepUpFromLink(
+        { href: 'https://dorkos.example/?confirm=../../settings' },
+        { replaceState, state: null }
+      );
+      expect(opened).toBe(false);
+      expect(replaceState).toHaveBeenCalledOnce();
+      expect(getActionStepUpShowing()).toBeNull();
+    });
+  });
+
   it('says it took too long on the sheet that follows an expired one', async () => {
     heldWith(VIEW, [200, { ok: true, status: 200, result: {} }]);
     render(<ActionStepUpHost />);
@@ -272,6 +381,17 @@ describe('ActionStepUpHost', () => {
       ([, init]) => (init as RequestInit)?.method === 'DELETE'
     );
     expect(String(dropped?.[0])).toMatch(/\/step-up\/held-1$/);
+  });
+
+  it('keeps terminal commands off a remote sheet with no password', async () => {
+    heldWith(
+      { ...VIEW, methods: [], answeringRemotely: true, passwordUnavailable: 'no-password' },
+      [200, { ok: true, status: 200, result: {} }]
+    );
+    render(<ActionStepUpHost />);
+    void ask();
+    expect(await screen.findByText('Set one on the computer running DorkOS.')).toBeVisible();
+    expect(screen.queryByText('dorkos auth reset-password')).not.toBeInTheDocument();
   });
 
   it('says how to set a password when the owner has none', async () => {

@@ -80,7 +80,11 @@ let bindingId: string;
 /** One write on this router, driven with whatever identity headers a test wants. */
 type Drive = (headers: Record<string, string>) => Promise<{ status: number }>;
 
-const ROUTES: Array<{ name: string; drive: Drive; expectStatus: number }> = [
+/**
+ * `agentsRefused`: the route answers only a person (pointing a chat at another agent waits
+ * for the owner's confirmation, DOR-4355), so an agent is refused and nothing is recorded.
+ */
+const ROUTES: Array<{ name: string; drive: Drive; expectStatus: number; agentsRefused?: true }> = [
   {
     name: 'POST /adapters',
     expectStatus: 201,
@@ -107,6 +111,7 @@ const ROUTES: Array<{ name: string; drive: Drive; expectStatus: number }> = [
   {
     name: 'POST /bindings/:id/move',
     expectStatus: 200,
+    agentsRefused: true,
     drive: (headers) =>
       request(fixtureServer)
         .post(`/api/relay/bindings/${bindingId}/move`)
@@ -176,7 +181,18 @@ describe('who the Activity feed says changed a connection or a chat route', () =
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  describe.each(ROUTES)('$name', ({ drive, expectStatus }) => {
+  describe.each(ROUTES)('$name', ({ drive, expectStatus, agentsRefused }) => {
+    /** An agent's answer: the route's own status, or refused with nothing recorded. */
+    function expectAgentAnswer(res: { status: number }): boolean {
+      if (!agentsRefused) {
+        expect(res.status).toBe(expectStatus);
+        return true;
+      }
+      expect(res.status).toBe(403);
+      expect(emitted).toEqual([]);
+      return false;
+    }
+
     it('records a browser write as the person', async () => {
       const res = await drive({});
 
@@ -189,7 +205,7 @@ describe('who the Activity feed says changed a connection or a chat route', () =
     it('records an identified agent as that agent, not as the person', async () => {
       const res = await drive({ 'x-dorkos-agent': KNOWN_TOKEN });
 
-      expect(res.status).toBe(expectStatus);
+      if (!expectAgentAnswer(res)) return;
       expect(emitted).toHaveLength(1);
       expect(emitted[0]).toMatchObject({
         actorType: 'agent',
@@ -201,7 +217,7 @@ describe('who the Activity feed says changed a connection or a chat route', () =
     it('records a token that resolves to nothing as an unidentified caller', async () => {
       const res = await drive({ 'x-dorkos-agent': 'tok_nobody_knows' });
 
-      expect(res.status).toBe(expectStatus);
+      if (!expectAgentAnswer(res)) return;
       expect(emitted).toHaveLength(1);
       expect(emitted[0]).toMatchObject({
         actorType: 'system',
@@ -211,12 +227,13 @@ describe('who the Activity feed says changed a connection or a chat route', () =
     });
 
     it('never writes a real-shaped presented token into the feed', async () => {
-      await drive({ 'x-dorkos-agent': REAL_SHAPED_TOKEN });
+      const res = await drive({ 'x-dorkos-agent': REAL_SHAPED_TOKEN });
 
       const serialized = JSON.stringify(emitted);
       expect(serialized).not.toContain(REAL_SHAPED_TOKEN);
       expect(serialized).not.toContain(REAL_SHAPED_TOKEN.slice(0, 16));
       expect(serialized).not.toContain(REAL_SHAPED_TOKEN.slice(-16));
+      if (!expectAgentAnswer(res)) return;
       expect(emitted).toHaveLength(1);
       expect(emitted[0]).toMatchObject({ actorType: 'system' });
     });

@@ -43,6 +43,11 @@ vi.mock('../../lib/boundary.js', () => ({
 }));
 
 import request from '@dorkos/test-utils/supertest';
+import {
+  approvalConfirmationRoutes,
+  finishApprovalForTest,
+} from './approval-confirmation-driver.js';
+import { setTestOwner } from './test-owner.js';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { openSseStream } from '@dorkos/test-utils';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -85,7 +90,8 @@ let anaId: string;
 let roomId: string;
 let otherRoomId: string;
 let rootId: string;
-let signedInUser: { userId: string; credential: 'cookie' | 'api-key' } | undefined;
+let signedInUser:
+  { userId: string; credential: 'cookie' | 'api-key'; sessionId?: string } | undefined;
 let statusOf: Record<string, string>;
 /** Every turn a post started, with the ceiling it ran under. */
 const turns: RoomTurnRequest[] = [];
@@ -177,14 +183,17 @@ beforeEach(async () => {
   };
   target.mount(
     honoGroupListener(
-      {
-        path: '/api/extensions',
-        routes: createExtensionsRoutes({
-          manager: manager as never,
-          dorkHome: '/tmp/unused',
-          getCwd: () => null,
-        }),
-      },
+      [
+        {
+          path: '/api/extensions',
+          routes: createExtensionsRoutes({
+            manager: manager as never,
+            dorkHome: '/tmp/unused',
+            getCwd: () => null,
+          }),
+        },
+        { path: '/api/step-up', routes: approvalConfirmationRoutes(TRUSTED_ORIGIN) },
+      ],
       {
         before: async (c, next) => {
           if (signedInUser) c.set('user', signedInUser as never);
@@ -551,7 +560,7 @@ describe('live replies', () => {
 });
 
 describe('choosing rooms', () => {
-  it('lets the person pick rooms they are in', async () => {
+  it('lets the person pick rooms they are in, at once while nobody has registered', async () => {
     const res = await request(server)
       .put('/api/extensions/social/room-access')
       .set('Origin', TRUSTED_ORIGIN)
@@ -560,6 +569,24 @@ describe('choosing rooms', () => {
     expect(res.body.roomIds).toEqual([roomId]);
     const read = await request(server).get('/api/extensions/social/room-access');
     expect(read.body.roomIds).toEqual([roomId]);
+  });
+
+  it('holds a new room at this computer once an owner exists', async () => {
+    setTestOwner('acct-1');
+    signedInUser = { userId: 'acct-1', credential: 'cookie', sessionId: 'desk' };
+    try {
+      const res = await request(server)
+        .put('/api/extensions/social/room-access')
+        .set('Origin', TRUSTED_ORIGIN)
+        .send({ roomIds: [roomId] });
+      expect(res.status).toBe(428);
+      expect((state.extensions.roomAccess as Record<string, string[]>).social).toBeUndefined();
+      const confirmed = await finishApprovalForTest(server, res, TRUSTED_ORIGIN);
+      expect(confirmed.status).toBe(200);
+      expect(confirmed.body.roomIds).toEqual([roomId]);
+    } finally {
+      setTestOwner(null);
+    }
   });
 
   it('refuses an agent picking rooms for a mini app', async () => {

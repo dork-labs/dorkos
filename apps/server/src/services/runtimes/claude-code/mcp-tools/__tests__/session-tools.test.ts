@@ -45,6 +45,7 @@ import type { AccountAdvisor } from '@dorkos/extension-api/server';
 import { USER_CONFIG_DEFAULTS, type UserConfig } from '@dorkos/shared/config-schema';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import { CLAUDE_CODE_CAPABILITIES } from '../../runtime-constants.js';
+import { creditsClaudeRoot } from '../../credits-root.js';
 import { CODEX_CAPABILITIES } from '../../../codex/runtime-constants.js';
 import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
 import { recordTurnLevels } from '../../../../core/turn-power/turn-levels.js';
@@ -74,10 +75,12 @@ vi.mock('../../../../core/cloud/credits-model-gate.js', () => ({
 }));
 /** The stored settings rows `getSessionSettings` answers from, by session id. */
 const storedSettings = vi.hoisted(() => new Map<string, { permissionMode?: string }>());
+const nativeAccounts = vi.hoisted(() => new Map<string, string>());
 vi.mock('../../../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
     computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
+    getNativeSessionAccount: vi.fn((id: string) => nativeAccounts.get(id) ?? null),
     getSessionSettings: vi.fn(async (id: string) => storedSettings.get(id) ?? null),
     has: vi.fn((type: string) => runtimes.has(type)),
     get: vi.fn((type: string) => runtimes.get(type)),
@@ -347,6 +350,7 @@ beforeEach(() => {
     permissionModes: CODEX_CAPABILITIES.permissionModes,
   });
   storedSettings.clear();
+  nativeAccounts.clear();
   runtimes.set('claude-code', claude);
   runtimes.set('codex', codex);
   installStore([account('work'), account('client')]);
@@ -978,6 +982,16 @@ describe('session_start records who started the new session (spec flow-multiproj
       reason: 'Split off the tests',
     });
     expect(store.get(sessionId.replace(/^canon-/, ''))).toBeNull();
+  });
+
+  it('does not carry a parent chat’s one-session credits choice into a spin-off', async () => {
+    nativeAccounts.set('credits-parent', creditsClaudeRoot());
+    const result = await fromChat('credits-parent')(BASE);
+    expect(result.isError).toBeUndefined();
+    const launched = vi.mocked(dispatchMessage).mock.calls.at(-1)![0];
+    expect(launched.sessionId).not.toBe('credits-parent');
+    expect(launched.accountHint).toBeUndefined();
+    expect(payloadOf(result).account).toBeNull();
   });
 
   describe('the scheduled thing behind the starting chat (DOR-3703, ME)', () => {

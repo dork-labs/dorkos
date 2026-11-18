@@ -486,7 +486,7 @@ export class ExtensionServerLifecycle {
       const handler = firstAnswer(
         bridgeExpressRouterHere(id, router),
         this.proxyFor(id, record),
-        fetch && createFetchHandler(record.manifest.name, fetch)
+        fetch && createFetchHandler(record.manifest.name, fetch, id)
       );
 
       // Asked again now that register() has run: a turn-off or revoke that

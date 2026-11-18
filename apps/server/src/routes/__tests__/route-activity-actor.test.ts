@@ -71,9 +71,22 @@ const FACTS_PARAMETERS: Record<string, string> = {
   // The add route binds `const caller = honoRequestFacts(c)` before a held add
   // waits for "Confirm it's you", and spreads it when the add runs.
   'relay-adapter-setting-routes.ts': 'caller',
+  // A held approval runs as `run(facts)`: the facts of the person who confirmed
+  // it (`holdExtensionPowerChange`), or the request's own when nothing was held.
+  'extensions-approval.ts': 'facts',
+  'extensions-approval-set.ts': 'facts',
   // Each handler binds `const caller = honoRequestFacts(c)` and spreads it.
   'runtimes-account-eligibility.ts': 'caller',
   'tasks.ts': 'caller',
+  // The extracted HTTP handlers receive the same caller facts, or the verified
+  // confirming request when a credits action commits.
+  'tasks-create-http.ts': 'caller',
+  'tasks-update-http.ts': 'caller',
+  // The held source addition records the browser that confirmed the write.
+  'extensions-trusted-sources.ts': 'confirming',
+  // Held task raises record the browser that confirmed the write (DOR-4355).
+  'task-file-approve.ts': 'confirming',
+  'task-mode-undo.ts': 'who',
   // The limit and price routes hand the request's facts to one `record`, or the
   // confirming request's after "Confirm it's you" (DOR-4204 PR 2).
   'connector-spending.ts': 'caller',

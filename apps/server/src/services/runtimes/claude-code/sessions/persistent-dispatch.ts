@@ -155,7 +155,7 @@ import { enrichContent } from '../enrich-content.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import { turnNotStarted } from '../../../session/launch/turn-not-started.js';
 import { explainRefusedDispatch, openWindowWaitingForSlot } from './slot-wait/open-turn-window.js';
-import { resolveMaxWarmSessions } from './slot-wait/warm-ceiling-size.js';
+import { waitsBehindReclaimGrace, warmPoolOptions } from './slot-wait/warm-pool-options.js';
 import { logger } from '../../../../lib/logger.js';
 import { stopWasAimedAt, type AgentSession } from '../agent-types.js';
 import { boundaryViolationEvent, validateDispatchBoundary } from '../dispatch-boundary.js';
@@ -852,10 +852,14 @@ export class PersistentDispatch {
         // `dispatch` because `bundle` is not resolved until `acquire` above,
         // and a `replaceProcess` can hand back a different one.
         bundle.closedByStop = false;
-        bundle.onSlotWait = onWaiting;
+        bundle.slotWait = { notify: onWaiting, personTurn: !waitsBehindReclaimGrace(messageOpts) };
         // A launch already waiting (a stage warmed this session) was told
-        // before this turn was listening, so the turn says it now.
-        if (this.registry.isWaitingForSlot(key)) onWaiting();
+        // before this turn was listening, so the turn says it now, and the
+        // wait looks again at once, since a person's turn may skip a grace.
+        if (this.registry.isWaitingForSlot(key)) {
+          onWaiting();
+          this.registry.recheckSlotWaits();
+        }
         return bundle.recovery.dispatch(
           [{ content: plan.enrichedContent, messageId }],
           effectiveCwd
@@ -866,7 +870,7 @@ export class PersistentDispatch {
       return;
     } finally {
       bundle.booting = false;
-      bundle.onSlotWait = undefined;
+      bundle.slotWait = undefined;
     }
     // The prompt is in the process now: record what this turn was handed.
     recordPumpTurnContext(session, sessionId, messageId, plan, messageOpts);
@@ -1239,10 +1243,7 @@ export class PersistentDispatch {
     } as unknown as SessionBundle;
 
     bundle.pump = this.registry.acquire(key, {
-      maxWarmSessions: () => resolveMaxWarmSessions(),
-      warmIdleMs: SESSIONS.WARM_IDLE_MS,
-      slotWaitMs: SESSIONS.WARM_SLOT_WAIT_MS,
-      onWaitingForSlot: () => bundle.onSlotWait?.(),
+      ...warmPoolOptions(bundle),
       // Mirrored into a durable record so a server that goes away while the
       // work runs can wake the chat at its next boot (DOR-2065).
       onBackgroundWorkChange: (holding) => {

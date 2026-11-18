@@ -11,7 +11,6 @@ import {
   Button,
   Input,
   Label,
-  PasswordInput,
 } from '@/layers/shared/ui';
 import { formatRelativeTime } from '@/layers/shared/lib';
 import {
@@ -20,7 +19,7 @@ import {
 } from '../model/use-approval-passkeys';
 import { PasswordPrompt, type Prompt } from './PasswordPrompt';
 
-/** Name the new passkey and give the password; the browser opens to make it. */
+/** Name the new passkey; confirmation opens the browser to make it. */
 function AddPasskeyDialog({
   open,
   onClose,
@@ -31,12 +30,9 @@ function AddPasskeyDialog({
   passkeys: Passkeys;
 }) {
   const labelId = useId();
-  const passwordId = useId();
   const [label, setLabel] = useState('');
-  const [password, setPassword] = useState('');
   const close = () => {
     setLabel('');
-    setPassword('');
     onClose();
   };
   return (
@@ -46,7 +42,7 @@ function AddPasskeyDialog({
           className="space-y-4"
           onSubmit={(event) => {
             event.preventDefault();
-            passkeys.add(label.trim(), password);
+            passkeys.add(label.trim());
             close();
           }}
         >
@@ -67,18 +63,9 @@ function AddPasskeyDialog({
               autoComplete="off"
             />
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor={passwordId}>Your password for this computer</Label>
-            <PasswordInput
-              id={passwordId}
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              autoComplete="current-password"
-            />
-          </div>
           <AlertDialogFooter>
             <AlertDialogCancel type="button">Cancel</AlertDialogCancel>
-            <Button type="submit" disabled={!label.trim() || !password}>
+            <Button type="submit" disabled={!label.trim()}>
               Continue
             </Button>
           </AlertDialogFooter>

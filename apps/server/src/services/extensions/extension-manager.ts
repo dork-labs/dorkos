@@ -79,6 +79,7 @@ import { isExpectedCopy, type ExpectedCopy } from './pin/extension-expected-copy
 import { bundleDigestOf, isPathTrustApproval } from './pin/extension-path-trust.js';
 import { isolationKeyOf } from './isolation/isolation-view.js';
 import { withoutExtension, withoutPersonChoices } from './rooms/extension-room-access.js';
+import { withRunApproval } from './pin/extension-approval-write.js';
 
 /**
  * How long discovery waits for a burst of project changes to settle before it
@@ -990,21 +991,9 @@ export class ExtensionManager {
     ) {
       // A "Not now" for this id is answered by the approval, so it goes too
       // (DOR-2517): a later withdrawal plus reinstall asks again rather than
-      // staying silenced by a decline the person has since reversed.
-      const next = {
-        ...extensions,
-        approvedToRun: extensions.approvedToRun.includes(id)
-          ? extensions.approvedToRun
-          : [...extensions.approvedToRun, id],
-        approvedSources: { ...(extensions.approvedSources ?? {}), [id]: source },
-        approvedPermissions: { ...permissions, [id]: declared },
-      };
-      if (dismissed[id]) {
-        const remainingDismissals = { ...dismissed };
-        delete remainingDismissals[id];
-        next.dismissedApprovals = remainingDismissals;
-      }
-      configManager.set('extensions', next);
+      // staying silenced by a decline the person has since reversed. A yes to
+      // another copy drops the old copy's rooms and agents (DOR-4573).
+      configManager.set('extensions', withRunApproval(extensions, id, source, declared));
       logConfigWrite(
         'approving an extension to run',
         'extensions',

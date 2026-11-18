@@ -19,7 +19,11 @@ import {
   type TurnMarks,
 } from '../../core/turn-power/turn-marks.js';
 import { marksOf, unknownLevelMarks } from '../../core/turn-power/turn-levels.js';
-import { chatReadOutsideWords } from '../../core/turn-power/chat-outside-words.js';
+import {
+  chatReadOutsideWords,
+  sendingChatHolds,
+} from '../../core/turn-power/chat-outside-words.js';
+import { primaryOf } from '../resolution/session-key-registry.js';
 import type { TurnOrigin } from '../origin/turn-origin.js';
 
 /** What a row stores when its sender's turn carried no teammate's chain. */
@@ -59,11 +63,14 @@ export function senderCeilingJson(
       : unknownLevelMarks([caller.sessionId], caller.agentPath);
   const carried = ceilingCarrying(mergeMarks(marks, atTurnEnd));
   // A hold carries the sender's outside words with it (`parseCarriedWords`); only an unheld
-  // sender's words need a bound of their own.
-  const held = marksHold(marksOf(caller.sessionId, caller.agentPath)) || marksHold(atTurnEnd);
+  // sender's words need a bound of their own. Both are read from the sending chat alone, never
+  // its agent's other chats (DOR-4698).
+  const levelKnown =
+    level !== undefined || deps.turnLevelOf(primaryOf(caller.sessionId)) !== undefined;
+  const held = sendingChatHolds(caller.sessionId, levelKnown) || marksHold(atTurnEnd);
   const flag = held
     ? CARRIED_HOLD
-    : chatReadOutsideWords(caller.sessionId, caller.agentPath)
+    : chatReadOutsideWords(caller.sessionId)
       ? CARRIED_WORDS
       : undefined;
   if (flag === undefined) return JSON.stringify(carried ?? NO_BOUND);

@@ -6,6 +6,7 @@ import * as JsxRuntime from 'react/jsx-runtime';
 import * as Sdk from '@dorkos/extension-api';
 import type { ExtensionAPI } from '@dorkos/extension-api';
 import type { FrameInit, FrameRegistration, FrameTheme } from './protocol';
+import { applyFrameTheme } from './theme';
 
 type Callback = (...args: unknown[]) => unknown;
 type View = {
@@ -63,12 +64,6 @@ window.addEventListener('message', function initialize(event: MessageEvent) {
   void start(event.data.init as FrameInit, event.ports[0]);
 });
 
-/** Mirror the host's light or dark mode and font choice onto this document. */
-function applyTheme(theme: FrameTheme): void {
-  document.documentElement.className = theme.className;
-  document.documentElement.setAttribute('style', theme.style);
-}
-
 /** Activate code and render its selected view without handing it any host reference. */
 async function start(init: FrameInit, port: MessagePort): Promise<void> {
   let seq = 0;
@@ -100,7 +95,7 @@ async function start(init: FrameInit, port: MessagePort): Promise<void> {
         : 'html,body{margin:0;width:100%;}#root{display:flow-root;}';
   style.textContent = `${init.css}\n${layout}body{background:transparent}`;
   document.head.append(style);
-  applyTheme(init.theme);
+  applyFrameTheme(document, init.theme);
 
   function call(method: string, ...args: unknown[]): Promise<unknown> {
     const requestId = ++seq;
@@ -141,7 +136,7 @@ async function start(init: FrameInit, port: MessagePort): Promise<void> {
       state = data.state;
       for (const [key, cb] of callbacks) if (key.startsWith('state:')) cb(state);
     } else if (data.type === 'theme') {
-      applyTheme(data.theme as FrameTheme);
+      applyFrameTheme(document, data.theme as FrameTheme);
     } else if (data.type === 'props') {
       currentProps = data.props;
       render(currentProps);

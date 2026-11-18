@@ -176,6 +176,9 @@ vi.mock('../../../../../config/constants.js', async (importOriginal) => {
       get WARM_SLOT_WAIT_MS() {
         return slotWait.ms;
       },
+      // These cases take a slot the moment a turn ends; the grace that would
+      // hold it has its own suite (DOR-4498).
+      RECLAIM_GRACE_MS: 0,
     },
   };
 });

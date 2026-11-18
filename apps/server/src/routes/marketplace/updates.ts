@@ -20,6 +20,7 @@ import { readJsonBody } from '../../http/request-body.js';
 import { honoRequestFacts } from '../../http/request-facts.js';
 import type { MarketplaceRouteDeps, MarketplaceRoutes } from '../marketplace.js';
 import type { MarketplaceRouteContext } from './context.js';
+import { runFrontDoorWrite } from '../front-door-step-up.js';
 import {
   BATCH_UPDATE_NEEDS_APPROVAL_CODE,
   errorResponse,
@@ -141,54 +142,95 @@ export function mountUpdateRoutes(
       const records = selectInstallations(await scanUpdateView(updateDeps, requested.projectPath), {
         installPaths,
       });
-      for (const input of reinstallInputsFor(records, requested)) {
+      const reinstalls = reinstallInputsFor(records, requested);
+      for (const input of reinstalls) {
         const decision = await authorize(c, 'marketplace.install', input);
         if (decision.outcome !== 'allowed') return gateResponse(c, decision);
       }
 
       const trusted = trustedCaller(readCallerAuthority(honoRequestFacts(c))) !== undefined;
       const identity = c.get('agentIdentity');
-      const outcome = await applyApprovedUpdates<UpdateRefusal>(
+      const selection = { ...requested, installPaths };
+      const apply = async (): Promise<Response> => {
+        const outcome = await applyApprovedUpdates<UpdateRefusal>(
+          updateDeps,
+          selection,
+          async (updates) => {
+            // What would be reinstalled now must be exactly what was shown:
+            // another version, or a version that runs anything else, stops the
+            // whole apply before anything is removed.
+            const changed = updatesNotAsShown(updates, targets);
+            if (changed.length > 0) return { kind: 'changed', changed };
+            if (!trusted) {
+              // An agent can read any disclosure the app can, so sending one
+              // back proves nothing about a person having looked. It gets the
+              // card `marketplace_update` raises, bound the same way.
+              const confirmation = await askAboutUpdates(
+                updates,
+                confirmationToken,
+                identity ? identity.displayName || identity.agentPath : undefined
+              );
+              if (confirmation) return confirmation;
+            }
+            return undefined;
+          },
+          // Only what landed, and only now that it has (DOR-2306): each is
+          // recorded as approved when its installed copy is what was shown.
+          async (landed) => {
+            for (const update of landed) {
+              await consent.settle(
+                {
+                  installPath: update.installPath,
+                  type: update.type,
+                  global: update.scope === 'global',
+                },
+                { disclosed: update.disclosed, contentHash: update.contentHash }
+              );
+            }
+          }
+        );
+        if ('refused' in outcome) return updateRefusalResponse(c, outcome.refused);
+        // The response is the record of what changed: each installation's
+        // `applied` or `applyError`.
+        return c.json(outcome.result);
+      };
+      // An agent's apply waits on the card the gate above raises.
+      if (!trusted) return await apply();
+
+      // A person's apply runs new code, so the owner confirms it's them
+      // (DOR-4355). It is checked against what was shown first, so a version
+      // that moved is refused before anyone is asked, and checked again on the
+      // confirmed apply. Nothing is reinstalled by this check.
+      const asShown = await applyApprovedUpdates<UpdateRefusal | 'as-shown'>(
         updateDeps,
-        { ...requested, installPaths },
+        selection,
         async (updates) => {
-          // What would be reinstalled now must be exactly what was shown:
-          // another version, or a version that runs anything else, stops the
-          // whole apply before anything is removed.
           const changed = updatesNotAsShown(updates, targets);
-          if (changed.length > 0) return { kind: 'changed', changed };
-          if (!trusted) {
-            // An agent can read any disclosure the app can, so sending one
-            // back proves nothing about a person having looked. It gets the
-            // card `marketplace_update` raises, bound the same way.
-            const confirmation = await askAboutUpdates(
-              updates,
-              confirmationToken,
-              identity ? identity.displayName || identity.agentPath : undefined
-            );
-            if (confirmation) return confirmation;
-          }
-          return undefined;
-        },
-        // Only what landed, and only now that it has (DOR-2306): each is
-        // recorded as approved when its installed copy is what was shown.
-        async (landed) => {
-          for (const update of landed) {
-            await consent.settle(
-              {
-                installPath: update.installPath,
-                type: update.type,
-                global: update.scope === 'global',
-              },
-              { disclosed: update.disclosed, contentHash: update.contentHash }
-            );
-          }
+          return changed.length > 0 ? { kind: 'changed', changed } : 'as-shown';
         }
       );
-      if ('refused' in outcome) return updateRefusalResponse(c, outcome.refused);
-      // The response is the record of what changed: each installation's
-      // `applied` or `applyError`.
-      return c.json(outcome.result);
+      // Nothing is stale, so nothing would be reinstalled.
+      if ('result' in asShown) return c.json(asShown.result);
+      if (asShown.refused !== 'as-shown') return updateRefusalResponse(c, asShown.refused);
+      const names = [...new Set(reinstalls.map((input) => input.name))];
+      return await runFrontDoorWrite(c, {
+        kind: 'marketplace.install',
+        target: names.join(', '),
+        input: { ...selection, targets },
+        reason:
+          names.length === 1
+            ? `Update ${names[0]}, which can run new code here.`
+            : `Update ${names.length} packages, which can run new code here.`,
+        subject: 'which code runs here',
+        run: async () => {
+          try {
+            return await apply();
+          } catch (err) {
+            logger.error('[Marketplace] Failed to apply updates', err);
+            return errorResponse(c, err);
+          }
+        },
+      });
     } catch (err) {
       logger.error('[Marketplace] Failed to apply updates', err);
       return errorResponse(c, err);
