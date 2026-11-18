@@ -345,6 +345,15 @@ describe('BrowserChrome', () => {
       // Below the narrowest its controls fit in (about 252px), the row scrolls sideways
       // rather than cut the pill or push ⋯ off the end (round 5).
       expect(row).toHaveClass('@max-[251px]/browser-chrome:overflow-x-auto');
+      // And the field is pinned there, so no scroll (a restore, focus on ⋯) can move
+      // the address off the edge; only the pill and ⋯ go past it (Security, round 5).
+      const pinned = container.querySelector('[data-slot="browser-chrome-field"]');
+      expect(pinned).toHaveClass(
+        '@max-[251px]/browser-chrome:sticky',
+        '@max-[251px]/browser-chrome:left-0',
+        '@max-[251px]/browser-chrome:z-10',
+        '@max-[251px]/browser-chrome:bg-background'
+      );
       const end = container.querySelector('[data-slot="browser-chrome-end"]');
       expect(end).toContainElement(screen.getByRole('button', { name: 'Status' }));
       expect(end).toContainElement(screen.getByRole('button', { name: 'More' }));

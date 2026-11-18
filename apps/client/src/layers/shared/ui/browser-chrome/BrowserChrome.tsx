@@ -173,7 +173,10 @@ export function BrowserChrome({
               truncates; below that the pill goes icon-only rather than squeeze it. */}
             <div
               data-slot="browser-chrome-field"
-              className="relative flex min-w-0 flex-1 max-md:min-w-22"
+              // When the row scrolls (under 252px), the address is pinned at its left
+              // edge over a solid background: no scroll can move the site out of view,
+              // only the pill and ⋯ pass the edge (DOR-4655).
+              className="@max-[251px]/browser-chrome:bg-background relative flex min-w-0 flex-1 max-md:min-w-22 @max-[251px]/browser-chrome:sticky @max-[251px]/browser-chrome:left-0 @max-[251px]/browser-chrome:z-10"
             >
               {/* Keyed on the retry so a refused address reopens the field in edit
                 mode, holding what was typed rather than the page still open. */}

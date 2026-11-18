@@ -511,6 +511,47 @@ test.describe('Touch reach — the browser row on a phone (DOR-4436) @smoke', ()
     }
   });
 
+  // Security, round 5: when the row scrolls, the address and its whole kept part are in
+  // view at the first scroll position, and stay pinned in view however far it scrolls.
+  test('at 240px of chrome the site stays wholly in view, scrolled or not', async ({ page }) => {
+    await page.setViewportSize({ width: 540, height: PHONE.height });
+    await page.goto('/dev/home-inbox');
+    const demo = page.getByTestId('browser-chrome-240-spoof');
+    await expect(demo).toBeVisible({ timeout: 15_000 });
+    await demo.scrollIntoViewIfNeeded();
+    const row = demo.locator('[data-slot="browser-chrome-row"]');
+    await expect(row).toHaveCSS('overflow-x', 'auto');
+    await expect(demo.locator('[data-slot="browser-address-host-kept"]')).toHaveText(
+      'com.attacker.example'
+    );
+
+    /** Whether every line of the kept part sits inside both the address and the row. */
+    const keptInView = () =>
+      demo.evaluate((root) => {
+        const rect = (selector: string) => root.querySelector(selector)!.getBoundingClientRect();
+        const text = rect('[data-slot="browser-address-text"]');
+        const row = rect('[data-slot="browser-chrome-row"]');
+        const lines = [
+          ...root.querySelector('[data-slot="browser-address-host-kept"]')!.getClientRects(),
+        ];
+        return lines.every(
+          (line) =>
+            line.left >= Math.max(text.left, row.left) - 0.5 &&
+            line.right <= Math.min(text.right, row.right) + 0.5 &&
+            line.top >= text.top - 0.5 &&
+            line.bottom <= text.bottom + 0.5
+        );
+      });
+
+    expect(await row.evaluate((el) => el.scrollLeft)).toBe(0);
+    expect(await keptInView(), 'at scrollLeft 0, com.attacker.example is wholly in view').toBe(
+      true
+    );
+    // However far the row is scrolled, the pinned address keeps its site in view.
+    await row.evaluate((el) => el.scrollTo({ left: el.scrollWidth }));
+    expect(await keptInView(), 'scrolled to the end, it is still wholly in view').toBe(true);
+  });
+
   // Round 5: a 320 viewport squeezes the Playground row to about 186px, under the
   // 252px its controls need. Real phones don't go that narrow; the row must still
   // never cut a control, so it scrolls sideways instead.

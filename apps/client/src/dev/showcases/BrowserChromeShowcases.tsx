@@ -193,6 +193,18 @@ export function BrowserChromeShowcases() {
           menu={<DemoMenu />}
         />
       </ShowcaseDemo>
+      <ShowcaseLabel>
+        Narrower than its controls (240px): the row scrolls, the address stays pinned in view
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <ChromeDemo
+          width={240}
+          testId="browser-chrome-240-spoof"
+          url="https://accounts.google.com.attacker.example/login"
+          status={<BrowserStatusPill state={YOUR_TURN} agentName="Atlas" />}
+          menu={<DemoMenu />}
+        />
+      </ShowcaseDemo>
       {NARROW_HOSTS.map((host, index) => (
         <Fragment key={host}>
           <ShowcaseLabel>
