@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { BrowserChrome, CHROME_TOOLTIP_DELAY_MS, type BrowserChromeProps } from '../browser-chrome';
 
@@ -249,6 +249,329 @@ describe('BrowserChrome', () => {
     expect(screen.queryByRole('textbox', { name: 'Address' })).not.toBeInTheDocument();
     rerender(<BrowserChrome {...props} retry={{ draft: 'file:///x', attempt: 2 }} />);
     expect(screen.getByRole('textbox', { name: 'Address' })).toHaveValue('file:///x');
+  });
+
+  it('sets the address at rest in the field text size, so tapping it never changes the size', () => {
+    renderChrome();
+    const field = screen.getByRole('button', { name: /^Address:/ });
+    expect(field).toHaveClass('text-field');
+    expect(field).not.toHaveClass('text-sm');
+  });
+
+  // DOR-4420 spec §12: at 390px, 10+44+6+field+6+44+44+10.
+  describe('on a phone', () => {
+    const desktop = window.matchMedia;
+    beforeEach(() => {
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        configurable: true,
+        value: vi.fn().mockImplementation((query: string) => ({
+          matches: true,
+          media: query,
+          onchange: null,
+          addListener: vi.fn(),
+          removeListener: vi.fn(),
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        })),
+      });
+    });
+    afterEach(() => {
+      // Back to the setup's desktop answer.
+      Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        configurable: true,
+        value: desktop,
+      });
+    });
+
+    const field = (container: HTMLElement) =>
+      container.querySelector('[data-slot="browser-chrome-field"]') as HTMLElement;
+
+    it('puts Reload inside the right end of the address field', () => {
+      const { container, onReload } = renderChrome();
+      const reload = screen.getByRole('button', { name: 'Reload' });
+      expect(field(container)).toContainElement(reload);
+      expect(field(container).lastElementChild).toBe(reload);
+      // No Reload slot of its own before the field: Forward (no menu here) is next to it.
+      expect(field(container).previousElementSibling).toBe(
+        screen.getByRole('button', { name: 'Forward' })
+      );
+      fireEvent.click(reload);
+      expect(onReload).toHaveBeenCalledOnce();
+    });
+
+    it('keeps the address text, Not secure included, clear of Reload', () => {
+      // DOR-4436 round 3: at 258px "Not secure" plus the host ran under Reload.
+      const { container } = renderChrome({ url: 'http://printer.example/status' });
+      const field = screen.getByRole('button', { name: /^Address:/ });
+      // Reload's 44px is the field's right padding, and the text lives in a box that clips
+      // at that padding, so nothing it holds can draw under Reload.
+      expect(field).toHaveClass('pr-11');
+      const text = container.querySelector('[data-slot="browser-address-text"]')!;
+      expect(field).toContainElement(text as HTMLElement);
+      expect(text).toHaveClass('min-w-0', 'flex-1', 'overflow-hidden');
+      expect(text).toContainElement(screen.getByText('Not secure'));
+      const host = screen.getByText('printer.example').parentElement!;
+      expect(host).toHaveAttribute('data-slot', 'browser-address-host');
+      expect(host).toHaveClass('min-w-0');
+    });
+
+    it('never lets the field shrink under Reload plus a sliver of host', () => {
+      // DOR-4436 round 2: 88px is Reload's 44 plus 44 of host, which still truncates.
+      const { container } = renderChrome();
+      expect(field(container)).toHaveClass('max-md:min-w-22');
+    });
+
+    it('turns that Reload into Stop while loading', () => {
+      const onStop = vi.fn();
+      const { container } = renderChrome({ loading: true, onStop });
+      const stop = screen.getByRole('button', { name: 'Stop' });
+      expect(field(container)).toContainElement(stop);
+      fireEvent.click(stop);
+      expect(onStop).toHaveBeenCalledOnce();
+    });
+
+    it('spaces the row 6px around the field, with the pill and ⋯ side by side', () => {
+      const { container } = renderChrome({
+        status: <button type="button">Status</button>,
+        menu: <button type="button">More</button>,
+      });
+      const row = container.querySelector('[data-slot="browser-chrome-row"]');
+      // A minimum, so a wrapped address grows the row rather than clip (DOR-4655).
+      expect(row).toHaveClass('min-h-12', 'px-2.5', 'gap-1.5', 'md:min-h-9', 'md:gap-1');
+      expect(row).toHaveClass('items-center');
+      // Below the narrowest its controls fit in (about 252px), the row scrolls sideways
+      // rather than cut the pill or push ⋯ off the end (round 5).
+      expect(row).toHaveClass('@max-[251px]/browser-chrome:overflow-x-auto');
+      // And the field is pinned there, so no scroll (a restore, focus on ⋯) can move
+      // the address off the edge; only the pill and ⋯ go past it (Security, round 5).
+      // Sticky at exactly where each already sits (round 6): Back at the row's 10px
+      // inset, the field after Back and its 6px gap (0.625 + 2.75 + 0.375 = 3.75rem),
+      // so neither moves at all when the row scrolls.
+      const pinned = container.querySelector('[data-slot="browser-chrome-field"]');
+      expect(pinned).toHaveClass(
+        '@max-[251px]/browser-chrome:sticky',
+        '@max-[251px]/browser-chrome:left-[3.75rem]',
+        '@max-[251px]/browser-chrome:z-10',
+        '@max-[251px]/browser-chrome:bg-background'
+      );
+      expect(screen.getByRole('button', { name: 'Back' })).toHaveClass(
+        '@max-[251px]/browser-chrome:sticky',
+        '@max-[251px]/browser-chrome:left-[0.625rem]',
+        '@max-[251px]/browser-chrome:z-10'
+      );
+      expect(row).toHaveClass('px-2.5', 'gap-1.5');
+      const end = container.querySelector('[data-slot="browser-chrome-end"]');
+      expect(end).toContainElement(screen.getByRole('button', { name: 'Status' }));
+      expect(end).toContainElement(screen.getByRole('button', { name: 'More' }));
+      expect(end).toHaveClass('gap-0', 'md:gap-1');
+    });
+  });
+
+  it('adds no gap for an end group whose menu renders nothing', () => {
+    function NothingToOffer() {
+      return null;
+    }
+    const { container } = renderChrome({ menu: <NothingToOffer /> });
+    const end = container.querySelector('[data-slot="browser-chrome-end"]');
+    // jsdom applies no `:empty`; the class is what hides it in a real browser.
+    expect(end).toBeEmptyDOMElement();
+    expect(end).toHaveClass('empty:hidden');
+  });
+
+  it('keeps Reload its own button before the field off a phone', () => {
+    const { container } = renderChrome();
+    const reload = screen.getByRole('button', { name: 'Reload' });
+    expect(container.querySelector('[data-slot="browser-chrome-field"]')).not.toContainElement(
+      reload
+    );
+    expect(reload.nextElementSibling).toBe(
+      container.querySelector('[data-slot="browser-chrome-field"]')
+    );
+  });
+
+  // DOR-4655 (Security Must): a long, trusted-looking start must never push the real
+  // site out of view. The end of the host is kept whole; only the start is elided.
+  describe('never hides the end of the host', () => {
+    const kept = () =>
+      document.querySelector('[data-slot="browser-address-host-kept"]') as HTMLElement;
+    const elided = () =>
+      document.querySelector('[data-slot="browser-address-host-elided"]') as HTMLElement | null;
+
+    const address = () => screen.getByRole('button', { name: /^Address:/ });
+    const host = () => document.querySelector('[data-slot="browser-address-host"]') as HTMLElement;
+
+    /**
+     * Lay the field out as a browser would: the at-rest field this wide, and each
+     * measured part 8px a character (the icon 15px). jsdom draws nothing itself.
+     */
+    function withLayout(fieldWidth: number) {
+      vi.spyOn(Element.prototype, 'clientWidth', 'get').mockImplementation(function (
+        this: Element
+      ) {
+        return this.getAttribute('aria-label')?.startsWith('Address:') ? fieldWidth : 0;
+      });
+      vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+        this: Element
+      ) {
+        const part = this.getAttribute('data-measure');
+        const text = this.getAttribute('data-text') ?? '';
+        const width = part === 'badge-icon' ? 15 : part ? text.length * 8 : 0;
+        return {
+          width,
+          height: 0,
+          top: 0,
+          left: 0,
+          right: width,
+          bottom: 0,
+          x: 0,
+          y: 0,
+        } as DOMRect;
+      });
+    }
+    afterEach(() => vi.restoreAllMocks());
+
+    it('before anything is measured, shows the whole host free to wrap, never a clipped guess', () => {
+      // No layout: first paint, a hidden panel (width 0), no resize yet.
+      renderChrome({ url: 'https://accounts.google.com.attacker.example/login' });
+      expect(address()).toHaveAttribute('data-host-fit', 'full');
+      expect(address()).toHaveAttribute('data-wrap', 'true');
+      expect(address()).toHaveClass('h-auto', 'min-h-11');
+      expect(host()).toHaveClass('whitespace-normal');
+      expect(host().textContent).toBe('accounts.google.com.attacker.example');
+      expect(host().style.fontSize).toBe('');
+    });
+
+    it('measures from a hidden copy that can take no click, focus or room', () => {
+      renderChrome({ url: 'https://accounts.google.com.attacker.example/login' });
+      const copy = document.querySelector('[data-slot="browser-address-measure"]') as HTMLElement;
+      expect(copy).toHaveAttribute('aria-hidden', 'true');
+      // Unseen and unclickable, and a zero-size box that clips, so its one-line copy
+      // can't stretch or scroll anything around it.
+      expect(copy).toHaveClass(
+        'pointer-events-none',
+        'invisible',
+        'absolute',
+        'size-0',
+        'overflow-hidden',
+        'select-none'
+      );
+      expect(copy.querySelector('a, button, input, [tabindex]')).toBeNull();
+      // Its words come from attributes, so the page never says them twice.
+      expect(copy.textContent).toBe('');
+    });
+
+    it('draws the whole host when it fits, the start included', () => {
+      withLayout(400);
+      renderChrome({ url: 'https://accounts.google.com.attacker.example/login' });
+      expect(address()).toHaveAttribute('data-host-fit', 'full');
+      expect(elided()).toHaveTextContent('accounts.google.');
+      expect(kept()).toHaveTextContent(/^com\.attacker\.example$/);
+    });
+
+    it('elides the start as "…", whole labels only, and keeps com.attacker.example whole', () => {
+      withLayout(200);
+      renderChrome({ url: 'https://accounts.google.com.attacker.example/login' });
+      expect(address()).toHaveAttribute('data-host-fit', 'elided');
+      expect(elided()).toBeNull();
+      expect(host().textContent).toBe('…com.attacker.example');
+      expect(kept()).toHaveTextContent(/^com\.attacker\.example$/);
+      // The path went first.
+      expect(document.querySelector('[data-slot="browser-address-path"]')).toBeNull();
+      // The full host is still the field's name.
+      expect(address()).toHaveAccessibleName('Address: accounts.google.com.attacker.example/login');
+    });
+
+    it('shrinks Not secure to an open lock before the site gives up anything, keeping its words', () => {
+      withLayout(150);
+      renderChrome({ url: 'http://printer.example/status' });
+      const badge = screen.getByText('Not secure');
+      // Words at zero size (still read aloud), and the open lock in their place.
+      expect(badge).toHaveClass('text-[0px]');
+      expect(badge.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+      expect(kept()).toHaveTextContent(/^printer\.example$/);
+      expect(host().style.fontSize).toBe('');
+    });
+
+    it('then takes one smaller step, 12px, never a smooth scale', () => {
+      withLayout(110);
+      renderChrome({ url: 'https://evil-google.com/' });
+      expect(host().style.fontSize).toBe('12px');
+      expect(address()).not.toHaveAttribute('data-wrap');
+      expect(kept()).toHaveTextContent(/^evil-google\.com$/);
+    });
+
+    it('wraps the site onto more lines rather than clip it, and the field grows', () => {
+      withLayout(100);
+      renderChrome({ url: 'https://a-very-long-attacker-registrable-name.example/' });
+      expect(address()).toHaveAttribute('data-wrap', 'true');
+      expect(address()).toHaveClass('h-auto', 'min-h-11');
+      expect(host().style.fontSize).toBe('12px');
+      expect(host()).toHaveClass('whitespace-normal');
+      expect(kept()).toHaveTextContent(/^a-very-long-attacker-registrable-name\.example$/);
+    });
+
+    // DOR-4436 round 5 (QA): wrapped lines broke mid-word ("notgoogl|e.com").
+    it('offers line breaks only after dots and hyphens, without changing a character', () => {
+      // Narrow enough that notgoogle.com must wrap even at 12px.
+      withLayout(70);
+      renderChrome({ url: 'https://notgoogle.com/' });
+      expect(kept().innerHTML).toBe('notgoogle.<wbr>com');
+      expect(kept().textContent).toBe('notgoogle.com');
+      // Inside a label it may break only if that one label can't fit a line at all.
+      expect(host()).toHaveClass('[overflow-wrap:break-word]');
+      expect(host()).not.toHaveClass('[overflow-wrap:anywhere]');
+    });
+
+    it('breaks a hyphenated label at its hyphens, and keeps "…" on the next label’s line', () => {
+      withLayout(100);
+      renderChrome({ url: 'https://x.evil-google.com.attacker.example/' });
+      expect(host().innerHTML).toBe(
+        '<span data-slot="browser-address-host-ellipsis" aria-hidden="true">…</span>' +
+          '<span data-slot="browser-address-host-kept" class="text-foreground">' +
+          'com.<wbr>attacker.<wbr>example</span>'
+      );
+      renderChrome({ url: 'https://evil-google.com/' });
+      expect(
+        document.querySelectorAll('[data-slot="browser-address-host-kept"]')[1].innerHTML
+      ).toBe('evil-<wbr>google.<wbr>com');
+    });
+
+    it('gives wrapped lines room: the normal padding, space above and below, taller lines', () => {
+      withLayout(100);
+      renderChrome({ url: 'https://a-very-long-attacker-registrable-name.example/' });
+      expect(address()).not.toHaveClass('pl-0.5');
+      expect(address()).toHaveClass('py-1.5');
+      expect(host().style.lineHeight).toBe('1.4');
+    });
+
+    it.each([
+      ['evil.github.io', 'https://evil.github.io/'],
+      ['login-google.vercel.app', 'https://login-google.vercel.app/'],
+      ['192.0.2.10', 'http://192.0.2.10/'],
+      ['[2001:db8::1]', 'http://[2001:db8::1]/'],
+      ['localhost:5173', 'http://localhost:5173/'],
+      ['xn--bcher-kva.example', 'https://xn--bcher-kva.example/'],
+    ])('shows %s whole, with nothing elided', (host, url) => {
+      renderChrome({ url });
+      expect(kept()).toHaveTextContent(host);
+      expect(elided()).toBeNull();
+    });
+
+    it('keeps the label in front of a two-part ending: attacker.co.za', () => {
+      renderChrome({ url: 'https://victim.attacker.co.za/' });
+      expect(kept()).toHaveTextContent(/^attacker\.co\.za$/);
+      expect(elided()).toHaveTextContent('victim.');
+    });
+
+    it('lets the path give way before the host', () => {
+      renderChrome({ url: 'https://accounts.google.com.attacker.example/a/very/long/path' });
+      const path = document.querySelector('[data-slot="browser-address-path"]')!;
+      expect(path).toHaveClass('min-w-0', 'truncate');
+      expect(path).toHaveTextContent('/a/very/long/path');
+    });
   });
 
   it('shows an empty page as the placeholder, named as a new page', () => {
