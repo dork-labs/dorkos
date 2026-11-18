@@ -1,0 +1,229 @@
+name: Release Publish
+
+# Publishes a release cut on release/vX.Y.Z to npm (DOR-4638, ADR 261118-135124).
+# Dispatched on main ONLY: this file and every proof it runs come from main, and
+# the release branch is checked out as data at the exact SHA QA and the PM named.
+# On a release/* ref the branch's own copy of this file would run, and a PR there
+# could change the checks without the approver seeing it (Security, 2026-11-17).
+#
+# prepare: proves the branch (tip, base, cherry-picks) with main's release-cli,
+#          builds and packs the three packages. No npm or deploy rights.
+# publish: waits for a person's approval on npm-release, checks that approval
+#          inside the job, re-checks the tip, then publishes the exact packed
+#          tarballs with npm trusted publishing (OIDC, no npm token).
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish, X.Y.Z (the branch is release/vX.Y.Z)'
+        required: true
+        type: string
+      expected_sha:
+        description: 'Full SHA QA and the PM named; the branch tip must equal it'
+        required: true
+        type: string
+      mode:
+        description: 'routine (cut from QA pin on main) or hotfix (cut from a published tag)'
+        required: true
+        type: choice
+        options: [routine, hotfix]
+      base:
+        description: "routine: QA's full pin SHA. hotfix: the vX.Y.Z tag it starts from"
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  # One publish at a time, never cancelled midway.
+  group: release-publish
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  RELEASE_VERSION: ${{ inputs.version }}
+  RELEASE_EXPECTED_SHA: ${{ inputs.expected_sha }}
+  RELEASE_MODE: ${{ inputs.mode }}
+  RELEASE_BASE: ${{ inputs.base }}
+
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: read
+      attestations: read
+    outputs:
+      dorkos_sha256: ${{ steps.collect.outputs.dorkos }}
+      cloud_api_sha256: ${{ steps.collect.outputs.cloud_api }}
+      connector_providers_sha256: ${{ steps.collect.outputs.connector_providers }}
+    steps:
+      - name: Refuse anything but main's copy and strict inputs
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/main ]]
+          [[ "$GITHUB_WORKFLOW_REF" == "$GITHUB_REPOSITORY/.github/workflows/release-publish.yml@refs/heads/main" ]]
+          [[ "$RELEASE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          [[ "$RELEASE_EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          case "$RELEASE_MODE" in
+            routine) [[ "$RELEASE_BASE" =~ ^[0-9a-f]{40}$ ]] ;;
+            hotfix) [[ "$RELEASE_BASE" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] ;;
+            *) exit 1 ;;
+          esac
+      - name: Check out main's proofs
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: trusted
+          persist-credentials: false
+      - name: Check out the release branch as data, at the named SHA
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.RELEASE_EXPECTED_SHA }}
+          path: release
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          package_json_file: release/package.json
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: Install the release checkout
+        working-directory: release
+        run: pnpm install --frozen-lockfile
+      - name: Prove the release branch and build dorkos with main's release-cli
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TMPDIR: ${{ runner.temp }}/cli
+        run: |
+          set -euo pipefail
+          mkdir -p "$TMPDIR"
+          node --experimental-strip-types trusted/packages/cli/scripts/release-cli.ts \
+            --release-branch "release/v$RELEASE_VERSION" \
+            --mode "$RELEASE_MODE" \
+            --base "$RELEASE_BASE" \
+            --expected-sha "$RELEASE_EXPECTED_SHA" \
+            --root release
+      - name: Build and pack the cloud contract and connector providers
+        working-directory: release
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/packed"
+          for pkg in cloud-api connector-providers; do
+            pnpm --filter "@dork-labs/$pkg" run prepublishOnly
+            (cd "packages/$pkg" && pnpm pack --pack-destination "$RUNNER_TEMP/packed")
+          done
+      - name: Collect and check the three tarballs
+        id: collect
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          cli=("$RUNNER_TEMP"/cli/dorkos-cli-release-*/packed/*.tgz)
+          receipts=("$RUNNER_TEMP"/cli/dorkos-cli-release-*/release-receipt.json)
+          [[ ${#cli[@]} -eq 1 && ${#receipts[@]} -eq 1 ]]
+          [[ "$(jq -r .commit "${receipts[0]}")" == "$RELEASE_EXPECTED_SHA" ]]
+          [[ "$(jq -r .version "${receipts[0]}")" == "$RELEASE_VERSION" ]]
+          cp "${cli[0]}" "$RUNNER_TEMP/packed/dorkos.tgz"
+          cp "${receipts[0]}" "$RUNNER_TEMP/packed/release-receipt.json"
+          gate=trusted/packages/cli/scripts/release-branch/publish-gate.ts
+          packed=("$RUNNER_TEMP"/packed/*.tgz)
+          [[ ${#packed[@]} -eq 3 ]]
+          for row in "dorkos:dorkos.tgz:dorkos" \
+                     "@dork-labs/cloud-api:dork-labs-cloud-api-$RELEASE_VERSION.tgz:cloud_api" \
+                     "@dork-labs/connector-providers:dork-labs-connector-providers-$RELEASE_VERSION.tgz:connector_providers"; do
+            IFS=: read -r name file key <<< "$row"
+            node --experimental-strip-types "$gate" tarball "$RUNNER_TEMP/packed/$file" "$name" "$RELEASE_VERSION"
+            echo "$key=$(sha256sum "$RUNNER_TEMP/packed/$file" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-tarballs-${{ github.run_id }}
+          path: ${{ runner.temp }}/packed
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: prepare
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Required reviewer: one account only the person holds; branches: main only.
+    environment: npm-release
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    env:
+      # The one account allowed to approve a publish (Security, 2026-11-18). It is
+      # hardcoded here, not a repo variable the agents' admin token could edit, so
+      # changing it takes a reviewed PR to main. PLACEHOLDER until Dorian names the
+      # account: it is not a valid GitHub login, so every publish refuses until then.
+      RELEASE_APPROVER: '<approver-not-named-yet>'
+      SHA_DORKOS: ${{ needs.prepare.outputs.dorkos_sha256 }}
+      SHA_CLOUD_API: ${{ needs.prepare.outputs.cloud_api_sha256 }}
+      SHA_CONNECTOR_PROVIDERS: ${{ needs.prepare.outputs.connector_providers_sha256 }}
+    steps:
+      - name: Refuse anything but main's copy and strict inputs
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/main ]]
+          [[ "$GITHUB_WORKFLOW_REF" == "$GITHUB_REPOSITORY/.github/workflows/release-publish.yml@refs/heads/main" ]]
+          [[ "$RELEASE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          [[ "$RELEASE_EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$RELEASE_APPROVER" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,38}$ ]]
+          for sum in "$SHA_DORKOS" "$SHA_CLOUD_API" "$SHA_CONNECTOR_PROVIDERS"; do
+            [[ "$sum" =~ ^[0-9a-f]{64}$ ]]
+          done
+      - name: Check out main's gate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: trusted
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: Require the approver's own approval, and the tip unchanged
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gate=trusted/packages/cli/scripts/release-branch/publish-gate.ts
+          node --experimental-strip-types "$gate" approval "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$RELEASE_APPROVER" "$GITHUB_ACTOR"
+          node --experimental-strip-types "$gate" approval "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$RELEASE_APPROVER" "$GITHUB_TRIGGERING_ACTOR"
+          node --experimental-strip-types "$gate" tip "$GITHUB_REPOSITORY" "$RELEASE_VERSION" "$RELEASE_EXPECTED_SHA"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-tarballs-${{ github.run_id }}
+          path: ${{ runner.temp }}/packed
+      - name: Check the tarballs are the ones prepare packed
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/packed"
+          printf '%s  %s\n' \
+            "$SHA_DORKOS" dorkos.tgz \
+            "$SHA_CLOUD_API" "dork-labs-cloud-api-$RELEASE_VERSION.tgz" \
+            "$SHA_CONNECTOR_PROVIDERS" "dork-labs-connector-providers-$RELEASE_VERSION.tgz" \
+            | sha256sum --check --strict
+      - name: Require npm with trusted publishing (11.5.1 or newer)
+        run: |
+          set -euo pipefail
+          npm --version
+          node -e 'const [a,b,c]=process.argv[1].split(".").map(Number); process.exit(a>11||(a===11&&(b>5||(b===5&&c>=1)))?0:1)' "$(npm --version)"
+      - name: Publish dorkos, then the cloud contract, then connector providers
+        run: |
+          set -euo pipefail
+          # Order matters: connector-providers pins cloud-api at this exact version.
+          for row in "dorkos:dorkos.tgz" \
+                     "@dork-labs/cloud-api:dork-labs-cloud-api-$RELEASE_VERSION.tgz" \
+                     "@dork-labs/connector-providers:dork-labs-connector-providers-$RELEASE_VERSION.tgz"; do
+            IFS=: read -r name file <<< "$row"
+            if [[ "$(npm view "$name@$RELEASE_VERSION" version 2>/dev/null || true)" == "$RELEASE_VERSION" ]]; then
+              echo "$name@$RELEASE_VERSION is already on npm; never publishing twice."
+              continue
+            fi
+            npm publish "$RUNNER_TEMP/packed/$file" --access public
+          done

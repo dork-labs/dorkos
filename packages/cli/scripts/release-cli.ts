@@ -6,9 +6,16 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readBrowserNativeArtifactManifest } from './browser-native-artifact.ts';
+import {
+  parseReleaseBranchArgs,
+  proveReleaseBranch,
+  type ReleaseBranchRequest,
+} from './release-branch/proof.ts';
 
 const workflow = 'browser-native-release-artifact.yml';
-const root = resolve(fileURLToPath(new URL('../../../', import.meta.url)));
+// Reassigned only by a release-branch build's --root, so main's copy of this
+// script can prove and build a release checkout it treats as data (DOR-4638).
+let root = resolve(fileURLToPath(new URL('../../../', import.meta.url)));
 interface ProducerRun {
   databaseId: number;
   headSha: string;
@@ -213,7 +220,13 @@ function clean() {
 }
 /** Explicit release command only. Preparation downloads verified originals and builds/packs;
  * --publish retains normal pnpm publication and its normal prepublishOnly/gitrelease checks. */
-export async function releaseCLI(publish: boolean) {
+export async function releaseCLI(
+  publish: boolean,
+  branch?: { request: ReleaseBranchRequest; root: string | undefined }
+) {
+  if (branch && publish)
+    throw Error('A release-branch build only prepares; the Release Publish workflow publishes it.');
+  if (branch?.root) root = resolve(branch.root);
   clean();
   const head = output('git', ['rev-parse', 'HEAD']);
   const pkg = JSON.parse(await readFile(join(root, 'packages/cli/package.json'), 'utf8')) as {
@@ -236,7 +249,19 @@ export async function releaseCLI(publish: boolean) {
   ]);
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository))
     throw Error('The release repository could not be confirmed.');
-  const proveMerged = () => {
+  let logged = false;
+  const proveBranch = () => {
+    const log = proveReleaseBranch({
+      root,
+      repository,
+      version: pkg.version,
+      head,
+      request: branch!.request,
+    });
+    if (!logged) console.log(log);
+    logged = true;
+  };
+  const proveMain = () => {
     const repo: unknown = JSON.parse(output('gh', ['api', `repos/${repository}`]));
     if (
       !repo ||
@@ -269,6 +294,8 @@ export async function releaseCLI(publish: boolean) {
       JSON.parse(output('gh', ['api', `repos/${repository}/compare/${head}...${main}`]))
     );
   };
+  // A release branch replaces only the main-ancestor proof; every other check stays.
+  const proveMerged = branch ? proveBranch : proveMain;
   proveMerged(); // Before any release producer acquisition or dispatch.
   const list = (): ProducerRun[] => {
     const value: unknown = JSON.parse(
@@ -304,7 +331,13 @@ export async function releaseCLI(publish: boolean) {
     { head, tag, repository, workflow },
     {
       list,
-      admit: proveMerged,
+      admit: branch
+        ? () => {
+            throw Error(
+              `No Browser Native Release Artifact run exists for ${tag}. Dispatch it at the tag before the release-branch build.`
+            );
+          }
+        : proveMerged,
       dispatch: () => {
         execFileSync('gh', ['workflow', 'run', workflow, '--repo', repository, '--ref', tag], {
           cwd: root,
@@ -409,6 +442,8 @@ export async function releaseCLI(publish: boolean) {
     DORKOS_BROWSER_DARWIN_ARTIFACT_DIRECTORY: artifact,
     DORKOS_BROWSER_DARWIN_ARTIFACT_SHA256: pin,
   };
+  // A release-branch build runs in CI; its build steps never need the GitHub token.
+  if (branch) for (const name of ['GH_TOKEN', 'GITHUB_TOKEN']) delete env[name];
   clean();
   assertBrowserNativeReleaseBinding(
     pkg.version,
@@ -455,10 +490,11 @@ export async function releaseCLI(publish: boolean) {
   }
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const args = process.argv.slice(2);
+  const branch = parseReleaseBranchArgs(process.argv.slice(2));
+  const args = branch ? branch.rest : process.argv.slice(2);
   if (args.length > 1 || (args.length === 1 && args[0] !== '--publish'))
     throw Error('Use release:cli:prepare or the explicit publish:cli command.');
-  void releaseCLI(args[0] === '--publish').catch((error: unknown) => {
+  void releaseCLI(args[0] === '--publish', branch).catch((error: unknown) => {
     console.error(error);
     process.exitCode = 1;
   });
