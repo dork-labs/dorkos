@@ -2,7 +2,7 @@
  * The gatherers and the rules rung (spec `heartbeats` §5, §6.1), over a real
  * test database where they read one.
  */
-import { describe, expect, it, beforeEach } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import {
   agentConnectionAttachments,
@@ -30,6 +30,19 @@ import { standingKey, triageByRules } from '../triage-rules.js';
 import { AuditLog } from '../../audit/audit-log.js';
 import { eq } from 'drizzle-orm';
 import { noteEntryLevel } from '../../core/turn-power/turn-levels.js';
+import { env } from '../../../env.js';
+
+// The Keychain guard in front of `gh` (DOR-4423) reads the test-runtime flag
+// from the startup snapshot and live, and a developer's shell may export it.
+const AMBIENT_TEST_RUNTIME = env.DORKOS_TEST_RUNTIME;
+beforeEach(() => {
+  env.DORKOS_TEST_RUNTIME = false;
+  vi.stubEnv('DORKOS_TEST_RUNTIME', '');
+});
+afterEach(() => {
+  env.DORKOS_TEST_RUNTIME = AMBIENT_TEST_RUNTIME;
+  vi.unstubAllEnvs();
+});
 
 const NOW = new Date('2026-10-12T10:00:00Z');
 const SINCE = '2026-10-12T09:00:00.000Z';
@@ -427,6 +440,25 @@ describe('workspace', () => {
     run.gh = 0;
     return run;
   }
+
+  describe('on a Mac with the test runtime on (DOR-4423)', () => {
+    const realPlatform = process.platform;
+    const realTestRuntime = env.DORKOS_TEST_RUNTIME;
+
+    afterEach(() => {
+      Object.defineProperty(process, 'platform', { value: realPlatform, configurable: true });
+      env.DORKOS_TEST_RUNTIME = realTestRuntime;
+    });
+
+    it('never starts gh, which reads its sign-in from the Keychain', async () => {
+      Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
+      env.DORKOS_TEST_RUNTIME = true;
+      const run = fakeRun('feature', JSON.stringify([{ name: 'test', bucket: 'fail' }]));
+      const changes = await createWorkspaceGatherer(run, () => NOW.getTime())(ctx());
+      expect(run.gh).toBe(0);
+      expect(changes.map((c) => c.key)).toEqual(['commit:aaa']);
+    });
+  });
 
   it('skips an agent with no working directory', async () => {
     const run = fakeRun('main', '[]');
