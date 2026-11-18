@@ -384,11 +384,104 @@ interface MockSession {
   setDisplayMediaRequestHandler: ReturnType<typeof vi.fn<(handler: unknown) => void>>;
   /** Where "Add to Dictionary" lands (see `context-menu.ts`). */
   addWordToSpellCheckerDictionary: ReturnType<typeof vi.fn<(word: string) => boolean>>;
+  /** The session's cookie store (see {@link MockCookieJar}). */
+  cookies: MockCookieJar;
+}
+
+/** One cookie as Electron's `cookies.get` returns it, cut to the fields the shell reads. */
+interface MockCookie {
+  name: string;
+  value: string;
+  domain?: string;
+}
+
+/** How a test describes one cookie change: where it is for, and why it changed. */
+interface MockCookieChange {
+  domain?: string;
+  cause?: string;
+}
+
+type CookieChangedListener = (
+  event: unknown,
+  cookie: MockCookie,
+  cause: string,
+  removed: boolean
+) => void;
+
+/**
+ * The session's cookie store: what the window's sign-in left behind
+ * (`sign-in/server-cookies.ts`). A test plays the server's side with
+ * {@link MockCookieJar.set} and {@link MockCookieJar.remove}, each of which
+ * fires `changed` as Electron does. `get` records the URL it was asked about.
+ */
+export class MockCookieJar {
+  private jar = new Map<string, string>();
+  private listeners = new Set<CookieChangedListener>();
+  /** Every URL `get` was asked about, in order. */
+  readonly askedUrls: string[] = [];
+
+  /** Set by {@link hold}: the next `get` waits on it. */
+  private held: Promise<void> | null = null;
+
+  get = vi.fn(async (filter: { url?: string }): Promise<MockCookie[]> => {
+    if (filter.url !== undefined) this.askedUrls.push(filter.url);
+    // The answer is what the store held when it was asked, as a real read
+    // that is slow to come back would give.
+    const snapshot = [...this.jar].map(([name, value]) => ({ name, value }));
+    const held = this.held;
+    this.held = null;
+    if (held) await held;
+    return snapshot;
+  });
+
+  /**
+   * Make the next `get` wait until the returned function is called, so a test
+   * can act while a read is still out. Never calling it is a read that never
+   * answers.
+   */
+  hold(): () => void {
+    let release!: () => void;
+    this.held = new Promise<void>((resolve) => (release = resolve));
+    return release;
+  }
+
+  on(event: 'changed', listener: CookieChangedListener): this {
+    if (event === 'changed') this.listeners.add(listener);
+    return this;
+  }
+
+  removeListener(event: 'changed', listener: CookieChangedListener): this {
+    if (event === 'changed') this.listeners.delete(listener);
+    return this;
+  }
+
+  /** How many `changed` listeners are attached, so a test can prove one was let go. */
+  get listenerCount(): number {
+    return this.listeners.size;
+  }
+
+  /** Store a cookie and fire `changed`, as a sign-in's `Set-Cookie` does. */
+  set(name: string, value: string, change: MockCookieChange = {}): void {
+    this.jar.set(name, value);
+    this.emit({ name, value, domain: change.domain }, change.cause ?? 'explicit', false);
+  }
+
+  /** Drop a cookie and fire `changed`, as a sign-out does. */
+  remove(name: string, change: MockCookieChange = {}): void {
+    const value = this.jar.get(name) ?? '';
+    this.jar.delete(name);
+    this.emit({ name, value, domain: change.domain }, change.cause ?? 'explicit', true);
+  }
+
+  private emit(cookie: MockCookie, cause: string, removed: boolean): void {
+    for (const listener of [...this.listeners]) listener({}, cookie, cause, removed);
+  }
 }
 
 /** A fresh session double — the shape `session.defaultSession` and every `webContents.session` share. */
 function makeMockSession(): MockSession {
   return {
+    cookies: new MockCookieJar(),
     clearCache: vi.fn<() => Promise<void>>(() => Promise.resolve()),
     clearStorageData: vi.fn<(options?: unknown) => Promise<void>>(() => Promise.resolve()),
     setPermissionRequestHandler: vi.fn<(handler: unknown) => void>(),

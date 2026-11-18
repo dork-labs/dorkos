@@ -429,8 +429,12 @@ export interface OperatingSkill {
  *   own exact commands (`allowList` at `dontAsk`, no card), and taking them back
  *   with `allowList: []` after the run (DOR-4315). An agent seeded at 57 would
  *   still believe the tool needs a cron and would ask the person for a card.
+ * - 59: `scheduling-tasks` teaches asking for more than an agent may set
+ *   (`requestedPermissionMode`, `requestedAllow`, up to 20 rules), which tasks can
+ *   wake, and the approval record on each task (DOR-4678). An agent seeded at 58
+ *   would not know the request fields exist or what `approvedBy` means.
  */
-export const OPERATING_SKILLS_VERSION = 58;
+export const OPERATING_SKILLS_VERSION = 59;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

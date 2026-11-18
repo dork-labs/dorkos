@@ -180,11 +180,12 @@ export interface CapabilityInvocationContext {
    */
   cwd?: string;
   /**
-   * The invoking session's turn runs at Never ask right now, set only by the in-session server
-   * from the live session (DOR-3971). It only narrows what a read returns, never what may run, so
-   * a handler that hands back words a stranger may have chosen leaves them out.
+   * The invoking session's turn runs right now at a level where the status reads run unasked
+   * (Never ask, Ask first, Accept edits: DOR-3971, DOR-4601), set only by the in-session server
+   * from the live session. It only narrows what a read returns, never what may run, so a handler
+   * that hands back words a stranger may have chosen leaves them out.
    */
-  neverAsks?: true;
+  narrowedReads?: true;
   /** Process-authenticated caller resolved by a server-owned boundary. */
   /**
    * Which MCP server's tool list this call arrived through, set by the MCP
@@ -351,8 +352,8 @@ export interface CapabilityHandlerContext {
    * a restart still resumes the agent in the right place (DOR-981).
    */
   cwd?: string;
-  /** See {@link CapabilityInvocationContext.neverAsks}. */
-  neverAsks?: true;
+  /** See {@link CapabilityInvocationContext.narrowedReads}. */
+  narrowedReads?: true;
   /** Process-authenticated caller resolved by the server boundary. */
   /** See {@link CapabilityInvocationContext.mcpServer}. */
   mcpServer?: McpServerId;
@@ -852,7 +853,7 @@ export function composeRegistry(
         ...(supplied.userId ? { userId: supplied.userId } : {}),
         ...(supplied.sessionId ? { sessionId: supplied.sessionId } : {}),
         ...(supplied.cwd ? { cwd: supplied.cwd } : {}),
-        ...(supplied.neverAsks ? { neverAsks: true as const } : {}),
+        ...(supplied.narrowedReads ? { narrowedReads: true as const } : {}),
         ...(supplied.serverPrincipal ? { serverPrincipal: supplied.serverPrincipal } : {}),
         ...(supplied.mcpServer ? { mcpServer: supplied.mcpServer } : {}),
         ...(supplied.signal ? { signal: supplied.signal } : {}),

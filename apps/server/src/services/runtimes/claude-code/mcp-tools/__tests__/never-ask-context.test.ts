@@ -1,6 +1,7 @@
 /**
- * The in-session server tells a capability when the calling turn runs at Never ask (DOR-3971), so
- * a read like `running_chats` can leave out words a stranger may have chosen. Read off the live
+ * The in-session server tells a capability when the calling turn runs at a level where the status
+ * reads run unasked: Never ask (DOR-3971), and Ask first and Accept edits (DOR-4601, PM ruling A).
+ * A read like `running_chats` then leaves out words a stranger may have chosen. Read off the live
  * session at call time; driven through the real SDK server and a real client.
  *
  * @vitest-environment node
@@ -23,14 +24,16 @@ const probe = {
     defineCapability({
       id: 'probe.turn_facts',
       title: 'Probe the turn',
-      description: 'Says whether the calling turn runs at Never ask.',
+      description: 'Says whether the calling turn reads narrowed.',
       tier: 'observe',
       area: null,
       areaNote: 'test probe',
       input: z.object({}),
       output: z.unknown(),
       surfaces: { mcp: { toolName: 'probe_turn_facts', servers: ['in-session'] } },
-      invoke: async (_deps, _input, context) => ({ neverAsks: context?.neverAsks === true }),
+      invoke: async (_deps, _input, context) => ({
+        narrowedReads: context?.narrowedReads === true,
+      }),
     }),
   ],
 };
@@ -55,27 +58,28 @@ async function connect(session: { permissionMode: string }) {
       arguments: {},
     })) as CallToolResult;
     const text = result.content.find((block) => block.type === 'text') as { text: string };
-    return JSON.parse(text.text) as { neverAsks: boolean };
+    return JSON.parse(text.text) as { narrowedReads: boolean };
   };
   return { live, ask };
 }
 
-describe('the Never ask fact a capability is told', () => {
-  it('is set for a turn at Never ask', async () => {
-    const { ask } = await connect({ permissionMode: 'dontAsk' });
-    expect(await ask()).toEqual({ neverAsks: true });
-  });
-
-  it('is not set in any other mode', async () => {
-    for (const permissionMode of ['default', 'acceptEdits', 'bypassPermissions']) {
+describe('the narrowed-reads fact a capability is told', () => {
+  it.each(['dontAsk', 'default', 'acceptEdits'])(
+    'is set for a turn at %s, where the status reads run unasked',
+    async (permissionMode) => {
       const { ask } = await connect({ permissionMode });
-      expect(await ask(), permissionMode).toEqual({ neverAsks: false });
+      expect(await ask()).toEqual({ narrowedReads: true });
     }
+  );
+
+  it.each(['bypassPermissions', 'plan', 'auto'])('is not set at %s', async (permissionMode) => {
+    const { ask } = await connect({ permissionMode });
+    expect(await ask()).toEqual({ narrowedReads: false });
   });
 
   it('is read at call time, not when the server was built', async () => {
-    const { live, ask } = await connect({ permissionMode: 'default' });
-    live.permissionMode = 'dontAsk';
-    expect(await ask()).toEqual({ neverAsks: true });
+    const { live, ask } = await connect({ permissionMode: 'bypassPermissions' });
+    live.permissionMode = 'default';
+    expect(await ask()).toEqual({ narrowedReads: true });
   });
 });

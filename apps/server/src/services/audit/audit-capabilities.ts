@@ -327,10 +327,10 @@ export const auditDomain: CapabilityDomain = {
         mcp: { toolName: 'running_chats', ...READ_TOOL, servers: [...READ_TOOL.servers] },
         http: { method: 'get', path: '/api/sessions/running' },
       },
-      // A Never ask turn reads no titles: a stranger can set one (DOR-3971).
+      // Where the status reads run unasked, no titles: a stranger can set one (DOR-3971, DOR-4601).
       invoke: async (deps, _input, context) => {
         const audit = requireAuditDeps(deps);
-        const withoutTitles = context?.neverAsks === true;
+        const withoutTitles = context?.narrowedReads === true;
         const running = await listRunningChats(
           deps.operatorDeps?.meshCore,
           readerFor(audit, context),
