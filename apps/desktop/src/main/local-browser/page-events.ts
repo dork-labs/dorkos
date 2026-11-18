@@ -1,4 +1,5 @@
 import type { WebContents } from 'electron';
+import { classifyRefusal, type LocalBrowserRefusal } from '@dorkos/shared/local-browser-refusal';
 import { isWebLink } from '../window-manager';
 
 /** The app's own read of one guest page: whether it is loading, and why its last load failed. */
@@ -11,6 +12,11 @@ export interface GuestPageState {
    * the browser's own record of the request, never from what an agent asked for.
    */
   failure: { code: string; host: string; url: string } | null;
+  /**
+   * The page the browser shows is a site refusing this browser (DOR-4097), read from its
+   * committed address and title only. The host is from the address, never the page.
+   */
+  refusal: LocalBrowserRefusal | null;
 }
 
 /** What the app may ask of a guest page. Retry loads only the address the browser recorded. */
@@ -40,8 +46,12 @@ export function watchGuestPage(
   contents: Contents,
   publish: (state: GuestPageState) => void
 ) {
-  const state: GuestPageState = { connectionId, loading: false, failure: null };
-  const read = (): GuestPageState => ({ ...state, failure: state.failure && { ...state.failure } });
+  const state: GuestPageState = { connectionId, loading: false, failure: null, refusal: null };
+  const read = (): GuestPageState => ({
+    ...state,
+    failure: state.failure && { ...state.failure },
+    refusal: state.refusal && { ...state.refusal },
+  });
   const send = () => publish(read());
   const onStart = () => {
     state.loading = true;
@@ -53,13 +63,32 @@ export function watchGuestPage(
   };
   // The page a crash would take down, so the crash block can name it.
   let committed = '';
+  let title = '';
+  // Re-read the refusal from the committed page; publish only when it changed.
+  const recheck = (): boolean => {
+    const next = isWebLink(committed) ? classifyRefusal({ url: committed, title }) : null;
+    if (next?.kind === state.refusal?.kind && next?.host === state.refusal?.host) return false;
+    state.refusal = next;
+    return true;
+  };
   // A page that commits, the error page aside, ends the failure: Electron emits
   // `did-navigate` only for pages that aren't the error page.
   const onNavigate = (_event: unknown, url: string) => {
     committed = url;
-    if (!state.failure) return;
+    title = '';
+    const refusalChanged = recheck();
+    if (!state.failure && !refusalChanged) return;
     state.failure = null;
     send();
+  };
+  const onInPage = (_event: unknown, url: string, isMainFrame: boolean) => {
+    if (!isMainFrame) return;
+    committed = url;
+    if (recheck()) send();
+  };
+  const onTitle = (_event: unknown, next: string) => {
+    title = next;
+    if (recheck()) send();
   };
   const onFail = (
     _event: unknown,
@@ -88,6 +117,8 @@ export function watchGuestPage(
   contents.on('did-start-loading', onStart);
   contents.on('did-stop-loading', onStop);
   contents.on('did-navigate', onNavigate);
+  contents.on('did-navigate-in-page', onInPage);
+  contents.on('page-title-updated', onTitle);
   contents.on('did-fail-load', onFail);
   contents.on('render-process-gone', onGone);
   return {
@@ -109,6 +140,8 @@ export function watchGuestPage(
       contents.removeListener('did-start-loading', onStart);
       contents.removeListener('did-stop-loading', onStop);
       contents.removeListener('did-navigate', onNavigate);
+      contents.removeListener('did-navigate-in-page', onInPage);
+      contents.removeListener('page-title-updated', onTitle);
       contents.removeListener('did-fail-load', onFail);
       contents.removeListener('render-process-gone', onGone);
     },

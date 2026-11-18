@@ -49,6 +49,7 @@ import { buildHandoffNotice } from '../notices/notice-copy.js';
 import { nameForAgents } from '../room-context.js';
 import { RoomError } from '../room-errors.js';
 import type { AsideCarry, AsideResult } from '../room-trigger/aside.js';
+import { roomStartAnchor } from '../room-trigger/room-start-anchor.js';
 import type { RoomCore } from '../service/room-core.js';
 import { declineReason } from './decline-reason.js';
 import { HandoffOutcomes } from './handoff-outcomes.js';
@@ -382,14 +383,15 @@ export class RoomHandoffs {
     try {
       for (let attempt = 0; ; attempt += 1) {
         const room = this.core.store.getRoom(handoff.roomId);
+        if (room === null || room.archived) break;
+        // A room nobody has posted in yet still takes the post: the turn is about its start.
         const [latest] = this.core.store.listEntries(handoff.roomId, { limit: 1 });
-        if (room === null || room.archived || latest === undefined) break;
         result = await this.core.triggers.askAside({
           room,
           handoffRecovery: true,
           handoffTrace: trace,
           admissionDeadlineAt: deadline,
-          entry: latest,
+          entry: latest ?? roomStartAnchor(room, handoff.authorId),
           authorId: handoff.authorId,
           prompt: seatPrompt(handoff, roomLabel(room, this.core.bridges)),
           carried: withRoomMarks(this.core, handoff.authorId, handoff.carried, room, latest),
@@ -507,7 +509,6 @@ function logReportFailure(handoff: RoomHandoff, err: unknown): void {
   });
 }
 
-/** Why the seat did not post, in a line the sender can act on. */
 /** The message the seat's turn is asked, as the model sees it. */
 function seatPrompt(handoff: RoomHandoff, target: string): string {
   const { label, requester } = handoff.origin;

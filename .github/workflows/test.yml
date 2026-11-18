@@ -1050,14 +1050,28 @@ jobs:
       # build's own scope is deleted with its ref, so a save there would be
       # waste. Builds that changed since the last canary still miss and
       # rebuild, so a busy day sees partial hits.
+      #
+      # ONE ENTRY PER SHARD (DOR-4190, ledger 261117-142230). Turbo passes the
+      # `--` arguments of `turbo test` to EVERY task in the run, the builds
+      # included, and hashes them in (turbo 2.10.13, `--dry=json`:
+      # `@dorkos/keep-awake#build` is 5999388a… under `--shard=1/6` and
+      # 1f2e6809… under `--shard=6/6`, with `cliArguments` the only field that
+      # differs). So shard N's build hashes are shard N's alone. With one entry
+      # for the whole canary, whichever shard saved first decided which queue
+      # shard could hit: on 2026-11-17 canary shard 6/6 saved, and in queue
+      # run 44047215523 shard 6/6 logged `Cached: 6 cached, 49 total` while
+      # 1/6-5/6 logged 0. Each shard therefore saves and restores under its
+      # own shard number. The pull request leg runs other arguments (no
+      # reporters, its own shard total), so it still misses; its restore is
+      # harmless.
       - name: Restore the builds the last main canary made
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .turbo/cache
-          key: turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          key: turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-shard${{ matrix.shard }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
           restore-keys: |
-            turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-
-            turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-
+            turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-shard${{ matrix.shard }}-${{ hashFiles('pnpm-lock.yaml') }}-
+            turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-shard${{ matrix.shard }}-
 
       # --summarize writes a machine-readable record of the run to
       # .turbo/runs/<id>.json. The assert step is the only reason it is here.
@@ -1416,9 +1430,9 @@ jobs:
       # step exits 0 either way, because a cache that was not saved is a
       # warning, not a failed canary.
       #
-      # Every shard tries the save, so one green shard is enough. The key ends
-      # in this commit's SHA, so the first shard to save wins and the other
-      # five log "another job may be creating this cache" and skip.
+      # Every shard saves its own entry, keyed by its shard number, because
+      # each shard's build hashes carry its own `--shard=N/6` (see "Restore
+      # the builds the last main canary made"). About 23 MB each.
       - name: Keep only this run's build entries in the turbo cache
         id: trim
         if: ${{ github.ref == 'refs/heads/main' }}
@@ -1434,7 +1448,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .turbo/cache
-          key: turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          key: turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-shard${{ matrix.shard }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
 
   # THE REAL-CLI SUITES, BESIDE THE SHARDS (DOR-4190, ledger 261115-203006).
   # Every `*.binary.test.ts` outside codex/ runs here and nowhere else: both
@@ -1546,7 +1560,11 @@ jobs:
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
-      # The same build entries the shards restore; see test-shard. Restore only.
+      # The build entries the shards restore; see test-shard. Restore only. The
+      # shards save one entry per shard, so this falls through to the last
+      # restore key, the newest of any shard's. Its `--` arguments (the file
+      # list, its own retry) differ from the sweep's, and turbo hashes them
+      # into every build, so it does not hit them today.
       - name: Restore the builds the last main canary made
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

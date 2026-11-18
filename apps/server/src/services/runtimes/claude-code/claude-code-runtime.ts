@@ -123,7 +123,8 @@ import {
 } from '../../core/agent-identity/index.js';
 import { projectOfFolder } from '../../core/usage/account-eligibility.js';
 import { accountUnlessHeld, checkClaudeLaunchAccount } from './launch-account-check.js';
-import { getOrCreateProjector, peekProjector, streamGenerationOf } from '../../session/index.js';
+import { getOrCreateProjector, streamGenerationOf } from '../../session/index.js';
+import { peekLiveProjector } from './live-projector.js';
 import type { SessionCapacity } from '@dorkos/shared/running-chats';
 import { reportClaudeMcpAuthFailures } from './tooling/mcp-auth-report.js';
 import type { McpAuthEvidencePort } from '../../mesh/mcp-revocation.js';
@@ -1288,12 +1289,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
    * one owns the registry entry (acceptance run 20260610-173202, F2: the
    * sidebar navigates by canonical id while the first turn streams under the
    * request UUID — and a pre-remap client URL holds the request UUID after the
-   * rekey lands). Returns `undefined` when neither key has a projector.
+   * rekey lands). Returns `undefined` when neither key has a projector, and
+   * reports one that belongs to another chat (DOR-4552, `live-projector.ts`).
    */
   private resolveLiveProjector(sessionId: string): SessionStateProjector | undefined {
-    return (
-      peekProjector(sessionId) ?? peekProjector(this.getInternalSessionId(sessionId) ?? sessionId)
-    );
+    return peekLiveProjector(sessionId, this.getInternalSessionId(sessionId), this.sessionStore);
   }
 
   /** @inheritdoc */
@@ -2053,7 +2053,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   /**
    * Backward-compatible alias for `getInternalSessionId`.
    *
-   * @deprecated Use `getInternalSessionId()` instead.
+   * @deprecated since 0.135, remove in 0.155. Use `getInternalSessionId()` instead.
    */
   getSdkSessionId(sessionId: string): string | undefined {
     return this.sessionStore.getSdkSessionId(sessionId);

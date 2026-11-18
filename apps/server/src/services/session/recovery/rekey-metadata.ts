@@ -22,6 +22,7 @@ import { SessionTouchStore } from '../origin/session-touch-store.js';
 import { SessionLimitStore } from '../fleet/session-limit-store.js';
 import { moveScheduledChats } from '../origin/rekey-moves.js';
 import { RequiredRoomLaunchStore } from '../../rooms/reseat/required-launch-store.js';
+import { mergedSessionRow } from '../../core/runtime-seam/session-metadata-columns.js';
 type Metadata = typeof sessionMetadata.$inferSelect;
 /** Move settings and native rows without silently merging a recovery billing conflict. */
 export function rekeySessionMetadata(
@@ -74,15 +75,8 @@ export function rekeySessionMetadata(
     else
       tx.update(sessionMetadata)
         .set({
-          runtime: destination.runtime ?? source.runtime,
-          permissionMode: destination.permissionMode ?? source.permissionMode,
-          model: destination.model ?? source.model,
-          effort: destination.effort ?? source.effort,
-          fastMode: destination.fastMode ?? source.fastMode,
-          agentPath: destination.agentPath ?? source.agentPath,
-          launchOrigin: destination.launchOrigin ?? source.launchOrigin,
-          launchedBy: destination.launchedBy ?? source.launchedBy,
-          lastAutoResumeFor: destination.lastAutoResumeFor ?? source.lastAutoResumeFor,
+          // The holds join as on any canonical rename (DOR-4593): a rename never loosens a chat.
+          ...mergedSessionRow(destination, source),
           requiredLaunchId: destination.requiredLaunchId ?? source.requiredLaunchId,
         })
         .where(eq(sessionMetadata.sessionId, to))

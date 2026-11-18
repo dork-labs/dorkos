@@ -17,7 +17,7 @@ import {
 } from '../../core/turn-power/turn-levels.js';
 import { carryRoomPostWords } from '../../core/turn-power/outside-words.js';
 import { chatReadOutsideWords } from '../../core/turn-power/chat-outside-words.js';
-import { NO_MARKS, type TurnMarks } from '../../core/turn-power/turn-marks.js';
+import { NO_MARKS, marksOfLevel, type TurnMarks } from '../../core/turn-power/turn-marks.js';
 import { ulid } from 'ulidx';
 import { roomEntries, type DbTransaction } from '@dorkos/db';
 import { and, eq } from 'drizzle-orm';
@@ -384,15 +384,32 @@ export class RoomEntryWriter {
     const held =
       kept === 'runtime-default' ||
       (typeof kept === 'object' && 'marks' in kept && kept.heldToDefault === true);
+    // A post written from a chat that had read outside words is kept with the outsider mark
+    // itself (DOR-4587): an agent relaying a mini app's or a stranger's ask hands it on as their
+    // words, on its row, so the turn it wakes is marked even after a restart. A chat a stranger
+    // started (a Telegram chat) counts too, not only its room turns (DOR-4029). Written in the
+    // insert's own transaction (DOR-4593), so a crash can never leave the row unmarked.
+    const carries =
+      opts?.carryWordsFrom?.some(
+        (id) => typeof id === 'string' && id !== '' && chatReadOutsideWords(id)
+      ) === true;
+    const level = typeof kept === 'object' && !('marks' in kept) ? kept : undefined;
+    const rowMarks: TurnMarks | undefined = !carries
+      ? keptMarks
+      : keptMarks
+        ? { ...keptMarks, outsider: true }
+        : level !== undefined
+          ? marksOfLevel({ ...level, outsider: true })
+          : { outsider: true };
     const bindTransactional =
-      bindAfterInsert || mirrorWrite || keptMarks || held
+      bindAfterInsert || mirrorWrite || rowMarks || held
         ? (tx: DbTransaction) => {
             bindAfterInsert?.(id, tx);
             mirrorWrite?.enqueue(id, tx);
-            if (keptMarks || held) {
+            if (rowMarks || held) {
               tx.update(roomEntries)
                 .set({
-                  ...(keptMarks ? { turnMarks: JSON.stringify(keptMarks) } : {}),
+                  ...(rowMarks ? { turnMarks: JSON.stringify(rowMarks) } : {}),
                   ...(held ? { heldToDefault: true } : {}),
                 })
                 .where(and(eq(roomEntries.roomId, roomId), eq(roomEntries.id, id)))
@@ -447,19 +464,11 @@ export class RoomEntryWriter {
     // the turn that wrote it (spec `trusted-by-default-flip` §4).
     // A level, or only marks when the level is unknown (DOR-3107); a hold to
     // the default (DOR-3037) is kept beside the marks, never instead of them.
-    // A post written from a chat that had read outside words is kept with the outsider mark
-    // itself (DOR-4587): an agent relaying a mini app's or a stranger's ask hands it on as their
-    // words, on its row, so the turn it wakes is marked even after a restart. A chat a stranger
-    // started (a Telegram chat) counts too, not only its room turns (DOR-4029).
-    const carries =
-      opts?.carryWordsFrom?.some(
-        (id) => typeof id === 'string' && id !== '' && chatReadOutsideWords(id)
-      ) === true;
+    // The carried outsider mark, already on the row, is kept in memory the same way.
     if (held) noteEntryHeldToDefault(entry.id);
     if (keptMarks) {
       noteEntryMarks(entry.id, carries ? { ...keptMarks, outsider: true } : keptMarks, roomId);
     } else if (carries) {
-      const level = kept as TurnPermissionLevel | undefined;
       if (level !== undefined && !held)
         noteEntryLevel(entry.id, { ...level, outsider: true }, roomId);
       else noteEntryMarks(entry.id, { outsider: true }, roomId);

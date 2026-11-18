@@ -8,7 +8,7 @@ import { noopLogger } from '@dorkos/shared/logger';
 import { composeRegistry } from '../../../core/capabilities/index.js';
 import {
   capabilitiesForMcpServer,
-  capabilityInputShape,
+  capabilityMcpInputObject,
   invokeCapabilityAsMcpResult,
 } from '../../../core/capabilities/mcp-projection.js';
 import type { CapabilityDeps, CapabilityHandlerContext } from '../../../core/capabilities/index.js';
@@ -102,7 +102,7 @@ describe('local browser scoped tool projection', () => {
     const tools = capabilitiesForMcpServer(registry, 'in-session');
     const schemas = tools.map((tool) => ({
       id: tool.id,
-      input: z.object(capabilityInputShape(tool)),
+      input: capabilityMcpInputObject(tool),
     }));
     expect(schemas).toHaveLength(5);
     expect(capabilitiesForMcpServer(registry, 'external')).toEqual([]);

@@ -313,12 +313,13 @@
     },
     "lint": {
       "dependsOn": ["^lint", "@dorkos/heavy-slot#slot"],
-      "cache": true
+      "cache": true,
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/VERSION"]
     },
     "@dorkos/server#lint": {
       "dependsOn": ["^lint", "@dorkos/heavy-slot#slot"],
       "cache": true,
-      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/apps/space/package.json"]
+      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/VERSION", "$TURBO_ROOT$/apps/space/package.json"]
     },
     "pack": {
       "dependsOn": ["^build"],

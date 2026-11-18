@@ -1,6 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import type { ExtensionRecord } from '@dorkos/extension-api';
 import { ExtensionManager } from '../extension-manager.js';
+import { initAuditTrail, resetAuditTrail, type AuditTrail } from '../../audit/audit-trail.js';
+import { runWithAuditActor } from '../../audit/audit-context.js';
 import type { CoreExtensionInfo } from '../extension-enable-resolution.js';
 
 // --- Mocks ---
@@ -140,6 +145,64 @@ describe('ExtensionManager', () => {
 
     const writes = mockConfigSet.mock.calls.filter(([key]) => key === 'extensions');
     expect(writes.at(-1)?.[1]).not.toHaveProperty('legacyUnsourced');
+  });
+
+  it('drops approvals for an extension that is no longer installed, and its tool settings (DOR-4305)', async () => {
+    // A real, throwaway parent folder; the extension's own folder is gone.
+    const parent = mkdtempSync(path.join(tmpdir(), 'dor4305-'));
+    try {
+      const gone = path.join(parent, 'northwind-sync');
+      const installed = makeRecord('kestrel-board', { status: 'enabled' });
+      mockConfigGet.mockReturnValue({
+        enabled: ['kestrel-board', 'northwind-sync'],
+        disabled: [],
+        approvedToRun: ['kestrel-board', 'northwind-sync'],
+        approvedSources: {
+          'kestrel-board': { path: '/fake/extensions/kestrel-board', digest: FIXTURE_DIGEST },
+          'northwind-sync': { path: gone, digest: FIXTURE_DIGEST },
+        },
+      });
+      mockDiscover.mockResolvedValue([installed]);
+      mockCompile.mockResolvedValue({ code: 'compiled code', sourceHash: 'abc123' });
+      const forgetToolPermissions = vi.fn().mockResolvedValue([]);
+      manager.attachAgentTools({ registry: null as never, forgetToolPermissions });
+      // A stand-in log: the line names DorkOS, even when a person's reload started the scan.
+      const record = vi.fn();
+      const system = { accountId: 'acct-system', kind: 'system', name: 'DorkOS' };
+      initAuditTrail({
+        log: { record } as unknown as AuditTrail['log'],
+        accounts: { system: () => system } as unknown as AuditTrail['accounts'],
+      });
+      const person = { accountId: 'acct-person', kind: 'person', name: 'Sam Demo' };
+
+      await runWithAuditActor({ actor: person, surface: 'http' } as never, () =>
+        manager.initialize(null)
+      );
+
+      const written = mockConfigSet.mock.calls
+        .filter(([key]) => key === 'extensions')
+        .map(([, value]) => value as { approvedToRun: string[]; approvedSources: object });
+      const last = written.at(-1)!;
+      expect(last.approvedToRun).toEqual(['kestrel-board']);
+      expect(Object.keys(last.approvedSources)).toEqual(['kestrel-board']);
+      // Only Allowed goes: a Blocked or Ask a person chose outlives the drop.
+      expect(forgetToolPermissions).toHaveBeenCalledWith('northwind-sync', 'northwind-sync', {
+        keep: ['blocked', 'ask'],
+      });
+      expect(forgetToolPermissions).not.toHaveBeenCalledWith('kestrel-board', expect.anything());
+      expect(record).toHaveBeenCalledTimes(1);
+      expect(record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'extension.stale_approval_dropped',
+          actor: system,
+          source: { surface: 'system' },
+          target: expect.objectContaining({ id: 'northwind-sync' }),
+        })
+      );
+    } finally {
+      resetAuditTrail();
+      rmSync(parent, { recursive: true, force: true });
+    }
   });
 
   it('initializes by cleaning cache, discovering, and compiling enabled extensions', async () => {

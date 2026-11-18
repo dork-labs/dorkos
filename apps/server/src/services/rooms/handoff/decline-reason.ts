@@ -14,7 +14,8 @@ export function declineReason(room: Room | null, result: AsideResult | null): st
   if (result?.outcome === 'failed') {
     return 'the chat stopped. Open it to continue.';
   }
-  if (result === null) return 'nobody has said anything there yet, so there is nothing to answer.';
+  // No try ran to the end: the hand-off failed before its turn did (logged by the caller).
+  if (result === null) return 'it could not take a turn there.';
   if (result.outcome === 'busy') return 'it stayed busy for an hour.';
   if (result.outcome === 'halted') return 'somebody stopped it.';
   if (result.why === 'budget') return 'the room is out of automatic turns for now.';

@@ -54,6 +54,22 @@ describe('withRoomMarks', () => {
       withRoomMarks(core, 'seat-agent', { externalAuthor: false }, room, posted)
     ).toMatchObject({ externalAuthor: false });
   });
+
+  // DOR-4619: a room nobody has posted in yet adds no marks, and takes none of the drafting chat's.
+  it('keeps every mark the drafting chat carried in a room with no entries', () => {
+    const { core, room } = roomWith(false);
+    const empty = { ...core, store: { listEntries: () => [] } } as unknown as RoomCore;
+    const carried = {
+      externalAuthor: true,
+      permissionCeiling: 'runtime-default' as const,
+      outsider: true as const,
+      outsideWords: true as const,
+    };
+    expect(withRoomMarks(empty, 'seat-agent', carried, room, undefined)).toEqual(carried);
+    expect(withRoomMarks(empty, 'seat-agent', { externalAuthor: false }, room, undefined)).toEqual({
+      externalAuthor: false,
+    });
+  });
 });
 
 // DOR-4587 (Security S2): the seat's outsider mark comes from the post's own record, so it holds

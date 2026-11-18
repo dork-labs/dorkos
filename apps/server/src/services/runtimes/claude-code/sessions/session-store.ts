@@ -1129,7 +1129,7 @@ export class SessionStore {
   /**
    * Backward-compatible alias for `getInternalSessionId`.
    *
-   * @deprecated Use `getInternalSessionId()` instead.
+   * @deprecated since 0.135, remove in 0.155. Use `getInternalSessionId()` instead.
    */
   getSdkSessionId(sessionId: string): string | undefined {
     return this.getInternalSessionId(sessionId);

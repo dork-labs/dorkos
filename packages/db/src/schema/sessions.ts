@@ -51,6 +51,13 @@ export const sessionMetadata = sqliteTable(
     // answer, a resume, a wake) is held the same way, after a restart too.
     // NULL = no turn recorded since this column existed: read as held.
     lastTurnHeld: integer('last_turn_held', { mode: 'boolean' }),
+    // Whose words a bridged Telegram or Slack chat holds (DOR-4593): `vouched`
+    // once a turn from a sender on the connection's approver list in a
+    // one-to-one chat ran with stranger marking on, `stranger` once any marked
+    // turn, or any bridged turn with marking off, ran on it. `stranger` is never
+    // cleared. NULL = not known: read as a stranger's. Every row from before
+    // this column was set to `stranger` by its migration.
+    bridgedSender: text('bridged_sender', { enum: ['vouched', 'stranger'] }),
     createdAt: text('created_at').notNull(),
     // --- Mutable per-session settings (last-write-wins; ADR-0260) ---
     // NULL = "no explicit preference; use the runtime's default."

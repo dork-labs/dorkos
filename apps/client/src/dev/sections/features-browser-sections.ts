@@ -64,6 +64,16 @@ export const FEATURE_BROWSER_SECTIONS: PlaygroundSection[] = [
     title: 'Agent browser page errors and loading',
     page: 'home-inbox',
     category: 'Home',
-    keywords: ['browser', 'agent browser', 'error', 'offline', 'certificate', 'loading', 'seam'],
+    keywords: [
+      'browser',
+      'agent browser',
+      'error',
+      'offline',
+      'certificate',
+      'loading',
+      'seam',
+      'refused',
+      'sign in',
+    ],
   },
 ];

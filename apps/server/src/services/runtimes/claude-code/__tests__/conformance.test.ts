@@ -1,5 +1,6 @@
 import { RuntimeRegistry } from '../../../core/runtime-registry.js';
 import { createTestDb } from '@dorkos/test-utils/db';
+import { claudeApprovalTurn } from './approval-conformance.js';
 import {
   DOC_VISIBLE_TRIGGER,
   docBoundaryEntry,
@@ -616,6 +617,8 @@ runtimeConformance(
     name: 'ClaudeCodeRuntime (mocked SDK) — AgentRuntime conformance',
     // The mocked SDK writes no JSONL transcript, so native history is [] here;
     // real-binary history round-trips are covered by integration smokes.
+    approvalTurn: (runtime, id, content, probes) =>
+      claudeApprovalTurn(mockedQuery, runtime, id, content, probes),
     expectHistory: false,
     // No `sessionListSilentReason`: the seeded transcript above is on disk
     // before any test runs, so the fleet-wide watcher MUST report it and

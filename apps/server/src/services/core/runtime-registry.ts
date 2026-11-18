@@ -111,6 +111,11 @@ export class RuntimeNotRegisteredError extends Error {
   }
 }
 
+/** A runtime that can say whether another live session already owns a chat's ids. */
+type LiveSessionProbe = AgentRuntime & {
+  hasIndependentLiveSession?: (from: string, to: string) => boolean;
+};
+
 /**
  * Registry of available agent runtimes, keyed by type string.
  *
@@ -1048,14 +1053,9 @@ export class RuntimeRegistry {
   /** Pure observations of real registered owners, or the captured native producer. */
   private requiredLiveOwner(from: string, to: string, sdkOwner?: () => boolean): boolean {
     if (sdkOwner && !sdkOwner()) return false;
-    const runtime = this.runtimes.get('claude-code') as
-      | (AgentRuntime & {
-          hasIndependentLiveSession?: (from: string, to: string) => boolean;
-        })
-      | undefined;
-    if (runtime?.hasIndependentLiveSession) {
-      if (runtime.hasIndependentLiveSession(from, to)) return false;
-    } else if (!sdkOwner) return false;
+    const runtime = this.runtimes.get('claude-code') as LiveSessionProbe | undefined;
+    // A runtime that can probe decides; without a probe, only the captured native producer can.
+    if (runtime?.hasIndependentLiveSession?.(from, to) ?? !sdkOwner) return false;
     const target = peekProjector(to);
     return target === undefined || target === peekProjector(from);
   }

@@ -136,8 +136,8 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
       // the palette draws nothing differently either way.
       if (readDmViewEnabled(queryClient)) {
         closePalette();
-        void openDirectChat({ agentPath: agent.projectPath }).then((opened) => {
-          if (opened) recordAgentOpened(agent.projectPath);
+        void openDirectChat({ agentPath: agent.projectPath }).then((outcome) => {
+          if (outcome === 'opened') recordAgentOpened(agent.projectPath);
         });
         return;
       }

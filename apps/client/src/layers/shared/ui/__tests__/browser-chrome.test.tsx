@@ -52,6 +52,31 @@ describe('BrowserChrome', () => {
     expect(screen.queryByText('Not secure')).not.toBeInTheDocument();
   });
 
+  // DOR-4450: a page the http:// fallback opened keeps "Not secure" and says why.
+  const WHY = 'This site didn’t answer over https, so it opened over http.';
+
+  it('keeps Not secure for a fallback page, and its tooltip and description say why', () => {
+    renderChrome({ url: 'http://nas.example:5000/', openedOverHttp: true });
+    expect(screen.getByText('Not secure')).toHaveAttribute('title', WHY);
+    expect(screen.queryByText('Opened over http')).not.toBeInTheDocument();
+    const field = screen.getByRole('button', { name: /^Address: nas\.example/ });
+    expect(field).toHaveAccessibleDescription(WHY);
+  });
+
+  it('gives a plain http page no new tooltip or description', () => {
+    renderChrome({ url: 'http://shop.example/' });
+    expect(screen.getByText('Not secure')).not.toHaveAttribute('title');
+    expect(
+      screen.getByRole('button', { name: /^Address: shop\.example/ })
+    ).not.toHaveAccessibleDescription();
+  });
+
+  it('ignores the fallback mark once the address is no longer http://', () => {
+    renderChrome({ url: 'https://nas.example/', openedOverHttp: true });
+    expect(screen.queryByText('Not secure')).not.toBeInTheDocument();
+    expect(screen.queryByText(WHY)).not.toBeInTheDocument();
+  });
+
   it('opens the full address, all selected, and Enter commits what was typed', () => {
     const { onSubmit } = renderChrome();
     fireEvent.click(screen.getByRole('button', { name: /^Address:/ }));
