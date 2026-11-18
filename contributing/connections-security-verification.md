@@ -69,6 +69,12 @@ A row may carry more than one state. Source proof and live proof answer differen
 | Managed account action and usage                    | Live-pending                                             | Deployment configuration and source/fixture proof exist; readiness remains separately gated                                                              | Use the established owner and linked instance for one harmless read, hosted/local usage reconciliation, revoke, and immediate next-call denial.                                  |
 | Managed event delivery                              | Live-pending                                             | Source and fixture proof exist; real catalog and delivery remain separate                                                                                | Complete read-only definition discovery, signed delivery, local persistence, hosted ACK, room/agent outcome, revoke, bounded no-new-delivery check, and readiness restoration.   |
 
+### Repository Control-File Arguments
+
+Writing a repository's workflow, CI, access-control or release files needs the agent's own exact grant (`apps/server/src/services/connectors/execution/workflow-files.ts`). So does moving where GitLab reads CI config from (`ci_config_path`, any value), and the history arguments a commit takes (force, new or start branch, GitLab's top-level `start_sha` and `start_project`). The file check reads only string arguments under a key whose name contains `path`, plus `deletes`; it never reads file content as a path.
+
+That limit is deliberate, and `apps/server/src/services/connectors/__tests__/workflow-file-keys.test.ts` keeps it honest. It walks a snapshot of every write or destructive action of GitHub, GitHub MCP, GitLab, Gitea and Bitbucket (`__tests__/fixtures/repository-write-arguments.json`). It fails when a location-like argument is neither read nor listed with the reason it isn't a repository file, when a history argument a commit takes isn't read, or when a free-form object argument (marked `{}`, whose keys no schema names) isn't listed with a reason. Refresh it with `node scripts/composio-repository-write-arguments.mjs` (read-only Composio catalog calls); a new upload or commit schema then fails the test until someone decides. Free text the check can't parse, such as a GraphQL query string, is outside what any argument check can see.
+
 ## Bounded Adversarial Checks
 
 Use synthetic requests that resemble the decisions a confused or prompt-injected agent might make. Keep the requests local and deterministic.
