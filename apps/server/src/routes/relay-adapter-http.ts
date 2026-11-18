@@ -122,8 +122,8 @@ const NOTE_MAX = 200;
  * A connection's name made one inert line for an agent's card (Security on
  * DOR-4355 M4): whitespace and newlines collapse to single spaces, then every
  * format and control character goes (bidi overrides and isolates, direction
- * marks, zero-width joiners, BOM), and quote marks that could close the card's
- * fence become plain apostrophes. It is counted and cut by code point, so no
+ * marks, zero-width joiners, BOM), and double quote marks that could close the
+ * card's fence, look-alikes included, become plain apostrophes. It is counted and cut by code point, so no
  * emoji is split, and whatever is cut is counted on the card.
  *
  * @param label - The connection's name as stored.
@@ -133,7 +133,8 @@ export function inertName(label: string): string {
     ...label
       .replace(/\s+/g, ' ')
       .replace(/[\p{Cf}\p{Cc}]/gu, '')
-      .replace(/[“”"]/g, "'")
+      // Every double quote that could pass for the fence's: “ ” " ″ ＂ 〞 ‟ „
+      .replace(/[“”"″＂〞‟„]/g, "'")
       .trim(),
   ];
   if (points.length <= MAX_CARD_NAME && NOTE_LEAD.length + points.join('').length + 1 <= NOTE_MAX)

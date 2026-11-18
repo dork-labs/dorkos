@@ -6,6 +6,7 @@ covers:
   - 'fix(auth): agent raise card lines stay within 15 words (DOR-4355)'
   - 'fix(approvals): a card that grants access never cuts its title short, and an agent raise card shows only what changes (DOR-4355)'
   - "fix(auth): an agent raise card quotes a connection's name in full, as one inert line (DOR-4355)"
+  - "fix(auth): a connection's name on an agent raise card turns look-alike double quotes into apostrophes too (DOR-4355)"
 ---
 
 ### Security
