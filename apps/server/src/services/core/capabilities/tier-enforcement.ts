@@ -150,7 +150,9 @@ import {
   approvalDeclineMessage,
   needsApprovalClause,
   retryGuidance,
+  REVOKED_ACCESS_MESSAGE,
 } from './approval-wording.js';
+import type { SpendAsk } from './spend-permission.js';
 
 /** Where a retry carries its approval token, per surface. */
 export type ApprovalRetryChannel = 'mcp-argument' | 'http-header';
@@ -552,6 +554,15 @@ export interface TierEnforcementRequest {
    */
   serviceAction?: ApprovalServiceAction;
   /**
+   * Why a paid run asks, set by the registry only when the spend limit keeps
+   * this call to a card (DOR-4447), and whether it is the only reason. It
+   * changes the WORDING of a fresh ask's message, so the agent can say the
+   * action costs money and, when it is the only reason, what the person can
+   * change. Never whether the gate asks, what it binds to, or what the card
+   * records.
+   */
+  spendAsk?: SpendAsk;
+  /**
    * Which surface this request arrived over, recorded only so an UNATTRIBUTED
    * card can say the true thing DorkOS knows about it.
    *
@@ -866,12 +877,9 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
   // actions with no area, which no permission governs. Not approvable: a person
   // gives the agent its access back, nobody approves past a revocation.
   if (permission === null && identity?.inactive === 'revoked') {
-    const payload = denied(
-      action,
-      'permission_blocked',
-      "This agent's access was turned off, so it cannot do this. Ask the person.",
-      { approvable: false }
-    );
+    const payload = denied(action, 'permission_blocked', REVOKED_ACCESS_MESSAGE, {
+      approvable: false,
+    });
     audit({ action, ...attributed, decision: { outcome: 'denied', payload } });
     return { outcome: 'denied', payload };
   }
@@ -1047,7 +1055,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
       approvalToken: ticket.token,
       expiresAt: ticket.expiresAt,
       reason,
-      message: approvalMessage(reason, action.title, tier, action.id, blockedAsk),
+      message: approvalMessage(reason, action.title, tier, action.id, blockedAsk, request.spendAsk),
       retry: retryGuidance(retryChannel, interactive),
     };
     audit({ action, ...attributed, decision: { outcome: 'approval_required', payload } });

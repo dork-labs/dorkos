@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowLeft, ArrowRight, CircleAlert, RotateCw, X, type LucideIcon } from 'lucide-react';
 import { cn } from '@/layers/shared/lib/utils';
+import { useIsMobile } from '../../model';
 import { Button } from '../button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../tooltip';
 import { AddressField } from './AddressField';
@@ -105,7 +106,7 @@ export interface BrowserChromeProps {
  *
  * It sizes itself by its own width, not the window's: from 480px everything
  * shows; below that the path drops and, once a ⋯ menu exists, Forward moves
- * into it.
+ * into it. On a phone, Reload moves inside the address field's right end.
  */
 export function BrowserChrome({
   url,
@@ -131,6 +132,20 @@ export function BrowserChrome({
   className,
 }: BrowserChromeProps) {
   const stopping = loading && onStop !== undefined;
+  // On a phone, Reload sits inside the field's right end rather than taking a
+  // 44px slot of its own (spec §12). Crossing `md` moves it to the other parent,
+  // which remounts it and drops an open tooltip; that is fine, and intended.
+  const phone = useIsMobile();
+  const reload = (
+    <ChromeButton
+      label={stopping ? 'Stop' : 'Reload'}
+      icon={stopping ? X : RotateCw}
+      disabled={busy && !stopping}
+      onClick={stopping ? onStop : onReload}
+      className={phone ? 'absolute top-1/2 right-0 -translate-y-1/2' : undefined}
+    />
+  );
+  const end = status || trailing || menu;
   return (
     <TooltipProvider delayDuration={CHROME_TOOLTIP_DELAY_MS}>
       <TooltipStillContext.Provider value={tooltipStill ?? null}>
@@ -144,9 +159,21 @@ export function BrowserChrome({
           <div
             data-slot="browser-chrome-row"
             aria-busy={loading}
-            className="flex h-12 items-center gap-1 px-2.5 md:h-9"
+            // A phone's 390px: 10 + Back 44 + 6 + field + 6 + pill 44 + ⋯ 44 + 10. A
+            // minimum, not a height: a wrapped address grows the row, never clips (DOR-4655),
+            // and the 44px controls stay centred.
+            // Below the narrowest its controls fit in (10+44+6+88+6+44+44+10 = 252px),
+            // the row scrolls sideways rather than cut the pill or push ⋯ off its end.
+            className="flex min-h-12 items-center gap-1.5 px-2.5 md:min-h-9 md:gap-1 @max-[251px]/browser-chrome:overflow-x-auto"
           >
-            <ChromeButton label="Back" icon={ArrowLeft} disabled={!canBack} onClick={onBack} />
+            <ChromeButton
+              label="Back"
+              icon={ArrowLeft}
+              disabled={!canBack}
+              onClick={onBack}
+              // Pinned with the address when the row scrolls, at the row's own inset.
+              className="@max-[251px]/browser-chrome:sticky @max-[251px]/browser-chrome:left-[0.625rem] @max-[251px]/browser-chrome:z-10"
+            />
             <ChromeButton
               label="Forward"
               icon={ArrowRight}
@@ -154,27 +181,43 @@ export function BrowserChrome({
               onClick={onForward}
               className={menu ? 'hidden @min-[480px]/browser-chrome:inline-flex' : undefined}
             />
-            <ChromeButton
-              label={stopping ? 'Stop' : 'Reload'}
-              icon={stopping ? X : RotateCw}
-              disabled={busy && !stopping}
-              onClick={stopping ? onStop : onReload}
-            />
-            {/* Keyed on the retry so a refused address reopens the field in edit
-              mode, holding what was typed rather than the page still open. */}
-            <AddressField
-              key={retry === null ? 'address' : `retry:${retry.attempt}`}
-              url={url}
-              openedOverHttp={openedOverHttp}
-              focusRequest={focusAddress}
-              startEditing={retry !== null}
-              initialDraft={retry?.draft}
-              busy={busy}
-              onSubmit={onSubmit}
-            />
-            {status}
-            {trailing}
-            {menu}
+            {!phone && reload}
+            {/* On a phone the field keeps Reload's 44px plus 44 of host, which
+              truncates; below that the pill goes icon-only rather than squeeze it. */}
+            <div
+              data-slot="browser-chrome-field"
+              // When the row scrolls (under 252px), the address is pinned where it
+              // already sits (10 + Back 44 + 6 = 3.75rem), over a solid background: no
+              // scroll can move the site, only the pill and ⋯ pass under it (DOR-4655).
+              className="@max-[251px]/browser-chrome:bg-background relative flex min-w-0 flex-1 max-md:min-w-22 @max-[251px]/browser-chrome:sticky @max-[251px]/browser-chrome:left-[3.75rem] @max-[251px]/browser-chrome:z-10"
+            >
+              {/* Keyed on the retry so a refused address reopens the field in edit
+                mode, holding what was typed rather than the page still open. */}
+              <AddressField
+                key={retry === null ? 'address' : `retry:${retry.attempt}`}
+                url={url}
+                openedOverHttp={openedOverHttp}
+                focusRequest={focusAddress}
+                startEditing={retry !== null}
+                initialDraft={retry?.draft}
+                busy={busy}
+                endButton={phone}
+                onSubmit={onSubmit}
+              />
+              {phone && reload}
+            </div>
+            {end && (
+              <div
+                data-slot="browser-chrome-end"
+                // `empty:hidden`: a menu with nothing in it renders nothing, and an
+                // empty group must not add a gap of its own to the row.
+                className="flex shrink-0 items-center gap-0 empty:hidden md:gap-1"
+              >
+                {status}
+                {trailing}
+                {menu}
+              </div>
+            )}
           </div>
           <div
             aria-hidden

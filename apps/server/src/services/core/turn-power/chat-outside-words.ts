@@ -21,7 +21,9 @@
  */
 import { env } from '../../../env.js';
 import { runtimeRegistry } from '../runtime-registry.js';
-import { bridgedSenderVouched } from './continuation-hold.js';
+import { bridgedSenderVouched, chatHeldStrangerWords, lastTurnHeld } from './continuation-hold.js';
+import { chatEverReadOutsideText } from './live-outsider-turns.js';
+import { primaryOf } from '../../session/resolution/session-key-registry.js';
 import { roomTurnReadOutsideWords } from './outside-words.js';
 import { marksOf } from './turn-levels.js';
 
@@ -55,4 +57,21 @@ export function chatReadOutsideWords(
     // No database (early boot): nothing stored to read, as memory and the browser read it.
     return false;
   }
+}
+
+/**
+ * Whether a chat's messages may hold words from outside the team (DOR-3969): the chat reads them
+ * by its own record (`chatReadOutsideWords`: its running turn's mark, its latest room turn, a
+ * stranger's launch origin), a stranger ever spoke on its bridge, a read in any of its turns handed
+ * it outside text, or its latest turn was held.
+ *
+ * @param chatId - The chat read.
+ */
+export function chatHoldsOutsideText(chatId: string): boolean {
+  return (
+    chatReadOutsideWords(chatId) ||
+    chatHeldStrangerWords(chatId) ||
+    chatEverReadOutsideText(primaryOf(chatId)) ||
+    lastTurnHeld(chatId)
+  );
 }
