@@ -248,6 +248,13 @@ describe('ScheduleApprovalCard — what it says', () => {
     renderCard(proposal(), {}, { pinActions: true });
     await screen.findByRole('button', { name: 'Approve Nightly sweep' });
     expect(screen.queryByText(/^(Runs as|Run permissions):/)).toBeNull();
+    // What the mode does sits under the picker that names it, once.
+    await waitFor(() =>
+      expect(
+        slot('schedule-mode-choice')!.querySelector('[data-slot="schedule-mode-explanation"]')
+      ).not.toBeNull()
+    );
+    expect(document.querySelectorAll('[data-slot="schedule-mode-explanation"]')).toHaveLength(1);
     cleanup();
 
     // The phone's sheet: the picker scrolls away under the pinned row, so it stays.
