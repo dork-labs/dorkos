@@ -9,6 +9,11 @@ import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import { execFileSync } from 'child_process';
+import {
+  DeclaredReaders,
+  declaredReaders,
+  setDeclaredReaders,
+} from '../../services/core/turn-power/declared-readers.js';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 
@@ -799,6 +804,84 @@ describe('Mesh routes', () => {
         expect(meshCore.update).not.toHaveBeenCalled();
       }
     );
+
+    // DOR-3969: anyone may say an agent reads outside text; only a person takes it back.
+    describe('reading outside text', () => {
+      let recordDir: string;
+      let home: string;
+      /** DorkOS's record as a restarted server reads it from disk. */
+      const onDisk = () =>
+        new DeclaredReaders({
+          file: path.join(recordDir, 'record.json'),
+          logger: { warn: vi.fn() },
+        });
+      /** The agent's own `.dork/agent.json`. */
+      const agentFile = () => path.join(home, '.dork', 'agent.json');
+      /** What the agent's own file says now. */
+      const fileSays = async () =>
+        (JSON.parse(await fs.readFile(agentFile(), 'utf-8')) as { readsOutsideText?: boolean })
+          .readsOutsideText;
+      beforeEach(async () => {
+        recordDir = await fs.mkdtemp(path.join(os.tmpdir(), 'declared-'));
+        home = path.join(recordDir, 'agent-1');
+        await fs.mkdir(path.join(home, '.dork'), { recursive: true });
+        await fs.writeFile(agentFile(), JSON.stringify(MOCK_MANIFEST));
+        setDeclaredReaders(onDisk());
+        // Stands in for MeshCore's own write: the patch lands in the agent's real file.
+        meshCore.update.mockImplementation(async (_id: string, fields: Record<string, unknown>) => {
+          const next = { ...JSON.parse(await fs.readFile(agentFile(), 'utf-8')), ...fields };
+          await fs.writeFile(agentFile(), JSON.stringify(next));
+          return next;
+        });
+        meshCore.getProjectPath.mockReturnValue(home);
+      });
+      afterEach(async () => {
+        setDeclaredReaders(null);
+        await fs.rm(recordDir, { recursive: true, force: true });
+      });
+
+      it('an agent may turn it on, and is refused turning it off', async () => {
+        const on = await request(fixtureServer)
+          .patch('/api/mesh/agents/agent-1')
+          .set('x-dorkos-agent', 'agent-token-abc')
+          .send({ readsOutsideText: true });
+        expect(on.status).toBe(200);
+        expect(meshCore.update).toHaveBeenCalledWith('agent-1', { readsOutsideText: true });
+        expect(onDisk().has('agent', 'agent-1')).toBe(true);
+        expect(onDisk().has('agentHome', home)).toBe(true);
+        expect(await fileSays()).toBe(true);
+        meshCore.update.mockClear();
+
+        const off = await request(fixtureServer)
+          .patch('/api/mesh/agents/agent-1')
+          .set('x-dorkos-agent', 'agent-token-abc')
+          .send({ readsOutsideText: false });
+        expect(off.status).toBe(403);
+        expect(off.body.code).toBe('person_only');
+        expect(meshCore.update).not.toHaveBeenCalled();
+        expect(onDisk().has('agent', 'agent-1')).toBe(true);
+        expect(onDisk().has('agentHome', home)).toBe(true);
+        expect(await fileSays()).toBe(true);
+      });
+
+      it('a person turns it off, in the record and the file', async () => {
+        declaredReaders()!.declare('agent', 'agent-1');
+        declaredReaders()!.declare('agentHome', home);
+        await fs.writeFile(
+          agentFile(),
+          JSON.stringify({ ...MOCK_MANIFEST, readsOutsideText: true })
+        );
+        const off = await request(fixtureServer)
+          .patch('/api/mesh/agents/agent-1')
+          .send({ readsOutsideText: false });
+        expect(off.status).toBe(200);
+        // The write to the agent's own file carries the person's `false`.
+        expect(meshCore.update).toHaveBeenCalledWith('agent-1', { readsOutsideText: false });
+        expect(onDisk().has('agent', 'agent-1')).toBe(false);
+        expect(onDisk().has('agentHome', home)).toBe(false);
+        expect(await fileSays()).toBe(false);
+      });
+    });
 
     it('refuses a reports-to change that would make a loop (DOR-2788)', async () => {
       // agent-2 already reports to agent-1, so agent-1 may not report to agent-2.

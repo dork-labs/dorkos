@@ -51,7 +51,7 @@ import { capRunIfFileChanged } from './agent-mode/file-cap/run-cap.js';
 import { settleRunAllowList, allowListSources } from './allow-list/run-allow-list.js';
 import { armOneShot } from './store/task-run-controls.js';
 import { failRun, skipRun } from './lifecycle/fail-run.js';
-import { creatorMarked, withCreatorMarks } from './approvals/cross-agent.js';
+import { runMarked, withRunMarks } from './approvals/run-marks.js';
 import { endRunSessions, noteRunSession } from './session/active-run-sessions.js';
 import { claimRunTurn, SESSION_BUSY_ERROR, type RunTurn } from './session/run-projection.js';
 import { recordRunSession } from './session/record-run-session.js';
@@ -1119,7 +1119,7 @@ export class TaskSchedulerService {
         // at. It is NOT why the predicate is optional — an absent predicate
         // takes the v1 reading instead, see {@link V1_RELAY_RUNTIME}.
         const relayVerdict = this.assessRelayDispatch(execution.runtimeType, task.id, run.trigger);
-        const viaRelay = relayVerdict.deliverable && !creatorMarked(this.store, task);
+        const viaRelay = relayVerdict.deliverable && !runMarked(this.store, task);
         span.setAttr(ATTR.TASK_DISPATCH, viaRelay ? 'relay' : 'direct');
         if (!relayVerdict.deliverable) {
           span.setAttr(ATTR.TASK_DISPATCH_REASON, relayVerdict.reason);
@@ -1402,8 +1402,9 @@ export class TaskSchedulerService {
         cwd: effectiveCwd,
         ...(forAgent !== undefined ? { forAgent } : {}),
         ...taskTurnOpts(task, run),
-        // With the marks of another agent that wrote the task, as a hop carries them (DOR-3938).
-        ...withCreatorMarks(this.store, task, execution.settings),
+        // With the marks of another agent that wrote the task, as a hop carries them (DOR-3938),
+        // and the outsider mark for a task that said it reads outside text (DOR-3969).
+        ...withRunMarks(this.store, task, execution.settings),
         // The same line as `unattended` above, for approval cards: a timer fire
         // does not hold its turn for one, a Run now a person pressed does
         // (spec `agent-permissions` D6).

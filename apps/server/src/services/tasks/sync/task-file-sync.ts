@@ -27,6 +27,7 @@ import {
   type FileSyncSource,
 } from '../file-sync-gates.js';
 import { mapTaskRow } from '../task-row-mappers.js';
+import { carryDeclaredTask } from '../../core/turn-power/declared-readers.js';
 import { resolveFileSwitch } from './file-switch.js';
 import { scheduleContentKey } from '../schedule-permission-clamp.js';
 import { patchAgentModeColumn } from '../agent-mode/agent-mode-record-field.js';
@@ -112,6 +113,22 @@ export class TaskFileSync {
    * @returns The upserted Task
    */
   upsertFromFile(def: TaskDefinition, agentId?: string, options?: UpsertFromFileOptions): Task {
+    const task = this.upsertRow(def, agentId, options);
+    // A file that says it reads outside text says so in DorkOS's own record too,
+    // where an edit of the file back to false cannot clear it, and a moved or
+    // copied task folder keeps a declaration its new file left out (DOR-3969).
+    if (!carryDeclaredTask(task, def.meta.schedule.readsOutsideText === true)) return task;
+    return { ...task, readsOutsideText: true };
+  }
+
+  /**
+   * The row half of {@link upsertFromFile}.
+   *
+   * @param def - Parsed task definition from a SKILL.md file
+   * @param agentId - Agent ID derived from directory location (optional)
+   * @param options - Where the write came from, and what is wrong with the file
+   */
+  private upsertRow(def: TaskDefinition, agentId?: string, options?: UpsertFromFileOptions): Task {
     const now = new Date().toISOString();
     // The schedule block is the only place scheduling lives since DOR-1486.
     // Until then this read went through a flattened copy of it that discovery

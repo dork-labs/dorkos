@@ -178,6 +178,14 @@ tracked:
       armed on the logged `--no-verify-proof` escape or a coordinator
       override. Hand-audited from the arm log and escapes.jsonl in the common
       git dir; not computed by the daily collector, which cannot see either.
+  - id: tracked.merge-tail-unknown-skips
+    unit: count
+    definition: >-
+      Pull requests per scheduled merge-tail tick that end as `SKIP
+      mergeability-unknown` (GitHub had not finished computing whether the PR
+      merges cleanly); median over the window's ticks. Read by hand from the
+      "Arm auto-merge on finished PRs" step logs (`PR #N -> SKIP
+      mergeability-unknown` lines); not computed by the daily collector.
   - id: tracked.review-runs-per-merged-pr
     unit: count
     definition: Automated review runs per merged PR.
