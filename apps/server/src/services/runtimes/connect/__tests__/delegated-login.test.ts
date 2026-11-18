@@ -7,7 +7,7 @@ vi.mock('../signin-accounts.js', () => ({
   signinAccounts: () =>
     resolveClaudeRootSet().map((root) => ({ accountId: root, path: root, name: root })),
 }));
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -37,6 +37,7 @@ import {
   pipeSecretToChild,
   delegateRuntimeLogin,
   resolveLoginCommand,
+  LOGIN_TIMEOUT_MS,
   type SpawnFn,
 } from '../delegated-login.js';
 import { resolveClaudeCliPath } from '../../claude-code/sdk/sdk-utils.js';
@@ -46,6 +47,8 @@ import {
   claudeConfigDirEnv,
 } from '../../claude-code/claude-config-dir.js';
 import { noteSigninRepaired } from '../../../observability/index.js';
+import { logger } from '../../../../lib/logger.js';
+import { loginFailureMessage } from '../login-failure.js';
 
 /**
  * Minimal ChildProcess double: an EventEmitter (for `once('exit'|'error')`) plus
@@ -112,8 +115,9 @@ describe('runDelegatedLogin', () => {
     child.emit('exit', 1);
     const result = await p;
     expect(result.ok).toBe(false);
-    // Condensed to the first line, no raw multi-line dump.
-    expect(result.error).toBe('Couldn’t sign in. Try again.');
+    // Says what happened and what to do, and never repeats the CLI's own words.
+    expect(result.error).toBe(loginFailureMessage('exited'));
+    expect(result.error).not.toContain('cancelled');
     expect(result.error).not.toContain('more detail');
   });
 
@@ -121,10 +125,98 @@ describe('runDelegatedLogin', () => {
     const child = new FakeChild();
     const { spawn } = fakeSpawn(child);
     const p = runDelegatedLogin({ binary: '/bin/nope', args: ['login'] }, { spawn });
-    child.emit('error', new Error('ENOENT'));
+    child.emit('error', Object.assign(new Error('spawn /bin/nope ENOENT'), { code: 'ENOENT' }));
     const result = await p;
     expect(result.ok).toBe(false);
-    expect(result.error).toBeTruthy();
+    expect(result.error).toBe(loginFailureMessage('spawn_failed'));
+  });
+
+  describe('logs why a sign-in failed, without its words (DOR-4426)', () => {
+    const FAKE_TOKEN = 'sk-ant-fake-1111-made-up';
+    let warn: MockInstance<typeof logger.warn>;
+    beforeEach(() => {
+      warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    });
+    afterEach(() => warn.mockRestore());
+
+    it('records the exit code and step, and no stderr text', async () => {
+      const child = new FakeChild();
+      const { spawn } = fakeSpawn(child);
+      const p = runDelegatedLogin({ binary: '/bin/claude', args: ['auth', 'login'] }, { spawn });
+      child.stderr.emit(
+        'data',
+        Buffer.from(`Login failed: ${FAKE_TOKEN} https://example.invalid/cb?code=x`)
+      );
+      child.emit('exit', 1, null);
+      await p;
+      expect(warn).toHaveBeenCalledWith(
+        '[Connect] delegated login did not complete',
+        expect.objectContaining({ reason: 'exited', step: 'oauth_flow', exitCode: 1 })
+      );
+      const logged = JSON.stringify(warn.mock.calls);
+      expect(logged).not.toContain(FAKE_TOKEN);
+      expect(logged).not.toContain('example.invalid');
+    });
+
+    it('records a spawn error by its code only', async () => {
+      const child = new FakeChild();
+      const { spawn } = fakeSpawn(child);
+      const p = runDelegatedLogin({ binary: '/bin/nope', args: ['login'] }, { spawn });
+      child.emit('error', Object.assign(new Error(`spawn ${FAKE_TOKEN}`), { code: 'EACCES' }));
+      await p;
+      expect(warn).toHaveBeenCalledWith(
+        '[Connect] delegated login did not complete',
+        expect.objectContaining({ reason: 'spawn_failed', errno: 'EACCES' })
+      );
+      expect(JSON.stringify(warn.mock.calls)).not.toContain(FAKE_TOKEN);
+    });
+
+    it('records a timeout, which used to leave no line at all', async () => {
+      vi.useFakeTimers();
+      try {
+        const child = new FakeChild();
+        const { spawn } = fakeSpawn(child);
+        const p = runDelegatedLogin(
+          { binary: '/bin/claude', args: ['auth', 'login'] },
+          { spawn, timeoutMs: 1000 }
+        );
+        vi.advanceTimersByTime(1000);
+        const result = await p;
+        // The line names the real bound, rounded up to a whole minute.
+        expect(result.error).toBe(loginFailureMessage('timeout', 1));
+        expect(result.error).toContain('within 1 minute,');
+        expect(warn).toHaveBeenCalledWith(
+          '[Connect] delegated login did not complete',
+          expect.objectContaining({ reason: 'timeout', step: 'waiting_for_browser' })
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('the timeout line names the bound a real sign-in gets', () => {
+      expect(loginFailureMessage('timeout')).toContain(
+        `within ${LOGIN_TIMEOUT_MS / 60_000} minutes,`
+      );
+    });
+
+    it('logs a failed API-key save the same way', async () => {
+      const child = new FakeChild();
+      const { spawn } = fakeSpawn(child);
+      const p = pipeSecretToChild(
+        { binary: '/bin/codex', args: ['login', '--with-api-key'] },
+        FAKE_TOKEN,
+        { spawn }
+      );
+      child.stderr.emit('data', Buffer.from(`rejected ${FAKE_TOKEN}`));
+      child.emit('exit', 2, null);
+      await p;
+      expect(warn).toHaveBeenCalledWith(
+        '[Connect] API key save did not complete',
+        expect.objectContaining({ reason: 'exited', exitCode: 2 })
+      );
+      expect(JSON.stringify(warn.mock.calls)).not.toContain(FAKE_TOKEN);
+    });
   });
 
   describe('with fake timers', () => {
@@ -177,7 +269,7 @@ describe('pipeSecretToChild', () => {
     child.emit('exit', 1);
     const result = await p;
     expect(result.ok).toBe(false);
-    expect(result.error).toBe('Couldn’t sign in. Try again.');
+    expect(result.error).toBe('Couldn’t save the API key. Check it, then try again.');
   });
 });
 

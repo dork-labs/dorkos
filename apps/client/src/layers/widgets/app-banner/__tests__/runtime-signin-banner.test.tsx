@@ -444,6 +444,20 @@ describe('account-targeted sign-in', () => {
       wrapper: harness(transport),
     });
     fireEvent.click(await screen.findByRole('button', { name: 'Sign in to Claude5' }));
-    expect(await screen.findByText('Couldn’t sign in to Claude5. Try again.')).toBeInTheDocument();
+    expect(await screen.findByText('Couldn’t sign in to Claude5.')).toBeInTheDocument();
+    expect(screen.getByText('Try again.')).toBeInTheDocument();
+  });
+  it('says why signing in did not work, and what to do (DOR-4426)', async () => {
+    const reason = 'Sign-in timed out. Finish it in the browser within 3 minutes, then try again.';
+    const transport = createMockTransport({
+      delegateRuntimeLogin: vi.fn().mockResolvedValue({ ok: false, error: reason }),
+    });
+    rtlRender(<RuntimeSigninBanner runtimes={['claude-code:/accounts/Claude5']} />, {
+      wrapper: harness(transport),
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign in to Claude5' }));
+    expect(await screen.findByText('Couldn’t sign in to Claude5.')).toBeInTheDocument();
+    expect(screen.getByText(reason)).toBeInTheDocument();
+    expect(screen.queryByText('Try again.')).not.toBeInTheDocument();
   });
 });
