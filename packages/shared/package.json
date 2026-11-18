@@ -89,6 +89,10 @@
       "types": "./src/constants.ts",
       "default": "./dist/constants.js"
     },
+    "./site-name": {
+      "types": "./src/site-name.ts",
+      "default": "./dist/site-name.js"
+    },
     "./company": {
       "types": "./src/company.ts",
       "default": "./dist/company.js"
@@ -688,10 +692,6 @@
     "./local-browser-refusal": {
       "types": "./src/local-browser-refusal.ts",
       "default": "./dist/local-browser-refusal.js"
-    },
-    "./site-name": {
-      "types": "./src/site-name.ts",
-      "default": "./dist/site-name.js"
     },
     "./transport-local-browser": {
       "types": "./src/transport-local-browser.ts",
