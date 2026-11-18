@@ -209,6 +209,52 @@ describe('the event stream signs in with the window (DOR-4691)', () => {
     expect(stream.connections).toBe(2);
   });
 
+  it('recovers when the window signs out and back in', async () => {
+    freezeBackoff();
+    jar().set(COOKIE_NAME, 'token-a');
+    stream.requiredCookie = `${COOKIE_NAME}=token-a`;
+    const log = new FrameLog();
+    let lost = deferred();
+    subscribe(() => stream.port, { onFrame: log.record, onConnectionLost: () => lost.resolve() });
+    await log.arrives('connected');
+
+    // Sign-out: the cookie goes, and the server ends the stream it vouched for.
+    jar().remove(COOKIE_NAME);
+    stream.dropClients();
+    await lost.promise;
+    lost = deferred();
+    vi.advanceTimersByTime(RECONNECT_BASE_MS);
+    await lost.promise;
+    expect(stream.cookiesSeen.at(-1)).toBeUndefined();
+
+    // Sign back in: the stream is back at once, not after the backoff.
+    jar().set(COOKIE_NAME, 'token-a');
+    await log.arrives('connected', 2);
+    expect(stream.cookiesSeen.at(-1)).toBe(`${COOKIE_NAME}=token-a`);
+  });
+
+  it('backs off on a cookie the server no longer takes, rather than hammering the stream', async () => {
+    freezeBackoff();
+    // An expired sign-in: the window still holds a cookie, and every try with it is refused.
+    jar().set(COOKIE_NAME, 'expired');
+    stream.requiredCookie = `${COOKIE_NAME}=token-a`;
+    let lost = deferred();
+    subscribe(() => stream.port, { onFrame: () => {}, onConnectionLost: () => lost.resolve() });
+    await lost.promise;
+
+    // Each wait doubles up to the 15s ceiling, and no try comes before its time.
+    for (const delay of [1_000, 2_000, 4_000, 8_000, 15_000, 15_000]) {
+      const before = stream.connections;
+      lost = deferred();
+      vi.advanceTimersByTime(delay - 1);
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(stream.connections).toBe(before);
+      vi.advanceTimersByTime(1);
+      await lost.promise;
+      expect(stream.connections).toBe(before + 1);
+    }
+  });
+
   it('dials nothing when the last subscriber leaves while the sign-in is being read', async () => {
     const release = jar().hold();
     const subscription = subscribe(() => stream.port, { onFrame: () => {} });
