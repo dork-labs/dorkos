@@ -481,33 +481,47 @@ test.describe('Touch reach — the browser row on a phone (DOR-4436) @smoke', ()
       expect(drawn.fieldInRow, `${site}: the row must grow with the field, not clip it`).toBe(true);
       expect(drawn.backCentred, `${site}: the controls stay centred in the row`).toBe(true);
 
-      // Round 5 (QA): where the drawn host moves to a new line, the character before
-      // the break is a dot or a hyphen, never the middle of a label.
-      const breaksAfter = await demo.evaluate((root) => {
-        const host = root.querySelector('[data-slot="browser-address-host"]')!;
+      // Rounds 5–6 (QA): where the drawn host moves to a new line, it breaks after a
+      // dot or a hyphen. It may break inside a piece (a label with its dot or hyphen)
+      // only when that piece alone is wider than the text column, so a piece that fits
+      // a line is never split.
+      const badBreaks = await demo.evaluate((root) => {
+        const host = root.querySelector('[data-slot="browser-address-host"]') as HTMLElement;
+        const column = root
+          .querySelector('[data-slot="browser-address-text"]')!
+          .getBoundingClientRect().width;
+        const context = document.createElement('canvas').getContext('2d')!;
+        const style = getComputedStyle(host);
+        context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
         const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
         const range = document.createRange();
-        const after: string[] = [];
-        let top: number | null = null;
-        let previous = '';
+        let text = '';
+        const tops: number[] = [];
         for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-          const text = node.textContent ?? '';
-          for (let i = 0; i < text.length; i += 1) {
+          const value = node.textContent ?? '';
+          for (let i = 0; i < value.length; i += 1) {
             range.setStart(node, i);
             range.setEnd(node, i + 1);
-            const at = range.getBoundingClientRect().top;
-            if (top !== null && at > top + 1) after.push(previous);
-            top = at;
-            previous = text[i];
+            tops.push(range.getBoundingClientRect().top);
+            text += value[i];
           }
         }
-        return after;
+        const bad: string[] = [];
+        for (let i = 1; i < text.length; i += 1) {
+          if (tops[i] <= tops[i - 1] + 1) continue;
+          if (text[i - 1] === '.' || text[i - 1] === '-') continue;
+          // The piece the break fell inside: from after the last dot or hyphen
+          // before it, through the next one (or the end).
+          const start = Math.max(text.lastIndexOf('.', i - 1), text.lastIndexOf('-', i - 1)) + 1;
+          const rest = text.slice(i).search(/[.-]/);
+          const end = rest === -1 ? text.length : i + rest + 1;
+          const piece = text.slice(start, end);
+          if (context.measureText(piece).width <= column)
+            bad.push(`${piece} (at "${text[i - 1]}|${text[i]}")`);
+        }
+        return bad;
       });
-      for (const character of breaksAfter) {
-        expect(['.', '-'], `${site}: a line may break only after a dot or a hyphen`).toContain(
-          character
-        );
-      }
+      expect(badBreaks, `${site}: a piece that fits a line must never be split`).toEqual([]);
     }
   });
 
@@ -547,8 +561,20 @@ test.describe('Touch reach — the browser row on a phone (DOR-4436) @smoke', ()
     expect(await keptInView(), 'at scrollLeft 0, com.attacker.example is wholly in view').toBe(
       true
     );
-    // However far the row is scrolled, the pinned address keeps its site in view.
+    const field = demo.locator('[data-slot="browser-chrome-field"]');
+    const back = demo.getByRole('button', { name: 'Back', exact: true });
+    const fieldAt = (await field.boundingBox())!.x;
+    const backAt = (await back.boundingBox())!.x;
+    // However far the row is scrolled, the address and Back are pinned: they don't move.
     await row.evaluate((el) => el.scrollTo({ left: el.scrollWidth }));
+    expect(await row.evaluate((el) => el.scrollLeft), 'the row did scroll').toBeGreaterThan(0);
+    expect(
+      Math.abs((await field.boundingBox())!.x - fieldAt),
+      'the address must not move'
+    ).toBeLessThan(0.5);
+    expect(Math.abs((await back.boundingBox())!.x - backAt), 'Back must not move').toBeLessThan(
+      0.5
+    );
     expect(await keptInView(), 'scrolled to the end, it is still wholly in view').toBe(true);
   });
 

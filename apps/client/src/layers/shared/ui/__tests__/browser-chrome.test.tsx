@@ -347,13 +347,22 @@ describe('BrowserChrome', () => {
       expect(row).toHaveClass('@max-[251px]/browser-chrome:overflow-x-auto');
       // And the field is pinned there, so no scroll (a restore, focus on ⋯) can move
       // the address off the edge; only the pill and ⋯ go past it (Security, round 5).
+      // Sticky at exactly where each already sits (round 6): Back at the row's 10px
+      // inset, the field after Back and its 6px gap (0.625 + 2.75 + 0.375 = 3.75rem),
+      // so neither moves at all when the row scrolls.
       const pinned = container.querySelector('[data-slot="browser-chrome-field"]');
       expect(pinned).toHaveClass(
         '@max-[251px]/browser-chrome:sticky',
-        '@max-[251px]/browser-chrome:left-0',
+        '@max-[251px]/browser-chrome:left-[3.75rem]',
         '@max-[251px]/browser-chrome:z-10',
         '@max-[251px]/browser-chrome:bg-background'
       );
+      expect(screen.getByRole('button', { name: 'Back' })).toHaveClass(
+        '@max-[251px]/browser-chrome:sticky',
+        '@max-[251px]/browser-chrome:left-[0.625rem]',
+        '@max-[251px]/browser-chrome:z-10'
+      );
+      expect(row).toHaveClass('px-2.5', 'gap-1.5');
       const end = container.querySelector('[data-slot="browser-chrome-end"]');
       expect(end).toContainElement(screen.getByRole('button', { name: 'Status' }));
       expect(end).toContainElement(screen.getByRole('button', { name: 'More' }));
