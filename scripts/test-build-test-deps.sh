@@ -47,11 +47,12 @@ run_case() {
 #!/usr/bin/env bash
 echo "\$*" >> "$dir/calls"
 case " \$* " in
-  *" --dry=json "*) printf '• turbo 2.10.13\n'; cat "$dir/dry.json" ;;
+  *" --dry=json "*) printf '• turbo 2.10.13\n'; cat "$dir/dry.json"; if [ -e "$dir/dry-fails" ]; then exit 2; fi ;;
   *" run build "*) printf '{}' > "$dir/.turbo/runs/RunId1.json" ;;
 esac
 STUB
   chmod +x "$dir/turbo"
+  if [ "${DRY_FAILS:-}" = 1 ]; then : > "$dir/dry-fails"; fi
   shift 2
   (cd "$dir" && TURBO="$dir/turbo" WORKSPACE_ROOT="$dir" GITHUB_OUTPUT="$dir/gh" \
     bash "$script" "$@" > "$dir/out" 2>&1)
@@ -89,6 +90,13 @@ check 'none: no GITHUB_OUTPUT line' absent "$([ -e "$work_dir/none/gh" ] && echo
 run_case garbage 'Error: something went wrong'
 check 'garbage: exit non-zero' 1 "$([ "$(cat "$work_dir/garbage/code")" -ne 0 ] && echo 1 || echo 0)"
 check 'garbage: only the dry run' 1 "$(grep -c '' "$work_dir/garbage/calls")"
+
+# 4. A dry run that exits non-zero fails, says so, and nothing is built, even
+#    when it printed something JSON-shaped first.
+DRY_FAILS=1 run_case dryfail "$dry_two"
+check 'dryfail: exit non-zero' 1 "$([ "$(cat "$work_dir/dryfail/code")" -ne 0 ] && echo 1 || echo 0)"
+check 'dryfail: only the dry run' 1 "$(grep -c '' "$work_dir/dryfail/calls")"
+check 'dryfail: names the failure' 1 "$(grep -c 'the turbo test dry run failed' "$work_dir/dryfail/out")"
 
 printf 'build-test-deps fixtures: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

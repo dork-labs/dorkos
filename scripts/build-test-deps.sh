@@ -34,7 +34,11 @@ set -euo pipefail
 turbo=${TURBO:-pnpm exec turbo}
 runs_dir=${WORKSPACE_ROOT:-.}/.turbo/runs
 
-dry=$($turbo test "$@" --dry=json 2>/dev/null | sed -n '/^{/,$p')
+# turbo's stderr stays in the log, so a bad filter or turbo.json says why.
+if ! dry=$($turbo test "$@" --dry=json | sed -n '/^{/,$p'); then
+  echo 'build-test-deps: the turbo test dry run failed (its error is above), so nothing was built.' >&2
+  exit 1
+fi
 # An empty or non-JSON dry run must fail here, not read as "no builds".
 jq -e '.tasks | type == "array"' >/dev/null 2>&1 <<<"$dry" || {
   echo 'build-test-deps: could not read the turbo test dry run as JSON with a task list.' >&2
