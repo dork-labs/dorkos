@@ -91,8 +91,11 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
-          cache-from: type=gha,scope=community-release
-          cache-to: type=gha,mode=max,scope=community-release
+          # No layer cache (DOR-4635). This workflow runs only on tag pushes, and a
+          # tag ref's Actions cache can be restored only by that same tag, so the
+          # next release never reads it. mode=max multi-arch layers wrote ~3.9 GB
+          # per release (with publish-docker.yml) and pushed the repo past its
+          # 10 GB cache budget, evicting main's CI caches.
 
       - name: Attest the immutable image digest
         uses: actions/attest-build-provenance@v4
