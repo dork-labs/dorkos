@@ -15,7 +15,6 @@ import { useSpaceVisible } from '@/layers/entities/community';
 import {
   setGroupCollapsed,
   setSectionCollapsed,
-  useSidebarPrefs,
   useUpdateSidebarPrefs,
 } from '@/layers/entities/config';
 import { useBootState } from '../model/boot/use-boot-state';
@@ -25,6 +24,7 @@ import {
   type SidebarSectionModel,
 } from '../model/build-sidebar-model';
 import { rowKey } from '../model/rules/targets';
+import type { SidebarState } from '../model/sidebar-state';
 import { useScrollToActive } from '../model/use-scroll-to-active';
 import { useHeldSections, useInside } from '../model/use-held-sections';
 import { SidebarSkeleton } from './boot/SidebarSkeleton';
@@ -53,6 +53,8 @@ function isFoldable(section: SidebarSectionModel): boolean {
 export interface SidebarSectionsProps {
   /** The model to draw. */
   model: SidebarModel;
+  /** The parent preferences used to build the model. */
+  prefsKey: SidebarState['prefs'];
 }
 
 /** The space view's Alt-click: nothing it draws folds. */
@@ -68,16 +70,15 @@ const NO_FOLD = () => {};
  *
  * @param props - The model.
  */
-export function SidebarSections({ model }: SidebarSectionsProps) {
+export function SidebarSections({ model, prefsKey }: SidebarSectionsProps) {
   const { update } = useUpdateSidebarPrefs();
-  const prefs = useSidebarPrefs();
   // **Rows never move under the person using the panel** (DOR-3092). While the
   // pointer is over the list or focus is in it, an agent drifting between a
   // smart section and Direct messages stays where it is; the move lands when
   // they leave. Their own changes (a drag, a pin) retake the snapshot, so those
   // land at once.
   const { inside, handlers } = useInside();
-  const sections = useHeldSections(model.sections, inside, prefs);
+  const sections = useHeldSections(model.sections, inside, prefsKey);
   const route = useCommunityRouteEpoch();
   // A space's channels replace the panel only while that space is reachable:
   // any with spaces on, the official one alone with them off (DOR-2740).

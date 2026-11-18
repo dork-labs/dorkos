@@ -7,7 +7,8 @@
  * that project's agent, with its own switch. From a project's own root the key
  * changes nothing.
  *
- * Drives the real reconciler over real files; nothing fires.
+ * Drives the real reconciler over real files; nothing fires. The clock-rescan
+ * case controls chokidar notifications, not the real watcher/scanner/store path.
  */
 import os from 'node:os';
 import path from 'node:path';
@@ -24,6 +25,34 @@ import { FakeScheduler } from './fake-scheduler.js';
 import { agentTaskRoots, globalSkillsRoot, globalTaskRoots } from '../skills-roots.js';
 import { applyTaskFileUpdate } from '../lifecycle/update-task-file.js';
 import { needsScheduleApprovalAttention } from '../schedule-permission-clamp.js';
+
+/** Only the external notification edge is controlled; scans and storage stay real. */
+const { externalWatches } = vi.hoisted(() => ({
+  externalWatches: new Map<
+    string,
+    {
+      emit(event: string, ...values: unknown[]): boolean;
+      closed: boolean;
+    }
+  >(),
+}));
+vi.mock('chokidar', async () => {
+  const { EventEmitter } = await import('node:events');
+  return {
+    default: {
+      watch: vi.fn((dir: string) => {
+        const watcher = Object.assign(new EventEmitter(), {
+          closed: false,
+          async close() {
+            this.closed = true;
+          },
+        });
+        externalWatches.set(dir, watcher);
+        return watcher;
+      }),
+    },
+  };
+});
 
 /** The file a project holds when it uses the package: what `/flow:init` writes. */
 const MARKER = '.agents/flow/config.json';
@@ -67,6 +96,7 @@ const registrar = {
 } as unknown as TaskRegistrar;
 
 beforeEach(async () => {
+  externalWatches.clear();
   store = new TaskStore(createTestDb());
   // Resolved: a schedule's identity is its file's REAL path, and on macOS every
   // temp directory is a symlink.
@@ -133,15 +163,27 @@ describe('a project-only schedule in a global package', () => {
           await new Promise((resolve) => setTimeout(resolve, 20));
         }
       };
-      const cue = async (name: string) => {
+      const cue = async (name: string, agents = ['agent-alpha', 'agent-beta']) => {
         reads.mockClear();
-        await fs.mkdir(path.join(globalSkillsRoot(dorkHome), name));
+        const dir = path.join(globalSkillsRoot(dorkHome), name);
+        await fs.mkdir(dir);
+        const external = externalWatches.get(globalSkillsRoot(dorkHome));
+        if (!external || external.closed) throw new Error('The skills watch is not open.');
+        // Deliver only chokidar's edge. The real handler schedules its bounded scan.
+        expect(external.emit('addDir', dir)).toBe(true);
         await until(() => reads.mock.calls.length > 0);
+        expect(
+          reads.mock.calls.map(([definition, agentId]) => ({ file: definition.filePath, agentId }))
+        ).toEqual(agents.map((agentId) => ({ file, agentId })));
       };
       try {
         for (const r of globalTaskRoots(dorkHome)) watcher.watch(r);
         for (const project of projects)
           for (const r of agentTaskRoots(project.path, project.agentId)) watcher.watch(r);
+        expect(externalWatches.has(globalSkillsRoot(dorkHome))).toBe(true);
+        for (const external of externalWatches.values()) {
+          expect(external.emit('ready')).toBe(true);
+        }
         await watcher.ready();
         const alpha = store.getTasks().find((task) => task.agentId === 'agent-alpha')!;
         expect(await patch(alpha, { status: 'active', enabled: true })).toMatchObject({ ok: true });
@@ -161,7 +203,7 @@ describe('a project-only schedule in a global package', () => {
         // A never-enabled copy retires when its project stops using the package.
         // Alpha's explicitly enabled copy keeps the existing ownership rule.
         await fs.rm(path.join(projects[1]!.path, MARKER));
-        await cue('remove-copy');
+        await cue('remove-copy', ['agent-alpha']);
         await until(() => store.getTask(beta.id) === null);
         expect(scheduler.hasJob(beta.id)).toBe(false);
         expect(scheduler.hasJob(alpha.id)).toBe(true);
@@ -170,8 +212,12 @@ describe('a project-only schedule in a global package', () => {
           'agent-alpha',
         ]);
       } finally {
-        await watcher.stopAll();
-        reads.mockRestore();
+        try {
+          await watcher.stopAll();
+          expect([...externalWatches.values()].every((external) => external.closed)).toBe(true);
+        } finally {
+          reads.mockRestore();
+        }
       }
     }
   );

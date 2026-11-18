@@ -51,6 +51,7 @@ import { readQuery } from '../http/request-query.js';
 import { resolveStanding } from '../services/notifications/notification-service.js';
 import { resolveScheduleParkPayload } from '../services/notifications/emitters/schedule-park.js';
 import { withTaskFolderRules } from './task-approval-rules.js';
+import { withTaskRunPlace } from '../services/tasks/execution/run-place-preview.js';
 import { withProposerNames } from '../services/tasks/task-provenance.js';
 import {
   withTaskProjects,
@@ -115,7 +116,11 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     const tasks = await presentAll(store.getTasks());
     return c.json(
       clearsTheAgentBar(honoRequestFacts(c))
-        ? await Promise.all(tasks.map((task) => withTaskFolderRules(task, meshCore)))
+        ? await Promise.all(
+            tasks.map(async (task) =>
+              withTaskRunPlace(await withTaskFolderRules(task, meshCore), meshCore)
+            )
+          )
         : tasks
     );
   });

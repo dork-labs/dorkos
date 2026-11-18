@@ -1,6 +1,12 @@
 import { useState, type ReactNode } from 'react';
 import { Button } from '@/layers/shared/ui';
-import { BrowserLoadingBar, PageErrorBlock, pageErrorBlock } from '@/layers/features/local-browser';
+import {
+  BrowserLoadingBar,
+  PageErrorBlock,
+  RefusalNotice,
+  pageErrorBlock,
+  refusalNotice,
+} from '@/layers/features/local-browser';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -17,6 +23,52 @@ const FAILURES: Array<{ label: string; code: string; typed?: boolean }> = [
   { label: 'Too many redirects', code: 'ERR_TOO_MANY_REDIRECTS' },
   { label: 'Page crashed', code: 'CRASHED' },
 ];
+
+/** Each notice a site refusing the in-app browser gets (DOR-4097). Made-up hosts. */
+const REFUSALS = [
+  {
+    label: 'Refusal notice: a sign-in the site won’t take here',
+    input: {
+      refusal: { kind: 'sign-in' as const, host: 'accounts.northwind.example' },
+      url: 'https://accounts.northwind.example/signin/rejected',
+    },
+  },
+  {
+    label: 'Refusal notice: a bot check or block',
+    input: {
+      refusal: { kind: 'blocked' as const, host: 'shop.northwind.example' },
+      url: 'https://shop.northwind.example/cart',
+    },
+  },
+  {
+    label: 'Refusal notice: signed in, goes on in its own window',
+    input: {
+      refusal: { kind: 'sign-in' as const, host: 'accounts.northwind.example' },
+      url: 'https://accounts.northwind.example/signin/rejected',
+      signIn: {
+        profileId: null,
+        site: 'accounts.northwind.example',
+        status: 'saved' as const,
+        startedAt: '2026-11-17T20:00:00.000Z',
+      },
+    },
+  },
+];
+
+/** The notice on the chrome's line, over a page that stays visible. */
+function RefusalArea({ input }: { input: Parameters<typeof refusalNotice>[0] }) {
+  const notice = refusalNotice(input);
+  return (
+    <div className="bg-background flex h-48 w-full max-w-sm flex-col rounded-lg border">
+      <div className="text-muted-foreground flex h-9 shrink-0 items-center px-2.5 text-xs">
+        {input.url.replace(/^https:\/\//, '')}
+      </div>
+      <div aria-hidden className="bg-foreground/5 h-0.5 shrink-0" />
+      {notice && <RefusalNotice notice={notice} onAction={() => {}} onDismiss={() => {}} />}
+      <div className="bg-muted/20 flex-1" />
+    </div>
+  );
+}
 
 /** The page area as the panel draws it: the seam, then the page, edge to edge. */
 function PageArea({ loading = false, children }: { loading?: boolean; children?: ReactNode }) {
@@ -68,6 +120,14 @@ export function BrowserPageErrorShowcases() {
           </div>
         );
       })}
+      {REFUSALS.map(({ label, input }) => (
+        <div key={label}>
+          <ShowcaseLabel>{label}</ShowcaseLabel>
+          <ShowcaseDemo>
+            <RefusalArea input={input} />
+          </ShowcaseDemo>
+        </div>
+      ))}
     </PlaygroundSection>
   );
 }

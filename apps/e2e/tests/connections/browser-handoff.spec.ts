@@ -21,6 +21,7 @@ function handoffState(sessionId: string, reason: 'wall' | 'password') {
     revision: 1,
     preparation: null,
     signIn: null,
+    takenOver: false,
     handoff: {
       id: 'h1',
       sessionId,

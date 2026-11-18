@@ -103,14 +103,16 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
   },
   {
     name: 'Agent browser',
-    can: 'drive a real website in a page a person shares (Browser, + menu); ask for one, never send them to a terminal.',
+    // One default profile, said here because an agent holding other browser
+    // tools (a person's Chrome MCP servers) called those "profiles" (DOR-4633).
+    can: "drive shared pages (Browser, + menu); ask for one, never send them to a terminal. One default profile; other browser tools aren't profiles.",
     covers: ['local_browser.', 'mcp.browser_preset'],
     areas: [],
     gate: 'a person shares it',
   },
   {
     name: 'Connected apps',
-    can: 'use connected apps, ask for one, or give access up.',
+    can: 'use them, ask for one, or give access up.',
     covers: ['connector.', 'connectors.'],
     areas: ['permissions'],
     gate: 'per-app grant',
@@ -118,7 +120,7 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
   {
     // MCP servers, packages and extensions share one permission area, so one line (DOR-3219 diet).
     name: 'Tools',
-    can: 'add or remove your MCP servers and packages; build extensions a person approves. A change reaches you next turn, in this chat: no restart.',
+    can: 'add or remove MCP servers and packages; build extensions a person approves. A change reaches you next turn, in this chat: no restart.',
     covers: ['mcp.', 'marketplace.', 'create_extension', 'reload_extensions', 'test_extension'],
     areas: ['packages'],
     gate: 'adding or changing an MCP server asks, and only a person adds one for all agents',
@@ -148,7 +150,7 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
   },
   {
     name: 'Agents',
-    can: 'find, create, change, pause and resume agents and work queues.',
+    can: 'find, create, change, pause, resume agents and work queues.',
     covers: [
       'work-queue.',
       'mesh_',
@@ -194,7 +196,7 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
   },
   {
     name: 'Settings',
-    can: 'change settings, see your permissions, ask for one you lack.',
+    can: 'change settings, see permissions, ask for more.',
     covers: [
       'operator.config_',
       'operator.check_update',

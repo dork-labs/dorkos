@@ -422,8 +422,11 @@ export interface OperatingSkill {
  *   (DOR-4061), the first skill with files beside its SKILL.md, and names it in
  *   `answering-dorkos-questions`' sibling list. An agent seeded at 55 has no way to
  *   learn how to build an app for its person without an install.
+ * - 57: `managing-agents` teaches `update_agent_config`, the one way to change
+ *   another agent's `.claude/` files (DOR-4266). An agent seeded at 56 would hand
+ *   a hook or settings change to a person at a terminal instead.
  */
-export const OPERATING_SKILLS_VERSION = 56;
+export const OPERATING_SKILLS_VERSION = 57;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

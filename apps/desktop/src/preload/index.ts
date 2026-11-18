@@ -11,6 +11,7 @@ import type { TerminalCommandResult } from '../main/terminal-command/state';
 import type { HeartbeatReport } from '../main/renderer-health';
 import type { ClosedTab, StartupMode, WindowTabs } from '../main/tab-session';
 import type { GuestPageState as LocalBrowserPageState } from '../main/local-browser/page-events';
+import type { GuestShortcut as LocalBrowserShortcut } from '../main/local-browser/page-keys';
 import type { StepUpWindowOutcome } from '../shared/step-up-page';
 
 /**
@@ -54,6 +55,7 @@ const TERMINAL_COMMAND_REMOVE_CHANNEL = 'terminal-command:remove';
 /** IPC channels for a guest page's loads and failures (mirror `main/local-browser/index.ts`). */
 const LOCAL_BROWSER_PAGE_CHANNEL = 'local-browser:page';
 const LOCAL_BROWSER_PAGE_CHANGED_CHANNEL = 'local-browser:page-changed';
+const LOCAL_BROWSER_SHORTCUT_CHANNEL = 'local-browser:shortcut';
 
 /** IPC channel a mounted renderer reports itself alive on (mirrors `ALIVE_CHANNEL` in renderer-health/index.ts). */
 const ALIVE_CHANNEL = 'renderer:alive';
@@ -313,6 +315,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
         cb(state);
       ipcRenderer.on(LOCAL_BROWSER_PAGE_CHANGED_CHANNEL, listener);
       return () => ipcRenderer.removeListener(LOCAL_BROWSER_PAGE_CHANGED_CHANNEL, listener);
+    },
+    /** Subscribe to browser keys pressed in the native guest page (DOR-4432). */
+    onShortcut: (
+      cb: (input: { connectionId: string; shortcut: LocalBrowserShortcut }) => void
+    ): (() => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        input: { connectionId: string; shortcut: LocalBrowserShortcut }
+      ): void => cb(input);
+      ipcRenderer.on(LOCAL_BROWSER_SHORTCUT_CHANNEL, listener);
+      return () => ipcRenderer.removeListener(LOCAL_BROWSER_SHORTCUT_CHANNEL, listener);
     },
     /**
      * A JPEG still of the page this window shows now, or `null` (DOR-4438). It is

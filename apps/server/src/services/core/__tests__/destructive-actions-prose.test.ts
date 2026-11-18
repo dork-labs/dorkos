@@ -303,6 +303,9 @@ const PLAIN_LANGUAGE: Record<string, string> = {
   // four above, and gated because every schedule that follows the agent runs
   // differently; the docs say both.
   'operator.update_agent_execution': 'changing what an agent runs on',
+  // A hook, a setting or a skill under an agent's `.claude/` (DOR-4266): the
+  // file is replaced whole, and a hook runs on every turn that agent takes.
+  'operator.update_agent_config': "changing an agent's setup files",
   // A dev link (DOR-2696): reversible by unlink, and gated on every call
   // because the folder's code then runs unreviewed on every edit.
   'marketplace.link': 'running a package from a folder',

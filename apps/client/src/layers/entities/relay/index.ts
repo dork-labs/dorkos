@@ -8,7 +8,7 @@ export { useRelayMessages, useSendRelayMessage } from './model/use-relay-message
 export { useRelayEndpoints } from './model/use-relay-endpoints';
 export { useRelayMetrics } from './model/use-relay-metrics';
 
-/** @deprecated Use `ConnectionState` from `@dorkos/shared/types` instead. */
+/** @deprecated since 0.135, remove in 0.155. Use `ConnectionState` from `@dorkos/shared/types` instead. */
 export type { ConnectionState as RelayConnectionState } from '@dorkos/shared/types';
 export {
   useRelayAdapters,

@@ -44,14 +44,13 @@ import { resolveRunSession, STICKY_BUSY_SKIP_REASON } from './session/sticky-ses
 import { parkIfAgentApprovalStale } from './agent-mode/agent-mode-record.js';
 import { V1_RELAY_RUNTIME } from './execution/relay-runtime.js';
 import { checkMisplacedMode } from './execution/misplaced-mode.js';
-import { guardRunPlacement, unregisteredAgentError } from './execution/run-place-guard.js';
+import { guardRunPlacement } from './execution/run-place-guard.js';
+import { chainRunPlacement } from './execution/run-placement.js';
 import { capRunIfFileChanged } from './agent-mode/file-cap/run-cap.js';
 import { creatorMarked, withCreatorMarks } from './approvals/cross-agent.js';
 import { endRunSessions, noteRunSession } from './session/active-run-sessions.js';
 import { claimRunTurn, SESSION_BUSY_ERROR, type RunTurn } from './session/run-projection.js';
 import { recordRunSession } from './session/record-run-session.js';
-import { resolveSessionCwd } from '../workspace/resolve-session-cwd.js';
-import { assertOwnDesk, deskBindingFor } from '../core/agent-identity/index.js';
 import { resolveRunExecution, type RunExecution } from './execution/resolve-run-execution.js';
 import {
   singleRuntimeSource,
@@ -839,24 +838,9 @@ export class TaskSchedulerService {
    *   (spec `agent-home-desk` §3.4)
    */
   private async resolveRunPlacement(task: Task): Promise<RunPlacement> {
-    if (task.agentId && this.meshCore) {
-      const projectPath = this.meshCore.getProjectPath(task.agentId);
-      if (!projectPath) {
-        throw unregisteredAgentError(task.agentId, task.id);
-      }
-      const resolved = await resolveSessionCwd({ agentPath: projectPath });
-      // **The desk guard** (spec `agent-home-desk` §3.4, DOR-2356): a run for
-      // this agent never stands in another agent's home, a copy of it, or a
-      // room's folder. A refusal throws, and the run is recorded failed with
-      // the reason — nothing reaches a runtime.
-      assertOwnDesk(projectPath, resolved.cwd, deskBindingFor(resolved));
-      return guardRunPlacement({ cwd: resolved.cwd, agentPath: projectPath });
-    }
-    // Unchanged: `process.cwd()`, not `DEFAULT_CWD`. The two are the same in
-    // every deployment that does not set `DORKOS_DEFAULT_CWD`, and routing an
-    // agent-less task through the chain's default rung would quietly move the
-    // ones where they differ.
-    return guardRunPlacement({ cwd: process.cwd() });
+    // The same chain the approval card reads (`execution/run-placement.ts`).
+    const { cwd, agentPath } = await chainRunPlacement(task, this.meshCore);
+    return guardRunPlacement(agentPath === undefined ? { cwd } : { cwd, agentPath });
   }
 
   /**

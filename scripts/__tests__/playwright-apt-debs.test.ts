@@ -316,7 +316,10 @@ describe('browser-test.yml', () => {
 
   it('saves the OS-package cache in one step, on a scheduled run on main only', () => {
     const text = workflowText();
-    const savers = steps(text).filter((s) => /uses: actions\/cache\/save@/.test(s));
+    // Only the steps that touch the apt cache: the pnpm-store save and restore
+    // steps (DOR-4537) are a different cache and are not counted here.
+    const aptSteps = steps(text).filter((s) => s.includes('playwright-apt/debs'));
+    const savers = aptSteps.filter((s) => /uses: actions\/cache\/save@/.test(s));
     expect(savers).toHaveLength(1);
     const condition = savers[0]?.match(/if: \$\{\{ (.*) \}\}/)?.[1] ?? '';
     expect(condition).toContain("github.event_name == 'schedule'");
@@ -324,10 +327,10 @@ describe('browser-test.yml', () => {
     expect(condition).toContain("steps.install.outputs.debs-ready == 'true'");
     expect(condition).not.toContain('pull_request');
     // Nothing else may write the apt cache: the restores are restore-only.
-    for (const step of steps(text).filter((s) => s.includes('playwright-apt/debs'))) {
+    for (const step of aptSteps) {
       expect(step).toMatch(/uses: actions\/cache\/(restore|save)@/);
     }
-    expect(steps(text).filter((s) => /uses: actions\/cache\/restore@/.test(s))).toHaveLength(3);
+    expect(aptSteps.filter((s) => /uses: actions\/cache\/restore@/.test(s))).toHaveLength(3);
   });
 
   it('gives every Chromium install the same cap, retry and script', () => {

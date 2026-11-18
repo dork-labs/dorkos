@@ -39,10 +39,15 @@ const getFrameBridgeStatus = vi.fn(
   })
 );
 
-vi.mock('@/layers/shared/model', async () => {
+vi.mock('@/layers/shared/model', async (importOriginal) => {
+  // The ⋯ menu (DOR-4435) reads these two; they touch no store or transport.
+  const { useIsMobile, useMenuCloseFocusGuard } =
+    await importOriginal<typeof import('@/layers/shared/model')>();
   const useAppStore = (selector: (s: typeof mockState) => unknown) => selector(mockState);
   (useAppStore as unknown as { getState: () => typeof mockState }).getState = () => mockState;
   return {
+    useIsMobile,
+    useMenuCloseFocusGuard,
     // The real key: the frame reads the server's own addresses from the cached config (DOR-4132).
     configKeys: (await import('@/layers/shared/model/server-config/query-keys')).configKeys,
     useAppStore,

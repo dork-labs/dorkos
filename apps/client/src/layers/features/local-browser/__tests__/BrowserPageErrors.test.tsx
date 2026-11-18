@@ -14,6 +14,7 @@ const transport = vi.hoisted(() => ({
   getLocalBrowserCapabilities: vi.fn(),
   openLocalBrowser: vi.fn(),
   navigateLocalBrowser: vi.fn(),
+  takeOverLocalBrowser: vi.fn(),
   stepLocalBrowserHistory: vi.fn(),
   getSession: vi.fn(),
   getAgentByPath: vi.fn(),
@@ -279,6 +280,37 @@ describe('the loading bar (DOR-4431)', () => {
     emit({ loading: false });
     expect(form).toHaveAttribute('aria-busy', 'false');
     expect(screen.getByRole('button', { name: 'Reload' })).toBeInTheDocument();
+  });
+
+  it('Stop while the agent drives also takes the page, in one step (DOR-4428)', async () => {
+    transport.takeOverLocalBrowser.mockResolvedValue({
+      ...embedded,
+      paused: true,
+      handoff: null,
+      signIn: null,
+      takenOver: true,
+    });
+    await mountOpen();
+    emit({ loading: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    expect(page).toHaveBeenCalledWith('owned', 'stop');
+    await waitFor(() => expect(transport.takeOverLocalBrowser).toHaveBeenCalledOnce());
+    await waitFor(() =>
+      expect(document.querySelector('[data-slot="browser-status-pill"]')).toHaveAttribute(
+        'data-state-kind',
+        'you'
+      )
+    );
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('Stop takes nothing when no chat shares the page', async () => {
+    transport.getLocalBrowserState.mockResolvedValue({ ...embedded, sessionId: null });
+    await mountOpen();
+    emit({ loading: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    expect(page).toHaveBeenCalledWith('owned', 'stop');
+    expect(transport.takeOverLocalBrowser).not.toHaveBeenCalled();
   });
 
   it('picks up a load that started before the panel opened', async () => {

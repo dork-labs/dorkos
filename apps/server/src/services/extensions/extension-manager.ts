@@ -67,6 +67,8 @@ import {
   settleLegacyApprovals,
   upkeepApprovals,
 } from './pin/extension-approval-upkeep.js';
+import { dropGoneExtensions, forgetToolSettings } from './pin/stale-approvals.js';
+import type { ForgetToolPermissions } from './pin/stale-approvals.js';
 import {
   reconcileRunningSkills,
   mergeSkillChanges,
@@ -191,8 +193,7 @@ export class ExtensionManager {
   /** What changed while nothing was attached to deliver it (boot). */
   private undeliveredSkills: RunningSkillsChange | null = null;
   /** Clears an uninstalled extension's tool permission settings; see {@link attachAgentTools}. */
-  private forgetToolPermissions:
-    ((extensionId: string, extensionName: string) => Promise<unknown>) | null = null;
+  private forgetToolPermissions: ForgetToolPermissions | null = null;
 
   /**
    * Build the extension system rooted at one DorkOS data directory.
@@ -268,7 +269,7 @@ export class ExtensionManager {
    */
   attachAgentTools(wiring: {
     registry: CapabilityRegistry;
-    forgetToolPermissions?: (extensionId: string, extensionName: string) => Promise<unknown>;
+    forgetToolPermissions?: ForgetToolPermissions;
   }): void {
     this.forgetToolPermissions = wiring.forgetToolPermissions ?? null;
     this.serverLifecycle.attachCapabilityRegistry(wiring.registry);
@@ -442,6 +443,8 @@ export class ExtensionManager {
       this.extensions.set(rec.id, rec);
     }
     upkeepApprovals(records, this.shadowed, this.dorkHome);
+    // Gone, not replaced (DOR-4305): its approval and Allowed tool settings go.
+    await dropGoneExtensions(records, this.shadowed, this.forgetToolPermissions);
     await placeSnapshots(this.dorkHome, records, configManager.get('extensions'));
 
     await this.compileEnabled();
@@ -1217,18 +1220,8 @@ export class ExtensionManager {
     await this.serverLifecycle.shutdown(id);
     // Removed, not stopped: a per-tool setting kept for its tools must not
     // carry over to whatever is installed under this id next (DOR-2685).
-    if (installRoot) await this.forgetToolPermissionsOf(id, name);
+    if (installRoot) await forgetToolSettings(this.forgetToolPermissions, id, name);
     this.emitChanged();
-  }
-
-  /** Clear one extension's tool permission settings, best-effort. */
-  private async forgetToolPermissionsOf(id: string, name: string): Promise<void> {
-    if (!this.forgetToolPermissions) return;
-    try {
-      await this.forgetToolPermissions(id, name);
-    } catch (err) {
-      logger.warn(`[Extensions] Could not clear the tool permission settings of ${id}`, err);
-    }
   }
 
   /** Initialize server-side extension code (delegated to server lifecycle). */
