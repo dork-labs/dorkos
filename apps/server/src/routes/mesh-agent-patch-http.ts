@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { ManifestUnreadableError } from '@dorkos/mesh';
 import { UpdateAgentRequestSchema } from '@dorkos/shared/mesh-schemas';
 import { clearsTheAgentBar, refuseUnlessAccountOwner } from '../lib/caller-authority.js';
+import { clearAgentByPerson, declareAgent } from '../services/core/turn-power/declared-readers.js';
+import { READS_OUTSIDE_TEXT_PERSON_ONLY } from '../services/core/operator/agent-updater.js';
 import { withPersonRepin } from '../services/runtimes/claude-code/folder-settings/folder-config-consent.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
@@ -52,6 +54,11 @@ export async function patchMeshAgent(
   const result = UpdateAgentRequestSchema.safeParse(body);
   if (!result.success) {
     return c.json({ error: 'Validation failed', details: z.flattenError(result.error) }, 400);
+  }
+  // Anyone may say an agent reads outside text; only a person takes it back (DOR-3969).
+  const readsOutsideText = result.data.readsOutsideText;
+  if (readsOutsideText === false && !clearsTheAgentBar(caller)) {
+    return c.json({ error: READS_OUTSIDE_TEXT_PERSON_ONLY, code: 'person_only' }, 403);
   }
 
   // Guard: system agents cannot have identity fields changed
@@ -142,6 +149,10 @@ export async function patchMeshAgent(
   if (!updated) {
     return c.json({ error: 'Agent not found' }, 404);
   }
+  // DorkOS's own record, which no edit of the file clears: a person's `false`
+  // (checked above) is the only way out (DOR-3969).
+  if (readsOutsideText === true) declareAgent(id, home);
+  if (readsOutsideText === false) clearAgentByPerson(id, home);
   // Only the owner of this DorkOS can put an agent on DorkOS credits
   // (ADR 261001-000811, DOR-2652). The file now says what was asked; the
   // consent lives in DorkOS config, recorded only for the owner, so an agent,

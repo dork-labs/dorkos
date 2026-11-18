@@ -1,3 +1,12 @@
+import {
+  initAgentIdentityService,
+  resetAgentIdentityService,
+} from '../../../../core/agent-identity/agent-identity-service.js';
+import {
+  createInSessionContextResolver,
+  resolveAgentHome,
+} from '../../../../core/agent-identity/index.js';
+import { createCanUseTool } from '../../messaging/interactive-handlers.js';
 /**
  * `session_start` (spec `claude-account-fleet` D5): an agent starts a session
  * of its own, optionally on a named account. The session always runs as the
@@ -115,7 +124,8 @@ vi.mock('../../../../session/projector-persistence.js', async (importOriginal) =
   ...(await importOriginal<object>()),
   persistenceModeFor: vi.fn(() => 'none'),
 }));
-vi.mock('../../../../observability/dispatch-buffers.js', () => ({
+vi.mock('../../../../observability/dispatch-buffers.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../observability/dispatch-buffers.js')>()),
   recordDispatchStart: vi.fn(),
   recordDispatchEnd: vi.fn(),
 }));
@@ -628,6 +638,74 @@ describe('session_start', () => {
       expect(dispatchMessage).not.toHaveBeenCalled();
     });
   });
+
+  it.each(['home', 'managed-worktree'] as const)(
+    'keeps actual own session_start identity through the SDK post gate from %s',
+    async (place) => {
+      const worktree = '/work/checkouts/scout-recovery';
+      registerTestHomes([AGENT_HOME, OTHER_HOME], {
+        roomsDir: ROOMS_DIR,
+        managed: { [worktree]: AGENT_HOME },
+      });
+      const identities = initAgentIdentityService(createTestDb());
+      await identities.mint({ agentPath: AGENT_HOME, displayName: 'Scout' });
+      try {
+        const result = await createSessionStartHandler(makeDeps(), () => ({
+          agentPath: AGENT_HOME,
+          sessionId: 'parent-seat',
+        }))({
+          ...BASE,
+          cwd: place === 'home' ? AGENT_HOME : worktree,
+        });
+        expect(result.isError).toBeUndefined();
+        const child = vi.mocked(dispatchMessage).mock.calls.at(-1)![0];
+        expect(child.forAgent).toBe(AGENT_HOME);
+        const resolver = createInSessionContextResolver(resolveAgentHome(child.forAgent));
+        expect(await resolver()).toMatchObject({ identity: { agentPath: AGENT_HOME } });
+        const session = {
+          cwd: child.cwd,
+          permissionMode: 'default' as const,
+          unattended: true,
+          turnPermissionCeiling: 'runtime-default' as const,
+          pendingInteractions: new Map(),
+          eventQueue: [],
+        };
+        const gate = createCanUseTool(session, { debug() {}, info() {} }, undefined, resolver);
+        await expect(
+          gate(
+            'mcp__dorkos__post_to_room',
+            { roomId: 'parent-room', text: 'done' },
+            {
+              signal: new AbortController().signal,
+              toolUseID: 'own-child-post',
+              mcpServer: { name: 'dorkos', source: 'sdk' },
+            }
+          )
+        ).resolves.toMatchObject({ behavior: 'allow' });
+        expect(session.pendingInteractions.size).toBe(0);
+        expect(session.turnPermissionCeiling).toBe('runtime-default');
+        const anonymousGate = createCanUseTool(
+          session,
+          { debug() {}, info() {} },
+          undefined,
+          async () => undefined
+        );
+        await expect(
+          anonymousGate(
+            'mcp__dorkos__post_to_room',
+            { roomId: 'parent-room', text: 'done' },
+            {
+              signal: new AbortController().signal,
+              toolUseID: 'anonymous-post',
+              mcpServer: { name: 'dorkos', source: 'sdk' },
+            }
+          )
+        ).resolves.toMatchObject({ behavior: 'deny' });
+      } finally {
+        resetAgentIdentityService();
+      }
+    }
+  );
 
   it('starts in its own home, and accepts its own agentPath', async () => {
     const result = await asScout()({ ...BASE, cwd: AGENT_HOME, agentPath: AGENT_HOME });

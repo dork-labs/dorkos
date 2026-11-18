@@ -776,6 +776,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
         "one write after the raw create fallback only: `updateTask(schedule.id, { status: 'pending_approval' })` parks that newly created row before registration (DOR-3861). It changes nothing else, grants no mode and cannot arm a schedule; this entry does not cover any other updateTask write",
       'routes/tasks-update-http.ts':
         'the cockpit REST route `PATCH /api/tasks/:id`, moved out of routes/tasks.ts with its bars (DOR-4355) — refuses operator-only task fields unless the caller clears the agent bar (DOR-504); see the createTask entry for why the DOR-474 cookie bar stops short of here. An edit that puts a task on credits, or changes one already on them, is also held for the owner to confirm',
+      'routes/task-route-answers.ts':
+        '`writeTaskRow`, the PATCH row write moved out of `routes/tasks.ts` (DOR-3969): its only caller is the PATCH handler in `routes/tasks-update-http.ts` (DOR-4355), after the operator-only refusal and the file step have run, so it writes exactly the row the route wrote before, plus the declared-reader record (anyone turns it on, only a person off)',
       'services/tasks/lifecycle/create-task.ts':
         'the shared create sequence, which parks a proposal and lifts the permission clamp for a trusted caller only — reached through a door that already refused operator-only fields (DOR-1568)',
       'services/runtimes/claude-code/mcp-tools/tasks/task-tools.ts':

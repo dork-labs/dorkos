@@ -104,6 +104,10 @@ import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import type { AgentIdentity } from '../../services/core/agent-identity/agent-identity-service.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
+import {
+  DeclaredReaders,
+  setDeclaredReaders,
+} from '../../services/core/turn-power/declared-readers.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
 
 taskRuntimeCapabilitiesFixture();
@@ -389,6 +393,48 @@ describe('operator-only task fields on the REST routes', () => {
       expect(after.prompt).toBe('an updated prompt');
       expect(after.enabled).toBe(false);
       expect(after.permissionMode).toBe('acceptEdits');
+    });
+  });
+
+  // DOR-3969: anyone may say a task reads outside text; only a person takes it back.
+  describe('a task that reads outside text', () => {
+    beforeEach(() => {
+      setDeclaredReaders(
+        new DeclaredReaders({
+          file: path.join(mkdtempSync(path.join(os.tmpdir(), 'declared-')), 'record.json'),
+          logger: { warn: vi.fn() },
+        })
+      );
+    });
+    afterEach(() => setDeclaredReaders(null));
+
+    it('an agent may turn it on, and is refused turning it off', async () => {
+      const on = await request(fixtureServer)
+        .patch(`/api/tasks/${existing.id}`)
+        .set('x-dorkos-agent', 'agent-token-abc')
+        .send({ readsOutsideText: true });
+      expect(on.status).toBe(200);
+      expect(store.getTask(existing.id)!.readsOutsideText).toBe(true);
+
+      const off = await request(fixtureServer)
+        .patch(`/api/tasks/${existing.id}`)
+        .set('x-dorkos-agent', 'agent-token-abc')
+        .send({ readsOutsideText: false });
+      expect(off.status).toBe(403);
+      expect(off.body.fields).toEqual(['readsOutsideText']);
+      expect(store.getTask(existing.id)!.readsOutsideText).toBe(true);
+    });
+
+    it('a person turns it off', async () => {
+      await request(fixtureServer)
+        .patch(`/api/tasks/${existing.id}`)
+        .set('x-dorkos-agent', 'agent-token-abc')
+        .send({ readsOutsideText: true });
+      const off = await request(fixtureServer)
+        .patch(`/api/tasks/${existing.id}`)
+        .send({ readsOutsideText: false });
+      expect(off.status).toBe(200);
+      expect(store.getTask(existing.id)!.readsOutsideText).toBeUndefined();
     });
   });
 

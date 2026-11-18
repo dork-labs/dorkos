@@ -113,8 +113,13 @@ import { UpdateTaskRequestSchema } from '@dorkos/shared/schemas';
  * - `operator-only` — how much the task is allowed to do without asking, or
  *   whether it is allowed to run at all. The agent surface refuses it and the
  *   person sets it in DorkOS.
+ * - `agent-may-turn-on` — a care a task takes on: an agent may send `true`, and
+ *   anything else (`false`, `null`) is the person's, refused like an
+ *   operator-only field. The one place this policy looks at a value: turning the
+ *   care on can only make a run more careful, and turning it off is the person's
+ *   call (DOR-3969).
  */
-export type TaskFieldWriteAccess = 'agent-writable' | 'operator-only';
+export type TaskFieldWriteAccess = 'agent-writable' | 'operator-only' | 'agent-may-turn-on';
 
 /**
  * Every caller-supplied field of a task write, classified for the AGENT surface.
@@ -190,6 +195,10 @@ export const TASK_WRITE_POLICY = {
   // Requests appear on the approval card but never change what a run may do.
   requestedPermissionMode: 'agent-writable',
   requestedAllow: 'agent-writable',
+  // The task reads mail, web pages or another app's text, so every turn of its runs is
+  // marked (DOR-3969). Anyone may say so; only a person takes it back
+  // (`core/turn-power/declared-readers.ts`).
+  readsOutsideText: 'agent-may-turn-on',
 
   // The runtime's safety prompts, for a run nobody is watching.
   //
@@ -218,6 +227,11 @@ export const TASK_WRITE_POLICY = {
 /** The `operator-only` fields, derived from the table so the two cannot drift. */
 export const OPERATOR_ONLY_TASK_FIELDS: readonly string[] = Object.entries(TASK_WRITE_POLICY)
   .filter(([, access]) => access === 'operator-only')
+  .map(([field]) => field);
+
+/** The `agent-may-turn-on` fields, derived from the table the same way. */
+const TURN_ON_ONLY_TASK_FIELDS: readonly string[] = Object.entries(TASK_WRITE_POLICY)
+  .filter(([, access]) => access === 'agent-may-turn-on')
   .map(([field]) => field);
 
 /** The `error` field every operator-only task refusal carries. */
@@ -269,7 +283,9 @@ export const CREDITS_SCHEDULE_AGENT_REFUSAL = {
  * Presence is what counts, not the value. A caller that sends
  * `permissionMode: null` reached for the field just as much as one that sent
  * `bypassPermissions`, and answering "that one was harmless" would mean this
- * guard has an opinion about values, which it deliberately does not.
+ * guard has an opinion about values, which it deliberately does not. The one
+ * exception is an `agent-may-turn-on` field, which counts unless its value is
+ * exactly `true`.
  *
  * Call this on the RAW body, before Zod parses it and before the route resolves
  * an omitted `permissionMode` from the operator's own trust stop
@@ -287,7 +303,10 @@ export const CREDITS_SCHEDULE_AGENT_REFUSAL = {
 export function findOperatorOnlyTaskFields(body: unknown): string[] {
   if (body === null || typeof body !== 'object' || Array.isArray(body)) return [];
   const keys = new Set(Object.keys(body));
-  return OPERATOR_ONLY_TASK_FIELDS.filter((field) => keys.has(field)).sort();
+  const turnedOff = TURN_ON_ONLY_TASK_FIELDS.filter(
+    (field) => keys.has(field) && (body as Record<string, unknown>)[field] !== true
+  );
+  return [...OPERATOR_ONLY_TASK_FIELDS.filter((field) => keys.has(field)), ...turnedOff].sort();
 }
 
 /**
@@ -400,15 +419,26 @@ function describeUnknownTaskUpdateRefusal(fields: readonly string[]): string {
  * why in one plain sentence, and tells it what to do instead, because this text
  * lands in a model's context and a model that is only told "no" will try again.
  *
+ * An `agent-may-turn-on` field gets its own sentence: it is not about how much the task may
+ * do, only about who may turn it off (DOR-3969).
+ *
  * @param fields - The offending fields, from {@link findOperatorOnlyTaskFields}.
  * @returns One paragraph written for the model.
  */
 export function describeOperatorOnlyTaskRefusal(fields: readonly string[]): string {
-  return (
+  const turnOnOnly = fields.filter((field) => TURN_ON_ONLY_TASK_FIELDS.includes(field));
+  const operatorOnly = fields.filter((field) => !turnOnOnly.includes(field));
+  const turnOff =
+    turnOnOnly.length > 0 ? `Only a person can turn this off: ${turnOnOnly.join(', ')}.` : '';
+  if (operatorOnly.length === 0) {
+    return `DorkOS changed nothing. ${turnOff} Send the rest of your changes again without it.`;
+  }
+  const paragraph =
     `DorkOS changed nothing — not one field of this task. A scheduled task runs later, on its ` +
     `own, with nobody watching, so how much it may do without asking is the person's to choose, ` +
-    `not yours: ${fields.join(', ')}. Send the rest of your changes again without ` +
-    `${fields.length === 1 ? 'that field' : 'those fields'} and they will go through. To change ` +
-    `${fields.length === 1 ? 'it' : 'them'}, ask the person to open the task in DorkOS.`
-  );
+    `not yours: ${operatorOnly.join(', ')}. Send the rest of your changes again without ` +
+    `${operatorOnly.length === 1 ? 'that field' : 'those fields'} and they will go through. To ` +
+    `change ${operatorOnly.length === 1 ? 'it' : 'them'}, ask the person to open the task in ` +
+    `DorkOS.`;
+  return turnOff ? `${paragraph} ${turnOff}` : paragraph;
 }

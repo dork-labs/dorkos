@@ -30,7 +30,7 @@ import { toToolPayload } from './turn-stream/tool-payload.js';
 import { timingPayload, modelRequestPayload } from './turn-stream/timing-events.js';
 import { isNonFatalErrorCode, readStopWasRequested } from '@dorkos/shared/run-outcome';
 import { isRefusedAskKind } from '@dorkos/shared/run-refusals';
-import type { ErrorCategory } from '@dorkos/shared/schemas';
+import { normalizedErrorEvent } from './turn-stream/error-event.js';
 import type { StreamEvent, TerminalReason } from '@dorkos/shared/types';
 import { alwaysAllowFieldsOf } from './asks/always-allow-fields.js';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
@@ -492,19 +492,8 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
     // A typed turn error, adapter-yielded or server-injected (guardTurnErrors
     // on a throw, the stall watchdog). Optionals are forwarded only when
     // present so a lean adapter error stays lean.
-    case 'error': {
-      const error: RawOf<'error'> = {
-        type: 'error',
-        message: String(data.message ?? 'Unknown error'),
-        ...(data.code !== undefined ? { code: String(data.code) } : {}),
-        // Kept so a reader of the stream can tell WHY a turn never started
-        // (`turn_not_started`), and say so in plain words (DOR-3012).
-        ...(data.reason !== undefined ? { reason: String(data.reason) } : {}),
-        ...(data.category !== undefined ? { category: data.category as ErrorCategory } : {}),
-        ...(data.details !== undefined ? { details: String(data.details) } : {}),
-      };
-      return error;
-    }
+    case 'error':
+      return normalizedErrorEvent(data);
 
     // No session-stream projection: raw context/usage notices, sync/presence/
     // relay traffic, prompt suggestions, and `done` (turn boundary handled by

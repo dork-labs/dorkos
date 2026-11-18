@@ -1,3 +1,4 @@
+import { isolatedRequiredLaunchOwner } from '../../__tests__/required-launch-fixture.js';
 /**
  * Sealed: what the turn-context record holds for a Claude Code turn is
  * byte-equal to what the SDK's `query()` was handed: the append on
@@ -22,6 +23,8 @@ import {
 import type { AgentSession } from '../../../agent-types.js';
 import { setTurnContextStore } from '../../../../../session/turn-context/record-turn-context.js';
 import { TurnContextStore } from '../../../../../session/turn-context/turn-context-store.js';
+
+const requiredLaunches = isolatedRequiredLaunchOwner();
 
 const renders = vi.hoisted(() => ({ count: 0 }));
 
@@ -67,7 +70,11 @@ function makeSession(): AgentSession {
   };
 }
 
-const senderOpts: MessageSenderOpts = { cwd: '/mock/project', onSdkSessionRebind: async () => {} };
+const senderOpts: MessageSenderOpts = {
+  cwd: '/mock/project',
+  requiredLaunches,
+  onSdkSessionRebind: async () => {},
+};
 
 let store: TurnContextStore;
 beforeEach(() => {

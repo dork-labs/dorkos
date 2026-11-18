@@ -1,3 +1,10 @@
+import { ErrorCategorySchema, ErrorEventSchema } from './error-event-schemas.js';
+export {
+  ErrorCategorySchema,
+  ErrorEventSchema,
+  type ErrorCategory,
+  type ErrorEvent,
+} from './error-event-schemas.js';
 import { ApprovalAnswerContextSchema } from './step-up.js';
 import {
   TimingFields,
@@ -2087,37 +2094,6 @@ export const PendingInteractionDTOSchema = z
   .openapi('PendingInteractionDTO');
 
 export type PendingInteractionDTO = z.infer<typeof PendingInteractionDTOSchema>;
-
-export const ErrorCategorySchema = z
-  .enum([
-    'max_turns',
-    'execution_error',
-    'budget_exceeded',
-    'output_format_error',
-    'auth_error',
-    'model_unavailable',
-    'runtime_update_required',
-  ])
-  .openapi('ErrorCategory');
-
-export type ErrorCategory = z.infer<typeof ErrorCategorySchema>;
-
-export const ErrorEventSchema = z
-  .object({
-    message: z.string(),
-    code: z.string().optional(),
-    category: ErrorCategorySchema.optional(),
-    details: z.string().optional(),
-    /**
-     * Why, for a code that has more than one cause: a `credits_unavailable`
-     * refusal says which (`folder-sign-in`, `off`, …), so the chat offers only
-     * the ways on that fit it.
-     */
-    reason: z.string().optional(),
-  })
-  .openapi('ErrorEvent');
-
-export type ErrorEvent = z.infer<typeof ErrorEventSchema>;
 
 export const ApiRetryEventSchema = z
   .object({
@@ -6103,6 +6079,14 @@ export const TaskSchema = z
      * same growing transcript.
      */
     sticky: z.boolean().default(false),
+    /**
+     * True when this task reads mail, web pages or another app's text (DOR-3969). Every turn of
+     * its runs is then treated as one that read outside words: what it posts is kept marked, and
+     * a send in it asks first. Present only when true. Anyone may set it; only a person sets it
+     * back to false, and DorkOS keeps its own record of it, so editing the file back cannot clear
+     * it.
+     */
+    readsOutsideText: z.boolean().optional(),
     maxRuntime: z.number().int().nullable(),
     permissionMode: PermissionModeSchema,
     /** The mode the proposer asked a person to approve; never an applied grant. */
@@ -6492,6 +6476,11 @@ export const CreateTaskRequestSchema = z
      */
     sticky: z.boolean().optional(),
     /**
+     * Set true when this task reads mail, web pages or another app's text (DOR-3969). See
+     * {@link TaskSchema.readsOutsideText}. An agent may send only `true`.
+     */
+    readsOutsideText: z.boolean().optional(),
+    /**
      * Which agent runtime this task's runs execute on (DOR-1615).
      *
      * Omitted or `null` means "the agent's runtime" — the default every task
@@ -6685,6 +6674,12 @@ export const UpdateTaskRequestSchema = z
      * {@link TaskSchema.sticky}.
      */
     sticky: z.boolean().optional(),
+    /**
+     * Set true when this task reads mail, web pages or another app's text, or (a person only)
+     * set it back to false (DOR-3969). See {@link TaskSchema.readsOutsideText}. An agent sending
+     * `false` is refused.
+     */
+    readsOutsideText: z.boolean().optional(),
     /**
      * Change which runtime this task's runs execute on, or send `null` to clear
      * the override and go back to following the agent (DOR-1615). See

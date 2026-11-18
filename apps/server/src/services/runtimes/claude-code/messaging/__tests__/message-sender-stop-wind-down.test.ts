@@ -1,3 +1,4 @@
+import { isolatedRequiredLaunchOwner } from './required-launch-fixture.js';
 /**
  * What a Stop pressed during a turn's WIND-DOWN actually settles as (DOR-1244).
  *
@@ -23,6 +24,8 @@ import { SessionStateProjector } from '../../../../session/session-state-project
 import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { StreamEvent } from '@dorkos/shared/types';
+
+const requiredLaunches = isolatedRequiredLaunchOwner();
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
@@ -236,7 +239,11 @@ async function runTurn(
   const cli = fakeWindDownCli(build(store), behaviour);
   vi.mocked(query).mockReturnValue(cli.handle);
 
-  const opts: MessageSenderOpts = { cwd: '/mock/project', onSdkSessionRebind: async () => {} };
+  const opts: MessageSenderOpts = {
+    cwd: '/mock/project',
+    requiredLaunches,
+    onSdkSessionRebind: async () => {},
+  };
   const yielded: StreamEvent[] = [];
   const projector = new SessionStateProjector(SESSION_ID);
   async function* stream(): AsyncIterable<StreamEvent> {

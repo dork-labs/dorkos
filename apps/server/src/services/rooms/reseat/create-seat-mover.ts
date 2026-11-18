@@ -1,3 +1,4 @@
+import { failedSeatCandidate } from './failed-seat-candidate.js';
 /**
  * The production {@link RoomSeatMover}: the mover's ports filled from the
  * running server, and the one instance the room dispatcher and `rooms.reseat`
@@ -62,6 +63,7 @@ const TRIGGER_WORDS: Record<ReseatActivity['trigger'], string> = {
   'nearly-out': 'its account was almost out of usage',
   stranded: 'its earlier session had expired',
   person: 'a person moved it',
+  failed: 'its earlier room chat stopped on a server error',
 };
 
 /**
@@ -141,6 +143,8 @@ export function createRoomSeatMover(opts: {
   activity: () => ActivityService | undefined;
 }): RoomSeatMover {
   return new RoomSeatMover({
+    recoveryCandidate: failedSeatCandidate,
+    requiredLaunches: runtimeRegistry.requiredLaunches(),
     signinHealthy: (root) => {
       const world = testWorldRanking();
       return world && runtimeRegistry.has(TEST_RUNTIME)

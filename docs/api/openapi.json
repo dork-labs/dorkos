@@ -7307,6 +7307,10 @@
               },
               "reason": {
                 "type": "string"
+              },
+              "sourceDispatchId": {
+                "type": "string",
+                "minLength": 1
               }
             },
             "required": [
@@ -8038,6 +8042,10 @@
           },
           "reason": {
             "type": "string"
+          },
+          "sourceDispatchId": {
+            "type": "string",
+            "minLength": 1
           }
         },
         "default": null,
@@ -11320,6 +11328,9 @@
             "type": "boolean",
             "default": false
           },
+          "readsOutsideText": {
+            "type": "boolean"
+          },
           "maxRuntime": {
             "type": [
               "integer",
@@ -12053,6 +12064,9 @@
           "sticky": {
             "type": "boolean"
           },
+          "readsOutsideText": {
+            "type": "boolean"
+          },
           "runtime": {
             "type": [
               "string",
@@ -12163,6 +12177,9 @@
             "pattern": "^(?:\\d+h)?(?:\\d+m)?(?:\\d+s)?$"
           },
           "sticky": {
+            "type": "boolean"
+          },
+          "readsOutsideText": {
             "type": "boolean"
           },
           "runtime": {
@@ -12903,6 +12920,11 @@
             "description": "Account id this agent reports to: a mesh agent id, or a person’s account id. Absent or null = whoever created it, then the owner.",
             "example": "01HZY8Q0V6S3W1A2B3C4D5E6F7"
           },
+          "readsOutsideText": {
+            "type": "boolean",
+            "description": "Set true when this agent reads mail, web pages or another app’s text. Every turn it runs is then treated as having read outside words. Only a person can set it back to false.",
+            "example": true
+          },
           "createdBy": {
             "type": "string",
             "description": "Account that created this agent (a person’s account id, or the creating agent’s mesh id). Written once at creation; null when unknown.",
@@ -13326,6 +13348,11 @@
                 "description": "Account id this agent reports to: a mesh agent id, or a person’s account id. Absent or null = whoever created it, then the owner.",
                 "example": "01HZY8Q0V6S3W1A2B3C4D5E6F7"
               },
+              "readsOutsideText": {
+                "type": "boolean",
+                "description": "Set true when this agent reads mail, web pages or another app’s text. Every turn it runs is then treated as having read outside words. Only a person can set it back to false.",
+                "example": true
+              },
               "createdBy": {
                 "type": "string",
                 "description": "Account that created this agent (a person’s account id, or the creating agent’s mesh id). Written once at creation; null when unknown.",
@@ -13444,6 +13471,9 @@
               "null"
             ],
             "minLength": 1
+          },
+          "readsOutsideText": {
+            "type": "boolean"
           }
         }
       },
@@ -44974,6 +45004,10 @@
                         },
                         "reason": {
                           "type": "string"
+                        },
+                        "sourceDispatchId": {
+                          "type": "string",
+                          "minLength": 1
                         }
                       },
                       "required": [
