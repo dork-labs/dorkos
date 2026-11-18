@@ -1,0 +1,850 @@
+{
+  "source": "Composio toolkit catalog, `composio dev toolkits info <slug>`",
+  "checkedAt": "2026-11-17",
+  "toolkits": [
+    {
+      "slug": "agenty",
+      "name": "Agenty"
+    },
+    {
+      "slug": "ai_ark",
+      "name": "AI Ark"
+    },
+    {
+      "slug": "ai_ml_api",
+      "name": "AI/ML API"
+    },
+    {
+      "slug": "aivoov",
+      "name": "Aivoov"
+    },
+    {
+      "slug": "all_images_ai",
+      "name": "All Images AI"
+    },
+    {
+      "slug": "allmodels",
+      "name": "AllModels"
+    },
+    {
+      "slug": "anakin_io",
+      "name": "Anakin"
+    },
+    {
+      "slug": "apiframe",
+      "name": "Apiframe"
+    },
+    {
+      "slug": "apify",
+      "name": "Apify"
+    },
+    {
+      "slug": "apify_mcp",
+      "name": "Apify MCP"
+    },
+    {
+      "slug": "apipie_ai",
+      "name": "APIpie AI"
+    },
+    {
+      "slug": "apollo",
+      "name": "Apollo"
+    },
+    {
+      "slug": "assemblyai",
+      "name": "AssemblyAI"
+    },
+    {
+      "slug": "autom",
+      "name": "Autom"
+    },
+    {
+      "slug": "beatapi",
+      "name": "BeatAPI"
+    },
+    {
+      "slug": "bettercontact",
+      "name": "Bettercontact"
+    },
+    {
+      "slug": "bfl",
+      "name": "Black Forest Labs"
+    },
+    {
+      "slug": "bland_ai",
+      "name": "Bland AI"
+    },
+    {
+      "slug": "blitz_api",
+      "name": "Blitz API"
+    },
+    {
+      "slug": "bouncer",
+      "name": "Bouncer"
+    },
+    {
+      "slug": "bouncify",
+      "name": "Bouncify"
+    },
+    {
+      "slug": "brave_search",
+      "name": "Brave Search"
+    },
+    {
+      "slug": "brightdata",
+      "name": "Bright Data"
+    },
+    {
+      "slug": "browseract",
+      "name": "BrowserAct"
+    },
+    {
+      "slug": "browserbase_mcp",
+      "name": "Browserbase MCP"
+    },
+    {
+      "slug": "browserbase_tool",
+      "name": "Browserbase"
+    },
+    {
+      "slug": "browserless",
+      "name": "Browserless"
+    },
+    {
+      "slug": "bulk_email_checker",
+      "name": "Bulk Email Checker"
+    },
+    {
+      "slug": "byte_plus_ark",
+      "name": "BytePlus Ark"
+    },
+    {
+      "slug": "camb_ai",
+      "name": "CAMB.AI"
+    },
+    {
+      "slug": "captions",
+      "name": "Captions"
+    },
+    {
+      "slug": "capturekit",
+      "name": "CaptureKit"
+    },
+    {
+      "slug": "cartesia",
+      "name": "Cartesia"
+    },
+    {
+      "slug": "castingwords",
+      "name": "Castingwords"
+    },
+    {
+      "slug": "ceramic",
+      "name": "Ceramic"
+    },
+    {
+      "slug": "clay",
+      "name": "Clay"
+    },
+    {
+      "slug": "clay_mcp",
+      "name": "Clay MCP"
+    },
+    {
+      "slug": "clicksend",
+      "name": "ClickSend"
+    },
+    {
+      "slug": "cloro",
+      "name": "Cloro"
+    },
+    {
+      "slug": "cohere",
+      "name": "Cohere"
+    },
+    {
+      "slug": "cometapi",
+      "name": "CometAPI"
+    },
+    {
+      "slug": "companyenrich",
+      "name": "CompanyEnrich"
+    },
+    {
+      "slug": "contactout",
+      "name": "ContactOut"
+    },
+    {
+      "slug": "context_dev",
+      "name": "Context.dev"
+    },
+    {
+      "slug": "countdown_api",
+      "name": "Countdown API"
+    },
+    {
+      "slug": "crawl4ai",
+      "name": "Crawl4AI"
+    },
+    {
+      "slug": "crawlbase",
+      "name": "Crawlbase"
+    },
+    {
+      "slug": "dataforseo",
+      "name": "DataForSEO"
+    },
+    {
+      "slug": "debounce",
+      "name": "DeBounce"
+    },
+    {
+      "slug": "deepgram",
+      "name": "Deepgram"
+    },
+    {
+      "slug": "deepimage",
+      "name": "DeepImage"
+    },
+    {
+      "slug": "deepseek",
+      "name": "DeepSeek"
+    },
+    {
+      "slug": "dialmycalls",
+      "name": "Dialmycalls"
+    },
+    {
+      "slug": "diffbot",
+      "name": "Diffbot"
+    },
+    {
+      "slug": "dreamstudio",
+      "name": "Dreamstudio"
+    },
+    {
+      "slug": "dropcontact",
+      "name": "Dropcontact"
+    },
+    {
+      "slug": "dropleads",
+      "name": "Dropleads"
+    },
+    {
+      "slug": "easy_email_verification",
+      "name": "Easy Email Verification"
+    },
+    {
+      "slug": "eden_ai",
+      "name": "Eden AI"
+    },
+    {
+      "slug": "elai",
+      "name": "Elai"
+    },
+    {
+      "slug": "elevenlabs",
+      "name": "ElevenLabs"
+    },
+    {
+      "slug": "emailable",
+      "name": "Emailable"
+    },
+    {
+      "slug": "emaillistverify",
+      "name": "Emaillistverify"
+    },
+    {
+      "slug": "enrich",
+      "name": "Enrich"
+    },
+    {
+      "slug": "enrich_layer",
+      "name": "Enrich Layer"
+    },
+    {
+      "slug": "exa",
+      "name": "Exa"
+    },
+    {
+      "slug": "explorium",
+      "name": "Explorium"
+    },
+    {
+      "slug": "fal_ai",
+      "name": "Fal.ai"
+    },
+    {
+      "slug": "fiber",
+      "name": "Fiber"
+    },
+    {
+      "slug": "findymail",
+      "name": "Findymail"
+    },
+    {
+      "slug": "firecrawl",
+      "name": "Firecrawl"
+    },
+    {
+      "slug": "fireworks_ai",
+      "name": "Fireworks AI"
+    },
+    {
+      "slug": "firmable",
+      "name": "Firmable"
+    },
+    {
+      "slug": "fish_audio",
+      "name": "Fish Audio"
+    },
+    {
+      "slug": "fullenrich",
+      "name": "FullEnrich"
+    },
+    {
+      "slug": "gan_ai",
+      "name": "Gan.AI"
+    },
+    {
+      "slug": "geekflare",
+      "name": "Geekflare"
+    },
+    {
+      "slug": "gemini",
+      "name": "Gemini"
+    },
+    {
+      "slug": "get_transcribe",
+      "name": "GetTranscribe"
+    },
+    {
+      "slug": "getprospect",
+      "name": "Getprospect"
+    },
+    {
+      "slug": "gladia",
+      "name": "Gladia"
+    },
+    {
+      "slug": "gradium",
+      "name": "Gradium"
+    },
+    {
+      "slug": "grok",
+      "name": "Grok"
+    },
+    {
+      "slug": "groqcloud",
+      "name": "GroqCloud"
+    },
+    {
+      "slug": "happy_scribe",
+      "name": "Happy Scribe"
+    },
+    {
+      "slug": "heygen",
+      "name": "HeyGen"
+    },
+    {
+      "slug": "higgsfield",
+      "name": "Higgsfield"
+    },
+    {
+      "slug": "higgsfield_mcp",
+      "name": "Higgsfield MCP"
+    },
+    {
+      "slug": "hunter",
+      "name": "Hunter"
+    },
+    {
+      "slug": "hystruct",
+      "name": "Hystruct"
+    },
+    {
+      "slug": "icypeas",
+      "name": "Icypeas"
+    },
+    {
+      "slug": "imagerouter",
+      "name": "ImageRouter"
+    },
+    {
+      "slug": "interzoid",
+      "name": "Interzoid"
+    },
+    {
+      "slug": "interzoid_mcp",
+      "name": "Interzoid MCP"
+    },
+    {
+      "slug": "invalid_bounce",
+      "name": "Invalid Bounce"
+    },
+    {
+      "slug": "inworld_ai",
+      "name": "Inworld AI"
+    },
+    {
+      "slug": "jigsawstack",
+      "name": "Jigsawstack"
+    },
+    {
+      "slug": "jogg_ai",
+      "name": "JoggAI"
+    },
+    {
+      "slug": "keenable",
+      "name": "Keenable"
+    },
+    {
+      "slug": "kickbox",
+      "name": "Kickbox"
+    },
+    {
+      "slug": "kieai",
+      "name": "Kieai"
+    },
+    {
+      "slug": "kitt",
+      "name": "Kitt AI"
+    },
+    {
+      "slug": "labsmobile",
+      "name": "LabsMobile"
+    },
+    {
+      "slug": "leadiq",
+      "name": "LeadIQ"
+    },
+    {
+      "slug": "leadmagic",
+      "name": "LeadMagic"
+    },
+    {
+      "slug": "leadsforge",
+      "name": "Leadsforge"
+    },
+    {
+      "slug": "limadata",
+      "name": "LimaData"
+    },
+    {
+      "slug": "listclean",
+      "name": "Listclean"
+    },
+    {
+      "slug": "llm_api",
+      "name": "LLM API"
+    },
+    {
+      "slug": "luma_labs",
+      "name": "Luma Labs"
+    },
+    {
+      "slug": "lusha",
+      "name": "Lusha"
+    },
+    {
+      "slug": "magic_hour",
+      "name": "Magic Hour"
+    },
+    {
+      "slug": "mailboxlayer",
+      "name": "Mailboxlayer"
+    },
+    {
+      "slug": "mailcheck",
+      "name": "Mailcheck"
+    },
+    {
+      "slug": "mailercheck",
+      "name": "MailerCheck"
+    },
+    {
+      "slug": "mailfloss",
+      "name": "mailfloss"
+    },
+    {
+      "slug": "meshy",
+      "name": "Meshy"
+    },
+    {
+      "slug": "minelead",
+      "name": "Minelead.io"
+    },
+    {
+      "slug": "minimax",
+      "name": "MiniMax"
+    },
+    {
+      "slug": "mistral_ai",
+      "name": "Mistral AI"
+    },
+    {
+      "slug": "mocean",
+      "name": "Mocean"
+    },
+    {
+      "slug": "moltsets",
+      "name": "MoltSets"
+    },
+    {
+      "slug": "mrscraper",
+      "name": "MrScraper"
+    },
+    {
+      "slug": "msg91",
+      "name": "Msg91"
+    },
+    {
+      "slug": "muapi",
+      "name": "MuAPI"
+    },
+    {
+      "slug": "neverbounce",
+      "name": "NeverBounce"
+    },
+    {
+      "slug": "ngram",
+      "name": "Ngram"
+    },
+    {
+      "slug": "ocean_io",
+      "name": "Ocean.io"
+    },
+    {
+      "slug": "olostep",
+      "name": "Olostep"
+    },
+    {
+      "slug": "onepage",
+      "name": "Onepage"
+    },
+    {
+      "slug": "openai",
+      "name": "OpenAI"
+    },
+    {
+      "slug": "openperplex",
+      "name": "Openperplex"
+    },
+    {
+      "slug": "openrouter",
+      "name": "OpenRouter"
+    },
+    {
+      "slug": "openweb_ninja",
+      "name": "OpenWeb Ninja"
+    },
+    {
+      "slug": "parallel_task_mcp",
+      "name": "Parallel Task MCP"
+    },
+    {
+      "slug": "parse_bot",
+      "name": "Parse.bot"
+    },
+    {
+      "slug": "parsehub",
+      "name": "Parsehub"
+    },
+    {
+      "slug": "parsera",
+      "name": "Parsera"
+    },
+    {
+      "slug": "peopledatalabs",
+      "name": "People Data Labs"
+    },
+    {
+      "slug": "perplexityai",
+      "name": "Perplexity AI"
+    },
+    {
+      "slug": "phantombuster",
+      "name": "PhantomBuster"
+    },
+    {
+      "slug": "photoroom",
+      "name": "PhotoRoom"
+    },
+    {
+      "slug": "piloterr",
+      "name": "Piloterr"
+    },
+    {
+      "slug": "plivo",
+      "name": "Plivo"
+    },
+    {
+      "slug": "ploid",
+      "name": "Ploid"
+    },
+    {
+      "slug": "prospeo",
+      "name": "Prospeo"
+    },
+    {
+      "slug": "purechecker",
+      "name": "PureChecker"
+    },
+    {
+      "slug": "quickenrich",
+      "name": "QuickEnrich"
+    },
+    {
+      "slug": "recallai",
+      "name": "Recall.ai"
+    },
+    {
+      "slug": "recraft",
+      "name": "Recraft"
+    },
+    {
+      "slug": "replicate",
+      "name": "Replicate"
+    },
+    {
+      "slug": "retellai",
+      "name": "Retell AI"
+    },
+    {
+      "slug": "rev",
+      "name": "Rev AI"
+    },
+    {
+      "slug": "rev_ai",
+      "name": "Rev AI"
+    },
+    {
+      "slug": "runway",
+      "name": "Runway"
+    },
+    {
+      "slug": "saperly",
+      "name": "Saperly"
+    },
+    {
+      "slug": "saperly_mcp",
+      "name": "Saperly MCP"
+    },
+    {
+      "slug": "scrape_do",
+      "name": "Scrape Do"
+    },
+    {
+      "slug": "scrapecreators",
+      "name": "ScrapeCreators"
+    },
+    {
+      "slug": "scrapegraph_ai",
+      "name": "ScrapeGraphAI"
+    },
+    {
+      "slug": "scrapfly",
+      "name": "Scrapfly"
+    },
+    {
+      "slug": "scrapingant",
+      "name": "Scrapingant"
+    },
+    {
+      "slug": "scrapingbee",
+      "name": "Scrapingbee"
+    },
+    {
+      "slug": "scrapingdog",
+      "name": "Scrapingdog"
+    },
+    {
+      "slug": "search_api",
+      "name": "Search api"
+    },
+    {
+      "slug": "search1api",
+      "name": "Search1API"
+    },
+    {
+      "slug": "serpapi",
+      "name": "SerpApi"
+    },
+    {
+      "slug": "serpdog",
+      "name": "Serpdog"
+    },
+    {
+      "slug": "serper",
+      "name": "Serper"
+    },
+    {
+      "slug": "serphouse",
+      "name": "Serphouse"
+    },
+    {
+      "slug": "serply",
+      "name": "Serply"
+    },
+    {
+      "slug": "seven_io",
+      "name": "Seven.io"
+    },
+    {
+      "slug": "signalbase",
+      "name": "Signalbase"
+    },
+    {
+      "slug": "simplescraper_mcp",
+      "name": "Simplescraper MCP"
+    },
+    {
+      "slug": "sixtyfour",
+      "name": "Sixtyfour"
+    },
+    {
+      "slug": "slazzer",
+      "name": "Slazzer"
+    },
+    {
+      "slug": "smartproxy",
+      "name": "Smartproxy"
+    },
+    {
+      "slug": "sms_alert",
+      "name": "SMS Alert"
+    },
+    {
+      "slug": "smtping",
+      "name": "SMTPing"
+    },
+    {
+      "slug": "speechmatics",
+      "name": "Speechmatics"
+    },
+    {
+      "slug": "spider",
+      "name": "Spider"
+    },
+    {
+      "slug": "studio_by_ai21_labs",
+      "name": "Studio By Ai21 Labs"
+    },
+    {
+      "slug": "sumble",
+      "name": "Sumble"
+    },
+    {
+      "slug": "supadata",
+      "name": "Supadata"
+    },
+    {
+      "slug": "synthflow_ai",
+      "name": "Synthflow AI"
+    },
+    {
+      "slug": "tavily",
+      "name": "Tavily"
+    },
+    {
+      "slug": "tavily_mcp",
+      "name": "Tavily MCP"
+    },
+    {
+      "slug": "telnyx",
+      "name": "Telnyx"
+    },
+    {
+      "slug": "teltel",
+      "name": "Teltel"
+    },
+    {
+      "slug": "textcortex",
+      "name": "Textcortex"
+    },
+    {
+      "slug": "thecompaniesapi",
+      "name": "The Companies API"
+    },
+    {
+      "slug": "tik_hub",
+      "name": "TikHub"
+    },
+    {
+      "slug": "tinyfish",
+      "name": "TinyFish"
+    },
+    {
+      "slug": "trestle",
+      "name": "Trestle"
+    },
+    {
+      "slug": "tripo3d",
+      "name": "Tripo3D"
+    },
+    {
+      "slug": "twilio",
+      "name": "Twilio"
+    },
+    {
+      "slug": "valyu",
+      "name": "Valyu"
+    },
+    {
+      "slug": "vast_ai",
+      "name": "Vast.ai"
+    },
+    {
+      "slug": "veo",
+      "name": "Veo"
+    },
+    {
+      "slug": "vercel_ai_gateway",
+      "name": "Vercel AI Gateway"
+    },
+    {
+      "slug": "verifi_email",
+      "name": "Verifi.Email"
+    },
+    {
+      "slug": "verifiedemail",
+      "name": "Verifiedemail"
+    },
+    {
+      "slug": "webcrawlerapi",
+      "name": "WebCrawlerAPI"
+    },
+    {
+      "slug": "webscraper_io",
+      "name": "Webscraper io"
+    },
+    {
+      "slug": "webscraping_ai",
+      "name": "WebScraping.AI"
+    },
+    {
+      "slug": "wiza",
+      "name": "Wiza"
+    },
+    {
+      "slug": "writer",
+      "name": "Writer"
+    },
+    {
+      "slug": "zenrows",
+      "name": "ZenRows"
+    },
+    {
+      "slug": "zenserp",
+      "name": "Zenserp"
+    },
+    {
+      "slug": "zoominfo",
+      "name": "Zoominfo"
+    },
+    {
+      "slug": "zyte_api",
+      "name": "Zyte Api"
+    }
+  ]
+}
