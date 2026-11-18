@@ -239,8 +239,12 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
   const hasAction =
     opensSchedule || opensChat || undoesMode || undoesAccessChange || signsOutDevice;
   // The secret-files notice's body is what to do about it, so it gets the same
-  // two lines below `sm` rather than being cut mid-sentence (DOR-3292).
-  const twoLineBody = hasAction || notification.kind === 'agent.secret_files';
+  // two lines below `sm` rather than being cut mid-sentence (DOR-3292). So does
+  // a folder allow list too long to approve (DOR-4455).
+  const twoLineBody =
+    hasAction ||
+    notification.kind === 'agent.secret_files' ||
+    notification.kind === 'agent.folder_rules_too_long';
   // An agent's change to a schedule is the person's only signal of it, so its
   // title and body read in full, never cut (DOR-3703, M6: the mode, the hashes
   // and who started the turn). An agent taking another's access away is the

@@ -21,6 +21,8 @@
  *   never reached its parent chat (DOR-3561).
  * - `todos/notice/todo-change-notifications.ts`: an agent moved or dropped a promise it
  *   made to a person (DOR-3034).
+ * - `runtimes/claude-code/folder-settings/folder-allow-notice.ts`: an agent's folder
+ *   allow list is too long for its approval card (DOR-4455).
  *
  * @module services/notifications/declared-entries
  */
@@ -60,6 +62,10 @@ import {
   type TodoChangePayloads,
 } from '../todos/notice/todo-change-notifications.js';
 import {
+  FOLDER_RULES_TOO_LONG_ENTRIES,
+  type FolderRulesTooLongPayloads,
+} from '../runtimes/claude-code/folder-settings/folder-allow-notice.js';
+import {
   BROWSER_HANDOFF_ENTRIES,
   type BrowserHandoffPayloads,
 } from './browser-handoff-notifications.js';
@@ -94,6 +100,7 @@ export interface DeclaredPayloads
     McpToolAddedPayloads,
     McpReservedNamePayloads,
     TodoChangePayloads,
+    FolderRulesTooLongPayloads,
     SpendingPayloads {}
 
 /** Every declared entry, spread into the registry's `ENTRIES`. */
@@ -112,6 +119,7 @@ export const DECLARED_ENTRIES = {
   ...MCP_TOOL_ADDED_ENTRIES,
   ...MCP_RESERVED_NAME_ENTRIES,
   ...TODO_CHANGE_ENTRIES,
+  ...FOLDER_RULES_TOO_LONG_ENTRIES,
   ...SPENDING_ENTRIES,
 };
 
@@ -135,5 +143,6 @@ export const DECLARED_WIRED_KINDS = [
   'mcp-server.tool_added',
   'mcp-server.reserved_name',
   'todo.changed',
+  'agent.folder_rules_too_long',
   ...SPENDING_NOTIFICATION_KINDS,
 ] as const;

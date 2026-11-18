@@ -10,6 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createDb, runMigrations } from '@dorkos/db';
 
 vi.mock('../../../../../lib/logger.js', () => ({
   logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
@@ -32,6 +33,20 @@ vi.mock('../../../../core/config-manager.js', () => ({
 }));
 vi.mock('../../../../core/operator/config-write.js', () => ({ logConfigWrite: vi.fn() }));
 
+import { eventFanOut } from '../../../../core/event-fan-out.js';
+import {
+  NOTIFICATION_RETENTION_DAYS,
+  NotificationStore,
+} from '../../../../notifications/notification-store.js';
+import {
+  NotificationService,
+  setNotificationService,
+} from '../../../../notifications/notification-service.js';
+import {
+  FOLDER_RULES_TOO_LONG_DEDUPE_MS,
+  FOLDER_RULES_TOO_LONG_ENTRIES,
+} from '../folder-allow-notice.js';
+import { applyFolderAllowsToLaunch } from '../launch-folder-allows.js';
 import {
   firstTimeToldAbout,
   folderAllowsFromSettings,
@@ -49,6 +64,8 @@ import {
   askForFolderAllows,
   mayAskAboutFolderAllows,
   summariseFolderAllows,
+  cardShowsWholeList,
+  setFolderAllowApprovalGateway,
   type FolderAllowApprovalGateway,
 } from '../folder-allow-approval.js';
 
@@ -306,5 +323,138 @@ describe('askForFolderAllows', () => {
     expect(store.permissions.approvedFolderAllows).toEqual([]);
     expect(store.permissions.refusedFolderAllows).toEqual([]);
     expect(mayAskAboutFolderAllows(request())).toBe(true);
+  });
+});
+
+describe('a list too long for its card (DOR-4455)', () => {
+  /** Twenty short rules: each fits a card alone, together they do not. */
+  const LONG_LIST = Array.from({ length: 20 }, (_, i) => `Bash(scripts/check-step-${i}:*)`);
+  let notices: NotificationStore;
+  let asked: unknown[];
+  let raised: Promise<unknown>[];
+
+  /** The agent's own launch, as the launch resolver makes it. */
+  const launch = (options: Options = {}) =>
+    applyFolderAllowsToLaunch({
+      agent: AGENT,
+      home,
+      cwd: home,
+      sdkOptions: options,
+      dorkHome: path.join(home, 'dork-home'),
+      accountRoot: path.join(home, 'claude-account'),
+      neverAsk: false,
+      chat: {},
+    });
+
+  const tooLongRows = () =>
+    notices
+      .list({ limit: 50, unread: false })
+      .notifications.filter((row) => row.kind === 'agent.folder_rules_too_long');
+
+  /**
+   * A real service over `notices`, as the server wires one, whose every notify
+   * is kept so a test can wait for the launch's fire-and-forget notice to land.
+   */
+  function startService(): void {
+    const service = new NotificationService(notices);
+    const notifyOnce = service.notify.bind(service);
+    vi.spyOn(service, 'notify').mockImplementation((...args) => {
+      const done = notifyOnce(...args);
+      raised.push(done);
+      return done;
+    });
+    setNotificationService(service);
+  }
+
+  /** Wait for every notice raised so far to be written or deduped. */
+  async function settle(): Promise<void> {
+    await Promise.all(raised);
+  }
+
+  beforeEach(() => {
+    const db = createDb(':memory:');
+    runMigrations(db);
+    notices = new NotificationStore(db);
+    raised = [];
+    startService();
+    vi.spyOn(eventFanOut, 'broadcast').mockImplementation(() => undefined);
+    asked = [];
+    setFolderAllowApprovalGateway({
+      request: (input) => {
+        asked.push(input);
+        return { approvalId: 'a1', token: 't1', expiresAt: new Date().toISOString() };
+      },
+      consume: () => ({ outcome: 'expired' }) as never,
+    });
+  });
+
+  afterEach(() => {
+    setFolderAllowApprovalGateway(null);
+    setNotificationService(null);
+    vi.restoreAllMocks();
+  });
+
+  it('is a list no card can show whole', async () => {
+    await writeSettings({ permissions: { allow: LONG_LIST } });
+    expect(
+      cardShowsWholeList({ agentId: AGENT.id, agentName: AGENT.name, home, rules: LONG_LIST })
+    ).toBe(false);
+    expect((await ownTurn()).kind).toBe('unshowable');
+  });
+
+  it('tells the person in the Inbox, naming the agent, and still applies nothing', async () => {
+    await writeSettings({ permissions: { allow: LONG_LIST } });
+    const options: Options = {};
+
+    await launch(options);
+    await settle();
+
+    const rows = tooLongRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.title).toContain(AGENT.name);
+    expect(rows[0]?.subject).toMatchObject({ type: 'agent', id: AGENT.id });
+    // It names the agent, never the rules.
+    expect(JSON.stringify(rows)).not.toContain('check-step');
+    // A person may only approve what they can read in full: no card, no rules.
+    expect(asked).toEqual([]);
+    expect(folderAllowsFromSettings(options.settings)).toEqual([]);
+  });
+
+  it('says it once per list, and again when the list changes', async () => {
+    await writeSettings({ permissions: { allow: LONG_LIST } });
+    await launch();
+    await launch();
+    await settle();
+    expect(raised).toHaveLength(2);
+    expect(tooLongRows()).toHaveLength(1);
+
+    await writeSettings({ permissions: { allow: [...LONG_LIST, 'Bash(scripts/check-extra:*)'] } });
+    await launch();
+    await settle();
+    expect(tooLongRows()).toHaveLength(2);
+  });
+
+  it('stays quiet about the same list after a restart', async () => {
+    await writeSettings({ permissions: { allow: LONG_LIST } });
+    await launch();
+    await settle();
+
+    // A restart: a new service over the same stored Inbox.
+    startService();
+    await launch();
+    await settle();
+    expect(raised).toHaveLength(2);
+    expect(tooLongRows()).toHaveLength(1);
+  });
+
+  it('stays quiet only as long as the Inbox keeps the row', () => {
+    expect(FOLDER_RULES_TOO_LONG_DEDUPE_MS).toBe(NOTIFICATION_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  });
+
+  it('never reaches a phone or a chat app', () => {
+    expect(FOLDER_RULES_TOO_LONG_ENTRIES['agent.folder_rules_too_long']).toMatchObject({
+      tier: 'notable',
+      relay: 'never',
+    });
   });
 });

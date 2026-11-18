@@ -1,13 +1,15 @@
 /**
  * The launch's half of an agent folder's allow list (DOR-3039): decide, merge
  * an approved list and its self-grant deny rules into the launch, or ask a
- * person and say why a Never ask chat is refusing.
+ * person and say why a Never ask chat is refusing. A list too long for its
+ * card is told to the person in the Inbox instead (DOR-4455).
  *
  * @module services/runtimes/claude-code/folder-settings/launch-folder-allows
  */
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { logger } from '../../../../lib/logger.js';
+import { notify } from '../../../notifications/notification-service.js';
 import {
   firstTimeToldAbout,
   folderAllowsWaitingStatus,
@@ -123,6 +125,21 @@ export async function applyFolderAllowsToLaunch(
     hash: decision.hash,
     state: decision.kind,
   });
+  if (decision.kind === 'unshowable' && agent) {
+    // No card can show it whole, so none is raised and it never applies. Say
+    // so where only the person reads, once per list (DOR-4455).
+    void notify('agent.folder_rules_too_long', {
+      agentId: agent.id,
+      agentName: agent.name,
+      hash: decision.hash,
+    }).catch((err: unknown) => {
+      logger.warn('[FolderAllows] Could not tell the person a folder allow list is too long', {
+        agentId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+    return undefined;
+  }
   if (decision.kind !== 'waiting') return undefined;
   const gateway = folderAllowApprovalGateway();
   if (gateway && mayAskAboutFolderAllows(decision.request)) {

@@ -44,7 +44,7 @@ export type FolderAllowsDecision =
   | { kind: 'waiting'; request: FolderAllowRequest; hash: string }
   /** Turned down: nothing applies, and nobody is asked again until it changes. */
   | { kind: 'refused'; hash: string }
-  /** Too long to show whole on a card: nothing applies, and nobody is asked. */
+  /** Too long to show whole on a card: nothing applies, no card, and the Inbox says why (DOR-4455). */
   | { kind: 'unshowable'; hash: string };
 
 /** What {@link resolveFolderAllows} needs to know about the turn. */
