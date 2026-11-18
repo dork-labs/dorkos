@@ -6,7 +6,7 @@ name: arm-door
 # session. An entry whose head has no `success` stamp was queued some other way
 # (a bare `gh pr merge --auto`, a GraphQL enqueue, merge-tail), so this takes it
 # back out and tells the author once. The decision is scripts/arm-door.sh
-# (fixtures: scripts/test-arm-door.sh). Ledger: ci/ledger/261118-170000-arm-door.md.
+# (fixtures: scripts/test-arm-door.sh). Ledger: ci/ledger/261118-183332-arm-door.md.
 #
 # A stamp is not a signature: every agent acts on GitHub as one login, so a
 # session can post one by hand. This stops the mistakes seen so far (#3913

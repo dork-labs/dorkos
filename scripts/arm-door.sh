@@ -74,9 +74,11 @@ case "$cmd" in
   comment)
     pr=${1:-} head=${2:-} reason=${3:-}
     [[ -n "$pr" && -n "$head" && -n "$reason" ]] || usage
-    echo "**Taken out of the merge queue.** This commit (\`${head:0:7}\`) was queued without going through the arm script, so none of its gates ran: Security's label at this head, QA's and the designer's sign-offs, and the verify proof or a logged waiver (\`$reason\`)."
+    echo "**Taken out of the merge queue.** This commit (\`${head:0:7}\`) was queued without the arm script, so its checks were skipped: Security's label at this head, QA's and the designer's sign-offs, and the verify proof."
     echo
-    echo "**What to do:** don't run \`gh pr merge\` yourself. Ask the code lead to arm it; the arm script stamps the head with an \`arm-record\` status, and the queue then lets it in."
+    echo "**What to do:** arm it through the arm script, not \`gh pr merge\`. The script runs those checks, marks this commit as armed, and the queue then lets it in."
+    echo
+    echo "<sub>reason: $reason</sub>"
     echo
     echo "<!-- arm-door head=$head -->"
     ;;
