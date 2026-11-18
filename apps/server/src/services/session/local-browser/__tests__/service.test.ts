@@ -930,7 +930,9 @@ describe('bounded browser lifecycle ownership', () => {
       name: 'Save',
       revision: observed.revision,
     });
-    const refused = expect(acting).rejects.toMatchObject({ code: 'paused' });
+    // The late continuation finds the browser disconnected, and says so: never a pause a
+    // person could lift (DOR-4678).
+    const refused = expect(acting).rejects.toMatchObject({ code: 'closed' });
     await vi.advanceTimersByTimeAsync(0);
     expect(observedNodeSets[0].evaluate).toHaveBeenCalledOnce();
     expect((await service.disconnect()).status).toBe('disconnected');
@@ -1338,6 +1340,31 @@ describe('DorkOS app origins (DOR-3218)', () => {
     expect(page.evaluateHandle).not.toHaveBeenCalled();
     expect(page.screenshot).not.toHaveBeenCalled();
     expect(cookies).not.toHaveBeenCalled();
+    await service.disconnect();
+  });
+
+  it('tells the agent a page it may not read paused it, once the page is safe again (DOR-4678)', async () => {
+    const { service, page, navigate } = await create(origins);
+    await selectOwned(service);
+    const observed = await service.observe();
+    vi.mocked(page.goto).mockImplementationOnce(async () => {
+      navigate('http://localhost:4242/connections');
+      return null;
+    });
+    await expect(
+      service.action({
+        kind: 'navigate',
+        url: 'http://fixture.test/r',
+        revision: observed.revision,
+      })
+    ).rejects.toMatchObject(refused);
+    navigate('http://fixture.test/safe');
+    const error = (await service
+      .action({ kind: 'navigate', url: 'http://fixture.test/x', revision: observed.revision })
+      .catch((caught: unknown) => caught)) as { code: string; message: string };
+    expect(error.code).toBe('paused');
+    expect(error.message).toContain('only a person can resume it');
+    expect(error.message).toContain('or a page you may not read');
     await service.disconnect();
   });
 
@@ -2296,6 +2323,16 @@ it('detaches the embedded guest during a handoff and makes a fresh connection on
   expect(bridge.detach).toHaveBeenCalledOnce();
   expect(bridge.close).not.toHaveBeenCalled();
   expect(await service.state()).toMatchObject({ status: 'connected', paused: true });
+  // The agent's reads during the handoff get the agent's words; the person's keep theirs (DOR-4678).
+  for (const read of [() => service.observe(), () => service.screenshot()]) {
+    const error = (await read().catch((caught: unknown) => caught)) as { message: string };
+    expect(error).toMatchObject({ code: 'paused' });
+    expect(error.message).toContain('only a person can resume it');
+  }
+  await expect(service.navigate('https://a.example/')).rejects.toMatchObject({
+    code: 'paused',
+    message: 'Your agent is paused. Resume it to continue.',
+  });
   f.page.title = vi.fn(async () => 'A private title');
   await service.state();
   expect(f.page.title).not.toHaveBeenCalled();
@@ -2411,10 +2448,27 @@ describe('Back and Forward (DOR-4449)', () => {
     const state = await f.service.stepHistory('back');
     expect(state.paused).toBe(true);
     expect(f.page.url()).toBe('https://a.example/');
-    // The agent's next action is refused rather than racing the person.
-    await expect(
-      f.service.action({ kind: 'navigate', revision: state.revision, url: 'https://c.example/' })
-    ).rejects.toMatchObject({ code: 'paused' });
+    // The agent's next action is refused rather than racing the person, and the refusal says a
+    // person's Back or Forward pauses it and that only a person can resume it (DOR-4678).
+    const refusal = f.service
+      .action({ kind: 'navigate', revision: state.revision, url: 'https://c.example/' })
+      .catch((error: unknown) => error);
+    await expect(refusal).resolves.toMatchObject({ code: 'paused' });
+    const message = ((await refusal) as Error).message;
+    expect(message).toContain('only a person can resume it');
+    expect(message).toContain('their Back or Forward while you drive');
+  });
+
+  it('tells an agent a disconnected browser closed, never that a person can resume it (DOR-4678)', async () => {
+    const f = await create();
+    await f.service.open({ mode: 'new-window', sessionId: 'chat-one' });
+    const { revision } = await f.service.observe();
+    await f.service.disconnect();
+    const error = (await f.service
+      .action({ kind: 'navigate', url: 'https://c.example/', revision })
+      .catch((caught: unknown) => caught)) as { code: string; message: string };
+    expect(error.code).toBe('closed');
+    expect(error.message).not.toContain('resume');
   });
 
   it('leaves a browser no agent shares unpaused', async () => {
