@@ -37,6 +37,8 @@ export const AgentOperationSchema = AccessibleConnectorOperationSchema.extend({
 /** The operations an agent may run on one account, with what each costs. */
 export const AgentOperationsResponseSchema = ConnectorAccessibleOperationsResponseSchema.extend({
   operations: z.array(AgentOperationSchema),
+  /** What the list leaves out and why, for the agent (DOR-4678). */
+  note: z.string().optional(),
 }).strict();
 
 /** The accounts an agent may use, with this month's spend limit. */

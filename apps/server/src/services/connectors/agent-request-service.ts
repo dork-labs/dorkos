@@ -66,7 +66,7 @@ import {
 } from './resources/agent-request-rows.js';
 import {
   elsewhereMessage,
-  grantedVerb,
+  grantedLine,
   missingClassNote,
   setupRequestNote,
   unavailableServiceMessage,
@@ -2100,7 +2100,7 @@ function requestNote(request: ConnectorAgentRequest, answer?: GrantedClasses): s
     case 'granted': {
       const classes = answer ?? NOTHING_HELD;
       return [
-        `You can now ${grantedVerb(classes.held)} ${app}.`,
+        grantedLine(app, classes),
         ...(classes.noUpdates
           ? [`You won't get updates when something new happens in ${app}.`]
           : []),

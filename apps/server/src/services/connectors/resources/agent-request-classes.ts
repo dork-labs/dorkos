@@ -16,13 +16,18 @@ import {
   type Db,
   type DbTransaction,
 } from '@dorkos/db';
-import type { ConnectorRequestAccess } from '@dorkos/shared/connector-schemas';
+import { isPaidOperation, type ConnectorRequestAccess } from '@dorkos/shared/connector-schemas';
 import { parseResolvedEventSelection, parseStringArray } from './agent-request-rows.js';
 import type { ClassOffer, RequestClass } from './agent-request-messages.js';
 
 /** The action classes a request's answer holds, and what it asked for that the answer leaves out. */
 export interface GrantedClasses {
   readonly held: ReadonlySet<RequestClass>;
+  /**
+   * The answer holds a change a level can include (an unpaid `write`), not
+   * only actions given one at a time (DOR-4678).
+   */
+  readonly heldLevelWrite: boolean;
   readonly notGranted: RequestClass[];
   /** How the answered account offers each class, so a note can say why one is missing. */
   readonly offers: Readonly<Record<RequestClass, ClassOffer>>;
@@ -33,6 +38,7 @@ export interface GrantedClasses {
 /** An answer with nothing recorded, for a note read without one. */
 export const NOTHING_HELD: GrantedClasses = {
   held: new Set(),
+  heldLevelWrite: false,
   notGranted: [],
   offers: { read: 'level', write: 'level' },
   noUpdates: false,
@@ -67,16 +73,19 @@ export function grantedClasses(
   asked: ConnectorRequestAccess = request.requestedAccess
 ): GrantedClasses {
   const ids = parseStringArray(request.resolvedOperationRevisionIdsJson);
-  const held = new Set(
+  const revisions =
     ids.length === 0
       ? []
       : db
-          .select({ classification: connectorOperationRevisions.capabilityClassification })
+          .select({
+            classification: connectorOperationRevisions.capabilityClassification,
+            toolkit: connectorOperationRevisions.toolkit,
+            operationSlug: connectorOperationRevisions.operationSlug,
+          })
           .from(connectorOperationRevisions)
           .where(inArray(connectorOperationRevisions.id, ids))
-          .all()
-          .map((revision) => requestClassOf(revision.classification))
-  );
+          .all();
+  const held = new Set(revisions.map((revision) => requestClassOf(revision.classification)));
   const account = request.resolvedConnectionId
     ? db
         .select({
@@ -104,6 +113,9 @@ export function grantedClasses(
   );
   return {
     held,
+    heldLevelWrite: revisions.some(
+      (revision) => revision.classification === 'write' && !isPaidOperation(revision)
+    ),
     notGranted: classesFor(asked).filter((kind) => !held.has(kind)),
     offers: {
       read: offered.has('read') ? 'level' : 'none',
