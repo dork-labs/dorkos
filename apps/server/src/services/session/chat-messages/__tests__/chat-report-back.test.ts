@@ -708,6 +708,10 @@ describe('the words', () => {
     expect(on).toContain('Release v1');
     expect(on).toContain('goes back to that chat on its own');
     expect(on).toContain('keep your turn alive');
+    // A shell loop is a shape Claude Code can't check before it runs, so it asks
+    // a person (DOR-3109): the wait it suggests is one plain command per call.
+    expect(on).not.toMatch(/loop/i);
+    expect(on).toContain('`sleep 240`');
     const off = spinOffBriefing({
       parentChatId: PARENT,
       parentTitle: null,
