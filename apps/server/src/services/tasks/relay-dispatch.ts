@@ -25,6 +25,7 @@ import type { RunExecution } from './execution/resolve-run-execution.js';
 import type { TaskStore } from './task-store.js';
 import { isTerminalRunStatus } from './lifecycle/run-statuses.js';
 import type { RunAccounting } from './run-accounting.js';
+import { RUN_START_WAIT_MS } from './timing/wake-settle.js';
 import { lowerMode, resolveScheduledRunPermissionMode } from './scheduled-run-power.js';
 import { createTaggedLogger } from '../../lib/logger.js';
 import { formatDuration } from '../../lib/format-duration.js';
@@ -263,6 +264,9 @@ export async function dispatchRunViaRelay(
       : {}),
     // So a run stopped at its deadline says how long it had (DOR-3033).
     ...(task.maxRuntime ? { timeLimit: formatDuration(task.maxRuntime) } : {}),
+    // The limit itself, which the receiver counts from when the turn starts,
+    // not from now: a turn can wait in line for a free agent slot (DOR-4576).
+    timeLimitMs: task.maxRuntime || DEFAULT_DISPATCH_TTL_MS,
   };
 
   // No `replyTo`. Nothing subscribes to a task run's progress: this function
@@ -278,7 +282,8 @@ export async function dispatchRunViaRelay(
       from: TASK_SCHEDULER_PRINCIPAL,
       budget: {
         maxHops: 3,
-        ttl: Date.now() + (task.maxRuntime || DEFAULT_DISPATCH_TTL_MS),
+        // The outer bound: the limit plus the longest wait to start.
+        ttl: Date.now() + (task.maxRuntime || DEFAULT_DISPATCH_TTL_MS) + RUN_START_WAIT_MS,
         callBudgetRemaining: 5,
       },
     });

@@ -157,6 +157,66 @@ export function awakeTimeout(clock: AwakeClock, ms: number, onExpire: () => void
   };
 }
 
+/** A deadline that can stop counting for a while. */
+export interface PausableAwakeTimeout {
+  /** Stop counting. The awake time used so far is kept. Idempotent. */
+  pause(): void;
+  /** Count again from where it stopped. Idempotent. */
+  resume(): void;
+  /** Drop the deadline for good. Idempotent. */
+  cancel(): void;
+}
+
+/**
+ * {@link awakeTimeout}, with time spent paused left out as well as sleep. A
+ * scheduled run's limit is paused while its turn waits for a free agent slot,
+ * so a run that waited in line still gets its whole limit (DOR-4576).
+ *
+ * @param clock - The clock that sees sleep.
+ * @param ms - The awake, unpaused time allowed.
+ * @param onExpire - Called once, when that time is used up.
+ */
+export function pausableAwakeTimeout(
+  clock: AwakeClock,
+  ms: number,
+  onExpire: () => void
+): PausableAwakeTimeout {
+  let used = 0;
+  let done = false;
+  // The leg running now, and where it started; null while paused.
+  let leg: { cancel: () => void; startedAt: number; sleptAtStart: number } | null = null;
+  const start = (): void => {
+    const startedAt = clock.now();
+    const sleptAtStart = clock.sleptMs();
+    const cancel = awakeTimeout(clock, ms - used, () => {
+      done = true;
+      leg = null;
+      onExpire();
+    });
+    leg = { cancel, startedAt, sleptAtStart };
+  };
+  start();
+  return {
+    pause: () => {
+      if (done || !leg) return;
+      leg.cancel();
+      used += Math.max(0, clock.now() - leg.startedAt - (clock.sleptMs() - leg.sleptAtStart));
+      leg = null;
+    },
+    resume: () => {
+      if (done || leg) return;
+      if (used < ms) return start();
+      done = true;
+      onExpire();
+    },
+    cancel: () => {
+      done = true;
+      leg?.cancel();
+      leg = null;
+    },
+  };
+}
+
 /**
  * An `AbortSignal` that aborts with a `TimeoutError` after `ms` of awake time:
  * `AbortSignal.timeout`, minus the sleep.
