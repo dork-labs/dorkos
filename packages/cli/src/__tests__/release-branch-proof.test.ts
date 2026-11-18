@@ -1,4 +1,5 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { mkdtemp, rm, symlink, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -167,4 +168,44 @@ it('fingerprints a file-to-symlink change, and a clean pick of it matches', asyn
   expect(gitPatchId(repo, source)).toBeDefined();
   expect(gitPatchId(repo, picked)).toBe(gitPatchId(repo, source));
   git('switch', '-q', branch);
+});
+
+describe('check-picks shell entry', () => {
+  const script = fileURLToPath(
+    new URL('../../scripts/release-branch/check-picks.ts', import.meta.url)
+  );
+  const runCheck = (...args: string[]) =>
+    spawnSync(process.execPath, ['--experimental-strip-types', script, ...args], {
+      encoding: 'utf8',
+    });
+  it('exits 0 with ok JSON on a clean branch', () => {
+    const result = runCheck(repo, '1.2.3', pin, head, mainTip);
+    expect(result.status).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual({ ok: true, findings: [] });
+  });
+  it('exits 1 with coded findings on a stray commit', async () => {
+    const saved = head;
+    await write('app.ts', 'export const a = 4;\n');
+    const stray = commitAll('fix: only on the branch');
+    try {
+      const result = runCheck(repo, '1.2.3', pin, stray, mainTip);
+      expect(result.status).toBe(1);
+      expect(JSON.parse(result.stdout).findings[0]).toMatchObject({
+        sha: stray,
+        code: 'non-release-file',
+      });
+    } finally {
+      git('reset', '-q', '--hard', saved);
+    }
+  });
+  it('exits 2 on bad arguments, and fails closed on an empty range', () => {
+    expect(runCheck(repo, '1.2.3', pin).status).toBe(2);
+    expect(runCheck(repo, '1.2.3', 'main', head, mainTip).status).toBe(2);
+    // head..head with a different base claimed would be a short read: base must equal head to pass empty.
+    const empty = runCheck(repo, '1.2.3', head, head, mainTip);
+    expect(empty.status).toBe(0);
+    const shortRead = runCheck(repo, '1.2.3', fix, pin, mainTip);
+    expect(shortRead.status).toBe(1);
+    expect(JSON.parse(shortRead.stdout).findings[0].code).toBe('no-commits');
+  });
 });

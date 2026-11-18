@@ -280,9 +280,12 @@ describe('cherry-pick rule', () => {
     ['a package.json that is not JSON', 'package.json', pkg('1.2.2'), '{'],
   ])('refuses a release commit with %s', (_, path, before, after) => {
     const commit = releaseCommit([{ path, status: 'M', before, after }]);
+    const code = /packages\/(cli|cloud-api|connector-providers)\/|^package\.json$/.test(path)
+      ? 'release-commit-package-json'
+      : 'non-release-file';
     expect(checkReleaseCherryPicks(input([commit]))[0]).toMatchObject({
-      code: 'non-release-file',
-      detail: expect.stringContaining(`${path} is not a release file`),
+      code,
+      detail: expect.stringContaining(path),
     });
   });
   it.each([
@@ -299,8 +302,10 @@ describe('cherry-pick rule', () => {
     ['a changed archive file', 'changelog/archive/CHANGELOG-v0.1.0-to-v1.2.2.md', 'M'],
     ['another archive file', 'changelog/archive/notes.md', 'A'],
   ] as const)('refuses a release commit with %s', (_, path, status) => {
-    const commit = releaseCommit([{ path, status }]);
-    expect(checkReleaseCherryPicks(input([commit]))[0]?.code).toBe('non-release-file');
+    const forbidden = /^(\.github|\.agents|scripts|packages\/cli\/scripts)\/|^pnpm-lock/.test(path);
+    expect(checkReleaseCherryPicks(input([releaseCommit([{ path, status }])]))[0]?.code).toBe(
+      forbidden ? 'release-commit-forbidden-path' : 'non-release-file'
+    );
   });
   it('names every bad commit in one error', () => {
     const stray = { ...releaseCommit([{ path: 'x.ts', status: 'A' }]), sha: sha('3') };

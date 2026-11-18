@@ -67,6 +67,8 @@ export type CherryPickCode =
   | 'source-not-on-main'
   | 'patch-id-mismatch'
   | 'non-release-file'
+  | 'release-commit-forbidden-path'
+  | 'release-commit-package-json'
   | 'empty-commit';
 
 /** One commit that breaks the cherry-pick rule, and why. */
@@ -269,6 +271,22 @@ function commitProblem(
       ];
     return undefined;
   }
+  // Told apart from a stray file so an alarm can say "a workflow or tool file
+  // changed on a release branch" (Security M1, M3).
+  const forbidden = commit.files.find((file) => FORBIDDEN_PATH.test(file.path));
+  if (forbidden)
+    return [
+      'release-commit-forbidden-path',
+      `not a cherry-pick, and ${forbidden.path} is a workflow, tool or lockfile path`,
+    ];
+  const pkgJson = commit.files.find(
+    (file) => PACKAGE_FILES.has(file.path) && !isReleaseFileChange(file, input.version)
+  );
+  if (pkgJson)
+    return [
+      'release-commit-package-json',
+      `not a cherry-pick, and ${pkgJson.path} changes more than its version`,
+    ];
   const stray = commit.files.find((file) => !isReleaseFileChange(file, input.version));
   if (stray)
     return ['non-release-file', `not a cherry-pick, and ${stray.path} is not a release file`];
@@ -276,6 +294,9 @@ function commitProblem(
   return undefined;
 }
 
+// Never part of a release commit, even where another rule would match.
+const FORBIDDEN_PATH =
+  /^(\.github\/|\.claude\/|\.agents\/|patches\/|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|\.npmrc$|\.pnpmfile\.cjs$|lefthook\.yml$|turbo\.json$)|(^|\/)scripts\//;
 const PACKAGE_FILES = new Set([
   'package.json',
   'packages/cli/package.json',
