@@ -1,7 +1,7 @@
 ---
 covers:
   - "fix(connections): moving where GitLab CI reads its config needs the agent's own grant, like editing CI files (DOR-4508)"
-  - "fix(connections): GitLab inline review comments stay under Read and write; start_sha counts only where a commit takes it (DOR-4507, DOR-4508)"
+  - 'fix(connections): GitLab inline review comments stay under Read and write; start_sha counts only where a commit takes it (DOR-4507, DOR-4508)'
 ---
 
 ### Fixed
