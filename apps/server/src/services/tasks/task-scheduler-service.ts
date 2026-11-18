@@ -47,6 +47,9 @@ import { checkMisplacedMode } from './execution/misplaced-mode.js';
 import { guardRunPlacement } from './execution/run-place-guard.js';
 import { chainRunPlacement } from './execution/run-placement.js';
 import { capRunIfFileChanged } from './agent-mode/file-cap/run-cap.js';
+import { settleRunAllowList, allowListSources } from './allow-list/run-allow-list.js';
+import { armOneShot } from './store/task-run-controls.js';
+import { failRun, skipRun } from './lifecycle/fail-run.js';
 import { creatorMarked, withCreatorMarks } from './approvals/cross-agent.js';
 import { endRunSessions, noteRunSession } from './session/active-run-sessions.js';
 import { claimRunTurn, SESSION_BUSY_ERROR, type RunTurn } from './session/run-projection.js';
@@ -573,6 +576,14 @@ export class TaskSchedulerService {
    */
   registerTask(task: Task): boolean {
     if (!task.cron) {
+      // A one-shot task runs once, as soon as it is armed, in the process that
+      // may fire and claims it: the claim stops a second fire, here or after a
+      // restart. A skipped run (a paused agent, the cap) was its run, on its row;
+      // a fire that wrote no row (parked, switched off) gives the claim back, so
+      // it runs when it is armed again. Outside the arming caller's audit scope,
+      // as a timer fire is (DOR-4315).
+      if (this.config.mayFire && this.isLeader)
+        armOneShot(this.store, this.wakeSettle, task, (at) => this.dispatch(task, at));
       logger.debug(`skipping cron registration for on-demand task "${task.name}"`);
       return false;
     }
@@ -877,22 +888,24 @@ export class TaskSchedulerService {
    * @param task - The task whose cron fired, as it was registered.
    * @param fire - When croner's timer ran out and which occurrence it was
    *   waiting for. A bare `Date` is a fire instant with nothing captured.
+   * @returns The run row this fire opened, run or skipped, or `null` when it
+   *   opened none. A one-shot task gives its claim back on `null` (DOR-4315).
    */
-  private async dispatch(task: Task, fire: ScheduledFire | Date): Promise<void> {
+  private async dispatch(task: Task, fire: ScheduledFire | Date): Promise<TaskRun | null> {
     const { firedAt, expected } = fire instanceof Date ? { firedAt: fire, expected: null } : fire;
 
     // Production gate (ADR-285): suppress firing in non-production environments.
     // Crons still register, so display/next-run is unaffected — only firing stops.
     if (!this.config.mayFire) {
       logger.debug(`skipping "${task.name}" — firing suppressed (${this.config.firingReason})`);
-      return;
+      return null;
     }
 
     // Leader gate (ADR-285): only the dorkHome leader fires; followers no-op so
     // N processes sharing a dorkHome fire a scheduled tick exactly once.
     if (!this.isLeader) {
       logger.debug(`skipping "${task.name}" — not the scheduler leader`);
-      return;
+      return null;
     }
 
     // An agent changed outside DorkOS parks the schedules that follow it, so
@@ -902,12 +915,12 @@ export class TaskSchedulerService {
 
     // An agent's approval never covers a later version: one that no longer
     // matches is parked here instead of run (DOR-3703).
-    if (await parkIfAgentApprovalStale(task.id, this.store, this.meshCore)) return;
+    if (await parkIfAgentApprovalStale(task.id, this.store, this.meshCore)) return null;
     // Re-read task to check current state
     const current = this.store.getTask(task.id);
     if (!current || !current.enabled || current.status !== 'active') {
       logger.debug(`skipping "${task.name}" — disabled or not active`);
-      return;
+      return null;
     }
 
     // Which occurrence this fire stands for (DOR-2718), read off the schedule
@@ -967,16 +980,13 @@ export class TaskSchedulerService {
         logger.debug(
           `skipping "${task.name}" — tick ${new Date(tickKey).toISOString()} already dispatched`
         );
-        return;
+        return null;
       }
     } else {
-      // No cron, so no occurrence to claim — an on-demand task can only get
-      // here by being dispatched directly, and the skip reasons still apply.
-      if (skipReason) {
-        logger.warn(`skipped "${task.name}" — ${skipReason}`);
-        return;
-      }
+      // No cron, so no occurrence to claim: only a one-shot task's one fire gets
+      // here (DOR-4315). A skip still writes its row, so that run never vanishes.
       run = this.store.createRun(task.id, 'scheduled');
+      if (skipReason) skipRun(this.store, run, skipReason);
     }
 
     if (skipReason) {
@@ -993,10 +1003,10 @@ export class TaskSchedulerService {
       if (pausedAgent && skipReason === AGENT_PAUSED_SKIP_REASON) {
         this.pauseHold.recordScheduledSkip(current.id, pausedAgent, run.id);
       }
-      return;
+      return run;
     }
 
-    await this.executeRun(current, run, checkedAgent);
+    return this.executeRun(current, run, checkedAgent).then(() => run);
   }
 
   /**
@@ -1063,8 +1073,10 @@ export class TaskSchedulerService {
           // A SKILL file changed outside the task tools runs capped at Never ask, in
           // the mode its resolved runtime declares; a check that fails, fails the run (M4).
           task = await capRunIfFileChanged(task, run, this.store, this.meshCore, execution);
+          // An agent-set allow list rides only on the programs it pinned (DOR-4315).
+          task = await settleRunAllowList(task, run, allowListSources(this.store, this.meshCore));
         } catch (err) {
-          this.failRun(run, err);
+          failRun(this.store, run, err);
           return recordDispatchEnd(dispatchId, 'failed');
         }
         span.setAttr(ATTR.RUNTIME, execution.runtimeType);
@@ -1087,7 +1099,7 @@ export class TaskSchedulerService {
           activityService: this.activityService,
         });
         if (accountRefusal) {
-          this.failRun(run, accountRefusal);
+          failRun(this.store, run, accountRefusal);
           return recordDispatchEnd(dispatchId, 'failed');
         }
         // A Stop during preparation ended this run before a runtime owned it.
@@ -1220,27 +1232,6 @@ export class TaskSchedulerService {
       ...(placement.agentPath !== undefined ? { agentPath: placement.agentPath } : {}),
       ...(checkedAgent !== undefined ? { agentDefaults: checkedAgent } : {}),
     });
-  }
-
-  /**
-   * End a run that never started, with the reason on the row a person reads.
-   *
-   * The activity-feed event rides the TaskStore run-terminal hook (DOR-1573),
-   * fired by this `updateRun('failed')` — the one funnel both dispatch paths
-   * share.
-   *
-   * @param run - The run row, already opened.
-   * @param err - Why it could not start.
-   */
-  private failRun(run: TaskRun, err: unknown): void {
-    const message = err instanceof Error ? err.message : String(err);
-    this.store.updateRun(run.id, {
-      status: 'failed',
-      finishedAt: new Date().toISOString(),
-      durationMs: 0,
-      error: message,
-    });
-    logger.error(`run ${run.id} could not start: ${message}`);
   }
 
   /**
