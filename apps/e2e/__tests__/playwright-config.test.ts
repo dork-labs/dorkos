@@ -38,13 +38,26 @@ async function allLegs(): Promise<{ timeout?: number; command: string }[]> {
   // packages/eslint-config/base.js), and this sets the flags the config module
   // itself reads, not a config read of our own. This file is not a config file,
   // so it still states the exemption here.
+  //
+  // CI is switched OFF for the import, and put back after. Under CI the config
+  // drops a leg's `turbo run build` when that package's dist is already on disk
+  // (`builtByCiStep`), and in test.yml it is: every test job builds what the
+  // suites import before they run (scripts/build-test-deps.sh, DOR-4625). These
+  // assertions are about the commands a leg runs when it builds, so they must
+  // not depend on whether some earlier step happened to leave a dist behind.
   /* eslint-disable no-restricted-syntax */
+  const ci = process.env.CI;
+  delete process.env.CI;
   process.env.E2E_SITE = '1';
   process.env.E2E_PROD = '1';
+  try {
+    const { default: config } = await import('../playwright.config.js');
+    const webServer = config.webServer;
+    return Array.isArray(webServer) ? webServer : webServer ? [webServer] : [];
+  } finally {
+    if (ci !== undefined) process.env.CI = ci;
+  }
   /* eslint-enable no-restricted-syntax */
-  const { default: config } = await import('../playwright.config.js');
-  const webServer = config.webServer;
-  return Array.isArray(webServer) ? webServer : webServer ? [webServer] : [];
 }
 
 describe('playwright.config.ts webServer legs', () => {
