@@ -120,8 +120,11 @@ export function ScheduleApprovalShowcases() {
               id: 'task-runs-as-other',
               agentId: 'agent-scout',
               runsAsName: 'Scout',
-              displayName: 'Weekly link check',
-              reason: 'Scout should check the docs links every Monday.',
+              displayName: 'Docs link check',
+              reason: 'Broken docs links go unnoticed until someone trips on one.',
+              prompt:
+                'Check every link in the docs, and list the broken ones with the page they are on.',
+              runPlace: { kind: 'agent', path: '/Users/dev/agents/scout' },
             })}
           />
         </div>
