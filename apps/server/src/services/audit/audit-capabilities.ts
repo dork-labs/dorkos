@@ -43,8 +43,10 @@ import {
 } from '../core/capabilities/index.js';
 import {
   listRunningChats,
+  runningChatsHandOutsideWords,
   type RunningChatSources,
 } from '../session/running-chats/running-chats.js';
+import { markCallerTurnOutsider } from '../core/capabilities/mark-caller-turn.js';
 import type { AuditLog } from './audit-log.js';
 import type { AccountIds } from './account-ids.js';
 import { isPlainSessionId } from './plain-session-id.js';
@@ -325,12 +327,16 @@ export const auditDomain: CapabilityDomain = {
       // A Never ask turn reads no titles: a stranger can set one (DOR-3971).
       invoke: async (deps, _input, context) => {
         const audit = requireAuditDeps(deps);
-        return listRunningChats(
+        const withoutTitles = context?.neverAsks === true;
+        const running = await listRunningChats(
           deps.operatorDeps?.meshCore,
           readerFor(audit, context),
           audit.runningChatSources,
-          { withoutTitles: context?.neverAsks === true }
+          { withoutTitles }
         );
+        // A title from a chat that holds outside words may quote them (DOR-3969).
+        if (runningChatsHandOutsideWords(running, withoutTitles)) markCallerTurnOutsider(context);
+        return running;
       },
     }),
   ],
