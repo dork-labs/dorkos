@@ -313,6 +313,17 @@ export function LocalBrowserPanel({
             busy={busy}
             action={action}
             onReconnect={open}
+            signIn={state.signIn ?? null}
+            // The site goes on in its own window, where the saved sign-in is (DOR-4097).
+            onOpenOwnWindow={(url) =>
+              void action(() =>
+                transport.openLocalBrowser({
+                  mode: 'new-window',
+                  ...(state.sessionId ? { sessionId: state.sessionId } : {}),
+                  url,
+                })
+              )
+            }
             agentDriving={pill?.kind === 'driving'}
             onTakeOver={
               pill && chromeTakesOver(pill)
