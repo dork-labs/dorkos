@@ -156,6 +156,7 @@ import { SESSIONS } from '../../../../config/constants.js';
 import { turnNotStarted } from '../../../session/launch/turn-not-started.js';
 import { explainRefusedDispatch, openWindowWaitingForSlot } from './slot-wait/open-turn-window.js';
 import { resolveMaxWarmSessions } from './slot-wait/warm-ceiling-size.js';
+import { warmPoolTiming } from './slot-wait/warm-pool-timing.js';
 import { logger } from '../../../../lib/logger.js';
 import { stopWasAimedAt, type AgentSession } from '../agent-types.js';
 import { boundaryViolationEvent, validateDispatchBoundary } from '../dispatch-boundary.js';
@@ -1240,8 +1241,7 @@ export class PersistentDispatch {
 
     bundle.pump = this.registry.acquire(key, {
       maxWarmSessions: () => resolveMaxWarmSessions(),
-      warmIdleMs: SESSIONS.WARM_IDLE_MS,
-      slotWaitMs: SESSIONS.WARM_SLOT_WAIT_MS,
+      ...warmPoolTiming(),
       onWaitingForSlot: () => bundle.onSlotWait?.(),
       // Mirrored into a durable record so a server that goes away while the
       // work runs can wake the chat at its next boot (DOR-2065).

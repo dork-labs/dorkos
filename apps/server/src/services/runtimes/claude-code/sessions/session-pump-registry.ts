@@ -133,12 +133,21 @@ export interface AcquirePumpOptions extends Omit<SessionPumpOptions, 'sessionId'
    * `SESSIONS.WARM_IDLE_MS`.
    */
   warmIdleMs: number;
+  /**
+   * How long after a turn ends this session's process is off limits to a
+   * reclaim, so a launch waits for a slot instead (DOR-4498). Production
+   * passes `SESSIONS.RECLAIM_GRACE_MS`; unset, a reclaim may take it at once.
+   */
+  reclaimGraceMs?: number;
 }
 
-/** A pump plus the two per-session bounds its acquire was held to. */
+/** A pump plus the per-session bounds its acquire was held to. */
 interface PumpEntry {
   pump: SessionPump;
   warmIdleMs: number;
+  reclaimGraceMs: number;
+  /** When the pump last went WARM, or undefined while it is not WARM. */
+  warmSince?: number;
   /** The armed idle timer, or undefined when this session is not sitting warm. */
   idleTimer?: ReturnType<typeof setTimeout>;
 }
@@ -174,6 +183,8 @@ export class SessionPumpRegistry {
   private readonly closing = new Set<Promise<boolean>>();
   /** Sessions whose wait a Stop has ended, read once by the waiting launch. */
   private readonly stoppedWaits = new Set<string>();
+  /** Wakes waiting launches when the soonest reclaim grace ends (DOR-4498). */
+  private graceWake?: ReturnType<typeof setTimeout>;
 
   /**
    * Build a registry that resolves every caller-supplied id through ONE
@@ -212,7 +223,14 @@ export class SessionPumpRegistry {
     const key = this.sessionKeyOf(sessionId);
     const existing = this.entries.get(key);
     if (existing) return existing.pump;
-    const { maxWarmSessions, warmIdleMs, slotWaitMs, onWaitingForSlot, ...pumpOpts } = opts;
+    const {
+      maxWarmSessions,
+      warmIdleMs,
+      slotWaitMs,
+      onWaitingForSlot,
+      reclaimGraceMs,
+      ...pumpOpts
+    } = opts;
     const ceiling = typeof maxWarmSessions === 'function' ? maxWarmSessions : () => maxWarmSessions;
     const pump: SessionPump = new SessionPump({
       ...pumpOpts,
@@ -226,7 +244,7 @@ export class SessionPumpRegistry {
         pumpOpts.onStateChange?.(change);
       },
     });
-    this.entries.set(key, { pump, warmIdleMs });
+    this.entries.set(key, { pump, warmIdleMs, reclaimGraceMs: reclaimGraceMs ?? 0 });
     liveRegistries.add(this);
     return pump;
   }
@@ -342,6 +360,7 @@ export class SessionPumpRegistry {
     // timer with it; and a pump torn down while its entry was still here would
     // report the state change into an entry about to be discarded anyway.
     for (const entry of entries) this.drop(entry.pump.sessionId);
+    clearTimeout(this.graceWake);
     // A reaped process still closing left `entries` already; its own drain
     // closes it, so shutdown waits for that rather than leaving it behind.
     const results = await Promise.allSettled([
@@ -409,9 +428,11 @@ export class SessionPumpRegistry {
     // gives its reservation back.
     this.wakeSlotWaiters();
     if (to === 'warm') {
+      entry.warmSince = Date.now();
       this.armIdle(entry);
       return;
     }
+    entry.warmSince = undefined;
     this.disarmIdle(entry);
   }
 
@@ -675,6 +696,21 @@ export class SessionPumpRegistry {
     });
   }
 
+  /**
+   * Wake waiting launches when the soonest reclaim grace ends. One timer at a
+   * time: a later call replaces it, since every call carries the soonest end.
+   *
+   * @param ms - How long until the soonest grace ends
+   */
+  private wakeWhenGraceEnds(ms: number): void {
+    clearTimeout(this.graceWake);
+    this.graceWake = setTimeout(() => {
+      this.graceWake = undefined;
+      this.wakeSlotWaiters();
+    }, ms + 1);
+    this.graceWake.unref?.();
+  }
+
   /** Wake every launch waiting for a slot, so each checks again. */
   private wakeSlotWaiters(): void {
     this.slotChanges += 1;
@@ -695,9 +731,19 @@ export class SessionPumpRegistry {
    */
   private async reclaimWarmSlot(asking: string): Promise<boolean> {
     const candidates: string[] = [];
+    const now = Date.now();
+    let graceLeft = Infinity;
     for (const [sessionId, entry] of this.entries) {
-      if (sessionId !== asking && entry.pump.state === 'warm') candidates.push(sessionId);
+      if (sessionId === asking || entry.pump.state !== 'warm') continue;
+      // Inside its grace a process sits out (DOR-4498): it is most likely a busy
+      // lane between two turns, and taking it costs a relaunch of every MCP
+      // server it runs. The launch waits instead, at most until a grace ends.
+      const left = (entry.warmSince ?? 0) + entry.reclaimGraceMs - now;
+      if (left > 0) graceLeft = Math.min(graceLeft, left);
+      else candidates.push(sessionId);
     }
+    // A grace running out changes no state, so nothing else would wake a wait.
+    if (graceLeft !== Infinity) this.wakeWhenGraceEnds(graceLeft);
     for (const sessionId of this.slots.leastRecentFirst(candidates)) {
       if (await this.reap(sessionId, { quiet: true })) {
         // `info`, matching the idle reap above: both are a warm process going
