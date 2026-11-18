@@ -32,6 +32,8 @@ import {
   resolveConnectorOperator,
   type ConnectorOwnerBoundaryDeps,
 } from './connector-owner-boundary.js';
+import { CONNECTED_APPS } from './connector-step-up.js';
+import { runFrontDoorWrite } from './front-door-step-up.js';
 
 /** What the access-change routes read. */
 export interface ConnectorAccessChangeRouterDeps extends ConnectorOwnerBoundaryDeps {
@@ -80,18 +82,29 @@ export function createConnectorAccessChangeRoutes(
     const owner = resolveConnectorOperator(c, deps);
     if (owner instanceof Response) return owner;
     const changeId = c.req.param('changeId');
-    try {
-      const { undoId } = await deps.narrowing.undo(owner, changeId);
-      return c.json(ConnectorAccessChangeUndoSchema.parse({ changeId, undoId }));
-    } catch (error) {
-      if (error instanceof AccessNarrowingError) {
-        return c.json(
-          { error: error.message, code: error.code },
-          error.code === 'UNDO_STALE' ? 409 : 404
-        );
-      }
-      throw error;
-    }
+    // An agent's change only ever took access away, so undoing it gives the
+    // access back and waits for the owner to confirm it's them (DOR-4355).
+    return runFrontDoorWrite(c, {
+      kind: 'connection.grant',
+      target: changeId,
+      input: { op: 'undo-access-change', changeId },
+      reason: 'Give an agent back the access it gave up.',
+      subject: CONNECTED_APPS,
+      run: async () => {
+        try {
+          const { undoId } = await deps.narrowing.undo(owner, changeId);
+          return c.json(ConnectorAccessChangeUndoSchema.parse({ changeId, undoId }));
+        } catch (error) {
+          if (error instanceof AccessNarrowingError) {
+            return c.json(
+              { error: error.message, code: error.code },
+              error.code === 'UNDO_STALE' ? 409 : 404
+            );
+          }
+          throw error;
+        }
+      },
+    });
   });
 
   return router;

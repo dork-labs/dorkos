@@ -9,6 +9,4 @@
  * @param requestedBy - Whoever asked, as the approval recorded it.
  * @returns The last path segment, or the label unchanged.
  */
-export function agentLabelFrom(requestedBy: string): string {
-  return requestedBy.split('/').filter(Boolean).pop() ?? requestedBy;
-}
+export { approvalRequesterLabel as agentLabelFrom } from '@dorkos/shared/approval-schemas';

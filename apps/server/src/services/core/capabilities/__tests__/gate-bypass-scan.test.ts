@@ -94,8 +94,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     what: 'writes user config through the guarded step, whose bars are only as strong as the authority the caller hands it',
     call: 'applyGuardedConfigWrite(',
     allowed: {
-      'routes/config.ts':
-        'the cockpit REST route — builds its authority from the request, refusing operator-only paths for any caller that is not a trusted caller (DOR-467), and with login on for any caller without a session cookie (DOR-505)',
+      'routes/config-patch-http.ts':
+        'the cockpit REST route `PATCH /api/config`, moved out of routes/config.ts with its bars (DOR-4355) — builds its authority from the request, refusing operator-only paths for any caller that is not a trusted caller (DOR-467), and with login on for any caller without a session cookie (DOR-505); a lasting access change is also held for the owner to confirm, and the authority is rebuilt from the confirming request before the write',
       'services/core/operator/operator-tool-handlers.ts':
         'the agent capability — OPERATOR_TOOL_AUTHORITY refuses operator-only paths unconditionally (DOR-488)',
       'services/core/operator/config-write.ts': 'the definition itself',
@@ -774,10 +774,10 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     allowed: {
       'services/shapes/shape-schedule-service.ts':
         "one write after the raw create fallback only: `updateTask(schedule.id, { status: 'pending_approval' })` parks that newly created row before registration (DOR-3861). It changes nothing else, grants no mode and cannot arm a schedule; this entry does not cover any other updateTask write",
-      'routes/tasks.ts':
-        'the cockpit REST route — refuses operator-only task fields unless the caller clears the agent bar (DOR-504); see the createTask entry for why the DOR-474 cookie bar stops short of here',
+      'routes/tasks-update-http.ts':
+        'the cockpit REST route `PATCH /api/tasks/:id`, moved out of routes/tasks.ts with its bars (DOR-4355) — refuses operator-only task fields unless the caller clears the agent bar (DOR-504); see the createTask entry for why the DOR-474 cookie bar stops short of here. An edit that puts a task on credits, or changes one already on them, is also held for the owner to confirm',
       'routes/task-route-answers.ts':
-        "`writeTaskRow`, the PATCH row write moved out of `routes/tasks.ts` (DOR-3969): its only caller is that route's PATCH handler, after the operator-only refusal and the file step have run, so it writes exactly the row the route wrote before, plus the declared-reader record (anyone turns it on, only a person off)",
+        '`writeTaskRow`, the PATCH row write moved out of `routes/tasks.ts` (DOR-3969): its only caller is the PATCH handler in `routes/tasks-update-http.ts` (DOR-4355), after the operator-only refusal and the file step have run, so it writes exactly the row the route wrote before, plus the declared-reader record (anyone turns it on, only a person off)',
       'services/tasks/lifecycle/create-task.ts':
         'the shared create sequence, which parks a proposal and lifts the permission clamp for a trusted caller only — reached through a door that already refused operator-only fields (DOR-1568)',
       'services/runtimes/claude-code/mcp-tools/tasks/task-tools.ts':
@@ -795,6 +795,91 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
       'services/runtimes/claude-code/mcp-tools/tasks/task-tool-narrow-bypass.ts':
         "one write (DOR-4315 PR 2, Security's ruling of Nov 18): `permissionMode: 'dontAsk'`, with the agent's pinned allow list, on a task that is `active` at a mode that runs every command without asking, so it only narrows. Gated by `settleToolModeCall` (`tasks.set_mode`) and `settleAllowListCall` (its own chat, own task, unmarked, not a scheduled run, a level that runs any command unasked, Claude Code, exact pinned entries); both audited first; the SKILL file is written only while `agentModeSnapshotOf` still matches, and the row inside one transaction that re-checks the mode, status, work, agent and last editor. Never sets a status, an approval or any other mode",
       'services/tasks/task-store.ts': 'the definition itself',
+    },
+  },
+  // Grant and level writers behind the person's own doors (DOR-4355 M3): each door holds a
+  // raise for the owner's confirmation, or names here why it does not need to.
+  {
+    what: 'changes the permission preset, which can raise what every agent may do',
+    call: 'setPreset(',
+    allowed: {
+      'routes/permissions.ts':
+        "`PUT /api/permissions/preset`: a raise waits for the owner to confirm it's them, judged by effect and refused (409) if permissions changed meanwhile (DOR-4355); Wi-Fi refuses a raise",
+      'services/core/permissions/permission-service.ts': 'the definition itself',
+    },
+  },
+  {
+    what: "changes everyone's permission defaults, which can raise what agents may do",
+    call: 'setDefaults(',
+    allowed: {
+      'routes/permissions.ts':
+        "`PATCH /api/permissions/defaults`: a raise waits for the owner to confirm it's them (DOR-4355); Wi-Fi refuses a raise",
+      'services/core/permissions/permission-capabilities.ts':
+        "an agent's own permission change, decided by the tool gate as a card a person answers",
+      'services/core/permissions/permission-service.ts': 'the definition itself',
+    },
+  },
+  {
+    what: "changes one agent's permissions, which can raise what it may do",
+    call: 'setAgent(',
+    allowed: {
+      'routes/permissions.ts':
+        "`PATCH /api/agents/:id/permissions`: a raise waits for the owner to confirm it's them (DOR-4355); Wi-Fi refuses a raise",
+      'routes/approvals.ts':
+        'Always allow on a card writes the standing rule; that answer is held in DOR-3648 (remote approval step-up), which merges first or in the same release',
+      'services/core/permissions/permission-capabilities.ts':
+        "an agent's own permission change, decided by the tool gate as a card a person answers",
+      'services/core/permissions/permission-service.ts': 'the definition itself',
+    },
+  },
+  {
+    what: 'turns an extension on, so its code may load again',
+    call: 'extensionManager.enable(',
+    allowed: {
+      'routes/extensions.ts':
+        "`POST /api/extensions/:id/enable`: waits for the owner to confirm it's them (DOR-4355)",
+      'services/marketplace/flows/install-plugin.ts':
+        "the install flow; the person's install request is held at `POST /api/marketplace/packages/:name/install` (DOR-4355), an agent's asks on a card",
+      'services/shapes/apply-shape.ts':
+        "applying a Shape; the person's apply is held at `POST /api/shapes/:name/apply` (DOR-4355), an agent's asks on a card",
+    },
+  },
+  {
+    what: "approves an extension's code to run in the server",
+    call: 'approveToRun(',
+    allowed: {
+      'routes/extensions-approval.ts':
+        '`POST /api/extensions/:id/approve`: held in DOR-3648 (remote approval step-up), which merges first or in the same release',
+      'services/extensions/groups/extension-approval-set.ts':
+        '`POST /api/extensions/approve-set`: held in DOR-3648, which merges first or in the same release',
+      'services/extensions/extension-manager.ts': 'the definition itself',
+    },
+  },
+  {
+    what: 'creates a chat route, which decides what an outside chat may make an agent do',
+    call: 'bindingStore.create(',
+    allowed: {
+      'routes/relay-adapters.ts':
+        "`POST /api/relay/bindings`: a route that starts looser than the defaults waits for the owner to confirm it's them (DOR-4355)",
+      'routes/unclaimed-chats.ts':
+        "`POST /api/relay/unclaimed-chats/:id/claim`: a claim that starts looser than the default mode waits for the owner to confirm it's them (DOR-4355)",
+    },
+  },
+  {
+    what: 'points a chat route at another agent',
+    call: 'moveToAgent(',
+    allowed: {
+      'routes/relay-adapters.ts':
+        "`POST /api/relay/bindings/:id/move`: always waits for the owner to confirm it's them (DOR-4355)",
+      'services/relay/binding-store.ts': 'the definition itself',
+    },
+  },
+  {
+    what: "sets what teammates' turns in a space may cost each month",
+    call: '.setLimit(',
+    allowed: {
+      'routes/community-teammate-spend.ts':
+        "`PUT /api/community-connections/:ref/teammate-spend`: raising or removing the limit waits for the owner to confirm it's them (DOR-4355)",
     },
   },
   {
@@ -856,8 +941,8 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     what: "writes any agent's manifest by id, runtime, model and effort included",
     call: 'meshCore.update(',
     allowed: {
-      'routes/mesh.ts':
-        '`PATCH /api/mesh/agents/:id`, mounted behind `refuseAgentExecutionWrites` (DOR-2328), and refusing permission fields by name (spec `agent-permissions` D10)',
+      'routes/mesh-agent-patch-http.ts':
+        '`PATCH /api/mesh/agents/:id`, moved out of routes/mesh.ts (DOR-4355) and still mounted behind `refuseAgentExecutionWrites` (DOR-2328), refusing permission fields by name (spec `agent-permissions` D10); putting an agent on credits is also held for the owner to confirm',
     },
   },
   {

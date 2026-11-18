@@ -13,7 +13,8 @@
  * - `POST …/decision` needs the token, the cookie, the same session,
  *   `Sec-Fetch-Site: same-origin` and DorkOS's own `Origin`, besides the owner
  *   check every account decision passes. The mini app's files must still be
- *   the ones the page showed.
+ *   the ones the page showed. Once an owner exists, a yes also waits for
+ *   them to confirm it's them (DOR-4355).
  *
  * Every answer here carries a CSP that loads nothing but these files, COOP
  * `same-origin` (a window a mini app opened loses its handle on it), no
@@ -46,6 +47,8 @@ import {
   decidePage,
   nothingWaitingPage,
 } from './mini-app-access-page-assets.js';
+import { CONNECTED_APPS } from './connector-step-up.js';
+import { runFrontDoorWrite } from './front-door-step-up.js';
 
 /** Where the page, its files and its decision live, under `/api/connectors`. */
 const BASE = '/mini-app-access';
@@ -185,25 +188,38 @@ export function createMiniAppAccessPageRoutes(deps: MiniAppAccessPageRouterDeps)
         503
       );
     }
-    try {
-      const result = access.approve({
-        extensionId: ticket.extensionId,
-        service: ticket.service,
-        connectionId: parsed.data.connectionId,
-        filesDigest: ticket.filesDigest,
-        approvedBy: sessionKeyOf(c),
-      });
-      return c.json({
-        status: 'approved',
-        granted: result.granted,
-        message: 'Done. It can read that account now. You can close this page.',
-      });
-    } catch (err) {
-      if (err instanceof ExtensionConnectionError) {
-        return c.json({ error: err.message, code: err.code }, 409);
-      }
-      throw err;
-    }
+    const approval = {
+      extensionId: ticket.extensionId,
+      service: ticket.service,
+      connectionId: parsed.data.connectionId,
+      filesDigest: ticket.filesDigest,
+      approvedBy: sessionKeyOf(c),
+    };
+    // A yes waits for the owner to confirm it's them (DOR-4355); Not now stays
+    // immediate above. The names a mini app chose go in the notes, not the reason.
+    return runFrontDoorWrite(c, {
+      kind: 'connection.grant',
+      target: approval.extensionId,
+      input: { op: 'mini-app-read', ...approval },
+      reason: 'Let a mini app read one of your connected accounts.',
+      notes: [`Mini app: ${approval.extensionId}`, `App: ${approval.service}`],
+      subject: CONNECTED_APPS,
+      run: async () => {
+        try {
+          const result = access.approve(approval);
+          return c.json({
+            status: 'approved',
+            granted: result.granted,
+            message: 'Done. It can read that account now. You can close this page.',
+          });
+        } catch (err) {
+          if (err instanceof ExtensionConnectionError) {
+            return c.json({ error: err.message, code: err.code }, 409);
+          }
+          throw err;
+        }
+      },
+    });
   });
 
   return router;

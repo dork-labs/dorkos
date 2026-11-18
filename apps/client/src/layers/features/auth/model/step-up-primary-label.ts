@@ -1,0 +1,57 @@
+/** Primary words for each confirmed action, shared by the existing sheet. */
+import type { StepUpActionKind } from '@dorkos/shared/step-up';
+
+const LABELS: Partial<Record<StepUpActionKind, string>> = {
+  'approval.grant': 'Allow',
+  'extension.grant': 'Allow',
+  'extension.settings-change': 'Save settings',
+  'approval.grant-always': 'Always allow',
+  'connection.confirm-setting': 'Confirm setting',
+  'connection.use-setting': 'Allow sending',
+  'api-key.create': 'Create key',
+  'api-key.update': 'Save key',
+  'remote-access.enrolment': 'Turn on',
+  'remote-access.mode': 'Turn on',
+  'tunnel.start': 'Turn on',
+  'lan-access.enable': 'Turn on',
+  'config.front-door': 'Save',
+  'permissions.raise': 'Save',
+  'community.teammate-spend': 'Save limit',
+  'mcp-token.reveal': 'Show token',
+  'mcp-token.rotate': 'Replace token',
+  'session-relay.link': 'Create link',
+  'session-relay.level': 'Allow',
+  'session-relay.resume': 'Resume',
+  'relay-passkey.enrol': 'Add passkey',
+  'extensions.trust-source': 'Trust source',
+  'extensions.enable': 'Turn on',
+  'canvas.route-approve': 'Allow route',
+  'connection.grant': 'Allow',
+  'connection.credential': 'Save key',
+  'marketplace.install': 'Install',
+  'marketplace.source': 'Add source',
+  'shapes.apply': 'Apply',
+  'workspace.setup': 'Run commands',
+  'tasks.arm': 'Allow',
+  'accounts.eligibility': 'Save',
+  'community.connect': 'Connect',
+  'community.wake': 'Save',
+  'extensions.secret': 'Save',
+  'relay.binding': 'Save',
+  'relay.allowlist': 'Add',
+  'cloud.link': 'Link account',
+  'cloud.billing': 'Confirm',
+  'cloud.delete': 'Request deletion',
+  'cloud.export': 'Export',
+  'cloud.seats': 'Assign seat',
+  'cloud.credits': 'Use credits',
+  'cloud.space': 'Continue',
+  'devices.sign-out-one': 'Sign it out',
+  'devices.sign-out-others': 'Sign out others',
+  'devices.sign-out-all': 'Sign out everywhere',
+};
+
+/** The sheet button's action, using the designer's names for guarded writes. */
+export function primaryLabel(kind: StepUpActionKind | undefined): string {
+  return (kind && LABELS[kind]) || 'Confirm';
+}

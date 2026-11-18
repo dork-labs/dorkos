@@ -305,10 +305,23 @@ export function hostLimitBytes(upload: CommunityMoveUpload): number {
 /**
  * Remove a staged export and its private directory. Safe to call twice.
  *
+ * Only ever the `move-…/export.zip` folder {@link stageArchive} made directly
+ * under this run's staging directory: any other path is left alone.
+ *
  * @param staged - The copy to remove.
  */
 export async function discardStagedArchive(staged: StagedArchive): Promise<void> {
-  await rm(path.dirname(staged.filePath), { recursive: true, force: true });
+  const dir = path.dirname(path.resolve(staged.filePath));
+  const ownCopy =
+    stagingRoot !== null &&
+    path.dirname(dir) === path.resolve(stagingRoot) &&
+    path.basename(dir).startsWith('move-') &&
+    path.basename(staged.filePath) === 'export.zip';
+  if (!ownCopy) {
+    logger.warn('[Cloud] Left a file that is not a staged space export');
+    return;
+  }
+  await rm(dir, { recursive: true, force: true });
 }
 
 /** One upload this process is responsible for. */

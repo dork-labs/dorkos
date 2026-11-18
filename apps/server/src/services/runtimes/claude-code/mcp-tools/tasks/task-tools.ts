@@ -26,7 +26,6 @@ import {
   RESET_TIMING_DESCRIPTION,
   ACCEPT_FILE_HASH_DESCRIPTION,
   PARKED_SCHEDULE_SURFACE_HINT,
-  TARGET_DESCRIPTION,
   REFUSED_AGENT_ID_DESCRIPTION,
   REFUSED_UPDATE_TARGET_DESCRIPTION,
   STICKY_DESCRIPTION,
@@ -35,7 +34,6 @@ import {
   MODEL_DESCRIPTION,
   EFFORT_DESCRIPTION,
   ACCOUNT_DESCRIPTION,
-  REASON_DESCRIPTION,
   REFUSED_PERMISSION_MODE_DESCRIPTION,
   REFUSED_STATUS_DESCRIPTION,
   STATUS_DESCRIPTION,
@@ -43,7 +41,11 @@ import {
   TASKS_LIST_DESCRIPTION,
   TASKS_UPDATE_DESCRIPTION,
 } from './task-tool-copy.js';
-import { CREATE_TASK_INPUT, UPDATE_TASK_INPUT } from './task-tool-inputs.js';
+import {
+  CREATE_TASK_INPUT,
+  type CreateScheduleArgs,
+  UPDATE_TASK_INPUT,
+} from './task-tool-inputs.js';
 import {
   finishOneShotCreate,
   LIST_ALONE_REFUSAL,
@@ -96,6 +98,7 @@ import { auditScheduleUpdate, scheduleEdit } from '../../../../tasks/approvals/s
 import { applyTaskFileUpdate } from '../../../../tasks/lifecycle/update-task-file.js';
 import { taskCreateLifecycleDeps } from './task-create-deps.js';
 import { changesApprovedWork } from '../../../../tasks/task-file-update.js';
+import { agentCreditsRaiseRefusal } from '../../../../tasks/credits/credits-work.js';
 import { refuseStickyAccountChange } from '../../../../tasks/session/sticky-session.js';
 import { AGENT_TIMING_CHANGE_REASON } from '../../../../tasks/timing/effective-timing.js';
 import { describeScheduleProblem } from '../../../../tasks/cron-validation.js';
@@ -154,48 +157,7 @@ export function createCreateScheduleHandler(
   callerMarks?: CallerMarksResolver,
   callerAgent?: CallerAgentResolver
 ) {
-  return async (args: {
-    name: string;
-    prompt: string;
-    /** Left out only for a one-shot task (DOR-4315). */
-    cron?: string;
-    /** A one-shot task (DOR-4315); see `task-tool-allow-list.ts`. */
-    runOnce?: true;
-    /** A one-shot task's exact commands (DOR-4315); see `task-tool-allow-list.ts`. */
-    allowList?: string[];
-    reason: string;
-    /** Left out means `global`, which files it under the caller (DOR-4067). */
-    target?: string;
-    description?: string;
-    timezone?: string;
-    maxRuntime?: string;
-    /** Whether every run resumes one session; see {@link STICKY_DESCRIPTION}. */
-    sticky?: boolean;
-    /** Whether the task reads outside text; see {@link READS_OUTSIDE_TEXT_DESCRIPTION}. */
-    readsOutsideText?: boolean;
-    /** Which runtime the runs execute on; see {@link RUNTIME_DESCRIPTION}. */
-    runtime?: string;
-    /** Which model the runs execute on; see {@link MODEL_DESCRIPTION}. */
-    model?: string;
-    /** How hard the model thinks; see {@link EFFORT_DESCRIPTION}. */
-    effort?: EffortLevel;
-    /** Which Claude account the runs start on; see {@link ACCOUNT_DESCRIPTION}. */
-    account?: string;
-    /** Mode requested for person approval; never applied by this tool. */
-    requestedPermissionMode?: PermissionMode;
-    /** Task-run rules requested for person approval; never applied by this tool. */
-    requestedAllow?: string[];
-    /** Refused: only a person applies task-run rules. */
-    approvedAllow?: string[];
-    /** Refused: only a person confirms a looser grant. */
-    acceptLooserThanRequested?: true;
-    /** Refused, or decided as `tasks.set_mode` (DOR-3703); see {@link REFUSED_PERMISSION_MODE_DESCRIPTION}. */
-    permissionMode?: string;
-    /** Refused: a new task never approves itself; see {@link REFUSED_STATUS_DESCRIPTION}. */
-    status?: string;
-    /** Advertised so it can be REFUSED; see {@link REFUSED_AGENT_ID_DESCRIPTION}. */
-    agentId?: string;
-  }) => {
+  return async (args: CreateScheduleArgs) => {
     // Defaulted here, not in the schema: a `.default()` never reaches the Agent SDK's raw
     // field map, so an agent that left `target` out would fail outright (DOR-2053).
     const target = args.target ?? 'global';
@@ -487,6 +449,10 @@ export function createUpdateScheduleHandler(
     ) {
       return jsonContent(CREDITS_SCHEDULE_AGENT_REFUSAL, true);
     }
+    // Making a live credits task spend more waits for a person's yes on the card;
+    // a marked turn gets none (DOR-4609).
+    const creditsRaise = agentCreditsRaiseRefusal(args, existing, caller);
+    if (creditsRaise) return jsonContent(creditsRaise, true);
 
     // A new timing and the package's own timing are two different answers to
     // one question; the call has to pick (DOR-2302).

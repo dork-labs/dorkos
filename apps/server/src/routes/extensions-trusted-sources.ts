@@ -27,6 +27,7 @@ import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
 import { refuseFrontDoorChange } from '../lib/caller-authority.js';
+import { runFrontDoorWrite } from './front-door-step-up.js';
 
 /** The code every refusal to change trusted sources carries. */
 export const TRUSTED_SOURCE_PERSON_ONLY_CODE = 'trusted_source_person_only';
@@ -86,28 +87,42 @@ export function registerTrustedSourceRoutes(
         return c.json({ error: 'Send the source to trust, like owner/repo' }, 400);
       }
 
-      const result = await extensionManager.trustSource(source);
-      if (result === 'unproven') {
-        return c.json(
-          {
-            error: `DorkOS hasn't installed anything from ${source}, so there is nothing to trust yet.`,
-            code: 'unproven_source',
-          },
-          409
-        );
-      }
-      if (result === 'added') {
-        await activity?.emit({
-          ...readActivityActor(honoRequestFacts(c)),
-          category: 'config',
-          eventType: 'config.extension_updated',
-          resourceType: 'extension',
-          resourceId: source,
-          resourceLabel: source,
-          summary: `Trusted every extension from ${source}`,
-        });
-      }
-      return c.json({ sources: configManager.get('extensions').trustedSources ?? [] });
+      return runFrontDoorWrite(c, {
+        kind: 'extensions.trust-source',
+        target: source,
+        input: { source },
+        reason: `Trust extensions from ${source}.`,
+        subject: 'which sources DorkOS trusts',
+        run: async (confirming) => {
+          try {
+            const result = await extensionManager.trustSource(source);
+            if (result === 'unproven') {
+              return c.json(
+                {
+                  error: `DorkOS hasn't installed anything from ${source}, so there is nothing to trust yet.`,
+                  code: 'unproven_source',
+                },
+                409
+              );
+            }
+            if (result === 'added') {
+              await activity?.emit({
+                ...readActivityActor(confirming),
+                category: 'config',
+                eventType: 'config.extension_updated',
+                resourceType: 'extension',
+                resourceId: source,
+                resourceLabel: source,
+                summary: `Trusted every extension from ${source}`,
+              });
+            }
+            return c.json({ sources: configManager.get('extensions').trustedSources ?? [] });
+          } catch (err) {
+            logger.error('[Extensions] Failed to trust a source', err);
+            return c.json({ error: 'Failed to trust that source' }, 500);
+          }
+        },
+      });
     } catch (err) {
       logger.error('[Extensions] Failed to trust a source', err);
       return c.json({ error: 'Failed to trust that source' }, 500);

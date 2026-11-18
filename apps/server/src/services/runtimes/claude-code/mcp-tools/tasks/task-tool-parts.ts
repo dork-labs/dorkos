@@ -53,8 +53,8 @@ export type TaskProvenanceResolver = () => {
   cwd?: string;
   /** Every id the chat's turn levels may be kept under: its canonical one and its first. */
   turnSessionIds?: string[];
-  /** The chat's turn runs at Never ask right now (DOR-3971). */
-  neverAsks?: boolean;
+  /** The chat reads narrowed now: its turn runs where the status reads run unasked (DOR-4601). */
+  narrowedReads?: boolean;
 };
 
 /**
@@ -193,17 +193,18 @@ export function createListSchedulesHandler(deps: McpToolDeps) {
   };
 }
 
-/** What run history says in place of the summaries it left out at Never ask. */
-export const SUMMARIES_LEFT_OUT_AT_NEVER_ASK =
-  'Each run’s summary is left out at Never ask: it is that run’s own words and can quote what it read. ' +
+/** What run history says in place of the summaries it left out. */
+export const RUN_SUMMARIES_LEFT_OUT =
+  'Each run’s summary is left out: it is that run’s own words and can quote what it read. ' +
   '`refusedTools` still says what each run was refused.';
 
 /**
  * Get recent runs for a schedule.
  *
- * At Never ask each run's `outputSummary` is left out (Security, DOR-3971): it is the first 500
- * characters of what that run wrote, so it can carry words the run read from anyone. A run's
- * status, timing and `refusedTools` stay, which is what an unattended watchdog reads.
+ * Where the status reads run unasked (Never ask, Ask first, Accept edits: DOR-3971, DOR-4601),
+ * each run's `outputSummary` is left out (Security): it is the first 500 characters of what that
+ * run wrote, so it can carry words the run read from anyone. A run's status, timing and
+ * `refusedTools` stay, which is what an unattended watchdog reads.
  *
  * @param deps - The tool dependencies.
  * @param resolveProvenance - The calling chat, read at call time; absent off a session.
@@ -219,12 +220,13 @@ export function createGetRunHistoryHandler(
       taskId: args.schedule_id,
       limit: args.limit ?? 20,
     });
-    if (resolveProvenance?.().neverAsks !== true) return jsonContent({ runs, count: runs.length });
+    if (resolveProvenance?.().narrowedReads !== true)
+      return jsonContent({ runs, count: runs.length });
     const withoutSummaries = runs.map(({ outputSummary: _left, ...run }) => run);
     return jsonContent({
       runs: withoutSummaries,
       count: runs.length,
-      note: SUMMARIES_LEFT_OUT_AT_NEVER_ASK,
+      note: RUN_SUMMARIES_LEFT_OUT,
     });
   };
 }

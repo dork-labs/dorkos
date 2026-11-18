@@ -3,10 +3,12 @@
  *
  * @module routes/tunnel
  */
+import { createHash } from 'node:crypto';
 import { Hono, type MiddlewareHandler } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { TunnelStatus } from '@dorkos/shared/types';
 import type { ApiEnv } from '../http/api-chain.js';
+import { runFrontDoorWrite } from './front-door-step-up.js';
 import { streamToNodeResponse } from '../http/raw-node-stream.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { env } from '../env.js';
@@ -153,28 +155,57 @@ router.post('/start', async (c) => {
     return c.json({ error: 'No ngrok auth token configured' }, 400);
   }
 
-  try {
-    await tunnelManager.start(config);
+  return runFrontDoorWrite(c, {
+    kind: 'tunnel.start',
+    target: 'own-tunnel',
+    input: {
+      port: config.port,
+      domain: config.domain ?? null,
+      credentialsHash: createHash('sha256')
+        .update(JSON.stringify([config.authtoken, config.basicAuth ?? null]))
+        .digest('hex'),
+    },
+    reason: 'Turn on Remote Access through your tunnel.',
+    subject: 'remote access',
+    run: async () => {
+      if (JSON.stringify(configManager.get('tunnel')) !== JSON.stringify(tunnelConfig)) {
+        return c.json(
+          { error: 'Tunnel settings changed. Try again.', code: 'TUNNEL_SETTINGS_CHANGED' },
+          409
+        );
+      }
+      if (!canExpose()) {
+        return c.json(
+          { error: EXPOSURE_REQUIRES_LOGIN_MESSAGE, code: AUTH_REQUIRED_FOR_EXPOSURE },
+          409
+        );
+      }
+      if (tunnelManager.isRunning) return c.json({ error: 'Tunnel is already running' }, 409);
+      try {
+        await tunnelManager.start(config);
 
-    // Persist enabled state
-    configManager.set('tunnel', { ...tunnelConfig, enabled: true });
-    logConfigWrite('the tunnel route', 'tunnel', tunnelConfig, configManager.get('tunnel'));
+        // Persist enabled state
+        const before = configManager.get('tunnel');
+        configManager.set('tunnel', { ...before, enabled: true });
+        logConfigWrite('the tunnel route', 'tunnel', before, configManager.get('tunnel'));
 
-    return c.json({ url: tunnelManager.status.url });
-  } catch (err) {
-    // A TUNNEL_PORT the tunnel can't use is a setting to fix, not a fault: 409
-    // with a stable code the app and scripts can act on (DOR-4263).
-    if (err instanceof TunnelPortMismatchError) {
-      logger.warn('[Tunnel] Refused start — TUNNEL_PORT points past Remote Access');
-      return c.json({ error: err.message, code: err.code }, 409);
-    }
-    // Say what went wrong somewhere a person can read it. The 500 body carries
-    // one sentence; whoever is debugging raised the log level for the stack, and
-    // before DOR-1738 found nothing there at all (GitHub #1458).
-    logger.error('[Tunnel] Failed to start', logError(err));
-    const message = err instanceof Error ? err.message : 'Failed to start tunnel';
-    return c.json({ error: message }, 500);
-  }
+        return c.json({ url: tunnelManager.status.url });
+      } catch (err) {
+        // A TUNNEL_PORT the tunnel can't use is a setting to fix, not a fault: 409
+        // with a stable code the app and scripts can act on (DOR-4263).
+        if (err instanceof TunnelPortMismatchError) {
+          logger.warn('[Tunnel] Refused start — TUNNEL_PORT points past Remote Access');
+          return c.json({ error: err.message, code: err.code }, 409);
+        }
+        // Say what went wrong somewhere a person can read it. The 500 body carries
+        // one sentence; whoever is debugging raised the log level for the stack, and
+        // before DOR-1738 found nothing there at all (GitHub #1458).
+        logger.error('[Tunnel] Failed to start', logError(err));
+        const message = err instanceof Error ? err.message : 'Failed to start tunnel';
+        return c.json({ error: message }, 500);
+      }
+    },
+  });
 });
 
 router.post('/stop', async (c) => {

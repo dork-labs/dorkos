@@ -36,6 +36,7 @@ import {
   type ComposedServer,
   type ContractCase,
   stepUpAt,
+  confirmSetupAt,
 } from './harness.js';
 
 /** Stands for this server's local MCP token, which is only known once it boots. */
@@ -305,13 +306,16 @@ async function setup(
   method: string,
   url: string,
   body?: unknown,
-  headers: Record<string, string> = {}
+  headers: Record<string, string> = {},
+  confirmationPassword?: string
 ): Promise<{ json: Record<string, unknown>; headers: Headers }> {
-  const res = await fetch(new URL(url, server!.baseUrl), {
+  let res = await fetch(new URL(url, server!.baseUrl), {
     method,
     headers: { ...(body === undefined ? {} : { 'content-type': 'application/json' }), ...headers },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
+  if (confirmationPassword)
+    res = await confirmSetupAt(server!.baseUrl, res, confirmationPassword, headers);
   const text = await res.text();
   if (!res.ok) throw new Error(`${method} ${url} answered ${res.status}: ${text.slice(0, 300)}`);
   return { json: text ? (JSON.parse(text) as Record<string, unknown>) : {}, headers: res.headers };
@@ -1115,7 +1119,8 @@ describe('contract: the A2A gateway with a person’s credentials, login off the
       'POST',
       '/api/auth/api-key/create',
       { name: 'a2a' },
-      { ...cookie, ...origin }
+      { ...cookie, ...origin },
+      OWNER.password
     );
     apiKey = { authorization: `Bearer ${created.json.key as string}` };
   }, BOOT_HOOK_TIMEOUT_MS);
@@ -1162,7 +1167,8 @@ describe('contract: the A2A gateway with a person’s credentials, login off the
       'PATCH',
       '/api/config',
       { auth: { enabled: true } },
-      await stepUpAt(server!.baseUrl, 'a-long-password-1')
+      await stepUpAt(server!.baseUrl, 'a-long-password-1'),
+      OWNER.password
     );
     // The refusal names the personal key, not the token file: the local token
     // works only where this computer asks for no password (DOR-2967).

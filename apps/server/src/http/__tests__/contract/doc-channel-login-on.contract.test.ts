@@ -26,6 +26,7 @@ import {
 import {
   bootComposedServer,
   BOOT_HOOK_TIMEOUT_MS,
+  confirmSetupAnswer,
   stepUpAt,
   type ComposedServer,
 } from './harness.js';
@@ -127,11 +128,12 @@ describe('contract: a preview page’s companion event wakes its agent with logi
     cookie = '';
     await ok('POST', '/api/auth/sign-up/email', { ...OWNER, name: 'Owner' });
     // Turning login on is the owner's own act, after their step-up (DOR-3330).
-    const enabled = await call(
-      'PATCH',
-      '/api/config',
-      { auth: { enabled: true } },
-      await stepUpAt(server.baseUrl, OWNER.password)
+    const stepUp = await stepUpAt(server.baseUrl, OWNER.password);
+    const enabled = await confirmSetupAnswer(
+      server.baseUrl,
+      await call('PATCH', '/api/config', { auth: { enabled: true } }, stepUp),
+      OWNER.password,
+      stepUp
     );
     expect(enabled.status).toBe(200);
     const signedIn = await fetch(new URL('/api/auth/sign-in/email', server.baseUrl), {

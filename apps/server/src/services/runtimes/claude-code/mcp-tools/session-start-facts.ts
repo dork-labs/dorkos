@@ -17,8 +17,15 @@ import {
 import { gatedActionForMcpTool } from '../../../core/mcp-tool-tiers.js';
 import { isKept } from '../../../core/permissions/existing-chats-raise.js';
 import { resolveUnattendedDefaultStop } from '../../../session/resolution/resolve-session-defaults.js';
-import { carriedHoldOf, markedBoundOf } from '../../../core/turn-power/turn-levels.js';
-import { chatReadOutsideWords } from '../../../core/turn-power/chat-outside-words.js';
+import {
+  carriedHoldOf,
+  lastTurnLevelOf,
+  markedBoundOf,
+} from '../../../core/turn-power/turn-levels.js';
+import {
+  chatReadOutsideWords,
+  sendingChatHolds,
+} from '../../../core/turn-power/chat-outside-words.js';
 import type { CallingChat, StartLevelFacts } from './session-start-permission.js';
 
 /** The calling agent, as `session_start` resolved it. */
@@ -57,7 +64,13 @@ export function outsiderStartCeiling(caller: Pick<StartCaller, 'agentPath' | 'ch
   carriedMarks?: { outsider: true };
 } {
   const bound = markedBoundOf(caller.chat?.sessionId, caller.agentPath);
-  const carried = carriedHoldOf(caller.chat?.sessionId, caller.agentPath);
+  // A named calling chat answers for itself, never through its agent's other chats (DOR-4698).
+  const chat = caller.chat?.sessionId;
+  const carried = chat
+    ? sendingChatHolds(chat, lastTurnLevelOf(chat) !== undefined)
+      ? { carriedMarks: { outsider: true as const } }
+      : {}
+    : carriedHoldOf(undefined, caller.agentPath);
   return bound === undefined ? carried : { permissionCeiling: bound, ...carried };
 }
 
@@ -69,7 +82,8 @@ export function outsiderStartCeiling(caller: Pick<StartCaller, 'agentPath' | 'ch
  * @param caller - Who is starting it: the calling chat, or only the agent.
  */
 export function startCarriesWords(caller: Pick<StartCaller, 'agentPath' | 'chat'>): boolean {
-  return chatReadOutsideWords(caller.chat?.sessionId, caller.agentPath);
+  // The calling chat's own record only, never its agent's other chats (DOR-4698).
+  return chatReadOutsideWords(caller.chat?.sessionId);
 }
 
 /**

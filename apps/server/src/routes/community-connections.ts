@@ -17,7 +17,6 @@ import {
   CommunityConnectionDescriptorSchema,
   CommunityDisconnectImpactSchema,
   CommunityDisconnectResponseSchema,
-  CommunityWakeAgentsFromSchema,
   type CommunityConnectionDescriptor,
   describeCommunityRetryWait,
 } from '@dorkos/shared/community-connections';
@@ -69,7 +68,8 @@ import {
 } from '../services/notifications/emitters/community-owner-replacement.js';
 import { resolveDorkHome } from '../lib/dork-home.js';
 import { officialOnlyOrigin, spaceReachable } from '../middleware/spaces-enabled.js';
-import { addAnswerInRoutes } from './community-answer-in.js';
+import { addAnswerInRoutes, addWakeAgentsFromRoutes } from './community-answer-in.js';
+import { runFrontDoorWrite } from './front-door-step-up.js';
 import { addTeammateSpendRoutes, type TeammateSpendPolicy } from './community-teammate-spend.js';
 import { addSpaceSettingsRoutes } from './community-space-settings.js';
 import {
@@ -335,16 +335,27 @@ export function createCommunityConnectionsRoutes(
     if (!parsed.success) {
       return c.json({ error: 'Enter a valid space address and install name.' }, 400);
     }
-    try {
-      return c.json(
-        CommunityConnectionStartResponseSchema.parse(
-          await connectionService.start(owner, parsed.data.url, parsed.data.installName)
-        ),
-        201
-      );
-    } catch (error) {
-      return failure(c, error);
-    }
+    const { url, installName } = parsed.data;
+    // A connection lets the space reach this install, so it waits for the owner (DOR-4355).
+    return runFrontDoorWrite(c, {
+      kind: 'community.connect',
+      target: url,
+      input: { url, installName },
+      reason: `Connect this DorkOS to the space at ${new URL(url).host}.`,
+      subject: 'which spaces this DorkOS is connected to',
+      run: async () => {
+        try {
+          return c.json(
+            CommunityConnectionStartResponseSchema.parse(
+              await connectionService.start(owner, url, installName)
+            ),
+            201
+          );
+        } catch (error) {
+          return failure(c, error);
+        }
+      },
+    });
   });
   router.get('/navigation', async (c) => {
     const owner = resolveCommunityOwner(c);
@@ -508,37 +519,11 @@ export function createCommunityConnectionsRoutes(
   // remote caller and anyone but this install's owner, and no DorkOS tool or config key
   // reaches it. (With login off, an agent's own shell on this machine is the local-trust
   // residual, and a stranger's turn asks before it runs one.)
-  router.get(
-    '/:ref/wake-agents-from',
-    forConnection(async (c, owner, ref) => {
-      try {
-        return c.json(
-          CommunityWakeAgentsFromSchema.parse({
-            wakeAgentsFrom: await (wakePolicy ?? getRemoteWakePolicy()).get(ref, owner),
-          })
-        );
-      } catch (error) {
-        return failure(c, error);
-      }
-    })
-  );
-  router.put(
-    '/:ref/wake-agents-from',
-    forConnection(async (c, owner, ref) => {
-      const body = CommunityWakeAgentsFromSchema.safeParse(readJsonBody(c));
-      if (!body.success) {
-        return c.json({ error: 'Choose who can wake your agents: me or members.' }, 400);
-      }
-      try {
-        await (wakePolicy ?? getRemoteWakePolicy()).set(ref, owner, body.data.wakeAgentsFrom);
-        return c.json(body.data);
-      } catch (error) {
-        return failure(c, error);
-      }
-    })
-  );
+  // Widening it to members waits for the owner to confirm it's them (DOR-4355).
+  const wake = () => wakePolicy ?? getRemoteWakePolicy();
+  addWakeAgentsFromRoutes(router, resolveCommunityOwner, wake, failure);
   // Where any person's post wakes the owner's agents without a mention (D11), owner-only too.
-  addAnswerInRoutes(router, resolveCommunityOwner, () => wakePolicy ?? getRemoteWakePolicy());
+  addAnswerInRoutes(router, resolveCommunityOwner, wake);
   // What teammates' turns in the space may cost the owner a month (DOR-2956), owner-only too.
   addTeammateSpendRoutes(router, resolveCommunityOwner, () => teammateSpend ?? getTeammateSpend());
   const ownerOf = resolveCommunityOwner;

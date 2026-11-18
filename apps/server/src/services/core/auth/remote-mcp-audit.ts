@@ -4,8 +4,40 @@ import { currentServerRole } from '../../../lib/server-role.js';
 import { credentialRef } from '../../audit/account-ids.js';
 import { auditTrail, recordAudit } from '../../audit/audit-trail.js';
 import { OWNER_READER } from '../../audit/visibility.js';
+import { describeUserAgent } from '../../../lib/http/user-agent.js';
 
 const REMOTE_SESSION_ACTION = 'mcp.remote_session';
+const REMOTE_KEY_CREATED_ACTION = 'api_key.created_remotely';
+
+/**
+ * Record where a confirmed remote key was made, without recording its settings.
+ * @param request - The confirming browser's route and caller facts.
+ * @param response - The key creation response, returned without consuming it.
+ */
+export async function recordApiKeyCreationRoute(
+  request: RequestFacts,
+  response: Response
+): Promise<Response> {
+  const route = classifyRequest(request, currentServerRole()).route;
+  if (!response.ok || (route !== 'own-tunnel' && route !== 'managed')) return response;
+  const key: unknown = await response
+    .clone()
+    .json()
+    .catch(() => null);
+  if (!isRecord(key) || typeof key.id !== 'string') return response;
+  const credential = credentialRef('api-key', key.id);
+  recordAudit({
+    action: REMOTE_KEY_CREATED_ACTION,
+    operation: 'create',
+    outcome: 'ok',
+    target: { type: 'api-key-reference', id: credential.idHash },
+    credential,
+    source: { surface: 'app', userAgent: request.headers['user-agent'] },
+    summary: 'Created an API key over Remote Access',
+    visibility: 'admins',
+  });
+  return response;
+}
 
 /**
  * Record an admitted remote MCP session. The transport is stateless, so each
@@ -68,7 +100,19 @@ export async function annotateRemoteMcpKeyList(response: Response): Promise<Resp
       },
       OWNER_READER
     ).events[0];
-    return { ...key, lastUsedRemotelyAt: last?.at ?? null };
+    const made = trail?.log.query(
+      {
+        targetId: credentialRef('api-key', key.id).idHash,
+        action: REMOTE_KEY_CREATED_ACTION,
+        limit: 1,
+      },
+      OWNER_READER
+    ).events[0];
+    return {
+      ...key,
+      lastUsedRemotelyAt: last?.at ?? null,
+      createdFrom: made ? `${describeUserAgent(made.source?.userAgent)} over Remote Access` : null,
+    };
   });
   const headers = new Headers(response.headers);
   headers.delete('content-length');

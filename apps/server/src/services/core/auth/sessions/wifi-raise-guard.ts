@@ -161,18 +161,41 @@ export function agentPatchRaises(
 }
 
 /**
- * Whether choosing a preset could raise anything. Only Careful, with no agents
- * brought along, is certain not to: moving into it keeps every Blocked and
- * never loosens (DOR-2739).
+ * Whether choosing a preset would raise anything, by what the move leaves in
+ * place. Any preset but Careful, or any agents brought along, counts as a raise.
+ * Careful replaces every change on top of the preset with its own table,
+ * keeping only a Blocked a person set, and only on a move into it from another
+ * preset (`keptOnPresetMove`). So it raises when that leaves any area or action
+ * looser than now: choosing Careful again clears a Blocked, and moving into it
+ * drops an Ask where Careful allows.
  *
  * @param preset - The preset asked for.
  * @param applyToAgents - The agents brought along, if any.
+ * @param overview - The defaults as they stand.
  */
 export function presetRaises(
   preset: PermissionPreset,
-  applyToAgents: readonly string[] | undefined
+  applyToAgents: readonly string[] | undefined,
+  overview: Pick<PermissionsResponse, 'areas' | 'preset' | 'defaults' | 'filesAndCommands'>
 ): boolean {
-  return preset !== 'careful' || (applyToAgents?.length ?? 0) > 0;
+  if (preset !== 'careful' || (applyToAgents?.length ?? 0) > 0) return true;
+  const table = presetTableFor('careful');
+  const keepsBlocked = overview.preset !== 'careful';
+  const kept = (own: PermissionState | undefined) => keepsBlocked && own === 'blocked';
+  const ownAreas = overview.defaults.areas as Record<string, PermissionState | undefined>;
+  for (const area of overview.areas) {
+    const after = kept(ownAreas[area.id])
+      ? 'blocked'
+      : (table.areas as Record<string, PermissionState | undefined>)[area.id];
+    if (stateRaises(area.resolved.state, after)) return true;
+  }
+  const actions = overview.areas.flatMap((area) => area.actions);
+  for (const [id, own] of Object.entries(overview.defaults.actions)) {
+    if (kept(own as PermissionState)) continue;
+    // A dropped action setting falls back to a level read elsewhere: a raise unless it was Allowed.
+    if (actions.find((entry) => entry.id === id)?.resolved.state !== 'allowed') return true;
+  }
+  return stopRaises(overview.filesAndCommands.stop, table.filesStop);
 }
 
 /** The runtime keys that hold their own Files & commands stop in the config. */

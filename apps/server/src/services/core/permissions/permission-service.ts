@@ -65,6 +65,8 @@ import {
   EXTENSION_REMOVAL_WRITER,
   extensionRemovedNote,
   PermissionError,
+  presetMoveChangesConfig,
+  refuseStalePresetMove,
   compact,
   isState,
   keptOnPresetMove,
@@ -499,6 +501,11 @@ export class PermissionService {
       preset: PermissionPreset;
       applyToAgents?: string[];
       surface: PermissionSurface;
+      /**
+       * The preset and changes the caller judged this move against. When they differ
+       * now, the move is refused: what it keeps depends on them (DOR-4355).
+       */
+      expect?: { preset: PermissionPreset | null; defaults: unknown };
     },
     writer: PermissionWriter
   ): Promise<PermissionChange[]> {
@@ -507,6 +514,7 @@ export class PermissionService {
       const selected = this.agentsById(input.applyToAgents ?? []);
       const presetStop = PERMISSION_PRESET_TABLES[input.preset].filesStop;
       const config = this.deps.config.get();
+      refuseStalePresetMove(input.expect, config);
       const stops = this.deps.config.trustStops();
       const changes: PermissionChange[] = [];
       // Moving into Careful keeps what a person Blocked; every other change goes.
@@ -553,11 +561,7 @@ export class PermissionService {
         defaults: config.defaults,
         trustStop: stops.global,
       };
-      const moved =
-        config.preset !== input.preset ||
-        Object.keys(config.defaults.areas).length > Object.keys(kept.areas).length ||
-        Object.keys(config.defaults.actions).length > Object.keys(kept.actions).length;
-      if (moved) {
+      if (presetMoveChangesConfig(config, input.preset, kept)) {
         this.deps.config.set({ ...config, preset: input.preset, defaults: kept });
       }
       if (stops.global !== presetStop) {

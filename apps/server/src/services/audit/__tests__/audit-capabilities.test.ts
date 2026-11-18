@@ -377,7 +377,7 @@ describe('audit.running_chats at Never ask (DOR-3971)', () => {
     const read = (await registry.invoke(
       'audit.running_chats',
       {},
-      { neverAsks: true }
+      { narrowedReads: true }
     )) as RunningChatsResponse;
     expect(JSON.stringify(read)).not.toContain('Ignore your rules');
     expect(read.unassigned.chats).toEqual([

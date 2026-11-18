@@ -81,12 +81,15 @@ name: test
 # fan-in's union check requires every `*.binary.test.ts` in the tree by name,
 # so a binary suite cannot stop running without `test` going red.
 #
-# NO separate build step: `test` declares `dependsOn: ["^build"]` in turbo.json,
-# so `turbo test` builds every dependency package first. Turbo computes that
-# from the task graph. Each shard used to pay that whole build cold; since
-# DOR-4190 the shards restore the builds the last main canary made, and turbo
-# replays the ones whose task hash still matches (see "Restore the builds the
-# last main canary made").
+# ONE BUILD STEP, THEN `--only` (DOR-4625). `test` declares `dependsOn:
+# ["^build"]` in turbo.json, and turbo hashes `turbo test`'s `--` arguments into
+# every task of the run, those builds included, so a build made inside a test
+# run is cached for that argument list alone. Every test job therefore builds
+# first with scripts/build-test-deps.sh (the build set read from turbo's own
+# dry run, built with no `--` arguments) and runs its suites with `--only`.
+# The builds then hash the same in every shard, the pull request leg and
+# test-binary, and replay the entry the last main canary saved (see "Restore
+# the builds the last main canary made").
 #
 # `-- --run` is REQUIRED, not decoration. Five packages' `test` scripts are a
 # bare `vitest` (@dorkos/db, harness, marketplace, operating-skills, skills),
@@ -1051,27 +1054,25 @@ jobs:
       # waste. Builds that changed since the last canary still miss and
       # rebuild, so a busy day sees partial hits.
       #
-      # ONE ENTRY PER SHARD (DOR-4190, ledger 261117-142230). Turbo passes the
-      # `--` arguments of `turbo test` to EVERY task in the run, the builds
-      # included, and hashes them in (turbo 2.10.13, `--dry=json`:
-      # `@dorkos/keep-awake#build` is 5999388a… under `--shard=1/6` and
-      # 1f2e6809… under `--shard=6/6`, with `cliArguments` the only field that
-      # differs). So shard N's build hashes are shard N's alone. With one entry
-      # for the whole canary, whichever shard saved first decided which queue
-      # shard could hit: on 2026-11-17 canary shard 6/6 saved, and in queue
-      # run 44047215523 shard 6/6 logged `Cached: 6 cached, 49 total` while
-      # 1/6-5/6 logged 0. Each shard therefore saves and restores under its
-      # own shard number. The pull request leg runs other arguments (no
-      # reporters, its own shard total), so it still misses; its restore is
-      # harmless.
+      # ONE ENTRY FOR EVERY TEST JOB (DOR-4625, ledger 261118-140000). Turbo
+      # passes the `--` arguments of `turbo test` to EVERY task in the run, the
+      # builds included, and hashes them in (turbo 2.10.13, `--dry=json`:
+      # `@dorkos/shared#build` is 021e0f55… from `turbo run build`, f45d40ab…
+      # under `turbo test -- --run --shard=1/6`, 1493bf38… under 2/6). Keyed
+      # per shard (ledger 261117-142230), a queue shard could replay only its
+      # own shard's builds, and only 6 of 49 hit. Now every test job builds
+      # first through scripts/build-test-deps.sh, a `turbo run build` with no
+      # `--` arguments, and the suites run with `--only`, so the same builds
+      # hash the same in every shard, the pull request leg and test-binary.
+      # One entry serves them all; shard 1 of the canary saves it.
       - name: Restore the builds the last main canary made
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .turbo/cache
-          key: turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-shard${{ matrix.shard }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          key: turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
           restore-keys: |
-            turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-shard${{ matrix.shard }}-${{ hashFiles('pnpm-lock.yaml') }}-
-            turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-shard${{ matrix.shard }}-
+            turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-
+            turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-
 
       # --summarize writes a machine-readable record of the run to
       # .turbo/runs/<id>.json. The assert step is the only reason it is here.
@@ -1128,12 +1129,29 @@ jobs:
           echo "VITEST_SHARD_EPOCH=$epoch" >> "$GITHUB_ENV"
           node scripts/sharding/mode.mjs "$epoch" >> "$GITHUB_ENV"
 
+      # The builds every suite imports, as their own turbo run with no `--`
+      # arguments (DOR-4625; scripts/build-test-deps.sh says why), so they
+      # replay from the restored cache and the sweep below runs `--only`.
+      # Gated in the script, not with a step `if:`, so a skipped build can
+      # never look like a passed one: the pull request leg builds its own set
+      # further down.
+      - name: Build what the suites import, once, with no test arguments
+        id: deps
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = 'pull_request' ]; then
+            echo 'the pull request leg builds its own set, inside its suite step below.'
+            exit 0
+          fi
+          bash scripts/build-test-deps.sh
+
       - name: Run every package's test suite (shard ${{ matrix.shard }}/6)
         id: sweep
         if: ${{ github.event_name != 'pull_request' }}
         run: |
           set +e
-          pnpm exec turbo test --summarize --continue --concurrency=1 -- --run --shard=${{ matrix.shard }}/6 --config=../../scripts/sharding/config.ts --retry=1 --passWithNoTests --exclude='**/*.binary.test.ts' --reporter=default --reporter=json --outputFile.json=vitest-shard-report.json --reporter=../../scripts/vitest-flake-reporter.ts
+          pnpm exec turbo test --summarize --continue --concurrency=1 --only -- --run --shard=${{ matrix.shard }}/6 --config=../../scripts/sharding/config.ts --retry=1 --passWithNoTests --exclude='**/*.binary.test.ts' --reporter=default --reporter=json --outputFile.json=vitest-shard-report.json --reporter=../../scripts/vitest-flake-reporter.ts
           code=$?
           echo "exit-code=$code" >> "$GITHUB_OUTPUT"
           if [ "$code" -ne 0 ]; then
@@ -1251,7 +1269,11 @@ jobs:
           else
             echo "test plan: every package's suite"
           fi
-          pnpm exec turbo test --continue --concurrency=1 "${filters[@]}" -- --run --shard=${{ matrix.shard }}/${{ strategy.job-total }} --config=../../scripts/sharding/config.ts --passWithNoTests --exclude='**/*.binary.test.ts'
+          # The builds first, as their own run with no test arguments, so they
+          # hash the same as the canary's and replay; then the suites alone
+          # (`--only`). scripts/build-test-deps.sh says why (DOR-4625).
+          bash scripts/build-test-deps.sh "${filters[@]}"
+          pnpm exec turbo test --continue --concurrency=1 --only "${filters[@]}" -- --run --shard=${{ matrix.shard }}/${{ strategy.job-total }} --config=../../scripts/sharding/config.ts --passWithNoTests --exclude='**/*.binary.test.ts'
 
       # THE POINT OF THIS STEP: turbo caches `test`, and a full cache hit prints
       # "Tasks: 31 successful, 31 total" — one per package declaring a `test`
@@ -1430,14 +1452,17 @@ jobs:
       # step exits 0 either way, because a cache that was not saved is a
       # warning, not a failed canary.
       #
-      # Every shard saves its own entry, keyed by its shard number, because
-      # each shard's build hashes carry its own `--shard=N/6` (see "Restore
-      # the builds the last main canary made"). About 23 MB each.
+      # Shard 1 alone saves, because every shard builds the same set with the
+      # same hashes (see "Restore the builds the last main canary made"), and
+      # the trim reads the build step's own run summary, not the sweep's,
+      # which under `--only` holds no build task (DOR-4625).
       - name: Keep only this run's build entries in the turbo cache
         id: trim
-        if: ${{ github.ref == 'refs/heads/main' }}
+        if: ${{ github.ref == 'refs/heads/main' && matrix.shard == 1 }}
+        env:
+          BUILD_SUMMARY: ${{ steps.deps.outputs.summary }}
         run: |
-          if bash scripts/keep-build-cache-only.sh; then
+          if bash scripts/keep-build-cache-only.sh "$BUILD_SUMMARY"; then
             echo 'save=true' >> "$GITHUB_OUTPUT"
           else
             echo '::warning title=Build cache not saved::the turbo cache could not be trimmed to build entries, so this run saves none; the next run rebuilds.'
@@ -1448,7 +1473,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .turbo/cache
-          key: turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-shard${{ matrix.shard }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          key: turbo-test-builds-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
 
   # THE REAL-CLI SUITES, BESIDE THE SHARDS (DOR-4190, ledger 261115-203006).
   # Every `*.binary.test.ts` outside codex/ runs here and nowhere else: both
@@ -1634,6 +1659,21 @@ jobs:
       # queue line; zero retries and a direct failure on a pull request, as the
       # shards' PR line. The reporters ride both, so the proof step below can
       # read what ran on either event.
+      # Same as test-shard's "Build what the suites import" (DOR-4625): the
+      # builds these packages import, with no test arguments, so they replay
+      # the canary's entry, and the line below runs `--only`.
+      - name: Build what the binary suites import, once, with no test arguments
+        env:
+          RUN: ${{ steps.plan.outputs.run }}
+        run: |
+          if [ "$RUN" != true ]; then
+            echo 'nothing to build here (see the step above).'
+            exit 0
+          fi
+          filters=()
+          while IFS= read -r name; do filters+=("--filter=$name"); done < "$RUNNER_TEMP/binary-packages.txt"
+          bash scripts/build-test-deps.sh "${filters[@]}"
+
       - name: Run the binary CLI suites
         id: sweep
         env:
@@ -1656,7 +1696,7 @@ jobs:
           # relative to the package, so a repo-relative filter matches nothing
           # from inside apps/server; an absolute one matches exactly that file.
           mapfile -t files < <(sed "s|^|$PWD/|" "$RUNNER_TEMP/binary-files.txt")
-          pnpm exec turbo test --continue --concurrency=1 "${filters[@]}" -- --run "${files[@]}" --retry=$retry --reporter=default --reporter=json --outputFile.json=vitest-shard-report.json --reporter=../../scripts/vitest-flake-reporter.ts
+          pnpm exec turbo test --continue --concurrency=1 --only "${filters[@]}" -- --run "${files[@]}" --retry=$retry --reporter=default --reporter=json --outputFile.json=vitest-shard-report.json --reporter=../../scripts/vitest-flake-reporter.ts
           code=$?
           echo "exit-code=$code" >> "$GITHUB_OUTPUT"
           if [ "$EVENT" = 'pull_request' ]; then

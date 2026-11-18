@@ -22,6 +22,12 @@
  */
 import type { RequestFacts } from '../http/request-facts.js';
 import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
+import type { Context } from 'hono';
+import type { ApiEnv } from '../http/api-chain.js';
+import { configManager } from '../services/core/config-manager.js';
+import { getCloudLinkGeneration } from '../services/core/auth/cloud-link.js';
+import { readOwnerAccount } from '../services/core/auth/index.js';
+import { runFrontDoorWrite, type FrontDoorWrite } from './front-door-step-up.js';
 
 /** Refusal code when anything but a person asks for a DorkOS account action. */
 const PERSON_ONLY_CODE = 'person_only';
@@ -86,4 +92,43 @@ export function errorRefusalUnlessOwner(
 ): { error: string; code: string } | undefined {
   const refusal = refusalFor(caller, wording);
   return refusal === undefined ? undefined : { error: refusal.message, code: refusal.code };
+}
+
+/**
+ * Hold an account write, bound to the account link it was asked against.
+ * The owner and front-door bars run again on confirmation; a relink needs a fresh ask.
+ *
+ * @param c - The request asking for the write.
+ * @param action - The fixed account change.
+ */
+export function runAccountWrite(
+  c: Context<ApiEnv>,
+  action: Omit<FrontDoorWrite, 'subject'>
+): Promise<Response> {
+  if (readOwnerAccount() === null)
+    return runFrontDoorWrite(c, { ...action, subject: 'the DorkOS account' });
+  const generation = getCloudLinkGeneration();
+  const token = configManager.get('cloud')?.instanceToken ?? null;
+  return runFrontDoorWrite(c, {
+    ...action,
+    subject: 'the DorkOS account',
+    run: async (confirming) => {
+      if (refuseUnlessAccountOwner(confirming) !== undefined) {
+        return c.json(
+          { error: 'Only the owner can change this account.', code: 'owner_only' },
+          403
+        );
+      }
+      if (
+        generation !== getCloudLinkGeneration() ||
+        token !== (configManager.get('cloud')?.instanceToken ?? null)
+      ) {
+        return c.json(
+          { error: 'The account link changed. Try again.', code: 'ACCOUNT_LINK_CHANGED' },
+          409
+        );
+      }
+      return action.run(confirming);
+    },
+  });
 }

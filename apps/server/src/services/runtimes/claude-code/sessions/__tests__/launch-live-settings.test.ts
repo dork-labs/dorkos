@@ -17,6 +17,7 @@ import { applyLiveChanges, MCP_SERVERS_UNKNOWN, prepareDispatch } from '../launc
 import { decideProcessReuse } from '../pump-launch.js';
 import { LIVE_SETTING_ACK_TIMEOUT_MS, PLUGIN_RELOAD_ACK_TIMEOUT_MS } from '../bounded-control.js';
 import type { PumpControlQuery } from '../session-pump-contract.js';
+import { logger } from '../../../../../lib/logger.js';
 
 const CLIENT_ROOT = '/staged/claude-client';
 const OTHER_ROOT = '/staged/claude-other';
@@ -111,6 +112,34 @@ describe('applyLiveChanges', () => {
     await applyLiveChanges(query, decision);
 
     expect(calls.sort()).toEqual(['reloadPlugins', 'setMcpServers']);
+  });
+
+  // Purpose: a live swap restarts every stdio server, so each one is counted at
+  // info, where a swap on every turn shows up in the log (DOR-4498).
+  it('logs every live MCP server swap at info, and nothing when none happened', async () => {
+    const info = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+    const { query } = controlQuery();
+    const swap = prepareDispatch(
+      capture(),
+      capture({
+        options: options({ mcpServers: { dorkos: { type: 'http', url: 'http://localhost/mcp' } } }),
+      })
+    );
+    if (swap.action !== 'reuse') throw new Error('expected a reuse');
+    await applyLiveChanges(query, swap, { sessionId: 'sess-1' });
+
+    const swaps = info.mock.calls.filter(([msg]) =>
+      String(msg).includes('swapped the MCP servers')
+    );
+    expect(swaps).toHaveLength(1);
+    expect(swaps[0]?.[1]).toEqual({ sessionId: 'sess-1' });
+
+    info.mockClear();
+    const model = prepareDispatch(capture(), capture({ options: options({ model: 'sonnet' }) }));
+    if (model.action !== 'reuse') throw new Error('expected a reuse');
+    await applyLiveChanges(query, model);
+    expect(info.mock.calls.some(([msg]) => String(msg).includes('swapped the MCP'))).toBe(false);
+    info.mockRestore();
   });
 
   it('touches nothing when nothing moved', async () => {

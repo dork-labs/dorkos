@@ -25,6 +25,8 @@ import type {
 } from '../services/connectors/events/grant-port.js';
 import type { ConnectorEventSettingsService } from '../services/connectors/events/settings-service.js';
 import { managedCloudErrorResponse } from './managed-cloud-error.js';
+import { CONNECTED_APPS } from './connector-step-up.js';
+import { runFrontDoorWrite } from './front-door-step-up.js';
 import {
   resolveConnectorOperator,
   type ConnectorOwnerBoundaryDeps,
@@ -83,22 +85,41 @@ export function createConnectorEventsRoutes(deps: ConnectorEventsRouterDeps): Ho
       CreateConnectionEventSubscriptionSchema.parse(readJsonBody(c));
     const connectionId = c.req.param('connectionId');
     const reviewId = `owner-event:${createHash('sha256').update(stableStringify(owner)).digest('hex')}:${requestId}`;
-    const result = await deps.grants.approve(
-      owner,
-      {
-        reviewId,
-        scopes: [{ ...scope, connectionId: connectionId as never }],
-        manageExistingTriggers: manageExistingTrigger,
+    // Sending an app's updates to an agent waits for the owner (DOR-4355). A
+    // held one runs outside this router, so it answers its own errors.
+    return runFrontDoorWrite(c, {
+      kind: 'connection.grant',
+      target: connectionId,
+      input: { op: 'receive-updates', connectionId, reviewId, manageExistingTrigger, scope },
+      reason: 'Send updates from this app to one of your agents.',
+      subject: CONNECTED_APPS,
+      run: async () => {
+        try {
+          const result = await deps.grants.approve(
+            owner,
+            {
+              reviewId,
+              scopes: [{ ...scope, connectionId: connectionId as never }],
+              manageExistingTriggers: manageExistingTrigger,
+            },
+            AbortSignal.timeout(30_000)
+          );
+          if (result.state === 'unavailable' || result.selections.length !== 1)
+            throw new ConnectorSubscriptionError('definition_changed');
+          const subscription = deps.store.get(
+            owner,
+            connectionId,
+            result.selections[0]!.subscriptionId
+          );
+          return c.json(
+            ConnectionEventSubscriptionSchema.parse(subscription),
+            subscription.state === 'active' ? 201 : 202
+          );
+        } catch (error) {
+          return answerEventsError(error as Error, c);
+        }
       },
-      AbortSignal.timeout(30_000)
-    );
-    if (result.state === 'unavailable' || result.selections.length !== 1)
-      throw new ConnectorSubscriptionError('definition_changed');
-    const subscription = deps.store.get(owner, connectionId, result.selections[0]!.subscriptionId);
-    return c.json(
-      ConnectionEventSubscriptionSchema.parse(subscription),
-      subscription.state === 'active' ? 201 : 202
-    );
+    });
   });
   router.delete(`${prefix}/subscriptions/:subscriptionId`, async (c) => {
     const owner = resolveConnectorOperator(c, deps);
@@ -136,11 +157,27 @@ export function createConnectorEventsRoutes(deps: ConnectorEventsRouterDeps): Ho
     // Drop the signing secret from the request before anything else can read it.
     c.set('body', undefined);
     (c.env.incoming as { body?: unknown }).body = undefined;
-    return c.json(
-      ConnectionEventSourceStatusSchema.parse(
-        await deps.settings.configure(owner, connection.providerInstanceId, input)
-      )
-    );
+    const connectionId = c.req.param('connectionId');
+    // A new signing secret waits for the owner (DOR-4355). The held statement
+    // names where updates come in, never the secret.
+    return runFrontDoorWrite(c, {
+      kind: 'connection.credential',
+      target: connectionId,
+      input: { op: 'set-signing-secret', connectionId, publicOrigin: input.publicOrigin },
+      reason: 'Save a new signing secret for this app’s updates.',
+      subject: CONNECTED_APPS,
+      run: async () => {
+        try {
+          return c.json(
+            ConnectionEventSourceStatusSchema.parse(
+              await deps.settings.configure(owner, connection.providerInstanceId, input)
+            )
+          );
+        } catch (error) {
+          return answerEventsError(error as Error, c);
+        }
+      },
+    });
   });
   // Any other path under one connection's notifications still asks for the
   // owner first, as the Express prefix guard did, before the `/api` 404.

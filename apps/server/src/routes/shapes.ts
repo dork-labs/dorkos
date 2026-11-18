@@ -46,6 +46,7 @@ import {
 } from '../services/shapes/apply-shape.js';
 import { forkShape, ShapeForkConflictError, type ForkShapeDeps } from '../services/shapes/fork.js';
 import { listInstalledShapes } from '../services/shapes/shape-services.js';
+import { runFrontDoorWrite } from './front-door-step-up.js';
 
 /** Constructor dependencies for {@link createShapesRoutes}. */
 export interface ShapesRouterDeps {
@@ -226,15 +227,34 @@ export function createShapesRoutes(deps: ShapesRouterDeps): Hono<ApiEnv> {
     // what is installed and no collaborator is touched (DOR-625).
     const decision = authorizeApply(c, name);
     if (decision.outcome !== 'allowed') return gateResponse(c, decision);
-    try {
-      const result = await applyShape(name, deps.applyDeps);
-      return c.json(result);
-    } catch (err) {
-      if (err instanceof ShapeNotInstalledError) {
-        return c.json({ error: err.message }, 404);
+    const apply = async (): Promise<Response> => {
+      try {
+        const result = await applyShape(name, deps.applyDeps);
+        return c.json(result);
+      } catch (err) {
+        if (err instanceof ShapeNotInstalledError) {
+          return c.json({ error: err.message }, 404);
+        }
+        throw err;
       }
-      throw err;
+    };
+    // An agent's apply waited on the card the gate raises.
+    const person = trustedCaller(readCallerAuthority(honoRequestFacts(c))) !== undefined;
+    if (!person) return apply();
+    // A Shape that is not installed is answered before anyone is asked.
+    if (!(await deps.applyDeps.manifestResolver.resolve(name))) {
+      return c.json({ error: new ShapeNotInstalledError(name).message }, 404);
     }
+    // Applying one turns on its extensions and schedules, so the owner
+    // confirms it's them first (DOR-4355).
+    return runFrontDoorWrite(c, {
+      kind: 'shapes.apply',
+      target: name,
+      input: { name },
+      reason: `Apply the ${name} Shape, which turns on its extensions and schedules.`,
+      subject: 'which Shape runs here',
+      run: apply,
+    });
   });
 
   // POST /api/shapes/:name/fork — fork a Shape.

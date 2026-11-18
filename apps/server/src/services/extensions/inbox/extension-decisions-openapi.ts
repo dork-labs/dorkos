@@ -22,11 +22,17 @@ import {
   StartWorkResponseSchema,
 } from '@dorkos/shared/extension-decision-schemas';
 import { ErrorResponseSchema } from '@dorkos/shared/schemas';
+import { StepUpRequiredBodySchema } from '@dorkos/shared/step-up';
 
 const error = (description: string) => ({
   description,
   content: { 'application/json': { schema: ErrorResponseSchema } },
 });
+
+const remoteConfirmation = {
+  description: 'A remote yes or accepted offer needs fresh confirmation for this request',
+  content: { 'application/json': { schema: StepUpRequiredBodySchema } },
+};
 
 const json = <T extends z.ZodType>(schema: T) => ({ 'application/json': { schema } });
 
@@ -79,6 +85,7 @@ export function registerExtensionDecisionsOpenApi(registry: OpenAPIRegistry): vo
       `already checked. ${PERSON_BAR}`,
     request: { params: decisionIdParam, body: { content: json(DecisionActionRequestSchema) } },
     responses: {
+      428: remoteConfirmation,
       200: { description: 'What the answer came to', content: json(DecisionActionResponseSchema) },
       400: error('The answer does not fit the decision, or a note is over 2000 characters'),
       403: error('Not a person'),
@@ -102,6 +109,7 @@ export function registerExtensionDecisionsOpenApi(registry: OpenAPIRegistry): vo
       `used up. ${PERSON_BAR}`,
     request: { params: decisionIdParam, body: { content: json(DecisionOfferRequestSchema) } },
     responses: {
+      428: remoteConfirmation,
       200: {
         description: 'What the extension said back',
         content: json(DecisionOfferResponseSchema),
@@ -144,6 +152,7 @@ export function registerExtensionDecisionsOpenApi(registry: OpenAPIRegistry): vo
       body: { content: json(DecisionActionRequestSchema) },
     },
     responses: {
+      428: remoteConfirmation,
       200: { description: 'What the answer came to', content: json(DecisionActionResponseSchema) },
       400: error('The answer does not fit the decision'),
       403: error('Not a person'),

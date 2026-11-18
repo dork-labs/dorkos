@@ -49,6 +49,7 @@ import {
 } from '../sessions/tool-result-outcome.js';
 import { randomUUID } from 'node:crypto';
 import type { ReadFolders } from '../tool-gate/held-turn-reads.js';
+import { FAIL_CLOSED_CHECKS, statusReadRunsUnasked } from '../tool-gate/never-ask-status-reads.js';
 import {
   autoAllowedByCall,
   DORKOS_AGENT_TOOLS,
@@ -452,9 +453,10 @@ export interface ToolApprovalContext {
  * Routes `AskUserQuestion` to the question handler, auto-allows calls to the two
  * safe-listed tool sets ({@link READ_ONLY_TOOLS}, {@link DORKOS_AGENT_TOOLS})
  * that {@link isAutoAllowedCall} also clears — and, for the owner-facing subset,
- * that this session has an agent identity ({@link IDENTITY_SCOPED_TOOLS}) — and
- * hands every remaining call to {@link resolveModeDecision}, which either allows
- * it or raises an approval card.
+ * that this session has an agent identity ({@link IDENTITY_SCOPED_TOOLS}) —
+ * allows the named status reads where {@link statusReadRunsUnasked} says so
+ * (DOR-4601), and hands every remaining call to {@link resolveModeDecision},
+ * which either allows it or raises an approval card.
  *
  * Nothing reaches a person's machine on a fall-through: a tool that matches no
  * safe list and no permissive mode asks. `Bash` under `acceptEdits` asks, and so
@@ -477,6 +479,9 @@ export interface ToolApprovalContext {
  * @param readFolders - The folders a file read skips the card inside (DOR-3300). A launch hands in
  *   the working folder, the agent's home and this turn's grants; the default is the session's own
  *   folder, and a session with none has no read that skips the card.
+ * @param outsideChecks - Whether the turn is marked, and whether the chat read outside words by the
+ *   DOR-4029 test (`turnOutsideChecks`), for the status reads. Absent, both count as yes, so a
+ *   caller that forgets them gets no status read unasked.
  */
 export function createCanUseTool(
   session: InteractiveSession & CeilingedMode<PermissionModeId>,
@@ -487,7 +492,8 @@ export function createCanUseTool(
   ),
   readFolders: ReadFolders | undefined = session.cwd
     ? { cwd: session.cwd, roots: [session.cwd] }
-    : undefined
+    : undefined,
+  outsideChecks = FAIL_CLOSED_CHECKS
 ): (
   toolName: string,
   input: Record<string, unknown>,
@@ -495,6 +501,9 @@ export function createCanUseTool(
 ) => Promise<PermissionResult> {
   return async (toolName, input, context) => {
     if (onToolPreflight) await onToolPreflight(toolName, input);
+    // The status reads, by the Never ask hook's own rule, whether or not the CLI honoured its allow.
+    if (statusReadRunsUnasked(session, toolName, context.mcpServer, ...outsideChecks))
+      return { behavior: 'allow', updatedInput: input };
     // A chat SET to Full autonomy asks nobody anything (DOR-3394): a mark, a
     // carried ceiling or a stranger's hold may have launched the turn lower, but
     // what it asks about is decided by the level the person chose. Below Full,

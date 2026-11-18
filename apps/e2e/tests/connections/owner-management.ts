@@ -419,6 +419,12 @@ export function registerOwnerManagementTests(harness: OwnerManagementHarness): v
         expect(paused.status()).toBe(409);
         expect(await paused.json()).toMatchObject({ code: 'CONNECTOR_NOT_EXECUTABLE' });
         await fix.getByRole('button', { name: 'Resume', exact: true }).click();
+        // Turning an account back on waits for the owner to confirm it's them (DOR-4355).
+        const sheet = page.getByRole('alertdialog', { name: 'Confirm it’s you' });
+        await expect(sheet).toContainText('Turn this connected account back on for your agents.');
+        await sheet.getByLabel('DorkOS password').fill(PROGRAM_KEY_OWNER.password);
+        await sheet.getByRole('button', { name: 'Allow', exact: true }).click();
+        await expect(sheet).toBeHidden();
         await expect(fix).toHaveCount(0);
         const resumed = await execute();
         expect(resumed.status(), await resumed.text()).toBe(200);
@@ -765,8 +771,8 @@ interface ProgramKey {
 
 /**
  * Issue an ephemeral program key through real local owner authentication:
- * register the owner, step up as the person the way the app does, and create
- * the key with that session and its proof.
+ * register the owner, get the app's person proof, then confirm this key
+ * creation with the same session and proof.
  */
 async function createProgramKey(request: APIRequestContext, apiUrl: string): Promise<ProgramKey> {
   await ensureTestOwner(request, apiUrl, PROGRAM_KEY_OWNER);
@@ -775,7 +781,19 @@ async function createProgramKey(request: APIRequestContext, apiUrl: string): Pro
     headers: { origin: apiUrl, ...personHeaders(proof) },
     data: { name: 'Connections browser protocol', expiresIn: 86400 },
   });
-  expect(created.ok(), await created.text()).toBe(true);
-  const { id, key } = (await created.json()) as { id: string; key: string };
-  return { id, key, proof };
+  expect(created.status(), await created.text()).toBe(428);
+  const { heldActionId } = (await created.json()) as { heldActionId: string };
+  const confirmed = await request.post(`${apiUrl}/api/step-up/${heldActionId}/password`, {
+    headers: { origin: apiUrl, ...personHeaders(proof) },
+    data: { password: PROGRAM_KEY_OWNER.password },
+  });
+  expect(confirmed.ok(), await confirmed.text()).toBe(true);
+  const answer = (await confirmed.json()) as {
+    ok: boolean;
+    status: number;
+    result: { id: string; key: string };
+  };
+  expect(answer.ok).toBe(true);
+  expect(answer.status).toBe(200);
+  return { ...answer.result, proof };
 }

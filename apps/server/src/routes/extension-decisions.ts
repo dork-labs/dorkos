@@ -22,6 +22,14 @@
  *
  * @module routes/extension-decisions
  */
+import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
+import { holdRemoteExtensionAnswer } from './extension-decision-step-up.js';
+import { deskGoesOnWithoutSheet } from './step-up-guard.js';
+import {
+  grantsPower,
+  refuseApprovalYesFromWifi,
+} from '../services/core/approvals/model/approval-answer-policy.js';
+import type { StepUpCommitResult } from '../services/core/auth/step-up/step-up-holds.js';
 import { Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import {
@@ -110,8 +118,16 @@ export function createExtensionDecisionsRoutes(
     const inbox = getExtensionInbox();
     if (!inbox) return c.json(INBOX_NOT_READY, 503);
     return c.json({
-      decisions: inbox.listOpen(query.data.extensionId),
-      offers: inbox.pendingOffers(),
+      decisions: inbox.listOpen(query.data.extensionId).map((decision) => ({
+        ...decision,
+        // Every yes away from this computer is held (no extension declares its effect yet).
+        answerNeedsStepUp: !isAtThisComputer(honoRequestFacts(c)),
+      })),
+      // An offer is lasting, so it is held at the desk too unless no sheet could answer there.
+      offers: inbox.pendingOffers().map((offer) => ({
+        ...offer,
+        answerNeedsStepUp: !deskGoesOnWithoutSheet(honoRequestFacts(c)),
+      })),
     });
   });
 
@@ -129,14 +145,35 @@ export function createExtensionDecisionsRoutes(
       }
       const inbox = getExtensionInbox();
       if (!inbox) return c.json(INBOX_NOT_READY, 503);
-      const outcome = await inbox.answer(id, body.data, { kind: 'person' });
-      if (!outcome.ok) {
-        return c.json(
-          { error: outcome.message, code: outcome.code },
-          outcome.status as ContentfulStatusCode
+      const run = async (facts: RequestFacts): Promise<StepUpCommitResult> => {
+        const outcome = await inbox.answer(id, body.data, { kind: 'person' });
+        if (!outcome.ok)
+          return { status: outcome.status, body: { error: outcome.message, code: outcome.code } };
+        const offer = outcome.response.offer;
+        return {
+          status: 200,
+          body: {
+            ...outcome.response,
+            offer: offer
+              ? {
+                  ...offer,
+                  requestCode: inbox.stepUpView(id, 'offer')?.requestCode,
+                  answerNeedsStepUp: !deskGoesOnWithoutSheet(facts),
+                }
+              : null,
+          },
+        };
+      };
+      if (grantsPower({ kind: body.data.action === 'reject' ? 'reject' : 'extension-answer' })) {
+        const held = holdRemoteExtensionAnswer(
+          c,
+          { id, kind: 'decision', inbox, copy: DECISION_BAR },
+          run
         );
+        if (held) return held;
       }
-      return c.json(outcome.response);
+      const outcome = await run(honoRequestFacts(c));
+      return c.json(outcome.body as never, outcome.status as ContentfulStatusCode);
     } catch (err) {
       logger.error('[Extensions] Failed to answer a decision', err);
       return c.json({ error: 'Failed to answer the decision' }, 500);
@@ -153,22 +190,31 @@ export function createExtensionDecisionsRoutes(
       if (refused) return refused;
       const body = DecisionOfferRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
       if (!body.success) return c.json({ error: 'Send { accept: true | false }.' }, 400);
+      const wifi = body.data.accept ? refuseApprovalYesFromWifi(honoRequestFacts(c)) : undefined;
+      if (wifi) return c.json(wifi, 403);
       // "Next time, on its own" is a standing yes: never from Wi-Fi (DOR-2969).
       const standing = refuseStandingYesFromWifi(honoRequestFacts(c), body.data.accept);
       if (standing) return c.json(standing, 403);
       const inbox = getExtensionInbox();
       if (!inbox) return c.json(INBOX_NOT_READY, 503);
-      const outcome = await inbox.answerOffer(id, body.data.accept);
-      if (!outcome.ok) {
-        return c.json(
-          { error: outcome.message, code: outcome.code },
-          outcome.status as ContentfulStatusCode
+      const run = async (facts: RequestFacts): Promise<StepUpCommitResult> => {
+        const outcome = await inbox.answerOffer(id, body.data.accept);
+        if (!outcome.ok)
+          return { status: outcome.status, body: { error: outcome.message, code: outcome.code } };
+        if (outcome.settingsChanged)
+          await recordSettingsChange(deps.activity, facts, outcome.settingsChanged);
+        return { status: 200, body: { message: outcome.message } };
+      };
+      if (grantsPower({ kind: body.data.accept ? 'offer-accept' : 'dismiss' })) {
+        const held = holdRemoteExtensionAnswer(
+          c,
+          { id, kind: 'offer', inbox, copy: DECISION_BAR },
+          run
         );
+        if (held) return held;
       }
-      if (outcome.settingsChanged) {
-        await recordSettingsChange(deps.activity, honoRequestFacts(c), outcome.settingsChanged);
-      }
-      return c.json({ message: outcome.message });
+      const outcome = await run(honoRequestFacts(c));
+      return c.json(outcome.body as never, outcome.status as ContentfulStatusCode);
     } catch (err) {
       logger.error('[Extensions] Failed to answer an offer', err);
       return c.json({ error: 'Failed to answer the offer' }, 500);
