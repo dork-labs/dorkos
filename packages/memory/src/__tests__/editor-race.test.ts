@@ -46,6 +46,7 @@ import path from 'node:path';
 
 import { CONVENTION_FILES } from '@dorkos/shared/convention-files';
 import { writeConventionFile } from '@dorkos/shared/convention-files-io';
+import { loadCeilingMs } from '@dorkos/shared/test-budget';
 
 import { writeMemory } from '../store.js';
 
@@ -57,6 +58,15 @@ const SEEDED_NOTES = 60;
 
 /** How many interleaves to run. See the module note on why this many. */
 const ROUNDS = 600;
+
+/**
+ * The timeout for a test that runs {@link ROUNDS} real interleaves.
+ *
+ * 30s covers an idle machine; a loaded one stretches that by up to the load
+ * clamp, and the absolute cap keeps a hung write from hiding behind minutes of
+ * silence (DOR-2021).
+ */
+const ROUNDS_TIMEOUT_MS = Math.min(120_000, loadCeilingMs(30_000));
 
 /** The memory file for the staged agent. */
 function memoryFile(): string {
@@ -80,84 +90,92 @@ afterEach(async () => {
 });
 
 describe('the in-app editor and memory_write against one file', () => {
-  it('never loses the file, over many real interleaves', async () => {
-    let lostEverything = 0;
-    let lostSomething = 0;
+  it(
+    'never loses the file, over many real interleaves',
+    async () => {
+      let lostEverything = 0;
+      let lostSomething = 0;
 
-    for (let round = 0; round < ROUNDS; round++) {
-      await writeFile(memoryFile(), seededContent(), 'utf8');
+      for (let round = 0; round < ROUNDS; round++) {
+        await writeFile(memoryFile(), seededContent(), 'utf8');
 
-      // The operator's edit, through the same writer the PATCH route uses.
-      const editorText = `${seededContent()}- edited by hand in round ${round}\n`;
-      // The agent's save, through the engine's read-modify-write.
-      const agentNote = `agent note ${round}`;
+        // The operator's edit, through the same writer the PATCH route uses.
+        const editorText = `${seededContent()}- edited by hand in round ${round}\n`;
+        // The agent's save, through the engine's read-modify-write.
+        const agentNote = `agent note ${round}`;
 
-      // Fired together, not awaited in sequence: the interleaving has to be the
-      // scheduler's rather than the test's. The tiny jitter moves the collision
-      // point around across rounds so it is not always the same instant.
-      const editing = writeConventionFile(agentPath, CONVENTION_FILES.memory, editorText);
-      const saving = (async () => {
-        // Sweep the phase: 0, 1 and 2 ticks in turn, so the read lands before,
-        // during and after the editor's write across the run.
-        for (let tick = 0; tick < round % 3; tick++) await Promise.resolve();
-        return writeMemory({ agentId: agentPath, agentPath }, { action: 'add', text: agentNote });
-      })();
+        // Fired together, not awaited in sequence: the interleaving has to be the
+        // scheduler's rather than the test's. The tiny jitter moves the collision
+        // point around across rounds so it is not always the same instant.
+        const editing = writeConventionFile(agentPath, CONVENTION_FILES.memory, editorText);
+        const saving = (async () => {
+          // Sweep the phase: 0, 1 and 2 ticks in turn, so the read lands before,
+          // during and after the editor's write across the run.
+          for (let tick = 0; tick < round % 3; tick++) await Promise.resolve();
+          return writeMemory({ agentId: agentPath, agentPath }, { action: 'add', text: agentNote });
+        })();
 
-      const [, saved] = await Promise.all([editing, saving]);
-      const after = await readFile(memoryFile(), 'utf8');
+        const [, saved] = await Promise.all([editing, saving]);
+        const after = await readFile(memoryFile(), 'utf8');
 
-      // Last-writer-wins is fine and expected: whichever of the two committed
-      // last is what the file says. What must NEVER happen is that the file
-      // comes back holding neither writer's notes — the truncation window.
-      const keptSeeded = after.includes(`- seeded note ${SEEDED_NOTES - 1}`);
-      const keptSomeWriter = after.includes(agentNote) || after.includes('edited by hand');
+        // Last-writer-wins is fine and expected: whichever of the two committed
+        // last is what the file says. What must NEVER happen is that the file
+        // comes back holding neither writer's notes — the truncation window.
+        const keptSeeded = after.includes(`- seeded note ${SEEDED_NOTES - 1}`);
+        const keptSomeWriter = after.includes(agentNote) || after.includes('edited by hand');
 
-      if (!keptSeeded && !keptSomeWriter) lostEverything++;
-      else if (!keptSeeded) lostSomething++;
+        if (!keptSeeded && !keptSomeWriter) lostEverything++;
+        else if (!keptSeeded) lostSomething++;
 
-      // A write that reported success must not have been the one that emptied
-      // the file — this is the exact shape the bug wore.
+        // A write that reported success must not have been the one that emptied
+        // the file — this is the exact shape the bug wore.
+        expect(
+          saved.chars,
+          `round ${round} reported a successful save of an empty file`
+        ).toBeGreaterThan(0);
+      }
+
       expect(
-        saved.chars,
-        `round ${round} reported a successful save of an empty file`
-      ).toBeGreaterThan(0);
-    }
-
-    expect(
-      lostEverything,
-      `${lostEverything}/${ROUNDS} interleaves emptied the memory file entirely`
-    ).toBe(0);
-    expect(lostSomething, `${lostSomething}/${ROUNDS} interleaves dropped the seeded notes`).toBe(
-      0
-    );
-  }, 30_000);
+        lostEverything,
+        `${lostEverything}/${ROUNDS} interleaves emptied the memory file entirely`
+      ).toBe(0);
+      expect(lostSomething, `${lostSomething}/${ROUNDS} interleaves dropped the seeded notes`).toBe(
+        0
+      );
+    },
+    ROUNDS_TIMEOUT_MS
+  );
 
   // The control. Without it the case above passes for a writer pair that never
   // actually collides — a lock that serialised by never letting the second
   // writer run would look identical.
-  it('really does interleave: both writers commit across the run', async () => {
-    await writeFile(memoryFile(), seededContent(), 'utf8');
+  it(
+    'really does interleave: both writers commit across the run',
+    async () => {
+      await writeFile(memoryFile(), seededContent(), 'utf8');
 
-    let agentWon = 0;
-    let editorWon = 0;
+      let agentWon = 0;
+      let editorWon = 0;
 
-    for (let round = 0; round < 40; round++) {
-      const editorText = `${seededContent()}- edited by hand in round ${round}\n`;
-      const agentNote = `agent note ${round}`;
+      for (let round = 0; round < 40; round++) {
+        const editorText = `${seededContent()}- edited by hand in round ${round}\n`;
+        const agentNote = `agent note ${round}`;
 
-      await Promise.all([
-        writeConventionFile(agentPath, CONVENTION_FILES.memory, editorText),
-        writeMemory({ agentId: agentPath, agentPath }, { action: 'add', text: agentNote }),
-      ]);
+        await Promise.all([
+          writeConventionFile(agentPath, CONVENTION_FILES.memory, editorText),
+          writeMemory({ agentId: agentPath, agentPath }, { action: 'add', text: agentNote }),
+        ]);
 
-      const after = await readFile(memoryFile(), 'utf8');
-      if (after.includes(agentNote)) agentWon++;
-      if (after.includes(`edited by hand in round ${round}`)) editorWon++;
-      // Whoever won, the file is whole.
-      expect(after).toContain(`- seeded note ${SEEDED_NOTES - 1}`);
-    }
+        const after = await readFile(memoryFile(), 'utf8');
+        if (after.includes(agentNote)) agentWon++;
+        if (after.includes(`edited by hand in round ${round}`)) editorWon++;
+        // Whoever won, the file is whole.
+        expect(after).toContain(`- seeded note ${SEEDED_NOTES - 1}`);
+      }
 
-    // Both orderings really occur, so the run above was exercising a race.
-    expect(agentWon + editorWon).toBeGreaterThan(0);
-  }, 30_000);
+      // Both orderings really occur, so the run above was exercising a race.
+      expect(agentWon + editorWon).toBeGreaterThan(0);
+    },
+    ROUNDS_TIMEOUT_MS
+  );
 });

@@ -51,6 +51,13 @@ export function markedTurnClause(markStrangerTurns = env.DORKOS_MARK_STRANGER_TU
 }
 
 /**
+ * Why a marked turn is held, as a clause after "because" (DOR-4678): true whatever marked it,
+ * including the marks {@link markedTurnClause}'s list does not name (a read through a connected
+ * app, DOR-3969). Used where a refusal must name the mark without listing what makes one.
+ */
+export const MARKED_TURN_REASON = "this turn read words DorkOS can't vouch for";
+
+/**
  * What a connected-app write or destructive call's agent is told (DOR-3683), as
  * a few sentences with a leading space. With the flag off it is word for word
  * what it was before DOR-3858. With it on, it names what DOR-4593 and DOR-4587

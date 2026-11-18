@@ -7,7 +7,7 @@
  */
 import type { PermissionMode, Task, UpdateTaskRequest } from '@dorkos/shared/types';
 import type { McpToolDeps } from '../types.js';
-import type { TurnMarks } from '../../../../core/turn-power/turn-marks.js';
+import { marksHold, type TurnMarks } from '../../../../core/turn-power/turn-marks.js';
 import {
   agentNameOf,
   auditCrossAgentTask,
@@ -203,4 +203,23 @@ export function recordOtherEdit(
     marks: decision.marks,
   });
   auditCrossAgentTask(updated, 'modify', decision.callerAgentPath, deps.meshCore);
+}
+
+/**
+ * Keep a marked turn's marks on a task an agent just edited, so the edit parks for a person and
+ * its card says why (DOR-3036). A write a person's card already allowed keeps nothing.
+ *
+ * @param deps - The tool dependencies.
+ * @param taskId - The task the agent edited.
+ * @param marks - The calling turn's marks.
+ * @param viaCard - Whether a person's card allowed this write.
+ * @returns Whether the marks were kept, so the edit parks.
+ */
+export function markedEditParks(
+  deps: McpToolDeps,
+  taskId: string,
+  marks: TurnMarks,
+  viaCard: boolean
+): boolean {
+  return !viaCard && marksHold(marks) && deps.taskStore!.approvals.markOrigin(taskId, marks);
 }

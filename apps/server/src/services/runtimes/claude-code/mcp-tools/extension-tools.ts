@@ -8,7 +8,10 @@ import {
   EXTENSION_TEXT_NOTE,
   extensionForAgents,
   extensionPartsForAgents,
+  waitingForAgents,
 } from '../../../extensions/extension-agent-text.js';
+import { listPendingExtensionApprovals } from '../../../extensions/extension-approval-queue.js';
+import type { PendingExtensionApproval } from '@dorkos/shared/extension-approval-schemas';
 import {
   createCreateExtensionHandler,
   type ExtensionCreatorResolver,
@@ -333,6 +336,9 @@ export function createListExtensionsHandler(deps: McpToolDeps) {
     if (!manager) {
       return jsonContent({ error: 'Extension system is not available' }, true);
     }
+    const waiting = await waitingById(manager);
+    // The waiting list could not be read: say so rather than imply nothing waits.
+    const unknown = waiting === null ? { waitingUnknown: true as const } : {};
     // The author's words are labelled and defused before an agent reads them (DOR-3514).
     const extensions = manager.listPublic().map((ext) => ({
       ...extensionForAgents(ext),
@@ -343,9 +349,28 @@ export function createListExtensionsHandler(deps: McpToolDeps) {
       // One that came inside a marketplace package carries text its author wrote (DOR-3969).
       ...(ext.sourcePlugin !== undefined ? { fromPackage: true as const } : {}),
       ...extensionPartsForAgents(ext),
+      ...(waiting ? waitingForAgents(waiting.get(ext.id)) : unknown),
     }));
     return jsonContent({ note: EXTENSION_TEXT_NOTE, extensions, count: extensions.length });
   };
+}
+
+/**
+ * The extensions waiting for a person, by id, read the way the waiting list answers an agent
+ * (no paths). `null` when the list could not be read, so the answer says that instead of
+ * implying nothing waits; the rest of it still comes.
+ *
+ * @param manager - The extension manager.
+ */
+async function waitingById(
+  manager: NonNullable<McpToolDeps['extensionManager']>
+): Promise<Map<string, PendingExtensionApproval> | null> {
+  try {
+    const pending = await listPendingExtensionApprovals(manager, { forPerson: false });
+    return new Map(pending.map((approval) => [approval.id, approval]));
+  } catch {
+    return null;
+  }
 }
 
 /** Error statuses that indicate an extension has a problem. */
@@ -495,7 +520,7 @@ export function extensionToolDefinitions(
     ),
     tool(
       'list_extensions',
-      "List all discovered DorkOS extensions with their status, scope, server capabilities, and errors. Returns both global (~/.dork/extensions/) and local extensions (.dork/extensions/ in the active CWD, in known projects, and in every agent's own folder). Includes hasServerEntry, hasDataProxy, and serverStatus fields.",
+      "List all discovered DorkOS extensions with their status, scope, server capabilities, and errors. Returns both global (~/.dork/extensions/) and local extensions (.dork/extensions/ in the active CWD, in known projects, and in every agent's own folder). Includes hasServerEntry, hasDataProxy, and serverStatus fields. waitsForPerson: true means some or all of it won't run until a person allows it in DorkOS; after an update, addsSinceApproval names the hosts, programs and apps it now reaches, and agent or full access it now asks for, that its last approval did not cover. waitingUnknown: true means DorkOS could not read which extensions are waiting.",
       {},
       createListExtensionsHandler(deps)
     ),
