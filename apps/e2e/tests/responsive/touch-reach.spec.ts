@@ -480,7 +480,59 @@ test.describe('Touch reach — the browser row on a phone (DOR-4436) @smoke', ()
       expect(drawn.clearOfReload, `${site}: the address must end before Reload`).toBe(true);
       expect(drawn.fieldInRow, `${site}: the row must grow with the field, not clip it`).toBe(true);
       expect(drawn.backCentred, `${site}: the controls stay centred in the row`).toBe(true);
+
+      // Round 5 (QA): where the drawn host moves to a new line, the character before
+      // the break is a dot or a hyphen, never the middle of a label.
+      const breaksAfter = await demo.evaluate((root) => {
+        const host = root.querySelector('[data-slot="browser-address-host"]')!;
+        const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+        const range = document.createRange();
+        const after: string[] = [];
+        let top: number | null = null;
+        let previous = '';
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          const text = node.textContent ?? '';
+          for (let i = 0; i < text.length; i += 1) {
+            range.setStart(node, i);
+            range.setEnd(node, i + 1);
+            const at = range.getBoundingClientRect().top;
+            if (top !== null && at > top + 1) after.push(previous);
+            top = at;
+            previous = text[i];
+          }
+        }
+        return after;
+      });
+      for (const character of breaksAfter) {
+        expect(['.', '-'], `${site}: a line may break only after a dot or a hyphen`).toContain(
+          character
+        );
+      }
     }
+  });
+
+  // Round 5: a 320 viewport squeezes the Playground row to about 186px, under the
+  // 252px its controls need. Real phones don't go that narrow; the row must still
+  // never cut a control, so it scrolls sideways instead.
+  test('a row narrower than its controls scrolls rather than cut one off', async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: PHONE.height });
+    await page.goto('/dev/home-inbox');
+    const demo = page.getByTestId('browser-chrome-phone-narrow-host-0');
+    await expect(demo).toBeVisible({ timeout: 15_000 });
+    await demo.scrollIntoViewIfNeeded();
+    const row = demo.locator('[data-slot="browser-chrome-row"]');
+    const width = (await row.boundingBox())!.width;
+    test.skip(width >= 252, `this viewport gives the row ${width}px, so nothing needs to scroll`);
+    await expect(row).toHaveCSS('overflow-x', 'auto');
+    const reaches = await row.evaluate((el) => el.scrollWidth > el.clientWidth);
+    expect(reaches, 'the row scrolls to reach its last control').toBe(true);
+    // Scrolled to its end, ⋯ is wholly in view.
+    await row.evaluate((el) => el.scrollTo({ left: el.scrollWidth }));
+    const box = (await row.boundingBox())!;
+    const menu = (await demo
+      .getByRole('button', { name: 'Browser menu', exact: true })
+      .boundingBox())!;
+    expect(menu.x + menu.width).toBeLessThanOrEqual(box.x + box.width + 0.5);
   });
 
   test('Your turn shows its full words on a phone', async ({ page }) => {

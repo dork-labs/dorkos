@@ -1,4 +1,13 @@
-import { useEffect, useId, useMemo, useRef, useState, type RefObject } from 'react';
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import { LockOpen } from 'lucide-react';
 import { keptHostTail } from '@dorkos/shared/site-name';
 import {
@@ -37,18 +46,25 @@ function splitHost(host: string): { elided: string; kept: string } {
  */
 function HostText({ host, fit }: { host: string; fit: AddressFit }) {
   const { elided, kept } = splitHost(host);
+  const style: CSSProperties = {};
+  if (fit.fontPx !== null) style.fontSize = `${fit.fontPx}px`;
+  // Wrapped lines stand a little apart, so each sits wholly inside the field.
+  if (fit.wrap) style.lineHeight = 1.4;
+  else if (fit.fontPx !== null) style.lineHeight = 1.25;
   return (
     <span
       data-slot="browser-address-host"
-      style={fit.fontPx === null ? undefined : { fontSize: `${fit.fontPx}px`, lineHeight: 1.25 }}
+      style={style}
       className={cn(
         'text-foreground min-w-0',
-        fit.wrap ? '[overflow-wrap:anywhere] whitespace-normal' : 'whitespace-nowrap'
+        // Lines break at the dots and hyphens first (`<wbr>`); inside a label only
+        // when that one label can't fit a line by itself.
+        fit.wrap ? '[overflow-wrap:break-word] whitespace-normal' : 'whitespace-nowrap'
       )}
     >
       {elided && fit.host === 'full' && (
         <span data-slot="browser-address-host-elided" className="text-foreground">
-          {elided}
+          {withBreaks(elided)}
         </span>
       )}
       {elided && fit.host === 'elided' && (
@@ -56,11 +72,25 @@ function HostText({ host, fit }: { host: string; fit: AddressFit }) {
           …
         </span>
       )}
+      {/* "…" and the kept part touch, with no break between them, so "…" never
+        sits on a line of its own. */}
       <span data-slot="browser-address-host-kept" className="text-foreground">
-        {kept}
+        {withBreaks(kept)}
       </span>
     </span>
   );
+}
+
+/**
+ * A host with a line-break chance (`<wbr>`) after each dot and hyphen: where a
+ * wrapped address may break. No character is added or changed.
+ */
+function withBreaks(text: string): ReactNode[] {
+  return text
+    .split(/(?<=[.-])/)
+    .flatMap((piece, index, pieces) =>
+      index < pieces.length - 1 ? [piece, <wbr key={index} />] : [piece]
+    );
 }
 
 /** One measured part: its words drawn from `data-text`, so they never sit in the page twice. */
@@ -210,7 +240,7 @@ export function AddressField({
           'focus-ring hover:bg-foreground/10 text-field relative flex items-center gap-1.5 text-left transition-colors',
           fit.tightPadding && 'pl-0.5',
           // Wrapped, the field grows taller rather than clip; the row grows with it.
-          fit.wrap && 'h-auto min-h-11 py-1 md:h-auto md:min-h-7'
+          fit.wrap && 'h-auto min-h-11 py-1.5 md:h-auto md:min-h-7'
         )}
       >
         {display.kind === 'url' && (

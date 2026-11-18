@@ -73,7 +73,12 @@ describe('chooseAddressFit (DOR-4655)', () => {
     const wraps = chooseAddressFit(
       narrow('accounts.google.com.attacker.example', 'com.attacker.example')
     );
-    expect(wraps).toMatchObject({ wrap: true, fontPx: ADDRESS_HOST_MIN_FONT_PX });
+    // Wrapped lines take the normal padding back: room is no longer the problem.
+    expect(wraps).toMatchObject({
+      wrap: true,
+      fontPx: ADDRESS_HOST_MIN_FONT_PX,
+      tightPadding: false,
+    });
   });
 
   it.each([

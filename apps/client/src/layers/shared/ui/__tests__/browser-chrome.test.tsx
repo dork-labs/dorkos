@@ -342,6 +342,9 @@ describe('BrowserChrome', () => {
       // A minimum, so a wrapped address grows the row rather than clip (DOR-4655).
       expect(row).toHaveClass('min-h-12', 'px-2.5', 'gap-1.5', 'md:min-h-9', 'md:gap-1');
       expect(row).toHaveClass('items-center');
+      // Below the narrowest its controls fit in (about 252px), the row scrolls sideways
+      // rather than cut the pill or push ⋯ off the end (round 5).
+      expect(row).toHaveClass('@max-[251px]/browser-chrome:overflow-x-auto');
       const end = container.querySelector('[data-slot="browser-chrome-end"]');
       expect(end).toContainElement(screen.getByRole('button', { name: 'Status' }));
       expect(end).toContainElement(screen.getByRole('button', { name: 'More' }));
@@ -490,6 +493,40 @@ describe('BrowserChrome', () => {
       expect(host().style.fontSize).toBe('12px');
       expect(host()).toHaveClass('whitespace-normal');
       expect(kept()).toHaveTextContent(/^a-very-long-attacker-registrable-name\.example$/);
+    });
+
+    // DOR-4436 round 5 (QA): wrapped lines broke mid-word ("notgoogl|e.com").
+    it('offers line breaks only after dots and hyphens, without changing a character', () => {
+      // Narrow enough that notgoogle.com must wrap even at 12px.
+      withLayout(70);
+      renderChrome({ url: 'https://notgoogle.com/' });
+      expect(kept().innerHTML).toBe('notgoogle.<wbr>com');
+      expect(kept().textContent).toBe('notgoogle.com');
+      // Inside a label it may break only if that one label can't fit a line at all.
+      expect(host()).toHaveClass('[overflow-wrap:break-word]');
+      expect(host()).not.toHaveClass('[overflow-wrap:anywhere]');
+    });
+
+    it('breaks a hyphenated label at its hyphens, and keeps "…" on the next label’s line', () => {
+      withLayout(100);
+      renderChrome({ url: 'https://x.evil-google.com.attacker.example/' });
+      expect(host().innerHTML).toBe(
+        '<span data-slot="browser-address-host-ellipsis" aria-hidden="true">…</span>' +
+          '<span data-slot="browser-address-host-kept" class="text-foreground">' +
+          'com.<wbr>attacker.<wbr>example</span>'
+      );
+      renderChrome({ url: 'https://evil-google.com/' });
+      expect(
+        document.querySelectorAll('[data-slot="browser-address-host-kept"]')[1].innerHTML
+      ).toBe('evil-<wbr>google.<wbr>com');
+    });
+
+    it('gives wrapped lines room: the normal padding, space above and below, taller lines', () => {
+      withLayout(100);
+      renderChrome({ url: 'https://a-very-long-attacker-registrable-name.example/' });
+      expect(address()).not.toHaveClass('pl-0.5');
+      expect(address()).toHaveClass('py-1.5');
+      expect(host().style.lineHeight).toBe('1.4');
     });
 
     it.each([

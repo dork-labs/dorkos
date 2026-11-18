@@ -92,5 +92,6 @@ export function chooseAddressFit(m: AddressMeasures): AddressFit {
   if (elided <= room) return tight;
   const small = { ...tight, fontPx: ADDRESS_HOST_MIN_FONT_PX };
   if ((elided * ADDRESS_HOST_MIN_FONT_PX) / m.baseFontPx <= room) return small;
-  return { ...small, wrap: true };
+  // Wrapped, width is no longer what is short, so the lines get their padding back.
+  return { ...small, tightPadding: false, wrap: true };
 }

@@ -156,7 +156,9 @@ export function BrowserChrome({
             // A phone's 390px: 10 + Back 44 + 6 + field + 6 + pill 44 + ⋯ 44 + 10. A
             // minimum, not a height: a wrapped address grows the row, never clips (DOR-4655),
             // and the 44px controls stay centred.
-            className="flex min-h-12 items-center gap-1.5 px-2.5 md:min-h-9 md:gap-1"
+            // Below the narrowest its controls fit in (10+44+6+88+6+44+44+10 = 252px),
+            // the row scrolls sideways rather than cut the pill or push ⋯ off its end.
+            className="flex min-h-12 items-center gap-1.5 px-2.5 md:min-h-9 md:gap-1 @max-[251px]/browser-chrome:overflow-x-auto"
           >
             <ChromeButton label="Back" icon={ArrowLeft} disabled={!canBack} onClick={onBack} />
             <ChromeButton
