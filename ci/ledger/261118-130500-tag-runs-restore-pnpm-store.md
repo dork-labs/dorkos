@@ -1,6 +1,6 @@
 ---
 id: 261118-130500
-title: tag-triggered release runs restore main's pnpm store instead of saving their own
+title: tag-triggered release runs install cold, with no dependency cache restored or saved
 kind: experiment
 status: proposed
 actor: agent
@@ -8,7 +8,7 @@ gates:
   - wf.desktop-release.build-macos
   - wf.desktop-release.build-windows
   - wf.publish-community.build-and-publish
-prs: []
+prs: [3938, 3944]
 hypothesis:
   metric: 'tracked.cache-hit-rate'
   baseline: null
@@ -19,23 +19,23 @@ ratchet-release: []
 field-changes: []
 ---
 
-DOR-4635 (Actions cache under 10 GB), second slice after #3910. It also covers the
-`desktop-release.yml` tag-ref save that DOR-4628 names.
+DOR-4635 (Actions cache under 10 GB), second slice after #3910, and DOR-4695 option (a). It
+also covers the `desktop-release.yml` tag-ref save named in DOR-4628.
 
 `desktop-release.yml` (build-macos, build-windows) and `publish-community.yml` run on tag pushes
 and used `actions/setup-node`'s `cache: pnpm`. That restores and, on a miss, saves the pnpm store
 in the tag's own scope. GitHub lets a run restore only from its own ref and the default branch,
 so the next release never reads what this one saved. v0.136.0 left about 2.1 GB of
-`node-cache-*` across three OSes, on top of the Docker layers #3910 removes from future releases.
-Over 10 GB, GitHub evicts least-recently-used entries first, and those are main's.
+`node-cache-*` across three OSes, on top of the Docker layers #3910 removes from future
+releases. Over 10 GB, GitHub evicts least-recently-used entries first, and those are main's.
 
-Each of the three installs now restores `pnpm-store-<os>-<ImageOS>-<arch>-<lockfile>`, the key
-main's own runs save (test.yml test-shard, typecheck, lint, harness-windows weekly). A tag can
-read main's scope, and nothing here saves. A miss installs from the registry, as a first
-release attempt mostly did before (no `node-cache-*` entry existed on main for Linux or Windows).
-The step that finds the store runs with `shell: bash` so `${ImageOS:?}` works on the Windows
-runner.
+The first version of this change restored main's `pnpm-store-*` entry instead. On Security's
+review, these three installs now use no dependency cache at all, because release jobs hold
+signing and publish credentials. `pnpm install --frozen-lockfile` fetches from the registry and
+checks every package against pnpm-lock.yaml's integrity hashes. The cost is one cold install per
+job per release, about a minute or two. `actions/setup-node` is pinned by SHA (v7.1.0) in both
+files.
 
-Expected after the next release: no `node-cache-*` entry on any `refs/tags/*` ref. Watch the
-three gates' durations for an install-time regression on a lockfile that main hasn't saved yet.
-Revert if a release install regularly runs slower than before.
+Expected after the next release: no `node-cache-*` entry on any `refs/tags/*` ref, and no
+release job restoring any Actions cache. Watch the three gates' durations: one cold install
+each is the expected cost. Revert only with Security's OK.
