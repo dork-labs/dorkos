@@ -104982,7 +104982,9 @@
                         "pairing-code.show",
                         "browser-profile.bind",
                         "connection.confirm-setting",
-                        "connection.use-setting"
+                        "connection.use-setting",
+                        "spending.raise",
+                        "spending.price"
                       ]
                     },
                     "reason": {
