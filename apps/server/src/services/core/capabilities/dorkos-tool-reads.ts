@@ -89,6 +89,10 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   test_extension: 'outside',
   // ── What other turns read or said ──────────────────────────────────────────
   'audit.transcript_read': 'outside',
+  // Event summaries can quote what a call was given, such as an email's subject.
+  'audit.query': 'outside',
+  'audit.get': 'outside',
+  'audit.account_timeline': 'outside',
   'rooms.read_canvas': 'outside',
   tasks_get_run_history: 'outside',
   relay_get_trace: 'outside',
@@ -181,9 +185,6 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'work-claims.check': 'local',
   'work-claims.release': 'local',
   'audit.verify': 'local',
-  'audit.query': 'local',
-  'audit.get': 'local',
-  'audit.account_timeline': 'local',
   'agent.pause': 'local',
   'agent.resume': 'local',
   'agent.list_paused': 'local',

@@ -33,7 +33,7 @@ import { chatTitleOf } from '../chat-messages/chat-message-wiring.js';
 import { chatStateOf } from '../chat-messages/chat-read.js';
 import { getSessionStartedByStore } from '../origin/session-started-by-store.js';
 import { listProjectorStatuses, peekProjector } from '../session-state-projector.js';
-import { chatReadOutsideWords } from '../../core/turn-power/chat-outside-words.js';
+import { chatHoldsOutsideText } from '../../core/turn-power/chat-outside-words.js';
 
 /** A live chat as the sources report it. */
 interface LiveProjector {
@@ -233,12 +233,18 @@ export async function listRunningChats(
 }
 
 /**
- * Whether any chat in the list holds words from outside the team, so its title may quote them
- * (DOR-3969): `running_chats` then marks the reader's turn.
+ * Whether a `running_chats` answer hands its reader outside words (DOR-3969): a listed chat holds
+ * them, by the check `chat_read` uses, and the answer carries titles, which may quote them. A list
+ * read without titles (a Never ask turn, DOR-3971) hands on nothing.
  *
  * @param running - The list as read.
+ * @param withoutTitles - Whether the list was read without titles.
  */
-export function listsChatWithOutsideWords(running: RunningChatsResponse): boolean {
+export function runningChatsHandOutsideWords(
+  running: RunningChatsResponse,
+  withoutTitles: boolean
+): boolean {
+  if (withoutTitles) return false;
   const chats = [...running.agents.flatMap((agent) => agent.chats), ...running.unassigned.chats];
-  return chats.some((chat) => chatReadOutsideWords(chat.id));
+  return chats.some((chat) => chatHoldsOutsideText(chat.id));
 }

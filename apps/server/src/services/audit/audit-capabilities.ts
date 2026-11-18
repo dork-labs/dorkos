@@ -43,7 +43,7 @@ import {
 } from '../core/capabilities/index.js';
 import {
   listRunningChats,
-  listsChatWithOutsideWords,
+  runningChatsHandOutsideWords,
   type RunningChatSources,
 } from '../session/running-chats/running-chats.js';
 import { markCallerTurnOutsider } from '../core/capabilities/mark-caller-turn.js';
@@ -335,7 +335,7 @@ export const auditDomain: CapabilityDomain = {
           { withoutTitles }
         );
         // A title from a chat that holds outside words may quote them (DOR-3969).
-        if (!withoutTitles && listsChatWithOutsideWords(running)) markCallerTurnOutsider(context);
+        if (runningChatsHandOutsideWords(running, withoutTitles)) markCallerTurnOutsider(context);
         return running;
       },
     }),

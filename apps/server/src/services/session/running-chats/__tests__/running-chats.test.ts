@@ -14,7 +14,7 @@ import {
   backgroundWorkOf,
   countBackgroundWorkIn,
   listRunningChats,
-  listsChatWithOutsideWords,
+  runningChatsHandOutsideWords,
   type RunningChatSources,
 } from '../running-chats.js';
 import { markRunningTurnOutsider } from '../../../core/turn-power/turn-levels.js';
@@ -338,7 +338,7 @@ describe('countBackgroundWorkIn', () => {
   });
 });
 
-describe('listsChatWithOutsideWords (DOR-3969)', () => {
+describe('runningChatsHandOutsideWords (DOR-3969)', () => {
   afterEach(() => resetLiveOutsiderTurns());
 
   /** A list holding one chat under one agent. */
@@ -369,10 +369,16 @@ describe('listsChatWithOutsideWords (DOR-3969)', () => {
 
   it('is true when a listed chat read outside words', () => {
     markRunningTurnOutsider('outside-chat-1', '/keep/dorkos');
-    expect(listsChatWithOutsideWords(listing('outside-chat-1'))).toBe(true);
+    expect(runningChatsHandOutsideWords(listing('outside-chat-1'), false)).toBe(true);
+  });
+
+  it('is false for the same list read without titles, as a Never ask turn reads it', () => {
+    markRunningTurnOutsider('outside-chat-2', '/keep/dorkos');
+    expect(runningChatsHandOutsideWords(listing('outside-chat-2'), true)).toBe(false);
+    expect(runningChatsHandOutsideWords(listing('outside-chat-2'), false)).toBe(true);
   });
 
   it("is false when every listed chat holds only the team's words", () => {
-    expect(listsChatWithOutsideWords(listing('clean-chat-1'))).toBe(false);
+    expect(runningChatsHandOutsideWords(listing('clean-chat-1'), false)).toBe(false);
   });
 });
