@@ -85,6 +85,7 @@ import {
   taskModeRefusal,
   scheduleEditorOf,
   namesCredits,
+  writeTaskRow,
 } from './task-route-answers.js';
 import {
   OPERATOR_ONLY_TASK_CODE,
@@ -441,9 +442,7 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
     // `settleApprovedWorkChange` below compares against.
     const before = { ...taskWorkOf(existing), status: existing.status };
 
-    const rowData =
-      fileOutcome.clampApplied && clampTo ? { ...data, permissionMode: clampTo } : data;
-    let updated = store.updateTask(id, rowData, { timingLandsOn, approval });
+    let updated = writeTaskRow(store, id, data, { ...fileOutcome, clampTo, approval, trusted });
     if (!updated) return c.json({ error: 'Scheduled task not found' }, 404);
 
     // **Re-assert the status the caller asked for.** The file is written before

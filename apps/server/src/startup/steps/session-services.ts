@@ -76,6 +76,10 @@ import { watchCreditsRefusals } from '../../services/notifications/emitters/cred
 import { announceInstalledVersion } from '../../services/notifications/emitters/update-installed.js';
 import { warnAboutGitProtection } from '../../lib/git-safety.js';
 import { watchShiftReport } from '../../services/notifications/emitters/shift-report.js';
+import {
+  DeclaredReaders,
+  setDeclaredReaders,
+} from '../../services/core/turn-power/declared-readers.js';
 import type { OpenConfigAndDatabaseResult } from './config-and-database.js';
 import type { WireCoreStoresResult } from './core-stores.js';
 import type { ClaimDataDirectoryResult } from './data-directory.js';
@@ -173,6 +177,14 @@ export async function wireSessionServices(refs: ServerRefs, built: WireSessionSe
     file: path.join(dorkHome, 'permissions', 'person-set-agent-permissions.json'),
     logger,
   });
+  // The tasks and agents that said they read outside text, kept where no agent
+  // can write: a file edited back to false never clears one (DOR-3969).
+  setDeclaredReaders(
+    new DeclaredReaders({
+      file: path.join(dorkHome, 'permissions', 'declared-outside-readers.json'),
+      logger,
+    })
+  );
   const permissionObserver = new PermissionObserver({
     snapshotFile: path.join(dorkHome, 'permissions', 'observed-agent-permissions.json'),
     agentAt: (agentPath) => {

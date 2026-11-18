@@ -174,6 +174,16 @@ export const STICKY_DESCRIPTION =
   'should build on the run before it — "since I last ran, here is what changed".';
 
 /**
+ * The description both tools give the `readsOutsideText` argument (DOR-3969).
+ *
+ * An agent may turn it on, never off: it can only make the task's runs more careful.
+ */
+export const READS_OUTSIDE_TEXT_DESCRIPTION =
+  "Set true when this task reads mail, web pages or another app's text. Its runs are then " +
+  'treated as having read outside words: their posts are marked, and a send asks first. ' +
+  'Only a person can set it back to false; sending false is refused.';
+
+/**
  * The description both tools give the `runtime` argument (DOR-1615).
  *
  * Agent-writable: it chooses WHICH backend does the work, not how much power the
