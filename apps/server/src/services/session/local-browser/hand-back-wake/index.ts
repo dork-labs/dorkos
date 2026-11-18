@@ -14,6 +14,7 @@ import {
   isSessionLaunchRefusal,
   type DispatchSessionMessageOpts,
 } from '../../launch/launch-session.js';
+import { HAND_BACK_CLIENT_ID } from './client-id.js';
 
 /**
  * The one message the agent gets after a hand back. Fixed text, with nothing from
@@ -21,8 +22,7 @@ import {
  */
 export const HANDED_BACK_MESSAGE = 'I’m done in the browser. Please continue.';
 
-/** The client id the wake is sent under, so it never takes a person's tab's write lock. */
-export const HAND_BACK_CLIENT_ID = 'local-browser-hand-back';
+export { HAND_BACK_CLIENT_ID };
 
 /** What the wake needs, read when a handoff ends rather than at startup. */
 export interface HandBackWakeDeps {
