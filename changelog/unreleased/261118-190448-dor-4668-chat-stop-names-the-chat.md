@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(chats): a chat stopped by another chat says which one, never "the user" (DOR-4668)'
+  - 'fix(chats): a chat stop that stops nothing keeps the note already owed (DOR-4668)'
 ---
 
 ### Fixed

@@ -564,8 +564,10 @@ export class ChatMessageService {
       if (cancelQueuedMessage(input.chat, queued.id)) dropped += 1;
     }
 
+    // The id it is known by now, where its windows and its "Stopped by" line read.
+    const chatId = await this.deps.canonicalId(input.chat).catch(() => input.chat);
     const stopped = await stopChatTurn(this.deps, {
-      chatId: input.chat,
+      chatId,
       sender: {
         fromSessionId: caller.sessionId,
         fromAgentPath: caller.agentPath,
@@ -577,10 +579,10 @@ export class ChatMessageService {
       reason,
     });
     this.deps.emitActivity(caller.sessionId);
-    this.deps.emitActivity(input.chat);
+    this.deps.emitActivity(chatId);
     return {
       stopped,
-      chatId: input.chat,
+      chatId,
       droppedMessages: dropped,
       note: stopped
         ? `Stopped. The chat shows "${byLine}${reason ? `: ${reason}` : ''}".`

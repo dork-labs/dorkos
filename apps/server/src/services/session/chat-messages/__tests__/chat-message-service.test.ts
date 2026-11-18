@@ -826,6 +826,16 @@ describe('send — interrupt', () => {
     expect(store.listStopsOf('chat-b')).toEqual([]);
     expect(recordAudit).not.toHaveBeenCalled();
   });
+
+  it('keeps a note already owed when the interrupt stops nothing', async () => {
+    chat('chat-b');
+    busy.add('chat-b');
+    const stall = { windowMs: 600_000, neverStarted: false };
+    restoreTurnCutoff('chat-b', stall);
+    interruptTurn.mockResolvedValue(false);
+    await service.send(ANA, { to: 'chat-b', message: 'x', delivery: 'interrupt' });
+    expect(takeTurnCutoff('chat-b')).toEqual(stall);
+  });
 });
 
 describe('send — replies', () => {
@@ -1324,6 +1334,16 @@ describe('stopChat', () => {
   it('tells the stopped chat’s next turn that another chat stopped it, not a person (DOR-4668)', async () => {
     await service.stopChat(ANA, { chat: 'chat-b' });
     expect(takeTurnCutoff('chat-b')).toEqual({ stoppedBy: 'chat', via: 'stop' });
+  });
+
+  it('records a stop named by another id under the id the chat is known by now', async () => {
+    chat('old-id-of-b');
+    aliases.set('old-id-of-b', 'chat-b');
+    const result = await service.stopChat(ANA, { chat: 'old-id-of-b' });
+    expect(result.chatId).toBe('chat-b');
+    expect(store.listStopsOf('chat-b')).toHaveLength(1);
+    expect(store.listStopsOf('old-id-of-b')).toEqual([]);
+    expect(emitActivity).toHaveBeenCalledWith('chat-b');
   });
 });
 

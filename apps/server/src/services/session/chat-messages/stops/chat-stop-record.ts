@@ -20,7 +20,12 @@ import type { ChatMessageRow } from '@dorkos/db';
 import type { ChatStopCutoff } from '@dorkos/shared/additional-context';
 import { logError, logger } from '../../../../lib/logger.js';
 import { recordAudit } from '../../../audit/audit-trail.js';
-import { noteTurnCutoff, withdrawTurnCutoff } from '../../turn-cutoff/turn-cutoff.js';
+import {
+  noteTurnCutoff,
+  restoreTurnCutoff,
+  takeTurnCutoff,
+  withdrawTurnCutoff,
+} from '../../turn-cutoff/turn-cutoff.js';
 import type { ChatMessageStore } from '../chat-message-store.js';
 
 /**
@@ -74,12 +79,17 @@ export async function stopChatTurn(
   const { chatId, sender, via } = input;
   const reason = input.reason ?? null;
   const owed: ChatStopCutoff = { stoppedBy: 'chat', via };
+  // A note still owed (a stall cutoff) comes back if this stop stops nothing.
+  const earlier = takeTurnCutoff(chatId);
   noteTurnCutoff(chatId, owed);
   const stopped = await deps.interruptTurn(chatId).catch((err: unknown) => {
     logger.warn('[chat_stop] could not stop a chat', { chat: chatId, via, ...logError(err) });
     return false;
   });
-  if (!stopped) withdrawTurnCutoff(chatId, owed);
+  if (!stopped) {
+    withdrawTurnCutoff(chatId, owed);
+    if (earlier !== null) restoreTurnCutoff(chatId, earlier);
+  }
   if (!stopped && via === 'interrupt') return false;
   try {
     await recordStop(deps, chatId, sender, via, reason, stopped);

@@ -7,15 +7,20 @@
  * agent (the note its next turn carries). A person's Stop, with no recorded
  * cutoff, still reads as a person's.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import type { HistoryMessage, StreamEvent } from '@dorkos/shared/types';
 import { mockInterruptReceipt } from '@dorkos/test-utils';
+import { createTestDb } from '@dorkos/test-utils/db';
+import {
+  ChatMessageStore,
+  setChatMessageStore,
+} from '../../../../session/chat-messages/chat-message-store.js';
 import { withStallGuard } from '../../../../session/stall-guard.js';
 import { resetTurnCutoffs, takeTurnCutoff } from '../../../../session/turn-cutoff/turn-cutoff.js';
 import type { RecordedTurnCutoff } from '../../../../session/session-event-store.js';
 import { parseTranscript } from '../../sessions/transcript-parser.js';
 import { renderContextEntry } from '../../messaging/context-builder.js';
-import { applyTurnCutoffs } from '../turn-cutoff-overlay.js';
+import { applyTurnCutoffs, overlayTurnCutoffs } from '../turn-cutoff-overlay.js';
 
 vi.mock('../../../../../lib/logger.js', () => ({
   logger: {
@@ -257,5 +262,52 @@ describe('another chat stopping the turn (DOR-4668)', () => {
     expect(history.find((m) => m.id === 'u-marker')?.content).toBe(
       '[Request interrupted by user for tool use]'
     );
+  });
+});
+
+describe('the recorded stops the overlay reads (DOR-4668)', () => {
+  afterEach(() => setChatMessageStore(undefined));
+
+  /** A store whose clock reads `at`, holding one stop row of the given status. */
+  function storeWithStop(at: string, status: 'delivered' | 'failed'): void {
+    const store = new ChatMessageStore(createTestDb(), () => new Date(at));
+    store.insert({
+      id: `stop-${status}`,
+      toSessionId: SESSION_ID,
+      fromSessionId: 'chat-a',
+      fromAgentPath: '/agents/ana',
+      fromAgentId: 'agent-ana',
+      fromAgentName: 'Ana',
+      fromChatTitle: 'Planning',
+      kind: 'stop',
+      text: '',
+      summary: null,
+      nonce: null,
+      delivery: 'interrupt',
+      status,
+      queueMessageId: null,
+      ceilingJson: '"runtime-default"',
+      replyToId: null,
+    });
+    setChatMessageStore(store);
+  }
+
+  it('reads a delivered stop from the store and drops the matching marker', () => {
+    storeWithStop('2026-10-26T00:41:50.600Z', 'delivered');
+    const history = overlayTurnCutoffs(SESSION_ID, parseTranscript(CUT_TRANSCRIPT));
+    expect(shown(history)).not.toMatch(PERSON_WORDING);
+    expect(shown(history)).toContain('Stopped by Ana · Planning');
+  });
+
+  it('ignores a stop that stopped nothing, and hands the history back unchanged', () => {
+    storeWithStop('2026-10-26T00:41:50.600Z', 'failed');
+    const parsed = parseTranscript(CUT_TRANSCRIPT);
+    expect(overlayTurnCutoffs(SESSION_ID, parsed)).toBe(parsed);
+  });
+
+  it('hands the history back unchanged when a stop matches no marker', () => {
+    storeWithStop('2026-10-26T00:10:00.000Z', 'delivered');
+    const parsed = parseTranscript(CUT_TRANSCRIPT);
+    expect(overlayTurnCutoffs(SESSION_ID, parsed)).toBe(parsed);
   });
 });

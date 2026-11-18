@@ -23,8 +23,8 @@
  * timestamps of the messages around it. A cutoff belongs to the first marker
  * whose window holds the cutoff's row time, and to no other. A cutoff with no
  * marker (the interrupt failed, or the CLI wrote none) is spliced in by time,
- * so the chat still says what happened. A marker no cutoff matches is a
- * person's Stop and is left exactly as it is.
+ * so the chat still says what happened. A marker that neither a cutoff nor a
+ * chat's stop (below) matches is a person's Stop and is left exactly as it is.
  *
  * ## A stop by another chat (DOR-4668)
  *
@@ -130,9 +130,9 @@ function nextTimestamp(messages: HistoryMessage[], from: number): string | undef
 /**
  * Lay recorded cutoffs over a Claude Code history.
  *
- * Returns `messages` BY REFERENCE when there are none, so an ordinary history
- * read does not invalidate memoized renders. Rows it rewrites are copied first;
- * the parser's output is never mutated.
+ * Returns `messages` BY REFERENCE when there are no cutoffs and no chat's stop
+ * matches a marker, so an ordinary history read does not invalidate memoized
+ * renders. Rows it rewrites are copied first; the parser's output is never mutated.
  *
  * @param messages - History as the transcript parser assembled it.
  * @param cutoffs - Recorded cutoffs, oldest first.
@@ -148,6 +148,7 @@ export function applyTurnCutoffs(
   const stops = [...chatStops];
   const merged: HistoryMessage[] = [];
   let lastSeen = '';
+  let stopMatched = false;
   const clearPrevious = (text: string) => {
     if (merged.length > 0) merged[merged.length - 1] = { ...merged[merged.length - 1]! };
     clearCutTools(merged, text);
@@ -164,6 +165,7 @@ export function applyTurnCutoffs(
       }
       const stopAt = matchIn(stops, lastSeen, before);
       if (stopAt !== -1) {
+        stopMatched = true;
         clearPrevious(stops.splice(stopAt, 1)[0]!.byLine);
         return;
       }
@@ -171,6 +173,7 @@ export function applyTurnCutoffs(
     if (message.timestamp !== undefined) lastSeen = message.timestamp;
     merged.push(message);
   });
+  if (cutoffs.length === 0 && !stopMatched) return messages;
   return spliceByCreatedAt(merged, unmatched, (cutoff) => cutoffMessage(cutoff));
 }
 
