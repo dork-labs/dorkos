@@ -2,6 +2,40 @@
   "version": 1,
   "decisions": [
     {
+      "id": "261115-223354",
+      "slug": "preserve-recovery-session-launch-requirements",
+      "title": "Preserve recovery session launch requirements",
+      "status": "accepted",
+      "created": "2026-11-15",
+      "extractedFrom": "specs/room-handoff-failed-seat-recovery/02-specification.md",
+      "specSlug": "room-handoff-failed-seat-recovery",
+      "supersedes": null,
+      "amends": null,
+      "affects": [
+        "packages/db/src/schema/sessions.ts",
+        "apps/server/src/services/rooms/reseat/**",
+        "apps/server/src/services/core/runtime-registry.ts",
+        "apps/server/src/services/runtimes/claude-code/messaging/launch-resolver.ts"
+      ]
+    },
+    {
+      "id": "261115-194346",
+      "slug": "private-seat-aside-messages",
+      "title": "Deliver peer messages to room seats through a bounded aside inbox",
+      "status": "accepted",
+      "created": "2026-11-15",
+      "extractedFrom": "agent-teams-seat-asides",
+      "specSlug": "agent-teams-seat-asides",
+      "supersedes": null,
+      "amends": [],
+      "affects": [
+        "apps/server/src/services/session/chat-messages/**",
+        "apps/server/src/services/rooms/handoff/**",
+        "apps/server/src/services/rooms/room-trigger/aside.ts",
+        "packages/db/src/schema/session/chat-messages.ts"
+      ]
+    },
+    {
       "id": "261115-161559",
       "slug": "composio-write-for-every-app",
       "title": "Composio write for every app",

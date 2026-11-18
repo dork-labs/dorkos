@@ -1,3 +1,14 @@
+import { readSessionBindings, type SessionBinding } from './runtime-seam/session-bindings.js';
+export type { SessionBinding } from './runtime-seam/session-bindings.js';
+import { peekProjector } from '../session/session-state-projector.js';
+import { onRequiredSessionRekey } from '../session/turn-identity/durable-rekey.js';
+import { RequiredSessionIdentityError } from '../../lib/replay/required-session-identity-error.js';
+import { RequiredRoomLaunchStore } from '../rooms/reseat/required-launch-store.js';
+import {
+  rekeySessionMetadata,
+  rekeyRequiredSessionIdentity,
+  moveSessionContext,
+} from '../session/recovery/rekey-metadata.js';
 import { ComputerAgentBinding, requireRegisteredRuntime } from '../computers/agent-binding.js';
 import { moveAlongside, moveScheduledChats } from '../session/origin/rekey-moves.js';
 import { resolveCodexHome } from '../runtimes/codex/codex-home.js';
@@ -37,7 +48,6 @@ import {
   type TurnOrigin,
 } from '../session/origin/turn-origin.js';
 import {
-  sessionContext,
   sessionMetadata,
   sessionNativeBindings,
   eq,
@@ -63,25 +73,6 @@ import {
 } from './runtime-seam/session-metadata-columns.js';
 
 /**
- * How many session ids one `WHERE session_id IN (...)` may carry. Every id
- * spends one of SQLite's compiled-in bound variables (~32k), so a list past the
- * ceiling would fail the whole read rather than part of it — the same ceiling,
- * and the same 500, the queue store chunks its deletes at.
- */
-const BOUND_RUNTIME_CHUNK_SIZE = 500;
-
-/** One session's ownership row, as a caller that must not guess reads it. */
-export interface SessionBinding {
-  /** The runtime type the row names. Never inferred, never a default. */
-  runtime: string;
-  /**
-   * When the row was written, epoch ms; `null` when the stored timestamp cannot
-   * be parsed, which a caller must treat as "unknown", never as "long ago".
-   */
-  boundAt: number | null;
-}
-
-/**
  * Where a session's runtime came from, for a caller that has to know.
  *
  * The registry answers "which runtime" for every session id it is handed,
@@ -99,40 +90,6 @@ export interface SessionRuntimeResolution {
    * fallback rather than an answer.
    */
   bound: boolean;
-}
-
-/**
- * Move a session's stored context reading (`session_context`, spec
- * `claude-account-fleet` §6 U) from `fromId` to `toId`. When both ids hold one,
- * the newer reading wins. A no-op when `fromId` holds none.
- *
- * @param db - The database.
- * @param fromId - The id the reading is stored under today.
- * @param toId - The id the session is now known by.
- */
-function moveSessionContext(db: Db, fromId: string, toId: string): void {
-  const source = db.select().from(sessionContext).where(eq(sessionContext.sessionId, fromId)).get();
-  if (!source) return;
-  const destination = db
-    .select()
-    .from(sessionContext)
-    .where(eq(sessionContext.sessionId, toId))
-    .get();
-  db.transaction((tx) => {
-    tx.delete(sessionContext).where(eq(sessionContext.sessionId, fromId)).run();
-    if (destination && destination.observedAt >= source.observedAt) return;
-    tx.insert(sessionContext)
-      .values({ ...source, sessionId: toId })
-      .onConflictDoUpdate({
-        target: sessionContext.sessionId,
-        set: {
-          contextTokens: source.contextTokens,
-          contextMaxTokens: source.contextMaxTokens,
-          observedAt: source.observedAt,
-        },
-      })
-      .run();
-  });
 }
 
 /**
@@ -154,6 +111,11 @@ export class RuntimeNotRegisteredError extends Error {
   }
 }
 
+/** A runtime that can say whether another live session already owns a chat's ids. */
+type LiveSessionProbe = AgentRuntime & {
+  hasIndependentLiveSession?: (from: string, to: string) => boolean;
+};
+
 /**
  * Registry of available agent runtimes, keyed by type string.
  *
@@ -167,6 +129,8 @@ export class RuntimeRegistry {
   private defaultType: string = 'claude-code';
   private readonly computerAgent = new ComputerAgentBinding(this.runtimes, () => this.getDefault());
   private db: Db | undefined;
+  private recoveryLaunchStore: RequiredRoomLaunchStore | undefined;
+  private stopRequiredRekey?: () => void;
 
   /**
    * Register a runtime implementation.
@@ -189,6 +153,24 @@ export class RuntimeRegistry {
    */
   setDb(db: Db): void {
     this.db = db;
+    this.recoveryLaunchStore = new RequiredRoomLaunchStore(db);
+    if (this === runtimeRegistry) {
+      this.stopRequiredRekey?.();
+      this.stopRequiredRekey = onRequiredSessionRekey((from, to, projectorOwner) => {
+        rekeyRequiredSessionIdentity(
+          db,
+          from,
+          to,
+          () => projectorOwner?.() !== false && this.requiredLiveOwner(from, to)
+        );
+      });
+    }
+  }
+
+  /** Server-owned recovery launch authority; unavailable storage never means unconstrained. */
+  requiredLaunches(): RequiredRoomLaunchStore {
+    if (!this.recoveryLaunchStore) throw new Error('Recovery launch storage is unavailable.');
+    return this.recoveryLaunchStore;
   }
 
   /**
@@ -283,6 +265,11 @@ export class RuntimeRegistry {
     agentPath?: string
   ): Promise<boolean> {
     const db = this.requireDb('persistSessionRuntime');
+    const required = this.requiredLaunches().forSession(sessionId);
+    if (required && required.destinationSessionId !== sessionId)
+      throw new RequiredSessionIdentityError('Recovery alias requires its canonical chat.');
+    if (required && required.runtime !== runtime)
+      throw new Error('Recovery runtime cannot change.');
     // The agent tier is read here, where the owning agent is actually known.
     // Read unconditionally rather than only for a row that turns out to be new:
     // the INSERT is what decides that, and it cannot await mid-statement.
@@ -353,6 +340,8 @@ export class RuntimeRegistry {
    */
   async forgetUnstartedSession(sessionId: string): Promise<void> {
     const db = this.requireDb('forgetUnstartedSession');
+    if (this.requiredLaunches().forSession(sessionId))
+      throw new Error('Recovery session identity must be preserved.');
     db.delete(sessionMetadata).where(eq(sessionMetadata.sessionId, sessionId)).run();
     return Promise.resolve();
   }
@@ -407,11 +396,13 @@ export class RuntimeRegistry {
     options: { allowUnbound?: boolean } = {}
   ): Promise<SessionRuntimeResolution> {
     const db = this.requireDb('resolveSessionRuntime');
+    const required = this.requiredLaunches().forSession(sessionId);
     const row = db
       .select({ runtime: sessionMetadata.runtime })
       .from(sessionMetadata)
       .where(eq(sessionMetadata.sessionId, sessionId))
       .get();
+    if (required) return { type: required.runtime, bound: row?.runtime === required.runtime };
     if (row?.runtime) {
       // A stored conversation must never resume under a different personal sign-in home.
       const source = this.getNativeSessionAccount(sessionId);
@@ -785,6 +776,8 @@ export class RuntimeRegistry {
    */
   async discardSessionSettings(sessionId: string): Promise<void> {
     const db = this.requireDb('discardSessionSettings');
+    if (this.requiredLaunches().forSession(sessionId))
+      throw new Error('Recovery session identity must be preserved.');
     db.delete(sessionMetadata).where(eq(sessionMetadata.sessionId, sessionId)).run();
   }
 
@@ -979,14 +972,33 @@ export class RuntimeRegistry {
    * @param fromId - The id the row is stored under today
    * @param toId - The canonical id the session is now known by
    */
-  async rekeySessionSettings(fromId: string, toId: string): Promise<void> {
+  async rekeySessionSettings(
+    fromId: string,
+    toId: string,
+    sdkOwner?: () => boolean
+  ): Promise<void> {
     if (fromId === toId) return;
-    const db = this.requireDb('rekeySessionSettings');
+    let db: Db;
+    try {
+      db = this.requireDb('rekeySessionSettings');
+    } catch (error) {
+      throw new RequiredSessionIdentityError(error);
+    }
+    if (
+      rekeyRequiredSessionIdentity(db, fromId, toId, () =>
+        this.requiredLiveOwner(fromId, toId, sdkOwner)
+      )
+    )
+      return;
     const rowFor = (id: string) =>
       db.select().from(sessionMetadata).where(eq(sessionMetadata.sessionId, id)).get();
     const source = rowFor(fromId);
     const destination = rowFor(toId);
-    if (refuseAgentChange(fromId, toId, source?.agentPath, destination?.agentPath)) return;
+    if (refuseAgentChange(fromId, toId, source?.agentPath, destination?.agentPath)) {
+      if (source?.requiredLaunchId || destination?.requiredLaunchId)
+        throw new RequiredSessionIdentityError('Recovery agent identity conflicts.');
+      return;
+    }
     // A usage limit the session hit under its old id moves with it (spec
     // claude-account-fleet D4), whether or not it has a settings row.
     // `rekeyProjector` moves the same table, and both are needed: the row is
@@ -1026,47 +1038,26 @@ export class RuntimeRegistry {
     // A run's and a beat's rows name their chat as started-by rows do (DOR-3703).
     moveAlongside('a scheduled chat', fromId, toId, () => moveScheduledChats(db, fromId, toId));
     if (!source) return;
-    db.transaction((tx) => {
-      // Native location and sign-in source belong to the conversation identity,
-      // so a canonical rename must move them with its runtime/settings row.
-      // A destination's verified source wins, just as its settings do below.
-      const nativeSource = tx
-        .select()
-        .from(sessionNativeBindings)
-        .where(eq(sessionNativeBindings.sessionId, fromId))
-        .get();
-      if (nativeSource) {
-        tx.insert(sessionNativeBindings)
-          .values({ ...nativeSource, sessionId: toId })
-          .onConflictDoNothing({ target: sessionNativeBindings.sessionId })
-          .run();
-        tx.delete(sessionNativeBindings).where(eq(sessionNativeBindings.sessionId, fromId)).run();
-      }
-      tx.delete(sessionMetadata).where(eq(sessionMetadata.sessionId, fromId)).run();
-      if (!destination) {
-        tx.insert(sessionMetadata)
-          .values({ ...source, sessionId: toId })
-          .run();
-        return;
-      }
-      tx.update(sessionMetadata)
-        .set({
-          runtime: destination.runtime ?? source.runtime,
-          permissionMode: destination.permissionMode ?? source.permissionMode,
-          model: destination.model ?? source.model,
-          effort: destination.effort ?? source.effort,
-          fastMode: destination.fastMode ?? source.fastMode,
-          agentPath: destination.agentPath ?? source.agentPath,
-          launchOrigin: destination.launchOrigin ?? source.launchOrigin,
-          launchedBy: destination.launchedBy ?? source.launchedBy,
-          lastAutoResumeFor: destination.lastAutoResumeFor ?? source.lastAutoResumeFor,
-        })
-        .where(eq(sessionMetadata.sessionId, toId))
-        .run();
-    });
+    try {
+      rekeySessionMetadata(db, fromId, toId, source, destination);
+    } catch (error) {
+      if (source.requiredLaunchId || destination?.requiredLaunchId)
+        throw new RequiredSessionIdentityError(error);
+      throw error;
+    }
     logger.debug(
       `[RuntimeRegistry] Re-keyed session_metadata '${fromId}' -> '${toId}'${destination ? ' (merged into existing row)' : ''}`
     );
+  }
+
+  /** Pure observations of real registered owners, or the captured native producer. */
+  private requiredLiveOwner(from: string, to: string, sdkOwner?: () => boolean): boolean {
+    if (sdkOwner && !sdkOwner()) return false;
+    const runtime = this.runtimes.get('claude-code') as LiveSessionProbe | undefined;
+    // A runtime that can probe decides; without a probe, only the captured native producer can.
+    if (runtime?.hasIndependentLiveSession?.(from, to) ?? !sdkOwner) return false;
+    const target = peekProjector(to);
+    return target === undefined || target === peekProjector(from);
   }
 
   /**
@@ -1092,33 +1083,8 @@ export class RuntimeRegistry {
    * @param ids - Session identifiers to read
    */
   getSessionBindings(ids: string[]): Map<string, SessionBinding> {
-    const result = new Map<string, SessionBinding>();
-    if (ids.length === 0) return result;
-    const db = this.requireDb('getSessionBindings');
-    for (let i = 0; i < ids.length; i += BOUND_RUNTIME_CHUNK_SIZE) {
-      const rows = db
-        .select({
-          sessionId: sessionMetadata.sessionId,
-          runtime: sessionMetadata.runtime,
-          createdAt: sessionMetadata.createdAt,
-        })
-        .from(sessionMetadata)
-        .where(inArray(sessionMetadata.sessionId, ids.slice(i, i + BOUND_RUNTIME_CHUNK_SIZE)))
-        .all();
-      for (const row of rows) {
-        if (!row.runtime) continue;
-        // `created_at` is free-form TEXT that this class writes as ISO 8601.
-        // Anything that does not parse is reported as unknown rather than as a
-        // number a caller would compare against — the same treatment
-        // `rowToSettings` gives an unreadable effort level.
-        const parsed = Date.parse(row.createdAt);
-        result.set(row.sessionId, {
-          runtime: row.runtime,
-          boundAt: Number.isFinite(parsed) ? parsed : null,
-        });
-      }
-    }
-    return result;
+    if (ids.length === 0) return new Map();
+    return readSessionBindings(this.requireDb('getSessionBindings'), ids);
   }
 
   /**

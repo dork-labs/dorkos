@@ -193,14 +193,33 @@ export function registerLocalBrowserOpenApi(registry: OpenAPIRegistry): void {
       authority +
       inPerson +
       'Accepts HTTP or HTTPS addresses and invalidates earlier observations. Refused during a handoff. ' +
-      'Takes the page from a chat sharing it first, as take-over does.',
+      'Takes the page from a chat sharing it first, as take-over does. ' +
+      'A bare host may ask for one HTTP fallback when the HTTPS page cannot connect; a timeout never falls back.',
     request: {
       body: {
         required: true,
-        content: { 'application/json': { schema: z.object({ url: z.string().url() }).strict() } },
+        content: {
+          'application/json': {
+            schema: z
+              .object({
+                url: z.string().url(),
+                httpFallback: z
+                  .boolean()
+                  .optional()
+                  .describe('Ask for one HTTP fallback for a bare host.'),
+              })
+              .strict(),
+          },
+        },
       },
     },
-    responses: { ...personStateResponses, 400: refusal('The web address is invalid') },
+    responses: {
+      ...personStateResponses,
+      400: refusal('The web address or HTTP fallback choice is invalid'),
+      409: refusal(
+        'The browser cannot complete the navigation (`navigation_timed_out`, `navigation_unreachable`, or `navigation_uncertain`)'
+      ),
+    },
   });
   registry.registerPath({
     method: 'post',

@@ -5518,7 +5518,8 @@
             "type": "string",
             "enum": [
               "wifi-open",
-              "spend"
+              "spend",
+              "outside-words"
             ]
           },
           "spend": {
@@ -7281,6 +7282,10 @@
               },
               "reason": {
                 "type": "string"
+              },
+              "sourceDispatchId": {
+                "type": "string",
+                "minLength": 1
               }
             },
             "required": [
@@ -8012,6 +8017,10 @@
           },
           "reason": {
             "type": "string"
+          },
+          "sourceDispatchId": {
+            "type": "string",
+            "minLength": 1
           }
         },
         "default": null,
@@ -11404,6 +11413,15 @@
               "null"
             ],
             "default": null
+          },
+          "runOnce": {
+            "type": "boolean"
+          },
+          "ranOnceAt": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "status": {
             "$ref": "#/components/schemas/TaskStatus"
@@ -32738,6 +32756,10 @@
                           "title": {
                             "type": "string"
                           },
+                          "openedOverHttp": {
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
+                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -32810,6 +32832,9 @@
                         },
                         "askedAt": {
                           "type": "string"
+                        },
+                        "refused": {
+                          "type": "boolean"
                         },
                         "outcome": {
                           "type": [
@@ -33103,6 +33128,10 @@
                           "title": {
                             "type": "string"
                           },
+                          "openedOverHttp": {
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
+                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -33175,6 +33204,9 @@
                         },
                         "askedAt": {
                           "type": "string"
+                        },
+                        "refused": {
+                          "type": "boolean"
                         },
                         "outcome": {
                           "type": [
@@ -33464,6 +33496,10 @@
                           "title": {
                             "type": "string"
                           },
+                          "openedOverHttp": {
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
+                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -33579,7 +33615,7 @@
           "Local browser"
         ],
         "summary": "Open a web address in the selected tab",
-        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Accepts HTTP or HTTPS addresses and invalidates earlier observations. Refused during a handoff. Takes the page from a chat sharing it first, as take-over does.",
+        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Accepts HTTP or HTTPS addresses and invalidates earlier observations. Refused during a handoff. Takes the page from a chat sharing it first, as take-over does. A bare host may ask for one HTTP fallback when the HTTPS page cannot connect; a timeout never falls back.",
         "requestBody": {
           "required": true,
           "content": {
@@ -33590,6 +33626,10 @@
                   "url": {
                     "type": "string",
                     "format": "uri"
+                  },
+                  "httpFallback": {
+                    "type": "boolean",
+                    "description": "Ask for one HTTP fallback for a bare host."
                   }
                 },
                 "required": [
@@ -33697,6 +33737,10 @@
                           "title": {
                             "type": "string"
                           },
+                          "openedOverHttp": {
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
+                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -33769,6 +33813,9 @@
                         },
                         "askedAt": {
                           "type": "string"
+                        },
+                        "refused": {
+                          "type": "boolean"
                         },
                         "outcome": {
                           "type": [
@@ -33854,7 +33901,7 @@
             }
           },
           "400": {
-            "description": "The web address is invalid",
+            "description": "The web address or HTTP fallback choice is invalid",
             "content": {
               "application/json": {
                 "schema": {
@@ -33898,7 +33945,7 @@
             }
           },
           "409": {
-            "description": "The browser cannot complete this request in its current state",
+            "description": "The browser cannot complete the navigation (`navigation_timed_out`, `navigation_unreachable`, or `navigation_uncertain`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -34048,6 +34095,10 @@
                           "title": {
                             "type": "string"
                           },
+                          "openedOverHttp": {
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
+                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -34120,6 +34171,9 @@
                         },
                         "askedAt": {
                           "type": "string"
+                        },
+                        "refused": {
+                          "type": "boolean"
                         },
                         "outcome": {
                           "type": [
@@ -34400,6 +34454,10 @@
                           "title": {
                             "type": "string"
                           },
+                          "openedOverHttp": {
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
+                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -34472,6 +34530,9 @@
                         },
                         "askedAt": {
                           "type": "string"
+                        },
+                        "refused": {
+                          "type": "boolean"
                         },
                         "outcome": {
                           "type": [
@@ -34751,6 +34812,10 @@
                           "title": {
                             "type": "string"
                           },
+                          "openedOverHttp": {
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
+                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -34964,6 +35029,10 @@
                           "title": {
                             "type": "string"
                           },
+                          "openedOverHttp": {
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
+                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -35036,6 +35105,9 @@
                         },
                         "askedAt": {
                           "type": "string"
+                        },
+                        "refused": {
+                          "type": "boolean"
                         },
                         "outcome": {
                           "type": [
@@ -35721,6 +35793,10 @@
                           "title": {
                             "type": "string"
                           },
+                          "openedOverHttp": {
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
+                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -35793,6 +35869,9 @@
                         },
                         "askedAt": {
                           "type": "string"
+                        },
+                        "refused": {
+                          "type": "boolean"
                         },
                         "outcome": {
                           "type": [
@@ -36091,6 +36170,10 @@
                           "title": {
                             "type": "string"
                           },
+                          "openedOverHttp": {
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
+                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -36163,6 +36246,9 @@
                         },
                         "askedAt": {
                           "type": "string"
+                        },
+                        "refused": {
+                          "type": "boolean"
                         },
                         "outcome": {
                           "type": [
@@ -36462,6 +36548,10 @@
                           "title": {
                             "type": "string"
                           },
+                          "openedOverHttp": {
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
+                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -36534,6 +36624,9 @@
                         },
                         "askedAt": {
                           "type": "string"
+                        },
+                        "refused": {
+                          "type": "boolean"
                         },
                         "outcome": {
                           "type": [
@@ -36833,6 +36926,10 @@
                           "title": {
                             "type": "string"
                           },
+                          "openedOverHttp": {
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
+                          },
                           "canGoBack": {
                             "type": "boolean"
                           },
@@ -36905,6 +37002,9 @@
                         },
                         "askedAt": {
                           "type": "string"
+                        },
+                        "refused": {
+                          "type": "boolean"
                         },
                         "outcome": {
                           "type": [
@@ -44201,6 +44301,10 @@
                         },
                         "reason": {
                           "type": "string"
+                        },
+                        "sourceDispatchId": {
+                          "type": "string",
+                          "minLength": 1
                         }
                       },
                       "required": [
@@ -101499,7 +101603,7 @@
           "Audit"
         ],
         "summary": "See every running chat",
-        "description": "Every chat running right now, per agent, spin-offs, room turns and scheduled runs included: its title, a ready markdown link, whether it is working or waiting on an answer, and who started it. A chat whose turn ended while its helpers, shells or Monitors still run is listed as `background`; `backgroundWork` is true while such work runs, and absent when nothing says so. Every registered agent is listed, zero included, so you can see who is free. `total` is the live count for this server. A person’s own chat is counted in `privateCount` and never named. Use the link, never the id, when you tell a person about a chat. `capacity` reports each capped backend’s live records and available starts, including reclaimable idle records. When every record is busy, its message says to wait for a chat to finish; restarting is not needed.",
+        "description": "Every chat running right now, per agent, spin-offs, room turns and scheduled runs included: its title, a ready markdown link, whether it is working or waiting on an answer, and who started it. A chat whose turn ended while its helpers, shells or Monitors still run is listed as `background`; `backgroundWork` is true while such work runs, and absent when nothing says so. Every registered agent is listed, zero included, so you can see who is free. `total` is the live count for this server. A person’s own chat is counted in `privateCount` and never named. A `title` is null when the chat has no title yet or it can't be read, or in a Never ask run, which leaves every title out because anyone in a bridged chat can set one; the link still opens the chat. Use the link, never the id, when you tell a person about a chat. `capacity` reports each capped backend’s live records and available starts, including reclaimable idle records. When every record is busy, its message says to wait for a chat to finish; restarting is not needed.",
         "responses": {
           "200": {
             "description": "See every running chat result",

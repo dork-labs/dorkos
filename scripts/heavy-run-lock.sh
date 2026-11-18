@@ -2,7 +2,9 @@
 # Run a heavy local command under a HOST-WIDE cap on how many of them may run at
 # once (DOR-2160, made host-wide in DOR-3274).
 #
-#   bash scripts/heavy-run-lock.sh [--job] <command> [args...]
+#   bash scripts/heavy-run-lock.sh [--job | --tests] <command> [args...]
+#                                           (--tests: a --job that is a full or
+#                                           multi-file test run; lower load bar)
 #   pnpm heavy <command> [args...]          (the same, with --job)
 #   bash scripts/heavy-run-lock.sh [--job] --hold <pid> [description...]
 #                                           (hold a slot for <pid>'s lifetime;
@@ -123,6 +125,11 @@
 #                               a missing path to prove the no-perl fallback
 #   DORKOS_HEAVY_MAX_LOAD       the 1-minute load a --job waits under
 #                               (local.heavy_max_load; 24)
+#   DORKOS_HEAVY_TEST_MAX_LOAD  the same for --tests (local.heavy_test_max_load;
+#                               16). A bare `vitest run` from the repo root
+#                               waits on the same number (scripts/lib/load-wait.ts)
+#   DORKOS_IGNORE_LOAD=1        skip the load wait for one run, keeping the slot
+#                               cap; printed, and recorded as `load_ignored`
 #   DORKOS_HEAVY_LOAD_WAIT_SECONDS  how long a --job waits for the load to drop
 #                               before exit 75 (local.heavy_load_wait_seconds; 600)
 #   DORKOS_HEAVY_LOAD_POLL_SECONDS  how often it re-reads the load
@@ -150,6 +157,16 @@ set -uo pipefail
 job=0
 if [ "${1:-}" = --job ]; then
   job=1
+  shift
+fi
+# --tests: a --job that is a full or multi-file test run (DOR-4646). It waits
+# for the load under the lower `local.heavy_test_max_load` (16) instead of
+# `local.heavy_max_load` (24): test runs are the heavy job agents start most
+# often, and the one most often started at a load that cannot take it.
+tests=0
+if [ "${1:-}" = --tests ]; then
+  job=1
+  tests=1
   shift
 fi
 
@@ -213,6 +230,9 @@ PERL="${DORKOS_HEAVY_PERL:-perl}"
 # The load guard, for a --job only (see "A HEAVY JOB WAITS FOR THE LOAD" above).
 MAX_LOAD="${DORKOS_HEAVY_MAX_LOAD:-$(config_number heavy_max_load)}"
 MAX_LOAD="${MAX_LOAD:-24}"
+TEST_MAX_LOAD="${DORKOS_HEAVY_TEST_MAX_LOAD:-$(config_number heavy_test_max_load)}"
+TEST_MAX_LOAD="${TEST_MAX_LOAD:-16}"
+[ "$tests" = 1 ] && MAX_LOAD=$TEST_MAX_LOAD
 LOAD_WAIT_SECONDS="${DORKOS_HEAVY_LOAD_WAIT_SECONDS:-$(config_number heavy_load_wait_seconds)}"
 LOAD_WAIT_SECONDS="${LOAD_WAIT_SECONDS:-600}"
 LOAD_POLL_SECONDS="${DORKOS_HEAVY_LOAD_POLL_SECONDS:-$(config_number heavy_load_poll_seconds)}"
@@ -276,6 +296,15 @@ if [ -e "$lock_dir" ] && [ ! -O "$lock_dir" ]; then
   # shellcheck disable=SC2012
   refuse_lock_dir "it is owned by uid $(ls -ldn -- "$lock_dir" 2>/dev/null | awk '{print $3}'), not by you (uid $(id -u))"
   run_uncapped "$@"
+fi
+
+# A person's way past the load guard alone, keeping the slot cap
+# (DORKOS_HEAVY_LOCK=0 drops both). Said out loud and recorded, for the same
+# reason as lock_off: an opt-out nobody can see is how a guard stops existing.
+if [ "$check_load" = 1 ] && [ "${DORKOS_IGNORE_LOAD:-}" = 1 ]; then
+  echo "[heavy-run-lock] DORKOS_IGNORE_LOAD=1 — not waiting for load on this run." >&2
+  ci_steward_note load_ignored
+  check_load=0
 fi
 
 # Every ancestor of this wrapper, nearest first. A nested call whose parent
@@ -455,7 +484,7 @@ if ($check_load && $max_load =~ /^\d+(?:\.\d+)?$/ && $max_load > 0) {
         exit 0;
       }
       if (time - $last_said >= 60) {
-        printf STDERR "[heavy-run-lock] the load is %s, over the max of %s — waiting up to %ds for it to drop.\n",
+        printf STDERR "[heavy-run-lock] waiting for load: it is %s, over the max of %s — up to %ds more.\n",
           $load, $max_load, int($l);
         $last_said = time;
       }

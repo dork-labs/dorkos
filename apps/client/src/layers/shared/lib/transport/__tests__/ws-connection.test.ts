@@ -211,6 +211,61 @@ describe('WSConnection', () => {
     conn.destroy();
   });
 
+  // DOR-4552: an old tab showed a new chat's work under its own history. A
+  // frame named for another chat must never reach this chat's view.
+  describe('a stream opened for one chat (DOR-4552)', () => {
+    const CHAT = '3f1c2a9e-0b7d-4e5f-9a8b-1c2d3e4f5a6b';
+    const OTHER = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
+
+    it('drops and reports a frame named for another chat, and never resumes from it', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const handler = vi.fn();
+      const conn = new WSConnection(TEST_URL, {
+        eventHandlers: { text_delta: handler },
+        resourceId: CHAT,
+      });
+      conn.connect();
+      latest().open();
+      latest().deliver({ event: 'text_delta', data: { n: 1 }, id: `${CHAT}-999-g1-1` });
+      latest().deliver({ event: 'text_delta', data: { n: 2 }, id: `${OTHER}-999-g1-2` });
+
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenCalledWith({ n: 1 });
+      expect(warn).toHaveBeenCalledWith(
+        "[WSConnection] dropping a frame for another chat's stream",
+        {
+          resourceId: CHAT,
+          frameId: `${OTHER}-999-g1-2`,
+        }
+      );
+
+      latest().drop();
+      vi.advanceTimersByTime(60_000);
+      expect(new URL(latest().url).searchParams.get(STREAM_RESUME_PARAM)).toBe(`${CHAT}-999-g1-1`);
+      conn.destroy();
+      warn.mockRestore();
+    });
+
+    it('passes its own frames and frames with no id, quietly', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const handler = vi.fn();
+      const conn = new WSConnection(TEST_URL, {
+        eventHandlers: { snapshot: handler, text_delta: handler },
+        resourceId: CHAT,
+      });
+      conn.connect();
+      latest().open();
+      // The snapshot is the hydration frame and carries no id.
+      latest().deliver({ event: 'snapshot', data: {} });
+      latest().deliver({ event: 'text_delta', data: {}, id: `${CHAT}-999-g1-1` });
+
+      expect(handler).toHaveBeenCalledTimes(2);
+      expect(warn).not.toHaveBeenCalled();
+      conn.destroy();
+      warn.mockRestore();
+    });
+  });
+
   it('treats a heartbeat as proof of life but never dispatches it', () => {
     const handler = vi.fn();
     const conn = new WSConnection(TEST_URL, {

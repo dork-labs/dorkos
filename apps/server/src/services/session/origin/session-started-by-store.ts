@@ -15,7 +15,16 @@
  *
  * @module services/session/origin/session-started-by-store
  */
-import { and, eq, gte, inArray, sessionStartedBy, sql, type Db } from '@dorkos/db';
+import {
+  and,
+  eq,
+  gte,
+  inArray,
+  sessionStartedBy,
+  sql,
+  type Db,
+  type DbTransaction,
+} from '@dorkos/db';
 
 /** One stored start. */
 export interface StartedByRecord {
@@ -119,23 +128,27 @@ export class SessionStartedByStore {
    */
   move(fromId: string, toId: string): void {
     if (fromId === toId) return;
-    this.db.transaction((tx) => {
-      const taken = tx
-        .select({ id: sessionStartedBy.sessionId })
-        .from(sessionStartedBy)
-        .where(eq(sessionStartedBy.sessionId, toId))
-        .get();
-      if (!taken) {
-        tx.update(sessionStartedBy)
-          .set({ sessionId: toId })
-          .where(eq(sessionStartedBy.sessionId, fromId))
-          .run();
-      }
+    this.db.transaction((tx) => this.moveWithin(tx, fromId, toId));
+  }
+
+  /** Contribute to the caller's actual SQLite transaction; no global store lookup. */
+  moveWithin(tx: DbTransaction, fromId: string, toId: string): void {
+    if (fromId === toId) return;
+    const taken = tx
+      .select({ id: sessionStartedBy.sessionId })
+      .from(sessionStartedBy)
+      .where(eq(sessionStartedBy.sessionId, toId))
+      .get();
+    if (!taken) {
       tx.update(sessionStartedBy)
-        .set({ startedBySessionId: toId })
-        .where(eq(sessionStartedBy.startedBySessionId, fromId))
+        .set({ sessionId: toId })
+        .where(eq(sessionStartedBy.sessionId, fromId))
         .run();
-    });
+    }
+    tx.update(sessionStartedBy)
+      .set({ startedBySessionId: toId })
+      .where(eq(sessionStartedBy.startedBySessionId, fromId))
+      .run();
   }
 
   /**

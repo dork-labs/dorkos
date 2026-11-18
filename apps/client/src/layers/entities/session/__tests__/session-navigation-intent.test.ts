@@ -3,6 +3,7 @@ import type { InPlaceNavigationState } from '@/layers/shared/model';
 import {
   beginSessionNavigation,
   sessionDestination,
+  watchSessionNavigation,
   type AppLocation,
 } from '../lib/session-navigation-intent';
 
@@ -165,5 +166,35 @@ describe('beginSessionNavigation — genuine departures still cancel (negative)'
     const second = beginSessionNavigation(reader(slot));
     expect(first()).toBe(false);
     expect(second()).toBe(true);
+  });
+});
+
+describe('watchSessionNavigation — a redirect the app started never cancels a click (DOR-4622)', () => {
+  it('stays wanted while nothing moved', () => {
+    const slot = { at: navigateGenuine('/channels', { id: 'dm-1' }) };
+    const isWanted = watchSessionNavigation(reader(slot));
+    expect(isWanted()).toBe(true);
+  });
+
+  it('goes quiet when the window moved', () => {
+    const slot = { at: navigateGenuine('/channels', { id: 'dm-1' }) };
+    const isWanted = watchSessionNavigation(reader(slot));
+    slot.at = navigateGenuine('/session', { session: 's2' });
+    expect(isWanted()).toBe(false);
+  });
+
+  it('does not cancel a click already in flight', () => {
+    const slot = { at: navigateGenuine('/channels', { id: 'dm-1' }) };
+    const click = beginSessionNavigation(reader(slot));
+    watchSessionNavigation(reader(slot));
+    expect(click()).toBe(true);
+  });
+
+  it('yields to a click begun after it', () => {
+    const slot = { at: navigateGenuine('/channels', { id: 'dm-1' }) };
+    const redirect = watchSessionNavigation(reader(slot));
+    const click = beginSessionNavigation(reader(slot));
+    expect(redirect()).toBe(false);
+    expect(click()).toBe(true);
   });
 });

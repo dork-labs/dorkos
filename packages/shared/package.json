@@ -89,6 +89,10 @@
       "types": "./src/constants.ts",
       "default": "./dist/constants.js"
     },
+    "./site-name": {
+      "types": "./src/site-name.ts",
+      "default": "./dist/site-name.js"
+    },
     "./company": {
       "types": "./src/company.ts",
       "default": "./dist/company.js"
@@ -168,10 +172,6 @@
     "./extension-id": {
       "types": "./src/extension-id.ts",
       "default": "./dist/extension-id.js"
-    },
-    "./portable-input-shape": {
-      "types": "./src/portable-input-shape.ts",
-      "default": "./dist/portable-input-shape.js"
     },
     "./relay-schemas": {
       "types": "./src/relay-schemas.ts",
@@ -688,6 +688,10 @@
     "./local-browser-page-error": {
       "types": "./src/local-browser-page-error.ts",
       "default": "./dist/local-browser-page-error.js"
+    },
+    "./local-browser-refusal": {
+      "types": "./src/local-browser-refusal.ts",
+      "default": "./dist/local-browser-refusal.js"
     },
     "./transport-local-browser": {
       "types": "./src/transport-local-browser.ts",

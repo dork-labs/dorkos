@@ -30,3 +30,24 @@ export function chromeIdentity(
     },
   };
 }
+
+/**
+ * Give every guest request the plain identity, app-wide fallback first (DOR-4650).
+ *
+ * The session's user agent covers pages, but Electron gives service and shared
+ * workers, and anything else outside a session, the app-wide fallback, which by
+ * default names `@dorkos/desktop` and `Electron`. Sites saw that one. The app's own
+ * window reads nothing from its user agent, so it loses nothing.
+ *
+ * @param app - Holds the app-wide fallback (Electron's `app`).
+ * @param guestSession - The guest partition.
+ * @param identity - The identity from {@link chromeIdentity}.
+ */
+export function applyGuestIdentity(
+  app: { userAgentFallback: string },
+  guestSession: { setUserAgent(userAgent: string): void },
+  identity: ReturnType<typeof chromeIdentity>
+): void {
+  app.userAgentFallback = identity.userAgent;
+  guestSession.setUserAgent(identity.userAgent);
+}

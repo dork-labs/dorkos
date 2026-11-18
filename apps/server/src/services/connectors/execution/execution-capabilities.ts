@@ -26,6 +26,7 @@ import type { ConnectorExecutionBroker } from './execution-broker.js';
 import type { DestructiveHoldService } from './destructive-hold.js';
 import { cancelWindowFor } from './destructive-hold-window.js';
 import { outsideWordsNote } from '../../core/turn-power/marked-turn-copy.js';
+import { markCallerTurnOutsider } from '../../core/capabilities/mark-caller-turn.js';
 import type { HeldActionOutcome } from '../../notifications/connector-hold-notifications.js';
 import {
   CONNECTOR_REQUEST_LIVE_HOLD_MS,
@@ -247,6 +248,9 @@ function executionCapability(
       } finally {
         // A held action's waiting row is replaced by how it came out.
         if (held) executionDeps.holds?.recordOutcome(held, outcome);
+        // A read hands the turn someone else's text, whatever came back (DOR-3969). Every read,
+        // not a list of apps: nearly every read carries text someone else wrote.
+        if (classification === 'read') markCallerTurnOutsider(context);
       }
     },
   });

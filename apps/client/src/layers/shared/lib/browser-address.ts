@@ -127,8 +127,9 @@ export type AddressInput =
   | { kind: 'reload' }
   /**
    * Open this URL. `httpFallback` is set only for a bare host the person typed
-   * with no scheme (`example.com`): when the `https://` address cannot connect
-   * (refused or timed out, never a certificate error), try this once.
+   * with no scheme (`example.com`). It marks the address as one that may try
+   * `http://` once; the server decides whether it does (never after a timeout
+   * or a certificate error, DOR-4450).
    */
   | { kind: 'open'; url: string; httpFallback?: string }
   /** Search for the text. */
@@ -211,7 +212,7 @@ function splitAuthority(text: string): { host: string; port: string | null } {
  *    (`demo/index.html`) → opened as typed; then anything with a space → a search;
  * 9. no dot, no port, not localhost → a search;
  * 10. a dotted host ending in a letters TLD (`google.com`) → `https://` in front,
- *     with `http://` as the one fallback when it cannot connect;
+ *     with `http://` as the one fallback the server may try when it cannot connect;
  * 11. anything else → a search.
  *
  * A leading `//` is read as the address after it. An address that opens is

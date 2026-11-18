@@ -7,8 +7,9 @@
  * the closing and the gating.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createServer, request, type Server } from 'node:http';
-import { connect, type AddressInfo } from 'node:net';
+import { once } from 'node:events';
+import { createServer, request } from 'node:http';
+import { createServer as createTcpServer, Socket, type AddressInfo, type Server } from 'node:net';
 import { LanAccess, type LanAccessDeps } from '../lan-access.js';
 import { getLanAccessHosts, getLanAccessOrigins } from '../lan-trust.js';
 
@@ -17,12 +18,69 @@ vi.mock('../../../../lib/logger.js', () => ({
   logError: (error: unknown) => ({ error }),
 }));
 
+interface SocketError {
+  error: NodeJS.ErrnoException;
+  expectedReset: boolean;
+}
+interface OwnedSocket {
+  socket: Socket;
+  closed: Promise<void>;
+  errors: SocketError[];
+  expectReset: () => void;
+}
 const controllers: LanAccess[] = [];
 const blockers: Server[] = [];
+const clients: OwnedSocket[] = [];
+
+/** Observe errors before connecting; only an explicitly armed reset is expected. */
+function ownSocket(socket: Socket): OwnedSocket {
+  const errors: SocketError[] = [];
+  let expectedReset = false;
+  socket.on('error', (error: NodeJS.ErrnoException) => errors.push({ error, expectedReset }));
+  const client = {
+    socket,
+    closed: new Promise<void>((resolve) => socket.once('close', () => resolve())),
+    errors,
+    expectReset: () => {
+      expectedReset = true;
+    },
+  };
+  clients.push(client);
+  return client;
+}
+function assertExpectedSocketErrors(errors: readonly SocketError[]): void {
+  for (const { error, expectedReset } of errors) {
+    if (!expectedReset || error.code !== 'ECONNRESET') throw error;
+  }
+}
+async function openClient(port: number): Promise<OwnedSocket> {
+  const client = ownSocket(new Socket());
+  const connected = once(client.socket, 'connect');
+  client.socket.connect(port, '127.0.0.1');
+  await connected;
+  return client;
+}
 
 afterEach(async () => {
-  for (const controller of controllers.splice(0)) await controller.close();
-  for (const blocker of blockers.splice(0)) await new Promise((r) => blocker.close(r));
+  const owned = clients.splice(0);
+  try {
+    for (const client of owned) client.socket.destroy();
+    await Promise.all(owned.map((client) => client.closed));
+  } finally {
+    try {
+      await Promise.all(controllers.splice(0).map((controller) => controller.close()));
+    } finally {
+      await Promise.all(
+        blockers.splice(0).map(
+          (blocker) =>
+            new Promise<void>((resolve, reject) => {
+              blocker.close((error) => (error ? reject(error) : resolve()));
+            })
+        )
+      );
+    }
+  }
+  assertExpectedSocketErrors(owned.flatMap((client) => client.errors));
 });
 
 /** A port nothing holds right now. */
@@ -191,15 +249,15 @@ describe('LanAccess', () => {
     await controller.reconcile();
 
     // A connection that never finishes a request, like a held-open stream.
-    const socket = connect(port, '127.0.0.1');
-    await new Promise<void>((resolve) => socket.once('connect', () => resolve()));
-    socket.write('GET / HTTP/1.1\r\nHost: studio.local\r\n');
-    const ended = new Promise<void>((resolve) => socket.once('close', () => resolve()));
-
+    const client = await openClient(port);
+    client.socket.write('GET / HTTP/1.1\r\nHost: studio.local\r\n');
+    client.expectReset();
     turn(false);
-    await controller.reconcile();
-    await ended;
-    expect(socket.destroyed).toBe(true);
+    const status = await controller.reconcile();
+    await client.closed;
+    expect(client.socket.destroyed).toBe(true);
+    expect(status.listening).toBe(false);
+    expect(await get(port)).toBe('ECONNREFUSED');
   });
 
   it('cuts a peer that is not on this computer’s own networks before answering it', async () => {
@@ -243,15 +301,47 @@ describe('LanAccess.dropConnections (Remote Access off, DOR-3650)', () => {
     await controller.attach({ port, createServer: okServer });
     turn(true);
     await controller.reconcile();
-    const socket = connect(port, '127.0.0.1');
-    await new Promise((resolve) => socket.once('connect', resolve));
-    socket.write('GET / HTTP/1.1\r\nHost: studio.local\r\nConnection: keep-alive\r\n\r\n');
-    await new Promise((resolve) => socket.once('data', resolve));
-    const closed = new Promise((resolve) => socket.once('close', resolve));
-
+    const client = await openClient(port);
+    const response = once(client.socket, 'data');
+    client.socket.write('GET / HTTP/1.1\r\nHost: studio.local\r\nConnection: keep-alive\r\n\r\n');
+    await response;
+    client.expectReset();
     controller.dropConnections();
-
-    await closed;
+    await client.closed;
+    expect(client.socket.destroyed).toBe(true);
+    expect(controller.status().listening).toBe(true);
     expect(await get(port)).toBe(200);
+  });
+});
+
+// Real TCP delivery and synthetic policy validation are separate assertions.
+describe('owned LAN test sockets', () => {
+  it('observes an explicitly requested real TCP reset before close', async () => {
+    const peer = createTcpServer((socket) => {
+      ownSocket(socket);
+      socket.once('data', () => socket.resetAndDestroy());
+    });
+    blockers.push(peer);
+    const listening = once(peer, 'listening');
+    peer.listen(0, '127.0.0.1');
+    await listening;
+    const client = await openClient((peer.address() as AddressInfo).port);
+    client.expectReset();
+    client.socket.resume();
+    client.socket.write('reset');
+    await client.closed;
+    expect(
+      client.errors.map(({ error, expectedReset }) => ({ code: error.code, expectedReset }))
+    ).toEqual([{ code: 'ECONNRESET', expectedReset: true }]);
+  });
+
+  it('accepts only an armed reset and rejects unexpected socket errors', () => {
+    const reset = Object.assign(new Error('synthetic reset'), { code: 'ECONNRESET' });
+    const pipe = Object.assign(new Error('synthetic pipe'), { code: 'EPIPE' });
+    expect(() => assertExpectedSocketErrors([{ error: reset, expectedReset: true }])).not.toThrow();
+    expect(() => assertExpectedSocketErrors([{ error: reset, expectedReset: false }])).toThrow(
+      reset
+    );
+    expect(() => assertExpectedSocketErrors([{ error: pipe, expectedReset: true }])).toThrow(pipe);
   });
 });

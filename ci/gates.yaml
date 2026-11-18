@@ -83,6 +83,11 @@ gates:
     source: .github/workflows/browser-test.yml
     purpose: Warns when a copy change will break a browser spec's expected text, so it is fixed before the queue finds it.
 
+  # --- cache-cleanup.yml ---
+  - id: wf.cache-cleanup.cache-cleanup
+    source: .github/workflows/cache-cleanup.yml
+    purpose: Deletes a pull request's Actions caches when it closes, and twice a day sweeps the caches of every closed or merged PR; never touches main's or an open PR's. Never required.
+
   # --- changelog-fragment-check.yml ---
   - id: wf.changelog-fragment-check.fragment-present
     source: .github/workflows/changelog-fragment-check.yml

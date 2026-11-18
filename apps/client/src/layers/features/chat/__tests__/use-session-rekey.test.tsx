@@ -51,7 +51,7 @@ describe('useSessionRekeyRedirect', () => {
     act(() => announceRekey('request-uuid', 'canonical-id'));
 
     expect(replace).toHaveBeenCalledTimes(1);
-    expect(replace).toHaveBeenCalledWith('canonical-id');
+    expect(replace).toHaveBeenCalledWith('canonical-id', 'request-uuid');
   });
 
   it('fires immediately when the active id was already retired at mount', () => {
@@ -61,7 +61,7 @@ describe('useSessionRekeyRedirect', () => {
     const replace = vi.fn();
     renderHook(() => useSessionRekeyRedirect('request-uuid', replace));
     expect(replace).toHaveBeenCalledTimes(1);
-    expect(replace).toHaveBeenCalledWith('canonical-id');
+    expect(replace).toHaveBeenCalledWith('canonical-id', 'request-uuid');
   });
 
   it('does nothing for a current id, a null session, or an unrelated retirement', () => {

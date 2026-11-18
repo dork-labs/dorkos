@@ -19,6 +19,7 @@ import {
   useRouteRoom,
   useRooms,
 } from '@/layers/entities/room';
+import { beginSessionNavigation, useLiveLocation } from '@/layers/entities/session';
 import { useAgentStatusLine, useDirectMessageAgent } from './use-direct-message-agent';
 
 /** Who the card is about, and the door it already had. */
@@ -60,6 +61,7 @@ export function useAgentCard(input: AgentCardInput): AgentCard | null {
   const openDirectChat = useOpenDirectChat();
   const resolveRoomSession = useRoomBoundSession();
   const navigate = useSafeNavigate();
+  const readLocation = useLiveLocation();
   const route = useRouteRoom();
   const { data: rooms } = useRooms({ enabled: reading && showSessions });
   const routeRoomId = route.status === 'ready' ? route.roomId : null;
@@ -75,13 +77,17 @@ export function useAgentCard(input: AgentCardInput): AgentCard | null {
 
   const openRoomSession = useCallback(async () => {
     if (agentPath === undefined || !navigate) return;
+    // Taken at the click: the lookup is a round trip, and a person who opened
+    // another chat meanwhile stays there, with nothing said (DOR-4622).
+    const isStillWanted = beginSessionNavigation(readLocation);
     const session = await resolveRoomSession(agentPath);
+    if (!isStillWanted()) return;
     if (session === null) {
       toast(`${displayName} has no session in ${roomLabel ?? 'this room'} yet`);
       return;
     }
     void navigate(toSession({ session }));
-  }, [agentPath, navigate, resolveRoomSession, displayName, roomLabel]);
+  }, [agentPath, navigate, readLocation, resolveRoomSession, displayName, roomLabel]);
 
   return useMemo(() => {
     if (!enabled || agentPath === undefined) return null;
