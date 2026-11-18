@@ -11,8 +11,8 @@
  * list (pay, charge, refund, payout, transfer, order, trade, credit, debit)
  * left 1,195 non-read actions in 400 apps needing a reason, too many to review
  * honestly. The tight matcher in `helpers/money-words.ts` matches 835 non-read
- * actions in 195 apps; after the money apps and pins of DOR-4624 it leaves 48
- * that need a reason. Skipped on purpose: "order" and "credit" on their own
+ * actions in 195 apps; after the money apps, pins and paid marks of DOR-4624
+ * it leaves 31 that need a reason (a paid mark counts as covered). Skipped on purpose: "order" and "credit" on their own
  * (a sort order, a film's credits) and in descriptions, which count only
  * beside a spend verb in the name, and per-call credit wording ("costs 10
  * credits"), which the paid list (`PAID_BY_DEFAULT_TOOLKITS`) covers instead.
@@ -22,6 +22,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { isPaidOperation } from '../../paid-operations.js';
 import { classifyComposioAction } from '../action-classes.js';
 import { MONEY_WORD_REVIEWED } from './fixtures/money-word-reviewed.js';
 import { matchesMoneyWords } from './helpers/money-words.js';
@@ -41,6 +42,12 @@ const rows = Object.entries(snapshot.toolkits).flatMap(([toolkit, actions]) =>
 );
 const classify = (row: (typeof rows)[number]) =>
   classifyComposioAction(row.toolkit, row.slug, row.tags);
+// A paid mark is at least as strong as a one-by-one pick: no level and no share
+// runs it (Security, Nov 19). The real check, so dropping an app from the paid
+// list turns its rows red again.
+const covered = (row: (typeof rows)[number]) =>
+  classify(row) === 'destructive' ||
+  isPaidOperation({ toolkit: row.toolkit, operationSlug: row.slug });
 
 describe('money-word matches stay one-by-one picks or have a reason (DOR-4624)', () => {
   it('has a dated snapshot from the tight matcher', () => {
@@ -62,7 +69,7 @@ describe('money-word matches stay one-by-one picks or have a reason (DOR-4624)',
 
   it('keeps every match a one-by-one pick unless it has a reason', () => {
     const unexplained = rows
-      .filter((row) => classify(row) !== 'destructive' && !MONEY_WORD_REVIEWED[row.slug])
+      .filter((row) => !covered(row) && !MONEY_WORD_REVIEWED[row.slug])
       .map(
         (row) =>
           `${row.slug}: pin it in action-classes.ts, or add why it moves no money to fixtures/money-word-reviewed.ts`
@@ -76,7 +83,7 @@ describe('money-word matches stay one-by-one picks or have a reason (DOR-4624)',
     const stale = Object.keys(MONEY_WORD_REVIEWED)
       .filter((slug) => {
         const row = bySlug.get(slug);
-        return !row || classify(row) === 'destructive';
+        return !row || covered(row);
       })
       .map((slug) => `${slug}: remove the stale reason`);
     expect(stale).toEqual([]);
