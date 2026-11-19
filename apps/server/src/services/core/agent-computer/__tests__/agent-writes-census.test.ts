@@ -258,6 +258,9 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'POST /api/extensions/:id/enable',
       'POST /api/extensions/:id/forget',
       'POST /api/extensions/:id/init-server',
+      // A frame's video link and the route it plays on (DOR-4321).
+      'POST /api/extensions/:id/media-tickets',
+      'ALL /api/extensions/media/:ticket',
       'POST /api/extensions/:id/move-out',
       'POST /api/extensions/:id/remove',
       'POST /api/extensions/:id/revoke',

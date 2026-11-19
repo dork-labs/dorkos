@@ -7,8 +7,14 @@
  * `URL.createObjectURL`, which its policy allows for pictures and video only
  * (`img-src blob:`, `media-src blob:`).
  *
+ * A long video takes the other road, `api.mediaUrl` (DOR-4321): the host asks
+ * the server for a short-lived link to the app's route, and the frame's
+ * `<video>` loads it itself, so the browser fetches ranges and seeks. The
+ * frame's policy allows that one path on DorkOS's own origins.
+ *
  * @module features/extensions/frame/app-media
  */
+import { extensionApiUrl } from '../model/extension-api-url';
 import { readAppResponse } from './app-request';
 
 /** The largest picture or video an app may bring into its frame: 32 MB. */
@@ -75,4 +81,41 @@ export async function readAppMedia(response: Response): Promise<Blob> {
     chunks.push(value);
   }
   return new Blob(chunks as BlobPart[], { type });
+}
+
+/** Every video link, as the server answers it: the route and one whole ticket. */
+const MEDIA_URL = /^\/api\/extensions\/media\/[A-Za-z0-9_-]{43}$/;
+const NO_LINK = 'The video link could not be made.';
+
+/**
+ * Ask the server for a video link to one path of the app's own routes.
+ *
+ * The frame is an opaque origin, so the link is absolute, on the same origin
+ * as the rest of the extensions API.
+ *
+ * @param id - The app's own id, from DorkOS's records.
+ * @param path - The path below the app, already checked by `extensionRequestPath`.
+ * @returns The absolute link for the frame's `<video src>`.
+ * @throws An `Error` with the server's plain reason when it refused.
+ */
+export async function mintAppMediaUrl(id: string, path: string): Promise<string> {
+  const response = await fetch(
+    extensionApiUrl(`/extensions/${encodeURIComponent(id)}/media-tickets`),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-DorkOS-Extension': id },
+      body: JSON.stringify({ path }),
+    }
+  );
+  const body = (await response.json().catch(() => null)) as {
+    url?: unknown;
+    error?: unknown;
+  } | null;
+  if (!response.ok) {
+    throw new Error(typeof body?.error === 'string' ? body.error : NO_LINK);
+  }
+  if (typeof body?.url !== 'string' || !MEDIA_URL.test(body.url)) {
+    throw new Error(NO_LINK);
+  }
+  return new URL(body.url, new URL(extensionApiUrl('/'), window.location.origin)).href;
 }

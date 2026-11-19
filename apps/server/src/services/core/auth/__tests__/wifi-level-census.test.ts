@@ -151,6 +151,9 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     // A frame's caller token: names which app is calling, grants nothing the
     // app's own routes, which Wi-Fi keeps, do not (DOR-3293).
     'POST /api/extension-frame/caller-token',
+    // A frame's video link: plays one path of the app's own routes, as no
+    // person, which Wi-Fi already reaches through api.media (DOR-4321).
+    'POST /api/extensions/:id/media-tickets',
     'POST /api/cloud/credits/notices/dismiss',
     'POST /api/cloud/link/cancel',
     'POST /api/cloud/link/check',
@@ -315,6 +318,7 @@ const MOUNTS: Readonly<Record<string, string>> = {
   'ALL /api/docs/*': 'The API reference, read only.',
   'ALL /api/ext/:id': 'An extension’s own page; extensions are turned on at the computer.',
   'ALL /api/ext/:id/*': 'An extension’s own page; extensions are turned on at the computer.',
+  'ALL /api/extensions/media/:ticket': 'A video link: plays only, as no person (DOR-4321).',
   'ALL /api/feedback/*': 'Group middleware for feedback.',
   'ALL /api/hub/computers/*': 'Hub only: a hub has no Wi-Fi route.',
   'ALL /api/local-browser/*': 'Group middleware; every route is this computer only.',

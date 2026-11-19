@@ -93,6 +93,10 @@ const REVIEWED: Record<string, { why: Why; note: string }> = {
     why: 'csp-sandbox',
     note: 'The empty frame for app screens (DOR-3293): CSP sandbox allow-scripts, no allow-same-origin, nonce-only script, no app text.',
   },
+  'routes/extension-media.ts': {
+    why: 'restricted-media',
+    note: "An app's video by ticket (DOR-4321): only video/mp4 or video/webm is ever sent, written by the host, with nosniff, inline and CSP sandbox; anything else is 415.",
+  },
   'routes/workbench-serve.ts': {
     why: 'csp-sandbox',
     note: 'Agent and project files: every answer carries CSP sandbox without allow-same-origin.',

@@ -20,6 +20,7 @@ import { Hono } from 'hono';
 import type { ApiEnv } from '../http/api-chain.js';
 import { resolveAuthTrustedOrigins } from '../lib/trusted-origins.js';
 import { registerCallerTokenRoute, type CallerTokenDeps } from './extension-caller-token.js';
+import { MEDIA_URL_PREFIX } from '../services/extensions/http/media-tickets.js';
 
 /**
  * The script that runs first in the frame. It keeps this load's nonce for the
@@ -62,10 +63,18 @@ export function frameBootstrap(parentOrigins: readonly string[]): string {
  * - `style-src`/`font-src`: the host's own styles and font choice, copied in.
  * - `img-src`/`media-src` `blob:`: pictures and video an app fetched through
  *   the bridge (Security, 2026-11-10).
+ * - `media-src <origin>/api/extensions/media/`: a video an app streams by
+ *   ticket (`api.mediaUrl`, DOR-4321), on each of DorkOS's own origins and
+ *   under that one path only.
  *
  * @param nonce - This response's nonce.
+ * @param origins - The exact origins DorkOS serves the app from.
  */
-export function extensionFrameCsp(nonce: string): string {
+export function extensionFrameCsp(nonce: string, origins: readonly string[] = []): string {
+  const media = origins
+    // Only a plain origin: nothing that could end the directive.
+    .filter((origin) => /^https?:\/\/[^\s;,'"/]+$/.test(origin))
+    .map((origin) => `${origin}${MEDIA_URL_PREFIX}`);
   return [
     'sandbox allow-scripts',
     "default-src 'none'",
@@ -73,7 +82,7 @@ export function extensionFrameCsp(nonce: string): string {
     "style-src 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' data: https://fonts.gstatic.com",
     'img-src data: blob:',
-    'media-src blob:',
+    ['media-src blob:', ...media].join(' '),
     "connect-src 'none'",
     "form-action 'none'",
     "base-uri 'none'",
@@ -97,7 +106,7 @@ export function createExtensionFrameRoutes(tokenDeps?: CallerTokenDeps): Hono<Ap
     // This listener's own origin, plus the others DorkOS is served from (Vite,
     // the desktop shell, the tunnel): the only windows that may hand over code.
     const origins = [...new Set([new URL(c.req.url).origin, ...resolveAuthTrustedOrigins()])];
-    c.header('Content-Security-Policy', extensionFrameCsp(nonce));
+    c.header('Content-Security-Policy', extensionFrameCsp(nonce, origins));
     c.header('Cache-Control', 'no-store');
     c.header('X-Content-Type-Options', 'nosniff');
     c.header('Referrer-Policy', 'no-referrer');

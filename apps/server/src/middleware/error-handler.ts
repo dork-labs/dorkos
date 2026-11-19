@@ -7,6 +7,7 @@ import {
   SessionDiscoveryUnavailableError,
 } from '../services/session/resolution/session-lookup-error.js';
 import { RuntimeNotRegisteredError } from '../services/core/runtime-registry.js';
+import { redactMediaTicket } from '../services/extensions/http/media-tickets.js';
 
 /** The status and JSON body an unhandled request error is answered with. */
 export interface ErrorReply {
@@ -19,13 +20,15 @@ export interface ErrorReply {
 /**
  * Log an error no route handled, with the request it broke.
  *
- * Written by the chain's `onError` (`http/api-chain.ts`).
+ * Written by the chain's `onError` (`http/api-chain.ts`). A video link's
+ * ticket is written as `[ticket]` (DOR-4321).
  *
  * @param err - The error.
  * @param method - The request method.
- * @param path - The request path, without the query string.
+ * @param sentPath - The request path, without the query string.
  */
-export function logRequestError(err: Error, method: string, path: string): void {
+export function logRequestError(err: Error, method: string, sentPath: string): void {
+  const path = redactMediaTicket(sentPath);
   // A refused browser origin is the caller's mistake, not a fault to page on.
   if (err instanceof OriginRefusedError) {
     logger.warn('[CORS] refused origin', { origin: err.origin, method, path });
