@@ -68,7 +68,8 @@ for (const toolkit of TOOLKITS) {
   async function worker() {
     for (let tool = queue.shift(); tool; tool = queue.shift()) {
       try {
-        const info = await composio(['execute', tool.slug, '--get-schema']);
+        // `tools info` only fetches the schema; it never goes near `execute`.
+        const info = await composio(['tools', 'info', tool.slug]);
         actions[tool.slug] = [...argumentPaths(info.inputSchema)].sort();
       } catch {
         actions[tool.slug] = null;

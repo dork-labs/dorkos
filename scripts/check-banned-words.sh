@@ -292,7 +292,7 @@ is_docs_allowlisted() {
 is_allowed_line() {
   local line="$1"
   for p in "${ALLOW_PATTERNS[@]}"; do
-    if printf '%s' "$line" | grep -Eq "$p"; then return 0; fi
+    if grep <<<"$line" -Eq "$p"; then return 0; fi
   done
   return 1
 }
@@ -326,8 +326,8 @@ report_hit() {
     echo "" >&2
   fi
   violations=$((violations + 1))
-  if printf '%s' "$text" | grep -Eqi "$BANNED_RE"; then hit_wave2=1; fi
-  if printf '%s' "$text" | grep -Eqi "$POSITIONING_RE|$DISCORD_LINK_RE"; then
+  if grep <<<"$text" -Eqi "$BANNED_RE"; then hit_wave2=1; fi
+  if grep <<<"$text" -Eqi "$POSITIONING_RE|$DISCORD_LINK_RE"; then
     hit_positioning=1
     case "$f" in docs/*) hit_positioning_docs=1 ;; esac
   fi
@@ -355,7 +355,7 @@ scan_files() {
       case "$f" in
         docs/*)
           if is_docs_allowlisted "$f" "${hit#*:}" &&
-            ! printf '%s' "${hit#*:}" | grep -Eqi "$BANNED_RE"; then
+            ! grep <<<"${hit#*:}" -Eqi "$BANNED_RE"; then
             continue
           fi
           ;;

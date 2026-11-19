@@ -296,9 +296,15 @@ function isRepositoryPersistenceName(toolkit: string, slug: string): boolean {
  * Security Nov 18). They stay one-by-one picks whatever their catalog hints say.
  */
 const MONEY_EXACT_ACTIONS = exactActions([
+  'ELASTIC_EMAIL_ADJUST_SUBACCOUNT_CREDITS',
   'GOOGLEBIGQUERY_CREATE_CAPACITY_COMMITMENT',
+  // Its settings can switch on automatic payroll runs.
+  'GUSTO_UPDATE_PAY_SCHEDULE',
   'KEIKI_MCP_POST_IDENTITIES_PHONE_CALLS',
   'KERNEL_MCP_MANAGE_VAULT_CARDS',
+  'MEMELORD_SWAP_VIDEO_SUBJECT_WITH_GENJUTSU',
+  // Loyalty credits can usually be redeemed for value.
+  'PIGGY_CREATE_CREDIT_RECEPTION',
   'PROABONO_BILL_CUSTOMER',
   'RILLET_CREATE_A_REIMBURSEMENT',
   'RIZE_CREATE_CARD',

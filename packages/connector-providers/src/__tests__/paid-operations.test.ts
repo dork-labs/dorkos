@@ -78,6 +78,8 @@ describe('pay-per-use apps, by their Composio toolkit names (DOR-4597)', () => {
     'strale',
     // Digital Humani charges for each tree planted (DOR-4624).
     'digital_humani',
+    // Nearly every Memelord render is a paid job (DOR-4624).
+    'memelord',
   ];
 
   it.each(MISSED)('marks a %s read paid, so no level covers it', (toolkit) => {
@@ -158,5 +160,19 @@ describe('accessLevelRevisionIds with a paid operation', () => {
   it('never puts a paid operation under Read or Read and write', () => {
     expect(accessLevelRevisionIds(candidates, 'read')).toEqual(['gmail-read']);
     expect(accessLevelRevisionIds(candidates, 'read-write')).toEqual(['gmail-read']);
+  });
+});
+
+describe('Words Into Music: only starting a song spends (DOR-4624)', () => {
+  // Composio's own slugs (catalog, 2026-11-18). Starting a song spends one
+  // prepaid song credit; preparing a brief, reading usage and making a
+  // checkout link spend nothing.
+  it.each([
+    ['WORDS_INTO_MUSIC_START_SONG_WITH_ONE_CREDIT', true],
+    ['WORDS_INTO_MUSIC_PREPARE_SONG', false],
+    ['WORDS_INTO_MUSIC_GET_ACCOUNT_USAGE', false],
+    ['WORDS_INTO_MUSIC_CREATE_CHECKOUT_LINK', false],
+  ])('marks %s paid: %s', (operationSlug, paid) => {
+    expect(isPaidOperation({ toolkit: 'words_into_music', operationSlug })).toBe(paid);
   });
 });

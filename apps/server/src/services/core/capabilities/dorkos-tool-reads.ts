@@ -188,6 +188,7 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'agent.pause': 'local',
   'agent.resume': 'local',
   'agent.list_paused': 'local',
+  'approvals.withdraw': 'local',
   'local_browser.state': 'local',
   'local_browser.ask_person': 'local',
   'memory.write': 'local',

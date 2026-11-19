@@ -39,7 +39,10 @@ import { logger } from '../../lib/logger.js';
 import type { CapabilityRegistry } from '../core/capabilities/registry.js';
 import { checkDeclaredTools } from '@dorkos/extension-api/tool-check';
 import { readRegisterResult, serverEntryRegister } from '@dorkos/extension-api/server';
-import { RunningExtensionTools, type ToolBinding } from './agent-tools/tool-binding.js';
+import { sealAgentTools } from './agent-tools/seal-agent-tools.js';
+import { inProcessMediaFetch, type ExtensionMediaFetch } from './http/media-fetch.js';
+import { revokeMediaTickets } from './http/media-tickets.js';
+import { isolatedMediaFetch } from './isolation/isolated-media.js';
 import { extensionDeclarationDigest } from './agent-tools/declaration-digest.js';
 import { isolationKeyOf } from './isolation/isolation-view.js';
 import { extensionServerErrorCopy } from '@dorkos/shared/extension-server-status';
@@ -514,6 +517,8 @@ export class ExtensionServerLifecycle {
       this.serverExtensions.set(id, {
         extensionId: id,
         handler,
+        // A video by ticket, only through a `fetch` handler (DOR-4321).
+        mediaFetch: inProcessMediaFetch(record.manifest.name, fetch),
         cleanup,
         scheduledCleanups: getScheduledCleanups(),
         releaseListeners,
@@ -573,6 +578,8 @@ export class ExtensionServerLifecycle {
 
   /** The body of {@link shutdown}, run inside the id's queue. */
   private async stop(id: string): Promise<void> {
+    // Every stop ends its video links: a turn-off, revoke, reload or update (DOR-4321).
+    revokeMediaTickets(id);
     const active = this.serverExtensions.get(id);
     if (!active) {
       this.cancelRestart(id);
@@ -750,6 +757,7 @@ export class ExtensionServerLifecycle {
     this.serverExtensions.set(id, {
       extensionId: id,
       handler: createIsolatedHandler({ displayName: name, host, proxy: this.proxyFor(id, record) }),
+      mediaFetch: isolatedMediaFetch(id, host),
       cleanup: null,
       scheduledCleanups: [],
       releaseListeners: built.releaseListeners,
@@ -819,6 +827,7 @@ export class ExtensionServerLifecycle {
     // Whatever the dead child still had running in the real ctx acts no more.
     active.disposeCtx?.();
     this.serverExtensions.delete(id);
+    revokeMediaTickets(id);
 
     const record = this.options.recordOf?.(id);
     const name = record?.manifest.name ?? id;
@@ -916,6 +925,16 @@ export class ExtensionServerLifecycle {
     return this.serverExtensions.get(id)?.handler ?? null;
   }
 
+  /**
+   * How the media route asks a running extension for a video (DOR-4321).
+   *
+   * @param id - Extension identifier
+   * @returns Its media fetch, or null when it is not running or has no `fetch` handler
+   */
+  mediaFetch(id: string): ExtensionMediaFetch | null {
+    return this.serverExtensions.get(id)?.mediaFetch ?? null;
+  }
+
   /** A hybrid extension's `dataProxy`, or null when it declares none. */
   private proxyFor(id: string, record: ExtensionRecord): ExtensionHttpHandler | null {
     const config = record.hasDataProxy ? record.manifest.dataProxy : undefined;
@@ -932,41 +951,4 @@ export class ExtensionServerLifecycle {
  */
 function runsSeparately(record: ExtensionRecord): boolean {
   return record.manifest.serverCapabilities?.runtime === 'subprocess' || !!record.isolation;
-}
-
-/**
- * Close an instance's tool binding once its `register()` finished, and hold
- * what it handled for contribution: only the declared tools it handled
- * (DOR-2685). A declared tool with no handler is reported, not offered. The
- * same for both runtimes: an isolated extension's tools were bound through
- * the same real `ctx.tools.handle` by the host's dispatcher.
- *
- * @param id - The extension id.
- * @param name - Its manifest name.
- * @param toolChecks - Discovery's verdict on each declared tool.
- * @param tools - The instance's binding, from `createDataProviderContext`.
- */
-function sealAgentTools(
-  id: string,
-  name: string,
-  toolChecks: ReturnType<typeof checkDeclaredTools>,
-  tools: ToolBinding
-): RunningExtensionTools {
-  const { handled, unhandled } = tools.seal();
-  const agentTools = new RunningExtensionTools(id, name, handled, [
-    ...toolChecks.flatMap((check) =>
-      check.ok ? [] : [{ name: check.name, reason: check.reason }]
-    ),
-    ...unhandled.map((tool) => ({
-      name: tool.name,
-      reason: `${name} declares ${tool.name} but never handles it`,
-    })),
-  ]);
-  if (unhandled.length > 0) {
-    logger.warn(
-      `[Extensions] ${id} declares tools it never handles, so agents won't get them: ` +
-        unhandled.map((tool) => tool.name).join(', ')
-    );
-  }
-  return agentTools;
 }

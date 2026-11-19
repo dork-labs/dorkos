@@ -276,6 +276,108 @@ describe('one-time Composio write upgrade', () => {
     expect(setAside.length).toBeGreaterThan(0);
     expect(setAside.every((row) => row.safeReason === WRITE_UPGRADE_SET_ASIDE)).toBe(true);
   });
+  // 0.136.0 ran the upgrade before the stamp existed, so what it set aside on
+  // those installs carries no stamp. A relink must still keep the writes away
+  // (DOR-4735), and must still send the saved choice for anything else.
+  describe('commands set aside before the stamp existed', () => {
+    function writerSelections(commands: ReturnType<typeof levelHarness>['submitted']) {
+      const selections: string[][] = [];
+      for (const command of commands) {
+        if (command.kind !== 'replace_agent_grants' || command.agentId !== 'writer') continue;
+        selections.push(command.revisions.map((revision) => revision.hostedRevisionId));
+      }
+      return selections;
+    }
+    async function relinkWriterCommands(h: Awaited<ReturnType<typeof setup>>) {
+      h.answer('applied');
+      const sent = h.submitted.length;
+      const { providerInstanceId } = h.db
+        .select({ providerInstanceId: connections.providerInstanceId })
+        .from(connections)
+        .where(eq(connections.id, CONNECTION_ID))
+        .get()!;
+      await h.sync!.restageAfterRelink(
+        ConnectorProviderInstanceIdSchema.parse(providerInstanceId),
+        new AbortController().signal
+      );
+      await h.applyPending();
+      return writerSelections(h.submitted.slice(sent));
+    }
+
+    // 0.136.0 kept whatever reason a pending command already carried, such
+    // as a hosted wait or a failed try, so the reason can't be relied on.
+    const HOSTED_WAIT = 'DorkOS’s servers haven’t finished this change yet.';
+    it.each([
+      ['the same as', null, NOW.toISOString()],
+      ['earlier than', null, '2026-09-29T11:00:00.000Z'],
+      ['the same as', HOSTED_WAIT, NOW.toISOString()],
+      ['earlier than', HOSTED_WAIT, '2026-09-29T11:00:00.000Z'],
+      ['the same as', '', NOW.toISOString()],
+    ])(
+      'keeps writes away after a relink, with the upgrade clock %s the command and reason %j',
+      async (_when, leftReason, upgradedAt) => {
+        const h = await setup('linear', 'dorkos-managed', true);
+        h.answer('pending');
+        h.db
+          .update(connections)
+          .set({ toolkit: 'gmail' })
+          .where(eq(connections.id, CONNECTION_ID))
+          .run();
+        await grantLevels(h);
+        h.db
+          .update(connections)
+          .set({ toolkit: 'linear' })
+          .where(eq(connections.id, CONNECTION_ID))
+          .run();
+        expect(upgradeComposioWriteLevels(h.db, upgradedAt)).toBe(1);
+        // Leave the set-aside rows as 0.136.0 did: superseded, never stamped.
+        const unstamped = h.db
+          .update(connectorManagedAuthorityOutbox)
+          .set({ safeReason: leftReason })
+          .where(eq(connectorManagedAuthorityOutbox.state, 'superseded'))
+          .run().changes;
+        expect(unstamped).toBeGreaterThan(0);
+        const resent = await relinkWriterCommands(h);
+        expect(storedLevels(h.db)).toEqual(['reader:read', 'writer:read']);
+        expect(liveActions(h.db, { agentId: 'writer' })).toEqual(['gmail.list:read']);
+        expect(resent).not.toEqual([]);
+        for (const revisions of resent)
+          expect(revisions).toEqual([hostedRef('gmail.list', 'read')]);
+      }
+    );
+    it('still sends the saved choice for a change set aside at another time', async () => {
+      const h = await setup('gmail', 'dorkos-managed', true);
+      h.answer('pending');
+      await grantLevels(h);
+      // The upgrade ran and lowered nothing here (Gmail keeps its writes).
+      expect(upgradeComposioWriteLevels(h.db, NOW.toISOString())).toBe(0);
+      const saved = writerSelections(h.submitted).at(-1)!;
+      expect(saved).not.toEqual([hostedRef('gmail.list', 'read')]);
+      // Set aside by something else, later, with no reason: not the upgrade.
+      h.db
+        .update(connectorManagedAuthorityOutbox)
+        .set({ state: 'superseded', resolvedAt: '2026-11-16T09:00:00.000Z', safeReason: null })
+        .where(eq(connectorManagedAuthorityOutbox.state, 'pending'))
+        .run();
+      const resent = await relinkWriterCommands(h);
+      expect(resent).toEqual([saved]);
+      expect(storedLevels(h.db)).toEqual(['reader:read', 'writer:read-write']);
+    });
+    it('still sends the saved choice when the upgrade never ran', async () => {
+      const h = await setup('gmail', 'dorkos-managed', true);
+      h.answer('pending');
+      await grantLevels(h);
+      const saved = writerSelections(h.submitted).at(-1)!;
+      expect(saved).not.toEqual([hostedRef('gmail.list', 'read')]);
+      // No marker at all, so nothing can match its completion time.
+      h.db
+        .update(connectorManagedAuthorityOutbox)
+        .set({ state: 'superseded', resolvedAt: NOW.toISOString(), safeReason: null })
+        .where(eq(connectorManagedAuthorityOutbox.state, 'pending'))
+        .run();
+      expect(await relinkWriterCommands(h)).toEqual([saved]);
+    });
+  });
   it('leaves other ways of connecting untouched', async () => {
     const h = await setup('linear', 'nango');
     expect(upgradeComposioWriteLevels(h.db, NOW.toISOString())).toBe(0);

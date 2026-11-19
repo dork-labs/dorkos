@@ -10,7 +10,8 @@ export interface ScheduleExecutionCopy {
   refusesUnansweredApprovals: boolean;
 }
 
-const FALLBACK_LABELS: Readonly<Record<string, string>> = {
+/** Labels for the mode ids DorkOS knows when the runtime declares none of its own. */
+export const FALLBACK_LABELS: Readonly<Record<string, string>> = {
   default: 'Default',
   plan: 'Plan',
   dontAsk: 'Never ask',

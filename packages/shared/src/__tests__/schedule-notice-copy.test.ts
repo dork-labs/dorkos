@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { TaskFailureReason } from '../types.js';
 import {
+  nextRunWhen,
   scheduleFailureClause,
   scheduleFailureSentence,
   scheduleFullName,
@@ -124,5 +125,36 @@ describe('scheduleNextTry', () => {
         'America/Chicago'
       )
     ).toBe('Next try 9:00 PM.');
+  });
+});
+
+describe('nextRunWhen (DOR-4483)', () => {
+  const now = new Date('2026-11-13T12:00:00.000Z'); // Fri 6:00 AM in Chicago
+
+  it('is the one wording both surfaces use', () => {
+    const zone = 'America/Chicago';
+    expect(nextRunWhen(new Date('2026-11-13T18:00:00.000Z'), now, zone)).toBe('12:00 PM');
+    expect(nextRunWhen(new Date('2026-11-14T08:30:00.000Z'), now, zone)).toBe(
+      'tomorrow at 2:30 AM'
+    );
+    expect(nextRunWhen(new Date('2026-11-16T15:00:00.000Z'), now, zone)).toBe('Mon at 9:00 AM');
+    expect(nextRunWhen(new Date('2026-11-20T15:00:00.000Z'), now, zone)).toBe('Nov 20 at 9:00 AM');
+  });
+
+  it('counts calendar days in the zone, not 24-hour spans, across a clock change', () => {
+    // Sat Nov 1 2025, 11:00 PM Chicago, to Mon Nov 3 after the clocks went back.
+    expect(
+      nextRunWhen(
+        new Date('2025-11-03T15:00:00.000Z'),
+        new Date('2025-11-02T04:00:00.000Z'),
+        'America/Chicago'
+      )
+    ).toBe('Mon at 9:00 AM');
+  });
+
+  it('names the date of a run already past, so it never reads as today', () => {
+    expect(nextRunWhen(new Date('2026-11-12T15:00:00.000Z'), now, 'America/Chicago')).toBe(
+      'Nov 12 at 9:00 AM'
+    );
   });
 });

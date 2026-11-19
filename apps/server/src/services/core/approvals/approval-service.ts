@@ -59,7 +59,7 @@ import {
   type PendingApproval,
 } from '@dorkos/shared/approval-schemas';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
-import { broadcastApprovalPending, broadcastApprovalResolved } from './approval-events.js';
+import { broadcastApprovalPending } from './approval-events.js';
 import { cannotAllowCard } from './approval-completeness.js';
 import {
   declinedHookCards,
@@ -79,10 +79,8 @@ import {
 
 export { isAlwaysOffered };
 import { ownAnswerInput, storedFullDetail, withServiceAction } from './approval-storable.js';
-import {
-  raiseCapabilityApproval,
-  resolveCapabilityApproval,
-} from '../../notifications/emitters/capability-approval.js';
+import { raiseCapabilityApproval } from '../../notifications/emitters/capability-approval.js';
+import { settleApproval } from './approval-settle.js';
 import { eventFanOut } from '../event-fan-out.js';
 import { retireSupersededApprovals, sweepExpiredApprovals } from './approval-retirement.js';
 import { toDecisionOutcome, type ApprovalDecisionOutcome } from './approval-decision-outcome.js';
@@ -1170,8 +1168,7 @@ export class ApprovalService {
    * @param outcome - How it ended.
    */
   private settle(approvalId: string, outcome: ApprovalOutcome): void {
-    resolveCapabilityApproval(approvalId);
-    broadcastApprovalResolved(approvalId, outcome);
+    settleApproval(approvalId, outcome);
   }
 
   /**

@@ -71,18 +71,21 @@ describe('the root config caps local runs', () => {
 describe('the turbo entry points carry the same cap', () => {
   // `pnpm vitest run <path>` and `pnpm test` load different configs, so a cap
   // in one is not a cap in the other.
-  it.each(['test', 'verify:checks'])('the root `%s` script sets VITEST_MAX_WORKERS', (name) => {
-    expect(
-      pkg.scripts[name],
-      `the root \`${name}\` script no longer sets VITEST_MAX_WORKERS, so the turbo path runs ` +
-        'one worker per core again while `pnpm vitest run` stays capped — the two halves ' +
-        'disagreeing is worse than neither, because the fast path looks fixed.'
-    ).toContain('VITEST_MAX_WORKERS=');
-  });
+  it.each(['test', 'verify:checks', 'verify:preopen:turbo'])(
+    'the root `%s` script sets VITEST_MAX_WORKERS',
+    (name) => {
+      expect(
+        pkg.scripts[name],
+        `the root \`${name}\` script no longer sets VITEST_MAX_WORKERS, so the turbo path runs ` +
+          'one worker per core again while `pnpm vitest run` stays capped — the two halves ' +
+          'disagreeing is worse than neither, because the fast path looks fixed.'
+      ).toContain('VITEST_MAX_WORKERS=');
+    }
+  );
 
   it('sets the same number the root config declares', () => {
     // Two places that must agree, with no way to notice from either alone.
-    for (const name of ['test', 'verify:checks']) {
+    for (const name of ['test', 'verify:checks', 'verify:preopen:turbo']) {
       const n = /VITEST_MAX_WORKERS=\$\(test -n "\$CI" \|\| echo (\d+)\)/.exec(
         pkg.scripts[name] as string
       );

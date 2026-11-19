@@ -12,7 +12,7 @@ It covers:
 - telling the person, in plain words, what the app can reach before they allow it
 - least privilege: no network, connections, secrets or agent tools unless the request names them
 - screenshots of every surface the app takes, at phone and desktop width, light and dark
-- the person's approval for the first run, every file change and every widened reach
+- the person's approval for the first run, every screen change and every widened reach
 
 Files:
 

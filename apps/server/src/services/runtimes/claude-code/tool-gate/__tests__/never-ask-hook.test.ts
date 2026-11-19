@@ -12,6 +12,7 @@ import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import type { PermissionModeId } from '@dorkos/shared/schemas';
 import { createNeverAskHook, NEVER_ASK_HOOK_TIMEOUT_MS } from '../never-ask-hook.js';
 import { dorkosAutoAllows } from '../auto-allow.js';
+import { gatePermissionMode, heldForOutsider } from '../../turn-permission.js';
 
 const SDK = { name: 'dorkos', source: 'sdk' };
 
@@ -42,6 +43,11 @@ const ALLOW = {
 };
 const NEVER_ASK = { permissionMode: 'dontAsk' as PermissionModeId };
 const STRANGER = { turnPermissionCeiling: 'runtime-default' as const };
+/** A list ceiling with a stranger's bound in it: held for them, still at Never ask. */
+const HELD_AT_NEVER_ASK: TurnPermissionCeiling = [
+  'runtime-default',
+  { asks: 'never', reach: 'everything' },
+];
 const noopLog = { debug: () => {}, info: () => {} };
 const signal = { signal: new AbortController().signal };
 const IDENTITY = { identity: { agentPath: '/agents/ana' } };
@@ -130,7 +136,11 @@ describe('the Never ask hook', () => {
   });
 
   it('sends no chat_send from a turn held to any ceiling, not only a stranger’s', async () => {
-    const session = { ...NEVER_ASK, turnPermissionCeiling: 'default' as TurnPermissionCeiling };
+    // A held ceiling that keeps the turn at Never ask, so the refusal is the held-turn check's
+    // and not the mode check's (DOR-4600): `'default'` clamped it to Plan, which never got there.
+    const session = { ...NEVER_ASK, turnPermissionCeiling: HELD_AT_NEVER_ASK };
+    expect(gatePermissionMode(session)).toBe('dontAsk');
+    expect(heldForOutsider(session)).toBe(true);
     expect(
       await decide(session, call('mcp__dorkos__chat_send', { to: 'c', message: 'hi' }))
     ).toEqual({});

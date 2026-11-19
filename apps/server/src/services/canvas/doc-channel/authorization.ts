@@ -15,15 +15,40 @@ import {
 } from '../../connectors/principal/server-principal.js';
 import { parseScope } from '../scopes.js';
 import type { CanvasDocumentStore } from '../canvas-document-store.js';
+import type { DocSaveRefusalReason } from '@dorkos/shared/file-save/recovery';
 
 /** The same refusal for an absent document and one the caller cannot reach. */
 export class DocChannelNotFoundError extends Error {
   readonly code = 'CANVAS_DOCUMENT_NOT_FOUND';
   readonly status = 404;
+  /**
+   * Which check refused, for the log and, when {@link disclosableRefusalReason}
+   * allows, the owner's own canvas (DOR-4442). Absent where no one check applies.
+   */
+  readonly reason: DocRefusalReason | undefined;
   /** Build a disclosure-safe document refusal. */
-  constructor(options?: ErrorOptions) {
+  constructor(options?: ErrorOptions & { reason?: DocRefusalReason }) {
     super('The document is not available.', options);
+    this.reason = options?.reason;
   }
+}
+
+/**
+ * A refusal's reason: the ones the owner may be told, plus `NOT_OPERATOR`, which
+ * is logged only. It is decided before the caller is known to be the owner, so
+ * telling the caller would say the document exists to someone who may not.
+ */
+export type DocRefusalReason = DocSaveRefusalReason | 'NOT_OPERATOR';
+
+/**
+ * The reason a refusal may carry to its caller, or undefined. Every code but
+ * `NOT_OPERATOR` is decided only after the owner's own access was checked.
+ *
+ * @param error - Anything a document route caught.
+ */
+export function disclosableRefusalReason(error: unknown): DocSaveRefusalReason | undefined {
+  if (!(error instanceof DocChannelNotFoundError) || error.reason === 'NOT_OPERATOR') return;
+  return error.reason;
 }
 /** An authorized room remains readable while its writes are stopped. */
 export class DocChannelArchivedError extends Error {

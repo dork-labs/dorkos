@@ -26,6 +26,7 @@ vi.mock('../context-assembler.js', () => ({
 }));
 
 import {
+  adoptQueuedMessages,
   dispatchMessage,
   listQueuedMessages,
   resetMessageDispatcher,
@@ -38,8 +39,18 @@ import {
   roomTurnReadOutsideWords,
 } from '../../core/turn-power/outside-words.js';
 import { liveOutsideTurnCheck } from '../local-browser/outside-turn.js';
+import { recordTurnLevels } from '../../core/turn-power/turn-levels.js';
+import {
+  lastTurnHeld,
+  noteTurnHold,
+  setContinuationHoldDb,
+} from '../../core/turn-power/continuation-hold.js';
 import type { OutsideTurnReason } from '../local-browser/handoff-guards/outside-turn-reason.js';
-import { MessageQueueStore, setMessageQueueStore } from '../message-queue-store.js';
+import {
+  getMessageQueueStore,
+  MessageQueueStore,
+  setMessageQueueStore,
+} from '../message-queue-store.js';
 import { getOrCreateProjector, disposeProjector } from '../session-state-projector.js';
 
 const PERSON = 'window-a';
@@ -316,6 +327,60 @@ describe('a message a mini app sent', () => {
     await settle();
     expect(carriedOfCall(0)).toBeUndefined();
     expect(carriedOfCall(1)).toEqual({ outsider: true });
+  });
+
+  it('launches marked when its row is picked up again after a restart (DOR-4603)', async () => {
+    getMessageQueueStore()!.enqueue({
+      sessionId: session,
+      content: 'from the board app, before the restart',
+      clientId: MINI_APP,
+      disposition: 'queue',
+      context: null,
+    });
+    // What a restart leaves: the row on disk, nothing in memory.
+    resetMessageDispatcher();
+    runtime.withScenarios([quickTurn()]);
+    expect(
+      adoptQueuedMessages({ sessionId: session, projector: getOrCreateProjector(session), runtime })
+    ).toBe(1);
+    await settle();
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+    expect(carriedOfCall(0)).toEqual({ outsider: true });
+  });
+});
+
+// DOR-4515: through the real dispatcher and the turn seam, a held chat stays marked for a turn that
+// is not the owner's own clean send, and the owner's next clean send clears it.
+describe('a chat that took in a stranger’s words', () => {
+  beforeEach(() => setContinuationHoldDb(createTestDb()));
+  afterEach(() => setContinuationHoldDb(undefined));
+
+  const carried = (n: number) =>
+    (runtime.sendMessage.mock.calls[n]![2] as Record<string, unknown>).carriedMarks;
+
+  it('stays marked for another send, and the owner’s own clean send clears it', async () => {
+    const seam = recordTurnLevels(runtime, () => 'bypassPermissions');
+    noteTurnHold(session, true);
+    runtime.withScenarios([quickTurn(), quickTurn(), quickTurn()]);
+    const through = (content: string, extra: Record<string, unknown> = {}) =>
+      dispatchMessage({
+        sessionId: session,
+        clientId: PERSON,
+        content,
+        projector: getOrCreateProjector(session),
+        runtime: seam,
+        ...extra,
+      });
+    await through('not the owner’s turn');
+    await settle();
+    expect(carried(0)).toEqual({ outsider: true });
+    await through('the owner', OWNER);
+    await settle();
+    expect(carried(1)).toBeUndefined();
+    expect(lastTurnHeld(session)).toBe(false);
+    await through('later, not the owner’s turn');
+    await settle();
+    expect(carried(2)).toBeUndefined();
   });
 });
 

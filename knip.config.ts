@@ -39,10 +39,14 @@ const config: KnipConfig = {
 
   workspaces: {
     '.': {
-      // Invoked by the required typecheck workflow, outside the app import graph.
-      // The Composio extractor is run by hand to refresh a test fixture
-      // (contributing/connections-security-verification.md).
-      entry: ['scripts/check-knip.ts!', 'scripts/composio-repository-write-arguments.mjs'],
+      entry: [
+        // Invoked by the required typecheck workflow, outside the app import graph.
+        'scripts/check-knip.ts!',
+        // Run by hand to refresh test fixtures from the Composio catalog
+        // (contributing/connections-security-verification.md).
+        'scripts/composio-repository-write-arguments.mjs',
+        'scripts/composio-money-word-candidates.mjs',
+      ],
     },
     'apps/client': {
       // shadcn/ui add-on-demand registry (main.tsx + test-setup are auto-detected).

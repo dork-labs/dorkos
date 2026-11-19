@@ -87,7 +87,7 @@ differential() {
   case "$command" in *pkill* | *killall*) ;; *) return ;; esac
   standin=${command//pkill/__ran}
   standin=${standin//killall/__ran}
-  if printf '%s' "$standin" | grep -Eq '(^|[^[:alnum:]_])(kill|sudo)([^[:alnum:]_]|$)'; then
+  if grep <<<"$standin" -Eq '(^|[^[:alnum:]_])(kill|sudo)([^[:alnum:]_]|$)'; then
     return
   fi
   for shell in "${diff_shells[@]}"; do

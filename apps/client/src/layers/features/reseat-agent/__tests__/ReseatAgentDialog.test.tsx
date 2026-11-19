@@ -101,6 +101,25 @@ describe('ReseatAgentDialog', () => {
     expect(transport.reseatRoomAgent).not.toHaveBeenCalled();
   });
 
+  // DOR-4439. Red when: the hint shows only beside an account that cannot be picked.
+  it('lets a person pick a signed-out account, and says it is signed out', async () => {
+    const { transport } = renderDialog({
+      current: { id: 'claude4', label: 'Claude4' },
+      seated: true,
+      accounts: [{ ...account('claude3', true, 'Signed out'), signedOut: true }],
+    });
+
+    const button = await screen.findByRole('button', { name: 'Continue on Claude3' });
+    expect(screen.getByText('Signed out')).toBeInTheDocument();
+    await userEvent.click(button);
+
+    await waitFor(() =>
+      expect(transport.reseatRoomAgent).toHaveBeenCalledWith('room-1', 'ana', {
+        account: 'claude3',
+      })
+    );
+  });
+
   it('shows why a move was refused, and stays open', async () => {
     const { onOpenChange } = renderDialog(
       { current: null, seated: true, accounts: [account('claude3', true)] },

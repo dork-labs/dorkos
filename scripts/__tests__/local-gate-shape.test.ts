@@ -229,6 +229,15 @@ describe('the root heavy scripts take a host-wide slot (DOR-3274)', () => {
     expect(scripts['verify:checks']).not.toMatch(/&& turbo run/);
   });
 
+  it('`pnpm verify:preopen` runs its typecheck and lint sweep under the lock, and no test sweep', () => {
+    const preopen = scripts['verify:preopen:turbo'] ?? '';
+    expect(wraps(preopen, 'typecheck')).toBe(true);
+    expect(preopen).not.toMatch(/&& turbo run/);
+    // The package tests are CI's at this level (DOR-4728); a test sweep here would be
+    // the full gate under a lighter name.
+    expect(preopen).not.toMatch(/\bturbo (run )?test\b/);
+  });
+
   it('`pnpm heavy` is the lock in job mode, for anything else heavy', () => {
     expect(scripts.heavy).toBe(`bash ${LOCK_REL} --job`);
   });

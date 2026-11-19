@@ -48,6 +48,11 @@ describe('single money actions pinned by name (DOR-4624)', () => {
     ['smarthr', 'SMARTHR_FINALIZE_PAYROLL'],
     ['workday', 'WORKDAY_CREATE_PAYROLL_INPUTS'],
     ['rillet', 'RILLET_CREATE_A_REIMBURSEMENT'],
+    // Found by the money-word pin test (DOR-4624, Security Nov 19).
+    ['elastic_email', 'ELASTIC_EMAIL_ADJUST_SUBACCOUNT_CREDITS'],
+    ['gusto', 'GUSTO_UPDATE_PAY_SCHEDULE'],
+    ['memelord', 'MEMELORD_SWAP_VIDEO_SUBJECT_WITH_GENJUTSU'],
+    ['piggy', 'PIGGY_CREATE_CREDIT_RECEPTION'],
   ])('keeps %s %s a one-by-one pick', (toolkit, slug) => {
     expect(classifyComposioAction(toolkit, slug, WRITE)).toBe('destructive');
   });
