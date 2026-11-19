@@ -167,8 +167,8 @@ describe('an agent patching a guarded setting', () => {
     expect(decision?.outcome).toBe('approval_required');
     const [pending] = approvals.listPending();
     expect(pending).toMatchObject({ area: 'reach', alwaysOffered: false });
-    // The sentence counts the settings; the detail names each, never the patch object.
-    expect(pending!.summary).toContain('changes: "1 setting, 1 needs you"');
+    // The sentence names the riskiest settings; the detail lists each, never the patch object.
+    expect(pending!.summary).toContain('changes: "tunnel.enabled, 1 needs you"');
     expect(pending!.detail).toBe('tunnel.enabled: yes');
     expect(written).toEqual([]);
   });
@@ -189,9 +189,10 @@ describe('an agent patching a guarded setting', () => {
         true
       );
     }
-    expect(pending!.summary).toContain('changes: "21 settings, 1 needs you"');
-    // The old one-line list, cut at 80 characters, is gone from the sentence.
-    expect(pending!.summary).not.toContain('someLongHarmlessSettingName');
+    // DOR-4778: the riskiest setting leads the sentence, whatever the agent sent first.
+    expect(pending!.summary).toContain('changes: "tunnel.enabled, ');
+    // Names only: no value of any setting reaches the sentence.
+    expect(pending!.summary).not.toContain('xxxx');
     expect(written).toEqual([]);
   });
 
@@ -205,6 +206,28 @@ describe('an agent patching a guarded setting', () => {
       detail: 'ui.theme: "dark"',
     });
   });
+
+  // DOR-4778: the detail exemption above must never reach a card with a person's setting on it.
+  it.each([
+    ['credentials', { cloud: { credits: { offer: true } } }],
+    ['reach', { tunnel: { enabled: true } }],
+    ['approvals', { runtimes: { codex: { defaultTrustStop: 'ask' } } }],
+    ['code', { extensions: { enabled: ['weekly-report'] } }],
+    ['another person-only setting', { rooms: { maxAgentDepth: 9 } }],
+  ])(
+    'offers no Always allow when one %s key rides an everyday patch, on any preset',
+    async (_stake, guarded) => {
+      for (const next of ['trusted', 'careful', 'balanced', 'full', null] as const) {
+        preset = next;
+        approvals = new ApprovalService(createTestDb());
+        initCapabilityTierGate({ approvals });
+        await refusal({ patch: { ui: { theme: 'dark' }, ...guarded } });
+        for (const pending of approvals.listPending()) {
+          expect(pending.alwaysOffered, `${String(next)}: ${pending.area}`).toBe(false);
+        }
+      }
+    }
+  );
 
   it('applies the change once the person says Allow', async () => {
     const decision = await refusal(TUNNEL_PATCH);

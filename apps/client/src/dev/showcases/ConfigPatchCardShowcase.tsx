@@ -37,7 +37,8 @@ const CARD: PendingApproval = {
   hasAgentPath: true,
   alwaysOffered: false,
   answerNeedsStepUp: false,
-  summary: 'Scout wants to run "Update configuration" with changes: "9 settings, 4 need you"',
+  summary:
+    'Scout wants to run "Update configuration" with changes: "mesh.scanRoots, tunnel.enabled, extensions.enabled and 6 more, 4 need you"',
   detail: CONFIG_PATCH_CARD_DETAIL,
   requestedAt: new Date(LOADED_AT).toISOString(),
   expiresAt: new Date(LOADED_AT + 90 * 60_000).toISOString(),

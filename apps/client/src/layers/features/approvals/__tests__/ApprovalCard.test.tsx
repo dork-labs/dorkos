@@ -676,6 +676,29 @@ describe('ApprovalCard', () => {
       expect(block!.textContent).toContain('mesh.scanRoots');
       expect(block!.className).not.toMatch(/line-clamp|truncate/);
     });
+
+    // DOR-4778: the sentence names the riskiest setting first; no clamp may hide it.
+    it('never clamps a settings change’s sentence, so its riskiest setting stays in view', () => {
+      const summary =
+        '"A long agent name, padded out" wants to run "Update configuration" with changes: "tunnel.enabled, mesh.scanRoots, extensions.enabled and 6 more, 4 need you"';
+      renderCard(
+        buildApproval({
+          capabilityId: 'operator.config_patch',
+          capabilityTitle: 'Update configuration',
+          tier: 'act',
+          summary,
+          detail: 'tunnel.enabled: yes',
+        })
+      );
+      const sentence = screen.getByText(summary);
+      expect(sentence.className).not.toMatch(/line-clamp/);
+    });
+
+    it('still clamps another act card’s sentence', () => {
+      const summary = '"Scout" wants to run "Rename a chat" with title: Weekly numbers';
+      renderCard(buildApproval({ capabilityId: 'sessions.rename', tier: 'act', summary }));
+      expect(screen.getByText(summary).className).toMatch(/line-clamp-2/);
+    });
   });
 });
 

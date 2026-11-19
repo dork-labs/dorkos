@@ -55,12 +55,6 @@ export const CONFIG_PATCH_AGENT_RANK = 5;
 /** Longest a value is shown on one line; the line itself is never dropped. */
 export const CONFIG_PATCH_VALUE_MAX_LENGTH = 80;
 
-/** Longest a setting's path is shown on one line, before the detail has to shrink. */
-export const CONFIG_PATCH_PATH_MAX_LENGTH = 200;
-
-/** Longest a path is shown once the detail is too long to carry the full ones. */
-const SHORT_PATH_MAX_LENGTH = 60;
-
 /**
  * Longest detail this card writes. Below the store's cut, with room for the
  * redaction sweep the store runs first, so the store never shortens it.
@@ -160,69 +154,94 @@ function patchLines(patch: unknown): PatchLine[] {
   );
 }
 
-/** One line of the detail, with or without its value, its path cut at `pathMax`. */
-function renderLine(line: PatchLine, withValue: boolean, pathMax: number): string {
-  const path = cap(line.path, pathMax);
-  return withValue && line.value !== undefined
-    ? `${path}: ${cap(line.value, CONFIG_PATCH_VALUE_MAX_LENGTH)}`
-    : path;
+/**
+ * One line of the detail, with or without its value. The path is never cut: a
+ * shortened path can make two settings read alike, or a risky one read like a
+ * harmless one, so a patch whose paths do not fit is refused instead. A
+ * person's setting keeps its whole value too (DOR-4778): a cut value hides a
+ * tail, which is the bug this card exists to end. Only a setting an agent may
+ * change alone has its value capped.
+ */
+function renderLine(line: PatchLine, withValue: boolean): string {
+  if (!withValue || line.value === undefined) return line.path;
+  const value =
+    line.rank === CONFIG_PATCH_AGENT_RANK
+      ? cap(line.value, CONFIG_PATCH_VALUE_MAX_LENGTH)
+      : line.value;
+  return `${line.path}: ${value}`;
 }
 
 /**
  * Every setting a patch changes, one line each, riskiest first:
  * `tunnel.enabled: yes`, `ui.theme: "dark"`. Sorted by
- * {@link CONFIG_PATCH_STAKE_RANK} and then by path. A value is cut at
- * {@link CONFIG_PATCH_VALUE_MAX_LENGTH} and a path at
- * {@link CONFIG_PATCH_PATH_MAX_LENGTH}, but no setting is left off. Strings and
- * odd keys are quoted and escaped, so no line can hold a newline or pass for
- * another setting.
+ * {@link CONFIG_PATCH_STAKE_RANK} and then by path. Only the value of a setting
+ * an agent may change alone is cut, at {@link CONFIG_PATCH_VALUE_MAX_LENGTH};
+ * a path never is, and no setting is left off. Strings and odd keys are quoted and escaped, so no line can hold a
+ * newline or pass for another setting.
  *
  * @param patch - The patch the call carries.
  * @returns One line per setting.
  */
 export function describePatchLines(patch: unknown): string[] {
-  return patchLines(patch).map((line) => renderLine(line, true, CONFIG_PATCH_PATH_MAX_LENGTH));
+  return patchLines(patch).map((line) => renderLine(line, true));
 }
 
+/** How many of the riskiest settings the sentence names. */
+export const CONFIG_PATCH_SUMMARY_NAMES = 3;
+
 /**
- * The count the card's sentence carries: `7 settings, 3 need you`, or
- * `nothing` for an empty patch. "Need you" counts the settings only a person
- * may change.
+ * Longest a setting's name is shown in the sentence. Short enough that the
+ * first, riskiest one always sits inside the sentence's 80-character value; the
+ * detail under it shows every name whole.
+ */
+export const CONFIG_PATCH_SUMMARY_NAME_MAX_LENGTH = 40;
+
+/**
+ * What the card's sentence carries: the riskiest settings by name, first, then
+ * how many more and how many only a person may change:
+ * `tunnel.enabled, mesh.scanRoots, extensions.enabled and 6 more, 4 need you`.
+ * `nothing` for an empty patch. Names only, never values (DOR-4778).
  *
  * @param patch - The patch the call carries.
  */
 export function describePatchSummary(patch: unknown): string {
   const lines = patchLines(patch);
   if (lines.length === 0) return 'nothing';
+  const names = lines
+    .slice(0, CONFIG_PATCH_SUMMARY_NAMES)
+    .map((line) => cap(line.path, CONFIG_PATCH_SUMMARY_NAME_MAX_LENGTH))
+    .join(', ');
+  const more = lines.length - CONFIG_PATCH_SUMMARY_NAMES;
   const guarded = lines.filter((line) => line.needsPerson).length;
-  const settings = `${lines.length} setting${lines.length === 1 ? '' : 's'}`;
-  return guarded === 0 ? settings : `${settings}, ${guarded} need${guarded === 1 ? 's' : ''} you`;
+  return (
+    names +
+    (more > 0 ? ` and ${more} more` : '') +
+    (guarded > 0 ? `, ${guarded} need${guarded === 1 ? 's' : ''} you` : '')
+  );
 }
 
 /**
  * The card's detail: {@link describePatchLines}, one per line, kept under
- * {@link CONFIG_PATCH_DETAIL_MAX_LENGTH}. When the whole list is too long it
- * shrinks from the bottom, where the settings an agent may change alone sit:
- * values go first, then long paths are cut shorter. Every setting keeps its
- * line, always: a patch too large for even that is refused before it gets a
- * card ({@link configPatchCardFits}).
+ * {@link CONFIG_PATCH_DETAIL_MAX_LENGTH}. When the whole list is too long, the
+ * values of settings an agent may change alone drop, from the bottom, and the
+ * name always stays. A person's setting is never shortened, nor is any path: a
+ * patch too large even then is refused before it gets a card
+ * ({@link configPatchCardFits}).
  *
  * @param patch - The patch the call carries.
  * @returns The detail, or an empty string when the patch changes nothing.
  */
 export function describePatchDetail(patch: unknown): string {
   const lines = patchLines(patch);
-  const rendered = lines.map((line) => renderLine(line, true, CONFIG_PATCH_PATH_MAX_LENGTH));
+  const rendered = lines.map((line) => renderLine(line, true));
   let total = rendered.reduce((sum, text) => sum + text.length + 1, -1);
-  const shrink = (withValue: boolean, pathMax: number): void => {
-    for (let i = lines.length - 1; i >= 0 && total > CONFIG_PATCH_DETAIL_MAX_LENGTH; i--) {
-      const next = renderLine(lines[i]!, withValue, pathMax);
-      total += next.length - rendered[i]!.length;
-      rendered[i] = next;
-    }
-  };
-  shrink(false, CONFIG_PATCH_PATH_MAX_LENGTH);
-  shrink(false, SHORT_PATH_MAX_LENGTH);
+  for (let i = lines.length - 1; i >= 0 && total > CONFIG_PATCH_DETAIL_MAX_LENGTH; i--) {
+    // A person's setting is shown whole, always; only an agent's own loses its value.
+    if (lines[i]!.rank !== CONFIG_PATCH_AGENT_RANK) continue;
+    const next = renderLine(lines[i]!, false);
+    total += next.length - rendered[i]!.length;
+    rendered[i] = next;
+  }
   return rendered.join('\n');
 }
 

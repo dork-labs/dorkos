@@ -27,8 +27,8 @@ const WORK_QUEUE_CAPABILITY = /^work-queue\./;
  * the promise of those cards is that a person sees every such change before it
  * happens, and a standing yes would let the next change through unseen.
  * A config patch's detail is the exception (DOR-4775): it only lists the
- * settings its sentence counts, and the patch already offers Always allow
- * solely in DorkOS settings, for settings an agent may change alone.
+ * settings its sentence names, and the rule below offers Always allow on it
+ * only in DorkOS settings and only when no setting on it is a person's.
  *
  * Nor does a card for an extension's destructive tool (DOR-2685): every call
  * asks, because the tool's tier is its author's to change and a standing yes
@@ -41,6 +41,8 @@ export function isAlwaysOffered(row: {
   area: string | null;
   authorityBindingDigest: string | null;
   detail?: string | null;
+  /** Whether the call reached a floor area; a config patch without it never offers Always allow. */
+  raisesPermissions?: boolean;
   /** Required: the extension rule reads it, and a caller must not be able to forget it. */
   capabilityId: string;
   /** Required for the same reason. */
@@ -57,7 +59,13 @@ export function isAlwaysOffered(row: {
     // must decide each time (`areasForInput`). Permissions stopped being a
     // floor area under Trusted (DOR-2739), so this keeps that card from
     // offering Always allow, as a floor area's never does.
-    !(row.capabilityId === 'operator.config_patch' && row.area !== 'settings') &&
+    // Nor a patch filed in DorkOS settings that still touches a person's
+    // setting (DOR-4778): Careful files a mixed patch under its own area first.
+    // A row that does not say is treated as one that does.
+    !(
+      row.capabilityId === 'operator.config_patch' &&
+      (row.area !== 'settings' || row.raisesPermissions !== false)
+    ) &&
     // An agent's permission change asks on every call that could loosen
     // anything (DOR-3107), so an Always allow on its card would change nothing.
     row.capabilityId !== 'permissions.change' &&

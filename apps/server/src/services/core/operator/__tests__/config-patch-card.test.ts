@@ -6,6 +6,7 @@ import { describe, it, expect } from 'vitest';
 import {
   CONFIG_PATCH_DETAIL_MAX_LENGTH,
   CONFIG_PATCH_STAKE_RANK,
+  CONFIG_PATCH_SUMMARY_NAME_MAX_LENGTH,
   configPatchCardFits,
   describePatchDetail,
   describePatchLines,
@@ -25,7 +26,9 @@ describe('describePatchLines', () => {
     for (let i = 0; i < 20; i++) {
       expect(lines).toContain(`ui.someLongHarmlessSettingName${i}: "${'y'.repeat(70)}"`);
     }
-    expect(describePatchSummary(patch)).toBe('21 settings, 1 needs you');
+    expect(describePatchSummary(patch)).toBe(
+      'tunnel.enabled, ui.someLongHarmlessSettingName0, ui.someLongHarmlessSettingName1 and 18 more, 1 needs you'
+    );
   });
 
   it('orders by rank, 0 to 5, then by path, never by the agent’s order', () => {
@@ -46,7 +49,9 @@ describe('describePatchLines', () => {
       'ui.alpha: 2',
       'ui.zeta: 1',
     ]);
-    expect(describePatchSummary(patch)).toBe('7 settings, 5 need you');
+    expect(describePatchSummary(patch)).toBe(
+      'cloud.credits.offer, tunnel.enabled, runtimes.defaultTrustStop and 4 more, 5 need you'
+    );
   });
 
   it('ranks every stake on file', () => {
@@ -72,6 +77,25 @@ describe('describePatchLines', () => {
     expect(line!.length).toBeLessThanOrEqual('ui.theme: '.length + 80);
   });
 
+  it('caps each name in the sentence, so a long first name cannot push the riskiest out', () => {
+    const long = `${'zone-'.repeat(40)}end`;
+    const summary = describePatchSummary({ ui: { [long]: 1 }, tunnel: { enabled: true } });
+    expect(summary.startsWith('tunnel.enabled, ')).toBe(true);
+    const second = summary.slice('tunnel.enabled, '.length).split(',')[0]!;
+    expect(second.length).toBeLessThanOrEqual(CONFIG_PATCH_SUMMARY_NAME_MAX_LENGTH);
+    // A long person-only name is capped in the sentence only; it still leads.
+    const own = `${'acct-'.repeat(40)}end`;
+    const first = describePatchSummary({ providers: { [own]: { label: 'x' } } }).split(',')[0]!;
+    expect(first.length).toBe(CONFIG_PATCH_SUMMARY_NAME_MAX_LENGTH);
+    expect(first.startsWith('providers.acct-')).toBe(true);
+  });
+
+  it('never cuts the value of a person’s setting, however long (DOR-4778)', () => {
+    const domain = `${'north-shop.'.repeat(30)}example.test`;
+    const [line] = describePatchLines({ tunnel: { domain } });
+    expect(line).toBe(`tunnel.domain: "${domain}"`);
+  });
+
   it('sweeps a token-shaped value before cutting it, so no prefix of it survives', () => {
     // 60 harmless characters, then a 40-character hex run the 80-character cut would split.
     const [line] = describePatchLines({ ui: { theme: `${'q'.repeat(60)}${'f'.repeat(40)}` } });
@@ -81,7 +105,7 @@ describe('describePatchLines', () => {
   it('says nothing for an empty patch', () => {
     expect(describePatchSummary({})).toBe('nothing');
     expect(describePatchDetail({})).toBe('');
-    expect(describePatchSummary({ ui: { theme: 'dark' } })).toBe('1 setting');
+    expect(describePatchSummary({ ui: { theme: 'dark' } })).toBe('ui.theme');
   });
 });
 
@@ -130,6 +154,39 @@ describe('describePatchDetail on a large patch', () => {
     expect(lines[0]).toBe('tunnel.enabled: yes');
     expect(lines[300]).toBe('ui.setting299');
     expect(configPatchCardFits({ ui, tunnel: { enabled: true } })).toBe(true);
+  });
+
+  it('never shortens a setting’s name, however long', () => {
+    const name = `acct${'n'.repeat(400)}`;
+    const patch = { providers: { [name]: { label: 'x' } }, ui: { theme: 'dark' } };
+    const lines = describePatchDetail(patch).split('\n');
+    expect(lines[0]).toBe(`providers.${name}.label: "x"`);
+    expect(describePatchDetail(patch)).not.toContain('…');
+    expect(configPatchCardFits(patch)).toBe(true);
+  });
+
+  it('refuses a patch that would need a person-only name shortened to fit', () => {
+    const name = `acct${'n'.repeat(CONFIG_PATCH_DETAIL_MAX_LENGTH)}`;
+    const patch = { providers: { [name]: { label: 'x' } } };
+    expect(configPatchCardFits(patch)).toBe(false);
+    // Nothing of a person's setting is shortened to make it fit: it is refused whole.
+    expect(describePatchDetail(patch)).toBe(`providers.${name}.label: "x"`);
+  });
+
+  it('drops only an agent’s own values to fit, never a person’s, and refuses when that is not enough', () => {
+    const ui: Record<string, unknown> = {};
+    for (let i = 0; i < 150; i++) ui[`setting${String(i).padStart(3, '0')}`] = 'v'.repeat(80);
+    const domain = `${'north-shop.'.repeat(Math.floor((CONFIG_PATCH_DETAIL_MAX_LENGTH - 4000) / 11))}test`;
+    const fits = { ui, tunnel: { domain } };
+    const lines = describePatchDetail(fits).split('\n');
+    expect(lines[0]).toBe(`tunnel.domain: "${domain}"`);
+    expect(lines.slice(1).every((line) => line.startsWith('ui.setting'))).toBe(true);
+    expect(configPatchCardFits(fits)).toBe(true);
+
+    const bigger = `${'north-shop.'.repeat(400)}${domain}`;
+    const tooBig = { ui, tunnel: { domain: bigger } };
+    expect(configPatchCardFits(tooBig)).toBe(false);
+    expect(describePatchDetail(tooBig).split('\n')[0]).toBe(`tunnel.domain: "${bigger}"`);
   });
 
   it('says a patch too large to list in full does not fit, so it is refused before any card', () => {
