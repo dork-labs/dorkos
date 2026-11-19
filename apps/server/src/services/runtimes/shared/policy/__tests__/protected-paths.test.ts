@@ -147,6 +147,7 @@ describe('protected paths', () => {
       'session-relay/**',
       'extension-snapshots/**',
       'cache/extensions/**',
+      'extension-data/path-trust-seen.json*',
       'cache/shell-guard/**',
       'marketplace/**',
       'plugins/**',

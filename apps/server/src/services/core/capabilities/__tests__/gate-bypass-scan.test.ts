@@ -525,6 +525,18 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     // DOR-2086. Changing which hostnames an open managed session serves. It can
     // only ever serve hostnames the open credential allows, but adding one
     // publishes this computer at another address, so who may ask is pinned.
+    // DOR-4693. Reopens the agent's own Agent browser window after a sign-in. Only the handover
+    // may, after it checks the chat was not stopped or taken and no handoff or sign-in is open.
+    what: "reopens an agent's own Agent browser window on a chat, after a person's sign-in",
+    call: 'reopenAgentWindow(',
+    allowed: {
+      'services/session/local-browser/handover.ts':
+        'restoreAfterSignIn: only for the chat the sign-in closed, at the page DorkOS read, and never when that chat was stopped or taken, or a handoff or another sign-in is open',
+      'services/session/local-browser/handoff-guards/agent-window-restore.ts':
+        'the definition itself; it reopens only what its caller hands it, and skips a browser that was opened again meanwhile',
+    },
+  },
+  {
     what: 'changes which Cloud-issued hostnames managed forwarding serves',
     call: 'tunnelManager.applyHosts(',
     // No caller, on purpose: a host change rides `startManaged`, which diffs
