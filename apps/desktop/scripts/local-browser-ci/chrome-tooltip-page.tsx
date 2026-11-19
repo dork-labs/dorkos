@@ -23,10 +23,27 @@ interface Scene {
 
 const noop = () => {};
 
+// Keep witness-only timing evidence: a failed hover must distinguish a missing
+// pointer event from a still the real surface hook could not prepare in time.
+const diagnostics: Record<string, unknown>[] = [];
+(window as unknown as { __tooltipDiagnostics: typeof diagnostics }).__tooltipDiagnostics =
+  diagnostics;
+const record = (event: string, details: Record<string, unknown> = {}) => {
+  diagnostics.push({ event, at: performance.now(), ...details });
+};
+for (const event of ['pointerover', 'pointerout', 'pointermove', 'focusin', 'focusout']) {
+  document.addEventListener(event, (input) => {
+    if (!(input.target instanceof Element) || !input.target.closest('button[aria-label="Back"]'))
+      return;
+    record(event);
+  });
+}
+
 function Witness() {
   const surface = useRef<HTMLDivElement | null>(null);
   const [scene, setScene] = useState<Scene>({ dark: false, agentDriving: false });
   (window as unknown as { __scene: (next: Scene) => void }).__scene = (next) => {
+    record('scene', { ...next });
     document.documentElement.classList.toggle('dark', next.dark);
     setScene(next);
   };
@@ -36,8 +53,17 @@ function Witness() {
   }, []);
   const tooltipStill = useMemo(
     () => ({
-      prepare: () => controls.current?.prepare() ?? Promise.resolve(false),
-      release: () => controls.current?.release(),
+      prepare: async () => {
+        const started = performance.now();
+        record('prepare-start', { controls: controls.current !== null });
+        const drawn = await (controls.current?.prepare() ?? Promise.resolve(false));
+        record('prepare-end', { drawn, durationMs: performance.now() - started });
+        return drawn;
+      },
+      release: () => {
+        record('release');
+        controls.current?.release();
+      },
     }),
     []
   );

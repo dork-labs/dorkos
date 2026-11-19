@@ -10,7 +10,7 @@
  */
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -130,6 +130,38 @@ async function main(): Promise<void> {
     host.webContents.sendInputEvent({ type: 'mouseMove', x, y });
   // Somewhere on the left half, away from the chrome and the page.
   const away = () => pointer(100, 400);
+  const diagnose = async (name: string) => {
+    const renderer = await js(`(() => {
+      const describe = (element) => element ? {
+        rect: element.getBoundingClientRect().toJSON(),
+        state: element.getAttribute('data-state'), title: element.getAttribute('title'),
+        hovered: element.matches(':hover'),
+        complete: element.complete, naturalWidth: element.naturalWidth,
+      } : null;
+      return {
+        events: window.__tooltipDiagnostics,
+        canHover: matchMedia('(hover: hover)').matches,
+        noHover: matchMedia('(hover: none)').matches,
+        focus: document.hasFocus(), visibility: document.visibilityState,
+        activeElement: document.activeElement?.getAttribute('aria-label'),
+        back: describe(document.querySelector('button[aria-label="Back"]')),
+        surface: describe(document.querySelector('[data-slot="native-browser-surface"]')),
+        still: describe(document.querySelector('[data-slot="native-browser-still"]')),
+        tooltip: describe(document.querySelector('[role="tooltip"]')),
+        popper: describe(document.querySelector('[data-radix-popper-content-wrapper]')),
+      };
+    })()`);
+    const evidence = {
+      name,
+      renderer,
+      hostFocused: host.isFocused(),
+      guestFocused: page().webContents.isFocused(),
+      guestVisible: page().getVisible(),
+      guestBounds: page().getBounds(),
+    };
+    writeFileSync(path.join(proofDir, `${name}.json`), JSON.stringify(evidence, null, 2));
+    console.log('Chrome tooltip diagnostics:', JSON.stringify(evidence));
+  };
 
   // A made-up page with something to see, so its still has pixels to compare.
   await (page() as WebContentsView).webContents.loadURL(
@@ -151,6 +183,7 @@ async function main(): Promise<void> {
     // after a tooltip closes, the next opens at once by design, for moving along a row.
     await delay(SKIP_DELAY_GAP_MS);
     const target = await back();
+    await diagnose(`${name}-start`);
     pointer(target.x, target.y);
     await delay(TOOLTIP_DELAY_MS / 2);
     assert.equal(await tooltipOpen(), false, `${name}: the tooltip opened inside the delay`);
@@ -158,13 +191,18 @@ async function main(): Promise<void> {
     await frame(`${name}-1-before`);
     // Frame by frame until the page steps aside: the still must already be there.
     for (const deadline = Date.now() + 5_000; page().getVisible(); await delay(16)) {
-      assert(Date.now() < deadline, `${name}: the page never stepped aside for the tooltip`);
+      if (Date.now() >= deadline) {
+        await diagnose(`${name}-failed`);
+        await frame(`${name}-failed`);
+        assert.fail(`${name}: the page never stepped aside for the tooltip`);
+      }
     }
     assert.equal(await stillDrawn(), true, `${name}: the page hid before its still was drawn`);
     for (const deadline = Date.now() + 2_000; !(await tooltipOpen()); await delay(50)) {
       assert(Date.now() < deadline, `${name}: the tooltip never opened`);
     }
     await frame(`${name}-2-during`);
+    await diagnose(`${name}-during`);
     away();
     await shown(true, `${name}: after`);
   };
