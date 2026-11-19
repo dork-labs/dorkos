@@ -13,8 +13,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { runIfMain } from './entry.ts';
 import { assertReleaseBranchName, assertReleaseBranchTip } from './rules.ts';
 
 /** The GitHub environment every npm publish waits on. */
@@ -124,5 +123,4 @@ function main(args: readonly string[]): void {
   } else throw Error('Usage: publish-gate.ts approval|tip|tarball|integrity <args>');
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
-  main(process.argv.slice(2));
+runIfMain(import.meta.url, () => main(process.argv.slice(2)));

@@ -74,6 +74,7 @@ it('accepts a clean -x pick and the release commit, read from real git', async (
       commits,
       isMainAncestor: (sha) => gitIsAncestor(repo, sha, mainTip),
       patchIdOf: (sha) => gitPatchId(repo, sha),
+      isInBase: (sha) => gitIsAncestor(repo, sha, pinSha),
     })
   ).toEqual([]);
 });
@@ -91,6 +92,7 @@ it('refuses a pick that was edited after picking (patch-id differs)', async () =
       commits,
       isMainAncestor: (sha) => gitIsAncestor(repo, sha, mainTip),
       patchIdOf: (sha) => gitPatchId(repo, sha),
+      isInBase: (sha) => gitIsAncestor(repo, sha, pinSha),
     })[0]?.code
   ).toBe('patch-id-mismatch');
 });

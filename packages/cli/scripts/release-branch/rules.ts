@@ -3,7 +3,7 @@
  * ADR 261118-135124). Nothing here runs a command or reads a file: callers feed
  * `gh api`-shaped JSON and facts read from git, and every check fails closed.
  *
- * The same `checkReleaseCherryPicks` backs the `release-cherry-picks` CI check
+ * The same `checkReleaseCherryPicks` backs the `release-branch-contents` CI check
  * (DOR-4639) and the publish job, so the two can never disagree.
  */
 
@@ -56,6 +56,12 @@ export interface CherryPickInput {
   isMainAncestor: (sha: string) => boolean;
   /** The patch fingerprint of a commit on main, or undefined if it cannot be read. */
   patchIdOf: (sha: string) => string | undefined;
+  /**
+   * True when the SHA is already in the branch's base (the cut point, or the
+   * hotfix tag). A pick must bring something new: a trailer naming a commit
+   * the branch already holds would let any change ride on an old source.
+   */
+  isInBase: (sha: string) => boolean;
 }
 
 /** A stable code for each way a commit can break the cherry-pick rule. */
@@ -65,10 +71,13 @@ export type CherryPickCode =
   | 'not-linear'
   | 'multiple-sources'
   | 'source-not-on-main'
+  | 'source-before-cut'
   | 'patch-id-mismatch'
   | 'non-release-file'
   | 'release-commit-forbidden-path'
   | 'release-commit-package-json'
+  | 'release-commit-subject'
+  | 'release-commit-no-version'
   | 'empty-commit';
 
 /** One commit that breaks the cherry-pick rule, and why. */
@@ -263,6 +272,11 @@ function commitProblem(
     const source = picks[0];
     if (!input.isMainAncestor(source))
       return ['source-not-on-main', `its source ${source.slice(0, 12)} is not on main`];
+    if (input.isInBase(source))
+      return [
+        'source-before-cut',
+        `its source ${source.slice(0, 12)} is already in the branch's base`,
+      ];
     const expected = input.patchIdOf(source);
     if (!expected || !commit.patchId || expected !== commit.patchId)
       return [
@@ -291,6 +305,18 @@ function commitProblem(
   if (stray)
     return ['non-release-file', `not a cherry-pick, and ${stray.path} is not a release file`];
   if (!commit.files.length) return ['empty-commit', 'not a cherry-pick, and it changes nothing'];
+  const subject = commit.message.split('\n')[0]?.trim();
+  if (subject !== `chore(release): v${input.version}`)
+    return [
+      'release-commit-subject',
+      `not a cherry-pick, and its subject is not "chore(release): v${input.version}"`,
+    ];
+  // isReleaseFileChange already holds VERSION to this version when it changes.
+  if (!commit.files.some((file) => file.path === 'VERSION'))
+    return [
+      'release-commit-no-version',
+      `the release commit does not set VERSION to ${input.version}`,
+    ];
   return undefined;
 }
 

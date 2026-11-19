@@ -174,6 +174,7 @@ const input = (commits: ReleaseBranchCommit[], onMain = [source], patch = sha('6
   commits,
   isMainAncestor: (s: string) => onMain.includes(s),
   patchIdOf: (s: string) => (onMain.includes(s) ? patch : undefined),
+  isInBase: (s: string) => s === sha('0'),
 });
 const fullRelease = releaseCommit([
   { path: 'VERSION', status: 'M', before: '1.2.2\n', after: '1.2.3\n' },
@@ -210,6 +211,20 @@ describe('cherry-pick rule', () => {
     expect(checkReleaseCherryPicks(input([pick({ patchId: undefined })]))[0]?.code).toBe(
       'patch-id-mismatch'
     );
+  });
+  it('refuses a pick whose source the branch already holds (before the cut)', () => {
+    const old = sha('0');
+    const stale = pick({ message: `fix: old (#1)\n\n(cherry picked from commit ${old})` });
+    expect(checkReleaseCherryPicks(input([stale], [old]))[0]?.code).toBe('source-before-cut');
+  });
+  it('requires the release commit subject and VERSION', () => {
+    const files = fullRelease.files;
+    const wrongSubject = { ...fullRelease, message: 'chore: bump to v1.2.3' };
+    expect(checkReleaseCherryPicks(input([wrongSubject]))[0]?.code).toBe('release-commit-subject');
+    const otherVersion = { ...fullRelease, message: 'chore(release): v1.2.4' };
+    expect(checkReleaseCherryPicks(input([otherVersion]))[0]?.code).toBe('release-commit-subject');
+    const noVersion = { ...fullRelease, files: files.filter((f) => f.path !== 'VERSION') };
+    expect(checkReleaseCherryPicks(input([noVersion]))[0]?.code).toBe('release-commit-no-version');
   });
   it('refuses a pick whose source is not on main', () => {
     expect(checkReleaseCherryPicks(input([pick()], []))[0]?.code).toBe('source-not-on-main');

@@ -8,8 +8,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
-import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { runIfMain } from './entry.ts';
 import {
   assertBaseIsAncestor,
   assertHotfixBaseTag,
@@ -266,6 +265,7 @@ export function proveReleaseBranch(input: {
     commits: readReleaseBranchCommits(root, base, head),
     isMainAncestor: (sha) => gitIsAncestor(root, sha, mainSha),
     patchIdOf: (sha) => gitPatchId(root, sha),
+    isInBase: (sha) => gitIsAncestor(root, sha, base),
   });
   return formatReleaseBranchLog({
     mode: request.mode,
@@ -353,5 +353,4 @@ export function printUnescaped(text: string): void {
   console.log(`::${token}::`);
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
-  main(process.argv.slice(2));
+runIfMain(import.meta.url, () => main(process.argv.slice(2)));

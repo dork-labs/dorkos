@@ -1,6 +1,6 @@
 /**
  * Shell entry for the cherry-pick rule, so a CI step (ci-steward's
- * `release-cherry-picks`, DOR-4639) runs the exact function the publish runs.
+ * `release-branch-contents`, DOR-4639) runs the exact function the publish runs.
  * Node builtins only, no install:
  *
  *   node --experimental-strip-types check-picks.ts <repo-dir> <version> <base> <head> <main-sha>
@@ -10,8 +10,7 @@
  * 1 = findings, 2 = bad arguments or a read error (fail closed).
  */
 import { execFileSync } from 'node:child_process';
-import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { runIfMain } from './entry.ts';
 import { gitIsAncestor, gitPatchId, readReleaseBranchCommits } from './proof.ts';
 import { checkReleaseCherryPicks, type CherryPickFinding } from './rules.ts';
 
@@ -43,6 +42,7 @@ export function checkPicksInRepo(input: {
     commits: readReleaseBranchCommits(repoDir, base, head),
     isMainAncestor: (sha) => gitIsAncestor(repoDir, sha, mainSha),
     patchIdOf: (sha) => gitPatchId(repoDir, sha),
+    isInBase: (sha) => gitIsAncestor(repoDir, sha, base),
     // An empty range with base != head means a shallow or partial fetch.
     allowEmpty: base === head,
   });
@@ -64,5 +64,4 @@ function main(args: readonly string[]): number {
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
-  process.exitCode = main(process.argv.slice(2));
+runIfMain(import.meta.url, () => main(process.argv.slice(2)));

@@ -178,6 +178,25 @@ describe('check-picks shell entry', () => {
     spawnSync(process.execPath, ['--experimental-strip-types', script, ...args], {
       encoding: 'utf8',
     });
+  it('still gives a verdict when started through a symlinked folder', async () => {
+    // A plain path compare skipped main() here and exited 0 with no output.
+    const linked = join(repo, 'linked-scripts');
+    await symlink(fileURLToPath(new URL('../../scripts/release-branch/', import.meta.url)), linked);
+    try {
+      const viaLink = (...args: string[]) =>
+        spawnSync(
+          process.execPath,
+          ['--experimental-strip-types', join(linked, 'check-picks.ts'), ...args],
+          { encoding: 'utf8' }
+        );
+      const good = viaLink(repo, '1.2.3', pin, head, mainTip);
+      expect(good.status).toBe(0);
+      expect(JSON.parse(good.stdout)).toEqual({ ok: true, findings: [] });
+      expect(viaLink(repo, '1.2.3').status).toBe(2);
+    } finally {
+      await unlink(linked);
+    }
+  });
   it('exits 0 with ok JSON on a clean branch', () => {
     const result = runCheck(repo, '1.2.3', pin, head, mainTip);
     expect(result.status).toBe(0);
