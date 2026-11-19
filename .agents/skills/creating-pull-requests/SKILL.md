@@ -30,18 +30,22 @@ exists**. Opening the PR is the last step, not the first:
 5. Squash to one clean commit carrying one changelog fragment.
 6. Run `pnpm verify:preopen` on the final head with a clean tree, then check that
    exact commit with `node scripts/verify-proof/cli.ts check HEAD --level preopen`.
-   The preopen run is the affected typecheck and lint, the scripts suite when the
-   change can reach it, and ESLint on the changed files; it leaves the package
-   tests to CI's test shards. It records its pass locally in the common git
+   The preopen run is the affected typecheck and lint; the whole scripts suite
+   when the change can reach it, and the repo-wide scripts suites (which any
+   change can break) when it can't; and ESLint on the changed files, or the full
+   root lint when the root lint setup changed. It leaves the package tests to
+   CI's test shards. It records its pass locally in the common git
    directory, as `<sha>.preopen`, only when HEAD and the working tree stay clean
    and unchanged throughout the run. A new commit needs its own pass. A full
    `pnpm verify` pass also satisfies `--level preopen`. A PR that touches
    `.github/` needs a full `pnpm verify` (or a PM waiver) instead, checked with
    plain `check HEAD`, since CI can't vouch for changes to itself. A preopen proof
-   never arms: arming needs green required checks and all six test shards at the
-   exact head, or a full proof. The checker runs no gates. If an exceptional PR
-   must open without proof, add `--no-verify-proof` to the checker; it logs who,
-   when, and which commit locally. This does not bypass CI.
+   never arms, because the arming check never reads it: arming accepts green
+   required checks and all six test shards at the exact head, a full local proof,
+   or a docs-only change. The checker runs no gates. If an exceptional PR must
+   open without proof, add `--no-verify-proof` to plain `check HEAD` (it is
+   refused with `--level preopen`); it logs who, when, and which commit locally.
+   This does not bypass CI.
 7. **Then** open the PR, already reviewed, so the repo's automated review spends
    its single pass on final content.
 

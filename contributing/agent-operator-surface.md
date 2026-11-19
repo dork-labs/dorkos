@@ -401,7 +401,7 @@ At pre-delivery review head `5c723eb22d24d3fa928905be538734c7a079a911`, author a
 
 The safe `list_capabilities` call is a production-handler positive. Other schema probes use recording handlers; they establish input behavior without exercising those production services. These tests do not establish native-runtime or live-model behavior.
 
-The controls were measured from a collected green baseline: removing strictness produced two intended wire-gate failures, raw-object reconstruction one refinement failure, and generated-metadata removal three actual-listing failures. Each change was byte-restored before the green rerun. Server and spaces typechecks and normal lint/hooks passed; a final delivery commit still requires its own mandatory `pnpm verify:preopen` receipt (a full `pnpm verify` if it touches `.github/`).
+The controls were measured from a collected green baseline: removing strictness produced two intended wire-gate failures, raw-object reconstruction one refinement failure, and generated-metadata removal three actual-listing failures. Each change was byte-restored before the green rerun. Server and spaces typechecks and normal lint/hooks passed; a final delivery commit still requires its own mandatory `pnpm verify` receipt.
 
 Run this focused subset from the repository root to exercise the new contracts:
 

@@ -65,18 +65,19 @@ This is a Turborepo monorepo with five apps and nineteen shared packages:
 
 ## Development Commands
 
-| Command              | Description                                                                                                   |
-| -------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `pnpm dev`           | Start server + client dev servers                                                                             |
-| `pnpm test`          | Run all tests (Vitest)                                                                                        |
-| `pnpm test -- --run` | Single test run (no watch mode)                                                                               |
-| `pnpm build`         | Build all packages                                                                                            |
-| `pnpm typecheck`     | Type-check all packages                                                                                       |
-| `pnpm lint`          | ESLint across all packages                                                                                    |
-| `pnpm lint -- --fix` | Auto-fix ESLint issues                                                                                        |
-| `pnpm format`        | Prettier format all files                                                                                     |
-| `pnpm format:check`  | Check formatting without writing                                                                              |
-| `pnpm verify`        | The pre-PR check: script tests and root lint always run, then typecheck, lint and test over affected packages |
+| Command               | Description                                                                                                                                  |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm dev`            | Start server + client dev servers                                                                                                            |
+| `pnpm test`           | Run all tests (Vitest)                                                                                                                       |
+| `pnpm test -- --run`  | Single test run (no watch mode)                                                                                                              |
+| `pnpm build`          | Build all packages                                                                                                                           |
+| `pnpm typecheck`      | Type-check all packages                                                                                                                      |
+| `pnpm lint`           | ESLint across all packages                                                                                                                   |
+| `pnpm lint -- --fix`  | Auto-fix ESLint issues                                                                                                                       |
+| `pnpm format`         | Prettier format all files                                                                                                                    |
+| `pnpm format:check`   | Check formatting without writing                                                                                                             |
+| `pnpm verify`         | The full check: script tests and root lint, then typecheck, lint and test over affected packages; needed before a PR that touches `.github/` |
+| `pnpm verify:preopen` | The pre-PR check: typecheck and lint over affected packages, the scripts suites, and lint of the changed files; no package tests             |
 
 ### Filtering Commands
 
