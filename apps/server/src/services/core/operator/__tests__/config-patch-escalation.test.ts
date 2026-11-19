@@ -167,9 +167,43 @@ describe('an agent patching a guarded setting', () => {
     expect(decision?.outcome).toBe('approval_required');
     const [pending] = approvals.listPending();
     expect(pending).toMatchObject({ area: 'reach', alwaysOffered: false });
-    // The card names the setting, never the patch object.
-    expect(pending!.summary).toContain('tunnel.enabled: yes');
+    // The sentence counts the settings; the detail names each, never the patch object.
+    expect(pending!.summary).toContain('changes: "1 setting, 1 needs you"');
+    expect(pending!.detail).toBe('tunnel.enabled: yes');
     expect(written).toEqual([]);
+  });
+
+  it('lists every key on the card, the risky one first, however many harmless ones lead (DOR-4775)', async () => {
+    const patch: Record<string, unknown> = { ui: {} };
+    const ui = patch.ui as Record<string, unknown>;
+    for (let i = 0; i < 20; i++) ui[`someLongHarmlessSettingName${i}`] = 'x'.repeat(60);
+    patch.tunnel = { enabled: true };
+    const decision = await refusal({ patch });
+    expect(decision?.outcome).toBe('approval_required');
+    const [pending] = approvals.listPending();
+    const lines = pending!.detail!.split('\n');
+    expect(lines).toHaveLength(21);
+    expect(lines[0]).toBe('tunnel.enabled: yes');
+    for (let i = 0; i < 20; i++) {
+      expect(lines.some((line) => line.startsWith(`ui.someLongHarmlessSettingName${i}: `))).toBe(
+        true
+      );
+    }
+    expect(pending!.summary).toContain('changes: "21 settings, 1 needs you"');
+    // The old one-line list, cut at 80 characters, is gone from the sentence.
+    expect(pending!.summary).not.toContain('someLongHarmlessSettingName');
+    expect(written).toEqual([]);
+  });
+
+  it('keeps Always allow on an everyday-settings card that now carries a detail', async () => {
+    preset = 'full';
+    const decision = await refusal({ patch: { ui: { theme: 'dark' } } });
+    expect(decision?.outcome).toBe('approval_required');
+    expect(approvals.listPending()[0]).toMatchObject({
+      area: 'settings',
+      alwaysOffered: true,
+      detail: 'ui.theme: "dark"',
+    });
   });
 
   it('applies the change once the person says Allow', async () => {

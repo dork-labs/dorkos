@@ -237,6 +237,21 @@ export interface CapabilityDefinition<
    */
   approvalView?: (input: unknown) => Record<string, unknown>;
   /**
+   * The card's detail, drawn from the input, for a card whose sentence can only
+   * hold a count (DOR-4775). Used only when the call has no other detail
+   * ({@link describeApprovalChange} or {@link approvalDetailField}); an empty
+   * string or `undefined` means none. Like {@link approvalView} it is
+   * display-only: the approval still binds to the real input alone.
+   *
+   * Allowed on any tier, unlike {@link approvalDetailField}. That rule exists
+   * because a tier that never stops has no card; this one serves an `act`
+   * capability that does stop, on a card where the 80-character value cap
+   * would otherwise hide part of the list (`operator.config_patch`). The view
+   * must leave out anything secret, and must stay under
+   * `APPROVAL_DETAIL_STORED_MAX_LENGTH`, which the store cuts at.
+   */
+  approvalViewDetail?: (input: unknown) => string | undefined;
+  /**
    * Which argument names the thing being acted on, and which registry knows it
    * by name (DOR-1929). Expected on any action that can raise a card and whose
    * target is an opaque id, so the card says WHICH room, agent or task it is

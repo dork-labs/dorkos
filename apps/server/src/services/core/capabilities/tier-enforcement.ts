@@ -226,6 +226,11 @@ export interface GatedAction {
    */
   approvalDetailField?: string;
   /**
+   * The card's detail drawn from the input, used when no other detail exists.
+   * See `CapabilityDefinition.approvalViewDetail`.
+   */
+  approvalViewDetail?: (input: unknown) => string | undefined;
+  /**
    * Which argument names the thing being acted on, and which registry knows it
    * by name (DOR-1929).
    *
@@ -712,7 +717,9 @@ export function describeGatedAttempt(
 
 /**
  * The verbatim value the card shows beside the summary, when the action declares
- * a detail field and the input actually carries a string there.
+ * a detail field and the input actually carries a string there. Otherwise the
+ * action's own `approvalViewDetail`, when it declares one and it says anything
+ * (DOR-4775: the full list of settings a config patch changes).
  *
  * Only a string qualifies. An object or a number rendered into a card would be
  * `[object Object]` or a bare digit sitting under a heading promising the full
@@ -728,9 +735,10 @@ export function describeGatedAttempt(
  * @returns The value to store, or `undefined`.
  */
 function detailFor(action: GatedAction, input: unknown): string | undefined {
-  if (!action.approvalDetailField) return undefined;
-  const value = readApprovalInputPath(input, action.approvalDetailField);
-  return typeof value === 'string' ? value : undefined;
+  const value = action.approvalDetailField
+    ? readApprovalInputPath(input, action.approvalDetailField)
+    : undefined;
+  return typeof value === 'string' ? value : action.approvalViewDetail?.(input) || undefined;
 }
 
 /** The label an approval records for who asked, or its absence for an anonymous one. */

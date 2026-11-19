@@ -26,6 +26,9 @@ const WORK_QUEUE_CAPABILITY = /^work-queue\./;
  * DOR-2328) or a text in full (`approvalDetailField`), never offers it either:
  * the promise of those cards is that a person sees every such change before it
  * happens, and a standing yes would let the next change through unseen.
+ * A config patch's detail is the exception (DOR-4775): it only lists the
+ * settings its sentence counts, and the patch already offers Always allow
+ * solely in DorkOS settings, for settings an agent may change alone.
  *
  * Nor does a card for an extension's destructive tool (DOR-2685): every call
  * asks, because the tool's tier is its author's to change and a standing yes
@@ -48,7 +51,7 @@ export function isAlwaysOffered(row: {
     row.area !== null &&
     !isFloorArea(row.area) &&
     row.authorityBindingDigest === null &&
-    (row.detail ?? null) === null &&
+    ((row.detail ?? null) === null || row.capabilityId === 'operator.config_patch') &&
     !(row.tier === 'destructive' && isExtensionCapabilityId(row.capabilityId)) &&
     // A config patch asks outside its own area only for a setting a person
     // must decide each time (`areasForInput`). Permissions stopped being a

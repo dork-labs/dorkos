@@ -31,7 +31,12 @@ import {
   refuseAgentToolFiles,
 } from './agent-file-inputs.js';
 import { defineUpdateAgentConfig } from './agent-config.js';
-import { isSecretInputKey } from '@dorkos/shared/capabilities';
+import {
+  CONFIG_PATCH_TOO_LARGE_MESSAGE,
+  configPatchCardFits,
+  describePatchDetail,
+  describePatchSummary,
+} from './config-patch-card.js';
 
 import { defineCapability, type CapabilityDomain } from '../capabilities/index.js';
 import type { CapabilityDeps } from '../capabilities/index.js';
@@ -58,36 +63,6 @@ import {
   type FeedbackDraftArgs,
 } from './operator-tool-handlers.js';
 import { CONFIG_PATCH_PERSON_SETTINGS } from './operator-only-tightening.js';
-
-/**
- * The settings a config patch changes, as one line for its approval card:
- * `ui.theme: dark, tunnel.enabled: yes`. The card quotes and escapes the whole
- * line as one value, so nothing in it can pass for a second field. A leaf whose name says secret is
- * listed by name only, and a list or an empty object by name only, so the card
- * never carries a credential or a wall of structure.
- *
- * @param patch - The patch the call carries.
- */
-export function describePatchForCard(patch: unknown): string {
-  const parts: string[] = [];
-  const walk = (value: unknown, prefix: string): void => {
-    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-      const entries = Object.entries(value as Record<string, unknown>);
-      if (entries.length === 0 && prefix) parts.push(prefix);
-      for (const [key, child] of entries) walk(child, prefix ? `${prefix}.${key}` : key);
-      return;
-    }
-    const leaf = prefix.split('.').pop() ?? prefix;
-    if (isSecretInputKey(leaf) || Array.isArray(value)) {
-      parts.push(prefix);
-      return;
-    }
-    const shown = typeof value === 'boolean' ? (value ? 'yes' : 'no') : String(value);
-    parts.push(`${prefix}: ${shown}`);
-  };
-  walk(patch, '');
-  return parts.length > 0 ? parts.join(', ') : 'nothing';
-}
 
 /**
  * Caps on the two free-form fields `feedback_draft` accepts.
@@ -694,26 +669,35 @@ export const operatorDomain: CapabilityDomain = {
       // At Full, the ones it raises are refused by name; one that only turns them down runs
       // (DOR-3426, `operator-only-tightening.ts`).
       ...CONFIG_PATCH_PERSON_SETTINGS,
-      // The card lists the settings the patch changes, never the patch object
-      // (which renders as "details") and never the value of a secret-named one.
+      // The sentence counts the settings; the detail lists every one, riskiest
+      // first, so a long harmless key cannot push a risky one past the
+      // sentence's 80-character cut (DOR-4775). Never the value of a
+      // secret-named one.
       approvalDisplayFields: ['changes'],
       approvalView: (input) => ({
-        changes: describePatchForCard((input as { patch?: unknown }).patch),
+        changes: describePatchSummary((input as { patch?: unknown }).patch),
       }),
+      approvalViewDetail: (input) => describePatchDetail((input as { patch?: unknown }).patch),
       input: z.object({
         // Not `z.record()`: a record anywhere in an in-session tool's schema
         // crashes the whole `tools/list` answer on claude-agent-sdk 0.3.257+ with
         // zod 4.5.3+, and the model is handed no DorkOS tools at all. `catchall`
         // accepts the same values. Full story in
         // `runtimes/claude-code/mcp-tools/tool-exposure.ts`.
-        patch: z.object({}).catchall(z.unknown()).describe(
-          // Keep this example a field that actually exists. It has drifted twice
-          // already: `ui.sidebar` never had a `collapsed` key, `ui.statusBar` is
-          // a `pins` list rather than per-item booleans (DOR-452), and the
-          // per-section collapse flags this used to name were retired by the
-          // sidebar redesign. `ui.theme` is the least likely to move.
-          'Partial config to deep-merge, e.g. { "ui": { "theme": "dark" } }'
-        ),
+        // Refused before any card when the card could not list every setting
+        // (DOR-4775): the parse runs ahead of the gate.
+        patch: z
+          .object({})
+          .catchall(z.unknown())
+          .refine(configPatchCardFits, { message: CONFIG_PATCH_TOO_LARGE_MESSAGE })
+          .describe(
+            // Keep this example a field that actually exists. It has drifted twice
+            // already: `ui.sidebar` never had a `collapsed` key, `ui.statusBar` is
+            // a `pins` list rather than per-item booleans (DOR-452), and the
+            // per-section collapse flags this used to name were retired by the
+            // sidebar redesign. `ui.theme` is the least likely to move.
+            'Partial config to deep-merge, e.g. { "ui": { "theme": "dark" } }'
+          ),
       }),
       output: z.unknown(),
       surfaces: {
