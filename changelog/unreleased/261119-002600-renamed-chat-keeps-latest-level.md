@@ -1,7 +1,6 @@
 ---
 covers:
   - 'fix(turn-power): a renamed chat keeps the latest turn''s "set to Full" answer (DOR-4606)'
-  - 'fix(turn-power): a renamed chat keeps the latest turn''s "set to Full" answer (DOR-4606)'
 ---
 
 ### Fixed
