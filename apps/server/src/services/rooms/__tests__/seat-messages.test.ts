@@ -41,7 +41,14 @@ import { noteRoomTurnWords } from '../../core/turn-power/outside-words.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import { agentKey, deepestClaimOf } from '../room-claims.js';
 import type { RoomTriggerDispatcher } from '../room-trigger.js';
-import type { RoomSeatMessagesPort } from '../handoff/seat-message-types.js';
+import type {
+  RoomSeatMessagesPort,
+  SeatMessageLimits,
+  SeatMessagePending,
+} from '../handoff/seat-message-types.js';
+import { SEAT_MESSAGE_GLOBAL_MAX, SEAT_MESSAGE_PENDING_MAX } from '../handoff/seat-messages.js';
+import { seatBatchStillCurrent } from '../handoff/seat-message-target.js';
+import type { RoomCore } from '../service/room-core.js';
 import type { RoomService } from '../room-service.js';
 import type { RoomTurnRequest } from '../room-turn-port.js';
 import { agentLookupFor, createRoomHarness, outcomeRunner } from './room-test-harness.js';
@@ -706,8 +713,14 @@ it('M9: the global pending bound cannot be bypassed by creating more seats', asy
   });
   if (!seatInbox) throw new Error('Missing production seat inbox');
   // The cap owns durable private admissions. Public notice/indexing behavior is
-  // covered by M8; repeating that work 1,000 times made this a throughput test.
-  for (let n = 0; n < 40; n++) {
+  // covered by M8. A small global bound proves the same rule without 1,000 rows,
+  // which timed out on loaded CI (DOR-4722); the real defaults are pinned below.
+  seatInbox.stop();
+  seatInbox = harness.service.createSeatMessages(receipts, () => undefined, {
+    pendingMax: SEAT_MESSAGE_PENDING_MAX,
+    globalMax: 10,
+  });
+  for (let n = 0; n < 5; n++) {
     const room = harness.service.createRoom(
       { kind: 'channel', title: `Queue ${n}`, members: [], agentPaths: ['/agents/bo'] },
       harness.human
@@ -716,7 +729,8 @@ it('M9: the global pending bound cannot be bypassed by creating more seats', asy
     harness.store.bindRoomSession(room.id, bo, session, new Date().toISOString());
     const target = seatInbox.resolveSeatTarget(session);
     if (!target) throw new Error('Missing real ledger seat');
-    for (let j = 0; j < 25; j++) {
+    // Each seat stays under its own bound; only their total reaches the global one.
+    for (let j = 0; j < 2; j++) {
       const row: NewChatMessage = {
         id: `pending-${n}-${j}`,
         toSessionId: session,
@@ -748,9 +762,19 @@ it('M9: the global pending bound cannot be bypassed by creating more seats', asy
   await expect(
     chats.send(caller, { to: 'seat-chat', message: 'global overflow' })
   ).rejects.toMatchObject({ code: 'UNAVAILABLE' });
-  expect(receipts.pendingSeatMessages()).toHaveLength(1000);
-  expect(receipts.listSentFrom(caller.sessionId)).toHaveLength(1000);
+  expect(receipts.pendingSeatMessages()).toHaveLength(10);
+  expect(receipts.listSentFrom(caller.sessionId)).toHaveLength(10);
   expect(turns).toHaveLength(0);
+});
+
+it('M9: production inboxes keep the real pending and global bounds', () => {
+  expect(SEAT_MESSAGE_PENDING_MAX).toBe(25);
+  expect(SEAT_MESSAGE_GLOBAL_MAX).toBe(1_000);
+  // Production factories pass no limits; the shrunken tests must not leak into them.
+  expect((seatInbox as unknown as { limits: SeatMessageLimits }).limits).toEqual({
+    pendingMax: SEAT_MESSAGE_PENDING_MAX,
+    globalMax: SEAT_MESSAGE_GLOBAL_MAX,
+  });
 });
 
 it('M4: the actual Full turn record retains level while raise and destructive gates retain the card', async () => {
@@ -1393,6 +1417,14 @@ it.each(['expiry', 'later-items', 'stop', 'requeue-error'] as const)(
       return { sessionId: request.sessionId!, text: null };
     };
     if (scenario === 'requeue-error') block();
+    if (scenario === 'expiry') {
+      // A full hour of 30-second rechecks over a small bound proves the same rule as 25 (DOR-4722).
+      seatInbox!.stop();
+      seatInbox = harness.service.createSeatMessages(receipts, () => undefined, {
+        pendingMax: 3,
+        globalMax: SEAT_MESSAGE_GLOBAL_MAX,
+      });
+    }
     const first = await chats.send(caller, { to: 'seat-chat', message: 'BUSY_FIRST' });
     let second: Awaited<ReturnType<ChatMessageService['send']>> | undefined;
     try {
@@ -1428,14 +1460,15 @@ it.each(['expiry', 'later-items', 'stop', 'requeue-error'] as const)(
         expect(receipts.get(first.messageId)?.status).toBe('queued');
         if (scenario === 'expiry') {
           block();
-          for (let i = 0; i < 24; i++)
+          // The requeued first message plus these fill the seat's bound of 3.
+          for (let i = 0; i < 2; i++)
             await chats.send(caller, { to: 'seat-chat', message: `WAITING_${i}` });
           await expect(
             chats.send(caller, { to: 'seat-chat', message: 'OVERFLOW' })
           ).rejects.toMatchObject({ code: 'UNAVAILABLE' });
           await vi.advanceTimersByTimeAsync(60 * 60_000 + 1);
           await seatInbox!.idle();
-          expect(receipts.listSentFrom(caller.sessionId)).toHaveLength(25);
+          expect(receipts.listSentFrom(caller.sessionId)).toHaveLength(3);
           expect(
             receipts.listSentFrom(caller.sessionId).every((row) => row.status === 'failed')
           ).toBe(true);
@@ -1698,4 +1731,30 @@ it('Code D3: a queued unsolicited write refuses when its room becomes bridged du
   } finally {
     release?.();
   }
+});
+
+describe('batch target checks (DOR-4722)', () => {
+  function batchOf(targets: SeatMessagePending['target'][], unsolicited = true) {
+    return targets.map((target) => ({ target, unsolicited }) as SeatMessagePending);
+  }
+  function core(): RoomCore {
+    return (harness.service as unknown as { parts: { core: RoomCore } }).parts.core;
+  }
+
+  it('M9: a batch sharing one seat reads that seat and its room once', () => {
+    const target = seatInbox!.resolveSeatTarget('seat-chat')!;
+    const ledger = vi.spyOn(core().store.sessionLedger, 'bindingForSession');
+    const bridges = vi.spyOn(core().bridges, 'findBridgeByRoom');
+    expect(seatBatchStillCurrent(core(), batchOf(Array<SeatMessagePending['target']>(8).fill(target)))).toBe(true);
+    expect(ledger).toHaveBeenCalledTimes(1);
+    // Once inside the seat check, once for the unsolicited bridge refusal.
+    expect(bridges).toHaveBeenCalledTimes(2);
+  });
+
+  it('M9: one stale seat among current ones still refuses the whole batch', () => {
+    const target = seatInbox!.resolveSeatTarget('seat-chat')!;
+    const stale = { ...target, joinedAt: '2000-01-01T00:00:00.000Z' };
+    expect(seatBatchStillCurrent(core(), batchOf([target, target, stale, target]))).toBe(false);
+    expect(seatBatchStillCurrent(core(), batchOf([target, target], false))).toBe(true);
+  });
 });

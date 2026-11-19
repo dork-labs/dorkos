@@ -11,7 +11,11 @@ import type { RoomPublisher } from '../service/room-publisher.js';
 import { agentKey } from '../room-claims.js';
 import { carryFrom, withRoomMarks } from './seat-carry.js';
 import { SEAT_REPORT_WAIT_MAX_MS } from './seat-report.js';
-import { currentSeatMessageTarget, resolveSeatMessageTarget } from './seat-message-target.js';
+import {
+  currentSeatMessageTarget,
+  resolveSeatMessageTarget,
+  seatBatchStillCurrent,
+} from './seat-message-target.js';
 import {
   joinSeatCarry,
   seatCarryOf,
@@ -22,6 +26,7 @@ import {
 import type {
   RoomSeatMessagesPort,
   SeatMessageAdmission,
+  SeatMessageLimits,
   SeatMessageTarget,
   SeatMessagePending as Pending,
 } from './seat-message-types.js';
@@ -30,6 +35,10 @@ import type {
 export const SEAT_MESSAGE_PENDING_MAX = 25;
 /** Maximum pending/active receipt references owned by this inbox across all seats. */
 export const SEAT_MESSAGE_GLOBAL_MAX = 1_000;
+const DEFAULT_LIMITS: SeatMessageLimits = {
+  pendingMax: SEAT_MESSAGE_PENDING_MAX,
+  globalMax: SEAT_MESSAGE_GLOBAL_MAX,
+};
 const RECHECK_MS = 30_000;
 interface Inbox {
   items: Pending[];
@@ -55,7 +64,9 @@ export class RoomSeatMessages implements RoomSeatMessagesPort {
     private readonly core: RoomCore,
     private readonly publisher: RoomPublisher,
     private readonly receipts: ChatMessageStore,
-    private readonly emit: (sessionId: string) => void
+    private readonly emit: (sessionId: string) => void,
+    // Smaller bounds exist so tests can reach them without thousands of rows (DOR-4722).
+    private readonly limits: SeatMessageLimits = DEFAULT_LIMITS
   ) {
     this.settlements = new SeatMessageSettlements(
       receipts,
@@ -88,8 +99,8 @@ export class RoomSeatMessages implements RoomSeatMessagesPort {
     const key = agentKey(input.target.roomId, input.target.authorId);
     const queue = this.queues.get(key);
     if (
-      this.count >= SEAT_MESSAGE_GLOBAL_MAX ||
-      (queue && queue.items.length + queue.active.length >= SEAT_MESSAGE_PENDING_MAX)
+      this.count >= this.limits.globalMax ||
+      (queue && queue.items.length + queue.active.length >= this.limits.pendingMax)
     ) {
       throw new ChatMessageError('UNAVAILABLE', 'The seat message queue is full. Try again later.');
     }
@@ -369,11 +380,7 @@ export class RoomSeatMessages implements RoomSeatMessagesPort {
         !this.stopped &&
         !this.faulted &&
         state.canRun &&
-        batch.every(
-          (item) =>
-            currentSeatMessageTarget(this.core, item.target) !== null &&
-            (!item.unsolicited || this.core.bridges.findBridgeByRoom(item.target.roomId) === null)
-        ),
+        seatBatchStillCurrent(this.core, batch),
       prepareCarry: () =>
         withRoomMarks(
           this.core,
