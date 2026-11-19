@@ -82,6 +82,45 @@ describe('noteTurnWait', () => {
     expect(onWaiting).toHaveBeenCalledWith({ kind: 'approval', toolName: 'Bash' });
   });
 
+  // DOR-4610: a card a person answers outside the SDK's prompts (a marked
+  // turn's connector send) holds the turn just the same, so the room says so.
+  it('reports an approval card still open after the grace, and not one answered in time', () => {
+    vi.useFakeTimers();
+    const waits: TurnWaits = new Map();
+    const onWaiting = vi.fn();
+    const card = (approvalId: string) =>
+      ({
+        seq: 8,
+        type: 'capability_approval_required',
+        startedAt: 0,
+        capMs: 600_000,
+        approval: { approvalId, capabilityId: 'connectors.execute_write', roomId: 'room-demo' },
+      }) as unknown as SessionEvent;
+    noteTurnWait(card('approval-answered'), waits, { graceMs: GRACE, onWaiting });
+    noteTurnWait(
+      {
+        seq: 9,
+        type: 'capability_approval_resolved',
+        approvalId: 'approval-answered',
+        outcome: 'granted',
+      } as unknown as SessionEvent,
+      waits,
+      { graceMs: GRACE, onWaiting }
+    );
+    vi.advanceTimersByTime(GRACE * 2);
+    expect(onWaiting).not.toHaveBeenCalled();
+    expect(waits.size).toBe(0);
+
+    noteTurnWait(card('approval-open'), waits, { graceMs: GRACE, onWaiting });
+    vi.advanceTimersByTime(GRACE);
+    expect(onWaiting).toHaveBeenCalledTimes(1);
+    expect(onWaiting).toHaveBeenCalledWith({
+      kind: 'approval',
+      toolName: 'connectors.execute_write',
+      cardRoomId: 'room-demo',
+    });
+  });
+
   it('tells a slot wait from any other status', () => {
     expect(isSlotWaitEvent(slotWait)).toBe(true);
     expect(isSlotWaitEvent({ seq: 1, type: 'system_status', message: 'x' } as SessionEvent)).toBe(

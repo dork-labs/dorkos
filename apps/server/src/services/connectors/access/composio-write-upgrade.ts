@@ -30,6 +30,17 @@ import { COMPOSIO_WRITE_NOTICE_ENTRIES } from '../../notifications/emitters/comp
 const VERSION = 20261115;
 
 /**
+ * The reason the upgrade stamps on each hosted command it sets aside (DOR-4510).
+ * A relink resend sends what the agent holds now in its place, never its saved
+ * selection, whatever the timestamps say, so the writes the upgrade took away
+ * can't come back on a clock step. The relink resend in
+ * `resources/managed-authority-sync-service.ts` reads it: if this one-time
+ * upgrade is ever retired, move the constant there first.
+ */
+export const WRITE_UPGRADE_SET_ASIDE =
+  'Read and write went back to Read for this app, so this older change was set aside.';
+
+/**
  * Lower previously inert Composio write levels exactly once, before any catalog follower starts.
  *
  * @param db - This installation's canonical connector database.
@@ -99,6 +110,7 @@ export function upgradeComposioWriteLevels(db: Db, now = new Date().toISOString(
       tx.update(connectorManagedAuthorityOutbox)
         .set({
           state: 'superseded',
+          safeReason: WRITE_UPGRADE_SET_ASIDE,
           resolvedAt: now,
           updatedAt: now,
           nextAttemptAt: null,

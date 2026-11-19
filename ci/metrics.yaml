@@ -189,6 +189,22 @@ tracked:
       falls in. Higher is better. Read by hand: counted by ci-steward from
       the Actions run list; not computed by the daily collector, which would
       otherwise read a ratio as lower-is-better.
+  - id: tracked.unarmed-queue-entries
+    unit: count
+    definition: >-
+      Merge-queue entries per 7 days whose head carried no `success`
+      `arm-record` status from the local arm script when they were queued
+      (bare `gh pr merge`, a GraphQL enqueue, merge-tail). Read by hand from
+      arm-door.yml's "queued without the arm script" warnings and the arm log; not
+      computed by the daily collector.
+  - id: tracked.ungated-merges
+    unit: count
+    definition: >-
+      Pull requests merged per 7 days whose merged head, when it was queued,
+      lacked a `security-reviewed` label added at or after it, or a verify
+      proof (the arm script's stamp, a docs-only diff, or green required checks
+      and six test shards). Read by hand from each PR's label events, arm-door.yml's
+      verdict lines and the arm log; not computed by the daily collector.
   - id: tracked.merge-tail-unknown-skips
     unit: count
     definition: >-

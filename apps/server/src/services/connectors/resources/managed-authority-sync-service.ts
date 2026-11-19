@@ -52,6 +52,7 @@ import {
   isFollowerCommand,
 } from '../execution/access-levels.js';
 import { everyAgentGrantSubject } from '../every-agent-grants.js';
+import { WRITE_UPGRADE_SET_ASIDE } from '../access/composio-write-upgrade.js';
 import { rejectionReason } from './managed-authority-rejection.js';
 import type {
   ConnectorManagedLifecyclePort,
@@ -878,8 +879,10 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
    *   the same account keeps the access it was given. When anything changed
    *   that agent's access here since (it was removed, say), what it holds now
    *   goes instead: nothing sent is ever wider than the owner's latest choice.
-   *   A disconnect still owed goes again even for an account removed from
-   *   the owner's list, so DorkOS still ends its access at the service.
+   *   A change the write upgrade set aside always goes as what the agent holds
+   *   now, never as the saved choice (DOR-4510). A disconnect still owed goes
+   *   again even for an account removed from the owner's list, so DorkOS
+   *   still ends its access at the service.
    * - `confirmed` — the owner confirmed who can use the account: every
    *   refused change is settled with exactly the access the owner was shown
    *   (what each agent holds now), never the refused selection. An agent the
@@ -937,6 +940,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
         subjectId: connectorManagedAuthorityOutbox.subjectId,
         state: connectorManagedAuthorityOutbox.state,
         rejectionCode: connectorManagedAuthorityOutbox.rejectionCode,
+        safeReason: connectorManagedAuthorityOutbox.safeReason,
         generation: connectorManagedAuthorityOutbox.executionConfigGeneration,
         requestJson: connectorManagedAuthorityOutbox.requestJson,
         compactedAt: connectorManagedAuthorityOutbox.compactedAt,
@@ -1000,10 +1004,12 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
       // The owner's last saved choice goes again only after a relink, only
       // while nothing has changed this agent's access since, and only when
       // the service still offers its actions. Otherwise what the agent holds
-      // now goes: never more than the owner last saw.
+      // now goes: never more than the owner last saw. A choice the write
+      // upgrade set aside never goes again, whatever the clocks say (DOR-4510).
       const saved =
         input.why === 'relinked' &&
         command &&
+        scope.safeReason !== WRITE_UPGRADE_SET_ASIDE &&
         scope.rejectionCode !== 'revision_unavailable' &&
         (command.kind === 'replace_agent_grants' ||
           command.kind === 'replace_every_agent_grants') &&
@@ -2106,12 +2112,7 @@ function sendAgain(
 ): boolean {
   if (scope.state === 'rejected' && scope.rejectionCode === 'connection_unavailable') return false;
   if (why === 'confirmed') return scope.state === 'rejected';
-  if (scope.state === 'rejected') {
-    return (
-      scope.rejectionCode === 'unauthorized' ||
-      scope.rejectionCode === 'permission_upgrade_required'
-    );
-  }
+  if (scope.state === 'rejected') return RESENT_REFUSALS.has(scope.rejectionCode ?? '');
   // Staged under the old link and never applied: under the new one it would
   // only be set aside as superseded, and the access it carried lost.
   return (
@@ -2119,6 +2120,9 @@ function sendAgain(
     (scope.state === 'pending' && scope.generation !== currentGeneration)
   );
 }
+
+/** Hosted refusals a new link can cure, so the refused command is sent again. */
+const RESENT_REFUSALS = new Set(['unauthorized', 'permission_upgrade_required']);
 
 /** Whether a stored lifecycle command asked to resume the account. */
 function isResume(requestJson: string): boolean {

@@ -316,6 +316,11 @@ export interface RoomTurnWaiting {
    * only** — see `buildWaitingNotice` on why it is not in the room's copy.
    */
   toolName?: string;
+  /**
+   * The room an approval card is shown in, when the wait is on one (DOR-4610).
+   * The room shows its own cards at the live end, so its line points there.
+   */
+  cardRoomId?: string;
 }
 
 /** What a turn produced, however long it took to produce it. */

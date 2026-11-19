@@ -1,0 +1,191 @@
+name: arm-door
+
+# The merge queue's door for the arm rule (DOR-4648). On every queue entry,
+# whoever queued it, this reads the pull request's head and scripts/arm-door.sh
+# decides (fixtures: scripts/test-arm-door.sh; ledger:
+# ci/ledger/261118-183332-arm-door.md):
+#
+#   - The gates decide whether it stays. It is taken back out when the head has
+#     no `security-reviewed` label added at or after it (every PR, the release
+#     range check's rule), or no verify proof: the arm script's `arm-record`
+#     stamp naming one, a docs-only diff, or every required check and all six
+#     test shards green at the head. So a careful merge by a person from the
+#     GitHub page still goes through.
+#   - The arm script only gets a comment. Gates met but no `arm-record` stamp
+#     means it went in some other way, and the author is told once.
+#
+# It never jams the queue on its own errors: it fails OPEN. Anything it cannot
+# read keeps the entry, with a warning and one comment. It is not a required
+# check, and it stays GREEN whatever happens, for the reason
+# queue-repeat-guard.yml gives: a red run on the merge-group commit is listed
+# among that build's failed checks. Every step is `continue-on-error`, every
+# failure is a `::warning::`, and the step ends `exit 0`.
+#
+# merge-tail (disabled since 2026-11-18) is held to the same gates: an entry it
+# queues stays only if the head carries Security's label and a proof this can
+# see (docs-only or green CI; it has no stamp), and it is told once that the
+# arm script was skipped. The arm script's other gates (QA's and the designer's
+# sign-offs) are not checked here, so merge-tail stays off until it runs the
+# arm script's gate code.
+#
+# A stamp is not a signature: every agent acts on GitHub as one login, so a
+# session can post one by hand. Per-role GitHub Apps are the real fix
+# (DOR-3183).
+#
+# WHOSE KEY: the workflow's own token reads; the `dorkos-merge-tail` GitHub
+# App's token (as in queue-repeat-guard.yml) dequeues and comments. It has no
+# Administration permission.
+
+on:
+  merge_group:
+    types: [checks_requested]
+
+permissions:
+  contents: read
+  statuses: read
+  checks: read
+  pull-requests: read
+  issues: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  door:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # The queue's base, not this entry's own tree: the scripts below run with
+      # a write token, so they must not be ones the pull request being judged
+      # could have edited. Same reason as security-gate.yml.
+      - uses: actions/checkout@v7
+        continue-on-error: true
+        timeout-minutes: 2
+        with:
+          ref: ${{ github.event.merge_group.base_sha }}
+          persist-credentials: false
+
+      - name: Mint the merge-tail app token
+        id: app-token
+        continue-on-error: true
+        timeout-minutes: 1
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.MERGE_TAIL_APP_CLIENT_ID }}
+          private-key: ${{ secrets.MERGE_TAIL_APP_PRIVATE_KEY }}
+          # Scoped down to the grants this job uses, both of which the app
+          # already holds (merge-tail.yml's token comment lists them): pull
+          # requests to comment, contents for the dequeue.
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Check the head's gates and the arm script's stamp
+        continue-on-error: true
+        # Under the job's 10: a hung `gh` call times this step out, which
+        # continue-on-error keeps green, instead of cancelling the job.
+        timeout-minutes: 6
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
+          HEAD_REF: ${{ github.event.merge_group.head_ref }}
+        run: |
+          # Not -e (GitHub's default shell sets it): every failure is handled.
+          set +e -uo pipefail
+          warn() { echo "::warning::arm-door: $*"; }
+          [[ -f scripts/arm-door.sh && -f scripts/queue-repeat-guard.sh ]] \
+            || { warn "the queue base has no scripts/arm-door.sh; nothing checked on this entry"; exit 0; }
+          pr=$(bash scripts/queue-repeat-guard.sh pr-from-ref "$HEAD_REF") \
+            || { warn "not a queue ref: $HEAD_REF"; exit 0; }
+          w=$(mktemp -d)
+
+          # Each read lands in its own file; a failed read leaves `null`, and the
+          # script then answers "unreadable" for that field.
+          head=$(gh pr view "$pr" --repo "$REPO" --json headRefOid --jq .headRefOid 2>/dev/null) || head=
+          [[ "$head" =~ ^[0-9a-f]{40}$ ]] || head=
+          rd() { # <out-file> <command...>: JSON on success, null on any failure
+            local out=$1; shift
+            "$@" > "$out.raw" 2>/dev/null && jq -s -c "${JQ:-.}" "$out.raw" > "$out" 2>/dev/null || echo null > "$out"
+          }
+          if [[ -n "$head" ]]; then
+            JQ='.[0]' rd "$w/committed" gh api "repos/$REPO/commits/$head" --jq '.commit.committer.date | tojson'
+            JQ='add // []' rd "$w/statuses" gh api --paginate "repos/$REPO/commits/$head/statuses?per_page=100"
+            JQ='.' rd "$w/runs" gh api --paginate "repos/$REPO/commits/$head/check-runs?per_page=100" --jq '.check_runs[]'
+          else
+            for f in committed statuses runs; do echo null > "$w/$f"; done
+          fi
+          JQ='.' rd "$w/labels" gh api --paginate "repos/$REPO/issues/$pr/events?per_page=100" \
+            --jq '.[] | select(.event == "labeled" and .label.name == "security-reviewed") | .created_at | tojson'
+          JQ='.' rd "$w/files" gh api --paginate "repos/$REPO/pulls/$pr/files?per_page=100" \
+            --jq '.[] | {filename, previous_filename}'
+          JQ='.[0]' rd "$w/changed" gh api "repos/$REPO/pulls/$pr" --jq .changed_files
+          jq -c '.contexts // null' ci/required-checks.json > "$w/required" 2>/dev/null || echo null > "$w/required"
+
+          jq -n --arg head "$head" \
+            --slurpfile committed "$w/committed" --slurpfile statuses "$w/statuses" \
+            --slurpfile runs "$w/runs" --slurpfile labels "$w/labels" --slurpfile files "$w/files" \
+            --slurpfile changed "$w/changed" --slurpfile required "$w/required" '
+            {head: $head, headCommittedAt: $committed[0], labelEvents: $labels[0],
+             statuses: $statuses[0], checkRuns: $runs[0], required: $required[0],
+             files: $files[0], changedFiles: $changed[0]}' > "$w/payload.json" 2>/dev/null \
+            || echo '{}' > "$w/payload.json"
+
+          bash scripts/arm-door.sh verdict "$w/payload.json" > "$w/verdict.txt" 2>/dev/null || :
+          verdict=$(head -n 1 "$w/verdict.txt")
+          [[ -n "$verdict" ]] || verdict="KEEP unreadable verdict"
+          echo "PR #$pr at ${head:0:10} -> $verdict"
+
+          # say <kind> <detail>: one comment per head and kind.
+          say() {
+            [[ -n "$APP_TOKEN" ]] || { warn "PR #$pr: no app token; not telling the author"; return; }
+            local marker="<!-- arm-door $1 head=${head:-unknown} -->"
+            GH_TOKEN=$APP_TOKEN gh api --paginate "repos/$REPO/issues/$pr/comments?per_page=100" --jq '.[].body' \
+              > "$w/comments.txt" 2>/dev/null || { warn "PR #$pr: could not read comments; not telling the author"; return; }
+            grep -qF -- "$marker" "$w/comments.txt" && return
+            bash scripts/arm-door.sh comment "$1" "$pr" "${head:-unknown}" "$2" > "$w/comment.md"
+            GH_TOKEN=$APP_TOKEN gh pr comment "$pr" --repo "$REPO" --body-file "$w/comment.md" >/dev/null 2>&1 \
+              || warn "PR #$pr: could not post the note"
+          }
+
+          case "$verdict" in
+            "PULL "*)
+              reasons=${verdict#PULL }
+              warn "PR #$pr at ${head:0:10} is missing a gate ($reasons)"
+              # The verdict judged the PR's head as read above, not the entry's
+              # own SHA (GitHub doesn't expose that). GitHub refuses pushes to a
+              # queued PR and drops an entry whose head moves, so the two agree
+              # while it is queued; re-read both right before acting, and act only
+              # if the head is unchanged and the PR is still in the queue.
+              recheck=$(gh api graphql -F number="$pr" -F owner="${REPO%/*}" -F name="${REPO#*/}" \
+                -f query='query($owner:String!,$name:String!,$number:Int!){ repository(owner:$owner,name:$name){
+                  pullRequest(number:$number){ headRefOid isInMergeQueue } } }' \
+                --jq '.data.repository.pullRequest | "\(.headRefOid) \(.isInMergeQueue)"' 2>/dev/null) || recheck=
+              if [[ "$recheck" != "$head true" ]]; then
+                warn "PR #$pr: head or queue state changed since it was read (${recheck:-unreadable}); left as it is"
+              elif [[ -z "$APP_TOKEN" ]]; then
+                warn "PR #$pr: no app token, so it stays in the queue"
+              else
+                node_id=$(GH_TOKEN=$APP_TOKEN gh pr view "$pr" --repo "$REPO" --json id --jq .id 2>/dev/null)
+                if [[ -n "$node_id" ]] && GH_TOKEN=$APP_TOKEN gh api graphql -f id="$node_id" \
+                     -f query='mutation($id:ID!){ dequeuePullRequest(input:{id:$id}){ clientMutationId } }' \
+                     >/dev/null 2>"$w/dequeue-err.txt"; then
+                  echo "PR #$pr -> taken out of the queue: $reasons"
+                  # Only once it is really out: the note says it was taken out.
+                  say pull "$reasons"
+                else
+                  warn "PR #$pr: could not dequeue: $(tr '\n' ' ' < "$w/dequeue-err.txt" 2>/dev/null | cut -c1-200)"
+                fi
+              fi
+              ;;
+            "KEEP gates-met "*"stamp=no")
+              proof=$(sed -E 's/.*(proof=[a-z-]+).*/\1/' <<<"$verdict")
+              warn "PR #$pr at ${head:0:10} was queued without the arm script ($proof); it stays"
+              say unarmed "$proof"
+              ;;
+            "KEEP unreadable "*)
+              field=${verdict#KEEP unreadable }
+              warn "PR #$pr: could not read $field; left in the queue"
+              say unreadable "$field"
+              ;;
+          esac
+          exit 0

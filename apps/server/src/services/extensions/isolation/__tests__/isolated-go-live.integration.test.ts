@@ -64,6 +64,12 @@ vi.mock('../../../core/auth/session-gate.js', async (importOriginal) => ({
 
 import { ExtensionManager } from '../../extension-manager.js';
 import { grantsDigestOf } from '../../pin/extension-path-trust.js';
+import { placeSnapshots } from '../../pin/extension-snapshot-placement.js';
+import {
+  noteWriteDone,
+  noteWriteStarting,
+  resetPathTrustWriters,
+} from '../../pin/path-trust-writers.js';
 import { createExtensionApiRoutes } from '../../../../routes/extension-api.js';
 import { honoGroupListener } from '../../../../http/__tests__/hono-group-listener.js';
 import type { ApiEnv } from '../../../../http/api-chain.js';
@@ -123,25 +129,37 @@ const sends = {
 };
 const inbox = { stopped: [] as string[], running: [] as string[] };
 
-/** Write the extension's files; `allow` widens or narrows what it declares. */
+/**
+ * Write the extension's files; `allow` widens or narrows what it declares. Each write is noted as
+ * its author's own unheld one, as the agent's file tools note it (DOR-4528).
+ */
 async function install(version = 'v1', net: string[] = []): Promise<void> {
   await fs.mkdir(extDir, { recursive: true });
-  await fs.writeFile(
-    path.join(extDir, 'extension.json'),
-    JSON.stringify({
-      id: ID,
-      name: NAME,
-      version: '1.0.0',
-      description: 'An isolated extension for the go-live test.',
-      serverCapabilities: {
-        serverEntry: './server.ts',
-        runtime: 'subprocess',
-        allow: { net, run: [], agents: true },
-      },
-    })
-  );
-  await fs.writeFile(path.join(extDir, 'index.ts'), 'export function activate() {}\n');
-  await fs.writeFile(path.join(extDir, 'server.ts'), serverSource(version));
+  const manifest = JSON.stringify({
+    id: ID,
+    name: NAME,
+    version: '1.0.0',
+    description: 'An isolated extension for the go-live test.',
+    serverCapabilities: {
+      serverEntry: './server.ts',
+      runtime: 'subprocess',
+      allow: { net, run: [], agents: true },
+    },
+  });
+  await authorWrite('extension.json', manifest);
+  await authorWrite('index.ts', 'export function activate() {}\n');
+  await authorWrite('server.ts', serverSource(version));
+}
+
+let writeCall = 0;
+
+/** One write by the author's file tool: noted, written as asked, completed. */
+async function authorWrite(name: string, text: string): Promise<void> {
+  const file = path.join(extDir, name);
+  const id = `write-${++writeCall}`;
+  await noteWriteStarting(id, { file, agentHome, held: false }, () => Buffer.from(text));
+  await fs.writeFile(file, text);
+  await noteWriteDone(id);
 }
 
 /**
@@ -248,6 +266,7 @@ beforeEach(async () => {
   // kind whose server edits keep running without a person (path trust, DOR-3068).
   agentHome = path.join(dorkHome, 'agents', 'live-agent');
   extDir = path.join(agentHome, '.dork', 'extensions', ID);
+  resetPathTrustWriters();
   announced = [];
   shownAtBroadcast = [];
   sends.held = [];
@@ -549,6 +568,39 @@ describe('an isolated extension goes live through the real lifecycle', () => {
       await install('v3');
       await manager.reload();
       expect((await get(`/api/ext/${ID}/ping`)).body.version).toBe('v3');
+    },
+    TEST_MS
+  );
+
+  // Purpose: at Full, an edit no file tool noted (a shell, another program) never runs on its
+  // own, on either load path: a reload by id, which skips the scan, or a full scan (DOR-4528).
+  it(
+    'does not run an edit nothing noted, on a reload or a scan',
+    async () => {
+      await install('v1');
+      await boot();
+      expect((await get(`/api/ext/${ID}/ping`)).body.version).toBe('v1');
+      await fs.writeFile(path.join(extDir, 'server.ts'), serverSource('v2'));
+      await manager.reloadExtension(ID);
+      expect((await get(`/api/ext/${ID}/ping`)).body.version).not.toBe('v2');
+      await manager.reload();
+      expect((await get(`/api/ext/${ID}/ping`)).body.version).not.toBe('v2');
+    },
+    TEST_MS
+  );
+
+  // Purpose: what runs is what was judged. Files that change after the scan read them are judged
+  // again, from the snapshot about to run, before anything builds (DOR-4528).
+  it(
+    'judges the files about to run, even when they changed after the scan read them',
+    async () => {
+      await install('v1');
+      await boot();
+      const record = manager.get(ID)!;
+      await fs.writeFile(path.join(extDir, 'server.ts'), serverSource('v2'));
+      await placeSnapshots(dorkHome, [record], stored.value);
+      expect(record.originProblem).toBe('changed');
+      expect(record.runPath).toBeUndefined();
     },
     TEST_MS
   );

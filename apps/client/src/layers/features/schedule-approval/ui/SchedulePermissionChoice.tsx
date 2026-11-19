@@ -13,6 +13,7 @@ import {
   schedulePermissionLabel,
   type ScheduleConfirmReason,
 } from '../lib/schedule-permission-copy';
+import { ScheduleRunPermissions } from './ScheduleRunPermissions';
 
 /** The run's mode and the separately approved folder rules, before the person approves. */
 export function SchedulePermissionChoice({
@@ -62,6 +63,8 @@ export function SchedulePermissionChoice({
           </option>
         ))}
       </select>
+      {/* What the picked mode does, right under the picker that names it (DOR-4572). */}
+      {selected && <ScheduleRunPermissions mode={value} label="" showLabel={false} />}
       {mismatch && (
         <p
           id={`${id}-mismatch`}

@@ -121,7 +121,7 @@ export function createAccountSigninRoutes(deps: SigninRouteDeps = {}): Hono<ApiE
     const identity = policy.neverUses(account.path) ? null : metadata(account.path);
     if (!policy.accept(account.path, identity))
       return c.json({ error: 'This sign-in can’t be used. Sign in again.' }, 409);
-    noteSigninRepaired('claude-code', account.path);
+    noteSigninRepaired('claude-code', account.path, 'accept');
     return c.json({ ok: true, identity: policy.assess(account.path, identity) });
   });
   return router;

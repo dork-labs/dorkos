@@ -59,7 +59,17 @@ function controlSpelling(value: string): boolean {
   return false;
 }
 
-/** Inspect nested path arguments, including path lists and legacy multi-file deletes. */
+/**
+ * Inspect nested path arguments, including path lists and legacy multi-file deletes.
+ *
+ * What it reads, on purpose (DOR-4508): string values under a key whose name
+ * contains `path` (and everything nested under such a key), plus `deletes`;
+ * {@link movesCiConfig} separately treats any CI config location as a change.
+ * File content is never read as a path. `__tests__/workflow-file-keys.test.ts`
+ * keeps that honest against a snapshot of every repository write schema: a
+ * location-like argument the check doesn't read fails it until it is read or
+ * listed there with the reason it isn't a repository file.
+ */
 function containsControlPath(value: unknown, isPath = false): boolean {
   if (typeof value === 'string') return isPath && controlPath(value);
   if (Array.isArray(value)) return value.some((entry) => containsControlPath(entry, isPath));
@@ -76,14 +86,49 @@ function containsControlPath(value: unknown, isPath = false): boolean {
  * @param args - Arguments before schema validation and execution.
  */
 export function changesRepositoryControlFiles(args: Record<string, unknown>): boolean {
-  return containsControlPath(args);
+  return containsControlPath(args) || movesCiConfig(args);
+}
+
+/**
+ * Argument names that move where CI reads its config from (GitLab's
+ * `ci_config_path`). Pointing CI at an ordinary file and then writing that
+ * file is a control-file change, so any value that isn't plainly empty counts.
+ */
+const CI_CONFIG_KEYS = new Set(['ciconfigpath']);
+
+/** Whether nested arguments move the CI config location. */
+function movesCiConfig(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(movesCiConfig);
+  if (value === null || typeof value !== 'object') return false;
+  return Object.entries(value).some(
+    ([key, entry]) =>
+      (CI_CONFIG_KEYS.has(looseKey(key)) && !namesNothing(entry)) || movesCiConfig(entry)
+  );
 }
 
 /** Argument names that replace history when set; any value but an explicit "off" counts. */
 const FORCE_KEYS = new Set(['force', 'forcepush']);
 
-/** Argument names that create a branch when given a name. */
+/** Argument names that create a branch when given a value, at any depth. */
 const NEW_BRANCH_KEYS = new Set(['newbranch', 'startbranch', 'basebranch']);
+
+/**
+ * GitLab's `start_sha` and `start_project` start a commit from another commit
+ * or project, like `start_branch` (DOR-4507). Only at the top level, where a
+ * commit takes them: an inline review comment's `position.start_sha` names
+ * the diff it sits on and changes nothing.
+ */
+const TOP_LEVEL_START_KEYS = new Set(['startsha', 'startproject']);
+
+/** Values that plainly name no branch, commit or project. Anything else fails closed, numbers included. */
+function namesNothing(value: unknown): boolean {
+  return (
+    value === undefined ||
+    value === null ||
+    value === false ||
+    (typeof value === 'string' && value.trim().length === 0)
+  );
+}
 
 /** Values that plainly leave a force argument off. Anything else fails closed. */
 function forceIsOff(value: unknown): boolean {
@@ -103,17 +148,18 @@ function looseKey(key: string): string {
 
 /** Whether nested arguments request history replacement or a new branch. */
 export function changesRepositoryHistory(args: Record<string, unknown>): boolean {
-  function changes(value: unknown): boolean {
-    if (Array.isArray(value)) return value.some(changes);
+  function changes(value: unknown, topLevel: boolean): boolean {
+    if (Array.isArray(value)) return value.some((entry) => changes(entry, false));
     if (value === null || typeof value !== 'object') return false;
     return Object.entries(value).some(([key, entry]) => {
       const loose = looseKey(key);
       return (
         (FORCE_KEYS.has(loose) && !forceIsOff(entry)) ||
-        (NEW_BRANCH_KEYS.has(loose) && typeof entry === 'string' && entry.trim().length > 0) ||
-        changes(entry)
+        (NEW_BRANCH_KEYS.has(loose) && !namesNothing(entry)) ||
+        (topLevel && TOP_LEVEL_START_KEYS.has(loose) && !namesNothing(entry)) ||
+        changes(entry, false)
       );
     });
   }
-  return changes(args);
+  return changes(args, true);
 }
