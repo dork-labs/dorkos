@@ -80,7 +80,11 @@ This gate was added after DOR-4097 closed while the browser was still broken.
    or its block must be recognised and handed off to the person.
 2. Complete a real Google sign-in, then run a Google search.
 3. Complete a sign-in handoff end to end. Confirm the agent's page is restored
-   in every shipped view, with the same agent profile and sign-ins.
+   in every shipped view, with the same agent profile and sign-ins. The sign-in
+   itself is checked on the Mac only: the plain sign-in window has no debugging
+   link, so it is never streamed. In the panel and on the phone, check that the
+   stream steps aside and says "Finish signing in on your Mac" instead of
+   failing silently. This exception lasts until remote sign-in ships (DOR-4821).
 4. Check that the agent-facing instruction block and `using-the-agent-browser`
    skill match the release. Their updates ship with DOR-4741 and DOR-2667,
    alongside the matching browser behaviour.
