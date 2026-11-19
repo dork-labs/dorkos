@@ -129,6 +129,19 @@ describe('slots and load', () => {
     expect(queue.tryAcquire(b, OPEN)).toBe('slot');
   });
 
+  it('names the owner of every running job, let-through ones included, and only those', () => {
+    const queue = new TicketQueue({ dir });
+    const a = queue.enqueue({ job: 'pnpm' });
+    const b = queue.enqueue({ job: 'tsc' });
+    expect(queue.runningOwners()).toEqual([]);
+    expect(queue.tryAcquire(a, OPEN)).toBe('slot');
+    queue.forceAcquire(b);
+    expect(queue.runningOwners()).toEqual([process.pid, process.pid]);
+    queue.release(a);
+    queue.release(b);
+    expect(queue.runningOwners()).toEqual([]);
+  });
+
   it('releases safely twice, leaving only number claims behind', () => {
     const queue = new TicketQueue({ dir });
     const a = queue.enqueue({ job: 'pnpm' });

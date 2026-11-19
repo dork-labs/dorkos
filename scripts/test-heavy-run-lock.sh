@@ -58,6 +58,10 @@ unset CI DORKOS_HEAVY_SLOT_HELD DORKOS_HEAVY_LOCK DORKOS_HEAVY_WAIT_SECONDS DORK
 # This machine's real load must never decide a case: a busy host would make
 # every --job case below wait out the load bound. The load cases set their own.
 export DORKOS_HEAVY_LOADAVG_CMD='echo 0.00'
+# These cases are about this lock alone. A --job also waits in the app's line
+# for heavy jobs (DOR-4209), whose folder is this machine's real one; that line
+# has its own suite, scripts/test-load-gate-turn.sh, over a throwaway folder.
+export DORKOS_LOAD_GATE_LINE=0
 
 work=$(mktemp -d)
 # Only ever the pids this suite itself forked, by the pid, never by name

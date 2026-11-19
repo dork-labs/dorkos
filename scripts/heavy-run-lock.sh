@@ -137,6 +137,12 @@
 #   DORKOS_HEAVY_LOADAVG_CMD    a command that prints the load, in place of
 #                               /proc/loadavg or `sysctl -n vm.loadavg`; the
 #                               fixtures use it to fake one
+#   DORKOS_LOAD_GATE_LINE=0     a --job skips the app's line for heavy jobs
+#                               (see "THE APP'S LINE" below), keeping this lock
+#   DORKOS_LOAD_GATE_TSX        the tsx that runs scripts/load-gate/turn.ts
+#                               (node_modules/.bin/tsx); its own DORKOS_LOAD_GATE_*
+#                               overrides are listed in that file
+# scripts/test-load-gate-turn.sh drives the app's line.
 # The fixture suite (scripts/test-heavy-run-lock.sh) drives every path through
 # them with second-scale values.
 #
@@ -240,22 +246,72 @@ LOAD_POLL_SECONDS="${LOAD_POLL_SECONDS:-30}"
 check_load=0
 [ "$job" = 1 ] && [ -z "$hold_pid" ] && check_load=1
 
-run_uncapped() {
-  [ -n "$hold_pid" ] && exit 0
+# THE APP'S LINE (DOR-4209 PR5a). A --job (or --tests) also waits its turn in
+# the line DorkOS keeps for agents' heavy shell jobs, `/tmp/dorkos-load-gate-<uid>`,
+# so the repo's runs and agents' runs are one first-come line, under the app's
+# `runtimes.loadGate` settings (slots, max load, hard cap). It is taken AFTER
+# this lock's own slot and load guard, around the command itself, by
+# scripts/load-gate/turn.ts, which opens the server's own TicketQueue rather
+# than copying its protocol. The commit gate (no --job), --hold, a nested call,
+# CI and DORKOS_HEAVY_LOCK=0 never join it; DORKOS_LOAD_GATE_LINE=0 skips the
+# line alone. It never fails closed: no tsx, an unusable folder or a helper that
+# dies before starting the command all run the command anyway, and a run
+# nested inside an agent's gated command goes straight through.
+line=0
+[ "$job" = 1 ] && [ -z "$hold_pid" ] && [ "${DORKOS_LOAD_GATE_LINE:-1}" != 0 ] && line=1
+TSX="${DORKOS_LOAD_GATE_TSX:-$repo_root/node_modules/.bin/tsx}"
+
+run_in_line() {
+  if [ "$line" != 1 ]; then
+    "$@"
+    exit $?
+  fi
+  if [ ! -x "$TSX" ]; then
+    echo "[heavy-run-lock] no tsx in this checkout — not waiting in the app's line for heavy jobs." >&2
+    "$@"
+    exit $?
+  fi
+  # The helper writes `ran` here when the command starts, `stopped` when a
+  # signal ended its wait. Empty means the command never ran, so it runs here.
+  turn_file=$(mktemp "${TMPDIR:-/tmp}/dorkos-load-gate-turn.XXXXXX" 2>/dev/null) || {
+    "$@"
+    exit $?
+  }
+  DORKOS_LOAD_GATE_TURN_FILE="$turn_file" "$TSX" "$repo_root/scripts/load-gate/turn.ts" -- "$@"
+  turn_status=$?
+  turn_said=$(cat -- "$turn_file" 2>/dev/null)
+  rm -f -- "$turn_file"
+  case $turn_said in ran | stopped) exit "$turn_status" ;; esac
+  echo "[heavy-run-lock] the app's line for heavy jobs did not start (exit $turn_status) — running without it." >&2
   "$@"
   exit $?
+}
+
+run_uncapped() {
+  [ -n "$hold_pid" ] && exit 0
+  run_in_line "$@"
 }
 
 if [ "${DORKOS_HEAVY_LOCK:-1}" = 0 ]; then
   # The way out stays open, and is now on the record: an opt-out nobody can see
   # is how a cap stops existing.
   ci_steward_note lock_off
+  line=0
   run_uncapped "$@"
 fi
 # Nested inside a run that already holds a slot (or already gave up waiting for
 # one): waiting again would wait on our own parent.
-[ -n "${DORKOS_HEAVY_SLOT_HELD:-}" ] && run_uncapped "$@"
-case "${CI:-}" in '' | 0 | false) ;; *) run_uncapped "$@" ;; esac
+if [ -n "${DORKOS_HEAVY_SLOT_HELD:-}" ]; then
+  line=0
+  run_uncapped "$@"
+fi
+case "${CI:-}" in
+  '' | 0 | false) ;;
+  *)
+    line=0
+    run_uncapped "$@"
+    ;;
+esac
 case $SLOTS in '' | *[!0-9]* | 0) run_uncapped "$@" ;; esac
 
 if ! command -v "$PERL" >/dev/null 2>&1; then
@@ -594,7 +650,9 @@ case $verdict in
     # EX_TEMPFAIL: nothing is wrong with the command; try again later.
     exit 75
     ;;
-  nested | refused) ;;
+  # A nested call's parent is already in the app's line, or chose not to be.
+  nested) line=0 ;;
+  refused) ;;
   *)
     echo "[heavy-run-lock] the lock helper exited without an answer — running without the host-wide cap." >&2
     ;;
@@ -606,5 +664,4 @@ esac
 # Exported even after a timeout: a nested call must not queue a second time
 # behind slots its own parent already gave up waiting for.
 export DORKOS_HEAVY_SLOT_HELD=1
-"$@"
-exit $?
+run_in_line "$@"

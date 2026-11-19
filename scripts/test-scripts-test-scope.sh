@@ -73,6 +73,7 @@ for path in \
   .github/dependabot.yml \
   .github/workflows/publish-community.yml \
   ci/space-server.env \
+  apps/server/src/services/core/load-gate/ticket-queue.ts \
   .github/workflows/typecheck.yml; do
   expect true "in scope: $path" "$path"
 done

@@ -63,6 +63,9 @@ SCOPE_PATTERNS=(
   '^\.github/dependabot\.yml$'
   '^\.github/workflows/publish-community\.yml$'
   '^ci/space-server\.env$'
+  # scripts/test-load-gate-turn.sh runs the server's own load-gate queue: the
+  # repo's heavy runs wait in that line, so a change to it can break them (DOR-4209).
+  '^apps/server/src/services/core/load-gate/'
   # typecheck.yml runs the repo-wide suites in the queue, and
   # scripts/__tests__/repo-wide-suites.test.ts pins that step. A PR that drops
   # the step must run the pin (ledger 261112-185148).
