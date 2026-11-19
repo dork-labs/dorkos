@@ -5526,6 +5526,10 @@
             "type": "integer",
             "minimum": 1
           },
+          "recipientsShortened": {
+            "type": "integer",
+            "minimum": 1
+          },
           "details": {
             "type": "array",
             "items": {
