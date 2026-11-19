@@ -13,6 +13,7 @@ import {
   sessionStagedContext,
   type Db,
 } from '@dorkos/db';
+import { loadCeilingMs } from '@dorkos/shared/test-budget';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { batchFixture, NOW, type BatchFixture } from './batch-fixtures.js';
@@ -78,6 +79,7 @@ function pump(f: BatchFixture, nudge: (id: string) => undefined, now = () => new
 describe('accepted pump source-aware recovery refusal', () => {
   it.each(['pending', 'in_doubt', 'failed'] as const)(
     'retains accepted work under a real %s identity hold and resumes exactly once after recovery',
+    { timeout: loadCeilingMs(5_000) },
     async (status) => {
       const directory = mkdtempSync(join(tmpdir(), 'doc-recovery-hold-'));
       directories.push(directory);
