@@ -229,6 +229,17 @@
         "opencode": []
       }
     },
+    "loadGate": {
+      "enabled": true,
+      "hardCapMinutes": 240,
+      "heavyCommands": {
+        "add": [],
+        "remove": []
+      },
+      "maxLoad": 16,
+      "maxWaitMinutes": 60,
+      "slots": 1
+    },
     "maxAgentChats": 8,
     "opencode": {
       "baseURL": null,

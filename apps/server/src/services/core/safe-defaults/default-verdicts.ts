@@ -262,6 +262,12 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'connectors.rawMcpServers[].url',
   'connectors.rawMcpServers[].transport',
   'runtimes.default',
+  // The load gate (DOR-4209). When a held job's wait first tells a person, and
+  // the person's own additions to the built-in heavy list. The notice holds
+  // nothing back and lets nothing through, and an empty `add` leaves the
+  // built-in list exactly as shipped, which is the bound; both are preferences.
+  'runtimes.loadGate.maxWaitMinutes',
+  'runtimes.loadGate.heavyCommands.add',
   // Fields OF a registered Claude account (spec claude-code-accounts). The
   // protection is structural, exactly as it is for the raw-MCP entries above:
   // `runtimes.claudeCode.accounts` ships EMPTY, so no account is known until a
@@ -446,6 +452,16 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // Spin-off chats running at once: the fixed number it was before it became a
   // setting (DOR-3413), a real bound at its default.
   'runtimes.maxAgentChats': 8,
+  // The load gate (DOR-4209): on, at a real bound on how busy the machine may
+  // be and how many heavy jobs run at once, with nothing taken off the built-in
+  // heavy list. The hard cap is the point a held job runs anyway, so a LONGER
+  // cap holds back more; a person can tighten the load and slots by lowering
+  // them and the cap by raising it, so those three carry across a wipe.
+  'runtimes.loadGate.enabled': true,
+  'runtimes.loadGate.maxLoad': 16,
+  'runtimes.loadGate.slots': 1,
+  'runtimes.loadGate.hardCapMinutes': 240,
+  'runtimes.loadGate.heavyCommands.remove': [],
   // The three ceilings a merge into a room's own files is refused against (spec
   // `project-rooms` §3.6). Real bounds at their defaults, on the same footing as
   // the upload caps above: what they hold back is content member agents wrote,

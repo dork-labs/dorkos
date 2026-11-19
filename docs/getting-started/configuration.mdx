@@ -742,6 +742,41 @@ With `autonomy`, every new chat starts with the approval prompts turned off, so 
       type: 'number (1–64)',
       default: '8',
     },
+    'runtimes.loadGate.enabled': {
+      description:
+        'Whether your agents’ big jobs, like builds, test runs and installs, wait their turn while your computer is busy. Nothing reads this yet: an upcoming update turns the wait on. Only you can change any `loadGate` setting.',
+      type: 'boolean',
+      default: 'true',
+    },
+    'runtimes.loadGate.maxLoad': {
+      description:
+        'How busy your computer may get, as its five-minute load average, before a big job waits.',
+      type: 'number (1–1024)',
+      default: '16',
+    },
+    'runtimes.loadGate.slots': {
+      description: 'How many big jobs may run at once on this computer, across all your agents.',
+      type: 'number (1–16)',
+      default: '1',
+    },
+    'runtimes.loadGate.maxWaitMinutes': {
+      description:
+        'Minutes a job may wait before you are told it is still waiting. It keeps waiting after that.',
+      type: 'number (1 or more)',
+      default: '60',
+    },
+    'runtimes.loadGate.hardCapMinutes': {
+      description:
+        'Minutes after which a waiting job runs anyway. A number below `maxWaitMinutes` counts as `maxWaitMinutes`.',
+      type: 'number (1 or more)',
+      default: '240',
+    },
+    'runtimes.loadGate.heavyCommands': {
+      description:
+        'Commands to add to, or take off, the list of big jobs, as `{ "add": [], "remove": [] }`. Write each one as the command and its first words, like `storybook build`.',
+      type: '{ add: string[], remove: string[] }',
+      default: '{ add: [], remove: [] }',
+    },
     'runtimes.claudeCode.defaultAccount': {
       description:
         'The Claude account new chats run and bill on when neither the agent nor the chat picks another, as the full path to its Claude folder (for example `/Users/you/.claude2`). When `null`, DorkOS uses whichever folder your shell already points at, or `~/.claude`.',

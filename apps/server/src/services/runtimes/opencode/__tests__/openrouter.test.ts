@@ -43,6 +43,14 @@ function fakeConfig(): ConfigReadWrite & { state: Partial<UserConfig> } {
       default: 'claude-code',
       defaultTrustStop: null,
       maxAgentChats: 8,
+      loadGate: {
+        enabled: true,
+        maxLoad: 16,
+        slots: 1,
+        maxWaitMinutes: 60,
+        hardCapMinutes: 240,
+        heavyCommands: { add: [], remove: [] },
+      },
       claudeCode: {
         defaultAccount: null,
         accounts: [],

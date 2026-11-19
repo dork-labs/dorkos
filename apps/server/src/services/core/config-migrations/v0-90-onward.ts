@@ -874,3 +874,37 @@ export function renameTodoPromiseActions(store: {
   }
   store.set('permissions', { ...permissions, defaults: { ...defaults, actions: next } });
 }
+
+/**
+ * Seed `runtimes.loadGate` with its shipped settings where the stored `runtimes`
+ * section lacks it (DOR-4209): on, at a five-minute load of 16, one heavy job at
+ * a time, a notice after 60 minutes, a run-anyway after 240, and nothing added to
+ * or taken off the built-in heavy list.
+ *
+ * A nested leaf inside a section every config already carries, and conf's
+ * pre-migration merge is shallow, so this body is the only thing that writes it
+ * to disk. The values are written out here rather than read from the schema, so
+ * this body stays exactly what merged. Absence is tested with `in`, so settings a
+ * person already chose are never rewritten, and running it twice changes nothing.
+ *
+ * @param store - The conf store, narrowed to the two calls this needs.
+ */
+export function seedLoadGate(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const runtimes = store.get('runtimes');
+  if (runtimes === null || typeof runtimes !== 'object' || Array.isArray(runtimes)) return;
+  if ('loadGate' in runtimes) return;
+  store.set('runtimes', {
+    ...runtimes,
+    loadGate: {
+      enabled: true,
+      maxLoad: 16,
+      slots: 1,
+      maxWaitMinutes: 60,
+      hardCapMinutes: 240,
+      heavyCommands: { add: [], remove: [] },
+    },
+  });
+}

@@ -348,6 +348,15 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'runtimes.claudeCode.maxWarmProcesses',
       // How many spin-off chats may run at once (DOR-3413).
       'runtimes.maxAgentChats',
+      // The load gate every agent's heavy shell jobs wait behind (DOR-4209). An
+      // agent that could loosen it would be waving its own job through.
+      'runtimes.loadGate.enabled',
+      'runtimes.loadGate.maxLoad',
+      'runtimes.loadGate.slots',
+      'runtimes.loadGate.maxWaitMinutes',
+      'runtimes.loadGate.hardCapMinutes',
+      'runtimes.loadGate.heavyCommands.add',
+      'runtimes.loadGate.heavyCommands.remove',
       'scheduler.maxConcurrentRuns',
       // Whether the computer stays awake for the work, and whether it is woken
       // for it: battery, and whether the machine is on while nobody is there.

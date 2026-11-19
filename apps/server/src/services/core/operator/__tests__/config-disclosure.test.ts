@@ -231,6 +231,14 @@ function fullyPopulatedConfig(): Record<string, unknown> {
       },
       default: 'claude-code',
       maxAgentChats: 12,
+      loadGate: {
+        enabled: false,
+        maxLoad: 12,
+        slots: 2,
+        maxWaitMinutes: 30,
+        hardCapMinutes: 120,
+        heavyCommands: { add: ['playwright test'], remove: ['git push'] },
+      },
       // A global stop with one runtime overriding it, so the projection is
       // exercised on both halves of the override rather than on one.
       defaultTrustStop: 'act',
