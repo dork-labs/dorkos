@@ -1,4 +1,7 @@
 import { createHash } from 'node:crypto';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { ApprovalServiceActionSchema } from '@dorkos/shared/approval-schemas';
 import {
   createCapabilityAuthorityBinding,
@@ -41,7 +44,14 @@ import { noteRoomTurnWords } from '../../core/turn-power/outside-words.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import { agentKey, deepestClaimOf } from '../room-claims.js';
 import type { RoomTriggerDispatcher } from '../room-trigger.js';
-import type { RoomSeatMessagesPort } from '../handoff/seat-message-types.js';
+import type {
+  RoomSeatMessagesPort,
+  SeatMessageLimits,
+  SeatMessagePending,
+} from '../handoff/seat-message-types.js';
+import { SEAT_MESSAGE_GLOBAL_MAX, SEAT_MESSAGE_PENDING_MAX } from '../handoff/seat-messages.js';
+import { currentSeatMessageTarget, seatBatchStillCurrent } from '../handoff/seat-message-target.js';
+import type { RoomCore } from '../service/room-core.js';
 import type { RoomService } from '../room-service.js';
 import type { RoomTurnRequest } from '../room-turn-port.js';
 import { agentLookupFor, createRoomHarness, outcomeRunner } from './room-test-harness.js';
@@ -706,8 +716,14 @@ it('M9: the global pending bound cannot be bypassed by creating more seats', asy
   });
   if (!seatInbox) throw new Error('Missing production seat inbox');
   // The cap owns durable private admissions. Public notice/indexing behavior is
-  // covered by M8; repeating that work 1,000 times made this a throughput test.
-  for (let n = 0; n < 40; n++) {
+  // covered by M8. A small global bound proves the same rule without 1,000 rows,
+  // which timed out on loaded CI (DOR-4722); the real defaults are pinned below.
+  seatInbox.stop();
+  seatInbox = harness.service.createSeatMessages(receipts, () => undefined, {
+    pendingMax: SEAT_MESSAGE_PENDING_MAX,
+    globalMax: 10,
+  });
+  for (let n = 0; n < 5; n++) {
     const room = harness.service.createRoom(
       { kind: 'channel', title: `Queue ${n}`, members: [], agentPaths: ['/agents/bo'] },
       harness.human
@@ -716,7 +732,8 @@ it('M9: the global pending bound cannot be bypassed by creating more seats', asy
     harness.store.bindRoomSession(room.id, bo, session, new Date().toISOString());
     const target = seatInbox.resolveSeatTarget(session);
     if (!target) throw new Error('Missing real ledger seat');
-    for (let j = 0; j < 25; j++) {
+    // Each seat stays under its own bound; only their total reaches the global one.
+    for (let j = 0; j < 2; j++) {
       const row: NewChatMessage = {
         id: `pending-${n}-${j}`,
         toSessionId: session,
@@ -748,9 +765,75 @@ it('M9: the global pending bound cannot be bypassed by creating more seats', asy
   await expect(
     chats.send(caller, { to: 'seat-chat', message: 'global overflow' })
   ).rejects.toMatchObject({ code: 'UNAVAILABLE' });
-  expect(receipts.pendingSeatMessages()).toHaveLength(1000);
-  expect(receipts.listSentFrom(caller.sessionId)).toHaveLength(1000);
+  expect(receipts.pendingSeatMessages()).toHaveLength(10);
+  expect(receipts.listSentFrom(caller.sessionId)).toHaveLength(10);
   expect(turns).toHaveLength(0);
+});
+
+it('M9: production inboxes keep the real pending and global bounds', () => {
+  expect(SEAT_MESSAGE_PENDING_MAX).toBe(25);
+  expect(SEAT_MESSAGE_GLOBAL_MAX).toBe(1_000);
+  // Production factories pass no limits; the shrunken tests must not leak into them.
+  expect((seatInbox as unknown as { limits: SeatMessageLimits }).limits).toEqual({
+    pendingMax: SEAT_MESSAGE_PENDING_MAX,
+    globalMax: SEAT_MESSAGE_GLOBAL_MAX,
+  });
+});
+
+it('M9: the inbox boot wires through setRoomSeatRoutes runs at the real bounds', async () => {
+  const { setRoomSeatRoutes, setRoomSeatReports, wireRoomSeatMessageLifetime } =
+    await import('../../session/chat-messages/chat-message-current.js');
+  setRoomSeatRoutes(harness.service);
+  const lifetime = wireRoomSeatMessageLifetime(receipts, () => undefined);
+  try {
+    expect((lifetime.get() as unknown as { limits: SeatMessageLimits }).limits).toEqual({
+      pendingMax: SEAT_MESSAGE_PENDING_MAX,
+      globalMax: SEAT_MESSAGE_GLOBAL_MAX,
+    });
+  } finally {
+    lifetime.stop();
+    setRoomSeatReports(undefined);
+  }
+});
+
+it('M9: no production source can hand an inbox smaller bounds', () => {
+  // Limits are a constructor option for tests only: no config key, route, env var or tool.
+  const src = fileURLToPath(new URL('../../../', import.meta.url));
+  const sources = readdirSync(src, { recursive: true, encoding: 'utf8' })
+    .filter((file) => file.endsWith('.ts') && !file.split(/[\\/]/u).includes('__tests__'))
+    .map((file) => ({
+      file: file.replace(/\\/gu, '/'),
+      text: readFileSync(join(src, file), 'utf8'),
+    }));
+  const callers = sources
+    .flatMap(({ file, text }) =>
+      (
+        text.match(
+          /(?:createSeatMessages|new RoomSeatMessages|seatMessageFactory\?\.)\([^)]*\)/gu
+        ) ?? []
+      ).map((call) => `${file}: ${call.replace(/\s+/gu, ' ')}`)
+    )
+    .sort();
+  // The one forwarding factory, and the two production calls that pass it no limits. The boot
+  // wrapper in chat-message-current also drops any third argument, so nothing can thread one.
+  expect(callers).toEqual([
+    'services/rooms/room-service.ts: new RoomSeatMessages(this.parts.core, this.parts.publisher, store, emit, limits)',
+    'services/session/chat-messages/chat-message-current.ts: createSeatMessages(store, emit)',
+    'services/session/chat-messages/chat-message-current.ts: seatMessageFactory?.(store, emit)',
+  ]);
+  // Only the inbox and its types name the bounds: no config schema, route, env or tool does.
+  expect(
+    sources
+      .filter(({ text }) => /\b(?:SeatMessageLimits|pendingMax|globalMax)\b/u.test(text))
+      .map(({ file }) => file)
+      .sort()
+  ).toEqual([
+    'services/rooms/handoff/seat-message-types.ts',
+    'services/rooms/handoff/seat-messages.ts',
+  ]);
+  expect(
+    sources.find(({ file }) => file === 'services/rooms/handoff/seat-messages.ts')?.text
+  ).toMatch(/limits: SeatMessageLimits = DEFAULT_LIMITS/u);
 });
 
 it('M4: the actual Full turn record retains level while raise and destructive gates retain the card', async () => {
@@ -1393,6 +1476,14 @@ it.each(['expiry', 'later-items', 'stop', 'requeue-error'] as const)(
       return { sessionId: request.sessionId!, text: null };
     };
     if (scenario === 'requeue-error') block();
+    if (scenario === 'expiry') {
+      // A full hour of 30-second rechecks over a small bound proves the same rule as 25 (DOR-4722).
+      seatInbox!.stop();
+      seatInbox = harness.service.createSeatMessages(receipts, () => undefined, {
+        pendingMax: 3,
+        globalMax: SEAT_MESSAGE_GLOBAL_MAX,
+      });
+    }
     const first = await chats.send(caller, { to: 'seat-chat', message: 'BUSY_FIRST' });
     let second: Awaited<ReturnType<ChatMessageService['send']>> | undefined;
     try {
@@ -1428,14 +1519,15 @@ it.each(['expiry', 'later-items', 'stop', 'requeue-error'] as const)(
         expect(receipts.get(first.messageId)?.status).toBe('queued');
         if (scenario === 'expiry') {
           block();
-          for (let i = 0; i < 24; i++)
+          // The requeued first message plus these fill the seat's bound of 3.
+          for (let i = 0; i < 2; i++)
             await chats.send(caller, { to: 'seat-chat', message: `WAITING_${i}` });
           await expect(
             chats.send(caller, { to: 'seat-chat', message: 'OVERFLOW' })
           ).rejects.toMatchObject({ code: 'UNAVAILABLE' });
           await vi.advanceTimersByTimeAsync(60 * 60_000 + 1);
           await seatInbox!.idle();
-          expect(receipts.listSentFrom(caller.sessionId)).toHaveLength(25);
+          expect(receipts.listSentFrom(caller.sessionId)).toHaveLength(3);
           expect(
             receipts.listSentFrom(caller.sessionId).every((row) => row.status === 'failed')
           ).toBe(true);
@@ -1698,4 +1790,174 @@ it('Code D3: a queued unsolicited write refuses when its room becomes bridged du
   } finally {
     release?.();
   }
+});
+
+describe('batch target checks (DOR-4722)', () => {
+  /** Only `target` and `unsolicited` fed the old per-item answer; nothing else is read. */
+  function item(target: SeatMessagePending['target'], unsolicited: boolean): SeatMessagePending {
+    return { target, unsolicited } as SeatMessagePending;
+  }
+  function batchOf(targets: SeatMessagePending['target'][], unsolicited = true) {
+    return targets.map((target) => item(target, unsolicited));
+  }
+  function core(): RoomCore {
+    return (harness.service as unknown as { parts: { core: RoomCore } }).parts.core;
+  }
+  /** The per-item check the batch check replaced, kept as the oracle it must match exactly. */
+  function perItem(batch: readonly SeatMessagePending[]): boolean {
+    return batch.every(
+      (item) =>
+        currentSeatMessageTarget(core(), item.target) !== null &&
+        (!item.unsolicited || core().bridges.findBridgeByRoom(item.target.roomId) === null)
+    );
+  }
+  function bridgeRoom(): void {
+    harness.bridges.createBridge({
+      roomId,
+      adapterId: 'batch-bridge',
+      chatId: 'batch-chat',
+      channelType: 'group',
+      platformChatType: 'group',
+      bindingId: 'batch-binding',
+      platformTitle: null,
+      deliverNotices: true,
+      createdAt: new Date().toISOString(),
+    });
+  }
+
+  it('M9: a batch sharing one seat reads that seat and its room once', () => {
+    const target = seatInbox!.resolveSeatTarget('seat-chat')!;
+    const ledger = vi.spyOn(core().store.sessionLedger, 'bindingForSession');
+    const bridges = vi.spyOn(core().bridges, 'findBridgeByRoom');
+    const batch = batchOf(Array<SeatMessagePending['target']>(8).fill(target));
+    expect(seatBatchStillCurrent(core(), batch)).toBe(true);
+    expect(ledger).toHaveBeenCalledTimes(1);
+    // Once inside the seat check, once for the unsolicited bridge refusal.
+    expect(bridges).toHaveBeenCalledTimes(2);
+  });
+
+  it('M9: one stale seat among current ones still refuses the whole batch', () => {
+    const target = seatInbox!.resolveSeatTarget('seat-chat')!;
+    const stale = { ...target, joinedAt: '2000-01-01T00:00:00.000Z' };
+    expect(seatBatchStillCurrent(core(), batchOf([target, target, stale, target]))).toBe(false);
+    expect(seatBatchStillCurrent(core(), batchOf([target, target], false))).toBe(true);
+  });
+
+  it('M9: two queued messages to one seat both refuse once it leaves and rejoins', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-15T12:00:00Z'));
+    const before = harness.store.getMember(roomId, bo)!;
+    const target = seatInbox!.resolveSeatTarget('seat-chat')!;
+    const blocker = harness.service.postNotice(roomId, { text: 'Seat busy marker.' });
+    // Hold the seat through the real claim map so both messages wait in one batch.
+    const triggers = (harness.service as unknown as { triggers: { claimed: Map<string, unknown> } })
+      .triggers;
+    triggers.claimed.set(agentKey(roomId, bo), {
+      roomId,
+      authorId: bo,
+      sessionId: 'seat-chat',
+      agentPath: '/agents/bo',
+      entryId: blocker.id,
+    });
+    const first = await chats.send(caller, { to: 'seat-chat', message: 'queued one' });
+    const second = await chats.send(caller, { to: 'seat-chat', message: 'queued two' });
+    expect(seatBatchStillCurrent(core(), batchOf([target, target]))).toBe(true);
+    harness.store.removeMember(roomId, bo);
+    const rejoinedAt = '2026-11-15T12:00:05.000Z';
+    harness.store.addMember({
+      roomId,
+      authorId: bo,
+      responseMode: before.responseMode,
+      joinedAt: rejoinedAt,
+    });
+    harness.store.bindRoomSession(roomId, bo, 'rejoined-seat', rejoinedAt);
+    for (const unsolicited of [true, false]) {
+      const batch = batchOf([target, target], unsolicited);
+      expect(seatBatchStillCurrent(core(), batch)).toBe(false);
+      expect(perItem(batch)).toBe(false);
+    }
+    triggers.claimed.clear();
+    await vi.advanceTimersByTimeAsync(30_000);
+    await seatInbox?.idle();
+    expect(turns).toHaveLength(0);
+    for (const receipt of [first, second]) {
+      expect(receipts.get(receipt.messageId)).toMatchObject({
+        status: 'failed',
+        failureReason: expect.stringContaining('NOT_ALLOWED'),
+      });
+    }
+  });
+
+  it('M9: a bridged room gives a mixed unsolicited and solicited batch the old answer', () => {
+    const unbridged = seatInbox!.resolveSeatTarget('seat-chat')!;
+    bridgeRoom();
+    const bridged = seatInbox!.resolveSeatTarget('seat-chat')!;
+    expect(bridged.bridgeOwnership).toBeDefined();
+    // Same seat, a foreign bridge: the key must keep ownership apart from the real one.
+    const forged = { ...bridged, bridgeOwnership: { ...bridged.bridgeOwnership!, chatId: 'x' } };
+    const batches: SeatMessagePending[][] = [];
+    for (const target of [unbridged, bridged]) {
+      batches.push(
+        [item(target, false), item(target, true)],
+        [item(target, true), item(target, false)],
+        [item(target, false), item(target, false)],
+        [item(target, true), item(target, true)]
+      );
+    }
+    batches.push(
+      [item(bridged, false), item(forged, false)],
+      [item(unbridged, false), item(bridged, false), item(forged, true)]
+    );
+    const oracle = batches.map(perItem);
+    // Not vacuous: the old logic refuses some of these batches and runs others.
+    expect(new Set(oracle)).toEqual(new Set([true, false]));
+    expect(batches.map((batch) => seatBatchStillCurrent(core(), batch))).toEqual(oracle);
+    // Any unsolicited item in the now-bridged room refuses; solicited-only still runs.
+    expect(seatBatchStillCurrent(core(), [item(bridged, false), item(unbridged, true)])).toBe(
+      false
+    );
+    expect(seatBatchStillCurrent(core(), [item(unbridged, false), item(bridged, false)])).toBe(
+      true
+    );
+    expect(seatBatchStillCurrent(core(), [item(bridged, false), item(forged, false)])).toBe(false);
+  });
+
+  // Every field currentSeatMessageTarget compares. A field missing from seatTargetKey would
+  // let the stale copy share the real target's key and skip its own check.
+  const comparedFields: [
+    string,
+    (t: SeatMessagePending['target']) => SeatMessagePending['target'],
+  ][] = [
+    ['sessionId', (t) => ({ ...t, sessionId: 'not-a-seat' })],
+    ['roomId', (t) => ({ ...t, roomId: 'other-room' })],
+    ['authorId', (t) => ({ ...t, authorId: 'other-author' })],
+    ['joinedAt', (t) => ({ ...t, joinedAt: '2000-01-01T00:00:00.000Z' })],
+    ['agentPath', (t) => ({ ...t, agentPath: '/agents/other' })],
+    [
+      'bridgeOwnership.bindingId',
+      (t) => ({ ...t, bridgeOwnership: { ...t.bridgeOwnership!, bindingId: 'x' } }),
+    ],
+    [
+      'bridgeOwnership.adapterId',
+      (t) => ({ ...t, bridgeOwnership: { ...t.bridgeOwnership!, adapterId: 'x' } }),
+    ],
+    [
+      'bridgeOwnership.chatId',
+      (t) => ({ ...t, bridgeOwnership: { ...t.bridgeOwnership!, chatId: 'x' } }),
+    ],
+  ];
+
+  it.each(comparedFields)(
+    'M9: a stale %s behind a current target refuses, matching the per-item answer',
+    (_field, mutate) => {
+      bridgeRoom();
+      const real = seatInbox!.resolveSeatTarget('seat-chat')!;
+      expect(real.bridgeOwnership).toBeDefined();
+      // Solicited items, so the bridged room's unsolicited refusal cannot mask the seat check.
+      const batch = [item(real, false), item(mutate(real), false)];
+      expect(perItem(batch)).toBe(false);
+      expect(seatBatchStillCurrent(core(), batch)).toBe(perItem(batch));
+      expect(seatBatchStillCurrent(core(), [item(real, false), item(real, false)])).toBe(true);
+    }
+  );
 });
