@@ -54,6 +54,7 @@ import {
 } from '../../../../session/session-state-projector.js';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import { roomTurnMarksOf } from '../../../../rooms/limits/teammate-turn.js';
+import { noteRoomTurnWords } from '../../../../core/turn-power/outside-words.js';
 import {
   captureLaunchFingerprint,
   compareLaunchFingerprints,
@@ -634,6 +635,37 @@ describe('the launch options every Claude Code turn is given', () => {
     expect(await hook(call, 'tool-1', signal)).toMatchObject({
       hookSpecificOutput: { permissionDecision: 'ask' },
     });
+  });
+
+  it('hands the Never ask hook the chat’s own outside-words check (DOR-4600, Security S3)', async () => {
+    // Red when: the launch passes the hook only the turn's marks. Then a status read runs for no
+    // chat, or for one that read outside words.
+    const session = { ...makeSession(), permissionMode: 'dontAsk' as const };
+    const options = await captureSdkOptions(undefined, session);
+    const neverAsk = (options.hooks?.PreToolUse ?? []).find((m) => m.matcher === '^mcp__dorkos__');
+    const hook = neverAsk!.hooks[0]!;
+    const statusRead = {
+      hook_event_name: 'PreToolUse' as const,
+      session_id: 'sdk-1',
+      transcript_path: '/tmp/t.jsonl',
+      cwd: '/mock/project',
+      tool_name: 'mcp__dorkos__running_chats',
+      tool_input: {},
+      tool_use_id: 'tool-1',
+      mcp_server: { name: 'dorkos', source: 'sdk' },
+    };
+    const signal = { signal: new AbortController().signal };
+
+    expect(await hook(statusRead, 'tool-1', signal)).toMatchObject({
+      hookSpecificOutput: { permissionDecision: 'allow' },
+    });
+    // A room turn that answered someone from outside (DOR-4029): the chat read outside words.
+    noteRoomTurnWords('sdk-1', true);
+    try {
+      expect(await hook(statusRead, 'tool-1', signal)).toEqual({});
+    } finally {
+      noteRoomTurnWords('sdk-1', false);
+    }
   });
 
   it('launches a teammate’s turn as any other: notes, profile, grants and process (DOR-3440)', async () => {
