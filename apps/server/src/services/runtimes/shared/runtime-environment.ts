@@ -109,14 +109,14 @@ function overrideNames(input: RuntimeEnvironmentInput): Set<string> {
 /**
  * Who a turn's agent is, for the /flow plugin: flow's own journal records the
  * runtime and what hosted it, and only a host can say the host is DorkOS. Empty
- * for helper processes, which run no agent commands, and for the DorkOS builder,
- * which runs no flow and is not a runtime flow knows.
+ * for helper processes, which run no agent commands. Doe carries its runtime
+ * name too: even a tool that does not recognize it can identify an agent shell.
  */
 export function flowIdentityEnv(
   runtime: EnvironmentRuntime,
   purpose: EnvironmentPurpose
 ): Record<string, string> {
-  if (purpose !== 'turn' || runtime === 'doe') return {};
+  if (purpose !== 'turn') return {};
   return { FLOW_RUNTIME: runtime, FLOW_HARNESS: 'dorkos' };
 }
 

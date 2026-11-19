@@ -8,6 +8,7 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import { logger } from '../../../../lib/logger.js';
 import { creditsRefusalEvent } from '../../../core/cloud/credits-protocols.js';
 import { CodexCrashLoopError } from '../app-server/process-pool.js';
+import { codexErrorCopy } from '../event-mapper.js';
 import type { AppServerTurnMapper } from '../app-server/notification-mapper.js';
 import { CodexProcessExitedError, isCodexRpcError } from '../app-server/protocol/errors.js';
 import { CodexWritableMissingTargetsError } from '../policy/writable-missing-targets.js';
@@ -61,6 +62,11 @@ export function* failedSetup(sessionId: string, err: unknown): Generator<StreamE
         details: err.cause instanceof Error ? err.cause.message : err.message,
       },
     };
+  } else if (err instanceof Error && codexErrorCopy(err.message).category === 'model_unavailable') {
+    yield {
+      type: 'error',
+      data: { ...codexErrorCopy(err.message), code: 'codex_model_unavailable' },
+    };
   } else {
     logger.warn('[CodexAppServer] could not open the turn', { sessionId, err: String(err) });
     const sandboxUnavailable = isCodexRpcError(err, 'sandbox-unavailable');
@@ -110,6 +116,11 @@ export function failedCompaction(mapper: AppServerTurnMapper, err: unknown): Str
  */
 export function failedStart(mapper: AppServerTurnMapper, err: unknown): StreamEvent[] {
   if (err instanceof CodexProcessExitedError) return mapper.closeOnCrash(err.detail);
+  if (err instanceof Error) {
+    const copy = codexErrorCopy(err.message, { code: 'codex_model_unavailable' });
+    if (copy.category === 'model_unavailable')
+      return mapper.closeQuietly({ ...copy, code: 'codex_model_unavailable' });
+  }
   logger.warn('[CodexAppServer] turn/start failed', { err: String(err) });
   if (err instanceof CodexGitMetadataPolicyError)
     return mapper.closeQuietly({ message: err.message, code: 'codex_git_metadata_unavailable' });

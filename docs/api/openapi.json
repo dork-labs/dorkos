@@ -5807,7 +5807,8 @@
           "reason": {
             "type": "string",
             "enum": [
-              "credits-not-covered"
+              "credits-not-covered",
+              "account-not-available"
             ]
           }
         },
@@ -7106,7 +7107,8 @@
               "reason": {
                 "type": "string",
                 "enum": [
-                  "credits-not-covered"
+                  "credits-not-covered",
+                  "account-not-available"
                 ]
               }
             },
@@ -44910,7 +44912,8 @@
                         "reason": {
                           "type": "string",
                           "enum": [
-                            "credits-not-covered"
+                            "credits-not-covered",
+                            "account-not-available"
                           ]
                         }
                       },

@@ -1272,7 +1272,13 @@ export function getCloudLinkManager(): CloudLinkManager {
   return instance;
 }
 
+/**
+ * Stop the process-wide cloud-link manager, if one was set up. Shutdown calls
+ * this, not {@link getCloudLinkManager}: a signal can land before startup
+ * reaches {@link initCloudLinkManager}, and a manager that never started has
+ * nothing to stop (DOR-4689).
+ */
+export const stopCloudLinkManager = (): void => instance?.stop();
+
 /** Current process-local link generation, if the singleton has been initialized. */
-export function getCloudLinkGeneration(): number | undefined {
-  return instance?.generation;
-}
+export const getCloudLinkGeneration = (): number | undefined => instance?.generation;
