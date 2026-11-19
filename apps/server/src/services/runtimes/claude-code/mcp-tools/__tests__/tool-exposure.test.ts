@@ -614,8 +614,10 @@ describe('in-session tool exposure', () => {
     // `work_claim_release` (DOR-4019), reached when a chat is about to take on a job.
     // 152 -> 153 total, 140 -> 141 deferred: `update_agent_config` (DOR-4266), like
     // `update_agent_boundaries`: a person asking for a setup change can afford a search.
-    expect(tools).toHaveLength(153);
-    expect(deferred).toHaveLength(141);
+    // 153 -> 154 total, 141 -> 142 deferred: `withdraw_approval_request` (DOR-4586), a step an
+    // agent takes only about a card it raised itself; no prompt block names it.
+    expect(tools).toHaveLength(154);
+    expect(deferred).toHaveLength(142);
     for (const name of [
       'local_browser_ask_person',
       'local_browser_state',
@@ -623,6 +625,7 @@ describe('in-session tool exposure', () => {
       'local_browser_screenshot',
       'local_browser_act',
       'connectors_cancel_held_action',
+      'withdraw_approval_request',
     ]) {
       expect(deferred.map((tool) => tool.name)).toContain(name);
     }
