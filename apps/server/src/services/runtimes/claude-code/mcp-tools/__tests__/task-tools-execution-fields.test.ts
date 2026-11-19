@@ -24,6 +24,7 @@ import type { Task } from '@dorkos/shared/schemas';
 import { TaskStore } from '../../../../tasks/task-store.js';
 import type { McpToolDeps } from '../types.js';
 import { getTasksTools } from '../tasks/task-tools.js';
+import { RULES_NOTE } from '../../../../tasks/agent-mode/agent-mode-asked-for.js';
 
 /** The shape `tool()` returns, narrowed to what this test drives. */
 interface SessionTool {
@@ -170,6 +171,10 @@ describe('tasks_create / tasks_update carry runtime, model and effort', () => {
       permissionMode: 'acceptEdits',
       approvedAllow: null,
     });
+    // Said, not dropped (DOR-4335): the fixed note, never the rules themselves.
+    expect(updated.payload.rulesNote).toBe(RULES_NOTE);
+    const plain = await call('tasks_update', { id, name: 'renamed' });
+    expect(plain.payload).not.toHaveProperty('rulesNote');
   });
 
   it('CLEARS an override with null, in the row AND in the file', async () => {

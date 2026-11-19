@@ -282,7 +282,7 @@ describe('the card is bound to the task, not just the call (M1)', () => {
     const pending = approvals.listPending()[0]!;
     expect(pending.detail).toContain('Task: sweep');
     expect(pending.detail).toContain('Runs: 0 3 * * *');
-    expect(pending.detail).toContain('Mode: default');
+    expect(pending.detail).toContain('Mode: Default');
     expect(pending.detail).toContain('Prompt: sweep');
     approvals.grant(first.approvalId as string);
 
@@ -428,6 +428,6 @@ describe('another agent’s task (Security, Nov 2)', () => {
     expect(card.requestedBy).toBe('Agent A');
     expect(card.detail).toContain('Task: b-sweep');
     expect(card.detail).toContain('Runs as: agent-b');
-    expect(card.detail).toContain('Mode: bypassPermissions (was acceptEdits)');
+    expect(card.detail).toContain('Mode: Bypass permissions (was Accept edits)');
   });
 });
