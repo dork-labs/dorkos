@@ -57,7 +57,10 @@ export interface ReseatAgentDialogProps {
   agentName: string;
 }
 
-/** One account the person can pick: dot, name, and why it can't take the agent. */
+/**
+ * One account the person can pick: dot, name, and why it can't take the agent,
+ * or that it is signed out (still pickable, DOR-4439).
+ */
 function AccountRow({ account, selected }: { account: Account; selected: boolean }) {
   return (
     <label
@@ -75,7 +78,7 @@ function AccountRow({ account, selected }: { account: Account; selected: boolean
         <AccountDot color={account.color} name={nameOf(account)} />
       </span>
       <span className="max-w-[55%] shrink-0 truncate font-medium">{nameOf(account)}</span>
-      {!account.eligible && (
+      {(!account.eligible || account.signedOut) && (
         <span className="text-muted-foreground ml-auto min-w-0 pl-1 text-right text-xs">
           {account.reason}
         </span>
