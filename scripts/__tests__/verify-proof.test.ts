@@ -527,6 +527,56 @@ describe('the preopen level (DOR-4728)', () => {
   });
 });
 
+describe("arm.sh's verify-proof call, end to end (DOR-4728)", () => {
+  /**
+   * The two shell lines `.temp/coord/arm.sh` runs, as it runs them: it writes main's
+   * `cli.ts` beside itself with `git show`, then runs that lone copy from the main
+   * checkout (`$REPO` here) with the full head SHA and no level flag.
+   */
+  const armCheck = (coord: string) =>
+    spawnSync(
+      '/bin/sh',
+      [
+        '-c',
+        'vpcli="$(cd "$COORD" && pwd)/verify-proof-cli.ts"\n' +
+          'git -C "$REPO" show origin/main:scripts/verify-proof/cli.ts > "$vpcli" || exit 9\n' +
+          '( cd "$REPO" && node "$vpcli" check "$SHA" )',
+      ],
+      {
+        encoding: 'utf8',
+        // eslint-disable-next-line no-restricted-syntax -- scripts/ has no env.ts; the child needs PATH for git and node
+        env: { ...process.env, COORD: coord, REPO: repo, SHA: sha },
+      }
+    );
+
+  it('refuses a head whose only proof is a real preopen pass, and arms it after a full one', () => {
+    // main carries the checker under test, the way origin/main does for arm.sh.
+    mkdirSync(path.join(repo, 'scripts/verify-proof'), { recursive: true });
+    copyFileSync(script, path.join(repo, 'scripts/verify-proof/cli.ts'));
+    git('add', '-A');
+    git('commit', '-qm', 'ship the checker');
+    git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+    sha = git('rev-parse', 'HEAD');
+    // Not realpath'd: arm.sh names its folder by `pwd`, which keeps a symlinked path.
+    const coord = mkdtempSync(path.join(tmpdir(), 'verify-proof-coord-'));
+    try {
+      expect(runVerification(repo, () => 0, [], 'preopen')).toBe(0);
+      expect(existsSync(path.join(proofs(), `${sha}.preopen`))).toBe(true);
+      expect(existsSync(path.join(proofs(), sha))).toBe(false);
+      const refused = armCheck(coord);
+      expect(refused.status, refused.stderr).toBe(1);
+      expect(refused.stderr).toBe(refusal());
+      // The same head after a real full run arms, so the refusal above is the level's doing.
+      expect(runVerification(repo, () => 0)).toBe(0);
+      const armed = armCheck(coord);
+      expect(armed.status, armed.stderr).toBe(0);
+      expect(armed.stderr).toBe('');
+    } finally {
+      rmSync(coord, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('what a preopen run checks (DOR-4728)', () => {
   const root = path.resolve(import.meta.dirname, '../..');
   const top = () => git('rev-parse', '--show-toplevel');
