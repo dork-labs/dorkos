@@ -84,6 +84,7 @@ vi.mock('../../lib/boundary.js', async (importOriginal) => ({
 import { writeManifest } from '@dorkos/mesh';
 import { folderAllowEntry } from '../../services/runtimes/claude-code/folder-settings/folder-allow-consent.js';
 import { createTasksRoutes } from '../tasks.js';
+import { pickIsStricter } from '../task-trial-mode.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
@@ -606,6 +607,57 @@ describe('approving a proposed schedule can carry the operator’s trust stop', 
     expect(response.status).toBe(409);
     expect(response.body.code).toBe('trial_looser_than_proposal');
     expect(scheduler.triggerManualRun).not.toHaveBeenCalled();
+  });
+
+  // DOR-4336: "Try it once now" runs at the mode the person picked on the card, never looser
+  // than the trial's cap (the saved mode, or the baseline for a looser one).
+  it('runs a trial at a stricter picked mode instead of the saved one', async () => {
+    const task = await proposedByAgent();
+    await request(fixtureServer)
+      .post(`/api/tasks/${task.id}/trigger`)
+      .send({ permissionMode: 'dontAsk' });
+    expect(scheduler.triggerManualRun).toHaveBeenCalledWith(task.id, 'dontAsk');
+  });
+
+  it('holds a looser picked mode at the cap, for saved and outsider-written work alike', async () => {
+    const task = await proposedByAgent();
+    const trigger = (permissionMode: string) =>
+      request(fixtureServer).post(`/api/tasks/${task.id}/trigger`).send({ permissionMode });
+
+    await trigger('bypassPermissions');
+    db.update(pulseSchedules)
+      .set({ originMarks: JSON.stringify({ outsider: true }) })
+      .where(eq(pulseSchedules.id, task.id))
+      .run();
+    await trigger('acceptEdits');
+    // A pick that ranks the same as the cap is not stricter, so the cap holds.
+    await trigger('default');
+
+    // One run per request, each at the cap: the saved Accept edits takes no override.
+    expect(scheduler.triggerManualRun).toHaveBeenCalledTimes(3);
+    expect(scheduler.triggerManualRun).toHaveBeenNthCalledWith(1, task.id);
+    expect(scheduler.triggerManualRun).toHaveBeenNthCalledWith(2, task.id, 'dontAsk');
+    expect(scheduler.triggerManualRun).toHaveBeenNthCalledWith(3, task.id, 'dontAsk');
+  });
+
+  it('refuses a trial at a mode the runtime does not offer', async () => {
+    const task = await proposedByAgent();
+    const response = await request(fixtureServer)
+      .post(`/api/tasks/${task.id}/trigger`)
+      .send({ permissionMode: 'made-up-mode' });
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe('trial_mode_unknown');
+    expect(scheduler.triggerManualRun).not.toHaveBeenCalled();
+  });
+
+  it('never counts a mode the ranking does not know as stricter, on either side', () => {
+    // A runtime with its own ids (the test runtime's `always-allow`, `always-deny`) must not
+    // read as stricter than anything, nor anything as stricter than it.
+    expect(pickIsStricter('always-allow', 'always-deny')).toBe(false);
+    expect(pickIsStricter('always-allow', 'acceptEdits')).toBe(false);
+    expect(pickIsStricter('dontAsk', 'made-up-mode')).toBe(false);
+    expect(pickIsStricter('dontAsk', 'acceptEdits')).toBe(true);
+    expect(pickIsStricter('default', 'dontAsk')).toBe(false);
   });
 
   it('judges rules by the runtime the run starts on, the agent one when the task names none', async () => {

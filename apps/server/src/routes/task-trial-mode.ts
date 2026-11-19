@@ -44,3 +44,46 @@ export async function pendingTrialMode(
     ? { kind: 'tightened', permissionMode: baseline as PermissionMode }
     : { kind: 'refused' };
 }
+
+/**
+ * Whether a picked mode is strictly stricter than the cap, by a ranking that knows both. An
+ * unknown mode reads as loosest in one slot and strictest in the other, so both orders are asked.
+ *
+ * @param picked - The mode picked on the card.
+ * @param capMode - The mode the trial would otherwise run at.
+ */
+export function pickIsStricter(picked: string, capMode: string): boolean {
+  return isLooserScheduleMode(capMode, picked) && !isLooserScheduleMode(picked, capMode);
+}
+
+/** Refused when the picked mode is not one the run's runtime offers. */
+export const TRIAL_UNKNOWN_MODE_REFUSAL = {
+  error: "This task's agent can't run in that mode.",
+  code: 'trial_mode_unknown',
+} as const;
+
+/**
+ * The trial's mode once the person's pick is weighed in (DOR-4336): the pick when it is strictly
+ * stricter than the cap {@link pendingTrialMode} sets (the saved mode, or the baseline for a looser
+ * one), else the cap. A pick never loosens a run. With no pick, the cap alone decides, as before.
+ *
+ * @param task - The schedule, or undefined when it does not exist.
+ * @param picked - The mode picked on the card, when the request named one.
+ * @param meshCore - Finds the task's agent folder, for its runtime.
+ */
+export async function trialRunMode(
+  task: Task | undefined | null,
+  picked: string | undefined,
+  meshCore?: Pick<MeshCore, 'getProjectPath'>
+): Promise<TrialMode | { kind: 'unknown_mode' }> {
+  const cap = await pendingTrialMode(task, meshCore);
+  if (!task || picked === undefined || cap.kind === 'refused') return cap;
+  const runtime = await taskRunRuntime(task, runtimeRegistry, meshCore);
+  const declared = runtimeRegistry.getAllCapabilities()[runtime]?.permissionModes?.values ?? [];
+  if (!declared.some((mode) => mode.id === picked)) return { kind: 'unknown_mode' };
+  const capMode = cap.kind === 'tightened' ? cap.permissionMode : task.permissionMode;
+  // Only a pick both sides rank, and strictly stricter, wins. A tie (Ask first beside Don't ask)
+  // keeps the cap, and so does a mode the ranking doesn't know, on either side.
+  if (!pickIsStricter(picked, capMode)) return cap;
+  return { kind: 'tightened', permissionMode: picked as PermissionMode };
+}

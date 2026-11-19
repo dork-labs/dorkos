@@ -37,8 +37,12 @@ export interface ScheduleTestRunState {
    * or the refusal of the trigger request itself. Null when nothing has.
    */
   error: string | null;
-  /** Start one supervised run. A no-op while one is already in flight. */
-  start: () => void;
+  /**
+   * Start one supervised run. A no-op while one is already in flight. `permissionMode` is the
+   * mode picked on the card: the server runs it, or the trial's cap when that is stricter
+   * (DOR-4336). Absent, the cap alone decides.
+   */
+  start: (permissionMode?: string) => void;
 }
 
 /**
@@ -66,18 +70,21 @@ export function useScheduleTestRun(taskId: string): ScheduleTestRunState {
   );
   const run = runId === null ? null : (runs?.find((candidate) => candidate.id === runId) ?? null);
 
-  const start = useCallback(() => {
-    if (trigger.isPending) return;
-    trigger.mutate(taskId, {
-      // Guarded, because a transport is free to answer with nothing: the
-      // playground's stub resolves `null`, and destructuring that threw inside
-      // the mutation callback — where it surfaced as a button that silently did
-      // nothing at all rather than as an error anybody could see.
-      onSuccess: (result) => {
-        if (result?.runId) setRunId(result.runId);
-      },
-    });
-  }, [taskId, trigger]);
+  const start = useCallback(
+    (permissionMode?: string) => {
+      if (trigger.isPending) return;
+      trigger.mutate(permissionMode ? { id: taskId, permissionMode } : taskId, {
+        // Guarded, because a transport is free to answer with nothing: the
+        // playground's stub resolves `null`, and destructuring that threw inside
+        // the mutation callback — where it surfaced as a button that silently did
+        // nothing at all rather than as an error anybody could see.
+        onSuccess: (result) => {
+          if (result?.runId) setRunId(result.runId);
+        },
+      });
+    },
+    [taskId, trigger]
+  );
 
   return {
     phase: testRunPhase({
