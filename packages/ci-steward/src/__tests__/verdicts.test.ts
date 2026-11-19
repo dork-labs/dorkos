@@ -20,6 +20,7 @@ import { describe, expect, it } from 'vitest';
 import { emptySnapshot, gateKey, type DesktopReleaseRun, type Snapshot } from '../data.ts';
 import { readLedger } from '../ledger.ts';
 import { loadHandFiles } from '../load.ts';
+import { effectiveLedger } from '../steward.ts';
 import { addDays, dayOf, daysBetween, secondOfDay } from '../time.ts';
 import { computeVerdict, seriesFrom, type LedgerEntry } from '../verdicts.ts';
 
@@ -133,6 +134,18 @@ describe('verdicts on the recorded backfill fixtures', () => {
     expect(v.verdict).toBe('partial');
     expect(v.baseline).toEqual({ value: 43, source: 'ledger' });
     expect(v.before.n).toBe(0);
+    expect(v.after).toMatchObject({ n: 241, value: 18.5 });
+  });
+
+  it('#1135 written as proposed with no prs: no verdict alone, the same verdict once its landing PR resolves', () => {
+    const authored: LedgerEntry = { ...entry('260819-235925'), status: 'proposed', prs: [] };
+    expect(verdict(authored) as unknown).toBeNull();
+    const [effective] = effectiveLedger([authored], new Map([[authored.id, { pr: 1135 }]]));
+    expect(effective).toMatchObject({ status: 'active', prs: [1135] });
+    const v = verdict(effective!);
+    expect(v.verdict).toBe('partial');
+    expect(v.prs).toEqual([1135]);
+    expect(v.anchor).toBe(mergedAt.get(1135));
     expect(v.after).toMatchObject({ n: 241, value: 18.5 });
   });
 
