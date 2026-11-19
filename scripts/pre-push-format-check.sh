@@ -295,7 +295,7 @@ in_push=''
 working=''
 while IFS= read -r file; do
   [ -n "$file" ] || continue
-  if printf '%s\n' "$committed" | grep -qxF "$file"; then
+  if grep <<<"$committed" -qxF "$file"; then
     in_push="${in_push}${file}"$'\n'
   else
     working="${working}${file}"$'\n'

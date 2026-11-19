@@ -81,8 +81,8 @@ for f in ${files[@]+"${files[@]}"}; do
     while IFS= read -r hit; do
       lineno="${hit%%:*}"
       text="${hit#*:}"
-      printf '%s' "$text" | grep -Fq "$ALLOW_MARKER" && continue
-      printf '%s' "$text" | grep -Fq "$SITE_SCOPE_MARKER" && continue
+      grep <<<"$text" -Fq "$ALLOW_MARKER" && continue
+      grep <<<"$text" -Fq "$SITE_SCOPE_MARKER" && continue
       if [ "$violations" -eq 0 ]; then
         echo "check-dead-doc-paths: a dead path found in ground-truth docs:" >&2
         echo "" >&2
