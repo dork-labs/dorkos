@@ -678,7 +678,12 @@ export function describeGatedAttempt(
     ? `${JSON.stringify(renderRequesterLabel(identity.displayName || identity.agentPath))} `
     : 'An unidentified caller ';
   if (serviceAction) {
-    const lines = serviceAction.details
+    // Recipients first: they left the glance for their own list (DOR-4592), and this
+    // sentence is what the audit, notifications and a card without its action read.
+    const lines = [
+      ...(serviceAction.recipients ?? []).map(({ label, address }) => ({ label, value: address })),
+      ...serviceAction.details,
+    ]
       .map(({ label, value }) => `${label}: ${JSON.stringify(value)}`)
       .join(', ');
     return redactSecretsInText(

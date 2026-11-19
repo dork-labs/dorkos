@@ -13,6 +13,7 @@ import {
   APPROVAL_REQUEST_REASON_MAX_LENGTH,
   APPROVAL_SUMMARY_MAX_LENGTH,
   ApprovalServiceActionSchema,
+  inertRecipientText,
   MarketplaceApprovalSummarySchema,
   type ApprovalServiceAction,
   type MarketplaceApprovalSummary,
@@ -100,6 +101,15 @@ export function storableServiceAction(action: ApprovalServiceAction): string | n
     serviceName: redactSecretsInText(action.serviceName),
     accountLabel: redactSecretsInText(action.accountLabel),
     actionName: redactSecretsInText(action.actionName),
+    ...(action.recipients
+      ? {
+          recipients: action.recipients.map((recipient) => ({
+            label: redactSecretsInText(recipient.label),
+            // Made inert again here, whatever the producer did (DOR-4592).
+            address: inertRecipientText(redactSecretsInText(recipient.address)),
+          })),
+        }
+      : {}),
     details: action.details.map((detail) => ({
       label: redactSecretsInText(detail.label),
       value: redactSecretsInText(detail.value),

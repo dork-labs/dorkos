@@ -32,6 +32,49 @@ function cutLine(count: number): string {
   return `${values} too long to show. If you’re unsure what this sends, don’t allow it.`;
 }
 
+/** "1 more recipient isn't shown", "3 more recipients aren't shown". */
+function recipientsCutLine(count: number): string {
+  const more = count === 1 ? '1 more recipient isn’t' : `${count} more recipients aren’t`;
+  return `${more} shown. If you’re unsure who this sends to, don’t allow it.`;
+}
+
+/**
+ * Everyone a send goes to, one line each, above the rest (DOR-4592). Never
+ * shortened or folded: it scrolls inside the card instead. Each address is
+ * plain text the server already made inert, never a link.
+ */
+function ApprovalRecipients({
+  recipients,
+  cut,
+}: {
+  recipients: NonNullable<ApprovalServiceActionValue['recipients']>;
+  cut: number | undefined;
+}) {
+  return (
+    <>
+      <dl
+        data-slot="approval-service-recipients"
+        className="border-border/60 mt-1.5 grid max-h-[40dvh] grid-cols-[minmax(0,max-content)_minmax(0,1fr)] gap-x-3 gap-y-0.5 overflow-auto rounded-md border p-2 text-xs md:max-h-56"
+      >
+        {recipients.map((recipient, index) => (
+          <div key={`${index}-${recipient.label}`} className="contents">
+            <dt className="text-muted-foreground max-w-40 break-words">{recipient.label}</dt>
+            {/* Isolated left-to-right, so right-to-left letters can't move its "@" or dots. */}
+            <dd dir="ltr" className="text-foreground min-w-0 break-all [unicode-bidi:isolate]">
+              {recipient.address}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      {cut !== undefined && (
+        <p data-slot="approval-recipients-cut" className="text-muted-foreground mt-0.5 text-xs">
+          {recipientsCutLine(cut)}
+        </p>
+      )}
+    </>
+  );
+}
+
 /**
  * What a connected-app action would do: the app and account it runs on, its
  * arguments, and — when the service marks it high risk — a plain line saying so
@@ -77,6 +120,9 @@ export function ApprovalServiceAction({
         </span>
         <span className="text-muted-foreground min-w-0 break-all">{action.accountLabel}</span>
       </div>
+      {action.recipients && (
+        <ApprovalRecipients recipients={action.recipients} cut={action.recipientsCut} />
+      )}
       {expanded && everything ? (
         <dl
           id={listId}

@@ -147,6 +147,56 @@ export const APPROVAL_SERVICE_FULL_MAX_CHARACTERS = 20_000;
 /** Deepest a nested argument is indented in the "Show everything" list. */
 export const APPROVAL_SERVICE_FULL_MAX_DEPTH = 8;
 
+/** Longest one recipient may be on the card: more than any real address or number. */
+export const APPROVAL_SERVICE_RECIPIENT_MAX_LENGTH = 320;
+
+/** Most recipients the card lists before it counts the rest. */
+export const APPROVAL_SERVICE_MAX_RECIPIENTS = 2_000;
+
+/**
+ * One recipient of a send, on its own line (DOR-4592): who the argument is
+ * ("To", "Cc") and the address as it would be sent, with every invisible or
+ * line-breaking character shown as a visible `<U+…>` marker.
+ */
+export const ApprovalServiceRecipientSchema = z
+  .object({
+    /** The argument's name in words, e.g. "To" or "Bcc". */
+    label: z.string().min(1).max(APPROVAL_SERVICE_DETAIL_LABEL_MAX_LENGTH),
+    /** The address, swept for secrets, its hidden characters made visible. */
+    address: z.string().min(1).max(APPROVAL_SERVICE_RECIPIENT_MAX_LENGTH),
+  })
+  .strict()
+  .openapi('ApprovalServiceRecipient');
+
+/** One recipient of a send. */
+export type ApprovalServiceRecipient = z.infer<typeof ApprovalServiceRecipientSchema>;
+
+/** Control (C0, C1) and format characters, plus the line and paragraph separators. */
+const HIDDEN_RECIPIENT_CHARACTERS = /[\p{Cc}\p{Cf}\u{2028}\u{2029}]/gu;
+
+/**
+ * A recipient made inert for the card (DOR-4592): every hidden character shown
+ * as a visible `<U+…>` marker, then cut with "…" to fit
+ * {@link APPROVAL_SERVICE_RECIPIENT_MAX_LENGTH} in UTF-16 units, the way the
+ * schema counts, never through the middle of a character. Run by the producer
+ * and again where the card is stored, so no producer's word is taken for it.
+ *
+ * @param text - The address, already swept for secrets.
+ */
+export function inertRecipientText(text: string): string {
+  const shown = text.replace(
+    HIDDEN_RECIPIENT_CHARACTERS,
+    (ch) => `<U+${ch.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}>`
+  );
+  if (shown.length <= APPROVAL_SERVICE_RECIPIENT_MAX_LENGTH) return shown;
+  let kept = '';
+  for (const point of shown) {
+    if (kept.length + point.length > APPROVAL_SERVICE_RECIPIENT_MAX_LENGTH - 1) break;
+    kept += point;
+  }
+  return `${kept}…`;
+}
+
 /**
  * One line of the complete argument list: a label, a value, and how far it is
  * indented under the line above. A list's items and an object's fields each
@@ -240,6 +290,17 @@ export const ApprovalServiceActionSchema = z
     accountLabel: z.string().min(1).max(APPROVAL_SERVICE_NAME_MAX_LENGTH),
     /** The action in plain words, e.g. "Delete message". */
     actionName: z.string().min(1).max(APPROVAL_SERVICE_NAME_MAX_LENGTH),
+    /**
+     * Everyone a send goes to, one line each, in the order the call names them
+     * (DOR-4592). Shown above {@link details} and never shortened, so an extra
+     * address can't hide behind "and N more". Absent when nothing is a recipient.
+     */
+    recipients: z
+      .array(ApprovalServiceRecipientSchema)
+      .max(APPROVAL_SERVICE_MAX_RECIPIENTS)
+      .optional(),
+    /** How many recipients past {@link APPROVAL_SERVICE_MAX_RECIPIENTS} the card could not list. */
+    recipientsCut: z.number().int().min(1).optional(),
     /** The arguments, most important first: the action's own fields, then any others. */
     details: z.array(ApprovalServiceActionDetailSchema).max(APPROVAL_SERVICE_ACTION_MAX_DETAILS),
     /** How many more arguments there are than the card lists. */

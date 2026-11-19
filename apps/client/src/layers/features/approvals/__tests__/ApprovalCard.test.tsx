@@ -917,6 +917,66 @@ describe('a connected-app action says what it does (DOR-2504)', () => {
     });
   });
 
+  // DOR-4592: every recipient on its own line, above the rest, with nothing folded.
+  describe('who a send goes to', () => {
+    const recipients = [
+      { label: 'Recipient email', address: 'ann@example.com' },
+      { label: 'CC', address: 'bo@example.org' },
+      { label: 'CC', address: 'cy@example.net' },
+      { label: 'BCC', address: 'di@example.com' },
+      { label: 'BCC', address: 'evil<U+202E>moc.elpmaxe@ann' },
+    ];
+    const gmailSend = {
+      ...GMAIL_DELETE,
+      actionName: 'Send email',
+      recipients,
+      details: [{ label: 'Subject', value: 'Garden note' }],
+    };
+
+    it('lists all five recipients, in order, above the other details, with no “more”', () => {
+      const { container } = renderCard(connectorApproval(gmailSend));
+      const box = container.querySelector('[data-slot="approval-service-recipients"]')!;
+      expect([...box.querySelectorAll('dd')].map((dd) => dd.textContent)).toEqual(
+        recipients.map((r) => r.address)
+      );
+      expect([...box.querySelectorAll('dt')].map((dt) => dt.textContent)).toEqual(
+        recipients.map((r) => r.label)
+      );
+      const details = container.querySelector('[data-slot="approval-service-details"]')!;
+      expect(box.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      const action = container.querySelector('[data-slot="approval-service-action"]')!;
+      expect(action.textContent).not.toMatch(/\bmore\b/u);
+    });
+
+    it('shows each address as plain text, never a link', () => {
+      const { container } = renderCard(connectorApproval(gmailSend));
+      const box = container.querySelector('[data-slot="approval-service-recipients"]')!;
+      expect(box.querySelector('a')).toBeNull();
+      expect(screen.getByText('evil<U+202E>moc.elpmaxe@ann')).toBeInTheDocument();
+    });
+
+    it('keeps the list in view while “Show everything” is open', async () => {
+      const user = userEvent.setup();
+      const { container } = renderCard(
+        connectorApproval({
+          ...gmailSend,
+          everything: [{ label: 'Subject', value: 'Garden note', depth: 0 }],
+        })
+      );
+      await user.click(screen.getByRole('button', { name: 'Show everything' }));
+      expect(container.querySelector('[data-slot="approval-service-recipients"]')).not.toBeNull();
+    });
+
+    it('says plainly how many recipients it couldn’t list', () => {
+      renderCard(connectorApproval({ ...gmailSend, recipientsCut: 3 }));
+      expect(
+        screen.getByText(
+          '3 more recipients aren’t shown. If you’re unsure who this sends to, don’t allow it.'
+        )
+      ).toBeInTheDocument();
+    });
+  });
+
   it('renders exactly as before for an approval with no connected-app action', () => {
     const { container } = renderCard(buildApproval());
     expect(screen.getByText('Uninstall a marketplace package')).toBeInTheDocument();

@@ -5514,6 +5514,17 @@
             "minLength": 1,
             "maxLength": 120
           },
+          "recipients": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ApprovalServiceRecipient"
+            },
+            "maxItems": 2000
+          },
+          "recipientsCut": {
+            "type": "integer",
+            "minimum": 1
+          },
           "details": {
             "type": "array",
             "items": {
@@ -5554,6 +5565,26 @@
           "accountLabel",
           "actionName",
           "details"
+        ],
+        "additionalProperties": false
+      },
+      "ApprovalServiceRecipient": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          },
+          "address": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 320
+          }
+        },
+        "required": [
+          "label",
+          "address"
         ],
         "additionalProperties": false
       },
