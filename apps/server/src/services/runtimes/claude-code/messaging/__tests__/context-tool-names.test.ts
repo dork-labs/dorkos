@@ -1066,7 +1066,7 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
       'working-with-spin-off-chats',
     ]);
 
-    // `building-dorkos-apps` is App Builder Pack 1.1.2 vendored byte for byte
+    // `building-dorkos-apps` is App Builder Pack 1.1.4 vendored byte for byte
     // (DOR-4061): Security reviewed that exact text, so DorkOS may not add the
     // note to it. The note belongs in the next pack version, upstream. Only the
     // note is waived; the prefix rule below still holds for it.

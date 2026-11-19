@@ -835,7 +835,7 @@ producer_text() {
 while IFS='|' read -r phrase producer; do
   [ -n "${phrase:-}" ] || continue
   check "the probe accepts '$phrase'" yes \
-    "$(printf '%s\n' "$phrase" | grep -qE "$verdict_re" && echo yes || echo no)"
+    "$(grep <<<"$phrase" -qE "$verdict_re" && echo yes || echo no)"
   check "$producer still asks for '$phrase'" present \
     "$(presence "$phrase" "$(producer_text "$producer")")"
 done <<'PHRASES'

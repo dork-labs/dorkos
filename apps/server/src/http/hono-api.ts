@@ -78,6 +78,7 @@ import errorRoutes from '../routes/errors.js';
 import { createExtensionApiRoutes } from '../routes/extension-api.js';
 import { createExtensionsRoutes, type ExtensionsRouterDeps } from '../routes/extensions.js';
 import { createExtensionFrameRoutes } from '../routes/extension-frame.js';
+import { createExtensionMediaRoutes } from '../routes/extension-media.js';
 import { appScreenRunsIn } from '../routes/app-screen-runs.js';
 import {
   createExtensionDecisionsRoutes,
@@ -512,6 +513,15 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
     app.route(
       '/api/extension-frame',
       createExtensionFrameRoutes({ appScreenRuns: records.callerRuns, manifest: records.manifest })
+    );
+    // Video for an app's frame (DOR-4321), after the extensions routes so
+    // `/media/:ticket` never shadows an app called `media`.
+    app.route(
+      '/api/extensions',
+      createExtensionMediaRoutes({
+        manifest: records.manifest,
+        mediaFetch: (id) => manager.getMediaFetch(id),
+      })
     );
   }
   // These two are mounted on all of `/api`, because their paths span several

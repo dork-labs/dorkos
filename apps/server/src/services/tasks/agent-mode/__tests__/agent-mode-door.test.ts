@@ -163,3 +163,42 @@ describe('a call the gate refuses reaches the tool as the tool, never as the act
     expect((await settle(input, waiting())).refusal).toMatchObject({ code: 'needs_a_person' });
   });
 });
+
+// DOR-4335: the rules a call asks for are bound in full, not only the five the card shows.
+describe('a yes covers the rules it was shown, all of them', () => {
+  const RULES = Array.from({ length: 8 }, (_, i) => `Bash(./step-${i + 1}.sh)`);
+
+  function settleBody(body: Record<string, unknown>, input: object) {
+    return settleAgentModeCall(
+      { door: 'update', body, input, task: waiting(), edits: EDITS, caller: CALLER },
+      undefined,
+      sources
+    );
+  }
+
+  function changeForBody(body: Record<string, unknown>) {
+    return agentModeChangeOf(
+      { door: 'update', body, task: waiting() },
+      { mode: 'dontAsk', previousMode: 'default' },
+      undefined,
+      CALLER.agentPath
+    );
+  }
+
+  it('refuses a retry that differs only in a rule the card did not list', async () => {
+    config = DEFAULT;
+    const shown = { permissionMode: 'dontAsk', requestedAllow: RULES };
+    // Sorts last, past the five the card lists: only the digest line can tell them apart.
+    const swapped = {
+      permissionMode: 'dontAsk',
+      requestedAllow: [...RULES.slice(0, 6), 'Bash(rm -rf ~)', RULES[7]!],
+    };
+    const input = { id: 'task-1', ...swapped };
+    note(input, 'tasks.set_mode', 'card', changeForBody(shown));
+    expect((await settleBody(swapped, input)).refusal).toMatchObject({ code: 'task_changed' });
+
+    const same = { id: 'task-1', ...shown };
+    note(same, 'tasks.set_mode', 'card', changeForBody(shown));
+    expect((await settleBody(shown, same)).grant).toBeDefined();
+  });
+});

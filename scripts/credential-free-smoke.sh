@@ -113,7 +113,7 @@ echo "credential-free smoke: /api/health answered in ${elapsed}s: $body"
 # Affirmative, not just "curl exited 0": the endpoint reports its own status,
 # and a probe that accepted any 200 would accept a future handler that answers
 # while the server is degraded.
-printf '%s' "$body" | grep -q '"status"' || {
+grep <<<"$body" -q '"status"' || {
   echo 'credential-free smoke: /api/health answered without a status field.' >&2
   exit 1
 }

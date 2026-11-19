@@ -79,6 +79,7 @@ import {
 } from './task-tool-parts.js';
 import { grantCoversOthersTask } from '../../../../tasks/agent-mode/agent-mode-door.js';
 import { agentEditMayStayLive } from '../../../../tasks/agent-mode/agent-mode-record.js';
+import { askedForRules, RULES_NOTE } from '../../../../tasks/agent-mode/agent-mode-asked-for.js';
 import {
   afterToolAgentEdit,
   armToolApproval,
@@ -307,12 +308,21 @@ export function createCreateScheduleHandler(
       metadata: { status: task.status },
     });
 
+    // Rules asked for are never applied here; say so instead of dropping them (DOR-4335).
+    const rulesReply = askedForRules(args as Record<string, unknown>)
+      ? { rulesNote: RULES_NOTE }
+      : {};
     if (armed) {
-      return jsonContent({ schedule: task, note: armedScheduleNote(armed.execution) + listNote });
+      return jsonContent({
+        schedule: task,
+        note: armedScheduleNote(armed.execution) + listNote,
+        ...rulesReply,
+      });
     }
 
     return jsonContent({
       schedule: task,
+      ...rulesReply,
       // The panel hint rides along only where the tool that would open it
       // exists. `resolveProvenance` is absent on the external `/mcp` server, so
       // that surface gets the "tell them" half and nothing it cannot do.
@@ -677,10 +687,15 @@ export function createUpdateScheduleHandler(
     // Say what the edit cost, so an agent does not report a live schedule that
     // has just stopped. Only a schedule that was running can be stopped; one
     // already parked, or paused, has nothing to disclose.
+    // Rules asked for are never applied here; say so instead of dropping them (DOR-4335).
+    const rulesReply = askedForRules(fields as Record<string, unknown>)
+      ? { rulesNote: RULES_NOTE }
+      : {};
     if (settled === 'parked') {
       return jsonContent({
         schedule: updated,
         ...fileReply,
+        ...rulesReply,
         needsReapproval: true,
         // The note follows the sentence the park wrote: timing alone, or the
         // work itself (its prompt or how it runs).
@@ -691,7 +706,7 @@ export function createUpdateScheduleHandler(
             : REAPPROVAL_NOTE),
       });
     }
-    return jsonContent({ schedule: updated, ...fileReply });
+    return jsonContent({ schedule: updated, ...fileReply, ...rulesReply });
   };
 }
 

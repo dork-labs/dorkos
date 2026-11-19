@@ -60,6 +60,8 @@ function buildApp(): RequestListener {
   // group mount matches, so the spelling variants that once slipped past the
   // health carve-out can be asked of it too.
   app.get('/api/debug/*', (c) => c.json({ claims: [] }));
+  // Stands in for every `/api/extensions` route, the video link among them (DOR-4321).
+  app.all('/api/extensions/*', (c) => c.json({ reached: true }));
   // Non-API path (the app): must never be gated.
   app.get('/', (c) => c.json({ spa: true }));
   return frontDoorListener(app);
@@ -280,6 +282,37 @@ describe('the session gate — /api/* and /mcp credential gate (integration)', (
       setAuthEnabled(true);
       const res = await request(fixtureServer).get('/api/debug/dispatches').set('Cookie', cookies);
       expect(res.status).toBe(200);
+    });
+
+    // A video link plays in a frame that carries no cookie: its whole ticket is
+    // the credential (DOR-4321). Only that exact shape passes, so the routes of
+    // an app called `media` stay gated.
+    const TICKET = 'Ab0_-'.repeat(8) + 'xyz';
+    it('lets a video link through by its whole ticket alone', async () => {
+      setAuthEnabled(true);
+      expect(TICKET).toHaveLength(43);
+      const res = await request(fixtureServer).get(`/api/extensions/media/${TICKET}`);
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ reached: true });
+    });
+
+    it.each([
+      ['a short ticket', `/api/extensions/media/${TICKET.slice(1)}`],
+      ['a longer ticket', `/api/extensions/media/${TICKET}x`],
+      ['a path after the ticket', `/api/extensions/media/${TICKET}/secrets`],
+      ['an app called media', '/api/extensions/media/secrets'],
+      ['the mint of an app called media', '/api/extensions/media/media-tickets'],
+      ['another app', `/api/extensions/clips/${TICKET}`],
+      // Only the router's own spelling is exempt, so a later
+      // `/api/extensions/:id/:param` route never loses the cookie gate.
+      ['the route in capitals', `/api/extensions/MEDIA/${TICKET}`],
+      ['the route in mixed case', `/api/extensions/Media/${TICKET}`],
+      ['the prefix in capitals', `/API/Extensions/media/${TICKET}`],
+    ])('gates %s', async (_name, path) => {
+      setAuthEnabled(true);
+      const res = await request(fixtureServer).get(path);
+      expect(res.status).toBe(401);
+      expect(res.body?.code).toBe('AUTH_REQUIRED');
     });
 
     it('still exempts the liveness probe with a trailing slash', async () => {
