@@ -178,6 +178,16 @@ tracked:
       armed on the logged `--no-verify-proof` escape or a coordinator
       override. Hand-audited from the arm log and escapes.jsonl in the common
       git dir; not computed by the daily collector, which cannot see either.
+  - id: tracked.first-run-green-share
+    unit: ratio
+    definition: >-
+      Share of PRs whose first CI run has `typecheck`, `test` and
+      `browser-test` all green. Per PR branch, the first `pull_request`-event
+      run of each of those three workflows counts, cancelled runs excluded (if
+      the first was cancelled, the next non-cancelled run counts); a PR passes
+      only if all three are green. A PR belongs to the window its first run
+      falls in. Counted by ci-steward from the Actions run list; not computed
+      by the daily collector.
   - id: tracked.merge-tail-unknown-skips
     unit: count
     definition: >-
