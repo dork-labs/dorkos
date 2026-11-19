@@ -346,23 +346,20 @@ export class BrowserHandover {
     const refused = this.browser.lastRefusalHost?.() === site;
     await this.browser.handToPerson();
     const profileId = this.browser.currentProfileId();
-    this.record = {
+    const handoff: LocalBrowserHandoff = {
       id: randomUUID(),
       sessionId,
       agentName: asker?.name ?? null,
       agentId: asker ? (this.agentIdAt(asker.folder) ?? null) : null,
       agentFolder: asker?.folder ?? null,
-      profileId: this.browser.currentProfileId(),
+      profileId,
       reason,
       site,
       askedAt: new Date(this.now()).toISOString(),
       ...(refused ? { refused: true } : {}),
       outcome: null,
     };
-    this.reopenAt = undefined;
-    this.askedUrl = tab.url;
     if (state.mode === 'new-window') {
-      this.reopenAt = { sessionId, profileId, url: tab.url };
       // No page-reading connection, automation pipe or theme extension survives
       // into the person's window. Form fields do not survive this deliberate swap.
       await this.browser.disconnect();
@@ -371,6 +368,11 @@ export class BrowserHandover {
     }
     // Bring the agent's window to the person. Its strip and card are drawn by DorkOS.
     if (state.mode === 'embedded') await this.browser.selectTab(tab.id).catch(() => undefined);
+    // A failed close or sign-in must not leave an unpublished handoff that a retry calls success.
+    this.record = handoff;
+    this.reopenAt =
+      state.mode === 'new-window' ? { sessionId, profileId, url: tab.url } : undefined;
+    this.askedUrl = tab.url;
     this.changed();
     this.handedOver(this.record);
     logger.info('[Browser] An agent handed the browser to a person', {

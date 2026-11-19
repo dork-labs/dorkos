@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { execFile } from 'node:child_process';
+import { appendFileSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,10 +19,12 @@ import {
   FORBIDDEN_PLAIN_FLAGS,
   plainChromiumArgs,
   spawnPlainChromium,
+  profileHeld,
   profileLockPid,
   type PlainChromium,
 } from '../../../server/src/services/session/local-browser/plain-chromium.js';
 import { installedChromePath } from '../../../server/src/services/session/local-browser/connection/chrome-installation.js';
+import { CLOSE_RESPONSE_TIMEOUT_MS } from '../../../server/src/services/session/local-browser/lifecycle.js';
 
 const run = promisify(execFile);
 const evidence = process.env.DORKOS_PUBLIC_CHROME_ARTIFACTS!;
@@ -32,6 +35,52 @@ await mkdir(evidence, { recursive: true });
 let context: BrowserContext | undefined;
 let agentPid: number | undefined;
 let plain: PlainChromium | undefined;
+let agentWindow = 0;
+/** CI evidence only: a context-close event never stands in for close-promise settlement. */
+function recordAgentClose(launched: BrowserContext, folder: string, pid: number): void {
+  const window = ++agentWindow;
+  const close = launched.close.bind(launched);
+  let startedAt: number | undefined;
+  let closeCalls = 0;
+  const record = (phase: string) => {
+    const line = JSON.stringify({
+      window,
+      pid,
+      phase,
+      closeCalls,
+      responseTimeoutMs: CLOSE_RESPONSE_TIMEOUT_MS,
+      at: new Date().toISOString(),
+      elapsedMs: startedAt === undefined ? null : performance.now() - startedAt,
+      contextClosed: launched.isClosed(),
+      profileHeld: profileHeld(folder),
+      profileLockPid: profileLockPid(folder) ?? null,
+    });
+    console.error(`Agent close timing: ${line}`);
+    try {
+      // Survives a thrown handoff or a child killed before asynchronous output could flush.
+      appendFileSync(path.join(evidence, 'agent-close-timing.ndjson'), `${line}\n`);
+    } catch {
+      console.error('Could not write the agent close timing artifact.');
+    }
+  };
+  launched.on('close', () => record('context-close-event'));
+  launched.close = async (options) => {
+    startedAt ??= performance.now();
+    closeCalls += 1;
+    const boundary = setTimeout(() => record('response-deadline'), CLOSE_RESPONSE_TIMEOUT_MS);
+    boundary.unref();
+    record('close-start');
+    try {
+      await close(options);
+      record('close-resolved');
+    } catch (error) {
+      record('close-rejected');
+      throw error;
+    } finally {
+      clearTimeout(boundary);
+    }
+  };
+}
 const signIns = new SignInWindow({
   spawner(executable, args) {
     assert.equal(executable, installedChromePath());
@@ -50,6 +99,7 @@ const backend = {
     context = await productionBackend.launch(...args);
     agentPid = profileLockPid(args[0]);
     assert(agentPid, 'The throwaway agent profile must name its own Chrome process');
+    recordAgentClose(context, args[0], agentPid);
     return context;
   },
 };

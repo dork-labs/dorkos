@@ -21,6 +21,7 @@ import { BrowserProfileRemoval } from '../profile-removal/index.js';
 import { prepareProfileFolder } from '../profile-folders.js';
 import { createLocalBrowserProfileStore } from '../profile-store.js';
 import type { SignInWindow } from '../sign-in-window.js';
+import { closingError } from '../lifecycle.js';
 
 let dataDirectory: string;
 beforeEach(() => {
@@ -122,6 +123,28 @@ function setup(outside = false, mode: 'embedded' | 'new-window' = 'embedded') {
 }
 
 describe('detached handoffs', () => {
+  it('does not publish a handoff or report success on retry after its close times out', async () => {
+    const { handover, browser, signIns, set } = setup(false, 'new-window');
+    const handedOver = vi.fn();
+    handover.useHandoffListener(handedOver);
+    browser.disconnect.mockRejectedValueOnce(closingError(false));
+
+    await expect(handover.ask('chat-1', 'password')).rejects.toMatchObject({ code: 'busy' });
+    expect((await handover.state()).handoff).toBeNull();
+    expect(handover.isOpenFor('chat-1')).toBe(false);
+    expect(handedOver).not.toHaveBeenCalled();
+    expect(signIns.start).not.toHaveBeenCalled();
+
+    // The close eventually lands. Asking again needs a live page, not a phantom handoff.
+    set({ ...connected(), status: 'disconnected', tabs: [], selectedTabId: null });
+    await expect(handover.ask('chat-1', 'password')).rejects.toMatchObject({ code: 'no_tab' });
+    await handover.open({ mode: 'new-window', sessionId: 'chat-1' });
+    const next = await handover.ask('chat-1', 'password');
+    expect((await handover.state()).handoff?.id).toBe(next.handoffId);
+    expect(signIns.start).toHaveBeenCalledOnce();
+    expect(handedOver).toHaveBeenCalledOnce();
+  });
+
   it('serializes hand-back against a second answer or reopen', async () => {
     const { handover, browser } = setup();
     const { handoffId } = await handover.ask('chat-1', 'password');
