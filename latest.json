@@ -1,8 +1,8 @@
 {
  "schema": 1,
- "date": "2026-11-17",
- "collected_at": "2026-11-18T13:45:45.541Z",
- "snapshot": "snapshots/2026-11-17.json",
+ "date": "2026-11-18",
+ "collected_at": "2026-11-19T14:15:04.508Z",
+ "snapshot": "snapshots/2026-11-18.json",
  "report_ref": "reports/2026-W46.md",
  "healthy": true,
  "failures": [],
@@ -10,17 +10,17 @@
   "Required workflow live comparison failed: Command failed: gh api orgs/dork-labs/rulesets?per_page=100&page=1\ngh: Resource not accessible by integration (HTTP 403)\n. Org rule and bypass-list read access is required; no extra credential is requested or installed by CI.",
   "Thin sample: review-recovery (n=0 < 5); those SLOs read as insufficient, not as a breach or a win."
  ],
- "api_calls": 353,
+ "api_calls": 427,
  "slos": [
   {
    "id": "headroom",
    "kind": "tripwire",
-   "from": "2026-11-11",
-   "to": "2026-11-17",
-   "n": 42262,
+   "from": "2026-11-12",
+   "to": "2026-11-18",
+   "n": 45347,
    "min_n": 10,
    "stats": {
-    "p95_over_timeout": 0.807
+    "p95_over_timeout": 0.827
    },
    "status": "ok",
    "excess_hours": null,
@@ -29,12 +29,12 @@
   {
    "id": "queue-green",
    "kind": "quality",
-   "from": "2026-11-11",
-   "to": "2026-11-17",
-   "n": 385,
+   "from": "2026-11-12",
+   "to": "2026-11-18",
+   "n": 445,
    "min_n": 30,
    "stats": {
-    "share": 0.8494
+    "share": 0.8562
    },
    "status": "ok",
    "excess_hours": null
@@ -42,42 +42,42 @@
   {
    "id": "wasted-queue-builds",
    "kind": "quality",
-   "from": "2026-11-11",
-   "to": "2026-11-17",
-   "n": 385,
+   "from": "2026-11-12",
+   "to": "2026-11-18",
+   "n": 445,
    "min_n": 30,
    "stats": {
-    "share": 0.0442
+    "share": 0.0449
    },
    "status": "ok",
-   "excess_hours": 23.57
+   "excess_hours": 32.67
   },
   {
    "id": "flaky-test-runs",
    "kind": "quality",
-   "from": "2026-11-11",
-   "to": "2026-11-17",
-   "n": 5851028,
+   "from": "2026-11-12",
+   "to": "2026-11-18",
+   "n": 6035467,
    "min_n": 1000,
    "stats": {
     "share": 0,
-    "failed_jobs": 58,
-    "unreported_failed_jobs": 21
+    "failed_jobs": 56,
+    "unreported_failed_jobs": 17
    },
    "status": "unmeasured",
    "excess_hours": null,
-   "note": "coverage unknown: 21 of 58 failed queue test jobs wrote no retry-aware report (wf.credential-free-build.credential-free-build 10, wf.test.community-pg 8, wf.test.community-packaged 3); share 0 is over the reported suites only"
+   "note": "coverage unknown: 17 of 56 failed queue test jobs wrote no retry-aware report (wf.credential-free-build.credential-free-build 11, wf.test.community-pg 5, wf.test.community-packaged 1); share 0 is over the reported suites only"
   },
   {
    "id": "main-green",
    "kind": "quality",
-   "from": "2026-10-21",
-   "to": "2026-11-17",
-   "n": 640,
+   "from": "2026-10-22",
+   "to": "2026-11-18",
+   "n": 679,
    "min_n": 1,
    "stats": {
-    "red_episodes": 23,
-    "restore_p90": 211.5
+    "red_episodes": 26,
+    "restore_p90": 194.8
    },
    "status": "breach",
    "excess_hours": null
@@ -85,12 +85,12 @@
   {
    "id": "review-completes",
    "kind": "quality",
-   "from": "2026-11-11",
-   "to": "2026-11-17",
-   "n": 301,
+   "from": "2026-11-12",
+   "to": "2026-11-18",
+   "n": 308,
    "min_n": 30,
    "stats": {
-    "share": 0.9767
+    "share": 0.9773
    },
    "status": "ok",
    "excess_hours": null
@@ -98,8 +98,8 @@
   {
    "id": "review-recovery",
    "kind": "quality",
-   "from": "2026-11-11",
-   "to": "2026-11-17",
+   "from": "2026-11-12",
+   "to": "2026-11-18",
    "n": 0,
    "min_n": 5,
    "stats": {},
@@ -109,69 +109,69 @@
   {
    "id": "pr-feedback",
    "kind": "speed",
-   "from": "2026-11-11",
-   "to": "2026-11-17",
-   "n": 239,
+   "from": "2026-11-12",
+   "to": "2026-11-18",
+   "n": 254,
    "min_n": 30,
    "stats": {
-    "p50": 26.9,
-    "p90": 29.4
+    "p50": 25.4,
+    "p90": 29.3
    },
    "status": "breach",
-   "excess_hours": 55.39
+   "excess_hours": 56.21
   },
   {
    "id": "queue-build",
    "kind": "speed",
-   "from": "2026-11-11",
-   "to": "2026-11-17",
-   "n": 246,
+   "from": "2026-11-12",
+   "to": "2026-11-18",
+   "n": 278,
    "min_n": 20,
    "stats": {
-    "p50": 29.5,
-    "p90": 51.7
+    "p50": 29.1,
+    "p90": 52
    },
    "status": "ok",
-   "excess_hours": 67.37
+   "excess_hours": 74.58
   },
   {
    "id": "lead-time",
    "kind": "speed",
-   "from": "2026-11-11",
-   "to": "2026-11-17",
-   "n": 277,
+   "from": "2026-11-12",
+   "to": "2026-11-18",
+   "n": 314,
    "min_n": 30,
    "stats": {
-    "p50": 166.3,
-    "p90": 912.8
+    "p50": 168.1,
+    "p90": 1099.6
    },
    "status": "breach",
-   "excess_hours": 1575.82
+   "excess_hours": 1911.5
   },
   {
    "id": "local-commit",
    "kind": "speed",
-   "from": "2026-11-11",
-   "to": "2026-11-17",
-   "n": 2440,
+   "from": "2026-11-12",
+   "to": "2026-11-18",
+   "n": 1930,
    "min_n": 20,
    "stats": {
-    "p90": 149,
-    "killed_share": 0.0041
+    "p90": 158.1,
+    "killed_share": 0.0052
    },
    "status": "breach",
-   "excess_hours": 39.86
+   "excess_hours": 34.06
   },
   {
    "id": "local-push",
    "kind": "speed",
-   "from": "2026-11-11",
-   "to": "2026-11-17",
-   "n": 1662,
+   "from": "2026-11-12",
+   "to": "2026-11-18",
+   "n": 1466,
    "min_n": 20,
    "stats": {
-    "p90": 29,
-    "killed_share": 0.0012
+    "p90": 30,
+    "killed_share": 0.0014
    },
    "status": "ok",
    "excess_hours": 0.33
@@ -180,22 +180,22 @@
  "constraint": {
   "tier": "quality",
   "id": "main-green",
-  "reason": "main stays green: red_episodes 23, restore_p90 211.5 breaches its floor."
+  "reason": "main stays green: red_episodes 26, restore_p90 194.8 breaches its floor."
  },
  "local_breaches": [
   "local-commit"
  ],
  "machine": {
-  "n": 85158,
+  "n": 73590,
   "clones": 2,
-  "load_per_core_p90": 2.43,
-  "mem_available_mb_p10": 265,
-  "swap_used_mb_p50": 7710
+  "load_per_core_p90": 2.5,
+  "mem_available_mb_p10": 261,
+  "swap_used_mb_p50": 7686
  },
  "safeguards_ok": true,
  "triggers": {
   "red": 4,
-  "amber": 70,
-  "top": "2 machines running the hooks is saturated — RAM: 265 MB free p10; swap: 7710 MB in use p50."
+  "amber": 72,
+  "top": "2 machines running the hooks is saturated — RAM: 261 MB free p10; swap: 7686 MB in use p50."
  }
 }
