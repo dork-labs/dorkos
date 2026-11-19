@@ -7,7 +7,17 @@
 import { describe, expect, it } from 'vitest';
 import type { Task } from '@dorkos/shared/types';
 import { agentModeChangeOf } from '../agent-mode-change.js';
-import { askedForLines, askedForRules, inertText, RULES_NOTE } from '../agent-mode-asked-for.js';
+import {
+  askedForLines,
+  askedForRules,
+  inertText,
+  modeLabel,
+  RULES_NOTE,
+} from '../agent-mode-asked-for.js';
+import { FALLBACK_LABELS } from '../../../notifications/schedule-execution-copy.js';
+import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
+import { CODEX_CAPABILITIES } from '../../../runtimes/codex/runtime-constants.js';
+import { OPENCODE_CAPABILITIES } from '../../../runtimes/opencode/runtime-constants.js';
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 
 const TASK = {
@@ -131,6 +141,48 @@ describe('the mode card names what the call asked for', () => {
       '[click](https://example.invalid)'
     );
     expect(inertText('a\u2028b\u00ADc')).toBe('a\\u{2028}b\\u{AD}c');
+  });
+});
+
+describe('a mode line never gives two modes the same words (Security, #4001)', () => {
+  // The card text is the binding: two modes with one label would let a yes for one
+  // answer a card for the other.
+  const RUNTIMES = {
+    'claude-code': CLAUDE_CODE_CAPABILITIES,
+    codex: CODEX_CAPABILITIES,
+    opencode: OPENCODE_CAPABILITIES,
+    none: undefined,
+  };
+
+  for (const [name, capabilities] of Object.entries(RUNTIMES)) {
+    it(`labels every mode on ${name} distinctly`, () => {
+      const ids = [
+        ...new Set([
+          ...(capabilities?.permissionModes.values.map((value) => value.id) ?? []),
+          ...Object.keys(FALLBACK_LABELS),
+          'future-mode',
+          'Unknown mode',
+        ]),
+      ];
+      const labels = ids.map((id) => modeLabel(id, capabilities));
+      expect(new Set(labels).size).toBe(ids.length);
+    });
+  }
+
+  it('adds the id when two modes share a label, or a label reads like the unknown fallback', () => {
+    const clash = {
+      permissionModes: {
+        values: [
+          { id: 'a', label: 'Careful' },
+          { id: 'b', label: 'Careful' },
+          { id: 'c', label: 'Unknown mode (d)' },
+        ],
+      },
+    } as unknown as RuntimeCapabilities;
+    expect(modeLabel('a', clash)).toBe('Careful (a)');
+    expect(modeLabel('b', clash)).toBe('Careful (b)');
+    expect(modeLabel('c', clash)).toBe('Unknown mode (d) (c)');
+    expect(modeLabel('d', clash)).toBe('Unknown mode (d)');
   });
 });
 

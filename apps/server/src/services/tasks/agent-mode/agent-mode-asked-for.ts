@@ -16,7 +16,7 @@
  */
 import { createHash } from 'node:crypto';
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
-import { scheduleExecutionCopy } from '../../notifications/schedule-execution-copy.js';
+import { FALLBACK_LABELS } from '../../notifications/schedule-execution-copy.js';
 
 /** How many requested rules the card lists before `+N more`; the box they sit in scrolls. */
 const RULES_SHOWN = 50;
@@ -24,7 +24,7 @@ const RULES_SHOWN = 50;
 /** The most characters one rule, or an unknown mode id, shows. */
 const RULE_MAX = 120;
 
-/** The label {@link scheduleExecutionCopy} gives a mode neither the runtime nor DorkOS knows. */
+/** What a mode neither the runtime nor DorkOS knows is called, beside its id. */
 const UNKNOWN_MODE = 'Unknown mode';
 
 /** What a tool reply says when the call asked for rules (DOR-4335). Fixed: never echoes them. */
@@ -52,16 +52,37 @@ function capped(value: string, max: number): string {
   return value.length > max ? `${value.slice(0, max - 1)}…` : value;
 }
 
+/** A mode's picker label: the runtime's own, else DorkOS's, else none. */
+function knownLabel(
+  mode: string,
+  capabilities: RuntimeCapabilities | undefined
+): string | undefined {
+  const declared = capabilities?.permissionModes.values.find((value) => value.id === mode)?.label;
+  return declared ?? (Object.hasOwn(FALLBACK_LABELS, mode) ? FALLBACK_LABELS[mode] : undefined);
+}
+
 /**
- * A mode as the runtime's mode picker names it ("Never ask"), for every mode line on the card. A
- * mode it does not know keeps its id beside the label, made inert, so the person still sees it.
+ * A mode as the runtime's mode picker names it ("Never ask"), for every mode line on the card.
+ *
+ * The card text is the binding, so this must never give two modes the same words (Security,
+ * #4001): a label another known mode shares, or one that reads like the unknown fallback, carries
+ * its id as well, and a mode nobody knows shows `Unknown mode (<inert id>)`.
  *
  * @param mode - The mode id.
  * @param capabilities - The task runtime's profile, or `undefined` when none is registered.
  */
 export function modeLabel(mode: string, capabilities: RuntimeCapabilities | undefined): string {
-  const label = scheduleExecutionCopy(mode, capabilities).modeLabel;
-  return label === UNKNOWN_MODE ? `${UNKNOWN_MODE} (${capped(inertText(mode), RULE_MAX)})` : label;
+  const label = knownLabel(mode, capabilities);
+  const id = capped(inertText(mode), RULE_MAX);
+  if (label === undefined) return `${UNKNOWN_MODE} (${id})`;
+  const others = [
+    ...(capabilities?.permissionModes.values.map((value) => value.id) ?? []),
+    ...Object.keys(FALLBACK_LABELS),
+  ].filter((other) => other !== mode);
+  const shared = others.some((other) => knownLabel(other, capabilities) === label);
+  return shared || label.startsWith(UNKNOWN_MODE) || label.includes('(')
+    ? `${label} (${id})`
+    : label;
 }
 
 /**
