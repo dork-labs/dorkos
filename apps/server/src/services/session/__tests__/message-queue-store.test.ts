@@ -3,6 +3,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { sessionMessageQueue, eq, type Db } from '@dorkos/db';
 import type { ClientContext } from '@dorkos/shared/additional-context';
 import { MessageQueueStore, QUEUE_POSITION_STEP } from '../message-queue-store.js';
+import { withKeptCeiling } from '../message-dispatcher/carried-limits.js';
 
 /** Enqueue with the fields a test does not care about filled in. */
 function enqueue(
@@ -368,6 +369,83 @@ describe('MessageQueueStore', () => {
         'typed before the crash',
         'and this one too',
       ]);
+    });
+  });
+});
+
+describe('the limits a row keeps (DOR-4350)', () => {
+  const LIMITS = {
+    outsider: true,
+    ceiling: [{ asks: 'never', reach: 'everything' }, 'runtime-default'],
+    unattended: true,
+  } as const;
+
+  it('round-trips the mark, the ceiling and the unattended answer, and none reads as null', () => {
+    const store = new MessageQueueStore(createTestDb());
+    const kept = store.enqueue({
+      sessionId: 's1',
+      content: 'a',
+      clientId: 'c',
+      carriedLimits: LIMITS,
+    });
+    const plain = store.enqueue({ sessionId: 's1', content: 'b', clientId: 'c' });
+    expect(store.get(kept.id)?.carriedLimits).toEqual(LIMITS);
+    expect(store.get(plain.id)?.carriedLimits).toBeNull();
+  });
+
+  it('keeps them through a remove and a restore', () => {
+    const store = new MessageQueueStore(createTestDb());
+    const row = store.enqueue({
+      sessionId: 's1',
+      content: 'a',
+      clientId: 'c',
+      carriedLimits: LIMITS,
+    });
+    const removed = store.remove(row.id)!;
+    expect(store.restore('s1', removed)).toBe(true);
+    expect(store.get(row.id)?.carriedLimits).toEqual(LIMITS);
+  });
+
+  it('combines a plan’s own ceiling with the row’s, so neither loosens the other', () => {
+    const own = { asks: 'never', reach: 'edit' } as const;
+    const kept = { asks: 'always', reach: 'everything' } as const;
+    expect(withKeptCeiling(own, kept)).toEqual([own, kept]);
+    expect(withKeptCeiling(['runtime-default'], kept)).toEqual(['runtime-default', kept]);
+    expect(withKeptCeiling(undefined, kept)).toEqual(kept);
+    expect(withKeptCeiling(own, undefined)).toEqual(own);
+    expect(withKeptCeiling(undefined, undefined)).toBeUndefined();
+    // The row usually kept the plan's own ceiling: each bound once.
+    expect(withKeptCeiling(own, own)).toEqual(own);
+    expect(withKeptCeiling([own, kept], kept)).toEqual([own, kept]);
+  });
+
+  it('reads a ceiling of unknown shape as unreadable: marked and held to the default', () => {
+    const db = createTestDb();
+    const store = new MessageQueueStore(db);
+    const row = store.enqueue({ sessionId: 's1', content: 'a', clientId: 'c' });
+    for (const ceiling of [{ asks: 'sometimes', reach: 'everything' }, []]) {
+      db.update(sessionMessageQueue)
+        .set({ carriedLimitsJson: JSON.stringify({ ceiling }) })
+        .where(eq(sessionMessageQueue.id, row.id))
+        .run();
+      expect(store.get(row.id)?.carriedLimits).toEqual({
+        outsider: true,
+        ceiling: 'runtime-default',
+      });
+    }
+  });
+
+  it('reads an unreadable cell as marked and held to the default, never as none', () => {
+    const db = createTestDb();
+    const store = new MessageQueueStore(db);
+    const row = store.enqueue({ sessionId: 's1', content: 'a', clientId: 'c' });
+    db.update(sessionMessageQueue)
+      .set({ carriedLimitsJson: '{"ceiling": 42' })
+      .where(eq(sessionMessageQueue.id, row.id))
+      .run();
+    expect(store.get(row.id)?.carriedLimits).toEqual({
+      outsider: true,
+      ceiling: 'runtime-default',
     });
   });
 });

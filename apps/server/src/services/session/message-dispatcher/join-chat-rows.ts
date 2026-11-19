@@ -55,7 +55,10 @@ export function joinWaitingChatRows(sessionId: string, headRowId: string): void 
       steering.has(next.id) ||
       // A row held to the default joins only a head held the same way: the
       // head's flag is the one the joined turn launches under.
-      (next.heldToDefault === true && head.heldToDefault !== true)
+      (next.heldToDefault === true && head.heldToDefault !== true) ||
+      // And only a head that kept the same limits (DOR-4350): the joined turn launches under
+      // the head's, and a row's mark, ceiling or unattended answer must not be dropped.
+      JSON.stringify(next.carriedLimits) !== JSON.stringify(head.carriedLimits)
     ) {
       break;
     }

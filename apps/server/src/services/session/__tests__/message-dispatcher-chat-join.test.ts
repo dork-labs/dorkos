@@ -205,6 +205,31 @@ describe('chat rows at a turn boundary', () => {
     expect(options.carriedMarks).toEqual({ outsider: true });
   });
 
+  // DOR-4350: a row whose kept limits differ from the head's runs as its own turn, so its mark is
+  // never folded into a head that does not carry it.
+  it('starts another turn for a row that kept limits the head did not', async () => {
+    await startBusy(quickTurn(), quickTurn());
+    await service.send(ANA, { to: TARGET, message: 'plain request' });
+    await dispatchMessage({
+      sessionId: TARGET,
+      clientId: 'chat:made-up-poster',
+      content: 'marked request',
+      projector: getOrCreateProjector(TARGET),
+      runtime,
+      carriedMarks: { outsider: true },
+    });
+    expect(queue.list(TARGET)).toHaveLength(2);
+
+    release();
+    await vi.waitFor(() => expect(runtime.sendMessage).toHaveBeenCalledTimes(3));
+    const launched = runtime.sendMessage.mock.calls.map((call) => call[1]);
+    expect(launched[1]).toContain('plain request');
+    expect(launched[1]).not.toContain('marked request');
+    expect(launched[2]).toContain('marked request');
+    const marked = runtime.sendMessage.mock.calls[2]![2] as { carriedMarks?: unknown };
+    expect(marked.carriedMarks).toEqual({ outsider: true });
+  });
+
   it('stops at a person row between two chat rows', async () => {
     await startBusy(quickTurn(), quickTurn(), quickTurn());
     const first = await service.send(ANA, { to: TARGET, message: 'first agent' });
