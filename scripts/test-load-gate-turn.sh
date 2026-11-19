@@ -14,14 +14,21 @@
 #     arguments or an environment assignment in front of it.
 #   * IT NEVER WEDGES. A repo run nested inside a job the app already let run
 #     (an agent's gated `pnpm build`) goes straight through instead of waiting
-#     on its own parent's slot.
-#   * IT NEVER FAILS CLOSED. A folder that is a symlink or a file, no tsx, and a
-#     helper that dies before starting the command all still run it.
+#     on its own parent's slot. And the app's line is taken BEFORE the repo's own
+#     slot: with the repo lock's one slot wanted by an outside run that is
+#     waiting for the app, the agent's nested run still gets it at once (on the
+#     old order the outside run held it while it waited, and the nested run
+#     queued behind it until its bound ran out).
+#   * IT NEVER FAILS CLOSED. A folder that is a symlink or a file, no tsx, a
+#     helper that dies before starting the command, and one that hangs on its
+#     start all still run it. A helper killed by a signal runs nothing.
+#   * A SIGNAL DURING THE WAIT RUNS NOTHING: the helper says `stopped`, leaves
+#     the line and exits 128 + 15, and the wrapper starts nothing.
 #   * IT GIVES THE SLOT BACK when the command ends: success, failure (exit code
 #     kept) and a signal.
 #   * IT READS THE APP'S SETTINGS. `enabled: false` and `slots: 2` in the
 #     config's `runtimes.loadGate` change what a repo job does; the commit gate
-#     and DORKOS_LOAD_GATE_LINE=0 never join the line.
+#     and DORKOS_LOAD_GATE_LINE=0 (recorded as `line_off`) never join the line.
 #
 # Needs `pnpm install` (tsx, zod): the line is the server's own code. Every case
 # gets its own queue folder, lock folder and DORK_HOME, so the real line on this
@@ -36,7 +43,8 @@ TSX_BIN="$repo_root/node_modules/.bin/tsx"
 
 unset CI DORKOS_HEAVY_SLOT_HELD DORKOS_HEAVY_LOCK DORKOS_HEAVY_WAIT_SECONDS DORKOS_HEAVY_SLOTS \
   DORKOS_IGNORE_LOAD DORKOS_LOAD_GATE_LINE DORKOS_LOAD_GATE_TSX DORKOS_LOAD_GATE_SLOTS \
-  DORKOS_LOAD_GATE_MAX_LOAD DORKOS_LOAD_GATE_HARD_CAP_MINUTES CI_STEWARD_TIMINGS_FILE CI_STEWARD_RUN_ID
+  DORKOS_LOAD_GATE_MAX_LOAD DORKOS_LOAD_GATE_HARD_CAP_MINUTES DORKOS_LOAD_GATE_START_SECONDS \
+  DORKOS_LOAD_GATE_IN_TURN DORKOS_LOAD_GATE_TURN_FILE CI_STEWARD_TIMINGS_FILE CI_STEWARD_RUN_ID
 export DORKOS_HEAVY_LOADAVG_CMD='echo 0.00'
 export DORKOS_LOAD_GATE_LOAD=0
 export DORKOS_LOAD_GATE_POLL_MS=200
@@ -210,6 +218,36 @@ if [ "$elapsed" -lt 30 ]; then ok "the nested run finished in ${elapsed}s"; else
 unset DORKOS_LOAD_GATE_HARD_CAP_MINUTES
 
 echo ""
+echo "== the app's line comes before the repo's own slot =="
+
+# The stall the old order allowed. The app holds its one slot for an agent's
+# command. An outside repo run joins: on the old order it took the repo lock's
+# ONE slot first and then waited for the app's, so when the agent's command
+# ran its nested `heavy-run-lock --job`, that nested run queued for the repo
+# slot behind a run that was only waiting, until its bound ran out. On the new
+# order the outside run waits in the app's line holding nothing, and the nested
+# run takes the repo slot at once. The agent's command starts its nested run
+# only once the outside run is in the app's line, so the race cannot hide it.
+fresh
+export DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_WAIT_SECONDS=10
+start_app_job run bash -c "
+  for _ in \$(seq 1 300); do ls '$DORKOS_LOAD_GATE_DIR'/ticket-*.json >/dev/null 2>&1 && break; sleep 0.1; done
+  sleep 1
+  bash '$LOCK' --job bash -c 'echo nested-ran'"
+await_slot || not_ok "the app's job never took its slot"
+bash "$LOCK" --job bash -c "echo outside-ran >>'$order'" >"$case_dir/outside-out" 2>&1 &
+outside_pid=$!
+own_pids+=("$outside_pid")
+wait "$app_pid" 2>/dev/null
+out=$(cat "$case_dir/app-out")
+check_contains "the agent's nested run ran" 'nested-ran' "$out"
+check_lacks 'without queueing for the repo slot behind a run that only waits' 'heavy-run slots on this machine are busy' "$out"
+check_lacks 'and without running uncapped after the bound' 'still no free slot' "$out"
+wait "$outside_pid" 2>/dev/null
+check_eq 'the outside run ran once the app job ended' 'app-start app-end outside-ran' "$(tr '\n' ' ' <"$order" | sed 's/ $//')"
+unset DORKOS_HEAVY_SLOTS DORKOS_HEAVY_WAIT_SECONDS
+
+echo ""
 echo "== it never fails closed =="
 
 fresh
@@ -241,6 +279,30 @@ check_eq 'a helper that dies before starting the command still runs it' 0 "$?"
 check_contains 'once' 'ran-after-the-helper-died' "$out"
 check_contains 'and it says the line did not start' 'did not start (exit 9)' "$out"
 
+# Killed by a signal before it could write a word (a Ctrl-C during tsx's start):
+# that is a stop, never a reason to run the build.
+fresh
+printf '#!/usr/bin/env bash\nexit 143\n' >"$work/stopped-tsx"
+chmod +x "$work/stopped-tsx"
+out=$(DORKOS_LOAD_GATE_TSX="$work/stopped-tsx" bash "$LOCK" --job bash -c 'echo must-not-run' 2>&1)
+check_eq 'a helper ended by a signal before it said anything exits 128 + 15' 143 "$?"
+check_lacks 'and the job never runs' 'must-not-run' "$out"
+
+# A start that hangs is given up on, the helper (only it) is stopped, and the
+# job runs on this lock alone.
+fresh
+printf '#!/usr/bin/env bash\nexec sleep 30\n' >"$work/hung-tsx"
+chmod +x "$work/hung-tsx"
+started=$(date +%s)
+out=$(TMPDIR="$case_dir" DORKOS_LOAD_GATE_START_SECONDS=2 DORKOS_LOAD_GATE_TSX="$work/hung-tsx" \
+  bash "$LOCK" --job bash -c 'echo ran-after-a-hung-start' 2>&1)
+status=$?
+elapsed=$(($(date +%s) - started))
+check_eq 'a helper that hangs on its start still runs the job' 0 "$status"
+check_contains 'its output is forwarded' 'ran-after-a-hung-start' "$out"
+check_contains 'and it says the line did not start in time' 'did not start within 2s' "$out"
+if [ "$elapsed" -lt 15 ]; then ok "the hung start was given up on in ${elapsed}s"; else not_ok "the hung start held the job for ${elapsed}s"; fi
+
 echo ""
 echo "== the slot comes back however the command ends =="
 
@@ -264,6 +326,42 @@ check_eq 'a job ended by a signal exits 128 + 15' 143 "$?"
 check_eq 'and leaves nothing in the line' 0 "$(leftovers)"
 
 echo ""
+echo "== a signal during the wait runs nothing =="
+
+# The waiting helper's pid is the one its ticket records: this suite's own
+# descendant, signalled by that pid and nothing else.
+waiting_helper_pid() { sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p' "$DORKOS_LOAD_GATE_DIR"/ticket-*.json 2>/dev/null | head -n 1; }
+tickets() { find "$DORKOS_LOAD_GATE_DIR" -maxdepth 1 -name 'ticket-*' 2>/dev/null | wc -l | tr -d ' '; }
+
+fresh
+start_app_job sleep 8
+await_slot || not_ok "the app's job never took its slot"
+turn_file="$case_dir/turn"
+: >"$turn_file"
+DORKOS_LOAD_GATE_TURN_FILE="$turn_file" "$TSX_BIN" "$repo_root/scripts/load-gate/turn.ts" -- \
+  bash -c "echo ran >'$case_dir/ran-direct'" >/dev/null 2>&1 &
+helper_pid=$!
+own_pids+=("$helper_pid")
+await_ticket || not_ok 'the helper never queued'
+kill -TERM "$(waiting_helper_pid)" 2>/dev/null
+wait "$helper_pid" 2>/dev/null
+check_eq 'the helper stopped in the wait exits 128 + 15' 143 "$?"
+check_eq 'and tells the wrapper it stopped' 'stopped' "$(cat "$turn_file")"
+check_eq 'and never starts the command' no "$([ -e "$case_dir/ran-direct" ] && echo yes || echo no)"
+check_eq 'and leaves the line' 0 "$(tickets)"
+
+bash "$LOCK" --job bash -c "echo ran >'$case_dir/ran-wrapped'" >/dev/null 2>&1 &
+repo_pid=$!
+own_pids+=("$repo_pid")
+await_ticket || not_ok 'the wrapped job never queued'
+kill -TERM "$(waiting_helper_pid)" 2>/dev/null
+wait "$repo_pid" 2>/dev/null
+check_eq 'through the wrapper, a job stopped in the wait exits 128 + 15' 143 "$?"
+check_eq 'and the wrapper never starts it' no "$([ -e "$case_dir/ran-wrapped" ] && echo yes || echo no)"
+check_eq 'and it leaves the line' 0 "$(tickets)"
+wait "$app_pid" 2>/dev/null
+
+echo ""
 echo "== it reads the app's settings, and only a --job joins =="
 
 fresh
@@ -271,9 +369,11 @@ unset DORKOS_LOAD_GATE_SLOTS
 printf '{"runtimes":{"loadGate":{"slots":2}}}\n' >"$DORK_HOME/config.json"
 start_app_job sleep 3
 await_slot || not_ok "the app's job never took its slot"
-out=$(bash "$LOCK" --job bash -c 'echo second-slot' 2>&1)
-check_lacks 'slots: 2 in the config lets a second job run beside the app job' 'waiting in' "$out"
-check_contains 'and it ran' 'second-slot' "$out"
+# The job counts the running jobs from inside its turn: two, the app's and its own.
+out=$(bash "$LOCK" --job bash -c 'ls "$DORKOS_LOAD_GATE_DIR"/slot-*.json | wc -l | tr -d " "' 2>&1)
+check_eq 'slots: 2 in the config runs a second job beside the app job, in its own slot' 2 "$out"
+check_lacks 'without waiting' 'waiting in' "$out"
+check_lacks 'and in the line, not past it' 'could not be used' "$out"
 wait "$app_pid" 2>/dev/null
 
 fresh
@@ -282,6 +382,8 @@ start_app_job sleep 3
 await_slot || not_ok "the app's job never took its slot"
 out=$(bash "$LOCK" --job bash -c 'echo gate-off' 2>&1)
 check_lacks 'enabled: false in the config means a job does not wait' 'waiting in' "$out"
+check_lacks 'because the gate is off, not because the line failed' 'could not be used' "$out"
+check_contains 'and it ran' 'gate-off' "$out"
 check_eq 'nothing of the job is in the line' 0 "$(find "$DORKOS_LOAD_GATE_DIR" -maxdepth 1 -name 'ticket-*' | wc -l | tr -d ' ')"
 wait "$app_pid" 2>/dev/null
 
@@ -291,9 +393,13 @@ start_app_job sleep 3
 await_slot || not_ok "the app's job never took its slot"
 out=$(bash "$LOCK" bash -c 'echo commit-gate' 2>&1)
 check_lacks 'the commit gate (no --job) never joins the line' 'waiting in' "$out"
-out=$(DORKOS_LOAD_GATE_LINE=0 bash "$LOCK" --job bash -c 'echo line-off' 2>&1)
+notes="$case_dir/notes.jsonl"
+: >"$notes"
+out=$(CI_STEWARD_TIMINGS_FILE="$notes" CI_STEWARD_RUN_ID=fixture DORKOS_LOAD_GATE_LINE=0 \
+  bash "$LOCK" --job bash -c 'echo line-off' 2>&1)
 check_lacks 'DORKOS_LOAD_GATE_LINE=0 keeps a job out of the line' 'waiting in' "$out"
 check_contains 'and it ran' 'line-off' "$out"
+check_contains 'and the opt-out is recorded as line_off' '"o":"line_off"' "$(cat "$notes")"
 wait "$app_pid" 2>/dev/null
 
 echo ""

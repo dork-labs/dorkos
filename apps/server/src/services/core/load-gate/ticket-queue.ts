@@ -332,7 +332,7 @@ export class TicketQueue {
   /**
    * The pid of each running job's owner, let-through ones included. The repo's
    * own heavy runs read it to tell a run nested inside an agent's gated command
-   * (its server is an ancestor) from a new job (`scripts/load-gate-turn.ts`).
+   * (its server is an ancestor) from a new job (`scripts/load-gate/turn.ts`).
    */
   runningOwners(): number[] {
     return this.running().map((marker) => marker.pid);

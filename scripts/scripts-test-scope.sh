@@ -65,6 +65,9 @@ SCOPE_PATTERNS=(
   '^ci/space-server\.env$'
   # scripts/test-load-gate-turn.sh runs the server's own load-gate queue: the
   # repo's heavy runs wait in that line, so a change to it can break them (DOR-4209).
+  # It also parses the app's settings through packages/shared/src/config-schema,
+  # which '^packages/shared/src/' above already covers; test-scripts-test-scope.sh
+  # pins both files in scope, so narrowing that entry goes red.
   '^apps/server/src/services/core/load-gate/'
   # typecheck.yml runs the repo-wide suites in the queue, and
   # scripts/__tests__/repo-wide-suites.test.ts pins that step. A PR that drops

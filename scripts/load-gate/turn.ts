@@ -1,18 +1,29 @@
 /**
  * The repo's own heavy runs take their turn in the app's line (DOR-4209 PR5a).
  *
+ *   tsx scripts/load-gate/turn.ts --wrap <heavy-run-lock.sh> <--job|--tests> -- <command> [args...]
  *   tsx scripts/load-gate/turn.ts -- <command> [args...]
  *
- * `scripts/heavy-run-lock.sh --job` (and `--tests`) runs this around its
- * command once it has its own slot, so `pnpm build`, `pnpm test`, `pnpm
- * typecheck`, `pnpm verify` and `pnpm heavy` wait in the SAME first-come line
- * as agents' heavy shell jobs: the queue folder `/tmp/dorkos-load-gate-<uid>`
- * that the server's load gate keeps (`apps/server/src/services/core/load-gate/`).
- * It does not re-implement that folder's protocol: it opens the server's own
- * {@link TicketQueue}, so a ticket from here and a ticket from the app are the
- * same kind of file, judged by the same rules. Importing server source from a
- * script has precedent (`scripts/export-openapi.ts`, the search benches) and
- * needs `tsx`, which turns the server's `.js` import specifiers back into `.ts`.
+ * `scripts/heavy-run-lock.sh --job` (and `--tests`) runs this FIRST, before its
+ * own slot, so `pnpm build`, `pnpm test`, `pnpm typecheck`, `pnpm verify` and
+ * `pnpm heavy` wait in the SAME first-come line as agents' heavy shell jobs: the
+ * queue folder `/tmp/dorkos-load-gate-<uid>` that the server's load gate keeps
+ * (`apps/server/src/services/core/load-gate/`). With `--wrap`, the command this
+ * runs once its turn comes is the wrapper again (`bash <wrapper> <mode> <command>`,
+ * told `DORKOS_LOAD_GATE_IN_TURN=1`), which then takes the repo's own slot inside
+ * the turn. That is the agents' order: an agent's gated command already holds
+ * the app's slot when its nested `heavy-run-lock --job` asks for the repo's, so
+ * every run must take the app's turn first and the repo's slot second, or a run
+ * holding a repo slot while it waits for the app's turn can stall the agent's.
+ *
+ * It does not re-implement the folder's protocol: it opens the server's own
+ * `TicketQueue`, so a ticket from here and a ticket from the app are the same kind
+ * of file, judged by the same rules. Importing server source from a script has
+ * precedent (`scripts/export-openapi.ts`, the search benches) and needs `tsx`,
+ * which turns the server's `.js` import specifiers back into `.ts`. The imports
+ * are by computed path and typed by the small {@link QueueModule} below, so the
+ * scripts typecheck does not pull the server and `@dorkos/shared` into its
+ * program; `scripts/test-load-gate-turn.sh` runs the real code.
  *
  * ## The settings
  *
@@ -33,34 +44,40 @@
  * - NEVER FAILS CLOSED. If the folder or the settings cannot be used, or the
  *   queue throws while waiting, it prints one line and runs the command. The
  *   shell wrapper also runs the command itself if this file never got as far as
- *   starting it (no `tsx`, a broken import).
+ *   starting it (no `tsx`, a broken import, a start that hangs).
  * - NESTED RUNS GO STRAIGHT THROUGH. An agent's gated `pnpm build` already holds
  *   a slot in the name of its DorkOS server, which is an ancestor of the shell the
  *   command runs in. Queueing again would wait on that slot until the hard cap,
- *   so a running job owned by any ancestor means "already in line". Known gap: a
- *   light agent command that runs a heavy repo script inside it also goes
- *   through whenever its server holds a slot for some other job.
- * - Its children are told `DORKOS_HEAVY_SLOT_HELD=1`, so a heavy run nested in
- *   this one never queues twice.
+ *   so a running job owned by any ancestor means "already in line". Ancestry is
+ *   read with ONE `ps` call; if it cannot be read while any job is running, the
+ *   run goes straight through too. Known gap: a light agent command that runs a
+ *   heavy repo script inside it also goes through whenever its server holds a
+ *   slot for some other job.
+ * - A held slot is refreshed until a lease past the hard cap, then left to its
+ *   lease, as the server's own slots are (`beatUntil` in `load-gate.ts`), so a
+ *   job that never ends cannot hold the machine forever.
  *
  * ## Signals
  *
- * While waiting, SIGINT, SIGTERM and SIGHUP take the ticket out of line and exit
- * `128 + n` without starting the command. While the command runs, SIGTERM and
- * SIGHUP are passed to it (and only to it); SIGINT is not, because a terminal's
- * Ctrl-C already reaches the whole foreground group. The slot is given back
- * however the command ends; if this process is SIGKILLed, the queue frees the
- * slot at its next check, since the owner's pid is gone.
+ * From the moment this module loads until the command starts, SIGINT, SIGTERM
+ * and SIGHUP take the ticket out of line (if there is one yet) and exit `128 + n`
+ * without starting the command. While the command runs, SIGTERM and SIGHUP are
+ * passed to it (and only to it); SIGINT is not, because a terminal's Ctrl-C
+ * already reaches the whole foreground group. The slot is given back however the
+ * command ends; if this process is SIGKILLed, the queue frees the slot at its
+ * next check, since the owner's pid is gone.
  *
  * ## What it tells the shell wrapper
  *
- * `DORKOS_LOAD_GATE_TURN_FILE`, when set, is a file this writes `ran` to the
- * moment the command starts, or `stopped` when a signal ended the wait. Left
- * empty, the wrapper knows nothing ran and runs the command itself.
+ * `DORKOS_LOAD_GATE_TURN_FILE`, when set, is a file this writes `waiting` to once
+ * its ticket is in line, `ran` the moment the command starts, or `stopped` when a
+ * signal ended the wait. The wrapper reads anything else as "never started" and
+ * runs the command itself. If `<file>.late` exists (the wrapper gave up on a slow
+ * start and already ran the command), this never starts it.
  *
- * @module scripts/load-gate-turn
+ * @module scripts/load-gate/turn
  */
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -69,10 +86,38 @@ import { fileURLToPath } from 'node:url';
 const TAG = '[load-gate]';
 const MS_PER_MINUTE = 60_000;
 const DEFAULT_POLL_MS = 5_000;
+/** The server's lease (`DEFAULT_LEASE_MS` in ticket-queue.ts), the margin past the hard cap. */
+const LEASE_MS = 30_000;
 const NOTICE_EVERY_MS = 60_000;
 const MAX_ANCESTORS = 64;
-const WAIT_SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'] as const;
-const PASSED_SIGNALS = ['SIGTERM', 'SIGHUP'] as const;
+const PS_TIMEOUT_MS = 5_000;
+const STOP_SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'] as const;
+
+/** What this process is doing, which decides what a signal means. */
+const state: {
+  phase: 'waiting' | 'running';
+  release: (() => void) | undefined;
+  child: ChildProcess | undefined;
+} = { phase: 'waiting', release: undefined, child: undefined };
+
+/** A signal before the command starts ends the wait; one after it is the command's. */
+function onSignal(signal: NodeJS.Signals): void {
+  if (state.phase === 'running') {
+    if (signal !== 'SIGINT') state.child?.kill(signal);
+    return;
+  }
+  try {
+    state.release?.();
+  } catch {
+    // Other readers free it once its owner, this process, is gone.
+  }
+  tellWrapper('stopped');
+  process.exit(128 + (os.constants.signals[signal] ?? 0));
+}
+
+// First thing, before the imports, the `ps` call and the ticket: a Ctrl-C at any
+// point before the command starts must never let the wrapper start it.
+if (isEntry()) for (const signal of STOP_SIGNALS) process.on(signal, onSignal);
 
 /** The settings one check is judged against, after overrides. */
 export interface TurnSettings {
@@ -87,13 +132,64 @@ export interface TurnSettings {
 }
 
 /** The `runtimes.loadGate` fields this reads, as the app's schema parses them. */
-interface ParsedLoadGate {
+export interface ParsedLoadGate {
+  /** Whether heavy jobs wait at all. */
   enabled: boolean;
+  /** Concurrent heavy jobs. */
   slots: number;
+  /** The load jobs wait at. */
   maxLoad: number;
+  /** Minutes before the "still waiting" notice. */
   maxWaitMinutes: number;
+  /** Minutes before a job runs anyway. */
   hardCapMinutes: number;
 }
+
+/** One ticket, as far as this file uses it. */
+interface QueueTicket {
+  id: string;
+  seq: number;
+}
+
+/** The part of the server's `TicketQueue` this file calls. Kept in step by the shell fixtures. */
+interface Queue {
+  enqueue(info: { job: string }): QueueTicket;
+  rejoin(ticket: QueueTicket): void;
+  beat(ticket: QueueTicket): boolean;
+  disown(ticket: QueueTicket): void;
+  list(): QueueTicket[];
+  position(ticket: QueueTicket): number;
+  runningCount(): number;
+  runningOwners(): number[];
+  tryAcquire(
+    ticket: QueueTicket,
+    limits: { slots: number; load: number; maxLoad: number }
+  ): 'slot' | 'let-through' | 'wait' | 'lost';
+  forceAcquire(ticket: QueueTicket): void;
+  release(ticket: QueueTicket): void;
+}
+
+/** The modules this file loads at run time, typed only as far as it uses them. */
+interface QueueModule {
+  TicketQueue: new (options: { dir?: string; leaseMs?: number }) => Queue;
+  DEFAULT_LEASE_MS: number;
+}
+interface LabelModule {
+  jobLabel: (word: string) => string;
+}
+interface SchemaModule {
+  LoadGateSettingsSchema: {
+    safeParse(value: unknown): { success: true; data: ParsedLoadGate } | { success: false };
+    parse(value: unknown): ParsedLoadGate;
+  };
+}
+
+// Computed, so the scripts typecheck does not follow them into the server's tree.
+const QUEUE_MODULE = '../../apps/server/src/services/core/load-gate/ticket-queue.js';
+const LABEL_MODULE = '../../apps/server/src/services/core/load-gate/job-label.js';
+// Through the entry, not `config-schema/runtime-settings.js`: entering at the
+// leaf trips a circular import (`RuntimesConfigSchema` before initialization).
+const SCHEMA_MODULE = '../../packages/shared/src/config-schema.js';
 
 /** A positive whole number from the environment, or `undefined`. */
 function envInt(value: string | undefined): number | undefined {
@@ -101,10 +197,11 @@ function envInt(value: string | undefined): number | undefined {
   return Number.isInteger(n) && n > 0 ? n : undefined;
 }
 
-/** A non-negative number from the environment, or `undefined`. */
-function envNumber(value: string | undefined): number | undefined {
+/** A positive number from the environment (zero too, when `inclusive`), or `undefined`. */
+function envNumber(value: string | undefined, inclusive: boolean): number | undefined {
   const n = value === undefined || value === '' ? NaN : Number(value);
-  return Number.isFinite(n) && n >= 0 ? n : undefined;
+  if (!Number.isFinite(n)) return undefined;
+  return n > 0 || (inclusive && n === 0) ? n : undefined;
 }
 
 /**
@@ -138,7 +235,7 @@ export function turnSettings(
   return {
     enabled: parsed.enabled,
     slots: envInt(env.DORKOS_LOAD_GATE_SLOTS) ?? parsed.slots,
-    maxLoad: envInt(env.DORKOS_LOAD_GATE_MAX_LOAD) ?? parsed.maxLoad,
+    maxLoad: envNumber(env.DORKOS_LOAD_GATE_MAX_LOAD, false) ?? parsed.maxLoad,
     hardCapMs: hardCapMinutes * MS_PER_MINUTE,
   };
 }
@@ -160,32 +257,54 @@ export function programWord(command: readonly string[]): string {
 }
 
 /**
- * Every ancestor of `pid`, nearest first, at most {@link MAX_ANCESTORS}.
+ * Each pid's parent, from `ps -A -o pid=,ppid=` output.
  *
- * @param pid - Where to start (not included).
- * @param parentOf - The parent of a pid, or `0` when unknown.
+ * @param psOutput - What `ps` printed: one `pid ppid` pair per line.
  */
-export function ancestorsOf(pid: number, parentOf: (pid: number) => number): Set<number> {
+export function parentMap(psOutput: string): Map<number, number> {
+  const parents = new Map<number, number>();
+  for (const line of psOutput.split('\n')) {
+    const match = /^\s*(\d+)\s+(\d+)\s*$/.exec(line);
+    if (match) parents.set(Number(match[1]), Number(match[2]));
+  }
+  return parents;
+}
+
+/**
+ * Every ancestor of a process, nearest first, or `null` when the chain cannot be
+ * followed to the top (a pid `ps` did not list, or more than {@link MAX_ANCESTORS}).
+ *
+ * @param parent - The process's own parent, where the walk starts.
+ * @param parents - Each pid's parent.
+ */
+export function ancestorsFrom(
+  parent: number,
+  parents: ReadonlyMap<number, number>
+): Set<number> | null {
   const found = new Set<number>();
-  let at = parentOf(pid);
-  while (at > 1 && found.size < MAX_ANCESTORS && !found.has(at)) {
+  let at = parent;
+  while (at > 1) {
+    if (found.has(at) || found.size >= MAX_ANCESTORS) return null;
     found.add(at);
-    at = parentOf(at);
+    const next = parents.get(at);
+    if (next === undefined) return null;
+    at = next;
   }
   return found;
 }
 
-/** A pid's parent from `ps`, which names a pid and signals nothing; `0` when it cannot say. */
-function psParent(pid: number): number {
+/** This process's ancestors from one `ps` call, which names pids and signals nothing; `null` when unreadable. */
+function readAncestors(): Set<number> | null {
   try {
-    const out = execFileSync('ps', ['-o', 'ppid=', '-p', String(pid)], {
+    const out = execFileSync('ps', ['-A', '-o', 'pid=,ppid='], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
-      timeout: 2_000,
+      timeout: PS_TIMEOUT_MS,
+      maxBuffer: 16 * 1024 * 1024,
     });
-    return Number(out.trim()) || 0;
+    return ancestorsFrom(process.ppid, parentMap(out));
   } catch {
-    return 0;
+    return null;
   }
 }
 
@@ -197,7 +316,7 @@ function errorKind(error: unknown): string {
 }
 
 /** Write the wrapper's one word, best effort. */
-function tellWrapper(word: 'ran' | 'stopped'): void {
+function tellWrapper(word: 'waiting' | 'ran' | 'stopped'): void {
   const file = process.env.DORKOS_LOAD_GATE_TURN_FILE;
   if (!file) return;
   try {
@@ -207,6 +326,12 @@ function tellWrapper(word: 'ran' | 'stopped'): void {
   }
 }
 
+/** Whether the wrapper gave up on this start and ran the command itself. */
+function wrapperGaveUp(): boolean {
+  const file = process.env.DORKOS_LOAD_GATE_TURN_FILE;
+  return Boolean(file) && fs.existsSync(`${file}.late`);
+}
+
 const say = (line: string): void => {
   process.stderr.write(`${TAG} ${line}\n`);
 };
@@ -214,8 +339,11 @@ const say = (line: string): void => {
 /** A held turn: refresh it while the command runs, give it back when it ends. */
 interface Turn {
   beat: () => void;
+  disown: () => void;
   release: () => void;
   pollMs: number;
+  /** How long after the start to keep refreshing: the hard cap and a lease. */
+  beatForMs: number;
 }
 
 /**
@@ -227,16 +355,13 @@ interface Turn {
  */
 async function takeTurn(command: readonly string[]): Promise<Turn | null> {
   const env = process.env;
-  let release: (() => void) | undefined;
   try {
     const [{ TicketQueue, DEFAULT_LEASE_MS }, { jobLabel }, { LoadGateSettingsSchema }] =
-      await Promise.all([
-        import('../../apps/server/src/services/core/load-gate/ticket-queue.js'),
-        import('../../apps/server/src/services/core/load-gate/job-label.js'),
-        // Through the entry, not `config-schema/runtime-settings.js`: entering at the
-        // leaf trips a circular import (`RuntimesConfigSchema` before initialization).
-        import('../../packages/shared/src/config-schema.js'),
-      ]);
+      (await Promise.all([import(QUEUE_MODULE), import(LABEL_MODULE), import(SCHEMA_MODULE)])) as [
+        QueueModule,
+        LabelModule,
+        SchemaModule,
+      ];
     const readSettings = (): TurnSettings => {
       let section: unknown;
       try {
@@ -253,7 +378,7 @@ async function takeTurn(command: readonly string[]): Promise<Turn | null> {
         env
       );
     };
-    const fixedLoad = envNumber(env.DORKOS_LOAD_GATE_LOAD);
+    const fixedLoad = envNumber(env.DORKOS_LOAD_GATE_LOAD, true);
     const fiveMinuteLoad = (): number => fixedLoad ?? os.loadavg()[1] ?? 0;
     const pollMs = envInt(env.DORKOS_LOAD_GATE_POLL_MS) ?? DEFAULT_POLL_MS;
 
@@ -263,83 +388,81 @@ async function takeTurn(command: readonly string[]): Promise<Turn | null> {
       ...(env.DORKOS_LOAD_GATE_DIR ? { dir: env.DORKOS_LOAD_GATE_DIR } : {}),
       leaseMs: Math.max(DEFAULT_LEASE_MS, 3 * pollMs),
     });
-    const ancestors = ancestorsOf(process.pid, psParent);
-    if (queue.runningOwners().some((pid) => ancestors.has(pid))) return null;
+    const owners = queue.runningOwners();
+    if (owners.length > 0) {
+      const ancestors = readAncestors();
+      if (ancestors === null) {
+        say('could not tell whether this run is inside a running heavy job — not waiting in line.');
+        return null;
+      }
+      if (owners.some((pid) => ancestors.has(pid))) return null;
+    }
 
     const job = jobLabel(programWord(command));
     const ticket = queue.enqueue({ job });
-    release = () => queue.release(ticket);
-    const stop = (signal: NodeJS.Signals): void => {
-      try {
-        release?.();
-      } catch {
-        // Other readers free it once its owner, this process, is gone.
-      }
-      tellWrapper('stopped');
-      process.exit(128 + (os.constants.signals[signal] ?? 0));
-    };
-    for (const signal of WAIT_SIGNALS) process.on(signal, stop);
+    state.release = () => queue.release(ticket);
+    tellWrapper('waiting');
 
     const startedAt = Date.now();
     let nextNotice = startedAt;
-    try {
-      for (;;) {
-        try {
-          settings = readSettings();
-        } catch {
-          // Keep the last settings that read.
-        }
-        if (!settings.enabled) {
-          queue.release(ticket);
-          return null;
-        }
-        const load = fiveMinuteLoad();
-        const limits = { slots: settings.slots, load, maxLoad: settings.maxLoad };
-        queue.beat(ticket);
-        let result = queue.tryAcquire(ticket, limits);
-        if (result === 'lost') {
-          // Its file went (a temp cleaner, a missed lease): back in at its own number.
-          queue.rejoin(ticket);
-          result = queue.tryAcquire(ticket, limits);
-        }
-        if (result === 'slot' || result === 'let-through') break;
-        const waitedMs = Date.now() - startedAt;
-        if (waitedMs >= settings.hardCapMs) {
-          queue.forceAcquire(ticket);
-          say(
-            `a ${job} job ran after waiting ${Math.round(waitedMs / MS_PER_MINUTE)} min, the hard cap.`
-          );
-          break;
-        }
-        if (Date.now() >= nextNotice) {
-          const place = queue.position(ticket);
-          if (place > 0) {
-            say(
-              `waiting in this computer's line for heavy jobs: number ${place}, ` +
-                `${queue.runningCount()} running of ${settings.slots}, load ${load.toFixed(2)} ` +
-                `(waits at ${settings.maxLoad}).`
-            );
-          }
-          nextNotice = Date.now() + NOTICE_EVERY_MS;
-        }
-        await new Promise((resolve) => setTimeout(resolve, pollMs));
+    for (;;) {
+      try {
+        settings = readSettings();
+      } catch {
+        // Keep the last settings that read.
       }
-    } finally {
-      for (const signal of WAIT_SIGNALS) process.off(signal, stop);
+      if (!settings.enabled) {
+        queue.release(ticket);
+        state.release = undefined;
+        return null;
+      }
+      const load = fiveMinuteLoad();
+      const limits = { slots: settings.slots, load, maxLoad: settings.maxLoad };
+      queue.beat(ticket);
+      let result = queue.tryAcquire(ticket, limits);
+      if (result === 'lost') {
+        // Its file went (a temp cleaner, a missed lease): back in at its own number.
+        queue.rejoin(ticket);
+        result = queue.tryAcquire(ticket, limits);
+      }
+      if (result === 'slot' || result === 'let-through') break;
+      const waitedMs = Date.now() - startedAt;
+      if (waitedMs >= settings.hardCapMs) {
+        queue.forceAcquire(ticket);
+        say(
+          `a ${job} job ran after waiting ${Math.round(waitedMs / MS_PER_MINUTE)} min, the hard cap.`
+        );
+        break;
+      }
+      if (Date.now() >= nextNotice) {
+        const place = queue.position(ticket);
+        if (place > 0) {
+          say(
+            `waiting in this computer's line for heavy jobs: number ${place}, ` +
+              `${queue.runningCount()} running of ${settings.slots}, load ${load.toFixed(2)} ` +
+              `(waits at ${settings.maxLoad}).`
+          );
+        }
+        nextNotice = Date.now() + NOTICE_EVERY_MS;
+      }
+      await new Promise((resolve) => setTimeout(resolve, pollMs));
     }
     return {
       pollMs,
+      beatForMs: settings.hardCapMs + LEASE_MS,
       beat: () => {
         queue.beat(ticket);
       },
+      disown: () => queue.disown(ticket),
       release: () => queue.release(ticket),
     };
   } catch (error) {
     try {
-      release?.();
+      state.release?.();
     } catch {
       // Already failing; other readers free it once its owner is gone.
     }
+    state.release = undefined;
     say(
       `the shared line for heavy jobs could not be used (${errorKind(error)}) — running without it.`
     );
@@ -351,12 +474,18 @@ async function takeTurn(command: readonly string[]): Promise<Turn | null> {
  * Run the command in the foreground, holding `turn` while it runs.
  *
  * @param command - The command and its arguments.
+ * @param env - The command's environment.
  * @param turn - The held turn, or `null` to run without one.
  * @returns The command's exit code, or `128 + n` when a signal ended it.
  */
-function runCommand(command: readonly string[], turn: Turn | null): Promise<number> {
+function runCommand(
+  command: readonly string[],
+  env: NodeJS.ProcessEnv,
+  turn: Turn | null
+): Promise<number> {
   return new Promise((resolve) => {
     let given = false;
+    const beatUntil = Date.now() + (turn?.beatForMs ?? 0);
     const giveBack = (): void => {
       if (given) return;
       given = true;
@@ -369,22 +498,26 @@ function runCommand(command: readonly string[], turn: Turn | null): Promise<numb
     };
     const timer = setInterval(() => {
       try {
-        turn?.beat();
+        if (Date.now() <= beatUntil) {
+          turn?.beat();
+          return;
+        }
+        // Past the hard cap and a lease: stop keeping it fresh, so the lease frees it.
+        clearInterval(timer);
+        turn?.disown();
       } catch {
         // A missed beat; the next one, or the release, settles it.
       }
     }, turn?.pollMs ?? DEFAULT_POLL_MS);
-    const child = spawn(command[0]!, command.slice(1), {
-      stdio: 'inherit',
-      env: { ...process.env, DORKOS_HEAVY_SLOT_HELD: '1' },
-    });
-    // Ctrl-C reaches the command through the terminal; this process only waits for it.
-    const ignore = (): void => {};
-    const pass = (signal: NodeJS.Signals): void => {
-      child.kill(signal);
-    };
-    process.on('SIGINT', ignore);
-    for (const signal of PASSED_SIGNALS) process.on(signal, pass);
+    if (wrapperGaveUp()) {
+      // The wrapper already ran the command: running it here would run it twice.
+      giveBack();
+      resolve(0);
+      return;
+    }
+    state.phase = 'running';
+    const child = spawn(command[0]!, command.slice(1), { stdio: 'inherit', env });
+    state.child = child;
     child.on('spawn', () => tellWrapper('ran'));
     child.on('error', (error) => {
       giveBack();
@@ -398,19 +531,56 @@ function runCommand(command: readonly string[], turn: Turn | null): Promise<numb
   });
 }
 
+/** The command and how to run it, from this script's arguments. */
+interface Invocation {
+  /** The job's own command, for its label. */
+  command: string[];
+  /** What actually runs: the command, or the wrapper around it. */
+  run: string[];
+  /** The environment it runs with. */
+  env: NodeJS.ProcessEnv;
+}
+
+/**
+ * Read `[--wrap <wrapper> <mode>] -- <command...>`.
+ *
+ * @param argv - This script's arguments.
+ * @param env - This process's environment.
+ * @returns What to run, or `null` when no command was given.
+ */
+export function invocation(argv: readonly string[], env: NodeJS.ProcessEnv): Invocation | null {
+  let rest = [...argv];
+  let wrapper: [string, string] | undefined;
+  if (rest[0] === '--wrap' && rest.length >= 3) {
+    wrapper = [rest[1]!, rest[2]!];
+    rest = rest.slice(3);
+  }
+  const command = rest[0] === '--' ? rest.slice(1) : rest;
+  if (command.length === 0) return null;
+  const childEnv: NodeJS.ProcessEnv = { ...env };
+  delete childEnv.DORKOS_LOAD_GATE_TURN_FILE;
+  if (wrapper) {
+    // The wrapper again, inside the turn: it skips the line and takes its own slot.
+    childEnv.DORKOS_LOAD_GATE_IN_TURN = '1';
+    return { command, run: ['bash', wrapper[0], wrapper[1], ...command], env: childEnv };
+  }
+  childEnv.DORKOS_HEAVY_SLOT_HELD = '1';
+  return { command, run: command, env: childEnv };
+}
+
 /**
  * Take a turn, run the command, give the turn back.
  *
- * @param argv - This script's arguments: `-- <command> [args...]`.
+ * @param argv - This script's arguments: `[--wrap <wrapper> <mode>] -- <command> [args...]`.
  * @returns The exit code to leave with.
  */
-export async function main(argv: readonly string[]): Promise<number> {
-  const command = argv[0] === '--' ? argv.slice(1) : [...argv];
-  if (command.length === 0) {
+async function main(argv: readonly string[]): Promise<number> {
+  const call = invocation(argv, process.env);
+  if (call === null) {
     say('no command given.');
     return 2;
   }
-  return runCommand(command, await takeTurn(command));
+  return runCommand(call.run, call.env, await takeTurn(call.command));
 }
 
 /** Whether this file is the entry point. Real paths, so a symlinked checkout still runs. */

@@ -26,24 +26,33 @@ app's load gate (`/tmp/dorkos-load-gate-<uid>`, agents' heavy shell jobs,
 An agent's gated `pnpm build` and a person's or another agent's `pnpm test`
 could run at once, each line seeing only its own.
 
-Now a `--job` or `--tests` run, once it has its slot in the repo's lock and has
-passed its load guard, also takes a turn in the app's line, through
+Now a `--job` or `--tests` run first takes a turn in the app's line, through
 `scripts/load-gate/turn.ts` (run by `tsx`), which opens the server's own
-`TicketQueue` rather than copying its folder protocol. It uses the installed
-app's `runtimes.loadGate` settings (slots, max load, hard cap), so both lines'
-jobs wait for each other, first come first served.
+`TicketQueue` rather than copying its folder protocol, and only then, inside
+the turn, takes its slot in the repo's lock and passes its load guard (the
+helper runs the wrapper again with `DORKOS_LOAD_GATE_IN_TURN=1`). That is the
+agents' order: an agent's gated command already holds the app's slot when its
+nested `heavy-run-lock --job` asks for a repo slot, so repo runs holding repo
+slots while they wait for the app's could stall it, and the commit gate. It
+uses the installed app's `runtimes.loadGate` settings (slots, max load, hard
+cap), so both lines' jobs wait for each other, first come first served.
 
 - Ticket labels are the program word only (`turbo`, `pnpm`, never arguments).
 - A run nested inside a job the app already let run (an agent's gated command,
   whose DorkOS server is an ancestor and owns the slot) goes straight through.
   `TicketQueue.runningOwners()` is the one addition to the server code.
 - Not in the line: the commit gate (no `--job`), a bare `turbo` run's `--hold`
-  slot, CI, `DORKOS_HEAVY_LOCK=0`, and `DORKOS_LOAD_GATE_LINE=0` (line alone).
-- Fail-open: no `tsx`, an unusable folder, or a helper that dies before starting
-  the command all run the command anyway with one line.
+  slot, CI, `DORKOS_HEAVY_LOCK=0`, and `DORKOS_LOAD_GATE_LINE=0` (line alone,
+  recorded as a new `line_off` note).
+- Fail-open: no `tsx`, an unusable folder, a helper that dies before starting,
+  one that has not reached the line in 60 s (`DORKOS_LOAD_GATE_START_SECONDS`),
+  or ancestry `ps` cannot read while a job runs: the run goes on with the repo's
+  lock alone, with one line. A signal during the wait runs nothing.
+- A held slot is refreshed until a lease past the hard cap, as the server's are.
 - `.temp/coord/heavy.sh` and the lane-brief rules are untouched (PR5b).
 
-New fixtures: `scripts/test-load-gate-turn.sh`, in `harness` (it needs
+New tests: `scripts/__tests__/load-gate-turn.test.ts` (labels, settings,
+ancestry) and the fixtures `scripts/test-load-gate-turn.sh`, in `harness` (it needs
 `node_modules`). `scripts/test-heavy-run-lock.sh` sets `DORKOS_LOAD_GATE_LINE=0`
 so its lock-only cases never touch the machine's real line. The harness scope
 gains `apps/server/src/services/core/load-gate/`.

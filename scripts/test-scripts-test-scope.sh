@@ -74,6 +74,8 @@ for path in \
   .github/workflows/publish-community.yml \
   ci/space-server.env \
   apps/server/src/services/core/load-gate/ticket-queue.ts \
+  packages/shared/src/config-schema.ts \
+  packages/shared/src/config-schema/runtime-settings.ts \
   .github/workflows/typecheck.yml; do
   expect true "in scope: $path" "$path"
 done
