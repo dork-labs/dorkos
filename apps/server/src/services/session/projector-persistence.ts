@@ -74,7 +74,7 @@ export type ProjectorPersistenceMode = 'history' | 'record';
  * `permission-denial-overlay` puts back.
  *
  * `model_substituted` records (DOR-2636) a turn that ran on another model
- * than its session names, because DorkOS credits do not cover that model. The
+ * than its session names, because its account or credits cannot use it. The
  * transcript names the model that ran and never the one it replaced, so the row
  * is what `model-substitution-overlay` puts back as a lasting notice. Eager for
  * the same reason a denial is: the turn it opens may never reach `turn_end`.

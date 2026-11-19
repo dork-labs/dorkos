@@ -330,6 +330,21 @@ const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
    * explicitly, not something a reader should pick off a list.
    */
   [SLOW_CLOSE_SCENARIO]: workingTurn(180, SLOW_CLOSE_MS),
+  // A durable account replacement followed immediately by text, for live/replay browser proof.
+  'account-model-notice': async function* () {
+    yield {
+      type: 'model_substituted',
+      data: {
+        from: 'old-model',
+        fromName: 'old-model',
+        to: 'available',
+        toName: 'Available',
+        reason: 'account-not-available',
+      },
+    };
+    yield { type: 'text_delta', data: { text: 'Reply after model replacement.' } };
+    yield { type: 'done', data: { sessionId: 'test-mode' } };
+  },
   'simple-text': async function* (content, _ctx, opts) {
     // session_status data cast needed because data union requires sessionId
     yield {
