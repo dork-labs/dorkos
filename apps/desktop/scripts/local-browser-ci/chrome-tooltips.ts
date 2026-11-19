@@ -139,6 +139,31 @@ async function main(): Promise<void> {
   host.focus();
   await shown(true, 'Start');
 
+  // A first capture can be cold. Establish that this native page can supply a
+  // decoded still before measuring tooltips against the product's 150 ms budget.
+  // This is setup only: the live page stays visible and no prepared still is held.
+  const warming = Date.now();
+  const warmed = await Promise.race([
+    js<boolean>(`(async () => {
+      const bytes = await window.electronAPI.localBrowser.captureStill(${JSON.stringify(CONNECTION)});
+      if (!bytes?.byteLength) return false;
+      const url = URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' }));
+      try {
+        const image = new Image();
+        image.src = url;
+        await image.decode();
+        return image.naturalWidth > 0 && image.naturalHeight > 0;
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    })()`),
+    delay(5_000).then(() => false),
+  ]);
+  assert.equal(warmed, true, 'Start: the native page could not supply a decoded still');
+  assert.equal(page().getVisible(), true, 'Start: warming the capture hid the page');
+  assert.equal(await stillDrawn(), false, 'Start: warming the capture left a prepared still');
+  console.log(`Chrome tooltips: capture warmed in ${Date.now() - warming} ms.`);
+
   /**
    * Hover Back: no tooltip inside the delay, then the still is drawn before the
    * page hides. The chrome sits at the window's top edge here, so the tooltip
