@@ -85,7 +85,7 @@ fi
 # Guard against the silent no-op failure mode: a source file inside a
 # workspace src/ tree must never be "ignored" — that means the wrong config
 # was resolved and lint feedback is silently off.
-if echo "$OUTPUT" | grep -q "File ignored" && [[ "$RELATIVE" =~ ^(apps|packages)/[^/]+/src/ ]]; then
+if grep <<<"$OUTPUT" -q "File ignored" && [[ "$RELATIVE" =~ ^(apps|packages)/[^/]+/src/ ]]; then
   echo "⚠️ ESLint ignored source file $RELATIVE — lint feedback is broken for this file; check $WORKSPACE_DIR/eslint.config.js ignores" >&2
   exit 2
 fi

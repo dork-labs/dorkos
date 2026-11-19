@@ -163,14 +163,14 @@ Nothing was checked."
   #   "Your SQL migration file"               — it wrote one, which the tree check
   #                                             below then reports as drift.
   local verdict
-  if printf '%s' "$output" | grep -qF 'No schema changes, nothing to migrate'; then
+  if grep <<<"$output" -qF 'No schema changes, nothing to migrate'; then
     verdict='no-changes'
-  elif printf '%s' "$output" | grep -qF 'Your SQL migration file'; then
+  elif grep <<<"$output" -qF 'Your SQL migration file'; then
     verdict='generated'
   else
     # Name the known cause before falling back to the generic message, because
     # this is the one a person will actually hit.
-    if printf '%s' "$output" | grep -qF 'Interactive prompts require a TTY'; then
+    if grep <<<"$output" -qF 'Interactive prompts require a TTY'; then
       fail "drizzle-kit needs an interactive answer it cannot be asked here, and it
 exits 0 without writing anything — so silence from it is NOT a clean schema.
 

@@ -57,7 +57,7 @@ check() {
       fi
       ;;
     has)
-      if printf '%s' "$actual" | grep -qF "$expected"; then
+      if grep <<<"$actual" -qF "$expected"; then
         pass=$((pass + 1))
       else
         fail=$((fail + 1))
@@ -65,7 +65,7 @@ check() {
       fi
       ;;
     lacks)
-      if printf '%s' "$actual" | grep -qF "$expected"; then
+      if grep <<<"$actual" -qF "$expected"; then
         fail=$((fail + 1))
         printf 'FAIL  %s\n        expected to NOT contain: %s\n        actual:\n%s\n' "$name" "$expected" "$actual" >&2
       else

@@ -86,7 +86,7 @@ step no-deleted-files sh -c 'test -z "$(git ls-files --deleted)"'
 "$real_git" -C /tmp/b.git config uploadpack.allowAnySHA1InWant false
 # `-c protocol.version=0` rather than GIT_CONFIG_COUNT: git before 2.31 ignores the latter.
 fresh d2
-step refused-by-commit sh -c "git -c protocol.version=0 fetch --quiet --no-tags --depth=1 --end-of-options origin $C3 2>&1 | grep -qi 'unadvertised object\|not our ref'"
+step refused-by-commit sh -c "git -c protocol.version=0 fetch --quiet --no-tags --depth=1 --end-of-options origin $C3 2>&1 | grep -i 'unadvertised object\|not our ref' >/dev/null"
 step fallback-refname git -c protocol.version=0 fetch --quiet --no-tags --depth=1 --end-of-options origin refs/heads/same-name
 step refname-is-the-branch sh -c "test \"\$(git rev-parse 'FETCH_HEAD^{commit}')\" = $C2"
 # A partial clone of an ADVERTISED commit on that server: the fetch succeeds,
@@ -111,7 +111,7 @@ step sparse-checkout-after-fallback sh -c "git sparse-checkout init --cone && gi
 
 # Whether this git reads config from the environment (2.31+). Where it does not,
 # git-tree.ts embeds the token in the remote URL instead; FAIL here is expected.
-step env-config-supported env GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraHeader "GIT_CONFIG_VALUE_0=Authorization: Basic eA==" sh -c 'git config --get-urlmatch http.extraHeader https://github.com/o/r.git | grep -q Basic'
+step env-config-supported env GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraHeader "GIT_CONFIG_VALUE_0=Authorization: Basic eA==" sh -c 'git config --get-urlmatch http.extraHeader https://github.com/o/r.git | grep Basic >/dev/null'
 
 # A private GitHub repository, authenticated as git-tree.ts would on this git.
 if [ -n "${PROBE_TOKEN:-}" ] && [ -n "${PROBE_PRIVATE_REPO:-}" ]; then
@@ -128,7 +128,7 @@ if [ -n "${PROBE_TOKEN:-}" ] && [ -n "${PROBE_PRIVATE_REPO:-}" ]; then
     remote=$(echo "$PROBE_PRIVATE_REPO" | sed "s#^https://#https://x-access-token:$PROBE_TOKEN@#")
   fi
   git remote add --end-of-options origin "$remote"
-  step private-lookup sh -c 'git ls-remote --end-of-options origin HEAD | grep -q HEAD'
+  step private-lookup sh -c 'git ls-remote --end-of-options origin HEAD | grep HEAD >/dev/null'
   sha=$(git ls-remote origin HEAD 2>/dev/null | cut -f1)
   git sparse-checkout init --cone >/dev/null 2>&1 && git sparse-checkout set --end-of-options no-such-dir-probe >/dev/null 2>&1
   git config core.repositoryformatversion 1 && git config extensions.partialClone origin &&

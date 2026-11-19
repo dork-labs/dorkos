@@ -47,7 +47,7 @@ set -u
 payload=""
 [ -t 0 ] || payload=$(cat)
 if [ -n "$payload" ] &&
-  ! printf '%s' "$payload" | grep -Eq '"source"[[:space:]]*:[[:space:]]*"startup"'; then
+  ! grep <<<"$payload" -Eq '"source"[[:space:]]*:[[:space:]]*"startup"'; then
   exit 0
 fi
 
@@ -67,7 +67,7 @@ esac
 first_block=$(git worktree list --porcelain 2>/dev/null | sed '/^$/q')
 main=$(printf '%s\n' "$first_block" | sed -n '1s/^worktree //p')
 [ -n "$main" ] && [ -d "$main" ] || exit 0
-printf '%s\n' "$first_block" | grep -qx bare && exit 0
+grep <<<"$first_block" -qx bare && exit 0
 gitdir=$(git -C "$main" rev-parse --absolute-git-dir 2>/dev/null) || exit 0
 
 # Refresh origin/main for the NEXT session, detached with every fd redirected
