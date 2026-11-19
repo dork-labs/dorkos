@@ -49,7 +49,7 @@ describe('Community release workflow', () => {
     expect(workflow).toContain('IMAGE_NAME: dork-labs/dorkos-community');
     expect(workflow).toContain('platforms: linux/amd64,linux/arm64');
     expect(workflow).toContain('${{ steps.image.outputs.digest }}');
-    expect(workflow).toContain('actions/attest-build-provenance@v4');
+    expect(workflow).toMatch(/actions\/attest-build-provenance@[0-9a-f]{40} # v4\./);
   });
 
   it('binds both artifact checks to the exact repository, workflow, and release ref', () => {

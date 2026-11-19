@@ -2,10 +2,11 @@
  * The census's environment-job checks (DOR-4030, Security M2 and M3), over
  * every workflow:
  *
- * - **Pins.** Every `uses:` in a job that names an environment is pinned to a
- *   full commit SHA (or a `docker://` image to a digest), with no exceptions.
- *   The action's code runs in the same job as the environment's secrets, and
- *   a tag can be moved by whoever controls the action's repository.
+ * - **Pins.** Every `uses:` in a job that names an environment, or whose
+ *   GITHUB_TOKEN can write contents, packages or id-token, is pinned to a full
+ *   commit SHA (or a `docker://` image to a digest), with no exceptions. The
+ *   action's code runs beside those secrets and that token, and a tag can be
+ *   moved by whoever controls the action's repository.
  * - **Placement.** A job that reads a secret listed under
  *   `secret_environments` names that secret's environment. Outside it the
  *   secret reads as empty (it is not at repository level), and a job that
@@ -30,6 +31,32 @@ export function isPinned(uses: string): boolean {
 /** Whether the job names any environment at all (an expression counts). */
 const hasEnvironment = (job: JobModel): boolean =>
   job.environment !== undefined && job.environment.trim() !== '';
+
+/** The GITHUB_TOKEN scopes that can publish: a release, an image, a signed provenance. */
+const PUBLISHING_SCOPES = ['contents', 'packages', 'id-token'] as const;
+
+/**
+ * Whether a `permissions:` value lets GITHUB_TOKEN write a publishing scope.
+ * Absent means the repository default, which is read (checked 2026-11-19), so
+ * it does not count; the tag gate treats absent as write for its own reasons.
+ *
+ * @param perms - The job's `permissions:`, else the workflow's.
+ */
+function canPublish(perms: unknown): boolean {
+  if (perms === 'write-all') return true;
+  if (typeof perms !== 'object' || perms === null || Array.isArray(perms)) return false;
+  const scopes = perms as Record<string, unknown>;
+  return PUBLISHING_SCOPES.some((s) => scopes[s] === 'write');
+}
+
+/** Why a job's actions must be pinned, for the finding's message. */
+function pinReason(job: JobModel, wf: WorkflowModel): string | undefined {
+  if (hasEnvironment(job)) return `names the ${job.environment} environment`;
+  if (canPublish(job.permissions ?? wf.permissions)) {
+    return 'lets GITHUB_TOKEN write contents, packages or id-token';
+  }
+  return undefined;
+}
 
 /**
  * Whether the job's `environment:` names `name`: exactly, or as a quoted
@@ -59,14 +86,15 @@ export function checkEnvironmentJobs(
 
   for (const wf of workflows) {
     for (const job of wf.jobs) {
-      if (hasEnvironment(job)) {
+      const reason = pinReason(job, wf);
+      if (reason !== undefined) {
         for (const step of job.steps) {
           if (step.uses === undefined || isPinned(step.uses)) continue;
           out.push({
             code: 'environment-pins/unpinned',
             file: wf.path,
             where: `${job.id}: ${step.uses}`,
-            message: `Job ${job.id} names the ${job.environment} environment, but its step uses ${step.uses}, which is not pinned to a commit SHA. Whoever can move that tag can run code beside the environment's secrets.`,
+            message: `Job ${job.id} ${reason}, but its step uses ${step.uses}, which is not pinned to a commit SHA. Whoever can move that tag can run code with the job's secrets and token.`,
             fix: `Pin it to the full commit SHA with the version as a comment (\`uses: owner/repo@<40 hex> # vX.Y.Z\`); reuse a SHA already pinned in .github/workflows for the same version.`,
           });
         }

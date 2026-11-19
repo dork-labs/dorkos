@@ -76,6 +76,54 @@ describe('checkEnvironmentJobs on the real workflows', () => {
     ]);
   });
 
+  it('fails on a tag-pinned action in a packages: write job with no environment', () => {
+    expect(
+      run({
+        file: 'publish-community.yml',
+        change: (t) =>
+          t.replace(
+            'docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0',
+            'docker/build-push-action@v7'
+          ),
+      })
+    ).toEqual([
+      [
+        'environment-pins/unpinned',
+        '.github/workflows/publish-community.yml',
+        'build-and-publish: docker/build-push-action@v7',
+      ],
+    ]);
+  });
+
+  it('fails on a tag-pinned action in an id-token: write job with no environment', () => {
+    expect(
+      run({
+        file: 'browser-native-release-artifact.yml',
+        change: (t) =>
+          t.replace(
+            'actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2',
+            'actions/attest@v4'
+          ),
+      })
+    ).toEqual([
+      [
+        'environment-pins/unpinned',
+        '.github/workflows/browser-native-release-artifact.yml',
+        'build-darwin: actions/attest@v4',
+      ],
+    ]);
+  });
+
+  it('leaves a tag in a read-only job with no environment alone', () => {
+    // operating-skills-version-check sets no permissions; the repository default is read.
+    const text = readFileSync(
+      path.join(REPO, '.github/workflows/operating-skills-version-check.yml'),
+      'utf8'
+    );
+    expect(text).toContain('actions/checkout@v7\n');
+    expect(run()).toEqual([]);
+  });
+
   it('fails on the App-token action back on its moving v3 tag (there is no exception list)', () => {
     expect(
       run({
