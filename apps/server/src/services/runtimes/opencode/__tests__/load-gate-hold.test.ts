@@ -27,6 +27,7 @@ import {
 import {
   enforceApprovals,
   PendingApprovalStore,
+  STOPPED_WHILE_WAITING_REASON,
   type ApprovalGateDeps,
   type ApprovalRouting,
 } from '../messaging/approvals.js';
@@ -443,7 +444,7 @@ describe('giving the slot back', () => {
     expect(m.queue.runningCount()).toBe(0);
   });
 
-  it('when the turn is stopped while the job waits: its ticket leaves, then the decision runs', async () => {
+  it('when the turn is stopped while the job waits at Full: refused, never auto-approved, and its ticket leaves', async () => {
     const m = machine(20);
     const stop = new AbortController();
     const ana = m.chat('ana', 'bypassPermissions', { 'perm-a': 'call-a' }, { signal: stop.signal });
@@ -454,8 +455,18 @@ describe('giving the slot back', () => {
     await settle();
     stop.abort();
     await vi.waitFor(() => expect(anaBuild.done).toBe(true));
-    // The normal decision answered it, once, as it would have; no slot was taken for it.
+    // Full would have approved it on its own; a stopped chat's ask is refused instead.
     expect(m.respond).toHaveBeenCalledTimes(1);
+    expect(m.respond).not.toHaveBeenCalledWith(approvedOnce('perm-a', 'ses_ana'));
+    expect(m.respond).toHaveBeenCalledWith({
+      url: '/permission/{requestID}/reply',
+      path: { requestID: 'perm-a' },
+      body: { reply: 'reject', message: STOPPED_WHILE_WAITING_REASON },
+    });
+    expect(anaBuild.events.at(-1)).toMatchObject({
+      type: 'permission_denied',
+      data: { toolCallId: 'perm-a', reasonType: 'turn_stopped' },
+    });
     expect(m.queue.runningCount()).toBe(0);
     expect(m.queue.list()).toHaveLength(1);
     // Bo moved up.
@@ -465,6 +476,30 @@ describe('giving the slot back', () => {
     );
     m.stopAll.abort();
     await vi.waitFor(() => expect(boTests.done).toBe(true));
+  });
+
+  it('when the turn is stopped just as its slot is granted: the slot goes back, and the ask is refused', async () => {
+    const m = machine(20);
+    const stop = new AbortController();
+    const ana = m.chat('ana', 'bypassPermissions', { 'perm-a': 'call-a' }, { signal: stop.signal });
+    const held = enforceApprovals(m.deps, ana, bashAsk('pnpm build', 'perm-a'));
+    // Read up to its status line, and leave it there while the computer calms and grants the slot.
+    expect((await held.next()).value).toMatchObject({ type: 'system_status' });
+    m.loadSource.set(4);
+    await m.time.step(POLL);
+    expect(m.queue.runningCount()).toBe(1);
+    stop.abort();
+    const rest: StreamEvent[] = [];
+    for (let next = await held.next(); !next.done; next = await held.next()) rest.push(next.value);
+    expect(rest.at(-1)).toMatchObject({
+      type: 'permission_denied',
+      data: { reasonType: 'turn_stopped' },
+    });
+    expect(m.respond).not.toHaveBeenCalledWith(approvedOnce('perm-a', 'ses_ana'));
+    expect(m.respond).toHaveBeenCalledWith(
+      expect.objectContaining({ body: expect.objectContaining({ reply: 'reject' }) })
+    );
+    expect(m.queue.runningCount()).toBe(0);
   });
 
   it('when the turn stops reading at its status line (its stream torn down)', async () => {

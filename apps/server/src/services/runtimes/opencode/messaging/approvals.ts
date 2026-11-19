@@ -472,8 +472,42 @@ export async function* enforceApprovals(
       slots: deps.approvals.heavyJobs,
       ...(deps.loadGate ? { deps: deps.loadGate } : {}),
     },
-    () => decideApproval(deps, turn, event)
+    () => decideApproval(deps, turn, event),
+    () => refuseStoppedAsk(deps, turn, event.data as ApprovalEvent)
   );
+}
+
+/** What the person and the model read about a heavy command whose chat was stopped while it waited. */
+export const STOPPED_WHILE_WAITING_REASON = 'The chat was stopped, so this command did not run.';
+
+/**
+ * Refuse an ask whose chat was stopped while it waited for the machine's line, the way a shell
+ * guard's refusal is given: a reject the model reads, and a `permission_denied` the person sees.
+ * Never the level's auto-approve: nobody is left in the turn to act for.
+ */
+async function* refuseStoppedAsk(
+  deps: ApprovalGateDeps,
+  turn: ApprovalRouting,
+  approval: ApprovalEvent
+): AsyncGenerator<StreamEvent> {
+  const askedIn =
+    turn.permissions.pendingPermissionSessions.get(approval.toolCallId) ?? turn.ocSessionId;
+  await rejectPermissionWithReason(
+    deps.provider,
+    { ocSessionId: askedIn, cwd: turn.cwd },
+    approval.toolCallId,
+    STOPPED_WHILE_WAITING_REASON
+  );
+  yield {
+    type: 'permission_denied',
+    data: {
+      toolCallId: approval.toolCallId,
+      toolName: approval.toolName,
+      reasonType: 'turn_stopped',
+      reason: STOPPED_WHILE_WAITING_REASON,
+      message: STOPPED_WHILE_WAITING_REASON,
+    },
+  };
 }
 
 /**

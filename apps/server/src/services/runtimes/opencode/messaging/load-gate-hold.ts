@@ -10,12 +10,12 @@
  * so the shell guards' own time limit (`PACKAGE_HOOK_TIMEOUT_MS`) never counts the time in line.
  * A light command's ask goes straight to the decision, as before.
  *
- * **It holds, it never decides.** Nothing here answers the sidecar. However the wait ends (its
- * turn, a let-through, the hard cap, a gate failure, a Stop), the normal decision runs next and is
- * the only thing that answers. After a Stop that means the decision answers an ask on a turn being
- * aborted, as it would have without the gate; what keeps that reply from running anything is the
- * sidecar's own abort of the session (`interruptQuery` sends it right after the stop), not this
- * module. Nothing in this repo shows the sidecar refusing such a reply, so that is not claimed.
+ * **It holds, and only ever adds a no.** Nothing here approves anything. However the wait ends (its
+ * turn, a let-through, the hard cap, a gate failure), the normal decision runs next and is the only
+ * thing that answers. The one exception is a Stop: an ask whose turn was stopped while it waited is
+ * refused (`refuseStopped`, a reject the model reads and a `permission_denied` the person sees) and
+ * never reaches the decision, because at Full the decision would approve it on its own for a turn
+ * nobody is running any more. That is Codex's turn-end "no" (`codex/app-server/load-gate-hold.ts`).
  *
  * **The turn's event stream waits with it.** The approval pass is a generator over the turn's
  * events, so while a `bash` ask waits, the turn's later events wait behind it. That is the same
@@ -223,11 +223,13 @@ function settlesAsk(event: StreamEvent, askId: string): boolean {
  * everything it yields. Anything else goes straight to `decide`.
  *
  * @param ask - The ask, its turn, and where its slot is kept.
- * @param decide - The normal decision for this ask, run exactly once whatever the wait did.
+ * @param decide - The normal decision for this ask, run once unless a Stop ended the wait.
+ * @param refuseStopped - The refusal for an ask whose turn was stopped while it waited.
  */
 export async function* holdHeavyShell(
   ask: HeldShellAsk,
-  decide: () => AsyncGenerator<StreamEvent>
+  decide: () => AsyncGenerator<StreamEvent>,
+  refuseStopped: () => AsyncGenerator<StreamEvent>
 ): AsyncGenerator<StreamEvent> {
   const { turn, approval, slots } = ask;
   const command = approval.toolName === SHELL_PERMISSION ? commandOf(approval) : undefined;
@@ -242,6 +244,12 @@ export async function* holdHeavyShell(
       : undefined;
   // A chat holding a slot shares it at once (the share key), so this never waits behind its own.
   const slot = yield* waitInLine(ask, command);
+  if (turn.signal?.aborted) {
+    // A Stop ended the wait: refused, never handed to a level that would approve it on its own.
+    slot?.release();
+    yield* refuseStopped();
+    return;
+  }
   if (slot === null || callId === undefined) {
     // Nothing to keep, or no way to see the call end: it runs outside the line.
     slot?.release();
