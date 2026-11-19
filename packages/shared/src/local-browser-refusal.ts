@@ -29,6 +29,14 @@ export function localBrowserRefusalNext(kind: LocalBrowserRefusalKind): string {
   return `This site refused the Agent browser. Stop, and hand the site to the person with local_browser_ask_person (reason: ${reason}): that is the way on. Don’t retry, change the browser or try to get yourself past the check.`;
 }
 
+/**
+ * What the reading says instead when this turn can't hand the site over (DOR-4693): a stranger
+ * started the chat or the turn, or the turn holds outside words. The handoff would refuse, so it
+ * never points there; the person opens the plain sign-in window from the browser's own notice.
+ */
+export const LOCAL_BROWSER_REFUSAL_HELD_NEXT =
+  'This site refused the Agent browser, and this turn can’t hand it to a person. Stop, and tell the person the site refused the browser, with the tool that notifies them, never an outside sender’s thread. They can sign in from the notice in the Agent browser. Don’t retry, change the browser or try to get yourself past the check.';
+
 /** What one page showed. `text` is optional: the desktop shell has only the title. */
 export interface LocalBrowserRefusalPage {
   url: string;

@@ -53,6 +53,7 @@ import { primaryOf } from '../../session/resolution/session-key-registry.js';
 import { noteBridgedSender, noteTurnHold } from './continuation-hold.js';
 import { aliasRoomTurnWords } from './outside-words.js';
 import { isOwnersCleanTurn, withHeldChatMark } from './held-chat-mark.js';
+import { aliasTurnStart, noteTurnStart } from './turn-start-marks.js';
 import { endReadMark, noteReadMark, sessionReadOutsideText } from './live-outsider-turns.js';
 
 /** The room turn's outside-words note travels with its level; a room runner sets both here. */
@@ -441,6 +442,7 @@ export function entryHeldToDefault(entryId: string, roomId?: string): boolean {
 export function aliasTurnLevel(from: string, to: string): void {
   const level = turnLevels.get(from);
   if (level !== undefined && from !== to) remember(turnLevels, to, level);
+  aliasTurnStart(from, to);
   const handOff = handOffLevels.get(from);
   if (handOff !== undefined && from !== to) remember(handOffLevels, to, handOff);
   if (strangerHeld.has(from) && from !== to) strangerHeld.add(to);
@@ -508,6 +510,8 @@ function recordTurn(
 ): TurnPermissionLevel {
   const level = levelForTurn(runtime, stored, opts);
   remember(turnLevels, sessionId, level);
+  // A continuation picks up a held turn, so it is still that turn: started marked (DOR-4693).
+  noteTurnStart(sessionId, level.outsider === true || opts?.continuationHold === true);
   // What the chat is set to, with no ceiling, and whether anybody can be asked in it (DOR-3394):
   // a chat set to Full asks nobody, whatever the ceiling holds the turn's power to.
   noteChosenTurn(

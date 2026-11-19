@@ -750,6 +750,28 @@ describe('local browser ownership and observations', () => {
     );
   });
 
+  // DOR-4693: an own-window Chrome left open would hold the profile out of sight, so the plain
+  // sign-in window could never start. Switching to embedded closes it first.
+  it('closes the own window when the person switches to embedded', async () => {
+    const f = await create();
+    const embedded = {
+      open: vi.fn(async () => ({
+        endpoint: 'ws://127.0.0.1:41111/page/fixture',
+        headers: { Authorization: 'Bearer fixture' },
+        close: vi.fn(async () => undefined),
+      })),
+    };
+    // The host is stood in, as for every own-window test: CI's Linux runners have no display.
+    const service = new LocalBrowserService(f.dir, embedded, f.backend, undefined, () => ({
+      platform: 'darwin',
+    }));
+    await service.open({ mode: 'new-window', sessionId: 'chat-one' });
+    expect(f.context.close).not.toHaveBeenCalled();
+    await service.open({ mode: 'embedded', sessionId: 'chat-one' });
+    expect(f.context.close).toHaveBeenCalledOnce();
+    expect((await service.state()).mode).toBe('embedded');
+  });
+
   it('closes the embedded bridge transport and guest without closing an owned context', async () => {
     const f = await create();
     const close = vi.fn(async () => undefined);
@@ -2318,7 +2340,7 @@ it('detaches the embedded guest during a handoff and makes a fresh connection on
   };
   const service = new LocalBrowserService(dir, { open: async () => bridge }, f.backend);
   await service.open({ mode: 'embedded', sessionId: 'chat-1' });
-  service.handover.useOutsideTurnCheck(async () => false);
+  service.handover.useOutsideTurnCheck(async () => null);
   const { handoffId } = await service.handover.ask('chat-1', 'wall');
   expect(bridge.detach).toHaveBeenCalledOnce();
   expect(bridge.close).not.toHaveBeenCalled();
@@ -2356,7 +2378,7 @@ it('leaves the embedded guest detached after Stop', async () => {
   };
   const service = new LocalBrowserService(dir, { open: async () => bridge }, f.backend);
   await service.open({ mode: 'embedded', sessionId: 'chat-1' });
-  service.handover.useOutsideTurnCheck(async () => false);
+  service.handover.useOutsideTurnCheck(async () => null);
   const { handoffId } = await service.handover.ask('chat-1', 'password');
   await service.handover.stop(handoffId);
   expect(bridge.detach).toHaveBeenCalledOnce();
@@ -2381,7 +2403,7 @@ it('retries a failed native detach before publishing a handoff', async () => {
   };
   const service = new LocalBrowserService(dir, { open: async () => bridge }, f.backend);
   await service.open({ mode: 'embedded', sessionId: 'chat-1' });
-  service.handover.useOutsideTurnCheck(async () => false);
+  service.handover.useOutsideTurnCheck(async () => null);
   await expect(service.handover.ask('chat-1', 'wall')).rejects.toThrow('host did not acknowledge');
   expect((await service.handover.state()).handoff).toBeNull();
   await service.handover.ask('chat-1', 'wall');
@@ -2607,7 +2629,7 @@ it('marks an in-app handoff refused only after DorkOS read the refusal itself', 
   };
   const service = new LocalBrowserService(dir, { open: async () => bridge }, f.backend);
   await service.open({ mode: 'embedded', sessionId: 'chat-1' });
-  service.handover.useOutsideTurnCheck(async () => false);
+  service.handover.useOutsideTurnCheck(async () => null);
   f.navigate('https://accounts.google.com/v3/signin/rejected?made=up');
   f.change('- heading "Couldn’t sign you in" [level=1]');
   await service.observe();
@@ -2631,7 +2653,7 @@ it('leaves an in-app handoff unmarked when no reading saw a refusal', async () =
   };
   const service = new LocalBrowserService(dir, { open: async () => bridge }, f.backend);
   await service.open({ mode: 'embedded', sessionId: 'chat-1' });
-  service.handover.useOutsideTurnCheck(async () => false);
+  service.handover.useOutsideTurnCheck(async () => null);
   // The agent never read the page, whatever it might say about it.
   f.navigate('https://accounts.google.com/v3/signin/rejected?made=up');
   await service.handover.ask('chat-1', 'password');

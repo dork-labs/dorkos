@@ -7,6 +7,7 @@ import {
   LocalBrowserObservationSchema,
   LocalBrowserStateSchema,
 } from '@dorkos/shared/local-browser';
+import { LOCAL_BROWSER_REFUSAL_HELD_NEXT } from '@dorkos/shared/local-browser-refusal';
 import {
   CapabilityToolError,
   CapabilityImageResult,
@@ -127,9 +128,19 @@ export function createLocalBrowserDomain(service: LocalBrowserService): Capabili
             annotations: { idempotentHint: true },
           },
         },
-        invoke: (_deps, _input, context) => {
-          return scopedAnswer(service, context, () => service.observe());
-        },
+        invoke: (_deps, _input, context) =>
+          scopedAnswer(service, context, async () => {
+            const observation = await service.observe();
+            if (!observation.refusal) return observation;
+            // A turn the handoff would refuse is never pointed at it (DOR-4693).
+            const marked = await service.handover.outsideTurnReason(context.sessionId!);
+            return marked === null || marked === 'read_outside_text'
+              ? observation
+              : {
+                  ...observation,
+                  refusal: { ...observation.refusal, next: LOCAL_BROWSER_REFUSAL_HELD_NEXT },
+                };
+          }),
       }),
       defineCapability({
         id: 'local_browser.screenshot',

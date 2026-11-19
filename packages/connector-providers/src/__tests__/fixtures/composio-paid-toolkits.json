@@ -219,6 +219,10 @@
       "name": "Diffbot"
     },
     {
+      "slug": "digital_humani",
+      "name": "Digital Humani"
+    },
+    {
       "slug": "dreamstudio",
       "name": "Dreamstudio"
     },
@@ -465,6 +469,10 @@
     {
       "slug": "mailfloss",
       "name": "mailfloss"
+    },
+    {
+      "slug": "memelord",
+      "name": "Memelord"
     },
     {
       "slug": "meshy",
@@ -725,6 +733,10 @@
     {
       "slug": "spider",
       "name": "Spider"
+    },
+    {
+      "slug": "strale",
+      "name": "Strale"
     },
     {
       "slug": "studio_by_ai21_labs",

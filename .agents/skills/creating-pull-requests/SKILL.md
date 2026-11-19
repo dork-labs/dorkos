@@ -28,15 +28,24 @@ exists**. Opening the PR is the last step, not the first:
 3. A reviewer fetches and checks out that branch. It does not need a PR.
 4. Findings, fixes, convergence.
 5. Squash to one clean commit carrying one changelog fragment.
-6. Check the exact final commit with `node scripts/verify-proof/cli.ts check HEAD`.
-   `pnpm verify` records its pass locally in the common git directory only when
-   HEAD and the working tree stay clean and unchanged throughout the run. A new
-   commit needs its own pass. It leaves the real-CLI suites listed in
-   `scripts/ci/binary-test-glob.txt` to CI, since they test whatever CLI this
-   computer has installed, and the proof names them under `excluded`. The
-   checker runs no gates. If an exceptional PR
-   must open without proof, add `--no-verify-proof` to the checker; it logs who,
-   when, and which commit locally. This does not bypass CI.
+6. Run `pnpm verify:preopen` on the final head with a clean tree, then check that
+   exact commit with `node scripts/verify-proof/cli.ts check HEAD --level preopen`.
+   The preopen run is the affected typecheck and lint; the whole scripts suite
+   when the change can reach it, and the repo-wide scripts suites (which any
+   change can break) when it can't; and ESLint on the changed files, or the full
+   root lint when the root lint setup changed. It leaves the package tests to
+   CI's test shards. It records its pass locally in the common git
+   directory, as `<sha>.preopen`, only when HEAD and the working tree stay clean
+   and unchanged throughout the run. A new commit needs its own pass. A full
+   `pnpm verify` pass also satisfies `--level preopen`. A PR that touches
+   `.github/` needs a full `pnpm verify` (or a PM waiver) instead, checked with
+   plain `check HEAD`, since CI can't vouch for changes to itself. A preopen proof
+   never arms, because the arming check never reads it: arming accepts green
+   required checks and all six test shards at the exact head, a full local proof,
+   or a docs-only change. The checker runs no gates. If an exceptional PR must
+   open without proof, add `--no-verify-proof` to plain `check HEAD` (it is
+   refused with `--level preopen`); it logs who, when, and which commit locally.
+   This does not bypass CI.
 7. **Then** open the PR, already reviewed, so the repo's automated review spends
    its single pass on final content.
 
@@ -67,7 +76,7 @@ Every reason below is a cost measured on 2026-07-27/28, not a preference:
 - **The automated review fires on open**, so opening early spends it on a draft.
 
 The one real cost: **CI does not run until the PR opens.** Cover it two ways. Run
-the local gates yourself, which is cheap (`pnpm verify`, plus the changelog gate
+the local gates yourself, which is cheap (`pnpm verify:preopen`, plus the changelog gate
 below). And when a runner-only check is the honest gate (smoke tests, the packaged
 runtime, Docker, anything path-filtered to its own workflow), open a **draft** so
 CI runs without inviting a merge, then mark ready once review converges.
@@ -401,6 +410,10 @@ Apply at creation so the `opened` event sees them:
 ```bash
 gh pr create --draft --label review:light --title "..." --body "..."
 ```
+
+**Never add or remove a `security-*` label** (`security-reviewed`,
+`security-deep-reviewed`). Only Security's `label-pr.sh` adds them, after its own
+review of the exact head (DOR-4711). If you think a PR needs one, ask Security.
 
 Request a re-review after pushing fixes:
 

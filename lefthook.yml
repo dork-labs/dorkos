@@ -58,7 +58,7 @@
 # error. A commit re-checked the same change about eight times per merged PR.
 # `typecheck` is a required check on every PR and in the merge queue, so no
 # type error can land; the worst a missed one costs is a red PR. Before you open
-# a PR, typecheck with `pnpm verify` (affected-only), or one package with
+# a PR, typecheck with `pnpm verify:preopen` (affected-only), or one package with
 # `pnpm --filter <pkg> typecheck`. Claude Code sessions also typecheck the
 # edited file's package after every edit (`.claude/hooks/typecheck-changed.sh`).
 pre-commit:
