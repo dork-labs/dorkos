@@ -78,6 +78,15 @@ const TICKET_FILE = /^ticket-(\d{12})-([0-9a-f]{16})\.json$/;
 const MARKER_FILE = /^(slot-\d+|through-[0-9a-f]{16})\.json$/;
 const FLAG_FILE = /^(urgent|let-through)-([0-9a-f]{16})$/;
 const LEFTOVER_FILE = /^\.(tmp|tomb)-/;
+/**
+ * The most folder entries one check reads and judges. Every entry can cost a
+ * file read and a `ps` call on the server's event loop, and anything running as
+ * this user can fill the folder. A real line is a handful of jobs; 512 leaves
+ * room for a very busy machine while bounding a check. Past it, this queue's own
+ * records are read first, then running jobs and marks, then the earliest
+ * tickets; the rest are left alone (not read, not counted, never removed).
+ */
+export const MAX_LISTED_ENTRIES = 512;
 const MAX_SEQ_ATTEMPTS = 1_000;
 /** How old a number claim or a stray temp file is before it is tidied. */
 const LEFTOVER_AGE_MS = 60_000;
@@ -145,6 +154,8 @@ export interface TicketQueueOptions {
   monoNow?: () => number;
   /** How long another process's record may stay unchanged. Defaults to {@link DEFAULT_LEASE_MS}. */
   leaseMs?: number;
+  /** Where the queue writes its one line about an overfull folder. Counts only. */
+  log?: (line: string) => void;
   /**
    * Who this queue writes tickets as.
    *
@@ -181,6 +192,8 @@ export class TicketQueue {
   private readonly holding = new Map<string, string>();
   /** The files this queue vouches for: its waiting tickets and the slots it holds. */
   private readonly mine = new Set<string>();
+  private readonly log: (line: string) => void;
+  private overfullLogged = false;
 
   /**
    * Open the queue, creating its folder if needed.
@@ -191,6 +204,7 @@ export class TicketQueue {
     this.dir = options.dir ?? defaultLoadGateDir();
     this.probe = options.probe ?? systemHolderProbe;
     this.now = options.now ?? Date.now;
+    this.log = options.log ?? (() => {});
     this.lease = new LeaseWatch(
       options.leaseMs ?? DEFAULT_LEASE_MS,
       options.monoNow ?? (() => performance.now())
@@ -274,7 +288,6 @@ export class TicketQueue {
     const names = this.names();
     const flags = new Set(names.filter((name) => FLAG_FILE.test(name)));
     const tickets: Ticket[] = [];
-    const ids = new Set<string>();
     for (const name of names) {
       if (!TICKET_FILE.test(name)) continue;
       const ticket = this.read(this.file(name), TicketSchema);
@@ -285,7 +298,6 @@ export class TicketQueue {
         continue;
       }
       if (ticket === null) continue;
-      ids.add(ticket.id);
       const urgent = flags.has(`urgent-${ticket.id}`);
       const letThrough = flags.has(`let-through-${ticket.id}`);
       tickets.push({
@@ -294,8 +306,12 @@ export class TicketQueue {
         ...(letThrough ? { letThrough: true } : {}),
       });
     }
-    // A mark whose ticket has gone (it started, or its owner left) marks nothing.
-    for (const flag of flags) if (!ids.has(FLAG_FILE.exec(flag)![2]!)) this.remove(flag);
+    // A mark whose ticket has gone (it started, or its owner left) marks nothing. Judged
+    // from every name, so a ticket past the reading cap keeps its mark.
+    if (flags.size > 0) {
+      const present = new Set(this.rawNames().flatMap((name) => TICKET_FILE.exec(name)?.[2] ?? []));
+      for (const flag of flags) if (!present.has(FLAG_FILE.exec(flag)![2]!)) this.remove(flag);
+    }
     return tickets.sort(byQueueOrder);
   }
 
@@ -359,14 +375,15 @@ export class TicketQueue {
    */
   release(ticket: Ticket): void {
     this.leaveLine(ticket);
-    const held = this.holding.get(ticket.id);
-    if (held !== undefined) this.mine.delete(held);
-    this.holding.delete(ticket.id);
     this.remove(throughName(ticket.id));
     const ours = (file: string): boolean => this.read(file, MarkerSchema)?.id === ticket.id;
+    // While still vouched for, so the reading cap cannot leave its own slot unread.
     for (const name of this.names()) {
       if (name.startsWith('slot-') && ours(this.file(name))) takeAway(this.dir, name, ours);
     }
+    const held = this.holding.get(ticket.id);
+    if (held !== undefined) this.mine.delete(held);
+    this.holding.delete(ticket.id);
   }
 
   /**
@@ -476,7 +493,9 @@ export class TicketQueue {
 
   /** Take the next number. Only one process can create a given `seq-<n>`. */
   private claimSeq(): number {
-    const used = this.names().flatMap((name) => {
+    // Every name, past the reading cap too: names cost no file read, and the
+    // highest number must never be missed or numbering would go back.
+    const used = this.rawNames().flatMap((name) => {
       const match = SEQ_CLAIM.exec(name) ?? TICKET_FILE.exec(name);
       return match ? [Number(match[1])] : [];
     });
@@ -500,7 +519,7 @@ export class TicketQueue {
     const entries = this.rawNames();
     const claims = entries.filter((name) => SEQ_CLAIM.test(name)).sort();
     const stale = [...claims.slice(0, -1), ...entries.filter((name) => LEFTOVER_FILE.test(name))];
-    for (const name of stale) {
+    for (const name of stale.slice(0, MAX_LISTED_ENTRIES)) {
       const mtimeMs = mtimeOf(this.file(name));
       if (mtimeMs !== null && Date.now() - mtimeMs > LEFTOVER_AGE_MS) this.remove(name);
     }
@@ -557,9 +576,25 @@ export class TicketQueue {
     }
   }
 
+  /** The entries one check reads, at most {@link MAX_LISTED_ENTRIES}, this queue's own first. */
   private names(): string[] {
-    const names = this.rawNames().filter((name) => !name.startsWith('.'));
-    this.lease.retain(new Set(names));
-    return names;
+    const all = this.rawNames().filter((name) => !name.startsWith('.'));
+    this.lease.retain(new Set(all));
+    if (all.length <= MAX_LISTED_ENTRIES) return all;
+    if (!this.overfullLogged) {
+      this.overfullLogged = true;
+      this.log(
+        `[LoadGate] The queue folder holds ${all.length} entries; each check reads ${MAX_LISTED_ENTRIES} of them`
+      );
+    }
+    // Own records, then running jobs and marks, then tickets: by name, so the earliest first.
+    const rank = (name: string): number => {
+      if (this.mine.has(name)) return 0;
+      if (MARKER_FILE.test(name) || FLAG_FILE.test(name)) return 1;
+      return TICKET_FILE.test(name) ? 2 : 3;
+    };
+    return all
+      .sort((a, b) => rank(a) - rank(b) || (a < b ? -1 : Number(a > b)))
+      .slice(0, MAX_LISTED_ENTRIES);
   }
 }

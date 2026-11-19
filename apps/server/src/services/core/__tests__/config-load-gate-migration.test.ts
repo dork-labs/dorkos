@@ -1,9 +1,9 @@
 /**
- * The `'0.137.0'` key writes `runtimes.loadGate` into a stored `runtimes`
+ * The `'0.138.0'` key writes `runtimes.loadGate` into a stored `runtimes`
  * section that predates it (DOR-4209), across the real `conf`/Ajv seam.
  *
  * `DORKOS_VERSION_OVERRIDE` is set before `lib/version.ts` loads, because a dev
- * tree's own version runs no `0.137.0` body. The assertions read the FILE:
+ * tree's own version runs no `0.138.0` body. The assertions read the FILE:
  * Ajv's `useDefaults` fills the section into every read copy, so a manager read
  * passes with the body deleted (DOR-1496).
  */
@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 vi.hoisted(() => {
-  process.env.DORKOS_VERSION_OVERRIDE = '0.137.0';
+  process.env.DORKOS_VERSION_OVERRIDE = '0.138.0';
 });
 
 import { ConfigManager, seedLoadGate } from '../config-manager.js';
@@ -55,7 +55,7 @@ function runtimesOnDisk(home: string): Record<string, unknown> {
   return JSON.parse(readFileSync(join(home, 'config.json'), 'utf8')).runtimes;
 }
 
-describe("the '0.137.0' load-gate migration", () => {
+describe("the '0.138.0' load-gate migration", () => {
   it('writes the shipped load gate beside the fields an older section kept', () => {
     const home = seed({ default: 'claude-code', maxAgentChats: 8 });
     new ConfigManager(home);

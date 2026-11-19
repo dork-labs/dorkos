@@ -7,10 +7,10 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HolderProbe } from '../holder-identity.js';
 import { defaultLoadGateDir, prepareDir } from '../queue-folder.js';
-import { DEFAULT_LEASE_MS, TicketQueue } from '../ticket-queue.js';
+import { DEFAULT_LEASE_MS, MAX_LISTED_ENTRIES, TicketQueue } from '../ticket-queue.js';
 
 const OPEN = { slots: 1, load: 2, maxLoad: 16 };
 const HOUR = 3_600_000;
@@ -269,6 +269,56 @@ describe('owners that went quiet', () => {
     clock.state.mono += DEFAULT_LEASE_MS;
     queue.runningCount();
     expect(fs.existsSync(path.join(dir, 'slot-0.json'))).toBe(false);
+  });
+});
+
+describe('an overfull folder', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('reads at most MAX_LISTED_ENTRIES a check, its own ticket always among them, and says so once', () => {
+    const self = { pid: process.pid, startedAt: 1_234 };
+    const lines: string[] = [];
+    const others = MAX_LISTED_ENTRIES + 88;
+    for (let i = 1; i <= others; i += 1) {
+      const id = i.toString(16).padStart(16, '0');
+      const ticket = {
+        id,
+        seq: i,
+        pid: self.pid,
+        startedAt: self.startedAt,
+        createdAt: 1,
+        priority: 'normal',
+        job: 'pnpm',
+      };
+      fs.writeFileSync(
+        path.join(dir, `ticket-${String(i).padStart(12, '0')}-${id}.json`),
+        JSON.stringify(ticket)
+      );
+    }
+    const queue = new TicketQueue({ dir, self, log: (line) => lines.push(line) });
+    const mine = queue.enqueue({ job: 'tsc' });
+    // Numbering reads every name, past the cap too, so it never goes back.
+    expect(mine.seq).toBe(others + 1);
+
+    const reads = vi.spyOn(fs, 'readFileSync');
+    const waiting = queue.list();
+    expect(reads.mock.calls.length).toBeLessThanOrEqual(MAX_LISTED_ENTRIES);
+    expect(waiting).toHaveLength(MAX_LISTED_ENTRIES);
+    expect(waiting.at(-1)!.id).toBe(mine.id);
+    // Its own ticket is never lost to the cap.
+    expect(queue.tryAcquire(mine, OPEN)).toBe('wait');
+    queue.list();
+
+    // Tickets, plus this queue's own and its number claim; counts only.
+    expect(lines).toEqual([
+      `[LoadGate] The queue folder holds ${others + 2} entries; each check reads ${MAX_LISTED_ENTRIES} of them`,
+    ]);
+    // Nothing past the cap was judged, so nothing past it was removed.
+    expect(fs.readdirSync(dir).filter((name) => name.startsWith('ticket-'))).toHaveLength(
+      others + 1
+    );
   });
 });
 

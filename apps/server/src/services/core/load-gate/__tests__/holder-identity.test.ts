@@ -4,6 +4,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  MAX_PS_PER_WINDOW,
   START_TIME_CACHE_MS,
   createHolderProbe,
   holderIsLive,
@@ -53,6 +54,28 @@ describe('the start-time cache', () => {
     now += START_TIME_CACHE_MS;
     holderIsLive({ pid: 41, startedAt: 500 }, probe, self);
     expect(lookup).toHaveBeenCalledTimes(3);
+  });
+
+  it('makes at most MAX_PS_PER_WINDOW calls a window, and never calls an owner it skipped gone', () => {
+    let now = 0;
+    const lookup = vi.fn(() => 1);
+    const probe = createHolderProbe({
+      lookupStartedAt: lookup,
+      isAlive: () => true,
+      now: () => now,
+    });
+    const self = { pid: 1, startedAt: 1 };
+    const pids = Array.from({ length: MAX_PS_PER_WINDOW + 4 }, (_, i) => 100 + i);
+    // Every owner recorded a start time that does not match: a reused pid, once asked.
+    const verdicts = pids.map((pid) => holderIsLive({ pid, startedAt: 999 }, probe, self));
+    expect(lookup).toHaveBeenCalledTimes(MAX_PS_PER_WINDOW);
+    expect(verdicts.slice(0, MAX_PS_PER_WINDOW).every((live) => !live)).toBe(true);
+    // Not asked this window: alive for now, so nothing is reclaimed on a skipped check.
+    expect(verdicts.slice(MAX_PS_PER_WINDOW)).toEqual([true, true, true, true]);
+
+    now += START_TIME_CACHE_MS;
+    expect(holderIsLive({ pid: pids.at(-1)!, startedAt: 999 }, probe, self)).toBe(false);
+    expect(lookup).toHaveBeenCalledTimes(MAX_PS_PER_WINDOW + 1);
   });
 
   it('never asks about this process, or a pid that is not running', () => {

@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LoadGateSettings } from '@dorkos/shared/config-schema';
 import { createLoadGate, type HeldSlot, type WaitStatus } from '../load-gate.js';
 import { fixedLoadSource } from '../load-source.js';
+import { prepareDir } from '../queue-folder.js';
 import { DEFAULT_LEASE_MS, TicketQueue } from '../ticket-queue.js';
 
 const MINUTE = 60_000;
@@ -383,6 +384,34 @@ describe('when the shared folder fails', () => {
     ]);
     expect(lines.join('\n')).not.toContain('made-up-secret-name');
   });
+
+  // Making a link on Windows needs a privilege a test runner may not have.
+  it.skipIf(process.platform === 'win32')(
+    'refuses a queue folder that is a link to a folder this user owns, and waits here instead',
+    async () => {
+      const target = path.join(dir, 'real');
+      const link = path.join(dir, 'link');
+      fs.mkdirSync(target, { mode: 0o700 });
+      fs.symlinkSync(target, link);
+      expect(() => prepareDir(link)).toThrow(/not a plain folder/);
+
+      const lines: string[] = [];
+      const gate = createLoadGate({
+        config: () => settings,
+        dir: link,
+        loadSource: fixedLoadSource(4),
+        log: (line) => lines.push(line),
+      });
+      await expect(gate.waitForSlot({ job: 'pnpm' })).resolves.toMatchObject({
+        outcome: 'gate-error',
+      });
+      expect(lines).toEqual([
+        "[LoadGate] The shared load-gate queue could not be used; heavy jobs wait in this server's own line, one at a time (Error)",
+      ]);
+      // Nothing was written through the link.
+      expect(fs.readdirSync(target)).toEqual([]);
+    }
+  );
 
   it('runs the job when even the settings cannot be read', async () => {
     const lines: string[] = [];

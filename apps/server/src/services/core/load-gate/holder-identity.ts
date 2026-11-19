@@ -62,6 +62,16 @@ const START_TIME_TOLERANCE_SECONDS = 2;
  */
 export const START_TIME_CACHE_MS = 4_000;
 
+/**
+ * The most `ps` calls one probe makes in one {@link START_TIME_CACHE_MS} window,
+ * about one poll. Each blocks the server's event loop (up to its timeout), and
+ * the folder's owners are whatever processes wrote to it. Sixteen covers every
+ * DorkOS process a machine plausibly runs. Past it, a pid's start time is
+ * unknown for now: the owner counts as alive, nothing is reclaimed on that
+ * check, and the next window asks again.
+ */
+export const MAX_PS_PER_WINDOW = 16;
+
 /** How long one `ps` call may take before it counts as unanswered. */
 const PS_TIMEOUT_MS = 2_000;
 
@@ -154,12 +164,20 @@ export function createHolderProbe(options: HolderProbeOptions = {}): HolderProbe
   const lookup = options.lookupStartedAt ?? psStartedAt;
   const now = options.now ?? Date.now;
   const cache = new Map<number, { at: number; startedAt: number | null }>();
+  const budget = { startedAt: Number.NEGATIVE_INFINITY, calls: 0 };
   return {
     isAlive: options.isAlive ?? signalZero,
     startedAt(pid) {
       const at = now();
       const kept = cache.get(pid);
       if (kept && at - kept.at < START_TIME_CACHE_MS) return kept.startedAt;
+      if (at - budget.startedAt >= START_TIME_CACHE_MS) {
+        budget.startedAt = at;
+        budget.calls = 0;
+      }
+      // Over budget: unknown for now, and not cached, so the next window asks.
+      if (budget.calls >= MAX_PS_PER_WINDOW) return null;
+      budget.calls += 1;
       const startedAt = lookup(pid);
       // Old entries go as they are read again; the map holds one entry per pid seen.
       cache.set(pid, { at, startedAt });

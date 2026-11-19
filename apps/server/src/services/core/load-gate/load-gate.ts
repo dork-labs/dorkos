@@ -263,6 +263,7 @@ export function createLoadGate(options: LoadGateOptions): LoadGate {
       ...(options.monoNow === undefined ? {} : { monoNow: options.monoNow }),
       now,
       leaseMs,
+      log,
     }));
 
   /** Log a failure once per kind until the shared queue works again. */
