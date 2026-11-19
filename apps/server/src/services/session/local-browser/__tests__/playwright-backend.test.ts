@@ -73,6 +73,50 @@ beforeEach(() => {
   mocks.failure = undefined;
 });
 describe('pinned managed browser preparation', () => {
+  it.each([true, false])(
+    'uses native media and popup/color defaults with installed Chrome=%s',
+    async (installed) => {
+      mocks.existsSync.mockReturnValue(installed);
+      mocks.access.mockResolvedValue(undefined);
+      const launch = vi
+        .spyOn(chromium, 'launchPersistentContext')
+        .mockResolvedValue(themedContext());
+      try {
+        await productionBackend.launch('test-only-storage');
+        const options = launch.mock.calls[0]![1]!;
+        expect(options).toMatchObject({
+          colorScheme: null,
+          reducedMotion: null,
+          forcedColors: null,
+          contrast: null,
+          chromiumSandbox: true,
+        });
+        expect(options.ignoreDefaultArgs).toEqual([
+          '--enable-automation',
+          expect.stringMatching(/^--disable-features=.*AvoidCorsURLLoaderRestartOnRedirect/),
+          '--force-color-profile=srgb',
+          '--disable-popup-blocking',
+          ...(installed ? [] : ['--disable-extensions']),
+        ]);
+        expect(options.args).not.toContain('--force-color-profile=srgb');
+        expect(options.args).not.toContain('--disable-popup-blocking');
+        for (const kept of [
+          '--disable-sync',
+          '--metrics-recording-only',
+          '--use-mock-keychain',
+          '--password-store=basic',
+        ])
+          expect(options.ignoreDefaultArgs).not.toContain(kept);
+        expect(
+          options.args?.some((arg) =>
+            /remote-debugging-port|AutomationControlled|user-agent/.test(arg)
+          )
+        ).toBe(false);
+      } finally {
+        launch.mockRestore();
+      }
+    }
+  );
   it('uses installed Chrome without downloading Chromium or requiring a theme extension', async () => {
     mocks.existsSync.mockReturnValue(true);
     const context = themedContext();
@@ -174,6 +218,10 @@ describe('pinned managed browser preparation', () => {
         headless: false,
         viewport: null,
         chromiumSandbox: true,
+        colorScheme: null,
+        reducedMotion: null,
+        forcedColors: null,
+        contrast: null,
         // Keep the pinned feature overrides and allow only the theme extension.
         args: [
           `${defaultFeatures},HttpsUpgrades,HttpsFirstBalancedModeAutoEnable`,
@@ -181,7 +229,13 @@ describe('pinned managed browser preparation', () => {
           `--load-extension=${path.join('.agent-window-theme')}`,
           '--window-name=An agent is using this window',
         ],
-        ignoreDefaultArgs: ['--enable-automation', defaultFeatures, '--disable-extensions'],
+        ignoreDefaultArgs: [
+          '--enable-automation',
+          defaultFeatures,
+          '--force-color-profile=srgb',
+          '--disable-popup-blocking',
+          '--disable-extensions',
+        ],
       });
       expect(mocks.execFile).not.toHaveBeenCalled();
       // The agent's window shares the profile with the sign-in window: neither saves passwords.
