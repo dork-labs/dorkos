@@ -307,6 +307,138 @@ describe('the acceptance test: two chats on one busy computer', () => {
   });
 });
 
+describe('one thread at a time: a thread’s own heavy calls share its turn', () => {
+  it('two heavy calls in one batch share one ticket, then one slot, and nobody deadlocks', async () => {
+    const { gate, time, loadSource, queue } = machine(20);
+    const ana = chat('sdk-ana');
+    const anaHooks = hooksFor(ana, gate, time.now);
+    const boHooks = hooksFor(chat('sdk-bo'), gate, time.now);
+    // The CLI may wait for every hook in a batch before it runs any of the calls.
+    const batch = track(
+      Promise.all([
+        call(anaHooks.wait, bash('pnpm build', 'ana-1')),
+        call(anaHooks.wait, bash('pnpm test', 'ana-2')),
+      ])
+    );
+    const boLint = track(call(boHooks.wait, bash('pnpm lint', 'bo-1')));
+    await settle();
+    // Ana's two calls hold one place in line between them, ahead of Bo's, and say so once.
+    expect(gate.waitingJobs().map((job) => job.chatId)).toEqual(['sdk-ana', 'sdk-bo']);
+    expect(said(ana)).toEqual(['Waiting for the computer to calm down. Next in line.']);
+
+    loadSource.set(4);
+    await time.step(POLL);
+    // Both of Ana's hooks returned on the one slot, before either call ran: no deadlock.
+    expect(batch.done).toBe(true);
+    for (const answer of batch.value!) expectNoDecision(answer);
+    expect(queue.runningCount()).toBe(1);
+    expect(boLint.done).toBe(false);
+
+    // The slot is Ana's until the last of her calls ends.
+    await call(anaHooks.afterCall, finished('ana-1', 'PostToolUse'));
+    await time.step(POLL);
+    expect(queue.runningCount()).toBe(1);
+    expect(boLint.done).toBe(false);
+    await call(anaHooks.afterCall, finished('ana-2', 'PostToolUseFailure'));
+    await time.step(POLL);
+    expect(boLint.done).toBe(true);
+    expectNoDecision(boLint.value);
+    await call(boHooks.afterCall, finished('bo-1', 'PostToolUse'));
+    expect(queue.runningCount()).toBe(0);
+  });
+
+  it('a heavy call from a chat that already holds the slot goes on at once, even on a busy computer', async () => {
+    const { gate, time, loadSource, queue } = machine(4);
+    const anaHooks = hooksFor(chat('sdk-ana'), gate, time.now);
+    const boHooks = hooksFor(chat('sdk-bo'), gate, time.now);
+    await call(anaHooks.wait, bash('pnpm build', 'ana-1'));
+    loadSource.set(20);
+    const boBuild = track(call(boHooks.wait, bash('pnpm build', 'bo-1')));
+    expectNoDecision(await call(anaHooks.wait, bash('pnpm test', 'ana-2')));
+    await settle();
+    // Still one slot, Ana's, and Bo still waits behind it.
+    expect(queue.runningCount()).toBe(1);
+    expect(boBuild.done).toBe(false);
+    await call(anaHooks.afterCall, finished('ana-2', 'PostToolUse'));
+    await call(anaHooks.afterCall, finished('ana-1', 'PostToolUse'));
+    expect(queue.runningCount()).toBe(0);
+  });
+
+  it('a chat’s helpers running side by side take their turns one after the other', async () => {
+    const { gate, time, loadSource, queue } = machine(20);
+    const hooks = hooksFor(chat('sdk-ana'), gate, time.now);
+    const first = track(call(hooks.wait, bash('pnpm build', 'h1-1', 'helper-1')));
+    const second = track(call(hooks.wait, bash('pnpm test', 'h2-1', 'helper-2')));
+    await settle();
+    // Two places in line, one per helper, both the same chat on the person's list.
+    expect(gate.waitingJobs().map((job) => job.chatId)).toEqual(['sdk-ana', 'sdk-ana']);
+
+    loadSource.set(4);
+    await time.step(POLL);
+    expect(first.done).toBe(true);
+    expect(second.done).toBe(false);
+    // The first helper's slot does not carry the second: it waits until the first is done.
+    await time.step(POLL);
+    expect(second.done).toBe(false);
+    await call(hooks.afterCall, finished('h1-1', 'PostToolUse'));
+    await time.step(POLL);
+    expect(second.done).toBe(true);
+    expectNoDecision(second.value);
+    expect(queue.runningCount()).toBe(1);
+    await call(hooks.afterCall, finished('h2-1', 'PostToolUse'));
+    expect(queue.runningCount()).toBe(0);
+  });
+
+  it('a busy helper’s slot is not the main thread’s: the main thread’s batch takes its own turn and shares it', async () => {
+    const { gate, time, loadSource, queue } = machine(4);
+    const hooks = hooksFor(chat('sdk-ana'), gate, time.now);
+    await call(hooks.wait, bash('pnpm build', 'h1-1', 'helper-1'));
+    loadSource.set(20);
+    const batch = track(
+      Promise.all([
+        call(hooks.wait, bash('pnpm lint', 'main-1')),
+        call(hooks.wait, bash('pnpm test', 'main-2')),
+      ])
+    );
+    await settle();
+    // The main thread waits behind its own helper, in one place in line for both calls.
+    expect(batch.done).toBe(false);
+    expect(queue.list()).toHaveLength(1);
+    await call(hooks.afterCall, finished('h1-1', 'PostToolUse'));
+    loadSource.set(4);
+    await time.step(POLL);
+    expect(batch.done).toBe(true);
+    for (const answer of batch.value!) expectNoDecision(answer);
+    expect(queue.runningCount()).toBe(1);
+    await call(hooks.afterCall, finished('main-1', 'PostToolUse'));
+    expect(queue.runningCount()).toBe(1);
+    await call(hooks.afterCall, finished('main-2', 'PostToolUse'));
+    expect(queue.runningCount()).toBe(0);
+  });
+
+  it('a call that leaves a shared place in line keeps the ticket for the other; the last one out takes it', async () => {
+    const { gate, time, queue } = machine(20);
+    const hooks = hooksFor(chat('sdk-ana'), gate, time.now);
+    const cancel = new AbortController();
+    const first = track(call(hooks.wait, bash('pnpm build', 'ana-1'), cancel.signal));
+    const second = track(call(hooks.wait, bash('pnpm test', 'ana-2')));
+    await settle();
+    expect(queue.list()).toHaveLength(1);
+    // The CLI cancels the first call's hook: the second keeps the chat's place.
+    cancel.abort();
+    await settle();
+    expectNoDecision(first.value);
+    expect(second.done).toBe(false);
+    expect(queue.list()).toHaveLength(1);
+    // A card goes up for the second: the last call out takes the ticket with it.
+    hooks.releaseCall('ana-2');
+    await settle();
+    expectNoDecision(second.value);
+    expect(queue.list()).toHaveLength(0);
+    expect(queue.runningCount()).toBe(0);
+  });
+});
+
 describe('the place in line, in words', () => {
   const at = (position: number, waitedMs = 0, pastMaxWait = false) => ({
     position,
@@ -665,7 +797,7 @@ describe('every answer is no answer', () => {
     expectNoDecision(await call(hooks.wait, bash('FOO=1 nice pnpm -C web build', 't-1')));
     expect(gateIfHeavy).toHaveBeenCalledWith(
       'FOO=1 nice pnpm -C web build',
-      { chatId: 'sdk-ana', agentName: 'Ana' },
+      { chatId: 'sdk-ana', agentName: 'Ana', shareKey: 'claude-code:sdk-ana:main' },
       expect.objectContaining({ signal: expect.any(AbortSignal), onWait: expect.any(Function) })
     );
   });
@@ -837,6 +969,7 @@ describe('giving slots back', () => {
     const { gate, time, queue } = machine(4);
     const hooks = hooksFor(chat('s'), gate, time.now);
     await call(hooks.wait, bash('pnpm build', 'main'));
+    // A helper is its own thread: it takes its own slot rather than riding the main thread's.
     await call(hooks.wait, bash('pnpm test', 'helper', 'h-1'));
     expect(queue.runningCount()).toBe(2);
     await call(hooks.sweep, {
@@ -844,6 +977,7 @@ describe('giving slots back', () => {
       hook_event_name: 'Stop',
       stop_hook_active: false,
     } as HookInput);
+    // The main thread's slot is back; the helper's stays until the helper ends.
     expect(queue.runningCount()).toBe(1);
     await call(hooks.backstops.SubagentStop[0]!, {
       ...BASE,
@@ -867,71 +1001,76 @@ describe('giving slots back', () => {
   });
 
   it('when the process ends mid-job: the slot is free, waits stop, and no hook has to run', async () => {
-    const { gate, time, queue } = machine(4);
+    const { gate, time, loadSource, queue } = machine(4);
     const hooks = hooksFor(chat('s'), gate, time.now);
-    // A process launched with these hooks, running a build, with a test suite waiting behind it.
+    // A process launched with these hooks, running a build.
     const options = { hooks: { PreToolUse: [{ hooks: [] }, hooks.wait] } };
     await call(hooks.wait, bash('pnpm build', 'running'));
-    const behind = track(call(hooks.wait, bash('pnpm test', 'waiting')));
-    await settle();
     expect(queue.runningCount()).toBe(1);
-    expect(queue.list()).toHaveLength(1);
     // It crashed, or was closed, or a Stop escalated to a kill: no PostToolUse, no SessionEnd.
     releaseHeavyJobsOf(options);
-    await settle();
     expect(queue.runningCount()).toBe(0);
+    // And a process that ends while its call is still in line takes the ticket out with it.
+    loadSource.set(20);
+    const waiting = track(call(hooks.wait, bash('pnpm test', 'waiting')));
+    await settle();
+    expect(queue.list()).toHaveLength(1);
+    releaseHeavyJobsOf(options);
+    await settle();
     expect(queue.list()).toHaveLength(0);
-    expectNoDecision(behind.value);
+    expectNoDecision(waiting.value);
     // Options with no load-gate hook, or none at all, are left alone.
     releaseHeavyJobsOf({ hooks: { PreToolUse: [{ hooks: [] }] } });
     releaseHeavyJobsOf({});
   });
 
   it('an old process’s late exit frees only its own slots, never its replacement’s', async () => {
-    settings.slots = 2;
     const { gate, time, queue } = machine(4);
     const hooks = hooksFor(chat('s'), gate, time.now);
     const options = { hooks: { PreToolUse: [hooks.wait] } };
     // The first process, holding a build.
     const oldExited = startHeavyJobsProcess(options);
     await call(hooks.wait, bash('pnpm build', 'old-1'));
-    // A recovery boots a replacement from the same plan before the old one's exit lands; it takes
-    // the second slot, and a third job waits behind both.
+    // A recovery boots a replacement from the same plan before the old one's exit lands; its job
+    // is the same chat's, so it shares the chat's slot. Another chat's job waits behind it.
     const newExited = startHeavyJobsProcess(options);
     await call(hooks.wait, bash('pnpm test', 'new-1'));
-    const behind = track(call(hooks.wait, bash('pnpm lint', 'new-2')));
+    expect(queue.runningCount()).toBe(1);
+    const other = hooksFor(chat('sdk-other'), gate, time.now);
+    const behind = track(call(other.wait, bash('pnpm lint', 'other-1')));
     await settle();
-    expect(queue.runningCount()).toBe(2);
+    expect(behind.done).toBe(false);
 
     oldExited();
     await settle();
-    // Only the old build's slot came back; the replacement's job keeps its slot and its wait.
+    // Only the old build's share came back; the replacement's keeps the slot, so the other chat
+    // still waits.
     expect(queue.runningCount()).toBe(1);
+    await time.step(POLL);
     expect(behind.done).toBe(false);
+
+    newExited();
     await time.step(POLL);
     expect(behind.done).toBe(true);
     expectNoDecision(behind.value);
-    expect(queue.runningCount()).toBe(2);
-
-    newExited();
+    await call(other.afterCall, finished('other-1', 'PostToolUse'));
     expect(queue.runningCount()).toBe(0);
   });
 
   it('after a process ends, a replacement launched with the same hooks still waits and holds', async () => {
-    const { gate, time, loadSource, queue } = machine(4);
+    const { gate, time, loadSource, queue } = machine(20);
     const hooks = hooksFor(chat('s'), gate, time.now);
     hooks.releaseAll();
-    await call(hooks.wait, bash('pnpm build', 'next-process'));
-    expect(queue.runningCount()).toBe(1);
-    loadSource.set(20);
-    const behind = track(call(hooks.wait, bash('pnpm test', 'behind')));
+    // Still waits on a busy computer...
+    const next = track(call(hooks.wait, bash('pnpm build', 'next-process')));
     await settle();
-    expect(behind.done).toBe(false);
-    await call(hooks.afterCall, finished('next-process', 'PostToolUse'));
+    expect(next.done).toBe(false);
+    // ...and still holds once its turn comes.
     loadSource.set(4);
     await time.step(POLL);
-    expect(behind.done).toBe(true);
-    await call(hooks.afterCall, finished('behind', 'PostToolUse'));
+    expect(next.done).toBe(true);
+    expect(queue.runningCount()).toBe(1);
+    await call(hooks.afterCall, finished('next-process', 'PostToolUse'));
     expect(queue.runningCount()).toBe(0);
   });
 

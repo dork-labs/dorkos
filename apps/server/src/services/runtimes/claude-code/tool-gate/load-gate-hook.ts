@@ -5,7 +5,9 @@
  * does not. A heavy command (a build, a test suite, an install: `heavy-classifier.ts`) waits in the
  * machine's one line (`core/load-gate/`) until the load is under the limit and a slot is free; a
  * light one (`ls`) passes at once. While it waits, the chat says its place in line every minute,
- * which also tells the stall guard the turn is alive.
+ * which also tells the stall guard the turn is alive. One thread at a time: a thread's own heavy
+ * calls share its turn ({@link shareKeyOf}, `core/load-gate/chat-turns.ts`), so two in one batch
+ * never wait on each other, while a chat's helpers running side by side each wait their own turn.
  *
  * **It holds, it never decides.** Every answer is `{}`: never a `permissionDecision`, never a
  * `decision`. So once the wait ends, however it ends (its turn, a let-through mark, the hard cap,
@@ -169,6 +171,18 @@ export function startHeavyJobsProcess(options: Pick<Options, 'hooks'>): () => vo
   return () => {
     for (const { launch, generation } of started) launch.end(generation);
   };
+}
+
+/**
+ * Which calls share one turn in the line: this runtime, this chat, and one agent thread in it,
+ * the main thread or one helper. A batch from one thread shares (so it cannot wait on itself);
+ * helpers running side by side each take their own turn.
+ *
+ * @param chatId - The chat the call is in.
+ * @param agentId - The helper the call came from, absent on the main thread.
+ */
+export function shareKeyOf(chatId: string, agentId: string | undefined): string {
+  return `claude-code:${chatId}:${agentId ?? 'main'}`;
 }
 
 /** The only answer these hooks give: nothing, so the normal flow decides. */
@@ -416,9 +430,12 @@ export function loadGateHooks(
     if (input.hook_event_name !== 'PreToolUse' || input.tool_name !== LOAD_GATE_MATCHER) return;
     const command = (input.tool_input as { command?: unknown } | null)?.command;
     if (typeof command !== 'string') return;
+    const chatId = session.sdkSessionId || launch.sessionId;
     const owner = {
-      chatId: session.sdkSessionId || launch.sessionId,
+      chatId,
       ...(launch.agentName ? { agentName: launch.agentName } : {}),
+      // One thread's calls share a turn: the main thread's, or one helper's (`chat-turns.ts`).
+      shareKey: shareKeyOf(chatId, input.agent_id),
     };
     const { stop, generation, handle } = slots.begin(input.tool_use_id);
     try {

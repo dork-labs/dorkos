@@ -23,6 +23,7 @@
  */
 import type { LoadGateSettings } from '@dorkos/shared/config-schema';
 import { logger } from '../../../lib/logger.js';
+import { abortError, createChatTurns } from './chat-turns.js';
 import { classifyCommand } from './heavy-classifier.js';
 import { JOB_LABEL } from './job-label.js';
 import { LocalLine, type LocalPlace } from './local-line.js';
@@ -155,16 +156,19 @@ export interface LoadGate {
    */
   waitForSlot(request: WaitRequest, options?: WaitOptions): Promise<HeldSlot>;
   /**
-   * Classify a command and wait only if it is heavy.
+   * Classify a command and wait only if it is heavy. Calls with the same `shareKey` share one
+   * turn: a call never waits behind a slot or a place in line its own thread already has, and the
+   * slot comes back when the last of them gives its share back (`chat-turns.ts`).
    *
    * @param command - The shell command line.
-   * @param request - Who it is for; the job label comes from the classifier.
+   * @param request - Who it is for, and which thread it belongs to; the job label comes from the
+   *   classifier.
    * @param options - Cancellation and progress.
    * @returns The held slot, or `null` when the command is light or the gate is off.
    */
   gateIfHeavy(
     command: string,
-    request: JobOwner & { priority?: TicketPriority },
+    request: JobOwner & { priority?: TicketPriority; shareKey?: string },
     options?: WaitOptions
   ): Promise<HeldSlot | null>;
   /**
@@ -184,11 +188,6 @@ interface Line {
   position(): number;
   /** Leave without starting. Never throws. */
   leave(): void;
-}
-
-/** The error a stopped wait rejects with. */
-function abortError(): DOMException {
-  return new DOMException('The wait for a heavy-job slot was stopped.', 'AbortError');
 }
 
 const isAbort = (error: unknown): boolean => (error as Error | undefined)?.name === 'AbortError';
@@ -480,6 +479,9 @@ export function createLoadGate(options: LoadGateOptions): LoadGate {
     }
   }
 
+  // A thread's own heavy calls share its turn, so two in one batch never wait on each other.
+  const chatTurns = createChatTurns(waitForSlot, report);
+
   return {
     waitForSlot,
     async gateIfHeavy(command, request, opts) {
@@ -493,7 +495,11 @@ export function createLoadGate(options: LoadGateOptions): LoadGate {
       if (settings?.enabled === false) return null;
       const classification = classifyCommand(command, settings?.heavyCommands);
       if (!classification.heavy || classification.reason === undefined) return null;
-      return waitForSlot({ ...request, job: classification.reason }, opts);
+      // The share key decides who shares a turn and goes no further: never in a ticket or the list.
+      const { shareKey, ...owner } = request;
+      const job = { ...owner, job: classification.reason };
+      if (shareKey === undefined) return waitForSlot(job, opts);
+      return chatTurns.join(shareKey, job, opts ?? {});
     },
     waitingJobs() {
       try {
