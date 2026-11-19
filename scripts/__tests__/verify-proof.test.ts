@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   unlinkSync,
@@ -307,12 +308,12 @@ const preopenRefusal = () =>
   'run pnpm verify:preopen, or pass --no-verify-proof\n';
 
 describe('the preopen level (DOR-4728)', () => {
-  it('wires pnpm verify:preopen to the same wrapper, with its own flag', () => {
+  it('wires pnpm verify:preopen to the same wrapper, with its own command', () => {
     const pkg = JSON.parse(
       readFileSync(path.resolve(import.meta.dirname, '../../package.json'), 'utf8')
     );
     expect(pkg.scripts.verify).toBe('node scripts/verify-proof/cli.ts run');
-    expect(pkg.scripts['verify:preopen']).toBe('node scripts/verify-proof/cli.ts run --preopen');
+    expect(pkg.scripts['verify:preopen']).toBe('node scripts/verify-proof/cli.ts run-preopen');
     expect(pkg.scripts['verify:preopen:turbo']).toContain('turbo run typecheck lint --affected');
     expect(pkg.scripts['verify:preopen:turbo']).not.toMatch(/turbo run test\b/);
   });
@@ -428,32 +429,38 @@ describe('the preopen level (DOR-4728)', () => {
     writeFileSync(path.join(bin, 'pnpm'), `#!/bin/sh\necho "$*" >> '${log}'\nexit 0\n`, {
       mode: 0o755,
     });
-    const result = spawnSync(process.execPath, [script, 'run', '--preopen'], {
+    const result = spawnSync(process.execPath, [script, 'run-preopen'], {
       cwd: repo,
       encoding: 'utf8',
       // eslint-disable-next-line no-restricted-syntax -- scripts/ has no env.ts; child processes inherit PATH and git config
       env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
     });
     expect(result.status, result.stderr).toBe(0);
-    // HEAD is main itself, so nothing changed: only the typecheck and lint step runs.
-    expect(readFileSync(log, 'utf8')).toBe('run verify:preopen:turbo\n');
+    // HEAD is main itself, so nothing changed: the repo-wide scripts suites (which any
+    // change can break) and the typecheck and lint step run, nothing else.
+    expect(readFileSync(log, 'utf8')).toBe(
+      'exec vitest run --config scripts/vitest.repo.config.ts\nrun verify:preopen:turbo\n'
+    );
     expect(existsSync(path.join(proofs(), sha))).toBe(false);
     expect(check('--level', 'preopen').status).toBe(0);
     expect(check().status).toBe(1);
   });
 
-  it.each([[['run', '--preopen', '--force']], [['run', '--force', '--preopen']]])(
-    'refuses %j before any check starts',
-    (args) => {
-      const result = spawnSync(process.execPath, [script, ...args], {
-        cwd: repo,
-        encoding: 'utf8',
-      });
-      expect(result.status).toBe(2);
-      expect(result.stderr).toMatch(/^pnpm verify takes no arguments/);
-      expect(existsSync(proofs())).toBe(false);
-    }
-  );
+  it.each([
+    // `pnpm verify --preopen`: only the verify:preopen script may ask for the lighter gate.
+    [['run', '--preopen'], 'pnpm verify takes no arguments (got: --preopen);'],
+    [['run', '--preopen', '--force'], 'pnpm verify takes no arguments (got: --preopen --force);'],
+    // `pnpm verify:preopen --force`: the message names only what the person typed.
+    [['run-preopen', '--force'], 'pnpm verify:preopen takes no arguments (got: --force);'],
+  ])('refuses %j before any check starts', (args, message) => {
+    const result = spawnSync(process.execPath, [script, ...args], {
+      cwd: repo,
+      encoding: 'utf8',
+    });
+    expect(result.status).toBe(2);
+    expect(result.stderr.startsWith(message), result.stderr).toBe(true);
+    expect(existsSync(proofs())).toBe(false);
+  });
 
   it.each([[['--level']], [['--level', 'quick']], [['--preopen']], [['--level', 'preopen', 'x']]])(
     'answers check %j with the usage line',
@@ -461,34 +468,62 @@ describe('the preopen level (DOR-4728)', () => {
       const result = check(...flags);
       expect(result.status).toBe(2);
       expect(result.stderr).toBe(
-        'usage: node scripts/verify-proof/cli.ts run [--preopen] | ' +
+        'usage: node scripts/verify-proof/cli.ts run | run-preopen | ' +
           'check <sha> [--level full|preopen] [--no-verify-proof]\n'
       );
     }
   );
 
-  it('logs an escape at the preopen level as one', () => {
-    const escaped = check('--level', 'preopen', '--no-verify-proof');
-    expect(escaped.status).toBe(0);
-    const record = JSON.parse(readFileSync(path.join(proofs(), 'escapes.jsonl'), 'utf8').trim());
-    expect(record).toMatchObject({ sha, level: 'preopen' });
+  it.each([
+    [['--level', 'preopen', '--no-verify-proof']],
+    [['--no-verify-proof', '--level', 'preopen']],
+  ])('refuses the escape at the preopen level %j, and logs nothing', (flags) => {
+    const result = check(...flags);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toBe(
+      '--no-verify-proof escapes the full check only; drop --level preopen to use it\n'
+    );
+    expect(existsSync(path.join(proofs(), 'escapes.jsonl'))).toBe(false);
   });
 
-  it('checks from a lone copy of the CLI, the way the arm script runs it', () => {
-    expect(runVerification(repo, () => 0)).toBe(0);
-    const lone = mkdtempSync(path.join(tmpdir(), 'verify-proof-lone-'));
+  /** A lone copy of the CLI in a directory named by its real path, as arm.sh makes one. */
+  const withLoneCopy = (body: (cli: string, lone: string) => void) => {
+    // realpath: on macOS tmpdir() is a symlink, and a copy reached through one is the
+    // other case below, not this one.
+    const lone = realpathSync(mkdtempSync(path.join(tmpdir(), 'verify-proof-lone-')));
     try {
       copyFileSync(script, path.join(lone, 'cli.ts'));
-      const run = (...flags: string[]) =>
-        spawnSync(process.execPath, [path.join(lone, 'cli.ts'), 'check', sha, ...flags], {
-          cwd: repo,
-          encoding: 'utf8',
-        });
-      expect(run().status, run().stderr).toBe(0);
-      expect(run('--level', 'preopen').status).toBe(0);
+      body(path.join(lone, 'cli.ts'), lone);
     } finally {
       rmSync(lone, { recursive: true, force: true });
     }
+  };
+  const runCli = (cli: string, ...args: string[]) =>
+    spawnSync(process.execPath, [cli, ...args], { cwd: repo, encoding: 'utf8' });
+
+  it('checks from a lone copy of the CLI, the way the arm script runs it', () => {
+    expect(runVerification(repo, () => 0)).toBe(0);
+    withLoneCopy((cli) => {
+      const passed = runCli(cli, 'check', sha);
+      expect(passed.status, passed.stderr).toBe(0);
+      expect(runCli(cli, 'check', sha, '--level', 'preopen').status).toBe(0);
+      // A pass means nothing unless the copy can also refuse: a commit with no proof.
+      git('commit', '--allow-empty', '-qm', 'no proof here');
+      sha = git('rev-parse', 'HEAD');
+      const refused = runCli(cli, 'check', sha);
+      expect(refused.status).toBe(1);
+      expect(refused.stderr).toBe(refusal());
+    });
+  });
+
+  it('runs when it is reached through a symlinked path', () => {
+    withLoneCopy((cli, lone) => {
+      const link = path.join(lone, 'linked-cli.ts');
+      symlinkSync(cli, link);
+      const refused = runCli(link, 'check', sha);
+      expect(refused.status).toBe(1);
+      expect(refused.stderr).toBe(refusal());
+    });
   });
 });
 
@@ -523,13 +558,88 @@ describe('what a preopen run checks (DOR-4728)', () => {
     ['packages/shared/src, through the scope script', 'packages/shared/src/thing.md'],
     ['turbo.json, through the scope script', 'turbo.json'],
   ])('runs test:scripts for a change under %s', (_kind, file) => {
-    expect(names(planFor({ [file]: 'changed' }))).toEqual(['test:scripts', 'typecheck-lint']);
+    const steps = names(planFor({ [file]: 'changed' }));
+    expect(steps[0]).toBe('test:scripts');
+    // The full suite already holds the repo-wide files; running them twice buys nothing.
+    expect(steps).not.toContain('scripts-repo');
+    expect(steps.at(-1)).toBe('typecheck-lint');
   });
 
-  it('skips test:scripts for a change only under apps/client/', () => {
+  it('runs test:scripts when a file under scripts/ is deleted', () => {
+    mkdirSync(path.join(repo, 'scripts'));
+    writeFileSync(path.join(repo, 'scripts/old-check.sh'), 'echo');
+    git('add', '-A');
+    git('commit', '-qm', 'base script');
+    expect(names(planFor({ 'scripts/old-check.sh': null }))).toEqual([
+      'test:scripts',
+      'typecheck-lint',
+    ]);
+  });
+
+  it('runs test:scripts when the scope script cannot answer', () => {
+    // A root with no scripts/scripts-test-scope.sh: bash fails, and a broken check runs more.
+    const noScope = mkdtempSync(path.join(tmpdir(), 'verify-proof-noscope-'));
+    try {
+      git('switch', '-qc', 'topic');
+      mkdirSync(path.join(repo, 'apps/client'), { recursive: true });
+      writeFileSync(path.join(repo, 'apps/client/README.md'), 'words');
+      git('add', '-A');
+      git('commit', '-qm', 'change');
+      expect(names(planPreopen(repo, noScope))).toEqual(['test:scripts', 'typecheck-lint']);
+    } finally {
+      rmSync(noScope, { recursive: true, force: true });
+    }
+  });
+
+  it('runs the repo-wide scripts suites in place of test:scripts for an apps/client/ change', () => {
     const steps = planFor({ 'apps/client/src/view.tsx': 'export {};' });
-    expect(names(steps)).toEqual(['lint:changed', 'typecheck-lint']);
+    expect(names(steps)).toEqual(['scripts-repo', 'lint:changed', 'typecheck-lint']);
     expect(steps.at(-1)?.args).toEqual(['run', 'verify:preopen:turbo']);
+  });
+
+  it('still runs the repo-wide scripts suites for a change only under apps/server/src/services/', () => {
+    // Those suites are censuses over the whole tree (agents-service-census reads this
+    // very directory), and the required typecheck workflow runs them on every PR.
+    const steps = planFor({ 'apps/server/src/services/new-domain/index.md': 'words' });
+    expect(names(steps)).toEqual(['scripts-repo', 'typecheck-lint']);
+    expect(steps[0]?.args).toEqual([
+      'exec',
+      'vitest',
+      'run',
+      '--config',
+      'scripts/vitest.repo.config.ts',
+    ]);
+  });
+
+  it.each([
+    'eslint.config.js',
+    'packages/eslint-config/index.js',
+    'package.json',
+    'pnpm-lock.yaml',
+  ])('lints the whole root with pnpm lint:root when %s changes', (file) => {
+    const steps = planFor({ [file]: 'changed', 'apps/client/src/view.tsx': 'export {};' });
+    expect(names(steps)).toContain('lint:root');
+    expect(names(steps)).not.toContain('lint:changed');
+    expect(steps.find((step) => step.name === 'lint:root')?.args).toEqual(['run', 'lint:root']);
+  });
+
+  it('lints only changed files when a workspace eslint.config.js changes', () => {
+    // Only the root config decides what `eslint .` from the root sees.
+    const steps = planFor({ 'apps/client/eslint.config.js': 'export default [];' });
+    expect(names(steps)).toContain('lint:changed');
+    expect(names(steps)).not.toContain('lint:root');
+  });
+
+  it.each([
+    [200, 'lint:changed'],
+    [201, 'lint:root'],
+  ])('with %i changed lintable files, lints with %s', (count, step) => {
+    const files = Object.fromEntries(
+      Array.from({ length: count }, (_, i) => [`apps/client/src/many/f${i}.ts`, ''])
+    );
+    const steps = planFor(files);
+    expect(names(steps)).toContain(step);
+    if (step === 'lint:changed') expect(lintArgs(steps)).toHaveLength(3 + count);
   });
 
   it('lints only the changed files that still exist, are JS or TS, and live in the repo', () => {
@@ -563,7 +673,7 @@ describe('what a preopen run checks (DOR-4728)', () => {
 
   it('skips the lint step when nothing lintable changed', () => {
     const steps = planFor({ 'apps/client/README.md': 'words', 'example.txt': null });
-    expect(names(steps)).toEqual(['typecheck-lint']);
+    expect(names(steps)).toEqual(['scripts-repo', 'typecheck-lint']);
   });
 
   it('measures the change from origin/main when there is one, not from main', () => {
@@ -577,7 +687,7 @@ describe('what a preopen run checks (DOR-4728)', () => {
     writeFileSync(path.join(repo, 'apps.txt'), 'mine');
     git('add', '-A');
     git('commit', '-qm', 'mine');
-    expect(names(planPreopen(repo, root))).toEqual(['typecheck-lint']);
+    expect(names(planPreopen(repo, root))).toEqual(['scripts-repo', 'typecheck-lint']);
     git('update-ref', '-d', 'refs/remotes/origin/main');
     expect(names(planPreopen(repo, root))).toEqual(['test:scripts', 'typecheck-lint']);
   });

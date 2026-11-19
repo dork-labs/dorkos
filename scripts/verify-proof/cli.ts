@@ -3,6 +3,7 @@ import {
   appendFileSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   writeFileSync,
@@ -144,6 +145,8 @@ function readProof(file: string): unknown {
  * Check a local pass without running any verification commands. The default `full`
  * level, which arming uses, reads only the full proof. `preopen` also accepts the
  * commit's preopen proof, since a full pass covers everything a preopen one does.
+ * The escape exists at the full level only (checkFlags refuses it with `preopen`), so
+ * every line in escapes.jsonl stands for the check arming makes.
  */
 function check(cwd: string, ref: string, escape: boolean, level: ProofLevel): number {
   let shortSha = ref.slice(0, 12);
@@ -166,8 +169,6 @@ function check(cwd: string, ref: string, escape: boolean, level: ProofLevel): nu
           // eslint-disable-next-line no-restricted-syntax -- scripts/ has no env.ts; the OS login is the audit fact itself
           user: process.env.USER || process.env.USERNAME || null,
           when: new Date().toISOString(),
-          // An escape from the lighter check says so; a full escape keeps its old shape.
-          ...(level === 'preopen' ? { level } : {}),
         }) + '\n'
       );
       return 0;
@@ -190,8 +191,11 @@ function check(cwd: string, ref: string, escape: boolean, level: ProofLevel): nu
   return 1;
 }
 
+/** What `check`'s flags asked for, or the line that explains why they were refused. */
+type CheckFlags = { escape: boolean; level: ProofLevel } | { refusal: string };
+
 /** Parse `check`'s flags; `undefined` means they were not ones it takes. */
-function checkFlags(flags: readonly string[]): { escape: boolean; level: ProofLevel } | undefined {
+function checkFlags(flags: readonly string[]): CheckFlags | undefined {
   let escape = false;
   let level: ProofLevel = 'full';
   for (let i = 0; i < flags.length; i++) {
@@ -201,21 +205,53 @@ function checkFlags(flags: readonly string[]): { escape: boolean; level: ProofLe
       level = flags[++i] as ProofLevel;
     } else return undefined;
   }
+  if (escape && level === 'preopen') {
+    return {
+      refusal: '--no-verify-proof escapes the full check only; drop --level preopen to use it',
+    };
+  }
   return { escape, level };
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const [command, ref, ...flags] = process.argv.slice(2);
+/**
+ * Whether this module is the program node was asked to run. Both sides are real paths:
+ * node resolves the main module's symlinks for `import.meta.url` but leaves argv as
+ * typed, so a copy reached through a symlink (macOS's tmpdir is one) would otherwise
+ * never run at all and exit 0, which reads as a pass.
+ */
+function isMain(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return realpathSync(entry) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (isMain()) {
+  const [command, ...args] = process.argv.slice(2);
   // Read from this script's own repository, so the lists match the checks it ships with.
   const root = path.resolve(import.meta.dirname, '../..');
-  const pnpm = (args: readonly string[]): number =>
+  const pnpm = (pnpmArgs: readonly string[]): number =>
     // pnpm's child inherits the current environment, just as the old shell did.
-    spawnSync(process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', args, {
+    spawnSync(process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', pnpmArgs, {
       cwd: process.cwd(),
       stdio: 'inherit',
     }).status ?? 1;
-  const parsed = command === 'check' ? checkFlags(flags) : undefined;
-  if (command === 'run' && ref === undefined) {
+  // A forced or filtered run is not the gate a proof stands for, so it is refused
+  // outright. Each gate has its own command, so `pnpm verify --preopen` is refused too,
+  // and the message shows only what the person typed after the script name.
+  const refuseArguments = (gate: string) => {
+    console.error(
+      `${gate} takes no arguments (got: ${args.join(' ')}); ` +
+        'for a forced run use turbo run typecheck lint --force, or turbo run test --force -- --run'
+    );
+    process.exitCode = 2;
+  };
+  if (command === 'run' && args.length > 0) refuseArguments('pnpm verify');
+  else if (command === 'run-preopen' && args.length > 0) refuseArguments('pnpm verify:preopen');
+  else if (command === 'run') {
     const excluded = readBinaryTestGlobs(root);
     if (excluded.length > 0) {
       console.log(
@@ -229,7 +265,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
       (globs) => pnpm(['run', 'verify:checks', ...globs.map((glob) => `--exclude=${glob}`)]),
       excluded
     );
-  } else if (command === 'run' && ref === '--preopen' && flags.length === 0) {
+  } else if (command === 'run-preopen') {
     const { planPreopen, runPreopen } = await import('./preopen.ts');
     process.exitCode = runVerification(
       process.cwd(),
@@ -243,27 +279,27 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
         }
         console.log(
           `pnpm verify:preopen runs ${steps.map((step) => step.name).join(', ')}; ` +
-            'the package tests are left to CI, and this proof never arms a PR'
+            'the package tests are left to CI, and arming never reads this proof'
         );
         return runPreopen(steps, (step) => pnpm(step.args));
       },
       [],
       'preopen'
     );
-  } else if (command === 'run') {
-    // A forced or filtered run is not the gate a proof stands for, so it is refused outright.
-    console.error(
-      `pnpm verify takes no arguments (got: ${process.argv.slice(3).join(' ')}); ` +
-        'for a forced run use turbo run typecheck lint --force, or turbo run test --force -- --run'
-    );
-    process.exitCode = 2;
-  } else if (command === 'check' && ref && parsed) {
-    process.exitCode = check(process.cwd(), ref, parsed.escape, parsed.level);
   } else {
-    console.error(
-      'usage: node scripts/verify-proof/cli.ts run [--preopen] | ' +
-        'check <sha> [--level full|preopen] [--no-verify-proof]'
-    );
-    process.exitCode = 2;
+    const [ref, ...flags] = args;
+    const parsed = command === 'check' && ref ? checkFlags(flags) : undefined;
+    if (parsed && 'refusal' in parsed) {
+      console.error(parsed.refusal);
+      process.exitCode = 2;
+    } else if (parsed && ref) {
+      process.exitCode = check(process.cwd(), ref, parsed.escape, parsed.level);
+    } else {
+      console.error(
+        'usage: node scripts/verify-proof/cli.ts run | run-preopen | ' +
+          'check <sha> [--level full|preopen] [--no-verify-proof]'
+      );
+      process.exitCode = 2;
+    }
   }
 }

@@ -6,23 +6,29 @@ import path from 'node:path';
  * The lighter checks `pnpm verify:preopen` runs before a PR opens (DOR-4728).
  *
  * The full `pnpm verify` runs four steps. Preopen keeps the one that catches the
- * most, the affected typecheck and lint, and narrows or drops the rest:
+ * most, the affected typecheck and lint, and narrows the rest:
  *
- *   test:scripts      only when the change can reach the scripts suite (the scope
- *                     `scripts/scripts-test-scope.sh` holds, plus `.agents/`,
+ *   test:scripts      the whole scripts suite, when the change can reach it (the
+ *                     scope `scripts/scripts-test-scope.sh` holds, plus `.agents/`,
  *                     `.claude/`, `.github/` and the root `package.json`)
+ *   scripts-repo      otherwise, the repo-wide scripts suites alone
+ *                     (`scripts/vitest.repo.config.ts`): they read the whole tree, so
+ *                     any change can break them, and the required `typecheck`
+ *                     workflow runs them on every PR
  *   lint:changed      ESLint on the changed files from the root, in place of `eslint .`
+ *   lint:root         the full `eslint .`, when the root lint setup itself changed or
+ *                     too many files did to list
  *   typecheck-lint    `pnpm verify:preopen:turbo`, the same lock, base pin and heap
  *                     as the full gate's typecheck and lint step
  *
  * It never runs the package test sweep; CI's test shards do. So a preopen proof
- * is recorded apart from the full one and never satisfies arming.
+ * is recorded apart from the full one, and the arming check never reads it.
  */
 
-/** One preopen step: a name for the log and the proof, and the arguments `pnpm` gets. */
+/** One preopen step: a name for the log, and the arguments `pnpm` gets. */
 export interface PreopenStep {
-  /** What the step is, as the log and the proof name it. */
-  name: 'test:scripts' | 'lint:changed' | 'typecheck-lint';
+  /** What the step is, as the log names it. */
+  name: 'test:scripts' | 'scripts-repo' | 'lint:changed' | 'lint:root' | 'typecheck-lint';
   /** Arguments to `pnpm`, run from the repository root. */
   args: readonly string[];
 }
@@ -39,6 +45,16 @@ const LINTABLE = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/;
  * `package.json` that names every script.
  */
 const ALSO_RUNS_SCRIPTS = /^(\.agents\/|\.claude\/|\.github\/|package\.json$)/;
+
+/**
+ * Paths that change what `eslint .` from the root does to files nobody touched: the
+ * root config, the shared config package, and the dependencies both resolve.
+ */
+const RELINTS_ROOT =
+  /^(eslint\.config\.js$|packages\/eslint-config\/|package\.json$|pnpm-lock\.yaml$)/;
+
+/** Past this many changed files the list stops being cheaper than `eslint .` itself. */
+export const MAX_LINT_FILES = 200;
 
 /**
  * Where the change starts: the merge base with `origin/main`, or with `main`
@@ -132,11 +148,18 @@ export function lintableFiles(cwd: string, changed: readonly string[]): string[]
 export function planPreopen(cwd: string, root: string): PreopenStep[] {
   const top = git(cwd, 'rev-parse', '--show-toplevel').trim();
   const changed = changedPaths(top, preopenBase(top));
-  const steps: PreopenStep[] = [];
-  if (needsScriptsSuite(root, changed))
-    steps.push({ name: 'test:scripts', args: ['run', 'test:scripts'] });
+  const steps: PreopenStep[] = [
+    needsScriptsSuite(root, changed)
+      ? { name: 'test:scripts', args: ['run', 'test:scripts'] }
+      : {
+          name: 'scripts-repo',
+          args: ['exec', 'vitest', 'run', '--config', 'scripts/vitest.repo.config.ts'],
+        },
+  ];
   const files = lintableFiles(top, changed);
-  if (files.length > 0) {
+  if (changed.some((file) => RELINTS_ROOT.test(file)) || files.length > MAX_LINT_FILES) {
+    steps.push({ name: 'lint:root', args: ['run', 'lint:root'] });
+  } else if (files.length > 0) {
     steps.push({ name: 'lint:changed', args: ['exec', 'eslint', '--no-warn-ignored', ...files] });
   }
   steps.push({ name: 'typecheck-lint', args: ['run', 'verify:preopen:turbo'] });

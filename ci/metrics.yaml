@@ -186,8 +186,9 @@ tracked:
       run of each of those three workflows counts, cancelled runs excluded (if
       the first was cancelled, the next non-cancelled run counts); a PR passes
       only if all three are green. A PR belongs to the window its first run
-      falls in. Counted by ci-steward from the Actions run list; not computed
-      by the daily collector.
+      falls in. Higher is better. Read by hand: counted by ci-steward from
+      the Actions run list; not computed by the daily collector, which would
+      otherwise read a ratio as lower-is-better.
   - id: tracked.merge-tail-unknown-skips
     unit: count
     definition: >-
