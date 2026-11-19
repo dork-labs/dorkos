@@ -411,7 +411,13 @@ describe('a chat never waits behind its own slot', () => {
 
   it('asks the gate under one share key per chat, its helpers’ asks included', async () => {
     const gateIfHeavy = vi.fn(async () => null);
-    const m = machine(4, () => ({ waitForSlot: vi.fn(), gateIfHeavy, waitingJobs: () => [] }));
+    const m = machine(4, () => ({
+      waitForSlot: vi.fn(),
+      gateIfHeavy,
+      occupy: vi.fn(() => null),
+      waitWhileBusy: vi.fn(async () => {}),
+      waitingJobs: () => [],
+    }));
     const ana = m.chat('ana', 'bypassPermissions', { 'perm-a': 'call-a', 'perm-h': 'call-h' });
     ana.permissions.pendingPermissionSessions.set('perm-h', 'ses_helper');
     await passAll(m.deps, ana, bashAsk('pnpm build', 'perm-a'));

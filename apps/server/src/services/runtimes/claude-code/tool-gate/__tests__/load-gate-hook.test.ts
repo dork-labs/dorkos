@@ -805,7 +805,13 @@ describe('every answer is no answer', () => {
   }
   /** A gate whose `gateIfHeavy` the test writes; the hook calls nothing else. */
   function stubGate(gateIfHeavy: LoadGate['gateIfHeavy']): LoadGate {
-    return { waitForSlot: vi.fn(), gateIfHeavy, waitingJobs: () => [] };
+    return {
+      waitForSlot: vi.fn(),
+      gateIfHeavy,
+      occupy: vi.fn(() => null),
+      waitWhileBusy: vi.fn(async () => {}),
+      waitingJobs: () => [],
+    };
   }
   const clock = () => 0;
 
@@ -1116,6 +1122,8 @@ describe('giving slots back', () => {
       {
         waitForSlot: vi.fn(),
         gateIfHeavy: async () => slots.shift()!,
+        occupy: vi.fn(() => null),
+        waitWhileBusy: vi.fn(async () => {}),
         waitingJobs: () => [],
       },
       () => 0
