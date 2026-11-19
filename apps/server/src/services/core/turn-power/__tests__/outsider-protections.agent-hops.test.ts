@@ -269,7 +269,7 @@ describe('a room turn that answered an agent post carrying outside words', () =>
       agentPathOf: async () => boPath,
       launchOriginOf: () => 'room',
     });
-    await expect(check(bo)).resolves.toBe(true);
+    await expect(check(bo)).resolves.toBe('room_outside_words');
   });
 
   it('is stopped by none of them once its next turn reads nothing from outside', async () => {
@@ -280,6 +280,6 @@ describe('a room turn that answered an agent post carrying outside words', () =>
       agentPathOf: async () => boPath,
       launchOriginOf: () => 'room',
     });
-    await expect(check(bo)).resolves.toBe(false);
+    await expect(check(bo)).resolves.toBeNull();
   });
 });
