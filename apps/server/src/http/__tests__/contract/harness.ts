@@ -62,7 +62,7 @@ const BUILD_WAIT_MS = 180_000;
  * wait, then every boot attempt, all on one deadline. Each step on its own is
  * also bounded, so whichever runs out first ends the boot.
  */
-const BOOT_BUDGET_MS = BUILD_WAIT_MS + BOOT_TIMEOUT_MS;
+export const BOOT_BUDGET_MS = BUILD_WAIT_MS + BOOT_TIMEOUT_MS;
 
 /**
  * The `beforeAll` budget for a boot: longer than {@link BOOT_BUDGET_MS}, so the
@@ -279,25 +279,22 @@ function loadBuiltEntries(): Promise<Map<string, string>> {
  * it throws rather than fall back to tsx. Anything else runs with tsx on the
  * source. Each boot marks its mode in the run folder for the run's mode line.
  *
+ * @param edges - Where the mode, the build and the server come from (see {@link BootEdges}).
  * @param entrypoint - `src/index.ts`, or an absolute path to a test bootstrap.
  * @param forceTsx - Boot with tsx whatever the run's mode (the parity boot).
  * @param deadline - The whole boot's deadline: waiting for the build stops there.
  */
 async function nodeArgs(
+  edges: BootEdges,
   entrypoint: string,
   forceTsx: boolean,
   deadline: number
 ): Promise<string[]> {
   const source = path.resolve(SERVER_DIR, entrypoint);
-  const bundled =
-    !forceTsx &&
-    inject('contractServerMode') === 'bundle' &&
-    Object.values(BUILT_ENTRIES).includes(source);
-  await writeFile(path.join(runDir(), BOOTED_MARKER_PREFIX + (bundled ? 'bundle' : 'tsx')), '');
-  if (!bundled) return [TSX_CLI, entrypoint];
-  const built = (
-    await beforeDeadline(loadBuiltEntries(), deadline, 'the contract server build')
-  ).get(source);
+  if (!(await edges.runsFromBuild(source, forceTsx))) return [TSX_CLI, entrypoint];
+  const built = (await beforeDeadline(edges.build(), deadline, 'the contract server build')).get(
+    source
+  );
   if (!built) {
     throw new Error(
       `The contract server build has no ${source}; set ${TSX_ESCAPE_FLAG}=1 to boot with tsx.`
@@ -336,6 +333,52 @@ export interface BootOptions {
 /** How many ports a boot tries before it gives up. */
 const BOOT_ATTEMPTS = 3;
 
+/** One server process, started but not yet known to answer. */
+export interface StartedServer {
+  /** The process, read for its exit code while the boot waits on it. */
+  readonly child: ChildProcess;
+  /** Where it should listen. */
+  readonly baseUrl: string;
+  /** The version it was told to report, so the boot knows its own answer. */
+  readonly version: string;
+  /** Its throwaway data directory. */
+  readonly dorkHome: string;
+  /** The last of what it printed. */
+  log(): string;
+  /** Stop it and delete its data directory. */
+  close(): Promise<void>;
+}
+
+/**
+ * What a boot reaches outside its own timing: the run's mode, the run's build
+ * and the server process. {@link bootComposedServer} always uses the real
+ * ones; `harness-deadline.test.ts` passes fakes to
+ * {@link bootWithEdges}, so it drives the real deadline code on a fake clock
+ * without building or booting anything or touching this run's build folder.
+ */
+export interface BootEdges {
+  /** Whether `source` runs from this run's build (else with tsx); marks the mode for the run's mode line. */
+  runsFromBuild(source: string, forceTsx: boolean): Promise<boolean>;
+  /** This run's build: entry source path to built file. */
+  build(): Promise<Map<string, string>>;
+  /** Start one server with these Node arguments on a free port and a throwaway data folder. */
+  start(args: string[], extra: Record<string, string>): Promise<StartedServer>;
+}
+
+/** The real {@link BootEdges}. */
+const REAL_EDGES: BootEdges = {
+  async runsFromBuild(source, forceTsx) {
+    const bundled =
+      !forceTsx &&
+      inject('contractServerMode') === 'bundle' &&
+      Object.values(BUILT_ENTRIES).includes(source);
+    await writeFile(path.join(runDir(), BOOTED_MARKER_PREFIX + (bundled ? 'bundle' : 'tsx')), '');
+    return bundled;
+  },
+  build: loadBuiltEntries,
+  start: startServer,
+};
+
 /**
  * Boot the composed server on a free port with a throwaway data directory.
  *
@@ -357,10 +400,30 @@ export async function bootComposedServer(
   entrypoint = 'src/index.ts',
   options: BootOptions = {}
 ): Promise<ComposedServer> {
+  return bootWithEdges(REAL_EDGES, extra, entrypoint, options);
+}
+
+/**
+ * {@link bootComposedServer} with its outside world given: the real boot
+ * passes {@link REAL_EDGES}, and only `harness-deadline.test.ts`
+ * passes anything else.
+ *
+ * @param edges - The mode, build and server process to use.
+ * @param extra - More environment for the server, over the defaults.
+ * @param entrypoint - The server entry or a test bootstrap.
+ * @param options - See {@link BootOptions}.
+ * @returns The running server.
+ */
+export async function bootWithEdges(
+  edges: BootEdges,
+  extra: Record<string, string>,
+  entrypoint: string,
+  options: BootOptions
+): Promise<ComposedServer> {
   const deadline = Date.now() + BOOT_BUDGET_MS;
   for (let attempt = 1; ; attempt++) {
     try {
-      return await bootOnce(extra, entrypoint, options.tsx ?? false, deadline);
+      return await bootOnce(edges, extra, entrypoint, options.tsx ?? false, deadline);
     } catch (error) {
       const lostPort = error instanceof Error && /Port \d+ is already in use/.test(error.message);
       if (!lostPort || attempt >= BOOT_ATTEMPTS) throw error;
@@ -371,17 +434,38 @@ export async function bootComposedServer(
 /**
  * One boot on one free port.
  *
+ * @param edges - The mode, build and server process to use.
  * @param extra - More environment for the server, over the defaults.
  * @param deadline - The whole boot's deadline, shared with every other attempt.
  */
 async function bootOnce(
+  edges: BootEdges,
   extra: Record<string, string>,
   entrypoint: string,
   forceTsx: boolean,
   deadline: number
 ): Promise<ComposedServer> {
   // First, so a build that fails or runs out of time leaves no data folder behind.
-  const args = await nodeArgs(entrypoint, forceTsx, deadline);
+  const args = await nodeArgs(edges, entrypoint, forceTsx, deadline);
+  const server = await edges.start(args, extra);
+  try {
+    await waitUntilUp(server.baseUrl, server.version, server.child, server.log, deadline);
+  } catch (error) {
+    await server.close();
+    throw error;
+  }
+  const { baseUrl, dorkHome, log, close } = server;
+  return { baseUrl, dorkHome, log, close };
+}
+
+/**
+ * Start the composed server with `args` on a free port with a throwaway data
+ * directory, without waiting for it to answer.
+ *
+ * @param args - The Node arguments, from {@link nodeArgs}.
+ * @param extra - More environment for the server, over the defaults.
+ */
+async function startServer(args: string[], extra: Record<string, string>): Promise<StartedServer> {
   const port = await freePort();
   const dorkHome = await mkdtemp(path.join(tmpdir(), 'dorkos-contract-'));
   await mkdir(path.join(dorkHome, 'home'));
@@ -405,15 +489,14 @@ async function bootOnce(
   child.stdout!.on('data', keep);
   child.stderr!.on('data', keep);
 
-  const baseUrl = `http://127.0.0.1:${port}`;
-  const close = (): Promise<void> => stopServerAndRemove(child, exited, dorkHome);
-  try {
-    await waitUntilUp(baseUrl, version, child, () => log, deadline);
-  } catch (error) {
-    await close();
-    throw error;
-  }
-  return { baseUrl, dorkHome, log: () => log, close };
+  return {
+    child,
+    baseUrl: `http://127.0.0.1:${port}`,
+    version,
+    dorkHome,
+    log: () => log,
+    close: () => stopServerAndRemove(child, exited, dorkHome),
+  };
 }
 
 /**
