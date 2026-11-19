@@ -50,7 +50,7 @@
       "slug": "agent-browser-panel-parallel-pages",
       "title": "Agent browser: a page per chat in the DorkOS-browser panel",
       "created": "2026-11-13",
-      "status": "draft",
+      "status": "superseded",
       "project": "After launch: agent browser profiles and global MCP polish",
       "linearIssue": "DOR-4289"
     },
@@ -59,7 +59,7 @@
       "slug": "agent-browser-page-stream",
       "title": "Agent browser: watch and take over the live page from anywhere",
       "created": "2026-11-13",
-      "status": "draft",
+      "status": "specified",
       "project": "After launch: agent browser profiles and global MCP polish",
       "linearIssue": "DOR-2667"
     },

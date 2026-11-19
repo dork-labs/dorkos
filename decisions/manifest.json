@@ -2,6 +2,15 @@
   "version": 1,
   "decisions": [
     {
+      "id": "261119-190201",
+      "slug": "one-real-chrome-per-agent-two-views",
+      "title": "One real Chrome per agent, two views",
+      "status": "accepted",
+      "created": "2026-11-19",
+      "extractedFrom": null,
+      "specSlug": "agent-browser-page-stream"
+    },
+    {
       "id": "261118-135124",
       "slug": "releases-cut-from-a-release-branch-not-a-frozen-main",
       "title": "Releases are cut on a protected release/vX.Y.Z branch, so main keeps merging",

@@ -68,6 +68,27 @@ Do not use the removed Signed-in browser card or `dorkos browser login` as a
 verification recipe. User guide: `docs/guides/agent-browser.mdx`; design:
 `specs/local-playwright-browser/`.
 
+## Live Agent browser release check
+
+A browser change is not shipped until a live run passes on the release build.
+Run the checks in every view that exists in that release. During the DOR-4741
+bridge, agent pages stay in Chrome and the panel is **Your browser** only.
+Once DOR-2667 ships, also check the streamed panel and any shipped remote views.
+This gate was added after DOR-4097 closed while the browser was still broken.
+
+1. Open GoDaddy (Akamai) and one Cloudflare-protected site. Each page must load,
+   or its block must be recognised and handed off to the person.
+2. Complete a real Google sign-in, then run a Google search.
+3. Complete a sign-in handoff end to end. Confirm the agent's page is restored
+   in every shipped view, with the same agent profile and sign-ins.
+4. Check that the agent-facing instruction block and `using-the-agent-browser`
+   skill match the release. Their updates ship with DOR-4741 and DOR-2667,
+   alongside the matching browser behaviour.
+
+Record the release version, views, sites, results and evidence. Mocked sign-in
+windows in unit tests do not count toward this check. Keep deterministic tests
+for regressions; a green mocked test does not prove a live site works.
+
 ## Where local output goes
 
 On the operator's Mac, anything worth keeping from a local run goes to cold
