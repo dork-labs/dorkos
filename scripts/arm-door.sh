@@ -7,10 +7,11 @@
 #      when its head is missing what matters:
 #        - Security's `security-reviewed` label, added at or after the head
 #          (the newest label event is not older than the later of the head's
-#          committer date and when this PR got it, its earliest `pull_request`
-#          run on the PR's own branch: the pusher sets the committer date, and a
-#          commit's check suites belong to the SHA repo-wide, so a backdated or
-#          side-branch commit could make an old label look fresh, DOR-4706). The same rule
+#          committer date and when this PR last got it: its latest
+#          `typecheck.yml` `pull_request` run on the PR's own branch, from this
+#          repo. The pusher sets the committer date, and a commit's check
+#          suites belong to the SHA repo-wide, so a backdated, side-branch or
+#          returning commit could make an old label look fresh, DOR-4706). The same rule
 #          the release range check and the arm script apply to every pull
 #          request, docs included (#3913 was client-only and still blocked a
 #          release). If docs are ever exempted, the checks change in one PR.
@@ -34,8 +35,8 @@
 #
 # Usage:
 #   scripts/arm-door.sh verdict <payload.json>
-#       payload: {head, headCommittedAt, headSeenAt (the head's earliest
-#       pull_request run on the PR's branch, or null), labelEvents: [security-reviewed
+#       payload: {head, headCommittedAt, headSeenAt (the head's latest
+#       typecheck pull_request run on the PR's branch, or null), labelEvents: [security-reviewed
 #       label times], statuses: [head commit statuses], checkRuns: [head check
 #       runs], required: [required contexts], files: [{filename,
 #       previous_filename}], changedFiles}. Prints one line:
