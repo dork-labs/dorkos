@@ -278,6 +278,11 @@ try {
     if (name !== 'godaddy') await handover.handBack(handoffId);
     if (name === 'echo') {
       await until(async () => (arrivedWith.length > before ? true : undefined));
+      // Made-up visit numbers only: what the reopened window arrived with, for the record.
+      await writeFile(
+        path.join(evidence, 'cookie-proof.json'),
+        JSON.stringify({ personVisit, arrivedWith }, null, 2)
+      );
       assert.match(
         arrivedWith.at(-1)!,
         new RegExp(`(^|; )made_up_visit=${personVisit}($|;)`),
@@ -303,8 +308,11 @@ try {
     )
   );
 } finally {
+  // Cleanup must never replace the proof's own failure, so each step reports and moves on.
+  const cleanup = async (step: string, run: () => Promise<unknown>) =>
+    run().catch((error: unknown) => console.error(`cleanup ${step}: ${String(error)}`));
   signIns.done();
-  if (plain) await plain.exited;
-  await browser.disconnect();
+  if (plain) await cleanup('sign-in window', () => plain!.exited);
+  await cleanup('browser', () => browser.disconnect());
   await new Promise<void>((resolve) => echo.close(() => resolve()));
 }
