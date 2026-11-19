@@ -96,20 +96,23 @@ export function clampForStorage(value: string, max: number): string {
  * @returns The JSON to store, or null.
  */
 export function storableServiceAction(action: ApprovalServiceAction): string | null {
+  // Made inert again here, whatever the producer did (DOR-4592). A recipient this
+  // pass shortens counts as well, so the stored card stays decline-only for it.
+  const recipients = action.recipients?.map((recipient) => ({
+    label: redactSecretsInText(recipient.label),
+    ...inertRecipientText(redactSecretsInText(recipient.address)),
+  }));
+  const shortened =
+    (action.recipientsShortened ?? 0) + (recipients ?? []).filter((r) => r.shortened).length;
   const swept = {
     ...action,
     serviceName: redactSecretsInText(action.serviceName),
     accountLabel: redactSecretsInText(action.accountLabel),
     actionName: redactSecretsInText(action.actionName),
-    ...(action.recipients
-      ? {
-          recipients: action.recipients.map((recipient) => ({
-            label: redactSecretsInText(recipient.label),
-            // Made inert again here, whatever the producer did (DOR-4592).
-            address: inertRecipientText(redactSecretsInText(recipient.address)),
-          })),
-        }
+    ...(recipients
+      ? { recipients: recipients.map(({ label, text }) => ({ label, address: text })) }
       : {}),
+    ...(shortened > 0 ? { recipientsShortened: shortened } : {}),
     details: action.details.map((detail) => ({
       label: redactSecretsInText(detail.label),
       value: redactSecretsInText(detail.value),

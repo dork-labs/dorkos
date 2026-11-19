@@ -32,10 +32,18 @@ function cutLine(count: number): string {
   return `${values} too long to show. If you’re unsure what this sends, don’t allow it.`;
 }
 
-/** "1 more recipient isn't shown", "3 more recipients aren't shown". */
-function recipientsCutLine(count: number): string {
-  const more = count === 1 ? '1 more recipient isn’t' : `${count} more recipients aren’t`;
-  return `${more} shown. If you’re unsure who this sends to, don’t allow it.`;
+/**
+ * Why a send that hides a recipient can only be declined (DOR-4592): the
+ * server refuses a yes to it, so the line says so instead of asking for care.
+ */
+function recipientsHiddenLine(cut: number | undefined, shortened: number | undefined): string {
+  if (cut !== undefined) {
+    const more = cut === 1 ? '1 more recipient isn’t' : `${cut} more recipients aren’t`;
+    return `${more} shown, so this can’t be allowed. Ask for a smaller send.`;
+  }
+  return shortened === 1
+    ? 'One address is too long to show, so this can’t be allowed.'
+    : `${shortened} addresses are too long to show, so this can’t be allowed.`;
 }
 
 /**
@@ -46,15 +54,17 @@ function recipientsCutLine(count: number): string {
 function ApprovalRecipients({
   recipients,
   cut,
+  shortened,
 }: {
   recipients: NonNullable<ApprovalServiceActionValue['recipients']>;
   cut: number | undefined;
+  shortened: number | undefined;
 }) {
   return (
     <>
       <dl
         data-slot="approval-service-recipients"
-        className="border-border/60 mt-1.5 grid max-h-[40dvh] grid-cols-[minmax(0,max-content)_minmax(0,1fr)] gap-x-3 gap-y-0.5 overflow-auto rounded-md border p-2 text-xs md:max-h-56"
+        className="border-border/60 bg-muted/40 mt-1.5 grid max-h-[40dvh] grid-cols-[minmax(0,max-content)_minmax(0,1fr)] gap-x-3 gap-y-0.5 overflow-auto rounded-md border p-2 text-xs md:max-h-56"
       >
         {recipients.map((recipient, index) => (
           <div key={`${index}-${recipient.label}`} className="contents">
@@ -66,9 +76,9 @@ function ApprovalRecipients({
           </div>
         ))}
       </dl>
-      {cut !== undefined && (
+      {(cut !== undefined || shortened !== undefined) && (
         <p data-slot="approval-recipients-cut" className="text-muted-foreground mt-0.5 text-xs">
-          {recipientsCutLine(cut)}
+          {recipientsHiddenLine(cut, shortened)}
         </p>
       )}
     </>
@@ -121,7 +131,11 @@ export function ApprovalServiceAction({
         <span className="text-muted-foreground min-w-0 break-all">{action.accountLabel}</span>
       </div>
       {action.recipients && (
-        <ApprovalRecipients recipients={action.recipients} cut={action.recipientsCut} />
+        <ApprovalRecipients
+          recipients={action.recipients}
+          cut={action.recipientsCut}
+          shortened={action.recipientsShortened}
+        />
       )}
       {expanded && everything ? (
         <dl

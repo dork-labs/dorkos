@@ -73,9 +73,17 @@ export function isRecipientArgumentName(key: string): boolean {
  *
  * @param value - The address as the call would send it.
  */
-export function inertRecipient(value: string): string {
+export function inertRecipient(value: string): { text: string; shortened: boolean } {
   return inertRecipientText(redactConnectedAppArgument(value, false));
 }
+
+/**
+ * Separators many send APIs accept inside one address string. Splitting on
+ * them gives each address its own line, so a long `to` string can't hide its
+ * last address past the length cap (Security, DOR-4592). A display name with a
+ * comma splits too: that shows an extra line, never a hidden one.
+ */
+const ADDRESS_SEPARATORS = /[,;\r\n]+/u;
 
 /** A plain address, or null for anything else. */
 function scalarAddress(item: unknown): string | null {
@@ -100,14 +108,12 @@ function itemAddress(item: unknown): string | null {
  * stay in the glance and in "Show everything", as before).
  */
 function addressesOf(value: unknown): string[] | null {
-  const one = itemAddress;
-  if (!Array.isArray(value)) {
-    const single = one(value);
-    return single === null || single.trim() === '' ? null : [single];
-  }
-  const items = value.map(one);
+  const items = (Array.isArray(value) ? value : [value]).map(itemAddress);
   if (items.some((item) => item === null)) return null;
-  return (items as string[]).filter((item) => item.trim() !== '');
+  return (items as string[])
+    .flatMap((item) => item.split(ADDRESS_SEPARATORS))
+    .map((address) => address.trim())
+    .filter((address) => address !== '');
 }
 
 /** The card's recipient lines, and how many could not be listed. */
@@ -116,6 +122,8 @@ export interface RecipientLines {
   lines: ApprovalServiceRecipient[];
   /** How many addresses past the card's limit were left off. */
   cut: number;
+  /** How many listed addresses were too long to show whole. */
+  shortened: number;
   /** The arguments listed here, which the glance then leaves out. */
   keys: ReadonlySet<string>;
 }
@@ -135,15 +143,21 @@ export function recipientLines(
   const lines: ApprovalServiceRecipient[] = [];
   const keys = new Set<string>();
   let cut = 0;
+  let shortened = 0;
   for (const key of order) {
     if (!isRecipientArgumentName(key)) continue;
     const addresses = addressesOf(args[key]);
     if (addresses === null || addresses.length === 0) continue;
     keys.add(key);
     for (const address of addresses) {
-      if (lines.length >= APPROVAL_SERVICE_MAX_RECIPIENTS) cut += 1;
-      else lines.push({ label: label(key), address: inertRecipient(address) });
+      if (lines.length >= APPROVAL_SERVICE_MAX_RECIPIENTS) {
+        cut += 1;
+        continue;
+      }
+      const shown = inertRecipient(address);
+      if (shown.shortened) shortened += 1;
+      lines.push({ label: label(key), address: shown.text });
     }
   }
-  return { lines, cut, keys };
+  return { lines, cut, shortened, keys };
 }

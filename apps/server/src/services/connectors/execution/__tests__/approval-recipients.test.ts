@@ -11,6 +11,7 @@ import {
   APPROVAL_SERVICE_RECIPIENT_MAX_LENGTH,
   type ApprovalServiceAction,
 } from '@dorkos/shared/approval-schemas';
+import { cannotAllowCard } from '../../../core/approvals/approval-completeness.js';
 import { storableServiceAction } from '../../../core/approvals/approval-storable.js';
 import { describeGatedAttempt } from '../../../core/capabilities/tier-enforcement.js';
 import { inertRecipient, isRecipientArgumentName } from '../approval-card/recipients.js';
@@ -82,19 +83,53 @@ describe("a send's recipients on its approval card", () => {
   });
 
   it('shows control characters and line separators instead of letting them break the line', () => {
-    expect(inertRecipient('a@example.com\nBcc: b@example.com')).toBe(
+    expect(inertRecipient('a@example.com\nBcc: b@example.com').text).toBe(
       'a@example.com<U+000A>Bcc: b@example.com'
     );
-    expect(inertRecipient('a@example.com\u2028b@x.com\u0085\u200B')).toBe(
+    expect(inertRecipient('a@example.com\u2028b@x.com\u0085\u200B').text).toBe(
       'a@example.com<U+2028>b@x.com<U+0085><U+200B>'
     );
   });
 
-  it('caps an address no real one reaches with "…", and never drops it', () => {
+  it('caps an address no real one reaches with "…", never drops it, and counts it', () => {
     const long = `${'garden.note.'.repeat(35)}ann@example.com`;
-    const [line] = describeServiceAction(send({ recipient_email: long })).recipients!;
+    const action = describeServiceAction(send({ recipient_email: long }));
+    const [line] = action.recipients!;
     expect(Array.from(line!.address)).toHaveLength(APPROVAL_SERVICE_RECIPIENT_MAX_LENGTH);
     expect(line!.address.endsWith('…')).toBe(true);
+    expect(action.recipientsShortened).toBe(1);
+  });
+
+  // Security, round 2: many send APIs take a comma list in one `to` string.
+  it('gives each address in one comma-joined string its own line, the last one too', () => {
+    const ok = Array.from({ length: 19 }, (_, i) => `friend${i}@example.com`);
+    const joined = [...ok, 'exfil@evil.example'].join(', ');
+    expect(joined.length).toBeGreaterThan(APPROVAL_SERVICE_RECIPIENT_MAX_LENGTH);
+    const action = describeServiceAction(send({ recipient_email: joined }));
+    expect(action.recipients).toHaveLength(20);
+    expect(action.recipients!.at(-1)!.address).toBe('exfil@evil.example');
+    expect(action.recipientsShortened).toBeUndefined();
+  });
+
+  it('splits a comma list inside an object list’s address field too', () => {
+    const action = describeServiceAction({
+      ...send({}),
+      inputSchema: { type: 'object', properties: { attendees: { type: 'array' } } },
+      arguments: {
+        attendees: [{ email: 'ann@example.com, exfil@evil.example', optional: false }],
+      },
+    });
+    expect(lines(action)).toEqual(['Attendees: ann@example.com', 'Attendees: exfil@evil.example']);
+  });
+
+  it('splits on semicolons and line breaks too, dropping empty pieces', () => {
+    const action = describeServiceAction(send({ cc: ['a@x.com;b@x.com', 'c@x.com\n\nd@x.com, '] }));
+    expect(action.recipients!.map((r) => r.address)).toEqual([
+      'a@x.com',
+      'b@x.com',
+      'c@x.com',
+      'd@x.com',
+    ]);
   });
 
   it('counts recipients past the card’s limit instead of cutting them silently', () => {
@@ -181,6 +216,36 @@ describe('recipients survive every place the card goes', () => {
       'Attendees: ann@example.com',
       'Attendees: outsider@example.net',
     ]);
+  });
+});
+
+// Security, round 2: a person can't allow a send to someone the card can't show.
+describe('a send that hides a recipient can only be declined', () => {
+  const row = (action: ApprovalServiceAction) => ({
+    capabilityId: 'connectors.execute_write',
+    inputHash: 'h',
+    packageRequest: null,
+    summary: 's',
+    detail: null,
+    serviceAction: storableServiceAction(action),
+  });
+
+  it('refuses a yes when an address is too long to show whole', () => {
+    const long = `${'garden.note.'.repeat(35)}ann@example.com`;
+    expect(cannotAllowCard(row(describeServiceAction(send({ recipient_email: long }))))).toBe(true);
+  });
+
+  it('refuses a yes past the card’s recipient limit', () => {
+    const many = Array.from(
+      { length: APPROVAL_SERVICE_MAX_RECIPIENTS + 1 },
+      (_, i) => `p${i}@x.co`
+    );
+    expect(cannotAllowCard(row(describeServiceAction(send({ bcc: many }))))).toBe(true);
+  });
+
+  it('still allows a send whose every recipient is on the card', () => {
+    const action = describeServiceAction(send({ recipient_email: 'a@x.com, b@x.com' }));
+    expect(cannotAllowCard(row(action))).toBe(false);
   });
 });
 

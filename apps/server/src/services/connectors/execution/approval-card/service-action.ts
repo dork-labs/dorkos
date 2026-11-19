@@ -344,6 +344,7 @@ export function describeServiceAction(facts: ServiceActionFacts): ApprovalServic
     actionName: name(actionNameFromSlug(facts.operationSlug, facts.toolkit)),
     ...(recipients.lines.length > 0 ? { recipients: recipients.lines } : {}),
     ...(recipients.cut > 0 ? { recipientsCut: recipients.cut } : {}),
+    ...(recipients.shortened > 0 ? { recipientsShortened: recipients.shortened } : {}),
     details: shown,
     ...(more > 0 ? { moreDetails: more } : {}),
     ...(glanceIsWhole ? {} : { everything: everything.lines }),

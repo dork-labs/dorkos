@@ -272,11 +272,13 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
   // A paid run (DOR-4204 spec §4): money on the card, Allow once only.
   const spend = approval.serviceAction?.spend;
   const spendLineId = useId();
-  const heading = approval.cannotAllow
-    ? `${approval.packageLabel ?? 'This package'} wants to run commands`
-    : spend
-      ? 'Run a paid action'
-      : (approval.serviceAction?.actionName ?? approval.capabilityTitle);
+  // A send that hides a recipient is decline-only too (DOR-4592); it keeps its action's name.
+  const heading =
+    approval.cannotAllow && !approval.serviceAction
+      ? `${approval.packageLabel ?? 'This package'} wants to run commands`
+      : spend
+        ? 'Run a paid action'
+        : (approval.serviceAction?.actionName ?? approval.capabilityTitle);
   const areaLabel = approval.area ? (getPermissionArea(approval.area)?.label ?? null) : null;
   // A floor area never offers Always allow, and says why; every other reason it
   // is absent needs no sentence (see the component docblock).
@@ -357,6 +359,14 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
                 </Badge>
               )}
           </div>
+          {/* A send that hides a recipient can only be declined, and still shows
+              who it was going to and why it can't be allowed (DOR-4592). */}
+          {approval.cannotAllow && approval.serviceAction && (
+            <ApprovalServiceAction
+              action={approval.serviceAction}
+              destructive={approval.tier === 'destructive'}
+            />
+          )}
           {!approval.cannotAllow && (
             <>
               {/* An extension's tool says which extension it is from (DOR-2685),
@@ -510,7 +520,8 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
             </AskCard.Receipt>
           ) : (
             <>
-              {approval.cannotAllow && (
+              {/* A send says which recipient it can't show, beside its list (DOR-4592). */}
+              {approval.cannotAllow && !approval.serviceAction && (
                 <p className="text-muted-foreground max-w-xs text-xs">
                   {"This request can't be shown in full, so it can't be allowed yet."}
                 </p>
@@ -609,7 +620,11 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
                     )
                   }
                 >
-                  {approval.cannotAllow ? 'Decline' : onWifi ? 'Deny' : 'Don’t allow'}
+                  {approval.cannotAllow && !approval.serviceAction
+                    ? 'Decline'
+                    : onWifi
+                      ? 'Deny'
+                      : 'Don’t allow'}
                 </Button>
               </AskCard.Actions>
             </>

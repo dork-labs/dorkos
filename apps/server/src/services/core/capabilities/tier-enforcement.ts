@@ -106,10 +106,11 @@
 
 import type { ApprovalRequiredPayload } from './approval-required-payload.js';
 import type { ActionConsent, CapabilitySource, CapabilityTier } from '@dorkos/shared/capabilities';
-import type {
-  ApprovalOrigin,
-  ApprovalServiceAction,
-  ApprovalSubject,
+import {
+  serviceActionArgumentText,
+  type ApprovalOrigin,
+  type ApprovalServiceAction,
+  type ApprovalSubject,
 } from '@dorkos/shared/approval-schemas';
 import type { PermissionAreaId, PermissionSource } from '@dorkos/shared/permissions';
 
@@ -678,14 +679,8 @@ export function describeGatedAttempt(
     ? `${JSON.stringify(renderRequesterLabel(identity.displayName || identity.agentPath))} `
     : 'An unidentified caller ';
   if (serviceAction) {
-    // Recipients first: they left the glance for their own list (DOR-4592), and this
-    // sentence is what the audit, notifications and a card without its action read.
-    const lines = [
-      ...(serviceAction.recipients ?? []).map(({ label, address }) => ({ label, value: address })),
-      ...serviceAction.details,
-    ]
-      .map(({ label, value }) => `${label}: ${JSON.stringify(value)}`)
-      .join(', ');
+    // Recipients first (DOR-4592): this sentence is what the audit and notifications read.
+    const lines = serviceActionArgumentText(serviceAction);
     return redactSecretsInText(
       `${who}wants to run "${serviceAction.actionName}" in ${serviceAction.serviceName} on ` +
         `${JSON.stringify(serviceAction.accountLabel)}${lines ? ` with ${lines}` : ''}`

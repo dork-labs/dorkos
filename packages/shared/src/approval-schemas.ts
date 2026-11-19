@@ -182,19 +182,22 @@ const HIDDEN_RECIPIENT_CHARACTERS = /[\p{Cc}\p{Cf}\u{2028}\u{2029}]/gu;
  * and again where the card is stored, so no producer's word is taken for it.
  *
  * @param text - The address, already swept for secrets.
+ * @returns The text to show, and whether the cap had to shorten it.
  */
-export function inertRecipientText(text: string): string {
+export function inertRecipientText(text: string): { text: string; shortened: boolean } {
   const shown = text.replace(
     HIDDEN_RECIPIENT_CHARACTERS,
     (ch) => `<U+${ch.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}>`
   );
-  if (shown.length <= APPROVAL_SERVICE_RECIPIENT_MAX_LENGTH) return shown;
+  if (shown.length <= APPROVAL_SERVICE_RECIPIENT_MAX_LENGTH) {
+    return { text: shown, shortened: false };
+  }
   let kept = '';
   for (const point of shown) {
     if (kept.length + point.length > APPROVAL_SERVICE_RECIPIENT_MAX_LENGTH - 1) break;
     kept += point;
   }
-  return `${kept}…`;
+  return { text: `${kept}…`, shortened: true };
 }
 
 /**
@@ -299,8 +302,14 @@ export const ApprovalServiceActionSchema = z
       .array(ApprovalServiceRecipientSchema)
       .max(APPROVAL_SERVICE_MAX_RECIPIENTS)
       .optional(),
-    /** How many recipients past {@link APPROVAL_SERVICE_MAX_RECIPIENTS} the card could not list. */
+    /**
+     * How many recipients past {@link APPROVAL_SERVICE_MAX_RECIPIENTS} the card
+     * could not list. With this or {@link recipientsShortened}, the card can only
+     * be declined: a person can't allow a send to someone they can't see.
+     */
     recipientsCut: z.number().int().min(1).optional(),
+    /** How many listed recipients were too long to show whole. */
+    recipientsShortened: z.number().int().min(1).optional(),
     /** The arguments, most important first: the action's own fields, then any others. */
     details: z.array(ApprovalServiceActionDetailSchema).max(APPROVAL_SERVICE_ACTION_MAX_DETAILS),
     /** How many more arguments there are than the card lists. */
@@ -341,6 +350,24 @@ export const ApprovalServiceActionSchema = z
 
 /** What a connected-app action would do, in words a person can decide on. */
 export type ApprovalServiceAction = z.infer<typeof ApprovalServiceActionSchema>;
+
+/**
+ * A connected-app action's arguments as one line for the summary sentence the
+ * audit, notifications and a card without its action read: every recipient
+ * first (DOR-4592), then the glance, each value JSON-quoted.
+ *
+ * @param action - The described action, or the two fields of it this reads.
+ */
+export function serviceActionArgumentText(
+  action: Pick<ApprovalServiceAction, 'recipients' | 'details'>
+): string {
+  return [
+    ...(action.recipients ?? []).map(({ label, address }) => ({ label, value: address })),
+    ...action.details,
+  ]
+    .map(({ label, value }) => `${label}: ${JSON.stringify(value)}`)
+    .join(', ');
+}
 
 /**
  * The heading a card, row or note gives an approval: the connected-app action

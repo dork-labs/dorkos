@@ -967,11 +967,27 @@ describe('a connected-app action says what it does (DOR-2504)', () => {
       expect(container.querySelector('[data-slot="approval-service-recipients"]')).not.toBeNull();
     });
 
+    it('a send that hides a recipient keeps its name and offers no Allow', () => {
+      renderCard({
+        ...connectorApproval({ ...gmailSend, recipientsShortened: 1 }),
+        cannotAllow: true,
+      });
+      expect(screen.getByText('Send email')).toBeInTheDocument();
+      expect(screen.queryByText(/wants to run commands/u)).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Allow' })).not.toBeInTheDocument();
+      // The card keeps its usual answer in its usual place, and no second "can't be shown" line.
+      expect(screen.getByRole('button', { name: 'Don’t allow' })).toBeInTheDocument();
+      expect(screen.queryByText(/can't be shown in full/u)).not.toBeInTheDocument();
+      expect(
+        screen.getByText('One address is too long to show, so this can’t be allowed.')
+      ).toBeInTheDocument();
+    });
+
     it('says plainly how many recipients it couldn’t list', () => {
       renderCard(connectorApproval({ ...gmailSend, recipientsCut: 3 }));
       expect(
         screen.getByText(
-          '3 more recipients aren’t shown. If you’re unsure who this sends to, don’t allow it.'
+          '3 more recipients aren’t shown, so this can’t be allowed. Ask for a smaller send.'
         )
       ).toBeInTheDocument();
     });
