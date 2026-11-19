@@ -7,15 +7,21 @@ import {
 } from '@dorkos/shared/local-browser';
 import { YourBrowserScanSchema } from '@dorkos/shared/your-browser';
 import { fetchJSON } from './http-client';
+import { createBrowserViewerMethods } from './browser-viewer-methods';
+import { resolveStableClientId } from './client-id';
 
 /** Local browser human controls, using the same authenticated origin as every app action. */
-export function createLocalBrowserMethods(baseUrl: string): LocalBrowserTransport {
+export function createLocalBrowserMethods(
+  baseUrl: string,
+  clientId: () => string = resolveStableClientId
+): LocalBrowserTransport {
   const request = <T>(path: string, body?: unknown): Promise<T> =>
     fetchJSON<T>(baseUrl, `/local-browser${path}`, {
       method: body === undefined ? 'GET' : 'POST',
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
   return {
+    ...createBrowserViewerMethods(baseUrl, clientId),
     scanYourBrowsers: async () =>
       YourBrowserScanSchema.parse(
         await fetchJSON(baseUrl, '/your-browser/scan', {

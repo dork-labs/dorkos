@@ -140,7 +140,7 @@ export class HttpTransport implements Transport {
     Object.assign(
       this,
       createComputerMethods(baseUrl, () => this.clientId),
-      createLocalBrowserMethods(baseUrl),
+      createLocalBrowserMethods(baseUrl, () => this.clientId),
       createTasksMethods(baseUrl),
       createRelayMethods(baseUrl, () => this.clientId),
       createMeshMethods(baseUrl),

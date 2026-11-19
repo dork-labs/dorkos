@@ -81,6 +81,7 @@ describe('the audit fallback, in the chain', () => {
     });
     app.get('/api/rooms', (c) => c.json([]));
     app.patch('/api/rooms/:id/read', (c) => c.json({ ok: true }));
+    app.post('/api/browser-viewers/:id/frame', (c) => c.body(null, 204));
     for (const path of CONVERSATION_PATHS) app.post(path, (c) => c.json({ ok: true }));
     fixtureTarget.mount(frontDoorListener(app));
   });
@@ -128,6 +129,13 @@ describe('the audit fallback, in the chain', () => {
   it('records nothing for reads, and nothing for marking something read', async () => {
     await request(server).get('/api/rooms');
     await request(server).patch('/api/rooms/01J9Z3K8M2Q4R6S7T8V9W0X1Y2/read');
+    expect(await rows()).toEqual([]);
+  });
+
+  it('keeps read-only frame polls out of the action ledger', async () => {
+    await request(server)
+      .post(`/api/browser-viewers/${'v'.repeat(43)}/frame`)
+      .send({ nonce: 'n'.repeat(43) });
     expect(await rows()).toEqual([]);
   });
 

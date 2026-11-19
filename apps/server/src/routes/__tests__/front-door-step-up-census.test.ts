@@ -190,6 +190,8 @@ const OTHER_FRONT_DOOR_CALLERS: Record<string, string> = {
   'computers.ts': 'Computer naming and removal; own separate owner checks.',
   'heartbeats.ts': 'Beat preferences and schedule ownership; no front-door credentials.',
   'local-browser.ts': 'Browser actions retain their existing person checks.',
+  'browser-viewers.ts':
+    'Local watch-only owner-session subscriptions and frame reads retain person checks; programs and API keys are refused. Subscribe adds no lasting grant and delete only narrows, so neither needs front-door step-up (N). No input or remote access is mounted.',
   'local-browser-profiles.ts': 'Browser profiles retain their existing person checks.',
   'local-browser-profile-removal.ts': 'Only removes access.',
   'your-browser.ts': 'Browser handoff retains its existing person checks.',

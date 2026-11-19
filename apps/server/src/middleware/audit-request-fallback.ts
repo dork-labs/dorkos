@@ -60,6 +60,7 @@ const CONVERSATION: readonly RegExp[] = [
  * seen; listing them keeps the log a record of actions.
  */
 const NOT_ACTIONS: readonly RegExp[] = [
+  /^\/api\/browser-viewers\/[^/]+\/frame$/,
   /\/devtools\/ingest$/,
   /\/preview$/,
   /\/previews$/,

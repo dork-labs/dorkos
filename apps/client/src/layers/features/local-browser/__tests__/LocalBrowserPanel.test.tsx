@@ -26,6 +26,9 @@ const transport = vi.hoisted(() => ({
   interruptSession: vi.fn(),
   getSession: vi.fn(),
   getAgentByPath: vi.fn(),
+  subscribeBrowserViewer: vi.fn(),
+  nextBrowserViewerFrame: vi.fn(),
+  closeBrowserViewer: vi.fn(),
 }));
 const navigate = vi.hoisted(() => vi.fn());
 vi.mock('@tanstack/react-router', async (importOriginal) => ({
@@ -95,6 +98,13 @@ beforeEach(() => {
   transport.getLocalBrowserState.mockResolvedValue(disconnected);
   transport.getLocalBrowserCapabilities.mockResolvedValue(capabilities);
   transport.openLocalBrowser.mockResolvedValue(connected);
+  transport.subscribeBrowserViewer.mockResolvedValue({
+    viewerId: 'v'.repeat(43),
+    nonce: 'n'.repeat(43),
+    binding: { chatId: 'chat-one', profileId: null, connectionId: 'owned', tabId: 'one' },
+  });
+  transport.nextBrowserViewerFrame.mockImplementation(() => new Promise(() => undefined));
+  transport.closeBrowserViewer.mockResolvedValue(undefined);
   // The holder chat's title and folder, and no agent there, unless a test says otherwise.
   transport.getSession.mockImplementation(async (id: string) => {
     if (id !== 'other-chat') throw new Error('not found');
@@ -105,6 +115,51 @@ beforeEach(() => {
 afterEach(() => {
   delete window.electronAPI;
   vi.restoreAllMocks();
+});
+
+describe('owner watch stream panel wiring', () => {
+  it('uses the stream for an agent window only when the server enables it', async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+    transport.getLocalBrowserCapabilities.mockResolvedValue({ ...capabilities, watchStream: true });
+    transport.getLocalBrowserState.mockResolvedValue(connected);
+    const view = mount();
+    await screen.findByText('Connecting to the browser…');
+    await waitFor(() =>
+      expect(transport.subscribeBrowserViewer).toHaveBeenCalledWith(
+        'chat-one',
+        expect.any(AbortSignal)
+      )
+    );
+    expect(
+      screen.queryByText('This page is in the separate browser window.')
+    ).not.toBeInTheDocument();
+    view.unmount();
+    await waitFor(() => expect(transport.closeBrowserViewer).toHaveBeenCalledTimes(1));
+  });
+
+  it('keeps the window bridge without opening a subscription when viewing is off', async () => {
+    transport.getLocalBrowserState.mockResolvedValue(connected);
+    mount();
+    await screen.findByText('This page is in the separate browser window.');
+    expect(transport.subscribeBrowserViewer).not.toHaveBeenCalled();
+  });
+
+  it('steps aside for the plain sign-in window and names the Mac step', async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+    transport.getLocalBrowserCapabilities.mockResolvedValue({ ...capabilities, watchStream: true });
+    transport.getLocalBrowserState.mockResolvedValue({
+      ...disconnected,
+      signIn: {
+        profileId: 'profile',
+        site: 'fixture.test',
+        status: 'open',
+        startedAt: '2026-11-19T12:00:00.000Z',
+      },
+    });
+    mount();
+    await screen.findByText('Finish signing in on your Mac');
+    expect(transport.subscribeBrowserViewer).not.toHaveBeenCalled();
+  });
 });
 
 /** Type into the Agent browser's address field and press Enter, as a person would. */

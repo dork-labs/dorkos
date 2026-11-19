@@ -17,6 +17,7 @@ import { refusalNotice } from '../lib/refusal-notice';
 import { BrowserPageArea } from './BrowserPageArea';
 import { RefusalNotice } from './RefusalNotice';
 import { PageAreaBlock } from './PageAreaBlock';
+import { BrowserViewer } from './BrowserViewer';
 
 /** The address of a new empty page. */
 export const EMPTY_PAGE = 'about:blank';
@@ -26,6 +27,8 @@ const EMPTY_PAGE_LINE = 'Type an address or a search above.';
 
 /** Props for {@link LocalBrowserView}. */
 export interface LocalBrowserViewProps {
+  /** The requested chat when the owner-only stream is enabled; absent preserves the window bridge. */
+  streamChatId?: string | null;
   /** The tab the person is looking at, or `null` before one is chosen (no chrome then). */
   tab: LocalBrowserState['tabs'][number] | null;
   /** The live browser connection, which the embedded page follows. */
@@ -77,6 +80,7 @@ export interface LocalBrowserViewProps {
  * the page never blinks out; with no still, the button keeps a plain hint.
  */
 export function LocalBrowserView({
+  streamChatId,
   tab,
   connectionId,
   embedded,
@@ -334,6 +338,13 @@ export function LocalBrowserView({
             )
           )}
         </BrowserPageArea>
+      ) : streamChatId ? (
+        <BrowserViewer
+          chatId={streamChatId}
+          connectionId={connectionId}
+          tabId={tab?.id ?? null}
+          visible={pageVisible}
+        />
       ) : (
         <PageAreaBlock>
           <p className="text-muted-foreground text-center text-sm">

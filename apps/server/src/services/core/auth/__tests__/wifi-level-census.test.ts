@@ -258,6 +258,9 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     'POST /api/step-up/:heldActionId/password',
   ],
   'Already this computer only: the route refuses every other caller': [
+    'POST /api/browser-viewers',
+    'POST /api/browser-viewers/:viewerId/frame',
+    'DELETE /api/browser-viewers/:viewerId',
     'POST /api/system/shell-check/continue',
     'POST /api/desktop/sign-in',
     'POST /api/person-session',
@@ -299,6 +302,7 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
  * Their writes are listed one by one; the few handlers are named.
  */
 const MOUNTS: Readonly<Record<string, string>> = {
+  'ALL /api/browser-viewers/*': 'Group middleware; owner session on this computer only.',
   'ALL /api/admin/*': 'Group middleware; its writes are refused one by one.',
   'ALL /api/auth/*': 'Better Auth; its key, password and sign-out writes are refused by path.',
   'ALL /api/person-session/*': 'The owner’s step-up; its one write is listed.',
