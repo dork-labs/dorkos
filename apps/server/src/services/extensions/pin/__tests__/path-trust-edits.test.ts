@@ -46,6 +46,11 @@ describe('notePathTrustEdits', () => {
     unpin: (id: string) => {
       delete approvals.approvedSources[id]!.digest;
     },
+    // The level rule alone: every edit here is its author's own unheld one
+    // (who wrote it is `path-trust-edit-tracing.test.ts`).
+    filesOf: async () => ({}),
+    tiedToAuthor: () => true,
+    markTrusted: () => undefined,
   };
   const scan = (digest: string) => notePathTrustEdits([copyAt(digest)], approvals, dorkHome, deps);
   /** Whether this copy's files may run under the approval as it stands. */
@@ -177,7 +182,12 @@ describe('notePathTrustEdits', () => {
     const saved = JSON.parse(
       await fs.readFile(path.join(dorkHome, 'extension-data', 'path-trust-seen.json'), 'utf8')
     );
-    expect(saved).toEqual({ digests: { desk: 'sha256:2' }, below: [] });
+    expect(saved).toEqual({
+      digests: { desk: 'sha256:2' },
+      below: [],
+      untied: [],
+      trusted: { desk: { digest: 'sha256:2', files: {} } },
+    });
     expect(emit).toHaveBeenCalledTimes(1);
   });
 

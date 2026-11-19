@@ -243,6 +243,12 @@ export const PAID_BY_DEFAULT_TOOLKITS: ReadonlySet<string> = new Set([
   'verifi_email',
   'webscraper_io',
   'zoominfo',
+  // Pay per call from a prepaid wallet, reads included (DOR-4624, Security Nov 17).
+  'strale',
+  // Plants trees at a price each (DOR-4624, Security Nov 18).
+  'digital_humani',
+  // Nearly every meme and video render is a paid job (DOR-4624, Security Nov 19).
+  'memelord',
   // Not in the Composio catalog today; kept so a matching name never reads as free.
   'anthropic',
   'browserbase',
@@ -264,6 +270,9 @@ export const REVIEWED_FREE_OPERATIONS: ReadonlySet<string> = new Set();
  */
 export const PAID_OPERATION_PATTERNS: ReadonlyMap<string, RegExp> = new Map([
   ['github', /^GITHUB_\w*INFERENCE/],
+  // Starting a song spends a prepaid song credit; preparing one and buying
+  // credits through a checkout link spend nothing (DOR-4624, Security Nov 19).
+  ['words_into_music', /^WORDS_INTO_MUSIC_START_SONG/],
 ]);
 
 /**

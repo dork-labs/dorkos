@@ -6,6 +6,7 @@ import path from 'path';
 import type { UserConfig } from '@dorkos/shared/config-schema';
 import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 import {
+  claudeCliConfigFile,
   claudeConfigDirEnv,
   describeClaudeCodeAccounts,
   resolveActiveClaudeRoot,
@@ -730,5 +731,26 @@ describe('claudeConfigDirEnv (spec claude-code-accounts D8)', () => {
     expect(claudeConfigDirEnv(`${path.join(os.homedir(), '.claude')}/`)).toEqual({
       CLAUDE_CONFIG_DIR: undefined,
     });
+  });
+});
+
+describe('claudeCliConfigFile', () => {
+  it('names the home folder file for the default ~/.claude, as the CLI does', () => {
+    expect(claudeCliConfigFile(path.join(os.homedir(), '.claude'))).toBe(
+      path.join(os.homedir(), '.claude.json')
+    );
+    // Another spelling of the same folder is still the default.
+    expect(claudeCliConfigFile(`${path.join(os.homedir(), '.claude')}/`)).toBe(
+      path.join(os.homedir(), '.claude.json')
+    );
+  });
+
+  it('names the file inside any other account folder', () => {
+    expect(claudeCliConfigFile('/made-up/accounts/.claude-work')).toBe(
+      '/made-up/accounts/.claude-work/.claude.json'
+    );
+    expect(claudeCliConfigFile('~/.claude2')).toBe(
+      path.join(os.homedir(), '.claude2', '.claude.json')
+    );
   });
 });

@@ -116,7 +116,7 @@ export class SignInWindow {
     if (this.isHeld(profileFolder))
       throw new LocalBrowserError(
         'profile_busy',
-        'Close the browser using this profile, then try again.'
+        'Another Agent browser window is still open. Close it, then try again.'
       );
     const site = new URL(url).host;
     const attempt = ++this.attempt;
@@ -155,7 +155,7 @@ export class SignInWindow {
       this.attempt += 1;
       throw new LocalBrowserError(
         'profile_busy',
-        'Close the browser using this profile, then try again.'
+        'Another Agent browser window is still open. Close it, then try again.'
       );
     }
     return this.record!;

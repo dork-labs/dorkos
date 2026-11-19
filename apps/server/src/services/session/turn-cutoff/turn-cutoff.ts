@@ -25,9 +25,17 @@
  * the chat still shows the cutoff, because the history overlay reads the
  * durable record instead.
  *
+ * ## A stop by another chat
+ *
+ * `chat_stop` and a message sent with `delivery: 'interrupt'` end a turn the
+ * same way, and the runtime records them in the same person's voice
+ * (DOR-4668). The chat-message service owes the same note for them, naming
+ * another chat as the one that stopped it. The note is owed BEFORE the stop:
+ * the turn ending releases the next message at once, and that turn must carry it.
+ *
  * @module services/session/turn-cutoff/turn-cutoff
  */
-import type { TurnCutoffData } from '@dorkos/shared/additional-context';
+import type { StalledTurnCutoff, TurnCutoffData } from '@dorkos/shared/additional-context';
 import { primaryOf } from '../resolution/session-key-registry.js';
 
 /** Notes owed to each session's next turn, keyed by primary session id. */
@@ -50,7 +58,7 @@ function formatWindow(windowMs: number): string {
  *
  * @param cutoff - How long the turn was quiet, and whether it ever started.
  */
-export function turnCutoffMessage(cutoff: TurnCutoffData): string {
+export function turnCutoffMessage(cutoff: StalledTurnCutoff): string {
   const window = formatWindow(cutoff.windowMs);
   return cutoff.neverStarted
     ? `DorkOS ended this turn: the agent didn't start within ${window}.`
@@ -64,28 +72,36 @@ export function turnCutoffMessage(cutoff: TurnCutoffData): string {
  * them in its own context and set them aside. Other runtimes word their
  * interrupt differently, and the quotes read there as what to ignore if seen.
  *
- * @param cutoff - How long the turn was quiet, and whether it ever started.
+ * @param cutoff - Who stopped the turn: the stall guard, or another chat.
  */
 export function formatTurnCutoff(cutoff: TurnCutoffData): string {
+  const quoted = (by: string) =>
+    'Any "[Request interrupted by user]" or "The user doesn\'t want to proceed with this tool use" ' +
+    `at the end of that turn was written by ${by}, not by a person.`;
+  if ('stoppedBy' in cutoff) {
+    const what =
+      cutoff.via === 'interrupt'
+        ? "Another chat's agent stopped your last turn to deliver the message in this turn."
+        : "Another chat's agent stopped your last turn with chat_stop.";
+    return `${what} No person stopped it, and nobody declined anything. ${quoted('this stop')}`;
+  }
   const window = formatWindow(cutoff.windowMs);
   const what = cutoff.neverStarted
     ? `DorkOS ended your last turn because it didn't start within ${window}.`
     : `DorkOS stopped your last turn after ${window} with no activity.`;
   return (
-    `${what} No person stopped it, and nobody declined anything. ` +
-    'Any "[Request interrupted by user]" or "The user doesn\'t want to proceed with this tool use" ' +
-    'at the end of that turn was written by this cutoff, not by a person. ' +
+    `${what} No person stopped it, and nobody declined anything. ${quoted('this cutoff')} ` +
     'Carry on with your work; check on anything that was running when it stopped.'
   );
 }
 
 /**
- * Record that the stall guard ended a turn, so the session's next turn is told.
- * A second cutoff before that turn replaces the first: the latest is what the
- * agent needs.
+ * Record that the stall guard or another chat ended a turn, so the session's
+ * next turn is told. A second cutoff before that turn replaces the first: the
+ * latest is what the agent needs.
  *
  * @param sessionId - Any id the session is known by.
- * @param cutoff - How long the turn was quiet, and whether it ever started.
+ * @param cutoff - Who stopped the turn, and for the stall guard, how long it was quiet.
  */
 export function noteTurnCutoff(sessionId: string, cutoff: TurnCutoffData): void {
   owed.set(primaryOf(sessionId), cutoff);
@@ -115,6 +131,18 @@ export function takeTurnCutoff(sessionId: string): TurnCutoffData | null {
 export function restoreTurnCutoff(sessionId: string, cutoff: TurnCutoffData): void {
   const key = primaryOf(sessionId);
   if (!owed.has(key)) owed.set(key, cutoff);
+}
+
+/**
+ * Take back a note owed ahead of a stop that turned out to stop nothing,
+ * unless a turn has taken it or a newer note replaced it since.
+ *
+ * @param sessionId - Any id the session is known by.
+ * @param cutoff - The note that was owed, by identity.
+ */
+export function withdrawTurnCutoff(sessionId: string, cutoff: TurnCutoffData): void {
+  const key = primaryOf(sessionId);
+  if (owed.get(key) === cutoff) owed.delete(key);
 }
 
 /**

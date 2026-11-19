@@ -246,6 +246,9 @@ export const AGENT_FOLDER_SECRET_PATHS = group(
  * - `extension-snapshots/` holds the approved files an extension runs from,
  *   and `cache/extensions/` the bundles built from them (DOR-3068). An agent
  *   that could rewrite either could run code nobody approved.
+ * - `extension-data/path-trust-seen.json` (and its temp files beside it) holds the
+ *   files each agent's own mini app may run as without a person (DOR-4528). An
+ *   agent that could rewrite it could make unseen code read as its own edit.
  * - `cache/shell-guard/` holds the development child that checks shell commands.
  *   Rewriting it could disable that check for every agent (DOR-3300).
  * - `marketplace/` holds what DorkOS's installer recorded, `project-installs.json`
@@ -278,6 +281,7 @@ export const PERSON_ONLY_DATA_PATHS: readonly ProtectedPath[] = [
     ['session-relay', 'folder'],
     ['extension-snapshots', 'folder'],
     ['cache/extensions', 'folder'],
+    ['extension-data/path-trust-seen.json*', 'file'],
     ['cache/shell-guard', 'folder'],
     ['marketplace', 'folder'],
     ['plugins', 'folder'],

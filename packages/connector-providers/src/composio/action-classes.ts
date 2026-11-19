@@ -74,6 +74,8 @@ export const MONEY_TOOLKITS: ReadonlySet<string> = new Set([
   'flutterwave',
   'fraudlabs_pro',
   'freshbooks',
+  // Tops up and redeems gift card balances (DOR-4624, Security Nov 18).
+  'gift_up',
   'gocardless_mcp',
   'gorgias',
   'gorilladesk',
@@ -88,6 +90,8 @@ export const MONEY_TOOLKITS: ReadonlySet<string> = new Set([
   'linq',
   'maxio',
   'memberstack',
+  // Usage billing: most writes change what customers are charged (DOR-4624, Security Nov 18).
+  'metronome',
   'mindbody',
   'moonclerk',
   'netsuite',
@@ -97,7 +101,14 @@ export const MONEY_TOOLKITS: ReadonlySet<string> = new Set([
   'paypal',
   'paystack',
   'plaid',
+  // A payments platform: orders, checkouts, refunds, prices and metered usage (DOR-4624).
+  'polar',
+  // Mails physical cheques (DOR-4624, Security Nov 18).
+  'postgrid',
   'quickbooks',
+  // Issues cards, sets limits and releases bill payments (DOR-4624, Security Nov 18).
+  // The sibling-suffix rule only strips a suffix, so `ramp_mcp` never covered it.
+  'ramp',
   'ramp_mcp',
   'razorpay',
   'recurly',
@@ -125,6 +136,8 @@ export const MONEY_TOOLKITS: ReadonlySet<string> = new Set([
   'zoho_invoice',
   'zoho_books',
   // Shopping.
+  // No actions in the Composio catalog (checked 2026-11-18); kept so it fails closed
+  // if the app comes back (DOR-4624, Security Nov 18).
   'amazon',
   'baselinker',
   'cloudcart',
@@ -278,8 +291,34 @@ function isRepositoryPersistenceName(toolkit: string, slug: string): boolean {
   return false;
 }
 
+/**
+ * Single actions outside money apps that spend or move money (DOR-4624,
+ * Security Nov 18). They stay one-by-one picks whatever their catalog hints say.
+ */
+const MONEY_EXACT_ACTIONS = exactActions([
+  'ELASTIC_EMAIL_ADJUST_SUBACCOUNT_CREDITS',
+  'GOOGLEBIGQUERY_CREATE_CAPACITY_COMMITMENT',
+  // Its settings can switch on automatic payroll runs.
+  'GUSTO_UPDATE_PAY_SCHEDULE',
+  'KEIKI_MCP_POST_IDENTITIES_PHONE_CALLS',
+  'KERNEL_MCP_MANAGE_VAULT_CARDS',
+  'MEMELORD_SWAP_VIDEO_SUBJECT_WITH_GENJUTSU',
+  // Loyalty credits can usually be redeemed for value.
+  'PIGGY_CREATE_CREDIT_RECEPTION',
+  'PROABONO_BILL_CUSTOMER',
+  'RILLET_CREATE_A_REIMBURSEMENT',
+  'RIZE_CREATE_CARD',
+  'SENDGRID_ADD_A_TWILIO_SEND_GRID_IP_ADDRESS',
+  'SMARTHR_CREATE_PAYROLL',
+  'SMARTHR_FINALIZE_PAYROLL',
+  'SPLICE_MCP_DOWNLOAD_ASSET',
+  'WORKDAY_CREATE_PAYROLL_INPUTS',
+]);
+
 /** Exact reach exceptions retained from the dated catalog when a family is insufficient. */
 const ACCOUNT_REACH_ACTIONS = exactActions([
+  // Manages stored payment cards: card data is a secret too (DOR-4624, Security Nov 18).
+  'KERNEL_MCP_MANAGE_VAULT_CARDS',
   'GITHUB_UPLOAD_RELEASE_ASSET',
   'GITHUB_UPDATE_A_RELEASE_ASSET',
   'GOOGLECALENDAR_ACL_INSERT',
@@ -404,7 +443,8 @@ const PEOPLE_REACH =
 const SECURITY_CONTROLS =
   /PROTECTION|RESTRICT|RULESET|ALLOWED_ACTIONS|GIT_?HUB_ACTIONS|WORKFLOW|CODE_SCANNING|VULN|INTERACTION|SECURITY|LFS|CUSTOM_PROPERT|_VARIABLE|ENVIRONMENT|DEPLOYMENT_BRANCH_POLICY|AUTHORIZATION|DEFAULT_BRANCH/;
 const MONEY_ACTIONS =
-  /SPONSOR|CODESPACE|PAYMENT|CHARGE|REFUND|INVOICE|PAYOUT|PURCHASE|ORDER|BILLING|CHECKOUT|PRICE|DONAT|_AD(?:_|$)|CAMPAIGN|BUDGET|BID|BOOST|CRYPTO|WITHDRAW|TRADE|BUY|SEND_MONEY/;
+  // PAYROLL and REIMBURSE catch a new payroll action in any app (DOR-4624, Security Nov 18).
+  /SPONSOR|CODESPACE|PAYMENT|CHARGE|REFUND|INVOICE|PAYOUT|PURCHASE|ORDER|BILLING|CHECKOUT|PRICE|DONAT|_AD(?:_|$)|CAMPAIGN|BUDGET|BID|BOOST|CRYPTO|WITHDRAW|TRADE|BUY|SEND_MONEY|PAYROLL|REIMBURSE/;
 const IRREVERSIBLE_ACTIONS =
   /PURGE|WIPE|RESET|REVOKE|CANCEL|EMPTY|FORCE|DESTROY|TERMINATE|PERMANENT|^GIT_?HUB_UPDATE_A_REFERENCE$/;
 const DELETE_ACTIONS = /DELETE|REMOVE|(?<!UN)TRASH|(?<!UN)ARCHIVE|_LEAVE(?:_|$)|CLOSE_DM/;
@@ -490,6 +530,7 @@ export function classifyComposioAction(
   slug = normalizeSlug(slug);
   if (!/^[A-Z0-9_]+$/.test(slug)) return 'destructive';
   if (REPOSITORY_PERSISTENCE_ACTIONS.has(exactKey(slug))) return 'destructive';
+  if (MONEY_EXACT_ACTIONS.has(exactKey(slug))) return 'destructive';
   const classification = classifyComposioTags(tags);
   if (classification === 'read') return classification;
   if (

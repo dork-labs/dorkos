@@ -28,7 +28,7 @@ import { CODEX_DORKOS_TOOL_PREFIX } from '../shared/dorkos-tool-names.js';
 function buildBrowserToolsBlock(prefix: string): string {
   return `<browser_tools>
 In a Codex chat, use the browser tools DorkOS gives you. Codex can’t start its own browser on macOS.
-The Agent browser, a website a person shares with this chat: ${prefix}local_browser_observe, then ${prefix}local_browser_act.
+The Agent browser, a website a person shares with this chat: ${prefix}local_browser_observe, then ${prefix}local_browser_act. It works only in a direct chat; in a room, ask the person to continue in a direct chat with you.
 A preview DorkOS serves: ${prefix}browser_read_page, then ${prefix}browser_click and ${prefix}browser_type.
 </browser_tools>`;
 }

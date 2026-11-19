@@ -26,7 +26,7 @@ import { installFolderDigest } from '../../marketplace/lib/install-digest.js';
 import { isRuntimeStatePath } from '../../marketplace/lib/content-hash.js';
 import { fileSha256Hex } from '../../marketplace/lib/records/tree-scan.js';
 import { installRootOf } from '../extension-trusted-origin.js';
-import { snapshotRootOf } from './extension-snapshots.js';
+import { ensureSnapshot, snapshotRootOf } from './extension-snapshots.js';
 import { grantsDigestOf, keepsPathTrust } from './extension-path-trust.js';
 import {
   approvedSourceOf,
@@ -170,6 +170,36 @@ async function filesOf(root: string): Promise<Map<string, CoveredEntry>> {
   };
   await visit('', root);
   return files;
+}
+
+/**
+ * The content of every file and link a copy's digest covers, read from a verified snapshot of
+ * exactly `digest`, so the files read are the files that digest names: `sha256:<hex>` for a file,
+ * `link:<target>` for a link, `other` for anything else, by relative path (DOR-4528).
+ *
+ * @param dorkHome - DorkOS's data directory.
+ * @param copy - The extension record.
+ * @param digest - The digest whose files to read.
+ * @returns The contents, or null when the folder no longer holds those files or cannot be read.
+ */
+export async function verifiedFilesOf(
+  dorkHome: string,
+  copy: DigestedCopy,
+  digest: string
+): Promise<Record<string, string> | null> {
+  try {
+    const root = await ensureSnapshot(dorkHome, digestRootOf(copy), digest);
+    if (!root) return null;
+    const out: Record<string, string> = {};
+    for (const [rel, entry] of await filesOf(root)) {
+      if (entry.link !== undefined) out[rel] = `link:${entry.link}`;
+      else if (entry.size < 0) out[rel] = 'other';
+      else out[rel] = `sha256:${await fileSha256Hex(entry.abs)}`;
+    }
+    return out;
+  } catch {
+    return null;
+  }
 }
 
 /**

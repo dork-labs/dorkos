@@ -1,5 +1,11 @@
 name: typecheck
 
+# ALSO A CLOCK (DOR-4706). arm-door.yml, the local arm script and the release
+# range check date a PR's head by this workflow's latest `pull_request` run, by
+# its exact path. Keep the name `typecheck.yml`, no `paths:` filter, and the
+# default `pull_request` types (never `labeled`: adding Security's label would
+# then make every label look stale). Change all three readers if this moves.
+#
 # Type-checks every package that declares a `typecheck` script, on every PR
 # and in the merge queue. See the KNOWN GAPS note below for what this does not
 # cover. (The formatting gate that used to ride this workflow moved to
