@@ -73,6 +73,18 @@ export function actionWords(toolkit: string, slug: string): string {
 }
 
 /**
+ * The words of a description that say money moves, or `''` when none do. The
+ * snapshot keeps only these words, never the whole description: vendor
+ * descriptions quote prices, and the public repo's boundary gate (BND-301)
+ * rightly refuses a money amount beside a plan-shaped word.
+ *
+ * @param description - Composio's description of the action.
+ */
+export function moneyDescriptionPhrase(description: string): string {
+  return MONEY_DESCRIPTION.exec(description)?.[0] ?? '';
+}
+
+/**
  * Whether an action's name or description says it may move money, by the
  * tight matcher. A match is a candidate for review, not a verdict.
  *

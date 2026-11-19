@@ -30,7 +30,8 @@ import { matchesMoneyWords } from './helpers/money-words.js';
 interface CandidateRow {
   slug: string;
   tags: string[];
-  description: string;
+  /** The description words that matched, or `''`; the full text is never kept. */
+  descriptionMatch: string;
 }
 
 const snapshot = JSON.parse(
@@ -61,7 +62,8 @@ describe('money-word matches stay one-by-one picks or have a reason (DOR-4624)',
     const misfits = rows
       .filter(
         (row) =>
-          !matchesMoneyWords(row.slug, row.description, row.toolkit) || classify(row) === 'read'
+          !matchesMoneyWords(row.slug, row.descriptionMatch, row.toolkit) ||
+          classify(row) === 'read'
       )
       .map((row) => `${row.toolkit} ${row.slug}`);
     expect(misfits).toEqual([]);

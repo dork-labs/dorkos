@@ -4,7 +4,8 @@
 // pins (DOR-4624). It lists every Composio app's actions, keeps each one whose
 // name or description says it may move money (the shared tight matcher in
 // __tests__/helpers/money-words.ts) and that is not a read, and writes them,
-// sorted by app then action, with their safety hints and full descriptions.
+// sorted by app then action, with their safety hints and the description
+// words that matched (never the full description, which can quote prices).
 //
 // Makes read-only catalog calls only: `composio dev toolkits list` to find the
 // apps and `composio tools list <app>` for their actions. It never runs an
@@ -22,7 +23,10 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs, promisify } from 'node:util';
 import { format, resolveConfig } from 'prettier';
 import { classifyComposioAction } from '../packages/connector-providers/src/composio/action-classes.ts';
-import { matchesMoneyWords } from '../packages/connector-providers/src/composio/__tests__/helpers/money-words.ts';
+import {
+  matchesMoneyWords,
+  moneyDescriptionPhrase,
+} from '../packages/connector-providers/src/composio/__tests__/helpers/money-words.ts';
 
 const run = promisify(execFile);
 const { values, positionals } = parseArgs({
@@ -114,7 +118,9 @@ for (const toolkit of Object.keys(catalog).sort()) {
     const description = action.description ?? '';
     if (!matchesMoneyWords(action.slug, description, toolkit)) continue;
     if (classifyComposioAction(toolkit, action.slug, tags) === 'read') continue;
-    rows.push({ slug: action.slug, tags, description });
+    // Only the words that matched, never the full description: vendor
+    // descriptions quote prices, which the boundary gate refuses (BND-301).
+    rows.push({ slug: action.slug, tags, descriptionMatch: moneyDescriptionPhrase(description) });
   }
   if (rows.length) {
     toolkits[toolkit] = rows.sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
