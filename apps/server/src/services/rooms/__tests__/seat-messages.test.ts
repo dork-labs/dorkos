@@ -1921,4 +1921,43 @@ describe('batch target checks (DOR-4722)', () => {
     );
     expect(seatBatchStillCurrent(core(), [item(bridged, false), item(forged, false)])).toBe(false);
   });
+
+  // Every field currentSeatMessageTarget compares. A field missing from seatTargetKey would
+  // let the stale copy share the real target's key and skip its own check.
+  const comparedFields: [
+    string,
+    (t: SeatMessagePending['target']) => SeatMessagePending['target'],
+  ][] = [
+    ['sessionId', (t) => ({ ...t, sessionId: 'not-a-seat' })],
+    ['roomId', (t) => ({ ...t, roomId: 'other-room' })],
+    ['authorId', (t) => ({ ...t, authorId: 'other-author' })],
+    ['joinedAt', (t) => ({ ...t, joinedAt: '2000-01-01T00:00:00.000Z' })],
+    ['agentPath', (t) => ({ ...t, agentPath: '/agents/other' })],
+    [
+      'bridgeOwnership.bindingId',
+      (t) => ({ ...t, bridgeOwnership: { ...t.bridgeOwnership!, bindingId: 'x' } }),
+    ],
+    [
+      'bridgeOwnership.adapterId',
+      (t) => ({ ...t, bridgeOwnership: { ...t.bridgeOwnership!, adapterId: 'x' } }),
+    ],
+    [
+      'bridgeOwnership.chatId',
+      (t) => ({ ...t, bridgeOwnership: { ...t.bridgeOwnership!, chatId: 'x' } }),
+    ],
+  ];
+
+  it.each(comparedFields)(
+    'M9: a stale %s behind a current target refuses, matching the per-item answer',
+    (_field, mutate) => {
+      bridgeRoom();
+      const real = seatInbox!.resolveSeatTarget('seat-chat')!;
+      expect(real.bridgeOwnership).toBeDefined();
+      // Solicited items, so the bridged room's unsolicited refusal cannot mask the seat check.
+      const batch = [item(real, false), item(mutate(real), false)];
+      expect(perItem(batch)).toBe(false);
+      expect(seatBatchStillCurrent(core(), batch)).toBe(perItem(batch));
+      expect(seatBatchStillCurrent(core(), [item(real, false), item(real, false)])).toBe(true);
+    }
+  );
 });

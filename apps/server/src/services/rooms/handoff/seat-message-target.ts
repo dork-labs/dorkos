@@ -42,7 +42,12 @@ export function resolveSeatMessageTarget(
   };
 }
 
-/** A removed/recreated binding cannot inherit admission, even when joinedAt is unchanged. */
+/**
+ * A removed/recreated binding cannot inherit admission, even when joinedAt is unchanged.
+ *
+ * Any field compared here must also be in {@link seatTargetKey}, or {@link seatBatchStillCurrent}
+ * would treat a stale target as already checked and let it through.
+ */
 export function currentSeatMessageTarget(
   core: RoomCore,
   expected: SeatMessageTarget
