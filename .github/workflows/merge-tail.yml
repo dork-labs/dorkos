@@ -39,7 +39,8 @@ name: merge-tail
 #
 # WHOSE KEY IT HOLDS: the `dorkos-merge-tail` GitHub App (client id in the
 # `MERGE_TAIL_APP_CLIENT_ID` secret, key in the `MERGE_TAIL_APP_PRIVATE_KEY`
-# secret). It can write code and pull requests and read checks, and it has NO
+# secret, both only in the `automation` environment, which deploys only
+# `main`, DOR-4030). It can write code and pull requests and read checks, and it has NO
 # Administration permission, so this workflow cannot edit the ruleset or bypass
 # the merge queue (contributing/ci.md: "no admin credential in Actions"). It
 # replaced `MERGE_TAIL_TOKEN`, an admin's `repo`-scoped PAT that could do both.
@@ -76,12 +77,15 @@ permissions:
 jobs:
   arm:
     runs-on: ubuntu-latest
+    # The App key lives only in the `automation` environment (DOR-4030), which
+    # deploys only `main`: this schedule, and a manual run from main.
+    environment: automation
     # Measured, not guessed (CI Steward phase 0, 2026-09-19): 299 completed
     # runs over 2026-08-22..09-19, p95 0.67 min, max 1.45. Ceiling =
     # max(10, ceil(3 x p95)). Raise it only with new data and a ci/ledger entry.
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Never GITHUB_TOKEN for this job. GitHub suppresses workflow runs for
       # events its own token triggered, and enqueueing is such an event: a merge
@@ -93,7 +97,7 @@ jobs:
       # instead of jamming the queue.
       - name: Mint the merge-tail app token
         id: app-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           # The client id is a secret, not a variable, on purpose: repo secrets
           # are proven to reach Dependabot's pull_request_target runs; vars.* there is not.
