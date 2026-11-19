@@ -43,7 +43,7 @@ export function LoadGateQueueCard({ className }: LoadGateQueueCardProps) {
           <p className="text-muted-foreground mt-0.5 text-xs">
             They start when the computer is less busy.
           </p>
-          <ol className="divide-border mt-2 divide-y">
+          <ol className="mt-1">
             {jobs.map((job) => (
               <LoadGateJobRow key={job.id} job={job} now={now} onDone={setAnnouncement} />
             ))}

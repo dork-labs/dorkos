@@ -21,7 +21,10 @@ interface LoadGateJobRowProps {
   onDone: (announcement: string) => void;
 }
 
-/** The three buttons, in the order they show. Let through is the main one. */
+/**
+ * The three buttons, in the order they show. All are secondary: a list of rows
+ * has no one main action, so no row shouts (design review, Nov 19).
+ */
 const ACTIONS: readonly { action: LoadGateJobAction; text: string; busy: string }[] = [
   { action: 'let-through', text: 'Let through', busy: 'Starting…' },
   { action: 'urgent', text: 'Urgent', busy: 'Marking…' },
@@ -55,7 +58,7 @@ export function LoadGateJobRow({ job, now, onDone }: LoadGateJobRowProps) {
     );
 
   return (
-    <li className="flex flex-col gap-2 py-2.5 @min-[36rem]/queue:flex-row @min-[36rem]/queue:items-center @min-[36rem]/queue:gap-4">
+    <li className="flex flex-col gap-2 py-3 @min-[36rem]/queue:flex-row @min-[36rem]/queue:items-center @min-[36rem]/queue:gap-4">
       <div className="flex min-w-0 flex-1 items-baseline gap-3">
         <span className="text-muted-foreground w-5 shrink-0 text-right text-xs tabular-nums">
           {job.position}
@@ -83,7 +86,7 @@ export function LoadGateJobRow({ job, now, onDone }: LoadGateJobRowProps) {
           <Button
             key={action}
             size="sm"
-            variant={action === 'let-through' ? 'primary' : 'secondary'}
+            variant="secondary"
             aria-label={labels[action]}
             disabledReason={disabledReason(job, action)}
             loading={act.isPending && act.variables?.action === action}

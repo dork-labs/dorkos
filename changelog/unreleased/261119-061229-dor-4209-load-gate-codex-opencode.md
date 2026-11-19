@@ -5,6 +5,7 @@ covers:
   - 'feat(load-gate): a person sees the waiting heavy jobs and can let one through (DOR-4209)'
   - 'fix(load-gate): the waiting-jobs card fits a phone and a narrow panel (DOR-4209)'
   - "fix(load-gate): review fixes for the person's view of the waiting line (DOR-4209)"
+  - 'fix(load-gate): calmer waiting-jobs rows: no main button, no lines (DOR-4209)'
 ---
 
 ### Added
