@@ -29065,6 +29065,16 @@
                     },
                     "code": {
                       "type": "string"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_SESSION",
+                        "NO_RECORDED_FOLDER",
+                        "ROOT_MISMATCH",
+                        "FOLDER_GONE",
+                        "OUTSIDE_BOUNDARY"
+                      ]
                     }
                   },
                   "required": [
@@ -29087,6 +29097,16 @@
                     },
                     "code": {
                       "type": "string"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_SESSION",
+                        "NO_RECORDED_FOLDER",
+                        "ROOT_MISMATCH",
+                        "FOLDER_GONE",
+                        "OUTSIDE_BOUNDARY"
+                      ]
                     }
                   },
                   "required": [
@@ -29109,6 +29129,16 @@
                     },
                     "code": {
                       "type": "string"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_SESSION",
+                        "NO_RECORDED_FOLDER",
+                        "ROOT_MISMATCH",
+                        "FOLDER_GONE",
+                        "OUTSIDE_BOUNDARY"
+                      ]
                     }
                   },
                   "required": [
@@ -29445,6 +29475,16 @@
                     },
                     "code": {
                       "type": "string"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_SESSION",
+                        "NO_RECORDED_FOLDER",
+                        "ROOT_MISMATCH",
+                        "FOLDER_GONE",
+                        "OUTSIDE_BOUNDARY"
+                      ]
                     }
                   },
                   "required": [
@@ -29467,6 +29507,16 @@
                     },
                     "code": {
                       "type": "string"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_SESSION",
+                        "NO_RECORDED_FOLDER",
+                        "ROOT_MISMATCH",
+                        "FOLDER_GONE",
+                        "OUTSIDE_BOUNDARY"
+                      ]
                     }
                   },
                   "required": [
@@ -29489,6 +29539,16 @@
                     },
                     "code": {
                       "type": "string"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_SESSION",
+                        "NO_RECORDED_FOLDER",
+                        "ROOT_MISMATCH",
+                        "FOLDER_GONE",
+                        "OUTSIDE_BOUNDARY"
+                      ]
                     }
                   },
                   "required": [
@@ -29573,7 +29633,7 @@
             }
           },
           "404": {
-            "description": "Existing file not found",
+            "description": "Existing file not found, or the document save was refused; a refused save may name which check refused (DOR-4442)",
             "content": {
               "application/json": {
                 "schema": {
@@ -29584,6 +29644,16 @@
                     },
                     "code": {
                       "type": "string"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_SESSION",
+                        "NO_RECORDED_FOLDER",
+                        "ROOT_MISMATCH",
+                        "FOLDER_GONE",
+                        "OUTSIDE_BOUNDARY"
+                      ]
                     }
                   },
                   "required": [

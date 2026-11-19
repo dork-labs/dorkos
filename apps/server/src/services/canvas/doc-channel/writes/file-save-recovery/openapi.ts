@@ -2,11 +2,17 @@
 import { z } from 'zod';
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import {
+  DocSaveRefusalReasonSchema,
   FileSaveDiscoverySchema,
   FileSaveRecoverBodySchema,
   FileSaveRecoverResultSchema,
 } from '@dorkos/shared/file-save/recovery';
-const refusal = z.object({ error: z.string(), code: z.string() });
+const refusal = z.object({
+  error: z.string(),
+  code: z.string(),
+  // Which check refused a 404, for the owner's own canvas (DOR-4442).
+  reason: DocSaveRefusalReasonSchema.optional(),
+});
 /** Register current-birth discovery and proof-only recovery API documentation. */
 export function registerFileSaveRecoveryOpenApi(registry: OpenAPIRegistry): void {
   const id = z.string().min(1).max(200);
