@@ -156,7 +156,7 @@ function writeStub(binDir: string, name: string, body: string): void {
  * Execute the real root `verify:checks` script while replacing its external commands
  * with deterministic stubs, returning the Turbo calls that reached the runner.
  */
-function captureVerifyTurboInvocations(): TurboInvocation[] {
+function captureVerifyTurboInvocations(script = 'verify:checks'): TurboInvocation[] {
   const fixtureDir = mkdtempSync(path.join(tmpdir(), 'dorkos-verify-gate-'));
   const capturePath = path.join(fixtureDir, 'turbo-calls.jsonl');
 
@@ -172,8 +172,8 @@ function captureVerifyTurboInvocations(): TurboInvocation[] {
 
     const scripts = JSON.parse(packageText) as { scripts?: Record<string, string> };
     // `pnpm verify` wraps `verify:checks` to record proof; the checks are what reach Turbo.
-    const verify = scripts.scripts?.['verify:checks'];
-    expect(verify, 'root package.json has no `verify:checks` script').toBeTypeOf('string');
+    const verify = scripts.scripts?.[script];
+    expect(verify, `root package.json has no \`${script}\` script`).toBeTypeOf('string');
 
     // eslint-disable-next-line no-restricted-syntax -- scripts/ has no env.ts; the fixture must preserve PATH while prepending its command stubs
     const inheritedEnv = process.env;
@@ -204,7 +204,8 @@ describe('local turbo --affected gates pin their diff base', () => {
   it('finds the call sites at all', () => {
     // Without this, every assertion below passes vacuously the day someone
     // renames a hook or the scanner stops matching — the exact way a guard
-    // dies quietly. TWO known sites today: pre-commit lint and `pnpm verify`.
+    // dies quietly. THREE known sites today: pre-commit lint, `pnpm verify` and
+    // `pnpm verify:preopen`'s typecheck and lint step (DOR-4728).
     // There were four until DOR-2160 removed the pre-push `tests` command,
     // whose measured runs either proved nothing or could not finish, and three
     // until pre-commit typecheck left the hook (ci/ledger/260919-175506-*),
@@ -218,6 +219,7 @@ describe('local turbo --affected gates pin their diff base', () => {
     expect(sites.map((s) => s.label).sort()).toEqual([
       'lefthook.yml pre-commit.lint',
       'package.json scripts.verify:checks',
+      'package.json scripts.verify:preopen:turbo',
     ]);
   });
 
@@ -276,6 +278,15 @@ describe('local turbo --affected gates pin their diff base', () => {
       },
       {
         args: ['run', 'test', '--affected', '--concurrency=1', '--', '--run'],
+        base: 'test-origin-main',
+      },
+    ]);
+  });
+
+  it('runs the preopen typecheck and lint through Turbo on the same pinned base', () => {
+    expect(captureVerifyTurboInvocations('verify:preopen:turbo')).toEqual([
+      {
+        args: ['run', 'typecheck', 'lint', '--affected'],
         base: 'test-origin-main',
       },
     ]);
