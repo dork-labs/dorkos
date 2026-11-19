@@ -175,6 +175,7 @@ const input = (commits: ReleaseBranchCommit[], onMain = [source], patch = sha('6
   isMainAncestor: (s: string) => onMain.includes(s),
   patchIdOf: (s: string) => (onMain.includes(s) ? patch : undefined),
   isInBase: (s: string) => s === sha('0'),
+  isRevertedOnMain: (s: string) => s === sha('e'),
 });
 const fullRelease = releaseCommit([
   { path: 'VERSION', status: 'M', before: '1.2.2\n', after: '1.2.3\n' },
@@ -216,6 +217,15 @@ describe('cherry-pick rule', () => {
     const old = sha('0');
     const stale = pick({ message: `fix: old (#1)\n\n(cherry picked from commit ${old})` });
     expect(checkReleaseCherryPicks(input([stale], [old]))[0]?.code).toBe('source-before-cut');
+  });
+  it('refuses a pick whose source main later reverted', () => {
+    const reverted = sha('e');
+    const pickOfReverted = pick({
+      message: `fix: x (#2)\n\n(cherry picked from commit ${reverted})`,
+    });
+    expect(checkReleaseCherryPicks(input([pickOfReverted], [reverted]))[0]?.code).toBe(
+      'source-reverted-on-main'
+    );
   });
   it('requires the release commit subject and VERSION', () => {
     const files = fullRelease.files;
@@ -367,14 +377,16 @@ describe('release-cli flags', () => {
     expect(parseReleaseBranchArgs([])).toBeUndefined();
     expect(parseReleaseBranchArgs(['--publish'])).toBeUndefined();
   });
-  it('parses a full routine or hotfix set', () => {
+  it('parses a full routine set', () => {
     expect(parseReleaseBranchArgs([...flags, '--root', '/tmp/r'])).toEqual({
       request: { branch, mode: 'routine', base: pin, expectedSha: head },
       root: '/tmp/r',
       rest: [],
     });
+  });
+  it('refuses hotfix mode while tags can be moved (Security M2)', () => {
     const hotfix = [...flags.slice(0, 3), 'hotfix', '--base', 'v1.2.2', '--expected-sha', head];
-    expect(parseReleaseBranchArgs(hotfix)?.request.mode).toBe('hotfix');
+    expect(() => parseReleaseBranchArgs(hotfix)).toThrow('Hotfix publishing is off');
   });
   it.each([
     ['a missing flag', flags.slice(0, 6)],

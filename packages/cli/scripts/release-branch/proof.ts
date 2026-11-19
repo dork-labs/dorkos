@@ -125,6 +125,27 @@ export function gitIsAncestor(cwd: string, sha: string, mainSha: string): boolea
   );
 }
 
+/**
+ * True when a commit on main after `sha` says "This reverts commit <sha>", the
+ * line `git revert` writes. Read errors count as reverted (fail closed).
+ */
+export function gitIsRevertedOnMain(cwd: string, sha: string, mainSha: string): boolean {
+  if (!/^[a-f0-9]{40}$/.test(sha)) return true;
+  try {
+    return (
+      run(cwd, 'git', [
+        'log',
+        '--format=%H',
+        '--fixed-strings',
+        `--grep=This reverts commit ${sha}`,
+        `${sha}..${mainSha}`,
+      ]) !== ''
+    );
+  } catch {
+    return true;
+  }
+}
+
 /** Read every commit in `<base>..<head>`, oldest first, from a full local checkout. */
 export function readReleaseBranchCommits(
   cwd: string,
@@ -260,12 +281,14 @@ export function proveReleaseBranch(input: {
     assertBaseIsAncestor(base, head, api(`repos/${repository}/compare/${base}...${head}`));
     baseLabel = `published tag ${request.base}`;
   }
+  const commits = readReleaseBranchCommits(root, base, head);
   assertReleaseCherryPicks({
     version,
-    commits: readReleaseBranchCommits(root, base, head),
+    commits,
     isMainAncestor: (sha) => gitIsAncestor(root, sha, mainSha),
     patchIdOf: (sha) => gitPatchId(root, sha),
     isInBase: (sha) => gitIsAncestor(root, sha, base),
+    isRevertedOnMain: (sha) => gitIsRevertedOnMain(root, sha, mainSha),
   });
   return formatReleaseBranchLog({
     mode: request.mode,
@@ -275,6 +298,18 @@ export function proveReleaseBranch(input: {
     head,
     diffStat: run(root, 'git', ['diff', '--stat', `${base}..${head}`]),
     log: run(root, 'git', ['log', '--oneline', `${base}..${head}`]),
+    picks: commits.flatMap((commit) => {
+      const source = /^\(cherry picked from commit ([a-f0-9]{40})\)$/m.exec(commit.message)?.[1];
+      return source
+        ? [
+            {
+              pick: commit.sha,
+              source,
+              mainSubject: run(root, 'git', ['log', '-1', '--format=%s', source]),
+            },
+          ]
+        : [];
+    }),
   });
 }
 
@@ -312,8 +347,12 @@ export function parseReleaseBranchArgs(
   if (!/^[a-f0-9]{40}$/.test(expectedSha)) throw Error('--expected-sha must be a full SHA.');
   if (mode === 'routine' && !/^[a-f0-9]{40}$/.test(base))
     throw Error("--base must be QA's full pin SHA in routine mode.");
-  if (mode === 'hotfix' && !/^v\d+\.\d+\.\d+$/.test(base))
-    throw Error('--base must be a vX.Y.Z tag in hotfix mode.');
+  // Off until a tag ruleset and full-range proof exist (Security M2, Nov 19): the
+  // base would be whatever a movable tag points at. The code below stays tested.
+  if (mode === 'hotfix')
+    throw Error(
+      'Hotfix publishing is off: its base is a tag that can be moved. It returns once tags are locked by an org ruleset and the proof checks the full range from main.'
+    );
   return { request: { branch, mode, base, expectedSha }, root: flags.get('--root'), rest };
 }
 

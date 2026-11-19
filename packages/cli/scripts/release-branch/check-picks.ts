@@ -11,7 +11,12 @@
  */
 import { execFileSync } from 'node:child_process';
 import { runIfMain } from './entry.ts';
-import { gitIsAncestor, gitPatchId, readReleaseBranchCommits } from './proof.ts';
+import {
+  gitIsAncestor,
+  gitIsRevertedOnMain,
+  gitPatchId,
+  readReleaseBranchCommits,
+} from './proof.ts';
 import { checkReleaseCherryPicks, type CherryPickFinding } from './rules.ts';
 
 const SHA = /^[a-f0-9]{40}$/;
@@ -43,6 +48,7 @@ export function checkPicksInRepo(input: {
     isMainAncestor: (sha) => gitIsAncestor(repoDir, sha, mainSha),
     patchIdOf: (sha) => gitPatchId(repoDir, sha),
     isInBase: (sha) => gitIsAncestor(repoDir, sha, base),
+    isRevertedOnMain: (sha) => gitIsRevertedOnMain(repoDir, sha, mainSha),
     // An empty range with base != head means a shallow or partial fetch.
     allowEmpty: base === head,
   });

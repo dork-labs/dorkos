@@ -115,6 +115,8 @@ describe('routine', () => {
     expect(log).toContain(`base:   QA's pin on main (${pin})`);
     expect(log).toContain('fix: a is two (#7)');
     expect(log).toContain('chore(release): v1.2.3');
+    // Each pick names its source with main's own subject, not the branch's wording.
+    expect(log).toMatch(new RegExp(`${fix.slice(0, 12)} -> [a-f0-9]{12}: fix: a is two \\(#7\\)`));
     expect(log).toMatch(/app\.ts\s+\| 2 \+-/);
   });
   it('refuses a cut that is not at the pin', () => {

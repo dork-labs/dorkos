@@ -62,6 +62,8 @@ export interface CherryPickInput {
    * the branch already holds would let any change ride on an old source.
    */
   isInBase: (sha: string) => boolean;
+  /** True when main later reverted the SHA ("This reverts commit <sha>" after it). */
+  isRevertedOnMain: (sha: string) => boolean;
 }
 
 /** A stable code for each way a commit can break the cherry-pick rule. */
@@ -72,6 +74,7 @@ export type CherryPickCode =
   | 'multiple-sources'
   | 'source-not-on-main'
   | 'source-before-cut'
+  | 'source-reverted-on-main'
   | 'patch-id-mismatch'
   | 'non-release-file'
   | 'release-commit-forbidden-path'
@@ -243,6 +246,8 @@ export function formatReleaseBranchLog(input: {
   head: string;
   diffStat: string;
   log: string;
+  /** Each pick with its source and main's own subject for it, not the branch's wording. */
+  picks?: readonly { pick: string; source: string; mainSubject: string }[];
 }): string {
   return [
     `Release branch publish (${input.mode})`,
@@ -253,6 +258,12 @@ export function formatReleaseBranchLog(input: {
     input.diffStat || '  (no changes)',
     `git log --oneline ${input.base}..${input.head}`,
     input.log || '  (no commits)',
+    'Picks (source on main -> pick on the branch: subject on main)',
+    ...(input.picks?.length
+      ? input.picks.map(
+          (p) => `  ${p.source.slice(0, 12)} -> ${p.pick.slice(0, 12)}: ${p.mainSubject}`
+        )
+      : ['  (no picks)']),
   ].join('\n');
 }
 
@@ -276,6 +287,11 @@ function commitProblem(
       return [
         'source-before-cut',
         `its source ${source.slice(0, 12)} is already in the branch's base`,
+      ];
+    if (input.isRevertedOnMain(source))
+      return [
+        'source-reverted-on-main',
+        `its source ${source.slice(0, 12)} was later reverted on main`,
       ];
     const expected = input.patchIdOf(source);
     if (!expected || !commit.patchId || expected !== commit.patchId)
