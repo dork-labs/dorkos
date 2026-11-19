@@ -21,6 +21,7 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readJsonBody } from '../http/request-body.js';
 import { validationFailureBody } from '../lib/route-utils.js';
+import { readActivityActor } from '../services/activity/activity-actor.js';
 import {
   readWritesBack,
   setWritesBack,
@@ -119,10 +120,7 @@ export function createConnectorWritesBackRoutes(deps: ConnectorWritesBackRouterD
       if (done.changed && deps.activity) {
         const app = `${serviceName(connection.toolkit)} (${connection.label})`;
         await deps.activity.emit({
-          actorType: 'user',
-          actorLabel: deps.loginEnabled(honoRequestFacts(c))
-            ? 'Your signed-in account'
-            : 'Someone on this computer',
+          ...readActivityActor(honoRequestFacts(c)),
           category: 'permissions',
           eventType: WRITES_BACK_CHANGED_EVENT,
           resourceType: 'connection',
