@@ -9,7 +9,7 @@
  *   replaces one. It's a speed bump: a blank popup or a `blob:` page has no response
  *   to add it to.
  * - Agent reads and actions are refused while any page is in full screen, read from
- *   an isolated world a page can't lie to. If that can't be read, the answer is yes.
+ *   an isolated world a page can't lie to. An unreadable state stays blocked separately.
  *
  * This doesn't stop a page hiding the frame. Never say it does.
  */
@@ -49,7 +49,7 @@ export class FullScreenGuard {
 
   /**
    * Start adding the refusal to a page's documents. A page that can't be watched
-   * is caught by {@link inFullScreen}, which then says yes.
+   * is caught by {@link inFullScreen}, which reports an unknown state.
    *
    * @param page - A page of the agent's window.
    */
@@ -67,22 +67,26 @@ export class FullScreenGuard {
   }
 
   /**
-   * Whether a page is in full screen, or that can't be told.
+   * Whether a page is in full screen, or null when that can't be told.
    *
    * @param page - A page of the agent's window.
    */
-  async inFullScreen(page: Page): Promise<boolean> {
+  async inFullScreen(page: Page): Promise<boolean | null> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const session = this.sessions.get(page);
-      if (!session) return true;
-      const cdp = await session;
+      if (!session) return null;
       const answer = await Promise.race([
-        this.read(cdp),
-        new Promise<undefined>((resolve) => setTimeout(resolve, CHECK_TIMEOUT_MS)),
+        session.then((cdp) => this.read(cdp)),
+        new Promise<null>((resolve) => {
+          timer = setTimeout(() => resolve(null), CHECK_TIMEOUT_MS);
+        }),
       ]);
-      return answer !== false;
+      return typeof answer === 'boolean' ? answer : null;
     } catch {
-      return true;
+      return null;
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -94,6 +98,11 @@ export class FullScreenGuard {
       throw new LocalBrowserError(
         'full_screen',
         'A page is in full screen. Ask the person to press Esc, then try again.'
+      );
+    if (answers.includes(null))
+      throw new LocalBrowserError(
+        'screen_state_unavailable',
+        'Couldn’t check full screen. Wait for the page to finish loading.'
       );
   }
 

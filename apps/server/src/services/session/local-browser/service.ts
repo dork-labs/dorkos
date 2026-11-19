@@ -1,6 +1,6 @@
 /** One DorkOS-owned visible browser, embedded or in a separate persistent window. */
 import { randomUUID } from 'node:crypto';
-import type { Browser, BrowserContext, Page, JSHandle } from 'playwright-core';
+import type { Browser, BrowserContext, Page } from 'playwright-core';
 import { localBrowserAuditWriter, type LocalBrowserAuditWriter } from './action-audit.js';
 import {
   LocalBrowserError,
@@ -28,8 +28,7 @@ import {
   closingError,
 } from './lifecycle.js';
 import { actionFence, performPageAction, auditPageAction } from './page-action.js';
-import type { ObservedPageNodes } from './observation-nodes.js';
-import { observeSelectedPage, screenshotSelectedPage } from './connection/observe-page.js';
+import { BrowserPageReadings } from './connection/page-readings.js';
 import { BrowserPreparation } from './preparation.js';
 import { LocalBrowserTabMetadata } from './tab-metadata.js';
 import {
@@ -51,7 +50,6 @@ import type {
   LocalBrowserCapabilities,
   LocalBrowserHistoryDirection,
   LocalBrowserMode,
-  LocalBrowserObservation,
   LocalBrowserOpen,
   LocalBrowserState,
 } from '@dorkos/shared/local-browser';
@@ -90,8 +88,6 @@ export class LocalBrowserService {
   // A frame that came and went during a read fails that read, but a page that churns
   // frames (ads) must not stale every action, so this is separate from `revision`.
   private frameChanges = 0;
-  private observation?: LocalBrowserObservation;
-  private observedNodes?: JSHandle<ObservedPageNodes>;
   private readonly actions = new BrowserActionFlight();
   private acquisition?: Promise<void>;
   private closing?: Promise<void>;
@@ -102,6 +98,21 @@ export class LocalBrowserService {
   private readonly preparation = new BrowserPreparation();
   private readonly metadata = new LocalBrowserTabMetadata();
   private readonly fullScreen = new FullScreenGuard();
+  private readonly readings = new BrowserPageReadings({
+    state: () => ({
+      page: this.tabs.get(this.selectedTabId ?? ''),
+      connectionId: this.connectionId,
+      tabId: this.selectedTabId,
+      connected: this.status === 'connected' && !this.detachedState,
+      paused: this.paused,
+      revision: this.revision,
+      frames: this.frameChanges,
+    }),
+    page: () => this.page(true),
+    protect: (page) => this.refuseProtectedPage(page),
+    invalidate: () => this.invalidate(),
+    stale: () => this.stale(),
+  });
   private readonly moves = new PersonPageMoves({
     mode: () => this.mode,
     attachment: () => this.embeddedAttachment,
@@ -242,7 +253,19 @@ export class LocalBrowserService {
   readonly currentProfileId = (): string | null => this.profileId;
 
   /** The host of the page last read, when that reading was a refusal; cleared by any change. */
-  readonly lastRefusalHost = (): string | null => this.observation?.refusal?.host ?? null;
+  readonly lastRefusalHost = (): string | null => this.readings.lastRefusalHost();
+
+  /** A server-only identity for a refusal's connection, selected tab and exact web address. */
+  readonly refusalIdentity = (): string | null => this.readings.refusalIdentity();
+
+  /** Whether bounded browser-event proof still belongs to this exact selected live page. */
+  readonly hasNavigationRefusal = this.readings.hasNavigationRefusal.bind(this.readings);
+
+  /** Recheck protected frames and the refusal's exact page after all capability awaits. */
+  readonly requireRefusalCurrent = this.readings.requireRefusalCurrent.bind(this.readings);
+
+  /** Return metadata only, never a DOM handle or an actionable page reading. */
+  readonly observeRefusal = this.readings.observeRefusal.bind(this.readings);
 
   /** Whether a named profile exists. False until startup wires the profile list, as for open. */
   readonly profileExists = (id: string): boolean => this.profileAuthorization.exists?.(id) ?? false;
@@ -279,6 +302,7 @@ export class LocalBrowserService {
     this.syncTabs();
     if (!this.tabs.has(id))
       throw new LocalBrowserError('closed', 'That tab closed. Choose another tab.');
+    if (id !== this.selectedTabId) this.readings.navigation.reset();
     this.selectedTabId = id;
     this.metadata.refresh(this.page());
     this.invalidate();
@@ -291,30 +315,10 @@ export class LocalBrowserService {
     return this.state();
   }
 
-  async observe(): Promise<LocalBrowserObservation> {
-    const page = this.page(true);
-    this.refuseProtectedPage(page);
-    this.invalidate();
-    const observed = await observeSelectedPage(page, this.selectedTabId!, {
-      revision: () => this.revision,
-      frames: () => this.frameChanges,
-      refuse: () => this.refuseProtectedPage(page),
-      stale: () => this.stale(),
-    });
-    this.observedNodes = observed.nodes;
-    this.observation = observed.observation;
-    return observed.observation;
-  }
+  readonly observe = this.readings.observe.bind(this.readings);
 
   /** Capture pixels from the same selected page; this grants no new action observation. */
-  async screenshot(): Promise<{ data: string; mimeType: string; revision: number; tabId: string }> {
-    const page = this.page(true);
-    return screenshotSelectedPage(
-      page,
-      () => ({ revision: this.revision, tabId: this.selectedTabId!, frames: this.frameChanges }),
-      () => this.refuseProtectedPage(page)
-    );
-  }
+  readonly screenshot = this.readings.screenshot.bind(this.readings);
 
   async action(input: LocalBrowserAction): Promise<LocalBrowserState> {
     return auditPageAction(
@@ -341,8 +345,8 @@ export class LocalBrowserService {
     assertAgentMayAct(this.status, this.paused);
     if (this.actions.active)
       throw new LocalBrowserError('busy', 'A browser action is finishing. Read the page again.');
-    const observed = this.observation;
-    const observedNodes = this.observedNodes;
+    const observed = this.readings.observation;
+    const observedNodes = this.readings.nodes;
     // Leaving needs no current read (DOR-4192); the pause, handoff and address checks still hold.
     const fence = actionFence(input, observed, Boolean(observedNodes), this.revision, () =>
       this.stale()
@@ -376,6 +380,9 @@ export class LocalBrowserService {
         'The page changed. Check what happened before continuing.'
       );
     }
+    if (this.lifecycle !== lifecycle || this.tabs.get(this.selectedTabId ?? '') !== page)
+      throw this.stale();
+    assertAgentMayAct(this.status, this.paused);
     this.refuseProtectedPage(page);
     return this.agentState();
   }
@@ -406,6 +413,7 @@ export class LocalBrowserService {
   /** Stop admission immediately; bounded in-flight effects may already have happened. */
   async pause(): Promise<LocalBrowserState> {
     this.paused = true;
+    this.readings.navigation.reset();
     this.invalidate();
     return this.state();
   }
@@ -448,6 +456,7 @@ export class LocalBrowserService {
       this.metadata.clear();
       this.preparation.clear();
       this.lifecycle += 1;
+      this.readings.navigation.clear();
       this.paused = true;
       this.invalidate();
       const acquisition = this.acquisition;
@@ -502,6 +511,7 @@ export class LocalBrowserService {
     for (const [id, known] of this.tabs) if (known === page) return id;
     const id = randomUUID();
     this.tabs.set(id, page);
+    this.readings.navigation.watch(page);
     if (this.ownedContext) this.fullScreen.watch(page);
     this.metadata.track(page, {
       active: () => [...this.tabs.values()].includes(page),
@@ -541,12 +551,7 @@ export class LocalBrowserService {
   }
   private invalidate(): void {
     this.revision += 1;
-    this.observation = undefined;
-    const nodes = this.observedNodes;
-    this.observedNodes = undefined;
-    // Invalidation is synchronous so navigation/pause fences admission immediately.
-    // Disposal is asynchronous protocol cleanup and cannot delay that fence.
-    void nodes?.dispose().catch(() => undefined);
+    this.readings.clear();
   }
   private admit(revision: number): void {
     this.assertNotClosing();

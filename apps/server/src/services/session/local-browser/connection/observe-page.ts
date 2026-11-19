@@ -56,6 +56,8 @@ export async function observeSelectedPage(
     // A site refusing this browser is read from what was already read, never a new load
     // (DOR-4097). Its title tells a vendor's block page from an ordinary one (DOR-4662).
     const title = await pageTitle(page);
+    owner.refuse();
+    if (revision !== owner.revision() || frames !== owner.frames()) throw owner.stale();
     const refused = classifyRefusal({ url, title, text: snapshot });
     const observation: LocalBrowserObservation = {
       revision,

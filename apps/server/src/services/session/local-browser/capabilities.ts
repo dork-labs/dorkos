@@ -63,14 +63,15 @@ function scopedAnswer<T>(
   service: LocalBrowserService,
   context: CapabilityHandlerContext,
   run: () => Promise<T>,
-  handingOver = false
+  handingOver = false,
+  refusalOnly = false
 ): Promise<T> {
   requireSession(service, context);
   const allowed = async () => {
     await answer(() => service.requireProfileAccess(context.sessionId!));
     if (!handingOver) {
       await answer(() => service.handover.requireAgentMayUse(context.sessionId!));
-      await answer(() => service.requireNotFullScreen());
+      if (!refusalOnly) await answer(() => service.requireNotFullScreen());
     }
     requireSession(service, context);
   };
@@ -128,19 +129,45 @@ export function createLocalBrowserDomain(service: LocalBrowserService): Capabili
             annotations: { idempotentHint: true },
           },
         },
-        invoke: (_deps, _input, context) =>
-          scopedAnswer(service, context, async () => {
-            const observation = await service.observe();
-            if (!observation.refusal) return observation;
-            // A turn the handoff would refuse is never pointed at it (DOR-4693).
-            const marked = await service.handover.outsideTurnReason(context.sessionId!);
-            return marked === null || marked === 'read_outside_text'
-              ? observation
-              : {
-                  ...observation,
-                  refusal: { ...observation.refusal, next: LOCAL_BROWSER_REFUSAL_HELD_NEXT },
-                };
-          }),
+        invoke: (_deps, _input, context) => {
+          requireSession(service, context);
+          return (async () => {
+            const refusalOnly = service.hasNavigationRefusal?.() === true;
+            const observation = await scopedAnswer(
+              service,
+              context,
+              async () => {
+                const observation = refusalOnly
+                  ? service.observeRefusal()
+                  : await service.observe();
+                if (!observation.refusal) return observation;
+                // A turn the handoff would refuse is never pointed at it (DOR-4693).
+                const marked = await service.handover.outsideTurnReason(context.sessionId!);
+                return marked === null || marked === 'read_outside_text'
+                  ? observation
+                  : {
+                      ...observation,
+                      refusal: { ...observation.refusal, next: LOCAL_BROWSER_REFUSAL_HELD_NEXT },
+                    };
+              },
+              false,
+              refusalOnly
+            );
+            // No failed DOM read can enter this branch. A move or expiry during any
+            // access/handoff await discards even this metadata-only answer.
+            if (refusalOnly && !service.hasNavigationRefusal(observation.tabId, observation.url))
+              throw new CapabilityToolError({
+                code: 'stale_page',
+                error: 'The page changed. Read it again before acting.',
+              });
+            if (refusalOnly)
+              return answer(async () => {
+                service.requireRefusalCurrent(observation.tabId, observation.url);
+                return observation;
+              });
+            return observation;
+          })();
+        },
       }),
       defineCapability({
         id: 'local_browser.screenshot',

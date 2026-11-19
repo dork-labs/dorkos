@@ -35,6 +35,13 @@ import {
 } from './handoff-guards/outside-turn-reason.js';
 import { prepareProfileFolder } from './profile-folders.js';
 import type { SignInWindow } from './sign-in-window.js';
+import {
+  assertSignInUrl,
+  prepareHandoffPage,
+  requireHandoffPage,
+  requireRefusalIdentity,
+} from './handoff-guards/prepare-handoff.js';
+export { assertSignInUrl } from './handoff-guards/prepare-handoff.js';
 
 /** The parts of the browser service a handoff steers. */
 export interface HandoverBrowser {
@@ -44,6 +51,8 @@ export interface HandoverBrowser {
   currentProfileId(): string | null;
   /** The host of the page DorkOS last read, when that reading was a refusal (DOR-4097). */
   lastRefusalHost?(): string | null;
+  /** Opaque server-only connection/tab/URL identity, rechecked across handoff awaits. */
+  refusalIdentity?(): string | null;
   /** Whether a named profile exists. False until startup wires the profile list. */
   profileExists(id: string): boolean;
   open(input: LocalBrowserOpen): Promise<LocalBrowserState>;
@@ -68,30 +77,6 @@ interface ReopenAt {
 /** What the agent is told after it hands the browser over. */
 export const HANDED_OVER_NEXT =
   'The person has the browser now. End your turn and wait. You get a message when they hand it back. Never ask again or retry on your own.';
-
-/**
- * A sign-in page must be `https:`, or `http:` on this computer only.
- *
- * @param value - The address to open.
- */
-export function assertSignInUrl(value: string): URL {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    throw new LocalBrowserError(
-      'unsupported_address',
-      'Use a website address starting with https.'
-    );
-  }
-  const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
-  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && local))
-    throw new LocalBrowserError(
-      'unsupported_address',
-      'Use a website address starting with https.'
-    );
-  return url;
-}
 
 /**
  * A page's address cut to its site: the origin, or for an address with none
@@ -331,9 +316,11 @@ export class BrowserHandover {
     // A stranger's words must not be able to raise a window or ask the person anything. A turn
     // marked only by a page the agent read may still hand over that page, when DorkOS's own
     // reading found it refused the browser (DOR-4693): the page is what needs the person.
+    const refusalIdentity = this.browser.refusalIdentity?.();
     const marked = await this.outsideTurn(sessionId);
     if (marked !== null && !(marked === 'read_outside_text' && (await this.refusedHere())))
       throw outsideTurnRefusal(marked);
+    requireRefusalIdentity(this.browser, marked, refusalIdentity);
     this.refuseStopped(sessionId);
     this.refuseTaken();
     if (this.preparingHandoff || this.answeringHandoff)
@@ -345,7 +332,12 @@ export class BrowserHandover {
       throw new LocalBrowserError('busy', 'A browser handoff is already open. Finish it first.');
     this.preparingHandoff = true;
     try {
-      return await this.prepareHandoff(sessionId, reason, asker);
+      return await this.prepareHandoff(
+        sessionId,
+        reason,
+        asker,
+        marked === 'read_outside_text' ? refusalIdentity : undefined
+      );
     } finally {
       this.preparingHandoff = false;
     }
@@ -369,19 +361,18 @@ export class BrowserHandover {
   private async prepareHandoff(
     sessionId: string,
     reason: LocalBrowserHandoffReason,
-    asker: { name: string; folder: string } | null
+    asker: { name: string; folder: string } | null,
+    expectedRefusal?: string | null
   ) {
     const state = await this.browser.state();
-    const tab = state.tabs.find((candidate) => candidate.id === state.selectedTabId);
-    if (state.status !== 'connected' || !tab)
-      throw new LocalBrowserError('no_tab', 'Choose the tab your agent should use.');
-    const site = new URL(tab.url).host;
-    if (!site) throw new LocalBrowserError('no_site', 'Open the website first, then ask again.');
-    if (state.mode === 'new-window') assertSignInUrl(tab.url);
-    // DorkOS's own reading, taken before handing over clears it; never the agent's word (DOR-4097).
-    const refused = this.browser.lastRefusalHost?.() === site;
-    await this.browser.handToPerson();
-    const profileId = this.browser.currentProfileId();
+    const { tab, site, refused, profileId } = prepareHandoffPage(
+      this.browser,
+      state,
+      sessionId,
+      expectedRefusal
+    );
+    const handed = await this.browser.handToPerson();
+    requireHandoffPage(this.browser, state, handed, profileId);
     this.record = {
       id: randomUUID(),
       sessionId,
