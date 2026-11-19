@@ -799,25 +799,36 @@ it('M9: the inbox boot wires through setRoomSeatRoutes runs at the real bounds',
 it('M9: no production source can hand an inbox smaller bounds', () => {
   // Limits are a constructor option for tests only: no config key, route, env var or tool.
   const src = fileURLToPath(new URL('../../../', import.meta.url));
-  const callers = readdirSync(src, { recursive: true, encoding: 'utf8' })
+  const sources = readdirSync(src, { recursive: true, encoding: 'utf8' })
     .filter((file) => file.endsWith('.ts') && !file.split(/[\\/]/u).includes('__tests__'))
-    .flatMap((file) => {
-      const text = readFileSync(join(src, file), 'utf8');
-      const calls = text.match(
-        /(?:createSeatMessages|new RoomSeatMessages|seatMessageFactory\?\.)\([^)]*\)/gu
-      );
-      return (calls ?? []).map(
-        (call) => `${file.replace(/\\/gu, '/')}: ${call.replace(/\s+/gu, ' ')}`
-      );
-    })
+    .map((file) => ({
+      file: file.replace(/\\/gu, '/'),
+      text: readFileSync(join(src, file), 'utf8'),
+    }));
+  const callers = sources
+    .flatMap(({ file, text }) =>
+      (
+        text.match(
+          /(?:createSeatMessages|new RoomSeatMessages|seatMessageFactory\?\.)\([^)]*\)/gu
+        ) ?? []
+      ).map((call) => `${file}: ${call.replace(/\s+/gu, ' ')}`)
+    )
     .sort();
-  // The one forwarding factory, and the two production calls that pass it no limits.
+  // The one forwarding factory, and the two production calls that pass it no limits. The boot
+  // wrapper in chat-message-current also drops any third argument, so nothing can thread one.
   expect(callers).toEqual([
     'services/rooms/room-service.ts: new RoomSeatMessages(this.parts.core, this.parts.publisher, store, emit, limits)',
     'services/session/chat-messages/chat-message-current.ts: createSeatMessages(store, emit)',
     'services/session/chat-messages/chat-message-current.ts: seatMessageFactory?.(store, emit)',
   ]);
-  expect(readFileSync(join(src, 'services/rooms/handoff/seat-messages.ts'), 'utf8')).toMatch(
+  // Only the inbox and its types name the bounds: no config schema, route, env or tool does.
+  expect(
+    sources
+      .filter(({ text }) => /\b(?:SeatMessageLimits|pendingMax|globalMax)\b/u.test(text))
+      .map(({ file }) => file)
+      .sort()
+  ).toEqual(['services/rooms/handoff/seat-message-types.ts', 'services/rooms/handoff/seat-messages.ts']);
+  expect(sources.find(({ file }) => file === 'services/rooms/handoff/seat-messages.ts')?.text).toMatch(
     /limits: SeatMessageLimits = DEFAULT_LIMITS/u
   );
 });
@@ -1779,8 +1790,12 @@ it('Code D3: a queued unsolicited write refuses when its room becomes bridged du
 });
 
 describe('batch target checks (DOR-4722)', () => {
+  /** Only `target` and `unsolicited` fed the old per-item answer; nothing else is read. */
+  function item(target: SeatMessagePending['target'], unsolicited: boolean): SeatMessagePending {
+    return { target, unsolicited } as SeatMessagePending;
+  }
   function batchOf(targets: SeatMessagePending['target'][], unsolicited = true) {
-    return targets.map((target) => ({ target, unsolicited }) as SeatMessagePending);
+    return targets.map((target) => item(target, unsolicited));
   }
   function core(): RoomCore {
     return (harness.service as unknown as { parts: { core: RoomCore } }).parts.core;
@@ -1811,7 +1826,8 @@ describe('batch target checks (DOR-4722)', () => {
     const target = seatInbox!.resolveSeatTarget('seat-chat')!;
     const ledger = vi.spyOn(core().store.sessionLedger, 'bindingForSession');
     const bridges = vi.spyOn(core().bridges, 'findBridgeByRoom');
-    expect(seatBatchStillCurrent(core(), batchOf(Array<SeatMessagePending['target']>(8).fill(target)))).toBe(true);
+    const batch = batchOf(Array<SeatMessagePending['target']>(8).fill(target));
+    expect(seatBatchStillCurrent(core(), batch)).toBe(true);
     expect(ledger).toHaveBeenCalledTimes(1);
     // Once inside the seat check, once for the unsolicited bridge refusal.
     expect(bridges).toHaveBeenCalledTimes(2);
@@ -1889,9 +1905,10 @@ describe('batch target checks (DOR-4722)', () => {
       [item(bridged, false), item(forged, false)],
       [item(unbridged, false), item(bridged, false), item(forged, true)]
     );
-    expect(batches.map((batch) => seatBatchStillCurrent(core(), batch))).toEqual(
-      batches.map(perItem)
-    );
+    const oracle = batches.map(perItem);
+    // Not vacuous: the old logic refuses some of these batches and runs others.
+    expect(new Set(oracle)).toEqual(new Set([true, false]));
+    expect(batches.map((batch) => seatBatchStillCurrent(core(), batch))).toEqual(oracle);
     // Any unsolicited item in the now-bridged room refuses; solicited-only still runs.
     expect(seatBatchStillCurrent(core(), [item(bridged, false), item(unbridged, true)])).toBe(
       false
