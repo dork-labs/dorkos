@@ -28,6 +28,8 @@ import { defineConfig } from 'vitest/config';
 
 /** Suites with at least one test that reads files outside `scripts/`'s harness scope. */
 export const REPO_WIDE_SUITES = [
+  // Reads docs/guides/agent-browser.mdx, packages/browser's pin and playwright-core's browsers.json.
+  '__tests__/agent-browser-doc-versions.test.ts',
   '__tests__/agents-service-census.test.ts',
   '__tests__/binary-lane-job.test.ts',
   '__tests__/binary-test-glob.test.ts',
