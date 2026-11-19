@@ -340,7 +340,7 @@ and not only look at it -- click it, type into it, and read it back:
   ${T}browser_wait_for(text?, selector?, fetchIdle?, timeoutMs?, documentId?) -- let the page catch up.
 Read the page first: the names it prints are the names the other five take. This drives only a preview DorkOS
 serves or proxies; a real website is shown here, not driven, so drive it in the Agent browser
-(${T}local_browser_observe, ${T}local_browser_act). It works only in a one-on-one chat, once the person
+(${T}local_browser_observe, ${T}local_browser_act). Each agent starts signed out in its own separate Chrome window. Only the person shares a profile from the panel; Stop sharing removes access. Never raise a sharing card yourself. The embedded browser is for the person alone. It works only in a one-on-one chat, once the person
 shares one from a direct chat with you:
 Open browser in its right panel, or Take it here if another chat has it. It never reaches a room: in a room,
 tell the person the Agent browser works only in a direct chat, and ask them to continue there with you.

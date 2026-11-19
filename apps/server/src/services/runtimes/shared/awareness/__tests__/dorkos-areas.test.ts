@@ -116,7 +116,9 @@ describe('buildDorkosAreasBlock', () => {
     // QA's cold run: an agent holding its owner's Chrome MCP servers called them
     // "profiles" and never named the Agent browser's default one.
     const line = block.split('\n').find((text) => text.startsWith('- Agent browser:')) ?? '';
-    expect(line).toContain("One default profile; other browser tools aren't profiles.");
+    expect(line).toContain(
+      'Each agent has its own signed-out profile in a separate Chrome window.'
+    );
   });
 
   it('stays small enough to ride in every session (DOR-3219 diet)', () => {

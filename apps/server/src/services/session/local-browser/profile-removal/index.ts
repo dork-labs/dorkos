@@ -1,7 +1,7 @@
 /** Remove a whole profile's saved data, only while every writer is excluded. */
-import { lstat, readdir, readlink, rm } from 'node:fs/promises';
+import { lstat, readlink, rm } from 'node:fs/promises';
 import path from 'node:path';
-import { z } from 'zod';
+import { LocalBrowserProfileIdSchema } from '@dorkos/shared/local-browser';
 import { recordAudit } from '../../../audit/audit-trail.js';
 import { LocalBrowserError } from '../errors.js';
 import { profileHeld } from '../plain-chromium.js';
@@ -49,9 +49,9 @@ const auditTamper: ProfileTamperWriter = (finding, profileId) => {
     operation: 'remove',
     summary:
       finding === 'planted_link'
-        ? 'Forget found a link someone put in an Agent browser profile, and removed it'
+        ? 'Forget found a link in an Agent browser profile, and cleared nothing'
         : 'Forget found the sign-ins folder changed outside DorkOS, and cleared nothing',
-    outcome: finding === 'planted_link' ? 'ok' : 'refused',
+    outcome: 'refused',
     target: profileId === null ? null : { type: 'browser-profile', id: profileId },
   });
 };
@@ -100,63 +100,12 @@ export class BrowserProfileRemoval {
   }
 
   async forget(profileId: string | null): Promise<void> {
-    if (profileId !== null) z.string().uuid().parse(profileId);
+    if (profileId !== null) LocalBrowserProfileIdSchema.parse(profileId);
     await this.idle(profileId, () => this.clear(profileId));
   }
 
-  /**
-   * Forget every saved sign-in: the default profile and each named one (DOR-4105). The
-   * panel shows one Saved sign-ins row, so its Forget has to leave no hidden sign-in behind.
-   * Every profile must be free first, so a busy one stops it before anything is cleared.
-   *
-   * @param namedIds - Every named profile on record.
-   */
-  async forgetAll(namedIds: readonly string[]): Promise<void> {
-    for (const id of namedIds) z.string().uuid().parse(id);
-    // A profile folder made outside the API (an agent with a shell can make one) is
-    // cleared too, so no sign-in survives Forget just because it's off the list.
-    const root = path.join(this.deps.dataDirectory(), 'browser-profiles');
-    // The profiles folder itself must be a real folder. If it was swapped for a link,
-    // Forget would walk somewhere else, so it refuses and clears nothing.
-    await this.assertRoot(root);
-    const onDisk = await readdir(root).catch(() => [] as string[]);
-    const ids = [
-      ...new Set([
-        ...namedIds,
-        ...onDisk.filter((name) => z.string().uuid().safeParse(name).success),
-      ]),
-    ];
-    // Only a real folder is cleared. Anything else under a profile's name (a link an agent
-    // planted to the person's own folder, say) is removed itself and never followed.
-    const folders: string[] = [];
-    const planted: string[] = [];
-    for (const id of ids) {
-      const info = await lstat(path.join(root, id)).catch(() => undefined);
-      (!info || info.isDirectory() ? folders : planted).push(id);
-    }
-    if (ids.some((id) => this.deps.busy(id)))
-      throw new LocalBrowserError(
-        'profile_busy',
-        'Close the browser using this profile, then try again.'
-      );
-    await this.idle(null, async () => {
-      await this.assertRoot(root);
-      await this.clear(null);
-      for (const id of planted) {
-        await this.assertRoot(root);
-        await rm(path.join(root, id), { force: true });
-        this.tampered('planted_link', id);
-      }
-      for (const id of folders) {
-        await this.assertRoot(root);
-        await this.clear(id);
-      }
-      for (const id of ids) this.deps.forgotten?.(id);
-    });
-  }
-
   async delete(profileId: string, profiles: LocalBrowserProfileStore): Promise<void> {
-    z.string().uuid().parse(profileId);
+    LocalBrowserProfileIdSchema.parse(profileId);
     await this.idle(profileId, async () => {
       if (!profiles.get(profileId))
         throw new LocalBrowserError('profile_not_found', 'That browser profile no longer exists.');
@@ -221,6 +170,7 @@ export class BrowserProfileRemoval {
 
   private async clear(profileId: string | null): Promise<void> {
     const home = this.deps.dataDirectory();
+    await this.assertRoot(path.join(home, 'browser-profiles'));
     const targets = [path.join(home, 'browser-profiles', profileId ?? 'default')];
     if (profileId === null) {
       // Both older sources can otherwise recreate the forgotten sign-ins later.
@@ -241,6 +191,7 @@ export class BrowserProfileRemoval {
       await this.assertPathsAndLocks(home, targets, profileId);
       // Remove the agents' exported state before its source profile, including unknown storage types.
       for (const target of targets.reverse()) {
+        await this.assertRoot(path.join(home, 'browser-profiles'));
         if (this.deps.remove) await this.deps.remove(target);
         else await rm(target, { recursive: true, force: true });
       }

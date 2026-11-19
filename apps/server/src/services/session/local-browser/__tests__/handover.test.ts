@@ -467,8 +467,8 @@ describe('BrowserHandover sign-in', () => {
     });
     await expect(handover.requireAgentMayUse('chat-1')).resolves.toBeUndefined();
     const other = setup();
-    await other.handover.signIn({ url: 'https://linear.app/' });
     other.setProfile(null);
+    await other.handover.signIn({ url: 'https://linear.app/' });
     await expect(other.handover.requireAgentMayUse('chat-1')).rejects.toMatchObject({
       code: 'signing_in',
     });
@@ -478,7 +478,9 @@ describe('BrowserHandover sign-in', () => {
     const { handover, browser } = setup();
     browser.open.mockClear();
     await handover.signIn({ url: 'https://linear.app/' });
-    await expect(handover.open({ mode: 'new-window', sessionId: 'chat-1' })).rejects.toMatchObject({
+    await expect(
+      handover.open({ mode: 'new-window', sessionId: 'chat-1', profileId: 'p1' })
+    ).rejects.toMatchObject({
       code: 'signing_in',
     });
     expect(browser.open).not.toHaveBeenCalled();
@@ -869,9 +871,9 @@ describe('a sign-in on a profile that no longer exists (DOR-4180)', () => {
     expect(existsSync(folder)).toBe(false);
   });
 
-  it('still signs in on the default profile, which has no id', async () => {
+  it('still signs in on the person’s explicitly selected default profile', async () => {
     const { handover, signIns } = await deletedProfile();
-    await handover.signIn({ url: 'https://linear.app/' });
+    await handover.signIn({ url: 'https://linear.app/', profileId: 'default' });
     expect(signIns.start).toHaveBeenCalledOnce();
   });
 });
@@ -1160,6 +1162,22 @@ describe('a sign-in started from a refused page', () => {
       });
     }
   );
+
+  it('keeps the first sign-in’s return page when another attempt is refused', async () => {
+    const { handover, browser, signIns, finish, signInMoved } = ownWindow();
+    await handover.signIn({ url: 'https://accounts.example.com/' });
+    signIns.start.mockRejectedValueOnce(new Error('A sign-in is already open'));
+    await expect(handover.signIn({ url: 'https://second.example.com/' })).rejects.toThrow();
+    finish('saved');
+    signInMoved();
+    await vi.waitFor(() =>
+      expect(browser.open).toHaveBeenCalledExactlyOnceWith({
+        mode: 'new-window',
+        sessionId: 'chat-1',
+        url: connected().tabs[0]!.url,
+      })
+    );
+  });
 
   it('reopens nothing for a chat the person stopped meanwhile', async () => {
     const { handover, browser, finish, set, signInMoved } = ownWindow();

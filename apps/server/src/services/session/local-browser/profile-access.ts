@@ -2,6 +2,7 @@
 import { declaresGuard, type RuntimeGuards } from '@dorkos/shared/agent-runtime';
 import { LocalBrowserError } from './errors.js';
 import type { LocalBrowserProfileStore } from './profile-store.js';
+import type { LocalBrowserOpen, LocalBrowserProfileChoice } from '@dorkos/shared/local-browser';
 
 /** The verified launch facts this check reads; it never reads an agent's own files. */
 export interface LocalBrowserProfileAccessDeps {
@@ -41,6 +42,7 @@ export function holderTitle(title: string | null | undefined): string | null {
 
 /** Admission facts for the selected profile; no profile data is read here. */
 export class BrowserProfileAccessGate {
+  select?: (input: LocalBrowserOpen) => Promise<LocalBrowserProfileChoice>;
   exists?: (id: string) => boolean;
   private access?: LocalBrowserProfileAccess;
   // None until startup wires chat titles; a refusal elsewhere then says "another chat".
@@ -96,10 +98,9 @@ export class BrowserProfileAccessGate {
   }
 
   async require(profileId: string | null, sessionId: string): Promise<void> {
-    if (!profileId) return;
     if (!this.access)
       throw new LocalBrowserError('profile_not_allowed', 'This agent can’t use this profile.');
-    await this.access(profileId, sessionId);
+    await this.access(profileId ?? 'default', sessionId);
   }
 }
 

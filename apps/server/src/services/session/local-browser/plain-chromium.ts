@@ -68,6 +68,7 @@ export function plainChromiumArgs(
     '--password-store=basic',
     // An extension could read the page; the person's own window needs none.
     '--disable-extensions',
+    '--disable-sync',
     '--disable-features=HttpsUpgrades,HttpsFirstBalancedModeAutoEnable',
     ...(testBuild ? ['--disable-infobars'] : []),
     `--window-name=Sign in to ${site}`,
@@ -85,6 +86,7 @@ export function plainChromiumArgs(
  */
 export async function disablePasswordSaving(profileFolder: string): Promise<void> {
   await editPreferences(profileFolder, (prefs) => {
+    prefs.signin = { ...section(prefs.signin), allowed: false };
     prefs.credentials_enable_service = false;
     prefs.profile = { ...section(prefs.profile), password_manager_enabled: false };
   });

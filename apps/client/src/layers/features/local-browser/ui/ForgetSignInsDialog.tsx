@@ -103,7 +103,7 @@ export function ForgetSignInsDialog({
             <AlertDialogHeader>
               <AlertDialogTitle>Forget saved sign-ins?</AlertDialogTitle>
               <AlertDialogDescription>
-                This signs every agent here out of every site. It can’t be undone.
+                This signs you out of every site in this browser. It can’t be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
             {error && (

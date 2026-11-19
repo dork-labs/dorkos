@@ -1,7 +1,12 @@
+import { createBrowserSharePolicy } from '../../services/session/local-browser/agent-profiles/sharing-policy.js';
 import { localBrowserHost } from '../local-browser.js';
 import type { OpenConfigAndDatabaseResult } from './config-and-database.js';
 import { realpathSync } from 'node:fs';
-import { createLocalBrowserProfileAccess } from '../../services/session/local-browser/profile-access.js';
+import { createAgentBrowserProfiles } from '../../services/session/local-browser/agent-profiles/agent-profiles.js';
+import {
+  createLocalBrowserProfileAccess,
+  type LocalBrowserProfileAccessDeps,
+} from '../../services/session/local-browser/profile-access.js';
 import { loadProfileBindingKey } from '../../services/session/local-browser/profile-folders.js';
 import { createLocalBrowserProfileStore } from '../../services/session/local-browser/profile-store.js';
 import { liveOutsideTurnCheck } from '../../services/session/local-browser/outside-turn.js';
@@ -430,23 +435,31 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
       return undefined;
     }
   };
+  const profileAccessDeps: LocalBrowserProfileAccessDeps = {
+    profiles: localBrowserProfiles,
+    resolveSessionRuntime: (sessionId) => runtimeRegistry.resolveSessionRuntime(sessionId),
+    guardsOf: (type) => {
+      try {
+        return runtimeRegistry.get(type).getCapabilities().guards;
+      } catch {
+        return undefined; // Not registered, or unreadable: no guards.
+      }
+    },
+    getSessionAgentPath: (sessionId) => runtimeRegistry.getSessionAgentPath(sessionId),
+    agentIdAtPath: (agentPath) => refs.meshCore?.getByPath(agentPath)?.id,
+    realFolder,
+  };
   localBrowserService.useProfileAccess(
-    createLocalBrowserProfileAccess({
-      profiles: localBrowserProfiles,
-      resolveSessionRuntime: (sessionId) => runtimeRegistry.resolveSessionRuntime(sessionId),
-      guardsOf: (type) => {
-        try {
-          return runtimeRegistry.get(type).getCapabilities().guards;
-        } catch {
-          return undefined; // Not registered, or unreadable: no guards.
-        }
-      },
-      getSessionAgentPath: (sessionId) => runtimeRegistry.getSessionAgentPath(sessionId),
-      agentIdAtPath: (agentPath) => refs.meshCore?.getByPath(agentPath)?.id,
-      realFolder,
-    }),
+    createLocalBrowserProfileAccess(profileAccessDeps),
     (id) => localBrowserProfiles.get(id) !== undefined,
     chatTitleOf
+  );
+  localBrowserService.useProfileSelection(
+    createAgentBrowserProfiles({
+      ...profileAccessDeps,
+      profiles: localBrowserProfiles,
+      agentName: (id) => refs.meshCore?.listWithPaths().find((a) => a.id === id)?.name,
+    }).select
   );
   localBrowserService.windowNames.use(async (sessionId) => {
     const agentPath = await runtimeRegistry.getSessionAgentPath(sessionId);
@@ -477,6 +490,12 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
     localBrowser: localBrowserService,
     localBrowserProfiles: {
       profiles: localBrowserProfiles,
+      mayShare: createBrowserSharePolicy({
+        state: () => localBrowserService.state(),
+        resolveSessionRuntime: (id) => runtimeRegistry.resolveSessionRuntime(id),
+        outsideTurn: liveOutsideTurnCheck(),
+        runtime: (type) => runtimeRegistry.get(type),
+      }),
       agent: (agentId) => {
         const agent = refs.meshCore?.listWithPaths().find((entry) => entry.id === agentId);
         const projectPath = agent && realFolder(agent.projectPath);

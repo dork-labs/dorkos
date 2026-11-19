@@ -626,7 +626,7 @@ describe('LocalBrowserPanel', () => {
     const open = await screen.findByRole('button', { name: 'Open browser' });
     await waitFor(() => expect(open).toBeEnabled());
     fireEvent.click(open);
-    expect(await screen.findByRole('heading', { name: 'Agent browser' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Your browser' })).toBeInTheDocument();
     await chooseFromMenu('Close browser');
     expect(await screen.findByRole('button', { name: 'Open browser' })).toBeEnabled();
     first.unmount();

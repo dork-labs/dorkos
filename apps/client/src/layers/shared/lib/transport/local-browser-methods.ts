@@ -33,6 +33,18 @@ export function createLocalBrowserMethods(baseUrl: string): LocalBrowserTranspor
         profiles: result.profiles.map((profile) => LocalBrowserProfileSchema.parse(profile)),
       };
     },
+    bindLocalBrowserProfile: async (id, agentId) =>
+      LocalBrowserProfileSchema.parse(
+        await request(`/profiles/${encodeURIComponent(id)}/agents`, { agentId })
+      ),
+    unbindLocalBrowserProfile: async (id, agentId) =>
+      LocalBrowserProfileSchema.parse(
+        await fetchJSON(
+          baseUrl,
+          `/local-browser/profiles/${encodeURIComponent(id)}/agents/${encodeURIComponent(agentId)}`,
+          { method: 'DELETE' }
+        )
+      ),
     forgetLocalBrowserSignIns: (id) =>
       request(`/profiles/${encodeURIComponent(id ?? 'default')}/forget-sign-ins`, {}),
     deleteLocalBrowserProfile: (id) =>

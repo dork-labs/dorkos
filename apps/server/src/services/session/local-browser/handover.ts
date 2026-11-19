@@ -35,6 +35,8 @@ import {
 } from './handoff-guards/outside-turn-reason.js';
 import { prepareProfileFolder } from './profile-folders.js';
 import type { SignInWindow } from './sign-in-window.js';
+import { assertSignInUrl, siteOnly } from './handoff-guards/sign-in-url.js';
+export { assertSignInUrl, siteOnly } from './handoff-guards/sign-in-url.js';
 
 /** The parts of the browser service a handoff steers. */
 export interface HandoverBrowser {
@@ -69,47 +71,6 @@ interface ReopenAt {
 export const HANDED_OVER_NEXT =
   'The person has the browser now. End your turn and wait. You get a message when they hand it back. Never ask again or retry on your own.';
 
-/**
- * A sign-in page must be `https:`, or `http:` on this computer only.
- *
- * @param value - The address to open.
- */
-export function assertSignInUrl(value: string): URL {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    throw new LocalBrowserError(
-      'unsupported_address',
-      'Use a website address starting with https.'
-    );
-  }
-  const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
-  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && local))
-    throw new LocalBrowserError(
-      'unsupported_address',
-      'Use a website address starting with https.'
-    );
-  return url;
-}
-
-/**
- * A page's address cut to its site: the origin, or for an address with none
- * (`about:`, `data:`) its scheme alone.
- *
- * @param value - The tab's address.
- */
-export function siteOnly(value: string): string {
-  try {
-    const url = new URL(value);
-    if (url.origin !== 'null') return url.origin;
-    // A blank tab carries nothing, and the panel names it "New tab".
-    return url.href === 'about:blank' ? url.href : url.protocol;
-  } catch {
-    return '';
-  }
-}
-
 /** One handoff at a time, and the plain sign-in window it can open. */
 export class BrowserHandover {
   private signingIn = 0;
@@ -124,6 +85,11 @@ export class BrowserHandover {
       this.signIns.holds(this.folderOf(profileId)) ||
       (this.record?.outcome === null && this.record.profileId === profileId)
     );
+  }
+
+  /** Refuse an open on a profile whose plain sign-in window still owns its data. */
+  signInHoldsProfile(profileId: string | null): boolean {
+    return this.signIns.holds(this.folderOf(profileId));
   }
 
   /** Clear stale success notices only after the disk operation succeeded. */
@@ -475,7 +441,10 @@ export class BrowserHandover {
       this.reopenAt = { sessionId: handoff.sessionId, profileId, url: this.askedUrl ?? tab.url };
     } else {
       url = assertSignInUrl(input.url);
-      profileId = input.profileId ?? null;
+      profileId =
+        input.profileId === 'default'
+          ? null
+          : (input.profileId ?? (state.sessionId ? this.browser.currentProfileId() : null));
       this.assertProfileExists(profileId);
     }
     const folder = await prepareProfileFolder(this.dataDirectory(), profileId);
@@ -494,7 +463,7 @@ export class BrowserHandover {
       await this.signIns.start(folder, profileId, url.href);
     } catch (error) {
       // A sign-in that never started never ends, so nothing may reopen on its account.
-      this.reopenAfterSignIn = undefined;
+      if (agentWindowOnProfile) this.reopenAfterSignIn = undefined;
       throw error;
     }
     return this.state();

@@ -46,7 +46,7 @@ describe('Saved sign-ins (DOR-4105)', () => {
     fireEvent.click(trigger);
     const dialog = await screen.findByRole('alertdialog', {
       name: 'Forget saved sign-ins?',
-      description: 'This signs every agent here out of every site. It can’t be undone.',
+      description: 'This signs you out of every site in this browser. It can’t be undone.',
     });
     expect(dialog.textContent?.toLowerCase()).not.toContain('profile');
     const cancel = within(dialog).getByRole('button', { name: 'Cancel' });

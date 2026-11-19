@@ -16,6 +16,10 @@ export interface LocalBrowserTransport {
   getLocalBrowserCapabilities(): Promise<LocalBrowserCapabilities>;
   /** Profile metadata for the person's browser controls. */
   listLocalBrowserProfiles(): Promise<{ profiles: LocalBrowserProfile[] }>;
+  /** Share one profile with the named agent after the person completes step-up. */
+  bindLocalBrowserProfile(profileId: string, agentId: string): Promise<LocalBrowserProfile>;
+  /** Stop sharing on the next agent call. */
+  unbindLocalBrowserProfile(profileId: string, agentId: string): Promise<LocalBrowserProfile>;
   /** Forget every site in one profile; null selects the shared default. */
   forgetLocalBrowserSignIns(profileId: string | null): Promise<{ success: true }>;
   /** Remove a named profile, its saved site data and agent access. */

@@ -13,11 +13,12 @@ import type { RequestFacts } from '../../http/request-facts.js';
 const CONFIRMING = { user: { sessionId: 'sess-a' } } as unknown as RequestFacts;
 
 /** The router's bar as the confirming request meets it: on this computer, and the owner. */
-const bar = vi.hoisted(() => ({ atThisComputer: true, owner: true }));
+const bar = vi.hoisted(() => ({ atThisComputer: true, owner: true, person: true, marked: false }));
 vi.mock('../../services/core/auth/gate-policy.js', () => ({
   isAtThisComputer: () => bar.atThisComputer,
 }));
 vi.mock('../../lib/caller-authority.js', () => ({
+  requirePersonAtThisComputer: () => (bar.person ? undefined : 'agent'),
   refuseUnlessAccountOwner: () => (bar.owner ? undefined : 'not-the-owner'),
 }));
 vi.mock('../../http/request-body.js', () => ({
@@ -40,7 +41,11 @@ function setup() {
       c.set('body' as never, (await c.req.json()) as never);
     await next();
   });
-  mountLocalBrowserProfileRoutes(app, { profiles, agent: (id) => agents[id] });
+  mountLocalBrowserProfileRoutes(app, {
+    profiles,
+    agent: (id) => agents[id],
+    mayShare: async () => !bar.marked,
+  });
   const post = (url: string, body: unknown) =>
     app.request(url, { method: 'POST', body: JSON.stringify(body) });
   return { profiles, app, post };
@@ -51,6 +56,8 @@ describe('browser profile routes', () => {
   beforeEach(() => {
     bar.atThisComputer = true;
     bar.owner = true;
+    bar.person = true;
+    bar.marked = false;
     t = setup();
   });
 
@@ -69,6 +76,33 @@ describe('browser profile routes', () => {
       expect(result).toMatchObject({ status: 403, body: { code: 'owner_only' } });
       expect(t.profiles.isBound(profile.id, 'atlas', '/agents/atlas')).toBe(false);
     }
+  });
+
+  it('refuses an agent without creating a step-up card', async () => {
+    const profile = t.profiles.create('Example');
+    bar.person = false;
+    const response = await t.post(`/profiles/${profile.id}/agents`, { agentId: 'atlas' });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({
+      error: 'Only you can share a browser.',
+      code: 'person_only',
+    });
+    expect(t.profiles.get(profile.id)?.agentIds).toEqual([]);
+  });
+
+  it('refuses marked turns before asking and again when step-up commits', async () => {
+    const profile = t.profiles.create('Example');
+    bar.marked = true;
+    expect((await t.post(`/profiles/${profile.id}/agents`, { agentId: 'atlas' })).status).toBe(403);
+    bar.marked = false;
+    const response = await t.post(`/profiles/${profile.id}/agents`, { agentId: 'atlas' });
+    const { heldActionId } = (await response.json()) as { heldActionId: string };
+    bar.marked = true;
+    expect(await takeHeldStepUp(heldActionId)!.commit(CONFIRMING)).toMatchObject({
+      status: 403,
+      body: { code: 'outside_turn' },
+    });
+    expect(t.profiles.get(profile.id)?.agentIds).toEqual([]);
   });
 
   it('holds a bind for step-up and writes nothing until it passes', async () => {

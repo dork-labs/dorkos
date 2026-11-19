@@ -168,6 +168,19 @@ function fixture() {
     },
   };
 }
+/** Page/lifecycle tests stand in for startup's trusted registry; selection itself has integration tests. */
+function configuredService(
+  ...args: ConstructorParameters<typeof LocalBrowserService>
+): LocalBrowserService {
+  const service = new LocalBrowserService(...args);
+  service.useProfileSelection(async (input) => ({
+    id: input.profileId ?? 'default',
+    label: 'Example browser',
+    agentId: input.sessionId ? 'example' : null,
+    agentName: null,
+  }));
+  return service;
+}
 const directories: string[] = [];
 afterEach(async () => {
   vi.useRealTimers();
@@ -180,7 +193,7 @@ async function create(appOrigins?: () => readonly string[]) {
   return {
     ...f,
     dir,
-    service: new LocalBrowserService(
+    service: configuredService(
       dir,
       undefined,
       f.backend,
@@ -306,7 +319,7 @@ describe('local browser ownership and observations', () => {
 
   it('refuses a headed window on Linux without a graphical display before launch', async () => {
     const f = await create();
-    const service = new LocalBrowserService(f.dir, undefined, f.backend, undefined, () => ({
+    const service = configuredService(f.dir, undefined, f.backend, undefined, () => ({
       platform: 'linux',
     }));
     expect(service.capabilities()).toMatchObject({
@@ -324,7 +337,7 @@ describe('local browser ownership and observations', () => {
     'opens an owned window for a declared Linux graphical session %o',
     async (display) => {
       const f = await create();
-      const service = new LocalBrowserService(f.dir, undefined, f.backend, undefined, () => ({
+      const service = configuredService(f.dir, undefined, f.backend, undefined, () => ({
         platform: 'linux',
         ...display,
       }));
@@ -557,7 +570,7 @@ describe('local browser ownership and observations', () => {
     expect(records[0].operationId).toBe(records[1].operationId);
     expect(records[0].tabId).toEqual(expect.any(String));
     expect(records.every((record) => !('title' in record))).toBe(true);
-    const noAudit = new LocalBrowserService(
+    const noAudit = configuredService(
       dir,
       undefined,
       backend,
@@ -762,12 +775,12 @@ describe('local browser ownership and observations', () => {
       })),
     };
     // The host is stood in, as for every own-window test: CI's Linux runners have no display.
-    const service = new LocalBrowserService(f.dir, embedded, f.backend, undefined, () => ({
+    const service = configuredService(f.dir, embedded, f.backend, undefined, () => ({
       platform: 'darwin',
     }));
     await service.open({ mode: 'new-window', sessionId: 'chat-one' });
     expect(f.context.close).not.toHaveBeenCalled();
-    await service.open({ mode: 'embedded', sessionId: 'chat-one' });
+    await service.open({ mode: 'embedded' });
     expect(f.context.close).toHaveBeenCalledOnce();
     expect((await service.state()).mode).toBe('embedded');
   });
@@ -782,7 +795,7 @@ describe('local browser ownership and observations', () => {
         close,
       })),
     };
-    const service = new LocalBrowserService(f.dir, embedded, f.backend);
+    const service = configuredService(f.dir, embedded, f.backend);
     await service.open({ mode: 'embedded' });
     expect(f.backend.connect).toHaveBeenCalledWith('ws://127.0.0.1:41111/page/fixture', {
       Authorization: 'Bearer fixture',
@@ -902,7 +915,7 @@ async function lifecycleFixture() {
   return {
     ...fixture,
     audit,
-    service: new LocalBrowserService(fixture.dir, undefined, fixture.backend, audit, () => ({
+    service: configuredService(fixture.dir, undefined, fixture.backend, audit, () => ({
       platform: 'darwin',
     })),
   };
@@ -1160,7 +1173,7 @@ describe('bounded browser lifecycle ownership', () => {
     const close = vi.fn(async () => {
       throw new Error('private bridge unavailable');
     });
-    const service = new LocalBrowserService(
+    const service = configuredService(
       fixture.dir,
       {
         open: async () => ({ endpoint: 'http://owned.test', headers: {}, close }),
@@ -1284,17 +1297,17 @@ describe('named profiles (DOR-3218)', () => {
     await expect(readFile(path.join(f.dir, 'browser-profiles', profileId))).rejects.toThrow();
   });
 
-  it('asks the access check on each call, and skips it on the default profile', async () => {
+  it('asks the access check on every profile, including default', async () => {
     const f = await create();
     const access = vi.fn(async () => undefined);
     f.service.useProfileAccess(access, () => true);
     await f.service.open({ mode: 'new-window', sessionId: 's' });
     await f.service.requireProfileAccess('s');
-    expect(access).not.toHaveBeenCalled();
+    expect(access).toHaveBeenCalledExactlyOnceWith('default', 's');
     await f.service.open({ mode: 'new-window', profileId, sessionId: 's' });
     await f.service.requireProfileAccess('s');
     await f.service.requireProfileAccess('s');
-    expect(access).toHaveBeenCalledTimes(2);
+    expect(access).toHaveBeenCalledTimes(3);
     expect(access).toHaveBeenLastCalledWith(profileId, 's');
     await f.service.disconnect();
   });
@@ -1538,7 +1551,7 @@ describe('DorkOS app origins (DOR-3218)', () => {
   it('rechecks origins after the audit wait, before any page effect', async () => {
     const f = await create();
     const live: string[] = [];
-    const service = new LocalBrowserService(
+    const service = configuredService(
       f.dir,
       undefined,
       f.backend,
@@ -2325,92 +2338,6 @@ describe('a page with two bodies, and leaving a page the agent can’t read', ()
   });
 });
 
-it('detaches the embedded guest during a handoff and makes a fresh connection on hand-back', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'embedded-handoff-'));
-  directories.push(dir);
-  const f = fixture();
-  const bridge = {
-    endpoint: 'ws://127.0.0.1:9876/page/guest',
-    headers: {},
-    close: vi.fn(async () => undefined),
-    detach: vi.fn(async () => {
-      f.browserEvents.emit('disconnected');
-    }),
-    reattach: vi.fn(async () => undefined),
-  };
-  const service = new LocalBrowserService(dir, { open: async () => bridge }, f.backend);
-  await service.open({ mode: 'embedded', sessionId: 'chat-1' });
-  service.handover.useOutsideTurnCheck(async () => null);
-  const { handoffId } = await service.handover.ask('chat-1', 'wall');
-  expect(bridge.detach).toHaveBeenCalledOnce();
-  expect(bridge.close).not.toHaveBeenCalled();
-  expect(await service.state()).toMatchObject({ status: 'connected', paused: true });
-  // The agent's reads during the handoff get the agent's words; the person's keep theirs (DOR-4678).
-  for (const read of [() => service.observe(), () => service.screenshot()]) {
-    const error = (await read().catch((caught: unknown) => caught)) as { message: string };
-    expect(error).toMatchObject({ code: 'paused' });
-    expect(error.message).toContain('only a person can resume it');
-  }
-  await expect(service.navigate('https://a.example/')).rejects.toMatchObject({
-    code: 'paused',
-    message: 'Your agent is paused. Resume it to continue.',
-  });
-  f.page.title = vi.fn(async () => 'A private title');
-  await service.state();
-  expect(f.page.title).not.toHaveBeenCalled();
-  await service.handover.handBack(handoffId);
-  expect(bridge.reattach).toHaveBeenCalledOnce();
-  expect(f.backend.connect).toHaveBeenCalledTimes(2);
-  expect((await service.state()).paused).toBe(false);
-  await service.disconnect();
-});
-
-it('leaves the embedded guest detached after Stop', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'embedded-stop-'));
-  directories.push(dir);
-  const f = fixture();
-  const bridge = {
-    endpoint: 'ws://127.0.0.1:9876/page/guest',
-    headers: {},
-    close: vi.fn(async () => undefined),
-    detach: vi.fn(async () => undefined),
-    reattach: vi.fn(async () => undefined),
-  };
-  const service = new LocalBrowserService(dir, { open: async () => bridge }, f.backend);
-  await service.open({ mode: 'embedded', sessionId: 'chat-1' });
-  service.handover.useOutsideTurnCheck(async () => null);
-  const { handoffId } = await service.handover.ask('chat-1', 'password');
-  await service.handover.stop(handoffId);
-  expect(bridge.detach).toHaveBeenCalledOnce();
-  expect(bridge.reattach).not.toHaveBeenCalled();
-  expect(f.backend.connect).toHaveBeenCalledTimes(1);
-  expect((await service.state()).paused).toBe(true);
-  await service.disconnect();
-});
-
-it('retries a failed native detach before publishing a handoff', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'embedded-retry-'));
-  directories.push(dir);
-  const f = fixture();
-  const bridge = {
-    endpoint: 'ws://127.0.0.1:9876/page/guest',
-    headers: {},
-    close: vi.fn(async () => undefined),
-    detach: vi
-      .fn(async () => undefined)
-      .mockRejectedValueOnce(new Error('host did not acknowledge')),
-    reattach: vi.fn(async () => undefined),
-  };
-  const service = new LocalBrowserService(dir, { open: async () => bridge }, f.backend);
-  await service.open({ mode: 'embedded', sessionId: 'chat-1' });
-  service.handover.useOutsideTurnCheck(async () => null);
-  await expect(service.handover.ask('chat-1', 'wall')).rejects.toThrow('host did not acknowledge');
-  expect((await service.handover.state()).handoff).toBeNull();
-  await service.handover.ask('chat-1', 'wall');
-  expect(bridge.detach).toHaveBeenCalledTimes(2);
-  await service.disconnect();
-});
-
 /**
  * Back and Forward (DOR-4449) over a made-up DevTools history: the page's
  * entries, moved by entry id, with every document load the step's guard sees.
@@ -2524,7 +2451,7 @@ describe('Back and Forward (DOR-4449)', () => {
       goToHistory: vi.fn(async () => 'refused' as const),
     };
     f.navigate('https://b.example/');
-    const service = new LocalBrowserService(dir, { open: async () => bridge }, f.backend);
+    const service = configuredService(dir, { open: async () => bridge }, f.backend);
     await service.open({ mode: 'embedded' });
     expect((await service.state()).tabs[0]).toMatchObject({ canGoBack: true, canGoForward: false });
     await expect(service.stepHistory('back')).rejects.toMatchObject({ code: 'history_refused' });
@@ -2541,7 +2468,7 @@ describe('Back and Forward (DOR-4449)', () => {
       headers: {},
       close: vi.fn(async () => undefined),
     };
-    const service = new LocalBrowserService(dir, { open: async () => bridge }, f.backend);
+    const service = configuredService(dir, { open: async () => bridge }, f.backend);
     await service.open({ mode: 'embedded' });
     expect((await service.state()).tabs[0]).toMatchObject({
       canGoBack: false,
@@ -2614,48 +2541,3 @@ describe('a page that refuses the Agent browser', () => {
 });
 
 // DOR-4097: the in-app handoff card learns of a refusal from DorkOS's own reading.
-it('marks an in-app handoff refused only after DorkOS read the refusal itself', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'embedded-refused-'));
-  directories.push(dir);
-  const f = fixture();
-  const bridge = {
-    endpoint: 'ws://127.0.0.1:9876/page/guest',
-    headers: {},
-    close: vi.fn(async () => undefined),
-    detach: vi.fn(async () => {
-      f.browserEvents.emit('disconnected');
-    }),
-    reattach: vi.fn(async () => undefined),
-  };
-  const service = new LocalBrowserService(dir, { open: async () => bridge }, f.backend);
-  await service.open({ mode: 'embedded', sessionId: 'chat-1' });
-  service.handover.useOutsideTurnCheck(async () => null);
-  f.navigate('https://accounts.google.com/v3/signin/rejected?made=up');
-  f.change('- heading "Couldn’t sign you in" [level=1]');
-  await service.observe();
-  await service.handover.ask('chat-1', 'password');
-  expect((await service.handover.state()).handoff).toMatchObject({
-    site: 'accounts.google.com',
-    refused: true,
-  });
-});
-
-it('leaves an in-app handoff unmarked when no reading saw a refusal', async () => {
-  const dir = await mkdtemp(path.join(tmpdir(), 'embedded-unrefused-'));
-  directories.push(dir);
-  const f = fixture();
-  const bridge = {
-    endpoint: 'ws://127.0.0.1:9876/page/guest',
-    headers: {},
-    close: vi.fn(async () => undefined),
-    detach: vi.fn(async () => undefined),
-    reattach: vi.fn(async () => undefined),
-  };
-  const service = new LocalBrowserService(dir, { open: async () => bridge }, f.backend);
-  await service.open({ mode: 'embedded', sessionId: 'chat-1' });
-  service.handover.useOutsideTurnCheck(async () => null);
-  // The agent never read the page, whatever it might say about it.
-  f.navigate('https://accounts.google.com/v3/signin/rejected?made=up');
-  await service.handover.ask('chat-1', 'password');
-  expect((await service.handover.state()).handoff?.refused).toBeUndefined();
-});
