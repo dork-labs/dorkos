@@ -12,6 +12,8 @@ import {
   Button,
 } from '@/layers/shared/ui';
 
+const SHARE_WAIT = 'Wait until this agent’s turn ends, then share.';
+
 /** Person-clicked sharing controls. Tool results and page content never open this card. */
 export function BrowserSharing({
   state,
@@ -53,7 +55,7 @@ export function BrowserSharing({
   if (!sharing || sharing.agentId !== agentId)
     return error ? (
       <div>
-        <p role="alert" className="text-sm">
+        <p role="alert" className="text-destructive text-sm">
           {error}
         </p>
         <Button size="sm" variant="ghost" onClick={() => setReload((value) => value + 1)}>
@@ -80,7 +82,7 @@ export function BrowserSharing({
     } catch (cause) {
       setError(
         (cause as { code?: string })?.code === 'outside_turn'
-          ? 'Wait until this agent’s turn ends, then share.'
+          ? SHARE_WAIT
           : 'Couldn’t change sharing. Try again.'
       );
     } finally {
@@ -94,20 +96,28 @@ export function BrowserSharing({
           Stop sharing
         </Button>
       ) : (
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-auto justify-start text-left whitespace-normal"
-          onClick={() => {
-            setError(null);
-            setOpen(true);
-          }}
-        >
-          This agent has its own browser. Share yours?
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-muted-foreground min-w-48 text-sm">This agent has its own browser.</p>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="w-auto shrink-0"
+            onClick={() => {
+              setError(null);
+              setOpen(true);
+            }}
+          >
+            Share yours
+          </Button>
+        </div>
       )}
       {error && !open && (
-        <p role="alert" className="text-sm">
+        <p
+          role={error === SHARE_WAIT ? 'status' : 'alert'}
+          className={
+            error === SHARE_WAIT ? 'text-muted-foreground text-xs' : 'text-destructive text-sm'
+          }
+        >
           {error}
         </p>
       )}
@@ -129,7 +139,12 @@ export function BrowserSharing({
             </AlertDialogDescription>
           </AlertDialogHeader>
           {error && (
-            <p role="alert" className="text-sm">
+            <p
+              role={error === SHARE_WAIT ? 'status' : 'alert'}
+              className={
+                error === SHARE_WAIT ? 'text-muted-foreground text-xs' : 'text-destructive text-sm'
+              }
+            >
               {error}
             </p>
           )}

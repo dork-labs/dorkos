@@ -328,19 +328,27 @@ export function LocalBrowserPanel({
               (DOR-4429). DorkOS draws both outside the page, so the page can't hide or fake them. */}
           </div>
           {state.profile?.agentId && mode === 'new-window' ? (
-            <PageAreaBlock title="This browser opens in its own window.">
-              <Button
-                disabled={busy || !selected}
-                onClick={() => {
-                  if (selected) void action(() => transport.selectLocalBrowserTab(selected.id));
-                }}
-              >
-                Show window
-              </Button>
-              <Button variant="ghost" onClick={(event) => close(event.currentTarget)}>
-                Close browser
-              </Button>
-            </PageAreaBlock>
+            <div
+              data-slot="local-browser-page-area-block"
+              className="flex min-h-0 flex-1 flex-col items-start gap-3 overflow-y-auto px-3 pb-3"
+            >
+              <p className="text-sm font-medium">This browser opens in its own window.</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={busy || !selected}
+                  onClick={() => {
+                    if (selected) void action(() => transport.selectLocalBrowserTab(selected.id));
+                  }}
+                >
+                  Show window
+                </Button>
+                <Button variant="ghost" onClick={(event) => close(event.currentTarget)}>
+                  Close browser
+                </Button>
+              </div>
+            </div>
           ) : (
             <LocalBrowserView
               tab={selected ?? null}

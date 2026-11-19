@@ -361,9 +361,23 @@ export function LocalBrowserPanelShowcases() {
       <ShowcaseDemo>
         <PanelDemo state={AGENT_HERE} interactive />
       </ShowcaseDemo>
-      <ShowcaseLabel>Sharing refused: press Share yours?, then Share browser</ShowcaseLabel>
+      <ShowcaseLabel>Sharing refused: press Share yours, then Share browser</ShowcaseLabel>
       <ShowcaseDemo>
         <PanelDemo state={AGENT_HERE} interactive shareRefused />
+      </ShowcaseDemo>
+      <ShowcaseLabel>Atlas · browser: sign-in notice under the header</ShowcaseLabel>
+      <ShowcaseDemo>
+        <PanelDemo
+          state={{
+            ...AGENT_HERE,
+            signIn: {
+              profileId: 'agent-atlas',
+              site: 'example.com',
+              status: 'open',
+              startedAt: '2026-11-19T12:00:00.000Z',
+            },
+          }}
+        />
       </ShowcaseDemo>
       <ShowcaseLabel>Back and Forward follow the page’s own history: press them</ShowcaseLabel>
       <ShowcaseDemo>
