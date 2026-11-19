@@ -27,6 +27,7 @@
  * @module services/runtimes/codex/transport/app-server-transport
  */
 import { recordMountTargets } from '../policy/mount-target-ledger.js';
+import { CodexLaunchModels, type PreparedLaunchModel } from '../app-server/launch-model.js';
 import type { InterruptReceipt, StreamEvent } from '@dorkos/shared/types';
 import type {
   DeliverIntoTurnOpts,
@@ -39,7 +40,7 @@ import type { CreditsRelay } from '../../../core/cloud/credits-relay.js';
 import { keepAwakeService } from '../../../core/keep-awake/index.js';
 import { CreditsUnavailableError } from '../../../core/cloud/credits-protocols.js';
 import { creditsCodexHome } from '../codex-home.js';
-import { buildSteerText, EFFORT_TO_REASONING, promptToSend } from '../turn-input.js';
+import { buildSteerText } from '../turn-input.js';
 import {
   CodexAppServerPool,
   codexAppServerPool,
@@ -53,7 +54,7 @@ import {
 import { ThreadChannel, turnIdOf, type TurnSink } from '../app-server/thread-channel.js';
 import { AppServerTurnMapper } from '../app-server/notification-mapper.js';
 import { mergeRateLimits, rateLimitsToRolloutShape } from '../app-server/rate-limits.js';
-import { approvalPolicyFor, EventQueue, codexPermissionProfile } from '../app-server/turn-parts.js';
+import { codexTurnParams, EventQueue } from '../app-server/turn-parts.js';
 import { CODEX_APP_SERVER_CAPABILITIES } from '../runtime-constants.js';
 import {
   BACKGROUND_CEILING_MS,
@@ -63,11 +64,7 @@ import {
   type BackgroundWake,
 } from '../app-server/background-work.js';
 import { CodexProcessExitedError, isCodexRpcError } from '../app-server/protocol/errors.js';
-import type {
-  ServerNotification,
-  ServerRequest,
-  TurnStartParams,
-} from '../app-server/protocol/methods.js';
+import type { ServerNotification, ServerRequest } from '../app-server/protocol/methods.js';
 import {
   CodexServerRequestBroker,
   logRefusedServerRequest,
@@ -240,6 +237,8 @@ export class AppServerCodexTransport implements CodexTransport {
   private readonly rateLimits = new Map<string, unknown>();
   /** Relay keys per credits process, revoked when it stops. */
   private readonly relayKeys = new Map<string, { baseUrl: string; key: string }>();
+  /** Personal model selection and reporting, independent of turn routing. */
+  private readonly launchModels = new CodexLaunchModels();
   /** Config warnings to say once, per process, in its next turn. */
   private readonly pendingWarnings = new Map<string, string[]>();
   private readonly watched = new WeakSet<CodexAppServerProcess>();
@@ -341,6 +340,7 @@ export class AppServerCodexTransport implements CodexTransport {
     // Whether the thread this turn runs on has no turn of DorkOS's still
     // winding down in Codex.
     let clear: boolean;
+    let modelChoice: PreparedLaunchModel;
     try {
       const filePolicy = await prepareCodexFilePolicy(request, this.options.mountTargets);
       process = this.watch(
@@ -348,6 +348,13 @@ export class AppServerCodexTransport implements CodexTransport {
       );
       if (!onCredits && !this.rateLimits.has(process.key)) this.readRateLimits(process);
       release = process.hold();
+      modelChoice = await this.launchModels.prepare(process, request, mode);
+      request = modelChoice.request;
+      if (request.signal.aborted) {
+        release();
+        yield { type: 'done', data: { sessionId } };
+        return;
+      }
       relay = onCredits ? this.relayFor(process) : undefined;
       loadInput = {
         process,
@@ -525,6 +532,11 @@ export class AppServerCodexTransport implements CodexTransport {
     request.signal.addEventListener('abort', onAbort, { once: true });
 
     try {
+      const modelError = yield* modelChoice.report();
+      if (modelError) {
+        yield* finish(mapper.closeQuietly(modelError));
+        return;
+      }
       if (loaded.notice) yield loaded.notice;
       for (const message of this.takeWarnings(process)) {
         yield { type: 'system_status', data: { message } };
@@ -541,7 +553,10 @@ export class AppServerCodexTransport implements CodexTransport {
       }
       let turnId: string;
       try {
-        const result = await process.client.request('turn/start', this.turnParams(request, loaded));
+        const result = await process.client.request(
+          'turn/start',
+          codexTurnParams(request, loaded.threadId, loaded.modelNote)
+        );
         turnId = result.turn.id;
       } catch (err) {
         yield* finish(failedStart(mapper, err));
@@ -1493,26 +1508,6 @@ export class AppServerCodexTransport implements CodexTransport {
     const deadline = Date.now() + this.stopAckMs;
     while (this.lingering.has(threadId) && Date.now() < deadline) await sleep(20);
     return !this.lingering.has(threadId);
-  }
-
-  private turnParams(request: CodexTurnRequest, loaded: LoadedThread): TurnStartParams {
-    const effort =
-      request.settings.effort !== undefined
-        ? EFFORT_TO_REASONING[request.settings.effort]
-        : undefined;
-    return {
-      threadId: loaded.threadId,
-      // A fresh load's notice for the model rides with the prompt (DOR-4447).
-      input: [{ type: 'text', text: promptToSend(request, loaded.modelNote), text_elements: [] }],
-      ...(request.messageId !== undefined ? { clientUserMessageId: request.messageId } : {}),
-      // Sent every turn (they are sticky): a mode or model change between turns lands.
-      cwd: request.cwd,
-      approvalPolicy: approvalPolicyFor(request.settings),
-      permissions: codexPermissionProfile(request.settings),
-      ...(request.settings.model !== undefined ? { model: request.settings.model } : {}),
-      ...(effort !== undefined ? { effort } : {}),
-      summary: 'auto',
-    };
   }
 }
 

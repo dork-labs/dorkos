@@ -1251,6 +1251,33 @@ describe('RuntimeRegistry', () => {
       expect(row?.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     });
 
+    it('updates the model only while the captured row and owner still match', async () => {
+      const session = 'codex-session';
+      expect(registry.captureCodexModel(session)).toBeUndefined();
+      await registry.saveSessionSettings(session, { effort: 'medium' });
+      expect(registry.captureCodexModel(session)?.model).toBeNull();
+      const unbound = registry.captureCodexModel(session)!;
+
+      db.update(sessionMetadata)
+        .set({ runtime: 'codex' })
+        .where(eq(sessionMetadata.sessionId, session))
+        .run();
+      expect(unbound.replaceIfCurrent('stale')).toBe(false);
+      const bound = registry.captureCodexModel(session)!;
+      expect(bound.replaceIfCurrent('available')).toBe(true);
+      expect(await registry.getSessionSettings(session)).toMatchObject({
+        effort: 'medium',
+        model: 'available',
+      });
+
+      const removed = registry.captureCodexModel(session)!;
+      await registry.discardSessionSettings(session);
+      expect(removed.replaceIfCurrent('stale')).toBe(false);
+      expect(await registry.getSessionSettings(session)).toBeNull();
+      await registry.persistSessionRuntime(session, 'claude-code', A_PERSON);
+      expect(registry.captureCodexModel(session)).toBeUndefined();
+    });
+
     it('discardSessionSettings removes one row, bound or not, and nothing else', async () => {
       await registry.saveSessionSettings('never-started', { model: 'sonnet' });
       await registry.persistSessionRuntime('bound-then-dropped', 'test-mode', A_PERSON);

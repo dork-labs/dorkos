@@ -171,4 +171,42 @@ describe('the model substitution notice', () => {
       })
     ).toMatchObject(SWAP);
   });
+  it('records an account replacement before text and restores its exact reason after reopen', () => {
+    currentStore = new SessionEventStore(createTestDb());
+    setSessionEventStore(currentStore);
+    const projector = getOrCreateProjector('sess', undefined, { persist: 'record' });
+    projector.ingest({ type: 'turn_start', userMessage: 'hello' } as RawSessionEvent);
+    const raw = toRawSessionEvent({
+      type: 'model_substituted',
+      data: {
+        from: 'old-model',
+        fromName: 'old-model',
+        to: 'available',
+        toName: 'Available',
+        reason: 'account-not-available',
+      },
+    });
+    expect(raw).toMatchObject({ type: 'model_substituted', reason: 'account-not-available' });
+    projector.ingest(raw!);
+    expect(currentStore.readModelSubstitutions('sess')).toHaveLength(1);
+    projector.ingest({ type: 'text_delta', text: 'Hi' } as RawSessionEvent);
+    projector.ingest({ type: 'turn_end' } as RawSessionEvent);
+    disposeProjector('sess');
+    const history = overlayModelSubstitutions('sess', [
+      message('u', 'user', '2026-11-15T10:00:00Z', 'hello'),
+      message('a', 'assistant', '2026-11-15T10:00:01Z', 'Hi'),
+    ]);
+    expect(
+      history.flatMap((row) => row.parts ?? []).filter((part) => part.type === 'model_substituted')
+    ).toEqual([
+      {
+        type: 'model_substituted',
+        from: 'old-model',
+        fromName: 'old-model',
+        to: 'available',
+        toName: 'Available',
+        reason: 'account-not-available',
+      },
+    ]);
+  });
 });

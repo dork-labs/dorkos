@@ -4,13 +4,13 @@ import { AccountsAccessContext } from '../shared/accounts-access-context.js';
  *
  * One DorkOS session maps to one Codex thread (ADR-0309), bound durably via
  * {@link CodexThreadMap}. How a turn reaches Codex is a transport's job
- * (`transport/`, ADR 261005-113107): on `exec` each turn is a fresh
- * `codex exec` subprocess through the SDK; on `app-server` it is one turn on a
- * long-lived `codex app-server` per Codex home. Everything above "run one
- * resolved turn" lives here: settings, the cwd chain, who pays, the model
- * swap, the connector binding and its lease, the identity token, managed MCP
+ * (`transport/`, ADR 261005-113107): one turn on a long-lived
+ * `codex app-server` per Codex home, including the legacy `exec` setting.
+ * Settings, the cwd chain, who pays, the credits model swap, the connector
+ * binding and its lease, the identity token, managed MCP
  * servers, the context gate, prompt assembly, the registry and `codex_threads`
- * writes, and media capture.
+ * writes, and media capture live here. The transport validates a personal
+ * account model against its own process before loading the thread (DOR-3168).
  *
  * Live turn state follows the test-mode pattern: `sendMessage` is a pure
  * StreamEvent producer (the platform's trigger-turn consumes it into the
@@ -89,6 +89,7 @@ import {
   resolveCodexBinaryPath,
 } from './check-dependencies.js';
 import { codexAppServerPool } from './app-server/process-pool.js';
+import { prepareModelReplacement } from './app-server/model-replacement-save.js';
 import { PINNED_CODEX_APP_SERVER_VERSION } from './app-server/protocol/methods.js';
 import { createCodexEventContext } from './event-mapper.js';
 import { readCodexTurnContextUsage, readCodexTurnReading } from './turn-context-usage.js';
@@ -110,11 +111,7 @@ import { captureCodexMedia } from './media-capture.js';
 import type { SessionAttachmentStore } from '../../session/attachments/index.js';
 import { CodexSessionRegistry } from './session-registry.js';
 import { CodexNativeSessionReader } from './native-session-reader.js';
-import {
-  CodexThreadMap,
-  type CodexThreadMetadataPatch,
-  type CodexThreadRecord,
-} from './thread-map.js';
+import { CodexThreadMap, codexThreadMetadata, type CodexThreadRecord } from './thread-map.js';
 import { clampModeToCeiling, tightensDeclaredMode } from '@dorkos/shared/permission-semantics';
 import { CODEX_CAPABILITIES } from './runtime-constants.js';
 import {
@@ -901,6 +898,15 @@ export class CodexRuntime implements AgentRuntime {
     if (creditsSwap?.notice) yield creditsSwap.notice;
     await creditsSwap?.commit();
 
+    const replacement = credits
+      ? {}
+      : prepareModelReplacement(
+          this.settingsPort,
+          sessionId,
+          this.registry.get(sessionId)?.model,
+          settings.model,
+          (model) => this.registry.register(sessionId, { model })
+        );
     const controller = new AbortController();
     this.activeTurns.set(sessionId, controller);
     if (credits) this.creditsTurns.add(controller);
@@ -1033,6 +1039,7 @@ export class CodexRuntime implements AgentRuntime {
         events: ctx,
         // The chat's "lost its DorkOS tools" / "back" notice (DOR-4393).
         onDorkosToolsListing: (listed) => this.registry.noteDorkosTools(sessionId, listed),
+        ...replacement,
         // Persisted the moment the transport learns the id — before the
         // terminal done — so even an interrupted or crashed first turn stays
         // resumable. The cwd is persisted with it so a post-restart resume runs
@@ -1050,7 +1057,7 @@ export class CodexRuntime implements AgentRuntime {
             sessionId,
             threadId,
             cwd,
-            tracked ? this.toMetadataPatch(tracked) : undefined
+            tracked ? codexThreadMetadata(tracked) : undefined
           );
         },
       });
@@ -1265,22 +1272,6 @@ export class CodexRuntime implements AgentRuntime {
   }
 
   /**
-   * Project a tracked session's display metadata into the thread map's patch
-   * shape. An unset title (the registry's `''` default) is omitted so a blank
-   * never overwrites a previously persisted title (or lands as `''` in a
-   * fresh row — NULL hydrates back to the same blank default).
-   */
-  private toMetadataPatch(session: Session): CodexThreadMetadataPatch {
-    return {
-      ...(session.title !== '' ? { title: session.title } : {}),
-      updatedAt: session.updatedAt,
-      ...(session.lastMessagePreview !== undefined
-        ? { lastMessagePreview: session.lastMessagePreview }
-        : {}),
-    };
-  }
-
-  /**
    * Write the registry's current title/updatedAt/preview through to the
    * session's durable `codex_threads` row. A no-op until `thread.started`
    * binds the row. Failures are logged, never thrown — durable metadata is
@@ -1290,7 +1281,7 @@ export class CodexRuntime implements AgentRuntime {
     const tracked = this.registry.get(sessionId);
     if (!tracked) return;
     try {
-      this.threadMap.updateMetadata(sessionId, this.toMetadataPatch(tracked));
+      this.threadMap.updateMetadata(sessionId, codexThreadMetadata(tracked));
     } catch (err) {
       logger.warn('[CodexRuntime] failed to persist session metadata', { sessionId, err });
     }

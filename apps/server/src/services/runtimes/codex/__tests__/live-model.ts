@@ -7,13 +7,12 @@
  * `config/read` reported `model = "gpt-6.1-sol"` from `type: user`, every turn
  * failed in two seconds with "not supported when using Codex with a ChatGPT
  * account", and `model/list`'s default for the account was a different model.
- * Both transports read that file, so the exec and app-server live legs failed
- * alike — and only the cases that need a reply could tell.
+ * Only cases that needed a reply could detect the unusable default.
  *
  * A live run proves DorkOS, not the person's Codex config, so it runs on the
  * account's own default from `model/list` (free: no inference). The product
- * keeps its behaviour: a person's chosen model is theirs, and an unusable one
- * gets DorkOS's plain "choose another model" error.
+ * validates personal choices against that account at launch (DOR-3168), and
+ * reports a typed "choose another model" error when discovery is unknown.
  *
  * @module services/runtimes/codex/__tests__/live-model
  */

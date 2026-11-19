@@ -16,6 +16,7 @@
  *
  * @module services/runtimes/codex/thread-map
  */
+import type { Session } from '@dorkos/shared/types';
 import { codexThreads, eq, and, isNull, type Db, type CodexThread } from '@dorkos/db';
 
 /**
@@ -260,4 +261,15 @@ export class CodexThreadMap {
   listAll(): CodexThreadRecord[] {
     return this.db.select().from(codexThreads).all().map(toRecord);
   }
+}
+
+/** Preserve missing legacy titles instead of freezing a blank default into a fresh row. */
+export function codexThreadMetadata(session: Session): CodexThreadMetadataPatch {
+  return {
+    ...(session.title !== '' ? { title: session.title } : {}),
+    updatedAt: session.updatedAt,
+    ...(session.lastMessagePreview !== undefined
+      ? { lastMessagePreview: session.lastMessagePreview }
+      : {}),
+  };
 }

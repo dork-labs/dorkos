@@ -346,6 +346,13 @@ export interface SessionSettingsPort {
    * first turn is (ADR-0255, DOR-812).
    */
   saveSessionSettings(sessionId: string, settings: SessionSettings): Promise<void>;
+  /** Capture an existing Codex/unbound row for a later model-only conditional save. */
+  captureCodexModel?(sessionId: string):
+    | {
+        readonly model: string | null;
+        replaceIfCurrent(model: string): boolean;
+      }
+    | undefined;
   /**
    * Move a session's stored settings to a new id, so they stay under exactly
    * one key. A runtime calls this the moment it rebinds a session to a new

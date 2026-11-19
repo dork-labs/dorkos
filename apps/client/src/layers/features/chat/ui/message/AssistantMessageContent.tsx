@@ -286,13 +286,7 @@ export function AssistantMessageContent({
       );
     }
     if (part.type === 'model_substituted') {
-      return (
-        <ModelSubstitutedRow
-          key={`model-substituted-${i}`}
-          fromName={part.fromName}
-          toName={part.toName}
-        />
-      );
+      return <ModelSubstitutedRow key={`model-substituted-${i}`} {...part} />;
     }
     if (part.type === 'project_addons_off') {
       return (
