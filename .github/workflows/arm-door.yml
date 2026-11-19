@@ -109,10 +109,15 @@ jobs:
           }
           if [[ -n "$head" ]]; then
             JQ='.[0]' rd "$w/committed" gh api "repos/$REPO/commits/$head" --jq '.commit.committer.date | tojson'
+            # When GitHub first saw the head: its earliest check suite. The pusher sets
+            # the committer date, so the label is timed against the later of the two
+            # (DOR-4706). No suite yet: null, and the script keeps the entry as unreadable.
+            JQ='min' rd "$w/seen" gh api --paginate "repos/$REPO/commits/$head/check-suites?per_page=100" \
+              --jq '.check_suites[].created_at | tojson'
             JQ='add // []' rd "$w/statuses" gh api --paginate "repos/$REPO/commits/$head/statuses?per_page=100"
             JQ='.' rd "$w/runs" gh api --paginate "repos/$REPO/commits/$head/check-runs?per_page=100" --jq '.check_runs[]'
           else
-            for f in committed statuses runs; do echo null > "$w/$f"; done
+            for f in committed seen statuses runs; do echo null > "$w/$f"; done
           fi
           JQ='.' rd "$w/labels" gh api --paginate "repos/$REPO/issues/$pr/events?per_page=100" \
             --jq '.[] | select(.event == "labeled" and .label.name == "security-reviewed") | .created_at | tojson'
@@ -122,10 +127,10 @@ jobs:
           jq -c '.contexts // null' ci/required-checks.json > "$w/required" 2>/dev/null || echo null > "$w/required"
 
           jq -n --arg head "$head" \
-            --slurpfile committed "$w/committed" --slurpfile statuses "$w/statuses" \
+            --slurpfile committed "$w/committed" --slurpfile seen "$w/seen" --slurpfile statuses "$w/statuses" \
             --slurpfile runs "$w/runs" --slurpfile labels "$w/labels" --slurpfile files "$w/files" \
             --slurpfile changed "$w/changed" --slurpfile required "$w/required" '
-            {head: $head, headCommittedAt: $committed[0], labelEvents: $labels[0],
+            {head: $head, headCommittedAt: $committed[0], headSeenAt: $seen[0], labelEvents: $labels[0],
              statuses: $statuses[0], checkRuns: $runs[0], required: $required[0],
              files: $files[0], changedFiles: $changed[0]}' > "$w/payload.json" 2>/dev/null \
             || echo '{}' > "$w/payload.json"

@@ -35,6 +35,7 @@ base() {
     {
       head: $h,
       headCommittedAt: "2026-11-18T10:00:00Z",
+      headSeenAt: "2026-11-18T10:00:30Z",
       labelEvents: ["2026-11-18T09:00:00Z", "2026-11-18T11:00:00Z"],
       statuses: [{id: 1, context: "security-review", state: "success", created_at: "2026-11-18T11:00:00Z"}],
       checkRuns: ([run(1; "typecheck"), run(2; "test"), run(3; "lint"), run(4; "no-fragment-under-skip-label")]
@@ -66,7 +67,13 @@ check "a careful manual merge: CI green, labelled, no stamp" "KEEP gates-met pro
 check "arm script stamp, local verify"             "KEEP gates-met proof=local-verify stamp=yes" ".statuses += [$(stamp success local-verify)]"
 check "arm script stamp, PM waiver, CI red"        "KEEP gates-met proof=waiver stamp=yes" ".statuses += [$(stamp success waiver)] | .checkRuns[1].conclusion = \"failure\""
 check "docs-only, no CI, no stamp"                 "KEEP gates-met proof=docs-only stamp=no" '.files = [{filename: "contributing/ci.md"}, {filename: "docs/a.mdx"}, {filename: "README.md"}] | .changedFiles = 3 | .checkRuns = []'
-check "label exactly at the head time counts"      "KEEP gates-met proof=ci-green stamp=no" '.labelEvents = ["2026-11-18T10:00:00Z"]'
+check "label exactly at the head time counts"      "KEEP gates-met proof=ci-green stamp=no" '.labelEvents = ["2026-11-18T10:00:30Z"]'
+# DOR-4706: the pusher sets the committer date, so the head time is the later of it and when
+# GitHub first saw the head (its earliest check suite).
+check "backdated commit: an old label stays old"   "PULL security-label-older-than-head" '.headCommittedAt = "2026-11-01T00:00:00Z" | .headSeenAt = "2026-11-18T10:00:30Z" | .labelEvents = ["2026-11-10T00:00:00Z"]'
+check "label after commit date, before GitHub saw it" "PULL security-label-older-than-head" '.labelEvents = ["2026-11-18T10:00:10Z"]'
+check "a seen time earlier than the commit date"   "KEEP gates-met proof=ci-green stamp=no" '.headSeenAt = "2026-11-18T09:00:00Z" | .labelEvents = ["2026-11-18T10:00:00Z"]'
+check "no seen time: keep (unreadable)"            "KEEP unreadable headSeenAt" 'del(.headSeenAt)'
 
 # Gate 1: Security's label at the head, on every PR.
 check "no label ever"                              "PULL no-security-label" '.labelEvents = []'

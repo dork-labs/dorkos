@@ -6,10 +6,13 @@
 #   1. The gates, which decide whether the entry stays. It is taken back out
 #      when its head is missing what matters:
 #        - Security's `security-reviewed` label, added at or after the head
-#          commit (the newest label event is not older than the head's committer
-#          date). The same rule the release range check applies to every pull
+#          (the newest label event is not older than the later of the head's
+#          committer date and when GitHub first saw it, its earliest check
+#          suite: the pusher sets the committer date, so a backdated commit
+#          alone could make an old label look fresh, DOR-4706). The same rule
+#          the release range check and the arm script apply to every pull
 #          request, docs included (#3913 was client-only and still blocked a
-#          release). If docs are ever exempted, both checks change in one PR.
+#          release). If docs are ever exempted, the checks change in one PR.
 #        - a verify proof: the arm script's `arm-record` stamp names one (a
 #          local `pnpm verify` pass, a PM waiver, docs-only or green CI, all of
 #          which only the arm script can see), or this script finds one itself:
@@ -30,7 +33,8 @@
 #
 # Usage:
 #   scripts/arm-door.sh verdict <payload.json>
-#       payload: {head, headCommittedAt, labelEvents: [security-reviewed
+#       payload: {head, headCommittedAt, headSeenAt (the head's earliest check
+#       suite), labelEvents: [security-reviewed
 #       label times], statuses: [head commit statuses], checkRuns: [head check
 #       runs], required: [required contexts], files: [{filename,
 #       previous_filename}], changedFiles}. Prints one line:
@@ -63,6 +67,7 @@ case "$cmd" in
     missing=$(jq -r '
       [ (if (.head | type) == "string" and (.head | test("^[0-9a-f]{40}$")) then empty else "head" end),
         (if (.headCommittedAt | type) == "string" and .headCommittedAt != "" then empty else "headCommittedAt" end),
+        (if (.headSeenAt | type) == "string" and .headSeenAt != "" then empty else "headSeenAt" end),
         (if (.labelEvents | type) == "array" then empty else "labelEvents" end),
         (if (.statuses | type) == "array" then empty else "statuses" end),
         (if (.checkRuns | type) == "array" then empty else "checkRuns" end),
@@ -79,10 +84,12 @@ case "$cmd" in
                  and (test("^(contributing|docs)/") or test("\\.md$"));
       .head as $h
       | ([.files[] | .filename, (.previous_filename // empty)]) as $names
-      # Gate 1: the newest security-reviewed label event at or after the head commit.
+      # Gate 1: the newest security-reviewed label event at or after the head,
+      # timed by the later of its committer date and when GitHub first saw it.
+      | ([.headCommittedAt, .headSeenAt] | max) as $headtime
       | ([.labelEvents[] | strings] | max) as $label
       | (if $label == null then "no-security-label"
-         elif $label < .headCommittedAt then "security-label-older-than-head"
+         elif $label < $headtime then "security-label-older-than-head"
          else null end) as $labelbad
       # The arm script stamp: the newest arm-record, by time then id.
       | ([.statuses[] | select(type == "object" and .context == "arm-record")]
