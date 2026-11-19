@@ -52,7 +52,7 @@ import {
   isFollowerCommand,
 } from '../execution/access-levels.js';
 import { everyAgentGrantSubject } from '../every-agent-grants.js';
-import { WRITE_UPGRADE_SET_ASIDE } from '../access/composio-write-upgrade.js';
+import { setAsideByWriteUpgrade } from '../access/composio-write-upgrade.js';
 import { rejectionReason } from './managed-authority-rejection.js';
 import type {
   ConnectorManagedLifecyclePort,
@@ -940,7 +940,7 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
         subjectId: connectorManagedAuthorityOutbox.subjectId,
         state: connectorManagedAuthorityOutbox.state,
         rejectionCode: connectorManagedAuthorityOutbox.rejectionCode,
-        safeReason: connectorManagedAuthorityOutbox.safeReason,
+        setAside: setAsideByWriteUpgrade,
         generation: connectorManagedAuthorityOutbox.executionConfigGeneration,
         requestJson: connectorManagedAuthorityOutbox.requestJson,
         compactedAt: connectorManagedAuthorityOutbox.compactedAt,
@@ -1005,11 +1005,12 @@ export class ManagedAuthoritySyncService implements ConnectorManagedLifecyclePor
       // while nothing has changed this agent's access since, and only when
       // the service still offers its actions. Otherwise what the agent holds
       // now goes: never more than the owner last saw. A choice the write
-      // upgrade set aside never goes again, whatever the clocks say (DOR-4510).
+      // upgrade set aside never goes again, whatever the clocks say (DOR-4510),
+      // stamped or set aside before the stamp existed (DOR-4735).
       const saved =
         input.why === 'relinked' &&
         command &&
-        scope.safeReason !== WRITE_UPGRADE_SET_ASIDE &&
+        !scope.setAside &&
         scope.rejectionCode !== 'revision_unavailable' &&
         (command.kind === 'replace_agent_grants' ||
           command.kind === 'replace_every_agent_grants') &&
