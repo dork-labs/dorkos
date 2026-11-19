@@ -8,7 +8,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LocalBrowserAskPersonSchema, type LocalBrowserState } from '@dorkos/shared/local-browser';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { logger } from '../../../../lib/logger.js';
-import { BrowserHandover, assertSignInUrl, type HandoverBrowser } from '../handover.js';
+import {
+  BrowserHandover,
+  SIGNING_IN_REFUSAL,
+  assertSignInUrl,
+  type HandoverBrowser,
+} from '../handover.js';
 import { HANDED_BACK_MESSAGE, handBackWake } from '../hand-back-wake/index.js';
 
 import { handBackWakeHarness } from './hand-back-wake-harness.js';
@@ -16,6 +21,7 @@ import { BrowserProfileRemoval } from '../profile-removal/index.js';
 import { prepareProfileFolder } from '../profile-folders.js';
 import { createLocalBrowserProfileStore } from '../profile-store.js';
 import type { SignInWindow } from '../sign-in-window.js';
+import { closingError } from '../lifecycle.js';
 
 let dataDirectory: string;
 beforeEach(() => {
@@ -66,7 +72,9 @@ function fakeSignIns() {
   let folder: string | undefined;
   const signIns = {
     get current() {
-      return status ? { profileId: null, site: 'x', status, startedAt: 'now' } : null;
+      return status
+        ? { profileId: null, site, status, startedAt: '2999-01-01T00:00:00.000Z' }
+        : null;
     },
     get active() {
       return status === 'open' || status === 'saving';
@@ -78,10 +86,26 @@ function fakeSignIns() {
       status = 'open';
       return signIns.current!;
     }),
-    close: vi.fn(),
-    onChange: vi.fn(),
+    // Like the real one: only an open window is asked to quit, and its save then lands.
+    done: vi.fn(() => {
+      if (status !== 'open') return;
+      status = doneLandsAs;
+      moved();
+    }),
+    onChange: vi.fn((listener: () => void) => {
+      moved = listener;
+    }),
   };
-  return { signIns, finish: (next: 'saved' | 'failed') => (status = next) };
+  let doneLandsAs: 'saved' | 'failed' = 'saved';
+  // The asked page's host, so a sign-in reads as this handoff's own unless a test says not.
+  let site = 'accounts.example.com';
+  let moved: () => void = () => undefined;
+  return {
+    signIns,
+    finish: (next: 'saved' | 'failed') => (status = next),
+    doneLandsAs: (next: 'saved' | 'failed') => (doneLandsAs = next),
+    signInSite: (next: string) => (site = next),
+  };
 }
 
 function setup(outside = false, mode: 'embedded' | 'new-window' = 'embedded') {
@@ -93,10 +117,34 @@ function setup(outside = false, mode: 'embedded' | 'new-window' = 'embedded') {
     () => dataDirectory
   );
   handover.useOutsideTurnCheck(async () => (outside ? 'outsider_turn' : null));
+  // As startup does: a sign-in that moves reaches the handoff (DOR-4731).
+  handover.useChangeListener(() => undefined);
   return { handover, ...browser, ...signIns };
 }
 
 describe('detached handoffs', () => {
+  it('does not publish a handoff or report success on retry after its close times out', async () => {
+    const { handover, browser, signIns, set } = setup(false, 'new-window');
+    const handedOver = vi.fn();
+    handover.useHandoffListener(handedOver);
+    browser.disconnect.mockRejectedValueOnce(closingError(false));
+
+    await expect(handover.ask('chat-1', 'password')).rejects.toMatchObject({ code: 'busy' });
+    expect((await handover.state()).handoff).toBeNull();
+    expect(handover.isOpenFor('chat-1')).toBe(false);
+    expect(handedOver).not.toHaveBeenCalled();
+    expect(signIns.start).not.toHaveBeenCalled();
+
+    // The close eventually lands. Asking again needs a live page, not a phantom handoff.
+    set({ ...connected(), status: 'disconnected', tabs: [], selectedTabId: null });
+    await expect(handover.ask('chat-1', 'password')).rejects.toMatchObject({ code: 'no_tab' });
+    await handover.open({ mode: 'new-window', sessionId: 'chat-1' });
+    const next = await handover.ask('chat-1', 'password');
+    expect((await handover.state()).handoff?.id).toBe(next.handoffId);
+    expect(signIns.start).toHaveBeenCalledOnce();
+    expect(handedOver).toHaveBeenCalledOnce();
+  });
+
   it('serializes hand-back against a second answer or reopen', async () => {
     const { handover, browser } = setup();
     const { handoffId } = await handover.ask('chat-1', 'password');
@@ -151,7 +199,7 @@ describe('detached handoffs', () => {
     await handover.stop(handoffId);
     expect(browser.disconnect).toHaveBeenCalledOnce();
     expect(browser.open).not.toHaveBeenCalled();
-    expect(signIns.close).not.toHaveBeenCalled();
+    expect(signIns.done).not.toHaveBeenCalled();
     await expect(handover.requireAgentMayUse('chat-1')).rejects.toMatchObject({
       code: 'task_stopped',
     });
@@ -260,7 +308,7 @@ describe('BrowserHandover.ask', () => {
     });
     expect(browser.resume).not.toHaveBeenCalled();
     expect(browser.disconnect).not.toHaveBeenCalled();
-    expect(signIns.close).not.toHaveBeenCalled();
+    expect(signIns.done).not.toHaveBeenCalled();
     expect(ended).not.toHaveBeenCalled();
 
     // Only the person's answer ends this same handoff.
@@ -697,7 +745,7 @@ describe('telling the app something changed', () => {
 
   it('tells the same listener when the sign-in window moves', () => {
     const { signIns, changed } = wired();
-    (signIns.onChange.mock.calls[0]![0] as () => void)();
+    signIns.onChange.mock.calls.at(-1)![0]();
     expect(changed).toHaveBeenCalledOnce();
   });
 
@@ -1141,7 +1189,7 @@ describe('a sign-in started from a refused page', () => {
     const made = setup(false, 'new-window');
     made.setProfile(null);
     made.handover.useChangeListener(vi.fn());
-    const signInMoved = () => (made.signIns.onChange.mock.calls[0]![0] as () => void)();
+    const signInMoved = () => made.signIns.onChange.mock.calls.at(-1)![0]();
     return { ...made, signInMoved };
   }
 
@@ -1215,5 +1263,173 @@ describe('a sign-in started from a refused page', () => {
     });
     expect(browser.disconnect).not.toHaveBeenCalled();
     expect(signIns.start).not.toHaveBeenCalled();
+  });
+});
+
+// DOR-4731: on a Mac, closing Chrome's last window leaves Chrome running, so DorkOS never
+// sees the close and the sign-in stays open. Done signing in must still finish it.
+describe('Done signing in (DOR-4731)', () => {
+  it('finishes when the window closed, the close was missed, and the person presses Done', async () => {
+    const { handover, browser, signIns } = setup(false, 'new-window');
+    const ended = vi.fn();
+    handover.useEndListener(ended);
+    const { handoffId } = await handover.ask('chat-1', 'password');
+    // The close never reached DorkOS: the window still reads as open, and Continue can't help.
+    expect((await handover.state()).signIn?.status).toBe('open');
+    await expect(handover.handBack(handoffId)).rejects.toMatchObject({ code: 'signing_in' });
+
+    await handover.finishSignIn(handoffId);
+
+    expect(signIns.done).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(ended).toHaveBeenCalledOnce());
+    expect(ended.mock.calls[0]![0]).toMatchObject({ id: handoffId, outcome: 'handed-back' });
+    expect(browser.open).toHaveBeenCalledWith({
+      mode: 'new-window',
+      sessionId: 'chat-1',
+      profileId: 'p1',
+      url: connected().tabs[0]!.url,
+    });
+    await expect(handover.requireAgentMayUse('chat-1')).resolves.toBeUndefined();
+  });
+
+  it('keeps the handoff open with the failure showing when the save fails', async () => {
+    const { handover, browser, doneLandsAs } = setup(false, 'new-window');
+    const ended = vi.fn();
+    handover.useEndListener(ended);
+    const { handoffId } = await handover.ask('chat-1', 'password');
+    doneLandsAs('failed');
+
+    await handover.finishSignIn(handoffId);
+
+    const state = await handover.state();
+    expect(state.signIn?.status).toBe('failed');
+    expect(state.handoff).toMatchObject({ id: handoffId, outcome: null });
+    expect(ended).not.toHaveBeenCalled();
+    expect(browser.open).not.toHaveBeenCalled();
+  });
+
+  it('refuses Done for a handoff that already ended', async () => {
+    const { handover, signIns } = setup(false, 'new-window');
+    const { handoffId } = await handover.ask('chat-1', 'password');
+    await handover.stop(handoffId);
+    await expect(handover.finishSignIn(handoffId)).rejects.toMatchObject({
+      code: 'handoff_ended',
+    });
+    expect(signIns.done).not.toHaveBeenCalled();
+  });
+
+  // Security (DOR-4731): Stop leaves the window for the person (2FA, a payment), so the
+  // panel's Done signing in must still end it, free the browser, and never resume the agent.
+  it('after Stop, Done signing in saves and frees the browser without resuming the agent', async () => {
+    const { handover, browser, signIns } = setup(false, 'new-window');
+    const ended = vi.fn();
+    handover.useEndListener(ended);
+    const { handoffId } = await handover.ask('chat-1', 'password');
+    await handover.stop(handoffId);
+    expect(signIns.done).not.toHaveBeenCalled();
+    // The 409s that followed Stop in the reported case.
+    const reopen = { mode: 'new-window' as const, sessionId: 'chat-1', profileId: 'p1' };
+    await expect(handover.open(reopen)).rejects.toMatchObject({ code: 'signing_in' });
+    // Another agent is told why, in plain words, never a bare busy.
+    await expect(handover.ask('chat-2', 'password')).rejects.toMatchObject({
+      code: 'signing_in',
+      message: SIGNING_IN_REFUSAL,
+    });
+
+    await handover.finishSignIn();
+
+    expect(signIns.done).toHaveBeenCalledOnce();
+    expect((await handover.state()).signIn?.status).toBe('saved');
+    expect(ended).toHaveBeenCalledOnce();
+    expect(ended.mock.calls[0]![0]).toMatchObject({ outcome: 'stopped' });
+    expect(browser.open).not.toHaveBeenCalled();
+    expect(browser.resume).not.toHaveBeenCalled();
+    await expect(handover.requireAgentMayUse('chat-1')).rejects.toMatchObject({
+      code: 'task_stopped',
+    });
+    await handover.open(reopen);
+    expect(browser.open).toHaveBeenCalledWith(reopen);
+  });
+
+  it('refuses a Done that names no handoff while one is open', async () => {
+    const { handover, signIns } = setup(false, 'new-window');
+    await handover.ask('chat-1', 'password');
+    await expect(handover.finishSignIn()).rejects.toMatchObject({ code: 'handoff_open' });
+    expect(signIns.done).not.toHaveBeenCalled();
+  });
+
+  // Security (DOR-4731): Done with no handoff named acts only on the open sign-in window
+  // DorkOS started, saves it, and never hands anything back.
+  it('Done with no handoff saves a window the person opened, and hands nothing back', async () => {
+    const { handover, browser, signIns, set } = setup(false, 'new-window');
+    const ended = vi.fn();
+    handover.useEndListener(ended);
+    set({ ...connected(), sessionId: null });
+    await handover.signIn({ url: 'https://linear.app/' });
+    browser.open.mockClear();
+    browser.resume.mockClear();
+
+    await handover.finishSignIn();
+
+    expect(signIns.done).toHaveBeenCalledOnce();
+    expect((await handover.state()).signIn?.status).toBe('saved');
+    expect(ended).not.toHaveBeenCalled();
+    expect(browser.open).not.toHaveBeenCalled();
+    expect(browser.resume).not.toHaveBeenCalled();
+  });
+
+  it('Done with no handoff and no open window changes nothing', async () => {
+    const { handover, browser, signIns } = setup(false, 'new-window');
+    await handover.finishSignIn();
+    // The window's own done() refuses anything but its open window: nothing moves.
+    expect(signIns.done).toHaveBeenCalledOnce();
+    expect((await handover.state()).signIn).toBeNull();
+    expect(browser.open).not.toHaveBeenCalled();
+    expect(browser.resume).not.toHaveBeenCalled();
+  });
+
+  it('tells an agent on the sign-in’s profile why, in plain words', async () => {
+    const { handover, setProfile } = setup();
+    setProfile(null);
+    await handover.signIn({ url: 'https://linear.app/' });
+    await expect(handover.requireAgentMayUse('chat-1')).rejects.toMatchObject({
+      code: 'signing_in',
+      message: SIGNING_IN_REFUSAL,
+    });
+    expect(() => handover.refuseWhileSigningIn()).toThrow(SIGNING_IN_REFUSAL);
+  });
+
+  it('Stop after Done signing in still never hands back', async () => {
+    const { handover, browser, signIns, finish } = setup(false, 'new-window');
+    const ended = vi.fn();
+    handover.useEndListener(ended);
+    const { handoffId } = await handover.ask('chat-1', 'password');
+    // Done was pressed and the window is still saving when the person presses Stop.
+    signIns.done.mockImplementationOnce(() => undefined);
+    await handover.finishSignIn(handoffId);
+    await handover.stop(handoffId);
+    finish('saved');
+    signIns.onChange.mock.calls.at(-1)![0]();
+    await Promise.resolve();
+    expect(ended).toHaveBeenCalledOnce();
+    expect(ended.mock.calls[0]![0]).toMatchObject({ outcome: 'stopped' });
+    expect(browser.open).not.toHaveBeenCalled();
+  });
+
+  it('refuses Done for a sign-in that isn’t this handoff’s', async () => {
+    const { handover, signIns, signInSite } = setup(false, 'new-window');
+    const { handoffId } = await handover.ask('chat-1', 'password');
+    signInSite('elsewhere.example');
+    await expect(handover.finishSignIn(handoffId)).rejects.toMatchObject({ code: 'signing_in' });
+    expect(signIns.done).not.toHaveBeenCalled();
+  });
+
+  it('refuses Done when the handoff has no sign-in window', async () => {
+    const { handover, signIns } = setup();
+    const { handoffId } = await handover.ask('chat-1', 'password');
+    await expect(handover.finishSignIn(handoffId)).rejects.toMatchObject({
+      code: 'sign_in_failed',
+    });
+    expect(signIns.done).not.toHaveBeenCalled();
   });
 });

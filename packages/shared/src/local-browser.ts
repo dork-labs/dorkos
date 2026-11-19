@@ -201,6 +201,11 @@ export const LocalBrowserSignInSchema = z.object({
   site: z.string(),
   status: z.enum(['open', 'saving', 'saved', 'failed']),
   startedAt: z.string(),
+  /**
+   * The window was asked to quit and hasn't: the person quits it with ⌘Q, and its exit still
+   * saves the sign-in (DOR-4731, macOS only). Absent otherwise.
+   */
+  needsQuit: z.literal(true).optional(),
 });
 export type LocalBrowserSignIn = z.infer<typeof LocalBrowserSignInSchema>;
 
@@ -257,6 +262,14 @@ export const LocalBrowserSignInRequestSchema = z.union([
   z.object({ handoffId: z.string().min(1) }).strict(),
 ]);
 export type LocalBrowserSignInRequest = z.infer<typeof LocalBrowserSignInRequestSchema>;
+
+/**
+ * A person's Done signing in (DOR-4731): the handoff whose sign-in window it ends, or none
+ * for a window no handoff waits on, such as one a stopped task left open.
+ */
+export const LocalBrowserSignInDoneSchema = z
+  .object({ handoffId: z.string().min(1).optional() })
+  .strict();
 
 /** Which handoff a person's Hand back or Stop task answers. */
 export const LocalBrowserHandoffAnswerSchema = z.object({ handoffId: z.string().min(1) }).strict();

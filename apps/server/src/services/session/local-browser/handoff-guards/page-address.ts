@@ -1,4 +1,9 @@
-/** URL validation and redaction for person handoffs and sign-ins. */
+/**
+ * The addresses a handoff may put in front of a person: a sign-in page must be `https:`, or
+ * `http:` on this computer, and while a person has the browser a tab shows only its site.
+ *
+ * @module services/session/local-browser/handoff-guards/page-address
+ */
 import { LocalBrowserError } from '../errors.js';
 
 /**

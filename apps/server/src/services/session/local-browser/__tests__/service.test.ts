@@ -11,6 +11,8 @@ import {
 } from '../lifecycle.js';
 import { AUDIT_WRITE_RESPONSE_TIMEOUT_MS, LOAD_START_MS } from '../page-action.js';
 import { LocalBrowserService } from '../service.js';
+import { BrowserHandover } from '../handover.js';
+import { SignInWindow } from '../sign-in-window.js';
 import { assertLocalBrowserUrl, httpFallbackAllowed, navigationRefusal } from '../errors.js';
 import { CLOUD_ORIGIN_REFUSAL } from '@dorkos/shared/cloud-origin';
 import { localBrowserRefusalNext } from '@dorkos/shared/local-browser-refusal';
@@ -921,7 +923,68 @@ async function lifecycleFixture() {
   };
 }
 
+async function handoffCloseFixture() {
+  const f = await lifecycleFixture();
+  const signIns = new SignInWindow({
+    executable: async () => '/made-up/Chromium',
+    installedChrome: () => undefined,
+    held: () => false,
+    lockOwner: () => 12345,
+    prepare: async () => undefined,
+    spawner: () => ({
+      pid: 12345,
+      exited: new Promise(() => {}),
+      quit: () => undefined,
+      forceQuit: () => undefined,
+    }),
+  });
+  const handover = new BrowserHandover(f.service, signIns, () => f.dir);
+  handover.useOutsideTurnCheck(async () => null);
+  await f.service.open({ mode: 'new-window', sessionId: 'chat-one', url: 'https://example.test/' });
+  const close = deferred<void>();
+  vi.mocked(f.context.close).mockReturnValueOnce(close.promise);
+  return { ...f, handover, signIns, close };
+}
+
 describe('bounded browser lifecycle ownership', () => {
+  // Regression pins: joining a close and its 2 s response budget predate DOR-4731's fix.
+  it('waits for the pending close before the next handoff starts its sign-in', async () => {
+    const { service, context, handover, signIns, close } = await handoffCloseFixture();
+    vi.useFakeTimers();
+    const disconnecting = service.disconnect();
+    const asking = handover.ask('chat-one', 'password');
+    await vi.advanceTimersByTimeAsync(CLOSE_RESPONSE_TIMEOUT_MS - 1);
+    expect(signIns.current).toBeNull();
+    expect(context.close).toHaveBeenCalledOnce();
+
+    close.resolve();
+    await disconnecting;
+    const { handoffId } = await asking;
+    expect((await handover.state()).handoff?.id).toBe(handoffId);
+    expect(signIns.current?.status).toBe('open');
+    expect(context.close).toHaveBeenCalledOnce();
+  });
+
+  it('refuses the next handoff at the unchanged close deadline and retains the profile', async () => {
+    const { service, context, handover, signIns, close } = await handoffCloseFixture();
+    vi.useFakeTimers();
+    const disconnecting = expect(service.disconnect()).rejects.toMatchObject({ code: 'busy' });
+    const asking = expect(handover.ask('chat-one', 'password')).rejects.toMatchObject({
+      code: 'busy',
+    });
+    await vi.advanceTimersByTimeAsync(CLOSE_RESPONSE_TIMEOUT_MS);
+    await Promise.all([disconnecting, asking]);
+    expect(signIns.current).toBeNull();
+    expect(context.close).toHaveBeenCalledOnce();
+    await expect(service.profileRemoval.forget(null)).rejects.toMatchObject({
+      code: 'profile_busy',
+    });
+
+    close.resolve();
+    await service.disconnect();
+    await expect(service.profileRemoval.forget(null)).resolves.toBeUndefined();
+  });
+
   it('returns pause immediately and retains pre-dispatch ownership after its response expires', async () => {
     const { service, observedNodeSets, click } = await lifecycleFixture();
     await service.open({ mode: 'new-window' });

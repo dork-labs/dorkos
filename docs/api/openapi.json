@@ -33539,6 +33539,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -33941,6 +33947,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -34610,6 +34622,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -34998,6 +35016,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -35387,6 +35411,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -36022,6 +36052,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -36820,6 +36856,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -37227,6 +37269,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -37304,6 +37352,143 @@
           },
           "409": {
             "description": "The browser cannot complete this request in its current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The browser operation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/local-browser/sign-in/done": {
+      "post": {
+        "tags": [
+          "Local browser"
+        ],
+        "summary": "Finish the open sign-in window",
+        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Quits the sign-in window DorkOS opened, so its sign-in saves. Names the handoff it answers, or none for a window no handoff waits on. Answers at once; the state says when it saved or failed, and a saved one is handed back to the handoff named.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "handoffId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "The window was asked to quit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accepted": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "accepted"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not the owner on this computer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No sign-in window of this handoff can be finished",
             "content": {
               "application/json": {
                 "schema": {
@@ -37635,6 +37820,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -38043,6 +38234,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [

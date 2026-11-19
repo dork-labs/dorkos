@@ -251,6 +251,15 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'runtimes.environment.inherit.codex',
       'runtimes.environment.inherit.doe',
       'runtimes.environment.inherit.opencode',
+      // The load gate agents' heavy shell jobs wait behind: an agent that could
+      // loosen any of it would be letting its own job past the wait (DOR-4209).
+      'runtimes.loadGate.enabled',
+      'runtimes.loadGate.hardCapMinutes',
+      'runtimes.loadGate.heavyCommands.add',
+      'runtimes.loadGate.heavyCommands.remove',
+      'runtimes.loadGate.maxLoad',
+      'runtimes.loadGate.maxWaitMinutes',
+      'runtimes.loadGate.slots',
       // How many spin-off chats may run at once: an agent would be raising its
       // own limit (DOR-3413).
       'runtimes.maxAgentChats',
