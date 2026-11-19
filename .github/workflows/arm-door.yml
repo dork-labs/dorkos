@@ -44,6 +44,7 @@ permissions:
   contents: read
   statuses: read
   checks: read
+  actions: read
   pull-requests: read
   issues: read
 
@@ -109,11 +110,21 @@ jobs:
           }
           if [[ -n "$head" ]]; then
             JQ='.[0]' rd "$w/committed" gh api "repos/$REPO/commits/$head" --jq '.commit.committer.date | tojson'
-            # When GitHub first saw the head: its earliest check suite. The pusher sets
-            # the committer date, so the label is timed against the later of the two
-            # (DOR-4706). No suite yet: null, and the script keeps the entry as unreadable.
-            JQ='min' rd "$w/seen" gh api --paginate "repos/$REPO/commits/$head/check-suites?per_page=100" \
-              --jq '.check_suites[].created_at | tojson'
+            # When THIS PR got the head: its earliest `pull_request` run for that SHA on the
+            # PR's own branch. The pusher sets the committer date, and a commit's check suites
+            # belong to the SHA repo-wide (a side-branch push would carry an earlier time), so
+            # the label is timed against the later of the committer date and this (DOR-4706).
+            # None yet: null, and the script decides on the committer date alone or keeps it.
+            branch=$(gh pr view "$pr" --repo "$REPO" --json headRefName --jq .headRefName 2>/dev/null) || branch=
+            if [[ -n "$branch" ]]; then
+              gh api --paginate "repos/$REPO/actions/runs?head_sha=$head&event=pull_request&per_page=100" \
+                --jq '.workflow_runs[] | "\(.head_branch)\t\(.created_at)"' > "$w/runs-by-branch" 2>/dev/null \
+                && awk -F'\t' -v b="$branch" '$1==b && $2!="" {print $2}' "$w/runs-by-branch" | sort | head -1 \
+                  | jq -R -s -c 'split("\n") | map(select(. != "")) | first' > "$w/seen" 2>/dev/null \
+                || echo null > "$w/seen"
+            else
+              echo null > "$w/seen"
+            fi
             JQ='add // []' rd "$w/statuses" gh api --paginate "repos/$REPO/commits/$head/statuses?per_page=100"
             JQ='.' rd "$w/runs" gh api --paginate "repos/$REPO/commits/$head/check-runs?per_page=100" --jq '.check_runs[]'
           else

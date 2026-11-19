@@ -7,9 +7,10 @@
 #      when its head is missing what matters:
 #        - Security's `security-reviewed` label, added at or after the head
 #          (the newest label event is not older than the later of the head's
-#          committer date and when GitHub first saw it, its earliest check
-#          suite: the pusher sets the committer date, so a backdated commit
-#          alone could make an old label look fresh, DOR-4706). The same rule
+#          committer date and when this PR got it, its earliest `pull_request`
+#          run on the PR's own branch: the pusher sets the committer date, and a
+#          commit's check suites belong to the SHA repo-wide, so a backdated or
+#          side-branch commit could make an old label look fresh, DOR-4706). The same rule
 #          the release range check and the arm script apply to every pull
 #          request, docs included (#3913 was client-only and still blocked a
 #          release). If docs are ever exempted, the checks change in one PR.
@@ -33,8 +34,8 @@
 #
 # Usage:
 #   scripts/arm-door.sh verdict <payload.json>
-#       payload: {head, headCommittedAt, headSeenAt (the head's earliest check
-#       suite), labelEvents: [security-reviewed
+#       payload: {head, headCommittedAt, headSeenAt (the head's earliest
+#       pull_request run on the PR's branch, or null), labelEvents: [security-reviewed
 #       label times], statuses: [head commit statuses], checkRuns: [head check
 #       runs], required: [required contexts], files: [{filename,
 #       previous_filename}], changedFiles}. Prints one line:
@@ -67,7 +68,6 @@ case "$cmd" in
     missing=$(jq -r '
       [ (if (.head | type) == "string" and (.head | test("^[0-9a-f]{40}$")) then empty else "head" end),
         (if (.headCommittedAt | type) == "string" and .headCommittedAt != "" then empty else "headCommittedAt" end),
-        (if (.headSeenAt | type) == "string" and .headSeenAt != "" then empty else "headSeenAt" end),
         (if (.labelEvents | type) == "array" then empty else "labelEvents" end),
         (if (.statuses | type) == "array" then empty else "statuses" end),
         (if (.checkRuns | type) == "array" then empty else "checkRuns" end),
@@ -85,11 +85,15 @@ case "$cmd" in
       .head as $h
       | ([.files[] | .filename, (.previous_filename // empty)]) as $names
       # Gate 1: the newest security-reviewed label event at or after the head,
-      # timed by the later of its committer date and when GitHub first saw it.
-      | ([.headCommittedAt, .headSeenAt] | max) as $headtime
+      # timed by the later of its committer date and when this PR got it. With no
+      # seen time, a label older than the committer date is still stale; a newer
+      # one cannot be judged, so the entry is kept as unreadable (DOR-4706).
+      | ((.headSeenAt | strings | select(. != "")) // null) as $seen
+      | ([.headCommittedAt, $seen] | map(select(. != null)) | max) as $headtime
       | ([.labelEvents[] | strings] | max) as $label
       | (if $label == null then "no-security-label"
          elif $label < $headtime then "security-label-older-than-head"
+         elif $seen == null then "unreadable-seen"
          else null end) as $labelbad
       # The arm script stamp: the newest arm-record, by time then id.
       | ([.statuses[] | select(type == "object" and .context == "arm-record")]
@@ -112,8 +116,10 @@ case "$cmd" in
          elif $docs then "docs-only"
          elif $ci then "ci-green"
          else null end) as $proof
-      | ([$labelbad, (if $proof == null then "no-proof" else null end)] | map(select(. != null))) as $bad
+      | ([(if $labelbad == "unreadable-seen" then null else $labelbad end),
+          (if $proof == null then "no-proof" else null end)] | map(select(. != null))) as $bad
       | if ($bad | length) > 0 then "PULL \($bad | join(","))"
+        elif $labelbad == "unreadable-seen" then "KEEP unreadable headSeenAt"
         else "KEEP gates-met proof=\($proof) stamp=\(if $stamped then "yes" else "no" end)" end
     ' "$src" 2>/dev/null || { echo "KEEP unreadable payload"; exit 2; }
     ;;

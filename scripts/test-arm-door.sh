@@ -73,7 +73,11 @@ check "label exactly at the head time counts"      "KEEP gates-met proof=ci-gree
 check "backdated commit: an old label stays old"   "PULL security-label-older-than-head" '.headCommittedAt = "2026-11-01T00:00:00Z" | .headSeenAt = "2026-11-18T10:00:30Z" | .labelEvents = ["2026-11-10T00:00:00Z"]'
 check "label after commit date, before GitHub saw it" "PULL security-label-older-than-head" '.labelEvents = ["2026-11-18T10:00:10Z"]'
 check "a seen time earlier than the commit date"   "KEEP gates-met proof=ci-green stamp=no" '.headSeenAt = "2026-11-18T09:00:00Z" | .labelEvents = ["2026-11-18T10:00:00Z"]'
-check "no seen time: keep (unreadable)"            "KEEP unreadable headSeenAt" 'del(.headSeenAt)'
+check "no seen time, label after commit: keep"     "KEEP unreadable headSeenAt" 'del(.headSeenAt)'
+check "null seen time, label after commit: keep"   "KEEP unreadable headSeenAt" '.headSeenAt = null'
+check "no seen time, label before commit: pull"    "PULL security-label-older-than-head" 'del(.headSeenAt) | .labelEvents = ["2026-11-18T09:00:00Z"]'
+check "no seen time, no label: pull"               "PULL no-security-label" 'del(.headSeenAt) | .labelEvents = []'
+check "no seen time, no proof: pull"               "PULL no-proof" 'del(.headSeenAt) | .checkRuns = []'
 
 # Gate 1: Security's label at the head, on every PR.
 check "no label ever"                              "PULL no-security-label" '.labelEvents = []'
