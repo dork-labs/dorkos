@@ -1,0 +1,4572 @@
+{
+  "source": "Composio action catalog, `composio tools list <app>`; scripts/composio-money-word-candidates.mjs",
+  "checkedAt": "2026-11-18",
+  "matcher": "tight",
+  "toolkits": {
+    "active_campaign": [
+      {
+        "slug": "ACTIVE_CAMPAIGN_CREATE_AN_ORDER",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "ACTIVE_CAMPAIGN_CREATE_CUSTOMER",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "purchases"
+      },
+      {
+        "slug": "ACTIVE_CAMPAIGN_UPSERT_RECURRING_PAYMENTS_BULK",
+        "tags": ["openWorldHint", "idempotentHint", "updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "agenty": [
+      {
+        "slug": "AGENTY_TRANSFER_AGENT_OWNERSHIP",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "aircall": [
+      {
+        "slug": "AIRCALL_TRANSFER_CALL",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "allmodels": [
+      {
+        "slug": "ALLMODELS_CREATE_TOP_UP_LINK",
+        "tags": ["createHint"],
+        "descriptionMatch": "charge a payment method"
+      }
+    ],
+    "altoviz": [
+      {
+        "slug": "ALTOVIZ_UPLOAD_PURCHASE_INVOICE",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "purchase"
+      }
+    ],
+    "ambiguous_mcp": [
+      {
+        "slug": "AMBIGUOUS_MCP_TRANSFER_OWNERSHIP",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "amplitude_mcp": [
+      {
+        "slug": "AMPLITUDE_MCP_MANAGE_AMP_EVENTS",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": "Purchase"
+      },
+      {
+        "slug": "AMPLITUDE_MCP_QUERY_AMPLITUDE_DATA",
+        "tags": ["updateHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "AMPLITUDE_MCP_UPDATE_PROPERTIES",
+        "tags": ["updateHint"],
+        "descriptionMatch": "Purchase"
+      }
+    ],
+    "anakin_io": [
+      {
+        "slug": "ANAKIN_IO_EXECUTE_WIRE_ACTION",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "api_ninjas": [
+      {
+        "slug": "API_NINJAS_CALCULATE_SALES_TAX",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "purchase"
+      }
+    ],
+    "apify": [
+      {
+        "slug": "APIFY_GET_CARFAX_REPORT_BY_VIN",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "purchase"
+      }
+    ],
+    "ashby": [
+      {
+        "slug": "ASHBY_TRANSFER_APPLICATION",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "aweber": [
+      {
+        "slug": "AWEBER_RECORD_SUBSCRIBER_TRACKED_EVENT",
+        "tags": ["updateHint"],
+        "descriptionMatch": "purchase"
+      }
+    ],
+    "baselinker": [
+      {
+        "slug": "BASELINKER_ADD_INVENTORY_PURCHASE_ORDER",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "BASELINKER_ADD_INVENTORY_PURCHASE_ORDER_ITEMS",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "BASELINKER_ADD_ORDER",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "BASELINKER_ADD_ORDER_BY_SPLIT",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "BASELINKER_ADD_ORDER_DUPLICATE",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "BASELINKER_ADD_ORDER_RETURN",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "BASELINKER_ADD_ORDER_RETURN_PRODUCT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "BASELINKER_SET_INVENTORY_PURCHASE_ORDER_STATUS",
+        "tags": ["updateHint", "idempotentHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "BASELINKER_SET_ORDER_PAYMENT",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "BASELINKER_SET_ORDER_RETURN_REFUND",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "beeminder": [
+      {
+        "slug": "BEEMINDER_CREATE_CHARGE",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "benchmark_email": [
+      {
+        "slug": "BENCHMARK_EMAIL_POST_ASSIGN_PRODUCT_LIST",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": "purchases"
+      },
+      {
+        "slug": "BENCHMARK_EMAIL_POST_SHOPIFY_PURCHASE_LIST",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": "purchase"
+      }
+    ],
+    "bexio": [
+      {
+        "slug": "BEXIO_CANCEL_PAYMENT",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "BEXIO_CREATE_INVOICE_PAYMENT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "BEXIO_CREATE_OUTGOING_PAYMENT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "BEXIO_CREATE_PAYMENT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "BEXIO_CREATE_PURCHASE_ORDER",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "BEXIO_DELETE_INVOICE_PAYMENT",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "BEXIO_DELETE_OUTGOING_PAYMENT",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "BEXIO_DELETE_PAYMENT",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "BEXIO_DELETE_PURCHASE_ORDER",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "BEXIO_UPDATE_OUTGOING_PAYMENT",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "BEXIO_UPDATE_PAYMENT",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "BEXIO_UPDATE_PURCHASE_ORDER",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "bigcommerce": [
+      {
+        "slug": "BIGCOMMERCE_ADD_ORDER_LEVEL_FEES_TO_CHECKOUT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "BIGCOMMERCE_CREATE_ORDER_REFUND",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "bitly": [
+      {
+        "slug": "BITLY_ADD_CUSTOM_DOMAIN",
+        "tags": ["createHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "BITLY_REGISTER_DOMAIN",
+        "tags": ["createHint"],
+        "descriptionMatch": "purchase"
+      }
+    ],
+    "bolna": [
+      {
+        "slug": "BOLNA_BUY_PHONE_NUMBER",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "Purchase"
+      }
+    ],
+    "bookingmood": [
+      {
+        "slug": "BOOKINGMOOD_DELETE_PAYMENTS",
+        "tags": ["destructiveHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "BOOKINGMOOD_UPDATE_PAYMENTS",
+        "tags": ["updateHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "botpress": [
+      {
+        "slug": "BOTPRESS_CHARGE_WORKSPACE_UNPAID_INVOICES",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "box": [
+      {
+        "slug": "BOX_TRANSFER_OWNED_FOLDERS",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "braze": [
+      {
+        "slug": "BRAZE_TRACK_USERS",
+        "tags": ["updateHint"],
+        "descriptionMatch": "purchases"
+      }
+    ],
+    "brex": [
+      {
+        "slug": "BREX_TRANSFER_CARD",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "brightdata": [
+      {
+        "slug": "BRIGHTDATA_SCRAPE_BEST_BUY_PRODUCTS",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "Buy"
+      },
+      {
+        "slug": "BRIGHTDATA_SCRAPE_BEST_BUY_REVIEWS",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "Buy"
+      }
+    ],
+    "btcpay_server": [
+      {
+        "slug": "BTCPAY_SERVER_CREATE_PAYMENT_REQUEST",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "BTCPAY_SERVER_DELETE_PAYMENT_REQUEST",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "BTCPAY_SERVER_DELETE_PAYOUT",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "bunnycdn": [
+      {
+        "slug": "BUNNYCDN_CREATE_COINIFY_PAYMENT",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "BUNNYCDN_GET_PREPARE_PAYMENT_AUTHORIZATION",
+        "tags": ["createHint", "openWorldHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "cashfree_payments_mcp": [
+      {
+        "slug": "CASHFREE_PAYMENTS_MCP_CANCEL_PAYMENT_LINK",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "CASHFREE_PAYMENTS_MCP_CREATE_PAYMENT_LINK",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "CASHFREE_PAYMENTS_MCP_CREATE_REFUND",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "CASHFREE_PAYMENTS_MCP_GET_ON_DEMAND_CHARGES",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "CASHFREE_PAYMENTS_MCP_SIMULATE_PAYMENT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "cdr_platform": [
+      {
+        "slug": "CDR_PLATFORM_GET_CDR_PRICE",
+        "tags": ["createHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": "purchases"
+      },
+      {
+        "slug": "CDR_PLATFORM_POST_CDR_PURCHASE",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "purchase"
+      }
+    ],
+    "clickfunnels": [
+      {
+        "slug": "CLICKFUNNELS_CREATE_WEBHOOKS_INCOMING_EXTERNAL_PURCHASE_ENDPOINTS",
+        "tags": ["createHint"],
+        "descriptionMatch": "Purchase"
+      },
+      {
+        "slug": "CLICKFUNNELS_CREATE_WEBHOOKS_INCOMING_EXTERNAL_PURCHASE_PRODUCT_MAPPINGS",
+        "tags": ["createHint"],
+        "descriptionMatch": "Purchase"
+      },
+      {
+        "slug": "CLICKFUNNELS_DELETE_WEBHOOKS_INCOMING_EXTERNAL_PURCHASE_ENDPOINTS",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": "Purchase"
+      },
+      {
+        "slug": "CLICKFUNNELS_DELETE_WEBHOOKS_INCOMING_EXTERNAL_PURCHASE_PRODUCT_MAPPINGS",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": "Purchase"
+      },
+      {
+        "slug": "CLICKFUNNELS_REFUND_ORDERS_TRANSACTIONS",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "CLICKFUNNELS_UPDATE_WEBHOOKS_INCOMING_EXTERNAL_PURCHASE_ENDPOINTS",
+        "tags": ["updateHint"],
+        "descriptionMatch": "Purchase"
+      },
+      {
+        "slug": "CLICKFUNNELS_UPDATE_WEBHOOKS_INCOMING_EXTERNAL_PURCHASE_PRODUCT_MAPPINGS",
+        "tags": ["updateHint"],
+        "descriptionMatch": "Purchase"
+      }
+    ],
+    "clicksend": [
+      {
+        "slug": "CLICKSEND_LISTS_TRANSFER_CONTACT_PUT",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "CLICKSEND_POST_NUMBERS_BUY",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "CLICKSEND_RECHARGE_PURCHASE_BY_PACKAGE_ID_PUT",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "Purchase"
+      }
+    ],
+    "clientary": [
+      {
+        "slug": "CLIENTARY_DELETE_PAYMENT",
+        "tags": ["destructiveHint", "idempotentHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "CLIENTARY_DELETE_PAYMENT_PROFILE",
+        "tags": ["destructiveHint", "idempotentHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "clover": [
+      {
+        "slug": "CLOVER_APPLY_ORDER_SERVICE_CHARGE",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "CLOVER_CREATE_AUTHORIZATION_ON_PAYMENT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "CLOVER_CREATE_CUSTOMER_CARD",
+        "tags": ["createHint"],
+        "descriptionMatch": "debit card"
+      },
+      {
+        "slug": "CLOVER_CREATE_PAYMENT_RECORD_ON_ORDER",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "CLOVER_REMOVE_ORDER_SERVICE_CHARGE",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "CLOVER_UPDATE_CUSTOMER_CARD",
+        "tags": ["updateHint"],
+        "descriptionMatch": "debit card"
+      },
+      {
+        "slug": "CLOVER_UPDATE_PAYMENT",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "coinbase_agents_mcp": [
+      {
+        "slug": "COINBASE_AGENTS_MCP_COINBASE_CONVERT_EXECUTE",
+        "tags": ["updateHint"],
+        "descriptionMatch": "moves funds"
+      },
+      {
+        "slug": "COINBASE_AGENTS_MCP_COINBASE_ORDERS_CLOSE_POSITION",
+        "tags": ["createHint"],
+        "descriptionMatch": "Places a market order"
+      },
+      {
+        "slug": "COINBASE_AGENTS_MCP_COINBASE_ORDERS_CREATE",
+        "tags": ["createHint"],
+        "descriptionMatch": "BUY"
+      },
+      {
+        "slug": "COINBASE_AGENTS_MCP_COINBASE_ORDERS_EDIT",
+        "tags": ["updateHint"],
+        "descriptionMatch": "BUY"
+      },
+      {
+        "slug": "COINBASE_AGENTS_MCP_COINBASE_TRANSFER",
+        "tags": ["updateHint"],
+        "descriptionMatch": "Moves funds"
+      },
+      {
+        "slug": "COINBASE_AGENTS_MCP_COINBASE_X402_FETCH",
+        "tags": ["updateHint"],
+        "descriptionMatch": "purchases"
+      },
+      {
+        "slug": "COINBASE_AGENTS_MCP_COINBASE_X402_PAY",
+        "tags": ["updateHint"],
+        "descriptionMatch": "send payment"
+      }
+    ],
+    "coinbase_wallet_mcp": [
+      {
+        "slug": "COINBASE_WALLET_MCP_SWAP",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "constant_contact": [
+      {
+        "slug": "CONSTANT_CONTACT_UPDATE_EVENT_TRACK_REGISTRATION_PAYMENT_STATUS",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "coupa": [
+      {
+        "slug": "COUPA_ADD_ATTACHMENT_FILE_TO_PURCHASE_ORDER",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "COUPA_ADD_ATTACHMENT_FILE_TO_PURCHASE_ORDER_LINE",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "COUPA_CREATE_EXTERNAL_PURCHASE_ORDER",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "COUPA_CREATE_PAYMENT_RECONCILIATION_LINES_FOR_A_PAY_ORDER",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "COUPA_CREATE_PAYMENT_TERM",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "COUPA_INVENTORY_TRANSFERS_DESTROY",
+        "tags": ["destructiveHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "COUPA_ISSUE_PURCHASE_ORDER_WITHOUT_SEND",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "COUPA_MARK_A_CHARGE_AS_EXPORTED",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "COUPA_MARK_COUPA_PAY_PAYMENT_AS_EXPORTED",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "COUPA_MARK_PAY_INVOICE_AS_EXPORTED",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "COUPA_PATCH_PURCHASE_ORDER",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "COUPA_PURCHASE_ORDERS_ISSUE",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "COUPA_RELEASE_PURCHASE_ORDER_FROM_BUYER_HOLD",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "COUPA_UPDATE_EXISTING_PAYMENT_TERM",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "COUPA_UPDATE_PAY_ORDER_STATUS_TO_READY_TO_PAY",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "COUPA_UPDATE_PURCHASE_ORDER_CHANGE_REMOTE_APPROVER",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "COUPA_WITHDRAW_CONTRACT_SIGNATURES",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "COUPA_WITHDRAW_INVOICE_DISPUTE",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "crawl4ai": [
+      {
+        "slug": "CRAWL4AI_CREATE_PLAN_CHECKOUT",
+        "tags": ["createHint"],
+        "descriptionMatch": "charge a card"
+      },
+      {
+        "slug": "CRAWL4AI_PURCHASE_EXTRA_CREDITS",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "creem": [
+      {
+        "slug": "CREEM_CREATE_PRODUCT",
+        "tags": ["createHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "CREEM_DEBIT_ACCOUNT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "CREEM_REFUND_PAYMENT",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "CREEM_UPDATE_PRODUCT",
+        "tags": ["updateHint"],
+        "descriptionMatch": "purchases"
+      },
+      {
+        "slug": "CREEM_UPDATE_SUBSCRIPTION",
+        "tags": ["updateHint"],
+        "descriptionMatch": "charge the customer"
+      },
+      {
+        "slug": "CREEM_UPGRADE_SUBSCRIPTION",
+        "tags": ["updateHint"],
+        "descriptionMatch": "charge the customer"
+      }
+    ],
+    "deel": [
+      {
+        "slug": "DEEL_ASSIGN_WORKERS_IT_SEATS",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "DEEL_ATTACH_ON_DEMAND_PAYROLL_ENTRIES",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "DEEL_CANCEL_ON_DEMAND_PAYROLL",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "DEEL_CREATE_CONTRACT_OFF_CYCLE_PAYMENT",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "DEEL_CREATE_ON_DEMAND_PAYROLL",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "DEEL_CREATE_PAYMENT_STATEMENT",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": "initiate payment"
+      },
+      {
+        "slug": "DEEL_CREATE_WORK_STATEMENT_PAYMENT_POLICY",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "DEEL_DETACH_ON_DEMAND_PAYROLL_ENTRIES",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "DEEL_IMPORT_PAYROLL_MIGRATION_FILES",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "DEEL_SIGN_GLOBAL_PAYROLL_AMENDMENT",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "DEEL_SUBMIT_ON_DEMAND_PAYROLL",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "DEEL_SUBMIT_PAYROLL_MIGRATION_IMPORT",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "DEEL_SYNC_TIME_OFF_GLOBAL_PAYROLL",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "DEEL_TRANSFER_IT_ASSET",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "DEEL_UPDATE_CONTRACT_PLATFORM_PAYMENT_TYPE",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "deputy": [
+      {
+        "slug": "DEPUTY_POST_MY_ROSTER_BIDS_WITHDRAW",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "DEPUTY_POST_MY_ROSTER_BY_ID_SWAP_BY_ACTION",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "DEPUTY_POST_SUPERVISE_EMPLOYEE_BY_EMPLOYEE_ID_HR_PAYROLL_SYNC",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "dialpad": [
+      {
+        "slug": "DIALPAD_REDEEM_ACCESS_OR_REFRESH_TOKEN",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "DIALPAD_TRANSFER_CALL_TO_DESTINATION",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "digital_humani": [
+      {
+        "slug": "DIGITAL_HUMANI_PLANT_TREES",
+        "tags": ["createHint"],
+        "descriptionMatch": "CHARGEABLE"
+      }
+    ],
+    "disqus": [
+      {
+        "slug": "DISQUS_UPDATE_ORGANIZATION_PAYMENT_INFORMATION",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "docusign": [
+      {
+        "slug": "DOCUSIGN_DELETE_ENVELOPE_TRANSFER_RULE",
+        "tags": ["destructiveHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "DOCUSIGN_POST_PAYMENT_TO_INVOICE",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "DOCUSIGN_PURCHASE_ADDITIONAL_ENVELOPES",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "DOCUSIGN_UPDATE_DOCUMENT_VISIBILITY_RECIPIENTS",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": "purchase"
+      }
+    ],
+    "dynatrace": [
+      {
+        "slug": "DYNATRACE_TRANSFER_DOCUMENT_OWNER",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "DYNATRACE_TRANSFER_SETTINGS_OBJECT_OWNERSHIP",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "elastic_email": [
+      {
+        "slug": "ELASTIC_EMAIL_ADJUST_SUBACCOUNT_CREDITS",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "elevenlabs": [
+      {
+        "slug": "ELEVENLABS_ADD_OUTBOUND_PHONE_NUMBER",
+        "tags": ["createHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "ELEVENLABS_SUBMIT_ORDER",
+        "tags": ["openWorldHint", "updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "era_context_mcp": [
+      {
+        "slug": "ERA_CONTEXT_MCP_TRANSACTIONS__MANAGE_TRANSFER_LINKS",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "erpnext": [
+      {
+        "slug": "ERPNEXT_MAKE_PURCHASE_ORDER",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "esignatures": [
+      {
+        "slug": "ESIGNATURES_WITHDRAW_CONTRACT",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "esignatures_io": [
+      {
+        "slug": "ESIGNATURES_IO_WITHDRAW_CONTRACT",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "esputnik": [
+      {
+        "slug": "ESPUTNIK_ADD_ORDERS",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ESPUTNIK_GENERATE_EVENT_V3",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "purchase"
+      }
+    ],
+    "eventbrite": [
+      {
+        "slug": "EVENTBRITE_UPDATE_TICKET_BUYER_SETTINGS",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": "purchase"
+      }
+    ],
+    "eventzilla": [
+      {
+        "slug": "EVENTZILLA_CONFIRM_ORDER",
+        "tags": ["updateHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "faraday": [
+      {
+        "slug": "FARADAY_CREATE_OUTCOME",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "purchase"
+      }
+    ],
+    "finerworks": [
+      {
+        "slug": "FINERWORKS_SUBMIT_ORDERS",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "fingertip": [
+      {
+        "slug": "FINGERTIP_CREATE_INVOICE",
+        "tags": ["createHint"],
+        "descriptionMatch": "bill a customer"
+      }
+    ],
+    "finmei": [
+      {
+        "slug": "FINMEI_DELETE_PAYMENT",
+        "tags": ["destructiveHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "finmo": [
+      {
+        "slug": "FINMO_CREATE_CUSTOMER",
+        "tags": ["createHint"],
+        "descriptionMatch": "move money"
+      },
+      {
+        "slug": "FINMO_CREATE_PAYOUT",
+        "tags": ["createHint"],
+        "descriptionMatch": "transfer funds"
+      },
+      {
+        "slug": "FINMO_CREATE_PAYOUT_BENEFICIARY",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "FINMO_CREATE_REFUND",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "FINMO_TRANSFER_WALLET_FUNDS",
+        "tags": ["createHint", "idempotentHint"],
+        "descriptionMatch": "Transfer funds"
+      }
+    ],
+    "firmao": [
+      {
+        "slug": "FIRMAO_CREATE_INVOICE",
+        "tags": ["createHint"],
+        "descriptionMatch": "purchase"
+      }
+    ],
+    "flutterwave": [
+      {
+        "slug": "FLUTTERWAVE_CANCEL_PAYMENT_PLAN",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "FLUTTERWAVE_CREATE_BULK_TOKENIZED_CHARGE",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "FLUTTERWAVE_CREATE_PAYMENT_LINK",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "FLUTTERWAVE_CREATE_PAYMENT_PLAN",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "FLUTTERWAVE_CREATE_REFUND",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "FLUTTERWAVE_DISABLE_PAYMENT_LINK",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "FLUTTERWAVE_UPDATE_PAYMENT_PLAN",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "fly": [
+      {
+        "slug": "FLY_ADD_WIRE_GUARD_PEER",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "FLY_CREATE_DELEGATED_WIRE_GUARD_TOKEN",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "FLY_DELETE_DELEGATED_WIRE_GUARD_TOKEN",
+        "tags": ["updateHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "FLY_REMOVE_WIRE_GUARD_PEER",
+        "tags": ["destructiveHint", "openWorldHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "freee": [
+      {
+        "slug": "FREEE_ACT_ON_PAYMENT_REQUEST",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "FREEE_ACT_ON_PURCHASE_REQUEST",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": "Purchase"
+      },
+      {
+        "slug": "FREEE_CREATE_DEAL_PAYMENT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "FREEE_CREATE_PAYMENT_REQUEST",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "FREEE_CREATE_PURCHASE_REQUEST",
+        "tags": ["createHint"],
+        "descriptionMatch": "Purchase"
+      },
+      {
+        "slug": "FREEE_CREATE_TRANSFER",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "FREEE_DELETE_DEAL_PAYMENT",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "FREEE_DELETE_PAYMENT_REQUEST",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "FREEE_DELETE_PURCHASE_REQUEST",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": "Purchase"
+      },
+      {
+        "slug": "FREEE_DELETE_TRANSFER",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "FREEE_PUT_YEAREND_ADJUSTMENT_PAYROLL_AND_BONUS",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "FREEE_UPDATE_DEAL_PAYMENT",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "FREEE_UPDATE_EMPLOYEE_BASIC_PAY_RULE",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "FREEE_UPDATE_EMPLOYEE_PAYROLL_STATEMENT_REMARK",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "FREEE_UPDATE_PAYMENT_REQUEST",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "FREEE_UPDATE_PURCHASE_REQUEST",
+        "tags": ["updateHint"],
+        "descriptionMatch": "Purchase"
+      },
+      {
+        "slug": "FREEE_UPDATE_TRANSFER",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "gelato": [
+      {
+        "slug": "GELATO_CREATE_ORDER",
+        "tags": ["createHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "GELATO_SUBMIT_DRAFT_ORDER",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "getresponse": [
+      {
+        "slug": "GETRESPONSE_CREATE_ORDER",
+        "tags": ["createHint"],
+        "descriptionMatch": "purchase"
+      }
+    ],
+    "gift_up": [
+      {
+        "slug": "GIFT_UP_ADD_ORDER_NOTE",
+        "tags": ["createHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "GIFT_UP_REDEEM_GIFT_CARD",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "GIFT_UP_REDEEM_GIFT_CARD_IN_FULL",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "GIFT_UP_TOP_UP_GIFT_CARD",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "github": [
+      {
+        "slug": "GITHUB_TRANSFER_A_REPOSITORY",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "gitlab": [
+      {
+        "slug": "GITLAB_TRANSFER_PROJECT",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "gocardless_mcp": [
+      {
+        "slug": "GOCARDLESS_MCP_CANCEL_PAYMENT",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "GOCARDLESS_MCP_CREATE_PAYMENT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "GOCARDLESS_MCP_CREATE_PAYMENT_LINK",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "GOCARDLESS_MCP_CREATE_PAYMENT_TEMPLATE_LINK",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "GOCARDLESS_MCP_CREATE_REFUND",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "goodapi_plant_trees": [
+      {
+        "slug": "GOODAPI_PLANT_TREES_REFUND_TREE_PLANTING",
+        "tags": ["updateHint", "idempotentHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "google_business_profile": [
+      {
+        "slug": "GOOGLE_BUSINESS_PROFILE_TRANSFER_LOCATION",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "google_classroom": [
+      {
+        "slug": "GOOGLE_CLASSROOM_WITHDRAW_GUARDIAN_INVITATION",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "googlebigquery": [
+      {
+        "slug": "GOOGLEBIGQUERY_CREATE_CAPACITY_COMMITMENT",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "purchase"
+      }
+    ],
+    "gosquared": [
+      {
+        "slug": "GOSQUARED_TRACKING_EVENT",
+        "tags": ["createHint"],
+        "descriptionMatch": "purchases"
+      },
+      {
+        "slug": "GOSQUARED_TRACKING_TRANSACTION",
+        "tags": ["createHint"],
+        "descriptionMatch": "purchase"
+      }
+    ],
+    "gumroad": [
+      {
+        "slug": "GUMROAD_VERIFY_LICENSE",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": "purchase"
+      }
+    ],
+    "gusto": [
+      {
+        "slug": "GUSTO_ADD_EMPLOYEES_TO_HOLIDAY_PAY_POLICY",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "GUSTO_ASSIGN_PAY_SCHEDULES",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "GUSTO_CREATE_HOLIDAY_PAY_POLICY",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "GUSTO_CREATE_PAY_SCHEDULES_ASSIGNMENT_PREVIEW",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "GUSTO_DELETE_COMPANY_HOLIDAY_PAY_POLICY",
+        "tags": ["destructiveHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "GUSTO_LIST_PAY_SCHEDULES_PREVIEW",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "GUSTO_REMOVE_HOLIDAY_PAY_POLICY_EMPLOYEES",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "GUSTO_UPDATE_CONTRACTOR_PAYMENT_METHOD",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "GUSTO_UPDATE_EMPLOYEE_PAYMENT_METHOD",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "GUSTO_UPDATE_HOLIDAY_PAY_POLICY",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "GUSTO_UPDATE_PAY_SCHEDULE",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "GUSTO_UPDATE_RECURRING_REIMBURSEMENT",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "halopsa": [
+      {
+        "slug": "HALOPSA_UPSERT_INVOICE",
+        "tags": ["createHint", "updateHint"],
+        "descriptionMatch": "capture payment"
+      }
+    ],
+    "happy_scribe": [
+      {
+        "slug": "HAPPY_SCRIBE_HS_CONFIRM_ORDER",
+        "tags": ["openWorldHint", "updateHint", "idempotentHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "harvest": [
+      {
+        "slug": "HARVEST_CREATE_INVOICE_PAYMENT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "HARVEST_DELETE_INVOICE_PAYMENT",
+        "tags": ["destructiveHint", "openWorldHint", "idempotentHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "harvey": [
+      {
+        "slug": "HARVEY_CREATE_ASSISTANT_COMPLETION",
+        "tags": ["createHint"],
+        "descriptionMatch": "purchase"
+      }
+    ],
+    "hibob": [
+      {
+        "slug": "HIBOB_CREATE_EMPLOYEE_VARIABLE_PAYMENT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "HIBOB_DELETE_EMPLOYEE_VARIABLE_PAYMENT",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "HIBOB_UPDATE_EMPLOYEE_VARIABLE_PAYMENT",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "highlevel_location": [
+      {
+        "slug": "HIGHLEVEL_LOCATION_INVOICES_AUTO_PAYMENT_INVOICE_SCHEDULE",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "HIGHLEVEL_LOCATION_INVOICES_TEXT2PAY_INVOICE",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "HIGHLEVEL_LOCATION_INVOICES_UPDATE_INVOICE_TEMPLATE_PAYMENT_METHODS_CONFIGURATION",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "HIGHLEVEL_LOCATION_MARKETPLACE_CREATE_WALLET_CHARGE",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "HIGHLEVEL_LOCATION_MARKETPLACE_DELETE_WALLET_CHARGE",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "HIGHLEVEL_LOCATION_PAYMENTS_CREATE_COUPON",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "HIGHLEVEL_LOCATION_PAYMENTS_CREATE_INTEGRATION",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "HIGHLEVEL_LOCATION_PAYMENTS_CREATE_INTEGRATION_PROVIDER",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "HIGHLEVEL_LOCATION_PAYMENTS_CREATE_ORDER_FULFILLMENT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "HIGHLEVEL_LOCATION_PAYMENTS_CUSTOM_PROVIDER_MARKETPLACE_APP_UPDATE_CAPABILITIES",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "HIGHLEVEL_LOCATION_PAYMENTS_DELETE_COUPON",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "HIGHLEVEL_LOCATION_PAYMENTS_DELETE_INTEGRATION",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "HIGHLEVEL_LOCATION_PAYMENTS_DISCONNECT_CONFIG",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "HIGHLEVEL_LOCATION_PAYMENTS_RECORD_ORDER_PAYMENT",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "HIGHLEVEL_LOCATION_PAYMENTS_UPDATE_COUPON",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "HIGHLEVEL_LOCATION_PHONE_SYSTEM_PURCHASE_NUMBER_FOR_LOCATION",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": "Purchase"
+      },
+      {
+        "slug": "HIGHLEVEL_LOCATION_PRODUCTS_UPDATE_INVENTORY",
+        "tags": ["updateHint"],
+        "descriptionMatch": "purchase"
+      }
+    ],
+    "iterable": [
+      {
+        "slug": "ITERABLE_TRACK_PURCHASE",
+        "tags": ["updateHint"],
+        "descriptionMatch": "purchase"
+      }
+    ],
+    "jibble": [
+      {
+        "slug": "JIBBLE_CHANGE_PAY_PERIOD_STATUS",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "kajabi": [
+      {
+        "slug": "KAJABI_CANCEL_PURCHASE_SUBSCRIPTION",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "KAJABI_DEACTIVATE_PURCHASE",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "KAJABI_REACTIVATE_PURCHASE",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": "purchase"
+      }
+    ],
+    "keiki_mcp": [
+      {
+        "slug": "KEIKI_MCP_DELETE_AGENTS_WALLET_INTENTS_BY_INTENT_ID",
+        "tags": ["updateHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "KEIKI_MCP_DELETE_PAYMENTS",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "KEIKI_MCP_DELETE_PAYMENTS_PAYEES_BY_ID",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "KEIKI_MCP_POST_BILLING_CREDITS_PURCHASE",
+        "tags": ["createHint"],
+        "descriptionMatch": "Buy"
+      },
+      {
+        "slug": "KEIKI_MCP_POST_IDENTITIES_PHONE_CALLS",
+        "tags": ["createHint"],
+        "descriptionMatch": "Buy"
+      },
+      {
+        "slug": "KEIKI_MCP_POST_LINES_PURCHASE",
+        "tags": ["createHint"],
+        "descriptionMatch": "Buy"
+      },
+      {
+        "slug": "KEIKI_MCP_POST_MEMBERS_TRANSFER_OWNERSHIP",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "KEIKI_MCP_POST_PAYMENTS_IDENTITY_VERIFICATION",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "KEIKI_MCP_POST_PAYMENTS_KEY",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "KEIKI_MCP_POST_PAYMENTS_LIVE",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "KEIKI_MCP_POST_PAYMENTS_PAYEES",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "KEIKI_MCP_POST_PAYMENTS_PAYEES_BY_ID",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "KEIKI_MCP_POST_PAYMENTS_SIGNUP",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "KEIKI_MCP_POST_PAYMENTS_VERIFY",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "KEIKI_MCP_PUT_BILLING_AUTO_TOP_UP",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "kernel": [
+      {
+        "slug": "KERNEL_CLICK",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": "place orders"
+      }
+    ],
+    "kit": [
+      {
+        "slug": "KIT_CREATE_PURCHASE",
+        "tags": ["openWorldHint", "createHint", "updateHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "KIT_CREATE_WEBHOOK",
+        "tags": ["createHint"],
+        "descriptionMatch": "purchase"
+      }
+    ],
+    "klarna": [
+      {
+        "slug": "KLARNA_ADD_ORDER_SHIPPING_INFO",
+        "tags": ["updateHint", "idempotentHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "KLARNA_CAPTURE_ORDER",
+        "tags": ["updateHint", "destructiveHint", "idempotentHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "KLARNA_CREATE_CUSTOMER_TOKEN_FROM_AUTHORIZATION",
+        "tags": ["createHint"],
+        "descriptionMatch": "purchases"
+      },
+      {
+        "slug": "KLARNA_CREATE_ORDER_FROM_AUTHORIZATION",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": "captures payment"
+      },
+      {
+        "slug": "KLARNA_CREATE_ORDER_FROM_CUSTOMER_TOKEN",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": "captures the payment"
+      },
+      {
+        "slug": "KLARNA_CREATE_PAYMENT_SESSION",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "KLARNA_REFUND_ORDER",
+        "tags": ["updateHint", "destructiveHint", "idempotentHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "KLARNA_UPDATE_PAYMENT_SESSION",
+        "tags": ["updateHint"],
+        "descriptionMatch": "purchase"
+      }
+    ],
+    "lexoffice": [
+      {
+        "slug": "LEXOFFICE_CREATE_VOUCHER",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "purchase"
+      }
+    ],
+    "linq": [
+      {
+        "slug": "LINQ_CANCEL_PAYMENT",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "LINQ_CANCEL_PAYMENT_REQUEST",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "LINQ_CONNECT_PAYMENT_HANDLE",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "LINQ_CREATE_PAYMENT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "LINQ_CREATE_PAYMENT_REQUEST",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "LINQ_REVOKE_PAYMENT_HANDLE_CONNECTION",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "LINQ_START_PAYMENT_PROVIDER_ONBOARDING",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "LINQ_VERIFY_PAYMENT_HANDLE",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "longbridge_mcp": [
+      {
+        "slug": "LONGBRIDGE_MCP_SUBMIT_ORDER",
+        "tags": ["createHint"],
+        "descriptionMatch": "buy"
+      }
+    ],
+    "loyverse": [
+      {
+        "slug": "LOYVERSE_CREATE_OR_UPDATE_SUPPLIER",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": "purchases"
+      },
+      {
+        "slug": "LOYVERSE_CREATE_REFUND",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "magic_hour": [
+      {
+        "slug": "MAGIC_HOUR_CREATE_BODY_SWAP",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "MAGIC_HOUR_CREATE_FACE_SWAP_PHOTO",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "MAGIC_HOUR_CREATE_FACE_SWAP_VIDEO",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "MAGIC_HOUR_CREATE_HEAD_SWAP",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "mailchimp": [
+      {
+        "slug": "MAILCHIMP_ADD_EVENT",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "purchases"
+      },
+      {
+        "slug": "MAILCHIMP_ADD_ORDER_LINE_ITEM",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "mailerlite": [
+      {
+        "slug": "MAILERLITE_CREATE_ECOMMERCE_CUSTOMER",
+        "tags": ["updateHint"],
+        "descriptionMatch": "purchases"
+      },
+      {
+        "slug": "MAILERLITE_CREATE_ECOMMERCE_ORDER",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "purchases"
+      }
+    ],
+    "maxio": [
+      {
+        "slug": "MAXIO_CREATE_INVOICE",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "bill a customer"
+      },
+      {
+        "slug": "MAXIO_CREATE_PAYMENT_PROFILE",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "MAXIO_CREATE_QUANTITY_BASED_COMPONENT",
+        "tags": ["createHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "MAXIO_DELETE_SUBSCRIPTION_PAYMENT_PROFILE",
+        "tags": ["destructiveHint", "idempotentHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "MAXIO_DELETE_UNUSED_PAYMENT_PROFILE",
+        "tags": ["destructiveHint", "idempotentHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "MAXIO_ISSUE_SERVICE_CREDIT",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "MAXIO_RECORD_PAYMENT_FOR_INVOICE",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "MAXIO_REFUND_INVOICE",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "MAXIO_REFUND_PREPAYMENT",
+        "tags": ["createHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "MAXIO_SEND_REQUEST_UPDATE_PAYMENT_EMAIL",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "MAXIO_UPDATE_PAYMENT_PROFILE",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "memelord": [
+      {
+        "slug": "MEMELORD_SWAP_VIDEO_SUBJECT_WITH_GENJUTSU",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "metronome": [
+      {
+        "slug": "METRONOME_RELEASE_EXTERNAL_PAYMENT_GATE_THRESHOLD_COMMIT",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "moco": [
+      {
+        "slug": "MOCO_ASSIGN_PURCHASE_TO_PROJECT",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "MOCO_CREATE_INVOICES_PAYMENTS_BULK",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "MOCO_CREATE_INVOICE_PAYMENT",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "MOCO_CREATE_PROJECTS_PAYMENT_SCHEDULES",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "MOCO_CREATE_PURCHASE_BOOKKEEPING_EXPORT",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "MOCO_CREATE_PURCHASE_PAYMENT",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "MOCO_CREATE_PURCHASE_PAYMENTS_BULK",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "MOCO_DELETE_INVOICES_PAYMENTS",
+        "tags": ["destructiveHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "MOCO_DELETE_PROJECTS_PAYMENT_SCHEDULES",
+        "tags": ["destructiveHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "MOCO_DELETE_PURCHASE",
+        "tags": ["destructiveHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "MOCO_DELETE_PURCHASE_PAYMENT",
+        "tags": ["destructiveHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "MOCO_DELETE_TAGGINGS",
+        "tags": ["updateHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": "Purchase"
+      },
+      {
+        "slug": "MOCO_PATCH_TAGGINGS",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": "Purchase"
+      },
+      {
+        "slug": "MOCO_PURCHASE_CREATE",
+        "tags": ["createHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "MOCO_UPDATE_PROJECTS_PAYMENT_SCHEDULES",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "MOCO_UPDATE_PURCHASE",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "MOCO_UPDATE_PURCHASES_STORE_DOCUMENT",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "MOCO_UPDATE_PURCHASE_STATUS",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "MOCO_UPDATE_TAGGINGS",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": "Purchase"
+      }
+    ],
+    "modelry": [
+      {
+        "slug": "MODELRY_ORDER_MODELING_SERVICE",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "place an order"
+      }
+    ],
+    "money_forward": [
+      {
+        "slug": "MONEY_FORWARD_CREATE_TRADE_PARTNERS",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "moneybird": [
+      {
+        "slug": "MONEYBIRD_CREATE_EXTERNAL_SALES_INVOICE_PAYMENT",
+        "tags": ["openWorldHint", "writeOnlyHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "MONEYBIRD_REQUEST_CONTACT_PAYMENTS_MANDATE_URL",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "msg91": [
+      {
+        "slug": "MSG91_CREATE_USER_EVENTS",
+        "tags": ["createHint"],
+        "descriptionMatch": "purchases"
+      }
+    ],
+    "neon": [
+      {
+        "slug": "NEON_ACCEPT_PROJECTS_TRANSFER_REQUESTS",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "NEON_CREATE_PROJECTS_TRANSFER_REQUESTS",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "NEON_TRANSFER_PROJECTS_BETWEEN_ORGANIZATIONS",
+        "tags": ["openWorldHint", "updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "NEON_TRANSFER_USER_PROJECTS_TO_ORGANIZATION",
+        "tags": ["openWorldHint", "updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "netlicensing": [
+      {
+        "slug": "NETLICENSING_TRANSFER_LICENSES",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "netsuite": [
+      {
+        "slug": "NETSUITE_CREATE_CUSTOMER_PAYMENT",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "NETSUITE_CREATE_PURCHASE_ORDER",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "NETSUITE_DELETE_CUSTOMER_PAYMENT",
+        "tags": ["destructiveHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "NETSUITE_DELETE_PURCHASE_ORDER",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "NETSUITE_DELETE_VENDOR_PAYMENT",
+        "tags": ["destructiveHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "NETSUITE_UPDATE_CUSTOMER_PAYMENT",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "NETSUITE_UPDATE_PURCHASE_ORDER",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "NETSUITE_UPDATE_VENDOR_PAYMENT",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "omnisend": [
+      {
+        "slug": "OMNISEND_CREATE_ORDER",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "purchase"
+      }
+    ],
+    "onesignal_user_auth": [
+      {
+        "slug": "ONESIGNAL_USER_AUTH_TRANSFER_SUBSCRIPTION",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "open_sea": [
+      {
+        "slug": "OPEN_SEA_CREATE_ITEM_OFFER",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "purchase"
+      }
+    ],
+    "openrouter": [
+      {
+        "slug": "OPENROUTER_CREATE_COINBASE_CHARGE",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "purchase"
+      }
+    ],
+    "order_desk": [
+      {
+        "slug": "ORDER_DESK_ADD_ORDER_HISTORY_NOTE",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ORDER_DESK_ADD_ORDER_ITEM",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ORDER_DESK_ADD_ORDER_ITEMS",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "pandadoc": [
+      {
+        "slug": "PANDADOC_TRANSFER_OWNERSHIP_OF_DOCUMENTS",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "paypal": [
+      {
+        "slug": "PAYPAL_CAPTURE_SUBSCRIPTION_PAYMENT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PAYPAL_CHARGE_PAYMENT_METHOD",
+        "tags": ["createHint"],
+        "descriptionMatch": "Charges a payment method"
+      },
+      {
+        "slug": "PAYPAL_CREATE_PAYMENT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PAYPAL_CREATE_PAYMENTS_BILLING_PLANS",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PAYPAL_DELETE_EXTERNAL_PAYMENT",
+        "tags": ["destructiveHint", "idempotentHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PAYPAL_DELETE_INVOICE_PAYMENT_RECORD",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PAYPAL_DELETE_INVOICE_REFUND_RECORD",
+        "tags": ["destructiveHint", "idempotentHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PAYPAL_DELETE_PAYMENT_RESOURCE",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PAYPAL_FINALIZE_PAY_PAL_BRAINTREE_DISPUTE",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PAYPAL_LIST_PAYMENTS",
+        "tags": ["readOnlyHint", "deprecatedHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PAYPAL_UPDATE_PAY_PAL_PRODUCT",
+        "tags": ["updateHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PAYPAL_UPDATE_PAY_PAL_WEBHOOK",
+        "tags": ["updateHint", "idempotentHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PAYPAL_VERIFY_PAYMENT_METHOD",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "paystack": [
+      {
+        "slug": "PAYSTACK_ARCHIVE_PAYMENT_REQUEST",
+        "tags": ["openWorldHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PAYSTACK_CREATE_BULK_TRANSFER_RECIPIENT",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PAYSTACK_CREATE_CHARGE",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "initiate a payment"
+      },
+      {
+        "slug": "PAYSTACK_CREATE_PAYMENT_PAGE",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PAYSTACK_CREATE_PAYMENT_REQUEST",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PAYSTACK_CREATE_REFUND",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PAYSTACK_CREATE_TRANSFER_RECIPIENT",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PAYSTACK_DELETE_TRANSFER_RECIPIENT",
+        "tags": ["destructiveHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PAYSTACK_DISABLE_OTP_FOR_TRANSFERS",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PAYSTACK_ENABLE_OTP_REQUIREMENT_FOR_TRANSFERS",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PAYSTACK_FINALIZE_PAYMENT_REQUEST",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PAYSTACK_INITIATE_BULK_CHARGE",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PAYSTACK_PAUSE_BULK_CHARGE",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PAYSTACK_PUBLISH_STOREFRONT",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "PAYSTACK_RESEND_OTP_FOR_TRANSFER",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PAYSTACK_RESUME_BULK_CHARGE_BATCH",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PAYSTACK_SEND_PAYMENT_REQUEST_NOTIFICATION",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PAYSTACK_TRIGGER_DIRECT_DEBIT_ACTIVATION_CHARGE",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PAYSTACK_UNREGISTER_APPLE_PAY_DOMAIN",
+        "tags": ["destructiveHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PAYSTACK_UPDATE_PAYMENT_PAGE",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PAYSTACK_UPDATE_PAYMENT_REQUEST",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PAYSTACK_UPDATE_PAYMENT_SESSION_TIMEOUT",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PAYSTACK_UPDATE_TRANSFER_RECIPIENT",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "photon_mcp": [
+      {
+        "slug": "PHOTON_MCP_PURCHASE_SMS_NUMBER",
+        "tags": ["createHint"],
+        "descriptionMatch": "Purchase"
+      }
+    ],
+    "piggy": [
+      {
+        "slug": "PIGGY_CREATE_CREDIT_RECEPTION",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "purchases"
+      }
+    ],
+    "plaid": [
+      {
+        "slug": "PLAID_CANCEL_TRANSFER",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PLAID_CANCEL_TRANSFER_AUTHORIZATION",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PLAID_CREATE_PAYMENT",
+        "tags": ["createHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PLAID_CREATE_PAYMENT_CONSENT",
+        "tags": ["createHint"],
+        "descriptionMatch": "move funds"
+      },
+      {
+        "slug": "PLAID_CREATE_PAYMENT_RECIPIENT",
+        "tags": ["createHint"],
+        "descriptionMatch": "move money"
+      },
+      {
+        "slug": "PLAID_CREATE_TRANSFER",
+        "tags": ["createHint", "destructiveHint"],
+        "descriptionMatch": "Move money"
+      },
+      {
+        "slug": "PLAID_CREATE_TRANSFER_AUTHORIZATION",
+        "tags": ["createHint"],
+        "descriptionMatch": "move money"
+      },
+      {
+        "slug": "PLAID_EXECUTE_CONSENT_PAYMENT",
+        "tags": ["createHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PLAID_REVERSE_PAYMENT",
+        "tags": ["createHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PLAID_REVOKE_PAYMENT_CONSENT",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PLAID_SANDBOX_SIMULATE_PAYMENT",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PLAID_SANDBOX_SIMULATE_TRANSFER",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PLAID_SANDBOX_TRANSFER_FIRE_WEBHOOK",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PLAID_SIGNAL_DECISION_REPORT",
+        "tags": ["updateHint"],
+        "descriptionMatch": "initiate an ACH"
+      },
+      {
+        "slug": "PLAID_SIGNAL_EVALUATE",
+        "tags": ["createHint"],
+        "descriptionMatch": "move money"
+      },
+      {
+        "slug": "PLAID_SIGNAL_RETURN_REPORT",
+        "tags": ["updateHint"],
+        "descriptionMatch": "move funds"
+      }
+    ],
+    "planetscale": [
+      {
+        "slug": "PLANETSCALE_CREATE_PAYMENT_METHOD_SETUP",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PLANETSCALE_DELETE_ORGANIZATION_BILLING_PAYMENT_METHOD",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "polar": [
+      {
+        "slug": "POLAR_CREATE_REFUND",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "POLAR_FINALIZE_ORDER",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "poof": [
+      {
+        "slug": "POOF_CREATE_CHECKOUT",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "POOF_CREATE_FIAT_CHARGE",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "POOF_CREATE_PAYMENT_LINK",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "POOF_SEND_PAYOUT",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "postgrid": [
+      {
+        "slug": "POSTGRID_CANCEL_CHEQUE",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "POSTGRID_CANCEL_CHEQUE_WITH_NOTE",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "POSTGRID_CREATE_CHEQUE",
+        "tags": ["createHint"],
+        "descriptionMatch": "send a payment"
+      },
+      {
+        "slug": "POSTGRID_PROGRESS_TEST_CHEQUE",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "postman": [
+      {
+        "slug": "POSTMAN_TRANSFER_FOLDERS",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "printful": [
+      {
+        "slug": "PRINTFUL_V1_CONFIRM_ORDER",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PRINTFUL_V2_CONFIRM_ORDER",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "printify": [
+      {
+        "slug": "PRINTIFY_CREATE_PRODUCT",
+        "tags": ["createHint"],
+        "descriptionMatch": "submit an order"
+      }
+    ],
+    "prisma": [
+      {
+        "slug": "PRISMA_TRANSFER_PROJECT",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "proabono": [
+      {
+        "slug": "PROABONO_BILL_CUSTOMER",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "Bills a customer"
+      },
+      {
+        "slug": "PROABONO_UPDATE_CUSTOMER_PAYMENT_SETTINGS",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": "makes payment"
+      }
+    ],
+    "procore_company_admin": [
+      {
+        "slug": "PROCORE_COMPANY_ADMIN_CREATE_TRADE",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "procore_financials": [
+      {
+        "slug": "PROCORE_FINANCIALS_ADD_CHANGE_ORDER_PACKAGE_REQUISITION_E803CA85",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_FINANCIALS_CREATE_CONTRACT_PAYMENT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_FINANCIALS_CREATE_PAYMENT_APPLICATION_OWNER_INV_94B71A87",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_FINANCIALS_CREATE_PURCHASE_ORDER_COMPLIANCE_DOCUMENT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_FINANCIALS_CREATE_PURCHASE_ORDER_CONTRACT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_FINANCIALS_CREATE_PURCHASE_ORDER_CONTRACT_DETAI_B68A8992",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_FINANCIALS_CREATE_PURCHASE_ORDER_CONTRACT_LINE_ITEM",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_FINANCIALS_DELETE_CONTRACT_PAYMENT",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_FINANCIALS_DELETE_PAYMENT_APPLICATION_OWNER_INVOICE",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_FINANCIALS_DELETE_PURCHASE_ORDER_COMPLIANCE_DOCUMENT",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_FINANCIALS_DELETE_PURCHASE_ORDER_CONTRACT",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_FINANCIALS_DELETE_PURCHASE_ORDER_CONTRACT_DETAI_5D2937A4",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_FINANCIALS_DELETE_PURCHASE_ORDER_CONTRACT_LINE_ITEM",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_FINANCIALS_SYNC_PURCHASE_ORDER_CONTRACTS",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_FINANCIALS_SYNC_PURCHASE_ORDER_CONTRACT_LINE_ITEMS",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_FINANCIALS_UPDATE_CONTRACT_PAYMENT",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_FINANCIALS_UPDATE_PAYMENT_APPLICATION_OWNER_INV_2134ECA4",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_FINANCIALS_UPDATE_PAYMENT_APPLICATION_OWNER_INV_37450644",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_FINANCIALS_UPDATE_PAYMENT_APPLICATION_OWNER_INV_BE65E38F",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_FINANCIALS_UPDATE_PURCHASE_ORDER_COMPLIANCE_DOCUMENT",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_FINANCIALS_UPDATE_PURCHASE_ORDER_CONTRACT",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_FINANCIALS_UPDATE_PURCHASE_ORDER_CONTRACT_DETAI_99005B90",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_FINANCIALS_UPDATE_PURCHASE_ORDER_CONTRACT_LINE_ITEM",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_FINANCIALS_UPDATE_PURCHASE_ORDER_CONTRACT_SUBCO_868DC6C5",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_FINANCIALS_UPDATE_WITHDRAW_ELECTRONIC_SIGNATURE",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "procore_project_documents": [
+      {
+        "slug": "PROCORE_PROJECT_DOCUMENTS_DELETE_SPECIFICATION_AREA_TRANSFER",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "procore_resource_management": [
+      {
+        "slug": "PROCORE_RESOURCE_MANAGEMENT_ADD_UP_TO_100_COMMENTS_TO_TRANSFER",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_RESOURCE_MANAGEMENT_CREATE_ADDS_ATTACHMENTS_TO_TRANSFER",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_RESOURCE_MANAGEMENT_CREATE_NEW_INTER_PROJECT_TRANSFER",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_RESOURCE_MANAGEMENT_CREATE_NEW_STAND_ALONE_TRANSFER",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_RESOURCE_MANAGEMENT_DELETE_ATTACHMENTS_FROM_TRANSFER",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_RESOURCE_MANAGEMENT_DELETE_LINE_ITEM_FROM_DRAFT_TRANSFER",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_RESOURCE_MANAGEMENT_DELETE_PURCHASE_ORDER_AND_O_DB6A5D90",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_RESOURCE_MANAGEMENT_DELETE_RECYCLES_TRANSFER_DOCUMENT",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_RESOURCE_MANAGEMENT_SYNC_PURCHASE_ORDER_HEADERS",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_RESOURCE_MANAGEMENT_SYNC_PURCHASE_ORDER_LINES",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_RESOURCE_MANAGEMENT_UPDATE_ATTACHMENT_FOR_TRANSFER",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_RESOURCE_MANAGEMENT_UPDATE_PURCHASE_ORDER",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_RESOURCE_MANAGEMENT_UPDATE_SPECIFIED_TRANSFER_LINE_ITEM",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "PROCORE_RESOURCE_MANAGEMENT_UPDATE_TRANSFER_DOCUMENT_HEADER",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "quaderno": [
+      {
+        "slug": "QUADERNO_ADD_EXPENSE_PAYMENT",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "QUADERNO_CREATE_INVOICE",
+        "tags": ["createHint"],
+        "descriptionMatch": "bill a customer"
+      },
+      {
+        "slug": "QUADERNO_RECORD_INVOICE_PAYMENT",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "QUADERNO_REMOVE_INVOICE_PAYMENT",
+        "tags": ["destructiveHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "quickbooks": [
+      {
+        "slug": "QUICKBOOKS_CAPTURE_CHARGE",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "QUICKBOOKS_CREATE_BILL",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "purchases"
+      },
+      {
+        "slug": "QUICKBOOKS_CREATE_BILL_PAYMENT",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "QUICKBOOKS_CREATE_ECHECK_PAYMENT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "QUICKBOOKS_CREATE_ESTIMATE",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "QUICKBOOKS_CREATE_INVOICE",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "bill customer"
+      },
+      {
+        "slug": "QUICKBOOKS_CREATE_ITEM",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "buys"
+      },
+      {
+        "slug": "QUICKBOOKS_CREATE_PAYMENT",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "QUICKBOOKS_CREATE_PURCHASE",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "QUICKBOOKS_CREATE_PURCHASE_ORDER",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "QUICKBOOKS_CREATE_REFUND_RECEIPT",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "QUICKBOOKS_CREATE_TAXSERVICE_TAXCODE",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "QUICKBOOKS_UPDATE_PAYMENT_METHOD",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "QUICKBOOKS_UPDATE_TRANSFER",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "quire": [
+      {
+        "slug": "QUIRE_BULK_TRANSFER_TASKS",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "QUIRE_TRANSFER_TASK",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "railway": [
+      {
+        "slug": "RAILWAY_CONFIRM_PROJECT_TRANSFER",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RAILWAY_INITIATE_PROJECT_TRANSFER",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RAILWAY_TRANSFER_ENVIRONMENT_IAC_PARTIAL",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RAILWAY_TRANSFER_PROJECT",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RAILWAY_UPDATE_PROJECT_TRANSFER_TO_TEAM",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "ramp": [
+      {
+        "slug": "RAMP_ADD_PURCHASE_ORDER_LINE_ITEMS",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RAMP_ARCHIVE_PURCHASE_ORDER",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RAMP_ARCHIVE_VENDOR_BANK_ACCOUNT",
+        "tags": ["destructiveHint", "openWorldHint"],
+        "descriptionMatch": "initiate a payment"
+      },
+      {
+        "slug": "RAMP_CREATE_MILEAGE_REIMBURSEMENT",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RAMP_CREATE_PURCHASE_ORDER",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RAMP_DELETE_PURCHASE_ORDER_LINE_ITEM",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RAMP_SUBMIT_REIMBURSEMENT_RECEIPT",
+        "tags": ["idempotentHint", "openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RAMP_UPDATE_PURCHASE_ORDER",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RAMP_UPDATE_PURCHASE_ORDER_LINE_ITEM",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RAMP_UPDATE_VENDOR_BANK_ACCOUNTS",
+        "tags": ["createHint"],
+        "descriptionMatch": "send a payment"
+      }
+    ],
+    "ramp_mcp": [
+      {
+        "slug": "RAMP_MCP_RAMP_APPROVE_OR_REJECT_REIMBURSEMENT",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RAMP_MCP_RAMP_CANCEL_REIMBURSEMENT_PAYMENT",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RAMP_MCP_RAMP_CREATE_DRAFT_BILL",
+        "tags": ["createHint"],
+        "descriptionMatch": "initiate payment"
+      },
+      {
+        "slug": "RAMP_MCP_RAMP_CREATE_REIMBURSEMENT_FROM_RECEIPT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RAMP_MCP_RAMP_DELETE_REIMBURSEMENT",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RAMP_MCP_RAMP_DELETE_SPEND_PROGRAM",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": "Move funds"
+      },
+      {
+        "slug": "RAMP_MCP_RAMP_DUPLICATE_REIMBURSEMENT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RAMP_MCP_RAMP_EDIT_REIMBURSEMENT",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RAMP_MCP_RAMP_ESTIMATE_MILEAGE_REIMBURSEMENT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RAMP_MCP_RAMP_GET_AGENT_CARD_CREDS",
+        "tags": ["createHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "RAMP_MCP_RAMP_PAYMENT_CREDENTIALS",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RAMP_MCP_RAMP_PAY_WITH_X402",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RAMP_MCP_RAMP_RAMP_BULK_CLOSE_PURCHASE_ORDERS",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RAMP_MCP_RAMP_RAMP_BULK_REOPEN_PURCHASE_ORDERS",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RAMP_MCP_RAMP_RESUBMIT_REIMBURSEMENT",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RAMP_MCP_RAMP_SUBMIT_REIMBURSEMENT",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RAMP_MCP_RAMP_TRANSFER_SPEND_ALLOCATION_OWNERSHIP",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RAMP_MCP_RAMP_WITHDRAW_X402_WALLET",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "razorpay": [
+      {
+        "slug": "RAZORPAY_CANCEL_PAYMENT_LINK",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RAZORPAY_CREATE_AN_ORDER",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "initiate a payment"
+      },
+      {
+        "slug": "RAZORPAY_CREATE_PAYMENT_LINK",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RAZORPAY_NOTIFY_PAYMENT_LINK",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RAZORPAY_UPDATE_PAYMENT_LINK",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "repairshopr": [
+      {
+        "slug": "REPAIRSHOPR_ADD_PURCHASE_ORDER_LINE_ITEM",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "REPAIRSHOPR_CHARGE_TICKET_TIMER",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "REPAIRSHOPR_POST_PAYMENT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "REPAIRSHOPR_POST_PURCHASE_ORDER",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "REPAIRSHOPR_RECEIVE_PURCHASE_ORDER",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "retellai": [
+      {
+        "slug": "RETELLAI_BUY_A_NEW_PHONE_NUMBER_BIND_AGENTS",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "Purchase"
+      }
+    ],
+    "rillet": [
+      {
+        "slug": "RILLET_CREATE_AN_INVOICE_PAYMENT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RILLET_CREATE_AUTO_PAYMENT_SETUP_LINK",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RILLET_CREATE_A_BILL_PAYMENT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RILLET_CREATE_A_CHARGE",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RILLET_CREATE_A_PRODUCT",
+        "tags": ["createHint"],
+        "descriptionMatch": "bill customer"
+      },
+      {
+        "slug": "RILLET_CREATE_A_REIMBURSEMENT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RILLET_CREATE_A_REIMBURSEMENT_PAYMENT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RILLET_DELETE_AN_INVOICE_PAYMENT",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RILLET_DELETE_A_BILL_PAYMENT",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": "bill balance"
+      },
+      {
+        "slug": "RILLET_DELETE_A_CHARGE",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RILLET_DELETE_A_REIMBURSEMENT",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RILLET_DELETE_A_REIMBURSEMENT_PAYMENT",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RILLET_MATCH_BANK_TRANSACTIONS_AS_TRANSFER",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RILLET_UPDATE_AN_INVOICE_PAYMENT",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RILLET_UPLOAD_CHARGE_DOCUMENT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RILLET_UPLOAD_REIMBURSEMENT_DOCUMENT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "rippling": [
+      {
+        "slug": "RIPPLING_CREATE_VARIABLE_COMPENSATION_PAYOUT_TYPE",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RIPPLING_DELETE_VARIABLE_COMPENSATION_PAYOUT_TYPE",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RIPPLING_GET_OR_CREATE_VARIABLE_COMPENSATION_PAYOUT_LABEL",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RIPPLING_SUBMIT_VARIABLE_COMPENSATION_PAYOUT_TO_PAYROLL",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RIPPLING_UPDATE_VARIABLE_COMPENSATION_PAYOUT_LABEL",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RIPPLING_UPDATE_VARIABLE_COMPENSATION_PAYOUT_TYPE",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "RIPPLING_UPSERT_VARIABLE_COMPENSATION_PAYOUT",
+        "tags": ["createHint", "updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "route4me": [
+      {
+        "slug": "ROUTE4ME_ADD_ORDER_CUSTOM_FIELD",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "salesforce": [
+      {
+        "slug": "SALESFORCE_MASS_TRANSFER_OWNERSHIP",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "saperly": [
+      {
+        "slug": "SAPERLY_PLACE_CALL",
+        "tags": ["createHint"],
+        "descriptionMatch": "PAID / METERED"
+      },
+      {
+        "slug": "SAPERLY_PROVISION_NUMBER",
+        "tags": ["createHint"],
+        "descriptionMatch": "PAID / METERED"
+      },
+      {
+        "slug": "SAPERLY_SEND_SMS",
+        "tags": ["createHint"],
+        "descriptionMatch": "PAID / METERED"
+      },
+      {
+        "slug": "SAPERLY_TRANSFER_CALL",
+        "tags": ["updateHint"],
+        "descriptionMatch": "PAID / METERED"
+      }
+    ],
+    "saperly_mcp": [
+      {
+        "slug": "SAPERLY_MCP_TRANSFER_CALL",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "segmetrics": [
+      {
+        "slug": "SEGMETRICS_DELETE_CONTACT",
+        "tags": ["destructiveHint", "idempotentHint"],
+        "descriptionMatch": "purchases"
+      }
+    ],
+    "send_pulse": [
+      {
+        "slug": "SEND_PULSE_CRM_APPROVE_PAYMENT",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SEND_PULSE_CRM_CANCEL_PAYMENT",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SEND_PULSE_CRM_CREATE_PAYMENT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "sendgrid": [
+      {
+        "slug": "SENDGRID_ADD_A_TWILIO_SEND_GRID_IP_ADDRESS",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "purchases"
+      }
+    ],
+    "servicem8": [
+      {
+        "slug": "SERVICEM8_CREATE_JOB_PAYMENT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SERVICEM8_DELETE_JOB_PAYMENT",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SERVICEM8_UPDATE_JOB_PAYMENT",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "servicenow": [
+      {
+        "slug": "SERVICENOW_CREATE_SERVICECATALOG_ITEMS_ORDER_NOW",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "submits an order"
+      },
+      {
+        "slug": "SERVICENOW_CREATE_SERVICE_CATALOG_CART_SUBMIT_ORDER",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "servicetitan": [
+      {
+        "slug": "SERVICETITAN_ADD_CREDIT_MEMO_SPLITS",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SERVICETITAN_APPROVE_PURCHASE_ORDER_REQUEST",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SERVICETITAN_CANCEL_PURCHASE_ORDER",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SERVICETITAN_CREATE_GROSS_PAY_ITEM",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SERVICETITAN_CREATE_PAYROLL_ADJUSTMENT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SERVICETITAN_CREATE_PURCHASE_ORDER",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SERVICETITAN_CREATE_PURCHASE_ORDER_MARKUP",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SERVICETITAN_CREATE_PURCHASE_ORDER_TYPE",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SERVICETITAN_DELETE_GROSS_PAY_ITEM",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SERVICETITAN_DELETE_PAYROLL_ADJUSTMENT",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SERVICETITAN_DELETE_PURCHASE_ORDER_MARKUP",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SERVICETITAN_MARK_AP_PAYMENTS_AS_EXPORTED",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SERVICETITAN_REJECT_PURCHASE_ORDER_REQUEST",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SERVICETITAN_UPDATE_AP_PAYMENT_CUSTOM_FIELDS",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SERVICETITAN_UPDATE_EMPLOYEE_PAYROLL_SETTINGS",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SERVICETITAN_UPDATE_GROSS_PAY_ITEM",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SERVICETITAN_UPDATE_INVENTORY_TRANSFER",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SERVICETITAN_UPDATE_INVENTORY_TRANSFER_CUSTOM_FIELDS",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SERVICETITAN_UPDATE_PAYMENT",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SERVICETITAN_UPDATE_PAYMENT_CUSTOM_FIELDS",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SERVICETITAN_UPDATE_PAYMENT_STATUS",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SERVICETITAN_UPDATE_PAYROLL_ADJUSTMENT",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SERVICETITAN_UPDATE_PURCHASE_ORDER",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SERVICETITAN_UPDATE_PURCHASE_ORDER_CUSTOM_FIELDS",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SERVICETITAN_UPDATE_PURCHASE_ORDER_MARKUP",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SERVICETITAN_UPDATE_PURCHASE_ORDER_TYPE",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SERVICETITAN_UPDATE_TECHNICIAN_PAYROLL_SETTINGS",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "sevdesk": [
+      {
+        "slug": "SEVDESK_CREATE_PAYMENT_METHOD",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SEVDESK_DELETE_PAYMENT_METHOD",
+        "tags": ["destructiveHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "share_point": [
+      {
+        "slug": "SHARE_POINT_REDEEM_SHARE",
+        "tags": ["updateHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "shipengine": [
+      {
+        "slug": "SHIPENGINE_PROCESS_BATCH_LABELS",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "purchase"
+      }
+    ],
+    "shippo": [
+      {
+        "slug": "SHIPPO_CREATE_MERCHANT_REFUND",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SHIPPO_CREATE_MERCHANT_TRANSACTION",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "SHIPPO_CREATE_REFUND",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SHIPPO_CREATE_TRANSACTION",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "SHIPPO_PURCHASE_MERCHANT_BATCH",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "SHIPPO_REMOVE_SHIPMENTS_FROM_BATCH",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": "purchase"
+      }
+    ],
+    "shopify": [
+      {
+        "slug": "SHOPIFY_ACTIVATE_ONE_TIME_CHARGE",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SHOPIFY_CALCULATE_REFUND",
+        "tags": ["createHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SHOPIFY_CANCEL_RECURRING_APPLICATION_CHARGE",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SHOPIFY_CREATE_CHECKOUT_PAYMENT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SHOPIFY_CREATE_DISCOUNT_CODE",
+        "tags": ["createHint"],
+        "descriptionMatch": "buy"
+      },
+      {
+        "slug": "SHOPIFY_CREATE_ONE_TIME_APPLICATION_CHARGE",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SHOPIFY_CREATE_PRICE_RULE",
+        "tags": ["createHint"],
+        "descriptionMatch": "Buy"
+      },
+      {
+        "slug": "SHOPIFY_CREATE_RECURRING_APPLICATION_CHARGE",
+        "tags": ["createHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SHOPIFY_CREATE_REFUND",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SHOPIFY_CREATE_USAGE_CHARGE",
+        "tags": ["createHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SHOPIFY_CUSTOMIZE_RECURRING_APPLICATION_CHARGE",
+        "tags": ["openWorldHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "shotstack": [
+      {
+        "slug": "SHOTSTACK_TRANSFER_ASSET",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "sign_now": [
+      {
+        "slug": "SIGN_NOW_SEND_GROUP_PAYMENT_INVITE",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "simla_com": [
+      {
+        "slug": "SIMLA_COM_CREATE_ORDERS_PAYMENTS_CREATE",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SIMLA_COM_DELETE_ORDER_PAYMENT",
+        "tags": ["openWorldHint", "destructiveHint", "idempotentHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SIMLA_COM_EDIT_ORDERS_PAYMENT",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SIMLA_COM_EDIT_REFERENCE_PAYMENT_STATUS",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SIMLA_COM_EDIT_REFERENCE_PAYMENT_TYPE",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "skyfire": [
+      {
+        "slug": "SKYFIRE_CHARGE_TOKEN",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SKYFIRE_CREATE_KYA_PAY_TOKEN",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SKYFIRE_CREATE_PAY_TOKEN",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "smarthr": [
+      {
+        "slug": "SMARTHR_CREATE_PAYROLL",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SMARTHR_DELETE_PAYROLL",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SMARTHR_FINALIZE_PAYROLL",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SMARTHR_PARTIALLY_UPDATE_PAYROLL",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SMARTHR_PUBLISH_PAYROLL",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SMARTHR_REOPEN_PAYROLL",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "spider": [
+      {
+        "slug": "SPIDER_AI_BROWSER",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": "purchase"
+      }
+    ],
+    "splice_mcp": [
+      {
+        "slug": "SPLICE_MCP_DOWNLOAD_ASSET",
+        "tags": ["createHint"],
+        "descriptionMatch": "Purchase"
+      }
+    ],
+    "spotify": [
+      {
+        "slug": "SPOTIFY_TRANSFER_PLAYBACK",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "square": [
+      {
+        "slug": "SQUARE_CANCEL_PAYMENT",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SQUARE_CREATE_REFUND",
+        "tags": ["createHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "SQUARE_LINK_CUSTOMER_TO_GIFT_CARD",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": "purchases"
+      },
+      {
+        "slug": "SQUARE_PAY_ORDER",
+        "tags": ["updateHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "strale": [
+      {
+        "slug": "STRALE_COUNTRY_TRADE_DATA",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRALE_PAYMENT_REFERENCE_GENERATE",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "stripe": [
+      {
+        "slug": "STRIPE_ATTACH_INVOICE_PAYMENT",
+        "tags": ["updateHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_ATTACH_PAYMENT_METHOD",
+        "tags": ["updateHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_CANCEL_PAYMENT_INTENT",
+        "tags": ["updateHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_CAPTURE_CHARGE",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": "capture payment"
+      },
+      {
+        "slug": "STRIPE_CAPTURE_PAYMENT_INTENT",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_COLLECT_TERMINAL_READER_PAYMENT_METHOD",
+        "tags": ["updateHint"],
+        "descriptionMatch": "initiate payment"
+      },
+      {
+        "slug": "STRIPE_CONFIRM_PAYMENT_INTENT",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_CONFIRM_TERMINAL_READER_PAYMENT_INTENT",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_CREATE_ACCOUNTS_CAPABILITIES_CARD_PAYMENTS",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_CREATE_APPLE_PAY_DOMAIN",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_CREATE_BILLING_CREDIT_GRANT",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_CREATE_CHARGE",
+        "tags": ["createHint"],
+        "descriptionMatch": "debit card"
+      },
+      {
+        "slug": "STRIPE_CREATE_CHARGE_REFUND",
+        "tags": ["createHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_CREATE_PAYMENT_INTENT",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_CREATE_PAYMENT_LINK",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_CREATE_PAYMENT_METHOD",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_CREATE_PAYMENT_METHOD_CONFIGURATION",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_CREATE_PAYMENT_METHOD_DOMAIN",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_CREATE_REFUND",
+        "tags": ["createHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_CREATE_TAX_CALCULATION",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "purchases"
+      },
+      {
+        "slug": "STRIPE_CREATE_TRANSFER",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "move funds"
+      },
+      {
+        "slug": "STRIPE_DELETE_APPLE_PAY_DOMAIN",
+        "tags": ["destructiveHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_DETACH_PAYMENT_FROM_INVOICE",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_DETACH_PAYMENT_METHOD",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_EXPIRE_BILLING_CREDIT_GRANT",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_PAY_INVOICE",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_POST_BILLING_CREDIT_GRANTS_VOID_CREDIT_GRANT",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_POST_CHARGES_CHARGE",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_POST_PAYMENT_RECORDS_REPORT_PAYMENT",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_POST_TERMINAL_READERS_READER_PROCESS_PAYMENT_INTENT",
+        "tags": ["updateHint"],
+        "descriptionMatch": "Initiates a payment"
+      },
+      {
+        "slug": "STRIPE_POST_TERMINAL_READERS_READER_SET_READER_DISPLAY",
+        "tags": ["updateHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "STRIPE_POST_V1_PAYMENT_METHOD_CONFIGS_LIST_PAYMENT_METHOD2",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_POST_V1_PAYMENT_METHOD_DOMAINS_PAYMENT_METHOD",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_POST_V1_PAYMENT_RECORDS_REPORT_ATTEMPT",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_POST_V1_PAYMENT_RECORDS_REPORT_CANCELED",
+        "tags": ["idempotentHint", "openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_POST_V1_PAYMENT_RECORDS_REPORT_GUARANTEED",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_POST_V1_PAYMENT_RECORDS_REPORT_INFO",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_POST_V1_PAYMENT_RECORDS_REPORT_REFUND_OVERVIEW",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_POST_V1_PAYOUTS_RETRIEVE_A_PAYOUT",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_PRESENT_PAYMENT_METHOD",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_REPORT_PAYMENT_ATTEMPT_FAILED",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_UPDATE_APPLICATION_FEE_REFUND",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_UPDATE_BILLING_CREDIT_GRANT",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_UPDATE_CHARGE",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_UPDATE_CHARGE_DISPUTE",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_UPDATE_CHARGE_REFUND",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_UPDATE_PAYMENT_INTENT",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_UPDATE_PAYMENT_LINK",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_UPDATE_PAYMENT_METHOD",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_VALIDATE_PAYMENT_METHOD_DOMAIN",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "STRIPE_VERIFY_MICRODEPOSITS_PAYMENT_INTENT",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "supermemory": [
+      {
+        "slug": "SUPERMEMORY_CONFIGURE_AUTOMATIC_TOPUPS",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": "purchases"
+      }
+    ],
+    "surecontact": [
+      {
+        "slug": "SURECONTACT_RECORD_PURCHASE",
+        "tags": ["createHint"],
+        "descriptionMatch": "purchase"
+      }
+    ],
+    "tapfiliate": [
+      {
+        "slug": "TAPFILIATE_CANCEL_PAYMENT",
+        "tags": ["openWorldHint", "updateHint", "idempotentHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "TAPFILIATE_PAYMENTS_CREATE_A_PAYMENT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "tave": [
+      {
+        "slug": "TAVE_APPLY_PAYMENT_TO_ORDER",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "TAVE_CREATE_RESOURCE_PAYMENT",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "TAVE_DELETE_RESOURCE_PAYMENTS",
+        "tags": ["openWorldHint", "destructiveHint", "idempotentHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "taxjar": [
+      {
+        "slug": "TAXJAR_CREATE_REFUND_TRANSACTION",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "TAXJAR_DELETE_REFUND_TRANSACTION",
+        "tags": ["destructiveHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "TAXJAR_UPDATE_REFUND_TRANSACTION",
+        "tags": ["updateHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "teamleader": [
+      {
+        "slug": "TEAMLEADER_REGISTER_PAYMENT_INCOMING_CREDIT_NOTE",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "TEAMLEADER_REGISTER_PAYMENT_INCOMING_INVOICE",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "TEAMLEADER_REGISTER_PAYMENT_INVOICE",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "TEAMLEADER_REGISTER_PAYMENT_RECEIPT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "TEAMLEADER_REMOVE_PAYMENTS_INVOICE",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "TEAMLEADER_REMOVE_PAYMENT_INCOMING_CREDIT_NOTE",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "TEAMLEADER_REMOVE_PAYMENT_INCOMING_INVOICE",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "TEAMLEADER_REMOVE_PAYMENT_RECEIPT",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "TEAMLEADER_UPDATE_PAYMENT_INCOMING_CREDIT_NOTE",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "TEAMLEADER_UPDATE_PAYMENT_INCOMING_INVOICE",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "TEAMLEADER_UPDATE_PAYMENT_RECEIPT",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "thanks_io": [
+      {
+        "slug": "THANKS_IO_MAILING_LISTS_BUY_RADIUS_SEARCH",
+        "tags": ["createHint"],
+        "descriptionMatch": "Buy"
+      },
+      {
+        "slug": "THANKS_IO_ORDER_PREVIEW_LETTER",
+        "tags": ["createHint"],
+        "descriptionMatch": "place an order"
+      }
+    ],
+    "ticket_tailor_mcp": [
+      {
+        "slug": "TICKET_TAILOR_MCP_ORDER_CONFIRM_PAYMENT",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "TICKET_TAILOR_MCP_PRODUCT_CREATE",
+        "tags": ["createHint"],
+        "descriptionMatch": "purchase"
+      }
+    ],
+    "tiktok_ads": [
+      {
+        "slug": "TIKTOK_ADS_CREATE_PAYMENT_PORTFOLIO",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "TIKTOK_ADS_TRANSFER_BC",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "TIKTOK_ADS_TRANSFER_BC_PIXEL",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "TIKTOK_ADS_TRANSFER_PAGE_LIBRARY",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "TIKTOK_ADS_UPDATE_PAYMENT_PORTFOLIO_ADVERTISER",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "TIKTOK_ADS_UPDATE_PAYMENT_PORTFOLIO_CREDIT_LINE",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "tipalti": [
+      {
+        "slug": "TIPALTI_CREATE_PAYMENT_BATCH",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "TIPALTI_CREATE_PAYMENT_TERM",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "TIPALTI_UPDATE_PAYEE_PAYMENT_METHOD",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "TIPALTI_UPDATE_PAYMENT_TERM",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "twilio": [
+      {
+        "slug": "TWILIO_CREATE_INCOMING_PHONE_NUMBER",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": "Purchase"
+      },
+      {
+        "slug": "TWILIO_CREATE_PAYMENTS",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "TWILIO_UPDATE_PAYMENTS",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "vercel": [
+      {
+        "slug": "VERCEL_BUY_DOMAINS",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "VERCEL_BUY_SINGLE_DOMAIN",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "VERCEL_CREATE_OR_TRANSFER_DOMAIN",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "VERCEL_CREATE_PROJECT_TRANSFER_REQUEST",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "VERCEL_TRANSFER_IN_DOMAIN",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "vercel_mcp": [
+      {
+        "slug": "VERCEL_MCP_BUY_ADDON",
+        "tags": ["updateHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "VERCEL_MCP_BUY_CREDITS",
+        "tags": ["updateHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "VERCEL_MCP_BUY_DOMAIN",
+        "tags": ["createHint"],
+        "descriptionMatch": "purchase"
+      }
+    ],
+    "webflow": [
+      {
+        "slug": "WEBFLOW_REFUND_ORDER",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "whatsapp": [
+      {
+        "slug": "WHATSAPP_ADD_BUSINESS_PHONE_NUMBER",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "WHATSAPP_UPDATE_COMMERCE_SETTINGS",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": "purchases"
+      }
+    ],
+    "wise": [
+      {
+        "slug": "WISE_CREATE_QUOTE",
+        "tags": ["createHint"],
+        "descriptionMatch": "move money"
+      }
+    ],
+    "words_into_music": [
+      {
+        "slug": "WORDS_INTO_MUSIC_CREATE_CHECKOUT_LINK",
+        "tags": ["createHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "WORDS_INTO_MUSIC_START_SONG_WITH_ONE_CREDIT",
+        "tags": ["createHint", "idempotentHint"],
+        "descriptionMatch": "purchases"
+      }
+    ],
+    "workday": [
+      {
+        "slug": "WORKDAY_CREATE_PAYROLL_INPUTS",
+        "tags": ["createHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "WORKDAY_DELETE_PAYROLL_INPUT",
+        "tags": ["destructiveHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "WORKDAY_PATCH_PAYROLL_INTERFACE_PAY_GROUP_PERIOD",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "WORKDAY_PUT_GOAL_PAYOUT_BAND",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "WORKDAY_REQUEST_ONE_TIME_PAYMENT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "WORKDAY_UPDATE_AN_EXISTING_PAYROLL",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "xero": [
+      {
+        "slug": "XERO_CREATE_BANK_TRANSFER",
+        "tags": ["createHint", "idempotentHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "XERO_CREATE_BATCH_PAYMENT",
+        "tags": ["createHint", "idempotentHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "XERO_CREATE_ITEM",
+        "tags": ["createHint"],
+        "descriptionMatch": "purchases"
+      },
+      {
+        "slug": "XERO_CREATE_PAYMENT",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "XERO_CREATE_PURCHASE_ORDER",
+        "tags": ["createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "XERO_DELETE_PAYMENT",
+        "tags": ["deleteHint", "destructiveHint", "idempotentHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "XERO_UPDATE_PURCHASE_ORDER",
+        "tags": ["updateHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "zelt": [
+      {
+        "slug": "ZELT_UPDATE_BENEFIT_PAYMENT",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "zettle": [
+      {
+        "slug": "ZETTLE_SET_INVENTORY_TRACKING",
+        "tags": ["updateHint"],
+        "descriptionMatch": "purchase"
+      }
+    ],
+    "zip": [
+      {
+        "slug": "ZIP_CREATE_SAVING_LINE_ITEM",
+        "tags": ["createHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "ZIP_DELETE_SAVING_LINE_ITEM",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "ZIP_UPDATE_PAYMENT_METHOD_BY_ID",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZIP_UPDATE_PURCHASE_ORDER_STATUSES",
+        "tags": ["updateHint", "destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZIP_UPDATE_REQUEST_BY_ID",
+        "tags": ["updateHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "ZIP_UPDATE_REQUEST_LINE_ITEMS_BY_ID",
+        "tags": ["updateHint"],
+        "descriptionMatch": "purchase"
+      }
+    ],
+    "zoho_books": [
+      {
+        "slug": "ZOHO_BOOKS_ADD_CUSTOMER_PAYMENT_ATTACHMENT",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_BOOKS_ADD_PURCHASE_ORDER_COMMENT",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_BOOKS_ADD_SALES_ORDER_COMMENT",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_BOOKS_ADD_VENDOR_CREDIT_COMMENT",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_BOOKS_ATTACH_DOCUMENTS_TO_CUSTOMER_PAYMENT",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_BOOKS_CATEGORIZE_AS_CUSTOMER_PAYMENT",
+        "tags": ["createHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_BOOKS_CATEGORIZE_AS_CUSTOMER_PAYMENT_REFUND",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_BOOKS_CREATE_CUSTOMER_PAYMENT",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_BOOKS_CREATE_CUSTOMER_PAYMENT_REFUND",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_BOOKS_CREATE_VENDOR_PAYMENT",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_BOOKS_DELETE_BILL_PAYMENT",
+        "tags": ["destructiveHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_BOOKS_DELETE_BULK_CUSTOMER_PAYMENTS",
+        "tags": ["destructiveHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_BOOKS_DELETE_BULK_VENDOR_PAYMENTS",
+        "tags": ["destructiveHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_BOOKS_DELETE_CREDIT_NOTE_REFUND",
+        "tags": ["destructiveHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_BOOKS_DELETE_CUSTOMER_PAYMENT",
+        "tags": ["destructiveHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_BOOKS_DELETE_CUSTOMER_PAYMENT_REFUND",
+        "tags": ["destructiveHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_BOOKS_DELETE_INVOICE_PAYMENT",
+        "tags": ["destructiveHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_BOOKS_DELETE_PURCHASE_ORDER",
+        "tags": ["destructiveHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_BOOKS_DELETE_PURCHASE_ORDER_ATTACHMENT",
+        "tags": ["destructiveHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_BOOKS_DELETE_PURCHASE_ORDER_COMMENT",
+        "tags": ["destructiveHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_BOOKS_DELETE_VENDOR_CREDIT_REFUND",
+        "tags": ["destructiveHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_BOOKS_DELETE_VENDOR_PAYMENT",
+        "tags": ["destructiveHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_BOOKS_DISABLE_CONTACT_PAYMENT_REMINDER",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_BOOKS_DISABLE_INVOICE_PAYMENT_REMINDER",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_BOOKS_ENABLE_CONTACT_PAYMENT_REMINDER",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_BOOKS_ENABLE_INVOICE_PAYMENT_REMINDER",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_BOOKS_REMIND_CUSTOMER_INVOICE",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "send a payment"
+      },
+      {
+        "slug": "ZOHO_BOOKS_SEND_BULK_INVOICE_REMINDER",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "send payment"
+      },
+      {
+        "slug": "ZOHO_BOOKS_UPDATE_CREDIT_NOTE_REFUND",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_BOOKS_UPDATE_CUSTOMER_PAYMENT",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_BOOKS_UPDATE_PURCHASE_ORDER_BILLING_ADDRESS",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_BOOKS_UPDATE_PURCHASE_ORDER_COMMENT",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_BOOKS_UPDATE_VENDOR_PAYMENT",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_BOOKS_UPDATE_VENDOR_PAYMENT_REFUND",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "zoho_inventory": [
+      {
+        "slug": "ZOHO_INVENTORY_ADD_CREDIT_NOTE_COMMENT",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_INVENTORY_CONFIRM_SALES_ORDER",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_INVENTORY_CREATE_CUSTOMER_PAYMENT",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_INVENTORY_CREATE_PURCHASE_ORDER",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_INVENTORY_CREATE_SALES_ORDER",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "places an order"
+      },
+      {
+        "slug": "ZOHO_INVENTORY_CREATE_TRANSFER_ORDER",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_INVENTORY_DELETE_PURCHASE_ORDER",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_INVENTORY_DELETE_PURCHASE_RECEIVE",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": "purchase"
+      },
+      {
+        "slug": "ZOHO_INVENTORY_DISABLE_PAYMENT_REMINDER",
+        "tags": ["updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_INVENTORY_ENABLE_INVOICE_PAYMENT_REMINDER",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "zoho_invoice": [
+      {
+        "slug": "ZOHO_INVOICE_CREATE_CUSTOMER_PAYMENT",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_INVOICE_CREATE_INVOICE",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "bill a customer"
+      },
+      {
+        "slug": "ZOHO_INVOICE_CREATE_REFUND_CREDIT_NOTE_REFUNDS",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_INVOICE_DELETE_CUSTOMER_PAYMENT",
+        "tags": ["destructiveHint", "idempotentHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_INVOICE_DISABLE_CONTACT_PAYMENT_REMINDERS",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_INVOICE_DISABLE_INVOICE_PAYMENT_REMINDER",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_INVOICE_ENABLE_INVOICE_PAYMENT_REMINDER",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_INVOICE_ENABLE_PAYMENT_REMINDERS",
+        "tags": ["openWorldHint", "updateHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_INVOICE_REFUND_CUSTOMER_PAYMENT",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": ""
+      },
+      {
+        "slug": "ZOHO_INVOICE_SEND_BULK_INVOICE_REMINDER",
+        "tags": ["openWorldHint", "createHint"],
+        "descriptionMatch": "send payment"
+      },
+      {
+        "slug": "ZOHO_INVOICE_UPDATE_CUSTOMER_PAYMENT_REFUND",
+        "tags": ["updateHint", "openWorldHint"],
+        "descriptionMatch": ""
+      }
+    ],
+    "zoho_recruit": [
+      {
+        "slug": "ZOHO_RECRUIT_TRANSFER_AND_DELETE_PIPELINE",
+        "tags": ["destructiveHint"],
+        "descriptionMatch": ""
+      }
+    ]
+  }
+}
