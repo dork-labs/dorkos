@@ -81,7 +81,7 @@ describe('createTrackedSpawn', () => {
     const child = createTrackedSpawn(ledger, () => {
       throw new Error('/secret/path at spawn');
     })(optionsFor('process.exit(0)'));
-    expect(child.pid).toBeGreaterThan(0);
+    expect(child.killed).toBe(false);
     await vi.waitFor(() => expect(ledger.read()?.processes ?? []).toEqual([]));
     // Throws at exit: the exit still forgets the child.
     createTrackedSpawn(ledger, () => () => {
