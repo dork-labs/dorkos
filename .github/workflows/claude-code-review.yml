@@ -463,7 +463,7 @@ jobs:
           exit 1
 
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           # Empty means "checkout's own default", which for a `pull_request` run is
@@ -808,7 +808,7 @@ jobs:
       - name: Claude Code review
         id: claude-review
         continue-on-error: true
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@f431adaf77e0fecf918431e75a2b5b45b85af002 # v1.0.283
         env:
           # The reviewer's destination, read by scripts/review-gh.sh. It lives in
           # the environment rather than in the helper's arguments precisely so the
