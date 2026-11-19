@@ -208,6 +208,9 @@ export function ApprovalCard(props: ApprovalCardProps) {
 /** The permission-change capability; allowing one lasts, so the desk confirms it too. */
 const CHANGE_PERMISSION_CAPABILITY = 'permissions.change';
 
+/** The settings-change capability; its sentence leads with the riskiest setting. */
+const CONFIG_PATCH_CAPABILITY_ID = 'operator.config_patch';
+
 /**
  * Whether the card must wait for the server before drawing its receipt.
  *
@@ -428,6 +431,9 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
                       'text-muted-foreground mt-0.5 text-xs break-words',
                       approval.tier !== 'destructive' &&
                         !approval.answerNeedsStepUp &&
+                        // A settings change names its riskiest setting in the
+                        // sentence; a clamp would cut it at phone widths (DOR-4778).
+                        approval.capabilityId !== CONFIG_PATCH_CAPABILITY_ID &&
                         'line-clamp-2'
                     )}
                   >

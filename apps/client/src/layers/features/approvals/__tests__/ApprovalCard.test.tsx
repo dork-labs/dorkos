@@ -649,6 +649,56 @@ describe('ApprovalCard', () => {
       expect(line.tagName).toBe('P');
       expect(block!.contains(line)).toBe(false);
     });
+
+    // DOR-4775: a settings change lists every key; the last one must be on the card too.
+    it('shows every line of a 20-setting change on an act card, the last one included', () => {
+      const lines = [
+        'tunnel.enabled: yes',
+        ...Array.from(
+          { length: 19 },
+          (_, i) => `ui.someLongHarmlessSettingName${i}: "${'y'.repeat(70)}"`
+        ),
+      ];
+      lines.push('mesh.scanRoots');
+      const detail = lines.join('\n');
+      renderCard(
+        buildApproval({
+          capabilityId: 'operator.config_patch',
+          capabilityTitle: 'Update configuration',
+          tier: 'act',
+          summary:
+            '"Warden" wants to run "Update configuration" with changes: "21 settings, 2 need you"',
+          detail,
+        })
+      );
+      const block = document.querySelector('[data-slot="approval-detail"]');
+      expect(block!.textContent).toBe(detail);
+      expect(block!.textContent).toContain('mesh.scanRoots');
+      expect(block!.className).not.toMatch(/line-clamp|truncate/);
+    });
+
+    // DOR-4778: the sentence names the riskiest setting first; no clamp may hide it.
+    it('never clamps a settings change’s sentence, so its riskiest setting stays in view', () => {
+      const summary =
+        '"A long agent name, padded out" wants to run "Update configuration" with changes: "tunnel.enabled, mesh.scanRoots, extensions.enabled and 6 more, 4 need you"';
+      renderCard(
+        buildApproval({
+          capabilityId: 'operator.config_patch',
+          capabilityTitle: 'Update configuration',
+          tier: 'act',
+          summary,
+          detail: 'tunnel.enabled: yes',
+        })
+      );
+      const sentence = screen.getByText(summary);
+      expect(sentence.className).not.toMatch(/line-clamp/);
+    });
+
+    it('still clamps another act card’s sentence', () => {
+      const summary = '"Scout" wants to run "Rename a chat" with title: Weekly numbers';
+      renderCard(buildApproval({ capabilityId: 'sessions.rename', tier: 'act', summary }));
+      expect(screen.getByText(summary).className).toMatch(/line-clamp-2/);
+    });
   });
 });
 

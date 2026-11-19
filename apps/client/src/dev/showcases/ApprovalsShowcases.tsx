@@ -6,6 +6,7 @@ import { ShowcaseDemo } from '../ShowcaseDemo';
 import { ApprovalList, ApprovalsUnavailable } from '@/layers/features/approvals';
 import { AgentRequestApprovalShowcase } from './AgentRequestApprovalShowcase';
 import { AgentRaiseCardShowcase } from './AgentRaiseCardShowcase';
+import { ConfigPatchCardShowcase } from './ConfigPatchCardShowcase';
 import { INSTALL_SUMMARY, UPDATE_SUMMARY } from './marketplace-summary-samples';
 
 /**
@@ -328,7 +329,6 @@ export function ApprovalCardShowcase() {
               // No agent path either, which is what keeps Always allow off this
               // card. The two travel together on a real anonymous request.
               hasAgentPath: false,
-              area: null,
               alwaysOffered: false,
               // The surface is known even when the caller is not, so the card
               // says the true thing rather than the vague one (DOR-1929).
@@ -535,6 +535,7 @@ export function ApprovalCardShowcase() {
           ]}
         />
       </ShowcaseDemo>
+      <ConfigPatchCardShowcase />
     </PlaygroundSection>
   );
 }
