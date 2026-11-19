@@ -14,8 +14,10 @@
  * read a sign-in token or a credentials file, or call a usage endpoint itself.
  * Everything comes from the binary, run in the account's own config folder.
  *
- * On demand only (the route and the `accounts_probe` tool): never at boot and
- * never on a timer. Single-flight per account, with a 60 s floor between tries.
+ * On demand only (the route, the `accounts_probe` tool, and once after a turn
+ * fails on the account's sign-in): never at boot and never on a timer.
+ * Single-flight per account, with a 60 s floor between tries. A probe that
+ * records readings is proof the sign-in works, so it clears a signed-out state.
  *
  * @module services/runtimes/claude-code/accounts/account-probe
  */
@@ -26,9 +28,14 @@ import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
 import { resolveDorkHome } from '../../../../lib/dork-home.js';
 import { logger } from '../../../../lib/logger.js';
+import { noteSigninProven } from '../../../observability/index.js';
 import type { AccountUsageStore } from '../../../core/usage/account-usage-store.js';
 import { getAccountUsageStore } from '../../../core/usage/current-usage-store.js';
-import { resolveAccountRef, type RuntimeAccount } from '../../../core/usage/runtime-accounts.js';
+import {
+  accountForPath,
+  resolveAccountRef,
+  type RuntimeAccount,
+} from '../../../core/usage/runtime-accounts.js';
 import { runtimeEnvironment } from '../../shared/runtime-environment-config.js';
 import { claudeConfigDirEnv, isClaudeAccountRoot } from '../claude-config-dir.js';
 import { createIdlePrompt, resolveClaudeBinaryBeforePath } from '../sdk/sdk-utils.js';
@@ -194,6 +201,9 @@ async function runProbe(
   store: AccountUsageStore,
   deps: AccountProbeDeps
 ): Promise<AccountProbeResult> {
+  // The wall clock the sign-in watch dates failures with, not `deps.now`: a
+  // probe that began before a failure was noticed must not clear it.
+  const startedAt = Date.now();
   const failed = (reason: string): AccountProbeResult => ({
     account: store.usageOfAccount(account),
     probe: 'failed',
@@ -251,6 +261,8 @@ async function runProbe(
     store.record('claude-code', { path: root }, observations, {
       subscriptionType: response.subscription_type ?? null,
     });
+    // The binary read this account's plan limits, so its sign-in works.
+    noteSigninProven('claude-code', root, startedAt, 'probe');
     return { account: store.usageOfAccount(account), probe: 'ok' };
   } catch (err) {
     if (err instanceof ProbeTimeoutError) return failed('timeout');
@@ -265,6 +277,39 @@ async function runProbe(
     // query ends the CLI child (see `warmCommands` in claude-code-runtime.ts).
     idle?.close();
     probe?.close();
+  }
+}
+
+/**
+ * The re-check a single failed turn runs before anybody is told (DOR-4424):
+ * probe the account at that root. A probe that recorded readings has already
+ * cleared the failure by the time this resolves.
+ *
+ * @param accountRoot - The account root the failing turn ran on, in any spelling.
+ * @param deps - Injectable collaborators.
+ * @returns `ok` when the probe recorded readings, `failed` when it ran and
+ *   learned nothing, `unknown` when no probe could run for that root.
+ */
+export async function recheckSigninByProbe(
+  accountRoot: string | undefined,
+  deps: AccountProbeDeps = {}
+): Promise<'ok' | 'failed' | 'unknown'> {
+  if (accountRoot === undefined) return 'unknown';
+  const store = deps.store ?? getAccountUsageStore();
+  if (!store) return 'unknown';
+  const account = accountForPath(
+    store.listAccounts('claude-code'),
+    'claude-code',
+    accountRoot,
+    undefined
+  );
+  if (!account) return 'unknown';
+  try {
+    const { probe } = await probeAccount(account.id, { ...deps, store });
+    if (probe === 'ok') return 'ok';
+    return probe === 'failed' ? 'failed' : 'unknown';
+  } catch {
+    return 'unknown';
   }
 }
 

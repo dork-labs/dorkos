@@ -31,15 +31,26 @@ export { traceRuntime } from './trace-runtime.js';
 export {
   watchRuntimeSignin,
   setRuntimeSigninSink,
+  noteSigninProven,
   noteSigninRepaired,
   isSigninFailing,
   resetSigninEpisodes,
+  setSigninRecheck,
+  SIGNIN_RECHECK_WINDOW_MS,
   setCreditsRefusedSink,
   type RuntimeSigninEvent,
   type RuntimeSigninSink,
+  type SigninClearCause,
+  type SigninRecheck,
+  type SigninRecheckResult,
   type CreditsRefusedEvent,
   type CreditsRefusedSink,
 } from './runtime-signin-watch.js';
+export {
+  onAccountSigninChange,
+  type AccountSigninChange,
+  type AccountSigninListener,
+} from './account-signin-state.js';
 export { traceRelay } from './trace-relay.js';
 export { SPAN, ATTR } from './attributes.js';
 export {

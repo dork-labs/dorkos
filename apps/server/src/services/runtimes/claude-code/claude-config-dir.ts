@@ -127,6 +127,30 @@ export function canonicalClaudeAccountPath(dir: string): string {
   return canonicalAccountPath(dir, os.homedir());
 }
 
+/** The name of the CLI config file Claude Code keeps for each account. */
+export const CLAUDE_CLI_CONFIG_FILE_NAME = '.claude.json';
+
+/**
+ * The CLI config file (`.claude.json`) Claude Code keeps for an account folder,
+ * mirroring the CLI's own rule 1:1: inside `$CLAUDE_CONFIG_DIR` when that is
+ * set, else beside the default folder in the home folder (`~/.claude.json`).
+ * The default folder always reaches the CLI as an unset variable (see
+ * {@link claudeConfigDirEnv}), so its file is the home folder's one.
+ *
+ * Names the file only; never reads it.
+ *
+ * @param root - An account folder, as the registry holds it.
+ * @returns The absolute path of that account's CLI config file.
+ */
+export function claudeCliConfigFile(root: string): string {
+  const home = os.homedir();
+  const isDefaultRoot =
+    canonicalAccountPath(root, home) === canonicalAccountPath(path.join(home, '.claude'), home);
+  return isDefaultRoot
+    ? path.join(home, CLAUDE_CLI_CONFIG_FILE_NAME)
+    : path.join(expandClaudeAccountHome(root), CLAUDE_CLI_CONFIG_FILE_NAME);
+}
+
 /**
  * A Claude account folder with a leading `~` expanded against the OS home, and
  * anything else returned exactly as written.

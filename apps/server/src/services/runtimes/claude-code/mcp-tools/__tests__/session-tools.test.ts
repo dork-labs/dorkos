@@ -2040,10 +2040,11 @@ describe('a start from a chat that read outside words (DOR-4029)', () => {
     }) as Promise<{ saved: boolean; code?: string }>;
   }
 
-  const browserRefuses = (sessionId: string) =>
-    liveOutsideTurnCheck({ agentPathOf: async () => home, launchOriginOf: () => 'agent-launch' })(
-      sessionId
-    );
+  const browserRefuses = async (sessionId: string) =>
+    (await liveOutsideTurnCheck({
+      agentPathOf: async () => home,
+      launchOriginOf: () => 'agent-launch',
+    })(sessionId)) !== null;
 
   it('notes the new chat before its turn runs; memory and the browser refuse it', async () => {
     noteRoomTurnWords(starter, true);

@@ -411,6 +411,13 @@ jobs:
       - name: Queue repeat-guard fixtures
         run: bash scripts/test-queue-repeat-guard.sh
 
+      # arm-door.yml's decision (DOR-4648): an entry whose head lacks Security's
+      # label at or after it, or a verify proof, is taken out of the queue. Both
+      # mistakes are pinned: an ungated head let in, and a gated, docs-only,
+      # stamped or unreadable one taken out.
+      - name: Arm-door fixtures
+        run: bash scripts/test-arm-door.sh
+
       # The other decision merge-tail makes on the same tick: whether to
       # re-request a review that failed. Its stakes run the opposite way to the
       # arming gate's — the expensive bug is a RETRY that fires when it should

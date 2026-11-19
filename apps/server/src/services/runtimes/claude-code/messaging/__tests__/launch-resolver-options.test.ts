@@ -34,6 +34,7 @@ import { resolveDorkHome } from '../../../../../lib/dork-home.js';
 import { CLASSIFIER_CONTEXT_MATCHER } from '../classifier-context.js';
 import { buildSystemPromptAppend, renderContextEntry } from '../context-builder.js';
 import { resolveLaunch } from '../launch-resolver.js';
+import { NOTE_WRITES_AFTER } from '../../tool-gate/extension-write-note.js';
 import {
   agentHomesSelfGrantRules,
   HOME_PERSON_ONLY_FULL_RULES,
@@ -607,7 +608,21 @@ describe('the launch options every Claude Code turn is given', () => {
     const options = await captureSdkOptions();
     const unmatched = (options.hooks?.PostToolUse ?? []).filter((m) => m.matcher === undefined);
     expect(unmatched).toHaveLength(1);
-    expect(options.hooks?.PostToolUseFailure).toEqual([{ hooks: [unmatched[0]!.hooks[0]] }]);
+    expect(options.hooks?.PostToolUseFailure).toEqual([
+      { hooks: [unmatched[0]!.hooks[0]] },
+      NOTE_WRITES_AFTER,
+    ]);
+  });
+
+  it('registers the hooks that note who wrote a mini app’s files, before and after', async () => {
+    // DOR-4528. Unregistered, every edit to an agent's own mini app is tied to no one and waits.
+    const options = await captureSdkOptions();
+    // On every tool, beside the held turn's ask, so a held turn that only starts later work still
+    // sets the launch's hold.
+    const everyTool = (options.hooks?.PreToolUse ?? []).filter((m) => m.matcher === undefined);
+    expect(everyTool).toHaveLength(2);
+    expect(options.hooks?.PostToolUse).toContain(NOTE_WRITES_AFTER);
+    expect(options.hooks?.PostToolUseFailure).toContain(NOTE_WRITES_AFTER);
   });
 
   it('registers the held turn’s ask on every tool, read from the session as each call is made', async () => {
@@ -615,8 +630,9 @@ describe('the launch options every Claude Code turn is given', () => {
     const session = makeSession();
     const options = await captureSdkOptions(undefined, session);
     const unmatched = (options.hooks?.PreToolUse ?? []).filter((m) => m.matcher === undefined);
-    // The only hook on every tool: there is no teammate fence (DOR-3440).
-    expect(unmatched).toHaveLength(1);
+    // The held turn's ask comes first; the other hook on every tool only notes who wrote a mini
+    // app's files (DOR-4528). There is no teammate fence (DOR-3440).
+    expect(unmatched).toHaveLength(2);
     const hook = unmatched[0]!.hooks[0]!;
     const call = {
       hook_event_name: 'PreToolUse' as const,
@@ -816,7 +832,9 @@ describe('the launch options every Claude Code turn is given', () => {
 
     // The audit record's helper-tool hook rides PostToolUse too (spec
     // `audit-trail` PR3); the classifier hook is the one with a matcher.
-    const matchers = (options.hooks?.PostToolUse ?? []).filter((m) => m.matcher !== undefined);
+    const matchers = (options.hooks?.PostToolUse ?? []).filter(
+      (m) => m.matcher !== undefined && m !== NOTE_WRITES_AFTER
+    );
     expect(matchers).toHaveLength(1);
     expect(
       matchers[0]?.matcher,

@@ -1004,7 +1004,7 @@ export class ExtensionManager {
 
     // A yes to these exact files runs them from their verified snapshot,
     // from the first start on, and the browser half is built from it again.
-    await placeSnapshots(this.dorkHome, [record], configManager.get('extensions'));
+    await placeSnapshots(this.dorkHome, [record], configManager.get('extensions'), live);
     if (record.bundleReady) applyCompileResult(record, await this.compiler.compile(record));
 
     if (this.needsServer(record)) {

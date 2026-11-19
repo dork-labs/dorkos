@@ -39,6 +39,7 @@ import {
   roomTurnReadOutsideWords,
 } from '../../core/turn-power/outside-words.js';
 import { liveOutsideTurnCheck } from '../local-browser/outside-turn.js';
+import type { OutsideTurnReason } from '../local-browser/handoff-guards/outside-turn-reason.js';
 import {
   getMessageQueueStore,
   MessageQueueStore,
@@ -427,7 +428,7 @@ describe('the outside words a row another chat sent carries on (DOR-4029)', () =
       launchOriginOf: () => 'interactive',
       marksOf: () => ({}),
     });
-    const during: boolean[] = [];
+    const during: (OutsideTurnReason | null)[] = [];
     const asking = () =>
       async function* (): AsyncGenerator<StreamEvent> {
         during.push(await handoffCheck(session));
@@ -440,7 +441,7 @@ describe('the outside words a row another chat sent carries on (DOR-4029)', () =
     await settle();
     await send('the owner: sign in to the site', PERSON, OWNER);
     await settle();
-    expect(during).toEqual([false, true, false]);
+    expect(during).toEqual([null, 'room_outside_words', null]);
   });
 
   it('stays for a turn whose own row carries them, after a clean one', async () => {

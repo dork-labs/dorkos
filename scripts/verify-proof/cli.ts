@@ -3,12 +3,31 @@ import {
   appendFileSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+// Types only: `check` must run from a lone copy of this file, which is how the arm
+// script runs it (it copies main's cli.ts by itself), so the preopen planner is
+// loaded only when a preopen run asks for it.
+import type { PreopenStep } from './preopen.ts';
+
+/**
+ * How much a proof stands for. `full` is `pnpm verify`, every step, and is the only
+ * level arming accepts. `preopen` is `pnpm verify:preopen`, the lighter checks before
+ * a PR opens (DOR-4728); it lives in its own file and never satisfies a full check.
+ */
+export type ProofLevel = 'full' | 'preopen';
+
+/** The proof file for a commit at a level; the two never share a path. */
+const proofFile = (dir: string, sha: string, level: ProofLevel): string =>
+  path.join(dir, level === 'full' ? sha : `${sha}.preopen`);
+
+const gateName = (level: ProofLevel): string =>
+  level === 'full' ? 'pnpm verify' : 'pnpm verify:preopen';
 
 const git = (cwd: string, ...args: string[]): string =>
   execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -51,16 +70,19 @@ export function readBinaryTestGlobs(root: string): string[] {
  * @param cwd - The checkout to verify.
  * @param verify - Runs the gates with the given test-file excludes and returns their exit code.
  * @param excluded - Test-file globs the gates skip; recorded in the proof so it states its coverage.
+ * @param level - Which gate this is. Each level writes, and clears on a rerun, only its
+ *   own file, so a preopen run can never remove or replace a full proof.
  * @returns The gates' exit code.
  */
 export function runVerification(
   cwd: string,
   verify: (excluded: readonly string[]) => number,
-  excluded: readonly string[] = []
+  excluded: readonly string[] = [],
+  level: ProofLevel = 'full'
 ): number {
   const before = commit(cwd, 'HEAD');
   const dir = proofDir(cwd);
-  const destination = path.join(dir, before.sha);
+  const destination = proofFile(dir, before.sha, level);
   const startedClean = clean(cwd);
   // A failed or interrupted rerun must not leave an earlier green behind.
   rmSync(destination, { force: true });
@@ -69,7 +91,7 @@ export function runVerification(
   const after = commit(cwd, 'HEAD');
   if (!startedClean || !clean(cwd) || after.sha !== before.sha || after.tree !== before.tree) {
     console.warn(
-      'pnpm verify passed; no proof recorded because HEAD or the working tree changed or was dirty'
+      `${gateName(level)} passed; no proof recorded because HEAD or the working tree changed or was dirty`
     );
     return 0;
   }
@@ -78,7 +100,7 @@ export function runVerification(
   try {
     writeFileSync(
       temporary,
-      JSON.stringify({ ...before, excluded, passedAt: new Date().toISOString() }) + '\n'
+      JSON.stringify({ ...before, level, excluded, passedAt: new Date().toISOString() }) + '\n'
     );
     renameSync(temporary, destination);
   } finally {
@@ -87,8 +109,47 @@ export function runVerification(
   return 0;
 }
 
-/** Check a local pass without running any verification commands. */
-function check(cwd: string, ref: string, escape: boolean): number {
+/**
+ * Whether a parsed proof file is a pass for this commit at exactly this level.
+ * A proof with no `level` predates DOR-4728, when every proof was a full one.
+ */
+function isPass(proof: unknown, sha: string, tree: string, level: ProofLevel): boolean {
+  if (typeof proof !== 'object' || proof === null) return false;
+  const record = proof as Record<string, unknown>;
+  return (
+    (level === 'full'
+      ? record.level === undefined || record.level === 'full'
+      : record.level === 'preopen') &&
+    record.sha === sha &&
+    record.tree === tree &&
+    typeof record.passedAt === 'string' &&
+    Number.isFinite(Date.parse(record.passedAt)) &&
+    // Proofs recorded before DOR-4501 carry no list; they excluded nothing, so they
+    // covered at least as much as a new one and stay valid.
+    (record.excluded === undefined ||
+      (Array.isArray(record.excluded) &&
+        record.excluded.every((glob: unknown) => typeof glob === 'string')))
+  );
+}
+
+/** Read one proof file; anything missing or unreadable reads as no proof. */
+function readProof(file: string): unknown {
+  try {
+    return JSON.parse(readFileSync(file, 'utf8'));
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Check a local pass without running any verification commands. The default `full`
+ * level, which arming uses, reads only the full proof. `preopen` also accepts the
+ * commit's preopen proof, since a full pass covers everything a preopen one does.
+ * The escape exists at the full level only (checkFlags refuses it with `preopen`), so
+ * every line in escapes.jsonl is an escape from the full-level check, whether it was
+ * made at PR open or at arming.
+ */
+function check(cwd: string, ref: string, escape: boolean, level: ProofLevel): number {
   let shortSha = ref.slice(0, 12);
   try {
     const { sha, tree } = commit(cwd, ref);
@@ -113,67 +174,133 @@ function check(cwd: string, ref: string, escape: boolean): number {
       );
       return 0;
     }
-    const proof = JSON.parse(readFileSync(path.join(dir, sha), 'utf8'));
+    if (isPass(readProof(proofFile(dir, sha, 'full')), sha, tree, 'full')) return 0;
     if (
-      proof.sha === sha &&
-      proof.tree === tree &&
-      typeof proof.passedAt === 'string' &&
-      Number.isFinite(Date.parse(proof.passedAt)) &&
-      // Proofs recorded before DOR-4501 carry no list; they excluded nothing, so they
-      // covered at least as much as a new one and stay valid.
-      (proof.excluded === undefined ||
-        (Array.isArray(proof.excluded) &&
-          proof.excluded.every((glob: unknown) => typeof glob === 'string')))
+      level === 'preopen' &&
+      isPass(readProof(proofFile(dir, sha, 'preopen')), sha, tree, 'preopen')
     )
       return 0;
   } catch {
     // Missing, unreadable, malformed, or mismatched proof is the same actionable refusal.
   }
   console.error(
-    `no pnpm verify pass recorded for ${shortSha}; run pnpm verify, or pass --no-verify-proof`
+    level === 'full'
+      ? `no pnpm verify pass recorded for ${shortSha}; run pnpm verify, or pass --no-verify-proof`
+      : `no pnpm verify:preopen or pnpm verify pass recorded for ${shortSha}; ` +
+          'run pnpm verify:preopen, or pass --no-verify-proof'
   );
   return 1;
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const [command, ref, ...flags] = process.argv.slice(2);
-  if (command === 'run' && ref === undefined) {
-    // Read from this script's own repository, so the list matches the checks it ships with.
-    const excluded = readBinaryTestGlobs(path.resolve(import.meta.dirname, '../..'));
+/** What `check`'s flags asked for, or the line that explains why they were refused. */
+type CheckFlags = { escape: boolean; level: ProofLevel } | { refusal: string };
+
+/** Parse `check`'s flags; `undefined` means they were not ones it takes. */
+function checkFlags(flags: readonly string[]): CheckFlags | undefined {
+  let escape = false;
+  let level: ProofLevel = 'full';
+  for (let i = 0; i < flags.length; i++) {
+    const flag = flags[i];
+    if (flag === '--no-verify-proof') escape = true;
+    else if (flag === '--level' && (flags[i + 1] === 'full' || flags[i + 1] === 'preopen')) {
+      level = flags[++i] as ProofLevel;
+    } else return undefined;
+  }
+  if (escape && level === 'preopen') {
+    return {
+      refusal: '--no-verify-proof escapes the full check only; drop --level preopen to use it',
+    };
+  }
+  return { escape, level };
+}
+
+/**
+ * Whether this module is the program node was asked to run. Both sides are real paths:
+ * node resolves the main module's symlinks for `import.meta.url` but leaves argv as
+ * typed, so a copy reached through a symlink (macOS's tmpdir is one) would otherwise
+ * never run at all and exit 0, which reads as a pass.
+ */
+function isMain(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return realpathSync(entry) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (isMain()) {
+  const [command, ...args] = process.argv.slice(2);
+  // Read from this script's own repository, so the lists match the checks it ships with.
+  const root = path.resolve(import.meta.dirname, '../..');
+  const pnpm = (pnpmArgs: readonly string[]): number =>
+    // pnpm's child inherits the current environment, just as the old shell did.
+    spawnSync(process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', pnpmArgs, {
+      cwd: process.cwd(),
+      stdio: 'inherit',
+    }).status ?? 1;
+  // A forced or filtered run is not the gate a proof stands for, so it is refused
+  // outright. Each gate has its own command, so `pnpm verify --preopen` is refused too,
+  // and the message shows only what the person typed after the script name.
+  const refuseArguments = (gate: string) => {
+    console.error(
+      `${gate} takes no arguments (got: ${args.join(' ')}); ` +
+        'for a forced run use turbo run typecheck lint --force, or turbo run test --force -- --run'
+    );
+    process.exitCode = 2;
+  };
+  if (command === 'run' && args.length > 0) refuseArguments('pnpm verify');
+  else if (command === 'run-preopen' && args.length > 0) refuseArguments('pnpm verify:preopen');
+  else if (command === 'run') {
+    const excluded = readBinaryTestGlobs(root);
     if (excluded.length > 0) {
       console.log(
         `pnpm verify leaves the host-binary tests to CI (scripts/ci/binary-test-glob.txt): ${excluded.join(', ')}`
       );
     }
+    // pnpm appends these to the end of verify:checks, which is the turbo test step,
+    // and quotes each one so the shell never expands the glob.
     process.exitCode = runVerification(
       process.cwd(),
-      (globs) => {
-        // pnpm appends these to the end of verify:checks, which is the turbo test step,
-        // and quotes each one so the shell never expands the glob.
-        const result = spawnSync(
-          process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
-          ['run', 'verify:checks', ...globs.map((glob) => `--exclude=${glob}`)],
-          {
-            cwd: process.cwd(),
-            stdio: 'inherit',
-            // pnpm's child inherits the current environment, just as the old shell did.
-          }
-        );
-        return result.status ?? 1;
-      },
+      (globs) => pnpm(['run', 'verify:checks', ...globs.map((glob) => `--exclude=${glob}`)]),
       excluded
     );
-  } else if (command === 'run') {
-    // A forced or filtered run is not the gate a proof stands for, so it is refused outright.
-    console.error(
-      `pnpm verify takes no arguments (got: ${process.argv.slice(3).join(' ')}); ` +
-        'for a forced run use turbo run typecheck lint --force, or turbo run test --force -- --run'
+  } else if (command === 'run-preopen') {
+    const { planPreopen, runPreopen } = await import('./preopen.ts');
+    process.exitCode = runVerification(
+      process.cwd(),
+      () => {
+        let steps: PreopenStep[];
+        try {
+          steps = planPreopen(process.cwd(), root);
+        } catch (error) {
+          console.error(error instanceof Error ? error.message : String(error));
+          return 2;
+        }
+        console.log(
+          `pnpm verify:preopen runs ${steps.map((step) => step.name).join(', ')}; ` +
+            'the package tests are left to CI, and arming never reads this proof'
+        );
+        return runPreopen(steps, (step) => pnpm(step.args));
+      },
+      [],
+      'preopen'
     );
-    process.exitCode = 2;
-  } else if (command === 'check' && ref && flags.every((flag) => flag === '--no-verify-proof')) {
-    process.exitCode = check(process.cwd(), ref, flags.includes('--no-verify-proof'));
   } else {
-    console.error('usage: node scripts/verify-proof/cli.ts run | check <sha> [--no-verify-proof]');
-    process.exitCode = 2;
+    const [ref, ...flags] = args;
+    const parsed = command === 'check' && ref ? checkFlags(flags) : undefined;
+    if (parsed && 'refusal' in parsed) {
+      console.error(parsed.refusal);
+      process.exitCode = 2;
+    } else if (parsed && ref) {
+      process.exitCode = check(process.cwd(), ref, parsed.escape, parsed.level);
+    } else {
+      console.error(
+        'usage: node scripts/verify-proof/cli.ts run | run-preopen | ' +
+          'check <sha> [--level full|preopen] [--no-verify-proof]'
+      );
+      process.exitCode = 2;
+    }
   }
 }
