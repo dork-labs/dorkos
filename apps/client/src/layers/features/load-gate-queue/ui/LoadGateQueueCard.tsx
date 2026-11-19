@@ -32,7 +32,10 @@ export function LoadGateQueueCard({ className }: LoadGateQueueCardProps) {
         <section
           data-slot="load-gate-queue"
           aria-labelledby={headingId}
-          className={cn('bg-card border-border rounded-lg border px-4 py-3', className)}
+          className={cn(
+            'bg-card border-border @container/queue rounded-lg border px-4 py-3',
+            className
+          )}
         >
           <h2 id={headingId} className="text-foreground text-sm font-medium">
             Heavy jobs waiting

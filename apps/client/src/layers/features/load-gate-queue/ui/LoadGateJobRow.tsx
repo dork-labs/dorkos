@@ -30,7 +30,8 @@ const ACTIONS: readonly { action: LoadGateJobAction; text: string; busy: string 
 
 /**
  * One waiting job: its place, who it is for, what it runs, how long it has
- * waited, and its three actions. On a narrow screen the buttons wrap below.
+ * waited, and its three actions. In a narrow card (a phone, a side panel) the
+ * buttons go below the job and the detail line wraps instead of being cut.
  */
 export function LoadGateJobRow({ job, now, onDone }: LoadGateJobRowProps) {
   const act = useLoadGateJobAction();
@@ -42,7 +43,7 @@ export function LoadGateJobRow({ job, now, onDone }: LoadGateJobRowProps) {
     act.mutate({ id: job.id, action }, { onSuccess: () => onDone(doneAnnouncement(job, action)) });
 
   return (
-    <li className="flex flex-col gap-2 py-2.5 sm:flex-row sm:items-center sm:gap-4">
+    <li className="flex flex-col gap-2 py-2.5 @min-[36rem]/queue:flex-row @min-[36rem]/queue:items-center @min-[36rem]/queue:gap-4">
       <div className="flex min-w-0 flex-1 items-baseline gap-3">
         <span className="text-muted-foreground w-5 shrink-0 text-right text-xs tabular-nums">
           {job.position}
@@ -54,7 +55,10 @@ export function LoadGateJobRow({ job, now, onDone }: LoadGateJobRowProps) {
             </span>
             <code className="text-muted-foreground shrink-0 font-mono text-xs">{job.label}</code>
           </p>
-          <p className="text-muted-foreground truncate text-xs" title={detail.join(' · ')}>
+          <p
+            className="text-muted-foreground text-xs break-words @min-[36rem]/queue:truncate"
+            title={detail.join(' · ')}
+          >
             {detail.join(' · ')}
           </p>
           {act.isError && (
@@ -62,7 +66,7 @@ export function LoadGateJobRow({ job, now, onDone }: LoadGateJobRowProps) {
           )}
         </div>
       </div>
-      <div className="flex flex-wrap gap-2 pl-8 sm:shrink-0 sm:pl-0">
+      <div className="flex flex-wrap gap-2 pl-8 @min-[36rem]/queue:shrink-0 @min-[36rem]/queue:pl-0">
         {ACTIONS.map(({ action, text, busy }) => (
           <Button
             key={action}
