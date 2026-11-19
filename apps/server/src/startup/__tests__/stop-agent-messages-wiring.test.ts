@@ -13,6 +13,13 @@ describe('production messaging shutdown wiring', () => {
     expect(body.indexOf('await shutdownRuntimes(')).toBeGreaterThan(stop);
     expect(body.indexOf('refs.releaseInstanceLock?.();')).toBeGreaterThan(stop);
   });
+  it('reads no accessor that throws before startup set it up (DOR-4689)', () => {
+    // A signal can arrive mid-boot; a service that never started is nothing to stop.
+    const start = source.indexOf('async function shutdownServices(');
+    const body = source.slice(start, source.indexOf('// Graceful shutdown', start));
+    expect(body).toContain('stopCloudLinkManager();');
+    expect(body).not.toMatch(/\bget\w+Manager\(\)/);
+  });
   it('also stops messaging after a startup failure closes admission', () => {
     const body = source.slice(source.indexOf('start().catch(async'));
     expect(body.indexOf('stopAgentMessageServices();')).toBeGreaterThan(
