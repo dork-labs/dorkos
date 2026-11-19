@@ -624,6 +624,84 @@ describe('a command Codex runs without asking counts in the line (DOR-4743)', ()
   });
 });
 
+describe('one slot: a command and its own ask never wait on each other (DOR-4743)', () => {
+  it('a heavy command reported started, then asked about, gives its slot to its ask, so neither waits forever; another chat’s job gets in after it completes', async () => {
+    // One slot, and a busy computer: the shape of a self-deadlock, if the running command kept
+    // the only slot (`codex:<chat>:running`) while its own ask waited for one (`codex:<chat>:main`).
+    expect(settings.slots).toBe(1);
+    const { h, time, loadSource, queue, gate } = machine(20);
+    let ask!: () => void;
+    let finish!: () => void;
+    h.host.home(PERSON_HOME).nextTurn(async (ctx) => {
+      const item = commandItem('pnpm build', 'a-1');
+      // 0.154's order: the command is reported started, then asked about.
+      ctx.emit('item/started', { item, startedAtMs: Date.now() });
+      await new Promise<void>((resolve) => (ask = resolve));
+      await ctx.serverRequest(ASK, { kind: 'command', itemId: 'a-1', command: 'pnpm build' });
+      await new Promise<void>((resolve) => (finish = resolve));
+      ctx.emit('item/completed', { item: { ...item, status: 'completed', exitCode: 0 } });
+      ctx.complete('completed');
+    });
+    const ana = h.transport.runTurn(h.request({ sessionId: 'ana' }));
+
+    // Reported started, not yet asked about: it holds the one slot.
+    await until(ana, 'tool_call_start');
+    await vi.waitFor(() => expect(typeof ask).toBe('function'));
+    expect(queue.runningCount()).toBe(1);
+    expect(queue.list()).toHaveLength(0);
+
+    // Asked about: the slot goes back while the ask waits, so the ask is not waiting on itself.
+    ask();
+    expect(waitWords(await until(ana, ['system_status', 'approval_required']))).toBe(
+      'Waiting for the computer to calm down. Next in line.'
+    );
+    await settle();
+    expect(queue.runningCount()).toBe(0);
+    expect(queue.list()).toHaveLength(1);
+    await time.step(POLL);
+    expect(queue.runningCount()).toBe(0);
+    expect(queue.list()).toHaveLength(1);
+
+    // The computer calms down: the one slot is free, so the ask gets its turn and its card.
+    loadSource.set(4);
+    await time.step(POLL);
+    await until(ana, 'approval_required');
+    expect(queue.runningCount()).toBe(0);
+    expect(queue.list()).toHaveLength(0);
+
+    // Approved, the command runs on the one slot.
+    h.transport.answerApproval('ana', 'a-1', true);
+    await vi.waitFor(() => expect(typeof finish).toBe('function'));
+    expect(queue.runningCount()).toBe(1);
+
+    // Another chat's heavy job (a Claude Code chat's build, say) waits behind it.
+    const other = gate.gateIfHeavy('pnpm test', { chatId: 'bo', shareKey: 'claude-code:bo:main' });
+    let otherIn = false;
+    void other.then(() => (otherIn = true));
+    await settle();
+    await time.step(POLL);
+    expect(otherIn).toBe(false);
+    expect(queue.runningCount()).toBe(1);
+    expect(queue.list()).toHaveLength(1);
+
+    // It completes and the turn ends: the slot is free, and the other job gets in.
+    finish();
+    const after = await rest(ana);
+    expect(after.find((e) => e.type === 'tool_call_end')).toMatchObject({
+      data: { toolCallId: 'a-1', status: 'complete' },
+    });
+    expect(after.filter((e) => e.type === 'done')).toHaveLength(1);
+    expect(queue.runningCount()).toBe(0);
+    await time.step(POLL);
+    expect(otherIn).toBe(true);
+    expect(queue.runningCount()).toBe(1);
+    (await other)!.release();
+    expect(queue.runningCount()).toBe(0);
+    expect(queue.list()).toHaveLength(0);
+    expect(replies(h)).toEqual([{ decision: 'accept' }]);
+  });
+});
+
 describe('a new Codex reply waits to start on a busy computer while Codex commands run (DOR-4743)', () => {
   /** Ana's chat runs a heavy command without asking; it holds a slot until `end`. */
   async function anaRunning(m: ReturnType<typeof machine>) {
