@@ -145,6 +145,7 @@ import type {
 } from '@dorkos/shared/schemas';
 import { COMMAND_INTENT_QUEUE_WAIT_MS } from '@dorkos/shared/command-intents';
 import { getMessageQueueStore } from './message-queue-store.js';
+import { queuedLimitsOf } from './message-dispatcher/carried-limits.js';
 import {
   onProjectorRekey,
   onProjectorTurnBoundary,
@@ -624,6 +625,9 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
           disposition: requested,
           context: opts.context ?? null,
           ...(heldToDefault ? { heldToDefault: true } : {}),
+          // What the turn carries only in memory goes on the row, so a pause or a restart keeps
+          // it (DOR-4350).
+          carriedLimits: queuedLimitsOf(opts),
         })
       : undefined;
   // **The person first** (spec `spin-off-chats` §3): a message a person (or

@@ -133,6 +133,10 @@ export const sessionMessageQueue = sqliteTable(
     // sign-in, DOR-3037). Kept on the row so the hold survives a restart and an
     // edit, when no in-memory plan carries the turn's ceiling.
     heldToDefault: integer('held_to_default', { mode: 'boolean' }).notNull().default(false),
+    // The limits the turn this row starts carried only in memory, JSON: an outsider mark, a
+    // ceiling, and whether nobody is watching it (DOR-4350). Kept so a pause or a restart hands
+    // them back unchanged. NULL = the row carried none.
+    carriedLimitsJson: text('carried_limits_json'),
   },
   (t) => ({
     // (session_id, position) rather than session_id alone: every read of this

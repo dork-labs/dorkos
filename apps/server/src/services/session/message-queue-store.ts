@@ -42,6 +42,11 @@ import type { MessageDisposition, QueuedMessage, QueuedWaitingOn } from '@dorkos
 import type { SessionMessageQueueRow } from '@dorkos/db';
 import { logger } from '../../lib/logger.js';
 import { isPersonWindowClientId } from './person-window-client-id.js';
+import {
+  parseQueuedLimits,
+  serializeQueuedLimits,
+  type QueuedCarriedLimits,
+} from './message-dispatcher/carried-limits.js';
 
 /**
  * The gap left between neighbouring queue positions. Wide enough that a person
@@ -100,6 +105,11 @@ export interface QueuedMessageRecord extends QueuedMessage {
    * survives a restart. Never exposed on the wire.
    */
   heldToDefault: boolean;
+  /**
+   * The limits the row's turn carried only in memory (DOR-4350); `null` for none. The
+   * dispatcher reads them at launch, so a pause or a restart keeps them. Never exposed on the wire.
+   */
+  carriedLimits: QueuedCarriedLimits | null;
 }
 
 /**
@@ -195,6 +205,8 @@ export interface EnqueueInput {
   id?: string;
   /** See {@link QueuedMessageRecord.heldToDefault}. Absent means not held. */
   heldToDefault?: boolean;
+  /** See {@link QueuedMessageRecord.carriedLimits}. Absent or `undefined` means none. */
+  carriedLimits?: QueuedCarriedLimits | undefined;
 }
 
 /**
@@ -233,6 +245,7 @@ function toRecord(row: SessionMessageQueueRow): QueuedMessageRecord {
     position: row.position,
     context: parseContext(row),
     heldToDefault: row.heldToDefault,
+    carriedLimits: parseQueuedLimits(row.carriedLimitsJson, row.id),
   };
 }
 
@@ -265,6 +278,7 @@ export class MessageQueueStore {
       enqueuedAt: Date.now(),
       contextJson: input.context ? JSON.stringify(input.context) : null,
       heldToDefault: input.heldToDefault === true,
+      carriedLimitsJson: serializeQueuedLimits(input.carriedLimits),
     };
     executor.insert(sessionMessageQueue).values(row).run();
     return toRecord(row);
@@ -331,6 +345,7 @@ export class MessageQueueStore {
         enqueuedAt: record.enqueuedAt,
         contextJson: record.context ? JSON.stringify(record.context) : null,
         heldToDefault: record.heldToDefault,
+        carriedLimitsJson: serializeQueuedLimits(record.carriedLimits),
       })
       .run();
     return true;

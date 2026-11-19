@@ -26,6 +26,7 @@ vi.mock('../context-assembler.js', () => ({
 }));
 
 import {
+  adoptQueuedMessages,
   dispatchMessage,
   listQueuedMessages,
   resetMessageDispatcher,
@@ -39,7 +40,11 @@ import {
 } from '../../core/turn-power/outside-words.js';
 import { liveOutsideTurnCheck } from '../local-browser/outside-turn.js';
 import type { OutsideTurnReason } from '../local-browser/handoff-guards/outside-turn-reason.js';
-import { MessageQueueStore, setMessageQueueStore } from '../message-queue-store.js';
+import {
+  getMessageQueueStore,
+  MessageQueueStore,
+  setMessageQueueStore,
+} from '../message-queue-store.js';
 import { getOrCreateProjector, disposeProjector } from '../session-state-projector.js';
 
 const PERSON = 'window-a';
@@ -316,6 +321,48 @@ describe('a message a mini app sent', () => {
     await settle();
     expect(carriedOfCall(0)).toBeUndefined();
     expect(carriedOfCall(1)).toEqual({ outsider: true });
+  });
+});
+
+// DOR-4350: what a queued turn carried only in memory goes on its row, so a restart hands it back.
+describe('the limits a queued message carried', () => {
+  const BOUND = { asks: 'never', reach: 'everything' } as const;
+  const AGENT_POST = 'agent-http:made-up-poster';
+
+  it('are written on its row as it queues', async () => {
+    const busy = gate();
+    runtime.withScenarios([heldTurn(busy.wait), quickTurn()]);
+    await send('the person', PERSON);
+    await settle();
+    await send('marked words', AGENT_POST, {
+      carriedMarks: { outsider: true },
+      permissionCeiling: BOUND,
+      unattended: true,
+    });
+    const row = getMessageQueueStore()!
+      .list(session)
+      .find((r) => r.content === 'marked words');
+    expect(row?.carriedLimits).toEqual({ outsider: true, ceiling: BOUND, unattended: true });
+    busy.open();
+  });
+
+  it('reach the runtime after a restart, the row being all that is left', async () => {
+    getMessageQueueStore()!.enqueue({
+      sessionId: session,
+      content: 'marked words, before the restart',
+      clientId: AGENT_POST,
+      disposition: 'queue',
+      context: null,
+      carriedLimits: { outsider: true, ceiling: BOUND, unattended: true },
+    });
+    resetMessageDispatcher();
+    runtime.withScenarios([quickTurn()]);
+    adoptQueuedMessages({ sessionId: session, projector: getOrCreateProjector(session), runtime });
+    await settle();
+    const opts = runtime.sendMessage.mock.calls[0]![2] as Record<string, unknown>;
+    expect(opts.carriedMarks).toEqual({ outsider: true });
+    expect(ceilingOfCall(0)).toEqual({ has: true, value: BOUND });
+    expect(opts.unattended).toBe(true);
   });
 });
 
