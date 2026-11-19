@@ -16,9 +16,9 @@
  *   back.
  * - `ticket-<n>-<id>.json`: a waiting job, written to a temp file and renamed
  *   into place so no reader sees half of it.
- * - `urgent-<id>` and `let-through-<id>`: a person's marks on a waiting ticket.
- *   Separate files rather than a rewrite, so a mark that lands just as the
- *   ticket leaves can never bring the ticket back.
+ * - `urgent-<id>`, `front-<id>` and `let-through-<id>`: a person's marks on a
+ *   waiting ticket. Separate files rather than a rewrite, so a mark that lands
+ *   just as the ticket leaves can never bring the ticket back.
  * - `slot-<k>.json`: a running job holding slot `k`. Taken with a hard link,
  *   which fails if the slot is already taken and never leaves a half-written
  *   marker, so the slot count holds across processes.
@@ -32,8 +32,9 @@
  *
  * ## Order
  *
- * Urgent tickets first, then by number. Only the first `slots - running` tickets
- * may start, so a later ticket never overtakes an earlier one for a free slot.
+ * Tickets moved to the front first, then urgent ones, then the rest; by number
+ * within each. Only the first `slots - running` tickets may start, so a later
+ * ticket never overtakes an earlier one for a free slot.
  * A let-through ticket skips both the load check and the slot count, because a
  * person asked for exactly that job to run now; while it runs it still counts as
  * running for everyone behind it.
@@ -76,7 +77,7 @@ const SEQ_DIGITS = 12;
 const SEQ_CLAIM = /^seq-(\d{12})$/;
 const TICKET_FILE = /^ticket-(\d{12})-([0-9a-f]{16})\.json$/;
 const MARKER_FILE = /^(slot-\d+|through-[0-9a-f]{16})\.json$/;
-const FLAG_FILE = /^(urgent|let-through)-([0-9a-f]{16})$/;
+const FLAG_FILE = /^(urgent|front|let-through)-([0-9a-f]{16})$/;
 const LEFTOVER_FILE = /^\.(tmp|tomb)-/;
 /**
  * The most folder entries one check reads and judges. Every entry can cost a
@@ -114,8 +115,19 @@ const MarkerSchema = z.object({
 /** A running job's marker, with the file it sits in. */
 type RunningMarker = z.infer<typeof MarkerSchema> & { name: string };
 
-/** One waiting heavy job. `letThrough` is set once a person let it past the limits. */
-export type Ticket = z.infer<typeof TicketSchema> & { letThrough?: boolean };
+/**
+ * One waiting heavy job. `letThrough` is set once a person let it past the
+ * limits, and `front` once a person moved it to the front of the line.
+ */
+export type Ticket = z.infer<typeof TicketSchema> & { letThrough?: boolean; front?: boolean };
+
+/**
+ * Whether `id` has the shape of a ticket id. Checked before any id from outside
+ * names a file, so it can never name anything but a mark.
+ *
+ * @param id - The id to check.
+ */
+export const isTicketId = (id: string): boolean => ID_PATTERN.test(id);
 
 /** What a caller says about the job it is queueing. Nothing here names an agent or a chat. */
 export interface TicketInfo {
@@ -174,10 +186,12 @@ const ticketName = (ticket: Pick<Ticket, 'seq' | 'id'>): string =>
   `ticket-${pad(ticket.seq)}-${ticket.id}.json`;
 const throughName = (id: string): string => `through-${id}.json`;
 
-/** Urgent first, then first come. */
+/** How early a ticket's part of the line is: moved to the front, then urgent, then the rest. */
+const tier = (ticket: Ticket): number => (ticket.front ? 0 : ticket.priority === 'urgent' ? 1 : 2);
+
+/** Front first, then urgent, then first come within each. */
 function byQueueOrder(a: Ticket, b: Ticket): number {
-  if (a.priority !== b.priority) return a.priority === 'urgent' ? -1 : 1;
-  return a.seq - b.seq;
+  return tier(a) - tier(b) || a.seq - b.seq;
 }
 
 /** The machine-wide queue of heavy jobs. See the module docs for the folder layout. */
@@ -300,10 +314,12 @@ export class TicketQueue {
       if (ticket === null) continue;
       const urgent = flags.has(`urgent-${ticket.id}`);
       const letThrough = flags.has(`let-through-${ticket.id}`);
+      const front = flags.has(`front-${ticket.id}`);
       tickets.push({
         ...ticket,
         priority: urgent ? 'urgent' : ticket.priority,
         ...(letThrough ? { letThrough: true } : {}),
+        ...(front ? { front: true } : {}),
       });
     }
     // A mark whose ticket has gone (it started, or its owner left) marks nothing. Judged
@@ -406,7 +422,18 @@ export class TicketQueue {
     return this.mark('urgent', id);
   }
 
-  private mark(kind: 'urgent' | 'let-through', id: string): boolean {
+  /**
+   * Move a waiting job to the front of the line, ahead of urgent ones too (a
+   * person's choice). Two moved to the front keep their first-come order.
+   *
+   * @param id - The ticket's id.
+   * @returns Whether a waiting ticket with that id was found.
+   */
+  markFront(id: string): boolean {
+    return this.mark('front', id);
+  }
+
+  private mark(kind: 'urgent' | 'front' | 'let-through', id: string): boolean {
     if (!ID_PATTERN.test(id) || !this.list().some((ticket) => ticket.id === id)) return false;
     fs.writeFileSync(this.file(`${kind}-${id}`), '');
     return true;
@@ -488,6 +515,7 @@ export class TicketQueue {
     this.mine.delete(ticketName(ticket));
     this.remove(ticketName(ticket));
     this.remove(`urgent-${ticket.id}`);
+    this.remove(`front-${ticket.id}`);
     this.remove(`let-through-${ticket.id}`);
   }
 

@@ -5,7 +5,7 @@ import type { PlaygroundSection } from '../playground-registry';
  *
  * Sources: PersonalityPickerShowcases, AgentFleetShowcases, RelayShowcases,
  * AgentSidebarShowcases, AdapterWizardShowcases, MeshShowcases,
- * TasksShowcases, PulsePanelShowcases, ActivityShowcases.
+ * TasksShowcases, PulsePanelShowcases, ActivityShowcases, LoadGateQueueShowcases.
  *
  * Formerly the first half of one combined `FEATURES_SECTIONS` array — split
  * into its own page at DOR-1766 (batch 20 audit finding 20.2): the flat
@@ -464,5 +464,13 @@ export const FEATURE_AGENT_SECTIONS: PlaygroundSection[] = [
     page: 'features',
     category: 'Activity',
     keywords: ['activity', 'toggle', 'all actions', 'audit', 'view', 'segmented'],
+  },
+  // LoadGateQueueShowcases (DOR-4209)
+  {
+    id: 'loadgatequeuecard',
+    title: 'LoadGateQueueCard',
+    page: 'features',
+    category: 'Activity',
+    keywords: ['load gate', 'waiting', 'heavy jobs', 'let through', 'urgent', 'front', 'busy'],
   },
 ];

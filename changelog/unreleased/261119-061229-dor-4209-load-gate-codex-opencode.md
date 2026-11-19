@@ -2,6 +2,7 @@
 covers:
   - "feat(runtimes): Codex and OpenCode agents' heavy shell jobs wait their turn too (DOR-4209)"
   - "fix(runtimes): a stopped OpenCode chat's waiting command is refused, never decided (DOR-4209)"
+  - 'feat(load-gate): a person sees the waiting heavy jobs and can let one through (DOR-4209)'
 ---
 
 ### Added

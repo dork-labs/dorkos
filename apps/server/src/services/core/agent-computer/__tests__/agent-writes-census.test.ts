@@ -537,6 +537,14 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
     ],
   ],
   [
+    'the waiting line of heavy jobs is a person’s to reorder (DOR-4209)',
+    [
+      'POST /api/system/load-gate/jobs/:id/front',
+      'POST /api/system/load-gate/jobs/:id/let-through',
+      'POST /api/system/load-gate/jobs/:id/urgent',
+    ],
+  ],
+  [
     'runtime sign-ins are the hub’s',
     [
       'POST /api/runtimes/:type/credential',
