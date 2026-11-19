@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "name": "app-builder-pack",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "type": "skill-pack",
   "description": "One skill for building a small DorkOS app (an extension) from a person's request: a placement interview, scaffold, test, check it really started, screenshot every surface, and tell the person what it can reach, with least privilege and the person's approval at every step",
   "author": "Dork Labs",
