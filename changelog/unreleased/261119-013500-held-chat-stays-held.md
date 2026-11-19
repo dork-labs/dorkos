@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(turn-power): a chat that took in a stranger's words stays held until your own next message (DOR-4515)"
+  - 'fix(turn-power): a held chat keeps its hold after a rename and a restart (DOR-4515)'
 ---
 
 ### Fixed

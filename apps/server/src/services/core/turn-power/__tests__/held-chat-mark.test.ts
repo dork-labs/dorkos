@@ -5,11 +5,17 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
+import { eq, sessionMetadata, type Db } from '@dorkos/db';
+import {
+  linkSessionId,
+  resetSessionKeys,
+} from '../../../session/resolution/session-key-registry.js';
+import { rekeySessionMetadata } from '../../../session/recovery/rekey-metadata.js';
 import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
 import { lastTurnLevelOf, recordTurnLevels } from '../turn-levels.js';
-import { lastTurnHeld, setContinuationHoldDb } from '../continuation-hold.js';
+import { lastTurnHeld, noteTurnHold, setContinuationHoldDb } from '../continuation-hold.js';
 import {
   forgetOwnersCleanSend,
   noteOwnersCleanSend,
@@ -51,9 +57,12 @@ const STRANGER: MessageOpts = { permissionCeiling: 'runtime-default', turnStarte
 /** A scheduled run in the same chat: unattended, carrying no mark of its own. */
 const SCHEDULED: MessageOpts = { unattended: true };
 
+let db: Db;
+
 beforeEach(() => {
   received = [];
-  setContinuationHoldDb(createTestDb());
+  db = createTestDb();
+  setContinuationHoldDb(db);
   resetHeldChatMarks();
   resetLiveOutsiderTurns();
 });
@@ -143,6 +152,27 @@ describe('a chat that took in a stranger’s words', () => {
     await send(runtime, chat, { turnStarter: 'person', messageId: 'owner-message-4' });
     expect(received[1]?.carriedMarks).toEqual({ outsider: true });
     expect(lastTurnHeld(chat)).toBe(true);
+  });
+
+  // Security M1 on DOR-4515: a renamed chat's row moves to its newer id, and a restart forgets the
+  // link, so the hold has to be kept under every id the chat answers to.
+  it('stays held after a rename and a restart, for a turn sent under the newer id', async () => {
+    const runtime = wrapped();
+    const born = fresh();
+    const renamed = `${born}-renamed`;
+    await send(runtime, born, { turnStarter: 'person' });
+    noteTurnHold(born, false);
+    const row = db.select().from(sessionMetadata).where(eq(sessionMetadata.sessionId, born)).get()!;
+    rekeySessionMetadata(db, born, renamed, row, undefined);
+    linkSessionId(born, renamed);
+    await send(runtime, renamed, STRANGER);
+    // What a restart leaves: the rows on disk, nothing in memory.
+    setContinuationHoldDb(db);
+    resetSessionKeys();
+    resetHeldChatMarks();
+    resetLiveOutsiderTurns();
+    await send(wrapped(), renamed, SCHEDULED);
+    expect(received[2]?.carriedMarks).toEqual({ outsider: true });
   });
 
   it('leaves a chat no stranger reached alone', async () => {
