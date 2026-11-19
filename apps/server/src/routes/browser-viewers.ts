@@ -132,14 +132,6 @@ export function createBrowserViewerRoutes(
       }),
     });
   });
-  router.get('/:viewerId/state', async (c) => {
-    // A GET cannot carry a JSON body. This nonce still requires the bound cookie/proof.
-    const nonce = nonceSchema.parse(c.req.header('x-browser-viewer-nonce'));
-    const state = await registry.state(principal(c), c.req.param('viewerId'), nonce);
-    await stillPerson(c);
-    registry.assertLive(principal(c), c.req.param('viewerId'), nonce);
-    return c.json(state);
-  });
   router.delete('/:viewerId', async (c) => {
     const { nonce } = closeSchema.parse(readJsonBody(c));
     await registry.unsubscribe(principal(c), c.req.param('viewerId'), nonce);

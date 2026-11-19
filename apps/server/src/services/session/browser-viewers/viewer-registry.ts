@@ -180,14 +180,6 @@ export class BrowserViewerRegistry {
     }
   }
 
-  /** Read only the binding, after the same current-page check as a frame. */
-  async state(principal: ViewerPrincipal, id: string, nonce: string) {
-    const viewer = this.find(principal, id, nonce);
-    await this.current(viewer);
-    this.touch(viewer);
-    return { ...viewer.producer.page.identity };
-  }
-
   /** No await may separate this fence from the response's construction. */
   assertLive(principal: ViewerPrincipal, id: string, nonce: string): void {
     const viewer = this.find(principal, id, nonce);

@@ -89,9 +89,9 @@ describe('person browser viewer custody', () => {
     const a = await f.registry.subscribe(person, 'chat-a');
     const other = { ...person, sessionId: 'second-owner-session' };
     const b = await f.registry.subscribe(other, 'chat-a');
-    await f.registry.state(person, a.viewerId, a.nonce);
+    expect(() => f.registry.assertLive(person, a.viewerId, a.nonce)).not.toThrow();
     endSession(person.sessionId);
-    await expect(f.registry.state(person, a.viewerId, a.nonce)).rejects.toThrow();
+    expect(() => f.registry.assertLive(person, a.viewerId, a.nonce)).toThrow('viewer_denied');
     f.publish(1);
     expect((await f.registry.frame(other, b.viewerId, b.nonce))?.sequence).toBe(1);
     await f.registry.close();
@@ -139,7 +139,7 @@ describe('person browser viewer custody', () => {
     await vi.advanceTimersByTimeAsync(1);
     f.expire();
     await result;
-    await expect(f.registry.state(person, b.viewerId, b.nonce)).rejects.toThrow();
+    expect(() => f.registry.assertLive(person, b.viewerId, b.nonce)).toThrow('viewer_denied');
     expect(f.stop).toHaveBeenCalledTimes(1);
     await f.registry.close();
   });

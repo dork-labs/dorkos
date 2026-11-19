@@ -107,7 +107,6 @@
     "GET /api/audit/:id",
     "GET /api/audit/accounts/:accountId/timeline",
     "GET /api/audit/verify",
-    "GET /api/browser-viewers/:viewerId/state",
     "GET /api/canvas/docs/:id/channel",
     "GET /api/canvas/docs/:id/events/:eventId",
     "GET /api/canvas/docs/:id/file-saves",

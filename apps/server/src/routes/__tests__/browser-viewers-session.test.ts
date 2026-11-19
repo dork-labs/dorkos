@@ -12,6 +12,9 @@ import { createApiApp } from '../../http/api-chain.js';
 import { mountBetterAuth } from '../../http/better-auth.js';
 import { frontDoorListener } from '../../http/front-door.js';
 import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
+import { markIngress } from '../../services/core/remote/ingress-mark.js';
+import { honoRequestFacts } from '../../http/request-facts.js';
+import { requirePersonAtThisComputer } from '../../lib/caller-authority.js';
 import { initAuth } from '../../services/core/auth/index.js';
 import { personProofFor } from '../../services/core/auth/person-proof.js';
 import { initConfigManager } from '../../services/core/config-manager.js';
@@ -45,6 +48,7 @@ let proof: string;
 let sessionId: string;
 let publish: (frame: ViewerFrame) => void;
 let admitted: (() => void) | undefined;
+let tunnelFacts = false;
 let logEntries: unknown[] = [];
 let reporters = [...logger.options.reporters];
 
@@ -70,6 +74,7 @@ function frame(): void {
 }
 
 beforeEach(async () => {
+  tunnelFacts = false;
   directory = await mkdtemp(path.join(tmpdir(), 'viewer-session-'));
   initConfigManager(directory);
   db = createTestDb();
@@ -114,6 +119,22 @@ beforeEach(async () => {
     bodyRules: [browserViewerBodyRule],
     beforeBodyParsing: (early) => mountBetterAuth(early, { auth, maxAttempts: 1000 }),
   });
+  // The real session/proof gate runs first; only the router's transport facts change.
+  app.use('/api/browser-viewers/*', async (c, next) => {
+    if (tunnelFacts) {
+      markIngress(c.env.incoming, 'own-tunnel');
+      Object.defineProperties(c.env.incoming.socket, {
+        remoteAddress: { configurable: true, value: '198.51.100.17' },
+        encrypted: { configurable: true, value: true },
+      });
+      const facts = honoRequestFacts(c);
+      expect(facts.user).toMatchObject({ credential: 'cookie', sessionId });
+      expect(facts.connectionEncrypted).toBe(true);
+      expect(facts.peerAddress).toBe('198.51.100.17');
+      expect(requirePersonAtThisComputer(facts)).toBeUndefined();
+    }
+    return next();
+  });
   app.route(
     '/api/browser-viewers',
     createBrowserViewerRoutes(registry, () => true)
@@ -143,6 +164,15 @@ afterEach(async () => {
 });
 
 describe('viewer sessions on the real HTTP chain', () => {
+  it('keeps local viewing local for an owner over an encrypted tunnel', async () => {
+    tunnelFacts = true;
+    const response = await asOwner(request(target.server).post('/api/browser-viewers')).send({
+      chatId: 'fixture-chat',
+    });
+    expect(response.status).toBe(403);
+    expect(response.body.code).toBe('viewer_local_only');
+  });
+
   it('delivers pixels only beside the live owner cookie and app proof', async () => {
     const viewer = await subscribe();
     frame();
@@ -158,16 +188,6 @@ describe('viewer sessions on the real HTTP chain', () => {
       byteLength: Buffer.byteLength(marker),
     });
     expect(Buffer.from(response.body).toString()).toBe(marker);
-    const state = await asOwner(
-      request(target.server).get(`/api/browser-viewers/${viewer.viewerId}/state`)
-    ).set('X-Browser-Viewer-Nonce', viewer.nonce);
-    expect(state.status).toBe(200);
-    expect(state.body).toEqual({
-      chatId: 'fixture-chat',
-      profileId: 'fixture-profile',
-      connectionId: 'fixture-connection',
-      tabId: 'fixture-tab',
-    });
     const closed = await asOwner(
       request(target.server).delete(`/api/browser-viewers/${viewer.viewerId}`)
     ).send({ nonce: viewer.nonce });
@@ -179,17 +199,6 @@ describe('viewer sessions on the real HTTP chain', () => {
     logger.info('Viewer fixture control line');
     expect(JSON.stringify(logEntries)).toContain('Viewer fixture control line');
     for (const planted of markerForms) expect(JSON.stringify(logEntries)).not.toContain(planted);
-  });
-
-  it('does not let a GET nonce stand in for a person session', async () => {
-    const viewer = await subscribe();
-    const response = await request(target.server)
-      .get(`/api/browser-viewers/${viewer.viewerId}/state`)
-      .set('Host', `localhost:${env.DORKOS_PORT}`)
-      .set('X-Client-Id', 'owner-window')
-      .set('X-Browser-Viewer-Nonce', viewer.nonce);
-    expect(response.status).toBe(403);
-    expect(response.body.code).toBe('viewer_person_only');
   });
 
   it('refuses a cookie without its app proof even on this computer', async () => {

@@ -68,7 +68,6 @@ function fixture() {
 const routes = [
   ['POST', ''],
   ['POST', '/viewer/frame'],
-  ['GET', '/viewer/state'],
   ['DELETE', '/viewer'],
 ] as const;
 
