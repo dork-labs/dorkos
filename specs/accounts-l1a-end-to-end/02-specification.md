@@ -27,7 +27,7 @@ This document lists twelve steps in build order. Each is one ticket and ends in 
 ## Goals
 
 - Close every gap between what is merged and the L1a path in the parent spec's "Launch gate".
-- Land the one open security fix (DOR-3137) before anything else that hashes an approval.
+- Land the approval-hash hardening (DOR-3137) first, since B4 builds on it.
 - Get DorkOS Security's threat model for A8, B4, B5 and C9 **before** a builder starts each one.
 - Keep every app step buildable and testable against contract fakes, so a Cloud slip delays only the live proof.
 
@@ -88,29 +88,15 @@ Where lanes meet:
 
 ---
 
-## Step 1. DOR-3137: the approval hash drops a `__proto__` key
+## Step 1. DOR-3137: canonical-hash hardening for approvals
 
-**Goal:** two tool inputs that differ only by an own `__proto__` key never share an approval hash.
+**Goal:** a small fix to how approval inputs are canonicalized before hashing, owned by DorkOS Security's review.
 
-**What exists:** `packages/connector-providers/src/stable-stringify.ts` rebuilds objects into a `{}` literal with `sorted[key] = …`. For the key `__proto__` that assignment sets the prototype instead of an own property, so the key vanishes from the output: `{"__proto__":{"x":1},"a":1}` and `{"a":1}` serialize the same. `apps/server/src/services/core/approvals/approval-input-hash.ts` (`hashApprovalInput`) calls it through `@dorkos/shared/capabilities` (`packages/shared/src/capabilities.ts:320` re-exports it). `assertBindableInput` walks `Object.entries`, which sees the own key but does not reject it. Relay approvals use the same hash (`session-relay/approval-challenges.ts`, `approval-proof.ts`). `packages/cloud-api/src/step-up.ts` (`canonicalJson`) already refuses a `__proto__` key.
+**Why first:** it lands first in lane 1 because B4 builds on the same hash.
 
-**What to build:**
-
-- In `sortKeysDeep`, build each copy with `Object.create(null)` and copy with `Object.defineProperty` (or plain assignment, which is safe on a null-prototype object). `JSON.stringify` then writes `__proto__` as an ordinary key. Catalog hashes do not change for any catalog without such a key.
-- In `assertBindableInput`, also refuse own keys `__proto__`, `constructor` and `prototype` with `ApprovalInputNotBindableError`, naming the path. This matches `step-up.ts` and means a web approval and a local approval refuse the same inputs. (Open question 1 covers `constructor` and `prototype`.)
-- Update the module doc in both files: the "plain data only" note gains the prototype-key rule.
-
-**Security notes:** this is Security's own fix. No threat model is needed beyond its review of the PR. Check every other `stableStringify` caller in `apps/server/src/services/connectors/` that hashes for consent or grants (`grant-service.ts`, `authorization-service.ts`, `global-plugin-consent.ts`); list them in the PR body with a yes/no on whether they bind consent.
+**Details:** with DorkOS Security, not in this public spec. The builder works from the ticket and Security's private notes.
 
 **User-facing parts:** none.
-
-**Tests (write first, see them fail):**
-
-- `stableStringify({ ['__proto__']: { x: 1 }, a: 1 })` built with `JSON.parse` differs from `stableStringify({ a: 1 })`.
-- `hashApprovalInput` of those two inputs differs, or the first throws `ApprovalInputNotBindableError` (whichever the open question settles; both are tested).
-- After hashing a `JSON.parse('{"__proto__":{"polluted":true}}')` input, `({} as any).polluted` is `undefined`, and the returned canonical copy has no inherited `polluted`.
-- `constructor` and `prototype` own keys: refused by `assertBindableInput`.
-- The catalog version fixture in `packages/connector-providers` is unchanged.
 
 **Size:** 1
 
@@ -118,8 +104,7 @@ Where lanes meet:
 
 **Done when:**
 
-- The four tests pass, and Security approves the PR.
-- No catalog or consent fixture hash changes.
+- Security's required tests pass, and Security approves the PR.
 
 ---
 
@@ -242,7 +227,7 @@ Suggested PR split, each up to about three days: (a) `worksOn` + Cloud computer 
 - **Card versus signed text:** the hub's card may lie. Does the approve page show only the statement, all of it, with control and bidi characters escaped? What if the statement is too large to show (the 256 KB cap: "approved at the computer")?
 - **Opener checks:** can another tab, frame or extension post a fake `result` to the hub page, or read the statement? Is `event.source` plus exact origin enough? What does COOP change?
 - **A compromised Cloud** serves both pages: what does the passkey binding still stop (forged or replayed approvals), and what does it not (a page that asks for a different approval the person then signs)? The consent text says this; confirm the words.
-- `__proto__` in tool input: after step 1, the local hash and the statement's canonical form refuse the same inputs.
+- After step 1, the local hash and the statement's canonical form refuse the same unsafe keys.
 
 **Which approvals are signed (Designer, agreed 2026-11-18):** only actions Security already marks person-only or destructive get passkey-signed, never every approval. A device with no passkey gets CLD-403's "add a passkey in place, then approve".
 
@@ -611,7 +596,7 @@ Security holds each threat model privately; it answers the questions in its step
 
 ## Open questions
 
-1. **DOR-3137: refuse `constructor` and `prototype` too, or only `__proto__`?** **Decided (Security, 2026-11-19):** hash an `Object.create(null)` canonical form and refuse `__proto__` only, matching `step-up.ts`. Tests: inputs differing only in `__proto__` are refused, never hashed equal; the approve and execute paths hash the same canonical form; no prototype pollution.
+1. **DOR-3137: which keys the canonical form refuses.** **Decided (Security, 2026-11-19):** the canonical form refuses unsafe keys, matching `step-up.ts`. Details and tests are with Security.
 2. **One PR for A8 and DOR-3067, or two?** **Recommended:** two. A8 can merge against the fake without the separate user; DOR-3067 needs Cloud's image and its own Security review.
 3. **Quiet hours versus working hours.** The app stores working hours (days, start, end, no midnight crossing); the contract stores quiet hours (start, end, may cross midnight, no days). **Recommended:** keep working hours local for heartbeats, and add `workingHours` to `DirectorySettingsSchema` (contract first, agreed with Cloud) instead of mapping to quiet hours. If Cloud prefers no change, derive quiet hours as the inverse of the working window on working days only, and say in the PR what is lost.
 4. **Invite link shape.** **Recommended:** the app's own origin with `/join?space=…&invite=…`, so a person with the app open goes straight to Join and one without lands on their hub.
