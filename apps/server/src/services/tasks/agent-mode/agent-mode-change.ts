@@ -17,6 +17,7 @@ import path from 'node:path';
 import type { MeshCore } from '@dorkos/mesh';
 import type { Task } from '@dorkos/shared/types';
 import { agentApprovalBindingOf } from './agent-mode-binding.js';
+import { askedForLines } from './agent-mode-asked-for.js';
 import { resolveAgentIdForPath, resolveAgentNameForId } from '../../mesh/agent-path-lookup.js';
 import type { AgentModeCall, AgentModeDecided } from './agent-mode-decision.js';
 
@@ -72,6 +73,8 @@ export function agentModeChangeOf(
     `Runs as: ${agentLabelOf(call.task ? call.task.agentId : read(call.body, 'target'))}`,
     `Runs: ${view.cron || 'only when started'}${view.timezone ? ` (${view.timezone})` : ''}`,
     `Mode: ${decision.mode}${was}`,
+    // What this call asked for and does not apply, bound with the rest (DOR-4335). None, no line.
+    ...askedForLines(call.body, decision.mode),
     `Prompt: ${promptHead(view.prompt)}`,
     FULL_PROMPT_LINE,
   ];
