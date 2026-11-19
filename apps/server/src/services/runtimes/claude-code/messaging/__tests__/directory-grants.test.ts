@@ -168,6 +168,8 @@ describe('the folders only a person may change', () => {
       expect(rules).toContain(`${tool}(//Users/ana/.dork/extension-snapshots/**)`);
       expect(rules).toContain(`${tool}(//Users/ana/.dork/cache/extensions/**)`);
       expect(rules).toContain(`${tool}(//Users/ana/.dork/cache/shell-guard/**)`);
+      // The files each agent's own mini app may run as without a person (DOR-4528).
+      expect(rules).toContain(`${tool}(//Users/ana/.dork/extension-data/path-trust-seen.json*)`);
       // The installer's records and the trusted package sources (DOR-3068).
       expect(rules).toContain(`${tool}(//Users/ana/.dork/marketplace/**)`);
       expect(rules).toContain(`${tool}(//Users/ana/.dork/marketplaces.json*)`);
