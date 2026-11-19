@@ -20,6 +20,7 @@ import {
   type PermissionState,
 } from '@dorkos/shared/permissions';
 import { TransportProvider } from '@/layers/shared/model';
+import { stopLabel } from '@/layers/shared/ui';
 
 import { AgentCanDo } from '../ui/AgentCanDo';
 import { PermissionList } from '../ui/PermissionList';
@@ -211,5 +212,67 @@ describe('AgentCanDo', () => {
     render(<AgentCanDo agentId={undefined} agentName="Atlas" />, { wrapper });
     expect(screen.getByText('Pick an agent to see what it can do.')).toBeInTheDocument();
     expect(transport.getAgentPermissions).not.toHaveBeenCalled();
+  });
+
+  it('shows this agent’s own setting, not the default it overrides', async () => {
+    const { transport, wrapper } = wrap();
+    const base = atlas();
+    vi.mocked(transport.getAgentPermissions).mockResolvedValue({
+      ...base,
+      // Atlas's own stop and its own Rooms level differ from what it would inherit.
+      filesAndCommands: {
+        stop: 'autonomy',
+        source: 'agent',
+        inherited: { stop: 'act', source: 'default' },
+      } as AgentPermissionsResponse['filesAndCommands'],
+      areas: base.areas.map((entry) =>
+        entry.id === 'rooms'
+          ? {
+              ...entry,
+              resolved: { state: 'blocked', source: 'agent-area', layer: 'agent' },
+              inherited: { state: 'allowed', source: 'preset', layer: 'default' },
+            }
+          : entry
+      ),
+    });
+    render(<AgentCanDo agentId="atlas" agentName="Atlas" />, { wrapper });
+
+    await userEvent.click(await screen.findByRole('button', { name: SHOW_ALL }));
+    expect(levelOf('rooms')).toBe('Blocked');
+    expect(stopLabel('autonomy')).not.toBe(stopLabel('act'));
+    expect(levelOf('files')).toBe(stopLabel('autonomy'));
+  });
+
+  it('says how many of an area’s actions are set apart from it, so the chip never hides one', async () => {
+    const { transport, wrapper } = wrap();
+    const base = atlas();
+    const action = (id: string, state: PermissionState) =>
+      ({
+        id,
+        title: id,
+        tier: 'act',
+        resolved: { area: 'rooms', state, source: 'agent-action', layer: 'agent' },
+      }) as AreaEntry['actions'][number];
+    vi.mocked(transport.getAgentPermissions).mockResolvedValue({
+      ...base,
+      areas: base.areas.map((entry) =>
+        entry.id === 'rooms'
+          ? {
+              ...entry,
+              resolved: { state: 'blocked', source: 'agent-area', layer: 'agent' },
+              actions: [action('rooms.create', 'allowed'), action('rooms.archive', 'blocked')],
+            }
+          : entry
+      ),
+    });
+    render(<AgentCanDo agentId="atlas" agentName="Atlas" />, { wrapper });
+
+    const rooms = await screen.findByTestId('can-do-row-rooms');
+    expect(levelOf('rooms')).toBe('Blocked');
+    expect(within(rooms).getByText('1 action set differently')).toBeInTheDocument();
+    // An area whose actions all follow it says nothing extra.
+    expect(
+      within(screen.getByTestId('can-do-row-tasks')).queryByText(/set differently/)
+    ).toBeNull();
   });
 });

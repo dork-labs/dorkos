@@ -36,10 +36,12 @@ const STATE_TONE: Record<PermissionState, BadgeTone> = {
   blocked: 'neutral',
 };
 
-/** The chip one area shows: its words, and the glyph that goes with them. */
+/** The chip one area shows: its words, the glyph that goes with them, and its exceptions. */
 interface Level {
   text: string;
   tone: BadgeTone;
+  /** How many of the area's actions are set apart from the area's own level. */
+  exceptions: number;
 }
 
 /**
@@ -51,11 +53,22 @@ interface Level {
 function levelFor(area: PermissionArea, permissions: AgentPermissionsResponse): Level | null {
   if (area.kind === 'trust-stop') {
     const stop = permissions.filesAndCommands.stop;
-    return { text: stop ? stopLabel(stop) : 'Not set', tone: 'neutral' };
+    return { text: stop ? stopLabel(stop) : 'Not set', tone: 'neutral', exceptions: 0 };
   }
   const entry = permissions.areas.find((candidate) => candidate.id === area.id);
   if (!entry) return null;
-  return { text: STATE_LABEL[entry.resolved.state], tone: STATE_TONE[entry.resolved.state] };
+  const state = entry.resolved.state;
+  return {
+    text: STATE_LABEL[state],
+    tone: STATE_TONE[state],
+    // The Permissions page lists these under the row; the chip alone would hide them.
+    exceptions: entry.actions.filter((action) => action.resolved.state !== state).length,
+  };
+}
+
+/** The quiet line under a row whose actions are not all at the area's level. */
+function exceptionLine(count: number): string {
+  return count === 1 ? '1 action set differently' : `${count} actions set differently`;
 }
 
 /** One area: what it covers, and the level this agent has there. */
@@ -69,6 +82,9 @@ function Row({ area, level }: { area: PermissionArea; level: Level | null }) {
       <div className="min-w-0 space-y-0.5">
         <p className="text-sm font-medium">{area.label}</p>
         <p className="text-muted-foreground text-sm">{area.description}</p>
+        {level && level.exceptions > 0 ? (
+          <p className="text-muted-foreground text-xs">{exceptionLine(level.exceptions)}</p>
+        ) : null}
       </div>
       {level ? (
         <Badge tone={level.tone} className="mt-0.5 shrink-0">
@@ -81,9 +97,10 @@ function Row({ area, level }: { area: PermissionArea; level: Level | null }) {
 
 /**
  * What one agent can do in DorkOS, with each area's live level (DOR-4115). One
- * row per permission area, in the Permissions page's order and with its words,
- * so the two pages cannot describe an area two ways. Read only: levels change
- * on the Permissions page, and this list follows every change there.
+ * row per permission area, in the registry's order and with the Permissions
+ * page's words, so the two pages cannot describe an area two ways. A row whose
+ * actions are not all at the area's level says how many differ. Read only:
+ * levels change on the Permissions page, and this list follows every change.
  *
  * @param props - See {@link AgentCanDoProps}.
  */
