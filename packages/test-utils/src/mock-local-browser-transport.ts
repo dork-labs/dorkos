@@ -41,6 +41,7 @@ export function createMockLocalBrowserTransport(): LocalBrowserTransport {
     resumeLocalBrowser: vi.fn().mockResolvedValue(state),
     disconnectLocalBrowser: vi.fn().mockResolvedValue(state),
     signInLocalBrowser: vi.fn().mockRejectedValue(new Error('Browser unavailable')),
+    finishLocalBrowserSignIn: vi.fn().mockRejectedValue(new Error('Browser unavailable')),
     handBackLocalBrowser: vi.fn().mockRejectedValue(new Error('Browser unavailable')),
     stopLocalBrowserHandoff: vi.fn().mockRejectedValue(new Error('Browser unavailable')),
   };
