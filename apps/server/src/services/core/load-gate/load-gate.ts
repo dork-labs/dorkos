@@ -203,8 +203,13 @@ function errorKind(error: unknown): string {
 /** How a log line names a job: its program, or nothing when the label is not one. */
 const jobPhrase = (job: string): string => (JOB_LABEL.test(job) ? `A ${job} job` : 'A heavy job');
 
-/** The wait after which a job runs anyway. The notice always comes first. */
-const hardCapMs = (settings: LoadGateSettings): number =>
+/**
+ * The wait after which a job runs anyway. The notice always comes first, so a
+ * hard cap below `maxWaitMinutes` is read as `maxWaitMinutes`.
+ *
+ * @param settings - The load-gate settings in force.
+ */
+export const hardCapMs = (settings: LoadGateSettings): number =>
   Math.max(settings.hardCapMinutes, settings.maxWaitMinutes) * MS_PER_MINUTE;
 
 /** Wait `ms`, or reject at once with an `AbortError` when `signal` fires. */
@@ -362,8 +367,9 @@ export function createLoadGate(options: LoadGateOptions): LoadGate {
         maxLoad: settings.maxLoad,
       });
       if (result === 'slot') return heldSlot(ticket, 'ran', waitedMs, settings);
-      if (result === 'let-through') return heldSlot(ticket, 'let-through', waitedMs, settings);
-      return null;
+      if (result !== 'let-through') return null;
+      log(`[LoadGate] ${jobPhrase(ticket.job)} was let through by a person`);
+      return heldSlot(ticket, 'let-through', waitedMs, settings);
     },
     force: (settings, waitedMs) => {
       openQueue().forceAcquire(ticket);
