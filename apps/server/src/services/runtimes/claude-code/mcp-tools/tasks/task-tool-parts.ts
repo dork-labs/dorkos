@@ -26,6 +26,7 @@ import {
   withRunOrigin,
 } from '../../../../tasks/agent-mode/agent-mode-run-origin.js';
 import type { TaskStore } from '../../../../tasks/task-store.js';
+import { agentIdOfHome } from '../../../../tasks/approvals/schedule-owner.js';
 import type { Task } from '@dorkos/shared/types';
 
 /**
@@ -193,6 +194,20 @@ export function createListSchedulesHandler(deps: McpToolDeps) {
   };
 }
 
+/** The refusal for another agent's run history, read from a chat below Full (DOR-4600). */
+export const NOT_YOUR_SCHEDULE_RUNS_MESSAGE =
+  "That scheduled task belongs to another agent, so its runs aren't yours to read. Only that " +
+  'agent, a person, or a chat at Full autonomy can read them.';
+
+/** The refusal for an agent's run history when DorkOS can't tell which agent is asking. */
+export const UNIDENTIFIED_RUNS_MESSAGE =
+  "DorkOS can't tell which agent is asking, so it can't show an agent's scheduled task runs.";
+
+/** The Mesh id of the calling agent, or `undefined` when DorkOS cannot name one. */
+function callerIdOf(deps: McpToolDeps, agentPath: string | undefined): string | undefined {
+  return agentPath ? agentIdOfHome(deps.meshCore ?? undefined, agentPath) : undefined;
+}
+
 /** What run history says in place of the summaries it left out. */
 export const RUN_SUMMARIES_LEFT_OUT =
   'Each run’s summary is left out: it is that run’s own words and can quote what it read. ' +
@@ -206,16 +221,32 @@ export const RUN_SUMMARIES_LEFT_OUT =
  * run wrote, so it can carry words the run read from anyone. A run's status, timing and
  * `refusedTools` stay, which is what an unattended watchdog reads.
  *
+ * In a chat, it answers only for the calling agent's own schedules and global ones, as its
+ * edits do (DOR-4600, Security): another agent's runs come back as a refusal unless
+ * `readsOthers` says the turn may (Full autonomy, unmarked). A global schedule's runs stay
+ * readable whoever proposed it (the ticket's rule; editing one is narrower). The sessionless
+ * external server keeps its answer.
+ *
  * @param deps - The tool dependencies.
  * @param resolveProvenance - The calling chat, read at call time; absent off a session.
+ * @param readsOthers - Whether the calling turn may read another agent's schedule.
  */
 export function createGetRunHistoryHandler(
   deps: McpToolDeps,
-  resolveProvenance?: TaskProvenanceResolver
+  resolveProvenance?: TaskProvenanceResolver,
+  readsOthers: () => boolean = () => false
 ) {
   return async (args: { schedule_id: string; limit?: number }) => {
     const err = requireTasks(deps);
     if (err) return err;
+    if (resolveProvenance && !readsOthers()) {
+      const task = deps.taskStore!.getTask(args.schedule_id);
+      const { agentPath } = resolveProvenance();
+      if (task?.agentId && task.agentId !== callerIdOf(deps, agentPath)) {
+        const error = agentPath ? NOT_YOUR_SCHEDULE_RUNS_MESSAGE : UNIDENTIFIED_RUNS_MESSAGE;
+        return jsonContent({ error, code: 'not_your_schedule' }, true);
+      }
+    }
     const runs = deps.taskStore!.listRuns({
       taskId: args.schedule_id,
       limit: args.limit ?? 20,
