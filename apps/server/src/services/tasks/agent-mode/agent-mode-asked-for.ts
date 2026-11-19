@@ -53,10 +53,13 @@ function capped(value: string, max: number): string {
 }
 
 /**
- * A requested mode as the runtime's mode picker names it ("Never ask"). A mode it does not know
- * keeps its id beside the label, made inert, so the person still sees what was asked.
+ * A mode as the runtime's mode picker names it ("Never ask"), for every mode line on the card. A
+ * mode it does not know keeps its id beside the label, made inert, so the person still sees it.
+ *
+ * @param mode - The mode id.
+ * @param capabilities - The task runtime's profile, or `undefined` when none is registered.
  */
-function modeLabel(mode: string, capabilities: RuntimeCapabilities | undefined): string {
+export function modeLabel(mode: string, capabilities: RuntimeCapabilities | undefined): string {
   const label = scheduleExecutionCopy(mode, capabilities).modeLabel;
   return label === UNKNOWN_MODE ? `${UNKNOWN_MODE} (${capped(inertText(mode), RULE_MAX)})` : label;
 }
@@ -106,7 +109,7 @@ export function askedForLines(
     for (const rule of rules.slice(0, RULES_SHOWN))
       lines.push(`  - ${capped(inertText(rule), RULE_MAX)}`);
     if (rules.length > RULES_SHOWN) {
-      lines.push(`  +${rules.length - RULES_SHOWN} more, all bound by the version below`);
+      lines.push(`  +${rules.length - RULES_SHOWN} more rules, none applied.`);
     }
   }
   if (lines.length === 0) return lines;

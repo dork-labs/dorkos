@@ -17,7 +17,7 @@ import path from 'node:path';
 import type { MeshCore } from '@dorkos/mesh';
 import type { Task } from '@dorkos/shared/types';
 import { agentApprovalBindingOf } from './agent-mode-binding.js';
-import { askedForLines } from './agent-mode-asked-for.js';
+import { askedForLines, modeLabel } from './agent-mode-asked-for.js';
 import { capabilitiesForTaskRuntime } from '../scheduled-run-power.js';
 import { resolveAgentIdForPath, resolveAgentNameForId } from '../../mesh/agent-path-lookup.js';
 import type { AgentModeCall, AgentModeDecided } from './agent-mode-decision.js';
@@ -63,9 +63,11 @@ export function agentModeChangeOf(
   meshCore: Pick<MeshCore, 'getProjectPath'> | undefined,
   callerPath: string | undefined
 ): string {
+  // Every mode by its picker label, never the raw id (designer, #4001).
+  const capabilities = capabilitiesForTaskRuntime(runtimeOf(call));
   const was =
     decision.previousMode && decision.previousMode !== decision.mode
-      ? ` (was ${decision.previousMode})`
+      ? ` (was ${modeLabel(decision.previousMode, capabilities)})`
       : '';
   const view = call.task ? taskView(call.task) : bodyView(call.body);
   const lines = [
@@ -73,9 +75,9 @@ export function agentModeChangeOf(
     `Task: ${view.name}`,
     `Runs as: ${agentLabelOf(call.task ? call.task.agentId : read(call.body, 'target'))}`,
     `Runs: ${view.cron || 'only when started'}${view.timezone ? ` (${view.timezone})` : ''}`,
-    `Mode: ${decision.mode}${was}`,
+    `Mode: ${modeLabel(decision.mode, capabilities)}${was}`,
     // What this call asked for and does not apply, bound with the rest (DOR-4335). None, no line.
-    ...askedForLines(call.body, decision.mode, capabilitiesForTaskRuntime(runtimeOf(call))),
+    ...askedForLines(call.body, decision.mode, capabilities),
     `Prompt: ${promptHead(view.prompt)}`,
     FULL_PROMPT_LINE,
   ];

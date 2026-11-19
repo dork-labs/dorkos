@@ -98,7 +98,7 @@ describe('the mode card names what the call asked for', () => {
     expect(lines.filter((l) => l.startsWith('  - '))).toHaveLength(50);
     expect(lines).toContain('  - Bash(./step-50.sh)');
     expect(lines.join('\n')).not.toContain('step-51');
-    expect(lines.at(-2)).toBe('  +3 more, all bound by the version below');
+    expect(lines.at(-2)).toBe('  +3 more rules, none applied.');
     const fewer = askedForLines({ requestedAllow: rules.slice(0, 52) }, 'dontAsk', undefined);
     expect(fewer.at(-1)).not.toBe(lines.at(-1));
   });
