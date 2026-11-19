@@ -28,6 +28,7 @@ import {
   type WaitOutcome,
 } from '../../../../core/load-gate/load-gate.js';
 import { fixedLoadSource } from '../../../../core/load-gate/load-source.js';
+import { loadWaitMessage } from '../../../../core/load-gate/runtime-wait.js';
 import { TicketQueue } from '../../../../core/load-gate/ticket-queue.js';
 import {
   createCanUseTool,
@@ -44,7 +45,6 @@ import {
   LOAD_GATE_MATCHER,
   loadGateHooks,
   loadGateHookTimeoutSeconds,
-  loadWaitMessage,
   releaseHeavyJobsOf,
   startHeavyJobsProcess,
   type LoadGateHookDeps,

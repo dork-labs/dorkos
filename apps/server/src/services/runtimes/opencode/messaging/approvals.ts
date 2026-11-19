@@ -38,6 +38,9 @@
  * a generator over the sidecar's stream with no seam to inject a DorkOS-authored
  * event, so the card and the room lane park identically and the "I am waiting
  * here" sentence is claude-code's only. Named here rather than discovered later.
+ * (The one line this pass does write is the load gate's "waiting for the
+ * computer" status, and only because the pass itself is what waits:
+ * `load-gate-hold.ts` yields it from inside the wait.)
  *
  * @module services/runtimes/opencode/approvals
  */
@@ -57,6 +60,8 @@ import { protectedFileVerdict } from './protected-files.js';
 import { protectedPathRoots } from '../../shared/policy/protected-path-roots.js';
 import type { ProtectedPathRoots } from '../../shared/policy/protected-path-check.js';
 import { checkShellCommand, type ShellCommandVerdict } from '../../shared/policy/package-hooks.js';
+import type { RuntimeWaitDeps } from '../../../core/load-gate/runtime-wait.js';
+import { HeavyShellSlots, holdHeavyShell } from './load-gate-hold.js';
 
 /** How a permission request should be resolved under a DorkOS mode. */
 export type ApprovalDecision = 'ask' | 'auto-approve';
@@ -131,6 +136,12 @@ export class PendingApprovalStore {
    * {@link PendingApprovalStore.clearSession} drops any whose echo never came.
    */
   private readonly expired = new Map<string, Set<string>>();
+
+  /**
+   * The machine-wide load gate's slots for heavy `bash` calls still running (DOR-4209), given back
+   * with everything else here when a turn's approvals are cleared.
+   */
+  readonly heavyJobs = new HeavyShellSlots();
 
   /**
    * Track a forwarded request and arm its auto-deny timer.
@@ -237,9 +248,11 @@ export class PendingApprovalStore {
    * Drop every pending record for a session (turn teardown) — timers are
    * disarmed; nothing is responded (the turn ending already resolved them
    * upstream, or the sidecar is gone). Unclaimed expiries go with them: an echo
-   * that has not arrived by teardown is never going to.
+   * that has not arrived by teardown is never going to. So do the turn's
+   * heavy-job slots: whatever its calls were doing, the turn is over.
    */
   clearSession(sessionId: string): void {
+    this.heavyJobs.endSession(sessionId);
     this.expired.delete(sessionId);
     const forSession = this.pending.get(sessionId);
     if (!forSession) return;
@@ -275,6 +288,8 @@ export interface ApprovalRouting {
    * the two and the session's stored mode is never rewritten.
    */
   permissionCeiling?: TurnPermissionCeiling;
+  /** The turn's own stop: it ends a heavy `bash` ask's wait for the machine's line. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -291,6 +306,8 @@ export interface ApprovalGateDeps {
   approvals: PendingApprovalStore;
   /** Tracked sessions — the live source of a session's permission mode. */
   registry: OpenCodeSessionRegistry;
+  /** The machine-wide load gate a heavy `bash` ask waits in (tests; the server's own otherwise). */
+  loadGate?: RuntimeWaitDeps;
 }
 
 /**
@@ -425,11 +442,45 @@ async function shellGuardVerdict(
  * later resolves — is addressed to the session that ASKED, which for a
  * subagent's prompt is its child session rather than the turn's (DOR-1126).
  *
+ * A heavy `bash` ask first waits for the machine's line (`load-gate-hold.ts`,
+ * DOR-4209), and only then reaches the decision below, unchanged; a call's
+ * `tool_call_end` gives its slot back.
+ *
  * @param deps - The runtime state this pass reads (see {@link ApprovalGateDeps})
  * @param turn - The turn's approval routing (see {@link ApprovalRouting})
  * @param event - One mapped StreamEvent from this turn
  */
 export async function* enforceApprovals(
+  deps: ApprovalGateDeps,
+  turn: ApprovalRouting,
+  event: StreamEvent
+): AsyncGenerator<StreamEvent> {
+  if (event.type === 'tool_call_end') {
+    deps.approvals.heavyJobs.finish(
+      turn.sessionId,
+      (event.data as { toolCallId: string }).toolCallId
+    );
+  }
+  if (event.type !== 'approval_required') {
+    yield* decideApproval(deps, turn, event);
+    return;
+  }
+  yield* holdHeavyShell(
+    {
+      turn,
+      approval: event.data as ApprovalEvent,
+      slots: deps.approvals.heavyJobs,
+      ...(deps.loadGate ? { deps: deps.loadGate } : {}),
+    },
+    () => decideApproval(deps, turn, event)
+  );
+}
+
+/**
+ * The decision {@link enforceApprovals} makes for one mapped event, after any
+ * wait for the machine's line: what it always was.
+ */
+async function* decideApproval(
   deps: ApprovalGateDeps,
   turn: ApprovalRouting,
   event: StreamEvent
