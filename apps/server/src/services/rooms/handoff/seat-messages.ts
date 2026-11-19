@@ -377,10 +377,7 @@ export class RoomSeatMessages implements RoomSeatMessagesPort {
       prompt: seatMessageBatch(batch.map((v) => v.rendered)),
       untrustedText: true,
       validateTarget: () =>
-        !this.stopped &&
-        !this.faulted &&
-        state.canRun &&
-        seatBatchStillCurrent(this.core, batch),
+        !this.stopped && !this.faulted && state.canRun && seatBatchStillCurrent(this.core, batch),
       prepareCarry: () =>
         withRoomMarks(
           this.core,

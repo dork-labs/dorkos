@@ -827,10 +827,13 @@ it('M9: no production source can hand an inbox smaller bounds', () => {
       .filter(({ text }) => /\b(?:SeatMessageLimits|pendingMax|globalMax)\b/u.test(text))
       .map(({ file }) => file)
       .sort()
-  ).toEqual(['services/rooms/handoff/seat-message-types.ts', 'services/rooms/handoff/seat-messages.ts']);
-  expect(sources.find(({ file }) => file === 'services/rooms/handoff/seat-messages.ts')?.text).toMatch(
-    /limits: SeatMessageLimits = DEFAULT_LIMITS/u
-  );
+  ).toEqual([
+    'services/rooms/handoff/seat-message-types.ts',
+    'services/rooms/handoff/seat-messages.ts',
+  ]);
+  expect(
+    sources.find(({ file }) => file === 'services/rooms/handoff/seat-messages.ts')?.text
+  ).toMatch(/limits: SeatMessageLimits = DEFAULT_LIMITS/u);
 });
 
 it('M4: the actual Full turn record retains level while raise and destructive gates retain the card', async () => {
