@@ -1,9 +1,12 @@
+import { RemoteApprovalSection } from './RemoteApprovalShowcase';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { ApprovalList, ApprovalsUnavailable } from '@/layers/features/approvals';
 import { AgentRequestApprovalShowcase } from './AgentRequestApprovalShowcase';
+import { AgentRaiseCardShowcase } from './AgentRaiseCardShowcase';
+import { ConfigPatchCardShowcase } from './ConfigPatchCardShowcase';
 import { INSTALL_SUMMARY, UPDATE_SUMMARY } from './marketplace-summary-samples';
 
 /**
@@ -42,6 +45,7 @@ function sample(overrides: Partial<PendingApproval> = {}): PendingApproval {
     hasAgentPath: true,
     area: null,
     alwaysOffered: false,
+    answerNeedsStepUp: false,
     requestedAt: new Date(LOADED_AT).toISOString(),
     expiresAt: expiresIn(105),
     ...overrides,
@@ -161,6 +165,8 @@ export function ApprovalCardShowcase() {
           </WidthColumn>
         </div>
       </ShowcaseDemo>
+
+      <RemoteApprovalSection />
 
       <ShowcaseLabel>The three answers, and the floor line</ShowcaseLabel>
       <ShowcaseDemo responsive>
@@ -307,6 +313,11 @@ export function ApprovalCardShowcase() {
         <AgentRequestApprovalShowcase />
       </ShowcaseDemo>
 
+      <ShowcaseLabel>An agent’s raise: what changes, and its name kept apart</ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <AgentRaiseCardShowcase />
+      </ShowcaseDemo>
+
       <ShowcaseLabel>Who asked, and how long is left</ShowcaseLabel>
       <ShowcaseDemo responsive>
         <ApprovalList
@@ -318,7 +329,6 @@ export function ApprovalCardShowcase() {
               // No agent path either, which is what keeps Always allow off this
               // card. The two travel together on a real anonymous request.
               hasAgentPath: false,
-              area: null,
               alwaysOffered: false,
               // The surface is known even when the caller is not, so the card
               // says the true thing rather than the vague one (DOR-1929).
@@ -525,6 +535,7 @@ export function ApprovalCardShowcase() {
           ]}
         />
       </ShowcaseDemo>
+      <ConfigPatchCardShowcase />
     </PlaygroundSection>
   );
 }

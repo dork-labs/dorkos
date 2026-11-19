@@ -68,7 +68,12 @@ import {
   installContinueService,
   installResumeService,
 } from '../../services/session/index.js';
-import { probeForReset } from '../../services/runtimes/claude-code/accounts/account-probe.js';
+import {
+  probeForReset,
+  recheckSigninByProbe,
+} from '../../services/runtimes/claude-code/accounts/account-probe.js';
+import { startSigninCredentialWatch } from '../../services/runtimes/claude-code/accounts/signin-credential-watch.js';
+import { setSigninRecheck } from '../../services/observability/index.js';
 import { watchAskResolution } from '../../services/notifications/emitters/ask-resolution.js';
 import { watchRuntimeSigninFailures } from '../../services/notifications/emitters/runtime-signin.js';
 import { watchAccountSigninReviews } from '../../services/notifications/emitters/account-signin-review.js';
@@ -320,6 +325,20 @@ export async function wireSessionServices(refs: ServerRefs, built: WireSessionSe
   // A runtime whose sign-in stopped working, noticed at whichever turn trips
   // over it first — including the 3am ones nobody is watching (DOR-1654).
   watchRuntimeSigninFailures();
+  // One failed sign-in is re-checked before anybody is told (DOR-4424). Not
+  // under the test runtime, whose accounts are not real folders to probe.
+  if (!env.DORKOS_TEST_RUNTIME) {
+    setSigninRecheck((runtime, accountRoot) =>
+      runtime === 'claude-code'
+        ? recheckSigninByProbe(accountRoot)
+        : Promise.resolve('unknown' as const)
+    );
+  }
+  // A signed-out Claude account signed in again from the command line is
+  // probed and cleared (DOR-4425). Off under the test runtime, inside the call.
+  refs.stopSigninCredentialWatch = startSigninCredentialWatch({
+    testRuntime: Boolean(env.DORKOS_TEST_RUNTIME),
+  });
   // A new or changed Claude sign-in, said once as a notice; it never holds a turn (DOR-3245).
   watchAccountSigninReviews(activityService);
   // A turn DorkOS credits refused, told whoever started it, so a refused

@@ -32,9 +32,9 @@
  *
  * @module routes/cloud
  */
+import type { MiddlewareHandler } from 'hono';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
-import type { Problem } from '@dork-labs/cloud-api';
 import { runtimeDisplayName, type RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import type {
   CloudAccountDeletionResponse,
@@ -80,6 +80,7 @@ import { creditsRuntimeViews, creditsStatus } from '../services/core/cloud/credi
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import {
   envelopeRefusalUnlessOwner,
+  runAccountWrite,
   errorRefusalUnlessOwner,
   type AccountOwnerWording,
 } from './cloud-owner-bar.js';
@@ -92,6 +93,7 @@ import { logger, logError } from '../lib/logger.js';
 import { createCloudCommunitiesRoutes } from './cloud-communities.js';
 import { gateCloudCommunities } from '../middleware/spaces-enabled.js';
 import { currentServerRole } from '../lib/server-role.js';
+import { cloudWriteFailed, NOT_LINKED } from './cloud-write-answers.js';
 
 const router = new Hono<ApiEnv>();
 
@@ -164,12 +166,14 @@ const HUB_LINKED_BY_CLOUD = {
   error: 'DorkOS Cloud manages this DorkOS. It can’t be linked or unlinked here.',
   code: 'HUB_LINKED_BY_CLOUD',
 } as const;
-for (const path of ['/link/start', '/link/cancel', '/unlink']) {
-  router.post(path, async (c, next) => {
-    if (currentServerRole() === 'hub') return c.json(HUB_LINKED_BY_CLOUD, 409);
-    await next();
-  });
-}
+/** Hub assignment is managed by Cloud; pass every other request to its route. */
+const hubLinkWriteBar: MiddlewareHandler<ApiEnv> = async (c, next) => {
+  if (currentServerRole() === 'hub') return c.json(HUB_LINKED_BY_CLOUD, 409);
+  await next();
+};
+router.post('/link/start', hubLinkWriteBar);
+router.post('/link/cancel', hubLinkWriteBar);
+router.post('/unlink', hubLinkWriteBar);
 
 /** POST /api/cloud/link/start — begin the device flow; returns codes to display. */
 router.post('/link/start', async (c) => {
@@ -179,16 +183,24 @@ router.post('/link/start', async (c) => {
   // a front-door change, made by the owner at this computer (DOR-2969).
   const frontDoor = refuseFrontDoorChange(honoRequestFacts(c), 'the DorkOS account link');
   if (frontDoor) return c.json({ error: frontDoor.error, code: frontDoor.code }, 403);
-  try {
-    const result = await getCloudLinkManager().startLink();
-    return c.json(result);
-  } catch (err) {
-    logger.error('[Cloud] Failed to start device link', logError(err));
-    return c.json(
-      { error: 'Could not reach the DorkOS cloud to start linking. Try again shortly.' },
-      502
-    );
-  }
+  return runAccountWrite(c, {
+    kind: 'cloud.link',
+    target: 'account-link',
+    input: {},
+    reason: 'Link this computer to a DorkOS account.',
+    run: async () => {
+      try {
+        const result = await getCloudLinkManager().startLink();
+        return c.json(result);
+      } catch (err) {
+        logger.error('[Cloud] Failed to start device link', logError(err));
+        return c.json(
+          { error: 'Could not reach the DorkOS cloud to start linking. Try again shortly.' },
+          502
+        );
+      }
+    },
+  });
 });
 
 /**
@@ -358,77 +370,6 @@ const SeatAssignBodySchema = z.object({
   subject: z.object({ kind: z.enum(['agent', 'user']), id: z.string().min(1) }),
 });
 
-/** What a refusal envelope looks like on the wire, whichever write produced it. */
-type CloudWriteRefusal = { ok: false; problem: Problem } | { ok: false; message: string };
-
-/** How one write words the refusals the service did not describe. */
-interface WriteFailureWording {
-  /** What was being done, for the log line. */
-  what: string;
-  /**
-   * What to tell the person when the service answers "not found". The service
-   * gives the same answer for a route it does not serve and for a thing the
-   * write named that it cannot find, so this one sentence has to be true in
-   * both cases. Without it, such a refusal is passed through like any other.
-   */
-  absent?: string;
-  /**
-   * What to tell the person when the service gave no answer it could read (a
-   * timeout, a broken body) for a write that may have done something anyway.
-   * Without it, such a failure reads as the account being out of reach.
-   */
-  unconfirmed?: string;
-}
-
-/**
- * Answer a failed cloud write: the service's own refusal verbatim, or one plain
- * sentence of ours.
- *
- * This is the whole reason the app can say "this needs a plan change" without
- * knowing a single plan: the words, including `requiredPlanDisplayName`, are the
- * service's.
- *
- * A "not found" is the exception. Its words are written for developers, not
- * people, so a write that can meet one names its own plain sentence in
- * `wording.absent`. That one sentence covers both things "not found" can mean
- * here, because the answer looks the same either way: the service does not
- * serve this write, or it cannot find what the write named.
- *
- * **It answers 200, and that is not sloppiness.** A refusal a plan change would
- * lift is an ANSWER this route succeeded in obtaining, not a failure of this
- * route — and the client's `fetchJSON` throws on every non-2xx, discarding the
- * body into an exception whose shape the caller would have to reverse-engineer.
- * Passing the status through would therefore make the one affordance this whole
- * feature exists for — explaining a refusal in the service's own words —
- * unreachable in the running app while still passing a mocked test. The
- * `{ ok: false, problem }` envelope carries the service's status inside
- * `problem.status`, so nothing is lost.
- *
- * @param c - The request's context.
- * @param error - The value the write rejected with.
- * @param wording - What was being done, and what to say when it is not served.
- */
-function cloudWriteFailed(c: Context<ApiEnv>, error: unknown, wording: WriteFailureWording) {
-  if (wording.absent !== undefined && isAbsent(error)) {
-    return c.json({ ok: false, message: wording.absent } satisfies CloudWriteRefusal);
-  }
-  const problem = problemOf(error);
-  if (problem !== null) {
-    return c.json({ ok: false, problem } satisfies CloudWriteRefusal);
-  }
-  logger.warn(`[Cloud] Could not ${wording.what}`, logError(error));
-  return c.json({
-    ok: false,
-    message: wording.unconfirmed ?? 'Couldn’t reach your DorkOS account. Try again shortly.',
-  } satisfies CloudWriteRefusal);
-}
-
-/** Said, with HTTP 200, by every cloud write while this instance is not linked. */
-const NOT_LINKED: CloudWriteRefusal = {
-  ok: false,
-  message: 'This instance is not linked to a DorkOS account.',
-};
-
 /** POST /api/cloud/seats/:seatId/assign — give a seat to a person or an agent. */
 router.post('/seats/:seatId/assign', async (c) => {
   const refusal = envelopeRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.seats);
@@ -437,12 +378,20 @@ router.post('/seats/:seatId/assign', async (c) => {
   if (!isCloudLinked()) return c.json(NOT_LINKED);
   const parsed = SeatAssignBodySchema.safeParse(readJsonBody(c));
   if (!parsed.success) return c.json({ ok: false, message: 'Unknown subject' }, 400);
-  try {
-    const seat = await assignSeat(c.req.param('seatId'), parsed.data.subject);
-    return c.json({ ok: true, seat } satisfies CloudSeatActionResponse);
-  } catch (err) {
-    return cloudWriteFailed(c, err, { what: 'change a seat' });
-  }
+  return runAccountWrite(c, {
+    kind: 'cloud.seats',
+    target: c.req.param('seatId'),
+    input: parsed.data,
+    reason: 'Assign this DorkOS account seat.',
+    run: async () => {
+      try {
+        const seat = await assignSeat(c.req.param('seatId'), parsed.data.subject);
+        return c.json({ ok: true, seat } satisfies CloudSeatActionResponse);
+      } catch (err) {
+        return cloudWriteFailed(c, err, { what: 'change a seat' });
+      }
+    },
+  });
 });
 
 /** POST /api/cloud/seats/:seatId/release — hand a seat back. */
@@ -508,15 +457,23 @@ router.post('/billing/:page', async (c) => {
   // A short-lived page address is not something to keep in any cache.
   c.header('Cache-Control', 'no-store');
   if (!isCloudLinked()) return c.json(NOT_LINKED);
-  try {
-    const url = await openBillingPage({ kind: page.data, skuId });
-    return c.json({ ok: true, url } satisfies CloudBillingSessionResponse);
-  } catch (err) {
-    return cloudWriteFailed(c, err, {
-      what: `open the ${page.data} page`,
-      absent: BILLING_ABSENT[page.data],
-    });
-  }
+  return runAccountWrite(c, {
+    kind: 'cloud.billing',
+    target: page.data,
+    input: { page: page.data, skuId: skuId ?? null },
+    reason: 'Open the DorkOS account billing page.',
+    run: async () => {
+      try {
+        const url = await openBillingPage({ kind: page.data, skuId });
+        return c.json({ ok: true, url } satisfies CloudBillingSessionResponse);
+      } catch (err) {
+        return cloudWriteFailed(c, err, {
+          what: `open the ${page.data} page`,
+          absent: BILLING_ABSENT[page.data],
+        });
+      }
+    },
+  });
 });
 
 /**
@@ -529,24 +486,32 @@ router.post('/account/export', async (c) => {
   const refusal = envelopeRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.export);
   if (refusal) return c.json(refusal, 403);
   if (!isCloudLinked()) return c.json(NOT_LINKED);
-  try {
-    const job = await requestAccountExport();
-    const body: CloudAccountExportResponse = {
-      ok: true,
-      export: {
-        requestedAt: job.requestedAt,
-        readyAt: job.readyAt,
-        downloadUrl: job.downloadUrl,
-        emailRequested: job.emailRequested,
-      },
-    };
-    return c.json(body);
-  } catch (err) {
-    return cloudWriteFailed(c, err, {
-      what: 'request an account export',
-      absent: 'Exporting your data isn’t available on your account yet.',
-    });
-  }
+  return runAccountWrite(c, {
+    kind: 'cloud.export',
+    target: 'account-export',
+    input: {},
+    reason: 'Export your DorkOS account data.',
+    run: async () => {
+      try {
+        const job = await requestAccountExport();
+        const body: CloudAccountExportResponse = {
+          ok: true,
+          export: {
+            requestedAt: job.requestedAt,
+            readyAt: job.readyAt,
+            downloadUrl: job.downloadUrl,
+            emailRequested: job.emailRequested,
+          },
+        };
+        return c.json(body);
+      } catch (err) {
+        return cloudWriteFailed(c, err, {
+          what: 'request an account export',
+          absent: 'Exporting your data isn’t available on your account yet.',
+        });
+      }
+    },
+  });
 });
 
 /**
@@ -565,27 +530,35 @@ router.post('/account/deletion', async (c) => {
   const refusal = envelopeRefusalUnlessOwner(honoRequestFacts(c), OWNER_ONLY.deletion);
   if (refusal) return c.json(refusal, 403);
   if (!isCloudLinked()) return c.json(NOT_LINKED);
-  try {
-    const deletion = await requestAccountDeletion();
-    const body: CloudAccountDeletionResponse = {
-      ok: true,
-      deletion: {
-        requestedAt: deletion.requestedAt,
-        confirmationSentTo: deletion.confirmationSentTo,
-        confirmBy: deletion.confirmBy,
-      },
-    };
-    return c.json(body);
-  } catch (err) {
-    return cloudWriteFailed(c, err, {
-      what: 'ask to delete the account',
-      absent: 'Deleting your account from the app isn’t available on your account yet.',
-      // The request may have reached the service, and the email gone, before
-      // the answer was lost, so "couldn't reach" could be untrue.
-      unconfirmed:
-        'We couldn’t confirm your request went through. A link may already be on its way, so check your email before asking again.',
-    });
-  }
+  return runAccountWrite(c, {
+    kind: 'cloud.delete',
+    target: 'account-deletion',
+    input: {},
+    reason: 'Request deletion of your DorkOS account.',
+    run: async () => {
+      try {
+        const deletion = await requestAccountDeletion();
+        const body: CloudAccountDeletionResponse = {
+          ok: true,
+          deletion: {
+            requestedAt: deletion.requestedAt,
+            confirmationSentTo: deletion.confirmationSentTo,
+            confirmBy: deletion.confirmBy,
+          },
+        };
+        return c.json(body);
+      } catch (err) {
+        return cloudWriteFailed(c, err, {
+          what: 'ask to delete the account',
+          absent: 'Deleting your account from the app isn’t available on your account yet.',
+          // The request may have reached the service, and the email gone, before
+          // the answer was lost, so "couldn't reach" could be untrue.
+          unconfirmed:
+            'We couldn’t confirm your request went through. A link may already be on its way, so check your email before asking again.',
+        });
+      }
+    },
+  });
 });
 
 /**
@@ -653,8 +626,18 @@ router.put('/credits/default', async (c) => {
       return c.json({ error: 'Sign in to your DorkOS account first.' }, 409);
     }
   }
-  setCreditsDefault(runtime, useCredits);
-  return c.json(await creditsStatus());
+  const run = async () => {
+    setCreditsDefault(runtime, useCredits);
+    return c.json(await creditsStatus());
+  };
+  if (!useCredits) return run();
+  return runAccountWrite(c, {
+    kind: 'cloud.credits',
+    target: runtime,
+    input: parsed.data,
+    reason: 'Run new work on DorkOS credits.',
+    run,
+  });
 });
 
 /**

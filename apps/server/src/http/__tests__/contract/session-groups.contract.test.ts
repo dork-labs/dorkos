@@ -43,6 +43,7 @@ import {
   SERVER_ORIGIN,
   type ComposedServer,
   stepUpAt,
+  confirmSetupAnswer,
 } from './harness.js';
 
 /** The repository root: the composed server's directory boundary. */
@@ -1131,9 +1132,12 @@ async function setup(
   method: string,
   url: string,
   body?: unknown,
-  headers: Record<string, string> = {}
+  headers: Record<string, string> = {},
+  confirmationPassword?: string
 ): Promise<Answer> {
-  const answer = await call(server, method, url, body, headers);
+  let answer = await call(server, method, url, body, headers);
+  if (confirmationPassword)
+    answer = await confirmSetupAnswer(server!.baseUrl, answer, confirmationPassword, headers);
   if (answer.status >= 300) {
     throw new Error(`${method} ${url} answered ${answer.status}: ${JSON.stringify(answer.json)}`);
   }
@@ -1719,7 +1723,8 @@ describe('contract: the session routes with login on', { timeout: 60_000 }, () =
       'PATCH',
       '/api/config',
       { auth: { enabled: true } },
-      await stepUpAt(server!.baseUrl, 'a-long-password-1')
+      await stepUpAt(server!.baseUrl, 'a-long-password-1'),
+      'a-long-password-1'
     );
   }, BOOT_HOOK_TIMEOUT_MS);
   afterAll(async () => {

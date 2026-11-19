@@ -2,6 +2,7 @@ import { resetCredentialReadHealth } from '../credential-read-health.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { runBinaryProbe } from '../../../shared/run-probe.js';
 import { claudeConfigDirEnv } from '../../claude-config-dir.js';
+import { env } from '../../../../../env.js';
 import {
   claudeCredentialKeychainService,
   isSignInUnusable,
@@ -186,10 +187,14 @@ describe('claudeCredentialKeychainService', () => {
 
 describe('readClaudeSignInDeadlines', () => {
   const realPlatform = process.platform;
+  const realTestRuntime = env.DORKOS_TEST_RUNTIME;
 
   beforeEach(() => {
     vi.clearAllMocks();
     resetCredentialReadHealth();
+    env.DORKOS_TEST_RUNTIME = false;
+    // The guard also reads the live variable, which a developer's shell may export.
+    vi.stubEnv('DORKOS_TEST_RUNTIME', '');
     // The real function returns `undefined` for the default root and the path
     // itself otherwise — that is the rule deciding which Keychain branch is read.
     mockedConfigDirEnv.mockImplementation((root: string) => ({
@@ -199,6 +204,23 @@ describe('readClaudeSignInDeadlines', () => {
 
   afterEach(() => {
     setPlatform(realPlatform);
+    env.DORKOS_TEST_RUNTIME = realTestRuntime;
+    vi.unstubAllEnvs();
+  });
+
+  it('never reads the Keychain on macOS while the test runtime is on', async () => {
+    // The login Keychain belongs to the macOS user, not the process, so a
+    // throwaway home does not seal it off. Under the test runtime the read is
+    // skipped entirely and the sign-in answers "unknown".
+    setPlatform('darwin');
+    env.DORKOS_TEST_RUNTIME = true;
+    mockedProbe.mockResolvedValue(credentialBlob(HEALTHY));
+    const { readFile } = await import('node:fs/promises');
+
+    await expect(readClaudeSignInDeadlines(DEFAULT_ROOT)).resolves.toBeNull();
+    await expect(readClaudeSignInDeadlines(NAMED_ROOT)).resolves.toBeNull();
+    expect(mockedProbe).not.toHaveBeenCalled();
+    expect(readFile).not.toHaveBeenCalled();
   });
 
   it('reads the Keychain entry for the account it was given on macOS', async () => {

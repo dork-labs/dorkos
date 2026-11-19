@@ -242,6 +242,7 @@ describe('Database Migrations', () => {
       // Decisions an extension raised in the inbox (spec flow-multiproject
       // §7.2, migration 0131).
       'extension_decisions',
+      'extension_person_records',
       'handle_tombstones',
       // Heartbeats: each agent's beat facts, one row per beat, and what beats
       // raised until it reaches its reader (spec heartbeats §11), and what

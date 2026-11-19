@@ -103,6 +103,8 @@
  *
  * @module services/core/capabilities/tier-enforcement
  */
+
+import type { ApprovalRequiredPayload } from './approval-required-payload.js';
 import type { ActionConsent, CapabilitySource, CapabilityTier } from '@dorkos/shared/capabilities';
 import type {
   ApprovalOrigin,
@@ -142,6 +144,7 @@ import {
   describeRemainingArguments,
   type ApprovalSubjectDeclaration,
 } from '../approvals/index.js';
+import { noteConfigPatchCard } from '../approvals/model/front-door-cards.js';
 import { logger } from '../../../lib/logger.js';
 import {
   APPROVAL_TOKEN_ARGUMENT,
@@ -222,6 +225,11 @@ export interface GatedAction {
    * channel that reaches this gate produces the same card.
    */
   approvalDetailField?: string;
+  /**
+   * The card's detail drawn from the input, used when no other detail exists.
+   * See `CapabilityDefinition.approvalViewDetail`.
+   */
+  approvalViewDetail?: (input: unknown) => string | undefined;
   /**
    * Which argument names the thing being acted on, and which registry knows it
    * by name (DOR-1929).
@@ -312,35 +320,7 @@ export function isFreshApprovalAsk(payload: ApprovalRequiredPayload): boolean {
  * Everything a model needs to proceed is in the payload: what is gated, the id a
  * person will decide, and exactly how to retry.
  */
-export interface ApprovalRequiredPayload {
-  /** Discriminator. Always `approval_required`. */
-  status: 'approval_required';
-  /** The capability that did NOT run. */
-  capabilityId: string;
-  /** Its human-facing title, as the operator's card shows it. */
-  capabilityTitle: string;
-  /** Its permission tier, from the registry — never from the requester. */
-  tier: CapabilityTier;
-  /** The approval a person will decide. Safe to show or log. */
-  approvalId: string;
-  /** The one-time token to present on the retry. Inert until someone grants it. */
-  approvalToken: string;
-  /** When the token stops being honored. ISO 8601 UTC. */
-  expiresAt: string;
-  /** Why the call is not running yet. */
-  reason: ApprovalRequiredReason;
-  /** One plain sentence a model (or a person reading a log) can act on. */
-  message: string;
-  /** Exactly how to retry once a person has approved. */
-  retry: {
-    /** Whether the token rides an MCP tool argument or an HTTP header. */
-    channel: ApprovalRetryChannel;
-    /** The exact argument or header name to put the token in. */
-    field: string;
-    /** Step-by-step retry instructions, written for the model. */
-    instructions: string;
-  };
-}
+export type { ApprovalRequiredPayload } from './approval-required-payload.js';
 
 /**
  * Why a call was refused outright rather than queued for approval.
@@ -737,7 +717,9 @@ export function describeGatedAttempt(
 
 /**
  * The verbatim value the card shows beside the summary, when the action declares
- * a detail field and the input actually carries a string there.
+ * a detail field and the input actually carries a string there. Otherwise the
+ * action's own `approvalViewDetail`, when it declares one and it says anything
+ * (DOR-4775: the full list of settings a config patch changes).
  *
  * Only a string qualifies. An object or a number rendered into a card would be
  * `[object Object]` or a bare digit sitting under a heading promising the full
@@ -753,9 +735,10 @@ export function describeGatedAttempt(
  * @returns The value to store, or `undefined`.
  */
 function detailFor(action: GatedAction, input: unknown): string | undefined {
-  if (!action.approvalDetailField) return undefined;
-  const value = readApprovalInputPath(input, action.approvalDetailField);
-  return typeof value === 'string' ? value : undefined;
+  const value = action.approvalDetailField
+    ? readApprovalInputPath(input, action.approvalDetailField)
+    : undefined;
+  return typeof value === 'string' ? value : action.approvalViewDetail?.(input) || undefined;
 }
 
 /** The label an approval records for who asked, or its absence for an anonymous one. */
@@ -984,7 +967,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
     // A turn nobody is watching (a scheduled run, an automatic carry-over) fails
     // at once with a reason instead of raising a card nobody can answer (DOR-3394).
     if (turnHasNobodyToAsk(requestingSession?.sessionId)) {
-      return refuse('enforcement_unavailable', nobodyToAskMessage(action.title));
+      return refuse('enforcement_unavailable', nobodyToAskMessage(action.title, permission));
     }
     // A request past Blocked is rate-limited from the approvals store BEFORE
     // anything is minted, so a looping agent gets one card, never a stack of
@@ -1046,12 +1029,14 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
       auditStoreFailure();
       throw err;
     }
+    noteConfigPatchCard(ticket.approvalId, action.id, input);
     const payload: ApprovalRequiredPayload = {
       status: 'approval_required',
       capabilityId: action.id,
       capabilityTitle: action.title,
       tier,
       approvalId: ticket.approvalId,
+      requestCode: ticket.requestCode,
       approvalToken: ticket.token,
       expiresAt: ticket.expiresAt,
       reason,
@@ -1094,6 +1079,7 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
         capabilityTitle: action.title,
         tier,
         approvalId: result.approvalId,
+        requestCode: result.requestCode,
         approvalToken,
         expiresAt: result.expiresAt,
         reason: 'awaiting_decision',

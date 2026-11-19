@@ -66,6 +66,7 @@ function setup() {
       refuseStopped: vi.fn((_sessionId: string) => undefined),
       isOpenFor: vi.fn((_sessionId: string) => false),
       ask: vi.fn(async () => ({ handoffId: 'h1', site: 'fixture.test', next: 'Wait.' })),
+      outsideTurnReason: vi.fn(async (_sessionId: string): Promise<string | null> => null),
     },
   };
   const domain = createLocalBrowserDomain(service as unknown as LocalBrowserService);
@@ -317,7 +318,7 @@ describe('local browser scoped tool projection', () => {
     };
     const signIns = { current: null, active: false, holds: () => false } as unknown as SignInWindow;
     const handover = new BrowserHandover(browser, signIns, () => '/tmp/unused');
-    handover.useOutsideTurnCheck(async () => false);
+    handover.useOutsideTurnCheck(async () => null);
     (service as { handover: unknown }).handover = handover;
     const tool = (id: string) => domain.capabilities.find((item) => item.id === id)!;
     const { handoffId } = (await tool('local_browser.ask_person').invoke(
@@ -362,7 +363,7 @@ describe('local browser scoped tool projection', () => {
     };
     const signIns = { current: null, active: false, holds: () => false } as unknown as SignInWindow;
     const handover = new BrowserHandover(browser, signIns, () => '/tmp/unused');
-    handover.useOutsideTurnCheck(async () => false);
+    handover.useOutsideTurnCheck(async () => null);
     (service as { handover: unknown }).handover = handover;
     await handover.ask('chat-one', 'wall');
     service.observe.mockClear();
@@ -400,7 +401,7 @@ describe('local browser scoped tool projection', () => {
     };
     const signIns = { current: null, active: false, holds: () => false } as unknown as SignInWindow;
     const handover = new BrowserHandover(browser, signIns, () => '/tmp/unused');
-    handover.useOutsideTurnCheck(async () => false);
+    handover.useOutsideTurnCheck(async () => null);
     (service as { handover: unknown }).handover = handover;
     const tool = (id: string) => domain.capabilities.find((item) => item.id === id)!;
     await tool('local_browser.ask_person').invoke(deps, { reason: 'wall' }, context('chat-one'));
@@ -458,7 +459,7 @@ describe('local browser scoped tool projection', () => {
       start: vi.fn(async () => undefined),
     } as unknown as SignInWindow;
     const handover = new BrowserHandover(browser, signIns, () => dataDirectory);
-    handover.useOutsideTurnCheck(async () => false);
+    handover.useOutsideTurnCheck(async () => null);
     (service as { handover: unknown }).handover = handover;
     const tool = (id: string) => domain.capabilities.find((item) => item.id === id)!;
     try {
@@ -565,6 +566,47 @@ describe('local browser scoped tool projection', () => {
       expect(next).toContain('get yourself past');
     }
   });
+  // DOR-4693: a refused page never points a turn at a handoff that would refuse it.
+  describe('what a refused page tells the agent to do', () => {
+    const refused = {
+      revision: 3,
+      snapshot: '- heading "Access Denied"',
+      url: 'https://www.godaddy.example/',
+      tabId: 'selected',
+      refusal: {
+        kind: 'blocked' as const,
+        host: 'www.godaddy.example',
+        next: localBrowserRefusalNext('blocked'),
+      },
+    };
+
+    it.each([null, 'read_outside_text'])(
+      'keeps the handoff for a turn marked by %s',
+      async (reason) => {
+        const { service, domain, deps, context } = setup();
+        service.observe.mockResolvedValueOnce(refused as never);
+        service.handover.outsideTurnReason.mockResolvedValueOnce(reason);
+        const read = domain.capabilities.find((item) => item.id === 'local_browser.observe')!;
+        const answer = (await read.invoke(deps, {}, context('chat-one'))) as typeof refused;
+        expect(answer.refusal.next).toContain('local_browser_ask_person');
+      }
+    );
+
+    it.each(['stranger_chat', 'room_outside_words', 'outsider_turn'])(
+      'points a %s turn at the person instead',
+      async (reason) => {
+        const { service, domain, deps, context } = setup();
+        service.observe.mockResolvedValueOnce(refused as never);
+        service.handover.outsideTurnReason.mockResolvedValueOnce(reason);
+        const read = domain.capabilities.find((item) => item.id === 'local_browser.observe')!;
+        const answer = (await read.invoke(deps, {}, context('chat-one'))) as typeof refused;
+        expect(answer.refusal.next).not.toContain('local_browser_ask_person');
+        expect(answer.refusal.next).toContain('tell the person');
+        expect(answer.refusal.host).toBe('www.godaddy.example');
+      }
+    );
+  });
+
   it('lets no agent name the site it hands over', () => {
     const { domain } = setup();
     const ask = domain.capabilities.find((item) => item.id === 'local_browser.ask_person')!;

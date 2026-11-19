@@ -11,6 +11,7 @@ import type {
   ExtensionToolStatus,
 } from '@dorkos/extension-api';
 import type { ExtensionHttpHandler } from './http/extension-http.js';
+import type { ExtensionMediaFetch } from './http/media-fetch.js';
 import type { ApprovedPermissionSet } from '@dorkos/shared/config-schema';
 import {
   isScreenHalfWithheld,
@@ -25,6 +26,12 @@ export interface ActiveServerExtension {
   extensionId: string;
   /** Answers `/api/ext/<id>/*` (`extension-http.ts`). */
   handler: ExtensionHttpHandler;
+  /**
+   * Answers a video by ticket (`http/media-fetch.ts`, DOR-4321). Null or
+   * absent when it cannot: a proxy-only extension, or one with only an
+   * Express router.
+   */
+  mediaFetch?: ExtensionMediaFetch | null;
   cleanup: (() => void) | null;
   scheduledCleanups: Array<() => void>;
   /**

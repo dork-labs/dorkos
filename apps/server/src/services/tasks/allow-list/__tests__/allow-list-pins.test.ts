@@ -16,6 +16,7 @@ import {
   runsAnotherProgram,
   serializePins,
 } from '../allow-list-pins.js';
+import { judgeTaskAllowList } from '../task-allow-list.js';
 
 let root: string;
 let script: string;
@@ -109,6 +110,32 @@ describe('allow-list pins', () => {
       ok: false,
       rule: `Bash(${link} ${script})`,
     });
+  });
+});
+
+describe('a script with its own `#!` line (QA’s acceptance case)', () => {
+  let publish: string;
+
+  beforeEach(() => {
+    publish = path.join(root, 'publish');
+    fs.writeFileSync(publish, '#!/usr/bin/env python3\nprint("dry run")\n', { mode: 0o755 });
+  });
+
+  it('passes when the script itself is the program, and its bytes are pinned', async () => {
+    const entry = `Bash(${publish} --dry-run)`;
+    expect(judgeTaskAllowList([entry])).toEqual({ ok: true, rules: [entry] });
+    const pinned = await pinPrograms([entry]);
+    expect(pinned).toMatchObject({ ok: true, programs: { [entry]: { path: publish } } });
+    const pins = mergePins(null, pinned.ok ? pinned.programs : {}, [entry], 'now');
+    fs.writeFileSync(publish, '#!/usr/bin/env python3\nprint("live run")\n');
+    expect(await checkPins([entry], pins)).toEqual({ ok: false, rule: entry });
+  });
+
+  it('is refused when a language runtime runs it', () => {
+    for (const runtime of ['python3', '/usr/bin/python3', '/usr/bin/env']) {
+      const verdict = judgeTaskAllowList([`Bash(${runtime} ${publish} --dry-run)`]);
+      expect(verdict.ok).toBe(false);
+    }
   });
 });
 

@@ -34,9 +34,10 @@ import {
   rebuildRecordStrict,
 } from '../../services/marketplace/lib/integrity/strict-record.js';
 import type { MarketplaceRouteDeps, MarketplaceRoutes } from '../marketplace.js';
-import type { MarketplaceRouteContext } from './context.js';
+import type { MarketplaceContext, MarketplaceRouteContext } from './context.js';
 import { readJsonBody } from '../../http/request-body.js';
 import { honoRequestFacts } from '../../http/request-facts.js';
+import { runFrontDoorWrite } from '../front-door-step-up.js';
 import {
   errorResponse,
   InstallRequestBodySchema,
@@ -86,6 +87,18 @@ const KeepFilesRequestBodySchema = z
     review: z.object({ effects: DisclosedEffectsSchema, bindsTo: z.string().min(1) }).optional(),
   })
   .strict();
+
+/** Answer a keep-files that failed: files that changed since they were shown, or the mapped error. */
+function keepFilesFailed(c: MarketplaceContext, name: string, err: unknown): Response {
+  if (err instanceof KeptFilesChangedError) {
+    return c.json({ error: err.message, code: 'kept_files_changed' }, 409);
+  }
+  const mapped = mapErrorToStatus(err);
+  if (mapped.status >= 500) {
+    logger.error(`[Marketplace] Failed to keep the files of ${name}`, err);
+  }
+  return c.json(mapped.body, mapped.status as ContentfulStatusCode);
+}
 
 /**
  * Register the `/packages/:name/{preview,install,check-files,keep-files,uninstall,update}` routes on
@@ -181,7 +194,8 @@ export function mountPackageActionRoutes(
       let heldTo = approvedDisclosure;
       let heldToFiles: string | undefined;
       let heldToType: PackageType | undefined;
-      if (trustedCaller(readCallerAuthority(honoRequestFacts(c)))) {
+      const person = trustedCaller(readCallerAuthority(honoRequestFacts(c))) !== undefined;
+      if (person) {
         // The person saw what it runs and which files: the installer holds the
         // install to the disclosure, and consent records it only when the
         // installed copy hashes the same (DOR-2306).
@@ -214,29 +228,51 @@ export function mountPackageActionRoutes(
           heldTo = asked.previewed;
         }
       }
-      const result = await installer.install({
+      const installInput = {
         name,
         ...request,
         ...(heldTo !== undefined && { approvedDisclosure: heldTo }),
         ...(heldToFiles !== undefined && { approvedContentHash: heldToFiles }),
         ...(heldToType !== undefined && { approvedPackageType: heldToType }),
         ...(confined.projectPath !== undefined && { projectPath: confined.projectPath }),
+      };
+      const install = async (): Promise<Response> => {
+        try {
+          const result = await installer.install(installInput);
+          // After the install landed, never before: a failed install records nothing.
+          await consent.settle(
+            { installPath: result.installPath, type: result.type, global },
+            approved
+          );
+          // Report the RESOLVED manifest name, never the raw `:name` route param.
+          // For `dorkos install ./local/path` or `github:user/repo` the param is
+          // an install identifier, not the package name, and consumers (Harness
+          // Sync auto-projection) look up `.dork/plugins/<packageName>` (DOR-264).
+          onPluginsChanged({
+            projectPath: parsed.data.projectPath,
+            packageName: result.packageName,
+            action: 'install',
+          });
+          return c.json(result);
+        } catch (err) {
+          logger.error(`[Marketplace] Failed to install package ${name}`, err);
+          return errorResponse(c, err);
+        }
+      };
+      // An agent's install already waited on its card above, where one was owed.
+      if (!person) return await install();
+      // A person's install brings new code, so the owner confirms it's them (DOR-4355).
+      return await runFrontDoorWrite(c, {
+        kind: 'marketplace.install',
+        target: name,
+        input: {
+          ...installInput,
+          ...(approved !== undefined && { consentContentHash: approved.contentHash }),
+        },
+        reason: `Install ${name}, which can run new code here.`,
+        subject: 'which code runs here',
+        run: install,
       });
-      // After the install landed, never before: a failed install records nothing.
-      await consent.settle(
-        { installPath: result.installPath, type: result.type, global },
-        approved
-      );
-      // Report the RESOLVED manifest name, never the raw `:name` route param.
-      // For `dorkos install ./local/path` or `github:user/repo` the param is
-      // an install identifier, not the package name, and consumers (Harness
-      // Sync auto-projection) look up `.dork/plugins/<packageName>` (DOR-264).
-      onPluginsChanged({
-        projectPath: parsed.data.projectPath,
-        packageName: result.packageName,
-        action: 'install',
-      });
-      return c.json(result);
     } catch (err) {
       logger.error(`[Marketplace] Failed to install package ${name}`, err);
       return errorResponse(c, err);
@@ -323,25 +359,34 @@ export function mountPackageActionRoutes(
       });
       if (root === null) throw new PackageNotInstalledError(name);
       const global = confined.projectPath === undefined;
-      const result = await keepPackageFiles({
+      const keep = {
         dorkHome,
         root,
         name,
         global,
         keepKey: parsed.data.keepKey,
         ...(global && parsed.data.review && { review: parsed.data.review }),
+      };
+      // Kept files stay in use, and a review here can let the package run, so
+      // the owner confirms it's them first (DOR-4355).
+      return await runFrontDoorWrite(c, {
+        kind: 'marketplace.install',
+        target: name,
+        input: keep,
+        reason: `Keep the leftover files of ${name} as yours.`,
+        subject: 'which code runs here',
+        run: async () => {
+          try {
+            const result = await keepPackageFiles(keep);
+            if (result.approved) await heldBackCards.onGranted();
+            return c.json(result);
+          } catch (err) {
+            return keepFilesFailed(c, name, err);
+          }
+        },
       });
-      if (result.approved) await heldBackCards.onGranted();
-      return c.json(result);
     } catch (err) {
-      if (err instanceof KeptFilesChangedError) {
-        return c.json({ error: err.message, code: 'kept_files_changed' }, 409);
-      }
-      const mapped = mapErrorToStatus(err);
-      if (mapped.status >= 500) {
-        logger.error(`[Marketplace] Failed to keep the files of ${name}`, err);
-      }
-      return c.json(mapped.body, mapped.status as ContentfulStatusCode);
+      return keepFilesFailed(c, name, err);
     }
   });
 

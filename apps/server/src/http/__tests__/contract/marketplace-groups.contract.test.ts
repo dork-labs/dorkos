@@ -47,6 +47,7 @@ import {
   type ComposedServer,
   type ContractCase,
   stepUpAt,
+  confirmSetupAnswer,
 } from './harness.js';
 
 /** The repository root: the composed server's directory boundary. */
@@ -716,9 +717,12 @@ async function setup(
   method: string,
   url: string,
   body?: unknown,
-  headers: Record<string, string> = {}
+  headers: Record<string, string> = {},
+  confirmationPassword?: string
 ): Promise<Answer> {
-  const answer = await call(server, method, url, body, headers);
+  let answer = await call(server, method, url, body, headers);
+  if (confirmationPassword)
+    answer = await confirmSetupAnswer(server!.baseUrl, answer, confirmationPassword, headers);
   if (answer.status >= 300) {
     throw new Error(`${method} ${url} answered ${answer.status}: ${JSON.stringify(answer.json)}`);
   }
@@ -1121,14 +1125,16 @@ describe('contract: the marketplace groups with login on', () => {
       'PATCH',
       '/api/config',
       { auth: { enabled: true } },
-      { ...person, ...origin }
+      { ...person, ...origin },
+      OWNER.password
     );
     const created = await setup(
       server,
       'POST',
       '/api/auth/api-key/create',
       { name: 'c' },
-      { ...cookie, ...origin }
+      { ...cookie, ...origin },
+      OWNER.password
     );
     apiKey = { authorization: `Bearer ${created.json.key as string}` };
   }, BOOT_HOOK_TIMEOUT_MS);
@@ -1169,13 +1175,16 @@ describe('contract: the marketplace groups with login on', () => {
       );
       expect(refused.status).toBe(403);
       expect(refused.json.code).toBe('marketplace_source_needs_app');
-      const added = await call(
+      // The owner's session adds it once they confirm it's them (DOR-4355).
+      const asked = await call(
         server,
         'POST',
         '/api/marketplace/sources',
         { name: 'contract', source: pathToFileURL(MARKET).href },
         cookie
       );
+      expect(asked.status).toBe(428);
+      const added = await confirmSetupAnswer(server!.baseUrl, asked, OWNER.password, cookie);
       expect(added.status).toBe(201);
       await check(server, {
         method: 'DELETE',

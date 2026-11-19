@@ -16,6 +16,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { pendingLockCount, withFileLock, writeFileAtomic } from '../atomic-write.js';
+import { loadCeilingMs } from '../test-budget.js';
 
 const tempDirs: string[] = [];
 
@@ -109,53 +110,64 @@ describe('writeFileAtomic', () => {
       expect(parsed.pad).toBe('x'.repeat(parsed.writer * 64));
     });
 
-    it('two writers never cross: a completed write is observable as a whole', async () => {
-      // The step-3 shape, at the size a person actually hits it: two cockpit
-      // tabs saving the same target. Under the old code ~88% of these trials
-      // published the other tab's bytes under a successful write.
-      const dir = await makeTempDir();
-      const TRIALS = 200;
-      let crossed = 0;
+    // 200 sequential trials of real file writes: fast alone, past vitest's 5s
+    // default on a loaded machine (DOR-2021). The trial count is the evidence.
+    it(
+      'two writers never cross: a completed write is observable as a whole',
+      { timeout: loadCeilingMs(5_000) },
+      async () => {
+        // The step-3 shape, at the size a person actually hits it: two cockpit
+        // tabs saving the same target. Under the old code ~88% of these trials
+        // published the other tab's bytes under a successful write.
+        const dir = await makeTempDir();
+        const TRIALS = 200;
+        let crossed = 0;
 
-      for (let t = 0; t < TRIALS; t++) {
-        const target = path.join(dir, `t${t}.json`);
-        // Sequence the two writers so the second is strictly last: with the
-        // path lock, last-enqueued is last-written, so B's bytes must land.
-        const a = writeFileAtomic(target, JSON.stringify({ tab: 'A' }));
-        const b = writeFileAtomic(target, JSON.stringify({ tab: 'B' }));
-        await Promise.all([a, b]);
+        for (let t = 0; t < TRIALS; t++) {
+          const target = path.join(dir, `t${t}.json`);
+          // Sequence the two writers so the second is strictly last: with the
+          // path lock, last-enqueued is last-written, so B's bytes must land.
+          const a = writeFileAtomic(target, JSON.stringify({ tab: 'A' }));
+          const b = writeFileAtomic(target, JSON.stringify({ tab: 'B' }));
+          await Promise.all([a, b]);
 
-        const final = JSON.parse(await fs.readFile(target, 'utf-8')) as { tab: string };
-        if (final.tab !== 'B') crossed++;
+          const final = JSON.parse(await fs.readFile(target, 'utf-8')) as { tab: string };
+          if (final.tab !== 'B') crossed++;
+        }
+
+        expect(crossed).toBe(0);
       }
+    );
 
-      expect(crossed).toBe(0);
-    });
+    // 100 sequential trials of real file writes; same budget reasoning as above.
+    it(
+      'a writer outside the lock cannot hijack an in-flight write',
+      { timeout: loadCeilingMs(5_000) },
+      async () => {
+        // The path lock only reaches writers inside this process. The unique temp
+        // name is what protects the rest: a second process (or any call site that
+        // has not been routed through this module) writing the legacy fixed temp
+        // path must not be able to get its bytes renamed into our destination.
+        const dir = await makeTempDir();
+        const TRIALS = 100;
+        let hijacked = 0;
 
-    it('a writer outside the lock cannot hijack an in-flight write', async () => {
-      // The path lock only reaches writers inside this process. The unique temp
-      // name is what protects the rest: a second process (or any call site that
-      // has not been routed through this module) writing the legacy fixed temp
-      // path must not be able to get its bytes renamed into our destination.
-      const dir = await makeTempDir();
-      const TRIALS = 100;
-      let hijacked = 0;
+        for (let t = 0; t < TRIALS; t++) {
+          const target = path.join(dir, `t${t}.json`);
+          const legacyTemp = `${target}.tmp`;
 
-      for (let t = 0; t < TRIALS; t++) {
-        const target = path.join(dir, `t${t}.json`);
-        const legacyTemp = `${target}.tmp`;
+          const ours = writeFileAtomic(target, JSON.stringify({ owner: 'lock' }));
+          const foreign = fs.writeFile(legacyTemp, JSON.stringify({ owner: 'foreign' }));
+          await Promise.all([ours, foreign]);
 
-        const ours = writeFileAtomic(target, JSON.stringify({ owner: 'lock' }));
-        const foreign = fs.writeFile(legacyTemp, JSON.stringify({ owner: 'foreign' }));
-        await Promise.all([ours, foreign]);
+          const final = JSON.parse(await fs.readFile(target, 'utf-8')) as { owner: string };
+          if (final.owner !== 'lock') hijacked++;
+          await fs.rm(legacyTemp, { force: true });
+        }
 
-        const final = JSON.parse(await fs.readFile(target, 'utf-8')) as { owner: string };
-        if (final.owner !== 'lock') hijacked++;
-        await fs.rm(legacyTemp, { force: true });
+        expect(hijacked).toBe(0);
       }
-
-      expect(hijacked).toBe(0);
-    });
+    );
 
     it('writes to different paths are not serialised against each other', async () => {
       const dir = await makeTempDir();

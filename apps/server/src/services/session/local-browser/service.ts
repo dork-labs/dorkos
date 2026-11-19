@@ -4,7 +4,11 @@ import type { Browser, BrowserContext, Page, JSHandle } from 'playwright-core';
 import { localBrowserAuditWriter, type LocalBrowserAuditWriter } from './action-audit.js';
 import {
   LocalBrowserError,
+  agentPausedRefusal,
+  assertAgentMayAct,
   assertLocalBrowserUrl,
+  browserClosedRefusal,
+  personPausedRefusal,
   protectedPageRefusal,
   browserSetupCancelled,
 } from './errors.js';
@@ -288,7 +292,7 @@ export class LocalBrowserService {
   }
 
   async observe(): Promise<LocalBrowserObservation> {
-    const page = this.page();
+    const page = this.page(true);
     this.refuseProtectedPage(page);
     this.invalidate();
     const observed = await observeSelectedPage(page, this.selectedTabId!, {
@@ -304,7 +308,7 @@ export class LocalBrowserService {
 
   /** Capture pixels from the same selected page; this grants no new action observation. */
   async screenshot(): Promise<{ data: string; mimeType: string; revision: number; tabId: string }> {
-    const page = this.page();
+    const page = this.page(true);
     return screenshotSelectedPage(
       page,
       () => ({ revision: this.revision, tabId: this.selectedTabId!, frames: this.frameChanges }),
@@ -333,8 +337,8 @@ export class LocalBrowserService {
   ): Promise<LocalBrowserState> {
     const selected = this.tabs.get(this.selectedTabId ?? '');
     if (selected && !selected.isClosed()) this.refuseProtectedPage(selected);
-    if (this.paused)
-      throw new LocalBrowserError('paused', 'Your agent is paused. Resume it to continue.');
+    this.assertNotClosing();
+    assertAgentMayAct(this.status, this.paused);
     if (this.actions.active)
       throw new LocalBrowserError('busy', 'A browser action is finishing. Read the page again.');
     const observed = this.observation;
@@ -343,7 +347,7 @@ export class LocalBrowserService {
     const fence = actionFence(input, observed, Boolean(observedNodes), this.revision, () =>
       this.stale()
     );
-    const page = this.page();
+    const page = this.page(true);
     this.refuseProtectedPage(page);
     if (input.kind === 'navigate')
       assertLocalBrowserUrl(input.url, 'agent', this.cloudOrigins(), this.appOrigins());
@@ -511,14 +515,13 @@ export class LocalBrowserService {
     });
     return id;
   }
-  private page(): Page {
+  /** The selected tab; `forAgent` picks the agent's words for a handoff's pause (DOR-4678). */
+  private page(forAgent = false): Page {
     this.assertNotClosing();
     this.syncTabs();
     const page = this.tabs.get(this.selectedTabId ?? '');
-    if (this.detachedState)
-      throw new LocalBrowserError('paused', 'Your agent is paused. Resume it to continue.');
-    if (this.status !== 'connected')
-      throw new LocalBrowserError('closed', 'The browser closed. Connect it again.');
+    if (this.detachedState) throw forAgent ? agentPausedRefusal() : personPausedRefusal();
+    if (this.status !== 'connected') throw browserClosedRefusal();
     if (!page || page.isClosed())
       throw new LocalBrowserError('no_tab', 'Choose the tab your agent should use.');
     return page;
@@ -547,10 +550,9 @@ export class LocalBrowserService {
   }
   private admit(revision: number): void {
     this.assertNotClosing();
-    if (this.paused)
-      throw new LocalBrowserError('paused', 'Your agent is paused. Resume it to continue.');
+    assertAgentMayAct(this.status, this.paused);
     if (revision !== this.revision) throw this.stale();
-    this.refuseProtectedPage(this.page());
+    this.refuseProtectedPage(this.page(true));
   }
   /**
    * An agent never reads or acts on a page showing DorkOS or Cloud, in the

@@ -41,6 +41,7 @@
  *
  * @module routes/extensions-forward
  */
+import { holdExtensionPowerChange } from './extension-decision-step-up.js';
 import { declaresBridgeCapability } from '@dorkos/shared/extension-approval-schemas';
 import type { Context, Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
@@ -66,6 +67,7 @@ import {
   PersonForwards,
   FORWARD_AGENTS_MAX,
   setForwardAgents,
+  forwardAgentsOf,
   type ForwardRequest,
   type PersonForwardDeps,
 } from '../services/extensions/forward/person-forward.js';
@@ -387,22 +389,40 @@ export function registerExtensionForwardRoutes(
     }
     const { app, viewer } = caller;
     let itemId = '';
-    return send(
-      c,
-      app,
-      () => itemId,
-      () => {
-        const sent = forwards.allow(
-          app.extensionId,
-          viewer,
-          c.req.param('pendingId'),
-          c.req.header('x-client-id') ?? ''
-        );
-        itemId = sent.itemId;
-        const { itemId: _item, ...receipt } = sent;
-        return receipt;
-      }
-    );
+    const run = () =>
+      send(
+        c,
+        app,
+        () => itemId,
+        () => {
+          const sent = forwards.allow(
+            app.extensionId,
+            viewer,
+            c.req.param('pendingId'),
+            c.req.header('x-client-id') ?? ''
+          );
+          itemId = sent.itemId;
+          const { itemId: _item, ...receipt } = sent;
+          return receipt;
+        }
+      );
+    const read = () =>
+      forwards.pendingGrant(
+        app.extensionId,
+        viewer,
+        c.req.param('pendingId'),
+        c.req.header('x-client-id') ?? ''
+      );
+    if (!read()) return refuse(c, 'not_found', 'That comment is no longer waiting. Send it again.');
+    const held = holdExtensionPowerChange(c, {
+      id: app.extensionId,
+      effect: 'extension-forward-agent',
+      copy: FORWARD_AGENTS_BAR,
+      reason: `Allow ${app.extensionName} to reach this agent.`,
+      read,
+      run,
+    });
+    return held ?? run();
   });
 
   router.post('/:id/forward/pending/:pendingId/decline', (c) => {
@@ -488,15 +508,33 @@ export function registerExtensionForwardRoutes(
         `Send { agentIds }, at most ${FORWARD_AGENTS_MAX}, or [] for none.`
       );
     }
-    return answer(c, () => {
-      // By id only, and only agents Mesh knows: a name or a stale id adds nothing.
-      if (body.data.agentIds.some((agentId) => !forwards.registered(agentId))) {
-        return refuse(c, 'not_found', 'There is no agent with that id here.');
-      }
-      // Recorded in the audit trail as a settings change by `setForwardAgents`.
-      setForwardAgents(id, body.data.agentIds);
-      return c.json(forwards.agents(id));
+    const run = () =>
+      answer(c, () => {
+        // By id only, and only agents Mesh knows: a name or a stale id adds nothing.
+        if (body.data.agentIds.some((agentId) => !forwards.registered(agentId))) {
+          return refuse(c, 'not_found', 'There is no agent with that id here.');
+        }
+        // Recorded in the audit trail as a settings change by `setForwardAgents`.
+        setForwardAgents(id, body.data.agentIds);
+        return c.json(forwards.agents(id));
+      });
+    if (body.data.agentIds.some((agentId) => !forwards.registered(agentId)))
+      return refuse(c, 'not_found', 'There is no agent with that id here.');
+    const prior = forwardAgentsOf(id);
+    const widening = body.data.agentIds.some((agentId) => !prior.includes(agentId));
+    const held = holdExtensionPowerChange(c, {
+      id,
+      effect: widening ? 'extension-forward-agents' : 'lower',
+      copy: FORWARD_AGENTS_BAR,
+      reason: `Change which agents ${record.manifest.name} may reach.`,
+      read: () => ({
+        prior: forwardAgentsOf(id),
+        requested: body.data.agentIds,
+        manifest: extensionManager.get(id)?.manifest ?? null,
+      }),
+      run,
     });
+    return held ?? run();
   });
 }
 

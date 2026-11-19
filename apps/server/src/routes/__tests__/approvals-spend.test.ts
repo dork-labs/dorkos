@@ -22,6 +22,8 @@ import { AGENT_IDENTITY_HEADER } from '../../middleware/agent-identity.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import type { ActivityService } from '../../services/activity/activity-service.js';
 import { createApprovalsRoutes } from '../approvals.js';
+import { createStepUpRoutes } from '../step-up.js';
+import { resetHeldStepUpsForTests } from '../../services/core/auth/step-up/step-up-holds.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { createPermissionWorld } from '../../services/core/permissions/__tests__/permission-fixtures.js';
 
@@ -185,5 +187,74 @@ describe('a paid-run card', () => {
       .post(`/api/approvals/${card.approvalId}/grant`)
       .send({});
     expect(owner.status).toBe(200);
+  });
+
+  // Where remote confirmation (DOR-3648) meets the paid-run bars: a remote yes is
+  // held for the owner's password like any other, and the bars run again when
+  // it is confirmed, because the limit can be used up while the sheet is open.
+  describe('answered over Remote Access', () => {
+    const ORIGIN = 'http://localhost:4242';
+    const PASSWORD = 'made-up confirmation password';
+    const remote = () =>
+      target.mount(
+        honoGroupListener(
+          [
+            { path: '/api/approvals', routes },
+            {
+              path: '/api/step-up',
+              routes: createStepUpRoutes({
+                ownerId: () => 'owner',
+                checkPassword: async (password) => (password === PASSWORD ? 'ok' : 'wrong'),
+                minPasswordLength: async () => 8,
+                setOwnerPassword: async () => undefined,
+                trustedOrigins: () => [ORIGIN],
+              }),
+            },
+          ],
+          {
+            before: async (c, next) => {
+              markIngress(c.env.incoming, 'own-tunnel');
+              c.set('user', {
+                userId: 'owner',
+                credential: 'cookie',
+                sessionId: 'browser-a',
+                route: 'tunnel',
+              });
+              await next();
+            },
+          }
+        )
+      );
+    const askRemotely = (server: Server, id: string) =>
+      request(server).post(`/api/approvals/${id}/grant`).set('Origin', ORIGIN).send({});
+    const confirm = (server: Server, heldActionId: string) =>
+      request(server)
+        .post(`/api/step-up/${heldActionId}/password`)
+        .set('Origin', ORIGIN)
+        .send({ password: PASSWORD });
+
+    afterEach(() => resetHeldStepUpsForTests());
+
+    it('holds a paid Allow once for the password, then runs it', async () => {
+      const card = spendCard();
+      const server = remote();
+      const held = await askRemotely(server, card.approvalId);
+      expect(held.status).toBe(428);
+      expect(approvals.answerScope(card.approvalId)?.state).toBe('pending');
+      const done = await confirm(server, held.body.heldActionId);
+      expect(done.body).toMatchObject({ ok: true, status: 200 });
+      expect(approvals.answerScope(card.approvalId)?.state).toBe('granted');
+    });
+
+    it('re-checks the limit at the confirmation: used up meanwhile, nothing is spent', async () => {
+      const card = spendCard();
+      const server = remote();
+      const held = await askRemotely(server, card.approvalId);
+      expect(held.status).toBe(428);
+      tapRefusal = LIMIT_RECEIPT;
+      const done = await confirm(server, held.body.heldActionId);
+      expect(done.body).toMatchObject({ status: 409, result: { code: 'SPEND_LIMIT' } });
+      expect(approvals.answerScope(card.approvalId)?.state).not.toBe('granted');
+    });
   });
 });

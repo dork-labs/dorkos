@@ -21,6 +21,18 @@ import type {
 } from '@dorkos/shared/local-browser';
 import { logger } from '../../../lib/logger.js';
 import { LocalBrowserError } from './errors.js';
+import {
+  agentWindowAt,
+  browserInUseRefusal,
+  reopenAgentWindow,
+  selectedTabRefused,
+  type AgentWindowRestore,
+} from './handoff-guards/agent-window-restore.js';
+import {
+  outsideTurnRefusal,
+  type OutsideTurnCheck,
+  type OutsideTurnReason,
+} from './handoff-guards/outside-turn-reason.js';
 import { prepareProfileFolder } from './profile-folders.js';
 import type { SignInWindow } from './sign-in-window.js';
 
@@ -44,8 +56,7 @@ export interface HandoverBrowser {
   disconnect(): Promise<LocalBrowserState>;
 }
 
-/** Whether a chat's current turn was started by, or read words from, someone outside the team. */
-export type OutsideTurnCheck = (sessionId: string) => Promise<boolean>;
+export type { OutsideTurnCheck, OutsideTurnReason };
 
 /** Where to put the agent back when the person hands the browser back. */
 interface ReopenAt {
@@ -122,6 +133,8 @@ export class BrowserHandover {
   }
   private record: LocalBrowserHandoff | null = null;
   private reopenAt?: ReopenAt;
+  /** The agent's window a refusal's sign-in closed, to reopen when that sign-in ends (DOR-4693). */
+  private reopenAfterSignIn?: AgentWindowRestore;
   // The agent's page when it asked. Saved here, so Continue never takes a URL from the agent.
   private askedUrl?: string;
   // After Stop task the browser stays open for the person (2FA, a payment), so that
@@ -131,7 +144,8 @@ export class BrowserHandover {
   // until a person resumes, opens or closes the browser.
   private takenFrom: string | null = null;
   // Fails closed until startup says how to read a turn's marks.
-  private outsideTurn: OutsideTurnCheck = async () => true;
+  // Until startup wires the live check, every turn reads as a stranger's: fails closed.
+  private outsideTurn: OutsideTurnCheck = async () => 'outsider_turn';
   // The registry id of the agent in a folder; none until startup wires the mesh.
   private agentIdAt: (agentFolder: string) => string | undefined = () => undefined;
   private changed: () => void = () => undefined;
@@ -164,7 +178,26 @@ export class BrowserHandover {
    */
   useChangeListener(listener: () => void): void {
     this.changed = listener;
-    this.signIns.onChange(listener);
+    this.signIns.onChange(() => {
+      listener();
+      this.restoreAfterSignIn();
+    });
+  }
+
+  /**
+   * Put the agent's own window back once a sign-in the person started from a refusal ends,
+   * whether it saved, failed or closed early (DOR-4693). Only for the chat it was taken from, at
+   * the page DorkOS itself read when it closed the window, never one a page names. Nothing reopens
+   * when the person stopped that chat, took the browser, opened it elsewhere meanwhile, or a
+   * handoff or another sign-in is open: each of those is the person's choice to keep.
+   */
+  private restoreAfterSignIn(): void {
+    const restore = this.reopenAfterSignIn;
+    if (!restore || this.signIns.active) return;
+    this.reopenAfterSignIn = undefined;
+    if (this.stoppedFor === restore.sessionId || this.takenFrom !== null) return;
+    if (this.record?.outcome === null || this.preparingHandoff || this.answeringHandoff) return;
+    reopenAgentWindow(this.browser, restore);
   }
 
   /**
@@ -295,12 +328,12 @@ export class BrowserHandover {
     reason: LocalBrowserHandoffReason,
     asker: { name: string; folder: string } | null = null
   ): Promise<{ handoffId: string; site: string; next: string }> {
-    // A stranger's words must not be able to raise a window or ask the person anything.
-    if (await this.outsideTurn(sessionId))
-      throw new LocalBrowserError(
-        'outside_turn',
-        'This turn read words from outside your team, so it can’t hand the browser to a person.'
-      );
+    // A stranger's words must not be able to raise a window or ask the person anything. A turn
+    // marked only by a page the agent read may still hand over that page, when DorkOS's own
+    // reading found it refused the browser (DOR-4693): the page is what needs the person.
+    const marked = await this.outsideTurn(sessionId);
+    if (marked !== null && !(marked === 'read_outside_text' && (await this.refusedHere())))
+      throw outsideTurnRefusal(marked);
     this.refuseStopped(sessionId);
     this.refuseTaken();
     if (this.preparingHandoff || this.answeringHandoff)
@@ -316,6 +349,21 @@ export class BrowserHandover {
     } finally {
       this.preparingHandoff = false;
     }
+  }
+
+  /**
+   * Which mark would make this chat's handoff refuse, or null for none (DOR-4693). The page
+   * reading asks it, so a refusal never points the agent at a handoff that would refuse.
+   *
+   * @param sessionId - The calling chat.
+   */
+  outsideTurnReason(sessionId: string): Promise<OutsideTurnReason | null> {
+    return this.outsideTurn(sessionId);
+  }
+
+  /** Whether DorkOS's own last reading found the selected tab's site refusing the browser. */
+  private refusedHere(): Promise<boolean> {
+    return selectedTabRefused(this.browser, this.browser.lastRefusalHost?.() ?? null);
   }
 
   private async prepareHandoff(
@@ -377,6 +425,9 @@ export class BrowserHandover {
    */
   async signIn(input: LocalBrowserSignInRequest): Promise<LocalBrowserPersonState> {
     this.browser.profileRemoval?.assertAvailable();
+    // A new sign-in owes nothing to an older one's window (DOR-4693), unless that one is still
+    // open: its own end puts its window back.
+    if (!this.signIns.active) this.reopenAfterSignIn = undefined;
     this.signingIn++;
     try {
       return await this.startSignIn(input);
@@ -428,14 +479,24 @@ export class BrowserHandover {
       this.assertProfileExists(profileId);
     }
     const folder = await prepareProfileFolder(this.dataDirectory(), profileId);
-    // Only one Chromium can hold a profile, so the agent's window on it closes first.
-    if (
+    // Only one Chromium can hold a profile, so the agent's window on it closes first, and comes
+    // back once the sign-in ends (DOR-4693). Never while the person is using it.
+    const agentWindowOnProfile =
       state.mode === 'new-window' &&
       state.status !== 'disconnected' &&
-      this.browser.currentProfileId() === profileId
-    )
+      this.browser.currentProfileId() === profileId;
+    if (agentWindowOnProfile) {
+      if (this.record?.outcome === null || this.takenFrom !== null) throw browserInUseRefusal();
+      this.reopenAfterSignIn = agentWindowAt(state, profileId);
       await this.browser.disconnect();
-    await this.signIns.start(folder, profileId, url.href);
+    }
+    try {
+      await this.signIns.start(folder, profileId, url.href);
+    } catch (error) {
+      // A sign-in that never started never ends, so nothing may reopen on its account.
+      this.reopenAfterSignIn = undefined;
+      throw error;
+    }
     return this.state();
   }
 

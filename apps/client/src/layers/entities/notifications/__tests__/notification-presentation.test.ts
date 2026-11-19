@@ -63,6 +63,25 @@ describe('notification presentation', () => {
     });
   });
 
+  // DOR-4455: folder rules too long to approve open the same Permissions page,
+  // where the agent's folder rules are.
+  it("draws folder rules too long to approve with the shield and opens the agent's Permissions page", () => {
+    expect(NOTIFICATION_ICONS['agent.folder_rules_too_long']).toBe(ShieldAlert);
+    const row: NotificationDTO = {
+      id: '01JZG0000000000000000013',
+      kind: 'agent.folder_rules_too_long',
+      tier: 'notable',
+      subject: { type: 'agent', id: 'scout' },
+      agentId: 'scout',
+      title: 'Folder rules for Scout are too long to approve.',
+      createdAt: '2026-10-27T12:00:00.000Z',
+    };
+    expect(notificationLink(row)).toEqual({
+      to: '/team',
+      search: { profile: 'scout', profilePage: 'permissions' },
+    });
+  });
+
   // DOR-4118: a global server that added a tool opens that server's sheet.
   it("opens the server's sheet when a global MCP server adds a tool", () => {
     const row: NotificationDTO = {

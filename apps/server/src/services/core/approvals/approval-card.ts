@@ -3,6 +3,7 @@
  *
  * @module services/core/approvals/approval-card
  */
+import { agentRaiseNote, isAgentRaiseCard } from './agent-raise/agent-raise-cards.js';
 import type { approvals } from '@dorkos/db';
 import {
   isExtensionCapabilityId,
@@ -16,9 +17,33 @@ import { cannotAllowCard, incompletePackageLabel } from './approval-completeness
 import { isAlwaysOffered } from './always-offered.js';
 import { withMarketplaceSummary, withServiceAction } from './approval-storable.js';
 import { extensionSourcePhrase } from './approval-summary.js';
+import { approvalStepUpHash } from './model/approval-step-up-binding.js';
+import { requestCodeForHash } from '../auth/step-up/request-code.js';
 
 /** A stored approval row, as Drizzle infers it. */
 export type ApprovalRow = typeof approvals.$inferSelect;
+
+/** The decision route’s scope, read from the same row as its card. */
+export interface ApprovalAnswerScope {
+  /** The capability id or hand-registered tool name. */
+  capabilityId: string;
+  /** The agent's path, or `null` for an unidentified request. */
+  agentPath: string | null;
+  /** The recorded area, or `null` for an action with no area. */
+  area: PermissionAreaId | null;
+  /** Whether "Always allow" may be answered (see {@link isAlwaysOffered}). */
+  alwaysOffered: boolean;
+  /** Whether the agent asked past a Blocked permission. */
+  blockedRequest: boolean;
+  /** Whether granting it could raise what agents may do (DOR-3037). */
+  raisesPermissions: boolean;
+  /** Where the request stands right now. */
+  state: 'pending' | 'granted' | 'denied';
+  /** Whether it is spent, written off, or past its window. */
+  closed: boolean;
+  /** The recorded permission tier of the action. */
+  tier: CapabilityTier;
+}
 
 /**
  * The recorded area, read defensively: a hand-edited row never breaks a card.
@@ -44,7 +69,7 @@ export interface ApprovalCardContext {
 }
 
 /**
- * Project a stored row into the cockpit-facing shape. Never includes the hash.
+ * Project a stored row into the app-facing shape. Never includes the hash.
  *
  * @param row - The stored approval.
  * @param context - What the card reads live; see {@link ApprovalCardContext}.
@@ -73,6 +98,7 @@ export function toPendingApproval(
   const source = live && row.summary.includes(extensionSourcePhrase(live.name)) ? live : undefined;
   return {
     approvalId: row.id,
+    requestCode: requestCodeForHash(approvalStepUpHash(row)),
     capabilityId: row.capabilityId,
     capabilityTitle:
       row.capabilityId === 'harness.project_hooks'
@@ -88,6 +114,10 @@ export function toPendingApproval(
       ? { cannotAllow: true as const, packageLabel: incompletePackageLabel(row.packageRequest) }
       : {}),
     ...(row.detail === null ? {} : { detail: row.detail }),
+    // An agent's raise card keeps a name an agent can set out of its box (DOR-4355 M4).
+    ...(isAgentRaiseCard(row.capabilityId) && agentRaiseNote(row.id)
+      ? { detailNote: agentRaiseNote(row.id) }
+      : {}),
     ...(row.requestedBy ? { requestedBy: row.requestedBy } : {}),
     // Both halves or neither: a label with no id behind it is the shape this
     // field exists to avoid, since the id is what makes the name checkable.

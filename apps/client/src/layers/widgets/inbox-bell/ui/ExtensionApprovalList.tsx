@@ -3,6 +3,7 @@
  *
  * @module widgets/inbox-bell/ui/ExtensionApprovalList
  */
+import { useConfig } from '@/layers/entities/config';
 import { Puzzle } from 'lucide-react';
 import type { PendingExtensionApproval } from '@dorkos/shared/extension-approval-schemas';
 import {
@@ -118,7 +119,9 @@ const RUNS_AS_YOU_TAIL = / ?It runs as you\.$/;
 
 /**
  * The row's words, as Security wrote them (Nov 8). A copy allowed before whose
- * files changed says so, with what changed and when; a first run asks to run.
+ * files changed says so, with what changed and when; one that also wants a
+ * power the last yes did not cover says that first, in the Designer's words
+ * (DOR-4531); a first run asks to run.
  *
  * @param approval - The waiting copy.
  */
@@ -126,7 +129,9 @@ function wordsOf(approval: PendingExtensionApproval) {
   if (isChangedSinceAllowed(approval)) {
     return {
       changed: true,
-      title: `${approval.name}’s files changed since you allowed it. Its screens are paused until you look.`,
+      title: approval.added
+        ? `${approval.name} was updated and wants more. Its screens are paused until you look.`
+        : `${approval.name}’s files changed since you allowed it. Its screens are paused until you look.`,
       why: approvalChangeLine(approval),
       approveLabel: 'Allow the new version',
       rejectLabel: 'Keep paused',
@@ -163,6 +168,7 @@ export function ExtensionApprovalList({
   focusId,
   onFocusSpent,
 }: ExtensionApprovalListProps) {
+  const answerContext = useConfig().data?.approvalAnswerContext;
   const { approve, dismiss, pending } = useExtensionApprovalActions();
   if (approvals.length === 0) return null;
 
@@ -190,6 +196,8 @@ export function ExtensionApprovalList({
                 titleId={titleId}
                 icon={Puzzle}
                 title={words.title}
+                requestCode={approval.requestCode}
+                answerContext={answerContext}
                 why={words.why}
                 // What it gives agents, on the row itself, so it is read before the
                 // yes; each tool and its tier is in the ⓘ panel (DOR-2685).

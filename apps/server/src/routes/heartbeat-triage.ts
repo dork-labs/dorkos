@@ -15,7 +15,7 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { validationFailureBody } from '../lib/route-utils.js';
-import { errorRefusalUnlessOwner } from './cloud-owner-bar.js';
+import { errorRefusalUnlessOwner, runAccountWrite } from './cloud-owner-bar.js';
 
 /** What the route reads and writes. */
 export interface HeartbeatTriageRouterDeps {
@@ -43,10 +43,20 @@ export function createHeartbeatTriageRoutes(deps: HeartbeatTriageRouterDeps): Ho
     const parsed = TriageCreditsChoiceSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
     const { useCredits } = parsed.data;
-    const before = deps.choice();
-    deps.setChoice(useCredits);
-    if (before !== useCredits) deps.record(before, useCredits);
-    return c.json({ useCredits });
+    const run = async () => {
+      const before = deps.choice();
+      deps.setChoice(useCredits);
+      if (before !== useCredits) deps.record(before, useCredits);
+      return c.json({ useCredits });
+    };
+    if (!useCredits) return run();
+    return runAccountWrite(c, {
+      kind: 'cloud.credits',
+      target: 'heartbeat-checks',
+      input: { useCredits },
+      reason: 'Use DorkOS credits for scheduled checks.',
+      run,
+    });
   });
   return router;
 }

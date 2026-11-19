@@ -1,4 +1,3 @@
-import { projectComputerPlacement, projectComputerPlacementById } from './computer-placement.js';
 /**
  * Mesh agent discovery and registry routes — discover agents, manage registrations,
  * maintain the denial list, and query network topology.
@@ -27,16 +26,16 @@ import { projectComputerPlacement, projectComputerPlacementById } from './comput
  *
  * @module routes/mesh
  */
+import { projectComputerPlacement, projectComputerPlacementById } from './computer-placement.js';
 import path from 'path';
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { isManifestGitTracked, ManifestUnreadableError } from '@dorkos/mesh';
+import { isManifestGitTracked } from '@dorkos/mesh';
 import type { TopologyView } from '@dorkos/shared/mesh-schemas';
 import {
   DiscoverRequestSchema,
   RegisterAgentRequestSchema,
   DenyRequestSchema,
-  UpdateAgentRequestSchema,
   AgentListQuerySchema,
   HeartbeatRequestSchema,
   UpdateAccessRuleRequestSchema,
@@ -54,43 +53,18 @@ import {
   refuseAgentExecutionWrites,
   refuseAgentSelfFilesFromWifi,
 } from '../middleware/agent-execution-gate.js';
-import { clearsTheAgentBar, refuseUnlessAccountOwner } from '../lib/caller-authority.js';
-import { clearAgentByPerson, declareAgent } from '../services/core/turn-power/declared-readers.js';
-import { READS_OUTSIDE_TEXT_PERSON_ONLY } from '../services/core/operator/agent-updater.js';
-import { withPersonRepin } from '../services/runtimes/claude-code/folder-settings/folder-config-consent.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
 import { enrichTopology, type TopologyEnrichmentDeps } from './mesh-topology.js';
-import { setCreditsAllowedForAgent } from '../services/core/cloud/credits-defaults.js';
-import { creditsAgentPatchRefusal } from '../services/core/cloud/credits-model-gate.js';
-import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
-import { writeAgentManifest } from '../services/core/agent-observation/agent-execution-writes.js';
-import { prepareAgentPatch, registrationFields } from '../services/mesh/agent-patch.js';
+import { registrationFields } from '../services/mesh/agent-patch.js';
+import { patchMeshAgent } from './mesh-agent-patch-http.js';
 
-/** What the mesh routes read: the registry, the activity feed, and what topology enrichment reads. */
+/** Registry, activity and topology services the Mesh HTTP routes use. */
 export interface MeshRouterDeps extends TopologyEnrichmentDeps {
   /** Where registrations and removals are recorded; absent in a test that does not watch it. */
   activity?: ActivityService;
-}
-
-/**
- * The permission fields a mesh agent PATCH names, which this route refuses: the
- * `permissions` object, and the two retired fields that used to carry the same
- * answer, `enabledToolGroups` and `tierCeiling` (spec `agent-permissions` D13).
- * Refused by name rather than stripped, so a caller still sending one learns
- * where the setting went instead of hearing "done".
- *
- * @param body - The raw request body.
- * @returns The refused field paths, empty when the body names none.
- */
-function retiredPermissionFields(body: unknown): string[] {
-  if (!body || typeof body !== 'object' || Array.isArray(body)) return [];
-  const record = body as Record<string, unknown>;
-  return ['permissions', 'enabledToolGroups', 'tierCeiling'].filter((field) =>
-    Object.hasOwn(record, field)
-  );
 }
 
 /**
@@ -431,130 +405,8 @@ export function createMeshRoutes(deps: MeshRouterDeps): Hono<ApiEnv> {
   // PATCH /agents/:id — Update agent fields
   // An agent's runtime, model and effort move every schedule that follows it,
   // so an agent changing them is sent to the tool that asks a person (DOR-2328).
-  router.patch(
-    '/agents/:id',
-    refuseAgentExecutionWrites,
-    refuseAgentSelfFilesFromWifi,
-    async (c) => {
-      const id = c.req.param('id');
-      // Read as an object: anything else fails the schema below before a field
-      // is looked up, as `req.body` did on Express.
-      const body = readJsonBody(c) as Record<string, unknown>;
-      // What an agent may do is never written here (spec `agent-permissions` D10).
-      // This route has no caller guard of its own, so any local program can reach
-      // it; the permission routes are the one way in, behind a person and with an
-      // audit event. Refused by name rather than stripped by the schema, so the
-      // caller learns where to go instead of getting a 200 that changed nothing.
-      const refused = retiredPermissionFields(body);
-      if (refused.length > 0) {
-        return c.json(
-          {
-            error:
-              'Only a person can change permissions, from the Permissions page. Agents can ask the person.',
-            code: 'USE_PERMISSIONS_API',
-            fields: refused,
-          },
-          400
-        );
-      }
-      const result = UpdateAgentRequestSchema.safeParse(body);
-      if (!result.success) {
-        return c.json({ error: 'Validation failed', details: z.flattenError(result.error) }, 400);
-      }
-      // Anyone may say an agent reads outside text; only a person takes it back (DOR-3969).
-      const readsOutsideText = result.data.readsOutsideText;
-      if (readsOutsideText === false && !clearsTheAgentBar(honoRequestFacts(c))) {
-        return c.json({ error: READS_OUTSIDE_TEXT_PERSON_ONLY, code: 'person_only' }, 403);
-      }
-
-      // Guard: system agents cannot have identity fields changed
-      const SYSTEM_PROTECTED_FIELDS = ['name', 'description', 'namespace', 'isSystem'] as const;
-      const blockedFields = meshCore.get(id)?.isSystem
-        ? SYSTEM_PROTECTED_FIELDS.filter((f) => f in body)
-        : [];
-      if (blockedFields.length > 0) {
-        return c.json(
-          {
-            error: `Cannot modify ${blockedFields.join(', ')} on system agents`,
-          },
-          403
-        );
-      }
-
-      // Only the keys the caller sent, `null` as "clear", and a reports-to change
-      // checked for loops (spec `heartbeats` §4.1) — see `prepareAgentPatch`.
-      const patch = prepareAgentPatch(meshCore, id, body, result.data);
-      if ('refusal' in patch) return c.json(patch.refusal, 400);
-      // An agent on DorkOS credits may be set only to a model credits serve on
-      // its runtime's protocol, the same menu its Model row offers (DOR-2636).
-      const modelRefusal = await creditsAgentPatchRefusal(
-        id,
-        patch.fields,
-        Object.hasOwn(body as object, 'account'),
-        meshCore.get(id)
-      );
-      if (modelRefusal) return c.json({ error: modelRefusal, code: 'UNSUPPORTED_MODEL' }, 400);
-      // ADR-0043: update() is async — writes to disk first, then DB.
-      //
-      // It REFUSES when the manifest is present but unreadable, rather than
-      // rebuilding one from the DB row, because that row cannot carry
-      // `permissions`, `mcpServers` or `workspace` and the rebuild would erase all
-      // three (DOR-486 review). Answered as a 409 with the
-      // reason: the request is fine, the state on disk is not, and the operator
-      // can act on the sentence.
-      // Narrowed to the sentinel class on purpose. An unconditional catch here
-      // also swallowed `writeManifest`'s schema rejection and any I/O failure, and
-      // answered all of them `409 MANIFEST_UNREADABLE` with the raw message —
-      // a wrong status over a wrong story, and internals on the wire (DOR-486
-      // re-review). Anything else rethrows to the error middleware, which is where
-      // an unexpected failure belongs.
-      let updated;
-      // Through the observer of outside changes when it names the runtime, model
-      // or effort, so this person's change is never reported as one (DOR-2337).
-      const home = meshCore.getProjectPath(id);
-      const write = () =>
-        writeAgentManifest(body, home, async () =>
-          patch.recorded(await meshCore.update(id, patch.fields))
-        );
-      try {
-        // A person's own account change moves the agent's folder settings pin
-        // with it; anyone else's waits for a card on its next turn (DOR-3068).
-        updated =
-          home && Object.hasOwn(body, 'account') && clearsTheAgentBar(honoRequestFacts(c))
-            ? await withPersonRepin(
-                { agentId: id, home },
-                'manifest',
-                "changing an agent's account",
-                write
-              )
-            : await write();
-      } catch (err) {
-        if (!(err instanceof ManifestUnreadableError)) throw err;
-        return c.json({ error: err.message, code: 'MANIFEST_UNREADABLE' }, 409);
-      }
-      if (!updated) {
-        return c.json({ error: 'Agent not found' }, 404);
-      }
-      // DorkOS's own record, which no edit of the file clears: a person's `false`
-      // (checked above) is the only way out (DOR-3969).
-      if (readsOutsideText === true) declareAgent(id, home);
-      if (readsOutsideText === false) clearAgentByPerson(id, home);
-      // Only the owner of this DorkOS can put an agent on DorkOS credits
-      // (ADR 261001-000811, DOR-2652). The file now says what was asked; the
-      // consent lives in DorkOS config, recorded only for the owner, so an agent,
-      // another signed-in account, or a cloned file naming credits on its own
-      // spends nothing.
-      if (
-        Object.hasOwn(body as object, 'account') &&
-        refuseUnlessAccountOwner(honoRequestFacts(c)) === undefined
-      ) {
-        setCreditsAllowedForAgent(
-          id,
-          (body as { account?: unknown }).account === CREDITS_ACCOUNT_ID
-        );
-      }
-      return c.json(updated);
-    }
+  router.patch('/agents/:id', refuseAgentExecutionWrites, refuseAgentSelfFilesFromWifi, (c) =>
+    patchMeshAgent(c, deps)
   );
 
   // DELETE /agents/:id/data — Unregister agent and delete its .dork directory

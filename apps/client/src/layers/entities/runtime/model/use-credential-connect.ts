@@ -260,6 +260,12 @@ export interface UseDelegateRuntimeLogin {
   isError: boolean;
   /** Honest failure message, or `null` when not failed. */
   errorMessage: string | null;
+  /**
+   * The server's own reason and next step for a sign-in it ran and saw fail,
+   * or `null` (not failed, or the request itself never got an answer). Lets a
+   * surface that names the account add why, without repeating a generic line.
+   */
+  failureReason: string | null;
 }
 
 /**
@@ -389,5 +395,6 @@ export function useDelegateRuntimeLogin(
     isSuccess,
     isError: failed,
     errorMessage: failed ? (rawError ?? 'Couldn’t sign in. Try again.') : null,
+    failureReason: failed && settled?.status === 'success' ? (settled.data?.error ?? null) : null,
   };
 }

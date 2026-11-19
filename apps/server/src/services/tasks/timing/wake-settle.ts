@@ -20,8 +20,16 @@
  *
  * @module services/tasks/timing/wake-settle
  */
-import { awakeTimeoutSignal, getAwakeClock, type AwakeClock } from '@dorkos/shared/awake-clock';
+import type { StreamEvent } from '@dorkos/shared/types';
+import {
+  awakeTimeout,
+  getAwakeClock,
+  pausableAwakeTimeout,
+  type AwakeClock,
+} from '@dorkos/shared/awake-clock';
+import { pauseWhileWaitingToStart } from '@dorkos/shared/run-time-limit';
 import { createTaggedLogger } from '../../../lib/logger.js';
+import { SESSIONS } from '../../../config/constants.js';
 
 const logger = createTaggedLogger('Tasks');
 
@@ -72,6 +80,15 @@ export class WakeSettle {
   }
 }
 
+/**
+ * The longest a run's turn may wait to start: the claude-code runtime refuses a
+ * turn that waited this long for a free agent slot. A run's limit counts only
+ * once its turn starts (DOR-4576), so every bound that outlives a run (the
+ * direct path's hard cap below, a relay envelope's TTL, the scheduler's cap-slot
+ * hold and the crash sweep's deadline) adds this wait to the run's own limit.
+ */
+export const RUN_START_WAIT_MS = SESSIONS.WARM_SLOT_WAIT_MS;
+
 /** How a direct run can be stopped early: its operator, or its time limit. */
 export interface RunDeadline {
   /** Aborts on whichever comes first; its reason says which. */
@@ -80,29 +97,51 @@ export interface RunDeadline {
   timedOut(): boolean;
   /** The run ended; drop the deadline. */
   cancel(): void;
+  /**
+   * Read one event of the run's stream: the limit is paused while the turn
+   * waits to start (`pauseWhileWaitingToStart`, DOR-4576).
+   */
+  observe(event: StreamEvent): void;
 }
 
 /**
  * A run's stop signal: the operator's, joined by the time limit counted in
- * awake time only. A plain timer counts through sleep, so a run the computer
- * slept through was stopped on wake as over its limit (DOR-3286).
+ * awake time only, and only once the run's turn has started. A plain timer
+ * counts through sleep, so a run the computer slept through was stopped on
+ * wake as over its limit (DOR-3286); and a limit counted from the fire spent
+ * itself while the turn waited for a free agent slot (DOR-4576).
  *
  * @param clock - The clock that sees sleep.
  * @param maxRuntime - The task's time limit, if it has one.
  * @param operator - The operator's stop signal.
+ * @param onWaiting - Told the wait's words when the turn starts waiting for a
+ *   slot, and `null` when it starts.
  */
 export function runDeadline(
   clock: AwakeClock,
   maxRuntime: number | null | undefined,
-  operator: AbortSignal
+  operator: AbortSignal,
+  onWaiting: (message: string | null) => void = () => {}
 ): RunDeadline {
-  if (!maxRuntime) return { signal: operator, timedOut: () => false, cancel: () => {} };
-  const limit = awakeTimeoutSignal(clock, maxRuntime);
+  if (!maxRuntime) {
+    return { signal: operator, timedOut: () => false, cancel: () => {}, observe: () => {} };
+  }
+  const limit = new AbortController();
+  const expire = () =>
+    limit.abort(new DOMException('The run reached its time limit.', 'TimeoutError'));
+  const timer = pausableAwakeTimeout(clock, maxRuntime, expire, RUN_START_WAIT_MS);
+  // The hard cap, which never pauses: a runtime that kept saying it was waiting
+  // must not hold a run open for ever.
+  const cancelCap = awakeTimeout(clock, maxRuntime + RUN_START_WAIT_MS, expire);
   // `AbortSignal.any` adopts the reason of whichever fired first.
   const signal = AbortSignal.any([operator, limit.signal]);
   return {
     signal,
     timedOut: () => (signal.reason as { name?: string } | null)?.name === 'TimeoutError',
-    cancel: limit.cancel,
+    cancel: () => {
+      timer.cancel();
+      cancelCap();
+    },
+    observe: pauseWhileWaitingToStart(timer, onWaiting),
   };
 }

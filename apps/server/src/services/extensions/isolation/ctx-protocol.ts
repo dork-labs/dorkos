@@ -220,6 +220,9 @@ export const CTX_PROTOCOL = {
       status: { kind: 'call', gate: 'connections' },
     },
   },
+  // A record counts only inside a person's request, which the host can't yet
+  // tie to a call from the child, so the child refuses it itself (DOR-4301).
+  personRecord: { kind: 'object', members: { record: local, verify: call } },
 } as const satisfies ProtocolFor<DataProviderContext>;
 
 /** A path segment: a plain identifier, never a prototype key. */

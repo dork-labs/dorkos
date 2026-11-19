@@ -12,6 +12,7 @@ import {
   stopRaises,
   trustStopPatchRaises,
 } from '../sessions/wifi-raise-guard.js';
+import { createPermissionWorld } from '../../permissions/__tests__/permission-fixtures.js';
 
 const MODES = CLAUDE_CODE_CAPABILITIES.permissionModes;
 
@@ -49,10 +50,34 @@ describe('stateRaises and stopRaises', () => {
 });
 
 describe('presetRaises', () => {
-  it('takes only Careful, and only without agents brought along', () => {
-    expect(presetRaises('careful', undefined)).toBe(false);
-    expect(presetRaises('trusted', undefined)).toBe(true);
-    expect(presetRaises('careful', ['agent-1'])).toBe(true);
+  /** The defaults as they stand, from a world on `preset` with the person's own `areas`. */
+  const overview = (preset: 'careful' | 'trusted', areas: Record<string, 'ask' | 'blocked'> = {}) =>
+    createPermissionWorld({ preset, defaults: { areas, actions: {} } }).service.getOverview();
+
+  it('counts any preset but Careful, and bringing agents along, as a raise', async () => {
+    const now = await overview('careful');
+    expect(presetRaises('trusted', undefined, now)).toBe(true);
+    expect(presetRaises('careful', ['agent-1'], now)).toBe(true);
+  });
+
+  it('takes Careful when nothing ends up looser', async () => {
+    expect(presetRaises('careful', undefined, await overview('careful'))).toBe(false);
+    // A move into Careful keeps a person's Blocked.
+    expect(
+      presetRaises('careful', undefined, await overview('trusted', { messages: 'blocked' }))
+    ).toBe(false);
+  });
+
+  it('counts choosing Careful again as a raise when it would clear a Blocked', async () => {
+    expect(
+      presetRaises('careful', undefined, await overview('careful', { messages: 'blocked' }))
+    ).toBe(true);
+  });
+
+  it('counts a move into Careful as a raise when it would drop an Ask Careful allows', async () => {
+    expect(presetRaises('careful', undefined, await overview('trusted', { messages: 'ask' }))).toBe(
+      true
+    );
   });
 });
 

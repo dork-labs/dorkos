@@ -1,7 +1,9 @@
+import { STEP_UP_REQUIRED_CODE } from '@dorkos/shared/step-up';
 import { DECLINED_HOOKS_QUERY_KEY } from './use-hook-reviews';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import type { ApprovalAnswer } from '@dorkos/shared/approval-schemas';
+import { holdDecidedApproval } from './settling-approvals';
+import type { PendingApproval, ApprovalAnswer } from '@dorkos/shared/approval-schemas';
 import { useTransport } from '@/layers/shared/model';
 import { PENDING_APPROVALS_QUERY_KEY } from '@/layers/entities/attention';
 import { permissionKeys } from '@/layers/entities/permissions';
@@ -12,7 +14,7 @@ import { describeDecisionRefusal } from '@/layers/shared/lib';
  * (spec `agent-permissions` D7).
  *
  * The server broadcasts `approval_resolved`, which retires the card everywhere;
- * the local invalidation is the belt-and-braces path for a cockpit whose event
+ * the local invalidation is the belt-and-braces path for an app whose event
  * stream is momentarily down.
  *
  * `answer: 'always'` is refused outright when the request does not offer it,
@@ -30,15 +32,32 @@ export function useGrantApproval() {
   const transport = useTransport();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (opts: { approvalId: string; answer?: ApprovalAnswer }) =>
+    mutationFn: (opts: {
+      approvalId: string;
+      answer?: ApprovalAnswer;
+      receipt?: PendingApproval;
+      onDecided?: (id: string) => void;
+    }) =>
       transport.grantApproval(
         opts.approvalId,
         opts.answer === 'always' ? { answer: 'always' } : undefined
       ),
     meta: { suppressErrorToast: true },
+    onSuccess: (_data, variables) => {
+      // This runs even if the SSE refresh already unmounted the clicked card.
+      if (!variables.receipt) return;
+      variables.onDecided?.(variables.approvalId);
+      holdDecidedApproval(
+        variables.receipt,
+        variables.answer === 'always' ? 'granted-always' : 'granted'
+      );
+    },
     onError: (error, variables) => {
+      const code = (error as { code?: unknown } | null)?.code;
+      // The sheet already explained a cancelled or refused confirmation.
+      if (code === STEP_UP_REQUIRED_CODE) return;
       // A paid run the monthly limit stopped says so on its own card (DOR-4204).
-      if ((error as { code?: unknown } | null)?.code === 'SPEND_LIMIT') return;
+      if (code === 'SPEND_LIMIT') return;
       toast.error(describeDecisionRefusal(error, variables.answer === 'always').message);
     },
     onSettled: (_data, _error, variables) => {

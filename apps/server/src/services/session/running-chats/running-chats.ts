@@ -138,7 +138,7 @@ function ownerFolder(
 export interface RunningChatsReadOptions {
   /**
    * Leave every title out, the starter's too (DOR-3971). A title is often a chat's opening words,
-   * and a stranger can set a bridged group's name, so a Never ask turn reads none of them. The link
+   * and a stranger can set a bridged group's name, so a turn where the status reads run unasked reads none of them. The link
    * still opens the chat.
    */
   withoutTitles?: boolean;

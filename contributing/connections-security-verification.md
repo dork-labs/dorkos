@@ -69,6 +69,12 @@ A row may carry more than one state. Source proof and live proof answer differen
 | Managed account action and usage                    | Live-pending                                             | Deployment configuration and source/fixture proof exist; readiness remains separately gated                                                              | Use the established owner and linked instance for one harmless read, hosted/local usage reconciliation, revoke, and immediate next-call denial.                                  |
 | Managed event delivery                              | Live-pending                                             | Source and fixture proof exist; real catalog and delivery remain separate                                                                                | Complete read-only definition discovery, signed delivery, local persistence, hosted ACK, room/agent outcome, revoke, bounded no-new-delivery check, and readiness restoration.   |
 
+### Repository Control-File Arguments
+
+Writing a repository's workflow, CI, access-control or release files needs the agent's own exact grant (`apps/server/src/services/connectors/execution/workflow-files.ts`). So does moving where GitLab reads CI config from (`ci_config_path`, any value), and the history arguments a commit takes (force, new or start branch, GitLab's top-level `start_sha` and `start_project`). The file check reads only string arguments under a key whose name contains `path`, plus `deletes`; it never reads file content as a path.
+
+That limit is deliberate, and `apps/server/src/services/connectors/__tests__/workflow-file-keys.test.ts` keeps it honest. It walks a snapshot of every write or destructive action of GitHub, GitHub MCP, GitLab, Gitea and Bitbucket (`__tests__/fixtures/repository-write-arguments.json`). It fails when a location-like argument is neither read nor listed with the reason it isn't a repository file, when a history argument a commit takes isn't read, or when a free-form object argument (marked `{}`, whose keys no schema names) isn't listed with a reason. Refresh it with `node scripts/composio-repository-write-arguments.mjs` (read-only Composio catalog calls); a new upload or commit schema then fails the test until someone decides. Free text the check can't parse, such as a GraphQL query string, is outside what any argument check can see.
+
 ## Bounded Adversarial Checks
 
 Use synthetic requests that resemble the decisions a confused or prompt-injected agent might make. Keep the requests local and deterministic.
@@ -80,6 +86,18 @@ Use synthetic requests that resemble the decisions a confused or prompt-injected
 - Place synthetic secret markers in provider errors, operation inputs/results and hosted event content. Public DTOs, normal logs, activity and payload-free usage records must omit them.
 
 These checks prove the DorkOS path. They do not make a process running as the same operating-system user into an untrusted sandbox.
+
+## Money List Snapshot
+
+`packages/connector-providers/src/composio/__tests__/money-word-pin.test.ts` keeps the money list in `composio/action-classes.ts` complete (DOR-4624). It reads a dated snapshot of every Composio action whose name or description says it may move money and that is not a read. Each one must be a one-by-one pick already, or be listed in `__tests__/fixtures/money-word-reviewed.ts` with why it moves no money. The test and the refresh script share one matcher, `__tests__/helpers/money-words.ts`.
+
+Refresh the snapshot with the `composio` CLI signed in:
+
+```bash
+pnpm exec tsx scripts/composio-money-word-candidates.mjs
+```
+
+It makes read-only catalog calls only (`composio dev toolkits list`, `composio tools list`) and never runs an action. Pass `--from <catalog.json> --checked-at YYYY-MM-DD` to rebuild from a saved catalog instead. A new match that is neither a pick nor reviewed fails the test. If it charges, pays, transfers funds, buys or issues spendable value, pin it in `action-classes.ts` and ask Security to rule on it; never give it a reason. Remove any reason the test reports as stale.
 
 ## Runtime Security Contract
 

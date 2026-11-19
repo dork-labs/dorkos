@@ -113,4 +113,30 @@ describe('settleRunAllowList', () => {
     const task = createMockSchedule({ approvedAllow: ['Read(notes/today.md)'] });
     await expect(settleRunAllowList(task, scheduled, src(false))).resolves.toBe(task);
   });
+
+  describe('a recurring task an agent moved off Bypass (PR 2)', () => {
+    const recurring = () =>
+      createMockSchedule({ approvedAllow: [rule], permissionMode: 'dontAsk', cron: '0 * * * *' });
+
+    it.each(['scheduled', 'manual', 'agent'] as const)(
+      'carries its list on a %s run while its programs and its agent’s level hold',
+      async (trigger) => {
+        const task = recurring();
+        await expect(settleRunAllowList(task, { trigger }, src())).resolves.toBe(task);
+      }
+    );
+
+    it.each(['scheduled', 'manual', 'agent'] as const)(
+      'refuses a %s run whose program changed, or whose agent dropped below Full',
+      async (trigger) => {
+        await expect(settleRunAllowList(recurring(), { trigger }, src(false))).rejects.toThrow(
+          LEVEL_DROPPED_MESSAGE
+        );
+        await fs.writeFile(program, '#!/bin/sh\necho changed\n');
+        await expect(settleRunAllowList(recurring(), { trigger }, src())).rejects.toThrow(
+          PROGRAM_CHANGED_MESSAGE
+        );
+      }
+    );
+  });
 });

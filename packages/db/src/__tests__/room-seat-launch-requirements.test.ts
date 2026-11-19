@@ -1,13 +1,41 @@
 /** Real registered migration preserves one immutable recovery constraint per failed source. */
-import { readFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createDb, runMigrations, type Db } from '../index.js';
+import { createDb, type Db } from '../index.js';
+const TAG = '20261118085342_room_seat_launch_requirements';
+const migrationDirectory = fileURLToPath(new URL('../../drizzle/', import.meta.url));
+const directories: string[] = [];
 let db: Db;
 beforeEach(() => {
   db = createDb(':memory:');
-  runMigrations(db);
+  migrate(db, { migrationsFolder: migrationsThroughLaunchRequirements() });
 });
-afterEach(() => db.$client.close());
+afterEach(() => {
+  db.$client.close();
+  for (const directory of directories.splice(0))
+    rmSync(directory, { recursive: true, force: true });
+});
+
+/** The down cases begin where this migration is latest, as in production when it ships. */
+function migrationsThroughLaunchRequirements(): string {
+  const directory = mkdtempSync(join(tmpdir(), 'room-seat-launch-'));
+  directories.push(directory);
+  mkdirSync(join(directory, 'meta'));
+  const journal = JSON.parse(
+    readFileSync(join(migrationDirectory, 'meta/_journal.json'), 'utf8')
+  ) as { entries: { idx: number; tag: string }[] };
+  const target = journal.entries.find((entry) => entry.tag === TAG);
+  if (!target) throw new Error('Missing room seat launch requirements migration');
+  const entries = journal.entries.filter((entry) => entry.idx <= target.idx);
+  for (const entry of entries)
+    copyFileSync(join(migrationDirectory, `${entry.tag}.sql`), join(directory, `${entry.tag}.sql`));
+  writeFileSync(join(directory, 'meta/_journal.json'), JSON.stringify({ ...journal, entries }));
+  return directory;
+}
 const downSql = () =>
   readFileSync(
     new URL('../down/20261118085342_room_seat_launch_requirements.down.sql', import.meta.url),

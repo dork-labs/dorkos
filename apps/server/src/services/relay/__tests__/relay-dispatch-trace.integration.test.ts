@@ -15,14 +15,26 @@
  * (in-memory) database — a mock trace store would only prove what the mock was
  * told to record.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { RelayCore } from '@dorkos/relay';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
+import { loadCeilingMs } from '@dorkos/shared/test-budget';
 import { TraceStore } from '../trace-store.js';
+
+/**
+ * Every case boots and closes a real RelayCore (Maildir, watchers), and on a
+ * loaded machine `close()` outruns vitest's 10s hook default on healthy code
+ * (DOR-2021). Sized from the load clamp's worst case: 20s per test, 40s per
+ * hook. The 60s cap only bites if LOAD_SCALE_MAX rises.
+ */
+vi.setConfig({
+  testTimeout: loadCeilingMs(5_000),
+  hookTimeout: Math.min(60_000, loadCeilingMs(10_000)),
+});
 
 describe('a dispatch that crosses the relay is one trace', () => {
   let dataDir: string;

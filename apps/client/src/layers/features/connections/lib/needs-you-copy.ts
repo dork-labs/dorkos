@@ -12,6 +12,7 @@ import type {
   MiniAppAccessWaiting,
 } from '@dorkos/shared/mini-app-access-schemas';
 import { accountAppName } from './app-list';
+import { isPaidAction, isPaidToolkit } from './paid-actions';
 
 /** One line pair for the strip. */
 export interface NeedsYouLine {
@@ -19,6 +20,8 @@ export interface NeedsYouLine {
   title: string;
   /** What it means: "Agents can't use it until you resume it." */
   detail: string;
+  /** The decision is about an app whose reads spend money: show the marker. */
+  paid?: boolean;
 }
 
 type Services = ReadonlyMap<string, ConnectorCatalogService>;
@@ -158,8 +161,15 @@ const MINI_APP_WAIT_DETAIL: Record<MiniAppAccessWaitReason, string> = {
  * @param services - Catalog services by id, for the app's name.
  */
 export function miniAppWaitingLine(item: MiniAppAccessWaiting, services: Services): NeedsYouLine {
+  const paid =
+    isPaidToolkit(item.service) ||
+    item.operations.some((operationSlug) => isPaidAction(item.service, operationSlug));
   return {
     title: `${item.extensionName} wants to read ${accountAppName(item.service, services)}`,
-    detail: MINI_APP_WAIT_DETAIL[item.reason],
+    detail:
+      paid && item.reason === 'new'
+        ? 'It could only read. Its reads spend money.'
+        : MINI_APP_WAIT_DETAIL[item.reason],
+    ...(paid ? { paid: true } : {}),
   };
 }

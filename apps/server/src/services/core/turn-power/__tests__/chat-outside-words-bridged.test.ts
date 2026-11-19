@@ -35,10 +35,25 @@ let db: Db;
 let counter = 0;
 const origins = new Map<string, string>();
 
-/** A chat a Telegram binding started. */
+/**
+ * A chat a Telegram binding started, with its launch origin stored as the registry stores it: the
+ * bridged-sender record is kept only for such a chat (DOR-4698), read from that stored row.
+ */
 function bridgedChat(label: string): string {
   const id = `bridged-${label}-${(counter += 1)}`;
   origins.set(id, 'relay-binding');
+  db.insert(sessionMetadata)
+    .values({
+      sessionId: id,
+      runtime: null,
+      createdAt: '2026-11-18',
+      launchOrigin: 'relay-binding',
+    })
+    .onConflictDoUpdate({
+      target: sessionMetadata.sessionId,
+      set: { launchOrigin: 'relay-binding' },
+    })
+    .run();
   return id;
 }
 

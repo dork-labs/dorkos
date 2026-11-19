@@ -365,6 +365,17 @@ export const SESSIONS = {
    */
   WARM_SLOT_WAIT_MS: 45 * 60 * 1000,
   /**
+   * How long after a turn ends a warm process is off limits to a reclaim
+   * (DOR-4498). A launch that finds only such processes waits for a slot.
+   *
+   * With more busy sessions than slots, most slots are mid-turn, so the only
+   * reclaimable processes are busy lanes between two turns. LRU took them: on
+   * 2026-11-18 the busiest lanes were relaunched every one to three minutes,
+   * each relaunch starting every MCP server again. Two minutes covers the gap
+   * between a busy lane's turns; a newcomer waits at most that long for a slot.
+   */
+  RECLAIM_GRACE_MS: 2 * 60 * 1000,
+  /**
    * How long a warm process must be CONTINUOUSLY quiet before its busy spell is
    * over (spec `warm-process-lifecycle` D1).
    *

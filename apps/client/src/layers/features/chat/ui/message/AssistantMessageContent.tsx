@@ -337,6 +337,7 @@ export function AssistantMessageContent({
       }
       return (
         <ApprovalCard
+          inChat
           key={`capability-approval-${part.approval.approvalId}`}
           approval={part.approval}
         />
@@ -393,6 +394,7 @@ export function AssistantMessageContent({
           approvalHasSuggestions={toolPart.approvalHasSuggestions}
           approvalAlwaysAllowScope={toolPart.approvalAlwaysAllowScope}
           approvalAlwaysAllowBreadth={toolPart.approvalAlwaysAllowBreadth}
+          approvalRequestCode={toolPart.approvalRequestCode}
           isActive={isActive}
           onDecided={onToolDecided ? () => onToolDecided(toolPart.toolCallId) : undefined}
           allowsDenyReason={allowsDenyReason}

@@ -4,6 +4,7 @@
  *
  * @module entities/extension/model/use-extension-decisions
  */
+import { STEP_UP_REQUIRED_CODE } from '@dorkos/shared/step-up';
 import { useMemo, useState, useSyncExternalStore } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -111,6 +112,8 @@ export interface DecisionAnswerInput {
 
 /** A one-time offer this client holds: the reply to an answer it gave. */
 interface LocalOffer {
+  requestCode?: string;
+  answerNeedsStepUp?: boolean;
   decisionId: string;
   text: string;
   expiresAt: number;
@@ -143,6 +146,8 @@ function publishOffers(): void {
     .filter((offer) => offer.expiresAt > now)
     .map((offer) => ({
       decisionId: offer.decisionId,
+      requestCode: offer.requestCode,
+      answerNeedsStepUp: offer.answerNeedsStepUp,
       text: offer.text,
       expiresAt: new Date(offer.expiresAt).toISOString(),
     }));
@@ -233,6 +238,7 @@ export function useExtensionDecisionActions(): ExtensionDecisionActions {
       if (!res.ok) {
         const err = await failureOf(res);
         // A question that changed is not a failure to shout about.
+        if (err.code === STEP_UP_REQUIRED_CODE) return null;
         if (err.code === DECISION_STALE_CODE) toast(err.message);
         else toast.error(err.message);
         return null;
@@ -243,6 +249,8 @@ export function useExtensionDecisionActions(): ExtensionDecisionActions {
         localOffers.set(decision.id, {
           decisionId: decision.id,
           text: response.offer.text,
+          requestCode: response.offer.requestCode,
+          answerNeedsStepUp: response.offer.answerNeedsStepUp,
           expiresAt: Date.now() + DECISION_OFFER_TTL_MS,
         });
         publishOffers();
@@ -263,7 +271,12 @@ export function useExtensionDecisionActions(): ExtensionDecisionActions {
 
   const offer = useMutation<string | null, Error, { decisionId: string; accept: boolean }>({
     mutationFn: async ({ decisionId, accept }) => {
-      if (localOffers.delete(decisionId)) publishOffers();
+      const listed =
+        queryClient.getQueryData<ListExtensionDecisionsResponse>(extensionDecisionsKey())?.offers;
+      const current =
+        localOffers.get(decisionId) ?? listed?.find((entry) => entry.decisionId === decisionId);
+      if ((!accept || current?.answerNeedsStepUp === false) && localOffers.delete(decisionId))
+        publishOffers();
       const res = await fetch(`${resolveApiBaseUrl()}/extension-decisions/${decisionId}/offer`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -272,15 +285,26 @@ export function useExtensionDecisionActions(): ExtensionDecisionActions {
       if (!res.ok) throw await failureOf(res);
       return DecisionOfferResponseSchema.parse(await res.json()).message;
     },
-    onSuccess: (message) => {
+    onMutate: ({ decisionId, accept }) =>
+      setInFlight((current) => new Map(current).set(decisionId, accept ? 'approve' : 'reject')),
+    onSuccess: (message, { decisionId }) => {
+      if (localOffers.delete(decisionId)) publishOffers();
       if (message) toast(message);
     },
     onError: (err: Error & { code?: string }, { accept }) => {
+      if (err.code === STEP_UP_REQUIRED_CODE) return;
       // A dismiss of an offer that already lapsed is not news.
       if (!accept && err.code === DECISION_OFFER_GONE_CODE) return;
       toast.error(err.message);
     },
-    onSettled: refresh,
+    onSettled: (_data, _error, { decisionId }) => {
+      setInFlight((current) => {
+        const next = new Map(current);
+        next.delete(decisionId);
+        return next;
+      });
+      refresh();
+    },
     meta: { suppressErrorToast: true },
   });
 

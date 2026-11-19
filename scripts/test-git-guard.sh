@@ -109,7 +109,7 @@ if command -v zsh >/dev/null 2>&1; then diff_shells+=("$(command -v zsh)"); fi
 differential() {
   local command=$1 actual=$2 shell
   case "$command" in *git*) ;; *) return ;; esac
-  if printf '%s' "$command" | grep -Eq '(^|[^[:alnum:]_])(kill|sudo)([^[:alnum:]_]|$)'; then
+  if grep <<<"$command" -Eq '(^|[^[:alnum:]_])(kill|sudo)([^[:alnum:]_]|$)'; then
     return
   fi
   for shell in "${diff_shells[@]}"; do
@@ -352,9 +352,9 @@ checkpoint_scratch=$(mktemp -d -t git-guard-checkpoint.XXXXXX)
   cd ../wt || exit 1
   echo edited >tracked.txt
   bash "$checkpoint"
-  git stash list | grep -q 'claude-checkpoint' || exit 1
+  git stash list | grep 'claude-checkpoint' >/dev/null || exit 1
   # And the checkpoint must actually hold the edit, not an empty tree.
-  git stash show -p 'stash@{0}' | grep -q '^+edited$' || exit 1
+  git stash show -p 'stash@{0}' | grep '^+edited$' >/dev/null || exit 1
 ) >/dev/null 2>&1
 check 'create-checkpoint.sh still records a checkpoint' 0 "$?"
 rm -rf "$checkpoint_scratch"

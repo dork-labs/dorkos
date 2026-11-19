@@ -45,6 +45,7 @@
 import type { TaskStore } from './task-store.js';
 import { isTerminalRunStatus } from './lifecycle/run-statuses.js';
 import { createTaggedLogger } from '../../lib/logger.js';
+import { RUN_START_WAIT_MS } from './timing/wake-settle.js';
 import type { CancelRunOutcome } from './run-cancel.js';
 
 const logger = createTaggedLogger('Tasks');
@@ -137,7 +138,9 @@ export class RunAccounting {
     this.preparing.delete(runId);
     // The grace on both branches: the relay awaits a task's delivery until its
     // deadline plus a grace (DOR-3033), and the slot must last as long.
-    const ttl = (maxRuntimeMs || RELAY_SLOT_DEFAULT_TTL_MS) + RELAY_SLOT_GRACE_MS;
+    // And the longest wait to start, since the run's own limit counts only after it.
+    const ttl =
+      (maxRuntimeMs || RELAY_SLOT_DEFAULT_TTL_MS) + RUN_START_WAIT_MS + RELAY_SLOT_GRACE_MS;
     this.runs.set(runId, { kind: 'relay', expiresAt: Date.now() + ttl });
   }
 

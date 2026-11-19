@@ -132,6 +132,7 @@ export type {
   CreateTaskRequest,
   CreateTaskInput,
   UpdateTaskRequest,
+  TriggerTaskRequest,
   ListTaskRunsQuery,
   RelayReceiptEvent,
   MessageDeliveredEvent,

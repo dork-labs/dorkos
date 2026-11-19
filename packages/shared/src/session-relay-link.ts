@@ -327,15 +327,7 @@ export const SessionRelayStatusSchema = z.object({
 /** See {@link SessionRelayStatusSchema}. */
 export type SessionRelayStatus = z.infer<typeof SessionRelayStatusSchema>;
 
-/**
- * The install owner's password, asked again before any change that opens this
- * computer wider through the API (and so through the agents' DorkOS tools):
- * linking, raising the level, resuming. An agent calling those routes like the
- * app does not have the password. It does not make linking agent-proof:
- * anything that can write the data folder (an agent with a shell, say) can
- * write a relay pin directly, as it could open any other channel. That is the
- * DOR-505 class, tracked separately. Never stored, logged or audited.
- */
+/** The owner's password for removing an approval passkey; never stored or logged. */
 const StepUpPasswordSchema = z.string().max(1024);
 
 /** `POST /api/session-relay/link`. */
@@ -344,22 +336,14 @@ export const SessionRelayLinkBodySchema = z.object({
   linkCode: z.string().min(1).max(512),
   /** The name to link with; this computer's own name when absent. */
   computerName: RelayLinkComputerNameSchema.optional(),
-  /** The owner's password; see `StepUpPasswordSchema`. */
-  password: StepUpPasswordSchema.optional(),
 });
 
 /** See {@link SessionRelayLinkBodySchema}. */
 export type SessionRelayLinkBody = z.infer<typeof SessionRelayLinkBodySchema>;
 
-/** `PATCH /api/session-relay/level`. Raising to `full` needs the owner's password. */
+/** `PATCH /api/session-relay/level`. Raising to `full` uses per-action confirmation. */
 export const SessionRelayLevelBodySchema = z.object({
   level: SessionRelayLevelSchema,
-  password: StepUpPasswordSchema.optional(),
-});
-
-/** `POST /api/session-relay/resume`: the owner's password. */
-export const SessionRelayResumeBodySchema = z.object({
-  password: StepUpPasswordSchema.optional(),
 });
 
 /** Why linking this computer to a hub did not happen. */
@@ -458,8 +442,6 @@ export const SessionRelayPasskeyLabelSchema = z
  * self-hosted hub names its own.
  */
 export const SessionRelayPasskeyStartBodySchema = z.object({
-  /** The owner's password; see `StepUpPasswordSchema`. */
-  password: StepUpPasswordSchema.optional(),
   label: SessionRelayPasskeyLabelSchema,
   /** The relying party: the approve page's host. Derived from `origin` when left out. */
   rpId: z.string().min(1).max(253).optional(),

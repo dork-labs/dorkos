@@ -34,28 +34,52 @@ export const ContextWarningDataSchema = z.object({
 
 /**
  * DorkOS ended this session's previous turn because the agent went quiet
- * (DOR-3307): a one-time note on the next turn, saying that DorkOS stopped it
- * and no person did.
- *
- * The note exists because the runtime's own record of the cutoff speaks for a
- * person. Claude Code writes `[Request interrupted by user]` for any
- * interrupt, and "The user doesn't want to proceed with this tool use" over a
- * tool that was running, and agents read both as a person's stop and waited
- * hours for one. SERVER-derived from the stall guard; nothing a caller can
- * supply.
+ * (DOR-3307).
  */
-export interface TurnCutoffData {
+export interface StalledTurnCutoff {
   /** How long the turn had gone without activity, in milliseconds. */
   windowMs: number;
   /** True when the turn never produced anything at all before the cutoff. */
   neverStarted: boolean;
 }
 
+/**
+ * Another chat's agent stopped this session's previous turn (DOR-4668): with
+ * `chat_stop`, or by sending it a message with `delivery: 'interrupt'`.
+ * Carries no name on purpose: a delivered message already names its sender
+ * inside its own fence, and this note sits outside any.
+ */
+export interface ChatStopCutoff {
+  /** Who stopped it: another chat, never a person. */
+  stoppedBy: 'chat';
+  /** `interrupt` when a message runs next because of it; `stop` for `chat_stop`. */
+  via: 'interrupt' | 'stop';
+}
+
+/**
+ * A one-time note on a session's next turn, saying who really ended the turn
+ * before it, and that no person did.
+ *
+ * The note exists because the runtime's own record of the stop speaks for a
+ * person. Claude Code writes `[Request interrupted by user]` for any
+ * interrupt, and "The user doesn't want to proceed with this tool use" over a
+ * tool that was running, and agents read both as a person's stop and waited
+ * hours for one. SERVER-derived from the stall guard and the chat-message
+ * service; nothing a caller can supply.
+ */
+export type TurnCutoffData = StalledTurnCutoff | ChatStopCutoff;
+
 /** Zod schema for {@link TurnCutoffData}. */
-export const TurnCutoffDataSchema = z.object({
-  windowMs: z.number().int().positive(),
-  neverStarted: z.boolean(),
-});
+export const TurnCutoffDataSchema = z.union([
+  z.object({
+    windowMs: z.number().int().positive(),
+    neverStarted: z.boolean(),
+  }),
+  z.object({
+    stoppedBy: z.literal('chat'),
+    via: z.enum(['interrupt', 'stop']),
+  }),
+]);
 
 /** Compiled release facts owed to an agent's first ordinary turn after an update. */
 export interface NewSinceData {

@@ -311,7 +311,13 @@ started=$(date +%s)
 out=$(DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_WAIT_SECONDS=20 \
   bash "$CHECK" bash "$CHECK" bash -c 'echo nested-ran' 2>&1)
 check_eq 'a nested call runs straight through' 'nested-ran' "$out"
-check_le 'a nested call does not wait on its parent' 2 "$(($(date +%s) - started))"
+# The property is "it never queued", and the exact output above already proves
+# it: a call that waited prints the queueing line. check_lacks only gives that a
+# clearer failure message. The clock is a backstop against a silent wait, so its
+# bound sits well under the 20s wait rather than at the cost of starting bash and
+# perl twice, which a loaded machine stretches past 2s (DOR-2021).
+check_lacks 'a nested call never queues behind its parent' 'queueing' "$out"
+check_le 'a nested call does not wait on its parent' 10 "$(($(date +%s) - started))"
 
 locks=$(new_locks)
 start_holder "$locks" 30
@@ -319,7 +325,9 @@ started=$(date +%s)
 out=$(CI=true DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_WAIT_SECONDS=20 \
   bash "$CHECK" bash -c 'echo ci-ran' 2>&1)
 check_eq 'under CI the command runs with no lock message' 'ci-ran' "$out"
-check_le 'under CI nothing waits' 2 "$(($(date +%s) - started))"
+# Same backstop as the nested case: the exact output above already proves no
+# lock message, so the clock only has to stay well under the 20s wait.
+check_le 'under CI nothing waits' 10 "$(($(date +%s) - started))"
 signal_tree KILL "$holder"
 wait "$holder" 2>/dev/null
 

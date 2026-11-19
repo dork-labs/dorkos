@@ -67,7 +67,7 @@ function inProcessRouter(): ExtensionHttpHandler {
   fn(mod.exports, () => ({}), mod);
   const router = Router();
   (mod.exports as (r: Router, c: unknown) => void)(router, {
-    requirePerson: createRequirePerson(NAME),
+    requirePerson: createRequirePerson('router-test', NAME),
   });
   return bridgeExpressRouter(router);
 }

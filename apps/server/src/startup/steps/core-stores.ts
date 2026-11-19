@@ -39,6 +39,10 @@ import {
   getExtensionInbox,
 } from '../../services/extensions/inbox/extension-inbox.js';
 import { getStartWorkService } from '../../services/extensions/start-work.js';
+import {
+  PersonRecordStore,
+  setPersonRecordStore,
+} from '../../services/extensions/person-record/person-record.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { setContinuationHoldDb } from '../../services/core/turn-power/continuation-hold.js';
 import {
@@ -179,6 +183,8 @@ export async function wireCoreStores(refs: ServerRefs, built: WireCoreStoresInpu
     })
   );
   getExtensionInbox()?.prune();
+  // What extensions recorded during a signed-in person's request (DOR-4301).
+  setPersonRecordStore(new PersonRecordStore(db));
 
   // A session's usage limit, kept so a restart or an idle eviction does not
   // turn a limited session back into a merely failed one (spec

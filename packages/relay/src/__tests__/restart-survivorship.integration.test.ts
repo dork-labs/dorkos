@@ -14,6 +14,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { loadCeilingMs, loadScaledMs } from '@dorkos/shared/test-budget';
 import { RelayCore } from '../relay-core.js';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 
@@ -22,9 +23,14 @@ const NEVER_MS = 60 * 60 * 1000;
 
 const PERSIST_SUBJECT = 'relay.inbox.persist.survivor';
 
-/** Poll until `collected` reaches `expectedLength` — avoids arbitrary sleeps. */
+/**
+ * Poll until `collected` reaches `expectedLength` — avoids arbitrary sleeps.
+ *
+ * The deadline is sampled when the wait starts, widened by the load right then:
+ * a fixed 2s was a claim about how fast the machine is (DOR-2021).
+ */
 async function waitForDrain(collected: unknown[], expectedLength: number): Promise<void> {
-  const deadline = Date.now() + 2_000;
+  const deadline = Date.now() + loadScaledMs(2_000);
   while (collected.length < expectedLength) {
     if (Date.now() > deadline) {
       throw new Error(`drain timed out at ${collected.length}/${expectedLength}`);
@@ -44,56 +50,67 @@ afterEach(async () => {
 });
 
 describe('message survivorship across a RelayCore restart', () => {
-  it('a consumer reconnecting after restart drains the persistent mail buffered before the crash', async () => {
-    // --- Before the crash: two messages land in a persistent inbox that has no
-    //     live subscriber (the consumer is offline).
-    const relay1 = new RelayCore({
-      dataDir: tmpDir,
-      gcIntervalMs: NEVER_MS,
-      ttlSweepIntervalMs: NEVER_MS,
-    });
-    await relay1.registerEndpoint(PERSIST_SUBJECT);
-    await relay1.publish(PERSIST_SUBJECT, { seq: 1 }, { from: 'relay.agent.sender' });
-    await relay1.publish(PERSIST_SUBJECT, { seq: 2 }, { from: 'relay.agent.sender' });
-    await relay1.close();
+  // Two RelayCore boots, a full sweep and two load-scaled drains: the timeout is
+  // sized from the worst case those waits can grow to, not vitest's 5s default.
+  it(
+    'a consumer reconnecting after restart drains the persistent mail buffered before the crash',
+    { timeout: loadCeilingMs(10_000) },
+    async () => {
+      // --- Before the crash: two messages land in a persistent inbox that has no
+      //     live subscriber (the consumer is offline).
+      const relay1 = new RelayCore({
+        dataDir: tmpDir,
+        gcIntervalMs: NEVER_MS,
+        ttlSweepIntervalMs: NEVER_MS,
+      });
+      try {
+        await relay1.registerEndpoint(PERSIST_SUBJECT);
+        await relay1.publish(PERSIST_SUBJECT, { seq: 1 }, { from: 'relay.agent.sender' });
+        await relay1.publish(PERSIST_SUBJECT, { seq: 2 }, { from: 'relay.agent.sender' });
+      } finally {
+        await relay1.close();
+      }
 
-    // --- Restart with reaping aggressive (retention 0). The construction sweep
-    //     runs immediately (deferring reaping); persistent inboxes are exempt
-    //     regardless. Instead of racing the fire-and-forget construction sweep
-    //     with a sleep, deterministically await an explicit FULL sweep — reaping
-    //     active, retention 0 — which is a strictly stronger destruction attempt
-    //     than the deferred construction sweep. The durable inbox must survive it.
-    const relay2 = new RelayCore({
-      dataDir: tmpDir,
-      gcIntervalMs: NEVER_MS,
-      ttlSweepIntervalMs: NEVER_MS,
-      orphanMaildirRetentionMs: 0,
-    });
-    const sweep = await relay2.runGcSweep();
-    expect(sweep?.orphansReaped).toBe(0);
+      // --- Restart with reaping aggressive (retention 0). The construction sweep
+      //     runs immediately (deferring reaping); persistent inboxes are exempt
+      //     regardless. Instead of racing the fire-and-forget construction sweep
+      //     with a sleep, deterministically await an explicit FULL sweep — reaping
+      //     active, retention 0 — which is a strictly stronger destruction attempt
+      //     than the deferred construction sweep. The durable inbox must survive it.
+      const relay2 = new RelayCore({
+        dataDir: tmpDir,
+        gcIntervalMs: NEVER_MS,
+        ttlSweepIntervalMs: NEVER_MS,
+        orphanMaildirRetentionMs: 0,
+      });
+      try {
+        const sweep = await relay2.runGcSweep();
+        expect(sweep?.orphansReaped).toBe(0);
 
-    // --- The consumer reconnects: re-register the endpoint (boot re-registration).
-    //     Nothing was destroyed by the restart or construction sweep: both
-    //     messages are still on disk and readable.
-    await relay2.registerEndpoint(PERSIST_SUBJECT);
-    const beforeDrain = await relay2.readInbox(PERSIST_SUBJECT, { status: 'unread' });
-    expect(beforeDrain.messages).toHaveLength(2);
+        // --- The consumer reconnects: re-register the endpoint (boot re-registration).
+        //     Nothing was destroyed by the restart or construction sweep: both
+        //     messages are still on disk and readable.
+        await relay2.registerEndpoint(PERSIST_SUBJECT);
+        const beforeDrain = await relay2.readInbox(PERSIST_SUBJECT, { status: 'unread' });
+        expect(beforeDrain.messages).toHaveLength(2);
 
-    // Now subscribe. The late subscriber must drain the pre-restart backlog.
-    const drained: RelayEnvelope[] = [];
-    relay2.subscribe(PERSIST_SUBJECT, (envelope) => {
-      drained.push(envelope);
-    });
+        // Now subscribe. The late subscriber must drain the pre-restart backlog.
+        const drained: RelayEnvelope[] = [];
+        relay2.subscribe(PERSIST_SUBJECT, (envelope) => {
+          drained.push(envelope);
+        });
 
-    await waitForDrain(drained, 2);
-    const seqs = drained.map((e) => (e.payload as { seq: number }).seq).sort();
-    expect(seqs).toEqual([1, 2]);
+        await waitForDrain(drained, 2);
+        const seqs = drained.map((e) => (e.payload as { seq: number }).seq).sort();
+        expect(seqs).toEqual([1, 2]);
 
-    // A fresh publish after reconnection also reaches the live subscriber.
-    await relay2.publish(PERSIST_SUBJECT, { seq: 3 }, { from: 'relay.agent.sender' });
-    await waitForDrain(drained, 3);
-    expect(drained.map((e) => (e.payload as { seq: number }).seq).sort()).toEqual([1, 2, 3]);
-
-    await relay2.close();
-  });
+        // A fresh publish after reconnection also reaches the live subscriber.
+        await relay2.publish(PERSIST_SUBJECT, { seq: 3 }, { from: 'relay.agent.sender' });
+        await waitForDrain(drained, 3);
+        expect(drained.map((e) => (e.payload as { seq: number }).seq).sort()).toEqual([1, 2, 3]);
+      } finally {
+        await relay2.close();
+      }
+    }
+  );
 });

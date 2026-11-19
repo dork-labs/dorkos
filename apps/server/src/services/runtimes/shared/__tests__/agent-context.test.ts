@@ -882,6 +882,24 @@ describe('<working_rules>', () => {
     expect(rules.indexOf(rule)).toBeLessThan(rules.indexOf('A no, a "stop"'));
   });
 
+  // Red when: the shell-shape line (DOR-3109) is dropped, reworded, copied a
+  // second time, or moved where a toggle could gate it. Claude Code can't check
+  // a `cd x && …` chain or an inline `$VAR` before it runs, so it asks a person;
+  // this line is what keeps those cards away from the owner.
+  it('carries the shell-shape line exactly once, inside the block', async () => {
+    vi.mocked(readManifest).mockResolvedValue(
+      createTestManifest({ conventions: { soul: false, nope: false, dorkosKnowledge: false } })
+    );
+
+    const text = (await buildAgentContextAppend(testHome('/test'), '/test')).text;
+    const rule =
+      'Shell: one command per call. Pass a path instead of cd-ing first; no && chains, no inline $VARS.';
+    expect(text.split(rule)).toHaveLength(2);
+    const rules = rulesIn(text);
+    expect(rules).toContain(rule);
+    expect(rules.indexOf(rule)).toBeLessThan(rules.indexOf('A no, a "stop"'));
+  });
+
   // Red when: anything per-session is interpolated. It sits in claude-code's
   // cached prefix and codex's stable half.
   it('is byte-identical between two different sessions', async () => {

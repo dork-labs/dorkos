@@ -130,11 +130,13 @@ export function personAwareFetch(base: typeof fetch, origin: string): typeof fet
     // "Confirm it's you" for one action: the server held it, and runs it only
     // once the person confirms. An expired one is asked for again, a few times.
     let afterExpiry = false;
+    let afterDifferent = false;
     for (let asks = 0; asks < MAX_STEP_UP_ASKS; asks++) {
       const held = await heldActionOf(res);
       if (held === null) break;
-      const outcome = await requestActionStepUp(held.id, { afterExpiry });
-      afterExpiry = outcome.kind === 'ask-again';
+      const outcome = await requestActionStepUp(held.id, { afterExpiry, afterDifferent });
+      afterDifferent = outcome.kind === 'ask-again' && outcome.reason === 'different-request';
+      afterExpiry = outcome.kind === 'ask-again' && !afterDifferent;
       if (outcome.kind === 'confirmed') return confirmedResponse(outcome.status, outcome.result);
       if (outcome.kind === 'not-confirmed') return refusalResponse(held.refusal);
       // A new sign-in first. The old held action was dropped and never moves to

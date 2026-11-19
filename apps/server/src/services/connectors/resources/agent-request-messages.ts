@@ -19,6 +19,7 @@ import {
   type AppReachProblem,
 } from '../app-connection-way.js';
 import { splitWords } from '../recommend/intent-match.js';
+import { outsideLevelsGrantedNote } from '../access/level-gap-lines.js';
 
 const MAX_SERVICE_SUGGESTIONS = 5;
 
@@ -155,6 +156,30 @@ export function setupRequestNote(app: string, reason: ConnectorAppSetupReason): 
     `long they take. Once they connect ${app}, their answer comes back to this chat, so ` +
     "don't ask again."
   );
+}
+
+/**
+ * The first line of a granted note: what the agent can now do in the app,
+ * and, once the answer holds a change a level includes in an app that offers
+ * "Read and write", which changes that level never covers (DOR-4678). An
+ * answer of only one-at-a-time actions, or an app with no such level, gets
+ * no such note: it would name a level the agent doesn't hold.
+ *
+ * @param app - The app's display name.
+ * @param answer - What the answer holds, and how the app offers changes.
+ */
+export function grantedLine(
+  app: string,
+  answer: {
+    readonly held: ReadonlySet<string>;
+    readonly heldLevelWrite: boolean;
+    readonly offers: Readonly<Record<RequestClass, ClassOffer>>;
+  }
+): string {
+  const line = `You can now ${grantedVerb(answer.held)} ${app}.`;
+  return answer.heldLevelWrite && answer.offers.write === 'level'
+    ? `${line} ${outsideLevelsGrantedNote(app)}`
+    : line;
 }
 
 /** What a granted agent can now do in an app, in words. */

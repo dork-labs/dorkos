@@ -38,6 +38,19 @@ describe('buildWaitingNotice', () => {
     );
   });
 
+  // DOR-4610: the card is right there in the room, so the line points at it.
+  it('points at the card when it is shown in this room, and only for an approval', () => {
+    expect(buildWaitingNotice('Ana', 'author-ana', 'approval', { cardHere: true })).toEqual({
+      text: 'Ana is waiting for your approval. Answer the card here or in Needs you. New messages for Ana wait with it.',
+      notice: 'awaiting_approval',
+      subjectAuthorId: 'author-ana',
+      waitingKind: 'approval',
+    });
+    expect(buildWaitingNotice('Ana', 'author-ana', 'question', { cardHere: true }).text).toBe(
+      buildWaitingNotice('Ana', 'author-ana', 'question').text
+    );
+  });
+
   it('carries no countdown, because a durable line cannot hold one honestly', () => {
     for (const kind of KINDS) {
       const { text } = buildWaitingNotice('Ana', 'author-ana', kind);

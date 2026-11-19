@@ -68,7 +68,7 @@ async function handedOver() {
   };
   const signIns = { current: null, active: false, holds: () => false } as unknown as SignInWindow;
   service.handover = new BrowserHandover(browser, signIns, () => '/tmp/unused');
-  service.handover.useOutsideTurnCheck(async () => false);
+  service.handover.useOutsideTurnCheck(async () => null);
   await service.handover.ask(CHAT, 'wall', { name: 'Atlas', folder: '/agents/atlas' });
   const registry = composeRegistry(
     [createLocalBrowserDomain(service as unknown as LocalBrowserService)],

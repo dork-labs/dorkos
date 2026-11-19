@@ -21,6 +21,9 @@ function makeMockAdapterManager(overrides?: Record<string, unknown>) {
         status: { state: 'connected', messageCount: { inbound: 5, outbound: 3 }, errorCount: 0 },
       },
     ]),
+    getAdapter: vi.fn((id: string) =>
+      id === 'tg-main' ? { config: { id, type: 'telegram', enabled: true } } : undefined
+    ),
     enable: vi.fn().mockResolvedValue(undefined),
     disable: vi.fn().mockResolvedValue(undefined),
     reload: vi.fn().mockResolvedValue(undefined),

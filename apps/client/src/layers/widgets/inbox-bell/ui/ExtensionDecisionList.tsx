@@ -10,6 +10,7 @@ import type {
   DecisionActionRequest,
   ExtensionDecisionDTO,
 } from '@dorkos/shared/extension-decision-schemas';
+import { useConfig } from '@/layers/entities/config';
 import { useExtensionDecisionActions } from '@/layers/entities/extension';
 import {
   InboxDecisionRow,
@@ -156,6 +157,7 @@ export function ExtensionDecisionList({
   onFocusSpent,
 }: ExtensionDecisionListProps) {
   const { answer, pendingFor } = useExtensionDecisionActions();
+  const answerContext = useConfig().data?.approvalAnswerContext;
   const listRef = useRef<HTMLDivElement>(null);
   if (decisions.length === 0) return null;
   const now = new Date();
@@ -260,11 +262,24 @@ export function ExtensionDecisionList({
             <InboxDecisionRow
               icon={MessageCircleQuestion}
               title={decision.title}
+              requestCode={decision.answerNeedsStepUp ? decision.requestCode : undefined}
+              answerContext={answerContext}
               why={decision.why}
               sourceLine={decision.extensionName}
               meta={sinceLine(decision.since, decision.raisedAt, now) ?? undefined}
               notice={decision.needsYou ? NEEDS_YOU : undefined}
-              more={decision.detail ? <p className="break-words">{decision.detail}</p> : undefined}
+              details={
+                decision.answerNeedsStepUp && decision.detail ? (
+                  <div className="max-h-40 overflow-auto break-words whitespace-pre-wrap">
+                    {decision.detail}
+                  </div>
+                ) : undefined
+              }
+              more={
+                !decision.answerNeedsStepUp && decision.detail ? (
+                  <p className="break-words">{decision.detail}</p>
+                ) : undefined
+              }
               onOpen={decision.link ? () => onNavigate(decision.link as string) : undefined}
               watch={
                 decision.watch

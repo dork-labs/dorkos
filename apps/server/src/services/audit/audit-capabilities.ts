@@ -312,8 +312,9 @@ export const auditDomain: CapabilityDomain = {
         'Every registered agent is listed, zero included, so you ' +
         'can see who is free. `total` is the live count for this server. A person’s own chat ' +
         'is counted in `privateCount` and never named. A `title` is null when the chat has ' +
-        "no title yet or it can't be read, or in a Never ask run, which leaves every title out " +
-        'because anyone in a bridged chat can set one; the link still opens the chat. ' +
+        "no title yet or it can't be read, or in a Claude Code run at Never ask, Ask first or " +
+        'Accept edits, which leaves every title out because anyone in a bridged chat can set ' +
+        'one; the link still opens the chat. ' +
         'Use the link, never the id, when you ' +
         'tell a person about a chat. `capacity` reports each capped backend’s live records ' +
         'and available starts, including reclaimable idle records. When every record is busy, ' +
@@ -327,10 +328,10 @@ export const auditDomain: CapabilityDomain = {
         mcp: { toolName: 'running_chats', ...READ_TOOL, servers: [...READ_TOOL.servers] },
         http: { method: 'get', path: '/api/sessions/running' },
       },
-      // A Never ask turn reads no titles: a stranger can set one (DOR-3971).
+      // Where the status reads run unasked, no titles: a stranger can set one (DOR-3971, DOR-4601).
       invoke: async (deps, _input, context) => {
         const audit = requireAuditDeps(deps);
-        const withoutTitles = context?.neverAsks === true;
+        const withoutTitles = context?.narrowedReads === true;
         const running = await listRunningChats(
           deps.operatorDeps?.meshCore,
           readerFor(audit, context),

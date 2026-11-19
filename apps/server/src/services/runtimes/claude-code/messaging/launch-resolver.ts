@@ -108,6 +108,7 @@ import { protectedFileMatcher } from '../tool-gate/protected-file-hook.js';
 import { turnReadRoots } from '../tool-gate/held-turn-reads.js';
 import { shellGuardMatcher } from '../shell-guard/shell-guard-launch.js';
 import { createNeverAskHook, turnOutsideChecks } from '../tool-gate/never-ask-hook.js';
+import { NOTE_WRITES_AFTER, noteWritesBefore } from '../tool-gate/extension-write-note.js';
 import { marksHold } from '../../../core/turn-power/turn-marks.js';
 import { marksOf } from '../../../core/turn-power/turn-levels.js';
 import { applyFolderAllowsToLaunch } from '../folder-settings/launch-folder-allows.js';
@@ -798,16 +799,23 @@ export async function resolveLaunch(args: {
   const resolveIdentity = createInSessionContextResolver(toolIdentity);
   const turnGrantPaths = (turnGrants ?? []).map((grant) => grant.path);
   const heldReadFolders = { cwd: effectiveCwd, roots: [effectiveCwd, ...turnGrantPaths] };
-  sdkOptions.canUseTool = createCanUseTool(session, logger, editBaselineCapture, resolveIdentity, {
+  // The status reads' outsider bound (DOR-3971, DOR-4601), shared by canUseTool and the hook.
+  const outsideChecks = turnOutsideChecks(session, sessionId, turnAgentPath);
+  const readRoots = turnReadRoots({
     cwd: effectiveCwd,
-    roots: turnReadRoots({
-      cwd: effectiveCwd,
-      agentHome: turnAgentPath,
-      grants: turnGrantPaths,
-      plugins: (opts.plugins ?? []).map((plugin) => plugin.path),
-      accountRoot,
-    }),
+    agentHome: turnAgentPath,
+    grants: turnGrantPaths,
+    plugins: (opts.plugins ?? []).map((plugin) => plugin.path),
+    accountRoot,
   });
+  sdkOptions.canUseTool = createCanUseTool(
+    session,
+    logger,
+    editBaselineCapture,
+    resolveIdentity,
+    { cwd: effectiveCwd, roots: readRoots },
+    outsideChecks
+  );
   // Pre-edit baseline capture must ALSO ride the SDK PreToolUse hook (DOR-212):
   // `canUseTool` is skipped entirely under `bypassPermissions`, but PreToolUse
   // hooks fire in every mode, before the tool runs. The matcher confines the
@@ -855,15 +863,10 @@ export async function resolveLaunch(args: {
       // per-call decision. Answers nothing in any other mode.
       {
         matcher: `^${IN_SESSION_TOOL_PREFIX}`,
-        hooks: [
-          createNeverAskHook(
-            session,
-            resolveIdentity,
-            logger,
-            ...turnOutsideChecks(session, sessionId, turnAgentPath)
-          ),
-        ],
+        hooks: [createNeverAskHook(session, resolveIdentity, logger, ...outsideChecks)],
       },
+      // Who wrote a mini app's files, so path trust runs only its author's unheld edits (DOR-4528).
+      noteWritesBefore(session, { sessionId, cwd: effectiveCwd, agentHome: turnAgentPath }),
       {
         matcher: 'Edit|Write|MultiEdit|NotebookEdit',
         hooks: [
@@ -900,10 +903,11 @@ export async function resolveLaunch(args: {
         hooks: [createClassifierContextHook({ sessionId, enabled: CLASSIFIER_CONTEXT_ON })],
       },
       ...auditHooks.PostToolUse,
+      NOTE_WRITES_AFTER,
     ],
     // A helper agent's tool calls never reach the stream the audit record
     // reads, so these record them (spec `audit-trail` PR3). Observe-only.
-    PostToolUseFailure: auditHooks.PostToolUseFailure,
+    PostToolUseFailure: [...auditHooks.PostToolUseFailure, NOTE_WRITES_AFTER],
     // Pending session timers, and the agent's own folder at turn end (`stop-hook.ts`).
     Stop: [{ hooks: [createStopHook(session, ownFolder.atTurnEnd)] }],
   };

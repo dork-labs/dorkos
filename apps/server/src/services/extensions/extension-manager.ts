@@ -79,6 +79,7 @@ import { isExpectedCopy, type ExpectedCopy } from './pin/extension-expected-copy
 import { bundleDigestOf, isPathTrustApproval } from './pin/extension-path-trust.js';
 import { isolationKeyOf } from './isolation/isolation-view.js';
 import { withoutExtension, withoutPersonChoices } from './rooms/extension-room-access.js';
+import { withRunApproval } from './pin/extension-approval-write.js';
 
 /**
  * How long discovery waits for a burst of project changes to settle before it
@@ -152,8 +153,6 @@ export interface ExtensionSkillDelivery {
  * Facade for the extension system.
  */
 export class ExtensionManager {
-  /** DorkOS's data directory, which every extension root is read relative to. */
-  readonly dorkHome: string;
   private discovery: ExtensionDiscovery;
   private compiler: ExtensionCompiler;
   private serverLifecycle: ExtensionServerLifecycle;
@@ -198,7 +197,8 @@ export class ExtensionManager {
   /**
    * Build the extension system rooted at one DorkOS data directory.
    *
-   * @param dorkHome - DorkOS's data directory.
+   * @param dorkHome - DorkOS's data directory, which every extension root is
+   *   read relative to.
    * @param coreExtensions - Tier metadata for the bundled core extensions.
    * @param options - Server lifecycle options (`ServerLifecycleOptions` in
    *   `extension-server-lifecycle.ts`): how long a server `register()` may
@@ -206,11 +206,10 @@ export class ExtensionManager {
    *   isolated extensions. Tests shorten them.
    */
   constructor(
-    dorkHome: string,
+    readonly dorkHome: string,
     coreExtensions: CoreExtensionInfo[] = [],
     options: Omit<ServerLifecycleOptions, 'recordOf' | 'onStatusChange'> = {}
   ) {
-    this.dorkHome = dorkHome;
     this.coreExtensions = new Map(coreExtensions.map((info) => [info.id, info]));
     this.discovery = new ExtensionDiscovery(dorkHome);
     this.compiler = new ExtensionCompiler(dorkHome);
@@ -990,21 +989,9 @@ export class ExtensionManager {
     ) {
       // A "Not now" for this id is answered by the approval, so it goes too
       // (DOR-2517): a later withdrawal plus reinstall asks again rather than
-      // staying silenced by a decline the person has since reversed.
-      const next = {
-        ...extensions,
-        approvedToRun: extensions.approvedToRun.includes(id)
-          ? extensions.approvedToRun
-          : [...extensions.approvedToRun, id],
-        approvedSources: { ...(extensions.approvedSources ?? {}), [id]: source },
-        approvedPermissions: { ...permissions, [id]: declared },
-      };
-      if (dismissed[id]) {
-        const remainingDismissals = { ...dismissed };
-        delete remainingDismissals[id];
-        next.dismissedApprovals = remainingDismissals;
-      }
-      configManager.set('extensions', next);
+      // staying silenced by a decline the person has since reversed. A yes to
+      // another copy drops the old copy's rooms and agents (DOR-4573).
+      configManager.set('extensions', withRunApproval(extensions, id, source, declared));
       logConfigWrite(
         'approving an extension to run',
         'extensions',
@@ -1015,7 +1002,7 @@ export class ExtensionManager {
 
     // A yes to these exact files runs them from their verified snapshot,
     // from the first start on, and the browser half is built from it again.
-    await placeSnapshots(this.dorkHome, [record], configManager.get('extensions'));
+    await placeSnapshots(this.dorkHome, [record], configManager.get('extensions'), live);
     if (record.bundleReady) applyCompileResult(record, await this.compiler.compile(record));
 
     if (this.needsServer(record)) {
@@ -1241,6 +1228,9 @@ export class ExtensionManager {
   getServerHandler(id: string): ExtensionHttpHandler | null {
     return this.serverLifecycle.getHandler(id);
   }
+
+  /** How the media route asks a running extension for a video (DOR-4321), or null. */
+  readonly getMediaFetch = (id: string) => this.serverLifecycle.mediaFetch(id);
 
   /**
    * Read a compiled bundle for serving to the client.

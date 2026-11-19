@@ -67,9 +67,8 @@ import {
   readEligibilityRules,
   refusalFor,
 } from '../../core/usage/account-eligibility.js';
-import { launchFallbackOrder } from '../../core/usage/account-ranking.js';
+import { launchFallbackOrder, mayAutoPickClaudeFolder } from '../../core/usage/account-ranking.js';
 import { isNeverUseClaudeFolder } from '../../health/account-signin-policy.js';
-import { mayAutoPickClaudeRoot } from './accounts/account-login-metadata.js';
 import {
   accountForPath,
   canonicalAccountPath,
@@ -125,6 +124,30 @@ export function listClaudeAccountFolderCandidates(home: string = os.homedir()): 
  */
 export function canonicalClaudeAccountPath(dir: string): string {
   return canonicalAccountPath(dir, os.homedir());
+}
+
+/** The name of the CLI config file Claude Code keeps for each account. */
+export const CLAUDE_CLI_CONFIG_FILE_NAME = '.claude.json';
+
+/**
+ * The CLI config file (`.claude.json`) Claude Code keeps for an account folder,
+ * mirroring the CLI's own rule 1:1: inside `$CLAUDE_CONFIG_DIR` when that is
+ * set, else beside the default folder in the home folder (`~/.claude.json`).
+ * The default folder always reaches the CLI as an unset variable (see
+ * {@link claudeConfigDirEnv}), so its file is the home folder's one.
+ *
+ * Names the file only; never reads it.
+ *
+ * @param root - An account folder, as the registry holds it.
+ * @returns The absolute path of that account's CLI config file.
+ */
+export function claudeCliConfigFile(root: string): string {
+  const home = os.homedir();
+  const isDefaultRoot =
+    canonicalAccountPath(root, home) === canonicalAccountPath(path.join(home, '.claude'), home);
+  return isDefaultRoot
+    ? path.join(home, CLAUDE_CLI_CONFIG_FILE_NAME)
+    : path.join(expandClaudeAccountHome(root), CLAUDE_CLI_CONFIG_FILE_NAME);
 }
 
 /**
@@ -485,8 +508,11 @@ export function resolveLaunchAccountRoot(opts: {
   const accountId = accountIdForRoot(root, config);
   const allowedHere = accountEligibility(config, 'claude-code', accountId, project).eligible;
   // An automatic rung keeps to sign-ins DorkOS may pick on its own: confirmed,
-  // or known before the upgrade (DOR-3245). A new or changed one is skipped.
-  if (allowedHere && mayAutoPickClaudeRoot(root)) return { ok: true, root, accountId };
+  // or known before the upgrade (DOR-3245), and not last seen signed out
+  // (DOR-4439). A new, changed or signed-out one is skipped.
+  if (allowedHere && mayAutoPickClaudeFolder(root)) {
+    return { ok: true, root, accountId };
+  }
   // The automatic choice may not work here: the next eligible account runs it.
   // Never credits: an automatic step may not start spending (ADR 261001-000811).
   const candidates = [
@@ -503,7 +529,7 @@ export function resolveLaunchAccountRoot(opts: {
     return row ? row.path : machineDefaultClaudeRoot(config);
   };
   const next = eligibleAccountIds(config, 'claude-code', [...new Set(candidates)], project).find(
-    (id) => mayAutoPickClaudeRoot(rootOf(id))
+    (id) => mayAutoPickClaudeFolder(rootOf(id))
   );
   if (next !== undefined) return { ok: true, root: rootOf(next), accountId: next };
   // No sign-in DorkOS may pick on its own: the folder's own default still runs.

@@ -57,9 +57,8 @@ import type {
   ChatStopNotice,
   SentChatMessage,
 } from '@dorkos/shared/chat-messages';
-import { logError, logger } from '../../../lib/logger.js';
 import { pausedChatMessageNote } from './chat-message-receipt.js';
-import { recordAudit } from '../../audit/audit-trail.js';
+import { chatStopByLine, stopChatTurn } from './stops/chat-stop-record.js';
 import {
   dispatchSessionMessage,
   isSessionLaunchRefusal,
@@ -371,8 +370,8 @@ export class ChatMessageService {
     if (delivery === 'interrupt' && result.queued && row.queueMessageId) {
       position = standing.moveToHead(chatId, row.queueMessageId);
       // Stopped AFTER the move, so the turn ending releases this message and
-      // not whatever was ahead of it.
-      const stopped = await this.deps.interruptTurn(chatId).catch(() => false);
+      // not whatever was ahead of it. Recorded as this chat's stop (DOR-4668).
+      const stopped = await stopChatTurn(this.deps, { chatId, sender: row, via: 'interrupt' });
       if (!stopped) note = 'Nothing was running there, so it simply runs next.';
     }
     note = pausedChatMessageNote({ status, chatId, cwd, agentPath: target.agent?.path }) ?? note;
@@ -546,7 +545,7 @@ export class ChatMessageService {
     const reason = input.reason?.trim() ? input.reason.trim().slice(0, CHAT_STOP_REASON_MAX) : null;
     const sender = this.agentFacts(caller.agentPath);
     const fromChatTitle = await this.deps.chatTitle(caller.sessionId).catch(() => null);
-    const byLine = `Stopped by ${sender.agentName}${fromChatTitle ? ` · ${fromChatTitle}` : ''}`;
+    const byLine = chatStopByLine(sender.agentName, fromChatTitle);
 
     // Other chats' queued messages go first, synchronously, so the turn ending
     // below cannot release one of them.
@@ -565,51 +564,25 @@ export class ChatMessageService {
       if (cancelQueuedMessage(input.chat, queued.id)) dropped += 1;
     }
 
-    const stopped = await this.deps.interruptTurn(input.chat).catch((err: unknown) => {
-      logger.warn('[chat_stop] could not stop a chat', { chat: input.chat, ...logError(err) });
-      return false;
-    });
-
-    this.deps.store.insert({
-      id: crypto.randomUUID(),
-      toSessionId: input.chat,
-      fromSessionId: caller.sessionId,
-      fromAgentPath: caller.agentPath,
-      fromAgentId: sender.agentId,
-      fromAgentName: sender.agentName,
-      fromChatTitle,
-      kind: 'stop',
-      text: reason ?? '',
-      summary: null,
-      nonce: null,
-      delivery: 'interrupt',
-      status: stopped ? 'delivered' : 'failed',
-      queueMessageId: null,
-      ceilingJson: JSON.stringify('runtime-default'),
-      replyToId: null,
-    });
-    recordAudit({
-      action: 'chat.stopped',
-      operation: 'execute',
-      target: {
-        type: 'session',
-        id: input.chat,
-        ...(await this.deps.chatTitle(input.chat).then(
-          (name) => (name ? { name } : {}),
-          () => ({})
-        )),
+    // The id it is known by now, where its windows and its "Stopped by" line read.
+    const chatId = await this.deps.canonicalId(input.chat).catch(() => input.chat);
+    const stopped = await stopChatTurn(this.deps, {
+      chatId,
+      sender: {
+        fromSessionId: caller.sessionId,
+        fromAgentPath: caller.agentPath,
+        fromAgentId: sender.agentId,
+        fromAgentName: sender.agentName,
+        fromChatTitle,
       },
-      outcome: stopped ? 'ok' : 'failed',
-      ...(reason ? { reason } : {}),
-      summary: stopped
-        ? `${byLine}${reason ? `: ${reason}` : ''}`
-        : `Tried to stop a chat that was not running`,
+      via: 'stop',
+      reason,
     });
     this.deps.emitActivity(caller.sessionId);
-    this.deps.emitActivity(input.chat);
+    this.deps.emitActivity(chatId);
     return {
       stopped,
-      chatId: input.chat,
+      chatId,
       droppedMessages: dropped,
       note: stopped
         ? `Stopped. The chat shows "${byLine}${reason ? `: ${reason}` : ''}".`

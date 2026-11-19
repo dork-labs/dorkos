@@ -6,7 +6,10 @@
 import { z } from 'zod';
 import { logger } from '../../lib/logger.js';
 import { InvalidSourceNameError } from '../../services/marketplace/sources/marketplace-source-manager.js';
-import { UnsupportedSourceUrlError } from '../../services/marketplace/sources/source-url-policy.js';
+import {
+  assertSupportedMarketplaceSourceUrl,
+  UnsupportedSourceUrlError,
+} from '../../services/marketplace/sources/source-url-policy.js';
 import {
   describeLastFetch,
   fetchNewSourceListing,
@@ -18,6 +21,7 @@ import { readQuery } from '../../http/request-query.js';
 import type { MarketplaceRouteDeps, MarketplaceRoutes } from '../marketplace.js';
 import type { MarketplaceContext, MarketplaceRouteContext } from './context.js';
 import { validationFailed } from './shared.js';
+import { runFrontDoorWrite } from '../front-door-step-up.js';
 
 /** Body schema for `POST /api/marketplace/sources`. */
 export const AddSourceBodySchema = z.object({
@@ -25,6 +29,28 @@ export const AddSourceBodySchema = z.object({
   source: z.string().min(1),
   enabled: z.boolean().optional(),
 });
+
+/**
+ * Answer an add that was refused. An address DorkOS will not fetch from is
+ * answered as the caller's input, naming the forms that do work; the address
+ * itself is logged rather than echoed, since the operator knows what they
+ * typed and the log is where a support question gets answered.
+ */
+function addRefused(c: MarketplaceContext, name: string, err: unknown): Response {
+  if (err instanceof InvalidSourceNameError) {
+    return c.json({ error: err.message }, 400);
+  }
+  if (err instanceof UnsupportedSourceUrlError) {
+    logger.warn('[Marketplace] Refused an unsupported source address', { name, url: err.url });
+    return c.json({ error: err.message }, 400);
+  }
+  const message = err instanceof Error ? err.message : 'Failed to add marketplace source';
+  if (message.includes('already exists')) {
+    return c.json({ error: message }, 409);
+  }
+  logger.error('[Marketplace] Failed to add source', err);
+  return c.json({ error: 'Failed to add marketplace source' }, 500);
+}
 
 /**
  * Register the `/sources` routes on the marketplace router.
@@ -79,39 +105,42 @@ export function mountSourceRoutes(
 
     const parsed = AddSourceBodySchema.safeParse(readJsonBody(c));
     if (!parsed.success) return validationFailed(c, parsed.error);
+    const input = parsed.data;
 
-    let created: MarketplaceSource;
+    // An address DorkOS will not fetch from, or a name already taken, is
+    // refused before anyone is asked to confirm; the add checks both again.
     try {
-      created = await sourceManager.add(parsed.data);
+      assertSupportedMarketplaceSourceUrl(input.source);
+      if ((await sourceManager.get(input.name)) !== null) {
+        return c.json({ error: `Marketplace source '${input.name}' already exists` }, 409);
+      }
     } catch (err) {
-      // An address DorkOS will not fetch from. Answered here rather than left
-      // to the 500 below: this is the caller's input, and the message names the
-      // forms that do work. The address itself is logged rather than echoed —
-      // the operator knows what they typed, and the log is where a support
-      // question gets answered.
-      if (err instanceof InvalidSourceNameError) {
-        return c.json({ error: err.message }, 400);
-      }
-      if (err instanceof UnsupportedSourceUrlError) {
-        logger.warn('[Marketplace] Refused an unsupported source address', {
-          name: parsed.data.name,
-          url: err.url,
-        });
-        return c.json({ error: err.message }, 400);
-      }
-      const message = err instanceof Error ? err.message : 'Failed to add marketplace source';
-      if (message.includes('already exists')) {
-        return c.json({ error: message }, 409);
-      }
-      logger.error('[Marketplace] Failed to add source', err);
-      return c.json({ error: 'Failed to add marketplace source' }, 500);
+      return addRefused(c, input.name, err);
     }
 
-    // One best-effort fetch of the new listing, the way refresh fetches it, so
-    // the first install does not need a refresh first (DOR-2304). It never
-    // throws: a failure is reported in `listing`, and the source stays saved.
-    const listing = await fetchNewSourceListing({ fetcher, cache }, created);
-    return c.json({ ...created, listing }, 201);
+    // A new source is a new place code can come from, so the owner confirms
+    // it's them first (DOR-4355). Removing one stays immediate.
+    return runFrontDoorWrite(c, {
+      kind: 'marketplace.source',
+      target: input.name,
+      input,
+      reason: `Add ${input.name} as a place packages can come from.`,
+      notes: [input.source],
+      subject: 'where packages come from',
+      run: async () => {
+        let created: MarketplaceSource;
+        try {
+          created = await sourceManager.add(input);
+        } catch (err) {
+          return addRefused(c, input.name, err);
+        }
+        // One best-effort fetch of the new listing, the way refresh fetches it, so
+        // the first install does not need a refresh first (DOR-2304). It never
+        // throws: a failure is reported in `listing`, and the source stays saved.
+        const listing = await fetchNewSourceListing({ fetcher, cache }, created);
+        return c.json({ ...created, listing }, 201);
+      },
+    });
   });
 
   // A source name rides in the path or, from the app, in `?name=`. The query form

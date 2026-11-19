@@ -53,8 +53,8 @@ export const RunningChatSchema = z.object({
   id: z.string(),
   /**
    * Its title, or null when it has none yet or it can't be read. The `running_chats` tool also
-   * leaves every title out (here and in `startedBy`) for a Never ask run, since
-   * anyone in a bridged chat can set one (DOR-3971).
+   * leaves every title out (here and in `startedBy`) for a Claude Code run at Never ask, Ask
+   * first or Accept edits, since anyone in a bridged chat can set one (DOR-3971, DOR-4601).
    */
   title: z.string().nullable(),
   /** A ready markdown link to the chat. */

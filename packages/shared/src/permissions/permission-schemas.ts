@@ -285,6 +285,12 @@ export type PermissionAnswer = (typeof PERMISSION_ANSWERS)[number];
  * created; this one records the answer itself.
  */
 export const PermissionAnsweredMetadataSchema = z.object({
+  /** Server-derived display fingerprint, shared with the request and confirmation. */
+  requestCode: z.string().optional(),
+  /** The stored device and route the answer came from. */
+  answeringFrom: z.string().optional(),
+  /** How this request's fresh confirmation was proved. */
+  confirmedWith: z.literal('password').optional(),
   /** The agent that asked, when DorkOS knows it. */
   agentId: z.string().optional(),
   /** The agent's project directory, when the gate recorded one. */

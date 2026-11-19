@@ -44,6 +44,7 @@ import {
 import { logger } from '../lib/logger.js';
 import { writerForPosture } from './permissions.js';
 import type { DocChannelHttpSource } from './canvas-doc-events.js';
+import { runFrontDoorWrite } from './front-door-step-up.js';
 
 const IdSchema = z.string().min(1).max(200);
 
@@ -260,16 +261,38 @@ export function createCanvasDocRouteControlRoutes(
     if (person instanceof Response) return person;
     try {
       const { id, routeId } = params(c);
-      const { controls: service, actor } = controls();
-      const { route, approvalId } = await service.approve(
-        id,
-        routeId,
-        readJsonBody(c),
-        actor(honoRequestFacts(c)),
-        person
-      );
-      auditAllow(person, id, route, approvalId);
-      return c.json({ route });
+      controls();
+      const body = readJsonBody(c);
+      // A standing route outlasts this request, so it waits for the owner (DOR-4355).
+      return await runFrontDoorWrite(c, {
+        kind: 'canvas.route-approve',
+        target: `${id}:${routeId}`,
+        input: { documentId: id, routeId, body },
+        reason: `Allow document events on route ${routeId}.`,
+        subject: 'which document routes are on',
+        run: async (who) => {
+          try {
+            // The person bars and the actor are read again, from the request that confirmed it.
+            const decided = decideAsPerson(who);
+            if (!('decision' in decided)) {
+              const { status, error, code } = decided.refusal;
+              return c.json({ error, code }, status as ContentfulStatusCode);
+            }
+            const { controls: service, actor } = controls();
+            const { route, approvalId } = await service.approve(
+              id,
+              routeId,
+              body,
+              actor(who),
+              decided.decision
+            );
+            auditAllow(decided.decision, id, route, approvalId);
+            return c.json({ route });
+          } catch (error) {
+            return failure(c, error);
+          }
+        },
+      });
     } catch (error) {
       return failure(c, error);
     }

@@ -55,7 +55,7 @@ const backend = {
 };
 const browser = new LocalBrowserService(process.env.DORK_HOME!, undefined, backend);
 const handover = new BrowserHandover(browser, signIns, () => process.env.DORK_HOME!);
-handover.useOutsideTurnCheck(async () => false);
+handover.useOutsideTurnCheck(async () => null);
 type Identity = {
   ua: string;
   brands: { brand: string; version: string }[];

@@ -23,6 +23,7 @@ import {
   type SchedulerRuntimes,
   type RelayRuntimePredicate,
 } from '../task-scheduler-service.js';
+import { RUN_START_WAIT_MS } from '../timing/wake-settle.js';
 import { assessTaskDispatch, RELAY_DISPATCH_OK } from '../../relay/task-dispatch/readiness.js';
 import { AdapterRegistry } from '@dorkos/relay';
 import type { AdapterStatus, RelayAdapter, RelayPublisher } from '@dorkos/relay';
@@ -2956,10 +2957,12 @@ describe('TaskSchedulerService', () => {
       await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
       await waitFor(() => expect(mockRelay.publish).toHaveBeenCalledOnce());
 
-      const [, , options] = mockRelay.publish.mock.calls[0];
-      // TTL should be roughly now + 600_000 (10 minutes)
-      expect(options.budget.ttl).toBeGreaterThanOrEqual(now + 600_000 - 1000);
-      expect(options.budget.ttl).toBeLessThanOrEqual(now + 600_000 + 5000);
+      const [, payload, options] = mockRelay.publish.mock.calls[0];
+      // TTL: the 10-minute limit plus the longest wait to start (DOR-4576). The
+      // limit itself travels on the payload, counted from when the turn starts.
+      expect(options.budget.ttl).toBeGreaterThanOrEqual(now + 600_000 + RUN_START_WAIT_MS - 1000);
+      expect(options.budget.ttl).toBeLessThanOrEqual(now + 600_000 + RUN_START_WAIT_MS + 5000);
+      expect(payload).toMatchObject({ timeLimitMs: 600_000 });
 
       await service.stop();
     });
@@ -2984,10 +2987,11 @@ describe('TaskSchedulerService', () => {
       await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
       await waitFor(() => expect(mockRelay.publish).toHaveBeenCalledOnce());
 
-      const [, , options] = mockRelay.publish.mock.calls[0];
-      // Default TTL: 3_600_000 (1 hour)
-      expect(options.budget.ttl).toBeGreaterThanOrEqual(now + 3_600_000 - 1000);
-      expect(options.budget.ttl).toBeLessThanOrEqual(now + 3_600_000 + 5000);
+      const [, payload, options] = mockRelay.publish.mock.calls[0];
+      // Default TTL: 3_600_000 (1 hour), plus the longest wait to start (DOR-4576).
+      expect(options.budget.ttl).toBeGreaterThanOrEqual(now + 3_600_000 + RUN_START_WAIT_MS - 1000);
+      expect(options.budget.ttl).toBeLessThanOrEqual(now + 3_600_000 + RUN_START_WAIT_MS + 5000);
+      expect(payload).toMatchObject({ timeLimitMs: 3_600_000 });
 
       await service.stop();
     });

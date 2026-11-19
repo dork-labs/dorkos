@@ -39,7 +39,7 @@ import { IMPLICIT_ACCOUNT_ID, type AccountUsage } from '@dorkos/shared/account-u
 import type { DeclaredPermissionModes } from '@dorkos/shared/permission-semantics';
 import type { SessionSettings } from '@dorkos/shared/schemas';
 import { logger } from '../../../lib/logger.js';
-import type { RankedAccount } from '../../core/usage/account-ranking.js';
+import { mayAutoPick, type RankedAccount } from '../../core/usage/account-ranking.js';
 import type { ReseatNoticeReason } from '../notices/notice-copy.js';
 import {
   canTakeWork,
@@ -82,7 +82,9 @@ export type AgentReseatRefusal =
   /** Its account's usage has no reading: unknown is a reason not to move, never to move. */
   | 'usage-unknown'
   /** Its account is below {@link AGENT_RESEAT_MIN_PCT}. */
-  | 'not-low-enough';
+  | 'not-low-enough'
+  /** The account it named was last seen signed out: only a person may move a seat there. */
+  | 'signed-out';
 
 /**
  * Whether this caller may move this seat by hand (Security Must 5): always a
@@ -418,10 +420,12 @@ export class RoomSeatMover {
       )
         .filter((row) => row.id !== current.id)
         .map((row) => {
-          const eligible = canTakeWork(row);
+          // A person may pick a signed-out account (it says so); its own agent may not.
+          const takes = canTakeWork(row);
+          const eligible = takes && (!opts.byAgent || mayAutoPick(row));
           // Core calls an account with any usage left eligible; a move also
           // skips one that is nearly out, and says so.
-          const reason = !eligible && row.eligible ? 'Almost out of usage' : row.reason;
+          const reason = !takes && row.eligible ? 'Almost out of usage' : row.reason;
           return { ...row, eligible, reason };
         }),
     };
@@ -467,7 +471,21 @@ export class RoomSeatMover {
       // Only a person naming one may use an account kept out of automatic moves.
       { keptOut: named && !opts.byAgent, signinHealthy: this.deps.signinHealthy }
     );
-    if (pick.kind === 'none') return null;
+    if (pick.kind === 'none') {
+      // Say why, rather than "no account left", when an agent named a signed-out
+      // one that its sign-in alone keeps it from (not nearly out, not kept out).
+      if (named && opts.byAgent && offered.some((row) => row.signedOut)) {
+        const signedIn = offered.map(({ signedOut: _signedOut, ...row }) => row);
+        const blockedBySignin =
+          pickReseatAccount(
+            signedIn,
+            { runtime, currentAccountId: current.id },
+            { keptOut: false, signinHealthy: this.deps.signinHealthy }
+          ).kind === 'move';
+        if (blockedBySignin) return { refused: 'signed-out' };
+      }
+      return null;
+    }
     return this.reseat(seat, {
       trigger: 'person',
       by: opts.by,

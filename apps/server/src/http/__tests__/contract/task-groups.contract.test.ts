@@ -45,6 +45,7 @@ import {
   type ContractCase,
   signInAt,
   stepUpAt,
+  confirmSetupAt,
 } from './harness.js';
 
 /** The repository root: the composed server's directory boundary. */
@@ -728,13 +729,16 @@ async function setup(
   method: string,
   url: string,
   body?: unknown,
-  headers: Record<string, string> = {}
+  headers: Record<string, string> = {},
+  confirmationPassword?: string
 ): Promise<{ json: Record<string, unknown>; headers: Headers }> {
-  const res = await fetch(new URL(url, server!.baseUrl), {
+  let res = await fetch(new URL(url, server!.baseUrl), {
     method,
     headers: { ...(body === undefined ? {} : { 'content-type': 'application/json' }), ...headers },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
+  if (confirmationPassword)
+    res = await confirmSetupAt(server!.baseUrl, res, confirmationPassword, headers);
   const text = await res.text();
   if (!res.ok) throw new Error(`${method} ${url} answered ${res.status}: ${text.slice(0, 300)}`);
   return { json: text ? (JSON.parse(text) as Record<string, unknown>) : {}, headers: res.headers };
@@ -1133,14 +1137,16 @@ describe('contract: the same groups with login on', () => {
       'PATCH',
       '/api/config',
       { auth: { enabled: true } },
-      { ...person, ...origin }
+      { ...person, ...origin },
+      OWNER.password
     );
     const created = await setup(
       server,
       'POST',
       '/api/auth/api-key/create',
       { name: 'c' },
-      { ...cookie, ...origin }
+      { ...cookie, ...origin },
+      OWNER.password
     );
     apiKey = { authorization: `Bearer ${created.json.key as string}` };
   }, BOOT_HOOK_TIMEOUT_MS);
@@ -1213,19 +1219,30 @@ describe('contract: the same groups with login on', () => {
         },
       },
     });
-    await check(server, {
+    // Arming it above Default waits for the owner's password (DOR-4355).
+    const held = await fetch(new URL(`/api/tasks/${id}`, server!.baseUrl), {
       method: 'PATCH',
-      path: `/api/tasks/${id}`,
-      headers: cookie,
-      body: { status: 'active', expectedApprovalRevision: proposed.json.approvalRevision },
-      expect: {
-        status: 200,
-        schema: TASK.extend({
-          status: z.literal('active'),
-          permissionMode: z.literal('acceptEdits'),
-        }),
-      },
+      headers: { ...cookie, origin: server!.baseUrl, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        status: 'active',
+        expectedApprovalRevision: proposed.json.approvalRevision,
+      }),
     });
+    expect(held.status).toBe(428);
+    const armed = await setup(
+      server,
+      'PATCH',
+      `/api/tasks/${id}`,
+      { status: 'active', expectedApprovalRevision: proposed.json.approvalRevision },
+      { ...cookie, origin: server!.baseUrl },
+      OWNER.password
+    );
+    expect(
+      TASK.extend({
+        status: z.literal('active'),
+        permissionMode: z.literal('acceptEdits'),
+      }).parse(armed.json)
+    ).toMatchObject({ id });
     await check(server, {
       method: 'DELETE',
       path: `/api/tasks/${id}`,

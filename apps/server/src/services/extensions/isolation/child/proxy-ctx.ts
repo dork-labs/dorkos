@@ -402,7 +402,13 @@ export function createProxyCtx(deps: ProxyCtxDeps): ProxyCtx {
     dorkHome: init.ctx.dorkHome,
     filesDir: init.ctx.filesDir,
   };
-  const locals: Record<string, unknown> = { schedule, requirePerson };
+  const recordRefused = () =>
+    Promise.reject(new Error('DorkOS recorded nothing. An isolated extension can’t record yet.'));
+  const locals: Record<string, unknown> = {
+    schedule,
+    requirePerson,
+    'personRecord.record': recordRefused,
+  };
 
   const build = (members: { readonly [name: string]: Kind }, prefix: string): object => {
     const out: Record<string, unknown> = {};

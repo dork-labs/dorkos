@@ -1,3 +1,4 @@
+import { createStepUpRoutes } from '../step-up.js';
 import {
   creditsAllowedForAgent,
   creditsIsDefaultFor,
@@ -28,12 +29,6 @@ vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../services/core/auth/session-gate.js')>();
   return { ...actual, decideSessionGate: vi.fn(actual.decideSessionGate) };
 });
-
-// The account that owns this install, for the credits-consent owner bar (DOR-2652).
-vi.mock('../../services/core/auth/index.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../services/core/auth/index.js')>()),
-  readOwnerAccount: () => ({ id: 'user_owner', name: 'Owner' }),
-}));
 
 vi.mock('../../services/core/cloud/credits-defaults.js', () => ({
   setCreditsAllowedForAgent: vi.fn(),
@@ -91,6 +86,7 @@ import { validateBoundary, validateBoundaryOrDorkHome, BoundaryError } from '../
 import { removeDorkDirectory } from '@dorkos/shared/manifest';
 import { logOrphanedInstalls } from '../../services/mesh/orphaned-installs.js';
 import { setOnAgentCreated } from '../../services/core/agent-created-hook.js';
+import { setTestOwner } from './test-owner.js';
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
@@ -144,10 +140,22 @@ describe('Mesh routes', () => {
   /** Serve the mesh routes behind the `/api` chain, recording into `activity` if given. */
   function mountMesh(activity?: ActivityService): void {
     fixtureTarget.mount(
-      honoGroupListener({
-        path: '/api/mesh',
-        routes: createMeshRoutes({ meshCore: meshCore as unknown as MeshCore, activity }),
-      })
+      honoGroupListener([
+        {
+          path: '/api/mesh',
+          routes: createMeshRoutes({ meshCore: meshCore as unknown as MeshCore, activity }),
+        },
+        {
+          path: '/api/step-up',
+          routes: createStepUpRoutes({
+            ownerId: () => 'user_owner',
+            checkPassword: async (password) => (password === 'made-up-password' ? 'ok' : 'wrong'),
+            minPasswordLength: async () => 8,
+            setOwnerPassword: async () => undefined,
+            trustedOrigins: () => ['http://localhost:4242'],
+          }),
+        },
+      ])
     );
   }
   /** Real directories a test made on disk, removed after it. */
@@ -161,6 +169,9 @@ describe('Mesh routes', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // A real owner account, for the credits-consent owner bar (DOR-2652). Every
+    // reader agrees there is one, so a change here needs the person's session.
+    setTestOwner('user_owner');
     // Reset validateBoundary to default passthrough
     vi.mocked(validateBoundary).mockImplementation(async (p: string) => p);
 
@@ -771,6 +782,16 @@ describe('Mesh routes', () => {
   // --- PATCH /agents/:id ---
 
   describe('PATCH /api/mesh/agents/:id', () => {
+    /**
+     * The next request comes from the owner in a browser session the gate
+     * proved: with an owner, a change at this computer needs one (DOR-3330).
+     */
+    const asThePerson = () =>
+      vi.mocked(decideSessionGate).mockResolvedValueOnce({
+        allowed: true,
+        user: { userId: 'user_owner', credential: 'cookie', sessionId: 'fixture-owner-browser' },
+      });
+
     it('updates agent and returns updated manifest', async () => {
       const updated = { ...MOCK_MANIFEST, name: 'Updated Agent' };
       meshCore.update.mockReturnValue(updated);
@@ -871,6 +892,16 @@ describe('Mesh routes', () => {
           agentFile(),
           JSON.stringify({ ...MOCK_MANIFEST, readsOutsideText: true })
         );
+        // With an owner, a program here with no browser session is not the person.
+        const noSession = await request(fixtureServer)
+          .patch('/api/mesh/agents/agent-1')
+          .send({ readsOutsideText: false });
+        expect(noSession.status).toBe(403);
+        expect(noSession.body.code).toBe('person_only');
+        expect(meshCore.update).not.toHaveBeenCalled();
+        expect(onDisk().has('agent', 'agent-1')).toBe(true);
+
+        asThePerson();
         const off = await request(fixtureServer)
           .patch('/api/mesh/agents/agent-1')
           .send({ readsOutsideText: false });
@@ -928,9 +959,22 @@ describe('Mesh routes', () => {
       expect(meshCore.update).toHaveBeenCalledWith('agent-1', { displayName: 'Ana' });
     });
 
+    it('refuses a model change at this computer with no browser session once an owner exists (DOR-3330)', async () => {
+      // A program here that names no agent is not the person: with an owner,
+      // only the owner's proved session may change what an agent runs.
+      const res = await request(fixtureServer)
+        .patch('/api/mesh/agents/agent-1')
+        .send({ model: 'opus' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('NEEDS_APPROVAL');
+      expect(meshCore.update).not.toHaveBeenCalled();
+    });
+
     it('lets a person change an agent’s model here', async () => {
       meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, model: 'opus' });
 
+      asThePerson();
       const res = await request(fixtureServer)
         .patch('/api/mesh/agents/agent-1')
         .send({ model: 'opus' });
@@ -1009,6 +1053,7 @@ describe('Mesh routes', () => {
     it("carries an agent's model and effort through to the manifest write", async () => {
       meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, model: 'sonnet', effort: 'low' });
 
+      asThePerson();
       const res = await request(fixtureServer)
         .patch('/api/mesh/agents/agent-1')
         .send({ model: 'sonnet', effort: 'low' });
@@ -1026,6 +1071,7 @@ describe('Mesh routes', () => {
       // edits — a refusal here fails for reasons they cannot see or fix.
       meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, model: 'gpt-5.3-codex' });
 
+      asThePerson();
       const res = await request(fixtureServer)
         .patch('/api/mesh/agents/agent-1')
         .send({ model: 'gpt-5.3-codex' });
@@ -1051,7 +1097,8 @@ describe('Mesh routes', () => {
 
     // Only a person can put an agent on DorkOS credits (ADR 261001-000811): the
     // consent is recorded in DorkOS config, never trusted from the file.
-    it('records a person’s consent when they put an agent on DorkOS credits', async () => {
+    it('records no credits consent from an unconfirmed request', async () => {
+      meshCore.get.mockReturnValue(MOCK_MANIFEST);
       meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, account: 'dorkos-credits' });
       vi.mocked(setCreditsAllowedForAgent).mockClear();
 
@@ -1059,14 +1106,15 @@ describe('Mesh routes', () => {
         .patch('/api/mesh/agents/agent-1')
         .send({ account: 'dorkos-credits' });
 
-      expect(res.status).toBe(200);
-      expect(setCreditsAllowedForAgent).toHaveBeenCalledExactlyOnceWith('agent-1', true);
+      expect(res.body.heldActionId).toBeUndefined();
+      expect(setCreditsAllowedForAgent).not.toHaveBeenCalled();
     });
 
     it('withdraws the consent when a person moves the agent off credits', async () => {
       meshCore.update.mockReturnValue(MOCK_MANIFEST);
       vi.mocked(setCreditsAllowedForAgent).mockClear();
 
+      asThePerson();
       await request(fixtureServer).patch('/api/mesh/agents/agent-1').send({ account: null });
 
       expect(setCreditsAllowedForAgent).toHaveBeenCalledExactlyOnceWith('agent-1', false);
@@ -1104,6 +1152,7 @@ describe('Mesh routes', () => {
         meshCore.get.mockReturnValue({ ...MOCK_MANIFEST, account: 'dorkos-credits' });
         vi.mocked(creditsAllowedForAgent).mockReturnValue(true);
 
+        asThePerson();
         const res = await request(fixtureServer)
           .patch('/api/mesh/agents/agent-1')
           .send({ model: 'sonnet' });
@@ -1118,6 +1167,7 @@ describe('Mesh routes', () => {
         vi.mocked(creditsAllowedForAgent).mockReturnValue(true);
         meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, model: 'md_served' });
 
+        asThePerson();
         const res = await request(fixtureServer)
           .patch('/api/mesh/agents/agent-1')
           .send({ model: 'md_served' });
@@ -1127,12 +1177,14 @@ describe('Mesh routes', () => {
 
       it('judges by credits when the same request puts the agent on them, or credits are the default', async () => {
         meshCore.get.mockReturnValue(MOCK_MANIFEST);
+        asThePerson();
         const both = await request(fixtureServer)
           .patch('/api/mesh/agents/agent-1')
           .send({ account: 'dorkos-credits', model: 'sonnet' });
         expect(both.status).toBe(400);
 
         vi.mocked(creditsIsDefaultFor).mockReturnValue(true);
+        asThePerson();
         const inherited = await request(fixtureServer)
           .patch('/api/mesh/agents/agent-1')
           .send({ model: 'sonnet' });
@@ -1142,6 +1194,7 @@ describe('Mesh routes', () => {
       it('keeps the runtime’s own menu for an agent on its own sign-in, or one nobody allowed', async () => {
         meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, model: 'sonnet' });
         meshCore.get.mockReturnValue({ ...MOCK_MANIFEST, account: 'acme-corp' });
+        asThePerson();
         const own = await request(fixtureServer)
           .patch('/api/mesh/agents/agent-1')
           .send({ model: 'sonnet' });
@@ -1149,6 +1202,7 @@ describe('Mesh routes', () => {
 
         // A file naming credits nobody allowed runs on the default instead.
         meshCore.get.mockReturnValue({ ...MOCK_MANIFEST, account: 'dorkos-credits' });
+        asThePerson();
         const unallowed = await request(fixtureServer)
           .patch('/api/mesh/agents/agent-1')
           .send({ model: 'sonnet' });
@@ -1165,13 +1219,30 @@ describe('Mesh routes', () => {
         // Stands in for a browser session the gate proved.
         vi.mocked(decideSessionGate).mockResolvedValueOnce({
           allowed: true,
-          user: { userId, credential: 'cookie' },
+          user: { userId, credential: 'cookie', sessionId: 'fixture-owner-browser' },
         });
+        meshCore.get.mockReturnValue(MOCK_MANIFEST);
         meshCore.update.mockReturnValue({ ...MOCK_MANIFEST, account: 'dorkos-credits' });
         vi.mocked(setCreditsAllowedForAgent).mockClear();
-        return request(fixtureServer)
+        const response = await request(fixtureServer)
           .patch('/api/mesh/agents/agent-1')
+          .set('Origin', 'http://localhost:4242')
           .send({ account: 'dorkos-credits' });
+        if (userId === 'user_owner') {
+          expect(response.status).toBe(428);
+          expect(setCreditsAllowedForAgent).not.toHaveBeenCalled();
+        }
+        if (response.status !== 428) return response;
+        vi.mocked(decideSessionGate).mockResolvedValueOnce({
+          allowed: true,
+          user: { userId, credential: 'cookie', sessionId: 'fixture-owner-browser' },
+        });
+        const confirmed = await request(fixtureServer)
+          .post(`/api/step-up/${response.body.heldActionId}/password`)
+          .set('Origin', 'http://localhost:4242')
+          .send({ password: 'made-up-password' });
+        expect(confirmed.status).toBe(200);
+        return { ...response, status: confirmed.body.status, body: confirmed.body.result };
       }
 
       afterEach(async () => {
@@ -1187,7 +1258,7 @@ describe('Mesh routes', () => {
       });
 
       it('records the owner’s consent', async () => {
-        await patchAs('user_owner');
+        expect((await patchAs('user_owner')).status).toBe(200);
         expect(setCreditsAllowedForAgent).toHaveBeenCalledExactlyOnceWith('agent-1', true);
       });
     });
@@ -1208,6 +1279,7 @@ describe('Mesh routes', () => {
     it('reads null as "go back to inheriting the server default"', async () => {
       meshCore.update.mockReturnValue(MOCK_MANIFEST);
 
+      asThePerson();
       const res = await request(fixtureServer)
         .patch('/api/mesh/agents/agent-1')
         .send({ model: null, effort: null });

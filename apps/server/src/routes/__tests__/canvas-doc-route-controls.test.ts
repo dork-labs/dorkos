@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import request from '@dorkos/test-utils/supertest';
+import { confirmAuthFixture } from '../../services/core/auth/__tests__/confirm-write.js';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import {
   createDb,
@@ -112,8 +113,19 @@ function agent(id: string, name: string, agentPath: string) {
 }
 const review = (routeId: string, expiresAt = hour()) =>
   request(server).post(`${endpoint()}/routes/${routeId}/review`).send({ expiresAt });
-const approve = (routeId: string, body: object) =>
-  request(server).post(`${endpoint()}/routes/${routeId}/approve`).send(body);
+/** The owner's made-up password, which confirms a held allow. */
+const PASSWORD = 'correct-horse-battery-staple';
+/**
+ * Allow a route, confirming the held allow with the owner's password through
+ * the real step-up route (DOR-4355). A refusal before the hold answers as it did.
+ */
+const approve = (routeId: string, body: object, headers: Record<string, string> = {}) =>
+  confirmAuthFixture(
+    request(server).post(`${endpoint()}/routes/${routeId}/approve`).set(headers).send(body),
+    server,
+    { origin, ...headers },
+    PASSWORD
+  );
 async function allow(routeId: string) {
   const reviewed = await review(routeId);
   expect(reviewed.status).toBe(200);
@@ -438,20 +450,27 @@ describe('document route controls over the mounted app', () => {
     expect((await request(server).get(`${endpoint()}/routes`).set('Cookie', cookies)).status).toBe(
       200
     );
-    const created = await request(server)
-      .post('/api/auth/api-key/create')
-      .set('Cookie', cookies)
-      .set('Origin', origin)
-      .send({ name: 'routes' });
+    const created = await confirmAuthFixture(
+      request(server)
+        .post('/api/auth/api-key/create')
+        .set('Cookie', cookies)
+        .set('Origin', origin)
+        .send({ name: 'routes' }),
+      server,
+      { origin, cookie: cookies.map((value) => value.split(';')[0]).join('; ') },
+      'correct-horse-battery-staple'
+    );
     expect(created.status).toBe(200);
     const reviewed = await review('helper').set('Cookie', cookies);
     expect(reviewed.status).toBe(200);
     const body = { expiresAt: reviewed.body.expiresAt, reviewHash: reviewed.body.reviewHash };
-    const keyed = await approve('helper', body).set('Authorization', `Bearer ${created.body.key}`);
+    const keyed = await approve('helper', body, { authorization: `Bearer ${created.body.key}` });
     expect(keyed.status).toBe(403);
     expect(keyed.body.code).toBe('operator_cookie_required');
     expect(grantRows()).toHaveLength(0);
-    const approved = await approve('helper', body).set('Cookie', cookies);
+    const approved = await approve('helper', body, {
+      cookie: cookies.map((value) => value.split(';')[0]).join('; '),
+    });
     expect(approved.status).toBe(200);
     const approval = db
       .select()

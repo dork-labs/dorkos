@@ -9,6 +9,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { loadCeilingMs } from '@dorkos/shared/test-budget';
 import { RelayCore } from '../relay-core.js';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 
@@ -18,6 +19,17 @@ import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 
 /** A sweep interval large enough never to fire during a test. */
 const NEVER_MS = 60 * 60 * 1000;
+
+/**
+ * Every case here boots one or two real RelayCores (SQLite, Maildir, watchers)
+ * and runs real sweeps, so on a loaded machine bodies outrun vitest's 5s
+ * default on healthy code (DOR-2021). Sized from the load clamp's worst case:
+ * 20s per test, 40s per hook. The 60s cap only bites if LOAD_SCALE_MAX rises.
+ */
+vi.setConfig({
+  testTimeout: loadCeilingMs(5_000),
+  hookTimeout: Math.min(60_000, loadCeilingMs(10_000)),
+});
 
 let tmpDir: string;
 
@@ -451,10 +463,13 @@ describe('GC orphan maildir reaping', () => {
     const subject = 'relay.inbox.persist.survivor';
 
     const relay1 = new RelayCore({ dataDir: tmpDir, gcIntervalMs: NEVER_MS });
-    await relay1.registerEndpoint(subject);
-    await relay1.publish(subject, { keep: 'me' }, { from: 'relay.agent.sender' });
-    expect(await listDir(path.join(mailboxDir(subject), 'new'))).toHaveLength(1);
-    await relay1.close();
+    try {
+      await relay1.registerEndpoint(subject);
+      await relay1.publish(subject, { keep: 'me' }, { from: 'relay.agent.sender' });
+      expect(await listDir(path.join(mailboxDir(subject), 'new'))).toHaveLength(1);
+    } finally {
+      await relay1.close();
+    }
 
     // Backdate the whole maildir so even the age safety-margin would allow
     // reaping — only the persistent-type exemption protects it.
@@ -470,17 +485,19 @@ describe('GC orphan maildir reaping', () => {
       gcIntervalMs: NEVER_MS,
       orphanMaildirRetentionMs: 0,
     });
-    const result = await relay2.runGcSweep();
-    expect(result?.orphansReaped).toBe(0);
+    try {
+      const result = await relay2.runGcSweep();
+      expect(result?.orphansReaped).toBe(0);
 
-    // The unread message is still on disk and readable after re-registration.
-    expect(await listDir(path.join(mailboxDir(subject), 'new'))).toHaveLength(1);
-    await relay2.registerEndpoint(subject);
-    const inbox = await relay2.readInbox(subject, { status: 'unread' });
-    expect(inbox.messages).toHaveLength(1);
-    expect(inbox.messages[0].payload).toEqual({ keep: 'me' });
-
-    await relay2.close();
+      // The unread message is still on disk and readable after re-registration.
+      expect(await listDir(path.join(mailboxDir(subject), 'new'))).toHaveLength(1);
+      await relay2.registerEndpoint(subject);
+      const inbox = await relay2.readInbox(subject, { status: 'unread' });
+      expect(inbox.messages).toHaveLength(1);
+      expect(inbox.messages[0].payload).toEqual({ keep: 'me' });
+    } finally {
+      await relay2.close();
+    }
   });
 
   it('the construction-time sweep defers orphan reaping (empty-registry grace)', async () => {

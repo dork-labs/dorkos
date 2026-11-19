@@ -88,7 +88,10 @@ describe('who may use a named browser profile', () => {
   ])('refuses %o even when the agent is bound', async (runtime) => {
     await expect(deps(runtime, '/agents/a', 'bound')('p', 's')).rejects.toMatchObject({
       code: 'profile_runtime',
-      message: 'Named browser profiles aren’t available on this agent’s runtime yet.',
+      // The agent is told which safety check is missing, true for an unlaunched chat too (DOR-4678).
+      message:
+        'Named browser profiles need a runtime DorkOS confirms keeps file tools out of saved ' +
+        'sign-ins. It can’t confirm this chat’s runtime does.',
     });
   });
 

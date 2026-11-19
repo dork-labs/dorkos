@@ -42,6 +42,7 @@ import { logger } from '../../lib/logger.js';
 import { createToolBinding, type ToolBinding } from './agent-tools/tool-binding.js';
 import type { ExtensionToolCheck } from '@dorkos/extension-api/tool-check';
 import { isolatedFilesDir } from './isolation/grants.js';
+import { createPersonRecordApi, outsidePersonRequest } from './person-record/person-record.js';
 
 /** Minimum scheduling interval in seconds (prevents tight loops). */
 const MIN_INTERVAL_SECONDS = 5;
@@ -189,7 +190,9 @@ function createAgentApi(extensionId: string): { agent: AgentApi; release: () => 
           'DorkOS cannot send messages yet. Try again in a moment.'
         );
       }
-      return service.send(extensionId, input);
+      // The agent it starts acts for itself, not for a person whose request
+      // to this extension happens to be open (DOR-4301).
+      return outsidePersonRequest(() => service.send(extensionId, input));
     },
     subscribe(listener) {
       if (released) {
@@ -411,7 +414,7 @@ export function createDataProviderContext(deps: CreateContextDeps): {
     accounts: guardedAccounts,
     projects: guardedProjects,
     inbox: guardedInbox,
-    requirePerson: createRequirePerson(extensionName),
+    requirePerson: createRequirePerson(extensionId, extensionName),
     projectSettings: guardedProjectSettings,
     sessions: {
       start: async (input) => {
@@ -425,11 +428,12 @@ export function createDataProviderContext(deps: CreateContextDeps): {
         }
         const service = getStartWorkService();
         if (!service) throw new Error('DorkOS cannot start chats yet. Try again in a moment.');
-        return service.start(extensionId, input, 'ctx');
+        return outsidePersonRequest(() => service.start(extensionId, input, 'ctx'));
       },
     },
     agent: guardedAgent,
     tools: tools.api,
+    personRecord: createPersonRecordApi(extensionId),
     // A given-up instance reads nothing: the read would outlive the extension.
     ...(deps.connections && {
       connections: {

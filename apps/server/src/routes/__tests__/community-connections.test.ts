@@ -8,7 +8,11 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import type { CommunityConnectionDescriptor } from '@dorkos/shared/community-connections';
 import { CommunityRefSchema } from '@dorkos/shared/community-adapter';
 
-const owner = vi.hoisted(() => ({ id: 'author-a' }));
+/**
+ * The install's owner. `account: false` is an install no one has claimed yet, where a
+ * connection has no password to wait for and goes straight to the space (DOR-4355).
+ */
+const owner = vi.hoisted(() => ({ id: 'author-a', account: true }));
 
 vi.mock('../room-caller.js', () => ({
   resolveCaller: (req: { headers: Record<string, string> }) => {
@@ -20,7 +24,7 @@ vi.mock('../../services/rooms/index.js', () => ({
   getRoomService: () => ({ authorRegistry: { isOwner: (id: string) => id === owner.id } }),
 }));
 vi.mock('../../services/core/auth/index.js', () => ({
-  readOwnerAccount: () => ({ id: owner.id }),
+  readOwnerAccount: () => (owner.account ? { id: owner.id } : null),
   getAuth: () => undefined,
 }));
 // The `/api` chain these routes run behind reads login and the host allowlist from config.
@@ -30,6 +34,8 @@ vi.mock('../../services/core/config-manager.js', () => ({
 vi.mock('../../lib/caller-authority.js', () => ({
   isLocalCaller: () => true,
   requireOperatorCookieUnderLogin: () => undefined,
+  // The limit's confirmation is proved with real sign-ins in teammate-spend-step-up.test.ts.
+  refuseFrontDoorChange: () => undefined,
 }));
 
 const attentionMock = vi.hoisted(() => ({
@@ -115,6 +121,7 @@ afterAll(async () => {
 });
 afterEach(() => {
   owner.id = 'author-a';
+  owner.account = true;
 });
 
 describe('local connection route authority and public projection', () => {
@@ -132,6 +139,8 @@ describe('local connection route authority and public projection', () => {
       })
     ).listen(0, '127.0.0.1');
     await once(selectionServer, 'listening');
+    // No owner yet, so the connection goes straight to the space and its answer shows.
+    owner.account = false;
     try {
       const response = await request(selectionServer)
         .post('/api/community-connections')
@@ -187,6 +196,8 @@ describe('local connection route authority and public projection', () => {
       })
     ).listen(0, '127.0.0.1');
     await once(upgradeServer, 'listening');
+    // No owner yet, so the connection goes straight to the space and its answer shows.
+    owner.account = false;
     try {
       const response = await request(upgradeServer)
         .post('/api/community-connections')
@@ -216,6 +227,8 @@ describe('local connection route authority and public projection', () => {
       })
     ).listen(0, '127.0.0.1');
     await once(nameServer, 'listening');
+    // No owner yet, so the connection goes straight to the space and its answer shows.
+    owner.account = false;
     try {
       const response = await request(nameServer)
         .post('/api/community-connections')
@@ -248,6 +261,8 @@ describe('local connection route authority and public projection', () => {
       })
     ).listen(0, '127.0.0.1');
     await once(limitedServer, 'listening');
+    // No owner yet, so the connection goes straight to the space and its answer shows.
+    owner.account = false;
     try {
       const response = await request(limitedServer)
         .post('/api/community-connections')
@@ -294,6 +309,8 @@ describe('local connection route authority and public projection', () => {
       })
     ).listen(0, '127.0.0.1');
     await once(reservedServer, 'listening');
+    // No owner yet, so the connection goes straight to the space and its answer shows.
+    owner.account = false;
     try {
       const response = await request(reservedServer)
         .post('/api/community-connections')
@@ -304,6 +321,34 @@ describe('local connection route authority and public projection', () => {
     } finally {
       await new Promise<void>((resolve) => reservedServer.close(() => resolve()));
       await rm(reservedDirectory, { recursive: true, force: true });
+    }
+  });
+
+  // Purpose: once an owner exists, connecting a space waits for them to confirm it's them
+  // (DOR-4355; the confirmation itself is proved with real sign-ins in its own step-up
+  // test), so this session-less caller starts nothing.
+  it('holds connecting a space for the owner, and starts nothing before they confirm', async () => {
+    const heldDirectory = await mkdtemp(join(tmpdir(), 'community-connections-held-'));
+    const heldService = new RemoteCommunityPairingService(new RemoteConnectionStore(heldDirectory));
+    const start = vi.spyOn(heldService, 'start');
+    const heldServer = createServer(
+      honoGroupListener({
+        path: '/api/community-connections',
+        routes: createCommunityConnectionsRoutes(heldService),
+      })
+    ).listen(0, '127.0.0.1');
+    await once(heldServer, 'listening');
+    try {
+      const response = await request(heldServer)
+        .post('/api/community-connections')
+        .set('x-test-author', 'author-a')
+        .send({ url: 'https://community.example', installName: 'Desktop' });
+      expect(response.status).toBe(403);
+      expect(response.body.code).toBe('not-a-person');
+      expect(start).not.toHaveBeenCalled();
+    } finally {
+      await new Promise<void>((resolve) => heldServer.close(() => resolve()));
+      await rm(heldDirectory, { recursive: true, force: true });
     }
   });
 
@@ -1057,6 +1102,16 @@ describe('who may wake agents in a space is the owner’s call', () => {
       .send({ wakeAgentsFrom: 'me' });
     expect(changed.status).toBe(200);
     expect(await policy.get(wakeRef, 'author-a')).toBe('me');
+
+    // Letting members wake them again waits for the owner to confirm it's them (DOR-4355),
+    // so this session-less caller is refused and the setting stays.
+    const widened = await request(wakeServer)
+      .put(path)
+      .set('x-test-author', 'author-a')
+      .send({ wakeAgentsFrom: 'members' });
+    expect(widened.status).toBe(403);
+    expect(widened.body.code).toBe('not-a-person');
+    expect(await policy.get(wakeRef, 'author-a')).toBe('me');
   });
 
   it('refuses an agent, and the setting stays where the owner put it', async () => {
@@ -1157,6 +1212,18 @@ describe('where agents answer without a mention is the owner’s call', () => {
     expect(before.status).toBe(200);
     expect(before.body).toEqual({ answerIn: [] });
 
+    // Adding a channel waits for the owner to confirm it's them (DOR-4355; proved with real
+    // sign-ins in its step-up test), so this session-less caller is refused, nothing changed.
+    const added = await request(answerServer)
+      .put(path)
+      .set('x-test-author', 'author-a')
+      .send({ answerIn: ['#Welcome', 'help'] });
+    expect(added.status).toBe(403);
+    expect(added.body.code).toBe('not-a-person');
+    expect(await policy.getAnswerIn(answerRef, 'author-a')).toEqual([]);
+
+    // Narrowing it is immediate, and the live answer follows at once.
+    await policy.setAnswerIn(answerRef, 'author-a', ['welcome', 'help', 'general']);
     const changed = await request(answerServer)
       .put(path)
       .set('x-test-author', 'author-a')
@@ -1165,6 +1232,7 @@ describe('where agents answer without a mention is the owner’s call', () => {
     expect(changed.body).toEqual({ answerIn: ['welcome', 'help'] });
     expect(await policy.getAnswerIn(answerRef, 'author-a')).toEqual(['welcome', 'help']);
     expect(policy.answersIn(answerRef, 'author-a', 'help')).toBe(true);
+    expect(policy.answersIn(answerRef, 'author-a', 'general')).toBe(false);
   });
 
   it('refuses an agent, and the list stays where the owner put it', async () => {
@@ -1286,11 +1354,16 @@ describe('the teammates’ monthly limit is the owner’s call', () => {
     await spend.record(spendRef, 'author-a', 0.5);
     expect(spend.allows(spendRef, 'author-a')).toBe(false);
 
+    // Removing the limit is a raise: it waits for the owner's own browser to confirm it
+    // (teammate-spend-step-up.test.ts), so this session-less caller is refused, nothing changed.
     const cleared = await request(spendServer)
       .put(path)
       .set('x-test-author', 'author-a')
       .send({ monthlyLimitUsd: null });
-    expect(cleared.body).toMatchObject({ monthlyLimitUsd: null });
+    expect(cleared.status).toBe(403);
+    expect(cleared.body.code).toBe('not-a-person');
+    expect(spend.allows(spendRef, 'author-a')).toBe(false);
+    await spend.setLimit(spendRef, 'author-a', null);
     expect(spend.allows(spendRef, 'author-a')).toBe(true);
   });
 

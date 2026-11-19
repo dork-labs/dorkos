@@ -7,7 +7,8 @@
  *
  * Owner-only, like every route on this router: `resolveCommunityOwner` refuses an agent's
  * identity, a remote caller and anyone but this install's owner, and no DorkOS tool or config key
- * reaches it.
+ * reaches it. Raising the limit or removing it waits for the owner to confirm it's them
+ * (DOR-4355); lowering it stays immediate.
  *
  * @module routes/community-teammate-spend
  */
@@ -22,6 +23,7 @@ import { readJsonBody } from '../http/request-body.js';
 import { RemoteConnectionNotFoundError } from '../services/communities/remote/connection-store.js';
 import type { TeammateSpend } from '../services/communities/remote/wake/teammate-spend.js';
 import { getRemoteCommunityEnrollmentStore } from '../services/communities/remote/state.js';
+import { runFrontDoorWrite } from './front-door-step-up.js';
 
 /** What the routes need of the spending counter. */
 export type TeammateSpendPolicy = Pick<TeammateSpend, 'summary' | 'setLimit'>;
@@ -76,12 +78,35 @@ export function addTeammateSpendRoutes(
     const body = CommunityTeammateSpendLimitRequestSchema.safeParse(readJsonBody(c));
     if (!body.success)
       return c.json({ error: 'Enter a monthly limit of at least $0.01, or none.' }, 400);
+    const next = body.data.monthlyLimitUsd;
+    const run = async () => {
+      try {
+        await spend().setLimit(ref.data, owner, next);
+        return c.json(await read(ref.data, owner));
+      } catch (error) {
+        return failure(c, error);
+      }
+    };
+    let current: number | null;
     try {
-      await spend().setLimit(ref.data, owner, body.data.monthlyLimitUsd);
-      return c.json(await read(ref.data, owner));
+      current = (await spend().summary(ref.data, owner)).monthlyLimitUsd;
     } catch (error) {
       return failure(c, error);
     }
+    // No limit is the most a teammate's turns may cost, so removing one is a raise.
+    const raises = current !== null && (next === null || next > current);
+    if (!raises) return run();
+    return runFrontDoorWrite(c, {
+      kind: 'community.teammate-spend',
+      target: ref.data,
+      input: { monthlyLimitUsd: next },
+      reason:
+        next === null
+          ? 'Remove the monthly limit on teammates’ turns in this space.'
+          : `Raise the monthly limit on teammates’ turns in this space to $${next}.`,
+      subject: 'what teammates’ turns may cost',
+      run,
+    });
   });
 }
 

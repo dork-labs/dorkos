@@ -471,6 +471,8 @@ async function shutdownServices(reason: 'authority' | 'shutdown' = 'shutdown') {
   refs.doeRuntime = null;
   refs.stopSessionContinuation?.();
   refs.stopSessionContinuation = undefined;
+  refs.stopSigninCredentialWatch?.();
+  refs.stopSigninCredentialWatch = undefined;
   if (refs.accountUsageStore) {
     refs.accountUsageStore.stop();
     await refs.accountUsageStore.flush().catch((err: unknown) => {

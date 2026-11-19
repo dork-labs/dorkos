@@ -55,6 +55,13 @@ async function sourceFiles(relDir: string, root = REPO_ROOT): Promise<string[]> 
 const FLEET_POLICY_LITERAL = /'fleet\.json'|"fleet\.json"/;
 
 /**
+ * Time allowed for the test that reads every server, client and shared source
+ * file. The 5s default is a claim about disk speed that a loaded machine breaks
+ * (DOR-2021).
+ */
+const SCAN_TIMEOUT_MS = 30_000;
+
+/**
  * The files among `files` whose code (comments blanked) holds the literal.
  *
  * @param files - Repo-relative paths.
@@ -97,12 +104,16 @@ async function readSourcesInOrder<T>(
 }
 
 describe('invariant 4: core never reads flow’s fleet policy', () => {
-  it('no server, client or shared source names fleet.json as a string', async () => {
-    const files = (await Promise.all(ROOTS.map((root) => sourceFiles(root)))).flat();
-    // A scan that found nothing to read would pass for a clean one.
-    expect(files.length).toBeGreaterThan(500);
-    expect(await offenders(files)).toEqual([]);
-  });
+  it(
+    'no server, client or shared source names fleet.json as a string',
+    { timeout: SCAN_TIMEOUT_MS },
+    async () => {
+      const files = (await Promise.all(ROOTS.map((root) => sourceFiles(root)))).flat();
+      // A scan that found nothing to read would pass for a clean one.
+      expect(files.length).toBeGreaterThan(500);
+      expect(await offenders(files)).toEqual([]);
+    }
+  );
 
   it('sees a literal in code, and not the same words in a comment', () => {
     const lexed = (source: string) => lexWithoutComments(source, 'probe.ts').code;

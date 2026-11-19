@@ -58,6 +58,7 @@ export default defineConfig({
     './src/schema/projects.ts',
     './src/schema/extensions/extension-decisions.ts',
     './src/schema/extensions/extension-agent-sends.ts',
+    './src/schema/extensions/extension-person-records.ts',
     './src/schema/todos/todos.ts',
     './src/schema/todos/todo-turns.ts',
     './src/schema/work-queue/work-queue.ts',

@@ -226,6 +226,10 @@ describe('enforceCapabilityTier', () => {
 
       const [pending] = approvals.listPending();
       expect(pending.approvalId).toBe(payload.approvalId);
+      expect(payload.requestCode).toBe(pending.requestCode);
+      expect(payload.requestCode).toMatch(
+        /^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$/
+      );
       // The card names the agent — the whole point of threading identity through.
       expect(pending.requestedBy).toBe('Prober');
       expect(pending.summary).toContain('Prober');

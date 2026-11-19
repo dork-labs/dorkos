@@ -27,6 +27,7 @@ import { passedOnLevelOf } from '../../core/turn-power/turn-levels.js';
 import { MessageQueueStore, setMessageQueueStore } from '../message-queue-store.js';
 import { SESSIONS } from '../../../config/constants.js';
 import { disposeProjector, getOrCreateProjector } from '../session-state-projector.js';
+import { logger } from '../../../lib/logger.js';
 
 let session: string;
 let runtime: FakeAgentRuntime;
@@ -211,14 +212,24 @@ describe('a restart leaves another chat’s message queued for an idle chat', ()
       disposition: 'queue',
       context: null,
     });
-    await expect(
-      rearmChatQueues({
-        resume: (id) => {
-          if (id === broken) throw new Error('no runtime');
-          resume(id);
-        },
-      })
-    ).resolves.toBe(1);
+    const info = vi.spyOn(logger, 'info');
+    try {
+      await expect(
+        rearmChatQueues({
+          resume: (id) => {
+            if (id === broken) throw new Error('no runtime');
+            resume(id);
+          },
+        })
+      ).resolves.toBe(1);
+      // The log names only the chat that resumed (DOR-4329).
+      expect(info).toHaveBeenCalledWith(expect.stringContaining('resumed chats'), {
+        sessions: 1,
+        chats: [session.slice(0, 8)],
+      });
+    } finally {
+      info.mockRestore();
+    }
     await vi.waitFor(() => expect(listQueuedMessages(session)).toEqual([]), { timeout: 2000 });
   });
 });
@@ -273,5 +284,22 @@ describe('a send to a chat that only looks busy', () => {
       },
       { timeout: 2000 }
     );
+  });
+});
+
+describe('the line a sweep logs (DOR-4329)', () => {
+  it('names each chat it resumed, by short id', async () => {
+    leftoverChatRow('named in the log');
+    const info = vi.spyOn(logger, 'info');
+    try {
+      await rearmChatQueues({ resume });
+      expect(info).toHaveBeenCalledWith(
+        '[MessageDispatcher] resumed chats whose queued messages nothing was running',
+        { sessions: 1, chats: [session.slice(0, 8)] }
+      );
+    } finally {
+      info.mockRestore();
+    }
+    await vi.waitFor(() => expect(listQueuedMessages(session)).toEqual([]), { timeout: 2000 });
   });
 });

@@ -1,5 +1,5 @@
 import './security-path-parity.test.mjs';
-/* global URL, structuredClone, Response, process */
+/* global console, URL, structuredClone, Response, process */
 import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { execFileSync, spawn } from 'node:child_process';
@@ -930,15 +930,10 @@ test('queue comparison matches both sides of a rename', async () => {
   }
 });
 
-test('queue comparison refuses API errors, missing lists, wrong base and the compare cap', async () => {
+test('queue comparison refuses API errors, missing lists, wrong base and duplicates', async () => {
   for (const comparison of [
     {},
     { base_commit: { sha: 'other' }, files: [] },
-    {
-      base_commit: { sha: 'base' },
-      merge_base_commit: { sha: 'base' },
-      files: Array.from({ length: 300 }, (_, i) => ({ filename: `docs/${i}.md` })),
-    },
     {
       base_commit: { sha: 'base' },
       merge_base_commit: { sha: 'base' },
@@ -1043,6 +1038,213 @@ test('queued comparison rejects a divergent or absent merge base', async () => {
       /Incomplete queued-head comparison/
     );
   }
+});
+
+// Compare lists at most 300 files. At that cap the gate reads the queued squash
+// commit's own file list, page by page, from the same two immutable SHAs.
+const docFiles = (n) => Array.from({ length: n }, (_, i) => ({ filename: `docs/${i}.md` }));
+const queuedParent = { group1: 'base', group2: 'group1' };
+function largeQueue(f, files, { compareFiles = files.slice(0, 300), commit } = {}) {
+  const pages = [];
+  f.api.compare = async (base) => ({
+    base_commit: { sha: base },
+    merge_base_commit: { sha: base },
+    files: compareFiles,
+  });
+  f.api.commitPage = async (sha, page) => {
+    pages.push([sha, page]);
+    return {
+      sha,
+      parents: [{ sha: queuedParent[sha] }],
+      files: files.slice((page - 1) * 100, page * 100),
+      ...commit?.(sha, page),
+    };
+  };
+  return pages;
+}
+
+test('a queued commit under 300 files is judged from compare alone', async () => {
+  const f = fixture();
+  const pages = largeQueue(f, docFiles(299), { compareFiles: docFiles(299) });
+  assert.match(await checkMergeGroup(f.api, groupEvent, pattern), /no security paths \(computed\)/);
+  assert.deepEqual(pages, []);
+});
+
+test('a queued commit at 300 or more files is read in full from its own commit', async () => {
+  for (const [count, wantPages] of [
+    [300, 4],
+    [392, 4],
+    [450, 5],
+    // The last page short of GitHub's 3,000 cap ends the list without a 31st read.
+    [2999, 30],
+  ]) {
+    const f = fixture();
+    const pages = largeQueue(f, docFiles(count));
+    assert.match(
+      await checkMergeGroup(f.api, groupEvent, pattern),
+      /PR #1: no security paths \(computed\)\nPR #2: no security paths \(computed\)/
+    );
+    // Pages run until a short one, for each entry's own head.
+    assert.deepEqual(
+      pages.filter(([sha]) => sha === 'group1').map(([, page]) => page),
+      Array.from({ length: wantPages }, (_, i) => i + 1)
+    );
+    assert.ok(pages.some(([sha]) => sha === 'group2'));
+  }
+});
+
+test('a security path past compare’s 300 files is caught', async () => {
+  const files = docFiles(392);
+  files[350] = { filename: 'apps/desktop/src/preload/index.ts' };
+  const f = fixture();
+  largeQueue(f, files);
+  await assert.rejects(checkMergeGroup(f.api, groupEvent, pattern), /pending Security approval/);
+  // Both sides of a rename are matched there too.
+  const renamed = docFiles(392);
+  renamed[350] = { filename: 'docs/moved.md', previous_filename: 'apps/desktop/src/main.ts' };
+  const g = fixture();
+  largeQueue(g, renamed);
+  await assert.rejects(checkMergeGroup(g.api, groupEvent, pattern), /pending Security approval/);
+  // A removed file is a change too.
+  const removed = docFiles(392);
+  removed[350] = { filename: 'apps/desktop/src/main.ts', status: 'removed' };
+  const h = fixture();
+  largeQueue(h, removed);
+  await assert.rejects(checkMergeGroup(h.api, groupEvent, pattern), /pending Security approval/);
+});
+
+test('a large queued commit logs counts only, never file names', async (t) => {
+  const logged = [];
+  t.mock.method(console, 'log', (line) => logged.push(String(line)));
+  const f = fixture();
+  largeQueue(f, docFiles(392));
+  await checkMergeGroup(f.api, groupEvent, pattern);
+  const reads = logged.filter((line) => line.startsWith('Queued commit'));
+  assert.deepEqual(reads, [
+    'Queued commit group1: 392 files over 4 pages',
+    'Queued commit group2: 392 files over 4 pages',
+  ]);
+  assert.ok(logged.every((line) => !line.includes('docs/')));
+});
+
+test('a large queued commit refuses a short, truncated or mismatched file list', async () => {
+  const cases = [
+    // Fewer files than compare already showed.
+    { files: docFiles(250), compareFiles: docFiles(300) },
+    // A compare file missing from the full list.
+    {
+      files: [...docFiles(299), { filename: 'docs/other.md' }, ...docFiles(400).slice(300)],
+      compareFiles: docFiles(300),
+    },
+    // A compare rename the full list reports differently.
+    {
+      files: docFiles(392),
+      compareFiles: [...docFiles(299), { filename: 'docs/299.md', previous_filename: 'docs/x.md' }],
+    },
+    // A page repeated: the list would hold duplicates.
+    { files: docFiles(392), commit: (sha, page) => (page === 2 ? { files: docFiles(100) } : {}) },
+    // A page that is not a list.
+    { files: docFiles(392), commit: (sha, page) => (page === 2 ? { files: undefined } : {}) },
+    // A file entry with no name, or a name that is not a string.
+    { files: [...docFiles(391), { filename: '' }] },
+    { files: [...docFiles(391), { filename: 42 }] },
+    { files: [...docFiles(391), {}] },
+    // A rename with no old name to check.
+    { files: [...docFiles(391), { filename: 'docs/new.md', status: 'renamed' }] },
+  ];
+  for (const { files, compareFiles, commit } of cases) {
+    const f = fixture();
+    largeQueue(f, files, { compareFiles: compareFiles ?? docFiles(300), commit });
+    await assert.rejects(checkMergeGroup(f.api, groupEvent, pattern), /Incomplete/);
+  }
+});
+
+test('each large-commit refusal names its reason', async () => {
+  for (const [reason, files, opts] of [
+    ['superset', docFiles(250), {}],
+    ['page', docFiles(392), { commit: (sha, page) => (page === 2 ? { files: {} } : {}) }],
+    ['parent', docFiles(392), { commit: () => ({ parents: [{ sha: 'other' }] }) }],
+    ['sha', docFiles(392), { commit: () => ({ sha: 'otherHead' }) }],
+    ['cap', docFiles(3000), {}],
+    ['file', [...docFiles(391), { filename: 'docs/new.md', status: 'renamed' }], {}],
+  ]) {
+    const f = fixture();
+    largeQueue(f, files, { compareFiles: docFiles(300), ...opts });
+    await assert.rejects(
+      checkMergeGroup(f.api, groupEvent, pattern),
+      new RegExp(`Incomplete queued-head file list \\(${reason}\\)`)
+    );
+  }
+});
+
+test('a large queued commit refuses a head that is not one squash commit on its base', async () => {
+  for (const commit of [
+    () => ({ parents: [{ sha: 'other' }] }),
+    () => ({ parents: [{ sha: 'base' }, { sha: 'head1' }] }),
+    () => ({ parents: [] }),
+    () => ({ parents: undefined }),
+    () => ({ sha: 'otherHead' }),
+    // A page past the first that names a different parent.
+    (sha, page) => (page === 3 ? { parents: [{ sha: 'other' }] } : {}),
+  ]) {
+    const f = fixture();
+    largeQueue(f, docFiles(392), { commit });
+    await assert.rejects(
+      checkMergeGroup(f.api, groupEvent, pattern),
+      /Incomplete queued-head file list/
+    );
+  }
+});
+
+test('a large queued commit refuses at 3,000 files, GitHub’s cap on a commit’s list', async () => {
+  const f = fixture();
+  const pages = largeQueue(f, docFiles(3000));
+  await assert.rejects(
+    checkMergeGroup(f.api, groupEvent, pattern),
+    /Incomplete queued-head file list/
+  );
+  assert.ok(pages.every(([, page]) => page <= 30));
+});
+
+test('a large queued commit refuses when the commit API errors', async () => {
+  const f = fixture();
+  largeQueue(f, docFiles(392));
+  const listed = f.api.commitPage;
+  f.api.commitPage = async (sha, page) => {
+    if (page === 2) throw new Error('GitHub API 502 at /repos/owner/repo/commits/group1');
+    return listed(sha, page);
+  };
+  await assert.rejects(checkMergeGroup(f.api, groupEvent, pattern), /GitHub API 502/);
+});
+
+test('a large queued commit still refuses a compare with the wrong base', async () => {
+  const f = fixture();
+  const pages = largeQueue(f, docFiles(392));
+  f.api.compare = async () => ({
+    base_commit: { sha: 'other' },
+    merge_base_commit: { sha: 'other' },
+    files: docFiles(300),
+  });
+  await assert.rejects(
+    checkMergeGroup(f.api, groupEvent, pattern),
+    /Incomplete queued-head comparison/
+  );
+  assert.deepEqual(pages, []);
+});
+
+test('GitHub commit pages pin the SHA and ask for one numbered page of 100', async (t) => {
+  let called;
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    called = url;
+    return Response.json({
+      sha: 'queuedHead',
+      parents: [{ sha: 'base' }],
+      files: [{ filename: 'docs/a.md' }],
+    });
+  });
+  const commit = await githubApi('owner/repo', 'fake').commitPage('queuedHead', 3);
+  assert.match(called, /\/repos\/owner\/repo\/commits\/queuedHead\?per_page=100&page=3$/);
+  assert.equal(commit.files[0].filename, 'docs/a.md');
 });
 
 test('only the newest exact-head App success authorizes a sensitive diff', async () => {

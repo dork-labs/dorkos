@@ -61,6 +61,8 @@ export interface ServerRefs {
   accountUsageStore: AccountUsageStore | undefined;
   /** Stops the out-of-usage planner and the continue service (spec claude-account-fleet D9). */
   stopSessionContinuation: (() => void) | undefined;
+  /** Stops watching signed-out Claude accounts for a command-line sign-in (DOR-4425). */
+  stopSigninCredentialWatch: (() => void) | undefined;
   /** Forwards to the `stopDocDelivery` variable in `index.ts`. */
   stopDocDelivery: (() => Promise<void>) | undefined;
   // The relay's DEFAULT runtime — what answers a relay message that names no
@@ -217,6 +219,7 @@ export function createServerRefs(): Omit<ServerRefs, BareServerRefs> {
     creditsRelay: null,
     accountUsageStore: undefined,
     stopSessionContinuation: undefined,
+    stopSigninCredentialWatch: undefined,
     relayAgentRuntime: null,
     schedulerService: null,
     relayCore: undefined,

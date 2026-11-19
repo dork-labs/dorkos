@@ -21,7 +21,13 @@
  */
 import { env } from '../../../env.js';
 import { runtimeRegistry } from '../runtime-registry.js';
-import { bridgedSenderVouched, chatHeldStrangerWords, lastTurnHeld } from './continuation-hold.js';
+import {
+  bridgedSenderVouched,
+  chatHeldStrangerWords,
+  chatLaunchedByBinding,
+  chatRecordKnown,
+  lastTurnHeld,
+} from './continuation-hold.js';
 import { chatEverReadOutsideText } from './live-outsider-turns.js';
 import { primaryOf } from '../../session/resolution/session-key-registry.js';
 import { roomTurnReadOutsideWords } from './outside-words.js';
@@ -74,4 +80,29 @@ export function chatHoldsOutsideText(chatId: string): boolean {
     chatEverReadOutsideText(primaryOf(chatId)) ||
     lastTurnHeld(chatId)
   );
+}
+
+/**
+ * Whether a message this chat sends now carries a hold on (DOR-4698, Security's ruling
+ * `dor4693-carried-outsider-spread-ruling`): only what THIS chat holds, never another chat of the
+ * same agent. Reading an unrecorded sender through its whole agent let one marked chat hold every
+ * message its agent's other chats sent, and each held message marked the turn it started, so the
+ * hold ran through every agent on the machine.
+ *
+ * - The chat's own running-turn marks, under the id in hand and its first id.
+ * - Its durable record: a read that ever handed it outside text, and its latest turn held. A
+ *   stranger on its bridge counts only for a chat a binding started, by the server's stored launch
+ *   origin; the leak stamped that record on nearly every other chat.
+ * - Unknown is not clean: a chat with no recorded turn and no stored record holds.
+ *
+ * @param sessionId - The sending chat, from the verified caller.
+ * @param levelKnown - Whether the sender's latest turn has a recorded level.
+ */
+export function sendingChatHolds(sessionId: string, levelKnown: boolean): boolean {
+  const first = primaryOf(sessionId);
+  if (marksOf(sessionId, undefined).outsider === true) return true;
+  if (first !== sessionId && marksOf(first, undefined).outsider === true) return true;
+  if (chatEverReadOutsideText(first) || lastTurnHeld(sessionId)) return true;
+  if (chatLaunchedByBinding(sessionId) && chatHeldStrangerWords(sessionId)) return true;
+  return !levelKnown && !chatRecordKnown(sessionId);
 }

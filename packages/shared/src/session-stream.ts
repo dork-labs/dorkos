@@ -503,6 +503,7 @@ export const SessionEventSchema = z
       id: z.string(),
       toolName: z.string(),
       input: z.string(),
+      requestCode: z.string().optional(),
       title: z.string().optional(),
       displayName: z.string().optional(),
       description: z.string().optional(),

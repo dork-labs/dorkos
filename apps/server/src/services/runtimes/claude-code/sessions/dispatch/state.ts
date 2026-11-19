@@ -9,15 +9,19 @@ import type { SessionTurnWindows } from '../session-turn-windows.js';
 import type { SessionCrashRecovery } from '../session-crash-recovery.js';
 import type { LaunchFingerprint } from '../launch-fingerprint.js';
 import type { PumpLaunchPlan } from '../pump-launch.js';
+import type { OpeningTurnSlotWait } from '../slot-wait/warm-pool-options.js';
 
 /** One session's pump, its windower, and its crash policy, wired together. */
 export interface SessionBundle {
   pump: SessionPump;
   /**
-   * Told when this turn's launch starts waiting for a warm slot; set only while
-   * a dispatch is opening its window (`slot-wait/open-turn-window.ts`, DOR-3012).
+   * The turn whose launch may wait for a warm slot: how to say so, and whether
+   * it may skip another chat's reclaim grace. Set only while a dispatch is
+   * opening its window (`slot-wait/open-turn-window.ts`, DOR-3012, DOR-4498).
+   * Absent at launch means `stage()` is warming a cold chat for a person's
+   * staged message, which skips the grace (`slot-wait/warm-pool-options.ts`).
    */
-  onSlotWait?: () => void;
+  slotWait?: OpeningTurnSlotWait;
   windows: SessionTurnWindows;
   recovery: SessionCrashRecovery;
   /**

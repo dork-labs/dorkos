@@ -82,31 +82,15 @@ const DEFAULT_PAGE_SIZE = 100;
 const DEFAULT_MAX_PAGES = 20;
 const DEFAULT_PREVIEW_TTL_MS = 10 * 60_000;
 
-/** Stable refusal codes returned by the reconciliation HTTP boundary. */
-export type ConnectorReconciliationErrorCode =
-  | 'connection_not_found'
-  | 'operations_unsupported'
-  | 'catalog_incomplete'
-  | 'preview_stale'
-  | 'invalid_selection'
-  | 'every_agent_unavailable';
+import {
+  ConnectorReconciliationError,
+  ReconciliationNeedsConfirmationError,
+} from './reconciliation/reconciliation-error.js';
 
-/** A secret-free, typed reconciliation refusal. */
-export class ConnectorReconciliationError extends Error {
-  /**
-   * Construct one typed refusal.
-   *
-   * @param code - Stable refusal category.
-   * @param message - Operator-facing safe explanation.
-   */
-  constructor(
-    readonly code: ConnectorReconciliationErrorCode,
-    message: string
-  ) {
-    super(message);
-    this.name = 'ConnectorReconciliationError';
-  }
-}
+export {
+  ConnectorReconciliationError,
+  type ConnectorReconciliationErrorCode,
+} from './reconciliation/reconciliation-error.js';
 
 /** Current agent identity safe to include in an owner-only preview. */
 export interface ConnectorReconciliationAgentSource {
@@ -914,7 +898,8 @@ export class ConnectorReconciliationService {
   async apply(
     owner: ConnectorOwnerAuthority,
     input: ConnectorReconciliationApplyRequest,
-    signal: AbortSignal = new AbortController().signal
+    signal: AbortSignal = new AbortController().signal,
+    options: { onlyNarrowing?: boolean } = {}
   ): Promise<ConnectorReconciliationApplyResponse> {
     const request = ConnectorReconciliationApplyRequestSchema.parse(input);
     this.assertUniqueSelections(request);
@@ -945,6 +930,7 @@ export class ConnectorReconciliationService {
           lifecycleState: connections.lifecycleState,
           mode: connectorProviderInstances.mode,
           managedConnectionId: connections.externalAccountRef,
+          reconciliationStatus: connections.grantReconciliationStatus,
         })
         .from(connectorProviderInstances)
         .innerJoin(connections, eq(connections.providerInstanceId, connectorProviderInstances.id))
@@ -970,6 +956,14 @@ export class ConnectorReconciliationService {
           'preview_stale',
           'This permission review is stale. Refresh and review the current actions.'
         );
+      }
+      // "Only takes access away" holds only if the save also leaves the review as
+      // settled as it was: nothing for the hosted service to re-send (Security M1).
+      if (
+        options.onlyNarrowing &&
+        (provider.mode === 'managed' || provider.reconciliationStatus !== 'ready')
+      ) {
+        throw new ReconciliationNeedsConfirmationError();
       }
 
       const currentAgentIds = new Set(this.snapshotAgents().map((agent) => agent.agentId));

@@ -4,12 +4,22 @@ import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createDb, runMigrations, type Db } from '@dorkos/db';
+import { loadCeilingMs } from '@dorkos/shared/test-budget';
 import { RelayCore } from '../relay-core.js';
 import type { MaildirStore } from '../maildir-store.js';
 import type { SqliteIndex } from '../sqlite-index.js';
 import type { WatcherManager } from '../watcher-manager.js';
 
 const SUBJECT = 'relay.agent.example';
+/**
+ * Every case boots a real RelayCore with a SQLite index and real Maildir I/O:
+ * 0.2-1.2s at load 17, past vitest's 5s default in a loaded full verify
+ * (DOR-2021). `close()` measured near-instant, so this is time, not a leak.
+ * Sized from the load clamp's worst case: 20s per test, 40s per hook.
+ */
+const CASE_TIMEOUT_MS = loadCeilingMs(5_000);
+const HOOK_TIMEOUT_MS = loadCeilingMs(10_000);
+vi.setConfig({ testTimeout: CASE_TIMEOUT_MS, hookTimeout: HOOK_TIMEOUT_MS });
 const LOCAL = { loginEnabled: false } as const;
 const fixtures: { relay: RelayCore; db: Db; dir: string }[] = [];
 function fixture() {

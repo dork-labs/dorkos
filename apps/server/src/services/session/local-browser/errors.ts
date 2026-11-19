@@ -24,6 +24,45 @@ export class LocalBrowserError extends Error {
   }
 }
 
+/**
+ * What an agent's browser call is told while agent control is paused (DOR-4678). Written for the
+ * agent, which cannot resume it. The causes are examples, not a list: a person's Pause, a
+ * handoff, a person's Back or Forward while it drives (DOR-4449), and a page it may not read
+ * (`refuseProtectedPage`) all pause it. A closed or disconnected browser is never told this:
+ * {@link assertAgentMayAct} answers {@link browserClosedRefusal} first.
+ */
+export function agentPausedRefusal(): LocalBrowserError {
+  return new LocalBrowserError(
+    'paused',
+    'Agent control of this browser is paused, and only a person can resume it. It pauses, for ' +
+      "example, on a person's Pause, a handoff, their Back or Forward while you drive, or a page " +
+      'you may not read. Nothing you send runs until then: tell them, end your turn, and read ' +
+      'the page again once it resumes.'
+  );
+}
+
+/** What a person is told while their agent is paused: theirs to resume. */
+export function personPausedRefusal(): LocalBrowserError {
+  return new LocalBrowserError('paused', 'Your agent is paused. Resume it to continue.');
+}
+
+/** A browser that closed or was disconnected, for agent and person alike. */
+export function browserClosedRefusal(): LocalBrowserError {
+  return new LocalBrowserError('closed', 'The browser closed. Connect it again.');
+}
+
+/**
+ * Refuse an agent's call on a browser it may not use now: closed or disconnected first, so that
+ * case never reads as a pause a person could lift, then paused.
+ *
+ * @param status - The browser's connection status.
+ * @param paused - Whether agent control is paused.
+ */
+export function assertAgentMayAct(status: string, paused: boolean): void {
+  if (status !== 'connected') throw browserClosedRefusal();
+  if (paused) throw agentPausedRefusal();
+}
+
 /** The refusal an agent gets for a page on the Cloud origin (DOR-3196). */
 export function cloudOriginRefusal(): LocalBrowserError {
   return new LocalBrowserError('cloud_origin', CLOUD_ORIGIN_REFUSAL);

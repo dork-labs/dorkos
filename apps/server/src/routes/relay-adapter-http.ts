@@ -14,6 +14,7 @@ import { honoRequestFacts } from '../http/request-facts.js';
 import { readJsonBody } from '../http/request-body.js';
 import { errorRefusalUnlessOwner } from './cloud-owner-bar.js';
 import { holdForStepUp } from './step-up-guard.js';
+import { runFrontDoorWrite } from './front-door-step-up.js';
 import {
   presentsProgramCredential,
   refuseUnlessAccountOwner,
@@ -104,6 +105,82 @@ export function settingNamesText(names: readonly string[]): string {
 
 /** The longest connection name the sheet shows before cutting it. */
 const MAX_SHOWN_NAME = 40;
+
+/**
+ * The longest connection name an agent's card quotes whole. Past it the rest is
+ * counted, not hidden (design review on DOR-4355 M4: a person should read what an
+ * agent called it, and the note stays under the 200-character card field).
+ */
+const MAX_CARD_NAME = 120;
+
+/** What the card's name line starts with; the name follows, inside the quotes. */
+const NOTE_LEAD = 'Its name, which an agent can set: “';
+/** The card field the note travels in (`PendingApproval.detailNote`). */
+const NOTE_MAX = 200;
+
+/**
+ * A connection's name made one inert line for an agent's card (Security on
+ * DOR-4355 M4): whitespace and newlines collapse to single spaces, then every
+ * format and control character goes (bidi overrides and isolates, direction
+ * marks, zero-width joiners, BOM), and double quote marks that could close the
+ * card's fence, look-alikes included, become plain apostrophes. It is counted and cut by code point, so no
+ * emoji is split, and whatever is cut is counted on the card.
+ *
+ * @param label - The connection's name as stored.
+ */
+export function inertName(label: string): string {
+  const points = [
+    ...label
+      .replace(/\s+/g, ' ')
+      .replace(/[\p{Cf}\p{Cc}]/gu, '')
+      // Every double quote that could pass for the fence's: “ ” " ″ ＂ 〞 ‟ „
+      .replace(/[“”"″＂〞‟„]/g, "'")
+      .trim(),
+  ];
+  if (points.length <= MAX_CARD_NAME && NOTE_LEAD.length + points.join('').length + 1 <= NOTE_MAX)
+    return points.join('');
+  // Keep up to MAX_CARD_NAME code points, fewer when wide ones would pass the field's cap.
+  let keep = Math.min(points.length, MAX_CARD_NAME);
+  const fits = (n: number) =>
+    NOTE_LEAD.length +
+      points.slice(0, n).join('').length +
+      `… (${points.length - n} more characters)`.length +
+      1 <=
+    NOTE_MAX;
+  while (keep > 0 && !fits(keep)) keep -= 1;
+  return `${points.slice(0, keep).join('')}… (${points.length - keep} more characters)`;
+}
+
+/** How an agent's card names a connection: a headline, and its name kept apart. */
+export interface CardConnection {
+  /** `the Slack connection northwind-sl`: its type and id, neither free text. */
+  headline: string;
+  /** Its name, quoted in full up to a cap and marked as a name an agent can set, when it has one. */
+  note?: string;
+}
+
+/**
+ * A connection as an agent's card names it. Anyone who can save a connection, an
+ * agent included, sets its name, and nothing records who did, so the headline
+ * never shows it: it shows the connection's type and its id, which is lowercase
+ * letters, digits and hyphens only. The name appears on its own line, quoted in
+ * full (past {@link MAX_CARD_NAME} characters the rest is counted) and marked as
+ * one an agent can set.
+ *
+ * @param adapterManager - Where the connection and its type are read.
+ * @param id - The connection's id.
+ */
+export function cardConnection(
+  adapterManager: Pick<AdapterManager, 'getAdapter' | 'getManifest'>,
+  id: string
+): CardConnection {
+  const config = adapterManager.getAdapter(id)?.config;
+  const type = config ? (adapterManager.getManifest(config.type)?.displayName ?? config.type) : '';
+  const headline = `the ${type ? `${type} ` : ''}connection ${id}`;
+  const name = typeof config?.label === 'string' ? inertName(config.label) : '';
+  if (!name) return { headline };
+  return { headline, note: `${NOTE_LEAD}${name}”` };
+}
 
 /**
  * A connection's name as the sheet shows it: quoted and cut short, since an
@@ -249,4 +326,38 @@ export function registerConfirmReferencesRoute(
   };
   router.post('/adapters/:id/confirm-references', (c) => handle(c, false));
   router.delete('/adapters/:id/confirm-references', (c) => handle(c, true));
+}
+
+/**
+ * Register `POST /adapters/:id/enable`. Turning a chat connection back on lets
+ * its people reach your agents again (Security S7 on DOR-4355 M3): the owner
+ * confirms it's them, and no agent turns one on over HTTP. One that is on
+ * already answers at once and changes nothing.
+ *
+ * @param router - The connection routes.
+ * @param adapterManager - The connections.
+ */
+export function registerEnableRoute(router: Hono<ApiEnv>, adapterManager: AdapterManager): void {
+  router.post('/adapters/:id/enable', async (c) => {
+    const id = c.req.param('id');
+    const enable = async () => {
+      try {
+        await adapterManager.enable(id);
+        return c.json({ ok: true });
+      } catch (err) {
+        return c.json({ error: err instanceof Error ? err.message : 'Enable failed' }, 400);
+      }
+    };
+    // Already on: nothing to do, and calling enable here could undo a person's switch-off
+    // that landed after this read.
+    if (adapterManager.getAdapter(id)?.config.enabled === true) return c.json({ ok: true });
+    return runFrontDoorWrite(c, {
+      kind: 'relay.binding',
+      target: id,
+      input: { op: 'enable-adapter', id },
+      reason: `Turn ${quotedName(adapterManager.resolveAdapterName(id))} back on, so its people can reach your agents again.`,
+      subject: 'what a chat connection may do',
+      run: enable,
+    });
+  });
 }

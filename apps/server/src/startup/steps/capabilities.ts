@@ -7,6 +7,7 @@
  *
  * @module startup/steps/capabilities
  */
+import { initAgentRaiseCards } from '../../services/core/approvals/agent-raise/agent-raise-cards.js';
 import type { McpCapabilityDeps } from '../../services/mesh/mcp-capability-deps.js';
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
 import { composeDorkOsCapabilityRegistry } from '../../services/core/self-description/dorkos-registry.js';
@@ -46,6 +47,7 @@ import { connectorThreadKeys } from '../../services/connectors/principal/thread-
 import { agentRequestSubjectName } from '../../services/connectors/access/approval-requests.js';
 import { getExtensionConnectionServices } from '../../services/connectors/extensions/extension-connections-seam.js';
 import { isConnectorRuntimeCapabilityId } from '../../services/connectors/runtime-capability-scope.js';
+import { operationsListNote } from '../../services/connectors/access/level-gap-lines.js';
 import { env } from '../../env.js';
 import { createDocFrameSdkProbe } from '../../services/runtimes/test-mode/doc-frame/doc-frame-sdk-probe.js';
 import { configureDocFrameSdkProbe } from '../../services/runtimes/test-mode/doc-frame/doc-frame-sdk-scenario.js';
@@ -221,6 +223,8 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
         access: connectorAccess,
         ...(refs.connectorAgentRequests && { requests: refs.connectorAgentRequests }),
         holds: connectorHolds,
+        operationsNote: (agentId, connectionId, toolkit) =>
+          operationsListNote(db, agentId, connectionId, toolkit),
       },
       // Agents changing connection access (spec `agent-grant-autonomy` phases 2-3).
       accessChangeDeps: {
@@ -249,6 +253,8 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
       auditDeps: auditCapabilityDeps(auditLog, auditAccounts, runtimeRegistry),
       // `agent.pause` / `agent.resume`: anyone may stop any agent (spec `audit-trail` PR5).
       agentPauseDeps: { pauses: agentPauses },
+      // `approvals.withdraw`: an agent takes back its own waiting request (DOR-4586).
+      approvalWithdrawDeps: { db },
       // Chats messaging chats (spec `spin-off-chats`).
       chatMessageDeps: chatMessaging,
       // What agents promised (spec `heartbeats` §12): an agent records its
@@ -329,6 +335,8 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
     approvals: approvalService,
     onAttempt: createCapabilityGateAuditObserver(activityService),
   });
+  // An agent's front-door raise goes on a card in the same store (DOR-4355 M4).
+  initAgentRaiseCards(approvalService);
   // Wire the permission half of the same gate (spec `agent-permissions` D6):
   // the live `permissions` config section, read per call like everything else
   // this gate decides on. The agent's own overrides are read fresh off its

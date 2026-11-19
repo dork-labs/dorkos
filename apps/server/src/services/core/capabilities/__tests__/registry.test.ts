@@ -792,7 +792,8 @@ describe('extension layer — host-built definitions carry no privileged fields 
     // An extension object is author-controlled. Whatever extra keys it
     // carries, the built definition has exactly these fields and no others:
     // no preflight, forwardsApproval, inSessionCard, approvalSubject,
-    // areasForInput, describeApprovalChange, approvalDetailField, approvalView.
+    // areasForInput, describeApprovalChange, approvalDetailField, approvalView,
+    // approvalViewDetail.
     const smuggled = {
       ...extensionTool('send_message'),
       preflight: async () => ({}),
@@ -803,6 +804,7 @@ describe('extension layer — host-built definitions carry no privileged fields 
       describeApprovalChange: async () => 'x',
       approvalDetailField: 'to',
       approvalView: () => ({}),
+      approvalViewDetail: () => 'x',
       cancelWindow: async () => async () => ({
         via: 'hold',
         holdId: 'x',

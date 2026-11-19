@@ -2,6 +2,13 @@ import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
+import type { AdapterManager } from '../../../relay/adapter-manager.js';
+import {
+  escalatedGrantFor,
+  registerToolCallEscalator,
+} from '../../../core/capabilities/tool-call-escalation.js';
+import { gateCallerOf } from '../../../tasks/agent-mode/agent-mode-escalation.js';
+import { readOutside } from '../../../tasks/credits/credits-work.js';
 
 /** Guard that returns an error response when adapters are not available. */
 function requireAdapterManager(deps: McpToolDeps) {
@@ -21,11 +28,27 @@ export function createRelayListAdaptersHandler(deps: McpToolDeps) {
   };
 }
 
+/** Whether this connection exists and is off, so turning it on lets its people in again. */
+function isOff(manager: AdapterManager, id: unknown): id is string {
+  return typeof id === 'string' && manager.getAdapter(id)?.config.enabled === false;
+}
+
 /** Enable a Relay adapter by ID. */
 export function createRelayEnableAdapterHandler(deps: McpToolDeps) {
   return async (args: { id: string }) => {
     const err = requireAdapterManager(deps);
     if (err) return err;
+    // Only a person's yes on this exact call turns one back on (Security S7 on DOR-4355 M3).
+    if (isOff(deps.adapterManager!, args.id) && escalatedGrantFor(args)?.via !== 'card') {
+      return jsonContent(
+        {
+          error:
+            'Turning a chat connection back on needs a person’s yes on a card, and a turn that read words from outside your team can’t ask for one.',
+          code: 'ENABLE_NEEDS_YES',
+        },
+        true
+      );
+    }
     try {
       await deps.adapterManager!.enable(args.id);
       return jsonContent({ ok: true, id: args.id, action: 'enabled' });
@@ -65,6 +88,39 @@ export function createRelayReloadAdaptersHandler(deps: McpToolDeps) {
       return jsonContent({ error: message, code: 'RELOAD_FAILED' }, true);
     }
   };
+}
+
+/**
+ * The tool gate's half of Security S7 on DOR-4355 M3: an agent turning a chat
+ * connection back on lets that connection's people reach your agents again, so
+ * it waits for a person's card at every level. A turn that read words from
+ * outside the team, or a caller DorkOS cannot name, gets no card: the call is
+ * let through to the tool, which refuses it. One that is on already, or does
+ * not exist, is left to the tool.
+ *
+ * @param manager - The connections, read when each call is decided.
+ * @returns A function that removes the escalator again.
+ */
+export function registerAdapterEnableEscalator(manager: AdapterManager): () => void {
+  return registerToolCallEscalator('relay_enable_adapter', async (call) => {
+    const id = (call.input as { id?: unknown } | undefined)?.id;
+    if (!isOff(manager, id)) return null;
+    const area = call.permission?.area ?? 'connections';
+    if (readOutside(gateCallerOf(call.context))) {
+      return {
+        action: call.action,
+        permission: { area, state: 'allowed', source: 'floor', layer: 'floor' },
+      };
+    }
+    return {
+      action: call.action,
+      permission:
+        call.permission?.state === 'blocked'
+          ? call.permission
+          : { area, state: 'ask', source: 'always-asks', layer: 'floor' },
+      change: `Turn the chat connection “${manager.resolveAdapterName(id)}” back on, so its people can reach your agents again.`,
+    };
+  });
 }
 
 /**

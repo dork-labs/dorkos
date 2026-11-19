@@ -48,6 +48,10 @@ vi.mock('../../lib/boundary.js', () => ({
 }));
 
 import request from '@dorkos/test-utils/supertest';
+import {
+  approvalConfirmationRoutes,
+  finishApprovalForTest,
+} from './approval-confirmation-driver.js';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { agents, auditEvents, type Db } from '@dorkos/db';
@@ -90,7 +94,8 @@ let service: RoomService;
 let chats: DirectChats;
 let roomStore: ReturnType<typeof createRoomSubsystem>['store'];
 let ownerAuthorId: string;
-let signedInUser: { userId: string; credential: 'cookie' | 'api-key' } | undefined;
+let signedInUser:
+  { userId: string; credential: 'cookie' | 'api-key'; sessionId?: string } | undefined;
 let statusOf: Record<string, string>;
 /** Every turn a post started, with the ceiling it ran under. */
 const turns: RoomTurnRequest[] = [];
@@ -147,7 +152,7 @@ beforeEach(async () => {
   state.authEnabled = true;
   state.ownerId = 'acct-owner';
   state.extensions = {};
-  signedInUser = { userId: 'acct-owner', credential: 'cookie' };
+  signedInUser = { userId: 'acct-owner', credential: 'cookie', sessionId: 'desk-browser' };
   turns.length = 0;
   statusOf = { desk: 'compiled', off: 'disabled', plain: 'compiled' };
   db = createTestDb();
@@ -194,15 +199,18 @@ beforeEach(async () => {
   };
   target.mount(
     honoGroupListener(
-      {
-        path: '/api/extensions',
-        routes: createExtensionsRoutes({
-          manager: manager as never,
-          dorkHome: '/tmp/unused',
-          getCwd: () => null,
-          mesh: () => mesh,
-        }),
-      },
+      [
+        {
+          path: '/api/extensions',
+          routes: createExtensionsRoutes({
+            manager: manager as never,
+            dorkHome: '/tmp/unused',
+            getCwd: () => null,
+            mesh: () => mesh,
+          }),
+        },
+        { path: '/api/step-up', routes: approvalConfirmationRoutes(TRUSTED_ORIGIN) },
+      ],
       {
         before: async (c, next) => {
           if (signedInUser) c.set('user', signedInUser as never);
@@ -359,7 +367,7 @@ describe('the forward bar', () => {
     why: string
   ): Promise<void> {
     const res = await req.send({ text: why, itemId: 'i' });
-    expect(res.status).toBe(403);
+    expect(res.status, JSON.stringify(res.body)).toBe(403);
     expect(res.body.code).toBe('person_required');
     expect(dmPosts().some((e) => e.body.text === why)).toBe(false);
     expect(forwardAudits().some((row) => row.outcome === 'refused')).toBe(true);
@@ -552,10 +560,13 @@ describe('replies', () => {
 
 describe('the forward agents setting', () => {
   it('a person sets, reads back and clears the agents, by id', async () => {
-    const put = await request(server)
+    const held = await request(server)
       .put('/api/extensions/desk/forward-agents')
       .set(APP)
       .send({ agentIds: [BO_ID, ANA_ID, BO_ID] });
+    expect(held.status).toBe(428);
+    expect(state.extensions.forwardAgents).toBeUndefined();
+    const put = await finishApprovalForTest(server, held, TRUSTED_ORIGIN);
     expect(put.status).toBe(200);
     expect(put.body.agents).toEqual([
       { id: BO_ID, name: 'Bo', handle: 'bo' },
@@ -664,7 +675,11 @@ describe('the first-use prompt', () => {
       .post(`${FORWARD}/pending/${consent.id}/allow`)
       .set(APP)
       .send({});
-    expect(allow.status).toBe(201);
+    expect(allow.status).toBe(428);
+    expect(state.extensions.forwardAgents).toBeUndefined();
+    expect(dmPosts()).toHaveLength(0);
+    const confirmed = await finishApprovalForTest(server, allow, TRUSTED_ORIGIN);
+    expect(confirmed.status).toBe(201);
     expect(state.extensions.forwardAgents).toEqual({ desk: [ANA_ID] });
     const posts = dmPosts();
     expect(posts).toHaveLength(1);
@@ -693,7 +708,11 @@ describe('the first-use prompt', () => {
 
   it('records the item on the Allow’s audit row', async () => {
     const { consent } = await firstForward();
-    await request(server).post(`${FORWARD}/pending/${consent.id}/allow`).set(APP).send({});
+    const held = await request(server)
+      .post(`${FORWARD}/pending/${consent.id}/allow`)
+      .set(APP)
+      .send({});
+    await finishApprovalForTest(server, held, TRUSTED_ORIGIN);
     const ok = forwardAudits().filter((row) => row.outcome === 'ok');
     expect(ok).toHaveLength(1);
     expect(ok[0]!.change).toContain('item-7');

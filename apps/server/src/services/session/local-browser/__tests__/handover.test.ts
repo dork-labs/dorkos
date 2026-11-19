@@ -92,7 +92,7 @@ function setup(outside = false, mode: 'embedded' | 'new-window' = 'embedded') {
     signIns.signIns as unknown as SignInWindow,
     () => dataDirectory
   );
-  handover.useOutsideTurnCheck(async () => outside);
+  handover.useOutsideTurnCheck(async () => (outside ? 'outsider_turn' : null));
   return { handover, ...browser, ...signIns };
 }
 
@@ -685,7 +685,7 @@ describe('telling the app something changed', () => {
       signIns as unknown as SignInWindow,
       () => dataDirectory
     );
-    handover.useOutsideTurnCheck(async () => false);
+    handover.useOutsideTurnCheck(async () => null);
     const changed = vi.fn();
     handover.useChangeListener(changed);
     const handedOver = vi.fn();
@@ -693,9 +693,10 @@ describe('telling the app something changed', () => {
     return { handover, signIns, changed, handedOver };
   }
 
-  it('hands the same listener to the sign-in window', () => {
+  it('tells the same listener when the sign-in window moves', () => {
     const { signIns, changed } = wired();
-    expect(signIns.onChange).toHaveBeenCalledWith(changed);
+    (signIns.onChange.mock.calls[0]![0] as () => void)();
+    expect(changed).toHaveBeenCalledOnce();
   });
 
   it('says so when a handoff starts, once, and not on a repeat ask', async () => {
@@ -748,7 +749,7 @@ describe('telling the app something changed', () => {
 
   it('says nothing when an outside turn is refused', async () => {
     const { handover, changed } = wired();
-    handover.useOutsideTurnCheck(async () => true);
+    handover.useOutsideTurnCheck(async () => 'outsider_turn');
     await expect(handover.ask('chat-1', 'wall')).rejects.toThrow();
     expect(changed).not.toHaveBeenCalled();
   });
@@ -1127,5 +1128,74 @@ describe('a handoff on a refused site (DOR-4097)', () => {
     expect(
       LocalBrowserAskPersonSchema.safeParse({ reason: 'password', refused: true }).success
     ).toBe(false);
+  });
+});
+
+// DOR-4693 part B: "Sign in in its own window" on a refused page closes the agent's own window on
+// that profile, then puts it back when the sign-in ends; never while the person is using it.
+describe('a sign-in started from a refused page', () => {
+  /** A chat's own-window Agent browser on the default profile, with the change listener wired. */
+  function ownWindow() {
+    const made = setup(false, 'new-window');
+    made.setProfile(null);
+    made.handover.useChangeListener(vi.fn());
+    const signInMoved = () => (made.signIns.onChange.mock.calls[0]![0] as () => void)();
+    return { ...made, signInMoved };
+  }
+
+  it.each(['saved', 'failed'] as const)(
+    'reopens the chat’s window at the page DorkOS read, once the sign-in has %s',
+    async (ending) => {
+      const { handover, browser, finish, signInMoved } = ownWindow();
+      await handover.signIn({ url: 'https://accounts.example.com/' });
+      expect(browser.disconnect).toHaveBeenCalledOnce();
+      expect(browser.open).not.toHaveBeenCalled();
+      finish(ending);
+      signInMoved();
+      await vi.waitFor(() => expect(browser.open).toHaveBeenCalledOnce());
+      expect(browser.open).toHaveBeenCalledWith({
+        mode: 'new-window',
+        sessionId: 'chat-1',
+        url: 'https://accounts.example.com/login?next=%2Fhome',
+      });
+    }
+  );
+
+  it('reopens nothing for a chat the person stopped meanwhile', async () => {
+    const { handover, browser, finish, set, signInMoved } = ownWindow();
+    const { handoffId } = await handover.ask('chat-1', 'password');
+    finish('saved');
+    await handover.stop(handoffId);
+    browser.open.mockClear();
+    set(connected());
+    await handover.signIn({ url: 'https://accounts.example.com/' });
+    finish('saved');
+    signInMoved();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(browser.open).not.toHaveBeenCalled();
+  });
+
+  it('reopens nothing when the person opened the browser again meanwhile', async () => {
+    const { handover, browser, finish, set, signInMoved } = ownWindow();
+    await handover.signIn({ url: 'https://accounts.example.com/' });
+    set({ ...connected(), sessionId: 'chat-2' });
+    finish('saved');
+    signInMoved();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(browser.open).not.toHaveBeenCalled();
+  });
+
+  // Security's condition: an own-window browser in a handoff is the person's. Never close it.
+  it('refuses, and closes nothing, while a handoff is open in the agent’s own window', async () => {
+    const { handover, browser, set, signIns } = ownWindow();
+    await handover.ask('chat-1', 'password');
+    browser.disconnect.mockClear();
+    signIns.start.mockClear();
+    set(connected());
+    await expect(handover.signIn({ url: 'https://accounts.example.com/' })).rejects.toMatchObject({
+      code: 'browser_in_use',
+    });
+    expect(browser.disconnect).not.toHaveBeenCalled();
+    expect(signIns.start).not.toHaveBeenCalled();
   });
 });

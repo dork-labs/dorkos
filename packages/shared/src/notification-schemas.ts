@@ -51,6 +51,8 @@ export type NotificationTier = (typeof NOTIFICATION_TIERS)[number];
  * Dot-notation `subject.verb`, matching the activity log's event types.
  */
 export const NOTIFICATION_KINDS = [
+  /** Five wrong passwords dropped a remote request's confirmation. */
+  'step-up.remote-refused',
   /** An agent is stopped, waiting on a person to answer. Standing. */
   'ask.pending',
   /** An agent proposed a schedule that only a person can approve. Standing. */
@@ -183,6 +185,12 @@ export const NOTIFICATION_KINDS = [
    * once per set of files.
    */
   'agent.secret_files',
+  /**
+   * An agent's folder allow list changed and is too long to show whole on its
+   * approval card, so it never applies and no card is raised (DOR-4455). Once
+   * per agent and list.
+   */
+  'agent.folder_rules_too_long',
   /**
    * A Claude account folder holds a sign-in DorkOS has not seen there before,
    * or a different one than it had (DOR-3245). Nothing pauses: DorkOS just

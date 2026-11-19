@@ -25,6 +25,8 @@ Read current state before changing anything:
 - Run history: \`tasks_get_run_history\` with \`schedule_id\` (and optional \`limit\`),
   or \`dorkos task runs [--schedule <id>] [--status <status>] [--limit <n>] --json\`.
 
+Only a task with \`enabled: true\` and \`status: "active"\` can run; one switched off, paused or waiting cannot wake. \`approvedAt\`, \`approvedBy\` and \`approvedVia\` say when, by whom (a person, an agent, or \`policy\` for a DorkOS rule) and where the standing approval was given; with \`approvedVia: "unknown"\`, \`policy\` also means DorkOS didn't record who approved it. All three are null when none is recorded.
+
 ## Create a task
 
 - Tool: \`tasks_create\` with \`name\`, \`prompt\` (the instruction the agent runs each
@@ -45,7 +47,7 @@ Only the CLI can create a manual-only task (omit \`--cron\`).
 For work that runs once (a backfill), send \`runOnce: true\` and no \`cron\`: it runs once, as soon as it is live, and never again. To let that run use commands without asking, also send \`permissionMode: "dontAsk"\` and \`allowList\`, each entry one exact command: \`Bash(/absolute/path/to/program --flags)\`.
 - Exact lines only: no wildcards, \`:*\`, shell characters (\`; | & $ < >\`, backticks, quotes) or \`..\`, and no program that runs another (\`sh\`, \`python3\`, \`env\`, \`timeout\`, \`git\`, \`make\`, a link to one). Up to 20, Claude Code only, and only if your own level runs commands without asking. One bad entry refuses the call.
 - No card, from your own chat, for your own new task. From a turn that read outside words, a scheduled run or another agent it is refused: use \`requestedAllow\` for the person's card. DorkOS records each program's bytes; if one changes, or your own level drops before it runs, the run fails and nothing runs. If it can't run when it turns on (parked, switched off), it runs once it is on again.
-- **When it is done, take them back:** \`tasks_update\` with only \`id\` and \`allowList: []\`. Removing needs no approval and is recorded. Adding to an existing task is not yours: use \`requestedAllow\`.
+- **When it is done, take them back:** \`tasks_update\` with only \`id\` and \`allowList: []\`. Removing needs no approval and is recorded. Adding to an existing task is not yours: use \`requestedAllow\`. **The one exception is your own task that is on at Bypass.** Move it to Don't ask with only the commands it needs: \`tasks_update\` with only \`id\`, \`permissionMode: "dontAsk"\` and \`allowList\`. That narrows it, so there is no card; it keeps its schedule, and every program is checked before every run.
 
 ### Where it runs, and on what
 
@@ -139,8 +141,9 @@ For a package an older DorkOS installed, it needs **Check files** first.
 On your own task, from your own chat, set \`permissionMode\` up to your level; higher is
 refused. It keeps running, and the user is told with an Undo; a raise after the user put a mode back
 waits for them, and a raise from a scheduled run or a heartbeat is refused, with the user told. Another agent's task, a linked worktree or
-outside words ask the user (outside words: \`dontAsk\` at most). \`status: "active"\`, sent alone, approves: it asks the user, never your own or
+outside words ask the user (outside words cap the mode lower; the refusal names the highest you can set). \`status: "active"\`, sent alone, approves: it asks the user, never your own or
 your chain's work, never from /mcp. Switched off, either field refuses the whole call.
+**Need more than you may set?** Ask instead: \`requestedPermissionMode\` and \`requestedAllow\` (up to 20 exact rules, each naming one specific action; a whole tool, the home folder, any web domain or any command an interpreter runs is refused) go to the person, who sees them when they approve the task. Rules work only for Claude Code runs: a task on any other runtime refuses them. Both apply only to that task's runs, and nothing applies until a person approves it.
 
 **Edited its SKILL file with file tools?** Its runs are then capped at \`dontAsk\` (only the tools already allowed; some steps may fail) until it is accepted. Accept your own edit in the same turn, from your own chat, in two calls: \`tasks_update\` with just the task's \`id\` keeps the cap and replies with what changed (untrusted text) and its \`hash\`; read it, then call again with \`acceptFileHash\` set to that hash.
 Missed it? Those two calls on your next ordinary turn are the fix. A scheduled run, a heartbeat, a chat either messaged or started, or a turn that read outside words cannot accept it; the user can, from the task.

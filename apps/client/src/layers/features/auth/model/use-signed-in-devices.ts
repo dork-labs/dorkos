@@ -11,8 +11,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { SignedInDeviceList } from '@dorkos/shared/signed-in-devices';
 import { useTransport } from '@/layers/shared/model';
 
-/** TanStack Query key for the list. */
-export const signedInDevicesKey = ['auth', 'signed-in-devices'] as const;
+import { signedInDevicesKey } from '@/layers/shared/lib';
+/** TanStack Query key for the list, shared with device notices. */
+export { signedInDevicesKey } from '@/layers/shared/lib';
 
 /** What the devices section reads and does. */
 export interface SignedInDevices {

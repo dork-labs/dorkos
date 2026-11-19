@@ -87,6 +87,18 @@
   <body>
     <h1>Confirm it’s you</h1>
     <p id="reason">Checking what this will do…</p>
+    <p
+      id="request-code"
+      role="group"
+      hidden
+      style="
+        font-family: ui-monospace, monospace;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: 0.04em;
+      "
+    >
+      <span id="request-code-text" aria-hidden="true"></span>
+    </p>
     <div id="notes"></div>
     <form id="form" hidden>
       <p id="too-short" class="muted" hidden></p>

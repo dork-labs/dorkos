@@ -287,27 +287,11 @@ const STALE: ApprovalSetRefusal = {
   error: 'These extensions changed since you saw them. Nothing was turned on.',
 };
 
-/**
- * Allow every waiting member of one plugin's set, each with its own digest.
- *
- * Checks everything, then writes (Must 3): the set is derived from DorkOS's
- * own records and must match the request exactly (Must 1), and the hash over
- * every member's id, version, digest and permission set must match the one
- * the card was drawn with (Must 2). Only then does the first approval run.
- * A member that still fails at its own approval, for any reason, is reported
- * and the loop goes on: the answer always says exactly which ones are now
- * allowed (Security, Nov 8, M2).
- *
- * @param source - The extension manager.
- * @param request - The plugin, the members the card showed, and their hash.
- * @param onAllowed - Called right after each member is allowed, before the
- *   next one starts, so its Activity entry exists even if the loop is cut short.
- */
-export async function approveExtensionSet(
+/** Read-only preflight, repeated at commit so a held set cannot approve changed members. */
+export async function checkExtensionSetApproval(
   source: ApprovalSetSource,
-  request: ApproveExtensionSetRequest,
-  onAllowed: (result: ApprovalSetResult) => Promise<void> = async () => {}
-): Promise<ApprovalSetRefusal | ApprovalSetOutcome> {
+  request: ApproveExtensionSetRequest
+): Promise<ApprovalSetRefusal | { ok: true; waiting: WaitingMember[] }> {
   const records = new Map(source.listRecords().map((record) => [record.id, record]));
   for (const member of request.members) {
     const record = records.get(member.id);
@@ -340,6 +324,33 @@ export async function approveExtensionSet(
     return STALE;
   }
   if ((await approvalSetHash(live, sha256)) !== request.setHash) return STALE;
+  return { ok: true as const, waiting };
+}
+
+/**
+ * Allow every waiting member of one plugin's set, each with its own digest.
+ *
+ * Checks everything, then writes (Must 3): the set is derived from DorkOS's
+ * own records and must match the request exactly (Must 1), and the hash over
+ * every member's id, version, digest and permission set must match the one
+ * the card was drawn with (Must 2). Only then does the first approval run.
+ * A member that still fails at its own approval, for any reason, is reported
+ * and the loop goes on: the answer always says exactly which ones are now
+ * allowed (Security, Nov 8, M2).
+ *
+ * @param source - The extension manager.
+ * @param request - The plugin, the members the card showed, and their hash.
+ * @param onAllowed - Called right after each member is allowed, before the
+ *   next one starts, so its Activity entry exists even if the loop is cut short.
+ */
+export async function approveExtensionSet(
+  source: ApprovalSetSource,
+  request: ApproveExtensionSetRequest,
+  onAllowed: (result: ApprovalSetResult) => Promise<void> = async () => {}
+): Promise<ApprovalSetRefusal | ApprovalSetOutcome> {
+  const checked = await checkExtensionSetApproval(source, request);
+  if (!checked.ok) return checked;
+  const { waiting } = checked;
 
   const results: ApprovalSetResult[] = [];
   for (const { record, echo } of waiting) {

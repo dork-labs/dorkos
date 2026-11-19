@@ -30,12 +30,11 @@ import type { ApiEnv } from '../../http/api-chain.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import type { MiddlewareHandler } from 'hono';
 import { markIngress } from '../../services/core/remote/ingress-mark.js';
-import {
-  NOT_FROM_WIFI,
-  WIFI_ACTION_REFUSAL,
-  WIFI_STANDING_YES_REFUSAL,
-} from '../../services/core/auth/sessions/wifi-level.js';
+import { NOT_FROM_WIFI } from '../../services/core/auth/sessions/wifi-level.js';
 import { WIFI_DENY_REASON_REFUSAL } from '../session-answer-wifi.js';
+
+/** What every approval yes from Wi-Fi hears (DOR-3648): it may only deny. */
+const WIFI_APPROVAL_REFUSAL = 'Answer at your computer or over Remote Access.';
 
 // The routes are served through the `/api` chain, whose host guard and session
 // gate read the login setting: off, as on a fresh install.
@@ -476,22 +475,23 @@ describe('a Wi-Fi sign-in and capabilities (DOR-2969)', () => {
     expect(ran).toEqual([]);
   });
 
-  it('refuses to allow a destructive request, and allows an act one', async () => {
+  it('only denies from Wi-Fi: every allow, once or always, is refused with where to answer (DOR-3648)', async () => {
     const ask = (capabilityId: string) =>
       approvals.request({ capabilityId, inputHash: hashApprovalInput({}), summary: 'x' });
     const destructive = ask('tiers.destructive');
     const act = ask('tiers.act');
     const server = fixtureTarget.mount(wifiApp());
-    const refused = await request(server).post(`/api/approvals/${destructive.approvalId}/grant`);
-    expect(refused.status).toBe(403);
-    expect(refused.body.code).toBe(NOT_FROM_WIFI);
-    const always = await request(server)
-      .post(`/api/approvals/${act.approvalId}/grant`)
-      .send({ answer: 'always' });
-    expect(always.status).toBe(403);
-    expect(always.body).toEqual({ error: WIFI_STANDING_YES_REFUSAL, code: NOT_FROM_WIFI });
-    const allowed = await request(server).post(`/api/approvals/${act.approvalId}/grant`);
-    expect(allowed.status).toBe(200);
+    for (const [id, body] of [
+      [destructive.approvalId, {}],
+      [act.approvalId, { answer: 'always' }],
+      [act.approvalId, {}],
+    ] as const) {
+      const refused = await request(server).post(`/api/approvals/${id}/grant`).send(body);
+      expect(refused.status).toBe(403);
+      expect(refused.body).toEqual({ error: WIFI_APPROVAL_REFUSAL, code: NOT_FROM_WIFI });
+      expect(refused.body.heldActionId).toBeUndefined();
+    }
+    expect(approvals.answerScope(act.approvalId)?.state).toBe('pending');
     const denied = await request(server).post(`/api/approvals/${destructive.approvalId}/deny`);
     expect(denied.status).toBe(200);
   });
@@ -530,7 +530,7 @@ describe('a Wi-Fi sign-in and capabilities (DOR-2969)', () => {
     const server = fixtureTarget.mount(wifiApp());
     const once = await request(server).post(`/api/approvals/${raising.approvalId}/grant`);
     expect(once.status).toBe(403);
-    expect(once.body).toEqual({ error: WIFI_ACTION_REFUSAL, code: NOT_FROM_WIFI });
+    expect(once.body).toEqual({ error: WIFI_APPROVAL_REFUSAL, code: NOT_FROM_WIFI });
     expect(approvals.answerScope(raising.approvalId)?.state).toBe('pending');
     const denied = await request(server).post(`/api/approvals/${raising.approvalId}/deny`);
     expect(denied.status).toBe(200);
