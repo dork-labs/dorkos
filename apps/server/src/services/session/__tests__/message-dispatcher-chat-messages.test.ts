@@ -26,6 +26,7 @@ vi.mock('../context-assembler.js', () => ({
 }));
 
 import {
+  adoptQueuedMessages,
   dispatchMessage,
   listQueuedMessages,
   resetMessageDispatcher,
@@ -38,7 +39,11 @@ import {
   roomTurnReadOutsideWords,
 } from '../../core/turn-power/outside-words.js';
 import { liveOutsideTurnCheck } from '../local-browser/outside-turn.js';
-import { MessageQueueStore, setMessageQueueStore } from '../message-queue-store.js';
+import {
+  getMessageQueueStore,
+  MessageQueueStore,
+  setMessageQueueStore,
+} from '../message-queue-store.js';
 import { getOrCreateProjector, disposeProjector } from '../session-state-projector.js';
 
 const PERSON = 'window-a';
@@ -315,6 +320,25 @@ describe('a message a mini app sent', () => {
     await settle();
     expect(carriedOfCall(0)).toBeUndefined();
     expect(carriedOfCall(1)).toEqual({ outsider: true });
+  });
+
+  it('launches marked when its row is picked up again after a restart (DOR-4603)', async () => {
+    getMessageQueueStore()!.enqueue({
+      sessionId: session,
+      content: 'from the board app, before the restart',
+      clientId: MINI_APP,
+      disposition: 'queue',
+      context: null,
+    });
+    // What a restart leaves: the row on disk, nothing in memory.
+    resetMessageDispatcher();
+    runtime.withScenarios([quickTurn()]);
+    expect(
+      adoptQueuedMessages({ sessionId: session, projector: getOrCreateProjector(session), runtime })
+    ).toBe(1);
+    await settle();
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+    expect(carriedOfCall(0)).toEqual({ outsider: true });
   });
 });
 

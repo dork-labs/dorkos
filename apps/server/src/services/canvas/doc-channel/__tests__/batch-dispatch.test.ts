@@ -82,6 +82,13 @@ describe('owning-session document dispatch', () => {
           ]),
         })
       );
+      // The page's events are someone else's words for the turn they start, as a mini app's
+      // message is (DOR-4603): the turn carries the outsider mark, which lowers nothing.
+      expect(runtime.sendMessage).toHaveBeenCalledWith(
+        'session-1',
+        expect.anything(),
+        expect.objectContaining({ carriedMarks: { outsider: true } })
+      );
       expect(f.db.select().from(sessionMessageAcceptanceReceipts).all()[0]).toMatchObject({
         id: accepted.receipt.id,
         state: 'settled',
