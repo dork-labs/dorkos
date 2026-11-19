@@ -1,9 +1,38 @@
 name: Publish Docker Image
 
+# DISPATCHED ON MAIN ONLY (DOR-4030, Security round 3, Nov 19). The release
+# person starts this by hand on main with `tag: vX.Y.Z`, once npm has the
+# version (the builds wait for it). One run does all three:
+#
+#   - build-and-push: the runtime image to GHCR, with GITHUB_TOKEN.
+#   - build-and-push-hub: the hub image DorkOS Cloud boots, to GHCR.
+#   - mirror-docker-hub: copies the runtime image build-and-push pushed in
+#     THIS run to Docker Hub, by its digest, never by a tag name. The Docker
+#     Hub token lives only in the `release-mirrors` environment, which deploys
+#     only `main` and needs its reviewer's approval.
+#
+# There is no tag-push trigger. On a tag push GitHub runs the tagged commit's
+# own copy of this file, which an unreviewed tag could have edited, so no
+# image is published that way any more. Every job here is main's copy:
+# tag-is-on-main peels the tag and runs main's scripts/ci/tag-is-on-main.sh on
+# its commit (on main, or the run-time tip of a release/vX.Y.Z branch that
+# passes main's release-branch check), and each build checks out exactly that
+# commit by SHA. Each job's first step refuses any run that is not main's copy
+# of this file dispatched on main; the census's tag gate (ci/config.yaml)
+# keeps those steps and the job-level `if:`s from being dropped.
+#
+# KNOWN GAP (predates this workflow's move; follow-up DOR-4795). GHCR packages are not
+# locked to this workflow: any workflow run whose GITHUB_TOKEN may write
+# packages, including a tag's or a branch's own copy of some other file, can
+# push to ghcr.io/dork-labs/dorkos and dorkos-hub. These gates keep THIS
+# workflow honest; they do not stop that.
 on:
-  push:
-    tags: ['v*']
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to publish, e.g. v0.135.0'
+        required: true
+        type: string
 
 env:
   REGISTRY: ghcr.io
@@ -12,9 +41,66 @@ env:
   # attest-build-provenance, etc.) ahead of GitHub's Sept 2026 hard cutoff for
   # Node 20 runtime. See https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  # Untrusted text: scripts read it from here, never `${{ }}` inside `run:`,
+  # and refuse anything but vX.Y.Z before using it.
+  RELEASE_TAG: ${{ inputs.tag }}
 
 jobs:
+  # DOR-4030: which commit may this run publish for? The commit of the `tag`
+  # input, peeled here, and only if main's scripts/ci/tag-is-on-main.sh
+  # accepts it. Anonymous, so this job reads no secret and holds no token.
+  tag-is-on-main:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.main-check.outputs.sha }}
+    steps:
+      - name: Refuse anything but main's copy and a strict tag
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/main ]] || exit 1
+          [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]] || exit 1
+          [[ "$GITHUB_WORKFLOW_REF" == "$GITHUB_REPOSITORY/.github/workflows/publish-docker.yml@refs/heads/main" ]] || exit 1
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] ||
+            { echo "::error::tag must be exactly vX.Y.Z. Nothing was built or pushed."; exit 1; }
+      # Node runs main's release-branch check for a release-branch tag.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - name: Fail unless the tag's commit is on main or a checked release branch
+        id: main-check
+        env:
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}.git
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/main-check"
+          git init -q "$dir"
+          git -C "$dir" remote add origin "$REPO_URL"
+          git -C "$dir" fetch -q --no-tags origin "+refs/heads/main:refs/remotes/origin/main"
+          # A full fetch, not tree:0: the release-branch path reads blobs.
+          if ! git -C "$dir" fetch -q --no-tags origin "+refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"; then
+            echo "::error::No tag ${RELEASE_TAG} in ${GITHUB_REPOSITORY}. Nothing was pushed."
+            exit 1
+          fi
+          if ! sha="$(git -C "$dir" rev-parse --verify --quiet "refs/tags/${RELEASE_TAG}^{commit}")"; then
+            echo "::error::${RELEASE_TAG} does not name a commit. Nothing was done."
+            exit 1
+          fi
+          # Main's copy of the gate, never the tagged commit's (scripts/ci/tag-is-on-main.sh).
+          git -C "$dir" show origin/main:scripts/ci/tag-is-on-main.sh > "$RUNNER_TEMP/tag-is-on-main.sh"
+          bash "$RUNNER_TEMP/tag-is-on-main.sh" --dir "$dir" \
+            --sha "$sha" --ref "refs/tags/${RELEASE_TAG}" --what 'Images are published'
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+          echo "Publishing images for \`${sha}\` (${RELEASE_TAG})." >> "$GITHUB_STEP_SUMMARY"
+
   build-and-push:
+    needs: tag-is-on-main
+    # Writes packages, so main's copy, dispatched on main, only (DOR-4030; the
+    # census's tag gate checks this line).
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     # 75 = up to 30 minutes waiting for the just-published npm package to
     # become fetchable (scripts/wait-for-npm.sh, DOR-1606) plus the same 45
@@ -29,9 +115,39 @@ jobs:
       packages: write
       attestations: write
       id-token: write
+    outputs:
+      # The pushed manifest list, which mirror-docker-hub copies by digest.
+      digest: ${{ steps.push.outputs.digest }}
+    env:
+      EXPECTED_SHA: ${{ needs.tag-is-on-main.outputs.sha }}
+      REPO_URL: ${{ github.server_url }}/${{ github.repository }}.git
 
     steps:
-      - uses: actions/checkout@v7
+      - name: Refuse anything but main's copy and a strict tag
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/main ]] || exit 1
+          [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]] || exit 1
+          [[ "$GITHUB_WORKFLOW_REF" == "$GITHUB_REPOSITORY/.github/workflows/publish-docker.yml@refs/heads/main" ]] || exit 1
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || exit 1
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+
+      # The tag's commit, not main's: a dispatch on main checks out main by
+      # default.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.tag-is-on-main.outputs.sha }}
+          persist-credentials: false
+
+      - name: Confirm the checkout, and that the tag still names it
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_SHA" ]] || exit 1
+          now="$(git ls-remote "$REPO_URL" "refs/tags/${RELEASE_TAG}" "refs/tags/${RELEASE_TAG}^{}" | awk '{print $1}' | tail -n 1)"
+          if [ "$now" != "$EXPECTED_SHA" ]; then
+            echo "::error::${RELEASE_TAG} now names ${now:-nothing}, not the checked ${EXPECTED_SHA}. Nothing was pushed." >&2
+            exit 1
+          fi
 
       - name: Log in to GHCR
         uses: docker/login-action@v4
@@ -46,32 +162,44 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      # A tag name is untrusted text: refuse anything but a plain release tag
-      # before the version reaches a command, a path or $GITHUB_OUTPUT
-      # (DOR-4175).
+      # The tag input is untrusted text: refuse anything but a plain release
+      # tag before the version reaches a command, a path, an image tag or
+      # $GITHUB_OUTPUT (DOR-4175, DOR-4030). Later steps read it from `env:`,
+      # never `${{ }}` in a script.
       - name: Extract version from tag
         id: version
         run: |
           set -euo pipefail
-          version=$(bash scripts/release-version.sh "$GITHUB_REF_NAME")
+          version=$(bash scripts/release-version.sh "$RELEASE_TAG")
+          IFS=. read -r major minor _ <<< "$version"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "major_minor=${major}.${minor}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${EXPECTED_SHA:0:7}" >> "$GITHUB_OUTPUT"
 
       - name: Wait for npm package availability
         env:
           PKG_VERSION: ${{ steps.version.outputs.version }}
         run: bash scripts/wait-for-npm.sh "$PKG_VERSION"
 
+      # The tags are named outright, not derived from the git ref: this run's
+      # ref is main. Same set as before: the version, major.minor, `latest` (a
+      # vX.Y.Z tag is never a prerelease) and `sha-<7>` of the tag's commit.
+      # The revision and version labels name the tag's commit, not main's.
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha
+            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=${{ steps.version.outputs.major_minor }}
+            type=raw,value=latest
+            type=raw,value=sha-${{ steps.version.outputs.short_sha }}
           flavor: |
-            latest=auto
+            latest=false
+          labels: |
+            org.opencontainers.image.revision=${{ env.EXPECTED_SHA }}
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
 
       - name: Build and push Docker image
         id: push
@@ -88,12 +216,10 @@ jobs:
             INSTALL_MODE=npm
             DORKOS_VERSION=${{ steps.version.outputs.version }}
           cache-from: type=gha
-          # No cache-to on a tag push (DOR-4635). A tag ref's Actions cache can be
-          # restored only by that same tag, so the next release never reads it;
-          # mode=max multi-arch layers wrote ~3.9 GB per release and pushed the
-          # repo past its 10 GB cache budget, evicting main's CI caches. A
-          # workflow_dispatch from main still writes, and tags can read that.
-          cache-to: ${{ startsWith(github.ref, 'refs/tags/') && '' || 'type=gha,mode=max' }}
+          # No cache-to (DOR-4635): mode=max multi-arch layers wrote ~3.9 GB
+          # per release and pushed the repo past its 10 GB cache budget,
+          # evicting main's CI caches. A release now runs on main's ref, so
+          # writing here would land in main's scope.
 
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v4
@@ -109,6 +235,10 @@ jobs:
   # `latest` tag: the version, and the commit for tracing. Signed with a build
   # attestation that is verified before the job passes.
   build-and-push-hub:
+    needs: tag-is-on-main
+    # Writes packages, so main's copy, dispatched on main, only (DOR-4030; the
+    # census's tag gate checks this line).
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     # Same build and the same npm wait as build-and-push above.
     timeout-minutes: 75
@@ -119,9 +249,33 @@ jobs:
       id-token: write
     env:
       HUB_IMAGE_NAME: dork-labs/dorkos-hub
+      EXPECTED_SHA: ${{ needs.tag-is-on-main.outputs.sha }}
+      REPO_URL: ${{ github.server_url }}/${{ github.repository }}.git
 
     steps:
-      - uses: actions/checkout@v7
+      - name: Refuse anything but main's copy and a strict tag
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/main ]] || exit 1
+          [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]] || exit 1
+          [[ "$GITHUB_WORKFLOW_REF" == "$GITHUB_REPOSITORY/.github/workflows/publish-docker.yml@refs/heads/main" ]] || exit 1
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || exit 1
+          [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.tag-is-on-main.outputs.sha }}
+          persist-credentials: false
+
+      - name: Confirm the checkout, and that the tag still names it
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_SHA" ]] || exit 1
+          now="$(git ls-remote "$REPO_URL" "refs/tags/${RELEASE_TAG}" "refs/tags/${RELEASE_TAG}^{}" | awk '{print $1}' | tail -n 1)"
+          if [ "$now" != "$EXPECTED_SHA" ]; then
+            echo "::error::${RELEASE_TAG} now names ${now:-nothing}, not the checked ${EXPECTED_SHA}. Nothing was pushed." >&2
+            exit 1
+          fi
 
       - name: Log in to GHCR
         uses: docker/login-action@v4
@@ -136,15 +290,17 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      # A tag name is untrusted text: refuse anything but a plain release tag
-      # before the version reaches a command, a path or $GITHUB_OUTPUT
-      # (DOR-4175).
+      # The tag input is untrusted text: refuse anything but a plain release
+      # tag before the version reaches a command, a path, an image tag or
+      # $GITHUB_OUTPUT (DOR-4175, DOR-4030). Later steps read it from `env:`,
+      # never `${{ }}` in a script.
       - name: Extract version from tag
         id: version
         run: |
           set -euo pipefail
-          version=$(bash scripts/release-version.sh "$GITHUB_REF_NAME")
+          version=$(bash scripts/release-version.sh "$RELEASE_TAG")
           echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${EXPECTED_SHA:0:7}" >> "$GITHUB_OUTPUT"
 
       - name: Wait for npm package availability
         env:
@@ -157,10 +313,13 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.HUB_IMAGE_NAME }}
           tags: |
-            type=semver,pattern={{version}}
-            type=sha
+            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=sha-${{ steps.version.outputs.short_sha }}
           flavor: |
             latest=false
+          labels: |
+            org.opencontainers.image.revision=${{ env.EXPECTED_SHA }}
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
 
       - name: Build and push the hub image
         id: push
@@ -177,12 +336,7 @@ jobs:
             INSTALL_MODE=npm
             DORKOS_VERSION=${{ steps.version.outputs.version }}
           cache-from: type=gha,scope=hub
-          # No cache-to on a tag push (DOR-4635). A tag ref's Actions cache can be
-          # restored only by that same tag, so the next release never reads it;
-          # mode=max multi-arch layers wrote ~3.9 GB per release and pushed the
-          # repo past its 10 GB cache budget, evicting main's CI caches. A
-          # workflow_dispatch from main still writes, and tags can read that.
-          cache-to: ${{ startsWith(github.ref, 'refs/tags/') && '' || 'type=gha,mode=max,scope=hub' }}
+          # No cache-to (DOR-4635), as for build-and-push above.
 
       - name: Attest the image digest
         uses: actions/attest-build-provenance@v4
@@ -191,6 +345,9 @@ jobs:
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
 
+      # The attestation names this run: main's copy of this workflow, on
+      # refs/heads/main. Which tag it was built for is in the image's labels
+      # and this run's summary.
       - name: Verify the attestation, and name the digest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -203,11 +360,16 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/publish-docker.yml" \
             --source-ref "$GITHUB_REF"
-          echo "Hub image ${PKG_VERSION}: \`${image}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Hub image ${PKG_VERSION} (\`${EXPECTED_SHA}\`): \`${image}\`" >> "$GITHUB_STEP_SUMMARY"
 
-  # Mirror the just-pushed GHCR multi-arch image to Docker Hub. GHCR is and
-  # stays the canonical registry; this job is a best-effort mirror purely for
-  # discoverability on Docker Hub — nothing in the product depends on it.
+  # Mirror the runtime image to Docker Hub. GHCR is and stays the canonical
+  # registry; this job is a best-effort mirror purely for discoverability on
+  # Docker Hub — nothing in the product depends on it.
+  #
+  # BY DIGEST, FROM THIS RUN (DOR-4030): the source is the manifest list
+  # build-and-push pushed a few minutes earlier in this same verified run,
+  # named by its digest, never by a GHCR tag (a tag there can be moved by
+  # anything that can write the package; see KNOWN GAP above).
   #
   # DORMANT BY DEFAULT and never fails when unconfigured: the whole job is gated
   # on the repository VARIABLE `DOCKERHUB_MIRROR` (repository variables are
@@ -215,87 +377,72 @@ jobs:
   # simply skips it. To enable:
   #   1. Set repository variable DOCKERHUB_MIRROR = true
   #   2. Add secrets DOCKERHUB_USERNAME and DOCKERHUB_TOKEN (a Docker Hub access
-  #      token with write scope on the destination repo)
+  #      token with write scope on the destination repo) to the
+  #      `release-mirrors` environment, never at repository level
   #   3. Optionally set repository variable DOCKERHUB_IMAGE to override the
   #      destination image (default: dorkai/dorkos)
   #
-  # No rebuild: `docker buildx imagetools create` copies the existing GHCR
-  # manifest list (both linux/amd64 and linux/arm64) to the Docker Hub tags,
-  # preserving multi-arch. The destination tag set mirrors the GHCR flavor
-  # (exact version, major.minor, latest-when-not-prerelease, sha) by reusing
-  # docker/metadata-action against the Docker Hub image name. Designed for the
-  # `v*` tag-push path, like build-and-push above.
+  # No rebuild and no third-party action: `docker buildx imagetools create`
+  # (preinstalled on the runner) copies the manifest list (both linux/amd64
+  # and linux/arm64) to the Docker Hub tags, preserving multi-arch. The tag
+  # set is the GHCR image's: the exact version, major.minor, `latest` and
+  # `sha-<7>` of the tag's commit.
   mirror-docker-hub:
-    needs: build-and-push
-    if: vars.DOCKERHUB_MIRROR == 'true'
+    needs: [tag-is-on-main, build-and-push]
+    # Names `release-mirrors`, so main's copy, dispatched on main, only
+    # (DOR-4030; the census's tag gate checks this line).
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && vars.DOCKERHUB_MIRROR == 'true'
     runs-on: ubuntu-latest
+    # DOCKERHUB_USERNAME and DOCKERHUB_TOKEN live only in the `release-mirrors`
+    # environment (DOR-4030), which needs its reviewer's approval and deploys
+    # only `main`.
+    environment: release-mirrors
     # A manifest copy normally finishes in under 2 minutes; this is headroom,
     # not an expected duration.
     timeout-minutes: 15
     permissions:
       contents: read
       packages: read
+    env:
+      TAG_SHA: ${{ needs.tag-is-on-main.outputs.sha }}
+      IMAGE_DIGEST: ${{ needs.build-and-push.outputs.digest }}
+      DOCKERHUB_IMAGE: ${{ vars.DOCKERHUB_IMAGE || 'dorkai/dorkos' }}
     steps:
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      # Read-only login to the canonical source registry so the mirror works
-      # even if the GHCR package is private.
-      - name: Log in to GHCR (source)
-        uses: docker/login-action@v4
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Log in to Docker Hub (destination)
-        uses: docker/login-action@v4
-        with:
-          registry: docker.io
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      # This job has no other checkout: it only needs the tag check.
-      - name: Checkout for the release tag check
-        uses: actions/checkout@v7
-        with:
-          sparse-checkout: |
-            scripts/release-version.sh
-          persist-credentials: false
-
-      # A tag name is untrusted text: refuse anything but a plain release tag
-      # before the version reaches a command, a path or $GITHUB_OUTPUT
-      # (DOR-4175).
-      - name: Extract version from tag
-        id: version
+      - name: Refuse anything but main's copy and a strict tag
         run: |
           set -euo pipefail
-          version=$(bash scripts/release-version.sh "$GITHUB_REF_NAME")
-          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          [[ "$GITHUB_REF" == refs/heads/main ]] || exit 1
+          [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]] || exit 1
+          [[ "$GITHUB_WORKFLOW_REF" == "$GITHUB_REPOSITORY/.github/workflows/publish-docker.yml@refs/heads/main" ]] || exit 1
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || exit 1
+          [[ "$TAG_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          [[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || exit 1
+          [[ "$DOCKERHUB_IMAGE" =~ ^[a-z0-9]+([._-][a-z0-9]+)*/[a-z0-9]+([._-][a-z0-9]+)*$ ]] || exit 1
 
-      - name: Compute Docker Hub tags
-        id: meta
-        uses: docker/metadata-action@v6
-        with:
-          images: ${{ vars.DOCKERHUB_IMAGE || 'dorkai/dorkos' }}
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha
-          flavor: |
-            latest=auto
-
-      - name: Mirror manifests from GHCR to Docker Hub
+      - name: Mirror the manifest list from GHCR to Docker Hub
         env:
-          PKG_VERSION: ${{ steps.version.outputs.version }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
           set -euo pipefail
-          source="${REGISTRY}/${IMAGE_NAME}:${PKG_VERSION}"
-          echo "Mirroring ${source} to Docker Hub:"
-          echo "${DOCKER_METADATA_OUTPUT_TAGS}"
+          version="${RELEASE_TAG#v}"
+          IFS=. read -r major minor _ <<< "$version"
+          source="${REGISTRY}/${IMAGE_NAME}@${IMAGE_DIGEST}"
+          # Read-only login to the canonical source registry, so the mirror
+          # works even if the GHCR package is private.
+          printf '%s' "$GHCR_TOKEN" | docker login "$REGISTRY" -u "$GITHUB_ACTOR" --password-stdin
+          printf '%s' "$DOCKERHUB_TOKEN" | docker login docker.io -u "$DOCKERHUB_USERNAME" --password-stdin
+          tags=("${version}" "${major}.${minor}" latest "sha-${TAG_SHA:0:7}")
           tag_args=()
-          while IFS= read -r tag; do
-            [ -n "$tag" ] || continue
-            tag_args+=("--tag" "$tag")
-          done <<< "${DOCKER_METADATA_OUTPUT_TAGS}"
+          for t in "${tags[@]}"; do
+            tag_args+=("--tag" "docker.io/${DOCKERHUB_IMAGE}:${t}")
+          done
+          echo "Mirroring ${source} to Docker Hub as ${tags[*]}"
           docker buildx imagetools create "${tag_args[@]}" "$source"
+
+      - name: Log out of both registries
+        if: always()
+        run: |
+          docker logout docker.io || true
+          docker logout "$REGISTRY" || true

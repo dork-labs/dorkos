@@ -58,6 +58,7 @@ bash scripts/test-check-banned-words.sh
 bash scripts/test-check-dead-doc-paths.sh
 bash scripts/test-check-nul-bytes.sh
 bash scripts/test-release-version.sh
+bash scripts/test-tag-is-on-main.sh
 bash scripts/test-wait-for-npm.sh
 bash scripts/test-npm-tarball-sha256.sh
 bash scripts/test-heavy-run-lock.sh

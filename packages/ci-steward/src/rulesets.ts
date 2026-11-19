@@ -1,11 +1,13 @@
 /**
  * The run-wide checks: the merge-queue ruleset reconciled against
- * `ci/required-checks.json`, the two data-branch safeguard rulesets, and the
- * cache and release reads every snapshot of the run shares.
+ * `ci/required-checks.json`, the two data-branch safeguard rulesets, the
+ * secret-environments alarm, and the cache and release reads every snapshot of the
+ * run shares.
  */
 import type { Health, Snapshot } from './data.ts';
 import { BudgetExhausted, type Gh } from './gh.ts';
 import type { HandFiles } from './load.ts';
+import { checkSecretEnvironments } from './secret-environments.ts';
 import { checkLiveWorkflows, UNREADABLE_CODE } from './required-workflows.ts';
 
 type Obj = Record<string, unknown>;
@@ -174,6 +176,11 @@ export function globalChecks(gh: Gh, files: HandFiles): GlobalChecks {
       );
     }
   }
+  const secretEnvs = checkSecretEnvironments(gh, files);
+  failures.push(...secretEnvs.failures);
+  // A check this token may not make (repository secrets need Secrets: read,
+  // which the collector is not given) is neither red nor a pass: a warning.
+  warnings.push(...secretEnvs.notChecked);
   const usage = gh.rest(`repos/${repo}/actions/cache/usage`) as Obj;
   const cache = {
     bytes: Number(usage.active_caches_size_in_bytes ?? 0),
