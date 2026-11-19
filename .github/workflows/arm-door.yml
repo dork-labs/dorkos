@@ -1,7 +1,7 @@
 name: arm-door
 
-# The merge queue's door for the arm rule (DOR-4648). On every queue entry,
-# whoever queued it, this reads the pull request's head and scripts/arm-door.sh
+# The merge queue's door for the arm rule (DOR-4648). Seconds after every queue
+# entry, whoever queued it, this reads the pull request's head and scripts/arm-door.sh
 # decides (fixtures: scripts/test-arm-door.sh; ledger:
 # ci/ledger/261118-183332-arm-door.md):
 #
@@ -14,12 +14,16 @@ name: arm-door
 #   - The arm script only gets a comment. Gates met but no `arm-record` stamp
 #     means it went in some other way, and the author is told once.
 #
-# It never jams the queue on its own errors: it fails OPEN. Anything it cannot
-# read keeps the entry, with a warning and one comment. It is not a required
-# check, and it stays GREEN whatever happens, for the reason
-# queue-repeat-guard.yml gives: a red run on the merge-group commit is listed
-# among that build's failed checks. Every step is `continue-on-error`, every
-# failure is a `::warning::`, and the step ends `exit 0`.
+# It never jams the queue on its own errors. Anything it cannot read keeps the
+# entry, with a warning and one comment. It is not a required check, and it
+# stays GREEN on those errors, for the reason queue-repeat-guard.yml gives:
+# every read failure is a `::warning::`, and the check step ends `exit 0`.
+#
+# ONE EXCEPTION, FAIL CLOSED: the App token. Without it the door can take
+# nothing out, so the label gate would be off with only a warning. If the
+# token cannot be minted (the key missing from `automation`, or the App
+# refused), the run goes RED with an error saying the gate is off, and stays
+# red on every entry until the key is back.
 #
 # merge-tail (disabled since 2026-11-18) is held to the same gates: an entry it
 # queues stays only if the head carries Security's label and a proof this can
@@ -34,11 +38,25 @@ name: arm-door
 #
 # WHOSE KEY: the workflow's own token reads; the `dorkos-merge-tail` GitHub
 # App's token (as in queue-repeat-guard.yml) dequeues and comments. It has no
-# Administration permission.
+# Administration permission. The key lives only in the `automation`
+# environment, which deploys only `main` (DOR-4030).
+#
+# WHY `workflow_run`, NOT `merge_group` (DOR-4030, Security M2, Nov 19): a
+# `merge_group` run uses the queue ref's copy of this file, which is the pull
+# request's own copy, so a queued pull request could rewrite this job while
+# the App key was in reach. A `workflow_run` run always uses main's copy, on
+# main's ref, so it can enter `automation`. Like queue-repeat-guard.yml, it
+# fires when changelog-fragment-check (a required check that takes seconds)
+# finishes on a queue entry, so the entry is judged seconds after it is
+# queued. It never checks out, downloads or runs anything from the pull
+# request or its queue run: only main's tree, and the queue ref's name,
+# validated before use. If the entry has already left the queue, it does
+# nothing.
 
 on:
-  merge_group:
-    types: [checks_requested]
+  workflow_run:
+    workflows: [changelog-fragment-check]
+    types: [completed]
 
 permissions:
   contents: read
@@ -53,24 +71,27 @@ env:
 
 jobs:
   door:
+    # Only a queue entry's run; the same workflow also runs on pull requests.
+    if: github.event.workflow_run.event == 'merge_group'
     runs-on: ubuntu-latest
+    environment: automation
     timeout-minutes: 10
     steps:
-      # The queue's base, not this entry's own tree: the scripts below run with
-      # a write token, so they must not be ones the pull request being judged
-      # could have edited. Same reason as security-gate.yml.
-      - uses: actions/checkout@v7
+      # Main's own tree, the default for `workflow_run`: no `ref:` from the
+      # triggering run, whose tree the pull request being judged could have
+      # edited. The scripts below run with a write token.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         continue-on-error: true
         timeout-minutes: 2
         with:
-          ref: ${{ github.event.merge_group.base_sha }}
           persist-credentials: false
 
+      # Fails closed: no `continue-on-error`. A door without the token cannot
+      # take anything out, so the run goes red instead (see the header).
       - name: Mint the merge-tail app token
         id: app-token
-        continue-on-error: true
         timeout-minutes: 1
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ secrets.MERGE_TAIL_APP_CLIENT_ID }}
           private-key: ${{ secrets.MERGE_TAIL_APP_PRIVATE_KEY }}
@@ -79,6 +100,15 @@ jobs:
           # requests to comment, contents for the dequeue.
           permission-contents: write
           permission-pull-requests: write
+
+      - name: Fail closed without the app token
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          if [[ -z "$APP_TOKEN" ]]; then
+            echo "::error::arm-door: no merge-tail app token, so the label and proof gate is OFF for this entry. Put MERGE_TAIL_APP_CLIENT_ID and MERGE_TAIL_APP_PRIVATE_KEY back in the automation environment."
+            exit 1
+          fi
 
       - name: Check the head's gates and the arm script's stamp
         continue-on-error: true
@@ -89,13 +119,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           APP_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO: ${{ github.repository }}
-          HEAD_REF: ${{ github.event.merge_group.head_ref }}
+          # The queue ref the triggering run ran on, e.g.
+          # gh-readonly-queue/main/pr-123-<40 hex>. Through env, never `${{ }}`
+          # in the script, and validated before any use.
+          HEAD_REF: ${{ github.event.workflow_run.head_branch }}
         run: |
           # Not -e (GitHub's default shell sets it): every failure is handled.
           set +e -uo pipefail
           warn() { echo "::warning::arm-door: $*"; }
+          [[ $HEAD_REF =~ ^gh-readonly-queue/main/pr-[0-9]+-[0-9a-f]{40}$ ]] \
+            || { warn "not a main queue ref; nothing to judge"; exit 0; }
           [[ -f scripts/arm-door.sh && -f scripts/queue-repeat-guard.sh ]] \
-            || { warn "the queue base has no scripts/arm-door.sh; nothing checked on this entry"; exit 0; }
+            || { warn "main has no scripts/arm-door.sh; nothing checked on this entry"; exit 0; }
           pr=$(bash scripts/queue-repeat-guard.sh pr-from-ref "$HEAD_REF") \
             || { warn "not a queue ref: $HEAD_REF"; exit 0; }
           w=$(mktemp -d)
