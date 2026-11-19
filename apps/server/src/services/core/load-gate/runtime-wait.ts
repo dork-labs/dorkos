@@ -19,7 +19,6 @@ import { classifyCommand } from './heavy-classifier.js';
 import {
   errorName,
   hardCapMs,
-  type BusyStatus,
   isAbortError,
   type HeldSlot,
   type JobOwner,
@@ -73,31 +72,20 @@ export function loadWaitEvent(status: WaitStatus, settings: LoadGateSettings | n
 
 /**
  * What the chat says while a new reply waits for the computer to calm down before it starts
- * (DOR-4743). It is not in the line, so it has no place to tell.
- *
- * @param status - How the wait is going, as the gate reports it.
- * @param capMs - When the reply starts anyway, or `undefined` when the settings cannot be read.
+ * (DOR-4743). It is not in the line, so it has no place to tell, and it starts anyway at
+ * `maxWaitMinutes`, so there is no "still waiting" to say either.
  */
-export function loadStartWaitMessage(status: BusyStatus, capMs: number | undefined): string {
-  if (!status.pastMaxWait) return 'Waiting for the computer to calm down before starting.';
-  const startsAnyway =
-    capMs === undefined ? '' : ` It starts anyway in about ${roughly(capMs - status.waitedMs)}.`;
-  return `Still waiting for the computer before starting.${startsAnyway}`;
-}
+const LOAD_START_WAIT_MESSAGE = 'Waiting for the computer to calm down before starting.';
 
 /**
  * The chat's status line while a new reply waits to start: the same `waiting_for_load` status a
  * waiting job sends, so the app shows and clears it the same way.
- *
- * @param status - How the wait is going, as the gate reports it.
- * @param settings - The settings in force, or `null` when they cannot be read.
  */
-export function loadStartWaitEvent(
-  status: BusyStatus,
-  settings: LoadGateSettings | null
-): StreamEvent {
-  const message = loadStartWaitMessage(status, settings ? hardCapMs(settings) : undefined);
-  return { type: 'system_status', data: { message, status: LOAD_WAIT_STATUS } };
+export function loadStartWaitEvent(): StreamEvent {
+  return {
+    type: 'system_status',
+    data: { message: LOAD_START_WAIT_MESSAGE, status: LOAD_WAIT_STATUS },
+  };
 }
 
 /**

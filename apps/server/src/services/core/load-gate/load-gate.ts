@@ -44,7 +44,7 @@ import type { HolderProbe } from './holder-identity.js';
 
 const MS_PER_MINUTE = 60_000;
 /** How often a waiting job checks again, and a running job refreshes its slot. */
-const DEFAULT_POLL_MS = 5_000;
+export const DEFAULT_POLL_MS = 5_000;
 /** How often a waiting job's caller hears how the wait is going. */
 const DEFAULT_NOTICE_EVERY_MS = 60_000;
 /** A record lasts this many polls without a heartbeat, and never less than the default lease. */
@@ -127,7 +127,7 @@ export interface WaitOptions {
 }
 
 /** How a wait for the computer to calm down is doing, as its caller sees it. Counts only. */
-export type BusyStatus = Pick<WaitStatus, 'load' | 'maxLoad' | 'waitedMs' | 'pastMaxWait'>;
+export type BusyStatus = Pick<WaitStatus, 'load' | 'maxLoad' | 'waitedMs'>;
 
 /** How one {@link LoadGate.waitWhileBusy} is run. */
 export interface BusyWaitOptions {
@@ -199,8 +199,9 @@ export interface LoadGate {
   occupy(command: string, request?: { shareKey?: string }): HeldSlot | null;
   /**
    * Wait while the computer is busy (the load at or above `maxLoad`) and `busy` says so. Returns
-   * at once when either is not so, or the gate is off. Like every wait it fails open: past the
-   * hard cap, or when the settings or the load cannot be read, it returns.
+   * at once when either is not so, or the gate is off. It is for new work a person asked for (a
+   * reply), not a heavy job, so it waits no longer than `maxWaitMinutes`, not the hard cap; and it
+   * fails open: when the settings or the load cannot be read, it returns.
    *
    * @param busy - The caller's own reason to wait, read again on every check.
    * @param options - Cancellation and progress.
@@ -586,20 +587,17 @@ export function createLoadGate(options: LoadGateOptions): LoadGate {
       if (busyFor === null) return;
       const { settings, load } = busyFor;
       const waitedMs = now() - startedAt;
-      if (waitedMs >= hardCapMs(settings)) {
+      // What waits here is new work a person asked for, not a heavy job: it waits no longer than
+      // `maxWaitMinutes`, where a heavy job would only be told it is still waiting.
+      if (waitedMs >= settings.maxWaitMinutes * MS_PER_MINUTE) {
         log(
-          `[LoadGate] Work started after waiting ${Math.round(waitedMs / MS_PER_MINUTE)} min, the hard cap`
+          `[LoadGate] Work started after waiting ${Math.round(waitedMs / MS_PER_MINUTE)} min, the longest it waits`
         );
         return;
       }
       if (opts.signal?.aborted) throw abortError();
       if (now() >= nextNotice) {
-        reportBusy(opts.onWait, {
-          load,
-          maxLoad: settings.maxLoad,
-          waitedMs,
-          pastMaxWait: waitedMs >= settings.maxWaitMinutes * MS_PER_MINUTE,
-        });
+        reportBusy(opts.onWait, { load, maxLoad: settings.maxLoad, waitedMs });
         nextNotice = now() + noticeEveryMs;
       }
       await sleep(pollMs, opts.signal);

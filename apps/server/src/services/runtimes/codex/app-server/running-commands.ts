@@ -15,20 +15,26 @@
  *   waits behind it. A light command, such as `ls`, takes nothing.
  * - **A new Codex reply waits to start** while the computer is busy and Codex commands already hold
  *   slots ({@link CodexRunningCommands.startWhenCalm}): it could start more of them, unheld. It shows
- *   the same `waiting_for_load` status a waiting job does, a Stop ends it before Codex is told
- *   anything, and it starts anyway at the hard cap, as every wait does.
+ *   the same `waiting_for_load` status a waiting job does, and a Stop ends it before Codex is told
+ *   anything. It is a person's reply, not a heavy job, so it starts anyway at `maxWaitMinutes`,
+ *   never waiting as long as the hard cap.
  *
  * **An asked command counts once.** Codex sends `item/started` for a command it is about to ask
  * about, then the ask (verified on 0.154), so the command's slot goes back while its ask waits in
  * line and its card is up ({@link CodexRunningCommands.suspend}): it is not running yet. Once the
- * ask is answered the
- * command takes a slot again until it completes ({@link CodexRunningCommands.resume}). An ask that
- * arrives before its `item/started` is handled the same way.
+ * ask is answered the command takes a slot again until it completes
+ * ({@link CodexRunningCommands.resume}). An ask that arrives before its `item/started` is handled
+ * the same way, and so is a second ask about a command already running (its network access): no
+ * card ever holds a slot, because a person may take hours to answer it.
  *
  * **What is left.** A Codex command still starts on a busy computer when its reply began while the
  * computer was calm: it never waits, it is only counted, and everything else waits behind it. A
  * command Codex keeps running after its reply ends (a background terminal) gives its slot back at
- * the reply's end. A chat's running commands share one slot, as every thread's heavy jobs do.
+ * the reply's end. A chat's running commands share one slot, as every thread's heavy jobs do. A
+ * Codex helper's own commands are not counted at all: the transport listens to the main thread
+ * only, so a helper on Full access runs heavy jobs unseen. A reply that was stopped but that Codex
+ * keeps running for a while (a lingering turn) gives its slots back when DorkOS closes the turn,
+ * not when Codex finally ends it.
  *
  * Nothing here logs or shows command text: the program's name and counts only.
  *
@@ -36,13 +42,14 @@
  */
 import type { StreamEvent } from '@dorkos/shared/types';
 import { logger } from '../../../../lib/logger.js';
-import { errorName, isAbortError, type HeldSlot } from '../../../core/load-gate/load-gate.js';
-import { loadGateSettings, machineLoadGate } from '../../../core/load-gate/machine-load-gate.js';
 import {
-  loadStartWaitEvent,
-  readSettingsOrNull,
-  type RuntimeWaitDeps,
-} from '../../../core/load-gate/runtime-wait.js';
+  DEFAULT_POLL_MS,
+  errorName,
+  isAbortError,
+  type HeldSlot,
+} from '../../../core/load-gate/load-gate.js';
+import { machineLoadGate } from '../../../core/load-gate/machine-load-gate.js';
+import { loadStartWaitEvent, type RuntimeWaitDeps } from '../../../core/load-gate/runtime-wait.js';
 import type { TurnSink } from './thread-channel.js';
 import type { ServerNotification } from './protocol/methods.js';
 
@@ -58,6 +65,19 @@ import type { ServerNotification } from './protocol/methods.js';
  */
 const codexRunningKey = (sessionId: string): string => `codex:${sessionId}:running`;
 
+/** What the registry counts with: the gate, the log, and the clock its heartbeats are timed on. */
+export type RunningCommandsDeps = RuntimeWaitDeps & {
+  /** The wall clock; the gate's own in tests, so a heartbeat's timing is the test's. */
+  now?: () => number;
+};
+
+/**
+ * How often a talking command refreshes its slot at most: the gate's own poll, well inside the
+ * lease, so a command that prints thousands of lines costs a file touch every few seconds, not one
+ * per line.
+ */
+const BEAT_EVERY_MS = DEFAULT_POLL_MS;
+
 /** What the registry reads of an open turn. */
 export interface RunningCommandsTurn {
   /** The DorkOS session. */
@@ -70,6 +90,8 @@ export interface RunningCommandsTurn {
 interface RunningItem {
   readonly command: string;
   slot: HeldSlot | null;
+  /** When the slot was last refreshed: taken counts as refreshed. */
+  lastBeat: number;
 }
 
 /** One open turn's commands. */
@@ -89,13 +111,18 @@ interface CommandParams {
 export class CodexRunningCommands {
   private readonly turns = new Map<RunningCommandsTurn, TurnCommands>();
   private readonly ended = new WeakSet<RunningCommandsTurn>();
+  private readonly now: () => number;
+  /** Whether a failure to count has been logged; once is enough. */
+  private failureLogged = false;
 
   /**
    * Construct the registry.
    *
-   * @param deps - The gate, the settings and the log; the server's own by default.
+   * @param deps - The gate, the log and the clock; the server's own by default.
    */
-  constructor(private readonly deps: RuntimeWaitDeps = {}) {}
+  constructor(private readonly deps: RunningCommandsDeps = {}) {
+    this.now = deps.now ?? Date.now;
+  }
 
   /**
    * Watch a turn's notifications for its commands, then hand each on to the sink unchanged. Every
@@ -109,7 +136,17 @@ export class CodexRunningCommands {
   watch(sink: TurnSink, turn: RunningCommandsTurn): TurnSink {
     const notify = sink.notify;
     sink.notify = (notification) => {
-      this.observe(turn, notification);
+      try {
+        this.observe(turn, notification);
+      } catch (error) {
+        // Counting must never cost the turn a notification.
+        if (!this.failureLogged) {
+          this.failureLogged = true;
+          (this.deps.log ?? logger).warn('[LoadGate] a Codex command could not be counted', {
+            error: errorName(error),
+          });
+        }
+      }
       notify.call(sink, notification);
     };
     void turn.completed.then(() => this.endTurn(turn));
@@ -142,7 +179,10 @@ export class CodexRunningCommands {
     if (commands === undefined || itemId === undefined) return;
     commands.asking.delete(itemId);
     const item = commands.items.get(itemId);
-    if (item && item.slot === null) item.slot = this.occupy(turn, item.command);
+    if (item && item.slot === null) {
+      item.slot = this.occupy(turn, item.command);
+      item.lastBeat = this.now();
+    }
   }
 
   /** How many Codex commands hold a slot now. */
@@ -167,7 +207,6 @@ export class CodexRunningCommands {
   }): AsyncGenerator<StreamEvent, boolean> {
     // Nothing of Codex's is running: a new reply adds nothing unseen to a busy computer.
     if (this.holding() === 0) return true;
-    const settings = this.deps.settings ?? loadGateSettings;
     const log = this.deps.log ?? logger;
     const said: StreamEvent[] = [];
     const state: { ended?: 'start' | 'stopped' } = {};
@@ -175,8 +214,8 @@ export class CodexRunningCommands {
     const waited = (async () => {
       await (this.deps.gate ?? machineLoadGate)().waitWhileBusy(() => this.holding() > 0, {
         signal: request.signal,
-        onWait: (status) => {
-          said.push(loadStartWaitEvent(status, readSettingsOrNull(settings)));
+        onWait: () => {
+          said.push(loadStartWaitEvent());
           wake();
         },
       });
@@ -212,10 +251,7 @@ export class CodexRunningCommands {
     if (notification.method === 'item/started') this.started(turn, params?.item);
     else if (notification.method === 'item/completed') this.finished(turn, params?.item?.id);
     else if (notification.method === 'item/commandExecution/outputDelta') {
-      // A command still talking is still running: its slot stays fresh past the hard cap.
-      if (typeof params?.itemId === 'string') {
-        this.turns.get(turn)?.items.get(params.itemId)?.slot?.heartbeat();
-      }
+      if (typeof params?.itemId === 'string') this.talking(turn, params.itemId);
     }
   }
 
@@ -226,7 +262,20 @@ export class CodexRunningCommands {
     if (commands === undefined || commands.items.has(item.id)) return;
     // Its ask is waiting: it is not running yet, and takes a slot once the ask is answered.
     const slot = commands.asking.has(item.id) ? null : this.occupy(turn, item.command);
-    commands.items.set(item.id, { command: item.command, slot });
+    commands.items.set(item.id, { command: item.command, slot, lastBeat: this.now() });
+  }
+
+  /**
+   * A command still talking is still running: its slot stays fresh past the hard cap, at most once
+   * a poll, since each refresh touches a file.
+   */
+  private talking(turn: RunningCommandsTurn, itemId: string): void {
+    const item = this.turns.get(turn)?.items.get(itemId);
+    if (!item?.slot) return;
+    const at = this.now();
+    if (at - item.lastBeat < BEAT_EVERY_MS) return;
+    item.lastBeat = at;
+    item.slot.heartbeat();
   }
 
   private finished(turn: RunningCommandsTurn, itemId: unknown): void {

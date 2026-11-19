@@ -49,16 +49,15 @@
  * @module services/runtimes/codex/app-server/load-gate-hold
  */
 import type { StreamEvent } from '@dorkos/shared/types';
-import {
-  waitForHeavyTurn,
-  wouldHold,
-  type RuntimeWaitDeps,
-} from '../../../core/load-gate/runtime-wait.js';
+import { waitForHeavyTurn, wouldHold } from '../../../core/load-gate/runtime-wait.js';
 import type { ServerRequest } from './protocol/methods.js';
-import { CodexRunningCommands } from './running-commands.js';
+import { CodexRunningCommands, type RunningCommandsDeps } from './running-commands.js';
 
-/** What the holder waits with: the gate, the settings and the log, the server's own by default. */
-export type HeavyAskDeps = RuntimeWaitDeps;
+/**
+ * What the holder waits and counts with: the gate, the settings, the log and the clock, the
+ * server's own by default.
+ */
+export type HeavyAskDeps = RunningCommandsDeps;
 
 /** The one ask a heavy command can be held at. */
 const COMMAND_APPROVAL_METHOD = 'item/commandExecution/requestApproval';
@@ -171,13 +170,11 @@ export class CodexHeavyAsks {
   ): unknown {
     const turn = requestTurn(byThread, process, request);
     const ask = turn === undefined ? undefined : askedCommand(request);
-    if (
-      turn === undefined ||
-      ask === undefined ||
-      !wouldHold(ask.command, this.deps) ||
-      this.heldBefore(turn, ask.itemId)
-    ) {
-      return answer();
+    if (turn === undefined || ask === undefined) return answer();
+    // A light command, the gate off, or a second ask about one command (its network access): no
+    // wait, but its card still holds no slot.
+    if (!wouldHold(ask.command, this.deps) || this.heldBefore(turn, ask.itemId)) {
+      return this.cardHoldsNoSlot(turn, ask.itemId, answer);
     }
     const key = waitKey(process.key, request.id);
     const entry: WaitingAsk = { stop: new AbortController(), withdrawn: false, turnEnded: false };
@@ -207,9 +204,22 @@ export class CodexHeavyAsks {
       slot?.release();
       // Codex withdrew it, or its turn is over: nobody is left to ask (see the module's TSDoc).
       if (entry.withdrawn || entry.turnEnded) return undefined;
-      // Answered, it runs (or Codex reports it declined at once): counted again until it completes.
-      return Promise.resolve(answer()).finally(() => this.running.resume(turn, ask.itemId));
+      return this.cardHoldsNoSlot(turn, ask.itemId, answer);
     });
+  }
+
+  /**
+   * Run the normal handling (a person's card, or a refusal) with the command's slot given back, and
+   * take it again once the ask is answered: it runs then, or Codex reports it declined at once and
+   * its `item/completed` gives the slot back. A card can wait for hours; it never holds a slot.
+   */
+  private cardHoldsNoSlot(
+    turn: HeldAskTurn,
+    itemId: string | undefined,
+    answer: () => unknown
+  ): Promise<unknown> {
+    this.running.suspend(turn, itemId);
+    return Promise.resolve(answer()).finally(() => this.running.resume(turn, itemId));
   }
 
   /**

@@ -623,7 +623,7 @@ describe('waitWhileBusy (DOR-4743)', () => {
     const seen: BusyStatus[] = [];
     const wait = trackWait(gate.waitWhileBusy(() => running, { onWait: (s) => void seen.push(s) }));
     await settle();
-    expect(seen).toEqual([{ load: 20, maxLoad: 16, waitedMs: 0, pastMaxWait: false }]);
+    expect(seen).toEqual([{ load: 20, maxLoad: 16, waitedMs: 0 }]);
     await time.step(MINUTE);
     expect(wait.done).toBe(false);
     expect(seen).toHaveLength(2);
@@ -650,17 +650,18 @@ describe('waitWhileBusy (DOR-4743)', () => {
     expect((wait.error as Error | undefined)?.name).toBe('AbortError');
   });
 
-  it('fails open: at the hard cap, and when the settings cannot be read', async () => {
+  it('gives up at maxWaitMinutes, not the hard cap: what waits here is a person’s reply', async () => {
     const { gate, time, lines } = setup(20);
-    const seen: BusyStatus[] = [];
-    const wait = trackWait(gate.waitWhileBusy(() => true, { onWait: (s) => void seen.push(s) }));
+    const wait = trackWait(gate.waitWhileBusy(() => true));
     await settle();
-    await time.step(60 * MINUTE);
-    expect(seen.at(-1)).toMatchObject({ pastMaxWait: true });
-    await time.step(180 * MINUTE);
+    await time.step(59 * MINUTE);
+    expect(wait.done).toBe(false);
+    await time.step(MINUTE);
     expect(wait.done).toBe(true);
-    expect(lines).toEqual(['[LoadGate] Work started after waiting 240 min, the hard cap']);
+    expect(lines).toEqual(['[LoadGate] Work started after waiting 60 min, the longest it waits']);
+  });
 
+  it('fails open when the settings cannot be read', async () => {
     const broken = createLoadGate({
       config: () => {
         throw new Error('not loaded');
