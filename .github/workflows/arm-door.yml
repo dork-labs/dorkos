@@ -44,6 +44,7 @@ permissions:
   contents: read
   statuses: read
   checks: read
+  actions: read
   pull-requests: read
   issues: read
 
@@ -109,10 +110,32 @@ jobs:
           }
           if [[ -n "$head" ]]; then
             JQ='.[0]' rd "$w/committed" gh api "repos/$REPO/commits/$head" --jq '.commit.committer.date | tojson'
+            # When THIS PR last got the head: the LATEST `typecheck.yml` `pull_request` run for
+            # that SHA on the PR's own branch, from this repo. The pusher sets the committer
+            # date, and a commit's check suites belong to the SHA repo-wide, so the label is
+            # timed against the later of the committer date and this (DOR-4706). typecheck runs
+            # on opened, synchronize and reopened, never on `labeled`; the latest, so a head that
+            # left and came back, or a reused branch name, can't date it by an old run; this repo
+            # only, so a fork's same-named branch can't count. The arm script and the release
+            # range check use the same rule (.temp/coord/head-seen.sh). None yet: null, and the
+            # script decides on the committer date alone or keeps the entry.
+            branch=$(gh pr view "$pr" --repo "$REPO" --json headRefName --jq .headRefName 2>/dev/null) || branch=
+            if [[ -n "$branch" ]]; then
+              gh api --paginate "repos/$REPO/actions/runs?head_sha=$head&event=pull_request&per_page=100" \
+                --jq '.workflow_runs[] | "\(.path)\t\(.head_branch)\t\(.head_repository.full_name)\t\(.created_at)"' \
+                > "$w/runs-by-branch" 2>/dev/null \
+                && awk -F'\t' -v b="$branch" -v r="$REPO" \
+                     '$1==".github/workflows/typecheck.yml" && $2==b && $3==r && $4!="" {print $4}' "$w/runs-by-branch" \
+                   | sort | tail -1 \
+                   | jq -R -s -c 'split("\n") | map(select(. != "")) | first' > "$w/seen" 2>/dev/null \
+                || echo null > "$w/seen"
+            else
+              echo null > "$w/seen"
+            fi
             JQ='add // []' rd "$w/statuses" gh api --paginate "repos/$REPO/commits/$head/statuses?per_page=100"
             JQ='.' rd "$w/runs" gh api --paginate "repos/$REPO/commits/$head/check-runs?per_page=100" --jq '.check_runs[]'
           else
-            for f in committed statuses runs; do echo null > "$w/$f"; done
+            for f in committed seen statuses runs; do echo null > "$w/$f"; done
           fi
           JQ='.' rd "$w/labels" gh api --paginate "repos/$REPO/issues/$pr/events?per_page=100" \
             --jq '.[] | select(.event == "labeled" and .label.name == "security-reviewed") | .created_at | tojson'
@@ -122,10 +145,10 @@ jobs:
           jq -c '.contexts // null' ci/required-checks.json > "$w/required" 2>/dev/null || echo null > "$w/required"
 
           jq -n --arg head "$head" \
-            --slurpfile committed "$w/committed" --slurpfile statuses "$w/statuses" \
+            --slurpfile committed "$w/committed" --slurpfile seen "$w/seen" --slurpfile statuses "$w/statuses" \
             --slurpfile runs "$w/runs" --slurpfile labels "$w/labels" --slurpfile files "$w/files" \
             --slurpfile changed "$w/changed" --slurpfile required "$w/required" '
-            {head: $head, headCommittedAt: $committed[0], labelEvents: $labels[0],
+            {head: $head, headCommittedAt: $committed[0], headSeenAt: $seen[0], labelEvents: $labels[0],
              statuses: $statuses[0], checkRuns: $runs[0], required: $required[0],
              files: $files[0], changedFiles: $changed[0]}' > "$w/payload.json" 2>/dev/null \
             || echo '{}' > "$w/payload.json"

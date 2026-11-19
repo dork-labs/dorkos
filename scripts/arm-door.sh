@@ -6,10 +6,15 @@
 #   1. The gates, which decide whether the entry stays. It is taken back out
 #      when its head is missing what matters:
 #        - Security's `security-reviewed` label, added at or after the head
-#          commit (the newest label event is not older than the head's committer
-#          date). The same rule the release range check applies to every pull
+#          (the newest label event is not older than the later of the head's
+#          committer date and when this PR last got it: its latest
+#          `typecheck.yml` `pull_request` run on the PR's own branch, from this
+#          repo. The pusher sets the committer date, and a commit's check
+#          suites belong to the SHA repo-wide, so a backdated, side-branch or
+#          returning commit could make an old label look fresh, DOR-4706). The same rule
+#          the release range check and the arm script apply to every pull
 #          request, docs included (#3913 was client-only and still blocked a
-#          release). If docs are ever exempted, both checks change in one PR.
+#          release). If docs are ever exempted, the checks change in one PR.
 #        - a verify proof: the arm script's `arm-record` stamp names one (a
 #          local `pnpm verify` pass, a PM waiver, docs-only or green CI, all of
 #          which only the arm script can see), or this script finds one itself:
@@ -30,7 +35,8 @@
 #
 # Usage:
 #   scripts/arm-door.sh verdict <payload.json>
-#       payload: {head, headCommittedAt, labelEvents: [security-reviewed
+#       payload: {head, headCommittedAt, headSeenAt (the head's latest
+#       typecheck pull_request run on the PR's branch, or null), labelEvents: [security-reviewed
 #       label times], statuses: [head commit statuses], checkRuns: [head check
 #       runs], required: [required contexts], files: [{filename,
 #       previous_filename}], changedFiles}. Prints one line:
@@ -79,10 +85,16 @@ case "$cmd" in
                  and (test("^(contributing|docs)/") or test("\\.md$"));
       .head as $h
       | ([.files[] | .filename, (.previous_filename // empty)]) as $names
-      # Gate 1: the newest security-reviewed label event at or after the head commit.
+      # Gate 1: the newest security-reviewed label event at or after the head,
+      # timed by the later of its committer date and when this PR got it. With no
+      # seen time, a label older than the committer date is still stale; a newer
+      # one cannot be judged, so the entry is kept as unreadable (DOR-4706).
+      | ((.headSeenAt | strings | select(. != "")) // null) as $seen
+      | ([.headCommittedAt, $seen] | map(select(. != null)) | max) as $headtime
       | ([.labelEvents[] | strings] | max) as $label
       | (if $label == null then "no-security-label"
-         elif $label < .headCommittedAt then "security-label-older-than-head"
+         elif $label < $headtime then "security-label-older-than-head"
+         elif $seen == null then "unreadable-seen"
          else null end) as $labelbad
       # The arm script stamp: the newest arm-record, by time then id.
       | ([.statuses[] | select(type == "object" and .context == "arm-record")]
@@ -105,8 +117,10 @@ case "$cmd" in
          elif $docs then "docs-only"
          elif $ci then "ci-green"
          else null end) as $proof
-      | ([$labelbad, (if $proof == null then "no-proof" else null end)] | map(select(. != null))) as $bad
+      | ([(if $labelbad == "unreadable-seen" then null else $labelbad end),
+          (if $proof == null then "no-proof" else null end)] | map(select(. != null))) as $bad
       | if ($bad | length) > 0 then "PULL \($bad | join(","))"
+        elif $labelbad == "unreadable-seen" then "KEEP unreadable headSeenAt"
         else "KEEP gates-met proof=\($proof) stamp=\(if $stamped then "yes" else "no" end)" end
     ' "$src" 2>/dev/null || { echo "KEEP unreadable payload"; exit 2; }
     ;;
