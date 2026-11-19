@@ -402,6 +402,10 @@ Apply at creation so the `opened` event sees them:
 gh pr create --draft --label review:light --title "..." --body "..."
 ```
 
+**Never add or remove a `security-*` label** (`security-reviewed`,
+`security-deep-reviewed`). Only Security's `label-pr.sh` adds them, after its own
+review of the exact head (DOR-4711). If you think a PR needs one, ask Security.
+
 Request a re-review after pushing fixes:
 
 ```bash
