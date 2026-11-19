@@ -8,6 +8,7 @@ import { LocalBrowserService } from '../../../server/src/services/session/local-
 import { BrowserHandover } from '../../../server/src/services/session/local-browser/handover.js';
 import {
   SignInWindow,
+  SIGN_IN_QUIT_TIMEOUT_MS,
   SIGN_IN_SAVE_TIMEOUT_MS,
 } from '../../../server/src/services/session/local-browser/sign-in-window.js';
 import { productionBackend } from '../../../server/src/services/session/local-browser/playwright-backend.js';
@@ -140,8 +141,8 @@ try {
   );
 } finally {
   try {
-    signIns.close();
-    const deadline = performance.now() + SIGN_IN_SAVE_TIMEOUT_MS;
+    signIns.done();
+    const deadline = performance.now() + SIGN_IN_QUIT_TIMEOUT_MS + SIGN_IN_SAVE_TIMEOUT_MS;
     while (signIns.active) {
       assert(performance.now() < deadline, 'The witness must release its plain-window profile');
       await new Promise((resolve) => setTimeout(resolve, 100));

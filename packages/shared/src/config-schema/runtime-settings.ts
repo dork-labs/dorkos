@@ -331,6 +331,74 @@ export const DoeRuntimeSettingsSchema = z
   })
   .default(() => ({ enabled: true, inference: null, defaultModel: null, defaultTrustStop: null }));
 
+/** The most command patterns a person may add to, or take off, the built-in heavy list. */
+const MAX_HEAVY_COMMAND_PATTERNS = 200;
+
+/**
+ * The shipped load-gate settings, fresh on each call so no two parses share a
+ * list. Used by the section default and the `runtimes` default, which must agree.
+ */
+function loadGateDefaults() {
+  return {
+    enabled: true,
+    maxLoad: 16,
+    slots: 1,
+    maxWaitMinutes: 60,
+    hardCapMinutes: 240,
+    heavyCommands: { add: [] as string[], remove: [] as string[] },
+  };
+}
+
+/**
+ * The machine-wide load gate (DOR-4209): every agent's heavy shell jobs (builds,
+ * test suites, typechecks, installs, image builds, commits and pushes that run
+ * hooks) wait in one first-come queue while the machine is busy, so several
+ * agents on one computer stop starting heavy work at the same moment.
+ *
+ * Only a person may change any of it: an agent that could would be letting its
+ * own job past the wait. The gate only ever makes a job wait; it never refuses
+ * one.
+ */
+export const LoadGateSettingsSchema = z
+  .object({
+    /** Whether heavy jobs wait at all. */
+    enabled: z.boolean().default(true),
+    /**
+     * The five-minute load average at or above which a heavy job waits. Read
+     * when each job asks, so a change applies to the next one.
+     */
+    maxLoad: z.number().int().min(1).max(1024).default(16),
+    /** How many heavy jobs may run at once on this machine, across every agent. */
+    slots: z.number().int().min(1).max(16).default(1),
+    /**
+     * Minutes a job may wait before a person is told it is still waiting. It
+     * keeps waiting after that; this only raises the notice.
+     */
+    maxWaitMinutes: z.number().int().min(1).default(60),
+    /**
+     * Minutes after which a held job runs anyway, and the run is logged. A value
+     * below `maxWaitMinutes` is read as `maxWaitMinutes`, so the notice always
+     * comes first. Not a schema refinement on purpose: a refinement failing on a
+     * stored file would throw the whole config into corrupt-recovery.
+     */
+    hardCapMinutes: z.number().int().min(1).default(240),
+    /**
+     * A person's changes to the built-in heavy list. Each pattern is a command
+     * name and its leading words, like `pnpm docs:export-api` or
+     * `storybook build`. `remove` wins over the built-in list; `add` adds.
+     */
+    heavyCommands: z
+      .object({
+        add: z.array(z.string().min(1)).max(MAX_HEAVY_COMMAND_PATTERNS).default([]),
+        remove: z.array(z.string().min(1)).max(MAX_HEAVY_COMMAND_PATTERNS).default([]),
+      })
+      .default(() => ({ add: [], remove: [] })),
+  })
+  .default(loadGateDefaults);
+
+/** The load-gate settings as parsed. See {@link LoadGateSettingsSchema}. */
+export type LoadGateSettings = z.infer<typeof LoadGateSettingsSchema>;
+
 /** The `runtimes` section of `UserConfigSchema`; its documentation sits on the field there. */
 export const RuntimesConfigSchema = z
   .object({
@@ -353,6 +421,11 @@ export const RuntimesConfigSchema = z
      * not queued. Read at each launch, so a change applies to the next one.
      */
     maxAgentChats: z.number().int().min(1).max(64).default(8),
+    /**
+     * The machine-wide wait every agent's heavy shell jobs pass through, on every
+     * runtime (DOR-4209). See {@link LoadGateSettingsSchema}.
+     */
+    loadGate: LoadGateSettingsSchema,
     // The rename heal runs BEFORE this object is parsed, so a config still
     // spelling the default `activeAccount` parses with the operator's choice
     // in the new key. What settles the FILE is a write that names `runtimes`,
@@ -458,6 +531,7 @@ export const RuntimesConfigSchema = z
     default: 'claude-code',
     defaultTrustStop: 'autonomy' as const,
     maxAgentChats: 8,
+    loadGate: loadGateDefaults(),
     doe: { enabled: true, inference: null, defaultModel: null, defaultTrustStop: null },
     claudeCode: {
       defaultAccount: null,

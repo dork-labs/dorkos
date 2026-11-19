@@ -43,6 +43,12 @@ export interface LocalBrowserTransport {
   disconnectLocalBrowser(): Promise<LocalBrowserPersonState>;
   /** Open the plain sign-in window, which no agent can reach. */
   signInLocalBrowser(input: LocalBrowserSignInRequest): Promise<LocalBrowserPersonState>;
+  /**
+   * Done signing in: the sign-in window quits and saves (DOR-4731). Answers at once; the
+   * state stream says when it saved or failed. A saved one is handed back to the handoff it
+   * names; with none named, nothing is handed back.
+   */
+  finishLocalBrowserSignIn(handoffId?: string): Promise<void>;
   /** Give the browser back to the agent that handed it over. */
   handBackLocalBrowser(handoffId: string): Promise<LocalBrowserPersonState>;
   /** End the agent's task. The browser stays open for the person. */

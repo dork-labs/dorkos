@@ -1,7 +1,14 @@
-import type { HandoverBrowser } from '../handover.js';
+import type { HandoverBrowser } from './handover-browser.js';
 import type { LocalBrowserState } from '@dorkos/shared/local-browser';
 import { LocalBrowserError } from '../errors.js';
 import { outsideTurnRefusal, type OutsideTurnReason } from './outside-turn-reason.js';
+import { assertSignInUrl } from './page-address.js';
+import { selectedTabRefused } from './agent-window-restore.js';
+
+/** Whether DorkOS's own last reading found the selected tab's site refusing the browser. */
+export function refusedHere(browser: HandoverBrowser): Promise<boolean> {
+  return selectedTabRefused(browser, browser.lastRefusalHost?.() ?? null);
+}
 
 /** A page-read exception must still name the same refusal after an admission await. */
 export function requireRefusalIdentity(
@@ -15,26 +22,6 @@ export function requireRefusalIdentity(
     (expected === null || expected !== browser.refusalIdentity?.())
   )
     throw outsideTurnRefusal(marked);
-}
-
-/** A sign-in page must use https, or http on this computer only. */
-export function assertSignInUrl(value: string): URL {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    throw new LocalBrowserError(
-      'unsupported_address',
-      'Use a website address starting with https.'
-    );
-  }
-  const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
-  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && local))
-    throw new LocalBrowserError(
-      'unsupported_address',
-      'Use a website address starting with https.'
-    );
-  return url;
 }
 
 /** Pause only the connection, selected page and profile admitted before the handoff. */
