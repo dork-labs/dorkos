@@ -162,6 +162,7 @@ import request from '@dorkos/test-utils/supertest';
 import { composedListener } from '../../http/__tests__/composed-listener.js';
 import type { SessionRouteDeps } from '../../routes/sessions.js';
 import { disposeProjector } from '../../services/session/session-state-projector.js';
+import { resetMessageDispatcher } from '../../services/session/message-dispatcher.js';
 import { logger } from '../../lib/logger.js';
 import type { AuthorRecord } from '../../services/rooms/author-registry.js';
 import type { RoomWorktreeManager } from '../../services/rooms/repo/room-worktree-manager.js';
@@ -242,14 +243,16 @@ async function send(
  * The route answers `202` before the turn runs (ADR-0264), so an assertion made
  * the instant the response lands would read an empty spy and pass for the wrong
  * reason. `vi.waitFor` is what makes "the runtime was never told" distinguishable
- * from "the runtime has not been told YET".
+ * from "the runtime has not been told YET". The status is checked first: a
+ * refused POST would otherwise read as a turn that never arrived (DOR-4608).
  *
  * @param body - The request body, minus `content`.
  */
 async function sendAndCapture(
   body: Record<string, unknown> = {}
 ): Promise<MessageOpts | undefined> {
-  await send(body);
+  const { status } = await send(body);
+  expect(status).toBe(202);
   await vi.waitFor(() => expect(fakeRuntime.sendMessage).toHaveBeenCalled());
   return fakeRuntime.sendMessage.mock.calls[0]?.[2];
 }
@@ -300,6 +303,9 @@ beforeEach(() => {
         turnFilesContext: () => Promise.resolve(null),
       }) as unknown as RoomWorktreeManager,
   });
+  // The dispatcher is module state; start each test from none, as the other
+  // session route files do.
+  resetMessageDispatcher();
   disposeProjector(S1);
   disposeProjector(S2);
 });

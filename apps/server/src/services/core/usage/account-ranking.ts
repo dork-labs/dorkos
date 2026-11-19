@@ -48,6 +48,7 @@ import { getAccountUsageStore } from './current-usage-store.js';
 import type { RuntimeAccount } from './runtime-accounts.js';
 import { mayAutoPickClaudeRoot } from '../../runtimes/claude-code/accounts/account-login-metadata.js';
 import { isCreditsClaudeRoot } from '../../runtimes/claude-code/credits-root.js';
+import { accountSigninState } from '../../observability/account-signin-state.js';
 
 /** One ranked account, with what a surface needs to show it. */
 export interface RankedAccount {
@@ -79,6 +80,12 @@ export interface RankedAccount {
    * its own seat here (DOR-3145), whatever id the account carries.
    */
   isDefault?: true;
+  /**
+   * `true` for an account a turn or a login last saw signed out (DOR-4439). It
+   * stays `eligible` for a person's own pick, with "Signed out" as its reason;
+   * nothing picks it on its own ({@link mayAutoPick}).
+   */
+  signedOut?: true;
 }
 
 /** The answer to {@link rankAccounts}. */
@@ -119,21 +126,87 @@ export const ACCOUNT_HIDDEN_REASON = 'The account policy does not offer this acc
 /** Why a Claude account DorkOS may not pick on its own is not offered first. */
 export const SIGNIN_NEEDS_REVIEW_REASON = 'Sign-in needs review';
 
+/** The hint beside an account a turn or a login last saw signed out (DOR-4439). */
+export const SIGNED_OUT_REASON = 'Signed out';
+
+/** Whether a Claude folder's sign-in is confirmed, or known before the upgrade (DOR-3245). */
+function identityAllowsAutoPick(runtime: string, root: string | null): boolean {
+  if (runtime !== 'claude-code') return true;
+  return root === null || isCreditsClaudeRoot(root) || mayAutoPickClaudeRoot(root);
+}
+
 /**
- * Whether DorkOS may pick this account on its own (DOR-3245): the one sign-in
- * check every automatic picker reads (the launch ladder, failover, auto-handoff,
- * room reseat, usage ranking). A Claude folder qualifies only when its sign-in
- * is confirmed or was known before the upgrade. It never refuses a turn: an
- * account a person or agent names still runs.
+ * Whether a turn or a login last saw this folder signed out, with nothing
+ * since proving it works. Nothing observed since boot ('unknown') is not.
+ * What clears it: a turn that works there, a DorkOS sign-in, or (DOR-4425) a
+ * usage check that reads plan limits, which also runs when the folder's sign-in
+ * file changes, so a sign-in made in a terminal is noticed too.
+ */
+function seenSignedOut(runtime: string, root: string | null): boolean {
+  return accountSigninState(runtime, root ?? undefined) === 'signed-out';
+}
+
+/** The folder an account's sign-in is keyed by. */
+function signinRoot(account: Pick<RuntimeAccount, 'path' | 'canonicalPath'>): string | null {
+  return account.canonicalPath ?? account.path;
+}
+
+/**
+ * Whether DorkOS may pick a registry row's sign-in on its own: what failover
+ * asks of an advisor's `auto` target, when it is planned and again when it
+ * fires. The credits row passes the identity check, as before; credits are
+ * kept out of automatic picks elsewhere. Not last seen signed out (DOR-4439).
  *
  * @param account - The account's runtime and folder.
  */
 export function signinAllowsAutoPick(
   account: Pick<RuntimeAccount, 'runtime' | 'path' | 'canonicalPath'>
 ): boolean {
-  if (account.runtime !== 'claude-code') return true;
-  const root = account.canonicalPath ?? account.path;
-  return root === null || isCreditsClaudeRoot(root) || mayAutoPickClaudeRoot(root);
+  const root = signinRoot(account);
+  return identityAllowsAutoPick(account.runtime, root) && !seenSignedOut(account.runtime, root);
+}
+
+/**
+ * Whether DorkOS may pick this Claude folder's sign-in on its own (DOR-3245,
+ * DOR-4439): confirmed or known before the upgrade, and not last seen signed
+ * out. What the launch ladder's automatic rungs and a room seat's recovery ask.
+ * Stricter than {@link signinAllowsAutoPick}: the credits folder gets no pass
+ * here, so an automatic rung or recovery never starts spending (Security on
+ * DOR-4439). It never refuses a turn by itself: an account a person names
+ * still runs (an agent's or relay's named account is checked by
+ * {@link checkAccountLaunch}).
+ *
+ * @param root - The Claude account folder.
+ */
+export function mayAutoPickClaudeFolder(root: string): boolean {
+  return mayAutoPickClaudeRoot(root) && !seenSignedOut('claude-code', root);
+}
+
+/**
+ * Whether DorkOS may hand work to a ranked account on its own: eligible, and
+ * not last seen signed out. The one check every automatic pick from a ranking
+ * reads (failover, auto-handoff, room reseat, beats, the work queue, the
+ * advisor's recommendation, an agent's or relay's named account). A person's
+ * own pick reads `eligible` alone, so a signed-out account stays theirs to choose.
+ *
+ * @param row - The ranked account.
+ */
+export function mayAutoPick(row: Pick<RankedAccount, 'eligible' | 'signedOut'>): boolean {
+  return row.eligible && row.signedOut !== true;
+}
+
+/**
+ * The reason a row shows: the sign-in review first, then "Signed out" for an
+ * account that could otherwise take work, then the ranker's own words.
+ */
+function signinReason(
+  identityOk: boolean,
+  eligible: boolean,
+  signedOut: boolean,
+  own: string
+): string {
+  if (!identityOk) return SIGNIN_NEEDS_REVIEW_REASON;
+  return eligible && signedOut ? SIGNED_OUT_REASON : own;
 }
 
 function isLedgerRuntime(runtime: string): runtime is LedgerRuntime {
@@ -222,8 +295,9 @@ function headroom(usage: AccountUsage, key: string): number | null {
 
 /**
  * Core's default ranking: every candidate except `excludeAccountId`; eligible
- * unless its usage reads `limited`; eligible first by weekly headroom (unknown
- * after known), then 5-hour headroom, then registry order; ineligible after.
+ * unless its usage reads `limited`; eligible first (a signed-out one after the
+ * rest) by weekly headroom (unknown after known), then 5-hour headroom, then
+ * registry order; ineligible after.
  */
 function defaultRanking(
   ctx: AdvisorContext,
@@ -233,8 +307,9 @@ function defaultRanking(
   const rows = candidatesOf(ctx.runtime, project, config)
     .filter(({ account }) => account.id !== ctx.excludeAccountId)
     .map(({ account, usage }, order) => {
-      const signinOk = signinAllowsAutoPick(account);
-      const eligible = usage.state !== 'limited' && signinOk;
+      const identityOk = identityAllowsAutoPick(account.runtime, signinRoot(account));
+      const signedOut = seenSignedOut(account.runtime, signinRoot(account));
+      const eligible = usage.state !== 'limited' && identityOk;
       return {
         order,
         row: {
@@ -244,15 +319,18 @@ function defaultRanking(
           color: account.color,
           usage,
           eligible,
-          reason: signinOk ? defaultReason(usage, eligible) : SIGNIN_NEEDS_REVIEW_REASON,
+          reason: signinReason(identityOk, eligible, signedOut, defaultReason(usage, eligible)),
           ...(account.noAutoMove ? { noAutoMove: true as const } : {}),
           ...(account.isDefault ? { isDefault: true as const } : {}),
+          ...(signedOut ? { signedOut: true as const } : {}),
         } satisfies RankedAccount,
       };
     });
   rows.sort((a, b) => {
     if (a.row.eligible !== b.row.eligible) return a.row.eligible ? -1 : 1;
     if (a.row.eligible) {
+      // A person may still pick a signed-out account, so it is offered, after the rest.
+      if (mayAutoPick(a.row) !== mayAutoPick(b.row)) return mayAutoPick(a.row) ? -1 : 1;
       const weekly = compareHeadroom(
         headroom(a.row.usage, 'seven_day'),
         headroom(b.row.usage, 'seven_day')
@@ -269,7 +347,7 @@ function defaultRanking(
   const accounts = rows.map((r) => r.row);
   return {
     accounts,
-    recommendedId: accounts.find((a) => a.eligible)?.id ?? null,
+    recommendedId: accounts.find(mayAutoPick)?.id ?? null,
     advised: false,
   };
 }
@@ -316,29 +394,29 @@ async function advisedRanking(
     if (!candidate) return [];
     const { account, usage } = candidate;
     // The advisor ranks; it cannot offer a sign-in DorkOS may not pick alone.
-    const signinOk = signinAllowsAutoPick(account);
+    const identityOk = identityAllowsAutoPick(account.runtime, signinRoot(account));
+    const signedOut = seenSignedOut(account.runtime, signinRoot(account));
+    const eligible = row.eligible && identityOk;
     return {
       runtime: row.runtime,
       id: row.id,
       label: account.label,
       color: account.color,
       usage,
-      eligible: row.eligible && signinOk,
-      reason: signinOk ? row.reason : SIGNIN_NEEDS_REVIEW_REASON,
+      eligible,
+      reason: signinReason(identityOk, eligible, signedOut, row.reason),
       ...(row.badge ? { badge: row.badge } : {}),
       ...(account.noAutoMove ? { noAutoMove: true as const } : {}),
       ...(account.isDefault ? { isDefault: true as const } : {}),
+      ...(signedOut ? { signedOut: true as const } : {}),
     };
   });
   // A recommendation the sign-in check took out of the running is not one.
-  const pulled = accounts.some(
-    (a) => a.id === validated.recommendedId && a.reason === SIGNIN_NEEDS_REVIEW_REASON
-  );
+  const recommended = accounts.find((a) => a.id === validated.recommendedId);
+  const pulled = recommended !== undefined && !mayAutoPick(recommended);
   return {
     accounts,
-    recommendedId: pulled
-      ? (accounts.find((a) => a.eligible)?.id ?? null)
-      : validated.recommendedId,
+    recommendedId: pulled ? (accounts.find(mayAutoPick)?.id ?? null) : validated.recommendedId,
     advised: true,
   };
 }
@@ -448,7 +526,8 @@ export function notAllowedReason(verdict: Ineligible, project: ProjectRef | null
  * the account it names. Refused first when the account may not work in the
  * folder's project, with the plain sentence. Then refused with no advisor registered, refused when the
  * advisor fails, and otherwise allowed only when the advisor's `launch` ranking
- * marks the account eligible (refused with its reason when not).
+ * marks the account eligible and it was not last seen signed out (refused with
+ * its reason when not).
  *
  * @param request - The account named, where, on which runtime, and by whom.
  */
@@ -481,5 +560,7 @@ export async function checkAccountLaunch(
     (a) => a.runtime === request.runtime && a.id === request.accountId
   );
   if (!row) return { allowed: false, reason: ACCOUNT_HIDDEN_REASON };
-  return row.eligible ? { allowed: true } : { allowed: false, reason: row.reason };
+  // An agent or a relay message is not a person: a signed-out account is
+  // refused with "Signed out", as any automatic pick skips it.
+  return mayAutoPick(row) ? { allowed: true } : { allowed: false, reason: row.reason };
 }

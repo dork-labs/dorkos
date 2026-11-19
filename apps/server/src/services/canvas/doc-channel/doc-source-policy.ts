@@ -194,9 +194,14 @@ export function readSessionDocSourceDescriptor(
   try {
     source = readSourceDescriptor(deps, documentId, tx, 'agent-or-recorded-cwd');
   } catch (error) {
-    if (error instanceof DocRouteGrantError) throw new DocChannelNotFoundError({ cause: error });
+    // On a chat's document, every source this policy refuses has no folder to
+    // save into: no path, no agent and no recorded folder, or no root (DOR-4442).
+    // Both callers run after the owner's own access passed, so the reason is safe.
+    if (error instanceof DocRouteGrantError)
+      throw new DocChannelNotFoundError({ cause: error, reason: 'NO_RECORDED_FOLDER' });
     throw error;
   }
-  if (parseScope(source.scope).kind !== 'session') throw new DocChannelNotFoundError();
+  if (parseScope(source.scope).kind !== 'session')
+    throw new DocChannelNotFoundError({ reason: 'NOT_SESSION' });
   return source;
 }

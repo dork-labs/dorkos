@@ -117,7 +117,7 @@ if [ -n "$census_counts" ]; then
     is_excluded_dir "$dir" && continue
     # Already covered by the growth tier above (ERROR/WARN or just under it) —
     # a second, differently-worded line about the same dir is noise.
-    printf '%s\n' "$growth_dirs" | grep -qxF "$dir" && continue
+    grep <<<"$growth_dirs" -qxF "$dir" && continue
     echo "WARN:  $dir has $count source files (over $ERROR_THRESHOLD; not touched by this commit)"
   done <<<"$census_counts"
 fi

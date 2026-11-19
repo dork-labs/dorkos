@@ -8,7 +8,7 @@ import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { SessionSettings } from '@dorkos/shared/schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
-import type { RankedAccount } from '../../../core/usage/account-ranking.js';
+import { SIGNED_OUT_REASON, type RankedAccount } from '../../../core/usage/account-ranking.js';
 import { marksOf, recordTurnLevels } from '../../../core/turn-power/turn-levels.js';
 import {
   AGENT_MAY_RESEAT_OWN_SEAT,
@@ -20,7 +20,7 @@ import {
 
 function row(
   id: string,
-  opts: { limited?: boolean; fiveHour?: number; noAutoMove?: true } = {}
+  opts: { limited?: boolean; fiveHour?: number; noAutoMove?: true; signedOut?: true } = {}
 ): RankedAccount {
   return {
     runtime: 'claude-code',
@@ -28,8 +28,10 @@ function row(
     label: id,
     color: '#000000',
     eligible: !opts.limited,
-    reason: '',
+    // What core's ranking says beside an account last seen signed out (DOR-4439).
+    reason: opts.signedOut ? SIGNED_OUT_REASON : '',
     ...(opts.noAutoMove ? { noAutoMove: true as const } : {}),
+    ...(opts.signedOut ? { signedOut: true as const } : {}),
     usage: {
       accountId: id,
       label: id,
@@ -309,6 +311,60 @@ describe('RoomSeatMover', () => {
     expect(accounts.map((a) => a.id)).toContain('claude-ab1');
   });
 
+  // DOR-4439. Red when: an automatic move reads `eligible` alone.
+  it('never moves a seat onto a signed-out account on its own, nor picks it as the best', async () => {
+    const ranking = [
+      row('claude4', { fiveHour: 97 }),
+      row('claude-so', { signedOut: true, fiveHour: 0 }),
+      row('claude3', { fiveHour: 60 }),
+    ];
+    const { m } = mover({
+      ranking: async () => ranking,
+      accountOf: async () => ({ id: 'claude4', label: 'claude4', usage: ranking[0]!.usage }),
+    });
+    await m.beforeTurn(SEAT, 'entry-1', { hideAccounts: false });
+    expect(m.pendingLaunch('room-1', 'ana', 'new-seat')).toMatchObject({ accountHint: 'claude3' });
+
+    const only = mover({
+      ranking: async () => [
+        row('claude4', { limited: true }),
+        row('claude-so', { signedOut: true }),
+      ],
+    });
+    expect((await only.m.afterLimit(SEAT, 'entry-2', OPTS)).kind).toBe('none');
+
+    const best = mover({ ranking: async () => ranking });
+    await best.m.byHand(SEAT, { by: 'Dorian', hideAccounts: false });
+    expect(best.m.pendingLaunch('room-1', 'ana', 'new-seat')).toMatchObject({
+      accountHint: 'claude3',
+    });
+  });
+
+  // DOR-4439. Red when: a signed-out account is made not eligible, refusing a person.
+  it('by hand: a person moves a seat onto a signed-out account they name, told it is signed out', async () => {
+    const ranking = [row('claude4', { limited: true }), row('claude-so', { signedOut: true })];
+    const { m, activity } = mover({ ranking: async () => ranking });
+    const { accounts } = await m.options(SEAT);
+    expect(accounts).toEqual([
+      expect.objectContaining({
+        id: 'claude-so',
+        eligible: true,
+        signedOut: true,
+        reason: SIGNED_OUT_REASON,
+      }),
+    ]);
+    const move = await m.byHand(SEAT, {
+      accountId: 'claude-so',
+      by: 'Dorian',
+      hideAccounts: false,
+    });
+    expect(move).toMatchObject({ reason: { kind: 'by-hand', by: 'Dorian', to: 'claude-so' } });
+    expect(m.pendingLaunch('room-1', 'ana', 'new-seat')).toMatchObject({
+      accountHint: 'claude-so',
+    });
+    expect(activity).toEqual([expect.objectContaining({ trigger: 'person', by: 'Dorian' })]);
+  });
+
   it('offers every allowed account but the seat’s own, marking which can take work', async () => {
     const { m } = mover({
       ranking: async () => [
@@ -445,6 +501,22 @@ describe('an agent moving its own seat (byHand, byAgent)', () => {
         accountId: 'claude-ab1',
       })
     ).toMatchObject({ reason: { kind: 'by-hand', to: 'claude-ab1' } });
+  });
+
+  // DOR-4439. Red when: an agent naming a signed-out account is let through, or told "no account left".
+  it('is refused, saying it is signed out, when it names a signed-out account', async () => {
+    const ranking = [row('claude4'), row('claude-so', { signedOut: true, fiveHour: 0 })];
+    const { m } = at(90, ranking);
+    expect(await m.byHand(SEAT, { ...AGENT, accountId: 'claude-so' })).toEqual({
+      refused: 'signed-out',
+    });
+    expect(await m.byHand(SEAT, AGENT)).toBeNull();
+    // Signed out AND nearly out: the sign-in is not why, so it is not named.
+    const both = at(90, [row('claude4'), row('claude-so', { signedOut: true, fiveHour: 99 })]);
+    expect(await both.m.byHand(SEAT, { ...AGENT, accountId: 'claude-so' })).toBeNull();
+    expect((await m.options(SEAT, { byAgent: true })).accounts).toEqual([
+      expect.objectContaining({ id: 'claude-so', eligible: false, reason: SIGNED_OUT_REASON }),
+    ]);
   });
 
   it('offers an agent only the accounts it may move to', async () => {

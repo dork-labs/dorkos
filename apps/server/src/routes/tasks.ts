@@ -29,10 +29,14 @@ import * as personReview from '../services/tasks/approvals/person-review.js';
  */
 import { Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
-import { ListTaskRunsQuerySchema } from '@dorkos/shared/schemas';
+import { ListTaskRunsQuerySchema, TriggerTaskRequestSchema } from '@dorkos/shared/schemas';
 import type { Task } from '@dorkos/shared/schemas';
 import { wifiRunNowRefusal } from './task-wifi-guard.js';
-import { pendingTrialMode, TRIAL_TOO_LOOSE_REFUSAL } from './task-trial-mode.js';
+import {
+  trialRunMode,
+  TRIAL_TOO_LOOSE_REFUSAL,
+  TRIAL_UNKNOWN_MODE_REFUSAL,
+} from './task-trial-mode.js';
 import {
   deleteOrDeclineTask,
   PROJECT_COPY_DELETE_REFUSAL,
@@ -48,6 +52,7 @@ import { readCallerPrincipal } from '../lib/caller-principal.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
+import { readJsonBody } from '../http/request-body.js';
 import { resolveStanding } from '../services/notifications/notification-service.js';
 import { resolveScheduleParkPayload } from '../services/notifications/emitters/schedule-park.js';
 import { withTaskFolderRules } from './task-approval-rules.js';
@@ -236,9 +241,13 @@ export function createTasksRoutes(deps: TasksRouterDeps): Hono<ApiEnv> {
         : undefined;
     if (creditsRefusal) return c.json(creditsRefusal, 403);
 
-    // A trial of a pending schedule is never looser than one click could approve.
-    const trial = await pendingTrialMode(store.getTask(id), meshCore);
+    // A trial of a pending schedule is never looser than one click could approve, and runs at
+    // the mode the person picked when that is stricter still (DOR-4336).
+    const body = TriggerTaskRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
+    if (!body.success) return c.json(validationFailureBody(body.error), 400);
+    const trial = await trialRunMode(store.getTask(id), body.data.permissionMode, meshCore);
     if (trial.kind === 'refused') return c.json(TRIAL_TOO_LOOSE_REFUSAL, 409);
+    if (trial.kind === 'unknown_mode') return c.json(TRIAL_UNKNOWN_MODE_REFUSAL, 400);
     const run =
       trial.kind === 'tightened'
         ? await scheduler.triggerManualRun(id, trial.permissionMode)

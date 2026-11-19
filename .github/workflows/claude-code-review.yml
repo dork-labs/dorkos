@@ -1498,7 +1498,7 @@ jobs:
           # errors on a label the PR does not carry — so look first. An empty
           # PR_NUMBER (the resolve step refused a fork) also lands here harmlessly.
           if gh pr view "$PR_NUMBER" --repo "$REPO" --json labels --jq '.labels[].name' 2>/dev/null \
-            | grep -qx 're-review'; then
+            | grep -x 're-review' >/dev/null; then
             gh pr edit "$PR_NUMBER" --repo "$REPO" --remove-label re-review
           else
             echo "no re-review label to clear"

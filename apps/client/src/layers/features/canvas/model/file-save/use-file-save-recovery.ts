@@ -1,6 +1,10 @@
 /** Finite UI observation of the original hook's serialized proof lane; no replay owner or polling. */
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
-import type { FileSaveDiscovery, FileSaveRecoveryEntry } from '@dorkos/shared/file-save/recovery';
+import type {
+  DocSaveRefusalReason,
+  FileSaveDiscovery,
+  FileSaveRecoveryEntry,
+} from '@dorkos/shared/file-save/recovery';
 import type { FileSaveRecoveryActions } from './recovery-ui-types';
 import type { FileSaveBinding } from './receipt-operation';
 type Observation = 'pending' | 'ready' | 'unavailable';
@@ -9,13 +13,18 @@ type State = {
   phase: 'pending' | 'ready' | 'unavailable' | 'refused' | 'local_uncertain';
   discovery?: FileSaveDiscovery;
   historical?: FileSaveRecoveryEntry;
+  /** Which check refused, while the phase is `refused` and the server said (DOR-4442). */
+  refusal?: DocSaveRefusalReason;
   busy: boolean;
 };
-/** The phase a call that observed nothing leaves behind. */
-function failed(result: { status: string }): State['phase'] {
-  return result.status === 'refused' || result.status === 'local_uncertain'
-    ? result.status
-    : 'unavailable';
+/** The phase, and any refusal reason, a call that observed nothing leaves behind. */
+function failed(result: {
+  status: string;
+  reason?: DocSaveRefusalReason;
+}): Pick<State, 'phase' | 'refusal'> {
+  if (result.status === 'refused')
+    return { phase: 'refused', ...(result.reason ? { refusal: result.reason } : {}) };
+  return { phase: result.status === 'local_uncertain' ? 'local_uncertain' : 'unavailable' };
 }
 /** Observe explicit receipt recovery through the existing committed save owner. */
 export function useFileSaveRecovery(
@@ -68,8 +77,7 @@ export function useFileSaveRecovery(
         if (disposed) return;
         if (result.status === 'observed')
           publish(identity, { phase: 'ready', discovery: result.value, busy: false });
-        else if (result.status !== 'idle')
-          publish(identity, { phase: failed(result), busy: false });
+        else if (result.status !== 'idle') publish(identity, { ...failed(result), busy: false });
         else settleIdle(identity);
       });
     }
@@ -94,7 +102,7 @@ export function useFileSaveRecovery(
     const result = await action.discover(true);
     if (result.status === 'observed')
       publish(identity, { phase: 'ready', discovery: result.value, busy: false });
-    else if (result.status !== 'idle') publish(identity, { phase: failed(result), busy: false });
+    else if (result.status !== 'idle') publish(identity, { ...failed(result), busy: false });
     else settleIdle(identity);
   }, [publish, settleIdle]);
   const recover = useCallback(
@@ -118,7 +126,7 @@ export function useFileSaveRecovery(
           historical: result.value.result.entry,
           busy: false,
         });
-      else if (result.status !== 'idle') publish(identity, { phase: failed(result), busy: false });
+      else if (result.status !== 'idle') publish(identity, { ...failed(result), busy: false });
       else settleIdle(identity);
     },
     [publish, settleIdle]
@@ -147,7 +155,9 @@ export function useFileSaveRecovery(
         previous.identity === identity
           ? {
               ...previous,
-              phase: result.status === 'observed' ? 'ready' : failed(result),
+              ...(result.status === 'observed'
+                ? { phase: 'ready' as const, refusal: undefined }
+                : failed(result)),
               busy: false,
             }
           : previous
@@ -165,6 +175,7 @@ export function useFileSaveRecovery(
     busy: current?.busy ?? phase === 'pending',
     discovery: current?.discovery,
     historical: current?.historical,
+    refusal: phase === 'refused' ? current?.refusal : undefined,
     refresh,
     recover,
     inspectCurrent,

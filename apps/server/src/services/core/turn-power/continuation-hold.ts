@@ -335,15 +335,19 @@ export function noteTurnHold(sessionId: string, held: boolean): void {
   if (!db) return;
   if (written.get(key) === held) return;
   try {
-    db.insert(sessionMetadata)
-      .values({
-        sessionId: key,
-        runtime: null,
-        createdAt: new Date().toISOString(),
-        lastTurnHeld: held,
-      })
-      .onConflictDoUpdate({ target: sessionMetadata.sessionId, set: { lastTurnHeld: held } })
-      .run();
+    // Under every id the chat answers to (DOR-4515): after a rename its row moves to the newer id,
+    // and after a restart nothing links the two, so a hold kept only under the first id is lost.
+    for (const id of chatKeys(sessionId)) {
+      db.insert(sessionMetadata)
+        .values({
+          sessionId: id,
+          runtime: null,
+          createdAt: new Date().toISOString(),
+          lastTurnHeld: held,
+        })
+        .onConflictDoUpdate({ target: sessionMetadata.sessionId, set: { lastTurnHeld: held } })
+        .run();
+    }
     written.delete(key);
     written.set(key, held);
     if (written.size > WRITTEN_MAX) written.delete(written.keys().next().value as string);

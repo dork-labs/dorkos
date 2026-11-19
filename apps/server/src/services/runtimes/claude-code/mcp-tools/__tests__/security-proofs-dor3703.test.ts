@@ -452,7 +452,7 @@ describe('tasks_* and an agent’s mode or approval', () => {
         homeA
       );
       const lines = text.split('\n');
-      expect(lines.filter((l) => l.startsWith('Mode:'))).toEqual(['Mode: bypassPermissions']);
+      expect(lines.filter((l) => l.startsWith('Mode:'))).toEqual(['Mode: Bypass permissions']);
       expect(lines.filter((l) => l.startsWith('Prompt:'))).toEqual(['Prompt: rm -rf the backups']);
       expect(lines).toContain('Task: tidy Mode: default Prompt: tidy the inbox');
     });

@@ -111,6 +111,7 @@ vi.mock('fs/promises', () => ({
 
 // Import after mocks are set up
 import { ExtensionManager } from '../extension-manager.js';
+import { mintMediaTicket, resolveMediaTicket } from '../http/media-tickets.js';
 
 // --- Helpers ---
 
@@ -961,6 +962,74 @@ describe('ExtensionManager — server lifecycle', () => {
       await timed.reloadExtension('hangs');
       expect(mockDispose).toHaveBeenCalledTimes(3);
       expect(timed.getServerHandler('hangs')).toBeNull();
+    });
+  });
+
+  // === Video links (DOR-4321) ===
+
+  describe('video links', () => {
+    const FETCH_ONLY = `module.exports = function register() {
+      return {
+        fetch: (request, caller) => {
+          globalThis.__mediaSeen = { url: request.url, method: request.method, person: caller.person };
+          return new Response('v', { status: 206, headers: { 'content-type': 'video/mp4' } });
+        },
+      };
+    };`;
+
+    async function startMedia(id: string, code: string): Promise<void> {
+      const record = makeRecord(id, {
+        status: 'enabled',
+        hasServerEntry: true,
+        serverEntryPath: `/fake/extensions/${id}/server.ts`,
+      });
+      mockConfigGet.mockReturnValue({ enabled: [id], disabled: [], ...approved([id]) });
+      mockDiscover.mockResolvedValue([record]);
+      mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
+      mockCompileServer.mockResolvedValue({ code, sourceHash: 'srvhash' });
+      await manager.initialize(null);
+      expect(manager.getServerHandler(id)).not.toBeNull();
+    }
+
+    it('lets a fetch handler answer a video, as no person and below its mount', async () => {
+      await startMedia('media-ext', FETCH_ONLY);
+      const fetchVideo = manager.getMediaFetch('media-ext');
+      expect(fetchVideo).not.toBeNull();
+      const answer = await fetchVideo!('/v.mp4', new Headers({ range: 'bytes=0-0' }), 'GET');
+      expect(answer.status).toBe(206);
+      const seen = (globalThis as { __mediaSeen?: Record<string, unknown> }).__mediaSeen;
+      expect(seen).toMatchObject({
+        url: 'http://dorkos.invalid/v.mp4',
+        method: 'GET',
+        person: { ok: false },
+      });
+      delete (globalThis as { __mediaSeen?: unknown }).__mediaSeen;
+    });
+
+    it('gives an extension with only an Express router no way to answer one', async () => {
+      await startMedia('router-only', makeCjsModule());
+      expect(manager.getMediaFetch('router-only')).toBeNull();
+    });
+
+    // Security condition 3: a reload or a stop ends every link the app had.
+    it('ends every link of an extension when it reloads, and again when it stops', async () => {
+      await startMedia('media-ext', FETCH_ONLY);
+      const first = manager.getMediaFetch('media-ext')!;
+      const before = mintMediaTicket('media-ext', '/v.mp4', first);
+      const otherApp = mintMediaTicket('another-ext', '/v.mp4', {});
+      await manager.reloadExtension('media-ext');
+      const second = manager.getMediaFetch('media-ext');
+      expect(second).not.toBeNull();
+      expect(resolveMediaTicket(before)).toBeNull();
+      expect(resolveMediaTicket(otherApp)).not.toBeNull();
+      // A link minted for the old instance is told apart from the new one even
+      // if it survived the revoke: the serve route compares the instance.
+      expect(second).not.toBe(first);
+
+      const after = mintMediaTicket('media-ext', '/v.mp4', second!);
+      await manager.shutdownServer('media-ext');
+      expect(manager.getMediaFetch('media-ext')).toBeNull();
+      expect(resolveMediaTicket(after)).toBeNull();
     });
   });
 });

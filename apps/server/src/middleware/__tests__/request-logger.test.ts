@@ -42,4 +42,18 @@ describe('logRequest', () => {
     const [fields] = vi.mocked(logger.debug).mock.calls[0] as [Record<string, unknown>, string];
     expect(Object.keys(fields).sort()).toEqual(['method', 'ms', 'path', 'status']);
   });
+
+  // Security condition 4 (DOR-4321): a video link's ticket is its credential.
+  it('writes a video link as its route, never its ticket', () => {
+    const ticket = 'Ab0_-'.repeat(8) + 'xyz';
+    logRequest('GET', `/api/extensions/media/${ticket}`, 206, 2);
+    logRequest('GET', `/api/extensions/media/${ticket}`, 404, 2);
+
+    const lines = [...vi.mocked(logger.debug).mock.calls, ...vi.mocked(logger.warn).mock.calls];
+    expect(lines).toHaveLength(2);
+    for (const [fields] of lines as [Record<string, unknown>, string][]) {
+      expect(fields.path).toBe('/api/extensions/media/[ticket]');
+    }
+    expect(JSON.stringify(lines)).not.toContain(ticket);
+  });
 });

@@ -38,6 +38,23 @@ describe('errorReply and logRequestError', () => {
     });
   });
 
+  it('reports a video link as its route, never its ticket (DOR-4321)', async () => {
+    const { logger } = await import('../../lib/logger.js');
+    const ticket = 'Ab0_-'.repeat(8) + 'xyz';
+    logRequestError(new Error('boom'), 'GET', `/api/extensions/media/${ticket}`);
+    logRequestError(
+      corsRefusal('https://elsewhere.example'),
+      'GET',
+      `/api/extensions/media/${ticket}`
+    );
+    const logged = JSON.stringify([
+      ...vi.mocked(logger.error).mock.calls,
+      ...vi.mocked(logger.warn).mock.calls,
+    ]);
+    expect(logged).toContain('/api/extensions/media/[ticket]');
+    expect(logged).not.toContain(ticket);
+  });
+
   it('logs the method, path, code, and status beside the message', async () => {
     const { logger } = await import('../../lib/logger.js');
     const error = Object.assign(new Error('Refused'), { code: 'cloud_refused', status: 502 });

@@ -17,7 +17,15 @@ import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { CARRIED_OUTSIDER_LEVEL } from '@dorkos/shared/permission-semantics';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
-import { recordTurnLevels } from '../turn-levels.js';
+import { sessionMetadata } from '@dorkos/db';
+import { aliasTurnLevel, recordTurnLevels } from '../turn-levels.js';
+import {
+  chatLaunchedByBinding,
+  lastTurnHeld,
+  noteTurnHold,
+  setContinuationHoldDb,
+} from '../continuation-hold.js';
+import { noteRoomTurnWords, roomTurnReadOutsideWords } from '../outside-words.js';
 import { resetLiveOutsiderTurns } from '../live-outsider-turns.js';
 import { boundTurnOpts } from '../agent-level-bound.js';
 import { chosenFullAutonomy } from '../../../runtimes/claude-code/turn-permission.js';
@@ -158,6 +166,59 @@ describe('what a chat is set to', () => {
     expect(turnHasNobodyToAsk(chat)).toBe(true);
     await ran(chat, 'acceptEdits');
     expect(turnHasNobodyToAsk(chat)).toBe(false);
+  });
+});
+
+describe('a turn’s record carried to the id the runtime renamed it to (DOR-4606)', () => {
+  afterEach(() => setContinuationHoldDb(undefined));
+
+  it('takes the latest turn’s answer, so an older Full under the new id does not stay', async () => {
+    const kept = fresh();
+    const sent = fresh();
+    await ran(kept, 'bypassPermissions');
+    await ran(sent, 'acceptEdits', CARRIED);
+    aliasTurnLevel(sent, kept);
+    expect(choseFullAutonomy(kept)).toBe(false);
+  });
+
+  it('takes the latest turn’s answer for who can be asked too', async () => {
+    const kept = fresh();
+    const sent = fresh();
+    await ran(kept, 'acceptEdits', { unattended: true });
+    await ran(sent, 'acceptEdits');
+    aliasTurnLevel(sent, kept);
+    expect(turnHasNobodyToAsk(kept)).toBe(false);
+  });
+
+  it('still carries Full and nobody-to-ask when the latest turn had them', async () => {
+    const kept = fresh();
+    const sent = fresh();
+    await ran(sent, 'bypassPermissions', { unattended: true });
+    aliasTurnLevel(sent, kept);
+    expect(choseFullAutonomy(kept)).toBe(true);
+    expect(turnHasNobodyToAsk(kept)).toBe(true);
+  });
+
+  it('leaves the new id’s stored hold, launch origin and outside-words note in place', async () => {
+    const kept = fresh();
+    const sent = fresh();
+    const db = createTestDb();
+    setContinuationHoldDb(db);
+    db.insert(sessionMetadata)
+      .values({
+        sessionId: kept,
+        runtime: null,
+        createdAt: '2026-11-18',
+        launchOrigin: 'relay-binding',
+      })
+      .run();
+    noteTurnHold(kept, true);
+    noteRoomTurnWords(kept, true);
+    await ran(sent, 'acceptEdits');
+    aliasTurnLevel(sent, kept);
+    expect(lastTurnHeld(kept)).toBe(true);
+    expect(chatLaunchedByBinding(kept)).toBe(true);
+    expect(roomTurnReadOutsideWords(kept)).toBe(true);
   });
 });
 

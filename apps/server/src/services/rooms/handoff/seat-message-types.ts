@@ -47,8 +47,17 @@ export interface RoomSeatMessagesPort {
   idle(): Promise<void>;
 }
 
+/** Capacity bounds for one inbox; production always uses the exported defaults. */
+export interface SeatMessageLimits {
+  /** Pending plus active receipts one seat may own. */
+  pendingMax: number;
+  /** Pending plus active receipts the whole inbox may own across seats. */
+  globalMax: number;
+}
+
 /** Late boot composition, avoiding a runtime import cycle through the rooms barrel. */
 export type RoomSeatMessageFactory = (
   store: ChatMessageStore,
-  emit: (sessionId: string) => void
+  emit: (sessionId: string) => void,
+  limits?: SeatMessageLimits
 ) => RoomSeatMessagesPort;

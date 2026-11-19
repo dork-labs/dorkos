@@ -253,6 +253,8 @@ export async function composeCapabilities(refs: ServerRefs, built: ComposeCapabi
       auditDeps: auditCapabilityDeps(auditLog, auditAccounts, runtimeRegistry),
       // `agent.pause` / `agent.resume`: anyone may stop any agent (spec `audit-trail` PR5).
       agentPauseDeps: { pauses: agentPauses },
+      // `approvals.withdraw`: an agent takes back its own waiting request (DOR-4586).
+      approvalWithdrawDeps: { db },
       // Chats messaging chats (spec `spin-off-chats`).
       chatMessageDeps: chatMessaging,
       // What agents promised (spec `heartbeats` §12): an agent records its
