@@ -352,9 +352,9 @@ Failures that blame the wrong thing, each measured on this machine:
   `drizzle/meta/_journal.json` — roll back and regenerate against updated main.
 - **`pnpm verify` and `pnpm verify:preopen` take no arguments** — each records a
   proof for the exact commit, so `pnpm verify --force` (or any extra argument) is
-  refused with exit 2 before any check runs. Forced forms that work: `turbo run
-typecheck lint --force` and `turbo run test --force -- --run` (they record no
-  proof).
+  refused with exit 2 before any check runs. Forced forms that work:
+  `turbo run typecheck lint --force` and `turbo run test --force -- --run`
+  (they record no proof).
 - **Before you open a PR, run `pnpm verify:preopen`** on the final head with a
   clean tree. Arming needs green required checks and all six test shards at the
   exact head (or a full local `pnpm verify` proof). A PR that touches `.github/`

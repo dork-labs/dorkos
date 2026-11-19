@@ -146,7 +146,8 @@ function readProof(file: string): unknown {
  * level, which arming uses, reads only the full proof. `preopen` also accepts the
  * commit's preopen proof, since a full pass covers everything a preopen one does.
  * The escape exists at the full level only (checkFlags refuses it with `preopen`), so
- * every line in escapes.jsonl stands for the check arming makes.
+ * every line in escapes.jsonl is an escape from the full-level check, whether it was
+ * made at PR open or at arming.
  */
 function check(cwd: string, ref: string, escape: boolean, level: ProofLevel): number {
   let shortSha = ref.slice(0, 12);
