@@ -15,6 +15,7 @@ import { fileSaveReceiptScenarios } from './file-save-receipt-scenarios.js';
 import { docFrameSdkScenario } from './doc-frame/doc-frame-sdk-scenario.js';
 import { docFrameCompanionScenario } from './doc-frame/doc-frame-companion-scenario.js';
 import { docRouteScenarios } from './doc-route-scenarios.js';
+import { ERROR_CARD_SCENARIOS } from './scenarios/error-card-scenarios.js';
 
 /**
  * One scripted turn.
@@ -545,36 +546,7 @@ const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
     } as StreamEvent;
     yield* BUILT_IN_SCENARIOS['simple-text']!(content, ctx, opts);
   },
-  error: async function* (_content) {
-    yield {
-      type: 'session_status',
-      data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' },
-    } as StreamEvent;
-    // Mirrors the Claude adapter's error-subtype result mapping
-    // (result-event-mapper.ts): a final session_status carrying the
-    // terminalReason, the typed error event (which the session-event
-    // normalizer projects onto the durable stream and the projector
-    // latches into SessionStatus.lastError), then the terminal done.
-    // feedProjector latches the terminalReason onto its synthesized
-    // turn_end, so the durable stream closes with
-    // turn_end{terminalReason:'error'} — the one turn-failure signal every
-    // runtime shares (TurnFailedNotice, spec additional-agent-runtimes 4.1).
-    // The error carries code + category like the production adapters do, so
-    // test-mode exercises the full-fidelity ErrorEvent shape.
-    yield {
-      type: 'session_status',
-      data: { sessionId: 'test-mode', terminalReason: 'error' },
-    } as StreamEvent;
-    yield {
-      type: 'error',
-      data: {
-        message: 'Simulated error from TestModeRuntime',
-        code: 'simulated_error',
-        category: 'execution_error',
-      },
-    } as StreamEvent;
-    yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
-  },
+  ...ERROR_CARD_SCENARIOS,
 };
 
 class ScenarioStore {

@@ -1,3 +1,4 @@
+import { registerGitRefusalHeadingTests } from './chat/git-refusal-heading.js';
 import { registerCompactionTests } from './chat/compaction.js';
 import { registerComposerEscapeAndImeTests } from './chat/composer-escape-and-ime.js';
 import { MOCK_API_URL, useMockServer } from './chat/mock-server.js';
@@ -33,3 +34,6 @@ registerComposerEscapeAndImeTests({ apiUrl: MOCK_API_URL, agentDir });
 // Compaction end to end (L-04, DOR-1215). It drives turns and a `/compact`
 // against the shared test-mode server — see the module header.
 registerCompactionTests({ apiUrl: MOCK_API_URL, agentDir });
+
+// Known typed refusal copy through the real UI and durable transcript replay.
+registerGitRefusalHeadingTests({ apiUrl: MOCK_API_URL, agentDir });
