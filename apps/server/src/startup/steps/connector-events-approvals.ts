@@ -25,6 +25,7 @@ import {
 import { env } from '../../env.js';
 import { createAlwaysSuggestion } from '../../services/core/permissions/index.js';
 import { setMarkedFullActivity } from '../../services/core/turn-power/full-autonomy.js';
+import { setShouldAskActivity } from '../../services/core/prompts/should-ask.js';
 import { projectRegistry } from '../../services/projects/project-registry.js';
 import { describeHookProjectionCapability } from '../../services/harness/hook-approval.js';
 import {
@@ -258,6 +259,8 @@ export async function wireConnectorEventsAndApprovals(
   // The one line a marked turn in a chat set to Full writes when it runs a send or a standing
   // change with no card (DOR-3394).
   setMarkedFullActivity(activityService);
+  // And the line a prompt kind writes when it lets an agent act with no card (DOR-4794).
+  setShouldAskActivity(activityService);
   // The card that lets an agent's own folder allow list apply (DOR-3039). The
   // runtime starts before this step, so the launch is handed the service here.
   setFolderAllowApprovalGateway(approvalService);

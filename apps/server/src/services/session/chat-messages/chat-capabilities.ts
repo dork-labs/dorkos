@@ -335,7 +335,7 @@ export const chatDomain: CapabilityDomain = {
           const read = await readChat(requireChatDeps(deps).read, caller, input);
           // Another chat's words, when that chat ever held outside text (DOR-3969).
           if (input.include !== 'status' && chatHoldsOutsideText(input.chat)) {
-            markCallerTurnOutsider(context);
+            markCallerTurnOutsider(context, { kind: 'chat' });
           }
           return { ok: true as const, ...read };
         });

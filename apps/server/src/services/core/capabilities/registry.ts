@@ -44,7 +44,7 @@ import {
   type GrantedApproval,
 } from './tier-enforcement.js';
 import { isTrustedCaller, type TrustedCaller } from './trusted-caller.js';
-import { resolveCallPermission } from './permission-enforcement.js';
+import { connectorGateFacts, resolveCallPermission } from './permission-enforcement.js';
 import { principalTurnOf } from './marked-turn-holds.js';
 import { refuseSpend, spendPermission, type SpendPreflight } from './spend-permission.js';
 import { agentComputerActionRefusal } from '../agent-computer/hub-owned.js';
@@ -926,7 +926,7 @@ export function composeRegistry(
               ...(supplied.identity ? { identity: supplied.identity } : {}),
               ...(supplied.sessionId ? { sessionId: supplied.sessionId } : {}),
               ...principalTurnOf(supplied.serverPrincipal),
-              ...(preflight?.outward === false ? { outward: false } : {}),
+              ...connectorGateFacts(preflight),
             });
         // A paid run that must ask does so at every level (DOR-4204 PR 2).
         const permission = spendAsks ? spendPermission(resolved) : resolved;

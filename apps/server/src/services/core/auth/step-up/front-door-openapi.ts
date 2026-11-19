@@ -71,6 +71,8 @@ export const HELD_WRITES = new Set([
   'post /api/connectors/connections/{connectionId}/events/subscriptions',
   'put /api/connectors/connections/{connectionId}/events/source',
   'post /api/connectors/access-changes/{changeId}/undo',
+  // DOR-4794: turning writes back on; turning it off answers at once.
+  'put /api/connectors/connections/{connectionId}/writes-back',
   'post /api/marketplace/packages/{name}/install',
   'post /api/marketplace/packages/{name}/keep-files',
   'post /api/marketplace/updates',

@@ -34,6 +34,7 @@ import { PresenceStripShowcases } from '../showcases/PresenceStripShowcases';
 import { HomeStatesShowcases } from '../showcases/HomeStatesShowcases';
 import { ConnectionsShowcases } from '../showcases/ConnectionsShowcases';
 import { SpendingShowcases } from '../showcases/SpendingShowcases';
+import { WritesBackShowcases } from '../showcases/WritesBackShowcases';
 import { PausedConnectionShowcases } from '../showcases/PausedConnectionShowcases';
 import { WorkLeftShowcases } from '../showcases/WorkLeftShowcases';
 import { TodosShowcases } from '../showcases/TodosShowcases';
@@ -123,6 +124,7 @@ export function HomeInboxPage() {
       <TodosShowcases />
       <ConnectionsShowcases />
       <SpendingShowcases />
+      <WritesBackShowcases />
       <PausedConnectionShowcases />
       <CommunityHostingShowcases />
       <McpServerCardShowcases />

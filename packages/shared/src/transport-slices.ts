@@ -45,6 +45,7 @@ import type { GlobalMcpTransport } from './transport-global-mcp.js';
 import type { ShellCheckTransport } from './transport-shell-check.js';
 import type { QueuedChatTransport } from './transport-queued-chat.js';
 import type { ConnectorSpendingTransport } from './transport-connector-spending.js';
+import type { ConnectorWritesBackTransport } from './transport-connector-writes-back.js';
 
 /** Every Transport slice declared outside `transport.ts`. */
 export interface TransportSlices
@@ -84,4 +85,5 @@ export interface TransportSlices
     GlobalMcpTransport,
     ShellCheckTransport,
     QueuedChatTransport,
-    ConnectorSpendingTransport {}
+    ConnectorSpendingTransport,
+    ConnectorWritesBackTransport {}

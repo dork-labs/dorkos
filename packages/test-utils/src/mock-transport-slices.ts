@@ -14,7 +14,8 @@
  * connection's settings, which succeeds, and undoing an agent's task mode,
  * where there is nothing to undo, and sending another chat's queued message
  * now, which joins the running turn.
- * Heartbeats, a hub's computers and the spend limit come from their own mocks.
+ * Heartbeats, a hub's computers, the spend limit and a connected app's
+ * writes-back switch come from their own mocks.
  *
  * @module test-utils/mock-transport-slices
  */
@@ -26,6 +27,7 @@ import { createMockLocalBrowserTransport } from './mock-local-browser-transport.
 import { createMockHeartbeatTransport } from './mock-heartbeat-transport.js';
 import { createMockHubTransport, createMockSessionRelayTransport } from './mock-hub-transport.js';
 import { createMockConnectorSpendingTransport } from './mock-connector-spending-transport.js';
+import { createMockConnectorWritesBackTransport } from './mock-connector-writes-back-transport.js';
 
 /** The methods {@link transportSliceMocks} covers. */
 type SliceMethods =
@@ -90,9 +92,11 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
   ReturnType<typeof createMockComputerTransport> &
   ReturnType<typeof createMockHubTransport> &
   ReturnType<typeof createMockSessionRelayTransport> &
-  ReturnType<typeof createMockConnectorSpendingTransport> {
+  ReturnType<typeof createMockConnectorSpendingTransport> &
+  ReturnType<typeof createMockConnectorWritesBackTransport> {
   return {
     ...createMockConnectorSpendingTransport(),
+    ...createMockConnectorWritesBackTransport(),
     ...createMockHeartbeatTransport(),
     ...createMockComputerTransport(),
     ...createMockLocalBrowserTransport(),
