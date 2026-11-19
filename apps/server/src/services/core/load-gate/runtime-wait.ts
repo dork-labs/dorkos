@@ -145,7 +145,9 @@ export async function waitForHeavyTurn(
   try {
     // The gate classifies with the shell guard's own parser, and logs a hard-cap run and a
     // let-through itself, by program name.
-    const owner = request.shareKey ? { ...request.owner, shareKey: request.shareKey } : request.owner;
+    const owner = request.shareKey
+      ? { ...request.owner, shareKey: request.shareKey }
+      : request.owner;
     return await gate().gateIfHeavy(request.command, owner, {
       ...(request.signal ? { signal: request.signal } : {}),
       onWait: (status) => request.notify(loadWaitEvent(status, readSettingsOrNull(settings))),
