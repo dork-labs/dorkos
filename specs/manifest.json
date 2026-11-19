@@ -2,6 +2,15 @@
   "version": 1,
   "specs": [
     {
+      "id": "261119-052319",
+      "slug": "canvas-recovery-timeout",
+      "title": "Bound the canvas recovery test timeout",
+      "created": "2026-11-19",
+      "status": "specified",
+      "project": "Codex, OpenCode and Doe work like Claude Code",
+      "linearIssue": "DOR-4757"
+    },
+    {
       "id": "261116-033650",
       "slug": "capability-mcp-full-schemas",
       "title": "Register capability MCP tools with full input schemas",
