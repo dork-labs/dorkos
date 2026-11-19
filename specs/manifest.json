@@ -6,7 +6,7 @@
       "slug": "canvas-recovery-timeout",
       "title": "Bound the canvas recovery test timeout",
       "created": "2026-11-19",
-      "status": "specified",
+      "status": "implemented",
       "project": "Codex, OpenCode and Doe work like Claude Code",
       "linearIssue": "DOR-4757"
     },

@@ -6,11 +6,11 @@ Mode `full`. Generated `2026-11-19T05:31:49Z`.
 
 ## P1 — Scoped test timeout
 
-- [ ] 1.1 Bound the three identity-hold recovery tests
+- [x] 1.1 Bound the three identity-hold recovery tests
 
 ### Task 1.1: Bound the three identity-hold recovery tests
 
-Status `pending`. Size `small`. Priority `medium`.
+Status `completed`. Size `small`. Priority `medium`.
 
 Dependencies and parallel tasks are empty. Promotion is unset.
 
