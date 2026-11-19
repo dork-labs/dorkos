@@ -17,10 +17,12 @@
  * turn for; running the normal handling instead would raise a card into a turn that is over. Never
  * a yes.
  *
- * **A chat never waits behind itself.** Every ask of one chat waits under one share key
+ * **One place in line per chat.** Every ask of one chat waits under one share key
  * (`codex:<chat>:main`, `core/load-gate/chat-turns.ts`): a second heavy ask that arrives while the
- * first still waits joins its place, takes no second ticket, and goes on with it. Codex withdrawing
- * one of them leaves the place standing for the others. Only the main thread's asks are ever held:
+ * first still waits takes the same place, not a ticket of its own, and goes on with it. Codex
+ * withdrawing one of them leaves the place standing for the others. The key is not what keeps a
+ * Codex chat from waiting behind itself: its slot goes back before any card goes up, so no Codex
+ * ask can ever wait for a slot its own chat holds. It only keeps a turn's asks together. Only the main thread's asks are ever held:
  * an ask from a Codex helper's own thread names no DorkOS turn and goes to the normal handling,
  * which refuses it.
  *
