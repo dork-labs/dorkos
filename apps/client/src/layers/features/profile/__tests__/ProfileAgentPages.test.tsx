@@ -32,7 +32,7 @@ import { TooltipProvider } from '@/layers/shared/ui';
 import { MOCK_TEAM_ROSTER } from '@/dev/mock-samples';
 import { buildProfileDeepLinkHarness } from '@/test-helpers/profile-deep-link';
 import { ProfileView } from '../ui/ProfileView';
-import { profilePage, isProfilePageAvailable } from '../ui/pages/registry';
+import { profilePage, profilePageTitle, isProfilePageAvailable } from '../ui/pages/registry';
 import { isProfilePickAvailable } from '../ui/popovers/registry';
 import { profileStack, type ProfilePageId, type ProfileStackState } from '../model/profile-stack';
 import { openEveryProfileFold, resetProfileFolds } from './profile-fold-helpers';
@@ -218,7 +218,7 @@ describe('the registry', () => {
     ];
     for (const page of pages) {
       expect(isProfilePageAvailable(page), page).toBe(true);
-      expect(profilePage(page)!.title, page).toBeTruthy();
+      expect(profilePageTitle(profilePage(page)!, MANAGED), page).toBeTruthy();
     }
   });
 
@@ -233,6 +233,12 @@ describe('the registry', () => {
     expect(profilePage('instructions')!.title).toBe('Instructions');
     expect(profilePage('boundaries')!.title).toBe('Boundaries');
     expect(profilePage('memory')!.title).toBe('Memory');
+  });
+
+  it('titles what an agent knows with that agent’s name', () => {
+    expect(profilePageTitle(profilePage('told')!, { displayName: 'Atlas' })).toBe(
+      'What Atlas knows'
+    );
   });
 });
 
@@ -643,16 +649,23 @@ describe('Instructions and Boundaries', () => {
   // uses (`runtimes/context-preview`), and its own suite pins that a template
   // filled for an agent equals the agent's preview, per runtime.
 
-  it('links from the file to everything the agent is told', async () => {
+  it('links from the file to what the agent knows, titled with its name', async () => {
     await renderProfile(MANAGED, { start: 'instructions' });
 
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'See everything this agent is told' })
-    );
+    await userEvent.click(await screen.findByRole('button', { name: 'See what Warden knows' }));
 
-    expect(
-      await screen.findByRole('heading', { name: 'What this agent is told' })
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'What Warden knows' })).toBeInTheDocument();
+  });
+
+  it('leads with what the agent can do, and opens its Permissions to change it', async () => {
+    const transport = mockTransport();
+    await renderProfile(MANAGED, { start: 'told', transport });
+
+    expect(await screen.findByRole('list', { name: 'What Warden can do' })).toBeInTheDocument();
+    expect(transport.getAgentPermissions).toHaveBeenCalledWith(MANAGED.id);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Change in Permissions' }));
+    expect(await screen.findByRole('heading', { name: 'Permissions' })).toBeInTheDocument();
   });
 
   it('asks the server for this agent’s instructions, at its own level', async () => {

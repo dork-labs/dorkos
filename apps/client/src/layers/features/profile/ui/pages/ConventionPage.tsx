@@ -336,7 +336,7 @@ function ConventionPage({
           className="focus-ring text-muted-foreground hover:text-foreground flex shrink-0 items-center gap-1 self-start rounded-md py-1 text-xs transition-colors"
         >
           <ChevronRight aria-hidden className="size-3.5" />
-          See everything this agent is told
+          See what {member.displayName} knows
         </button>
       )}
     </div>
