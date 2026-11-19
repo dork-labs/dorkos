@@ -33,6 +33,7 @@ import {
   saveOriginalDocumentFile,
 } from '../services/canvas/doc-channel/writes/installation-file-writes.js';
 import { CanonicalFileIdentityChangedError } from '../services/canvas/doc-channel/writes/canonical-writer.js';
+import { disclosableRefusalReason } from '../services/canvas/doc-channel/authorization.js';
 
 /** Build confined file routes using the owning installation writer. */
 export function createFileRoutes(writes = new InstallationFileWrites()): Hono<ApiEnv> {
@@ -208,8 +209,17 @@ export function createFileRoutes(writes = new InstallationFileWrites()): Hono<Ap
           412
         );
       const code = (err as NodeJS.ErrnoException).code;
-      if (code === 'CANVAS_DOCUMENT_NOT_FOUND')
-        return c.json({ error: 'The document is not available.', code }, 404);
+      if (code === 'CANVAS_DOCUMENT_NOT_FOUND') {
+        // Which check refused, logged always and told to the owner when safe (DOR-4442).
+        logger.info('[files] a document save check refused', {
+          reason: (err as { reason?: string }).reason ?? null,
+        });
+        const reason = disclosableRefusalReason(err);
+        return c.json(
+          { error: 'The document is not available.', code, ...(reason ? { reason } : {}) },
+          404
+        );
+      }
       if (code === 'DOC_SAVE_ID_CONFLICT' || code === 'DOC_SAVE_FAILED')
         return c.json({ error: 'Save operation conflicts with its recorded identity.', code }, 412);
       if (code === 'DOC_SAVE_IN_DOUBT')

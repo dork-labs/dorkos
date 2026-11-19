@@ -3,6 +3,7 @@ import { registerFileSaveRecoveryOpenApi } from './file-save-recovery/openapi.js
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
 import { WriteFileRequestSchema, WriteFileResponseSchema } from '@dorkos/shared/schemas';
+import { DocSaveRefusalReasonSchema } from '@dorkos/shared/file-save/recovery';
 
 const RefusalSchema = z.object({ error: z.string(), code: z.string().optional() });
 
@@ -41,8 +42,13 @@ export function registerFileWriteOpenApi(registry: OpenAPIRegistry): void {
         content: { 'application/json': { schema: RefusalSchema } },
       },
       404: {
-        description: 'Existing file not found',
-        content: { 'application/json': { schema: RefusalSchema } },
+        description:
+          'Existing file not found, or the document save was refused; a refused save may name which check refused (DOR-4442)',
+        content: {
+          'application/json': {
+            schema: RefusalSchema.extend({ reason: DocSaveRefusalReasonSchema.optional() }),
+          },
+        },
       },
       409: {
         description: 'The content baseline no longer matches',
