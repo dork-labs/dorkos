@@ -23,6 +23,8 @@
  * plain JSON. The first destructive schema to grow a `z.date()` or `z.set()` field
  * fails loudly at the gate instead of quietly unbinding that field. Callers turn
  * the throw into a refusal, so the destructive action does not run either way.
+ * Prototype-named own keys (`__proto__`, `constructor`, `prototype`) are refused
+ * at any depth too, as the step-up statement's canonical form refuses them.
  *
  * @module services/core/approvals/approval-input-hash
  */
@@ -67,6 +69,13 @@ function describe(value: unknown): string {
   return ctor ? `a ${ctor} instance` : 'a non-plain object';
 }
 
+/** Own keys an approval refuses at any depth, whatever their value. */
+const PROTOTYPE_NAMED_KEYS: ReadonlySet<string> = new Set([
+  '__proto__',
+  'constructor',
+  'prototype',
+]);
+
 /** Whether an object is a plain `{}` — own keys only, no custom prototype. */
 function isPlainObject(value: object): boolean {
   const proto = Object.getPrototypeOf(value) as object | null;
@@ -81,7 +90,8 @@ function isPlainObject(value: object): boolean {
  *
  * @param input - The value about to be bound.
  * @param path - Path prefix used in the error message. Defaults to `input`.
- * @throws {@link ApprovalInputNotBindableError} on any non-plain value.
+ * @throws {@link ApprovalInputNotBindableError} on any non-plain value or
+ *   prototype-named own key.
  */
 export function assertBindableInput(input: unknown, path = 'input'): void {
   if (input === null || input === undefined) return;
@@ -109,6 +119,9 @@ export function assertBindableInput(input: unknown, path = 'input'): void {
     throw new ApprovalInputNotBindableError(path, describe(input));
   }
   for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+    if (PROTOTYPE_NAMED_KEYS.has(key)) {
+      throw new ApprovalInputNotBindableError(`${path}.${key}`, 'a prototype-named key');
+    }
     assertBindableInput(value, `${path}.${key}`);
   }
 }

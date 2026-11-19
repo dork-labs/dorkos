@@ -183,7 +183,7 @@ describe('community-packaged scope step', () => {
     expect(decide(repo, 'pull_request').run).toBe('false');
   });
 
-  it.each(['merge_group', 'schedule', 'workflow_dispatch'])(
+  it.each(['merge_group', 'schedule', 'workflow_dispatch', 'release_pull_request'])(
     'always runs the proof on %s, whatever changed',
     (event) => {
       const repo = checkout({ changes: ['docs/x.md'] });

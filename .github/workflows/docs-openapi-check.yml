@@ -100,10 +100,14 @@ jobs:
       # `--no-renames` is load-bearing: with rename detection on, moving a file
       # OUT of docs/api reports only the destination path, so the very change
       # that deletes a generated page would score as not touching it.
+      #
+      # A pull request into a release branch regenerates unconditionally, like
+      # the queue: its `EVENT` reads `release_pull_request` (DOR-4639, test.yml's
+      # header "PULL REQUESTS INTO A RELEASE BRANCH").
       - name: Decide whether this run regenerates the API docs
         id: scope
         env:
-          EVENT: ${{ github.event_name }}
+          EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
           BASE: HEAD^1
         run: |
           set -euo pipefail

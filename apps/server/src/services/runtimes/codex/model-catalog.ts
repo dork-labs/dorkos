@@ -206,17 +206,41 @@ async function listAllModels(
       throw new Error('Codex app-server rejected initialize', { cause: error });
     throw error;
   }
+  return { models: await listCodexModels(client), appServerVersion };
+}
+
+/**
+ * Read the account catalog from an already initialized process, without a cache.
+ *
+ * @param client - The very process whose account will run the turn.
+ * @param options - Cancellation and an end-to-end query budget.
+ */
+export async function listCodexModels(
+  client: CodexJsonRpcClient,
+  options: { signal?: AbortSignal; timeoutMs?: number } = {}
+): Promise<ModelOption[]> {
+  const timeoutMs = options.timeoutMs ?? MODEL_QUERY_TIMEOUT_MS;
+  const budget = AbortSignal.timeout(timeoutMs);
+  const signal = options.signal ? AbortSignal.any([options.signal, budget]) : budget;
+  const deadline = Date.now() + timeoutMs;
   const rows: AppServerModel[] = [];
   let cursor: string | null = null;
   for (let page = 1; ; page += 1) {
     if (page > MAX_MODEL_PAGES) throw new Error('Codex model/list exceeded the page limit');
     let result: unknown;
     try {
-      result = await client.request('model/list', {
-        cursor,
-        includeHidden: false,
-        limit: MODEL_PAGE_SIZE,
-      });
+      result = await client.request(
+        'model/list',
+        {
+          cursor,
+          includeHidden: false,
+          limit: MODEL_PAGE_SIZE,
+        },
+        {
+          timeoutMs: Math.max(1, deadline - Date.now()),
+          signal,
+        }
+      );
     } catch (error) {
       if (error instanceof CodexRpcError)
         throw new Error('Codex app-server rejected model/list', { cause: error });
@@ -230,7 +254,7 @@ async function listAllModels(
     if (!parsed.data.nextCursor) break;
     cursor = parsed.data.nextCursor;
   }
-  return { models: rows.map(mapAppServerModel), appServerVersion };
+  return rows.map(mapAppServerModel);
 }
 
 /** Add optional context windows, within a budget that never fails the answer. */

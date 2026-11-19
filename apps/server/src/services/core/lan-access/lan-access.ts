@@ -204,6 +204,9 @@ export class LanAccess {
   async close(): Promise<void> {
     this.unsubscribe?.();
     this.unsubscribe = null;
+    // Never attached: a shutdown that landed during boot, before the settings
+    // it would read exist. There is nothing to close (DOR-4689).
+    if (this.source === null && this.server === null) return;
     this.source = null;
     await this.reconcile();
   }
