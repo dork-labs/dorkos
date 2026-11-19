@@ -196,8 +196,11 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
   },
   {
     name: 'Settings',
+    // Taking back a request you made rides beside asking for more, with no words
+    // of its own: the block has no room left under its token cap (DOR-4586).
     can: 'change settings, see permissions, ask for more.',
     covers: [
+      'approvals.withdraw',
       'operator.config_',
       'operator.check_update',
       'permissions.',
