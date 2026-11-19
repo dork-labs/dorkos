@@ -77,6 +77,7 @@ export function useBrowserHandoff(sessionId?: string | null) {
       : null,
     canShowWindow: state?.mode === 'new-window' && state.status === 'connected' && !!selectedTabId,
     sharedProfile: handoff?.profileId === null,
+    needsQuit: state?.signIn?.needsQuit === true,
     busy,
     error,
     // The server wakes the agent once the handoff ends, whichever way the person hands

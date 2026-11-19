@@ -203,7 +203,7 @@ describe('SignInWindow', () => {
 
   // Security (DOR-4731): fail at the deadline, then force that same child closed so its
   // profile lock clears for Try again. Nothing from a forced close is saved.
-  it('fails, never stays open, when Chromium ignores the quit, and forces it closed', async () => {
+  it('on Linux and Windows, fails when Chromium ignores the quit, and forces it closed', async () => {
     let exitNow!: (value: PlainChromiumExit) => void;
     const exited = new Promise<PlainChromiumExit>((resolve) => (exitNow = resolve));
     // A Chromium that never answers the quit: only the forced close ends it.
@@ -211,6 +211,7 @@ describe('SignInWindow', () => {
     const forceQuit = vi.fn(() => exitNow({ code: null, signal: 'SIGKILL' }));
     let clock = 0;
     const signIns = new SignInWindow({
+      platform: 'linux',
       executable: async () => '/managed/Chromium',
       spawner: () => ({ pid: 4242, exited, quit, forceQuit }),
       held: () => false,
@@ -230,6 +231,43 @@ describe('SignInWindow', () => {
     for (let i = 0; i < 5; i += 1) await settle();
     expect(signIns.current?.status).toBe('failed');
     expect(signIns.active).toBe(false);
+  });
+
+  // DOR-4731: on a Mac a forced close loses the newest cookies too, so it never comes. The
+  // window stays open, holding its profile, and the person is asked to quit it with ⌘Q.
+  it('on a Mac, never forces a window that ignores the quit; it asks for ⌘Q and still saves', async () => {
+    let exitNow!: (value: PlainChromiumExit) => void;
+    const exited = new Promise<PlainChromiumExit>((resolve) => (exitNow = resolve));
+    const quit = vi.fn();
+    const forceQuit = vi.fn();
+    let clock = 0;
+    let held = false;
+    const signIns = new SignInWindow({
+      platform: 'darwin',
+      executable: async () => '/managed/Chromium',
+      spawner: () => ({ pid: 4242, exited, quit, forceQuit }),
+      held: () => held,
+      lockOwner: () => 4242,
+      prepare: async () => undefined,
+      now: () => clock,
+      sleep: async (ms) => {
+        clock += ms;
+      },
+    });
+    await signIns.start('/profiles/p1', null, 'https://linear.app/');
+    held = true;
+    signIns.done();
+    for (let i = 0; i < SIGN_IN_QUIT_TIMEOUT_MS / 200 + 5; i += 1) await settle();
+    expect(forceQuit).not.toHaveBeenCalled();
+    expect(signIns.current).toMatchObject({ status: 'open', needsQuit: true });
+    // Its profile stays held, so nothing else may take it meanwhile.
+    expect(signIns.holds('/profiles/p1')).toBe(true);
+    // The person quits it with ⌘Q: Chromium exits cleanly, lets go, and the sign-in saves.
+    held = false;
+    exitNow({ code: 0, signal: null });
+    for (let i = 0; i < 5; i += 1) await settle();
+    expect(signIns.current?.status).toBe('saved');
+    expect(signIns.current?.needsQuit).toBeUndefined();
   });
 
   it('says so each time the status moves, and the status has moved by then', async () => {

@@ -484,6 +484,24 @@ describe('BrowserHandoffCard', () => {
       expect(transport.handBackLocalBrowser).not.toHaveBeenCalled();
     });
 
+    // DOR-4731: on a Mac a window that ignores the quit is never forced closed (that loses
+    // the sign-in), so the card asks the person to quit it, and keeps Done signing in.
+    it('asks for ⌘Q when the window didn’t quit', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(
+        person({
+          handoff: password,
+          signIn: { ...signIn('open'), needsQuit: true },
+          status: 'disconnected',
+        })
+      );
+      mount();
+      expect(await button('Done signing in')).toBeTruthy();
+      expect(screen.getByRole('status').textContent).toBe(
+        'Click the sign-in window, then press ⌘Q to finish signing in.'
+      );
+      expect(screen.getByRole('button', { name: 'Stop task' })).toBeTruthy();
+    });
+
     it('says why when Done signing in is refused', async () => {
       transport.getLocalBrowserState.mockResolvedValue(
         person({ handoff: password, signIn: signIn('open'), status: 'disconnected' })

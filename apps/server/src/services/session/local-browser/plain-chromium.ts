@@ -2,10 +2,12 @@
  * The plain sign-in window: DorkOS's own Chromium on a profile folder, started
  * with no debugging channel at all, so no agent can drive or read it.
  */
-import { spawn, spawnSync } from 'node:child_process';
+import { execFile, spawn, spawnSync } from 'node:child_process';
 import { readlinkSync, existsSync, rmSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { logger } from '../../../lib/logger.js';
+import { quitPlainChild, type QuitRunner } from './connection/mac-quit.js';
 
 /** How a plain Chromium ended. A spawn error reads as no code and no signal. */
 export interface PlainChromiumExit {
@@ -19,7 +21,10 @@ export interface PlainChromium {
   pid?: number;
   /** Resolves once the process has exited. */
   exited: Promise<PlainChromiumExit>;
-  /** Quit the way a person would, so Chromium writes the profile out. */
+  /**
+   * Quit the way a person would, so Chromium writes the profile out: ⌘Q's quit on a Mac,
+   * SIGTERM on Linux, a close request on Windows (DOR-4731).
+   */
   quit(): void;
   /** End a window that ignored {@link quit}, so its profile lock clears. Nothing it held is saved. */
   forceQuit(): void;
@@ -193,6 +198,18 @@ function isAlive(pid: number): boolean {
   }
 }
 
+/**
+ * Run a quit and wait for nothing. Only the outcome word is logged, never the arguments,
+ * which name the binary's path. A quit that doesn't land is caught by the sign-in's deadline.
+ */
+const runQuit: QuitRunner = (file, args) => {
+  execFile(file, args, { timeout: 5_000 }, (error, stdout) => {
+    const outcome = error ? 'error' : String(stdout).trim();
+    if (outcome !== 'sent' && file !== 'taskkill')
+      logger.warn('[Browser] Sign-in window quit not sent', { outcome });
+  });
+};
+
 /** Start a real plain Chromium. Its output is ignored, and it gets no pipe beyond stdio. */
 export const spawnPlainChromium: PlainChromiumSpawner = (executable, args) => {
   const child = spawn(executable, args, { stdio: 'ignore' });
@@ -204,12 +221,7 @@ export const spawnPlainChromium: PlainChromiumSpawner = (executable, args) => {
     pid: child.pid,
     exited,
     quit() {
-      if (child.pid === undefined || child.exitCode !== null) return;
-      // POSIX Chromium treats SIGTERM as quit and writes its profile out.
-      // Windows has no SIGTERM, so ask it to close its windows instead.
-      if (process.platform === 'win32')
-        spawnSync('taskkill', ['/PID', String(child.pid)], { stdio: 'ignore' });
-      else child.kill('SIGTERM');
+      quitPlainChild(child, executable, process.platform, runQuit);
     },
     forceQuit() {
       if (child.pid === undefined || child.exitCode !== null) return;

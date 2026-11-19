@@ -14,6 +14,7 @@ const STEPS: Array<{
   canShowWindow?: boolean;
   error?: string;
   site?: string;
+  needsQuit?: boolean;
 }> = [
   { label: 'A check only a person can do', step: 'wall', canShowWindow: true },
   { label: 'A password page', step: 'sign-in' },
@@ -24,6 +25,11 @@ const STEPS: Array<{
   },
   { label: 'A handoff in the Mac app’s panel', step: 'person' },
   { label: 'Sign-in window open', step: 'sign-in-open' },
+  {
+    label: 'The sign-in window didn’t quit (Mac): click it, then ⌘Q',
+    step: 'sign-in-open',
+    needsQuit: true,
+  },
   { label: 'Saving the sign-in', step: 'saving' },
   { label: 'Signed in', step: 'saved' },
   { label: 'Saving failed', step: 'failed' },
@@ -52,7 +58,7 @@ export function BrowserHandoffShowcases() {
       title="Browser handoff card"
       description="An agent hands the Agent browser to a person and stops. The card sits above the composer, outside the transcript, because an agent can write a message that looks like a card but can't write into this slot."
     >
-      {STEPS.map(({ label, step, canShowWindow, error, site }) => (
+      {STEPS.map(({ label, step, canShowWindow, error, site, needsQuit }) => (
         <div key={label}>
           <ShowcaseLabel>{label}</ShowcaseLabel>
           <ShowcaseDemo>
@@ -62,6 +68,7 @@ export function BrowserHandoffShowcases() {
                 agentName="Atlas"
                 agentFolder="/home/sam/agents/atlas"
                 step={step}
+                needsQuit={needsQuit}
                 canShowWindow={canShowWindow ?? false}
                 sharedProfile={step === 'sign-in'}
                 busy={false}

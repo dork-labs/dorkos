@@ -16,5 +16,12 @@ export function signInOpenLine(site: string): string {
   return `Sign in to ${site} in the sign-in window, then press ${DONE_SIGNING_IN}.`;
 }
 
+/**
+ * The window was asked to quit and hasn't (macOS). A forced close would lose the sign-in, so
+ * the person quits it; its exit saves the sign-in and finishes what Done started. Clicking it
+ * first makes ⌘Q land on the sign-in window, never the person's own Chrome in front.
+ */
+export const SIGN_IN_QUIT_LINE = 'Click the sign-in window, then press ⌘Q to finish signing in.';
+
 /** While the sign-in saves. */
 export const SIGN_IN_SAVING = 'Saving your sign-in…';

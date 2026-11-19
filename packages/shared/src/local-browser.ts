@@ -186,6 +186,11 @@ export const LocalBrowserSignInSchema = z.object({
   site: z.string(),
   status: z.enum(['open', 'saving', 'saved', 'failed']),
   startedAt: z.string(),
+  /**
+   * The window was asked to quit and hasn't: the person quits it with ⌘Q, and its exit still
+   * saves the sign-in (DOR-4731, macOS only). Absent otherwise.
+   */
+  needsQuit: z.literal(true).optional(),
 });
 export type LocalBrowserSignIn = z.infer<typeof LocalBrowserSignInSchema>;
 

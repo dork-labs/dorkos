@@ -91,6 +91,11 @@ const echo = createServer((request, response) => {
     </script>`);
   }
 });
+/** A time in the form `log show --start` takes. */
+function logTime(at: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}`;
+}
 async function until<T>(read: () => Promise<T | undefined>, timeout = 30000): Promise<T> {
   const deadline = Date.now() + timeout;
   do {
@@ -273,11 +278,31 @@ try {
     // window closes, so this quit is what saves the sign-in (DOR-4731).
     const quitWindow = plain;
     const quitAt = Date.now();
+    const tccFrom = logTime(new Date(quitAt - 1000));
     let exitedAfterMs: number | undefined;
     void quitWindow?.exited.then(() => (exitedAfterMs = Date.now() - quitAt));
     signIns.done();
-    await until(async () => (signIns.current?.status === 'saved' ? true : undefined));
+    await until(async () =>
+      signIns.current?.status === 'saved' || signIns.current?.needsQuit ? true : undefined
+    );
+    // A Mac quit that hangs is how a hidden permission prompt would show on a runner.
+    assert.notEqual(signIns.current?.needsQuit, true, `${name}: the quit didn’t finish in 10 s`);
+    assert(exitedAfterMs !== undefined && exitedAfterMs < 10_000, `${name}: quit took too long`);
     const savedAfterMs = Date.now() - quitAt;
+    // Security (DOR-4731): the quit must ask macOS for no Apple Events consent. A prompt a
+    // person accepted would give every agent under DorkOS Automation over their real Chrome.
+    const tcc = await run('/usr/bin/log', [
+      'show',
+      '--start',
+      tccFrom,
+      '--predicate',
+      'subsystem == "com.apple.TCC"',
+      '--style',
+      'compact',
+    ]);
+    const appleEvents = tcc.stdout.split('\n').filter((line) => /AppleEvents/.test(line));
+    await writeFile(path.join(evidence, `${name}-tcc-apple-events.txt`), appleEvents.join('\n'));
+    assert.deepEqual(appleEvents, [], `${name}: the quit asked macOS for Apple Events consent`);
     // How the person's window ended: by the signal, or a clean exit (Security's check, DOR-4731).
     const quitExit = await quitWindow?.exited;
     // Counted before the hand back: it reopens the agent's page and waits for that load.

@@ -54,6 +54,8 @@ export interface SignInWindowDeps {
   /** Get the profile ready: password saving off, the agent window's theme out, no tabs to bring back. */
   prepare?: (profileFolder: string) => Promise<void>;
   now?: () => number;
+  /** Which platform's quit and deadline apply. Defaults to this computer's. */
+  platform?: NodeJS.Platform;
   sleep?: (ms: number) => Promise<void>;
 }
 
@@ -194,6 +196,15 @@ export class SignInWindow {
     const deadline = this.now() + SIGN_IN_QUIT_TIMEOUT_MS;
     while (attempt === this.attempt && this.record?.status === 'open') {
       if (this.now() >= deadline) {
+        // On a Mac a forced close loses the newest cookies too (DOR-4731), so the window stays
+        // open, holding its profile, and the person is asked to quit it with ⌘Q. Its exit
+        // still saves the sign-in. Nothing else ever clears its lock.
+        if ((this.deps.platform ?? process.platform) === 'darwin') {
+          logger.warn('[Browser] Sign-in window didn’t quit', { site: this.record.site });
+          this.record = { ...this.record, needsQuit: true as const };
+          this.changed();
+          return;
+        }
         // Failed first, so the exit the forced close brings finds nothing left to save.
         this.finish(attempt, 'failed', 'quit_timeout');
         window.forceQuit();
@@ -206,7 +217,9 @@ export class SignInWindow {
   private async save(attempt: number, profileFolder: string): Promise<void> {
     // Only an open window's exit saves: never one that already failed or was forced closed.
     if (attempt !== this.attempt || this.record?.status !== 'open') return;
-    this.record = { ...this.record, status: 'saving' };
+    // The window has exited, so a ⌘Q ask is over.
+    const { needsQuit: _asked, ...record } = this.record;
+    this.record = { ...record, status: 'saving' };
     this.changed();
     const sleep = this.deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
     const deadline = this.now() + SIGN_IN_SAVE_TIMEOUT_MS;

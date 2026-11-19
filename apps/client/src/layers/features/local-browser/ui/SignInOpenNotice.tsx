@@ -1,6 +1,11 @@
 import { Check } from 'lucide-react';
 import type { LocalBrowserSignIn } from '@dorkos/shared/local-browser';
-import { DONE_SIGNING_IN, SIGN_IN_SAVING, signInOpenLine } from '@/layers/entities/local-browser';
+import {
+  DONE_SIGNING_IN,
+  SIGN_IN_QUIT_LINE,
+  SIGN_IN_SAVING,
+  signInOpenLine,
+} from '@/layers/entities/local-browser';
 import { Button } from '@/layers/shared/ui';
 
 /** Props for {@link SignInOpenNotice}. */
@@ -20,7 +25,11 @@ export function SignInOpenNotice({ signIn, busy, onDone }: SignInOpenNoticeProps
   return (
     <div data-slot="sign-in-open-notice" className="flex flex-col gap-2 text-sm">
       <p role="status" aria-live="polite">
-        {saving ? SIGN_IN_SAVING : signInOpenLine(signIn.site)}
+        {saving
+          ? SIGN_IN_SAVING
+          : signIn.needsQuit
+            ? SIGN_IN_QUIT_LINE
+            : signInOpenLine(signIn.site)}
       </p>
       <Button
         size="sm"

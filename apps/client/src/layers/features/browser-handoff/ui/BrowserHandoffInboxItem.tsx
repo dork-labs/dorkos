@@ -14,6 +14,7 @@ export function BrowserHandoffInboxItem() {
     step,
     canShowWindow,
     sharedProfile,
+    needsQuit,
     busy,
     error,
     continueAgent,
@@ -39,6 +40,7 @@ export function BrowserHandoffInboxItem() {
         step={step}
         canShowWindow={canShowWindow}
         sharedProfile={sharedProfile}
+        needsQuit={needsQuit}
         busy={busy}
         error={error}
         onContinue={() => void continueAgent()}

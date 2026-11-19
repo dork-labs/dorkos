@@ -471,6 +471,18 @@ describe('LocalBrowserPanel', () => {
       expect(transport.handBackLocalBrowser).not.toHaveBeenCalled();
       expect(transport.resumeLocalBrowser).not.toHaveBeenCalled();
     });
+    it('asks for ⌘Q in the panel when the window didn’t quit', async () => {
+      transport.getLocalBrowserState.mockResolvedValue({
+        ...signingIn,
+        handoff: { ...here, outcome: 'stopped' },
+        signIn: { ...signingIn.signIn, needsQuit: true },
+      });
+      mount();
+      expect(
+        await screen.findByText('Click the sign-in window, then press ⌘Q to finish signing in.')
+      ).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Done signing in' })).toBeInTheDocument();
+    });
     it('holds Done signing in still while that window saves', async () => {
       transport.getLocalBrowserState.mockResolvedValue({
         ...signingIn,

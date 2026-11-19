@@ -33400,6 +33400,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -33772,6 +33778,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -34381,6 +34393,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -34739,6 +34757,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -35098,6 +35122,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -35673,6 +35703,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -36441,6 +36477,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -36818,6 +36860,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -37333,6 +37381,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -37711,6 +37765,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [

@@ -1,5 +1,10 @@
 import { Check, Hand, KeyRound, LogIn, Monitor, Play } from 'lucide-react';
-import { DONE_SIGNING_IN, SIGN_IN_SAVING, signInOpenLine } from '@/layers/entities/local-browser';
+import {
+  DONE_SIGNING_IN,
+  SIGN_IN_QUIT_LINE,
+  SIGN_IN_SAVING,
+  signInOpenLine,
+} from '@/layers/entities/local-browser';
 import { shortenHomePath } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
 import { cardAgentName } from '../lib/agent-name';
@@ -17,6 +22,8 @@ export interface BrowserHandoffCardViewProps {
   step: HandoffStep;
   /** Whether the agent's own window can be raised. */
   canShowWindow: boolean;
+  /** The sign-in window was asked to quit and hasn't, so the person quits it with ⌘Q. */
+  needsQuit?: boolean;
   /** The sign-in lands in the default profile, which every agent shares. */
   sharedProfile?: boolean;
   /** A button's call is running. */
@@ -32,8 +39,8 @@ export interface BrowserHandoffCardViewProps {
 }
 
 /** The status line for each step of the plain sign-in window, in the words the panel uses too. */
-function signInStatus(step: HandoffStep, site: string): string | null {
-  if (step === 'sign-in-open') return signInOpenLine(site);
+function signInStatus(step: HandoffStep, site: string, needsQuit: boolean): string | null {
+  if (step === 'sign-in-open') return needsQuit ? SIGN_IN_QUIT_LINE : signInOpenLine(site);
   if (step === 'saving') return SIGN_IN_SAVING;
   if (step === 'saved') return `Signed in to ${site}.`;
   if (step === 'failed') return 'Couldn’t save your sign-in.';
@@ -52,6 +59,7 @@ export function BrowserHandoffCardView({
   agentFolder,
   step,
   canShowWindow,
+  needsQuit = false,
   sharedProfile = false,
   busy,
   error,
@@ -64,7 +72,7 @@ export function BrowserHandoffCardView({
 }: BrowserHandoffCardViewProps) {
   const name = cardAgentName(agentName);
   const asksPassword = step === 'sign-in' || step === 'failed';
-  const status = signInStatus(step, site);
+  const status = signInStatus(step, site, needsQuit);
   const canContinue = step === 'person' || step === 'wall' || step === 'saved';
   // The host goes in the wrapping title, never in a button, so a long one can't push a
   // control out of the card on a phone.
