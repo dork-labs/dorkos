@@ -543,6 +543,7 @@
     "POST /api/local-browser/profiles/:id/forget-sign-ins",
     "POST /api/local-browser/resume",
     "POST /api/local-browser/sign-in",
+    "POST /api/local-browser/sign-in/done",
     "POST /api/local-browser/tabs/:id/select",
     "POST /api/local-browser/take-over",
     "POST /api/marketplace/cache/prune",

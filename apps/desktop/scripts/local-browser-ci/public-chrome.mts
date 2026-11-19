@@ -273,9 +273,10 @@ try {
     // window closes, so this quit is what saves the sign-in (DOR-4731).
     signIns.done();
     await until(async () => (signIns.current?.status === 'saved' ? true : undefined));
+    // Counted before the hand back: it reopens the agent's page and waits for that load.
+    const before = arrivedWith.length;
     if (name !== 'godaddy') await handover.handBack(handoffId);
     if (name === 'echo') {
-      const before = arrivedWith.length;
       await until(async () => (arrivedWith.length > before ? true : undefined));
       assert.match(
         arrivedWith.at(-1)!,
