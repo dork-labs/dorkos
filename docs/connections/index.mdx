@@ -174,6 +174,16 @@ The **MCP servers** tab on the Connections page holds servers you add once for e
 
 On Codex, a reply that's already running can finish with the server.
 
+### See what a server can do
+
+Choose a server to open its details. **What it can do** lists the server's tools, read from the server each time the details open. A tool it added in the last day is marked **New today**. Reading the list changes nothing that runs.
+
+**Who uses it without asking** lists each agent that uses the server, or one of its tools, without asking first. An agent lands here when someone chooses **Always allow** on its request. Choose **Make it ask** to undo that, and the agent asks again next time. A rule someone wrote in the agent's `.claude/settings.json` shows **Set in settings.json** instead. Edit that file to remove it.
+
+### Names DorkOS keeps for itself
+
+Two server names belong to DorkOS: `dorkos` and `dorkos_connections`. Capital letters don't make a difference. A new server can't use either name. A server saved with one of them before it was reserved still shows its tools, but agents can't use it. Remove it and add it again under a new name.
+
 <Callout type="warn">
   If you remove a server because you no longer trust it, also revoke its key at the service: a
   program it already started may still hold the key.

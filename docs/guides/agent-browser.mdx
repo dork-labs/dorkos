@@ -18,6 +18,7 @@ Some sites open an extra sign-in window. These windows are for you;
 your agent stays on the original page. Finish signing in, then close the extra window.
 
 If your agent stops because a site needs you, a card appears in the chat.
+It says the site needs you to sign in, or wants a person to continue.
 In the Mac app, the card offers **Open sign-in window**. It opens a plain sign-in window outside the panel,
 and your agent continues in its own window. Every agent that uses the Agent browser can use that sign-in.
 Only sign in to accounts you're happy for all of those agents to use.
@@ -34,6 +35,17 @@ Choose **In its own window**, or use the desktop app for **In DorkOS**.
 
 Only the selected page is shared with the agent in your current direct chat.
 A browser opened from Rooms stays human-only.
+
+## One chat at a time
+
+One chat uses a browser at a time. If another chat has it, the panel says **This browser is open in another chat**.
+It names that chat and links to it when the chat has a title.
+Choose **Take it here** to move the browser to the chat you're in.
+If that chat's agent is working in the browser right now, the button reads **Take it from** and the agent's name.
+Taking it stops what that agent is doing there.
+In a room, the panel asks you to open a direct chat with an agent instead.
+
+If an agent in another chat is waiting for you to finish signing in, the panel says so and offers **Open that chat**.
 
 ## Pause, close, and reconnect
 
@@ -68,7 +80,8 @@ The library and browser are separate downloads, and DorkOS keeps their versions 
 The desktop view uses Electron’s built-in browser instead.
 Some websites restrict sign-ins from embedded browsers. Use **In its own window** for those sites.
 
-This release pins Playwright to 1.65.0-alpha-2026-10-30. The Chromium it downloads is version 157.
+This release pins Playwright to 1.65.0-alpha-2026-10-30. That is a pre-release (test) build of Playwright, not a stable one.
+The Chromium it downloads is version 157.
 Local browser behavior has been verified on macOS. Windows desktop remains an early alpha;
 Windows and Linux local-browser behavior still require platform verification.
 These choices are for DorkOS running on your computer.
