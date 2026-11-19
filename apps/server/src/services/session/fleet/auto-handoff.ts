@@ -25,7 +25,7 @@
 import type { ContinueSessionResponse } from '@dorkos/shared/schemas';
 import { logger } from '../../../lib/logger.js';
 import type { ActivityService } from '../../activity/activity-service.js';
-import { rankAccounts } from '../../core/usage/account-ranking.js';
+import { mayAutoPick, rankAccounts } from '../../core/usage/account-ranking.js';
 import { notifyAutoMoveFailed } from '../../notifications/emitters/session-lifecycle.js';
 import type { MeshCore } from '@dorkos/mesh';
 import type { RoomSessionPlacePort } from '../../workspace/room-session-place.js';
@@ -148,7 +148,7 @@ async function targetStillEligible(stored: StoredSessionLimit, target: string): 
       ...(stored.limit.accountId ? { excludeAccountId: stored.limit.accountId } : {}),
     });
     return ranking.accounts.some(
-      (a) => a.runtime === LIMIT_RUNTIME && a.id === target && a.eligible
+      (a) => a.runtime === LIMIT_RUNTIME && a.id === target && mayAutoPick(a)
     );
   } catch (err) {
     logger.warn('[auto-handoff] could not rank accounts for an automatic move', {

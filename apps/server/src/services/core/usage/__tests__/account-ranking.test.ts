@@ -5,10 +5,17 @@ import {
   ACCOUNT_HIDDEN_REASON,
   ADVISOR_FAILED_REASON,
   NO_ADVISOR_REASON,
+  SIGNED_OUT_REASON,
   checkAccountLaunch,
+  coreRanking,
   formatShortLocalTime,
+  mayAutoPick,
   rankAccounts,
 } from '../account-ranking.js';
+import {
+  recordAccountSignin,
+  resetAccountSignins,
+} from '../../../observability/account-signin-state.js';
 import {
   ADVISOR_TIMEOUT_MS,
   __resetAccountAdvisorForTests,
@@ -107,6 +114,7 @@ const continueCtx = {
 
 beforeEach(() => {
   __resetAccountAdvisorForTests();
+  resetAccountSignins();
 });
 
 afterEach(() => {
@@ -252,6 +260,101 @@ describe('rankAccounts: with an advisor', () => {
     advise(() => 'nonsense' as unknown as AdvisorRanking);
     ranking = await rankAccounts(continueCtx);
     expect(ranking.advised).toBe(false);
+  });
+});
+
+describe('rankAccounts: a sign-in last seen signed out (DOR-4439)', () => {
+  /** `fresh` has the most room, so only its sign-in can keep it from going first. */
+  const FLEET: Fixture[] = [
+    { id: 'fresh', weekly: 10 },
+    { id: 'next', weekly: 50 },
+  ];
+
+  it('an automatic pick skips it for the next eligible account', async () => {
+    installStore(FLEET);
+    recordAccountSignin('claude-code', '/accounts/fresh', 'signed-out');
+    const ranking = await rankAccounts(continueCtx);
+    expect(ranking.recommendedId).toBe('next');
+    // Core's own ranking (failover, room reseat, beats, the work queue) agrees.
+    const core = coreRanking('claude-code', null);
+    expect(core[0]?.id).toBe('next');
+    expect(core.find(mayAutoPick)?.id).toBe('next');
+  });
+
+  it('keeps it eligible for a person to pick, saying it is signed out', async () => {
+    installStore(FLEET);
+    recordAccountSignin('claude-code', '/accounts/fresh', 'signed-out');
+    const ranking = await rankAccounts(continueCtx);
+    expect(ranking.accounts.map((a) => [a.id, a.eligible, a.reason, a.signedOut])).toEqual([
+      ['next', true, '50% of the week left', undefined],
+      ['fresh', true, SIGNED_OUT_REASON, true],
+    ]);
+  });
+
+  it('an agent or a relay naming it through the advisor is refused with "Signed out"', async () => {
+    installStore(FLEET);
+    recordAccountSignin('claude-code', '/accounts/fresh', 'signed-out');
+    advise(() => ({
+      accounts: [{ id: 'fresh', eligible: true, reason: 'Most room' }],
+      recommendedId: 'fresh',
+    }));
+    const request = { accountId: 'fresh', cwd: '/w', runtime: 'claude-code' } as const;
+    expect(await checkAccountLaunch({ ...request, caller: 'agent' })).toEqual({
+      allowed: false,
+      reason: SIGNED_OUT_REASON,
+    });
+    expect(await checkAccountLaunch({ ...request, caller: 'relay' })).toEqual({
+      allowed: false,
+      reason: SIGNED_OUT_REASON,
+    });
+  });
+
+  it('the advisor cannot offer it either', async () => {
+    installStore(FLEET);
+    recordAccountSignin('claude-code', '/accounts/fresh', 'signed-out');
+    advise(() => ({
+      accounts: [
+        { id: 'fresh', eligible: true, reason: 'Most room' },
+        { id: 'next', eligible: true, reason: 'Fine' },
+      ],
+      recommendedId: 'fresh',
+    }));
+    const ranking = await rankAccounts(continueCtx);
+    expect(ranking.advised).toBe(true);
+    expect(ranking.accounts.find((a) => a.id === 'fresh')).toMatchObject({
+      eligible: true,
+      signedOut: true,
+      reason: SIGNED_OUT_REASON,
+    });
+    expect(ranking.recommendedId).toBe('next');
+  });
+
+  it('is picked again once it is seen signed in', async () => {
+    installStore(FLEET);
+    recordAccountSignin('claude-code', '/accounts/fresh', 'signed-out');
+    expect((await rankAccounts(continueCtx)).recommendedId).toBe('next');
+    recordAccountSignin('claude-code', '/accounts/fresh', 'signed-in');
+    const ranking = await rankAccounts(continueCtx);
+    expect(ranking.recommendedId).toBe('fresh');
+    expect(ranking.accounts[0]).toMatchObject({ id: 'fresh', eligible: true });
+    expect(ranking.accounts[0]).not.toHaveProperty('signedOut');
+  });
+
+  it('an account nobody has seen since boot stays eligible', async () => {
+    installStore([
+      { id: 'out', weekly: 5 },
+      { id: 'unseen', weekly: 30 },
+      { id: 'seen', weekly: 60 },
+    ]);
+    recordAccountSignin('claude-code', '/accounts/out', 'signed-out');
+    recordAccountSignin('claude-code', '/accounts/seen', 'signed-in');
+    const ranking = await rankAccounts(continueCtx);
+    expect(ranking.recommendedId).toBe('unseen');
+    expect(ranking.accounts.map((a) => [a.id, mayAutoPick(a)])).toEqual([
+      ['unseen', true],
+      ['seen', true],
+      ['out', false],
+    ]);
   });
 });
 

@@ -5,7 +5,13 @@
 import { describe, it, expect } from 'vitest';
 import type { ContinueOptionAccount } from '@dorkos/shared/account-usage';
 import { createMockAccountUsage } from '@dorkos/test-utils/mock-factories';
-import { canOpenPicker, isSelectable, keptOutLine, rowName } from '../lib/continue-picker';
+import {
+  canOpenPicker,
+  isSelectable,
+  keptOutLine,
+  rowName,
+  rowStatusText,
+} from '../lib/continue-picker';
 
 function row(extra: Partial<ContinueOptionAccount> = {}): ContinueOptionAccount {
   return {
@@ -58,6 +64,18 @@ describe('isSelectable: accounts this project may not use (spec flow-multiprojec
     expect(
       isSelectable(row({ eligible: false, reason: 'Only for client-app', notAllowed: true }))
     ).toBe(false);
+  });
+});
+
+describe('rowStatusText: a sign-in last seen signed out (DOR-4439)', () => {
+  // Red when: a signed-out row reads as weekly usage left instead of its reason.
+  it('stays pickable and says why, word for word', () => {
+    const signedOut = row({
+      reason: 'Signed out',
+      usage: createMockAccountUsage({ signInState: 'signed-out' }),
+    });
+    expect(isSelectable(signedOut)).toBe(true);
+    expect(rowStatusText(signedOut, new Date())).toBe('Signed out');
   });
 });
 

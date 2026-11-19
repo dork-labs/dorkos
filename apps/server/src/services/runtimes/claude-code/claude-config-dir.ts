@@ -67,9 +67,8 @@ import {
   readEligibilityRules,
   refusalFor,
 } from '../../core/usage/account-eligibility.js';
-import { launchFallbackOrder } from '../../core/usage/account-ranking.js';
+import { launchFallbackOrder, mayAutoPickClaudeFolder } from '../../core/usage/account-ranking.js';
 import { isNeverUseClaudeFolder } from '../../health/account-signin-policy.js';
-import { mayAutoPickClaudeRoot } from './accounts/account-login-metadata.js';
 import {
   accountForPath,
   canonicalAccountPath,
@@ -485,8 +484,11 @@ export function resolveLaunchAccountRoot(opts: {
   const accountId = accountIdForRoot(root, config);
   const allowedHere = accountEligibility(config, 'claude-code', accountId, project).eligible;
   // An automatic rung keeps to sign-ins DorkOS may pick on its own: confirmed,
-  // or known before the upgrade (DOR-3245). A new or changed one is skipped.
-  if (allowedHere && mayAutoPickClaudeRoot(root)) return { ok: true, root, accountId };
+  // or known before the upgrade (DOR-3245), and not last seen signed out
+  // (DOR-4439). A new, changed or signed-out one is skipped.
+  if (allowedHere && mayAutoPickClaudeFolder(root)) {
+    return { ok: true, root, accountId };
+  }
   // The automatic choice may not work here: the next eligible account runs it.
   // Never credits: an automatic step may not start spending (ADR 261001-000811).
   const candidates = [
@@ -503,7 +505,7 @@ export function resolveLaunchAccountRoot(opts: {
     return row ? row.path : machineDefaultClaudeRoot(config);
   };
   const next = eligibleAccountIds(config, 'claude-code', [...new Set(candidates)], project).find(
-    (id) => mayAutoPickClaudeRoot(rootOf(id))
+    (id) => mayAutoPickClaudeFolder(rootOf(id))
   );
   if (next !== undefined) return { ok: true, root: rootOf(next), accountId: next };
   // No sign-in DorkOS may pick on its own: the folder's own default still runs.

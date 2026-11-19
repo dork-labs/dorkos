@@ -72,6 +72,10 @@ import {
 } from '../../../core/usage/account-ranking.js';
 import { pickReseatAccount } from '../../../rooms/reseat/reseat-accounts.js';
 import { installContinueService } from '../continue-service.js';
+import {
+  recordAccountSignin,
+  resetAccountSignins,
+} from '../../../observability/account-signin-state.js';
 
 const NOW = new Date('2026-09-27T12:00:00.000Z');
 const SINCE = '2026-09-27T11:59:00.000Z';
@@ -206,6 +210,7 @@ beforeEach(() => {
   __resetAccountAdvisorForTests();
   claudeCode = {};
   unconfirmed.clear();
+  resetAccountSignins();
   installUsageStore();
   vi.mocked(dispatchSessionMessage).mockReset();
   vi.mocked(dispatchSessionMessage).mockImplementation(
@@ -279,6 +284,26 @@ describe('automatic moves and a sign-in that needs a look', () => {
     });
     expect(advised.accounts.find((row) => row.id === 'spare')?.eligible).toBe(false);
     expect(advised.recommendedId).toBe('busy');
+  });
+
+  // DOR-4439. Red when: `mayAutoMoveTo` or the fire-time check reads the sign-in review alone.
+  it('a target last seen signed out: the auto plan degrades to ask', async () => {
+    recordAccountSignin('claude-code', SPARE, 'signed-out');
+    adviseAutoToSpare();
+    await limitedSession('src-1');
+    expect(plan('src-1')).toEqual({ mode: 'ask' });
+  });
+
+  it('a target seen signed out during the countdown: the move fails and carries nothing over', async () => {
+    adviseAutoToSpare();
+    await limitedSession('src-1');
+    expect(plan('src-1')).toMatchObject({ mode: 'auto', target: 'spare' });
+
+    recordAccountSignin('claude-code', SPARE, 'signed-out');
+    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.waitFor(() => expect(plan('src-1')).toEqual({ mode: 'ask' }));
+    expect(dispatchSessionMessage).not.toHaveBeenCalled();
+    expect(notifyAutoMoveFailed).toHaveBeenCalledTimes(1);
   });
 
   it('room reseat never picks it', () => {

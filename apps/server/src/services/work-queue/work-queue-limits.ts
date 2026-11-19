@@ -8,7 +8,7 @@ import { statfs } from 'node:fs/promises';
 import { loadavg } from 'node:os';
 import { CREDITS_ACCOUNT_ID, type AccountUsage } from '@dorkos/shared/account-usage';
 import type { WorkQueueHold } from '@dorkos/shared/work-queue-schemas';
-import type { RankedAccount } from '../core/usage/account-ranking.js';
+import { mayAutoPick, type RankedAccount } from '../core/usage/account-ranking.js';
 import { reseatCandidates } from '../rooms/reseat/reseat-accounts.js';
 
 /** The queue starts nothing with less free disk than this. */
@@ -50,8 +50,8 @@ export function accountFull(usage: AccountUsage): boolean {
 /**
  * The account with the most room, from core's ranking: the same accounts a room
  * seat may move to (never DorkOS credits, never one a person kept out of
- * automatic moves, never one with a sign-in that needs a look), and none at its
- * limit.
+ * automatic moves, never one with a sign-in that needs a look or last seen
+ * signed out), and none at its limit.
  *
  * @param ranking - Core's ranking for the folder's project, best first.
  * @param runtime - The chat's runtime.
@@ -63,7 +63,29 @@ export function pickQueueAccount(
 ): RankedAccount | null {
   return (
     reseatCandidates(ranking, runtime).find(
-      (row) => row.id !== CREDITS_ACCOUNT_ID && row.eligible && !accountFull(row.usage)
+      (row) => row.id !== CREDITS_ACCOUNT_ID && mayAutoPick(row) && !accountFull(row.usage)
     ) ?? null
   );
+}
+
+/**
+ * Why {@link pickQueueAccount} found nothing: `signed-out` when an account with
+ * room was skipped only for being last seen signed out, so the queue says so
+ * rather than "near its limit" (DOR-4439); `accounts` otherwise.
+ *
+ * @param ranking - Core's ranking for the folder's project, best first.
+ * @param runtime - The chat's runtime.
+ */
+export function queueAccountHold(
+  ranking: readonly RankedAccount[],
+  runtime: string
+): Extract<WorkQueueHold, 'accounts' | 'signed-out'> {
+  const skippedForSignin = reseatCandidates(ranking, runtime).some(
+    (row) =>
+      row.id !== CREDITS_ACCOUNT_ID &&
+      row.eligible &&
+      row.signedOut === true &&
+      !accountFull(row.usage)
+  );
+  return skippedForSignin ? 'signed-out' : 'accounts';
 }

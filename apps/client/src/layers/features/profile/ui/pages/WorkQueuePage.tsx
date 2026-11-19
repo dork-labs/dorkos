@@ -38,6 +38,7 @@ const HOLD_WORDS: Record<WorkQueueHold, string> = {
   disk: 'Waiting: under 20 GB of disk free.',
   load: 'Waiting: this computer is too busy.',
   accounts: 'Waiting: every account is near its limit.',
+  'signed-out': 'Waiting: every account with room is signed out.',
   'chat-cap': 'Waiting: too many chats are running.',
   permission: 'Waiting: this agent must ask before starting chats.',
   'agent-paused': 'Waiting: this agent is paused.',

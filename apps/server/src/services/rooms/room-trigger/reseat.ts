@@ -359,7 +359,9 @@ export async function reseatByHand(
       'AGENT_MAY_NOT_MOVE_YET',
       move.refused === 'usage-unknown'
         ? "Your account's usage can't be read right now, so you can't move yourself. Ask a person."
-        : `You can move yourself only once your account is at ${AGENT_RESEAT_MIN_PCT}% of its usage or more.`
+        : move.refused === 'signed-out'
+          ? 'Signed out. Ask a person to sign that account in, or to move you there.'
+          : `You can move yourself only once your account is at ${AGENT_RESEAT_MIN_PCT}% of its usage or more.`
     );
   }
   if (move === 'nothing-to-move') {
@@ -403,6 +405,7 @@ export async function reseatOptionsFor(
       color: row.color,
       eligible: row.eligible,
       reason: row.reason,
+      ...(row.signedOut ? { signedOut: true as const } : {}),
     })),
   };
 }

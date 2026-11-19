@@ -43,15 +43,15 @@ export function isSelectable(row: ContinueOptionAccount): boolean {
 /**
  * What a row says on its right: for an eligible account, how much of its week
  * is left and when it resets ("28% left · resets Sun"), or "usage unknown"
- * with no weekly reading; for any other account, the server's own reason,
- * word for word.
+ * with no weekly reading; for any other account, or one last seen signed out
+ * (still pickable, DOR-4439), the server's own reason, word for word.
  *
  * @param row - One account from the server's list.
  * @param now - The moment reset days are read from.
  */
 export function rowStatusText(row: ContinueOptionAccount, now: Date): string {
   if (row.id === CREDITS_ACCOUNT_ID) return row.reason;
-  if (!row.eligible) return row.reason;
+  if (!row.eligible || row.usage.signInState === 'signed-out') return row.reason;
   const week = accountWindow(row.usage, 'seven_day');
   if (!week || week.usedPct === null) return 'usage unknown';
   const left = Math.min(100, Math.max(0, Math.round(100 - week.usedPct)));

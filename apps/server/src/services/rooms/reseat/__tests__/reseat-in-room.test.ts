@@ -18,7 +18,7 @@ import type { AccountUsage } from '@dorkos/shared/account-usage';
 import type { SessionSettings } from '@dorkos/shared/schemas';
 import type { RoomTurnRequest } from '../../room-turn-port.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
-import type { RankedAccount } from '../../../core/usage/account-ranking.js';
+import { SIGNED_OUT_REASON, type RankedAccount } from '../../../core/usage/account-ranking.js';
 import {
   agentLookupFor,
   createRoomHarness,
@@ -40,6 +40,8 @@ interface Account {
   limitedUntil?: string | null;
   /** The usage store already knows it is out, before any turn. */
   knownOut?: boolean;
+  /** A turn or a login last saw it signed out, as core's ranking marks it (DOR-4439). */
+  signedOut?: true;
 }
 
 function ranked(account: Account, hit = false): RankedAccount {
@@ -50,7 +52,8 @@ function ranked(account: Account, hit = false): RankedAccount {
     label: account.id[0]!.toUpperCase() + account.id.slice(1),
     color: '#000000',
     eligible: !limited,
-    reason: '',
+    reason: account.signedOut ? SIGNED_OUT_REASON : '',
+    ...(account.signedOut ? { signedOut: true as const } : {}),
     usage: {
       runtime: 'claude-code',
       accountId: account.id,
@@ -554,6 +557,46 @@ describe('by hand (rooms.reseat)', () => {
       ['claude3', true, ''],
       ['claude2', false, 'Almost out of usage'],
     ]);
+  });
+
+  // DOR-4439. Red when: the options drop `signedOut`, so the dialog shows no hint.
+  it('tells a person which account is signed out, and still lets them pick it', async () => {
+    const w = open({
+      accounts: [{ id: 'claude4' }, { id: 'claude3', signedOut: true }],
+      bound: true,
+      turn: () => 'answer',
+    });
+    const options = await w.harness.service.reseatOptions(w.room.id, w.ana, w.harness.human);
+    expect(options.accounts).toEqual([
+      expect.objectContaining({
+        id: 'claude3',
+        eligible: true,
+        signedOut: true,
+        reason: SIGNED_OUT_REASON,
+      }),
+    ]);
+  });
+
+  // DOR-4439. Red when: the agent is told "no account left", or the 80% rule, for a sign-in.
+  it('tells an agent naming a signed-out account that it is signed out', async () => {
+    const w = open({
+      accounts: [
+        { id: 'claude4', fiveHour: 90 },
+        { id: 'claude3', signedOut: true },
+      ],
+      bound: true,
+      turn: () => 'answer',
+    });
+    await expect(
+      w.harness.service.reseatAgent(w.room.id, w.ana, w.ana, {
+        markedTurn: false,
+        accountId: 'claude3',
+      })
+    ).rejects.toMatchObject({
+      code: 'AGENT_MAY_NOT_MOVE_YET',
+      message: 'Signed out. Ask a person to sign that account in, or to move you there.',
+    });
+    expect(w.activity).toEqual([]);
   });
 
   it('says the agent has no seat yet when it has not answered in the room', async () => {
