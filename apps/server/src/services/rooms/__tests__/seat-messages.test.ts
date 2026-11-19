@@ -1,4 +1,7 @@
 import { createHash } from 'node:crypto';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { ApprovalServiceActionSchema } from '@dorkos/shared/approval-schemas';
 import {
   createCapabilityAuthorityBinding,
@@ -47,7 +50,7 @@ import type {
   SeatMessagePending,
 } from '../handoff/seat-message-types.js';
 import { SEAT_MESSAGE_GLOBAL_MAX, SEAT_MESSAGE_PENDING_MAX } from '../handoff/seat-messages.js';
-import { seatBatchStillCurrent } from '../handoff/seat-message-target.js';
+import { currentSeatMessageTarget, seatBatchStillCurrent } from '../handoff/seat-message-target.js';
 import type { RoomCore } from '../service/room-core.js';
 import type { RoomService } from '../room-service.js';
 import type { RoomTurnRequest } from '../room-turn-port.js';
@@ -775,6 +778,48 @@ it('M9: production inboxes keep the real pending and global bounds', () => {
     pendingMax: SEAT_MESSAGE_PENDING_MAX,
     globalMax: SEAT_MESSAGE_GLOBAL_MAX,
   });
+});
+
+it('M9: the inbox boot wires through setRoomSeatRoutes runs at the real bounds', async () => {
+  const { setRoomSeatRoutes, setRoomSeatReports, wireRoomSeatMessageLifetime } =
+    await import('../../session/chat-messages/chat-message-current.js');
+  setRoomSeatRoutes(harness.service);
+  const lifetime = wireRoomSeatMessageLifetime(receipts, () => undefined);
+  try {
+    expect((lifetime.get() as unknown as { limits: SeatMessageLimits }).limits).toEqual({
+      pendingMax: SEAT_MESSAGE_PENDING_MAX,
+      globalMax: SEAT_MESSAGE_GLOBAL_MAX,
+    });
+  } finally {
+    lifetime.stop();
+    setRoomSeatReports(undefined);
+  }
+});
+
+it('M9: no production source can hand an inbox smaller bounds', () => {
+  // Limits are a constructor option for tests only: no config key, route, env var or tool.
+  const src = fileURLToPath(new URL('../../../', import.meta.url));
+  const callers = readdirSync(src, { recursive: true, encoding: 'utf8' })
+    .filter((file) => file.endsWith('.ts') && !file.split(/[\\/]/u).includes('__tests__'))
+    .flatMap((file) => {
+      const text = readFileSync(join(src, file), 'utf8');
+      const calls = text.match(
+        /(?:createSeatMessages|new RoomSeatMessages|seatMessageFactory\?\.)\([^)]*\)/gu
+      );
+      return (calls ?? []).map(
+        (call) => `${file.replace(/\\/gu, '/')}: ${call.replace(/\s+/gu, ' ')}`
+      );
+    })
+    .sort();
+  // The one forwarding factory, and the two production calls that pass it no limits.
+  expect(callers).toEqual([
+    'services/rooms/room-service.ts: new RoomSeatMessages(this.parts.core, this.parts.publisher, store, emit, limits)',
+    'services/session/chat-messages/chat-message-current.ts: createSeatMessages(store, emit)',
+    'services/session/chat-messages/chat-message-current.ts: seatMessageFactory?.(store, emit)',
+  ]);
+  expect(readFileSync(join(src, 'services/rooms/handoff/seat-messages.ts'), 'utf8')).toMatch(
+    /limits: SeatMessageLimits = DEFAULT_LIMITS/u
+  );
 });
 
 it('M4: the actual Full turn record retains level while raise and destructive gates retain the card', async () => {
@@ -1740,6 +1785,27 @@ describe('batch target checks (DOR-4722)', () => {
   function core(): RoomCore {
     return (harness.service as unknown as { parts: { core: RoomCore } }).parts.core;
   }
+  /** The per-item check the batch check replaced, kept as the oracle it must match exactly. */
+  function perItem(batch: readonly SeatMessagePending[]): boolean {
+    return batch.every(
+      (item) =>
+        currentSeatMessageTarget(core(), item.target) !== null &&
+        (!item.unsolicited || core().bridges.findBridgeByRoom(item.target.roomId) === null)
+    );
+  }
+  function bridgeRoom(): void {
+    harness.bridges.createBridge({
+      roomId,
+      adapterId: 'batch-bridge',
+      chatId: 'batch-chat',
+      channelType: 'group',
+      platformChatType: 'group',
+      bindingId: 'batch-binding',
+      platformTitle: null,
+      deliverNotices: true,
+      createdAt: new Date().toISOString(),
+    });
+  }
 
   it('M9: a batch sharing one seat reads that seat and its room once', () => {
     const target = seatInbox!.resolveSeatTarget('seat-chat')!;
@@ -1756,5 +1822,83 @@ describe('batch target checks (DOR-4722)', () => {
     const stale = { ...target, joinedAt: '2000-01-01T00:00:00.000Z' };
     expect(seatBatchStillCurrent(core(), batchOf([target, target, stale, target]))).toBe(false);
     expect(seatBatchStillCurrent(core(), batchOf([target, target], false))).toBe(true);
+  });
+
+  it('M9: two queued messages to one seat both refuse once it leaves and rejoins', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-15T12:00:00Z'));
+    const before = harness.store.getMember(roomId, bo)!;
+    const target = seatInbox!.resolveSeatTarget('seat-chat')!;
+    const blocker = harness.service.postNotice(roomId, { text: 'Seat busy marker.' });
+    // Hold the seat through the real claim map so both messages wait in one batch.
+    const triggers = (harness.service as unknown as { triggers: { claimed: Map<string, unknown> } })
+      .triggers;
+    triggers.claimed.set(agentKey(roomId, bo), {
+      roomId,
+      authorId: bo,
+      sessionId: 'seat-chat',
+      agentPath: '/agents/bo',
+      entryId: blocker.id,
+    });
+    const first = await chats.send(caller, { to: 'seat-chat', message: 'queued one' });
+    const second = await chats.send(caller, { to: 'seat-chat', message: 'queued two' });
+    expect(seatBatchStillCurrent(core(), batchOf([target, target]))).toBe(true);
+    harness.store.removeMember(roomId, bo);
+    const rejoinedAt = '2026-11-15T12:00:05.000Z';
+    harness.store.addMember({
+      roomId,
+      authorId: bo,
+      responseMode: before.responseMode,
+      joinedAt: rejoinedAt,
+    });
+    harness.store.bindRoomSession(roomId, bo, 'rejoined-seat', rejoinedAt);
+    for (const unsolicited of [true, false]) {
+      const batch = batchOf([target, target], unsolicited);
+      expect(seatBatchStillCurrent(core(), batch)).toBe(false);
+      expect(perItem(batch)).toBe(false);
+    }
+    triggers.claimed.clear();
+    await vi.advanceTimersByTimeAsync(30_000);
+    await seatInbox?.idle();
+    expect(turns).toHaveLength(0);
+    for (const receipt of [first, second]) {
+      expect(receipts.get(receipt.messageId)).toMatchObject({
+        status: 'failed',
+        failureReason: expect.stringContaining('NOT_ALLOWED'),
+      });
+    }
+  });
+
+  it('M9: a bridged room gives a mixed unsolicited and solicited batch the old answer', () => {
+    const unbridged = seatInbox!.resolveSeatTarget('seat-chat')!;
+    bridgeRoom();
+    const bridged = seatInbox!.resolveSeatTarget('seat-chat')!;
+    expect(bridged.bridgeOwnership).toBeDefined();
+    // Same seat, a foreign bridge: the key must keep ownership apart from the real one.
+    const forged = { ...bridged, bridgeOwnership: { ...bridged.bridgeOwnership!, chatId: 'x' } };
+    const batches: SeatMessagePending[][] = [];
+    for (const target of [unbridged, bridged]) {
+      batches.push(
+        [item(target, false), item(target, true)],
+        [item(target, true), item(target, false)],
+        [item(target, false), item(target, false)],
+        [item(target, true), item(target, true)]
+      );
+    }
+    batches.push(
+      [item(bridged, false), item(forged, false)],
+      [item(unbridged, false), item(bridged, false), item(forged, true)]
+    );
+    expect(batches.map((batch) => seatBatchStillCurrent(core(), batch))).toEqual(
+      batches.map(perItem)
+    );
+    // Any unsolicited item in the now-bridged room refuses; solicited-only still runs.
+    expect(seatBatchStillCurrent(core(), [item(bridged, false), item(unbridged, true)])).toBe(
+      false
+    );
+    expect(seatBatchStillCurrent(core(), [item(unbridged, false), item(bridged, false)])).toBe(
+      true
+    );
+    expect(seatBatchStillCurrent(core(), [item(bridged, false), item(forged, false)])).toBe(false);
   });
 });
