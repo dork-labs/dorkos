@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(connections): a relink keeps Read for changes the write update set aside before 0.137.0 (DOR-4735)'
+  - 'fix(connections): match set-aside changes whatever reason 0.136.0 left on them (DOR-4735)'
 ---
 
 ### Fixed

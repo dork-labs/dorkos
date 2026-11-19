@@ -277,7 +277,7 @@ describe('one-time Composio write upgrade', () => {
     expect(setAside.every((row) => row.safeReason === WRITE_UPGRADE_SET_ASIDE)).toBe(true);
   });
   // 0.136.0 ran the upgrade before the stamp existed, so what it set aside on
-  // those installs carries no reason. A relink must still keep the writes away
+  // those installs carries no stamp. A relink must still keep the writes away
   // (DOR-4735), and must still send the saved choice for anything else.
   describe('commands set aside before the stamp existed', () => {
     function writerSelections(commands: ReturnType<typeof levelHarness>['submitted']) {
@@ -304,12 +304,18 @@ describe('one-time Composio write upgrade', () => {
       return writerSelections(h.submitted.slice(sent));
     }
 
+    // 0.136.0 kept whatever reason a pending command already carried, such
+    // as a hosted wait or a failed try, so the reason can't be relied on.
+    const HOSTED_WAIT = 'DorkOS’s servers haven’t finished this change yet.';
     it.each([
-      ['the same as', NOW.toISOString()],
-      ['earlier than', '2026-09-29T11:00:00.000Z'],
+      ['the same as', null, NOW.toISOString()],
+      ['earlier than', null, '2026-09-29T11:00:00.000Z'],
+      ['the same as', HOSTED_WAIT, NOW.toISOString()],
+      ['earlier than', HOSTED_WAIT, '2026-09-29T11:00:00.000Z'],
+      ['the same as', '', NOW.toISOString()],
     ])(
-      'keeps writes away after a relink, with the upgrade clock %s the command',
-      async (_when, upgradedAt) => {
+      'keeps writes away after a relink, with the upgrade clock %s the command and reason %j',
+      async (_when, leftReason, upgradedAt) => {
         const h = await setup('linear', 'dorkos-managed', true);
         h.answer('pending');
         h.db
@@ -324,10 +330,10 @@ describe('one-time Composio write upgrade', () => {
           .where(eq(connections.id, CONNECTION_ID))
           .run();
         expect(upgradeComposioWriteLevels(h.db, upgradedAt)).toBe(1);
-        // Leave the set-aside rows as 0.136.0 did: superseded, no reason.
+        // Leave the set-aside rows as 0.136.0 did: superseded, never stamped.
         const unstamped = h.db
           .update(connectorManagedAuthorityOutbox)
-          .set({ safeReason: null })
+          .set({ safeReason: leftReason })
           .where(eq(connectorManagedAuthorityOutbox.state, 'superseded'))
           .run().changes;
         expect(unstamped).toBeGreaterThan(0);

@@ -47,16 +47,17 @@ export const WRITE_UPGRADE_SET_ASIDE =
  * to select beside the outbox row.
  *
  * Installs that ran the upgrade before {@link WRITE_UPGRADE_SET_ASIDE} existed
- * (0.136.0) left those commands unstamped. The upgrade sets them aside and
- * records its marker in one transaction with one timestamp, so an unstamped
- * superseded command resolved at the marker's completion time is one of them.
- * A false match only sends what the agent holds now, the narrower side.
+ * (0.136.0) left those commands without it, and kept whatever reason a
+ * pending command already carried (a hosted wait, a failed try), so the reason
+ * can't tell them apart. The upgrade sets them aside and records its marker in
+ * one transaction with one timestamp, so a superseded command resolved at the
+ * marker's completion time is one of them, whatever its reason says. A false
+ * match only sends what the agent holds now, the narrower side.
  */
 export const setAsideByWriteUpgrade = sql<boolean>`coalesce(
   ${connectorManagedAuthorityOutbox.safeReason} = ${WRITE_UPGRADE_SET_ASIDE}
   or (
     ${connectorManagedAuthorityOutbox.state} = 'superseded'
-    and ${connectorManagedAuthorityOutbox.safeReason} is null
     and ${connectorManagedAuthorityOutbox.resolvedAt} = (
       select ${connectorApplicationMigrations.completedAt}
       from ${connectorApplicationMigrations}
