@@ -271,8 +271,15 @@ try {
     const personVisit = visits;
     // Done signing in, as the card's button does: Chrome on a Mac keeps running when its
     // window closes, so this quit is what saves the sign-in (DOR-4731).
+    const quitWindow = plain;
+    const quitAt = Date.now();
+    let exitedAfterMs: number | undefined;
+    void quitWindow?.exited.then(() => (exitedAfterMs = Date.now() - quitAt));
     signIns.done();
     await until(async () => (signIns.current?.status === 'saved' ? true : undefined));
+    const savedAfterMs = Date.now() - quitAt;
+    // How the person's window ended: by the signal, or a clean exit (Security's check, DOR-4731).
+    const quitExit = await quitWindow?.exited;
     // Counted before the hand back: it reopens the agent's page and waits for that load.
     const before = arrivedWith.length;
     if (name !== 'godaddy') await handover.handBack(handoffId);
@@ -281,7 +288,7 @@ try {
       // Made-up visit numbers only: what the reopened window arrived with, for the record.
       await writeFile(
         path.join(evidence, 'cookie-proof.json'),
-        JSON.stringify({ personVisit, arrivedWith }, null, 2)
+        JSON.stringify({ personVisit, arrivedWith, quitExit, exitedAfterMs, savedAfterMs }, null, 2)
       );
       assert.match(
         arrivedWith.at(-1)!,
