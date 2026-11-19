@@ -2,17 +2,21 @@
 slug: agent-browser-panel-parallel-pages
 id: 261113-215632
 created: 2026-11-13
-status: draft
+status: superseded
 ---
 
 # Agent browser: a page per chat in the DorkOS-browser panel
 
-**Status:** Draft. Security reviews the design before build and the PR before arming.
+**Status:** Superseded (Nov 19) by [streaming the agent's real Chrome into the panel](../agent-browser-page-stream/02-specification.md), DOR-2667. DOR-4289 is canceled.
 **Author:** DorkOS Code (agent)
 **Date:** 2026-11-13
 **Tracker:** DOR-4289 (Should, after DOR-4273)
 **Builds on:** [`specs/agent-browser-tab-per-chat/`](../agent-browser-tab-per-chat/02-specification.md)
 **Why:** [Agent browser: keep building, adopt, or package?](../../research/20261113_agent-browser-build-vs-adopt.md)
+
+## Replacement direction
+
+Do not build this plan. Each agent will use one real Chrome profile. The panel will stream that Chrome page, with the same sign-ins as its own window. Until DOR-2667 ships, the panel is **Your browser** only and agent tabs stay in Chrome (DOR-4741). No sign-in state is copied between Electron and Chrome. The original design below is retained as history, not current instructions.
 
 ## Overview
 

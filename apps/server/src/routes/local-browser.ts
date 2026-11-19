@@ -5,6 +5,7 @@ import {
   LocalBrowserHandoffAnswerSchema,
   LocalBrowserHistoryDirectionSchema,
   LocalBrowserOpenSchema,
+  LocalBrowserSignInDoneSchema,
   LocalBrowserSignInRequestSchema,
 } from '@dorkos/shared/local-browser';
 import type { ApiEnv } from '../http/api-chain.js';
@@ -92,6 +93,13 @@ export function createLocalBrowserRoutes(
   router.post('/sign-in', personOnly, async (c) =>
     c.json(await service.handover.signIn(LocalBrowserSignInRequestSchema.parse(readJsonBody(c))))
   );
+  // Done signing in quits the sign-in window DorkOS opened (DOR-4731). It answers at once;
+  // the card follows the save on the state stream.
+  router.post('/sign-in/done', personOnly, async (c) => {
+    const { handoffId } = LocalBrowserSignInDoneSchema.parse(readJsonBody(c));
+    await service.handover.finishSignIn(handoffId);
+    return c.json({ accepted: true }, 202);
+  });
   router.post('/handoff/hand-back', personOnly, async (c) => {
     const { handoffId } = LocalBrowserHandoffAnswerSchema.parse(readJsonBody(c));
     return c.json(await service.handover.handBack(handoffId));

@@ -87,6 +87,14 @@ const RUNTIMES_DEFAULTS = {
   // autonomy, and each runtime's own stop ships `null` so it follows it.
   defaultTrustStop: 'autonomy',
   maxAgentChats: 8,
+  loadGate: {
+    enabled: true,
+    maxLoad: 16,
+    slots: 1,
+    maxWaitMinutes: 60,
+    hardCapMinutes: 240,
+    heavyCommands: { add: [], remove: [] },
+  },
   claudeCode: {
     defaultAccount: null,
     accounts: [],
@@ -3569,7 +3577,7 @@ describe('CONFIG_MIGRATIONS append-only pins (DOR-1222 regression guard)', () =>
     // table is append-only, so raising it is the deliberate act of adding a
     // migration, which is exactly when this check should be re-read. DOR-4188
     // lowered it by retiring three keys the upgrade floor left as no-ops.
-    expect(Object.keys(bodies)).toHaveLength(53);
+    expect(Object.keys(bodies)).toHaveLength(54);
 
     const reaching = Object.keys(bodies).filter((key) =>
       reachedDeclarations(bodies[key]!, pool).includes('describeLoadError')
