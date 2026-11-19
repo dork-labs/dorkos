@@ -243,6 +243,14 @@ export const LocalBrowserSignInRequestSchema = z.union([
 ]);
 export type LocalBrowserSignInRequest = z.infer<typeof LocalBrowserSignInRequestSchema>;
 
+/**
+ * A person's Done signing in (DOR-4731): the handoff whose sign-in window it ends, or none
+ * for a window no handoff waits on, such as one a stopped task left open.
+ */
+export const LocalBrowserSignInDoneSchema = z
+  .object({ handoffId: z.string().min(1).optional() })
+  .strict();
+
 /** Which handoff a person's Hand back or Stop task answers. */
 export const LocalBrowserHandoffAnswerSchema = z.object({ handoffId: z.string().min(1) }).strict();
 

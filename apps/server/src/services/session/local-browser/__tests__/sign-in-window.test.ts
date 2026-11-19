@@ -1,14 +1,24 @@
 /** The sign-in window's states, with a fake Chromium. Nothing here launches a browser. */
 import { describe, expect, it, vi } from 'vitest';
 import { FORBIDDEN_PLAIN_FLAGS, type PlainChromiumExit } from '../plain-chromium.js';
-import { SIGN_IN_SAVE_TIMEOUT_MS, SignInWindow } from '../sign-in-window.js';
+import {
+  SIGN_IN_QUIT_TIMEOUT_MS,
+  SIGN_IN_SAVE_TIMEOUT_MS,
+  SignInWindow,
+} from '../sign-in-window.js';
 
 function fakeChromium() {
   let exit!: (value: PlainChromiumExit) => void;
   const exited = new Promise<PlainChromiumExit>((resolve) => (exit = resolve));
   const quit = vi.fn(() => exit({ code: 0, signal: null }));
-  const spawner = vi.fn((_executable: string, _args: string[]) => ({ pid: 4242, exited, quit }));
-  return { spawner, quit, exit };
+  const forceQuit = vi.fn(() => exit({ code: null, signal: 'SIGKILL' }));
+  const spawner = vi.fn((_executable: string, _args: string[]) => ({
+    pid: 4242,
+    exited,
+    quit,
+    forceQuit,
+  }));
+  return { spawner, quit, forceQuit, exit };
 }
 
 function window(
@@ -158,14 +168,68 @@ describe('SignInWindow', () => {
     });
   });
 
-  it('closes an open window the way a person would', async () => {
+  // DOR-4731: on a Mac, closing Chrome's last window leaves Chrome running, so its exit
+  // never comes on its own. Done signing in quits the one Chromium this window started.
+  it('finishes a sign-in whose window closed without Chromium quitting', async () => {
     const { signIns, chromium } = window();
     await signIns.start('/profiles/p1', null, 'https://linear.app/');
-    signIns.close();
+    for (let i = 0; i < 10; i += 1) await settle();
+    expect(signIns.current?.status).toBe('open');
+    signIns.done();
     expect(chromium.quit).toHaveBeenCalledOnce();
+    expect(chromium.forceQuit).not.toHaveBeenCalled();
     await settle();
     await settle();
     expect(signIns.current?.status).toBe('saved');
+    expect(signIns.active).toBe(false);
+  });
+
+  it('does nothing when Done is pressed on a sign-in that isn’t open', async () => {
+    const none = window();
+    none.signIns.done();
+    expect(none.signIns.current).toBeNull();
+
+    const { signIns, chromium } = window();
+    await signIns.start('/profiles/p1', null, 'https://linear.app/');
+    chromium.exit({ code: 0, signal: null });
+    await settle();
+    await settle();
+    expect(signIns.current?.status).toBe('saved');
+    chromium.quit.mockClear();
+    signIns.done();
+    expect(chromium.quit).not.toHaveBeenCalled();
+    expect(signIns.current?.status).toBe('saved');
+  });
+
+  // Security (DOR-4731): fail at the deadline, then force that same child closed so its
+  // profile lock clears for Try again. Nothing from a forced close is saved.
+  it('fails, never stays open, when Chromium ignores the quit, and forces it closed', async () => {
+    let exitNow!: (value: PlainChromiumExit) => void;
+    const exited = new Promise<PlainChromiumExit>((resolve) => (exitNow = resolve));
+    // A Chromium that never answers the quit: only the forced close ends it.
+    const quit = vi.fn();
+    const forceQuit = vi.fn(() => exitNow({ code: null, signal: 'SIGKILL' }));
+    let clock = 0;
+    const signIns = new SignInWindow({
+      executable: async () => '/managed/Chromium',
+      spawner: () => ({ pid: 4242, exited, quit, forceQuit }),
+      held: () => false,
+      lockOwner: () => 4242,
+      prepare: async () => undefined,
+      now: () => clock,
+      sleep: async (ms) => {
+        clock += ms;
+      },
+    });
+    await signIns.start('/profiles/p1', null, 'https://linear.app/');
+    signIns.done();
+    for (let i = 0; i < SIGN_IN_QUIT_TIMEOUT_MS / 200 + 5; i += 1) await settle();
+    expect(quit).toHaveBeenCalledOnce();
+    expect(forceQuit).toHaveBeenCalledOnce();
+    // The forced exit lands after the failure and must never be saved.
+    for (let i = 0; i < 5; i += 1) await settle();
+    expect(signIns.current?.status).toBe('failed');
+    expect(signIns.active).toBe(false);
   });
 
   it('says so each time the status moves, and the status has moved by then', async () => {

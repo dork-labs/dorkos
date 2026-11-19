@@ -1,12 +1,18 @@
-import { useContext } from 'react';
+import { useContext, type ReactNode } from 'react';
 import { useRouterState } from '@tanstack/react-router';
 import { PanelResourceVisible, useAppStore } from '@/layers/shared/model';
 import { useSessionId, useSessionRow } from '@/layers/entities/session';
 import { useCurrentAgent } from '@/layers/entities/agent';
 import { LocalBrowserPanel } from './LocalBrowserPanel';
 
+/** Props for {@link LocalBrowserContent}. */
+export interface LocalBrowserContentProps {
+  /** Draws a direct chat's handoff card in the panel, the same card the chat shows. */
+  renderHandoff?: (sessionId: string) => ReactNode;
+}
+
 /** A panel's route scopes sharing; room routes never inherit the last direct chat. */
-export function LocalBrowserContent() {
+export function LocalBrowserContent({ renderHandoff }: LocalBrowserContentProps = {}) {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const [sessionId] = useSessionId();
   const directSessionId = pathname === '/session' ? sessionId : null;
@@ -24,6 +30,7 @@ export function LocalBrowserContent() {
       visible={resourceVisible && open && active === 'local-browser'}
       sessionId={pathname === '/session' ? sessionId : null}
       agentName={pathname === '/session' ? agent?.name : null}
+      handoffCard={directSessionId ? renderHandoff?.(directSessionId) : null}
     />
   );
 }

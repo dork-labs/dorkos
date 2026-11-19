@@ -14,6 +14,7 @@ const transport = vi.hoisted(() => ({
   handBackLocalBrowser: vi.fn(),
   stopLocalBrowserHandoff: vi.fn(),
   signInLocalBrowser: vi.fn(),
+  finishLocalBrowserSignIn: vi.fn(),
   openLocalBrowser: vi.fn(),
   selectLocalBrowserTab: vi.fn(),
   postMessage: vi.fn(),
@@ -399,14 +400,20 @@ describe('BrowserHandoffCard', () => {
       await waitFor(() =>
         expect(transport.signInLocalBrowser).toHaveBeenCalledWith({ handoffId: 'h1' })
       );
-      expect(await screen.findByText(/Sign-in window open/)).toBeTruthy();
+      expect(
+        await screen.findByText(
+          'Sign in to northwind.example in the sign-in window, then press Done signing in.'
+        )
+      ).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Done signing in' })).toBeTruthy();
       expect(screen.queryByRole('button', { name: 'Show window' })).toBeNull();
     });
 
-    it('holds Continue while that sign-in saves, then offers it', async () => {
+    it('holds Done signing in while that sign-in saves, then offers Continue', async () => {
       transport.getLocalBrowserState.mockResolvedValue(person({ signIn: signIn('saving') }));
       const saving = mount();
-      expect((await button('Continue')).getAttribute('aria-disabled')).toBe('true');
+      expect((await button('Done signing in')).getAttribute('aria-disabled')).toBe('true');
+      expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull();
       saving.unmount();
       transport.getLocalBrowserState.mockResolvedValue(person({ signIn: signIn('saved') }));
       mount();
@@ -439,22 +446,57 @@ describe('BrowserHandoffCard', () => {
       await waitFor(() =>
         expect(transport.signInLocalBrowser).toHaveBeenCalledWith({ handoffId: 'h1' })
       );
-      expect(await screen.findByText(/Sign-in window open/)).toBeTruthy();
+      expect(await screen.findByText(/then press Done signing in\./)).toBeTruthy();
       // That window has no channel to DorkOS, so nothing here could raise it.
       expect(screen.queryByRole('button', { name: 'Show window' })).toBeNull();
       expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull();
     });
 
-    it('holds Continue inert while saving', async () => {
+    it('holds Done signing in inert while saving', async () => {
       transport.getLocalBrowserState.mockResolvedValue(
         person({ handoff: password, signIn: signIn('saving') })
       );
       mount();
-      const held = await button('Continue');
+      const held = await button('Done signing in');
       expect(screen.getByRole('status').textContent).toBe('Saving your sign-in…');
       expect(held.getAttribute('aria-disabled')).toBe('true');
+      expect(held).toBeDisabled();
       fireEvent.click(held);
+      expect(transport.finishLocalBrowserSignIn).not.toHaveBeenCalled();
       expect(transport.handBackLocalBrowser).not.toHaveBeenCalled();
+    });
+
+    // DOR-4731: on a Mac, closing the window leaves Chrome running, so the close is never
+    // seen. Done signing in is on the card from the moment the window opens.
+    it('offers Done signing in while the window is open, and it finishes the sign-in', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(
+        person({ handoff: password, signIn: signIn('open'), status: 'disconnected' })
+      );
+      transport.finishLocalBrowserSignIn.mockResolvedValue(undefined);
+      mount();
+      const done = await button('Done signing in');
+      expect(screen.getByRole('status').textContent).toBe(
+        'Sign in to northwind.example in the sign-in window, then press Done signing in.'
+      );
+      expect(screen.getByRole('button', { name: 'Stop task' })).toBeTruthy();
+      fireEvent.click(done);
+      await waitFor(() => expect(transport.finishLocalBrowserSignIn).toHaveBeenCalledWith('h1'));
+      expect(transport.handBackLocalBrowser).not.toHaveBeenCalled();
+    });
+
+    it('says why when Done signing in is refused', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(
+        person({ handoff: password, signIn: signIn('open'), status: 'disconnected' })
+      );
+      transport.finishLocalBrowserSignIn.mockRejectedValue(
+        Object.assign(new Error('x'), {
+          code: 'handoff_ended',
+          message: 'This handoff already ended.',
+        })
+      );
+      mount();
+      fireEvent.click(await button('Done signing in'));
+      expect((await screen.findByRole('alert')).textContent).toBe('This handoff already ended.');
     });
 
     it('offers Continue once saved', async () => {
@@ -466,13 +508,17 @@ describe('BrowserHandoffCard', () => {
       expect(screen.getByRole('status').textContent).toBe('Signed in to northwind.example.');
     });
 
-    it('offers Sign in again when saving failed', async () => {
+    it('offers Sign in again when saving failed, saying it once', async () => {
       transport.getLocalBrowserState.mockResolvedValue(
         person({ handoff: password, signIn: signIn('failed') })
       );
       mount();
-      expect(await button('Open sign-in window')).toBeTruthy();
-      expect(screen.getByRole('status').textContent).toMatch(/Couldn’t save/);
+      fireEvent.click(await button('Sign in again'));
+      await waitFor(() =>
+        expect(transport.signInLocalBrowser).toHaveBeenCalledWith({ handoffId: 'h1' })
+      );
+      expect(screen.getByRole('status').textContent).toBe('Couldn’t save your sign-in.');
+      expect(screen.queryByText(/Try again/)).toBeNull();
       expect(screen.getByRole('button', { name: 'Stop task' })).toBeTruthy();
     });
 

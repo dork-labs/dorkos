@@ -17,6 +17,7 @@ export function BrowserHandoffInboxItem() {
     busy,
     error,
     continueAgent,
+    doneSigningIn,
     signIn,
     openWindow,
     showWindow,
@@ -41,6 +42,7 @@ export function BrowserHandoffInboxItem() {
         busy={busy}
         error={error}
         onContinue={() => void continueAgent()}
+        onDone={doneSigningIn}
         onSignIn={signIn}
         onOpenWindow={openWindow}
         onShowWindow={showWindow}

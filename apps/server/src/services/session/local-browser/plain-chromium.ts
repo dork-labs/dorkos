@@ -21,6 +21,8 @@ export interface PlainChromium {
   exited: Promise<PlainChromiumExit>;
   /** Quit the way a person would, so Chromium writes the profile out. */
   quit(): void;
+  /** End a window that ignored {@link quit}, so its profile lock clears. Nothing it held is saved. */
+  forceQuit(): void;
 }
 
 /** Starts a plain Chromium. Tests swap it for a fake; nothing here launches Chrome in a test. */
@@ -208,6 +210,13 @@ export const spawnPlainChromium: PlainChromiumSpawner = (executable, args) => {
       if (process.platform === 'win32')
         spawnSync('taskkill', ['/PID', String(child.pid)], { stdio: 'ignore' });
       else child.kill('SIGTERM');
+    },
+    forceQuit() {
+      if (child.pid === undefined || child.exitCode !== null) return;
+      // Only this child, by its own handle: never a pid looked up or a name matched.
+      if (process.platform === 'win32')
+        spawnSync('taskkill', ['/F', '/PID', String(child.pid)], { stdio: 'ignore' });
+      else child.kill('SIGKILL');
     },
   };
 };

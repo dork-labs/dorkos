@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { PanelResourceVisible } from '@/layers/shared/model';
@@ -31,17 +32,21 @@ vi.mock('../ui/LocalBrowserPanel', () => ({
     sessionId,
     visible,
     agentName,
+    handoffCard,
   }: {
     sessionId: string | null;
     visible: boolean;
     agentName?: string | null;
+    handoffCard?: ReactNode;
   }) => (
     <div
       data-testid="browser-scope"
       data-session={sessionId ?? 'human-only'}
       data-visible={visible}
       data-agent={agentName ?? 'none'}
-    />
+    >
+      {handoffCard}
+    </div>
   ),
 }));
 beforeEach(() => {
@@ -99,6 +104,17 @@ describe('LocalBrowserContent', () => {
       </PanelResourceVisible>
     );
     expect(screen.getByTestId('browser-scope')).toHaveAttribute('data-visible', 'false');
+  });
+  // DOR-4731: the panel shows the chat's own handoff card, never words of its own.
+  it('passes the route chat’s handoff card to the panel, and none in a room', () => {
+    const renderHandoff = vi.fn((id: string) => <p>card for {id}</p>);
+    const view = render(<LocalBrowserContent renderHandoff={renderHandoff} />);
+    expect(screen.getByText('card for current-chat')).toBeInTheDocument();
+    context.pathname = '/team';
+    renderHandoff.mockClear();
+    view.rerender(<LocalBrowserContent renderHandoff={renderHandoff} />);
+    expect(renderHandoff).not.toHaveBeenCalled();
+    expect(screen.queryByText(/card for/)).toBeNull();
   });
   it('hides native presentation when the panel closes or switches view', () => {
     const view = render(<LocalBrowserContent />);

@@ -45,6 +45,7 @@ const spies = {
   resume: vi.fn(async () => ({})),
   disconnect: vi.fn(async () => ({})),
   signIn: vi.fn(async () => ({})),
+  finishSignIn: vi.fn(async () => ({})),
   handBack: vi.fn(async () => ({})),
   stop: vi.fn(async () => ({})),
 };
@@ -67,6 +68,7 @@ const service = {
     disconnect: spies.disconnect,
     resume: spies.resume,
     signIn: spies.signIn,
+    finishSignIn: spies.finishSignIn,
     handBack: spies.handBack,
     stop: spies.stop,
   },
@@ -126,6 +128,7 @@ const endpoints = [
   ['post', '/resume', undefined, 'resume'],
   ['post', '/disconnect', undefined, 'disconnect'],
   ['post', '/sign-in', { url: 'https://example.test/' }, 'signIn'],
+  ['post', '/sign-in/done', { handoffId: 'h1' }, 'finishSignIn'],
   ['post', '/handoff/hand-back', { handoffId: 'h1' }, 'handBack'],
   ['post', '/handoff/stop', { handoffId: 'h1' }, 'stop'],
 ] as const;
@@ -150,7 +153,8 @@ describe.each(endpoints)('%s %s authority', (method, path, body, effect) => {
       if (body) call.send(body);
       const response = await call;
       if (caller === 'owner') {
-        expect(response.status).toBe(200);
+        // Done signing in answers at once; the card follows the save on the state stream.
+        expect(response.status).toBe(path === '/sign-in/done' ? 202 : 200);
         expect(spies[effect]).toHaveBeenCalledOnce();
       } else {
         expect(response.status).toBe(403);
@@ -172,6 +176,7 @@ describe.each([
   ['/resume', undefined],
   ['/disconnect', undefined],
   ['/sign-in', { url: 'https://example.test/' }],
+  ['/sign-in/done', { handoffId: 'h1' }],
   ['/handoff/hand-back', { handoffId: 'h1' }],
   ['/handoff/stop', { handoffId: 'h1' }],
 ] as const)('POST %s takes a person', (path, body) => {
@@ -343,4 +348,48 @@ it.each([
   } finally {
     login.on = true;
   }
+});
+
+// DOR-4731: Done signing in quits only the sign-in window DorkOS opened. It names the
+// handoff it answers and nothing else: never a window, a process or a page.
+describe('POST /sign-in/done', () => {
+  it('passes the handoff it answers, and nothing else', async () => {
+    const response = await request(server)
+      .post('/api/local-browser/sign-in/done')
+      .set('Host', 'localhost')
+      .send({ handoffId: 'h1' });
+    expect(response.status).toBe(202);
+    expect(spies.finishSignIn).toHaveBeenCalledWith('h1');
+  });
+
+  it('takes no handoff for a window a stopped task left open', async () => {
+    const response = await request(server)
+      .post('/api/local-browser/sign-in/done')
+      .set('Host', 'localhost')
+      .send({});
+    expect(response.status).toBe(202);
+    expect(spies.finishSignIn).toHaveBeenCalledWith(undefined);
+  });
+
+  it('refuses an agent, even naming no handoff', async () => {
+    const response = await request(server)
+      .post('/api/local-browser/sign-in/done')
+      .set('Host', 'localhost')
+      .set('X-DorkOS-Agent', '')
+      .send({});
+    expect(response.status).toBe(403);
+    expect(spies.finishSignIn).not.toHaveBeenCalled();
+  });
+
+  it.each([{ handoffId: 'h1', pid: 4242 }, { url: 'https://example.test/' }, { handoffId: 7 }])(
+    'refuses anything else in the body: %j',
+    async (body) => {
+      const response = await request(server)
+        .post('/api/local-browser/sign-in/done')
+        .set('Host', 'localhost')
+        .send(body);
+      expect(response.status).toBe(400);
+      expect(spies.finishSignIn).not.toHaveBeenCalled();
+    }
+  );
 });

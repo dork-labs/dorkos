@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type {
   LocalBrowserMode,
@@ -19,6 +19,7 @@ import { BrowserPreparation } from './BrowserPreparation';
 import { BrowserStatusPill } from './BrowserStatusPill';
 import { WaitingElsewhere } from './WaitingElsewhere';
 import { SavedSignIns } from './SavedSignIns';
+import { SignInOpenNotice } from './SignInOpenNotice';
 import { LocalBrowserMenu } from './LocalBrowserMenu';
 import { PageAreaBlock } from './PageAreaBlock';
 import { SharedElsewhere } from './SharedElsewhere';
@@ -30,6 +31,11 @@ export interface LocalBrowserPanelProps {
   sessionId?: string | null;
   /** Display identity for the current direct chat; never an unrelated retained panel. */
   agentName?: string | null;
+  /**
+   * This chat's handoff card, shown while its agent waits on a person. The app passes it in,
+   * so the panel and the chat show the same words and buttons at every step (DOR-4731).
+   */
+  handoffCard?: ReactNode;
 }
 
 /** Controls one exact live page; embedded rendering belongs to the desktop host. */
@@ -37,6 +43,7 @@ export function LocalBrowserPanel({
   visible = true,
   sessionId = null,
   agentName = null,
+  handoffCard = null,
 }: LocalBrowserPanelProps) {
   const transport = useTransport();
   const queryClient = useQueryClient();
@@ -86,8 +93,14 @@ export function LocalBrowserPanel({
     !!sessionId && state?.handoff?.outcome === null && state.handoff.sessionId === sessionId
       ? state.handoff
       : null;
-  // The person closed the sign-in window and it saved, so all that's left is Continue.
-  const signInClosed = !!handoffHere && state?.signIn?.status === 'saved';
+  // A sign-in window no handoff waits on: one a stopped task left, or one the person
+  // opened. Its own Done signing in ends it, since on a Mac closing it isn't seen (DOR-4731).
+  const looseSignIn =
+    state?.signIn &&
+    (state.signIn.status === 'open' || state.signIn.status === 'saving') &&
+    state.handoff?.outcome !== null
+      ? state.signIn
+      : null;
   const mode =
     connected && state.mode
       ? state.mode
@@ -250,6 +263,18 @@ export function LocalBrowserPanel({
                   ? 'Disconnected'
                   : 'Not open yet';
   const readFailed = query.isError || capabilityQuery.isError;
+  const signInNotice = looseSignIn && (
+    <SignInOpenNotice
+      signIn={looseSignIn}
+      busy={busy}
+      onDone={() =>
+        void action(async () => {
+          await transport.finishLocalBrowserSignIn();
+          return transport.getLocalBrowserState();
+        })
+      }
+    />
+  );
   // The blocks for another chat and for a read that failed say it in their own words.
   const statusShown = !waitingElsewhere && !sharedElsewhere && !readFailed;
   // Why the last action or read failed, and a way back when trying again can help.
@@ -292,6 +317,7 @@ export function LocalBrowserPanel({
               </span>
             </div>
             {problem}
+            {signInNotice}
             {/* With a page open, who has it (Your turn, Only you, Paused) and Pause, Resume,
               Take over and Hand back live in the chrome's status pill (DOR-3111, DOR-4428); the
               tab list, Copy address, Forget saved sign-ins and Close browser live in its ⋯ menu
@@ -374,31 +400,14 @@ export function LocalBrowserPanel({
             </Button>
           )}
           {problem}
+          {signInNotice}
           {waitingElsewhere && (
             <WaitingElsewhere
               sessionId={waitingElsewhere.sessionId}
               agentName={waitingElsewhere.agentName}
             />
           )}
-          {!connected && handoffHere && (
-            <div className="space-y-1 text-sm">
-              <p>
-                {agentName || handoffHere.agentName || 'The agent'} needs you to sign in to{' '}
-                {handoffHere.site}.
-              </p>
-              {signInClosed ? (
-                <p>
-                  The sign-in window closed. Press{' '}
-                  <strong className="font-medium">Continue in the chat</strong> to hand it back.
-                </p>
-              ) : (
-                <p>
-                  Finish in the sign-in window, then press{' '}
-                  <strong className="font-medium">Continue in the chat</strong>.
-                </p>
-              )}
-            </div>
-          )}
+          {!connected && handoffHere && handoffCard}
           {/* While it opens, the choice stays in place so focus has somewhere to return, but
               frozen: out of reach (inert) and dimmed, so it doesn't read as a second question. */}
           {!connected && !waitingElsewhere && !handoffHere && !readFailed && (

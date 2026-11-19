@@ -89,6 +89,11 @@ export function useBrowserHandoff(sessionId?: string | null) {
       if (handoff.refused && state?.mode === 'embedded') openWindow();
       else void run(() => transport.signInLocalBrowser({ handoffId: handoff.id }));
     },
+    // On a Mac, closing the sign-in window leaves Chrome running, so DorkOS can't see it
+    // close. Done signing in quits it; a saved sign-in is then handed back (DOR-4731).
+    doneSigningIn: () => {
+      if (handoff) void run(() => transport.finishLocalBrowserSignIn(handoff.id));
+    },
     openWindow,
     showWindow: () => {
       // A plain browser answer says nothing about the handoff, so nothing is cached from it.

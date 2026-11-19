@@ -22,6 +22,7 @@ const transport = vi.hoisted(() => ({
   takeOverLocalBrowser: vi.fn(),
   handBackLocalBrowser: vi.fn(),
   signInLocalBrowser: vi.fn(),
+  finishLocalBrowserSignIn: vi.fn(),
   stepLocalBrowserHistory: vi.fn(),
   interruptSession: vi.fn(),
   getSession: vi.fn(),
@@ -78,11 +79,18 @@ function holdOpening() {
   transport.openLocalBrowser.mockReturnValue(promise);
   return { resolve, reject };
 }
+/** Stands in for the chat's handoff card, which the app passes in (DOR-4731). */
+const handoffCard = <div data-testid="handoff-card">card</div>;
 function mount(visible = true, sessionId: string | null = 'chat-one') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   const view = render(
     <QueryClientProvider client={client}>
-      <LocalBrowserPanel visible={visible} sessionId={sessionId} agentName="Kai" />
+      <LocalBrowserPanel
+        visible={visible}
+        sessionId={sessionId}
+        agentName="Kai"
+        handoffCard={handoffCard}
+      />
     </QueryClientProvider>
   );
   return { ...view, client };
@@ -401,19 +409,14 @@ describe('LocalBrowserPanel', () => {
         startedAt: '2026-11-03T00:00:01.000Z',
       },
     };
-    it('says it is waiting for you and where to finish, with no Open browser', async () => {
+    // DOR-4731: the panel once said to press a Continue the card didn't show yet. It now
+    // shows the chat's own card, so both say the same words and offer the same buttons.
+    it('shows the chat’s handoff card where to finish, with no Open browser', async () => {
       transport.getLocalBrowserState.mockResolvedValue(signingIn);
       mount();
       expect(await screen.findByText('Waiting for you')).toBeInTheDocument();
-      expect(
-        screen.getByText('Kai needs you to sign in to northwind.example.')
-      ).toBeInTheDocument();
-      const next = screen.getByText(
-        (_, element) =>
-          element?.tagName === 'P' &&
-          element.textContent === 'Finish in the sign-in window, then press Continue in the chat.'
-      );
-      expect(within(next).getByText('Continue in the chat').tagName).toBe('STRONG');
+      expect(screen.getByTestId('handoff-card')).toBeInTheDocument();
+      expect(screen.queryByText(/Continue in the chat/)).toBeNull();
       expect(screen.queryByText('Not open yet')).toBeNull();
       expect(screen.queryByRole('button', { name: 'Open browser' })).toBeNull();
       expect(screen.queryByRole('button', { name: 'Reconnect' })).toBeNull();
@@ -445,21 +448,52 @@ describe('LocalBrowserPanel', () => {
       // The state already says it, so "Finish…" isn't said twice.
       expect(screen.queryByRole('alert')).toBeNull();
     });
-    it('says the sign-in window closed once it has, and still waits for you', async () => {
+    // DOR-4731: Stop leaves the sign-in window for the person (2FA, a payment). On a Mac its
+    // close is never seen, so the panel offers Done signing in, which never resumes the agent.
+    it('after Stop, offers Done signing in, which saves without resuming the agent', async () => {
+      transport.getLocalBrowserState.mockResolvedValue({
+        ...signingIn,
+        handoff: { ...here, outcome: 'stopped' },
+      });
+      transport.finishLocalBrowserSignIn.mockResolvedValue(undefined);
+      mount();
+      const done = await screen.findByRole('button', { name: 'Done signing in' });
+      expect(
+        screen.getByText(
+          'Sign in to northwind.example in the sign-in window, then press Done signing in.'
+        )
+      ).toBeInTheDocument();
+      expect(screen.queryByTestId('handoff-card')).toBeNull();
+      fireEvent.click(done);
+      await waitFor(() =>
+        expect(transport.finishLocalBrowserSignIn).toHaveBeenCalledExactlyOnceWith()
+      );
+      expect(transport.handBackLocalBrowser).not.toHaveBeenCalled();
+      expect(transport.resumeLocalBrowser).not.toHaveBeenCalled();
+    });
+    it('holds Done signing in still while that window saves', async () => {
+      transport.getLocalBrowserState.mockResolvedValue({
+        ...signingIn,
+        handoff: null,
+        signIn: { ...signingIn.signIn, status: 'saving' },
+      });
+      mount();
+      const held = await screen.findByRole('button', { name: 'Done signing in' });
+      expect(held).toHaveAttribute('aria-disabled', 'true');
+      expect(held).toBeDisabled();
+      expect(screen.getByText('Saving your sign-in…')).toBeInTheDocument();
+      fireEvent.click(held);
+      expect(transport.finishLocalBrowserSignIn).not.toHaveBeenCalled();
+    });
+    it('keeps showing the card once the sign-in saved, and still waits for you', async () => {
       transport.getLocalBrowserState.mockResolvedValue({
         ...signingIn,
         signIn: { ...signingIn.signIn, status: 'saved' },
       });
       mount();
       expect(await screen.findByText('Waiting for you')).toBeInTheDocument();
-      const next = screen.getByText(
-        (_, element) =>
-          element?.tagName === 'P' &&
-          element.textContent ===
-            'The sign-in window closed. Press Continue in the chat to hand it back.'
-      );
-      expect(within(next).getByText('Continue in the chat').tagName).toBe('STRONG');
-      expect(screen.queryByText(/Finish in the sign-in window/)).toBeNull();
+      expect(screen.getByTestId('handoff-card')).toBeInTheDocument();
+      expect(screen.queryByText(/Continue in the chat/)).toBeNull();
     });
   });
   describe('while this chat’s agent waits on a person in the Mac app (DOR-3111)', () => {

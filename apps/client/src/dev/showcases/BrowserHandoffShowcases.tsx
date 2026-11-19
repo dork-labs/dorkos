@@ -67,6 +67,7 @@ export function BrowserHandoffShowcases() {
                 busy={false}
                 error={error ?? null}
                 onContinue={ignore}
+                onDone={ignore}
                 onSignIn={ignore}
                 onOpenWindow={ignore}
                 onShowWindow={ignore}

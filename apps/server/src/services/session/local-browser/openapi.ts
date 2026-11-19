@@ -9,6 +9,7 @@ import {
   LocalBrowserPersonStateSchema,
   LocalBrowserProfileBindSchema,
   LocalBrowserProfileSchema,
+  LocalBrowserSignInDoneSchema,
   LocalBrowserSignInRequestSchema,
   LocalBrowserStateSchema,
 } from '@dorkos/shared/local-browser';
@@ -69,6 +70,34 @@ function registerHandoverOpenApi(registry: OpenAPIRegistry): void {
       },
     },
     responses: { ...personStateResponses, 400: refusal('The request is invalid') },
+  });
+  registry.registerPath({
+    method: 'post',
+    path: '/api/local-browser/sign-in/done',
+    tags: ['Local browser'],
+    summary: 'Finish the open sign-in window',
+    description:
+      authority +
+      inPerson +
+      'Quits the sign-in window DorkOS opened, so its sign-in saves. Names the handoff it ' +
+      'answers, or none for a window no handoff waits on. Answers at once; the state says when ' +
+      'it saved or failed, and a saved one is handed back to the handoff named.',
+    request: {
+      body: {
+        required: true,
+        content: { 'application/json': { schema: LocalBrowserSignInDoneSchema } },
+      },
+    },
+    responses: {
+      202: {
+        description: 'The window was asked to quit',
+        content: { 'application/json': { schema: z.object({ accepted: z.literal(true) }) } },
+      },
+      400: refusal('The request is invalid'),
+      403: refusal('The caller is not the owner on this computer'),
+      409: refusal('No sign-in window of this handoff can be finished'),
+      500: refusal('The browser operation failed'),
+    },
   });
   registry.registerPath({
     method: 'post',

@@ -63,6 +63,10 @@ type Identity = {
   headers?: Record<string, unknown>;
 };
 let receipt: Identity | undefined;
+// DOR-4731: each visit to the made-up page sets a cookie naming that visit, and records the
+// cookie it arrived with, to prove Done signing in saves what the person's window was given.
+let visits = 0;
+const arrivedWith: string[] = [];
 const echo = createServer((request, response) => {
   if (request.method === 'POST') {
     let body = '';
@@ -74,6 +78,11 @@ const echo = createServer((request, response) => {
       response.end('saved');
     });
   } else {
+    if (request.url === '/') {
+      arrivedWith.push(String(request.headers.cookie ?? ''));
+      visits += 1;
+      response.setHeader('Set-Cookie', `made_up_visit=${visits}; Max-Age=86400; Path=/`);
+    }
     response.setHeader('Content-Type', 'text/html');
     response.end(`<h1>Made-up browser check</h1><pre id="result"></pre><script>
       const identity={ua:navigator.userAgent,brands:navigator.userAgentData.brands,webdriver:navigator.webdriver};
@@ -258,9 +267,22 @@ try {
       await handover.stop(handoffId);
       assert.equal(signIns.active, true, 'Stop must leave the hook-free window open');
     }
-    signIns.close();
+    // The person's own visit set the cookie the agent's reopened window must arrive with.
+    const personVisit = visits;
+    // Done signing in, as the card's button does: Chrome on a Mac keeps running when its
+    // window closes, so this quit is what saves the sign-in (DOR-4731).
+    signIns.done();
     await until(async () => (signIns.current?.status === 'saved' ? true : undefined));
     if (name !== 'godaddy') await handover.handBack(handoffId);
+    if (name === 'echo') {
+      const before = arrivedWith.length;
+      await until(async () => (arrivedWith.length > before ? true : undefined));
+      assert.match(
+        arrivedWith.at(-1)!,
+        new RegExp(`(^|; )made_up_visit=${personVisit}($|;)`),
+        'Done signing in must save the cookie the person’s window was given'
+      );
+    }
   }
   await fallbackProof(pages[0][1]);
   await writeFile(path.join(evidence, 'window-titles.json'), JSON.stringify(titles, null, 2));
@@ -273,13 +295,14 @@ try {
         signedIn: false,
         realProfileUsed: false,
         stopLeftDetached: true,
+        doneSavedPersonCookie: true,
       },
       null,
       2
     )
   );
 } finally {
-  signIns.close();
+  signIns.done();
   if (plain) await plain.exited;
   await browser.disconnect();
   await new Promise<void>((resolve) => echo.close(() => resolve()));
