@@ -85,7 +85,8 @@ dorkos/
 pnpm dev               # API server + Vite dev server (loads .env)
 pnpm dev:dogfood       # Dev preview (:6241) + the built CLI app (:4242) — the default workflow
 pnpm build             # Build all apps
-pnpm verify            # Affected-only typecheck + lint + test — the pre-PR loop-closer
+pnpm verify            # Affected-only typecheck + lint + test — the full gate
+pnpm verify:preopen    # The lighter check you run before you open a PR (no package tests)
 pnpm knip              # Dead-code detection (build dists first)
 pnpm smoke:docker      # CLI Docker smoke test
 pnpm smoke:integration # Full integration test in Docker
@@ -213,6 +214,7 @@ The full guide, written for agents, is [contributing/ci.md](contributing/ci.md):
 - **Every pipeline change carries a ledger entry with a hypothesis.** One file in `ci/ledger/` (scaffold: `node packages/ci-steward/src/cli.ts ledger-new --slug <slug>`) naming one metric, its baseline, a target and a date; code, not a model, later computes whether it worked (`/ci-status` shows the verdicts, the SLOs and the one constraint to work on, from the `ci-steward-data` branch). Editing a workflow, `lefthook.yml`, `turbo.json`, `.claude/settings.json`, a gate script or `ci/**` loads `.claude/rules/ci-pipeline.md` with the protocol; the `stewarding-ci-pipeline` skill carries it for every harness. **Ratchet releases block review by default.**
 - **`main` merges through a merge queue** (ADR 260728-112203), and merges are fully autonomous: no human approval, ever (ADR 260919-174348). **Never update a branch to satisfy a gate**: the queue tests your PR on top of `main` plus everything ahead of it, and being behind blocks nothing.
 - **Every required check comes from ruleset 19893973** (classic branch protection is gone); the list in `contributing/ci.md` is generated from `ci/required-checks.json`, so never restate the count. **Every required check must report on `pull_request` and `merge_group`**, with no `paths:` filter and no job-level `if:` that can skip it, except `no-fragment-under-skip-label`, which skips on `merge_group` by design and is allowlisted in `ci/census-allowlist.yaml`; the CI Steward census step in `typecheck` enforces it.
+- **Before you open a PR, run `pnpm verify:preopen` on your final head with a clean tree.** Arming needs green required checks and all six test shards at the exact head; a PR that touches `.github/` still needs a full `pnpm verify` (or a PM waiver), since CI can't vouch for changes to itself. A preopen proof never arms.
 - **`merge-tail.yml` arms finished PRs as a backstop, roughly every 2-3 hours** (GitHub throttles its `*/10` schedule; decision: `scripts/should-arm-automerge.sh`), so arm your own green PR yourself. Apply `hold` (or `do-not-merge`, `wip`, `blocked`) to keep a green PR from being armed. Arm your own with `gh pr merge --auto <n>`; an admin merge is never the answer (`.claude/hooks/merge-guard.mjs` refuses it).
 - **A red is not a reason to add load** (Team plan: 60 concurrent jobs, 19-25 per push). First failed-checks ejection from the queue: don't push or rerun; read the failing job, and once it is plainly not yours re-arm once with `gh pr merge --auto <n>` (85% re-pass unchanged). The same check failing again on the same head is a regression only the queue can see (browser tests run only there): stop re-arming, read the log, push a fix. A PR check that is not yours: `gh run rerun <run-id> --failed`, once. Never an empty commit.
 
