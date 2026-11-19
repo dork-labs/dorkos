@@ -91,7 +91,7 @@ async function historyAs(sessionId: string | undefined, scheduleId: string) {
     sessionId === undefined ? undefined : () => ({ sessionId, agentPath: homeA })
   );
   const tool = tools.find((t) => t.name === 'tasks_get_run_history')!;
-  const result = (await tool.handler({ schedule_id: scheduleId }, {})) as {
+  const result = (await tool.handler({ schedule_id: scheduleId } as never, {})) as {
     content: { text: string }[];
     isError?: boolean;
   };
@@ -134,7 +134,7 @@ describe('tasks_get_run_history reads only the caller’s own schedules', () => 
   it('refuses an agent’s schedule to a chat DorkOS can’t name, saying so', async () => {
     const tools = getTasksTools(deps, () => ({ sessionId: 'ses-nameless' }));
     const tool = tools.find((t) => t.name === 'tasks_get_run_history')!;
-    const result = (await tool.handler({ schedule_id: taskWithRun('agent-a') }, {})) as {
+    const result = (await tool.handler({ schedule_id: taskWithRun('agent-a') } as never, {})) as {
       content: { text: string }[];
       isError?: boolean;
     };
