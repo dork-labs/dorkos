@@ -52,6 +52,7 @@ import {
 import { primaryOf } from '../../session/resolution/session-key-registry.js';
 import { noteBridgedSender, noteTurnHold } from './continuation-hold.js';
 import { aliasRoomTurnWords } from './outside-words.js';
+import { isOwnersCleanTurn, withHeldChatMark } from './held-chat-mark.js';
 import { endReadMark, noteReadMark, sessionReadOutsideText } from './live-outsider-turns.js';
 
 /** The room turn's outside-words note travels with its level; a room runner sets both here. */
@@ -625,13 +626,43 @@ export function recordTurnLevels(
       return undefined;
     }
   };
-  return applyTurnMarks(
-    recordLevels(runtime, storedModeOf),
-    (sessionId) => marksOfLevel(turnLevels.get(sessionId)),
-    (sessionId, opts) => {
-      recordTurn(runtime, sessionId, storedOf(sessionId), opts);
-    }
+  return markHeldChats(
+    applyTurnMarks(
+      recordLevels(runtime, storedModeOf),
+      (sessionId) => marksOfLevel(turnLevels.get(sessionId)),
+      (sessionId, opts) => {
+        recordTurn(runtime, sessionId, storedOf(sessionId), opts);
+      }
+    )
   );
+}
+
+/**
+ * Outermost at the seam, so the level record and the marks both see it: a turn in a chat that
+ * took in words DorkOS cannot vouch for carries the outsider mark until the owner's own clean
+ * turn (`held-chat-mark.ts`, DOR-4515).
+ */
+function markHeldChats(runtime: AgentRuntime): AgentRuntime {
+  return new Proxy(runtime, {
+    get(target, prop) {
+      if (
+        (prop === 'sendMessage' || prop === 'executeCommandIntent') &&
+        typeof target[prop] === 'function'
+      ) {
+        const start = (
+          target[prop] as (
+            id: string,
+            input: unknown,
+            opts?: MessageOpts
+          ) => AsyncGenerator<StreamEvent>
+        ).bind(target);
+        return (sessionId: string, input: unknown, opts?: MessageOpts) =>
+          start(sessionId, input, withHeldChatMark(sessionId, opts));
+      }
+      const value = Reflect.get(target, prop, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
 }
 
 /** The level record alone, which {@link recordTurnLevels} wraps in the marks. */
@@ -664,9 +695,11 @@ function recordLevels(
           } catch {
             stored = undefined;
           }
-          // A read's agent-wide mark from this chat's last turn ends as its next real turn starts
-          // (DOR-3969); a continuation picks up the same words, so it keeps it.
-          if (opts?.continuationHold !== true) endReadMark(primaryOf(sessionId));
+          // A read's agent-wide mark from this chat's last turn ends only as the owner's own clean
+          // turn starts (DOR-3969, DOR-4515): any other turn re-reads the same words. A room turn
+          // works out its own marks from the posts it answers, so it still ends it.
+          const roomTurn = opts?.roomTurn !== undefined && opts.continuationHold !== true;
+          if (isOwnersCleanTurn(opts) || roomTurn) endReadMark(primaryOf(sessionId));
           const level = recordTurn(target, sessionId, stored, opts);
           // Kept on the chat's row, for the turns that later pick it up on their own. A
           // turn a continuation's hold clamped read no new words, so it leaves the answer

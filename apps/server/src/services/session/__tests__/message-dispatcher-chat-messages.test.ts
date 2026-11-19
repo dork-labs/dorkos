@@ -38,6 +38,12 @@ import {
   roomTurnReadOutsideWords,
 } from '../../core/turn-power/outside-words.js';
 import { liveOutsideTurnCheck } from '../local-browser/outside-turn.js';
+import { recordTurnLevels } from '../../core/turn-power/turn-levels.js';
+import {
+  lastTurnHeld,
+  noteTurnHold,
+  setContinuationHoldDb,
+} from '../../core/turn-power/continuation-hold.js';
 import { MessageQueueStore, setMessageQueueStore } from '../message-queue-store.js';
 import { getOrCreateProjector, disposeProjector } from '../session-state-projector.js';
 
@@ -315,6 +321,41 @@ describe('a message a mini app sent', () => {
     await settle();
     expect(carriedOfCall(0)).toBeUndefined();
     expect(carriedOfCall(1)).toEqual({ outsider: true });
+  });
+});
+
+// DOR-4515: through the real dispatcher and the turn seam, a held chat stays marked for a turn that
+// is not the owner's own clean send, and the owner's next clean send clears it.
+describe('a chat that took in a stranger’s words', () => {
+  beforeEach(() => setContinuationHoldDb(createTestDb()));
+  afterEach(() => setContinuationHoldDb(undefined));
+
+  const carried = (n: number) =>
+    (runtime.sendMessage.mock.calls[n]![2] as Record<string, unknown>).carriedMarks;
+
+  it('stays marked for another send, and the owner’s own clean send clears it', async () => {
+    const seam = recordTurnLevels(runtime, () => 'bypassPermissions');
+    noteTurnHold(session, true);
+    runtime.withScenarios([quickTurn(), quickTurn(), quickTurn()]);
+    const through = (content: string, extra: Record<string, unknown> = {}) =>
+      dispatchMessage({
+        sessionId: session,
+        clientId: PERSON,
+        content,
+        projector: getOrCreateProjector(session),
+        runtime: seam,
+        ...extra,
+      });
+    await through('not the owner’s turn');
+    await settle();
+    expect(carried(0)).toEqual({ outsider: true });
+    await through('the owner', OWNER);
+    await settle();
+    expect(carried(1)).toBeUndefined();
+    expect(lastTurnHeld(session)).toBe(false);
+    await through('later, not the owner’s turn');
+    await settle();
+    expect(carried(2)).toBeUndefined();
   });
 });
 

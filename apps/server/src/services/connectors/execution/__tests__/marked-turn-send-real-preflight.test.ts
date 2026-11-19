@@ -39,6 +39,8 @@ import {
 import { eventFanOut } from '../../../core/event-fan-out.js';
 import { recordTurnLevels } from '../../../core/turn-power/turn-levels.js';
 import { noteRoomTurnWords } from '../../../core/turn-power/outside-words.js';
+import { setContinuationHoldDb } from '../../../core/turn-power/continuation-hold.js';
+import { MARKED_TURN_REASON } from '../../../core/turn-power/marked-turn-copy.js';
 import { resetChosenTurns } from '../../../core/turn-power/full-autonomy.js';
 import { resetLiveOutsiderTurns } from '../../../core/turn-power/live-outsider-turns.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
@@ -185,6 +187,9 @@ describe('a Gmail send through the real preflight, at Full', () => {
     vi.restoreAllMocks();
   });
 
+  /** What the last refused send told the agent. */
+  let lastRefusal = '';
+
   /** Send one made-up email from the chat; the outcome and whether a card is waiting. */
   async function send(sessionId: string) {
     const outcome = await registry
@@ -208,8 +213,10 @@ describe('a Gmail send through the real preflight, at Full', () => {
       )
       .then(
         () => 'ran',
-        (error: unknown) =>
-          (error as { decision?: { outcome?: string } }).decision?.outcome ?? String(error)
+        (error: unknown) => {
+          lastRefusal = error instanceof Error ? error.message : String(error);
+          return (error as { decision?: { outcome?: string } }).decision?.outcome ?? String(error);
+        }
       );
     return { outcome, cards: approvals.listPending().length };
   }
@@ -227,6 +234,31 @@ describe('a Gmail send through the real preflight, at Full', () => {
     await ranAtFull(chat);
     expect(await send(chat)).toEqual({ outcome: 'approval_required', cards: 1 });
     expect(execute).not.toHaveBeenCalled();
+  });
+
+  // DOR-4515: a chat that took in a stranger's words stays marked for the turns after it.
+  describe('in a chat a stranger’s words reached earlier', () => {
+    beforeEach(() => setContinuationHoldDb(db));
+    afterEach(() => setContinuationHoldDb(undefined));
+
+    it('cards a later turn another chat started, and nothing reaches the provider', async () => {
+      const chat = fresh();
+      await ranAtFull(chat, { permissionCeiling: 'runtime-default', turnStarter: 'telegram' });
+      await ranAtFull(chat, { turnStarter: 'agent-message' });
+      expect(await send(chat)).toEqual({ outcome: 'approval_required', cards: 1 });
+      expect(execute).not.toHaveBeenCalled();
+    });
+
+    it('refuses a later scheduled run’s send with a reason, and nothing reaches the provider', async () => {
+      const chat = fresh();
+      await ranAtFull(chat, { permissionCeiling: 'runtime-default', turnStarter: 'telegram' });
+      await ranAtFull(chat, { unattended: true });
+      // Nobody watches a scheduled run, so it is refused at once rather than left on a card
+      // nobody can answer (DOR-3394), and the refusal says the outside words are why.
+      expect(await send(chat)).toEqual({ outcome: 'denied', cards: 0 });
+      expect(execute).not.toHaveBeenCalled();
+      expect(lastRefusal).toContain(MARKED_TURN_REASON);
+    });
   });
 
   it('lets a clean turn reach the provider with no card', async () => {

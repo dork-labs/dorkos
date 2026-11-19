@@ -101,13 +101,16 @@ describe("the owner's own linked Telegram chat", () => {
     vi.spyOn(runtimeRegistry, 'getSessionLaunchOrigin').mockReturnValue('relay-binding');
   });
 
-  it('hands on clean words on its next turn after an inbox read', async () => {
+  // DOR-4515 (Security, Nov 19): only the owner's own clean send in the app clears a chat that read
+  // outside words. A bridged turn says who started it by a label any caller can set, so it does
+  // not; letting the owner's own linked 1:1 chat clear it from the binding's record comes later.
+  it('keeps the inbox read through its next bridged turn', async () => {
     const chat = fresh();
     await turn(chat, vouched);
     markRunningTurnOutsider(chat, WREN);
     await turn(chat, vouched);
     setContinuationHoldDb(db);
-    expect(chatReadOutsideWords(chat, WREN, true)).toBe(false);
+    expect(chatReadOutsideWords(chat, WREN, true)).toBe(true);
   });
 
   it("carries once a stranger's message runs on it", async () => {
