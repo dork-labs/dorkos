@@ -34,11 +34,58 @@ function injectedCalls(source: string): number {
 }
 
 /**
+ * The places a generated bundle registers in, by the call it makes: each must
+ * be declared in its manifest, or DorkOS refuses it (DOR-4282).
+ */
+function registeredPlaces(source: string): string[] {
+  const file = ts.createSourceFile(
+    'index.tsx',
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX
+  );
+  const byCall: Record<string, string> = {
+    registerCommand: 'command-palette.items',
+    registerDialog: 'dialog',
+    registerSettingsTab: 'settings.tabs',
+    registerPage: 'pages',
+    registerStatusBarItem: 'status-bar',
+    openCanvas: 'canvas',
+  };
+  const places = new Set<string>();
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+      const method = node.expression.name.text;
+      const [first] = node.arguments;
+      if (method === 'registerComponent' && first && ts.isStringLiteral(first))
+        places.add(first.text);
+      else if (byCall[method]) places.add(byCall[method]!);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return [...places].sort();
+}
+
+/**
  * Direct coverage for the extension starter templates. These generators are
  * otherwise exercised only indirectly through the scaffolder, so the assertions
  * below pin the generated source that authors actually receive.
  */
 describe('extension-templates', () => {
+  it.each(TEMPLATES)('the %s template declares every place it registers in', (kind) => {
+    const manifest = generateManifest('sample', 'A sample', kind) as {
+      contributions: Record<string, boolean>;
+    };
+    const declared = Object.keys(manifest.contributions).filter(
+      (key) => manifest.contributions[key] === true
+    );
+    const used = registeredPlaces(generateTemplate('sample', 'A sample', kind));
+    expect(used.length).toBeGreaterThan(0);
+    for (const place of used) expect(declared).toContain(place);
+  });
+
   describe('generateManifest', () => {
     it('makes every new app a version 2 app, so it loads instead of asking for an update', () => {
       for (const kind of [

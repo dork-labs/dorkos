@@ -8,7 +8,15 @@
  *
  * @module features/extensions/lib/extension-row-state
  */
-import { needsClientUpdate, type ExtensionRecordPublic } from '@dorkos/extension-api';
+import {
+  GRACE_CONTRIBUTION_KEYS,
+  contributionWords,
+  declaresContribution,
+  declaredContributions,
+  needsClientUpdate,
+  type ExtensionContributionKey,
+  type ExtensionRecordPublic,
+} from '@dorkos/extension-api';
 import { APP_NEEDS_UPDATE_COPY } from '@/layers/entities/extension';
 import { isExtensionServerErrorCode } from '@dorkos/shared/extension-server-status';
 
@@ -17,7 +25,13 @@ const OFF_STATUSES = new Set(['disabled', 'discovered']);
 
 /** Why a row needs the person, if it does. */
 export type ExtensionRowNeed =
-  'screens-paused' | 'needs-ok' | 'not-working' | 'cant-load' | 'needs-update' | 'needs-newer';
+  | 'screens-paused'
+  | 'needs-ok'
+  | 'checking-update'
+  | 'not-working'
+  | 'cant-load'
+  | 'needs-update'
+  | 'needs-newer';
 
 /** What a row's chip says and how loud it is. */
 export interface ExtensionRowChip {
@@ -50,6 +64,7 @@ export interface ExtensionRowState {
 const NEED_CHIP: Record<ExtensionRowNeed, ExtensionRowChip> = {
   'screens-paused': { label: 'Needs your OK', tone: 'warning' },
   'needs-ok': { label: 'Needs your OK', tone: 'warning' },
+  'checking-update': { label: 'Checking an update…', tone: 'neutral' },
   'not-working': { label: 'Not working', tone: 'error' },
   'cant-load': { label: 'Can’t load', tone: 'error' },
   'needs-update': { label: APP_NEEDS_UPDATE_COPY.chip, tone: 'neutral' },
@@ -64,6 +79,7 @@ const NEED_RANK: Record<ExtensionRowNeed, number> = {
   'cant-load': 3,
   'needs-update': 4,
   'needs-newer': 5,
+  'checking-update': 6,
 };
 
 /**
@@ -98,6 +114,11 @@ export function extensionRowNeed(ext: ExtensionRecordPublic): ExtensionRowNeed |
   // switch is never the way in: the person reads the panel first.
   // One a person turned off is not asked about, the same rule the Activity
   // inbox follows; its row still offers Review instead of the switch.
+  // Its files changed after the last check (DOR-4282): nothing to allow yet,
+  // because the next check decides whether it asks again at all.
+  if (ext.origin === 'user' && ext.awaitingScan === true && !isExtensionOff(ext)) {
+    return 'checking-update';
+  }
   if (ext.origin === 'user' && ext.screensPaused === true && !isExtensionOff(ext)) {
     return 'screens-paused';
   }
@@ -122,6 +143,58 @@ export function extensionRowNeed(ext: ExtensionRecordPublic): ExtensionRowNeed |
  */
 export function waitsForOk(ext: ExtensionRecordPublic): boolean {
   return ext.origin === 'user' && (!ext.approvedToRun || ext.screensPaused === true);
+}
+
+/**
+ * The places a running app declares that no stored yes covers yet, in card
+ * order (DOR-4282). The app keeps running while they wait. Read from the
+ * record DorkOS keeps, never from the Inbox queue, so putting the Inbox card
+ * off does not hide them here. Empty for an app that is not running on a yes,
+ * and for an older server that sends no `allowedSlots`.
+ *
+ * @param ext - The extension record.
+ */
+export function waitingPlaces(ext: ExtensionRecordPublic): ExtensionContributionKey[] {
+  if (ext.origin !== 'user' || !ext.approvedToRun || ext.screensPaused === true) return [];
+  const allowed = ext.allowedSlots;
+  if (!allowed || !isExtensionOn(ext)) return [];
+  return declaredContributions(ext.manifest).filter((key) => !allowed.includes(key));
+}
+
+/** The most waiting places {@link waitingPlacesLine} names one by one. */
+const PLACES_NAMED_MAX = 3;
+
+/**
+ * What a running app's waiting places line says (DOR-4282), in DorkOS's own
+ * words and card order, never the app's: "Adds a page and dialogs. Allow
+ * when ready." Past three places it names two and counts the rest, so the
+ * line stays within 15 words. Its Allow sends every declared place, which is
+ * the ones already allowed plus exactly these.
+ *
+ * @param keys - The waiting places, as {@link waitingPlaces} returns them.
+ */
+export function waitingPlacesLine(keys: readonly string[]): string {
+  const words = contributionWords(keys);
+  const named = words.length > PLACES_NAMED_MAX ? words.slice(0, PLACES_NAMED_MAX - 1) : words;
+  const rest = words.length - named.length;
+  const parts = rest > 0 ? [...named, `${rest} more`] : named;
+  const list =
+    parts.length <= 1
+      ? (parts[0] ?? 'a place')
+      : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
+  return `Adds ${list}. Allow when ready.`;
+}
+
+/**
+ * Whether DorkOS keeps places for this app that its manifest does not
+ * declare, for an approval given before places were recorded (DOR-4282).
+ *
+ * @param ext - The extension record.
+ */
+export function keepsPlacesForOldApproval(ext: ExtensionRecordPublic): boolean {
+  return GRACE_CONTRIBUTION_KEYS.some(
+    (key) => (ext.allowedSlots ?? []).includes(key) && !declaresContribution(ext.manifest, key)
+  );
 }
 
 /**

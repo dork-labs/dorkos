@@ -256,7 +256,7 @@ describe('PermissionPreviewBuilder', () => {
         extensions: [
           {
             id: 'review-extension',
-            contributions: { 'session-sidebar': true, 'message-toolbar': true },
+            contributions: { 'right-panel': true, 'command-palette.items': true, 'made-up': true },
           },
         ],
         tasks: [
@@ -279,9 +279,8 @@ describe('PermissionPreviewBuilder', () => {
       // extensions
       expect(preview.extensions).toHaveLength(1);
       expect(preview.extensions[0]?.id).toBe('review-extension');
-      expect(preview.extensions[0]?.slots).toEqual(
-        expect.arrayContaining(['session-sidebar', 'message-toolbar'])
-      );
+      // Only places DorkOS has, in card order (DOR-4282).
+      expect(preview.extensions[0]?.slots).toEqual(['right-panel', 'command-palette.items']);
 
       // schedules
       expect(preview.schedules).toHaveLength(2);

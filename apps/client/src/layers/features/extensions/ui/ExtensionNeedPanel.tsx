@@ -9,7 +9,7 @@
  * @module features/extensions/ui/ExtensionNeedPanel
  */
 import { useState, type Ref } from 'react';
-import type { ExtensionRecordPublic } from '@dorkos/extension-api';
+import { RESERVED_APP_NAME_CODE, type ExtensionRecordPublic } from '@dorkos/extension-api';
 import type { PendingExtensionApproval } from '@dorkos/shared/extension-approval-schemas';
 import {
   extensionServerErrorCopy,
@@ -63,6 +63,7 @@ const TONE_PANEL = {
 const NEED_TONE: Record<ExtensionRowNeed, keyof typeof TONE_PANEL> = {
   'screens-paused': 'warning',
   'needs-ok': 'warning',
+  'checking-update': 'neutral',
   'not-working': 'error',
   'cant-load': 'error',
   'needs-update': 'neutral',
@@ -157,6 +158,17 @@ export function ExtensionNeedPanel({
         </div>
       </>,
       'extension-screens-paused'
+    );
+  }
+
+  if (need === 'checking-update') {
+    // Nothing to allow yet: the next check decides whether it asks at all.
+    return panel(
+      'Checking an update…',
+      <p className="text-muted-foreground text-sm">
+        {`${name} is paused until DorkOS checks its new files.`}
+      </p>,
+      'extension-checking-update'
     );
   }
 
@@ -255,6 +267,15 @@ export function ExtensionNeedPanel({
       >
         <AppNeedsUpdateNotice name={extension.manifest.name} />
       </div>
+    );
+  }
+
+  if (need === 'cant-load' && extension.error?.code === RESERVED_APP_NAME_CODE) {
+    // Its name is DorkOS's own (DOR-4282): the sentence says what to change.
+    return panel(
+      'It can’t use this name.',
+      <p className="text-sm">{extension.error.message}</p>,
+      'extension-reserved-name'
     );
   }
 

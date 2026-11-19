@@ -483,7 +483,8 @@ describe('the dev loop stays free after one approval, for the approved files', (
       // The yes covers what it declares: an in-process extension, so full
       // access (DOR-2686).
       approvedPermissions: {
-        'my-ext': { runtime: 'in-process', net: [], run: [], agents: false },
+        // A new approval always records its places, even none (DOR-4282).
+        'my-ext': { runtime: 'in-process', net: [], run: [], agents: false, slots: [] },
       },
     });
     // The approve route is what makes one click enough: the extension is running

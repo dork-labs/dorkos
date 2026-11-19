@@ -7,7 +7,7 @@
  */
 import fs from 'fs/promises';
 import path from 'path';
-import { EXTENSION_ID_REGEX } from '@dorkos/extension-api';
+import { EXTENSION_ID_REGEX, reservedAppNameProblem } from '@dorkos/extension-api';
 import {
   generateManifest,
   generateTemplate,
@@ -112,6 +112,9 @@ export async function scaffoldExtension(options: {
       `Invalid extension name '${name}': use lowercase letters, numbers, and hyphens only`
     );
   }
+  // The display name is made from it, and DorkOS's own names stay DorkOS's (DOR-4282).
+  const nameProblem = reservedAppNameProblem(name);
+  if (nameProblem) throw new Error(`Can't create '${name}'. ${nameProblem}`);
 
   // Resolve target directory
   const globalRoot = path.join(dorkHome, 'extensions');

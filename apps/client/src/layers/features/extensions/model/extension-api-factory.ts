@@ -23,7 +23,6 @@ import type {
 import type { CrossAppManifest } from '@dorkos/extension-api';
 import { isExtensionEventDeclared, StartWorkError } from '@dorkos/extension-api';
 import type { UiCommand, UiCanvasContent } from '@dorkos/shared/types';
-import { placementFromInput } from '@dorkos/shared/mini-app-placement';
 import { warnOnUnusableShowIn } from '../lib/placement-pages';
 import {
   DecisionActionResponseSchema,
@@ -51,15 +50,12 @@ import { createExtensionRoomsApi } from './extension-rooms-api';
 import { createExtensionForwardApi } from './extension-forward-api';
 import { requestError } from './request-error';
 import { resolveAppNavigation } from './app-navigation';
-
-/** Default priority for extension contributions (mid-range, after built-ins). */
-const DEFAULT_PRIORITY = 50;
-
-/** Lucide icon name used as a fallback for extension commands. */
-const FALLBACK_ICON = 'puzzle';
-
-/** Default order of an extension's status-bar item among the others (spec §11.1). */
-const DEFAULT_STATUS_BAR_PRIORITY = 100;
+import {
+  adaptToContribution,
+  DEFAULT_STATUS_BAR_PRIORITY,
+  FALLBACK_ICON,
+} from './adapt-contribution';
+import { createSlotGate, type DeclaredPlaces } from './slot-gate';
 
 /**
  * Every registered extension dialog's open flag, across all extensions. Only
@@ -82,17 +78,21 @@ function closeOtherDialogs(keep: DialogOpenState): void {
  * @param declaredEvents - The manifest's `capabilities.events` entries. Gates
  *   `api.events.subscribe`: a subscribe request for a kind not covered here (by
  *   kind name or category) is rejected. Defaults to none.
- * @param caller - The manifest's `capabilities`, from DorkOS's records: the
- *   apps it lists are the ones whose pages `navigate` may open. Defaults to none.
+ * @param caller - The manifest's `capabilities` and `contributions`, from
+ *   DorkOS's records: the apps it lists are the ones whose pages `navigate`
+ *   may open, and the places it declares are the only ones it may show in
+ *   (DOR-4282). Defaults to none of either.
  * @returns The API object and collected cleanup functions
  */
 export function createExtensionAPI(
   extId: string,
   deps: ExtensionAPIDeps,
   declaredEvents: readonly ExtensionEventDeclaration[] = [],
-  caller: Pick<CrossAppManifest, 'capabilities'> = {}
+  caller: Pick<CrossAppManifest, 'capabilities'> & DeclaredPlaces = {}
 ): { api: ExtensionAPI; cleanups: Array<() => void> } {
   const cleanups: Array<() => void> = [];
+  // Only the places the approval card named (DOR-4282).
+  const allows = createSlotGate(extId, caller);
 
   /**
    * Follow a path an extension wrote, once it is checked against the routes
@@ -136,6 +136,7 @@ export function createExtensionAPI(
         );
         return () => {};
       }
+      if (!allows(slot, `registerComponent('${slot}', '${id}')`)) return () => {};
       if (slot === 'right-panel' && options?.showIn !== undefined) {
         warnOnUnusableShowIn(extId, id, options.showIn);
       }
@@ -151,6 +152,7 @@ export function createExtensionAPI(
       callback: () => void,
       options?: { icon?: string; shortcut?: string }
     ): () => void {
+      if (!allows('command-palette.items', `registerCommand('${id}')`)) return () => {};
       const actionId = `ext:${extId}:${id}`;
       const contribution: CommandPaletteContribution = {
         id: `${extId}:${id}`,
@@ -159,6 +161,7 @@ export function createExtensionAPI(
         action: actionId,
         shortcut: options?.shortcut,
         category: 'feature',
+        extensionId: extId,
       };
       const unsub = deps.registry.register('command-palette.items', contribution);
       deps.registerCommandHandler(actionId, callback);
@@ -174,6 +177,7 @@ export function createExtensionAPI(
       id: string,
       component: ComponentType<ExtensionDialogProps>
     ): ExtensionDialogControls {
+      if (!allows('dialog', `registerDialog('${id}')`)) return { open: () => {}, close: () => {} };
       // The open flag lives here, not in the app store: an extension cannot add
       // a store key, and DialogHost mounts the dialog only while this is true.
       const openState = createDialogOpenState({ onOpen: () => closeOtherDialogs(openState) });
@@ -182,6 +186,7 @@ export function createExtensionAPI(
         id: `${extId}:${id}`,
         component,
         openState,
+        extensionId: extId,
       };
       const unregister = deps.registry.register('dialog', contribution);
       cleanups.push(() => {
@@ -200,6 +205,7 @@ export function createExtensionAPI(
       component: ComponentType,
       options?: { group?: string }
     ): () => void {
+      if (!allows('settings.tabs', `registerSettingsTab('${id}')`)) return () => {};
       const contribution = {
         id: `${extId}:${id}`,
         label,
@@ -221,6 +227,7 @@ export function createExtensionAPI(
       component: ComponentType<ExtensionPageProps>,
       options: ExtensionPageOptions
     ): () => void {
+      if (!allows('pages', `registerPage('${path}')`)) return () => {};
       if (!EXTENSION_PAGE_PATH_PATTERN.test(path)) {
         throw new Error(
           `[extensions] ${extId}: registerPage path ${JSON.stringify(path)} is not '' or ` +
@@ -272,6 +279,7 @@ export function createExtensionAPI(
       component: ComponentType<StatusBarSlotContext>,
       options: StatusBarItemOptions
     ): () => void {
+      if (!allows('status-bar', `registerStatusBarItem('${id}')`)) return () => {};
       const contribution: StatusBarContribution = {
         id: `${extId}:${id}`,
         extensionId: extId,
@@ -319,6 +327,14 @@ export function createExtensionAPI(
     },
 
     executeCommand(command: UiCommand): void {
+      // Putting a document on the canvas is the `canvas` place however it is
+      // asked for, so this path passes the same gate as openCanvas (DOR-4282).
+      if (
+        (command.action === 'open_canvas' || command.action === 'update_canvas') &&
+        !allows('canvas', `executeCommand('${command.action}')`)
+      ) {
+        return;
+      }
       // Origin 'agent': extension code is programmatic — not an explicit human
       // tab pick — so it must not persist over the user's per-agent right-panel
       // tab preference (DOR-227).
@@ -326,6 +342,7 @@ export function createExtensionAPI(
     },
 
     openCanvas(content: UiCanvasContent): void {
+      if (!allows('canvas', 'openCanvas')) return;
       // Opened here, for this app only: the store marks the document with this
       // API's own id (DOR-3293), which no agent path and no content can set.
       // Origin 'agent' for the reveal: programmatic, as with executeCommand.
@@ -535,95 +552,4 @@ function projectState(store: unknown): ExtensionReadableState {
     currentProject: s.currentProject ?? null,
     requireLogin: s.requireLogin === true,
   };
-}
-
-/**
- * Adapt a generic component registration into the Phase 2 registry's per-slot
- * contribution shape. Each slot has its own required fields.
- */
-function adaptToContribution(
-  // `registerComponent` refuses `dialog` before it gets here (no way to open it).
-  slot: Exclude<ExtensionPointId, 'dialog'>,
-  id: string,
-  component: ComponentType,
-  options?: {
-    priority?: number;
-    label?: string;
-    icon?: ComponentType<{ className?: string }>;
-    group?: string;
-    visibleWhen?: () => boolean;
-    showIn?: ExtensionTabPlacement;
-  }
-): Record<string, unknown> {
-  const base = { id, priority: options?.priority ?? DEFAULT_PRIORITY };
-  // Human label for labelled/tabbed slots; namespaced id is the honest fallback.
-  const label = options?.label ?? id;
-
-  switch (slot) {
-    case 'dashboard.sections':
-      // `visibleWhen` is forwarded, not dropped: the section renders on the
-      // Activity tab, which re-evaluates the predicate on every render, so an
-      // extension can hide its own section without unregistering it.
-      return { ...base, component, visibleWhen: options?.visibleWhen };
-    case 'sidebar.footer':
-      return {
-        ...base,
-        onClick: () => {},
-        label,
-        icon: undefined as unknown as import('lucide-react').LucideIcon,
-      };
-    case 'right-panel':
-      // Third-party right-panel tabs register their content component and, if
-      // they choose, a tab icon; the strip falls back to a puzzle-piece when
-      // `icon` is omitted. The container owns the shared header (tab strip +
-      // close), so an extension tab can never trap the user — no per-tab header
-      // wiring is required. `headerActions` is reserved for built-ins that need
-      // header controls.
-      // `extensionId` and `declaredPlacement` are what make it a mini-app tab
-      // to the panel: placement rules apply only to tabs that carry them.
-      return {
-        ...base,
-        component,
-        title: label,
-        icon: options?.icon,
-        headerActions: undefined,
-        visibleWhen: undefined,
-        extensionId: id.slice(0, id.indexOf(':')),
-        declaredPlacement: placementFromInput(options?.showIn),
-      };
-    case 'settings.tabs':
-      return {
-        ...base,
-        component,
-        label,
-        icon: undefined as unknown as import('lucide-react').LucideIcon,
-        // Absent group is resolved to "Add-ons" by the Settings dialog itself.
-        group: options?.group,
-      };
-    case 'command-palette.items':
-      return {
-        ...base,
-        label,
-        icon: FALLBACK_ICON,
-        action: `ext:${id}`,
-        category: 'feature' as const,
-      };
-    case 'status-bar':
-      // `registerStatusBarItem` is the documented way in; this keeps
-      // `registerComponent('status-bar', …)` from registering something the bar
-      // cannot draw. Always shown, never urgent.
-      return {
-        ...base,
-        extensionId: id.slice(0, id.indexOf(':')),
-        label,
-        priority: options?.priority ?? DEFAULT_STATUS_BAR_PRIORITY,
-        component,
-      };
-    default: {
-      // Exhaustive check for future slot additions
-      const _exhaustive: never = slot;
-      console.warn('[ExtensionAPI] Unknown slot:', _exhaustive);
-      return { ...base, component };
-    }
-  }
 }

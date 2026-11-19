@@ -247,6 +247,10 @@ describe('ExtensionManager — server lifecycle', () => {
         extensionDir: '/fake/extensions/srv-ext',
         dorkHome: '/fake/dork-home',
         extensionName: expect.any(String),
+        // The manifest declares no places, so `ctx.inbox` is refused (DOR-4282).
+        contributions: {},
+        // Read from the stored approval on every `ctx.inbox` call (DOR-4282).
+        allowedPlaces: expect.any(Function),
         // The manifest declares no tools, so `ctx.tools` binds nothing (DOR-2685).
         toolChecks: [],
       });

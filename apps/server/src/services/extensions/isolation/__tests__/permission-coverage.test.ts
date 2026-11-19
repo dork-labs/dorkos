@@ -8,6 +8,9 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ExtensionManifest, ExtensionRecord } from '@dorkos/extension-api';
 import {
   addedSince,
+  addsOnlyPlaces,
+  cardTextAddsAPage,
+  isCoveredApartFromPlaces,
   declaredSet,
   isCovered,
   isSamePermissionSet,
@@ -140,6 +143,176 @@ describe('isCovered', () => {
   });
 });
 
+describe('declared places (DOR-4282)', () => {
+  /** A manifest declaring these places. */
+  const declaring = (contributions: Record<string, boolean>): ExtensionManifest =>
+    ({ id: 'x', name: 'X', version: '1.0.0', contributions }) as ExtensionManifest;
+
+  // Purpose: the set records every declared place, sorted, unknown keys out.
+  it('records declared places, sorted', () => {
+    expect(
+      declaredSet(declaring({ pages: true, dialog: true, 'made-up': true, inbox: false })).slots
+    ).toEqual(['dialog', 'pages']);
+  });
+
+  // Purpose: a newly declared place asks again, under any runtime.
+  it('asks again for a place the approval did not cover', () => {
+    const approved = { ...IN_PROCESS, slots: ['settings.tabs'] };
+    const next = declaredSet(declaring({ 'settings.tabs': true, 'command-palette.items': true }));
+    expect(isCovered(next, approved)).toBe(false);
+    expect(addedSince(next, approved)).toEqual({
+      net: [],
+      run: [],
+      agents: false,
+      runtime: false,
+      slots: ['command-palette.items'],
+    });
+    expect(addedSince(next, { ...sub(), slots: ['settings.tabs'] })?.slots).toEqual([
+      'command-palette.items',
+    ]);
+  });
+
+  // Purpose: dropping a place never asks.
+  it('covers fewer places', () => {
+    const approved = { ...IN_PROCESS, slots: ['dialog', 'pages'] };
+    expect(isCovered(declaredSet(declaring({ pages: true })), approved)).toBe(true);
+  });
+
+  // Purpose: an approval from before places were recorded covers only the
+  // two its card named, never everything.
+  it('reads an approval without places as the panel tab and Settings page only', () => {
+    const legacy = declaredSet(declaring({ 'right-panel': true, 'settings.tabs': true }));
+    expect(isCovered(legacy, IN_PROCESS)).toBe(true);
+    expect(isCovered(legacy, undefined)).toBe(true);
+    const wider = declaredSet(declaring({ 'right-panel': true, pages: true }));
+    expect(addedSince(wider, IN_PROCESS)?.slots).toEqual(['pages']);
+    expect(addedSince(wider, undefined)?.slots).toEqual(['pages']);
+  });
+
+  // Purpose: a stored set without places is written again on the next yes.
+  it('is not the same set as one without places', () => {
+    expect(isSamePermissionSet({ ...IN_PROCESS, slots: [] }, IN_PROCESS)).toBe(false);
+    expect(
+      isSamePermissionSet(
+        { ...IN_PROCESS, slots: ['a', 'b'] },
+        { ...IN_PROCESS, slots: ['b', 'a'] }
+      )
+    ).toBe(true);
+  });
+});
+
+describe('new places alone never stop an app (DOR-4282, option C)', () => {
+  const declaring = (contributions: Record<string, boolean>): ExtensionManifest =>
+    ({ id: 'x', name: 'X', version: '1.0.0', contributions }) as ExtensionManifest;
+
+  // Purpose: places-only is decided from the stored record and the manifest,
+  // and only when places are the one thing that is new.
+  it('runs when new places are the only addition', () => {
+    const next = declaredSet(declaring({ 'settings.tabs': true, pages: true, dialog: true }));
+    const approved = { ...IN_PROCESS, slots: ['settings.tabs'] };
+    expect(isCovered(next, approved)).toBe(false);
+    expect(isCoveredApartFromPlaces(next, approved)).toBe(true);
+    expect(isCoveredApartFromPlaces(next, undefined)).toBe(true);
+  });
+
+  // Purpose: any power, host, runtime or app diff still stops the whole app.
+  it('never counts a power as a place', () => {
+    const none = { net: [], run: [], agents: false, runtime: false };
+    expect(addsOnlyPlaces({ ...none, slots: ['pages'] })).toBe(true);
+    for (const extra of [
+      { net: ['a.example.com'] },
+      { run: ['git'] },
+      { agents: true },
+      { runtime: true },
+      { apps: ['planner'] },
+    ]) {
+      expect(addsOnlyPlaces({ ...none, slots: ['pages'], ...extra })).toBe(false);
+    }
+    expect(addsOnlyPlaces({ ...none })).toBe(false);
+    expect(addsOnlyPlaces({ ...none, slots: [] })).toBe(false);
+  });
+
+  // Purpose: fail-closed, so a field added to the additions later stops the app.
+  it('reads any other field that is not empty as more than places', () => {
+    const later = { net: [], run: [], agents: false, runtime: false, slots: ['pages'], hosts: 1 };
+    expect(addsOnlyPlaces(later as never)).toBe(false);
+  });
+
+  // Purpose: a new host beside a new place stops the app.
+  it('stops for a new host beside a new place', () => {
+    const approved = { ...sub(['a.example.com']), slots: [] };
+    const next = {
+      ...sub(['a.example.com', 'b.example.com']),
+      slots: ['pages'],
+    };
+    expect(isCoveredApartFromPlaces(next, approved)).toBe(false);
+  });
+});
+
+describe('a page on an old card (DOR-4282)', () => {
+  /** A manifest declaring these places. */
+  const declaring = (contributions: Record<string, boolean>): ExtensionManifest =>
+    ({ id: 'x', name: 'X', version: '1.0.0', contributions }) as ExtensionManifest;
+  const pages = declaredSet(declaring({ pages: true }));
+
+  // Purpose: stored card text saying "adds a page" covers pages; without it, pages asks.
+  it('covers pages only when card text saved with the yes says it adds a page', () => {
+    expect(isCovered(pages, IN_PROCESS, 'This adds a page that tracks spending.')).toBe(true);
+    expect(isCovered(pages, undefined, 'It adds a page and a Ledger tab.')).toBe(true);
+    expect(addedSince(pages, IN_PROCESS)?.slots).toEqual(['pages']);
+    expect(addedSince(pages, IN_PROCESS, 'This adds a Ledger tab.')?.slots).toEqual(['pages']);
+  });
+
+  // Purpose: only the text saved at the yes counts. The coverage check never
+  // reads the manifest's words, so an update that adds page wording to its
+  // description gains nothing.
+  it('grants nothing to page wording an update puts in its manifest', () => {
+    const updated = declaredSet({
+      ...declaring({ pages: true }),
+      description: 'This adds a page.',
+      purpose: 'adds a page',
+    } as ExtensionManifest);
+    expect(isCovered(updated, IN_PROCESS)).toBe(false);
+    expect(isCovered(updated, undefined)).toBe(false);
+  });
+
+  // Purpose: an approval that records places never reads text.
+  it('ignores card text for an approval that records places', () => {
+    expect(isCovered(pages, { ...IN_PROCESS, slots: [] }, 'This adds a page.')).toBe(false);
+    expect(isCovered(pages, { ...IN_PROCESS, slots: ['pages'] })).toBe(true);
+  });
+
+  // Purpose: a negative or loose phrase never matches.
+  it('reads negative and loose phrasing as no', () => {
+    for (const text of [
+      'This adds no page.',
+      "It doesn't add a page.",
+      'This doesn’t add a page.',
+      'This never adds a page.',
+      'This adds a page? Not really.',
+      'This adds a Ledger settings page.',
+      'A page for your budget.',
+      'page',
+      'Adds a page.',
+      'This adds a page-turner.',
+      '',
+    ]) {
+      expect(cardTextAddsAPage(text), text).toBe(false);
+    }
+    expect(cardTextAddsAPage('Tracks money. This adds a page, and a tab.')).toBe(true);
+  });
+
+  // Purpose: the page is the only place card text can cover; ⌘K, dialogs
+  // and the status bar for the same app still ask once.
+  it('still asks for ⌘K, a dialog or the status bar', () => {
+    const text = 'This adds a page and ⌘K commands and dialogs and a status bar item.';
+    for (const key of ['command-palette.items', 'dialog', 'status-bar']) {
+      const declared = declaredSet(declaring({ pages: true, [key]: true }));
+      expect(addedSince(declared, IN_PROCESS, text)?.slots).toEqual([key]);
+    }
+  });
+});
+
 describe('declaredSet', () => {
   /** A manifest with these server capabilities. */
   const manifest = (serverCapabilities?: object): ExtensionManifest =>
@@ -147,9 +320,11 @@ describe('declaredSet', () => {
 
   // Purpose: an extension with no runtime, or in-process, declares full access.
   it('is the in-process set for an in-process extension', () => {
-    expect(declaredSet(manifest())).toEqual(IN_PROCESS);
-    expect(declaredSet(manifest({ serverEntry: './server.ts' }))).toEqual(IN_PROCESS);
-    expect(declaredSet(manifest({ runtime: 'in-process' }))).toEqual(IN_PROCESS);
+    // `slots` is always recorded, even empty (DOR-4282).
+    const declared = { ...IN_PROCESS, slots: [] };
+    expect(declaredSet(manifest())).toEqual(declared);
+    expect(declaredSet(manifest({ serverEntry: './server.ts' }))).toEqual(declared);
+    expect(declaredSet(manifest({ runtime: 'in-process' }))).toEqual(declared);
   });
 
   // Purpose: a subprocess extension declares exactly its allow lists.
@@ -161,8 +336,8 @@ describe('declaredSet', () => {
           allow: { net: ['a.example.com'], run: ['git'], agents: true },
         })
       )
-    ).toEqual(sub(['a.example.com'], ['git'], true));
-    expect(declaredSet(manifest({ runtime: 'subprocess' }))).toEqual(sub());
+    ).toEqual({ ...sub(['a.example.com'], ['git'], true), slots: [] });
+    expect(declaredSet(manifest({ runtime: 'subprocess' }))).toEqual({ ...sub(), slots: [] });
   });
 
   // Purpose: set equality ignores order but nothing else.

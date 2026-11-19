@@ -26,6 +26,7 @@ import { bridgeExpressRouterHere } from './http/express-bridge.js';
 import { createFetchHandler } from './http/fetch-handler.js';
 import { firstAnswer, type ExtensionHttpHandler } from './http/extension-http.js';
 import { createDataProviderContext } from './extension-server-api-factory.js';
+import { recordContextDeps } from './server-bundle/extension-context-deps.js';
 import { toRecordError, type ActiveServerExtension } from './extension-manager-types.js';
 import {
   EXTENSION_NOT_APPROVED_CODE,
@@ -59,6 +60,10 @@ import { loadInProcessBundle } from './server-bundle/load-in-process.js';
 import { createIsolatedHandler } from './isolation/isolated-router.js';
 import { RestartPolicy, type RestartPolicyOptions } from './isolation/restart-policy.js';
 import { env } from '../../env.js';
+
+// The person's stored approvals as they are now: `ctx.inbox` reads its
+// allowed places through this on every call (DOR-4282).
+const storedApprovals = () => configManager.get('extensions');
 
 /**
  * Everything the running instance of an extension was built from, as one
@@ -442,17 +447,9 @@ export class ExtensionServerLifecycle {
       const router = Router();
       // Starting again lifts the stop on its messages (DOR-2683).
       getAgentSendService()?.extensionStarted(id);
-      const toolChecks = checkDeclaredTools(record.manifest);
+      const deps = recordContextDeps(id, record, this.dorkHome, storedApprovals);
       const { ctx, getScheduledCleanups, releaseListeners, dispose, tools } =
-        createDataProviderContext({
-          extensionId: id,
-          // A copy that runs by origin runs from its verified snapshot, so what
-          // it reaches relative to itself at runtime is the snapshot's too.
-          extensionDir: record.runPath ?? record.path,
-          dorkHome: this.dorkHome,
-          extensionName: record.manifest.name,
-          toolChecks,
-        });
+        createDataProviderContext(deps);
       // A register() that throws, or returns something unusable, must leave
       // nothing behind: its schedules are cancelled, its account listeners and
       // advisor released, and a late `ctx` call starts nothing. This instance
@@ -483,7 +480,7 @@ export class ExtensionServerLifecycle {
 
       // register() finished: no more handlers. Only an instance that started
       // has tools, and only the declared tools it handled (DOR-2685).
-      const agentTools = sealAgentTools(id, record.manifest.name, toolChecks, tools);
+      const agentTools = sealAgentTools(id, record.manifest.name, deps.toolChecks, tools);
 
       // Its routes first; its proxy and its fetch handler get what they pass on.
       const handler = firstAnswer(
@@ -673,16 +670,9 @@ export class ExtensionServerLifecycle {
 
     // Starting again lifts the stop on its messages (DOR-2683).
     getAgentSendService()?.extensionStarted(id);
-    const toolChecks = checkDeclaredTools(record.manifest);
+    const deps = recordContextDeps(id, record, this.dorkHome, storedApprovals);
     const connections = extensionConnections.isolatedConnectionsFor(record);
-    const built = createDataProviderContext({
-      extensionId: id,
-      extensionDir: record.runPath ?? record.path,
-      dorkHome: this.dorkHome,
-      extensionName: name,
-      toolChecks,
-      connections: connections.api,
-    });
+    const built = createDataProviderContext({ ...deps, connections: connections.api });
     const release = (): void => {
       built.tools.close();
       built.dispose();
@@ -709,7 +699,7 @@ export class ExtensionServerLifecycle {
         ctx: built.ctx,
         projectRoots: async () => (await built.ctx.projects.list()).map((p) => p.root),
         timings: { loadTimeoutMs: this.registerTimeoutMs, ...this.options.isolatedTimings },
-        tools: toolChecks,
+        tools: deps.toolChecks,
         // Its tools leave the registry before anything else of the dead
         // child is released, so a call still running fails as stopped.
         onGone: () => {
@@ -753,7 +743,7 @@ export class ExtensionServerLifecycle {
     // register() finished in the child (`registered`), and every tool it
     // bound was bound through the real ctx.tools.handle on the way: seal the
     // host's binding exactly as after an in-process register() (spec §8).
-    const agentTools = sealAgentTools(id, name, toolChecks, built.tools);
+    const agentTools = sealAgentTools(id, name, deps.toolChecks, built.tools);
     this.serverExtensions.set(id, {
       extensionId: id,
       handler: createIsolatedHandler({ displayName: name, host, proxy: this.proxyFor(id, record) }),

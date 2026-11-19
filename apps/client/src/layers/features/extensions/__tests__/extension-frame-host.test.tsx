@@ -50,11 +50,12 @@ async function call(method: string, args: unknown[], extensionId = 'atlas') {
   await port.receive({ type: 'call', extensionId, requestId: id, method, args });
   return port.messages.find((message) => (message as { requestId?: number }).requestId === id);
 }
-async function start(extra: Partial<ExtensionManifest> = {}) {
-  const result = isolatedExtensionModule('globalThis.executed = true', {
-    ...manifest,
-    ...extra,
-  }).activate(api);
+async function start(extra: Partial<ExtensionManifest> = {}, allowedSlots?: string[]) {
+  const result = isolatedExtensionModule(
+    'globalThis.executed = true',
+    { ...manifest, ...extra },
+    allowedSlots
+  ).activate(api);
   await port.receive({ type: 'ready' });
   stop = (await result) || undefined;
 }
@@ -615,6 +616,23 @@ describe('isolated app host', () => {
     await start();
     expect(await call('rooms.reply', ['room-1', 'entry-1', 'hello'])).toHaveProperty('error');
     expect(await call('forward.send', [{ text: 'hi', itemId: 'i' }])).toHaveProperty('error');
+  });
+  it('opens canvas documents only for an app that declares them and was allowed (DOR-4282)', async () => {
+    const openCanvas = vi.fn();
+    Object.assign(api, { openCanvas });
+    const note = { type: 'markdown', content: '# Notes' };
+    // Undeclared: refused, even with an allowed list naming it.
+    await start({}, ['canvas']);
+    expect(await call('openCanvas', [note])).toHaveProperty('error');
+    stop?.();
+    // Declared and not allowed yet: the same refusal, never a silent null.
+    await start({ contributions: { canvas: true } }, []);
+    expect(await call('openCanvas', [note])).toHaveProperty('error');
+    expect(openCanvas).not.toHaveBeenCalled();
+    stop?.();
+    await start({ contributions: { canvas: true } }, ['canvas']);
+    expect(await call('openCanvas', [note])).toHaveProperty('value', null);
+    expect(openCanvas).toHaveBeenCalledOnce();
   });
   it('refuses prototype names as bridge operations', async () => {
     await start();

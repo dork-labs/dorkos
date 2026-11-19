@@ -21,6 +21,10 @@ function contextFor(extensionId: string, extensionName: string) {
     extensionName,
     extensionDir: '/fake',
     dorkHome: '/tmp/dork-home-unused',
+    // The inbox is fail-closed, so the fixture declares Inbox cards and a
+    // person allowed them.
+    contributions: { inbox: true },
+    allowedPlaces: () => ['inbox'],
   });
 }
 

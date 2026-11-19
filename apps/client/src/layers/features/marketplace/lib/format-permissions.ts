@@ -18,6 +18,7 @@ import {
   type PreviewSchedule,
   type SchedulePermissionMode,
 } from '@dorkos/shared/marketplace-schemas';
+import { contributionWords } from '@dorkos/extension-api';
 import { describePreviewSchedule, runsUnattended } from '@/layers/entities/marketplace';
 
 // ---------------------------------------------------------------------------
@@ -345,10 +346,12 @@ function formatEffects(
   }
 
   for (const ext of preview.extensions) {
+    // The only places it will show in, in DorkOS's words (DOR-4282).
+    const places = contributionWords(ext.slots);
     rows.push({
       icon: 'puzzle',
       label: `Register UI extension: ${ext.id}`,
-      description: ext.slots.length > 0 ? `Slots: ${ext.slots.join(', ')}` : undefined,
+      description: places.length > 0 ? `Shows in: ${places.join(', ')}` : undefined,
     });
   }
 

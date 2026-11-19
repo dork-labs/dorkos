@@ -17,6 +17,7 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { PendingExtensionApproval } from '@dorkos/shared/extension-approval-schemas';
 import { createMockTransport } from '@dorkos/test-utils/mock-factories';
+import { STEP_UP_REQUIRED_CODE } from '@dorkos/shared/step-up';
 
 const mockNavigate = vi.fn();
 
@@ -61,6 +62,7 @@ const FLOW: PendingExtensionApproval = {
   digest: null,
   changedFiles: null,
   updatedFrom: null,
+  placesOnly: false,
 };
 
 /** What the fake server holds and what it was asked. */
@@ -421,6 +423,123 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     expect(row.querySelector('li[data-tone="new"]')).toBeNull();
     // Files only, so the title keeps today's words (DOR-4531).
     expect(screen.queryByText(WANTS_MORE_TITLE)).not.toBeInTheDocument();
+  });
+
+  // Purpose: one app that keeps running while only new places wait asks
+  // about those places alone, and never says it is paused (DOR-4282).
+  it('asks a running app only about its new places, by name', async () => {
+    waiting = [
+      {
+        ...FLOW,
+        placesOnly: true,
+        added: { net: [], run: [], agents: false, runtime: false, slots: ['pages', 'dialog'] },
+      },
+    ];
+    renderBell();
+    const user = userEvent.setup();
+    await user.click(await screen.findByTestId('inbox-bell'));
+
+    expect(await screen.findByText('Flow wants to show in new places.')).toBeInTheDocument();
+    expect(
+      screen.getByText('It keeps working meanwhile. Adds a page and dialogs.')
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/paused/i)).not.toBeInTheDocument();
+  });
+
+  // Purpose: in a grouped card, Not now collapses that row in place while the
+  // answer is sent; the card never folds away and back mid-request (DOR-4282).
+  it('keeps a two-app places card open, that row answered, while Not now is sent', async () => {
+    const placesOnly = {
+      placesOnly: true,
+      added: { net: [], run: [], agents: false, runtime: false, slots: ['pages'] },
+      runsInServer: false,
+    };
+    waiting = [
+      { ...FLOW, ...placesOnly },
+      {
+        ...FLOW,
+        ...placesOnly,
+        id: 'beacon',
+        name: 'Beacon',
+        plugin: 'beacon',
+        path: '/home/me/.dork/plugins/beacon/.dork/extensions/beacon',
+      },
+    ];
+    // The answer is never confirmed, so the card shows what it does meanwhile.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
+        String(input).endsWith('/dismiss-approval')
+          ? new Promise<Response>(() => {})
+          : fakeFetch(input, init)
+      )
+    );
+    renderBell();
+    const user = userEvent.setup();
+    await user.click(await screen.findByTestId('inbox-bell'));
+    expect(await screen.findByText('2 apps need a quick look')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Not now for Flow' }));
+
+    expect(await screen.findByText('1 app needs a quick look')).toBeInTheDocument();
+    const rows = screen.getAllByTestId(/^places-reask-row-/);
+    expect(rows.map((row) => row.dataset.testid)).toEqual([
+      'places-reask-row-flow',
+      'places-reask-row-beacon',
+    ]);
+    expect(rows[0]).toHaveTextContent('Flow · Not now');
+    expect(within(rows[0]!).queryByRole('button')).toBeNull();
+    // Beacon stays on the card, never on a card of its own.
+    expect(screen.queryByText('Beacon wants to show in new places.')).not.toBeInTheDocument();
+  });
+
+  // Purpose: a yes left on "Confirm it's you" is not undone on the card when
+  // a fresh list says it went through elsewhere (DOR-4282).
+  it('keeps an Allow that ended on Confirm it’s you until a fresh list answers', async () => {
+    const placesOnly = {
+      placesOnly: true,
+      added: { net: [], run: [], agents: false, runtime: false, slots: ['pages'] },
+      runsInServer: false,
+    };
+    const beacon = {
+      ...FLOW,
+      ...placesOnly,
+      id: 'beacon',
+      name: 'Beacon',
+      plugin: 'beacon',
+      path: '/home/me/.dork/plugins/beacon/.dork/extensions/beacon',
+    };
+    waiting = [{ ...FLOW, ...placesOnly }, beacon];
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (!String(input).endsWith('/extensions/flow/approve')) return fakeFetch(input, init);
+      // Confirmed on another screen: the server no longer lists it.
+      waiting = [beacon];
+      return Promise.resolve(
+        new Response(JSON.stringify({ error: 'Confirm it’s you.', code: STEP_UP_REQUIRED_CODE }), {
+          status: 428,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    renderBell();
+    const user = userEvent.setup();
+    await user.click(await screen.findByTestId('inbox-bell'));
+    expect(await screen.findByText('2 apps need a quick look')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Allow Flow' }));
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/flow/approve'))).toBe(true)
+    );
+    // Let the refusal and the fresh list settle.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    const row = screen.getByTestId('places-reask-row-flow');
+    expect(row).toHaveTextContent('Flow · Allowed');
+    expect(within(row).queryByRole('button')).toBeNull();
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
   });
 
   it('opens ⓘ in place with the consent sentence and the way to Settings', async () => {

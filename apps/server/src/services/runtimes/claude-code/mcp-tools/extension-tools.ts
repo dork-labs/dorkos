@@ -92,27 +92,16 @@ interface ExtensionAPI {
 }
 \`\`\`
 
-## ExtensionPointId (Available Slots)
+## Places: manifest \`contributions\`
 
-\`\`\`typescript
-type ExtensionPointId =
-  | 'sidebar.footer'
-  | 'dashboard.sections'
-  | 'command-palette.items'
-  | 'dialog'
-  | 'settings.tabs'
-  | 'right-panel';
-\`\`\`
+Set every place the app uses to true, e.g. \`{ "contributions": { "pages": true } }\`.
+DorkOS refuses any other registration, names each place on the approval card, and asks
+again when an update adds one. Keys: pages, right-panel, dashboard.sections, settings.tabs,
+status-bar, command-palette.items, dialog, sidebar.footer, canvas, inbox (ctx.inbox).
+DorkOS draws the app's name on its dialogs and ⌘K rows. Names starting with DorkOS, or
+DorkOS page names (Settings, Inbox, Tasks, Apps...), are refused.
 
-## ExtensionReadableState
-
-\`\`\`typescript
-interface ExtensionReadableState {
-  currentCwd: string | null;
-  activeSessionId: string | null;
-  agentId: string | null;
-}
-\`\`\`
+ExtensionReadableState: \`{ currentCwd, activeSessionId, agentId }\`, each string or null.
 
 ## ExtensionEvent (curated, privacy-safe)
 
@@ -150,13 +139,6 @@ Manifest declaration (a category grants all its kinds):
 
 ## Usage Examples
 
-### Dashboard Section
-\`\`\`typescript
-export function activate(api: ExtensionAPI) {
-  api.registerComponent('dashboard.sections', 'my-section', MyComponent, { priority: 50 });
-}
-\`\`\`
-
 ### Right-Panel Tab (contextual inspector)
 \`\`\`typescript
 export function activate(api: ExtensionAPI) {
@@ -176,13 +158,6 @@ export function activate(api: ExtensionAPI) {
   api.registerCommand('greet', 'Say Hello', () => {
     api.notify('Hello from my extension!', { type: 'success' });
   });
-}
-\`\`\`
-
-### Settings Tab with Persistence
-\`\`\`typescript
-export function activate(api: ExtensionAPI) {
-  api.registerSettingsTab('config', 'My Settings', MySettingsPanel);
 }
 \`\`\`
 

@@ -51,6 +51,8 @@ export interface ExtensionRowProps {
   isRemoving?: boolean;
   /** Draw its chip in the neutral tone: a row inside a plugin group, beside the group's count. */
   quietChip?: boolean;
+  /** Whether the Marketplace's last check found a newer version of it. */
+  updateAvailable?: boolean;
 }
 
 /** Open: 200ms ease-out. Close: 150ms ease-in. Instant under reduced motion. */
@@ -90,6 +92,7 @@ export function ExtensionRow({
   onRemove,
   isRemoving,
   quietChip = false,
+  updateAvailable = false,
 }: ExtensionRowProps) {
   const { manifest } = extension;
   const state = extensionRowState(extension);
@@ -328,6 +331,8 @@ export function ExtensionRow({
                   stepUpRisk={stepUpRisk}
                   onRemove={onRemove ? () => onRemove(extension.id) : undefined}
                   isRemoving={isRemoving}
+                  onAllowNewPlaces={() => onSetRunApproval(extension.id, true)}
+                  updateAvailable={updateAvailable}
                 />
               )}
             </div>

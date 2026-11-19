@@ -17,6 +17,7 @@ import { normalizeTrustedSource } from '../../marketplace/lib/trusted-source.js'
 import type { CoreExtensionInfo, ExtensionsConfig } from '../extension-enable-resolution.js';
 import { logger } from '../../../lib/logger.js';
 import { MARKETPLACE_BACKUP_DIR_MARKER } from '@dorkos/shared/marketplace-schemas';
+import { RESERVED_APP_NAME_CODE, RESERVED_APP_NAME_MESSAGE } from '@dorkos/extension-api';
 
 /** No user overrides. */
 const EMPTY_CONFIG: ExtensionsConfig = { enabled: [], disabled: [], approvedToRun: [] };
@@ -440,6 +441,53 @@ describe('ExtensionDiscovery', () => {
 
     expect(results).toHaveLength(1);
     expect(results[0].id).toBe('real-ext');
+  });
+
+  describe('names that are DorkOS’s own (DOR-4282)', () => {
+    it.each([['DorkOS Helper'], ['Dork​OS'], ['DоrkOS'], ['Settings'], ['settings ']])(
+      'does not load an app named %j, and says why',
+      async (name) => {
+        await writeManifest(path.join(dorkHome, 'extensions', 'lookalike'), {
+          id: 'lookalike',
+          name,
+          version: '1.0.0',
+        });
+
+        const [record] = await discovery.discover(null, EMPTY_CONFIG, EMPTY_CORE);
+
+        expect(record).toMatchObject({
+          id: 'lookalike',
+          origin: 'user',
+          status: 'invalid',
+          error: { code: RESERVED_APP_NAME_CODE, message: RESERVED_APP_NAME_MESSAGE },
+        });
+      }
+    );
+
+    it('loads an ordinary name that starts with Dork', async () => {
+      await writeManifest(path.join(dorkHome, 'extensions', 'dork-notes'), {
+        id: 'dork-notes',
+        name: 'Dork Notes',
+        version: '1.0.0',
+      });
+
+      const [record] = await discovery.discover(null, EMPTY_CONFIG, EMPTY_CORE);
+
+      expect(record).toMatchObject({ id: 'dork-notes', status: 'disabled' });
+    });
+
+    it('lets DorkOS’s own staged app carry its name', async () => {
+      await writeManifest(path.join(dorkHome, 'extensions', 'marketplace'), {
+        id: 'marketplace',
+        name: 'DorkOS Marketplace',
+        version: '1.0.0',
+      });
+
+      const core = coreMap({ id: 'marketplace', defaultEnabled: true, canDisable: true });
+      const [record] = await discovery.discover(null, EMPTY_CONFIG, core);
+
+      expect(record).toMatchObject({ id: 'marketplace', origin: 'core', status: 'enabled' });
+    });
   });
 
   describe('tier-aware status and origin', () => {

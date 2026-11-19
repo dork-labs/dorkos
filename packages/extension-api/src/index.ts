@@ -25,6 +25,24 @@ export {
   ISOLATION_MEMORY_MB,
 } from './manifest-schema.js';
 export {
+  EXTENSION_CONTRIBUTION_KEYS,
+  GRACE_CONTRIBUTION_KEYS,
+  CONTRIBUTION_WORDS,
+  contributionWords,
+  declaredContributions,
+  declaresContribution,
+  isContributionKey,
+} from './contribution-slots.js';
+export type { ExtensionContributionKey } from './contribution-slots.js';
+export {
+  normalizedAppName,
+  reservedAppNameProblem,
+  RESERVED_APP_NAME_CODE,
+  RESERVED_APP_NAME_MESSAGE,
+  MIXED_SCRIPT_APP_NAME_MESSAGE,
+  UNUSUAL_LETTER_APP_NAME_MESSAGE,
+} from './reserved-names.js';
+export {
   parseNetEntry,
   isNetEntryError,
   formatNetEntry,

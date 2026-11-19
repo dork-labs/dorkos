@@ -121,6 +121,7 @@ export function PaletteResultRow({
           >
             {Icon && <Icon className="size-4" />}
             <span>{item.data.label}</span>
+            {item.data.appName && <PaletteAppName name={item.data.appName} />}
             {item.data.shortcut && (
               <span className="text-muted-foreground ml-auto text-xs">{item.data.shortcut}</span>
             )}
@@ -164,6 +165,20 @@ export function PaletteResultRow({
       );
     }
   }
+}
+
+/**
+ * The app a command came from, after its label: "· Planner" (DOR-4282). The
+ * name is DorkOS's record of the app, so every app command names its app. The
+ * dot is for the eye; a reader hears the label, then the app's name.
+ */
+function PaletteAppName({ name }: { name: string }) {
+  return (
+    <span className="text-muted-foreground min-w-0 truncate text-xs" title={name}>
+      <span aria-hidden>· </span>
+      {name}
+    </span>
+  );
 }
 
 /**

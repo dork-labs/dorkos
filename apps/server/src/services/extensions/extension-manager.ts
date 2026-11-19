@@ -1334,11 +1334,11 @@ export class ExtensionManager {
 
   /**
    * Re-read a digest-pinned copy's live files before a load (DOR-3068). On a
-   * change, its server half stops and it waits for a person, so an edit made
-   * after the last scan never runs.
+   * change, its server half stops and it waits, so an edit made after the
+   * last scan never runs; a change no scan has seen yet asks for one.
    */
   private async recheckPin(record: ExtensionRecord): Promise<void> {
-    if (await recheckAtItsLevel(this.dorkHome, record)) return;
+    if (await recheckAtItsLevel(this.dorkHome, record, () => this.requestRefresh())) return;
     logger.warn(`[Extensions] ${record.id} changed since a person approved it; it waits for them`);
     await this.serverLifecycle.shutdown(record.id);
     this.emitChanged();

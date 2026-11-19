@@ -6,6 +6,7 @@ import { useMenuExtensionPages, useSlotContributions } from '@/layers/shared/mod
 import { extensionPageHref, SETTINGS_TAB_DIRECTORY, settingsTabsFor } from '@/layers/shared/lib';
 import { useIsHub } from '@/layers/entities/config';
 import { useAppCatalogSnapshot, type AppTarget } from '@/layers/entities/extension';
+import { useExtensionNames } from '@/layers/shared/lib/extension-names';
 // Deep, because the day boundary is off the `shared/lib` barrel on purpose —
 // see that barrel's note beside it.
 import { overnightBoundary } from '@/layers/shared/lib/overnight-boundary';
@@ -36,6 +37,11 @@ export interface FeatureItem {
   action: string;
   /** Extra search terms beyond `label` — see `CommandPaletteContribution.keywords`. */
   keywords?: string[];
+  /**
+   * The name of the app that added this command, from DorkOS's record of it,
+   * drawn after the label. Absent on DorkOS's own commands.
+   */
+  appName?: string;
 }
 
 export interface QuickActionItem {
@@ -216,17 +222,27 @@ export function usePaletteItems(activeCwd: string | null, now: number): PaletteI
 
   // On a hub, no row leads to a Settings tab that is not there.
   const isHub = useIsHub();
-  const features = useMemo(() => {
+  // An app's command carries the app's name, looked up by the id DorkOS stamped
+  // on it (DOR-4282), from the names the loader keeps. Until a name is known
+  // the row shows none, never the raw id.
+  const appNames = useExtensionNames();
+  const features = useMemo<FeatureItem[]>(() => {
     const shown = new Set<string>(settingsTabsFor(isHub).map((tab) => tab.id));
     const hidden = new Set<string>(
       SETTINGS_TAB_DIRECTORY.map((tab) => tab.id).filter((id) => !shown.has(id))
     );
-    return allPaletteItems.filter((item) => {
-      if (item.category !== 'feature') return false;
-      const tab = settingsTabForAction(item.action);
-      return tab === null || !hidden.has(tab);
-    });
-  }, [allPaletteItems, isHub]);
+    return allPaletteItems
+      .filter((item) => {
+        if (item.category !== 'feature') return false;
+        const tab = settingsTabForAction(item.action);
+        return tab === null || !hidden.has(tab);
+      })
+      .map((item) => {
+        const id = item.extensionId;
+        const appName = id && Object.hasOwn(appNames, id) ? appNames[id].trim() : '';
+        return appName ? { ...item, appName } : item;
+      });
+  }, [allPaletteItems, isHub, appNames]);
 
   // Remote access contributes rows that only make sense while it is in a
   // particular state, so they are derived per render rather than registered

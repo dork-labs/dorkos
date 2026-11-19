@@ -310,6 +310,24 @@ export interface ExtensionRecordPublic {
    */
   screensPaused?: boolean;
   /**
+   * Its files changed after DorkOS last checked them (DOR-4282): it is paused
+   * until the next check decides whether it keeps running with new places
+   * waiting or asks again. Settings says it is checking and offers no Allow.
+   * Absent otherwise, and from an older server.
+   */
+  awaitingScan?: boolean;
+  /**
+   * The places it may show in right now, as DorkOS's records decide
+   * (DOR-4282): each place it declares that a person allowed, in card order.
+   * A place it declares that is not here waits for a person while the rest
+   * of the app runs. It may also hold `pages`, `right-panel` or
+   * `settings.tabs` without the manifest declaring them, for an app approved
+   * before places were recorded whose files have not changed since (Settings
+   * asks for an update). The screen shows the app nowhere else; absent shows
+   * it nowhere.
+   */
+  allowedSlots?: string[];
+  /**
    * The path of the newer copy that runs instead of this one, or `null` when
    * this is the copy that runs (spec `flow-multiproject` §9.2). Informational:
    * when the same extension is installed in several projects from one trusted
