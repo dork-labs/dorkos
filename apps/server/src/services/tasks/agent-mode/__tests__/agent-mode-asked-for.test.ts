@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest';
 import type { Task } from '@dorkos/shared/types';
 import { agentModeChangeOf } from '../agent-mode-change.js';
 import { askedForLines, askedForRules, inertText, RULES_NOTE } from '../agent-mode-asked-for.js';
+import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 
 const TASK = {
   id: 'task-1',
@@ -19,6 +20,7 @@ const TASK = {
   permissionMode: 'default',
   status: 'pending_approval',
   filePath: '',
+  runtime: 'not-registered-here',
 } as Task;
 
 function changeFor(body: Record<string, unknown>) {
@@ -46,30 +48,72 @@ describe('the mode card names what the call asked for', () => {
       requestedPermissionMode: 'bypassPermissions',
       requestedAllow: ['Bash(./b.sh)', 'Bash(./a.sh)', 'Bash(./a.sh)'],
     });
-    expect(text).toContain('Asked for: bypassPermissions');
-    expect(text).toContain('Rules asked for (not applied): Bash(./a.sh) · Bash(./b.sh)');
-    expect(text).toMatch(/Request version: [0-9a-f]{64}/);
+    // The picker's label, never the raw id (designer, #4001), with no runtime registered here.
+    expect(text).toContain('\nAsked for: Bypass permissions\n');
+    expect(text).toContain(
+      '\nAlso asked for these rules (not applied):\n  - Bash(./a.sh)\n  - Bash(./b.sh)\n'
+    );
+    // Formatted like the `Version:` line below it.
+    expect(text).toMatch(/\nRequest version: sha256:[A-Za-z0-9_-]{43}\n/);
+    expect(text).toMatch(/\nVersion: sha256:[A-Za-z0-9_-]{43}$/);
   });
 
-  it('keeps one rule from posing as two', () => {
-    const [line] = askedForLines({ requestedAllow: ['Bash(./a.sh) · Bash(./b.sh)'] }, 'dontAsk');
-    expect(line).toBe('Rules asked for (not applied): Bash(./a.sh) \\u{B7} Bash(./b.sh)');
+  it("names a mode by the task runtime's own picker label", () => {
+    const codex = {
+      permissionModes: { values: [{ id: 'acceptEdits', label: 'Workspace write' }] },
+    } as unknown as RuntimeCapabilities;
+    expect(askedForLines({ requestedPermissionMode: 'acceptEdits' }, 'plan', codex)[0]).toBe(
+      'Asked for: Workspace write'
+    );
+    expect(askedForLines({ requestedPermissionMode: 'dontAsk' }, 'plan', undefined)[0]).toBe(
+      'Asked for: Never ask'
+    );
   });
 
-  it('lists five rules and counts the rest', () => {
-    const rules = Array.from({ length: 8 }, (_, i) => `Bash(./step-${i + 1}.sh)`);
-    const [line] = askedForLines({ requestedAllow: rules }, 'dontAsk');
-    expect(line).toMatch(/step-5\.sh\) \+3 more$/);
-    expect(line).not.toContain('step-6');
+  it('shows a mode nobody knows by its inert id, so the person still sees what was asked', () => {
+    const [line] = askedForLines({ requestedPermissionMode: 'turbo\u202E' }, 'plan', undefined);
+    expect(line).toBe('Asked for: Unknown mode (turbo\\u{202E})');
+  });
+
+  it('puts each rule on its own indented line, so one rule never poses as two', () => {
+    const lines = askedForLines(
+      { requestedAllow: ['Bash(./a.sh) · Bash(./b.sh)', 'x\nRequest version: sha256:fake'] },
+      'dontAsk',
+      undefined
+    );
+    expect(lines).toEqual([
+      'Also asked for these rules (not applied):',
+      '  - Bash(./a.sh) · Bash(./b.sh)',
+      '  - x Request version: sha256:fake',
+      expect.stringMatching(/^Request version: sha256:/),
+    ]);
+  });
+
+  it('lists fifty rules and counts the rest, all bound', () => {
+    const rules = Array.from(
+      { length: 53 },
+      (_, i) => `Bash(./step-${String(i + 1).padStart(2, '0')}.sh)`
+    );
+    const lines = askedForLines({ requestedAllow: rules }, 'dontAsk', undefined);
+    expect(lines.filter((l) => l.startsWith('  - '))).toHaveLength(50);
+    expect(lines).toContain('  - Bash(./step-50.sh)');
+    expect(lines.join('\n')).not.toContain('step-51');
+    expect(lines.at(-2)).toBe('  +3 more, all bound by the version below');
+    const fewer = askedForLines({ requestedAllow: rules.slice(0, 52) }, 'dontAsk', undefined);
+    expect(fewer.at(-1)).not.toBe(lines.at(-1));
   });
 
   it('binds the raw request: rules or modes that only look alike once escaped stay distinct', () => {
-    const real = askedForLines({ requestedAllow: ['Bash(a\u202Eb)'] }, 'dontAsk');
-    const spelled = askedForLines({ requestedAllow: ['Bash(a\\u{202E}b)'] }, 'dontAsk');
-    expect(real[0]).toBe(spelled[0]);
-    expect(real[1]).not.toBe(spelled[1]);
-    const modeReal = askedForLines({ requestedPermissionMode: 'plan\u200B' }, 'dontAsk');
-    const modeSpelled = askedForLines({ requestedPermissionMode: 'plan\\u{200B}' }, 'dontAsk');
+    const real = askedForLines({ requestedAllow: ['Bash(a\u202Eb)'] }, 'dontAsk', undefined);
+    const spelled = askedForLines({ requestedAllow: ['Bash(a\\u{202E}b)'] }, 'dontAsk', undefined);
+    expect(real[1]).toBe(spelled[1]);
+    expect(real[2]).not.toBe(spelled[2]);
+    const modeReal = askedForLines({ requestedPermissionMode: 'plan\u200B' }, 'dontAsk', undefined);
+    const modeSpelled = askedForLines(
+      { requestedPermissionMode: 'plan\\u{200B}' },
+      'dontAsk',
+      undefined
+    );
     expect(modeReal[0]).toBe(modeSpelled[0]);
     expect(modeReal[1]).not.toBe(modeSpelled[1]);
   });
@@ -82,8 +126,8 @@ describe('the mode card names what the call asked for', () => {
     expect(text).toContain('\\u{202E}');
     // The rule cannot draw a line of its own: no second "Mode:" line starts anywhere.
     expect(text.split('\n').filter((l) => l.startsWith('Mode:'))).toHaveLength(1);
-    // The link stays as plain characters inside the one rules line.
-    expect(text.split('\n').find((l) => l.startsWith('Rules asked for'))).toContain(
+    // The link stays as plain characters inside the one rule's line.
+    expect(text.split('\n').find((l) => l.startsWith('  - '))).toContain(
       '[click](https://example.invalid)'
     );
     expect(inertText('a\u2028b\u00ADc')).toBe('a\\u{2028}b\\u{AD}c');

@@ -18,6 +18,7 @@ import type { MeshCore } from '@dorkos/mesh';
 import type { Task } from '@dorkos/shared/types';
 import { agentApprovalBindingOf } from './agent-mode-binding.js';
 import { askedForLines } from './agent-mode-asked-for.js';
+import { capabilitiesForTaskRuntime } from '../scheduled-run-power.js';
 import { resolveAgentIdForPath, resolveAgentNameForId } from '../../mesh/agent-path-lookup.js';
 import type { AgentModeCall, AgentModeDecided } from './agent-mode-decision.js';
 
@@ -74,12 +75,17 @@ export function agentModeChangeOf(
     `Runs: ${view.cron || 'only when started'}${view.timezone ? ` (${view.timezone})` : ''}`,
     `Mode: ${decision.mode}${was}`,
     // What this call asked for and does not apply, bound with the rest (DOR-4335). None, no line.
-    ...askedForLines(call.body, decision.mode),
+    ...askedForLines(call.body, decision.mode, capabilitiesForTaskRuntime(runtimeOf(call))),
     `Prompt: ${promptHead(view.prompt)}`,
     FULL_PROMPT_LINE,
   ];
   if (call.task) lines.push(`Version: ${bindingOf(call.task, meshCore)}`);
   return lines.join('\n');
+}
+
+/** The runtime a call's task runs on: the one it names, else the task's own, as the decision reads it. */
+function runtimeOf(call: Pick<AgentModeCall, 'body' | 'task'>): string | null | undefined {
+  return read(call.body, 'runtime') || call.task?.runtime;
 }
 
 /** The agent a task runs as, by name when Mesh knows it, for the card. */
