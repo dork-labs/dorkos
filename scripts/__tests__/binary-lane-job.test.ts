@@ -136,7 +136,7 @@ describe('the shards exclude exactly the binary suites', () => {
 
 describe('test-binary and codex-sandbox together run exactly the binary suites', () => {
   it('the plan is every binary suite outside codex/, on the queue and the canary', () => {
-    for (const EVENT of ['merge_group', 'schedule', 'workflow_dispatch']) {
+    for (const EVENT of ['merge_group', 'schedule', 'workflow_dispatch', 'release_pull_request']) {
       const { run, files } = plan({ EVENT });
       expect(run).toBe('true');
       expect(files).toEqual(trackedBinarySuites().filter((file) => !file.includes('/codex/')));

@@ -217,9 +217,12 @@ describe('how many shards a run gets (ledger 261031-150702)', () => {
     );
     expect(workflow).toMatch(/^ {6}matrix: \$\{\{ steps\.count\.outputs\.matrix \}\}$/m);
   });
-  it.each(['merge_group', 'schedule', 'workflow_dispatch'])('%s always gets six', (event) => {
-    expect(pick(event, { kind: 'none' })).toEqual(SIX);
-  });
+  it.each(['merge_group', 'schedule', 'workflow_dispatch', 'release_pull_request'])(
+    '%s always gets six',
+    (event) => {
+      expect(pick(event, { kind: 'none' })).toEqual(SIX);
+    }
+  );
   // The last four are files `turbo --affected` reads as touching every package
   // (#3361 ran all 33 suites on two shards for a turbo.json edit).
   it.each([
