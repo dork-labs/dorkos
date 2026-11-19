@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(extensions): an app plays long video in its frame, with seeking (DOR-4321)'
+  - "fix(auth): the video-link exemption matches only the route's exact spelling (DOR-4321)"
 ---
 
 ### Added

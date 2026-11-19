@@ -150,16 +150,22 @@ function isGatedHealthPath(path: string): boolean {
 }
 
 /**
- * A media URL with a whole ticket (43 base64url characters), lowercased as the
- * gate sees every path.
+ * A media URL with a whole ticket (43 base64url characters), matched on the
+ * path exactly as the router sees it, case and all: the router is
+ * case-sensitive, so this is the only spelling that reaches the media route,
+ * and no other spelling (`/api/extensions/MEDIA/…`) is ever exempt.
  */
-const MEDIA_TICKET_PATH = /^\/api\/extensions\/media\/[a-z0-9_-]{43}$/;
+const MEDIA_TICKET_PATH = /^\/api\/extensions\/media\/[A-Za-z0-9_-]{43}$/;
 
 /**
  * Paths that always pass while login is enabled: the Better Auth endpoints (so
  * sign-in is reachable), the health probe, and on a hub the link path.
+ *
+ * @param path - The path, lowercased.
+ * @param exactPath - The same path in its original case, for the one
+ *   exemption that must match it exactly.
  */
-function isExemptPath(path: string): boolean {
+function isExemptPath(path: string, exactPath: string): boolean {
   if (isGatedHealthPath(path)) return false;
   return (
     path.startsWith('/api/auth/') ||
@@ -168,7 +174,7 @@ function isExemptPath(path: string): boolean {
     // Signed-token-authorized embedded-browser content (see the module doc).
     path.startsWith('/api/workbench/serve/') ||
     // A video an app's frame plays, by its ticket (see the module doc).
-    MEDIA_TICKET_PATH.test(path) ||
+    MEDIA_TICKET_PATH.test(exactPath) ||
     // A computer redeeming a link code, on a hub only (see the module doc).
     (path === RELAY_LINK_PATH && currentServerRole() === 'hub') ||
     // A new approvals passkey coming back to this computer (see the module doc).
@@ -361,7 +367,7 @@ export async function decideSessionGate(
   // Only the API surface and the MCP endpoint are gated; SPA assets pass so the
   // login screen can load. The Better Auth endpoints and the health probe are
   // always reachable.
-  if (!isSessionGatedPath(lowered) || isExemptPath(lowered)) return { allowed: true };
+  if (!isSessionGatedPath(lowered) || isExemptPath(lowered, path)) return { allowed: true };
 
   if (access === 'refused') return { allowed: false };
 

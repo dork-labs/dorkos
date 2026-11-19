@@ -303,6 +303,11 @@ describe('the session gate — /api/* and /mcp credential gate (integration)', (
       ['an app called media', '/api/extensions/media/secrets'],
       ['the mint of an app called media', '/api/extensions/media/media-tickets'],
       ['another app', `/api/extensions/clips/${TICKET}`],
+      // Only the router's own spelling is exempt, so a later
+      // `/api/extensions/:id/:param` route never loses the cookie gate.
+      ['the route in capitals', `/api/extensions/MEDIA/${TICKET}`],
+      ['the route in mixed case', `/api/extensions/Media/${TICKET}`],
+      ['the prefix in capitals', `/API/Extensions/media/${TICKET}`],
     ])('gates %s', async (_name, path) => {
       setAuthEnabled(true);
       const res = await request(fixtureServer).get(path);
