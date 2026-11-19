@@ -114,6 +114,8 @@ describe('TaskRow viewer-local timing', () => {
     expect(document.body).toHaveTextContent(/Daily at 2:30 AM · Next .* 2:30 AM/);
     expect(document.body.textContent).not.toContain('UTC · Next');
     expect(document.body.textContent).not.toContain(':00 AM CST');
+    // The next run wraps as one piece, never between "Next" and its time (DOR-4483).
+    expect(document.querySelector('[data-slot="task-next-run"]')).toHaveClass('whitespace-nowrap');
   });
 
   it('words the next run the way the Needs you card does (DOR-4483)', () => {

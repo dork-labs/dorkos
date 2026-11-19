@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(tasks): a schedule's next run reads the same on the Schedules list and in Needs you (DOR-4483)"
+  - "fix(tasks): a schedule's next run wraps as one piece on a narrow screen (DOR-4483)"
 ---
 
 ### Fixed
