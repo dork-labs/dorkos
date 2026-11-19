@@ -1168,11 +1168,11 @@ export const CONFIG_MIGRATIONS = {
   // to `todo_promises.add|update|list`, and touches nothing else (DOR-3933).
   // See `renameTodoPromiseActions`.
   '0.133.0': renameTodoPromiseActions,
-  // v0.137.0 is cut before this lands, so this opens 0.138.0. Frozen from
-  // merge; anything further opens `'0.139.0'`.
+  // v0.138.0 is cut before this lands, so this opens 0.139.0. Frozen from
+  // merge; anything further opens `'0.140.0'`.
   //
   // Writes `runtimes.loadGate` with its shipped settings where the stored
   // `runtimes` section lacks it, and touches nothing else (DOR-4209). See
   // `seedLoadGate`.
-  '0.138.0': seedLoadGate,
+  '0.139.0': seedLoadGate,
 } as const;
