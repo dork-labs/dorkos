@@ -116,33 +116,33 @@ export function scheduleClockTime(instant: Date, timeZone?: string | null): stri
     .replace(/^0/, '');
 }
 
-/** A calendar day key (`2026-11-11`) in a time zone, or the local one. */
-function dayKey(instant: Date, timeZone?: string | null): string {
-  return instant.toLocaleDateString('en-CA', {
+/** A calendar day number in a time zone, or the local one, read with `formatToParts`. */
+function calendarDay(instant: Date, timeZone?: string | null): number {
+  const parts: Record<string, number> = {};
+  for (const part of new Intl.DateTimeFormat('en-US', {
     year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
+    month: 'numeric',
+    day: 'numeric',
     ...(timeZone ? { timeZone } : {}),
-  });
-}
-
-/** Whole calendar days from `now` to `instant`, in the given zone. */
-function daysAhead(instant: Date, now: Date, timeZone?: string | null): number {
-  return Math.round(
-    (Date.parse(dayKey(instant, timeZone)) - Date.parse(dayKey(now, timeZone))) / 86_400_000
-  );
+  }).formatToParts(instant)) {
+    if (part.type === 'year' || part.type === 'month' || part.type === 'day') {
+      parts[part.type] = Number(part.value);
+    }
+  }
+  return Date.UTC(parts.year!, parts.month! - 1, parts.day!) / 86_400_000;
 }
 
 /**
- * "Next try 12:00 PM." for the Needs you card: 12-hour, with a day when it
- * isn't today ("tomorrow at 9:00 AM", "Sat at 9:00 AM", "Nov 25 at 9:00 AM").
- * Every space is a no-break space, so the clause wraps as one piece.
+ * When a schedule runs next, in the one wording every surface uses
+ * (DOR-4483): a 12-hour time, with a day when it isn't today ("12:00 PM",
+ * "tomorrow at 9:00 AM", "Sat at 9:00 AM", "Nov 25 at 9:00 AM"). A past
+ * instant names its date.
  *
- * @param instant - When the schedule tries again.
+ * @param instant - When the schedule runs next.
  * @param now - The current time.
  * @param timeZone - The zone to read days and hours in; the local one when omitted.
  */
-export function scheduleNextTry(instant: Date, now: Date, timeZone?: string | null): string {
+export function nextRunWhen(instant: Date, now: Date, timeZone?: string | null): string {
   const zone = timeZone ? { timeZone } : {};
   const time = instant.toLocaleTimeString('en-US', {
     hour: 'numeric',
@@ -150,16 +150,30 @@ export function scheduleNextTry(instant: Date, now: Date, timeZone?: string | nu
     hour12: true,
     ...zone,
   });
-  const days = daysAhead(instant, now, timeZone);
+  const days = calendarDay(instant, timeZone) - calendarDay(now, timeZone);
+  // A time alone means today. A run already past (the computer slept, the
+  // server was down) names its date, so it never reads as later today.
   const day =
-    days <= 0
+    days === 0
       ? null
       : days === 1
         ? 'tomorrow'
-        : days < 7
+        : days > 1 && days < 7
           ? instant.toLocaleDateString('en-US', { weekday: 'short', ...zone })
           : instant.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...zone });
-  return `Next try ${day ? `${day} at ` : ''}${time}.`.replace(/\s/g, '\u00a0');
+  return day ? `${day} at ${time}` : time;
+}
+
+/**
+ * "Next try 12:00 PM." for the Needs you card, worded by {@link nextRunWhen}.
+ * Every space is a no-break space, so the clause wraps as one piece.
+ *
+ * @param instant - When the schedule tries again.
+ * @param now - The current time.
+ * @param timeZone - The zone to read days and hours in; the local one when omitted.
+ */
+export function scheduleNextTry(instant: Date, now: Date, timeZone?: string | null): string {
+  return `Next try ${nextRunWhen(instant, now, timeZone)}.`.replace(/\s/g, '\u00a0');
 }
 
 /**
