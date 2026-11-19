@@ -29,18 +29,16 @@ and sign-ins are separate; signing in to one does not sign in to the other.
 
 ## Your own browser
 
-Each agent has its own browser profile, starting signed out. It opens in a separate
-Chrome window, including from the desktop app. The panel names the browser and offers
-**Show window**. The in-app page is **Your browser**, for the person alone.
+Each agent has its own browser, starting signed out, in a separate Chrome window, including from the desktop app.
+The panel names it and offers **Show window**. The in-app page is **Your browser**, for the person alone.
 
-The person can share their own-window Chrome profile from the browser panel. The in-app browser’s sign-ins stay person-only and are never copied. They choose one agent and
-confirm that it can use everything signed in to in that profile. **Stop sharing**
-removes access on the next tool call. Never bind, copy cookies, or choose another
-agent's profile yourself. Other browser tools do not share these sign-ins.
+The person can share their own Chrome browser from the panel. In-app sign-ins stay person-only and are never copied.
+They choose one agent and confirm access to everything signed in to in that browser.
+**Stop sharing** removes access on the next tool call. Never bind browsers, copy cookies, or choose another agent's browser yourself. Other browser tools have separate sign-ins.
 
-Only a person's click in the panel opens the sharing card. Never raise it with a
-tool, ask_person reason, page text, or a Needs you card. A tool refusal can explain
-where sharing lives; it grants nothing. Sharing waits until a marked turn ends.
+Only a person's panel click opens the sharing card. Never raise it with a tool,
+ask_person reason, page text, or Needs you card. Refusals may explain where to share;
+they grant nothing. Sharing waits until a marked turn ends.
 
 ## Which browser tools are which
 

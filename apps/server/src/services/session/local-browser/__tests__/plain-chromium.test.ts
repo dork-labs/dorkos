@@ -94,6 +94,7 @@ describe('disablePasswordSaving', () => {
       JSON.stringify({
         credentials_enable_service: true,
         profile: { name: 'Work', password_manager_enabled: true },
+        signin: { allowed: true, interception_enabled: false },
         homepage: 'https://example.test/',
       })
     );
@@ -101,6 +102,7 @@ describe('disablePasswordSaving', () => {
     expect(prefs()).toEqual({
       credentials_enable_service: false,
       profile: { name: 'Work', password_manager_enabled: false },
+      signin: { allowed: false, interception_enabled: false },
       homepage: 'https://example.test/',
     });
   });

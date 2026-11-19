@@ -446,8 +446,12 @@ export interface OperatingSkill {
  *   code, gives the reach list while approval waits, and names the app on every ⌘K
  *   label and dialog. An agent seeded at 60 would believe DorkOS refuses a marked turn's
  *   build, and that every server-code change at Full runs at once.
+ * - 62: `using-the-agent-browser` teaches per-agent browsers (DOR-4741): each agent
+ *   opens its own signed-out profile in its own Chrome window, the in-app panel is
+ *   the person's "Your browser", and only the person can share theirs. An agent
+ *   seeded at 61 would expect the person's sign-ins and the panel view.
  */
-export const OPERATING_SKILLS_VERSION = 61;
+export const OPERATING_SKILLS_VERSION = 62;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

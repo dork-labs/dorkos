@@ -177,6 +177,7 @@ describe('pinned managed browser preparation', () => {
         chromiumSandbox: true,
         // Keep the pinned feature overrides and allow only the theme extension.
         args: [
+          '--disable-sync',
           `${defaultFeatures},HttpsUpgrades,HttpsFirstBalancedModeAutoEnable`,
           `--disable-extensions-except=${path.join('.agent-window-theme')}`,
           `--load-extension=${path.join('.agent-window-theme')}`,
