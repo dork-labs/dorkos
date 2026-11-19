@@ -682,6 +682,14 @@ jobs:
       - name: No-code scope fixtures
         run: bash scripts/test-no-code-scope.sh
 
+      # release-branch-contents.sh is the rule for what a pull request into a
+      # release/v<X.Y.Z> branch may carry (DOR-4639): only cherry-picks of main
+      # with a matching patch-id and the release commit. A rule that quietly
+      # loosens lets a commit main never saw ship to npm. Hermetic (throwaway
+      # repos with a local origin), git and jq, no pnpm.
+      - name: Release-branch contents fixtures
+        run: bash scripts/test-release-branch-contents.sh
+
   # The TypeScript under scripts/ belongs to no pnpm workspace, so `pnpm verify`'s
   # affected-only turbo run resolves a scripts-only change to 0 affected packages
   # and covers none of it. Without this job the Q3 harness — its overlap and work

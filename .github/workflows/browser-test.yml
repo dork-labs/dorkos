@@ -100,6 +100,28 @@ name: browser-test
 # coverage is actually worth given GitHub's throttling are in test.yml's
 # matching header; the crons here are the same four hours, offset by minutes so
 # the four canary workflows do not ask for runners in the same second.
+# PULL REQUESTS INTO A RELEASE BRANCH RUN THE FULL SWEEP (DOR-4639).
+#
+# Releases ship from `release/v<X.Y.Z>` branches cut from a QA-pinned main
+# commit (decision DOR-4636), and changes reach one only by pull request. Such
+# a pull request is the last gate before npm and the desktop app, and there is
+# no merge queue behind it to run the full suite, so it runs what the queue
+# runs: the full browser-shard matrix and first-run, gated by the fan-in
+# exactly as on `merge_group`. The PR-only browser-smoke leg is skipped there,
+# as it is in the queue.
+#
+# How: wherever this file said "full on every event but a pull request", it now
+# says "full on every event but a pull request whose base is not a release
+# branch". In `if:` that is
+#
+#   github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/')
+#
+# and browser-smoke and its fan-in step read the negation. Keep this in step
+# with test.yml, which spells the same rule.
+#
+# FAILS CLOSED ON THE SIDE OF MORE TESTING: the prefix is `release/`, wider
+# than the `release/v*` the branches use, so any base under release/ gets the
+# full sweep.
 on:
   pull_request:
   merge_group:
@@ -146,7 +168,7 @@ jobs:
   # opt-in. Reuse the suite's projects, isolation, caches and one CI retry.
   browser-smoke:
     name: browser-smoke (${{ matrix.shard }}/${{ strategy.job-total }})
-    if: ${{ github.event_name == 'pull_request' }}
+    if: ${{ github.event_name == 'pull_request' && !startsWith(github.base_ref, 'release/') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     strategy:
@@ -270,7 +292,7 @@ jobs:
   browser-shard:
     name: browser-shard (${{ matrix.shard }}/${{ strategy.job-total }})
     # Full suite off PRs; browser-smoke supplies the PR-time browser verdict.
-    if: ${{ github.event_name != 'pull_request' }}
+    if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
     # Pinned, every job in this file: `ubuntu-latest` moved to 26.04 on
     # 2026-10-27, and the same tree that passed on 24.04 timed out on six specs
     # there. Lift the pin once the suite is green on 26.04 (ledger 261027-053504).
@@ -939,7 +961,7 @@ jobs:
   # its credits and the model are the in-process test-mode fakes.
   first-run:
     name: first-run
-    if: ${{ github.event_name != 'pull_request' }}
+    if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
@@ -1141,7 +1163,7 @@ jobs:
       # The always() fan-in must inspect the PR dependency explicitly: skipped
       # or cancelled smoke is not a successful queue-entry check.
       - name: Refuse a PR whose smoke specs did not pass
-        if: ${{ github.event_name == 'pull_request' && needs.browser-smoke.result != 'success' }}
+        if: ${{ github.event_name == 'pull_request' && !startsWith(github.base_ref, 'release/') && needs.browser-smoke.result != 'success' }}
         run: |
           echo "::error::the PR smoke specs did not pass — browser-smoke reported '${{ needs.browser-smoke.result }}'. Open its shard jobs and browser-smoke-results-* artifacts."
           exit 1
@@ -1150,18 +1172,18 @@ jobs:
       # the full-suite matrix is skipped and `skipped != success` would otherwise
       # turn every PR red here.
       - name: Refuse a run whose shards did not all pass
-        if: ${{ github.event_name != 'pull_request' && needs.browser-shard.result != 'success' }}
+        if: ${{ (github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/')) && needs.browser-shard.result != 'success' }}
         run: |
           echo "::error::the browser suite did not pass — the browser-shard matrix reported '${{ needs.browser-shard.result }}'. Open the shard jobs above for the failing specs, and the playwright-report-shard-* artifacts for their traces, screenshots and videos."
           exit 1
 
       - name: Refuse a run whose first run did not pass
-        if: ${{ github.event_name != 'pull_request' && needs.first-run.result != 'success' }}
+        if: ${{ (github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/')) && needs.first-run.result != 'success' }}
         run: |
           echo "::error::the one-minute first run did not pass — the first-run job reported '${{ needs.first-run.result }}'. Open it above for the failing path, and the first-run-results artifact for its trace."
           exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
 
       # The fan-in has no `pnpm install` — it is a jq-and-bash job that costs
       # seconds — so it cannot run the engine to read the lane itself. The
@@ -1180,14 +1202,14 @@ jobs:
       # exactly backwards. Each copy carries its own `i/N`, so a missing,
       # duplicated or stale one is refused by name.
       - name: Collect every shard's quarantine lane
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: quarantine-lane-shard-*
           path: lane
 
       - name: Agree on the lane this build ran under
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
         run: |
           shopt -s nullglob
           lanes=(lane/*/quarantine.txt)
@@ -1229,7 +1251,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Collect every shard's JSON report
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: browser-results-shard-*
@@ -1259,7 +1281,7 @@ jobs:
       # failed exactly that way on an unrelated PR (2026-07-29). The guard turns
       # that into a message naming the cause.
       - name: Prove the browser suite actually executed
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
         run: |
           if [ ! -f scripts/assert-browser-tests-executed.sh ]; then
             echo "::error::scripts/assert-browser-tests-executed.sh is not in this checkout — this tree predates the script the workflow calls. Update the branch from main (or merge main in) to pick it up."
