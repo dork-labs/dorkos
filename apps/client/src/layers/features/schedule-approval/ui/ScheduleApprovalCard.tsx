@@ -182,7 +182,7 @@ function ScheduleApprovalContent({
     isShownInline: (error) => 'code' in error && error.code === 'schedule_review_changed',
   });
   const deleteTask = useDeleteTask();
-  const testRun = useScheduleTestRun(task.id);
+  const testRunState = useScheduleTestRun(task.id);
   const [decision, setDecision] = useState<Decision | null>(null);
   const [pickedMode, setPickedMode] = useState<string | null>(initialPickedMode ?? null);
   const [confirmLooser, setConfirmLooser] = useState(false);
@@ -253,6 +253,16 @@ function ScheduleApprovalContent({
     trialMode,
     power.modes.find((mode) => mode.id === trialMode)?.label ?? permissionModeLabel(trialMode)
   );
+  // A test run takes the pick only when it is stricter than the trial's cap, as the trigger route
+  // does (DOR-4336), so the card names another mode only when the cap overrides the pick.
+  // Both orders asked: a mode the ranking doesn't know reads as loosest in one slot only.
+  const pickIsStricter =
+    isLooserScheduleMode(trialMode, selectedMode) && !isLooserScheduleMode(selectedMode, trialMode);
+  const trialOverridesPick = selectedMode !== trialMode && !pickIsStricter;
+  const testRun = {
+    ...testRunState,
+    start: () => testRunState.start(pickIsStricter ? selectedMode : undefined),
+  };
   const confirmReason = scheduleConfirmReason(task, looserMode);
   const needsLooserConfirmation = confirmReason !== null;
   const currentLabel = schedulePermissionLabel(
@@ -604,9 +614,9 @@ function ScheduleApprovalContent({
           />
         )}
 
-        {/* A test run takes no pick: it uses the saved mode, or the baseline when
-            the saved one is looser. Said only when that differs from the pick. */}
-        {answered === null && (trialBlocked || selectedMode !== trialMode) && (
+        {/* A test run uses the pick, held to the saved mode, or the baseline when the
+            saved one is looser. Said only when that cap overrides the pick. */}
+        {answered === null && (trialBlocked || trialOverridesPick) && (
           <p data-slot="schedule-try-mode" className="text-muted-foreground text-xs">
             {trialBlocked
               ? 'Try it once now waits until you approve it.'
@@ -624,7 +634,7 @@ function ScheduleApprovalContent({
               aria-label={`Run ${name} once`}
               className="min-h-11 px-2.5 text-xs sm:min-h-0"
               disabled={testRun.phase === 'running' || refreshing || trialBlocked}
-              onClick={testRun.start}
+              onClick={() => testRun.start()}
             >
               Try it once now
             </Button>

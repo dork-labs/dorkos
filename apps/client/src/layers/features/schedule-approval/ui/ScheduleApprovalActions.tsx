@@ -108,7 +108,7 @@ export function ScheduleApprovalActions({
             aria-label={`Run ${name} once`}
             className="min-h-11 w-full px-2.5 text-xs sm:h-7 sm:min-h-0 sm:w-auto"
             disabled={testRun.phase === 'running' || refreshing || trialBlocked}
-            onClick={testRun.start}
+            onClick={() => testRun.start()}
           >
             Try it once now
           </Button>

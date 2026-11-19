@@ -72,6 +72,7 @@ import {
   CancelTaskRunResponseSchema,
   CreateTaskRequestSchema,
   UpdateTaskRequestSchema,
+  TriggerTaskRequestSchema,
   ListTaskRunsQuerySchema,
   ModelOptionSchema,
   ForkShapeRequestSchema,
@@ -2102,11 +2103,19 @@ registry.registerPath({
   summary: 'Manually trigger a schedule run',
   request: {
     params: z.object({ id: z.string() }),
+    body: {
+      content: { 'application/json': { schema: TriggerTaskRequestSchema } },
+      required: false,
+    },
   },
   responses: {
     201: {
       description: 'Run started',
       content: { 'application/json': { schema: z.object({ runId: z.string() }) } },
+    },
+    400: {
+      description: 'The body is not valid, or the picked mode is not one the task can run in',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     404: {
       description: 'Schedule not found',

@@ -142,13 +142,19 @@ export function useDeleteTask() {
   });
 }
 
-/** Trigger a manual run of a Task. */
+/**
+ * Trigger a manual run of a Task: by id, or with the mode an approval card picked (DOR-4336),
+ * which the run uses unless the trial's cap is stricter.
+ */
 export function useTriggerTask() {
   const transport = useTransport();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: string) => transport.triggerTask(id),
+    mutationFn: (target: string | { id: string; permissionMode: string }) =>
+      typeof target === 'string'
+        ? transport.triggerTask(target)
+        : transport.triggerTask(target.id, { permissionMode: target.permissionMode }),
     onSuccess: () => {
       // No `exact` here, on purpose: every run query — filtered, paginated,
       // single-run — hangs off `['tasks', 'runs', …]`, and a fresh run belongs

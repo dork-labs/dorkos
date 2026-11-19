@@ -6749,6 +6749,25 @@ export const UpdateTaskRequestSchema = z
 
 export type UpdateTaskRequest = z.infer<typeof UpdateTaskRequestSchema>;
 
+/**
+ * What "Try it once now" may send to `POST /api/tasks/:id/trigger` (DOR-4336): the mode the
+ * person picked on the approval card. The run uses it or the trial's cap, whichever is stricter;
+ * a pick never loosens a run. With none, the cap alone decides.
+ */
+export const TriggerTaskRequestSchema = z
+  .object({
+    permissionMode: z
+      .string()
+      .min(1)
+      .optional()
+      .describe('The mode picked on the approval card; the stricter of it and the cap runs.'),
+  })
+  .strict()
+  .openapi('TriggerTaskRequest');
+
+/** The body of a manual trigger. */
+export type TriggerTaskRequest = z.infer<typeof TriggerTaskRequestSchema>;
+
 export const ListTaskRunsQuerySchema = z
   .object({
     scheduleId: z.string().optional(),

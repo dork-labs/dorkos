@@ -1304,6 +1304,29 @@ describe('ScheduleApprovalCard — the receipt outlives the refetch', () => {
 });
 
 describe('ScheduleApprovalCard — running it once', () => {
+  it('runs a trial at a stricter picked mode, and says nothing else (DOR-4336)', async () => {
+    const triggerTask = vi.fn().mockResolvedValue({ runId: 'run-1' });
+    renderCard(proposal(), { triggerTask, listTaskRuns: vi.fn().mockResolvedValue([]) });
+    const picker = await screen.findByRole('combobox', { name: 'Run permissions' });
+    await userEvent.selectOptions(picker, 'plan');
+
+    expect(slot('schedule-try-mode')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Run Nightly sweep once' }));
+    expect(triggerTask).toHaveBeenCalledWith('task-1', { permissionMode: 'plan' });
+  });
+
+  it('holds a looser pick at the saved mode, says so, and sends no pick (DOR-4336)', async () => {
+    const triggerTask = vi.fn().mockResolvedValue({ runId: 'run-1' });
+    renderCard(proposal(), { triggerTask, listTaskRuns: vi.fn().mockResolvedValue([]) });
+    const picker = await screen.findByRole('combobox', { name: 'Run permissions' });
+    await userEvent.selectOptions(picker, 'bypassPermissions');
+
+    expect(await findSlot('schedule-try-mode')).toHaveTextContent(/uses the saved mode/);
+    await userEvent.click(screen.getByRole('button', { name: 'Run Nightly sweep once' }));
+    expect(triggerTask).toHaveBeenCalledTimes(1);
+    expect(triggerTask.mock.calls[0]).toEqual(['task-1']);
+  });
+
   it('triggers a supervised run without arming anything', async () => {
     const triggerTask = vi.fn().mockResolvedValue({ runId: 'run-1' });
     const updateTask = vi.fn();

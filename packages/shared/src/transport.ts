@@ -1880,8 +1880,11 @@ export interface Transport extends TransportSlices {
   updateTask(id: string, opts: UpdateTaskRequest): Promise<Task>;
   /** Delete a Task. */
   deleteTask(id: string): Promise<{ success: boolean }>;
-  /** Trigger a manual run of a Task. */
-  triggerTask(id: string): Promise<{ runId: string }>;
+  /**
+   * Trigger a manual run of a Task. `opts.permissionMode` is the mode picked on an approval
+   * card: the run uses it or the trial's cap, whichever is stricter (DOR-4336).
+   */
+  triggerTask(id: string, opts?: { permissionMode?: string }): Promise<{ runId: string }>;
   /** List Task runs with optional filters. */
   listTaskRuns(opts?: Partial<ListTaskRunsQuery>): Promise<TaskRun[]>;
   /** Get a specific Task run. */

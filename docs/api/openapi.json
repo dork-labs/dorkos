@@ -12283,6 +12283,17 @@
           "pending_approval"
         ]
       },
+      "TriggerTaskRequest": {
+        "type": "object",
+        "properties": {
+          "permissionMode": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The mode picked on the approval card; the stricter of it and the cap runs."
+          }
+        },
+        "additionalProperties": false
+      },
       "TaskRun": {
         "type": "object",
         "properties": {
@@ -48337,6 +48348,16 @@
             "in": "path"
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TriggerTaskRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "201": {
             "description": "Run started",
@@ -48352,6 +48373,16 @@
                   "required": [
                     "runId"
                   ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not valid, or the picked mode is not one the task can run in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
