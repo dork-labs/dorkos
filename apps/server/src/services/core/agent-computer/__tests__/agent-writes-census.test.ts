@@ -222,6 +222,7 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'POST /api/local-browser/profiles/:id/agents',
       'DELETE /api/local-browser/profiles/:id/agents/:agentId',
       'POST /api/local-browser/sign-in',
+      'POST /api/local-browser/sign-in/done',
       'POST /api/local-browser/handoff/hand-back',
       'POST /api/local-browser/handoff/stop',
       'POST /api/notifications/read-all',
