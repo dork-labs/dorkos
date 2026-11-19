@@ -294,6 +294,18 @@ describe('LanAccess', () => {
   });
 });
 
+describe('LanAccess.close before startup attached it (DOR-4689)', () => {
+  it('resolves without reading the setting, as a shutdown during boot does', async () => {
+    // Before startup opens the config, reading the setting throws.
+    const readSetting = vi.fn((): boolean => {
+      throw new TypeError("Cannot read properties of undefined (reading 'get')");
+    });
+    const { controller } = setup({ readSetting });
+    await expect(controller.close()).resolves.toBeUndefined();
+    expect(readSetting).not.toHaveBeenCalled();
+  });
+});
+
 describe('LanAccess.dropConnections (Remote Access off, DOR-3650)', () => {
   it('cuts a kept-alive connection now and keeps listening', async () => {
     const port = await freePort();

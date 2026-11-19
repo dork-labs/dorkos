@@ -1304,4 +1304,20 @@ describe('cloud-link construction seam (init/getCloudLinkManager)', () => {
     const fresh = await import('../cloud-link.js');
     expect(() => fresh.getCloudLinkManager()).toThrow('CloudLinkManager not initialized');
   });
+
+  it('stopCloudLinkManager() before initCloudLinkManager() has nothing to stop and does not throw (DOR-4689)', async () => {
+    // A shutdown signal can land while the server is still booting.
+    vi.resetModules();
+    const fresh = await import('../cloud-link.js');
+    expect(() => fresh.stopCloudLinkManager()).not.toThrow();
+  });
+
+  it('stopCloudLinkManager() stops the initialized manager', async () => {
+    vi.resetModules();
+    const fresh = await import('../cloud-link.js');
+    const live = fresh.initCloudLinkManager({ fetchImpl: vi.fn(), sleep: noSleep });
+    const stop = vi.spyOn(live, 'stop');
+    fresh.stopCloudLinkManager();
+    expect(stop).toHaveBeenCalledOnce();
+  });
 });
