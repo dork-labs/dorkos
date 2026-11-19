@@ -5,9 +5,21 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createDb, runMigrations, type Db } from '@dorkos/db';
+import { loadCeilingMs } from '@dorkos/shared/test-budget';
 import { RelayCore } from '../relay-core.js';
 import { RECEIPT_RETENTION_MS, type DeliveryReceiptStore } from '../delivery-receipt-store.js';
 import { noopLogger, type AdapterRegistryLike, type DeliveryResult } from '../types.js';
+
+/**
+ * Every case boots a real RelayCore over SQLite and Maildir, rebuilds and
+ * reopens it, so on a loaded machine bodies and closes outrun vitest's 5s/10s
+ * defaults on healthy code (DOR-4679). Sized from the load clamp's worst case:
+ * 20s per test, 40s per hook. The 60s cap only bites if LOAD_SCALE_MAX rises.
+ */
+vi.setConfig({
+  testTimeout: loadCeilingMs(5_000),
+  hookTimeout: Math.min(60_000, loadCeilingMs(10_000)),
+});
 
 const SUBJECT = 'relay.agent.example';
 const LOCAL = { loginEnabled: false } as const;

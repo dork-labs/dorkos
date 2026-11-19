@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { loadCeilingMs } from '@dorkos/shared/test-budget';
 import { RelayCore } from '../relay-core.js';
 import { SERVER_DESTINATION_SENDERS, mayReachServerDestination } from '../lib/reserved-subjects.js';
 import { approvalBridgePrincipal } from '../lib/approval-principal.js';
@@ -16,6 +17,17 @@ import {
   TASK_SCHEDULER_PRINCIPAL,
 } from '@dorkos/shared/relay-schemas';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
+
+/**
+ * Every case boots and closes a real RelayCore (Maildir, watchers), so on a
+ * loaded machine they outrun vitest's 5s/10s defaults on healthy code
+ * (DOR-4679). Sized from the load clamp's worst case: 20s per test, 40s per
+ * hook. The 60s cap only bites if LOAD_SCALE_MAX rises.
+ */
+vi.setConfig({
+  testTimeout: loadCeilingMs(5_000),
+  hookTimeout: Math.min(60_000, loadCeilingMs(10_000)),
+});
 
 /**
  * DOR-2432: an agent cannot send to `relay.system.*` or `relay.control.*`.

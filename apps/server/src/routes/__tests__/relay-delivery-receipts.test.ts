@@ -13,6 +13,7 @@ import {
 } from '@dorkos/relay';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
+import { loadCeilingMs } from '@dorkos/shared/test-budget';
 import { relayRoutesListener } from './relay-routes-listener.js';
 import type { ApiEnv } from '../../http/api-chain.js';
 import type { ActivityService } from '../../services/activity/activity-service.js';
@@ -25,6 +26,17 @@ import type { AdapterManager } from '../../services/relay/adapter-manager.js';
 vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../services/core/auth/session-gate.js')>();
   return { ...actual, decideSessionGate: vi.fn(actual.decideSessionGate) };
+});
+
+/**
+ * Every case drives a real RelayCore over SQLite behind real HTTP routes, so on
+ * a loaded machine bodies and closes outrun vitest's 5s/10s defaults on healthy
+ * code (DOR-4679). Sized from the load clamp's worst case: 20s per test, 40s per
+ * hook. The 60s cap only bites if LOAD_SCALE_MAX rises.
+ */
+vi.setConfig({
+  testTimeout: loadCeilingMs(5_000),
+  hookTimeout: Math.min(60_000, loadCeilingMs(10_000)),
 });
 
 const target = swappableServer();
