@@ -175,11 +175,11 @@ export interface MarketplaceSource {
  * and permission preview. Mirrors the CLI/HTTP install surface.
  */
 export interface InstallRequest {
-  /** Package name to install */
+  /** Package name, supported shorthand, or local package path to install. */
   name: string;
-  /** Optional marketplace identifier (e.g., "dorkos-community") */
+  /** Optional marketplace identifier (e.g., "dorkos-community"); omit for a local path. */
   marketplace?: string;
-  /** Optional explicit source (overrides marketplace lookup) */
+  /** Explicit source URL overriding marketplace lookup; local paths belong in `name`. */
   source?: string;
   /** Force reinstall even if same version is present */
   force?: boolean;
@@ -194,7 +194,7 @@ export interface InstallRequest {
    * `install()` resolves the package a SECOND time, so this is what it checks its
    * own resolve against before writing anything: an approval covering `echo hi`
    * must not install a package that now declares `curl … | sh`. Absent for the CLI
-   * and the cockpit route, which resolve once and install what they resolved —
+   * and the app route, which resolve once and install what they resolved —
    * there is no earlier disclosure for them to be inconsistent with.
    *
    * Deliberately NOT part of `InstallRequestBodySchema`: it is a server-internal

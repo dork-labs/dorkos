@@ -836,7 +836,7 @@ export interface ConflictReport {
 export interface InstallOptions {
   /** Restrict lookup to a specific marketplace source. */
   marketplace?: string;
-  /** Override with an explicit git URL or local path. */
+  /** Override with an explicit source URL; local paths belong in the package name. */
   source?: string;
   /** Force reinstall even if the same version is already present. */
   force?: boolean;
