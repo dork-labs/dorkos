@@ -368,7 +368,9 @@ export function createLoadGate(options: LoadGateOptions): LoadGate {
       });
       if (result === 'slot') return heldSlot(ticket, 'ran', waitedMs, settings);
       if (result !== 'let-through') return null;
-      log(`[LoadGate] ${jobPhrase(ticket.job)} was let through by a person`);
+      // Not "by a person": any program running as this user can write the mark. The route a
+      // person uses (PR4) is where who did it gets recorded.
+      log(`[LoadGate] ${jobPhrase(ticket.job)} was let through`);
       return heldSlot(ticket, 'let-through', waitedMs, settings);
     },
     force: (settings, waitedMs) => {

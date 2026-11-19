@@ -813,13 +813,16 @@ export async function resolveLaunch(args: {
     plugins: (opts.plugins ?? []).map((plugin) => plugin.path),
     accountRoot,
   });
+  // One launch's heavy-job hooks (DOR-4209), built here because a card gives its call's slot back.
+  const loadGate = loadGateHooks(session, { sessionId, agentName: agentDisplayName });
   sdkOptions.canUseTool = createCanUseTool(
     session,
     logger,
     editBaselineCapture,
     resolveIdentity,
     { cwd: effectiveCwd, roots: readRoots },
-    outsideChecks
+    outsideChecks,
+    loadGate.releaseCall
   );
   // Pre-edit baseline capture must ALSO ride the SDK PreToolUse hook (DOR-212):
   // `canUseTool` is skipped entirely under `bypassPermissions`, but PreToolUse
@@ -839,7 +842,6 @@ export async function resolveLaunch(args: {
     turn: { cwd: effectiveCwd, forAgent, roomTurn: messageOpts?.roomTurn },
   };
   const auditHooks = auditToolHookMatchers(auditTurn);
-  const loadGate = loadGateHooks(session, { sessionId, agentName: agentDisplayName });
   sdkOptions.hooks = {
     PreToolUse: [
       // A read of outside text marks the turn first (DOR-3969); then withheld browser tools, and a

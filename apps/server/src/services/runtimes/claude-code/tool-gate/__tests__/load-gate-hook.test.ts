@@ -20,6 +20,7 @@ import type {
 import type { LoadGateSettings } from '@dorkos/shared/config-schema';
 import { LOAD_WAIT_STATUS, type PermissionModeId } from '@dorkos/shared/schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
+import { SESSIONS } from '../../../../../config/constants.js';
 import {
   createLoadGate,
   type HeldSlot,
@@ -424,8 +425,12 @@ describe('the gate holds a call and never decides it', () => {
     expect(queue.runningCount()).toBe(0);
   });
 
-  it('a heavy command that needs a card still reaches the card once its slot comes', async () => {
-    const { gate, time, loadSource, queue } = machine(20);
+  /**
+   * A chat below Full whose heavy `git push` waits for its slot on a busy computer, then, once the
+   * computer calms, goes on to the permission flow, which raises a card with the launch's own
+   * `releaseCall` wired in, as `launch-resolver.ts` wires it.
+   */
+  async function carded(m: ReturnType<typeof machine>, cardClock: 'real' | 'fake' = 'real') {
     const session = {
       ...chat('sdk-ana'),
       permissionMode: 'acceptEdits' as PermissionModeId,
@@ -433,33 +438,199 @@ describe('the gate holds a call and never decides it', () => {
       cwd: roots.cwd,
       pendingInteractions: new Map<string, PendingInteraction>(),
     };
-    const hooks = hooksFor(session, gate, time.now);
+    const hooks = hooksFor(session, m.gate, m.time.now);
     const settled = track(
       cliSettles([guardFor(session), hooks.wait.hooks[0]!], bash('git push', 'card'), 'card')
     );
     await settle();
     expect(settled.done).toBe(false);
-
-    loadSource.set(4);
-    await time.step(POLL);
+    m.loadSource.set(4);
+    await m.time.step(POLL);
     // No hook decided, the gate least of all, so the call goes on to the permission flow.
     expect(settled.value?.decision).toBe('permission flow');
     expectNoDecision(settled.value!.answers[1]);
-    const context: ToolApprovalContext = {
-      signal: new AbortController().signal,
-      toolUseID: 'card',
-    };
-    void createCanUseTool(session, noopLog)('Bash', { command: 'git push' }, context);
+    expect(m.queue.runningCount()).toBe(1);
+    const cancel = new AbortController();
+    const context: ToolApprovalContext = { signal: cancel.signal, toolUseID: 'card' };
+    // The card's own wait timers, faked only for a test that runs the card out of time.
+    if (cardClock === 'fake') vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const canUseTool = createCanUseTool(
+      session,
+      noopLog,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      hooks.releaseCall
+    );
+    const answer = track(canUseTool('Bash', { command: 'git push' }, context));
     await vi.waitFor(() => expect(session.pendingInteractions.has('card')).toBe(true));
     expect(session.eventQueue.map((event) => event.type)).toContain('approval_required');
-    // Its slot is kept while the card waits, and comes back at the latest when the turn ends.
-    expect(queue.runningCount()).toBe(1);
-    await call(hooks.sweep, {
-      ...BASE,
-      hook_event_name: 'Stop',
-      stop_hook_active: false,
-    } as HookInput);
+    /** The person answers the card. */
+    const answerCard = (yes: boolean): void => {
+      const pending = session.pendingInteractions.get('card');
+      if (pending?.type !== 'approval') throw new Error('no card is waiting');
+      pending.resolve(yes, yes ? undefined : 'Not now.');
+    };
+    return { hooks, answer, answerCard, cancel };
+  }
+
+  it('a heavy command that needs a card reaches the card, gives its slot back while it waits, and runs at once on a yes', async () => {
+    const m = machine(20);
+    const { hooks, answer, answerCard } = await carded(m);
+    // The card took the slot back: the line is free for the next heavy job.
+    expect(m.queue.runningCount()).toBe(0);
+    const bo = hooksFor(chat('sdk-bo'), m.gate, m.time.now);
+    const boBuild = track(call(bo.wait, bash('pnpm build', 'bo-1')));
+    await settle();
+    expect(boBuild.done).toBe(true);
+    expect(m.queue.runningCount()).toBe(1);
+
+    // The person approves: the call runs now, outside the line, and takes no slot or ticket. At
+    // most one job runs outside the line this way, the one the person said yes to.
+    answerCard(true);
+    await settle();
+    expect(answer.value).toEqual({ behavior: 'allow', updatedInput: { command: 'git push' } });
+    expect(m.queue.runningCount()).toBe(1);
+    expect(m.queue.list()).toHaveLength(0);
+    // Its finishing gives back nothing it does not hold: Bo's slot stays Bo's.
+    expectNoDecision(await call(hooks.afterCall, finished('card', 'PostToolUse')));
+    expect(m.queue.runningCount()).toBe(1);
+    await call(bo.afterCall, finished('bo-1', 'PostToolUse'));
+    expect(m.queue.runningCount()).toBe(0);
+  });
+
+  describe('however the card ends, the slot was freed when it was raised and nothing is retaken', () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    type Card = Awaited<ReturnType<typeof carded>>;
+    const ENDINGS: [string, 'allow' | 'deny', 'real' | 'fake', (card: Card) => void][] = [
+      ['approved', 'allow', 'real', (card) => card.answerCard(true)],
+      ['denied', 'deny', 'real', (card) => card.answerCard(false)],
+      [
+        'run out of time',
+        'deny',
+        'fake',
+        // The interaction wait's own path: it parks, then expires at the ceiling.
+        () => {
+          vi.advanceTimersByTime(SESSIONS.INTERACTION_PARK_CEILING_MS);
+        },
+      ],
+      ['withdrawn by the CLI', 'deny', 'real', (card) => card.cancel.abort()],
+    ];
+
+    it.each(ENDINGS)('%s', async (_ending, behavior, cardClock, end) => {
+      const m = machine(20);
+      const card = await carded(m, cardClock);
+      // Freed the moment the card went up, before anyone answered.
+      expect(m.queue.runningCount()).toBe(0);
+      expect(m.queue.list()).toHaveLength(0);
+      end(card);
+      await settle();
+      expect(card.answer.value).toMatchObject({ behavior });
+      // Nothing retaken, whatever the ending, and nothing left in line.
+      expect(m.queue.runningCount()).toBe(0);
+      expect(m.queue.list()).toHaveLength(0);
+      // Every hook the call can still meet answers nothing, and frees nothing it does not hold.
+      const after: HookInput[] = [
+        finished('card', behavior === 'allow' ? 'PostToolUse' : 'PostToolUseFailure'),
+        {
+          ...BASE,
+          hook_event_name: 'PermissionDenied',
+          tool_name: 'Bash',
+          tool_input: {},
+          tool_use_id: 'card',
+          reason: 'denied',
+        } as HookInput,
+        { ...BASE, hook_event_name: 'Stop', stop_hook_active: false } as HookInput,
+      ];
+      for (const input of after) {
+        expectNoDecision(await call(card.hooks.afterCall, input));
+        expectNoDecision(await call(card.hooks.sweep, input));
+      }
+      expect(m.queue.runningCount()).toBe(0);
+    });
+  });
+
+  it.each(['the CLI cancels the hook', 'the process ends'] as const)(
+    'a turn stopped while its call waits in line: %s, its ticket leaves, and the next job moves up',
+    async (how) => {
+      const { gate, time, loadSource, queue } = machine(20);
+      const ana = chat('sdk-ana');
+      const bo = chat('sdk-bo');
+      const anaHooks = hooksFor(ana, gate, time.now);
+      const boHooks = hooksFor(bo, gate, time.now);
+      const cancel = new AbortController();
+      const anaBuild = track(call(anaHooks.wait, bash('pnpm build', 'ana-1'), cancel.signal));
+      const boTests = track(call(boHooks.wait, bash('pnpm test', 'bo-1')));
+      await settle();
+      expect(said(bo)).toEqual(['Waiting for the computer to calm down. 2nd in line.']);
+
+      // Stop pressed on Ana's chat. An interrupt runs no Stop hook, so the stop arrives either as
+      // the CLI cancelling the waiting hook or as the process going away.
+      if (how === 'the CLI cancels the hook') cancel.abort();
+      else releaseHeavyJobsOf({ hooks: { PreToolUse: [anaHooks.wait] } });
+      await settle();
+      // Ana's call fails open into the normal flow (the CLI stops it there), and leaves the line.
+      expectNoDecision(anaBuild.value);
+      expect(queue.list()).toHaveLength(1);
+      expect(anaHooks.log.warn).not.toHaveBeenCalled();
+
+      // Bo moved up: next in line now, and first to run once the computer calms.
+      bo.eventQueue.splice(0);
+      await time.step(MINUTE);
+      expect(said(bo)).toEqual(['Waiting for the computer to calm down. Next in line.']);
+      loadSource.set(4);
+      await time.step(POLL);
+      expectNoDecision(boTests.value);
+      expect(queue.runningCount()).toBe(1);
+      await call(boHooks.afterCall, finished('bo-1', 'PostToolUse'));
+      expect(queue.runningCount()).toBe(0);
+    }
+  );
+
+  it('canUseTool tells the launch only of a call put to a person', async () => {
+    const onCard = vi.fn();
+    const full = {
+      permissionMode: 'bypassPermissions' as PermissionModeId,
+      cwd: roots.cwd,
+      pendingInteractions: new Map<string, PendingInteraction>(),
+      eventQueue: [] as StreamEvent[],
+      eventQueueNotify: vi.fn(),
+    };
+    const canUseTool = createCanUseTool(
+      full,
+      noopLog,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      onCard
+    );
+    const context: ToolApprovalContext = { signal: new AbortController().signal, toolUseID: 'f' };
+    expect(await canUseTool('Bash', { command: 'pnpm build' }, context)).toMatchObject({
+      behavior: 'allow',
+    });
+    expect(onCard).not.toHaveBeenCalled();
+  });
+
+  it('a card for a call still in line takes its ticket out, and it never runs from the line', async () => {
+    const { gate, time, loadSource, queue } = machine(20);
+    const hooks = hooksFor(chat('s'), gate, time.now);
+    const held = track(call(hooks.wait, bash('pnpm build', 'still-waiting')));
+    await settle();
+    expect(queue.list()).toHaveLength(1);
+    // The CLI gave up on the hook and asked a person about the call.
+    hooks.releaseCall('still-waiting');
+    await settle();
+    expectNoDecision(held.value);
+    expect(queue.list()).toHaveLength(0);
+    loadSource.set(4);
+    await time.step(POLL);
     expect(queue.runningCount()).toBe(0);
+    expect(hooks.log.warn).not.toHaveBeenCalled();
   });
 });
 
@@ -614,7 +785,7 @@ describe('every answer is no answer', () => {
     // One line each, by program name alone.
     expect(lines).toEqual([
       '[LoadGate] A pnpm job ran after waiting 1 min, the hard cap',
-      '[LoadGate] A docker job was let through by a person',
+      '[LoadGate] A docker job was let through',
     ]);
   });
 

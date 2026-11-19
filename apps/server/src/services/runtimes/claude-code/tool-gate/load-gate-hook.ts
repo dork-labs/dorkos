@@ -8,8 +8,8 @@
  * which also tells the stall guard the turn is alive.
  *
  * **It holds, it never decides.** Every answer is `{}`: never a `permissionDecision`, never a
- * `decision`. So once the wait ends, however it ends (its turn, a person letting it through, the
- * hard cap, a gate failure, a Stop), the call goes on exactly as it would have without this hook:
+ * `decision`. So once the wait ends, however it ends (its turn, a let-through mark, the hard cap,
+ * a gate failure, a Stop), the call goes on exactly as it would have without this hook:
  * the shell guard's refusal still refuses, an allow rule still allows, a card is still raised. The
  * CLI may run a call's `PreToolUse` hooks side by side and then combine their answers, so nothing
  * here relies on running after the hooks that refuse. The cost of that is only time: a command
@@ -20,7 +20,8 @@
  * long wait. Should the CLI's limit pass anyway (a hard cap raised after this process started, or
  * one past the longest timer Node can set), the CLI goes on as if this hook had said nothing, which
  * is the normal flow, and its cancel stops the wait. A slot granted after its call already finished
- * is given back at once.
+ * is given back at once. Put plainly: if the CLI cuts the hook short (its time limit or a cancel),
+ * the call fails open into the normal flow, and its ticket leaves the line.
  *
  * **A slot is given back** when the call finishes (`PostToolUse`, `PostToolUseFailure`), when its
  * batch ends (`PostToolBatch`, which covers a call that was refused and never ran), when a
@@ -36,6 +37,13 @@
  * to start and no longer. Holding the slot until the background shell ends would mean trusting
  * the CLI's task-ended message to arrive, and one that never did would hold every heavy job on the
  * computer until the gate's bound; that is left for a later change.
+ *
+ * **A heavy command that needs your OK gives its turn back while the card waits; after you
+ * approve it runs straight away, so at most one job runs outside the line.** A card can wait for
+ * hours, and a slot held through it would hold every heavy job on the computer behind one
+ * person's answer. A person approving in real time is already a gate, so the slot is given back
+ * when the card is raised ({@link LoadGateHooks.releaseCall}, from `canUseTool`) and never taken
+ * again; a deny takes nothing either.
  *
  * Nothing here logs or shows command text: only the program's name (`pnpm`) and counts. A waiting
  * agent learns its place in line, never what is ahead of it.
@@ -120,6 +128,12 @@ export interface LoadGateHooks {
   >;
   /** Give back every slot, and stop every wait: the process these hooks run in has ended. */
   releaseAll: () => void;
+  /**
+   * Give back the slot one call holds, now, and take its ticket out of line if it is still
+   * waiting: a person is being asked about it (or it is refused for want of one). Never takes a
+   * slot, and the call is not put back in line. For `canUseTool`, never for the SDK. Never throws.
+   */
+  releaseCall: (toolUseId: string) => void;
 }
 
 /** Each launch's slot ledger, found by the `wait` matcher in its options. */
@@ -220,6 +234,8 @@ class LaunchSlots {
     { slot: HeldSlot; generation: number; agentId?: string }
   >();
   private readonly finished = new Set<string>();
+  /** What stops each call's wait still in line, so a card can take its ticket out. */
+  private readonly waits = new Map<string, AbortController>();
   /** Each live process's generation, and what stops the waits started under it. */
   private readonly live = new Map<number, AbortController>();
   /** The newest process: a hook that runs now is its. */
@@ -239,9 +255,29 @@ class LaunchSlots {
     return this.current;
   }
 
-  /** What a wait starting now needs: the signal its process's end fires, and which process. */
-  begin(): { processEnded: AbortSignal; generation: number } {
-    return { processEnded: this.live.get(this.current)!.signal, generation: this.current };
+  /**
+   * What a call's wait starting now needs: the signal that stops it (its process ending, or a
+   * card raised for it), and which process it belongs to. Pair with {@link LaunchSlots.settled}.
+   */
+  begin(toolUseId: string): { stop: AbortSignal; generation: number; handle: AbortController } {
+    const handle = new AbortController();
+    this.waits.set(toolUseId, handle);
+    const stop = AbortSignal.any([this.live.get(this.current)!.signal, handle.signal]);
+    return { stop, generation: this.current, handle };
+  }
+
+  /**
+   * A call's wait ended, however it ended. Forgets its stop handle only if it is still this
+   * wait's: a later wait for the same call id keeps its own.
+   */
+  settled(toolUseId: string, handle: AbortController): void {
+    if (this.waits.get(toolUseId) === handle) this.waits.delete(toolUseId);
+  }
+
+  /** A person is asked about the call: its slot comes back, its wait stops, nothing is retaken. */
+  release(toolUseId: string): void {
+    this.waits.get(toolUseId)?.abort();
+    this.finish(toolUseId);
   }
 
   /** Keep a granted slot until its call finishes; give it back at once if nothing will finish it. */
@@ -380,18 +416,22 @@ export function loadGateHooks(
     if (input.hook_event_name !== 'PreToolUse' || input.tool_name !== LOAD_GATE_MATCHER) return;
     const command = (input.tool_input as { command?: unknown } | null)?.command;
     if (typeof command !== 'string') return;
-    const { processEnded, generation } = slots.begin();
     const owner = {
       chatId: session.sdkSessionId || launch.sessionId,
       ...(launch.agentName ? { agentName: launch.agentName } : {}),
     };
-    // The gate classifies with the shell guard's own parser, on this same string, and logs a
-    // hard-cap run and a person's let-through itself, by program name.
-    const slot = await gate().gateIfHeavy(command, owner, {
-      signal: AbortSignal.any([signal, processEnded]),
-      onWait: say,
-    });
-    if (slot !== null) slots.keep(input.tool_use_id, slot, input.agent_id, generation);
+    const { stop, generation, handle } = slots.begin(input.tool_use_id);
+    try {
+      // The gate classifies with the shell guard's own parser, on this same string, and logs a
+      // hard-cap run and a let-through itself, by program name.
+      const slot = await gate().gateIfHeavy(command, owner, {
+        signal: AbortSignal.any([signal, stop]),
+        onWait: say,
+      });
+      if (slot !== null) slots.keep(input.tool_use_id, slot, input.agent_id, generation);
+    } finally {
+      slots.settled(input.tool_use_id, handle);
+    }
   };
 
   const waitHook: HookCallback = async (input, _toolUseId, { signal }) => {
@@ -437,5 +477,14 @@ export function loadGateHooks(
       SessionEnd: [sweep],
     },
     releaseAll,
+    // Never throws: `canUseTool` calls it just before raising a card, and a throw there would turn
+    // the card into a rejected permission callback. Guarded here rather than at the call site.
+    releaseCall: (toolUseId) => {
+      try {
+        slots.release(toolUseId);
+      } catch (error) {
+        log.warn('[LoadGate] a card could not give its slot back', { error: errorName(error) });
+      }
+    },
   };
 }
