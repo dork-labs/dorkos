@@ -447,7 +447,8 @@ export function aliasTurnLevel(from: string, to: string): void {
   if (strangerHeld.has(from) && from !== to) strangerHeld.add(to);
   const serial = turnSerials.get(from);
   if (serial !== undefined && from !== to) turnSerials.set(to, serial);
-  aliasChosenTurn(from, to);
+  // Like the level: only a turn this process recorded under `from` replaces what `to` holds.
+  if (level !== undefined) aliasChosenTurn(from, to);
   // The room turn's outside words go with it, or every check reading the new id sees none (DOR-4023).
   aliasRoomTurnWords(from, to);
 }
