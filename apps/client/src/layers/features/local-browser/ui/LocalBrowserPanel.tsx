@@ -328,7 +328,7 @@ export function LocalBrowserPanel({
               (DOR-4429). DorkOS draws both outside the page, so the page can't hide or fake them. */}
           </div>
           {state.profile?.agentId && mode === 'new-window' ? (
-            <PageAreaBlock title="Page open in a separate window">
+            <PageAreaBlock title="This browser opens in its own window.">
               <Button
                 disabled={busy || !selected}
                 onClick={() => {

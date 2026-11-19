@@ -123,12 +123,11 @@ export function BrowserSharing({
               Share your browser with {profile.agentName ?? 'your agent'}?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Shares the sign-ins in your Chrome window (not the in-app browser).
+              {profile.agentName
+                ? `${profile.agentName} will use your own Chrome window and every site you’re signed in to there.`
+                : 'This agent will use your Chrome window and every site you’re signed in to there.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <p className="text-muted-foreground text-sm">
-            It can use everything you’re signed in to in this profile.
-          </p>
           {error && (
             <p role="alert" className="text-sm">
               {error}

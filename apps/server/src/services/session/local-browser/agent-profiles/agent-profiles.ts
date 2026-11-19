@@ -33,18 +33,20 @@ export function createAgentBrowserProfiles(deps: AgentBrowserProfileDeps) {
       if (!agentId || !real)
         throw new LocalBrowserError('profile_not_allowed', 'This chat has no registered agent.');
       const agentName = deps.agentName(agentId) ?? 'Your agent';
-      const id = input.profileId ?? `agent-${agentId}`;
+      const ownId = `agent-${agentId}`;
+      const label = Array.from(`${agentName} · browser`).slice(0, 80).join('');
+      const id = input.profileId ?? ownId;
       LocalBrowserProfileIdSchema.parse(id);
       if (!input.profileId) {
         // Only a person's open reaches here. Each agent starts with an empty, distinct folder.
-        deps.profiles.ensure(id, Array.from(`${agentName}’s browser`).slice(0, 80).join(''));
+        deps.profiles.ensure(id, label);
         if (!deps.profiles.isBound(id, agentId, real)) deps.profiles.bind(id, agentId, real);
       }
       await requireAccess(id, input.sessionId);
       const profile = deps.profiles.get(id);
       if (!profile)
         throw new LocalBrowserError('profile_not_found', 'That browser no longer exists.');
-      return { id, label: profile.label, agentId, agentName };
+      return { id, label: id === ownId ? label : profile.label, agentId, agentName };
     },
   };
 }

@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'fix(browser): plainer share card and own-window wording for agent browsers (DOR-4741)'
   - 'fix(browser): each agent gets its own Agent browser profile, and only the person can share one (DOR-4741, DOR-4818, DOR-4703)'
   - 'fix(browser): agents read about their own browser without the word profile, and the skill pack reaches them (DOR-4741)'
 ---

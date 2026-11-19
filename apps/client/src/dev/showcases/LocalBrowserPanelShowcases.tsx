@@ -59,6 +59,12 @@ const CONNECTED_HERE: LocalBrowserPersonState = {
   ],
 };
 
+/** Atlas's own browser, in its own Chrome window. No real account or page. */
+const AGENT_HERE: LocalBrowserPersonState = {
+  ...CONNECTED_HERE,
+  profile: { id: 'agent-atlas', label: 'Atlas · browser', agentId: 'atlas', agentName: 'Atlas' },
+};
+
 /**
  * Shared with Atlas, two pages into a made-up site (DOR-4449): Back goes to the
  * first page, Forward comes back. Each press really moves this demo's history.
@@ -192,22 +198,28 @@ function browserTransport(
  * The panel in Atlas's chat reading one browser state, from a scoped transport and
  * its own query cache: the browser's state is one app-wide query, so demos sharing
  * the Playground's cache would all show whichever state loaded first.
- * `visible` stays off so several demos on one page don't pull focus and scroll.
+ * Most demos keep `visible` off to avoid pulling focus; sharing demos need the live controls.
  */
 function PanelDemo({
   state,
   open,
   afterOpen,
+  interactive = false,
+  shareRefused = false,
 }: {
   /** What the browser reports, or `null` for a browser DorkOS can't reach. */
   state: LocalBrowserPersonState | null;
   open?: () => Promise<never>;
   /** What the browser reports once Open browser was pressed: a handoff that began meanwhile. */
   afterOpen?: LocalBrowserPersonState;
+  /** Allow the person to open and answer the real sharing card in this demo. */
+  interactive?: boolean;
+  /** Show the marked-turn refusal after the person presses Share browser. */
+  shareRefused?: boolean;
 }) {
   const [transport] = useState<Transport>(() => {
     let current = state;
-    return browserTransport(
+    const base = browserTransport(
       () => {
         if (!current) throw new Error('The browser didn’t answer.');
         return current;
@@ -219,6 +231,29 @@ function PanelDemo({
           return open();
         })
     );
+    if (!interactive) return base;
+    return new Proxy(base, {
+      get: (target, prop, receiver) => {
+        if (prop === 'bindLocalBrowserProfile')
+          return async () => {
+            if (shareRefused)
+              throw Object.assign(new Error('Sharing waits.'), { code: 'outside_turn' });
+            return { id: 'default', label: 'Your browser', agentIds: ['atlas'], createdAt: 'now' };
+          };
+        if (prop === 'openLocalBrowser')
+          return async (input: { profileId?: string }) => {
+            current = {
+              ...AGENT_HERE,
+              profile: input.profileId
+                ? { ...AGENT_HERE.profile!, id: 'default', label: 'Your browser' }
+                : AGENT_HERE.profile,
+            };
+            return current;
+          };
+        if (prop === 'selectLocalBrowserTab') return async () => current;
+        return Reflect.get(target, prop, receiver) as unknown;
+      },
+    });
   });
   useEffect(() => {
     if (state?.sessionId !== IN_USE_WORKING.sessionId) return;
@@ -235,7 +270,7 @@ function PanelDemo({
       <TransportProvider transport={transport}>
         <div className="bg-background h-[36rem] w-full max-w-sm rounded-lg border">
           <LocalBrowserPanel
-            visible={false}
+            visible={interactive}
             sessionId="chat-atlas"
             agentName="Atlas"
             // The app passes the chat's own card, as the Browser panel does (DOR-4731).
@@ -321,6 +356,14 @@ export function LocalBrowserPanelShowcases() {
       <ShowcaseLabel>Shared with this chat’s agent: the browser chrome over the page</ShowcaseLabel>
       <ShowcaseDemo>
         <PanelDemo state={CONNECTED_HERE} />
+      </ShowcaseDemo>
+      <ShowcaseLabel>Atlas · browser: own window and sharing card</ShowcaseLabel>
+      <ShowcaseDemo>
+        <PanelDemo state={AGENT_HERE} interactive />
+      </ShowcaseDemo>
+      <ShowcaseLabel>Sharing refused: press Share yours?, then Share browser</ShowcaseLabel>
+      <ShowcaseDemo>
+        <PanelDemo state={AGENT_HERE} interactive shareRefused />
       </ShowcaseDemo>
       <ShowcaseLabel>Back and Forward follow the page’s own history: press them</ShowcaseLabel>
       <ShowcaseDemo>

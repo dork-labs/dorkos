@@ -24,11 +24,21 @@ describe('agent browser profile choice', () => {
     const { profiles, access, selection } = fixture();
     const a = await selection.select({ mode: 'new-window', sessionId: 'atlas' });
     const b = await selection.select({ mode: 'embedded', sessionId: 'bolt' });
-    expect(a).toMatchObject({ id: 'agent-atlas', label: 'atlas’s browser' });
-    expect(b).toMatchObject({ id: 'agent-bolt', label: 'bolt’s browser' });
+    expect(a).toMatchObject({ id: 'agent-atlas', label: 'atlas · browser' });
+    expect(b).toMatchObject({ id: 'agent-bolt', label: 'bolt · browser' });
     expect(profiles.get('default')?.agentIds).toEqual([]);
     await expect(access(a.id, 'atlas')).resolves.toBeUndefined();
     await expect(access(a.id, 'bolt')).rejects.toMatchObject({ code: 'profile_not_allowed' });
+  });
+
+  it('uses the current label when an agent browser already has an older stored name', async () => {
+    const { profiles, selection } = fixture();
+    profiles.ensure('agent-atlas', 'Old browser name');
+    await expect(
+      selection.select({ mode: 'new-window', sessionId: 'atlas' })
+    ).resolves.toMatchObject({
+      label: 'atlas · browser',
+    });
   });
 
   it('refuses an explicit profile until shared and immediately after unshare', async () => {

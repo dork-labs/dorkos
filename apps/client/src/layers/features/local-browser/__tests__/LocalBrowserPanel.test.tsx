@@ -27,6 +27,7 @@ const transport = vi.hoisted(() => ({
   interruptSession: vi.fn(),
   getSession: vi.fn(),
   getAgentByPath: vi.fn(),
+  listLocalBrowserProfiles: vi.fn(),
 }));
 const navigate = vi.hoisted(() => vi.fn());
 vi.mock('@tanstack/react-router', async (importOriginal) => ({
@@ -103,6 +104,7 @@ beforeEach(() => {
   transport.getLocalBrowserState.mockResolvedValue(disconnected);
   transport.getLocalBrowserCapabilities.mockResolvedValue(capabilities);
   transport.openLocalBrowser.mockResolvedValue(connected);
+  transport.listLocalBrowserProfiles.mockResolvedValue({ profiles: [] });
   // The holder chat's title and folder, and no agent there, unless a test says otherwise.
   transport.getSession.mockImplementation(async (id: string) => {
     if (id !== 'other-chat') throw new Error('not found');
@@ -160,6 +162,22 @@ async function choosePage(name: string): Promise<void> {
 }
 
 describe('LocalBrowserPanel', () => {
+  it('names an agent browser and offers its own window', async () => {
+    transport.getLocalBrowserState.mockResolvedValue({
+      ...connected,
+      profile: {
+        id: 'agent-atlas',
+        label: 'Atlas · browser',
+        agentId: 'atlas',
+        agentName: 'Atlas',
+      },
+    });
+    mount();
+    expect(await screen.findByRole('heading', { name: 'Atlas · browser' })).toBeInTheDocument();
+    expect(screen.getByText('This browser opens in its own window.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Show window' })).toBeEnabled();
+  });
+
   it('never labels another chat’s browser with the current agent name', async () => {
     transport.getLocalBrowserState.mockResolvedValue({ ...connected, sessionId: 'other-chat' });
     mount();
