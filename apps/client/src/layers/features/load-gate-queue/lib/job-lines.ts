@@ -42,16 +42,18 @@ export function waitedLine(job: LoadGateWaitingJob, now: number): string {
 }
 
 /**
- * Where the job stands, when a person has moved it: shown beside the wait.
+ * Where a job a person moved stands, shown beside the wait. "First in line"
+ * comes from its place, never from the mark: a later move to the front goes
+ * ahead of an earlier one.
  *
  * @param job - The waiting job.
  * @returns A short state word, or `null` for a job nobody moved.
  */
 export function standingLine(job: LoadGateWaitingJob): string | null {
   if (job.letThrough) return 'Starting';
-  if (job.front) return 'First in line';
-  if (job.urgent) return 'Urgent';
-  return null;
+  if (!job.front && !job.urgent) return null;
+  if (job.position === 1) return 'First in line';
+  return job.front ? 'Moved to front' : 'Urgent';
 }
 
 /**
@@ -79,24 +81,31 @@ export function disabledReason(
   action: LoadGateJobAction
 ): string | undefined {
   if (job.letThrough) return 'Starting now';
-  if (action === 'front' && job.front) return 'Already first in line';
-  if (action === 'urgent' && job.front) return 'Already first in line';
+  if (action === 'let-through') return undefined;
+  if (job.position === 1) return 'Already first in line';
+  if (action === 'urgent' && job.front) return 'Already ahead of urgent jobs';
   if (action === 'urgent' && job.urgent) return 'Already urgent';
   return undefined;
 }
 
 /**
- * What a screen reader hears once an action took.
+ * What a screen reader hears once an action took. A move to the front says
+ * "first in line" only when the line after the change says so.
  *
  * @param job - The job it acted on.
  * @param action - What was done.
+ * @param after - The same job in the line the server answered with, when it is still there.
  */
-export function doneAnnouncement(job: LoadGateWaitingJob, action: LoadGateJobAction): string {
+export function doneAnnouncement(
+  job: LoadGateWaitingJob,
+  action: LoadGateJobAction,
+  after: LoadGateWaitingJob | undefined
+): string {
   const phrase = jobPhrase(job);
   const subject = phrase.charAt(0).toUpperCase() + phrase.slice(1);
   if (action === 'let-through') return `${subject} starts now.`;
   if (action === 'urgent') return `${subject} is urgent.`;
-  return `${subject} is first in line.`;
+  return after?.position === 1 ? `${subject} is first in line.` : `${subject} moved to the front.`;
 }
 
 /**

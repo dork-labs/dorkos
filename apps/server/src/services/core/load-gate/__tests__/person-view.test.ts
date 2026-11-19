@@ -76,6 +76,21 @@ describe('waitingLineForPerson', () => {
     expect(view).not.toHaveProperty('chatTitle');
   });
 
+  it('shows one row per id, numbering the line after the repeat is dropped', () => {
+    const line = waitingLineForPerson(
+      [
+        job({ agentName: 'Scout' }),
+        job({ seq: 9, job: 'docker', agentName: 'Scout' }),
+        job({ id: 'bbbbbbbbbbbbbbbb', ownedHere: false }),
+      ],
+      NOW
+    );
+    expect(line.jobs.map((row) => [row.id, row.position, row.label])).toEqual([
+      ['0123456789abcdef', 1, 'pnpm'],
+      ['bbbbbbbbbbbbbbbb', 2, 'pnpm'],
+    ]);
+  });
+
   it('never shows a wait that started in the future', () => {
     const [view] = waitingLineForPerson([job({ createdAt: NOW + 3_600_000 })], NOW).jobs;
     expect(view!.waitingSinceMs).toBe(NOW);

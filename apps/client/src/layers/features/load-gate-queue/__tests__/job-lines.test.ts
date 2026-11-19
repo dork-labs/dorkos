@@ -3,6 +3,7 @@ import type { LoadGateWaitingJob } from '@dorkos/shared/load-gate-queue';
 import {
   actionError,
   disabledReason,
+  doneAnnouncement,
   jobOwner,
   jobPhrase,
   standingLine,
@@ -40,19 +41,46 @@ describe('job lines', () => {
     expect(waitedLine(job(), NOW - 60_000)).toBe('Waiting');
   });
 
-  it('says where a moved job stands', () => {
+  it('says where a moved job stands, taking first in line from its place', () => {
+    const second = { position: 2 };
     expect(standingLine(job())).toBeNull();
-    expect(standingLine(job({ urgent: true }))).toBe('Urgent');
-    expect(standingLine(job({ urgent: true, front: true }))).toBe('First in line');
+    expect(standingLine(job({ ...second, urgent: true }))).toBe('Urgent');
+    expect(standingLine(job({ ...second, front: true }))).toBe('Moved to front');
+    expect(standingLine(job({ front: true }))).toBe('First in line');
+    expect(standingLine(job({ urgent: true }))).toBe('First in line');
     expect(standingLine(job({ front: true, letThrough: true }))).toBe('Starting');
   });
 
   it('holds back only what a job already has', () => {
-    expect(disabledReason(job(), 'urgent')).toBeUndefined();
-    expect(disabledReason(job({ urgent: true }), 'urgent')).toBe('Already urgent');
-    expect(disabledReason(job({ urgent: true }), 'front')).toBeUndefined();
-    expect(disabledReason(job({ front: true }), 'urgent')).toBe('Already first in line');
+    const second = { position: 2 };
+    expect(disabledReason(job(second), 'urgent')).toBeUndefined();
+    expect(disabledReason(job(second), 'front')).toBeUndefined();
+    expect(disabledReason(job({ ...second, urgent: true }), 'urgent')).toBe('Already urgent');
+    expect(disabledReason(job({ ...second, urgent: true }), 'front')).toBeUndefined();
+    expect(disabledReason(job({ ...second, front: true }), 'urgent')).toBe(
+      'Already ahead of urgent jobs'
+    );
+    // Moved to the front before, and a later move went ahead: it can be moved again.
+    expect(disabledReason(job({ ...second, front: true }), 'front')).toBeUndefined();
+    expect(disabledReason(job(), 'front')).toBe('Already first in line');
+    expect(disabledReason(job(), 'urgent')).toBe('Already first in line');
+    expect(disabledReason(job(), 'let-through')).toBeUndefined();
     expect(disabledReason(job({ letThrough: true }), 'let-through')).toBe('Starting now');
+  });
+
+  it('says first in line after a move only when the answer puts the job first', () => {
+    const before = job({ position: 3, agentName: 'Scout' });
+    expect(doneAnnouncement(before, 'front', job({ position: 1 }))).toBe(
+      'Scout’s pnpm is first in line.'
+    );
+    expect(doneAnnouncement(before, 'front', job({ position: 2 }))).toBe(
+      'Scout’s pnpm moved to the front.'
+    );
+    expect(doneAnnouncement(before, 'front', undefined)).toBe('Scout’s pnpm moved to the front.');
+    expect(doneAnnouncement(before, 'urgent', job({ position: 1 }))).toBe(
+      'Scout’s pnpm is urgent.'
+    );
+    expect(doneAnnouncement(before, 'let-through', undefined)).toBe('Scout’s pnpm starts now.');
   });
 
   it('tells a job that left apart from any other failure', () => {

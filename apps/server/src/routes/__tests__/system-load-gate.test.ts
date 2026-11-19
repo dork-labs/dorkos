@@ -173,17 +173,20 @@ describe('a person’s actions', () => {
 });
 
 describe('who can reach the line at all', () => {
+  /**
+   * A call to the list or an action, as a method or a bare name (a destructured or
+   * re-exported one counts too): the gate's, the queue's and the person view's.
+   */
+  const CALL =
+    /\b(waitingJobs|letThrough|markUrgent|moveToFront|markFront|markLetThrough|waitingLineForPerson)\b\s*\(/;
+
   /** Server source outside tests that names the list or an action, by file. */
   function callers(): string[] {
     const src = path.resolve(__dirname, '../..');
     const files = fs.readdirSync(src, { recursive: true }) as string[];
     return files
       .filter((file) => file.endsWith('.ts') && !file.includes('__tests__'))
-      .filter((file) =>
-        /\.(waitingJobs|letThrough|markUrgent|moveToFront)\(|waitingLineForPerson\(/.test(
-          fs.readFileSync(path.join(src, file), 'utf8')
-        )
-      )
+      .filter((file) => CALL.test(fs.readFileSync(path.join(src, file), 'utf8')))
       .map((file) => file.split(path.sep).join('/'))
       .sort();
   }
@@ -195,52 +198,74 @@ describe('who can reach the line at all', () => {
   });
 });
 
+/** Mounts the routes behind a listener that marks every request as coming through the tunnel. */
+function mountOverTunnel(options: Parameters<typeof honoGroupListener>[1] = {}): void {
+  const router = new Hono<ApiEnv>();
+  mountLoadGateRoutes(router, { gate: () => gate, audit });
+  const listener = honoGroupListener({ path: '/api/system', routes: router }, options);
+  target.mount((incoming, response) => {
+    // The real mark the tunnel puts on a request from a phone or another computer.
+    markIngress(incoming, 'managed');
+    listener(incoming, response);
+  });
+}
+
+/** Asserts every route answers `status` (and `code`, when given) and the line is untouched. */
+async function expectEveryRouteRefused(
+  status: number,
+  code: string | undefined,
+  headers: Record<string, string> = {}
+): Promise<void> {
+  const before = gate.waitingJobs().map((job) => job.id);
+  const read = await request(target.server).get('/api/system/load-gate/waiting').set(headers);
+  expect(read.status).toBe(status);
+  if (code) expect(read.body.code).toBe(code);
+  expect(read.body).not.toHaveProperty('jobs');
+  for (const action of ['let-through', 'urgent', 'front']) {
+    const response = await request(target.server)
+      .post(`/api/system/load-gate/jobs/${before[0]}/${action}`)
+      .set(headers)
+      .send({});
+    expect(response.status, action).toBe(status);
+    if (code) expect(response.body.code, action).toBe(code);
+  }
+  expect(marks()).toEqual([]);
+  expect(gate.waitingJobs().map((job) => job.id)).toEqual(before);
+  expect(audit).not.toHaveBeenCalled();
+}
+
 describe('anyone but a person at this computer', () => {
-  it.each([
-    ['an agent', { 'x-dorkos-agent': 'agent-a' }],
-    ['another site', { origin: 'https://elsewhere.example' }],
-  ])('refuses %s on every route, and nothing changes', async (_who, headers) => {
-    const [mine] = (await list()).jobs;
-    const before = await list();
-    const read = await request(target.server).get('/api/system/load-gate/waiting').set(headers);
-    expect(read.status).not.toBe(200);
-    expect(read.body).not.toHaveProperty('jobs');
-    for (const action of ['let-through', 'urgent', 'front']) {
-      const response = await request(target.server)
-        .post(`/api/system/load-gate/jobs/${mine.id}/${action}`)
-        .set(headers)
-        .send({});
-      expect(response.status, action).not.toBe(200);
-    }
-    expect(marks()).toEqual([]);
-    expect(await list()).toEqual(before);
-    expect(audit).not.toHaveBeenCalled();
+  it('refuses an agent on every route, at the route’s own person check', async () => {
+    await expectEveryRouteRefused(403, 'person_required', { 'x-dorkos-agent': 'agent-a' });
   });
 
-  it('refuses another device on every route, and nothing changes', async () => {
-    const before = await list();
-    const [mine] = before.jobs;
-    // The real mark the tunnel puts on a request from a phone or another computer.
-    const router = new Hono<ApiEnv>();
-    mountLoadGateRoutes(router, { gate: () => gate, audit });
-    const listener = honoGroupListener({ path: '/api/system', routes: router });
-    target.mount((incoming, response) => {
-      markIngress(incoming, 'managed');
-      listener(incoming, response);
+  it('refuses a page from another site on every route', async () => {
+    const read = await request(target.server)
+      .get('/api/system/load-gate/waiting')
+      .set({ origin: 'https://elsewhere.example' });
+    await expectEveryRouteRefused(read.status, undefined, { origin: 'https://elsewhere.example' });
+    expect(read.status).toBeGreaterThanOrEqual(400);
+  });
+
+  it('refuses a stranger over the tunnel before the route runs', async () => {
+    mountOverTunnel();
+    await expectEveryRouteRefused(401, undefined);
+  });
+
+  it('refuses a signed-in person on another device, at the route’s own this-computer check', async () => {
+    // Mounted ahead of the chain's sign-in gate, with a signed-in person set, so only
+    // the route's own checks stand between the tunnel and the line.
+    mountOverTunnel({
+      beforeBodyParsing: (app) => {
+        app.use(async (c, next) => {
+          c.set('user', { userId: 'user_owner', credential: 'cookie' });
+          await next();
+        });
+        const router = new Hono<ApiEnv>();
+        mountLoadGateRoutes(router, { gate: () => gate, audit });
+        app.route('/api/system', router);
+      },
     });
-    const read = await request(target.server).get('/api/system/load-gate/waiting');
-    expect([401, 403]).toContain(read.status);
-    expect(read.body).not.toHaveProperty('jobs');
-    for (const action of ['let-through', 'urgent', 'front']) {
-      const response = await request(target.server)
-        .post(`/api/system/load-gate/jobs/${mine.id}/${action}`)
-        .send({});
-      expect([401, 403], action).toContain(response.status);
-    }
-    expect(marks()).toEqual([]);
-    expect(gate.waitingJobs().map((job) => job.id)).toEqual(
-      before.jobs.map((job: { id: string }) => job.id)
-    );
-    expect(audit).not.toHaveBeenCalled();
+    await expectEveryRouteRefused(403, 'local_only');
   });
 });

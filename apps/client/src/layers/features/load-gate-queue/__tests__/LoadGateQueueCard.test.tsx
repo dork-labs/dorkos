@@ -108,19 +108,51 @@ describe('LoadGateQueueCard', () => {
     ).toBeInTheDocument();
   });
 
+  // Scout's job second in line, behind another app's, so every button can be pressed.
+  const SECOND = job({ position: 2 });
+  const AHEAD = { ...OTHER, position: 1 };
+  const MOVED_FIRST = { jobs: [job({ position: 1, front: true }), { ...AHEAD, position: 2 }] };
+
   it.each([
     ['Let through Scout’s pnpm', 'let-through', 'Scout’s pnpm starts now.'],
     ['Mark Scout’s pnpm urgent', 'urgent', 'Scout’s pnpm is urgent.'],
     ['Move to front: Scout’s pnpm', 'front', 'Scout’s pnpm is first in line.'],
   ])('%s sends that action and announces it', async (name, action, announcement) => {
     const user = userEvent.setup();
-    const transport = transportWith([job()]);
+    const transport = transportWith([AHEAD, SECOND], {
+      actOnLoadGateJob: vi.fn().mockResolvedValue(MOVED_FIRST),
+    });
     renderCard(transport);
     await user.click(await screen.findByRole('button', { name }));
     await waitFor(() =>
       expect(transport.actOnLoadGateJob).toHaveBeenCalledWith('aaaaaaaaaaaaaaaa', action)
     );
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(announcement));
+  });
+
+  it('says first in line only when the answer puts the job first', async () => {
+    const user = userEvent.setup();
+    const stillSecond = { jobs: [AHEAD, job({ position: 2, front: true })] };
+    renderCard(
+      transportWith([AHEAD, SECOND], {
+        actOnLoadGateJob: vi.fn().mockResolvedValue(stillSecond),
+      })
+    );
+    await user.click(await screen.findByRole('button', { name: 'Move to front: Scout’s pnpm' }));
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent('Scout’s pnpm moved to the front.')
+    );
+  });
+
+  it('keeps Move to front open for a job moved there before, now second', async () => {
+    renderCard(transportWith([{ ...AHEAD, front: true }, job({ position: 2, front: true })]));
+    const front = await screen.findByRole('button', { name: 'Move to front: Scout’s pnpm' });
+    expect(front).not.toHaveAttribute('aria-disabled');
+    expect(screen.getByRole('button', { name: 'Mark Scout’s pnpm urgent' })).toHaveAttribute(
+      'aria-disabled',
+      'true'
+    );
+    expect(screen.getAllByRole('listitem')[1]).toHaveTextContent('Moved to front');
   });
 
   it('works from the keyboard', async () => {

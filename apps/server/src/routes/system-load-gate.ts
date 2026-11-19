@@ -7,8 +7,13 @@
  * **A person's routes only, reads included.** The list names which agents and
  * chats are waiting, which no agent learns about another (`load-gate.ts`), so
  * every route here, the read too, takes the three person bars
- * (`extensions-person-bar.ts`) and a caller at this computer. There is no agent
- * route and no MCP tool for any of it.
+ * (`extensions-person-bar.ts`) and a caller at this computer. No route here is
+ * meant for agents, and there is no MCP tool for any of it.
+ *
+ * **The residual, as named on those bars.** With no owner set up there is no
+ * session to prove a person, so a program on this computer that leaves out the
+ * agent headers passes, an agent's own shell included. Signing up an owner
+ * closes it, and the real boundary is DOR-3053.
  *
  * **Who did it is recorded here.** Any program running as this user can write a
  * mark in the shared folder by hand, so the gate's own log line never says a
@@ -31,6 +36,7 @@ import type { JobActionResult } from '../services/core/load-gate/job-actions.js'
 import type { LoadGate } from '../services/core/load-gate/load-gate.js';
 import { machineLoadGate } from '../services/core/load-gate/machine-load-gate.js';
 import { waitingLineForPerson } from '../services/core/load-gate/person-view.js';
+import { isTicketId } from '../services/core/load-gate/ticket-queue.js';
 import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
 
 const COPY: PersonBarCopy = {
@@ -116,12 +122,14 @@ export function mountLoadGateRoutes(router: Hono<ApiEnv>, deps: LoadGateRouteDep
       const refused = refusedNotHere(c);
       if (refused) return refused;
       const id = c.req.param('id');
+      const invalidId = () =>
+        c.json(errorBody('That isn’t a waiting job’s id.', 'invalid_id'), 400);
+      // Checked first, so an id that cannot be a job's never costs a read of the folder.
+      if (!isTicketId(id)) return invalidId();
       // Read before the action, from this server's memory only: the job leaves the line once it starts.
       const agentName = line().jobs.find((job) => job.id === id)?.agentName;
       const result = spec.run(gate(), id);
-      if (result === 'invalid-id') {
-        return c.json(errorBody('That isn’t a waiting job’s id.', 'invalid_id'), 400);
-      }
+      if (result === 'invalid-id') return invalidId();
       if (result === 'not-found') {
         return c.json(errorBody('That job isn’t waiting anymore.', 'not_found'), 404);
       }

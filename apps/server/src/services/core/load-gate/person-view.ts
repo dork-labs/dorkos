@@ -81,7 +81,10 @@ function viewOf(job: WaitingJob, position: number, now: number): LoadGateWaiting
 }
 
 /**
- * The waiting line, in the order the gate lists it.
+ * The waiting line, in the order the gate lists it, one row per id. The queue
+ * already keeps one ticket per id; this holds too if it ever did not, so a
+ * file copied under another job's id can never show as a second row with that
+ * job's agent and chat.
  *
  * @param jobs - The gate's list (`LoadGate.waitingJobs`).
  * @param now - The wall clock now.
@@ -90,5 +93,11 @@ export function waitingLineForPerson(
   jobs: readonly WaitingJob[],
   now: number = Date.now()
 ): LoadGateWaitingLine {
-  return { jobs: jobs.map((job, index) => viewOf(job, index + 1, now)) };
+  const seen = new Set<string>();
+  const unique = jobs.filter((job) => {
+    if (seen.has(job.id)) return false;
+    seen.add(job.id);
+    return true;
+  });
+  return { jobs: unique.map((job, index) => viewOf(job, index + 1, now)) };
 }

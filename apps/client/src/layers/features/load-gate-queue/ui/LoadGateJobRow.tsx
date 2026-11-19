@@ -40,7 +40,19 @@ export function LoadGateJobRow({ job, now, onDone }: LoadGateJobRowProps) {
   const detail = [job.chatTitle, waitedLine(job, now), standingLine(job)].filter(Boolean);
 
   const run = (action: LoadGateJobAction) =>
-    act.mutate({ id: job.id, action }, { onSuccess: () => onDone(doneAnnouncement(job, action)) });
+    act.mutate(
+      { id: job.id, action },
+      {
+        onSuccess: (line) =>
+          onDone(
+            doneAnnouncement(
+              job,
+              action,
+              line.jobs.find((next) => next.id === job.id)
+            )
+          ),
+      }
+    );
 
   return (
     <li className="flex flex-col gap-2 py-2.5 @min-[36rem]/queue:flex-row @min-[36rem]/queue:items-center @min-[36rem]/queue:gap-4">
