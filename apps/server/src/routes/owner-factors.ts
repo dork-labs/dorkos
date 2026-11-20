@@ -12,9 +12,11 @@
  * - `POST /authenticator/confirm`: `{ id, code }`. One good code confirms it.
  * - `DELETE /:id`: after "Confirm it's you", removes one.
  *
- * Every route is the owner in person: at this computer, or signed in on an
- * encrypted connection ({@link refuseFrontDoorChange}). Never Wi-Fi, an agent,
- * an API key or an approval token. Reads included.
+ * Every route is the owner in person, never Wi-Fi, an agent, an API key or an
+ * approval token ({@link refuseFrontDoorChange}), reads included. Every change
+ * is at this computer only, by the request classifier's verdict: a sign-in
+ * check is added or removed only where the owner sits, never from another
+ * device with a password alone.
  *
  * @module routes/owner-factors
  */
@@ -24,10 +26,13 @@ import { Hono, type Context } from 'hono';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
-import { refuseFrontDoorChange } from '../lib/caller-authority.js';
+import { NEEDS_PERSON_AT_THIS_COMPUTER, refuseFrontDoorChange } from '../lib/caller-authority.js';
+import { classifyRequest } from '../lib/request-classifier.js';
+import { currentServerRole } from '../lib/server-role.js';
 import { isOwnOriginJsonWrite, NOT_FROM_OWN_PAGE } from '../lib/http/own-origin-write.js';
 import { errorBody } from '../lib/route-utils.js';
-import { getUserById, readOwnerAccount } from '../services/core/auth/index.js';
+import { passkeyChecked } from '../http/sign-in/passkey-check.js';
+import { getAuth, getUserById, readOwnerAccount } from '../services/core/auth/index.js';
 import { recordSignInTrustChange } from '../services/core/auth/auth-audit.js';
 import {
   addPendingTotp,
@@ -38,10 +43,12 @@ import {
   removeOwnerFactor,
 } from '../services/core/auth/factors/owner-factors.js';
 import {
+  everHadRemoteFactor,
   finishAddingPasskey,
   startAddingPasskey,
   thisComputerPasskeyOrigins,
 } from '../services/core/auth/factors/owner-passkeys.js';
+import { signOutSessionsAway } from '../services/core/auth/sessions/signed-in-devices.js';
 import { newTotpSecret, totpUri, verifyTotp } from '../services/core/auth/factors/totp.js';
 import { notify } from '../services/notifications/notification-service.js';
 import { runFrontDoorWrite } from './front-door-step-up.js';
@@ -52,19 +59,49 @@ const SUBJECT = 'sign-in checks';
 /** Longest label kept. */
 const MAX_LABEL = 60;
 
-/** The owner asking, with their sign-in, or the refusal. */
+/**
+ * The owner asking, with their sign-in, or the refusal. A change also needs
+ * the classifier's this-computer verdict.
+ */
 function ownerOf(
   c: Context<ApiEnv>,
+  change: boolean,
   facts: RequestFacts = honoRequestFacts(c)
 ): { userId: string; sessionId: string } | Response {
   const refusal = refuseFrontDoorChange(facts, SUBJECT);
   if (refusal) return c.json(errorBody(refusal.error, refusal.code), 403);
+  if (change && classifyRequest(facts, currentServerRole()).kind !== 'this-computer') {
+    return c.json(
+      errorBody(
+        'Change sign-in checks on the computer DorkOS runs on.',
+        NEEDS_PERSON_AT_THIS_COMPUTER
+      ),
+      403
+    );
+  }
   const owner = readOwnerAccount();
   const sessionId = facts.user?.sessionId;
   if (!owner || facts.user?.userId !== owner.id || !sessionId) {
     return c.json(errorBody('Sign in to change sign-in checks.', 'SIGN_IN_FIRST'), 403);
   }
   return { userId: owner.id, sessionId };
+}
+
+/**
+ * After the owner's first check that works from other devices is confirmed,
+ * sign out every sign-in they made from another device before it, which a
+ * password alone made. The sign-in confirming it, and this computer's, stay.
+ *
+ * @param owner - The owner and the confirming sign-in.
+ * @param first - Whether no such check had existed before this one.
+ */
+async function endSignInsFromBefore(
+  owner: { userId: string; sessionId: string },
+  first: boolean
+): Promise<void> {
+  const auth = getAuth();
+  if (!first || !auth) return;
+  await signOutSessionsAway(auth, owner.userId, owner.sessionId);
 }
 
 /** A label from a body, trimmed and capped, or the fallback. */
@@ -93,17 +130,23 @@ export function createOwnerFactorRoutes(): Hono<ApiEnv> {
   });
 
   router.get('/', (c) => {
-    const owner = ownerOf(c);
+    const owner = ownerOf(c, false);
     if (owner instanceof Response) return owner;
     return c.json({ factors: listOwnerFactors(owner.userId) });
   });
 
   router.post('/passkeys/options', async (c) => {
-    const owner = ownerOf(c);
+    const owner = ownerOf(c, true);
     if (owner instanceof Response) return owner;
-    const body = (readJsonBody(c) ?? null) as { label?: unknown } | null;
+    const body = (readJsonBody(c) ?? null) as { label?: unknown; passkey?: unknown } | null;
     const label = labelOf(body, 'Passkey');
     const origin = String(c.req.header('origin'));
+    // Only the first passkey is added on a password alone: once there is one,
+    // adding another takes a check with it.
+    const checked = await passkeyChecked(c, owner, 'owner-factor-add-passkey', body?.passkey, {
+      ifAny: true,
+    });
+    if (checked !== true) return checked;
     return runFrontDoorWrite(c, {
       kind: 'owner-factor.change',
       target: 'passkey',
@@ -111,7 +154,7 @@ export function createOwnerFactorRoutes(): Hono<ApiEnv> {
       reason: 'Add a passkey to your DorkOS account.',
       subject: SUBJECT,
       run: async (confirming) => {
-        const who = ownerOf(c, confirming);
+        const who = ownerOf(c, true, confirming);
         if (who instanceof Response) return who;
         const options = await startAddingPasskey({
           userId: who.userId,
@@ -122,7 +165,7 @@ export function createOwnerFactorRoutes(): Hono<ApiEnv> {
         });
         if (typeof options === 'string') {
           return c.json(
-            errorBody('Add a passkey on this computer, or over https.', 'PASSKEY_ORIGIN'),
+            errorBody('Add a passkey in the DorkOS app on this computer.', 'PASSKEY_ORIGIN'),
             403
           );
         }
@@ -132,12 +175,13 @@ export function createOwnerFactorRoutes(): Hono<ApiEnv> {
   });
 
   router.post('/passkeys/finish', async (c) => {
-    const owner = ownerOf(c);
+    const owner = ownerOf(c, true);
     if (owner instanceof Response) return owner;
     const body = (readJsonBody(c) ?? null) as { response?: unknown } | null;
     if (!body?.response || typeof body.response !== 'object') {
       return c.json(errorBody('Send the new passkey.', 'INVALID_BODY'), 400);
     }
+    const first = !everHadRemoteFactor(owner.userId);
     const added = await finishAddingPasskey({
       userId: owner.userId,
       sessionId: owner.sessionId,
@@ -150,6 +194,7 @@ export function createOwnerFactorRoutes(): Hono<ApiEnv> {
       (origin) => new URL(origin).hostname === added.host
     );
     recordSignInTrustChange(owner.userId, here ? 'passkey-added-here' : 'passkey-added');
+    if (!here) await endSignInsFromBefore(owner, first);
     void notify('signin.check_added', {
       factorId: added.factorId,
       kind: 'passkey',
@@ -159,10 +204,22 @@ export function createOwnerFactorRoutes(): Hono<ApiEnv> {
   });
 
   router.post('/authenticator/start', async (c) => {
-    const owner = ownerOf(c);
+    const owner = ownerOf(c, true);
     if (owner instanceof Response) return owner;
-    const body = (readJsonBody(c) ?? null) as { label?: unknown } | null;
+    const body = (readJsonBody(c) ?? null) as { label?: unknown; passkey?: unknown } | null;
     const label = labelOf(body, 'Authenticator app');
+    // With a passkey on this computer, it is checked too: a password alone,
+    // even one a browser filled in, never adds a sign-in check here.
+    const checked = await passkeyChecked(
+      c,
+      owner,
+      'owner-factor-add-authenticator',
+      body?.passkey,
+      {
+        ifAny: true,
+      }
+    );
+    if (checked !== true) return checked;
     return runFrontDoorWrite(c, {
       kind: 'owner-factor.change',
       target: 'authenticator',
@@ -170,7 +227,7 @@ export function createOwnerFactorRoutes(): Hono<ApiEnv> {
       reason: 'Add an authenticator app to your DorkOS account.',
       subject: SUBJECT,
       run: async (confirming) => {
-        const who = ownerOf(c, confirming);
+        const who = ownerOf(c, true, confirming);
         if (who instanceof Response) return who;
         const secret = newTotpSecret();
         const id = await addPendingTotp(who.userId, label, secret);
@@ -181,7 +238,7 @@ export function createOwnerFactorRoutes(): Hono<ApiEnv> {
   });
 
   router.post('/authenticator/confirm', async (c) => {
-    const owner = ownerOf(c);
+    const owner = ownerOf(c, true);
     if (owner instanceof Response) return owner;
     const body = (readJsonBody(c) ?? null) as { id?: unknown; code?: unknown } | null;
     const factor =
@@ -195,19 +252,27 @@ export function createOwnerFactorRoutes(): Hono<ApiEnv> {
     if (step === null) {
       return c.json(errorBody('That code didn’t match. Try the newest one.', 'CODE_REFUSED'), 400);
     }
+    const first = !everHadRemoteFactor(owner.userId);
     confirmTotp(factor.id, step);
     recordSignInTrustChange(owner.userId, 'authenticator-added');
+    await endSignInsFromBefore(owner, first);
     void notify('signin.check_added', { factorId: factor.id, kind: 'authenticator' });
     return c.json({ id: factor.id });
   });
 
-  router.delete('/:id', (c) => {
-    const owner = ownerOf(c);
+  router.delete('/:id', async (c) => {
+    const owner = ownerOf(c, true);
     if (owner instanceof Response) return owner;
     const id = c.req.param('id');
-    if (!findOwnerFactor(owner.userId, id)) {
+    const factor = findOwnerFactor(owner.userId, id);
+    if (!factor) {
       return c.json(errorBody('That sign-in check is already gone.', 'NOT_FOUND'), 404);
     }
+    const body = (readJsonBody(c) ?? null) as { passkey?: unknown } | null;
+    const checked = await passkeyChecked(c, owner, `owner-factor-remove:${id}`, body?.passkey, {
+      ifAny: true,
+    });
+    if (checked !== true) return checked;
     return runFrontDoorWrite(c, {
       kind: 'owner-factor.change',
       target: id,
@@ -215,12 +280,19 @@ export function createOwnerFactorRoutes(): Hono<ApiEnv> {
       reason: 'Remove this sign-in check.',
       subject: SUBJECT,
       run: async (confirming) => {
-        const who = ownerOf(c, confirming);
+        const who = ownerOf(c, true, confirming);
         if (who instanceof Response) return who;
         if (!removeOwnerFactor(who.userId, id)) {
           return c.json(errorBody('That sign-in check is already gone.', 'NOT_FOUND'), 404);
         }
         recordSignInTrustChange(who.userId, 'factor-removed');
+        // A pending authenticator was never a sign-in check: nothing to tell.
+        if (factor.confirmedAt !== null) {
+          void notify('signin.check_removed', {
+            factorId: id,
+            kind: factor.kind === 'passkey' ? 'passkey' : 'authenticator',
+          });
+        }
         return c.body(null, 204);
       },
     });

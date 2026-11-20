@@ -192,11 +192,16 @@ The old global MCP key (and its `POST /api/config/mcp/generate-key` / `DELETE /a
 
 ## A second step for other devices
 
-In **Settings → Login & security → Signing in from other devices**, you can add a passkey or an authenticator app. Once you have one, signing in from another device (over remote access, your own tunnel, or another network) needs it as well as your password, or a passkey on its own. This computer never asks for it. Adding or removing one asks you to confirm it's you, and each new one shows in Activity.
+On the computer DorkOS runs on, open **Settings → Login & security → Signing in from other devices** and add an authenticator app. Once you have one, signing in from another device (over remote access, your own tunnel, or another network) needs a code from it as well as your password. This computer never asks for it.
 
-A passkey works on the address you added it on, for example your tunnel's address. An authenticator app works on any of them.
+- You add and remove these only on the computer DorkOS runs on, never from another device.
+- Adding or removing one asks you to confirm it's you. If that computer has a passkey, it asks for the passkey too.
+- Each change shows in Activity and sends you a notice.
+- Once you have had one, removing the last one doesn't bring back signing in from another device with just your password. Those sign-ins are refused until you add a new one on the computer DorkOS runs on.
 
-**Lost your passkey or phone?** Sign in on the computer DorkOS runs on, which never asks for the second step, and remove it in **Signing in from other devices**. Then add a new one.
+A passkey you add here works on this computer. It's how you approve Wi-Fi devices.
+
+**Lost your phone?** Sign in on the computer DorkOS runs on, which never asks for the second step. Remove the old authenticator app in **Signing in from other devices**, then add a new one.
 
 ## Recovering a lost password
 

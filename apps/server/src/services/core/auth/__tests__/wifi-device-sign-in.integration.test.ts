@@ -28,7 +28,7 @@ import { createDevicesRoutes } from '../../../../routes/devices.js';
 import { createStepUpRoutes } from '../../../../routes/step-up.js';
 import { MainRequestAdmission } from '../../lifecycle/main-request-admission.js';
 import { configManager, initConfigManager } from '../../config-manager.js';
-import { markIngress } from '../../remote/ingress-mark.js';
+import { markIngress, type RequestIngress } from '../../remote/ingress-mark.js';
 import { addPasskey } from '../factors/owner-factors.js';
 import { passkeyOrigins } from '../factors/owner-passkeys.js';
 import { wifiTurnHeld } from '../sessions/wifi-turn-ceiling.js';
@@ -77,11 +77,17 @@ function cookiesOf(res: { headers: Record<string, unknown> }): string {
 }
 
 /** A JSON write from this server's own page, through one listener. */
-function post(url: string, via: 'wifi' | 'direct', cookie = '', method: 'post' | 'put' = 'post') {
+function post(
+  url: string,
+  via: RequestIngress,
+  cookie = '',
+  method: 'post' | 'put' = 'post',
+  host = LOCAL
+) {
   let req = request(target.server)
     [method](url)
-    .set('Host', LOCAL)
-    .set('Origin', ORIGIN)
+    .set('Host', host)
+    .set('Origin', `http://${host}`)
     .set('Content-Type', 'application/json');
   if (cookie) req = req.set('Cookie', cookie);
   if (via !== 'direct') req = req.set(INGRESS_HEADER, via);
@@ -345,18 +351,15 @@ describe('a one-time code from this computer', () => {
   it('needs a fresh passkey check for each approval', async () => {
     await post('/api/wifi-sign-in/start', 'wifi').send({});
     const first = await newestRequestId();
-    await post('/api/wifi-sign-in/start', 'wifi').send({});
-    const second = (
-      await request(target.server)
-        .get('/api/devices/sign-in-requests')
-        .set('Host', LOCAL)
-        .set('Cookie', deskCookie)
-    ).body.requests.find((r: { id: string }) => r.id !== first).id as string;
     const asked = await post(
       `/api/devices/sign-in-requests/${first}/approve`,
       'direct',
       deskCookie
     ).send({});
+    // The device asks again, which ends the first request and opens a second.
+    await post('/api/wifi-sign-in/start', 'wifi').send({});
+    const second = await newestRequestId();
+    expect(second).not.toBe(first);
     const proof = desk.assert({ challenge: asked.body.options.challenge });
     const passkey = {
       id: proof.credentialId,
@@ -446,6 +449,14 @@ describe('what a Wi-Fi device may do', () => {
     });
     expect(allowed.status).toBe(204);
     expect((await turnFrom(device, true)).body.held).toBe(false);
+    const after = await request(target.server)
+      .get('/api/devices/sessions')
+      .set('Host', LOCAL)
+      .set('Cookie', deskCookie);
+    expect(
+      after.body.sessions.find((s: { id: string; runsAgents?: boolean }) => s.id === row.id)
+        .runsAgents
+    ).toBe(true);
 
     // Another device is still held, and that check cannot be used again for it.
     const other = await signInOverWifi();
@@ -570,5 +581,90 @@ describe('what a Wi-Fi device may do', () => {
       .filter((pair) => pair.split('=', 1)[0]!.endsWith('.session_token'))
       .join('; ');
     expect((await turnFrom(token, true)).status).toBe(401);
+  });
+});
+
+describe('each step only where it belongs', () => {
+  it.each(['direct', 'own-tunnel'] as const)(
+    'a code is typed only on the Wi-Fi listener: over %s it is not there',
+    async (via) => {
+      const started = await post('/api/wifi-sign-in/start', 'wifi').send({});
+      const code = await approveAtDesk(await newestRequestId());
+      const res = await post('/api/wifi-sign-in/finish', via).send({
+        requestId: started.body.requestId,
+        code,
+      });
+      expect(res.status).toBe(404);
+      expect(cookiesOf(res)).not.toMatch(/session_token/);
+    }
+  );
+
+  it.each(['own-tunnel', 'managed'] as const)(
+    'approving and the per-device switch are refused over %s, even signed in there',
+    async (via) => {
+      const signedIn = await post('/api/auth/sign-in/email', via).send({
+        email: EMAIL,
+        password: PASSWORD,
+      });
+      expect(signedIn.status).toBe(200);
+      const cookie = cookiesOf(signedIn);
+      const device = await signInOverWifi();
+      const row = (
+        await request(target.server)
+          .get('/api/devices/sessions')
+          .set('Host', LOCAL)
+          .set('Cookie', deskCookie)
+      ).body.sessions.find((s: { route: string }) => s.route === 'wifi');
+      await post('/api/wifi-sign-in/start', 'wifi').send({});
+      const viewId = await newestRequestId();
+      const approve = await post(
+        `/api/devices/sign-in-requests/${viewId}/approve`,
+        via,
+        cookie
+      ).send({});
+      expect(approve.status).toBe(403);
+      expect(approve.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
+      const opt = await post(
+        `/api/devices/sessions/${row.id}/runs-agents`,
+        via,
+        cookie,
+        'put'
+      ).send({ on: true });
+      expect(opt.status).toBe(403);
+      expect(opt.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
+      expect(device).toMatch(/session_token/);
+    }
+  );
+
+  it('approving needs the owner’s own sign-in at this computer, with login on or off', async () => {
+    await post('/api/wifi-sign-in/start', 'wifi').send({});
+    const viewId = await newestRequestId();
+    const url = `/api/devices/sign-in-requests/${viewId}/approve`;
+    // Refused before any passkey check is offered: never a 428, never a code.
+    const signedOutOn = await post(url, 'direct').send({});
+    expect(signedOutOn.status).toBe(401);
+    configManager.set('auth', { enabled: false });
+    try {
+      const signedOutOff = await post(url, 'direct').send({});
+      expect(signedOutOff.status).toBe(401);
+      expect(signedOutOff.body.options).toBeUndefined();
+    } finally {
+      configManager.set('auth', { enabled: true });
+    }
+  });
+
+  it('an address that is not on the fixed list is refused, whatever Host and Origin say', async () => {
+    await post('/api/wifi-sign-in/start', 'wifi').send({});
+    const viewId = await newestRequestId();
+    // A Host on another local port, with an Origin that matches it.
+    const forged = await post(
+      `/api/devices/sign-in-requests/${viewId}/approve`,
+      'direct',
+      deskCookie,
+      'post',
+      'localhost:4999'
+    ).send({});
+    expect(forged.status).toBe(403);
+    expect(forged.body.code).toBe('NOT_FROM_OWN_PAGE');
   });
 });

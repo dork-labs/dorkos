@@ -135,6 +135,8 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   'web.new_device': MonitorSmartphone,
   // A passkey or authenticator app was added to the owner's account (DOR-3647).
   'signin.check_added': KeyRound,
+  // One was removed (DOR-3647).
+  'signin.check_removed': KeyRound,
   // Files in an agent's folder whose names say they are secrets (DOR-3292).
   'agent.secret_files': ShieldAlert,
   // An agent's folder allow list too long for its approval card (DOR-4455).
@@ -330,7 +332,11 @@ const BURST_VERB: Record<GroupableNotificationKind, (count: number) => string> =
 export function notificationLink(notification: NotificationDTO): NotificationLink | null {
   const { subject, kind, sessionId } = notification;
 
-  if (kind === 'step-up.remote-refused' || kind === 'signin.check_added')
+  if (
+    kind === 'step-up.remote-refused' ||
+    kind === 'signin.check_added' ||
+    kind === 'signin.check_removed'
+  )
     return { ...appRoutes.home(), search: { settings: 'security' } };
   if (kind === 'agent.unreachable') {
     return { ...appRoutes.home(), search: { detail: 'offline-agent', itemId: subject.id } };

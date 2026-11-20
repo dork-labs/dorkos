@@ -1,7 +1,9 @@
 /**
  * The owner's sign-in checks: passkeys and authenticator apps that prove a
  * sign-in from another device (DOR-3647). Adding or removing one asks
- * "Confirm it's you" first, which the app's fetch handles.
+ * "Confirm it's you" first, which the app's fetch handles. With a passkey on
+ * this computer, adding an authenticator app or removing a check also takes a
+ * fresh passkey check, run here.
  *
  * @module features/auth/model/use-owner-factors
  */
@@ -9,7 +11,7 @@ import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { OwnerFactor, PendingAuthenticator } from '@dorkos/shared/signed-in-devices';
 import { useTransport } from '@/layers/shared/model';
-import { makePasskey } from '../lib/passkey-ceremony';
+import { makePasskey, withPasskeyCheck } from '../lib/passkey-ceremony';
 
 /** TanStack Query key for the list. */
 export const ownerFactorsKey = ['auth', 'owner-factors'] as const;
@@ -82,13 +84,20 @@ export function useOwnerFactors(enabled: boolean): OwnerFactors {
     error,
     addPasskey: async () => {
       await run(async () => {
-        const { options } = await transport.startAddingPasskey('Passkey');
-        await transport.finishAddingPasskey(await makePasskey(options));
+        const started = await withPasskeyCheck((passkey) =>
+          transport.startAddingPasskey('Passkey', passkey)
+        );
+        if (started.kind !== 'options') return;
+        await transport.finishAddingPasskey(await makePasskey(started.options));
       });
     },
     startAuthenticator: async () => {
-      const started = await run(() => transport.startAddingAuthenticator('Authenticator app'));
-      if (started) setPending(started);
+      const started = await run(() =>
+        withPasskeyCheck((passkey) =>
+          transport.startAddingAuthenticator('Authenticator app', passkey)
+        )
+      );
+      if (started?.kind === 'started') setPending(started.pending);
     },
     confirmAuthenticator: async (code) => {
       if (!pending) return false;
@@ -98,7 +107,7 @@ export function useOwnerFactors(enabled: boolean): OwnerFactors {
     },
     cancelAuthenticator: () => setPending(null),
     remove: async (id) => {
-      await run(() => transport.removeOwnerFactor(id));
+      await run(() => withPasskeyCheck((passkey) => transport.removeOwnerFactor(id, passkey)));
     },
   };
 }

@@ -131,3 +131,21 @@ export async function makePasskey(options: unknown): Promise<Record<string, unkn
     },
   };
 }
+
+/**
+ * Run a passkey-checked action: call, run the check the server asks for, call
+ * again with its answer. A call the server answers without a check is done.
+ *
+ * @param call - The action, given the passkey response the second time.
+ * @returns The step that is not a check.
+ */
+export async function withPasskeyCheck<T extends { kind: string }>(
+  call: (passkey?: unknown) => Promise<T | { kind: 'passkey-check'; options: unknown }>
+): Promise<Exclude<T, { kind: 'passkey-check' }>> {
+  const first = await call();
+  if (first.kind !== 'passkey-check') return first as Exclude<T, { kind: 'passkey-check' }>;
+  const answer = await runPasskeyCheck((first as { options: unknown }).options);
+  const second = await call(answer);
+  if (second.kind === 'passkey-check') throw new Error('That passkey check didn’t work.');
+  return second as Exclude<T, { kind: 'passkey-check' }>;
+}

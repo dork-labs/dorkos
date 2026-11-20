@@ -21,6 +21,18 @@ const OWNER_ONLY = json(
   'Not the owner, in the app, at the computer DorkOS runs on or signed in over https'
 );
 
+/** A change, refused anywhere but the computer DorkOS runs on. */
+const AT_THIS_COMPUTER = json(
+  ErrorSchema,
+  'Not the owner, in the app, at the computer DorkOS runs on. Never another device.'
+);
+
+/** A fresh passkey check, when this computer has a passkey. */
+const PASSKEY_CHECK = json(
+  z.object({ code: z.literal('PASSKEY_CHECK_REQUIRED'), options: z.unknown() }),
+  'This computer has a passkey: run this check, then send its response as passkey'
+);
+
 const FactorSchema = z.object({
   id: z.string(),
   kind: z.enum(['totp', 'passkey']),
@@ -60,12 +72,14 @@ export function registerOwnerFactorsOpenApi(registry: OpenAPIRegistry): void {
     tags: TAGS,
     summary: 'Start adding a passkey',
     description:
-      'After "Confirm it’s you", a challenge to make a passkey on the address the browser is ' +
-      'on. The person is always verified. Never over Wi-Fi.',
+      'After a passkey check when this computer has a passkey, then "Confirm it’s you": a ' +
+      'challenge to make a passkey on this computer’s own address. The person is always ' +
+      'verified. At this computer only.',
     request: { body: LabelBody },
     responses: {
       200: json(z.object({ options: z.unknown() }), 'The options to hand the browser'),
-      403: OWNER_ONLY,
+      403: AT_THIS_COMPUTER,
+      428: PASSKEY_CHECK,
     },
   });
 
@@ -83,7 +97,7 @@ export function registerOwnerFactorsOpenApi(registry: OpenAPIRegistry): void {
     responses: {
       200: json(z.object({ id: z.string(), host: z.string() }), 'Added'),
       400: json(ErrorSchema, 'The passkey was not added'),
-      403: OWNER_ONLY,
+      403: AT_THIS_COMPUTER,
     },
   });
 
@@ -93,15 +107,17 @@ export function registerOwnerFactorsOpenApi(registry: OpenAPIRegistry): void {
     tags: TAGS,
     summary: 'Start adding an authenticator app',
     description:
-      'After "Confirm it’s you", a new secret and the address an authenticator app scans. ' +
-      'It counts only once one of its codes is confirmed.',
+      'After a passkey check when this computer has a passkey, then "Confirm it’s you": a ' +
+      'new secret and the address an authenticator app scans. It counts only once one of ' +
+      'its codes is confirmed.',
     request: { body: LabelBody },
     responses: {
       200: json(
         z.object({ id: z.string(), secret: z.string(), uri: z.string() }),
         'The new secret to scan'
       ),
-      403: OWNER_ONLY,
+      403: AT_THIS_COMPUTER,
+      428: PASSKEY_CHECK,
     },
   });
 
@@ -121,7 +137,7 @@ export function registerOwnerFactorsOpenApi(registry: OpenAPIRegistry): void {
     responses: {
       200: json(z.object({ id: z.string() }), 'Confirmed'),
       400: json(ErrorSchema, 'The code did not match'),
-      403: OWNER_ONLY,
+      403: AT_THIS_COMPUTER,
       404: json(ErrorSchema, 'Nothing waiting to confirm'),
     },
   });
@@ -131,11 +147,15 @@ export function registerOwnerFactorsOpenApi(registry: OpenAPIRegistry): void {
     path: '/api/owner-factors/{id}',
     tags: TAGS,
     summary: 'Remove a sign-in check',
-    description: 'After "Confirm it’s you", removes one passkey or authenticator app.',
+    description:
+      'After a passkey check when this computer has a passkey, then "Confirm it’s you": ' +
+      'removes one passkey or authenticator app and raises a notice. Once one that works ' +
+      'from another device has existed, a password alone never signs in from one again.',
     request: { params: z.object({ id: z.string() }) },
     responses: {
       204: { description: 'Removed' },
-      403: OWNER_ONLY,
+      403: AT_THIS_COMPUTER,
+      428: PASSKEY_CHECK,
       404: json(ErrorSchema, 'Already gone'),
     },
   });

@@ -9,8 +9,10 @@
 import {
   PASSKEY_CHECK_CODE,
   PASSKEY_NEEDED_CODE,
+  type AuthenticatorStartStep,
   type OwnerFactor,
   type PasskeyCheckedStep,
+  type PasskeyStartStep,
   type PendingAuthenticator,
   type SignedInDeviceList,
   type SignOutEverywhereElseResult,
@@ -100,11 +102,22 @@ export function createDeviceMethods(baseUrl: string) {
     listOwnerFactors(): Promise<{ factors: OwnerFactor[] }> {
       return fetchJSON(baseUrl, '/owner-factors');
     },
-    startAddingPasskey(label: string): Promise<{ options: unknown }> {
-      return fetchJSON(baseUrl, '/owner-factors/passkeys/options', {
-        method: 'POST',
-        body: JSON.stringify({ label }),
-      });
+    async startAddingPasskey(label: string, passkey?: unknown): Promise<PasskeyStartStep> {
+      try {
+        const { options } = await fetchJSON<{ options: unknown }>(
+          baseUrl,
+          '/owner-factors/passkeys/options',
+          {
+            method: 'POST',
+            body: JSON.stringify(passkey === undefined ? { label } : { label, passkey }),
+          }
+        );
+        return { kind: 'options', options };
+      } catch (error) {
+        const step = passkeyStepOf(error);
+        if (step) return step;
+        throw error;
+      }
     },
     finishAddingPasskey(response: unknown): Promise<{ id: string; host: string }> {
       return fetchJSON(baseUrl, '/owner-factors/passkeys/finish', {
@@ -112,11 +125,25 @@ export function createDeviceMethods(baseUrl: string) {
         body: JSON.stringify({ response }),
       });
     },
-    startAddingAuthenticator(label: string): Promise<PendingAuthenticator> {
-      return fetchJSON(baseUrl, '/owner-factors/authenticator/start', {
-        method: 'POST',
-        body: JSON.stringify({ label }),
-      });
+    async startAddingAuthenticator(
+      label: string,
+      passkey?: unknown
+    ): Promise<AuthenticatorStartStep> {
+      try {
+        const pending = await fetchJSON<PendingAuthenticator>(
+          baseUrl,
+          '/owner-factors/authenticator/start',
+          {
+            method: 'POST',
+            body: JSON.stringify(passkey === undefined ? { label } : { label, passkey }),
+          }
+        );
+        return { kind: 'started', pending };
+      } catch (error) {
+        const step = passkeyStepOf(error);
+        if (step) return step;
+        throw error;
+      }
     },
     confirmAuthenticator(id: string, code: string): Promise<{ id: string }> {
       return fetchJSON(baseUrl, '/owner-factors/authenticator/confirm', {
@@ -124,10 +151,18 @@ export function createDeviceMethods(baseUrl: string) {
         body: JSON.stringify({ id, code }),
       });
     },
-    removeOwnerFactor(id: string): Promise<void> {
-      return fetchNoContent(baseUrl, `/owner-factors/${encodeURIComponent(id)}`, {
-        method: 'DELETE',
-      });
+    async removeOwnerFactor(id: string, passkey?: unknown): Promise<PasskeyCheckedStep> {
+      try {
+        await fetchNoContent(baseUrl, `/owner-factors/${encodeURIComponent(id)}`, {
+          method: 'DELETE',
+          body: JSON.stringify(passkey === undefined ? {} : { passkey }),
+        });
+        return { kind: 'done' };
+      } catch (error) {
+        const step = passkeyStepOf(error);
+        if (step) return step;
+        throw error;
+      }
     },
   };
 }

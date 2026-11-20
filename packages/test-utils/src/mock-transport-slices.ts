@@ -125,13 +125,14 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
     declineWifiSignIn: vi.fn().mockResolvedValue(undefined),
     // No sign-in checks yet; adding one succeeds.
     listOwnerFactors: vi.fn().mockResolvedValue({ factors: [] }),
-    startAddingPasskey: vi.fn().mockResolvedValue({ options: {} }),
+    startAddingPasskey: vi.fn().mockResolvedValue({ kind: 'options', options: {} }),
     finishAddingPasskey: vi.fn().mockResolvedValue({ id: 'f1', host: 'localhost' }),
-    startAddingAuthenticator: vi
-      .fn()
-      .mockResolvedValue({ id: 'f2', secret: 'ABCDEFGH', uri: 'otpauth://totp/DorkOS' }),
+    startAddingAuthenticator: vi.fn().mockResolvedValue({
+      kind: 'started',
+      pending: { id: 'f2', secret: 'ABCDEFGH', uri: 'otpauth://totp/DorkOS' },
+    }),
     confirmAuthenticator: vi.fn().mockResolvedValue({ id: 'f2' }),
-    removeOwnerFactor: vi.fn().mockResolvedValue(undefined),
+    removeOwnerFactor: vi.fn().mockResolvedValue({ kind: 'done' }),
     listAuditEvents: vi.fn().mockResolvedValue({ events: [] }),
     getAccountTimeline: vi.fn().mockResolvedValue({ events: [] }),
     getChatActivity: vi.fn().mockResolvedValue({ sent: [], stops: [] }),

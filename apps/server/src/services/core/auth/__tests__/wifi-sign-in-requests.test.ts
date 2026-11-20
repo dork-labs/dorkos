@@ -137,10 +137,21 @@ describe('a code', () => {
     expect(redeemWifiSignIn(requestId, code, NOW)).toEqual({ userId: 'owner-1' });
   });
 
-  it('one address may have only a couple of requests open at once', () => {
+  it('one address has one request open: asking again ends the one before', () => {
     startWifiSignIn(PHONE, NOW);
-    startWifiSignIn(PHONE, NOW);
-    expect(startWifiSignIn(PHONE, NOW)).toBeNull();
-    expect(startWifiSignIn({ ...PHONE, address: '10.0.0.7' }, NOW)).not.toBeNull();
+    const firstView = listWifiSignInRequests(NOW)[0]!.id;
+    const second = startWifiSignIn(PHONE, NOW)!;
+    const mine = listWifiSignInRequests(NOW).filter((request) => request.address === PHONE.address);
+    expect(mine).toHaveLength(1);
+    expect(mine[0]!.matchCode).toBe(second.matchCode);
+    // The ended one can no longer be approved.
+    expect(approveWifiSignIn(firstView, 'owner-1', NOW)).toBeNull();
+  });
+
+  it('one address can never fill every open slot', () => {
+    for (let i = 0; i < MAX_STARTS_PER_ADDRESS; i += 1) startWifiSignIn(PHONE, NOW);
+    for (let i = 1; i < MAX_OPEN_REQUESTS; i += 1) {
+      expect(startWifiSignIn({ ...PHONE, address: `10.0.0.${i}` }, NOW)).not.toBeNull();
+    }
   });
 });

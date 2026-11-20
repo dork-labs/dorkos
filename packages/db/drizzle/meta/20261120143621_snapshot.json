@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "fb1b6829-1764-48b6-a1b4-356475222602",
+  "id": "c1f129f9-4bc3-4cba-9bce-37a6d4dbbd5b",
   "prevId": "eb0dbad2-8ede-46c1-b1fe-01076c2e6a59",
   "tables": {
     "a2a_tasks": {
@@ -5414,6 +5414,13 @@
         },
         "last_used_at": {
           "name": "last_used_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "removed_at": {
+          "name": "removed_at",
           "type": "integer",
           "primaryKey": false,
           "notNull": false,

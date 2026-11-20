@@ -11,14 +11,10 @@
  */
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type {
-  PasskeyCheckedStep,
-  WifiSignInApprovalStep,
-  WifiSignInRequest,
-} from '@dorkos/shared/signed-in-devices';
+import type { WifiSignInRequest } from '@dorkos/shared/signed-in-devices';
 import { signedInDevicesKey } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
-import { runPasskeyCheck } from '../lib/passkey-ceremony';
+import { withPasskeyCheck } from '../lib/passkey-ceremony';
 
 /** TanStack Query key for the waiting Wi-Fi sign-ins. */
 export const wifiSignInRequestsKey = ['devices', 'wifi-sign-in-requests'] as const;
@@ -50,21 +46,6 @@ export interface DeviceTrust {
   decline(id: string): Promise<void>;
   /** Let one Wi-Fi device run agents, or stop it. */
   setRunsAgents(deviceId: string, on: boolean): Promise<void>;
-}
-
-/**
- * Run a passkey-checked action: call, run the check the server asks for, call
- * again with its answer.
- */
-async function withPasskeyCheck<T extends WifiSignInApprovalStep | PasskeyCheckedStep>(
-  call: (passkey?: unknown) => Promise<T>
-): Promise<Exclude<T, { kind: 'passkey-check' }>> {
-  const first = await call();
-  if (first.kind !== 'passkey-check') return first as Exclude<T, { kind: 'passkey-check' }>;
-  const answer = await runPasskeyCheck(first.options);
-  const second = await call(answer);
-  if (second.kind === 'passkey-check') throw new Error('That passkey check didn’t work.');
-  return second as Exclude<T, { kind: 'passkey-check' }>;
 }
 
 /** A sentence for a failure. */

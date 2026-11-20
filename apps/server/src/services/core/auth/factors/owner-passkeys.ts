@@ -40,7 +40,14 @@ import {
 import { getStaticLocalOrigins, getTunnelOrigins } from '../../../../lib/trusted-origins.js';
 import { APPROVAL_KEY_ALGS } from '../../session-relay/approval-key-store.js';
 import { algOf, notFramed } from '../../session-relay/passkeys/passkey-enrolment.js';
-import { addPasskey, confirmedFactors, findPasskey, usePasskey } from './owner-factors.js';
+import {
+  addPasskey,
+  confirmedFactors,
+  everConfirmedFactors,
+  findPasskey,
+  usePasskey,
+  type OwnerFactorRow,
+} from './owner-factors.js';
 
 /** How long a passkey challenge lives. */
 export const PASSKEY_CHALLENGE_TTL_MS = 2 * 60 * 1000;
@@ -93,6 +100,44 @@ export function passkeyOrigins(): string[] {
 /** This computer's own origins, where confirming an action by passkey happens. */
 export function thisComputerPasskeyOrigins(): string[] {
   return getStaticLocalOrigins();
+}
+
+/**
+ * The addresses of this computer a person has a passkey for, whatever address
+ * the asking page is on: a check is never skipped because the page was opened
+ * at another of this computer's addresses.
+ *
+ * @param userId - Whose.
+ */
+export function thisComputerPasskeyHosts(userId: string): string[] {
+  const here = new Set(thisComputerPasskeyOrigins().map((origin) => new URL(origin).hostname));
+  const hosts = confirmedFactors(userId, 'passkey')
+    .map((row) => row.rpId)
+    .filter((rpId): rpId is string => rpId !== null && here.has(rpId));
+  return [...new Set(hosts)];
+}
+
+/**
+ * Whether a factor proves a sign-in from another device: any authenticator
+ * app, and a passkey made for any address but this computer's (one made here
+ * only works here).
+ *
+ * @param row - The factor.
+ */
+export function worksFromOtherDevices(row: OwnerFactorRow): boolean {
+  if (row.kind === 'totp') return true;
+  const here = new Set(thisComputerPasskeyOrigins().map((origin) => new URL(origin).hostname));
+  return row.rpId !== null && !here.has(row.rpId);
+}
+
+/**
+ * Whether a person ever confirmed a factor that works from other devices,
+ * removed ones included. A pending authenticator never counts.
+ *
+ * @param userId - Whose.
+ */
+export function everHadRemoteFactor(userId: string): boolean {
+  return everConfirmedFactors(userId).some(worksFromOtherDevices);
 }
 
 /** The relying party id an origin stands for: its host name. */

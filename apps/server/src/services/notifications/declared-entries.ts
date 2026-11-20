@@ -8,7 +8,7 @@
  * - `web-device-notifications.ts`: a new browser used chat from the web here
  *   (DOR-2946).
  * - `sign-in-check-notifications.ts`: a passkey or authenticator app was added
- *   to the owner's account (DOR-3647).
+ *   to the owner's account, or removed from it (DOR-3647).
  * - `community-notifications.ts`: a space's teammates reached their monthly
  *   limit, or it was changed (DOR-2956).
  * - `account-signin-notifications.ts`: a Claude folder's sign-in is new or
@@ -150,6 +150,7 @@ export const DECLARED_WIRED_KINDS = [
   'connector.destructive_executed',
   'web.new_device',
   'signin.check_added',
+  'signin.check_removed',
   'agent.secret_files',
   'account.signin_review',
   'browser.handoff',

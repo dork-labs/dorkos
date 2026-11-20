@@ -86,12 +86,24 @@ function db(): Db {
 }
 
 /**
- * A person's factors that count (confirmed), optionally of one kind.
+ * A person's factors that count (confirmed, not removed), optionally of one kind.
  *
  * @param userId - Whose.
  * @param kind - Only this kind, when given.
  */
 export function confirmedFactors(userId: string, kind?: 'totp' | 'passkey'): OwnerFactorRow[] {
+  return everConfirmedFactors(userId, kind).filter((row) => row.removedAt === null);
+}
+
+/**
+ * Every factor a person ever confirmed, removed ones included, optionally of
+ * one kind: once one has existed, a password alone never signs them in from
+ * another device again.
+ *
+ * @param userId - Whose.
+ * @param kind - Only this kind, when given.
+ */
+export function everConfirmedFactors(userId: string, kind?: 'totp' | 'passkey'): OwnerFactorRow[] {
   const found = readAuthDb();
   if (!found) return [];
   return found
@@ -166,7 +178,7 @@ export async function addPendingTotp(
 }
 
 /**
- * One of a person's factors by id, confirmed or not.
+ * One of a person's factors by id, confirmed or not, never a removed one.
  *
  * @param userId - Whose.
  * @param id - The factor id.
@@ -175,7 +187,9 @@ export function findOwnerFactor(userId: string, id: string): OwnerFactorRow | un
   return db()
     .select()
     .from(ownerFactors)
-    .where(and(eq(ownerFactors.userId, userId), eq(ownerFactors.id, id)))
+    .where(
+      and(eq(ownerFactors.userId, userId), eq(ownerFactors.id, id), isNull(ownerFactors.removedAt))
+    )
     .get();
 }
 
@@ -190,7 +204,9 @@ export function confirmTotp(id: string, step: number, now = Date.now()): void {
   db()
     .update(ownerFactors)
     .set({ confirmedAt: new Date(now), lastStep: step })
-    .where(eq(ownerFactors.id, id))
+    .where(
+      and(eq(ownerFactors.id, id), isNull(ownerFactors.confirmedAt), isNull(ownerFactors.removedAt))
+    )
     .run();
 }
 
@@ -249,7 +265,7 @@ export function addPasskey(passkey: NewPasskey, now = Date.now()): string {
 }
 
 /**
- * A passkey by its credential id.
+ * A passkey that still counts, by its credential id.
  *
  * @param credentialId - Base64url.
  */
@@ -257,7 +273,13 @@ export function findPasskey(credentialId: string): OwnerFactorRow | undefined {
   return db()
     .select()
     .from(ownerFactors)
-    .where(and(eq(ownerFactors.kind, 'passkey'), eq(ownerFactors.credentialId, credentialId)))
+    .where(
+      and(
+        eq(ownerFactors.kind, 'passkey'),
+        eq(ownerFactors.credentialId, credentialId),
+        isNull(ownerFactors.removedAt)
+      )
+    )
     .get();
 }
 
@@ -287,17 +309,26 @@ export function usePasskey(
 }
 
 /**
- * Remove one of a person's factors.
+ * Remove one of a person's factors. It stops counting at once and is kept,
+ * marked removed (see {@link everConfirmedFactors}).
  *
  * @param userId - Whose.
  * @param id - The factor id.
+ * @param now - The current time, for tests.
  * @returns Whether one was removed.
  */
-export function removeOwnerFactor(userId: string, id: string): boolean {
+export function removeOwnerFactor(userId: string, id: string, now = Date.now()): boolean {
   return (
     db()
-      .delete(ownerFactors)
-      .where(and(eq(ownerFactors.userId, userId), eq(ownerFactors.id, id)))
+      .update(ownerFactors)
+      .set({ removedAt: new Date(now) })
+      .where(
+        and(
+          eq(ownerFactors.userId, userId),
+          eq(ownerFactors.id, id),
+          isNull(ownerFactors.removedAt)
+        )
+      )
       .run().changes > 0
   );
 }

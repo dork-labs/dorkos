@@ -46,6 +46,12 @@ export const ownerFactors = sqliteTable(
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
       .notNull(),
     lastUsedAt: integer('last_used_at', { mode: 'timestamp_ms' }),
+    /**
+     * When the owner removed it. A removed factor no longer counts, but is kept
+     * so that once one has existed a password alone never signs in from
+     * another device again.
+     */
+    removedAt: integer('removed_at', { mode: 'timestamp_ms' }),
   },
   (table) => [
     index('owner_factors_user_idx').on(table.userId),

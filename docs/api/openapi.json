@@ -20276,6 +20276,7 @@
           "mcp-server.reserved_name",
           "web.new_device",
           "signin.check_added",
+          "signin.check_removed",
           "agent.secret_files",
           "agent.folder_rules_too_long",
           "account.signin_review",
@@ -44048,7 +44049,7 @@
           "Auth"
         ],
         "summary": "Start adding a passkey",
-        "description": "After \"Confirm it’s you\", a challenge to make a passkey on the address the browser is on. The person is always verified. Never over Wi-Fi.",
+        "description": "After \"Confirm it’s you\", a challenge to make a passkey on this computer’s own address. The person is always verified. At this computer only.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -44078,7 +44079,7 @@
             }
           },
           "403": {
-            "description": "Not the owner, in the app, at the computer DorkOS runs on or signed in over https",
+            "description": "Not the owner, in the app, at the computer DorkOS runs on. Never another device.",
             "content": {
               "application/json": {
                 "schema": {
@@ -44204,7 +44205,7 @@
             }
           },
           "403": {
-            "description": "Not the owner, in the app, at the computer DorkOS runs on or signed in over https",
+            "description": "Not the owner, in the app, at the computer DorkOS runs on. Never another device.",
             "content": {
               "application/json": {
                 "schema": {
@@ -44233,7 +44234,7 @@
           "Auth"
         ],
         "summary": "Start adding an authenticator app",
-        "description": "After \"Confirm it’s you\", a new secret and the address an authenticator app scans. It counts only once one of its codes is confirmed.",
+        "description": "After a passkey check when this computer has a passkey, then \"Confirm it’s you\": a new secret and the address an authenticator app scans. It counts only once one of its codes is confirmed.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -44276,7 +44277,7 @@
             }
           },
           "403": {
-            "description": "Not the owner, in the app, at the computer DorkOS runs on or signed in over https",
+            "description": "Not the owner, in the app, at the computer DorkOS runs on. Never another device.",
             "content": {
               "application/json": {
                 "schema": {
@@ -44407,7 +44408,7 @@
             }
           },
           "403": {
-            "description": "Not the owner, in the app, at the computer DorkOS runs on or signed in over https",
+            "description": "Not the owner, in the app, at the computer DorkOS runs on. Never another device.",
             "content": {
               "application/json": {
                 "schema": {
@@ -44457,7 +44458,7 @@
           "Auth"
         ],
         "summary": "Remove a sign-in check",
-        "description": "After \"Confirm it’s you\", removes one passkey or authenticator app.",
+        "description": "After a passkey check when this computer has a passkey, then \"Confirm it’s you\": removes one passkey or authenticator app and raises a notice. Once one that works from another device has existed, a password alone never signs in from one again.",
         "parameters": [
           {
             "schema": {
@@ -44473,7 +44474,7 @@
             "description": "Removed"
           },
           "403": {
-            "description": "Not the owner, in the app, at the computer DorkOS runs on or signed in over https",
+            "description": "Not the owner, in the app, at the computer DorkOS runs on. Never another device.",
             "content": {
               "application/json": {
                 "schema": {

@@ -268,6 +268,29 @@ export async function signOutOtherSessions(
   return ended;
 }
 
+/**
+ * Sign out every one of a person's sign-ins made away from this computer (the
+ * tunnel, managed access, Wi-Fi, any other route), except `keepSessionId`.
+ * Sign-ins at this computer stay.
+ *
+ * @param auth - The Better Auth instance.
+ * @param userId - Whose.
+ * @param keepSessionId - The sign-in to keep.
+ * @returns How many ended.
+ */
+export async function signOutSessionsAway(
+  auth: Auth,
+  userId: string,
+  keepSessionId: string
+): Promise<number> {
+  const away = (await liveRowsOf(auth, userId)).filter(
+    (row) => row.id !== keepSessionId && (row.route ?? 'local') !== 'local'
+  );
+  let ended = 0;
+  for (const row of away) if (await signOutSession(auth, userId, row.id)) ended += 1;
+  return ended;
+}
+
 /** Most pages of sign-ins one sign-out-everywhere reads. */
 const MAX_SIGN_OUT_PAGES = 50;
 

@@ -46,8 +46,11 @@ export const WIFI_SIGN_IN_CODE_TTL_MS = 5 * 60 * 1000;
 /** Most requests open at once on this computer. */
 export const MAX_OPEN_REQUESTS = 5;
 
-/** Most requests one address may have open at once. */
-export const MAX_OPEN_PER_ADDRESS = 2;
+/**
+ * Most requests one address may have open at once. A new one from the same
+ * address ends the one before, so one device cannot fill every open slot.
+ */
+export const MAX_OPEN_PER_ADDRESS = 1;
 
 /** Most requests one address may start per window. */
 export const MAX_STARTS_PER_ADDRESS = 5;
@@ -182,11 +185,12 @@ export function startWifiSignIn(
   now = Date.now()
 ): { requestId: string; matchCode: string; expiresAt: string } | null {
   sweep(now);
-  if (open.size >= MAX_OPEN_REQUESTS) return null;
-  const mine = [...open.values()].filter((request) => request.address === device.address);
-  if (mine.length >= MAX_OPEN_PER_ADDRESS) return null;
   const recent = starts.get(device.address) ?? [];
   if (recent.length >= MAX_STARTS_PER_ADDRESS) return null;
+  const mine = [...open.values()].filter((request) => request.address === device.address);
+  if (open.size - mine.length >= MAX_OPEN_REQUESTS) return null;
+  // Asking again from the same address replaces the request it had open.
+  for (const request of mine) open.delete(request.viewId);
   starts.set(device.address, [...recent, now]);
   // 256 bits for the device's secret, 128 for the id the app shows.
   const requestId = randomBytes(32).toString('base64url');

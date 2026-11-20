@@ -166,15 +166,17 @@ export interface SignedInDevicesTransport {
    * @param id - The request's id from the list.
    */
   declineWifiSignIn(id: string): Promise<void>;
-  /** The owner's sign-in checks. In person only: at this computer or over https. */
+  /** The owner's sign-in checks. Read in person; changed at this computer only. */
   listOwnerFactors(): Promise<{ factors: OwnerFactor[] }>;
   /**
-   * Start adding a passkey on this page's address, after "Confirm it's you".
+   * Start adding a passkey on this computer, after "Confirm it's you". With a
+   * passkey here already, it asks for a fresh passkey check first, as below.
    *
    * @param label - What to call it.
-   * @returns The options to hand the browser.
+   * @param passkey - The browser's response to the passkey check, the second time.
+   * @returns The options to hand the browser, or the check to run.
    */
-  startAddingPasskey(label: string): Promise<{ options: unknown }>;
+  startAddingPasskey(label: string, passkey?: unknown): Promise<PasskeyStartStep>;
   /**
    * Finish adding a passkey.
    *
@@ -182,11 +184,14 @@ export interface SignedInDevicesTransport {
    */
   finishAddingPasskey(response: unknown): Promise<{ id: string; host: string }>;
   /**
-   * Start adding an authenticator app, after "Confirm it's you".
+   * Start adding an authenticator app, after "Confirm it's you". With a
+   * passkey on this computer, it is called first with no passkey, which asks
+   * for a fresh passkey check, then with its response.
    *
    * @param label - What to call it.
+   * @param passkey - The browser's response to the passkey check, the second time.
    */
-  startAddingAuthenticator(label: string): Promise<PendingAuthenticator>;
+  startAddingAuthenticator(label: string, passkey?: unknown): Promise<AuthenticatorStartStep>;
   /**
    * Confirm a new authenticator app with one of its codes.
    *
@@ -195,11 +200,13 @@ export interface SignedInDevicesTransport {
    */
   confirmAuthenticator(id: string, code: string): Promise<{ id: string }>;
   /**
-   * Remove one sign-in check, after "Confirm it's you".
+   * Remove one sign-in check, after "Confirm it's you". With a passkey on
+   * this computer, it asks for a fresh passkey check first, as above.
    *
    * @param id - Its id.
+   * @param passkey - The browser's response to the passkey check, the second time.
    */
-  removeOwnerFactor(id: string): Promise<void>;
+  removeOwnerFactor(id: string, passkey?: unknown): Promise<PasskeyCheckedStep>;
 }
 
 /** One of the owner's sign-in checks: a passkey or an authenticator app (DOR-3647). */
@@ -234,6 +241,18 @@ export type PasskeyCheckedStep =
   | { kind: 'passkey-check'; options: unknown }
   /** There is no passkey on this computer to check with yet. */
   | { kind: 'needs-passkey' };
+
+/** Where starting a passkey stands after one call. */
+export type PasskeyStartStep =
+  | Exclude<PasskeyCheckedStep, { kind: 'done' }>
+  /** Hand these options to the browser to make the new passkey. */
+  | { kind: 'options'; options: unknown };
+
+/** Where starting an authenticator app stands after one call. */
+export type AuthenticatorStartStep =
+  | Exclude<PasskeyCheckedStep, { kind: 'done' }>
+  /** Started: show this secret and wait for its first code. */
+  | { kind: 'started'; pending: PendingAuthenticator };
 
 /** Where approving a Wi-Fi sign-in stands after one call. */
 export type WifiSignInApprovalStep =

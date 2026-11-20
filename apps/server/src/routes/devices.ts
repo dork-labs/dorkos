@@ -59,18 +59,11 @@ import {
   declineWifiSignIn,
   listWifiSignInRequests,
 } from '../services/core/auth/sessions/wifi-sign-in-requests.js';
-import {
-  finishPasskeyCheck,
-  startPasskeyCheck,
-} from '../services/core/auth/factors/owner-passkeys.js';
+import { passkeyChecked } from '../http/sign-in/passkey-check.js';
 import { classifyRequest } from '../lib/request-classifier.js';
 import { currentServerRole } from '../lib/server-role.js';
 import { recordSignInTrustChange } from '../services/core/auth/auth-audit.js';
-import {
-  PASSKEY_CHECK_CODE,
-  PASSKEY_NEEDED_CODE,
-  type WifiSignInRequestList,
-} from '@dorkos/shared/signed-in-devices';
+import type { WifiSignInRequestList } from '@dorkos/shared/signed-in-devices';
 import { isOwnOriginJsonWrite, NOT_FROM_OWN_PAGE } from '../lib/http/own-origin-write.js';
 
 /** Refusal code for an agent, an API key or the relay. */
@@ -210,45 +203,6 @@ export function createDevicesRoutes(auth: () => Auth | undefined = getAuth): Hon
       );
     }
     return { userId: caller.userId, sessionId: caller.sessionId };
-  };
-
-  /**
-   * A fresh passkey check for one action, done by the person at this computer
-   * (DOR-4744). The first call answers `428` with the check; the second sends
-   * the browser's response in `passkey`. Each check covers this one action
-   * once. Never a password: with no passkey here, `409` says to add one.
-   *
-   * @returns `true` once checked, otherwise the answer to send.
-   */
-  const passkeyChecked = async (
-    c: Context<ApiEnv>,
-    owner: { userId: string; sessionId: string },
-    action: string,
-    passkey: unknown
-  ): Promise<true | Response> => {
-    const purpose = { kind: 'confirm', ...owner, action } as const;
-    if (passkey === undefined) {
-      const options = await startPasskeyCheck(purpose, String(c.req.header('origin')));
-      if (options === 'no-passkey') {
-        return c.json(errorBody('Add a passkey on this computer first.', PASSKEY_NEEDED_CODE), 409);
-      }
-      if (typeof options === 'string') {
-        return c.json(errorBody('Do this in the DorkOS app.', NOT_FROM_OWN_PAGE), 403);
-      }
-      c.header('Cache-Control', 'no-store');
-      return c.json({ code: PASSKEY_CHECK_CODE, options }, 428);
-    }
-    const checked = await finishPasskeyCheck(
-      purpose,
-      passkey as Parameters<typeof finishPasskeyCheck>[1]
-    );
-    if (typeof checked === 'string') {
-      return c.json(
-        errorBody('That passkey check didn’t work. Try again.', 'PASSKEY_REFUSED'),
-        401
-      );
-    }
-    return true;
   };
 
   router.put('/sessions/:id/runs-agents', async (c) => {

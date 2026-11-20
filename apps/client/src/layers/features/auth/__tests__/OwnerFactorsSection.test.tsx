@@ -84,7 +84,7 @@ describe('OwnerFactorsSection', () => {
       screen.getByText('Other devices will sign in with your password only.')
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
-    await waitFor(() => expect(transport.removeOwnerFactor).toHaveBeenCalledWith('k1'));
+    await waitFor(() => expect(transport.removeOwnerFactor).toHaveBeenCalledWith('k1', undefined));
   });
 
   it('shows nothing to a caller the server will not show them to', async () => {

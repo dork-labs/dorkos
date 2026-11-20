@@ -21,6 +21,10 @@
  * - **Only what works there is asked.** A passkey made for this computer works
  *   only here, so on its own it asks nothing of another device's sign-in.
  * - **Only the owner.** Another account's sign-in goes on as before.
+ * - **Never back to the password alone.** Once a factor that works away from
+ *   this computer has existed, removing the last one does not bring the
+ *   password-only sign-in back: away from this computer it is refused until
+ *   the owner adds another, here.
  *
  * @module middleware/second-factor-gate
  */
@@ -38,7 +42,10 @@ import {
   useTotpStep,
 } from '../services/core/auth/factors/owner-factors.js';
 import { verifyTotp } from '../services/core/auth/factors/totp.js';
-import { thisComputerPasskeyOrigins } from '../services/core/auth/factors/owner-passkeys.js';
+import {
+  everHadRemoteFactor,
+  worksFromOtherDevices,
+} from '../services/core/auth/factors/owner-passkeys.js';
 import { ingressOf } from '../services/core/remote/ingress-mark.js';
 import { readCappedBody } from './auth-rate-limit.js';
 
@@ -50,6 +57,9 @@ export const SIGN_IN_UNREADABLE = 'SIGN_IN_UNREADABLE';
 
 /** Refusal code when the second factor given did not check out. */
 export const SECOND_FACTOR_REFUSED = 'SECOND_FACTOR_REFUSED';
+
+/** Refusal code when every factor that worked from another device was removed. */
+export const SECOND_FACTOR_GONE = 'SECOND_FACTOR_GONE';
 
 /**
  * A path the way a lenient router might read it: lower case, single slashes,
@@ -105,15 +115,14 @@ async function ownerPasswordMatches(userId: string, password: string): Promise<b
  * authenticator app, and a passkey made for any address but this computer's. A passkey made for this computer only works here, so it is never
  * asked for elsewhere.
  */
-function usableRemotely(userId: string): { totp: boolean; passkey: boolean } {
-  const here = new Set(thisComputerPasskeyOrigins().map((origin) => new URL(origin).hostname));
+function usableRemotely(userId: string): { totp: boolean; passkey: boolean; ever: boolean } {
+  // Whether or not that address is live right now: a passkey for another
+  // address keeps counting while its tunnel is down.
+  const counting = confirmedFactors(userId).filter(worksFromOtherDevices);
   return {
-    totp: confirmedFactors(userId, 'totp').length > 0,
-    // Whether or not that address is live right now: a passkey for another
-    // address keeps counting while its tunnel is down.
-    passkey: confirmedFactors(userId, 'passkey').some(
-      (row) => row.rpId !== null && !here.has(row.rpId)
-    ),
+    totp: counting.some((row) => row.kind === 'totp'),
+    passkey: counting.some((row) => row.kind === 'passkey'),
+    ever: everHadRemoteFactor(userId),
   };
 }
 
@@ -151,7 +160,7 @@ export function buildSecondFactorGate(): MiddlewareHandler<RequestFactsEnv> {
     const owner = readOwnerAccount();
     if (!owner) return next();
     const usable = usableRemotely(owner.id);
-    if (!usable.totp && !usable.passkey) return next();
+    if (!usable.ever) return next();
     const body = await signInBodyOf(c.req.raw);
     // A body this gate cannot read is never passed on: Better Auth might read it.
     if (!body) {
@@ -166,6 +175,15 @@ export function buildSecondFactorGate(): MiddlewareHandler<RequestFactsEnv> {
     // The password first: a wrong one gets Better Auth's own answer, so the
     // code is never checked, nor its step spent, without it.
     if (!body.password || !(await ownerPasswordMatches(owner.id, body.password))) return next();
+    if (!usable.totp && !usable.passkey) {
+      return c.json(
+        {
+          code: SECOND_FACTOR_GONE,
+          message: 'Sign in on the computer DorkOS runs on, then add a sign-in check.',
+        },
+        401
+      );
+    }
     if (body.totpCode === undefined) {
       return c.json(
         {

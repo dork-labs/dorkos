@@ -257,11 +257,13 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     'POST /api/step-up/:heldActionId/change-password',
     'POST /api/step-up/:heldActionId/password',
   ],
-  // DOR-4744, DOR-3647: a Wi-Fi device asks for a code and types it, with no
-  // password; a passkey sign-in is refused on Wi-Fi by the route itself.
-  'Signing in: a Wi-Fi device by a code from this computer; a passkey from other devices only': [
+  // DOR-4744: a Wi-Fi device asks for a code and types it, with no password.
+  'Signing in on Wi-Fi: a device by a code from this computer': [
     'POST /api/wifi-sign-in/start',
     'POST /api/wifi-sign-in/finish',
+  ],
+  // DOR-3647: answers 404 on Wi-Fi itself, before any check.
+  'Passkey sign-in: refused on Wi-Fi by the route itself, before the gate': [
     'POST /api/owner-sign-in/passkey/options',
     'POST /api/owner-sign-in/passkey/finish',
   ],
