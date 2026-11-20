@@ -2578,6 +2578,17 @@ export const SLOT_WAIT_STATUS = 'waiting_for_slot';
 export const SLOT_WAIT_TEXT = 'Waiting to start: every agent on this computer is busy.';
 
 /**
+ * The `status` a turn carries while one of its heavy shell jobs (a build, a
+ * test suite, an install) waits for the computer to calm down (DOR-4209). Shown
+ * like {@link SLOT_WAIT_STATUS}: the chat's status strip reads its `message`,
+ * which gives the job's place in line and nothing about the jobs ahead. Sent
+ * again every minute while the job waits. It never pauses a run's time limit
+ * (`isWaitingToStart` in `run-time-limit.ts` reads the slot wait alone): the
+ * turn has started.
+ */
+export const LOAD_WAIT_STATUS = 'waiting_for_load';
+
+/**
  * The named long-running operations a runtime can report progress for. An
  * extensible union: today only `compaction` (context-window summarization), but
  * a runtime that exposes indexing, cloning, or model-download progress adds its
