@@ -230,9 +230,11 @@ describe('company facts', { timeout: 30_000 }, () => {
   });
 
   it('formats the postal address on one line', () => {
-    expect(formatCompanyAddress()).toBe('6028 Toscana Ave, Austin, TX 78724, United States');
+    expect(formatCompanyAddress()).toBe(
+      '605 W 9th Street, Unit #4144, Austin, TX 78701, United States'
+    );
     expect(formatCompanyAddress(company.address, { country: false })).toBe(
-      '6028 Toscana Ave, Austin, TX 78724'
+      '605 W 9th Street, Unit #4144, Austin, TX 78701'
     );
   });
 
