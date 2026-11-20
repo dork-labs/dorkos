@@ -270,6 +270,34 @@ describe('ErrorMessageBlock', () => {
     expect(screen.queryByText('Details')).not.toBeInTheDocument();
   });
 
+  it('names the next step for the exact Git refusal and preserves its message and details', () => {
+    const message = 'Codex can’t protect this folder’s Git files. Choose another folder.';
+    const details = 'Synthetic Git metadata refusal details';
+    render(
+      <ErrorMessageBlock
+        code="codex_git_metadata_unavailable"
+        message={message}
+        details={details}
+      />
+    );
+
+    expect(screen.getByText('Choose another folder')).toBeInTheDocument();
+    expect(screen.getByText(message)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Details' }));
+    expect(screen.getByText(details)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
+  });
+
+  it.each(['unknown_error', 'codex_git_metadata_unavailable_extra'])(
+    'keeps the generic heading for an uncategorized code %s',
+    (code) => {
+      render(<ErrorMessageBlock message="Something went wrong" code={code} />);
+
+      expect(screen.getByText('Error')).toBeInTheDocument();
+      expect(screen.getByText('Something went wrong')).toBeInTheDocument();
+    }
+  );
+
   it('falls back to generic heading when no category', () => {
     render(<ErrorMessageBlock message="Something went wrong" />);
 
