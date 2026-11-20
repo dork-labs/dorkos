@@ -332,3 +332,18 @@ export function removeOwnerFactor(userId: string, id: string, now = Date.now()):
       .run().changes > 0
   );
 }
+
+/**
+ * Take back a factor whose add did not finish. Unlike
+ * {@link removeOwnerFactor}, nothing is kept: it never counted, so it is not
+ * one the person once had.
+ *
+ * @param userId - Whose.
+ * @param id - The factor id.
+ */
+export function discardOwnerFactor(userId: string, id: string): void {
+  db()
+    .delete(ownerFactors)
+    .where(and(eq(ownerFactors.userId, userId), eq(ownerFactors.id, id)))
+    .run();
+}

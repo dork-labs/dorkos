@@ -396,6 +396,109 @@ describe('sign-in checks change only at this computer', () => {
     expect(res.body.code).toBe('PASSKEY_REFUSED');
   });
 
+  /** Start an authenticator app up to its first code: a passkey check, then the password. */
+  async function startAuthenticator(label: string): Promise<{ id: string; secret: string }> {
+    const asked = await post('/api/owner-factors/authenticator/start', 'direct', deskCookie).send({
+      label,
+    });
+    expect(asked.status).toBe(428);
+    const held = await post('/api/owner-factors/authenticator/start', 'direct', deskCookie).send({
+      label,
+      passkey: deskProof(asked.body.options.challenge),
+    });
+    expect(held.body.code).toBe('step_up_required');
+    const started = await confirmHeld(held.body.heldActionId);
+    expect(started.body).toMatchObject({ ok: true, status: 200 });
+    return started.body.result as { id: string; secret: string };
+  }
+
+  /** Confirm an authenticator app with its current code. */
+  function confirmAuthenticator(id: string, totp: string) {
+    return post('/api/owner-factors/authenticator/confirm', 'direct', deskCookie).send({
+      id,
+      code: totpCodeAt(totp, totpStepOf(Date.now())),
+    });
+  }
+
+  /** Read the checks over one listener: 200 while that sign-in lasts, 401 once it ended. */
+  function readVia(cookie: string, via: RequestIngress) {
+    let req = request(target.server)
+      .get('/api/owner-factors')
+      .set('Host', LOCAL)
+      .set('Cookie', cookie);
+    if (via !== 'direct') req = req.set(INGRESS_HEADER, via);
+    return req;
+  }
+
+  /** The stored row for one factor, if any. */
+  function factorRow(id: string) {
+    return db.select().from(ownerFactors).where(eq(ownerFactors.id, id)).get();
+  }
+
+  it('when the earlier sign-ins can’t be ended, the first check is not added, and a retry adds it', async () => {
+    const tunnel = cookiesOf(await signIn('own-tunnel'));
+    const { id, secret: fresh } = await startAuthenticator('Phone');
+    const adapter = (await getAuth()!.$context).internalAdapter;
+    const failing = vi
+      .spyOn(adapter, 'deleteSession')
+      .mockRejectedValueOnce(new Error('store unavailable'));
+    try {
+      const refused = await confirmAuthenticator(id, fresh);
+      expect(failing).toHaveBeenCalled();
+      expect(refused.status).toBe(500);
+      expect(refused.body.code).toBe('SIGN_OUT_FAILED');
+    } finally {
+      failing.mockRestore();
+    }
+    // Still waiting for its first code: it counts for nothing yet.
+    expect(factorRow(id)?.confirmedAt).toBeNull();
+    expect((await signIn('own-tunnel')).status).toBe(200);
+    expect((await readVia(tunnel, 'own-tunnel')).status).toBe(200);
+    // The retry ends them, then counts.
+    const retried = await confirmAuthenticator(id, fresh);
+    expect(retried.status).toBe(200);
+    expect(factorRow(id)?.confirmedAt).not.toBeNull();
+    expect((await readVia(tunnel, 'own-tunnel')).status).toBe(401);
+    expect((await readVia(deskCookie, 'direct')).status).toBe(200);
+    // Back to no check from other devices, for the tests after this one.
+    db.delete(ownerFactors).where(eq(ownerFactors.id, id)).run();
+  });
+
+  it('when the sign-out after the confirm fails, the check is taken back, and a new one still ends them', async () => {
+    const tunnel = cookiesOf(await signIn('own-tunnel'));
+    const { id, secret: fresh } = await startAuthenticator('Phone');
+    const adapter = (await getAuth()!.$context).internalAdapter;
+    const listSessions = adapter.listSessions.bind(adapter);
+    // Only the pass that runs once the check is confirmed fails.
+    const failing = vi
+      .spyOn(adapter, 'listSessions')
+      .mockImplementation(async (...args: Parameters<typeof listSessions>) => {
+        if (factorRow(id)?.confirmedAt) throw new Error('store unavailable');
+        return listSessions(...args);
+      });
+    try {
+      const refused = await confirmAuthenticator(id, fresh);
+      expect(refused.status).toBe(500);
+      expect(refused.body.code).toBe('SIGN_OUT_FAILED');
+    } finally {
+      failing.mockRestore();
+    }
+    // Gone, never counted: a password alone still signs in from another device.
+    expect(factorRow(id)).toBeUndefined();
+    // The pass before the confirm already ended the earlier one.
+    expect((await readVia(tunnel, 'own-tunnel')).status).toBe(401);
+    const since = await signIn('own-tunnel');
+    expect(since.status).toBe(200);
+    const sinceCookie = cookiesOf(since);
+    expect((await readVia(sinceCookie, 'own-tunnel')).status).toBe(200);
+    // So the next one is still the first, and ends the one made since.
+    const again = await startAuthenticator('Phone');
+    expect((await confirmAuthenticator(again.id, again.secret)).status).toBe(200);
+    expect((await readVia(sinceCookie, 'own-tunnel')).status).toBe(401);
+    expect((await readVia(deskCookie, 'direct')).status).toBe(200);
+    db.delete(ownerFactors).where(eq(ownerFactors.id, again.id)).run();
+  });
+
   it('the first check that works from other devices signs out sign-ins made from them before it', async () => {
     // Wi-Fi sign-ins end by the same rule (every route but this computer's);
     // this app has no Wi-Fi sign-in, which can't make API keys anyway.
