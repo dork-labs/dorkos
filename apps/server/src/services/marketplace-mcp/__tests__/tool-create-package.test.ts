@@ -103,12 +103,16 @@ function buildDeps(opts: {
   dorkHome: string;
   confirmationProvider: ConfirmationProvider;
   logger?: Logger;
+  sourceManager?: MarketplaceMcpDeps['sourceManager'];
+  fetcher?: MarketplaceMcpDeps['fetcher'];
 }): MarketplaceMcpDeps {
   return {
     dorkHome: opts.dorkHome,
     installer: {} as MarketplaceMcpDeps['installer'],
-    sourceManager: {} as MarketplaceMcpDeps['sourceManager'],
-    fetcher: {} as MarketplaceMcpDeps['fetcher'],
+    sourceManager:
+      opts.sourceManager ??
+      ({ list: vi.fn(async () => []) } as unknown as MarketplaceMcpDeps['sourceManager']),
+    fetcher: opts.fetcher ?? ({} as MarketplaceMcpDeps['fetcher']),
     cache: {} as MarketplaceMcpDeps['cache'],
     uninstallFlow: {} as MarketplaceMcpDeps['uninstallFlow'],
     updateFlow: {} as MarketplaceMcpDeps['updateFlow'],
@@ -281,6 +285,73 @@ describe('createCreatePackageHandler', () => {
     // (local copy, no git clone) — not a file:// url, which the schema rejects.
     const pkgDir = (payload.packagePath as string).split('/').pop();
     expect(entry?.source).toBe(`./packages/${pkgDir}`);
+  });
+
+  // Nothing on the install path reads a source itself, so without this re-read
+  // `marketplace_install` refused the new package (DOR-4851).
+  it('re-reads the personal marketplace after registering, so install finds the package', async () => {
+    const personal = { name: PERSONAL_MARKETPLACE_NAME, source: 'file:///p', enabled: true };
+    const listed: string[][] = [];
+    const fetchMarketplaceJson = vi.fn(async () => {
+      const raw = await readFile(
+        join(personalMarketplaceRoot(dorkHome), 'marketplace.json'),
+        'utf-8'
+      );
+      listed.push((JSON.parse(raw) as { plugins: { name: string }[] }).plugins.map((p) => p.name));
+      return {} as never;
+    });
+    const handler = createCreatePackageHandler(
+      buildDeps({
+        dorkHome,
+        confirmationProvider: new AlwaysApprovesConfirmationProvider(),
+        logger,
+        sourceManager: {
+          list: vi.fn(async () => [
+            { name: 'other', source: 'https://x', enabled: true },
+            personal,
+          ]),
+        } as unknown as MarketplaceMcpDeps['sourceManager'],
+        fetcher: { fetchMarketplaceJson } as unknown as MarketplaceMcpDeps['fetcher'],
+      })
+    );
+
+    const { payload } = parseResult(
+      await handler({ name: 'fresh-pkg', type: 'plugin', description: 'Made up.' })
+    );
+    expect(payload.status).toBe('created');
+    expect(fetchMarketplaceJson).toHaveBeenCalledTimes(1);
+    expect(fetchMarketplaceJson).toHaveBeenCalledWith(personal);
+    // Read after the package was registered, never before.
+    expect(listed).toEqual([['fresh-pkg']]);
+  });
+
+  it('still returns created when the re-read fails, with a warning', async () => {
+    const handler = createCreatePackageHandler(
+      buildDeps({
+        dorkHome,
+        confirmationProvider: new AlwaysApprovesConfirmationProvider(),
+        logger,
+        sourceManager: {
+          list: vi.fn(async () => [
+            { name: PERSONAL_MARKETPLACE_NAME, source: 'file:///p', enabled: true },
+          ]),
+        } as unknown as MarketplaceMcpDeps['sourceManager'],
+        fetcher: {
+          fetchMarketplaceJson: vi.fn(async () => {
+            throw new Error('unreadable');
+          }),
+        } as unknown as MarketplaceMcpDeps['fetcher'],
+      })
+    );
+
+    const { payload } = parseResult(
+      await handler({ name: 'still-made', type: 'plugin', description: 'Made up.' })
+    );
+    expect(payload.status).toBe('created');
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[marketplace_create_package] failed to refresh the personal marketplace',
+      { error: 'unreadable' }
+    );
   });
 
   it('forwards categories to the scaffolder, deriving the primary category', async () => {

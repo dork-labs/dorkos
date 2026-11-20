@@ -307,6 +307,14 @@ ${T}marketplace_create_package -- all require explicit user confirmation through
      what has a newer version and changes nothing; with apply, reinstalls the stale ones where they are installed
   ${T}marketplace_uninstall(name, purge?, projectPath?, confirmationToken?)
   ${T}marketplace_create_package(name, type, description, author?, categories?, confirmationToken?)
+
+Building a mini app when your own .dork/extensions folder is read-only (a turn that read words
+from someone other than your owner, such as a room with another person in it): build it in the
+personal marketplace instead. ${T}marketplace_create_package with type "plugin" once, write the app
+into <package>/.dork/extensions/<app id>/, and raise "version" in the package's .dork/manifest.json
+for each new version. Then ${T}marketplace_install (first time) or ${T}marketplace_update with names
+and apply: true. Each version is one card your owner approves; an app with server code also waits
+for them to allow it in Activity. Never hand anyone a Terminal copy command instead.
 </marketplace_tools>`;
 
 const UI_TOOLS_CONTEXT = `<ui_tools>
