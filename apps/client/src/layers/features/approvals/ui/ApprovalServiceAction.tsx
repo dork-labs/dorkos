@@ -1,7 +1,8 @@
 import type { ApprovalServiceAction as ApprovalServiceActionValue } from '@dorkos/shared/approval-schemas';
-import { useId, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { ServiceMark } from '@/layers/entities/connectors';
 import { cn } from '@/layers/shared/lib';
+import { useScrollOverflow } from '@/layers/shared/model';
 
 export interface ApprovalServiceActionProps {
   /** The connected-app action, as the server described it. */
@@ -46,10 +47,34 @@ function recipientsHiddenLine(cut: number | undefined, shortened: number | undef
     : `${shortened} addresses are too long to show, so this can’t be allowed.`;
 }
 
+/** The scroll-edge shadow a capped list draws over an edge with rows behind it. */
+const RECIPIENTS_EDGE = {
+  top: 'top-px rounded-t-md bg-[radial-gradient(farthest-side_at_50%_0,hsl(var(--scroll-edge)),transparent)]',
+  bottom:
+    'bottom-px rounded-b-md bg-[radial-gradient(farthest-side_at_50%_100%,hsl(var(--scroll-edge)),transparent)]',
+} as const;
+
+/** Decorative and click-through, so it never covers a row's text from the pointer. */
+function RecipientsEdge({ edge }: { edge: keyof typeof RECIPIENTS_EDGE }) {
+  return (
+    <div
+      aria-hidden="true"
+      data-slot={`approval-recipients-edge-${edge}`}
+      className={cn('pointer-events-none absolute inset-x-px h-2', RECIPIENTS_EDGE[edge])}
+    />
+  );
+}
+
 /**
  * Everyone a send goes to, one line each, above the rest (DOR-4592). Never
  * shortened or folded: it scrolls inside the card instead. Each address is
  * plain text the server already made inert, never a link.
+ *
+ * On a narrow card the label sits on its own line, so the address gets the
+ * whole width and reads in one piece; `overflow-wrap: anywhere` breaks it only
+ * when it is longer than the box. The scroll-edge shadow says rows continue
+ * past the cap: the card's surface is translucent, so a CSS cover can't hide
+ * it at rest, and the shadow is drawn only while a row is really behind an edge.
  */
 function ApprovalRecipients({
   recipients,
@@ -60,22 +85,35 @@ function ApprovalRecipients({
   cut: number | undefined;
   shortened: number | undefined;
 }) {
+  const listRef = useRef<HTMLDListElement>(null);
+  const edges = useScrollOverflow(listRef);
   return (
     <>
-      <dl
-        data-slot="approval-service-recipients"
-        className="border-border/60 bg-muted/40 mt-1.5 grid max-h-[40dvh] grid-cols-[minmax(0,max-content)_minmax(0,1fr)] gap-x-3 gap-y-0.5 overflow-auto rounded-md border p-2 text-xs md:max-h-56"
-      >
-        {recipients.map((recipient, index) => (
-          <div key={`${index}-${recipient.label}`} className="contents">
-            <dt className="text-muted-foreground max-w-40 break-words">{recipient.label}</dt>
-            {/* Isolated left-to-right, so right-to-left letters can't move its "@" or dots. */}
-            <dd dir="ltr" className="text-foreground min-w-0 break-all [unicode-bidi:isolate]">
-              {recipient.address}
-            </dd>
-          </div>
-        ))}
-      </dl>
+      <div className="relative mt-1.5">
+        <dl
+          ref={listRef}
+          onScroll={edges.onScroll}
+          data-slot="approval-service-recipients"
+          className="border-border/60 bg-muted/40 flex max-h-[40dvh] flex-col gap-1.5 overflow-auto rounded-md border p-2 text-xs md:max-h-56 @sm/approval:grid @sm/approval:grid-cols-[max-content_minmax(0,1fr)] @sm/approval:gap-x-3 @sm/approval:gap-y-0.5"
+        >
+          {recipients.map((recipient, index) => (
+            <div key={`${index}-${recipient.label}`} className="min-w-0 @sm/approval:contents">
+              <dt className="text-muted-foreground text-2xs break-words @sm/approval:max-w-40 @sm/approval:text-xs">
+                {recipient.label}
+              </dt>
+              {/* Isolated left-to-right, so right-to-left letters can't move its "@" or dots. */}
+              <dd
+                dir="ltr"
+                className="text-foreground min-w-0 [overflow-wrap:anywhere] [unicode-bidi:isolate]"
+              >
+                {recipient.address}
+              </dd>
+            </div>
+          ))}
+        </dl>
+        {edges.start && <RecipientsEdge edge="top" />}
+        {edges.end && <RecipientsEdge edge="bottom" />}
+      </div>
       {(cut !== undefined || shortened !== undefined) && (
         <p data-slot="approval-recipients-cut" className="text-muted-foreground mt-0.5 text-xs">
           {recipientsHiddenLine(cut, shortened)}

@@ -11,7 +11,7 @@
  */
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
-import { act, render, screen, cleanup, waitFor } from '@testing-library/react';
+import { act, render, screen, cleanup, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -1015,6 +1015,37 @@ describe('a connected-app action says what it does (DOR-2504)', () => {
       );
       await user.click(screen.getByRole('button', { name: 'Show everything' }));
       expect(container.querySelector('[data-slot="approval-service-recipients"]')).not.toBeNull();
+    });
+
+    // jsdom lays nothing out, so the box's sizes are set by hand; what's under
+    // test is which edge gets the shadow, not how it looks.
+    it('shades the edge a capped list still has rows behind, and only that edge', () => {
+      const { container } = renderCard(connectorApproval(gmailSend));
+      const box = container.querySelector<HTMLElement>(
+        '[data-slot="approval-service-recipients"]'
+      )!;
+      Object.defineProperty(box, 'clientHeight', { configurable: true, value: 100 });
+      Object.defineProperty(box, 'scrollHeight', { configurable: true, value: 300 });
+      const edge = (name: string) =>
+        container.querySelector(`[data-slot="approval-recipients-edge-${name}"]`);
+
+      fireEvent.scroll(box);
+      expect(edge('top')).toBeNull();
+      expect(edge('bottom')).not.toBeNull();
+
+      box.scrollTop = 200;
+      fireEvent.scroll(box);
+      expect(edge('top')).not.toBeNull();
+      expect(edge('bottom')).toBeNull();
+    });
+
+    it('draws no shadow when every recipient fits', () => {
+      const { container } = renderCard(connectorApproval(gmailSend));
+      const box = container.querySelector<HTMLElement>(
+        '[data-slot="approval-service-recipients"]'
+      )!;
+      fireEvent.scroll(box);
+      expect(container.querySelector('[data-slot^="approval-recipients-edge-"]')).toBeNull();
     });
 
     it('a send that hides a recipient keeps its name and offers no Allow', () => {
