@@ -6,5 +6,5 @@ covers:
 
 ### Fixed
 
-- An agent building a mini app in a room with another person in it now says why it can't edit the app's folder, and publishes each version to your personal marketplace instead. You approve each version on one card, with no Terminal copying.
+- An agent building a mini app in a room with another person in it now says why it can't edit the app's folder, and publishes each version to your personal marketplace instead. You approve each version in DorkOS, with no Terminal copying.
 - A package an agent just created in your personal marketplace can now be installed right away.
