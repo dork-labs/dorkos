@@ -37,7 +37,12 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { PermissionPreset } from '@dorkos/shared/permissions';
 
+import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import type { StreamEvent } from '@dorkos/shared/types';
 import { marketplaceDomain } from '../marketplace-capabilities.js';
+import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
+import { recordTurnLevels } from '../../core/turn-power/turn-levels.js';
+import { resetLiveOutsiderTurns } from '../../core/turn-power/live-outsider-turns.js';
 import { trustedCaller } from '../../core/capabilities/trusted-caller.js';
 import {
   initPermissionGate,
@@ -205,5 +210,82 @@ describe('an area-level Allowed, by trust posture (ADR 261006-225605)', () => {
       },
     });
     expect(await invokeWith(AREA_ALLOWED)).toEqual({ asked: true, ran: false });
+  });
+});
+
+describe('a turn that read words from outside the team (DOR-4851)', () => {
+  const AGENT = {
+    agentPath: '/agents/maple',
+    displayName: 'Maple',
+    createdAt: new Date().toISOString(),
+  };
+  let counter = 0;
+
+  /** A chat whose latest turn carried the outsider mark, as a room with another person sets it. */
+  async function markedChat(): Promise<string> {
+    const sessionId = `outside-words-${(counter += 1)}`;
+    const runtime = recordTurnLevels(
+      {
+        type: 'claude-code',
+        getCapabilities: () => CLAUDE_CODE_CAPABILITIES,
+        async *sendMessage(): AsyncGenerator<StreamEvent> {
+          yield { type: 'done', data: {} } as StreamEvent;
+        },
+      } as unknown as AgentRuntime,
+      () => 'bypassPermissions'
+    );
+    for await (const _event of runtime.sendMessage(sessionId, 'hi', {
+      permissionCeiling: 'runtime-default',
+    })) {
+      // drain
+    }
+    return sessionId;
+  }
+
+  afterEach(() => {
+    resetPermissionGate();
+    resetLiveOutsiderTurns();
+  });
+
+  it('asks, though the person set Always allow on the action', async () => {
+    const sessionId = await markedChat();
+    const result = await invokeWith({
+      identity: AGENT,
+      sessionId,
+      approval: { via: 'permission', source: 'agent-action' },
+    });
+    expect(result).toEqual({ asked: true, ran: false });
+  });
+
+  it('asks, though the area is Allowed under Trusted', async () => {
+    initPermissionGate({
+      readConfig: () => ({ preset: 'trusted', defaults: { areas: {}, actions: {} } }),
+    });
+    const sessionId = await markedChat();
+    const result = await invokeWith({
+      identity: AGENT,
+      sessionId,
+      approval: { via: 'permission', source: 'preset' },
+    });
+    expect(result).toEqual({ asked: true, ran: false });
+  });
+
+  it('still runs on a card the person answered for this exact call', async () => {
+    const sessionId = await markedChat();
+    const result = await invokeWith({
+      identity: AGENT,
+      sessionId,
+      approval: { via: 'approval', approvalId: 'appr_02' },
+    });
+    expect(result).toEqual({ asked: false, ran: true });
+  });
+
+  it('leaves the agent’s own unmarked work on its Always allow', async () => {
+    const result = await invokeWith({
+      identity: AGENT,
+      sessionId: 'clean-chat',
+      approval: { via: 'permission', source: 'agent-action' },
+    });
+    expect(result).toEqual({ asked: false, ran: true });
   });
 });
