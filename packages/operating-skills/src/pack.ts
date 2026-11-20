@@ -446,8 +446,11 @@ export interface OperatingSkill {
  *   code, gives the reach list while approval waits, and names the app on every ⌘K
  *   label and dialog. An agent seeded at 60 would believe DorkOS refuses a marked turn's
  *   build, and that every server-code change at Full runs at once.
+ * - 62: `continuing-on-another-account` teaches moving your own seat from another
+ *   chat at the usage threshold, once your answer in that room ends (DOR-3833).
+ *   An agent seeded at 61 would still believe only a person can move it.
  */
-export const OPERATING_SKILLS_VERSION = 61;
+export const OPERATING_SKILLS_VERSION = 62;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the
