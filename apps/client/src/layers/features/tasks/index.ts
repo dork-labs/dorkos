@@ -14,3 +14,5 @@ export { formatCron } from './lib/format-cron';
 export { TasksList } from './ui/TasksList';
 export { TasksDialog } from './ui/TasksDialog';
 export { taskFilterSchema, taskSortOptions } from './lib/task-filter-schema';
+export { TaskAutonomyField } from './ui/autonomy/TaskAutonomyField';
+export { TaskAutonomyConfirm } from './ui/autonomy/TaskAutonomyConfirm';

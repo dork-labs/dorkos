@@ -9,8 +9,8 @@
  *
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi, type Mock } from 'vitest';
+import { render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -161,6 +161,17 @@ let user: ReturnType<typeof userEvent.setup>;
 async function pick(testId: string, optionName: string | RegExp) {
   await user.click(await screen.findByTestId(testId));
   await user.click(await screen.findByRole('option', { name: optionName }));
+}
+
+/**
+ * Answer the one confirm a save takes at a level that acts without asking
+ * (DOR-3841). Codex's Act never asks, so a schedule saved there asks first, and
+ * nothing is written until this is pressed.
+ */
+async function confirmNeverAskingSave(save: Mock) {
+  const confirm = await screen.findByRole('alertdialog');
+  expect(save).not.toHaveBeenCalled();
+  fireEvent.click(within(confirm).getByRole('button', { name: 'Turn on Act' }));
 }
 
 describe('the task form Runs-on controls', () => {
@@ -373,7 +384,8 @@ describe('the task form Runs-on controls', () => {
   describe('moving a task onto a runtime that reads its mode as never-asking', () => {
     // `acceptEdits` asks before a command on Claude Code and cannot ask at all
     // on Codex. Moving the runtime used to open an "unattended" consent dialog;
-    // trusted by default (ADR 261006-225605), it is just a change.
+    // trusted by default (ADR 261006-225605), it is just a change. Saving it
+    // takes the one confirm a never-asking level takes (DOR-3841).
     it('moves straight away with no dialog, and saves only the runtime', async () => {
       const updateTask = vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-1' }));
       const transport = transportWithAgent(null, { updateTask });
@@ -389,6 +401,7 @@ describe('the task form Runs-on controls', () => {
       expect(screen.queryByRole('alertdialog')).toBeNull();
 
       fireEvent.click(screen.getByText('Save'));
+      await confirmNeverAskingSave(updateTask);
       await waitFor(() =>
         expect(updateTask).toHaveBeenCalledWith(
           'sched-1',
@@ -479,6 +492,7 @@ describe('the task form Runs-on controls', () => {
 
       fillRequiredFields();
       fireEvent.click(screen.getByText('Create task'));
+      await confirmNeverAskingSave(createTask);
       await waitFor(() =>
         expect(createTask).toHaveBeenCalledWith(
           expect.objectContaining({ target: CODEX_AGENT.id, permissionMode: 'acceptEdits' })
@@ -601,6 +615,7 @@ describe('the task form Runs-on controls', () => {
         expect(screen.queryByRole('alertdialog')).toBeNull();
 
         fireEvent.click(screen.getByText('Save'));
+        await confirmNeverAskingSave(updateTask);
         await waitFor(() =>
           expect(updateTask).toHaveBeenCalledWith(
             'sched-1',
@@ -861,6 +876,7 @@ describe('the task form Runs-on controls', () => {
       await pick('task-effort-select', 'High');
 
       fireEvent.click(screen.getByText('Create task'));
+      await confirmNeverAskingSave(createTask);
 
       await waitFor(() =>
         expect(createTask).toHaveBeenCalledWith(

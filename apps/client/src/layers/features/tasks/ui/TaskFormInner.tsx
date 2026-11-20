@@ -15,19 +15,19 @@ import {
   CollapsibleFieldCard,
   Label,
   Button,
-  PermissionModeScopeNote,
   Switch,
-  TrustDial,
 } from '@/layers/shared/ui';
 import { useAppForm } from '@/layers/shared/lib/form';
-import { isBypassPermissionMode, permissionModeLabel } from '@/layers/shared/lib';
-import type { PermissionMode, Task } from '@dorkos/shared/types';
+import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
+import type { Task } from '@dorkos/shared/types';
 import { createTaskInput } from '../lib/create-task-input';
+import { autonomyToConfirm } from '../lib/full-autonomy-confirm';
 import { ScheduleBuilder, isCronValid } from './TaskBuilder';
 import { TimezoneCombobox } from './TimezoneCombobox';
 import { TaskAgentField, type TaskAgentRoster } from './TaskAgentField';
+import { TaskAutonomyConfirm } from './autonomy/TaskAutonomyConfirm';
+import { TaskAutonomyField } from './autonomy/TaskAutonomyField';
 import { TaskExecutionFields } from './TaskExecutionFields';
-import { asksWhileUnattended, TaskUnattendedWarning } from './TaskUnattendedWarning';
 import { useAgentRuntime, useTaskExecution } from './use-task-execution';
 import {
   DEFAULT_MAX_RUNTIME,
@@ -142,22 +142,41 @@ export function ScheduleForm({
   const ownedBy: PackageOwnedBy | null = knownOwner ?? refusal?.ownedBy ?? null;
   const readOnly = knownOwner !== null;
 
+  function save(value: ScheduleFormValues) {
+    if (editTask) {
+      // Only what the person changed (`changedUpdateFields`): a field sent
+      // unchanged is still a field the server has to act on, and a package's
+      // schedule refuses every one but its switch and its timing.
+      const input = changedUpdateFields(defaultValues, value);
+      if (Object.keys(input).length === 0) {
+        onSubmitSuccess();
+        return;
+      }
+      updateTask.mutate({ id: editTask.id, ...input }, { onSuccess: onSubmitSuccess });
+    } else {
+      createTask.mutate(createTaskInput(value, defaultTimezone), { onSuccess: onSubmitSuccess });
+    }
+  }
+
+  // A save at a level that acts without asking waits here for one click in
+  // the app (DOR-3841, `autonomyToConfirm`). Client-only on purpose: no field
+  // in the request says it was confirmed, so no caller can claim it was.
+  const [pendingSave, setPendingSave] = useState<{
+    descriptor: PermissionModeDescriptor;
+    value: ScheduleFormValues;
+  } | null>(null);
+
   const form = useAppForm({
     defaultValues,
     onSubmit: ({ value }) => {
-      if (editTask) {
-        // Only what the person changed (`changedUpdateFields`): a field sent
-        // unchanged is still a field the server has to act on, and a package's
-        // schedule refuses every one but its switch and its timing.
-        const input = changedUpdateFields(defaultValues, value);
-        if (Object.keys(input).length === 0) {
-          onSubmitSuccess();
-          return;
-        }
-        updateTask.mutate({ id: editTask.id, ...input }, { onSuccess: onSubmitSuccess });
-      } else {
-        createTask.mutate(createTaskInput(value, defaultTimezone), { onSuccess: onSubmitSuccess });
-      }
+      const descriptor = autonomyToConfirm({
+        value,
+        opening: editTask ? defaultValues : undefined,
+        // Read at submit time, from the render that last updated the form.
+        descriptors,
+      });
+      if (descriptor) setPendingSave({ descriptor, value });
+      else save(value);
     },
   });
 
@@ -168,9 +187,6 @@ export function ScheduleForm({
   const runtimeOverride = useStore(form.store, (s) => s.values.runtime);
   const modelOverride = useStore(form.store, (s) => s.values.model);
   const effortOverride = useStore(form.store, (s) => s.values.effort);
-  // Read here as well as inside its own field, because the Advanced badge below
-  // counts a never-asking mode as a change.
-  const permissionMode = useStore(form.store, (s) => s.values.permissionMode);
 
   // The two disclosure sections. Schedule opens on a task that already has one;
   // Advanced always starts shut, which is what makes it advanced.
@@ -188,11 +204,6 @@ export function ScheduleForm({
     effortOverride !== '',
     maxRuntime !== DEFAULT_MAX_RUNTIME,
     sticky,
-    // Permissions lives inside this same section, and it is the one setting
-    // here that changes what an unattended run may do to the machine — a
-    // closed "Advanced settings" with Full autonomy inside must never read
-    // like one hiding nothing (`contributing/design-system.md` §Disclosure).
-    isBypassPermissionMode(permissionMode),
   ].filter(Boolean).length;
 
   // The selected agent's own runtime, off the manifest that owns it (ADR-0043).
@@ -332,6 +343,20 @@ export function ScheduleForm({
             </form.AppField>
           </fieldset>
 
+          {/* ── Permissions ── on the main form, never under Advanced: what an
+              unattended run may do is the one setting nobody should have to
+              open a section to find (DOR-3841). */}
+          <form.AppField name="permissionMode">
+            {(field) => (
+              <TaskAutonomyField
+                mode={field.state.value}
+                descriptors={descriptors}
+                onChange={(next) => field.handleChange(next)}
+                disabled={readOnly}
+              />
+            )}
+          </form.AppField>
+
           {/* ── Schedule (optional) ── */}
           <CollapsibleFieldCard
             open={scheduleOpen}
@@ -395,9 +420,7 @@ export function ScheduleForm({
             }
           >
             <fieldset disabled={readOnly} className="min-w-0 space-y-4">
-              {/* Above Permissions on purpose: the dial's whole vocabulary comes
-                  from the runtime chosen here, so the runtime is the thing to
-                  read first. */}
+              {/* The Permissions dial above follows the runtime chosen here. */}
               <TaskExecutionFields
                 runtime={runtimeOverride}
                 model={modelOverride}
@@ -414,63 +437,6 @@ export function ScheduleForm({
                 onModelChange={(value) => form.setFieldValue('model', value)}
                 onEffortChange={(value) => form.setFieldValue('effort', value)}
               />
-
-              <form.AppField name="permissionMode">
-                {(field) => {
-                  const current = descriptors.find((d) => d.id === field.state.value);
-                  // The runtime's own word for the mode wherever it declared one.
-                  const modeLabel = current?.label ?? permissionModeLabel(field.state.value);
-                  if (descriptors.length === 0) {
-                    // No profile in hand — one round trip on a cold open, and
-                    // forever under a test-mode boot, where the scheduler runs on
-                    // `TestModeRuntime` and `claude-code` is never registered.
-                    return (
-                      <fieldset className="space-y-2">
-                        <legend className="mb-1.5 text-sm font-medium">Permissions</legend>
-                        <p
-                          data-testid="trust-dial-unavailable"
-                          className="text-muted-foreground px-1 text-xs leading-relaxed"
-                        >
-                          Set to “{modeLabel}”. No other options to choose yet. Saving keeps it.
-                        </p>
-                      </fieldset>
-                    );
-                  }
-                  return (
-                    <fieldset className="space-y-2">
-                      <legend className="mb-1.5 text-sm font-medium">Permissions</legend>
-                      <TrustDial
-                        mode={field.state.value}
-                        descriptors={descriptors}
-                        onChangeMode={(next) => field.handleChange(next as PermissionMode)}
-                        // A schedule has no Plan switch. One saved at `plan` is
-                        // kept and named, not frozen behind a control that is
-                        // not on this screen.
-                        strandsWorkingMode
-                        strandedNote={
-                          <>
-                            Set to “{modeLabel}”, which isn’t listed. Saving keeps it. Pick a stop
-                            to change it.
-                          </>
-                        }
-                      />
-                      {/* The fact that is true here and on no attended surface:
-                          a stop that asks has nobody to ask, so the ask is
-                          refused the moment it is raised and the run needs
-                          attention (DOR-3123 A1). Read from what the runtime
-                          declared, never from a guess about the prompt. */}
-                      {current !== undefined && asksWhileUnattended(current) && (
-                        <TaskUnattendedWarning />
-                      )}
-                      <PermissionModeScopeNote
-                        mode={field.state.value}
-                        {...(current ? { descriptor: current } : {})}
-                        className="px-1"
-                      />
-                    </fieldset>
-                  );
-                }}
-              </form.AppField>
 
               <form.AppField name="maxRuntime">
                 {(field) => (
@@ -555,6 +521,17 @@ export function ScheduleForm({
           )}
         </form.Subscribe>
       </ResponsiveDialogFooter>
+
+      {/* The one confirm a save at a level that acts without asking takes.
+          Cancel saves nothing and leaves the form as it was. */}
+      <TaskAutonomyConfirm
+        descriptor={pendingSave?.descriptor ?? null}
+        onCancel={() => setPendingSave(null)}
+        onConfirm={() => {
+          if (pendingSave) save(pendingSave.value);
+          setPendingSave(null);
+        }}
+      />
     </form.AppForm>
   );
 }

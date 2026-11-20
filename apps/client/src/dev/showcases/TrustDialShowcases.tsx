@@ -23,6 +23,7 @@ import {
 import { GlobalTrustRow, TrustRow, type GlobalTrustRowRuntime } from '@/layers/features/settings';
 import { InfoTip, TrustDial, UnattendedAutonomyDialog } from '@/layers/shared/ui';
 import { actsWithoutAsking } from '@/layers/shared/lib';
+import { TaskSaveDial } from './TaskSaveDialDemo';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -202,7 +203,8 @@ function LiveDial({
  * The same dial on a surface nobody is watching — a relay binding or a scheduled
  * task. A stored mode with no stop is kept until somebody picks one and SAVES.
  * A binding also asks first at any stop that never asks, because strangers can
- * message it; a task applies every stop on the click (ADR 261006-225605).
+ * message it; a task applies every stop on the click (ADR 261006-225605) and
+ * confirms one that never asks only on save ({@link TaskSaveDial}).
  */
 function UnattendedDial({
   descriptors,
@@ -461,8 +463,22 @@ export function TrustDialShowcases() {
 
       <PlaygroundSection
         title="Trust Dial — the surfaces nobody is watching"
-        description="An integration binding and a scheduled task ask the same question with the same control. A stored mode with no stop is kept until somebody picks one AND saves. A binding also confirms a stop that never asks, naming what stops happening in the chat, because strangers can message it; a task does not."
+        description="An integration binding and a scheduled task ask the same question with the same control. A stored mode with no stop is kept until somebody picks one AND saves. A binding confirms a stop that never asks on the pick, because strangers can message it. A task confirms it once on save, and its dial sits on the form's main page, not under Advanced (DOR-3841)."
       >
+        <ShowcaseLabel>
+          A new task at Full autonomy — Create asks once; pick Act and it saves straight away
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <TaskSaveDial descriptors={CLAUDE} />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>
+          The same on Codex — its Act stop never asks either, so Create asks there too
+        </ShowcaseLabel>
+        <ShowcaseDemo>
+          <TaskSaveDial descriptors={CODEX} />
+        </ShowcaseDemo>
+
         <ShowcaseLabel>
           A binding saved at Plan — kept and named, never quietly widened
         </ShowcaseLabel>

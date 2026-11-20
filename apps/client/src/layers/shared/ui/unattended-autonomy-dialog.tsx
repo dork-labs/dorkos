@@ -33,26 +33,29 @@ export interface UnattendedAutonomyDialogProps {
 }
 
 /**
- * The door into a mode that will not stop to ask on a chat binding — a Telegram
- * or Slack connection whose messages can come from people outside the team
- * (spec `trust-dial`, decision 5, widened 2026-08-01 by DOR-816).
+ * The door into a mode that will not stop to ask, on the two surfaces that
+ * still confirm it: a chat binding — a Telegram or Slack connection whose
+ * messages can come from people outside the team (spec `trust-dial`, decision
+ * 5, widened 2026-08-01 by DOR-816) — and saving a schedule (DOR-3841).
  *
  * Which modes is `actsWithoutAsking`'s answer, and it is wider than the dial's
  * Full-autonomy stop: a runtime may file a mode that never asks at the middle
- * stop, so the binding gates it here rather than only at the top of the dial.
+ * stop, so both callers gate it here rather than only at the top of the dial.
  *
- * ## Why a binding still asks when nothing else does
+ * ## Why these two ask when a session does not
  *
- * Agents are trusted by default (ADR 261006-225605): a session, a scheduled task
- * and a schedule approval all take Full autonomy without a confirm. Trust never
- * extends to strangers, though, and anyone who can message a connection can
- * drive the agent behind it. What a person needs told is *what stops happening*
- * — the approval message that would have arrived in their chat — so the caller
- * writes that sentence and this component holds the shape. The copy that is
- * about the MODE lives in `consent-ritual-copy`.
+ * Agents are trusted by default (ADR 261006-225605): a session and a schedule
+ * approval take Full autonomy without a confirm, and a new schedule still OPENS
+ * at Full on that default. Trust never extends to strangers, though, and anyone
+ * who can message a connection can drive the agent behind it. A schedule's runs
+ * happen with nobody watching, so saving one at such a level takes one click
+ * in the app; picking the stop on its dial does not. What a person needs told
+ * is *what stops happening*, so the caller writes that sentence and this
+ * component holds the shape. The copy that is about the MODE lives in
+ * `consent-ritual-copy`.
  *
- * It lives in `shared` beside the rest of the dial's pieces; its one caller is
- * `entities/binding`.
+ * It lives in `shared` beside the rest of the dial's pieces; its callers are
+ * `entities/binding` and `features/tasks`.
  *
  * The consequence sentence about the **mode** is still the runtime's own
  * `promise`, never copy written here: Codex says "network included" and a
