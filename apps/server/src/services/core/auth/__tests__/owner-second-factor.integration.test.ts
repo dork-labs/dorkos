@@ -26,6 +26,7 @@ import { frontDoorListener } from '../../../../http/front-door.js';
 import { createDevicesRoutes } from '../../../../routes/devices.js';
 import { createOwnerFactorRoutes } from '../../../../routes/owner-factors.js';
 import { createStepUpRoutes } from '../../../../routes/step-up.js';
+import { APPROVAL_TOKEN_HEADER } from '../../capabilities/index.js';
 import { AuditLog } from '../../../audit/audit-log.js';
 import { AccountIds } from '../../../audit/account-ids.js';
 import { initAuditTrail, resetAuditTrail } from '../../../audit/audit-trail.js';
@@ -336,6 +337,63 @@ describe('sign-in checks change only at this computer', () => {
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('PASSKEY_ON_OTHER_ADDRESS');
     expect(res.body.secret).toBeUndefined();
+  });
+
+  it('an agent, an approval token or an API key at this computer never changes a check', async () => {
+    const key = (
+      await getAuth()!.api.createApiKey({
+        body: { userId: readOwnerAccount()!.id, name: 'made-up' },
+      })
+    ).key;
+    const start = () => post('/api/owner-factors/authenticator/start', 'direct', deskCookie);
+    const asAgent = await start().set('X-DorkOS-Agent', 'agent-token').send({ label: 'x' });
+    const withToken = await start()
+      .set(APPROVAL_TOKEN_HEADER, 'made-up-token')
+      .send({ label: 'x' });
+    const withKey = await post('/api/owner-factors/authenticator/start', 'direct')
+      .set('Authorization', `Bearer ${key}`)
+      .send({ label: 'x' });
+    for (const res of [asAgent, withToken, withKey]) {
+      expect(res.status).toBe(403);
+      expect(res.body.secret).toBeUndefined();
+      expect(res.body.options).toBeUndefined();
+    }
+  });
+
+  it('a removed passkey no longer passes a check while another is set up', async () => {
+    const owner = readOwnerAccount()!.id;
+    const old = new SoftAuthenticator({ rpId: 'localhost', origin: ORIGIN, userHandle: 'b2xk' });
+    const oldId = addPasskey({
+      userId: owner,
+      label: 'Old key',
+      credentialId: old.credentialId,
+      publicKey: old.cosePublicKeyBase64url(),
+      alg: old.coseAlg,
+      signCount: 0,
+      rpId: 'localhost',
+    });
+    removeOwnerFactor(owner, oldId);
+    const asked = await post('/api/owner-factors/authenticator/start', 'direct', deskCookie).send({
+      label: 'Phone',
+    });
+    expect(asked.status).toBe(428);
+    const proof = old.assert({ challenge: asked.body.options.challenge });
+    const res = await post('/api/owner-factors/authenticator/start', 'direct', deskCookie).send({
+      label: 'Phone',
+      passkey: {
+        id: proof.credentialId,
+        rawId: proof.credentialId,
+        type: 'public-key',
+        clientExtensionResults: {},
+        response: {
+          clientDataJSON: proof.clientDataJSON,
+          authenticatorData: proof.authenticatorData,
+          signature: proof.signature,
+        },
+      },
+    });
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe('PASSKEY_REFUSED');
   });
 
   it('the first check that works from other devices signs out sign-ins made from them before it', async () => {

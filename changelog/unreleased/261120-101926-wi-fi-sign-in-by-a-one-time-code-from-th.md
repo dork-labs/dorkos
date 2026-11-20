@@ -9,6 +9,7 @@ covers:
   - 'test(server): list the sign-in and sign-in check routes in the route censuses (DOR-4744, DOR-3647)'
   - 'docs(changelog): every Wi-Fi device signs in again after updating (DOR-4744)'
   - 'fix(auth): sign-in checks change only at this computer, and stay required once set (DOR-3647, DOR-4744)'
+  - 'fix(auth): the first sign-in check from other devices ends earlier sign-ins before it counts (DOR-3647)'
 ---
 
 ### Added

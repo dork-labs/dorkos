@@ -99,8 +99,10 @@ async function endSignInsFromBefore(
   owner: { userId: string; sessionId: string },
   first: boolean
 ): Promise<void> {
+  if (!first) return;
   const auth = getAuth();
-  if (!first || !auth) return;
+  // Nothing to end them with: refuse rather than go on with them signed in.
+  if (!auth) throw new Error('Sign-in is not set up.');
   await signOutSessionsAway(auth, owner.userId, owner.sessionId);
 }
 
@@ -253,8 +255,11 @@ export function createOwnerFactorRoutes(): Hono<ApiEnv> {
       return c.json(errorBody('That code didn’t match. Try the newest one.', 'CODE_REFUSED'), 400);
     }
     const first = !everHadRemoteFactor(owner.userId);
+    // The earlier sign-ins end first: if that fails, the check is not confirmed.
+    await endSignInsFromBefore(owner, first);
     confirmTotp(factor.id, step);
     recordSignInTrustChange(owner.userId, 'authenticator-added');
+    // And again, for any made in the moment between.
     await endSignInsFromBefore(owner, first);
     void notify('signin.check_added', { factorId: factor.id, kind: 'authenticator' });
     return c.json({ id: factor.id });

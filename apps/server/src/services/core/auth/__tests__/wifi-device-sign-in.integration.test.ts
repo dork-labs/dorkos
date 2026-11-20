@@ -38,6 +38,7 @@ import {
 } from '../sessions/wifi-sign-in-requests.js';
 import { resetWifiActivityForTests } from '../sessions/wifi-activity.js';
 import { WIFI_SESSION_IDLE_SECONDS } from '../sessions/session-route.js';
+import { deviceIdOf, signOutSessionsAway } from '../sessions/signed-in-devices.js';
 import { env } from '../../../../env.js';
 
 const target = swappableServer();
@@ -666,5 +667,32 @@ describe('each step only where it belongs', () => {
     ).send({});
     expect(forged.status).toBe(403);
     expect(forged.body.code).toBe('NOT_FROM_OWN_PAGE');
+  });
+});
+
+describe('the first sign-in check that works from other devices', () => {
+  it('ends Wi-Fi sign-ins too, and keeps the one at this computer', async () => {
+    const device = await signInOverWifi();
+    const turnFrom = (cookie: string) =>
+      post('/api/sessions', 'wifi', cookie).set('Sec-Fetch-Site', 'same-origin').send({});
+    expect((await turnFrom(device)).status).toBe(200);
+    const desk = (
+      await request(target.server)
+        .get('/api/devices/sessions')
+        .set('Host', LOCAL)
+        .set('Cookie', deskCookie)
+    ).body.sessions.find((s: { current: boolean }) => s.current);
+    const deskSessionId = db
+      .select({ id: session.id })
+      .from(session)
+      .all()
+      .find((row) => deviceIdOf(row.id) === desk.id)!.id;
+    await signOutSessionsAway(getAuth()!, readOwnerAccount()!.id, deskSessionId);
+    expect((await turnFrom(device)).status).toBe(401);
+    const still = await request(target.server)
+      .get('/api/devices/sessions')
+      .set('Host', LOCAL)
+      .set('Cookie', deskCookie);
+    expect(still.status).toBe(200);
   });
 });
