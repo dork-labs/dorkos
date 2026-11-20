@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, index, check } from 'drizzle-orm/sqlite-core';
 
 // Per-session operational metadata. The row carries two concerns with distinct
 // write semantics:
@@ -26,6 +26,10 @@ export const sessionMetadata = sqliteTable(
     runtime: text('runtime'),
     // Immutable server-owned billing requirement; not native/runtime existence.
     requiredLaunchId: text('required_launch_id'),
+    // NULL preserves legacy uncertainty. Only an evaluated owned launch advances this state.
+    modelLaunchState: text('model_launch_state', {
+      enum: ['pending-v1', 'attempted-v1', 'established-v1'],
+    }),
     agentPath: text('agent_path'),
     // What started the session (`TurnOrigin.kind`), written by the same
     // first-write-wins statement that binds the runtime and never overwritten.
@@ -76,6 +80,10 @@ export const sessionMetadata = sqliteTable(
   // for every agent's session list, and there is one row per session ever
   // started, so without this it read the whole table per request.
   (t) => [
+    check(
+      'session_metadata_model_launch_state',
+      sql`${t.modelLaunchState} IS NULL OR ${t.modelLaunchState} IN ('pending-v1', 'attempted-v1', 'established-v1')`
+    ),
     index('session_metadata_agent_path_idx')
       .on(t.agentPath)
       .where(sql`${t.agentPath} IS NOT NULL`),
