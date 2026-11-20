@@ -12,20 +12,30 @@ import type {
 export interface LocalBrowserTransport {
   /** Scan profile metadata only after a person taps Find my browsers. Never cache the response. */
   scanYourBrowsers(): Promise<import('./your-browser.js').YourBrowserScan>;
-  getLocalBrowserState(): Promise<LocalBrowserPersonState>;
+  getLocalBrowserState(sessionId?: string | null): Promise<LocalBrowserPersonState>;
+  /** The install’s current handoff card, independent of the selected page. */
+  getLocalBrowserHandoffState(): Promise<LocalBrowserPersonState>;
   getLocalBrowserCapabilities(): Promise<LocalBrowserCapabilities>;
   /** Profile metadata for the person's browser controls. */
   listLocalBrowserProfiles(): Promise<{ profiles: LocalBrowserProfile[] }>;
   /** Share one profile with the named agent after the person completes step-up. */
-  bindLocalBrowserProfile(profileId: string, agentId: string): Promise<LocalBrowserProfile>;
+  bindLocalBrowserProfile(
+    profileId: string,
+    agentId: string,
+    sessionId?: string
+  ): Promise<LocalBrowserProfile>;
   /** Stop sharing on the next agent call. */
-  unbindLocalBrowserProfile(profileId: string, agentId: string): Promise<LocalBrowserProfile>;
+  unbindLocalBrowserProfile(
+    profileId: string,
+    agentId: string,
+    sessionId?: string
+  ): Promise<LocalBrowserProfile>;
   /** Forget every site in one profile; null selects the shared default. */
   forgetLocalBrowserSignIns(profileId: string | null): Promise<{ success: true }>;
   /** Remove a named profile, its saved site data and agent access. */
   deleteLocalBrowserProfile(profileId: string): Promise<{ success: true }>;
   openLocalBrowser(input: LocalBrowserOpen): Promise<LocalBrowserPersonState>;
-  selectLocalBrowserTab(id: string): Promise<LocalBrowserState>;
+  selectLocalBrowserTab(id: string, sessionId?: string | null): Promise<LocalBrowserState>;
   /**
    * A person's navigation, which takes the page from an agent sharing it (DOR-4428).
    *
@@ -34,25 +44,25 @@ export interface LocalBrowserTransport {
    */
   navigateLocalBrowser(
     url: string,
-    options?: { httpFallback?: boolean }
+    options?: { httpFallback?: boolean; sessionId?: string | null }
   ): Promise<LocalBrowserPersonState>;
   /** Move the page one step back or forward through its own history. Takes the page from an agent. */
   stepLocalBrowserHistory(
-    direction: LocalBrowserHistoryDirection
+    direction: LocalBrowserHistoryDirection,
+    sessionId?: string | null
   ): Promise<LocalBrowserPersonState>;
   /** Take the page from the chat it is shared with, until the person resumes the agent. */
-  takeOverLocalBrowser(): Promise<LocalBrowserPersonState>;
-  pauseLocalBrowser(): Promise<LocalBrowserState>;
-  resumeLocalBrowser(): Promise<LocalBrowserPersonState>;
-  disconnectLocalBrowser(): Promise<LocalBrowserPersonState>;
+  takeOverLocalBrowser(sessionId?: string | null): Promise<LocalBrowserPersonState>;
+  pauseLocalBrowser(sessionId?: string | null): Promise<LocalBrowserState>;
+  resumeLocalBrowser(sessionId?: string | null): Promise<LocalBrowserPersonState>;
+  disconnectLocalBrowser(sessionId?: string | null): Promise<LocalBrowserPersonState>;
   /** Open the plain sign-in window, which no agent can reach. */
-  signInLocalBrowser(input: LocalBrowserSignInRequest): Promise<LocalBrowserPersonState>;
-  /**
-   * Done signing in: the sign-in window quits and saves (DOR-4731). Answers at once; the
-   * state stream says when it saved or failed. A saved one is handed back to the handoff it
-   * names; with none named, nothing is handed back.
-   */
-  finishLocalBrowserSignIn(handoffId?: string): Promise<void>;
+  signInLocalBrowser(
+    input: LocalBrowserSignInRequest,
+    sessionId?: string | null
+  ): Promise<LocalBrowserPersonState>;
+  /** Finish the selected chat's sign-in, or the handoff named by its own identity. */
+  finishLocalBrowserSignIn(handoffId?: string, sessionId?: string | null): Promise<void>;
   /** Give the browser back to the agent that handed it over. */
   handBackLocalBrowser(handoffId: string): Promise<LocalBrowserPersonState>;
   /** End the agent's task. The browser stays open for the person. */

@@ -49,8 +49,20 @@ const spies = {
   handBack: vi.fn(async () => ({})),
   stop: vi.fn(async () => ({})),
 };
+function controlsFor(sessionId: string | null) {
+  return {
+    ...spies,
+    state: vi.fn(async () => ({ sessionId })),
+    takeOver: vi.fn(async () => ({ sessionId })),
+    pause: vi.fn(async () => ({ sessionId })),
+    finishSignIn: vi.fn(async () => undefined),
+  };
+}
+const selectedControls = new Map<string | null, ReturnType<typeof controlsFor>>();
 // Everything a person does that can move, close or open the browser goes through the handoff.
 const service = {
+  personState: vi.fn((id: string | null) => (selectedControls.get(id) ?? spies).state()),
+  personSession: vi.fn((id: string | null) => ({ handover: selectedControls.get(id) ?? spies })),
   profileRemoval: {
     forget: spies.forgetProfile,
     delete: spies.deleteProfile,
@@ -74,6 +86,7 @@ const service = {
 };
 let user = { userId: 'user_owner', credential: 'cookie' as 'cookie' | 'api-key' };
 let managed = false;
+let wifi = false;
 const listener = honoGroupListener(
   {
     path: '/api/local-browser',
@@ -105,6 +118,7 @@ const listener = honoGroupListener(
 );
 const markedListener: RequestListener = (incoming, response) => {
   if (managed) markIngress(incoming, 'managed');
+  else if (wifi) markIngress(incoming, 'wifi');
   listener(incoming, response);
 };
 const server = listeningServer(markedListener);
@@ -119,6 +133,7 @@ const endpoints = [
   ['delete', '/profiles/11111111-1111-4111-8111-111111111111', undefined, 'deleteProfile'],
   ['get', '/capabilities', undefined, 'capabilities'],
   ['get', '/state', undefined, 'state'],
+  ['get', '/handoff/state', undefined, 'state'],
   ['post', '/open', { mode: 'new-window' }, 'open'],
   ['post', '/tabs/tab-1/select', undefined, 'selectTab'],
   ['post', '/navigate', { url: 'https://example.test/' }, 'navigate'],
@@ -135,15 +150,66 @@ const endpoints = [
 
 beforeEach(() => {
   vi.clearAllMocks();
+  selectedControls.clear();
   user = { userId: 'user_owner', credential: 'cookie' };
   managed = false;
+  wifi = false;
+});
+
+describe('person page selection', () => {
+  it('reads the explicitly selected chat instead of the globally last opened browser', async () => {
+    const a = controlsFor('chat-a');
+    const b = controlsFor('chat-b');
+    selectedControls.set('chat-a', a);
+    selectedControls.set('chat-b', b);
+    const response = await request(server)
+      .get('/api/local-browser/state?sessionId=chat-a')
+      .set('Host', 'localhost');
+    expect(response.status).toBe(200);
+    expect(response.body.sessionId).toBe('chat-a');
+    expect(a.state).toHaveBeenCalledTimes(1);
+    expect(b.state).not.toHaveBeenCalled();
+    expect(spies.state).not.toHaveBeenCalled();
+  });
+
+  it('takes and pauses only the selected chat page', async () => {
+    const a = controlsFor('chat-a');
+    const b = controlsFor('chat-b');
+    selectedControls.set('chat-a', a);
+    selectedControls.set('chat-b', b);
+    await request(server)
+      .post('/api/local-browser/take-over?sessionId=chat-a')
+      .set('Host', 'localhost')
+      .expect(200);
+    await request(server)
+      .post('/api/local-browser/pause?sessionId=chat-b')
+      .set('Host', 'localhost')
+      .expect(200);
+    expect(a.takeOver).toHaveBeenCalledTimes(1);
+    expect(a.pause).not.toHaveBeenCalled();
+    expect(b.pause).toHaveBeenCalledTimes(1);
+    expect(b.takeOver).not.toHaveBeenCalled();
+    expect(spies.takeOver).not.toHaveBeenCalled();
+    expect(spies.pause).not.toHaveBeenCalled();
+  });
+
+  it('an omitted selector reads Your browser, never an agent chat', async () => {
+    const person = controlsFor(null);
+    selectedControls.set(null, person);
+    const response = await request(server).get('/api/local-browser/state').set('Host', 'localhost');
+    expect(response.status).toBe(200);
+    expect(response.body.sessionId).toBeNull();
+    expect(person.state).toHaveBeenCalledTimes(1);
+    expect(spies.state).not.toHaveBeenCalled();
+  });
 });
 
 describe.each(endpoints)('%s %s authority', (method, path, body, effect) => {
-  it.each(['owner', 'managed', 'non-owner', 'api-key', 'agent'] as const)(
+  it.each(['owner', 'managed', 'wifi', 'non-owner', 'api-key', 'agent'] as const)(
     '%s caller',
     async (caller) => {
       managed = caller === 'managed';
+      wifi = caller === 'wifi';
       if (caller === 'non-owner') user.userId = 'user_guest';
       if (caller === 'api-key') user.credential = 'api-key';
       const call = request(server)
@@ -158,7 +224,9 @@ describe.each(endpoints)('%s %s authority', (method, path, body, effect) => {
         expect(spies[effect]).toHaveBeenCalledOnce();
       } else {
         expect(response.status).toBe(403);
-        expect(response.body.code).toBe(caller === 'managed' ? 'local_only' : 'owner_only');
+        expect(response.body.code).toBe(
+          caller === 'managed' || caller === 'wifi' ? 'local_only' : 'owner_only'
+        );
         for (const spy of Object.values(spies)) expect(spy).not.toHaveBeenCalled();
       }
     }
@@ -371,6 +439,27 @@ it.each(PERSON_ONLY_GRANTS)(
     }
   }
 );
+it('keeps unsharing person-only for agent, approval-token and API-key callers', async () => {
+  login.on = false;
+  try {
+    for (const headers of [{ 'X-DorkOS-Agent': '' }, { 'X-DorkOS-Approval': 'example' }]) {
+      const response = await request(server)
+        .delete('/api/local-browser/profiles/default/agents/atlas?sessionId=chat-atlas')
+        .set('Host', 'localhost')
+        .set(headers);
+      expect(response.status).toBe(403);
+      expect(response.body).not.toHaveProperty('heldActionId');
+    }
+    user.credential = 'api-key';
+    const response = await request(server)
+      .delete('/api/local-browser/profiles/default/agents/atlas?sessionId=chat-atlas')
+      .set('Host', 'localhost');
+    expect(response.status).toBe(403);
+    expect(response.body).not.toHaveProperty('heldActionId');
+  } finally {
+    login.on = true;
+  }
+});
 // DOR-4731: Done signing in quits only the sign-in window DorkOS opened. It names the
 // handoff it answers and nothing else: never a window, a process or a page.
 describe('POST /sign-in/done', () => {
@@ -390,6 +479,32 @@ describe('POST /sign-in/done', () => {
       .send({});
     expect(response.status).toBe(202);
     expect(spies.finishSignIn).toHaveBeenCalledWith(undefined);
+  });
+
+  it('finishes only the selected chat or Your browser, and handoffs keep their own identity', async () => {
+    const a = controlsFor('chat-a');
+    const b = controlsFor('chat-b');
+    const person = controlsFor(null);
+    selectedControls.set('chat-a', a);
+    selectedControls.set('chat-b', b);
+    selectedControls.set(null, person);
+    for (const suffix of ['?sessionId=chat-a', '']) {
+      const response = await request(server)
+        .post(`/api/local-browser/sign-in/done${suffix}`)
+        .set('Host', 'localhost')
+        .send({});
+      expect(response.status).toBe(202);
+    }
+    expect(a.finishSignIn).toHaveBeenCalledExactlyOnceWith(undefined);
+    expect(person.finishSignIn).toHaveBeenCalledExactlyOnceWith(undefined);
+    expect(b.finishSignIn).not.toHaveBeenCalled();
+    const response = await request(server)
+      .post('/api/local-browser/sign-in/done?sessionId=chat-b')
+      .set('Host', 'localhost')
+      .send({ handoffId: 'h1' });
+    expect(response.status).toBe(202);
+    expect(spies.finishSignIn).toHaveBeenCalledExactlyOnceWith('h1');
+    expect(b.finishSignIn).not.toHaveBeenCalled();
   });
 
   it('refuses an agent, even naming no handoff', async () => {

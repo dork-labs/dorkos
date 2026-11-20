@@ -63,7 +63,11 @@ it.each([
     expect(card.textContent).not.toMatch(/profile/i);
     fireEvent.click(within(card).getByRole('button', { name: 'Share browser' }));
     await waitFor(() =>
-      expect(transport.bindLocalBrowserProfile).toHaveBeenCalledExactlyOnceWith('default', 'atlas')
+      expect(transport.bindLocalBrowserProfile).toHaveBeenCalledExactlyOnceWith(
+        'default',
+        'atlas',
+        'example-chat'
+      )
     );
     expect(transport.openLocalBrowser).toHaveBeenCalledWith({
       mode: 'new-window',
@@ -92,7 +96,11 @@ it('stops sharing before reopening the agent’s own browser', async () => {
   );
   fireEvent.click(await screen.findByRole('button', { name: 'Stop sharing' }));
   await waitFor(() =>
-    expect(transport.unbindLocalBrowserProfile).toHaveBeenCalledExactlyOnceWith('default', 'atlas')
+    expect(transport.unbindLocalBrowserProfile).toHaveBeenCalledExactlyOnceWith(
+      'default',
+      'atlas',
+      'example-chat'
+    )
   );
   expect(transport.openLocalBrowser).toHaveBeenCalledWith({
     mode: 'new-window',
@@ -117,7 +125,11 @@ it('keeps Stop sharing available after reopening the agent’s own profile', asy
   fireEvent.click(await screen.findByRole('button', { name: 'Stop sharing' }));
   expect(screen.queryByRole('button', { name: 'Share yours' })).toBeNull();
   await waitFor(() =>
-    expect(transport.unbindLocalBrowserProfile).toHaveBeenCalledExactlyOnceWith('default', 'atlas')
+    expect(transport.unbindLocalBrowserProfile).toHaveBeenCalledExactlyOnceWith(
+      'default',
+      'atlas',
+      'example-chat'
+    )
   );
 });
 

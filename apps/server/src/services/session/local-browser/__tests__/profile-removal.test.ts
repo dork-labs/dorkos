@@ -225,7 +225,9 @@ describe('whole-profile disk removal (DOR-3887)', () => {
     const service = new LocalBrowserService(home, { open: vi.fn(), forgetSignIns: () => gate });
     const pending = service.profileRemoval.forget(null);
     await expect(service.open({ mode: 'new-window' })).rejects.toMatchObject({ code: 'busy' });
-    await expect(service.handover.signIn({ url: 'https://example.test/' })).rejects.toMatchObject({
+    await expect(
+      service.personSession(null).handover.signIn({ url: 'https://example.test/' })
+    ).rejects.toMatchObject({
       code: 'busy',
     });
     finish();
@@ -298,13 +300,15 @@ describe('whole-profile disk removal (DOR-3887)', () => {
     const profiles = store();
     const { id } = profiles.create('Example work');
     let cancel!: (error: Error) => void;
-    vi.spyOn(service, 'state').mockImplementationOnce(
+    vi.spyOn(service.personSession(null), 'state').mockImplementationOnce(
       () =>
         new Promise((_resolve, reject) => {
           cancel = reject;
         })
     );
-    const signingIn = service.handover.signIn({ url: 'https://example.test/', profileId: id });
+    const signingIn = service
+      .personSession(null)
+      .handover.signIn({ url: 'https://example.test/', profileId: id });
     await expect(service.profileRemoval.delete(id, profiles)).rejects.toMatchObject({
       code: 'profile_busy',
     });
@@ -327,7 +331,7 @@ describe('whole-profile disk removal (DOR-3887)', () => {
     const folder = path.join(home, 'browser-profiles', id);
     await expect(stat(folder)).rejects.toMatchObject({ code: 'ENOENT' });
     await expect(
-      service.handover.signIn({ url: 'https://example.test/', profileId: id })
+      service.personSession(null).handover.signIn({ url: 'https://example.test/', profileId: id })
     ).rejects.toMatchObject({ code: 'profile_not_found' });
     await expect(stat(folder)).rejects.toMatchObject({ code: 'ENOENT' });
   });
@@ -336,7 +340,7 @@ describe('whole-profile disk removal (DOR-3887)', () => {
     const service = new LocalBrowserService(home);
     const id = '00000000-0000-4000-8000-00000000abcd';
     await expect(
-      service.handover.signIn({ url: 'https://example.test/', profileId: id })
+      service.personSession(null).handover.signIn({ url: 'https://example.test/', profileId: id })
     ).rejects.toMatchObject({ code: 'profile_not_found' });
     await expect(stat(path.join(home, 'browser-profiles', id))).rejects.toMatchObject({
       code: 'ENOENT',

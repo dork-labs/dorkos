@@ -313,7 +313,7 @@ export async function claimRunTurn(opts: {
     // the first rekey dies with "getInternalSessionId is not a function". An
     // object-literal test double spreads perfectly well, which is exactly why
     // this shipped once and had to be found by running it. `turnDeps` in
-    // `message-dispatcher.ts` builds its port the same way for the same reason.
+    // `message-dispatcher/turn-deps.ts` builds its port the same way for the same reason.
     deps: {
       getInternalSessionId: (id) => runtime.getInternalSessionId(id),
       acquireLock: (sid, cid, res, token) => runtime.acquireLock(sid, cid, res, token),

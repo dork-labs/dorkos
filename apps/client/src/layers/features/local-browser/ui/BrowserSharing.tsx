@@ -68,8 +68,9 @@ export function BrowserSharing({
     setBusy(true);
     setError(null);
     try {
-      if (share) await transport.bindLocalBrowserProfile('default', profile.agentId!);
-      else await transport.unbindLocalBrowserProfile('default', agentId);
+      if (share)
+        await transport.bindLocalBrowserProfile('default', profile.agentId!, state.sessionId!);
+      else await transport.unbindLocalBrowserProfile('default', agentId, state.sessionId!);
       setSharing({ agentId, shared: share });
       await action(() =>
         transport.openLocalBrowser({

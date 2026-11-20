@@ -26,6 +26,11 @@
 # habit this replaces was "an agent decides cleanup is in scope and starts
 # deleting". Seeing the plan first is the whole point.
 #
+# Never add `pnpm store prune` here, and never run it by hand while any lane is
+# active. Every worktree shares one pnpm store, so pruning it makes the next
+# install in each live worktree download everything again: about 12 GB of
+# re-installs on 2026-11-20, more than the cleanup that ran it had freed.
+#
 # Requires git, jq and an authenticated gh. All three are checked up front: a
 # missing one is a hard error, never a quiet empty plan.
 #

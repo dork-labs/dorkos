@@ -55,7 +55,8 @@ const CLIENT_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.
 const MODE_PICKERS = [
   'layers/features/status/ui/PermissionModeItem.tsx',
   'layers/entities/binding/ui/BindingAdvancedSection.tsx',
-  'layers/features/tasks/ui/TaskFormInner.tsx',
+  // The schedule form's dial moved out of Advanced into its own field (DOR-3841).
+  'layers/features/tasks/ui/autonomy/TaskAutonomyField.tsx',
   'layers/features/settings/ui/runtimes/rows/TrustRow.tsx',
   'layers/features/settings/ui/runtimes/GlobalTrustRow.tsx',
   'layers/features/permissions/ui/PresetPicker.tsx',
@@ -110,6 +111,21 @@ describe('PermissionModeScopeNote', () => {
     expect(screen.getByText(/in Settings under Permissions/)).toBeInTheDocument();
     expect(screen.queryByText(/under Security/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Standing permissions/)).not.toBeInTheDocument();
+  });
+
+  it('leaves out only the lines a schedule surface asks it to (DOR-3841)', () => {
+    // The schedule form drops the ask line; its save confirm drops the covers
+    // line too. The line about DorkOS's own actions is never optional.
+    const { unmount } = render(<PermissionModeScopeNote mode="bypassPermissions" omitAskLine />);
+    expect(screen.getByText(/This covers editing files/)).toBeInTheDocument();
+    expect(screen.getByText(/DorkOS’s own actions/)).toBeInTheDocument();
+    expect(screen.queryByText(/To stop an ask/)).toBeNull();
+    unmount();
+
+    render(<PermissionModeScopeNote mode="bypassPermissions" omitAskLine omitCoversLine />);
+    expect(screen.queryByText(/This covers editing files/)).toBeNull();
+    expect(screen.getByText(/DorkOS’s own actions/)).toBeInTheDocument();
+    expect(screen.queryByText(/To stop an ask/)).toBeNull();
   });
 
   it('appears for the other spelling of the same thing', () => {

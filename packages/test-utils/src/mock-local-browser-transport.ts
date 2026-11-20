@@ -20,6 +20,7 @@ export function createMockLocalBrowserTransport(): LocalBrowserTransport {
   return {
     scanYourBrowsers: vi.fn().mockResolvedValue({ supported: true, profiles: [], unreadable: [] }),
     getLocalBrowserState: vi.fn().mockResolvedValue(state),
+    getLocalBrowserHandoffState: vi.fn().mockResolvedValue(state),
     listLocalBrowserProfiles: vi.fn().mockResolvedValue({ profiles: [] }),
     bindLocalBrowserProfile: vi.fn(),
     unbindLocalBrowserProfile: vi.fn(),

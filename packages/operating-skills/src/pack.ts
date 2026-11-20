@@ -446,12 +446,19 @@ export interface OperatingSkill {
  *   code, gives the reach list while approval waits, and names the app on every ⌘K
  *   label and dialog. An agent seeded at 60 would believe DorkOS refuses a marked turn's
  *   build, and that every server-code change at Full runs at once.
- * - 62: `using-the-agent-browser` teaches per-agent browsers (DOR-4741): each agent
- *   opens its own signed-out profile in its own Chrome window, the in-app panel is
- *   the person's "Your browser", and only the person can share theirs. An agent
- *   seeded at 61 would expect the person's sign-ins and the panel view.
+ * - 63: `using-the-agent-browser` teaches that each chat owns its own page (DOR-4273):
+ *   chats of one agent share sign-ins, an agent never closes another chat's page,
+ *   waits while a sign-in is busy or a person holds the browser, and never recovers
+ *   a page from its URL, title or tab order. An agent seeded at 61 would expect one
+ *   shared page per install.
+ * - 64: `continuing-on-another-account` teaches moving your own seat from another
+ *   chat at the usage threshold, once your answer in that room ends (DOR-3833).
+ *   An agent seeded at 63 would still believe only a person can move it.
+ * - 65: `using-the-agent-browser` teaches separate signed-out profiles per agent,
+ *   person-only sharing and own-window agent pages while retaining per-chat leases.
+ *   An agent seeded at 64 would still expect the person’s default browser.
  */
-export const OPERATING_SKILLS_VERSION = 62;
+export const OPERATING_SKILLS_VERSION = 65;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

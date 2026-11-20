@@ -22,6 +22,7 @@ export type ProfileTamperWriter = (finding: ProfileTamperFinding, profileId: str
 export interface ProfileRemovalDeps {
   dataDirectory(): string;
   busy(profileId: string | null): boolean;
+  revoke?(profileId: string | null): Promise<void>;
   forgotten?(profileId: string | null): void;
   embedded?(): { forgetSignIns?(): Promise<void> } | undefined;
   /** Disk failure seam; production always recursively removes the whole folder. */
@@ -91,6 +92,7 @@ export class BrowserProfileRemoval {
       );
     this.removing = true;
     try {
+      await this.deps.revoke?.(id);
       const result = await operation();
       this.deps.forgotten?.(id);
       return result;

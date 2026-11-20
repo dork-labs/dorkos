@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   FORBIDDEN_PLAIN_FLAGS,
   disablePasswordSaving,
+  disableTabRestore,
   forgetOpenTabs,
   plainChromiumArgs,
   profileHeld,
@@ -24,6 +25,40 @@ beforeEach(() => {
   folder = mkdtempSync(path.join(tmpdir(), 'plain-chromium-'));
 });
 afterEach(() => rmSync(folder, { recursive: true, force: true }));
+
+it('turns restore off without removing session files, cookies or other preferences', async () => {
+  const defaults = path.join(folder, 'Default');
+  mkdirSync(path.join(defaults, 'Sessions'), { recursive: true });
+  writeFileSync(path.join(defaults, 'Sessions', 'Session_test'), 'saved tabs');
+  writeFileSync(path.join(defaults, 'Cookies'), 'saved cookies');
+  writeFileSync(
+    path.join(defaults, 'Preferences'),
+    JSON.stringify({
+      session: { restore_on_startup: 1, other: 'keep' },
+      signin: { allowed: false },
+    })
+  );
+  await disableTabRestore(folder);
+  expect(JSON.parse(readFileSync(path.join(defaults, 'Preferences'), 'utf8'))).toEqual({
+    session: { restore_on_startup: 5, other: 'keep' },
+    signin: { allowed: false },
+  });
+  expect(readFileSync(path.join(defaults, 'Sessions', 'Session_test'), 'utf8')).toBe('saved tabs');
+  expect(readFileSync(path.join(defaults, 'Cookies'), 'utf8')).toBe('saved cookies');
+});
+
+it('rechecks admission immediately before writing restore preferences', async () => {
+  mkdirSync(path.join(folder, 'Default'), { recursive: true });
+  const file = path.join(folder, 'Default', 'Preferences');
+  const original = JSON.stringify({ session: { restore_on_startup: 1 } });
+  writeFileSync(file, original);
+  await expect(
+    disableTabRestore(folder, () => {
+      throw new Error('held');
+    })
+  ).rejects.toThrow('held');
+  expect(readFileSync(file, 'utf8')).toBe(original);
+});
 
 describe('plainChromiumArgs', () => {
   const args = plainChromiumArgs('/profiles/default', 'https://linear.app/', 'linear.app', true);

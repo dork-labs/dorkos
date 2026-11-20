@@ -1,3 +1,4 @@
+import { LocalBrowserError } from '../errors.js';
 /**
  * The parts of the browser service a handoff steers, apart so the handover's guards can name
  * them without importing the handover itself.
@@ -7,11 +8,16 @@
 import type {
   LocalBrowserHistoryDirection,
   LocalBrowserOpen,
+  LocalBrowserSignInRequest,
   LocalBrowserState,
 } from '@dorkos/shared/local-browser';
 
 /** The parts of the browser service a handoff steers. */
 export interface HandoverBrowser {
+  /** A physical profile swap needs exclusive custody. */
+  requireExclusiveProfile?(profileId?: string | null): void;
+  /** Page custody also applies without a handoff record. */
+  requireAgentPage?(): void;
   profileRemoval?: { assertAvailable(): void };
   state(): Promise<LocalBrowserState>;
   capabilities(): { newWindow: boolean };
@@ -28,4 +34,23 @@ export interface HandoverBrowser {
   handToPerson(): Promise<LocalBrowserState>;
   resume(): Promise<LocalBrowserState>;
   disconnect(): Promise<LocalBrowserState>;
+}
+
+/** The default profile always exists; a deleted saved profile cannot be reopened by a handoff. */
+export function assertHandoffProfileExists(
+  browser: HandoverBrowser,
+  profileId: string | null
+): void {
+  if (profileId !== null && !browser.profileExists(profileId))
+    throw new LocalBrowserError('profile_not_found', 'That browser profile no longer exists.');
+}
+
+/** Resolve a pending sign-in reservation without reading any page. */
+export function signInProfile(
+  input: LocalBrowserSignInRequest,
+  current: string | null,
+  handoff?: { profileId: string | null } | null
+): string | null {
+  if ('handoffId' in input) return handoff ? handoff.profileId : current;
+  return input.profileId === 'default' ? null : (input.profileId ?? current);
 }

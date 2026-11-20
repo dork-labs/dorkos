@@ -99,6 +99,20 @@ export async function disablePasswordSaving(profileFolder: string): Promise<void
   });
 }
 
+/** Disable tab restoration for a new owned launch, retaining cookies and session files. */
+export async function disableTabRestore(
+  profileFolder: string,
+  beforeWrite: () => void = () => undefined
+): Promise<void> {
+  await editPreferences(
+    profileFolder,
+    (prefs) => {
+      prefs.session = { ...section(prefs.session), restore_on_startup: START_WITH_NEW_TAB };
+    },
+    beforeWrite
+  );
+}
+
 /**
  * Make the next window open on the page it's given, alone.
  *
@@ -128,7 +142,8 @@ function section(value: unknown): Record<string, unknown> {
 
 async function editPreferences(
   profileFolder: string,
-  edit: (prefs: Record<string, unknown>) => void
+  edit: (prefs: Record<string, unknown>) => void,
+  beforeWrite: () => void = () => undefined
 ): Promise<void> {
   const folder = path.join(profileFolder, 'Default');
   await mkdir(folder, { recursive: true, mode: 0o700 });
@@ -140,6 +155,7 @@ async function editPreferences(
     // No preferences yet, or unreadable ones: start from an empty set.
   }
   edit(prefs);
+  beforeWrite();
   await writeFile(file, JSON.stringify(prefs), { mode: 0o600 });
 }
 

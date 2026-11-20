@@ -574,7 +574,7 @@ None — all decisions resolved during ideation (see Section 6 of `01-ideation.m
 ## References
 
 - Ideation document: `specs/permission-mode-management/01-ideation.md`
-- Existing spec #135: `specs/agent-permission-mode/02-specification.md`
+- Existing spec #135: [`agent-permission-mode/02-specification.md`](https://github.com/dork-labs/dorkos/blob/2b98f06e42fab0c9f36c789387138bfc1b211116/specs/agent-permission-mode/02-specification.md)
 - Claude Agent SDK permissions: https://platform.claude.com/docs/en/agent-sdk/permissions
 - Claude Code permission modes: https://code.claude.com/docs/en/permission-modes
 - Claude Code auto mode: https://www.anthropic.com/engineering/claude-code-auto-mode

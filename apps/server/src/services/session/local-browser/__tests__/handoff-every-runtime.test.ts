@@ -45,7 +45,7 @@ async function handedOver() {
   const service = {
     requireProfileAccess: vi.fn(async () => undefined),
     requireNotFullScreen: vi.fn(async () => undefined),
-    requireSharedSession: vi.fn(() => undefined),
+    assertLeaseIdentity: vi.fn(() => undefined),
     agentState: vi.fn(async () => state),
     observe: vi.fn(async () => ({ revision: 3, snapshot: '- heading "Private"', tabId: 'x' })),
     screenshot: vi.fn(async () => ({ data: 'cGl4', mimeType: 'image/png', revision: 3 })),
@@ -70,8 +70,16 @@ async function handedOver() {
   service.handover = new BrowserHandover(browser, signIns, () => '/tmp/unused');
   service.handover.useOutsideTurnCheck(async () => null);
   await service.handover.ask(CHAT, 'wall', { name: 'Atlas', folder: '/agents/atlas' });
+  const scoped = {
+    ...service,
+    leaseFor: () => ({
+      ...service,
+      assertCurrent: () => undefined,
+      runOperation: <T>(_effect: boolean, operation: () => Promise<T>) => operation(),
+    }),
+  };
   const registry = composeRegistry(
-    [createLocalBrowserDomain(service as unknown as LocalBrowserService)],
+    [createLocalBrowserDomain(scoped as unknown as LocalBrowserService)],
     { logger: noopLogger }
   );
   return { service, registry };

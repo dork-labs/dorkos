@@ -3,6 +3,7 @@
  * check in `local-browser.ts`, and adding an agent also waits on "Confirm it's you".
  */
 import type { Hono } from 'hono';
+import { z } from 'zod';
 import { LocalBrowserProfileBindSchema } from '@dorkos/shared/local-browser';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
@@ -15,8 +16,8 @@ import type { LocalBrowserProfileStore } from '../services/session/local-browser
 /** What the profile routes need. */
 export interface LocalBrowserProfileRouteDeps {
   profiles: LocalBrowserProfileStore;
-  /** True only for the holding agent chat while its current turn is unmarked. */
-  mayShare?(agentId: string): Promise<boolean>;
+  /** Share admission for the explicitly selected agent chat and its live turn. */
+  mayShare?(agentId: string, sessionId?: string): Promise<boolean>;
   /** The registered agent with this id and its folder's real path, or undefined. */
   agent(agentId: string): { name: string; projectPath: string } | undefined;
 }
@@ -49,12 +50,13 @@ export function mountLocalBrowserProfileRoutes(
     if (requirePersonAtThisComputer(honoRequestFacts(c)) !== undefined)
       return c.json({ error: 'Only you can share a browser.', code: 'person_only' }, 403);
     const profileId = c.req.param('id');
+    const sessionId = z.string().min(1).max(256).optional().parse(c.req.query('sessionId'));
     const { agentId } = LocalBrowserProfileBindSchema.parse(readJsonBody(c));
     const profile = profiles.get(profileId);
     if (!profile) return c.json(NOT_FOUND, 404);
     const agent = deps.agent(agentId);
     if (!agent) return c.json(NO_AGENT, 404);
-    if (!(await deps.mayShare?.(agentId)))
+    if (!sessionId || !(await deps.mayShare?.(agentId, sessionId)))
       return c.json(
         { error: 'Wait until this agent’s turn ends, then share.', code: 'outside_turn' },
         403
@@ -62,7 +64,7 @@ export function mountLocalBrowserProfileRoutes(
     return holdForStepUp(c, {
       kind: 'browser-profile.bind',
       target: profile.label,
-      input: { profileId, agentId },
+      input: { profileId, agentId, sessionId },
       // An agent picks its own name, so the folder says which agent this really is.
       reason: `${agent.name} (${agent.projectPath}) can use everything you’re signed in to in this profile.`,
       // The router's own bar, re-run on the request that confirmed it (DOR-3234): an owner
@@ -79,7 +81,7 @@ export function mountLocalBrowserProfileRoutes(
         if (!current) return { status: 404, body: NO_AGENT };
         // The person confirmed this folder. An agent that moved since is a new question.
         if (current.projectPath !== agent.projectPath) return { status: 404, body: NO_AGENT };
-        if (!(await deps.mayShare?.(agentId)))
+        if (!sessionId || !(await deps.mayShare?.(agentId, sessionId)))
           return {
             status: 403,
             body: { error: 'Wait until this agent’s turn ends, then share.', code: 'outside_turn' },
@@ -89,13 +91,15 @@ export function mountLocalBrowserProfileRoutes(
       },
     });
   });
-  // Taking access away narrows it, so it needs no step-up. The next tool call is refused.
-  router.delete('/profiles/:id/agents/:agentId', (c) => {
+  // The path explicitly names both targets. Narrowing access stays available even
+  // during a marked turn, with no share-admission check or step-up.
+  router.delete('/profiles/:id/agents/:agentId', async (c) => {
     if (requirePersonAtThisComputer(honoRequestFacts(c)) !== undefined)
       return c.json({ error: 'Only you can change browser sharing.', code: 'person_only' }, 403);
     const profileId = c.req.param('id');
     if (!profiles.get(profileId)) return c.json(NOT_FOUND, 404);
-    profiles.unbind(profileId, c.req.param('agentId'));
+    const agentId = c.req.param('agentId');
+    profiles.unbind(profileId, agentId);
     return c.json(profiles.get(profileId));
   });
 }

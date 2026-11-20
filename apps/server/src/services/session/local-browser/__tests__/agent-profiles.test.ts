@@ -22,8 +22,8 @@ function fixture() {
 describe('agent browser profile choice', () => {
   it('opens each agent in its own signed-out profile, with a binding only for that agent', async () => {
     const { profiles, access, selection } = fixture();
-    const a = await selection.select({ mode: 'new-window', sessionId: 'atlas' });
-    const b = await selection.select({ mode: 'embedded', sessionId: 'bolt' });
+    const a = await selection.initialize({ mode: 'new-window', sessionId: 'atlas' });
+    const b = await selection.initialize({ mode: 'embedded', sessionId: 'bolt' });
     expect(a).toMatchObject({ id: 'agent-atlas', label: 'atlas · browser' });
     expect(b).toMatchObject({ id: 'agent-bolt', label: 'bolt · browser' });
     expect(profiles.get('default')?.agentIds).toEqual([]);
@@ -35,7 +35,7 @@ describe('agent browser profile choice', () => {
     const { profiles, selection } = fixture();
     profiles.ensure('agent-atlas', 'Old browser name');
     await expect(
-      selection.select({ mode: 'new-window', sessionId: 'atlas' })
+      selection.initialize({ mode: 'new-window', sessionId: 'atlas' })
     ).resolves.toMatchObject({
       label: 'atlas · browser',
     });
@@ -43,18 +43,22 @@ describe('agent browser profile choice', () => {
 
   it('refuses an explicit profile until shared and immediately after unshare', async () => {
     const { profiles, selection } = fixture();
-    await selection.select({ mode: 'new-window' });
+    await selection.initialize({ mode: 'new-window' });
     const input = { mode: 'embedded' as const, sessionId: 'atlas', profileId: 'default' };
-    await expect(selection.select(input)).rejects.toMatchObject({ code: 'profile_not_allowed' });
+    await expect(selection.initialize(input)).rejects.toMatchObject({
+      code: 'profile_not_allowed',
+    });
     profiles.bind('default', 'atlas', '/agents/atlas');
-    await expect(selection.select(input)).resolves.toMatchObject({ id: 'default' });
+    await expect(selection.initialize(input)).resolves.toMatchObject({ id: 'default' });
     profiles.unbind('default', 'atlas');
-    await expect(selection.select(input)).rejects.toMatchObject({ code: 'profile_not_allowed' });
+    await expect(selection.initialize(input)).rejects.toMatchObject({
+      code: 'profile_not_allowed',
+    });
   });
 
   it('checks null and default bindings on every agent call', async () => {
     const { access, profiles, selection } = fixture();
-    await selection.select({ mode: 'new-window' });
+    await selection.initialize({ mode: 'new-window' });
     const gate = new BrowserProfileAccessGate();
     gate.use(access, () => true);
     for (const id of [null, 'default']) {
@@ -79,14 +83,14 @@ describe('agent browser profile choice', () => {
       agentName: () => undefined,
     });
     await expect(
-      selection.select({ mode: 'embedded', sessionId: 'ownerless' })
+      selection.initialize({ mode: 'embedded', sessionId: 'ownerless' })
     ).rejects.toMatchObject({ code: 'profile_not_allowed' });
     expect(profiles.get('default')?.agentIds).toEqual([]);
   });
 
   it('keeps the person-alone browser under default without binding any agent', async () => {
     const { profiles, selection } = fixture();
-    await expect(selection.select({ mode: 'new-window' })).resolves.toMatchObject({
+    await expect(selection.initialize({ mode: 'new-window' })).resolves.toMatchObject({
       id: 'default',
       label: 'Your browser',
       agentId: null,
