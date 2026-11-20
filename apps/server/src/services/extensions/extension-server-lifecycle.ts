@@ -55,7 +55,8 @@ import {
 import { resolveChildEntry } from './isolation/child-entry.js';
 import * as extensionConnections from './connections/extension-connections-ctx.js';
 import { settleWithin } from './settle-within.js';
-import { loadInProcessBundle, writeServerBundle } from './server-bundle/load-in-process.js';
+import { loadInProcessBundle } from './server-bundle/load-in-process.js';
+import { writeServerBundle } from './server-bundle/write-server-bundle.js';
 import { runDirMissingMessage, runDirOf } from './pin/run-dir.js';
 import { createIsolatedHandler } from './isolation/isolated-router.js';
 import { RestartPolicy, type RestartPolicyOptions } from './isolation/restart-policy.js';

@@ -260,7 +260,7 @@ describe('a pinned copy runs only from its checked copy (pin/run-dir)', () => {
       trustedOrigin: { plugin: 'flow', source: 'dork-labs/marketplace' },
     });
     expect(runDirOf(proven)).toBe(extDir);
-    expect(runDirOf({ ...proven, scope: 'local' })).toBe(extDir);
+    expect(runDirOf(record({ ...proven, scope: 'local' }))).toBe(extDir);
     expect(runDirOf({ ...proven, trustedOrigin: undefined })).toBeNull();
     expect(runDirOf({ ...proven, sourcePlugin: undefined })).toBeNull();
   });

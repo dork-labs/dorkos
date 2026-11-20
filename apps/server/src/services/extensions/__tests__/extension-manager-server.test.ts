@@ -8,10 +8,7 @@ import { logger } from '../../../lib/logger.js';
 // lifecycle "wrote" to its temp file.
 const { lastWrittenCodeRef } = vi.hoisted(() => ({ lastWrittenCodeRef: { value: '' } }));
 
-vi.mock('../server-bundle/load-in-process.js', async (importOriginal) => ({
-  // Writes through the `fs/promises` mock below.
-  writeServerBundle: (await importOriginal<typeof import('../server-bundle/load-in-process.js')>())
-    .writeServerBundle,
+vi.mock('../server-bundle/load-in-process.js', () => ({
   loadInProcessBundle: () => {
     const mod = { exports: {} as Record<string, unknown> };
     new Function('module', 'exports', 'require', lastWrittenCodeRef.value)(
