@@ -273,11 +273,11 @@ describe('local turbo --affected gates pin their diff base', () => {
   it('runs verify tests through Turbo with the pre-push scheduling contract', () => {
     expect(captureVerifyTurboInvocations()).toEqual([
       {
-        args: ['run', 'typecheck', 'lint', '--affected'],
+        args: ['run', 'typecheck', 'lint', '--affected', '--summarize'],
         base: 'test-origin-main',
       },
       {
-        args: ['run', 'test', '--affected', '--concurrency=1', '--', '--run'],
+        args: ['run', 'test', '--affected', '--summarize', '--concurrency=1', '--', '--run'],
         base: 'test-origin-main',
       },
     ]);
@@ -286,7 +286,7 @@ describe('local turbo --affected gates pin their diff base', () => {
   it('runs the preopen typecheck and lint through Turbo on the same pinned base', () => {
     expect(captureVerifyTurboInvocations('verify:preopen:turbo')).toEqual([
       {
-        args: ['run', 'typecheck', 'lint', '--affected'],
+        args: ['run', 'typecheck', 'lint', '--affected', '--summarize'],
         base: 'test-origin-main',
       },
     ]);

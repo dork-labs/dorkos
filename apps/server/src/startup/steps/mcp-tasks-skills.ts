@@ -1,13 +1,16 @@
 import { localBrowserHost } from '../local-browser.js';
 import type { OpenConfigAndDatabaseResult } from './config-and-database.js';
 import { realpathSync } from 'node:fs';
-import { createLocalBrowserProfileAccess } from '../../services/session/local-browser/profile-access.js';
+import { eq, sessionMetadata } from '@dorkos/db';
+import {
+  createLocalBrowserProfileAccess,
+  createLocalBrowserProfileProof,
+} from '../../services/session/local-browser/profile-access.js';
 import { loadProfileBindingKey } from '../../services/session/local-browser/profile-folders.js';
 import { createLocalBrowserProfileStore } from '../../services/session/local-browser/profile-store.js';
 import { liveOutsideTurnCheck } from '../../services/session/local-browser/outside-turn.js';
 import { agentWindowLabel } from '../../services/session/local-browser/agent-window/index.js';
 import { handBackWake } from '../../services/session/local-browser/hand-back-wake/index.js';
-import { chatTitleOf } from '../../services/session/chat-messages/chat-message-wiring.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import { notify } from '../../services/notifications/notification-service.js';
 import { localBrowserChangedAnnouncer } from '../../services/core/streams/live-change-broadcasts.js';
@@ -421,7 +424,12 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
   let bindingKey: Buffer | undefined;
   const localBrowserProfiles = createLocalBrowserProfileStore(
     built.db,
-    () => (bindingKey ??= loadProfileBindingKey(dorkHome))
+    () => (bindingKey ??= loadProfileBindingKey(dorkHome)),
+    (profileId, agentId) => {
+      void localBrowserService
+        .revokeProfileAccess(profileId, agentId)
+        .catch(() => logger.warn('[Browser] A revoked browser page is still closing'));
+    }
   );
   const realFolder = (folder: string) => {
     try {
@@ -446,8 +454,29 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
       realFolder,
     }),
     (id) => localBrowserProfiles.get(id) !== undefined,
-    chatTitleOf
+    createLocalBrowserProfileProof({
+      profiles: localBrowserProfiles,
+      sessionFacts: (sessionId) =>
+        built.db
+          .select({ runtime: sessionMetadata.runtime, agentPath: sessionMetadata.agentPath })
+          .from(sessionMetadata)
+          .where(eq(sessionMetadata.sessionId, sessionId))
+          .get(),
+      guardsOf: (type) => {
+        try {
+          return runtimeRegistry.get(type).getCapabilities().guards;
+        } catch {
+          return undefined;
+        }
+      },
+      agentIdAtPath: (agentPath) => refs.meshCore?.getByPath(agentPath)?.id,
+      realFolder,
+    })
   );
+  localBrowserService.useSessionAgentLookup(async (sessionId) => {
+    const agentPath = await runtimeRegistry.getSessionAgentPath(sessionId);
+    return agentPath ? refs.meshCore?.getByPath(agentPath)?.id : undefined;
+  });
   localBrowserService.windowNames.use(async (sessionId) => {
     const agentPath = await runtimeRegistry.getSessionAgentPath(sessionId);
     const agent = agentPath ? refs.meshCore?.getByPath(agentPath) : undefined;

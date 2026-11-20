@@ -1,10 +1,31 @@
 /** Availability of the two DorkOS-owned browser surfaces. */
-import type { LocalBrowserCapabilities } from '@dorkos/shared/local-browser';
+import type {
+  LocalBrowserCapabilities,
+  LocalBrowserPersonState,
+} from '@dorkos/shared/local-browser';
 import { LOCAL_PLAYWRIGHT_VERSION, LOCAL_MANAGED_CHROMIUM_VERSION } from './playwright-backend.js';
 export interface LocalBrowserHostFacts {
   platform: NodeJS.Platform;
   display?: string;
   waylandDisplay?: string;
+}
+
+/** No selected page or handoff; constructing an owner read never creates a lease. */
+export function emptyBrowserPersonState(): LocalBrowserPersonState {
+  return {
+    preparation: null,
+    connectionId: null,
+    sessionId: null,
+    mode: null,
+    status: 'disconnected',
+    paused: false,
+    tabs: [],
+    selectedTabId: null,
+    revision: 0,
+    handoff: null,
+    signIn: null,
+    takenOver: false,
+  };
 }
 
 /** Read only the graphical host hints required for a headed browser window. */

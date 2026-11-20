@@ -31,12 +31,8 @@ import {
   refuseAgentToolFiles,
 } from './agent-file-inputs.js';
 import { defineUpdateAgentConfig } from './agent-config.js';
-import {
-  CONFIG_PATCH_TOO_LARGE_MESSAGE,
-  configPatchCardFits,
-  describePatchDetail,
-  describePatchSummary,
-} from './config-patch-card.js';
+import { CONFIG_PATCH_TOO_LARGE_MESSAGE } from './config-patch-card.js';
+import { CONFIG_PATCH_CARD, configPatchFitsStoredCard } from './config-patch-card-view.js';
 
 import { defineCapability, type CapabilityDomain } from '../capabilities/index.js';
 import type { CapabilityDeps } from '../capabilities/index.js';
@@ -669,15 +665,11 @@ export const operatorDomain: CapabilityDomain = {
       // At Full, the ones it raises are refused by name; one that only turns them down runs
       // (DOR-3426, `operator-only-tightening.ts`).
       ...CONFIG_PATCH_PERSON_SETTINGS,
-      // The sentence counts the settings; the detail lists every one, riskiest
-      // first, so a long harmless key cannot push a risky one past the
-      // sentence's 80-character cut (DOR-4775). Never the value of a
-      // secret-named one.
-      approvalDisplayFields: ['changes'],
-      approvalView: (input) => ({
-        changes: describePatchSummary((input as { patch?: unknown }).patch),
-      }),
-      approvalViewDetail: (input) => describePatchDetail((input as { patch?: unknown }).patch),
+      // The sentence counts the settings and names the riskiest a person must
+      // decide; the detail lists every one old → new, riskiest first, so a long
+      // harmless key cannot push a risky one out of view (DOR-4775). Never the
+      // value of a secret-named one.
+      ...CONFIG_PATCH_CARD,
       input: z.object({
         // Not `z.record()`: a record anywhere in an in-session tool's schema
         // crashes the whole `tools/list` answer on claude-agent-sdk 0.3.257+ with
@@ -689,7 +681,7 @@ export const operatorDomain: CapabilityDomain = {
         patch: z
           .object({})
           .catchall(z.unknown())
-          .refine(configPatchCardFits, { message: CONFIG_PATCH_TOO_LARGE_MESSAGE })
+          .refine(configPatchFitsStoredCard, { message: CONFIG_PATCH_TOO_LARGE_MESSAGE })
           .describe(
             // Keep this example a field that actually exists. It has drifted twice
             // already: `ui.sidebar` never had a `collapsed` key, `ui.statusBar` is

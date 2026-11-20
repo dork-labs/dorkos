@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { changedParts, readFolderConfigParts } from '../folder-config-pin.js';
+import { canonicalJson, changedParts, readFolderConfigParts } from '../folder-config-pin.js';
 
 let home: string;
 
@@ -430,5 +430,16 @@ describe('settings and frontmatter that widen power (M1, M2)', () => {
         text('.claude/commands/notes.md', '---\ndescription: notes\n---\nTake notes.\n')
       )
     ).toEqual([]);
+  });
+});
+
+describe('canonicalJson', () => {
+  // Purpose: the digest covers every own key a settings file holds, whatever
+  // its name, and builds nothing that inherits from the input.
+  it('keeps every own key in the canonical copy', () => {
+    const withKey = JSON.parse('{"__proto__":{"x":1},"a":1}') as unknown;
+    expect(canonicalJson(withKey)).not.toBe(canonicalJson({ a: 1 }));
+    expect(canonicalJson(withKey)).toBe('{"__proto__":{"x":1},"a":1}');
+    expect(({} as Record<string, unknown>).x).toBeUndefined();
   });
 });

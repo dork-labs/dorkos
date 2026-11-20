@@ -1,6 +1,6 @@
 import { ApprovalStepUpNote } from './ApprovalStepUpNote';
 import { HookApprovalCard } from './HookApprovalCard';
-import { useId } from 'react';
+import { useId, type ReactNode } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { Lock } from 'lucide-react';
 import { approvalHeading, type PendingApproval } from '@dorkos/shared/approval-schemas';
@@ -479,7 +479,11 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
                     data-slot="approval-detail"
                     className="border-border/60 bg-muted/40 text-muted-foreground mt-1.5 max-h-[50dvh] overflow-auto rounded-md border p-2 font-mono text-xs break-words whitespace-pre-wrap md:max-h-56"
                   >
-                    {approval.detail}
+                    {approval.capabilityId === CONFIG_PATCH_CAPABILITY_ID ? (
+                      <SettingsLines detail={approval.detail} />
+                    ) : (
+                      breakAtDots(approval.detail)
+                    )}
                   </pre>
                 )
               )}
@@ -657,4 +661,42 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
       </div>
     </motion.div>
   );
+}
+
+/**
+ * A detail with a chance to wrap after every dot, so a long setting name on a
+ * phone breaks between its parts (`runtimes.claudeCode.` then `projectAccounts`)
+ * rather than mid-word (DOR-4775). Adds no characters, so a copy is the text.
+ */
+function breakAtDots(text: string): ReactNode {
+  return text.split(/(?<=\.)/).flatMap((part, i) => (i === 0 ? [part] : [<wbr key={i} />, part]));
+}
+
+/** What the server ends a line a person must decide with (`config-patch-card.ts`). */
+const NEEDS_YOU_MARK = ' (needs you)';
+
+/**
+ * A settings card's detail, one setting per block with a hanging indent, so a
+ * long one that wraps on a phone sits under its own name and the next one
+ * plainly starts fresh. The "(needs you)" mark never splits across lines.
+ * Each block keeps its newline, so a copy is still the text (DOR-4775).
+ */
+function SettingsLines({ detail }: { detail: string }) {
+  const lines = detail.split('\n');
+  return lines.map((line, i) => {
+    const marked = line.endsWith(NEEDS_YOU_MARK);
+    const text = marked ? line.slice(0, -NEEDS_YOU_MARK.length) : line;
+    return (
+      <span key={i} className="block pl-4 -indent-4">
+        {breakAtDots(text)}
+        {marked && (
+          <>
+            {' '}
+            <span className="whitespace-nowrap">{NEEDS_YOU_MARK.trim()}</span>
+          </>
+        )}
+        {i < lines.length - 1 && '\n'}
+      </span>
+    );
+  });
 }

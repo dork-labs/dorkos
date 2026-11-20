@@ -12,7 +12,9 @@
 #                                           scripts/heavy-turbo-slot.mjs)
 #
 # It forwards the command's output and exit code unchanged, so on a quiet
-# machine it is invisible: the first slot is free and the command starts.
+# machine it is invisible: the first slot is free and the command starts. The
+# one exception: a run stopped by INT or QUIT exits 128+n even when the command
+# itself exited 0 (see "A SIGNAL NEVER BECOMES A PASS" below).
 #
 # WHY THIS EXISTS
 #
@@ -240,10 +242,29 @@ LOAD_POLL_SECONDS="${LOAD_POLL_SECONDS:-30}"
 check_load=0
 [ "$job" = 1 ] && [ -z "$hold_pid" ] && check_load=1
 
+# A SIGNAL NEVER BECOMES A PASS (DOR-4616). The command runs in the foreground,
+# where bash treats SIGINT and SIGQUIT specially: it waits for the command, and
+# when the command caught the signal and exited 0 (turbo does, after shutting
+# its tasks down) bash carries on as though nothing happened. So a Ctrl-C'd run
+# used to exit 0. These traps record the signal instead, and the exit is then
+# 128+n whatever the command returned. Neither signal is passed on: a terminal
+# sends both to the whole process group, so the command already has it. TERM
+# and HUP need no trap: with none set they end this shell at once, which its
+# parent sees as a death by that signal, never as 0.
+run_command() {
+  stopped=0
+  trap 'stopped=130' INT
+  trap 'stopped=131' QUIT
+  "$@"
+  status=$?
+  trap - INT QUIT
+  [ "$stopped" != 0 ] && exit "$stopped"
+  exit "$status"
+}
+
 run_uncapped() {
   [ -n "$hold_pid" ] && exit 0
-  "$@"
-  exit $?
+  run_command "$@"
 }
 
 if [ "${DORKOS_HEAVY_LOCK:-1}" = 0 ]; then
@@ -606,5 +627,4 @@ esac
 # Exported even after a timeout: a nested call must not queue a second time
 # behind slots its own parent already gave up waiting for.
 export DORKOS_HEAVY_SLOT_HELD=1
-"$@"
-exit $?
+run_command "$@"
