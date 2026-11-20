@@ -50,6 +50,9 @@ function port(
   return {
     openTurn: vi.fn(),
     renew: vi.fn(),
+    resolveToolTurn: vi.fn(async () => {
+      throw new Error('Live tools are not part of this fixture.');
+    }),
     resolve: vi.fn().mockResolvedValue(result),
     revoke: vi.fn(),
   };
@@ -189,6 +192,9 @@ describe('connector runtime MCP listener', () => {
         status: 'renewed' as const,
         expiresAt: '2026-09-08T16:00:00.000Z',
       })),
+      resolveToolTurn: vi.fn(async () => {
+        throw new Error('Live tools are not part of this fixture.');
+      }),
       resolve: vi.fn(async () => ({
         status: 'resolved' as const,
         principal: renewedPrincipal,

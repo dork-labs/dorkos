@@ -277,6 +277,13 @@ describe('notificationDeepLink', () => {
     expect(notificationDeepLink(dto)).toBe('/');
   });
 
+  it.each(['extension.approval', 'extension.stopped'] as const)(
+    'takes %s to Settings → Extensions',
+    (kind) => {
+      expect(notificationDeepLink(notificationDto({ kind }))).toBe('/?settings=extensions');
+    }
+  );
+
   it('takes a dead sign-in to the tab that fixes it, not just to home', () => {
     // Its subject type is `system`, so the switch above would land it on `/`
     // with nothing to do there — while the same condition's phone push

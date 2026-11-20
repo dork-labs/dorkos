@@ -50,6 +50,92 @@ const childCalls = new Set([
   'launchQuery',
 ]);
 
+/** Bind the sidecar launch's sole env property to its inline builder or preceding local const. */
+function sidecarProjection(call: ts.CallExpression, options: ts.Expression | undefined): boolean {
+  if (!options || !ts.isObjectLiteralExpression(options)) return false;
+  if (
+    options.properties.some(
+      (property) =>
+        ts.isSpreadAssignment(property) ||
+        (property.name && ts.isComputedPropertyName(property.name))
+    )
+  )
+    return false;
+  const env = options.properties.filter(
+    (property) =>
+      property.name &&
+      (ts.isIdentifier(property.name) || ts.isStringLiteralLike(property.name)) &&
+      property.name.text === 'env'
+  );
+  if (env.length !== 1) return false;
+  const property = env[0]!;
+  const value = ts.isShorthandPropertyAssignment(property)
+    ? property.name
+    : ts.isPropertyAssignment(property)
+      ? property.initializer
+      : undefined;
+  const builder = (node: ts.Node | undefined): boolean =>
+    !!node &&
+    ts.isCallExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    node.expression.text === 'buildSidecarSpawnEnv';
+  if (builder(value)) return true;
+  if (!value || !ts.isIdentifier(value)) return false;
+  const envName = value.text;
+  let statement: ts.Node = call;
+  while (statement.parent && !ts.isBlock(statement.parent)) statement = statement.parent;
+  if (!statement.parent || !ts.isBlock(statement.parent)) return false;
+  const statements = statement.parent.statements;
+  const position = statements.findIndex((entry) => entry === statement);
+  const preceding = statements.slice(0, position);
+  const declarations = preceding.flatMap((entry) =>
+    ts.isVariableStatement(entry)
+      ? entry.declarationList.declarations
+          .filter(
+            (declaration) => ts.isIdentifier(declaration.name) && declaration.name.text === envName
+          )
+          .map((declaration) => ({ entry, declaration }))
+      : []
+  );
+  if (declarations.length !== 1) return false;
+  const binding = declarations[0]!;
+  if (
+    !(binding.entry.declarationList.flags & ts.NodeFlags.Const) ||
+    !builder(binding.declaration.initializer)
+  )
+    return false;
+  // Reject direct writes to the binding or its properties before the launch.
+  let changed = false;
+  function inspect(node: ts.Node): void {
+    if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+      node.operatorToken.kind <= ts.SyntaxKind.LastAssignment &&
+      references(node.left)
+    )
+      changed = true;
+    if (
+      (ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node)) &&
+      (node.operator === ts.SyntaxKind.PlusPlusToken ||
+        node.operator === ts.SyntaxKind.MinusMinusToken) &&
+      references(node.operand)
+    )
+      changed = true;
+    if (ts.isDeleteExpression(node) && references(node.expression)) changed = true;
+    ts.forEachChild(node, inspect);
+  }
+  function references(node: ts.Node): boolean {
+    if (ts.isIdentifier(node)) return node.text === envName;
+    return (
+      (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) &&
+      references(node.expression)
+    );
+  }
+  const start = preceding.indexOf(binding.entry);
+  for (const entry of preceding.slice(start + 1)) inspect(entry);
+  return !changed;
+}
+
 /** Parse executable calls; comments and illustrative snippets cannot satisfy the census. */
 function census(text: string, name: string): { count: number; unprojected: string[] } {
   const source = ts.createSourceFile(name, text, ts.ScriptTarget.Latest, true);
@@ -90,12 +176,13 @@ function census(text: string, name: string): { count: number; unprojected: strin
         // scratch HOME/CODEX_HOME and nothing inherited at all — stricter than
         // any projection, and never on a turn's path.
         (name === 'codex/app-server/protocol/snapshot.ts' &&
-          /^\{[^}]*\benv,?\s*\}$/.test(call.replace(/\s+/g, ' '))) ||
-        // The sidecar's env is built by `buildSidecarSpawnEnv`, which projects
-        // through `runtimeEnvironment` on both sides (own sign-in and credits).
-        (name === 'opencode/server-manager.ts' && /env: buildSidecarSpawnEnv\(/.test(call));
-      if (!forwarded && !(/\benv:/.test(call) && /runtimeEnvironment\(/.test(call)))
-        unprojected.push(kind);
+          /^\{[^}]*\benv,?\s*\}$/.test(call.replace(/\s+/g, ' ')));
+      // The manager's builder projects both the person's sign-in and credits.
+      const projected =
+        name === 'opencode/server-manager.ts' && kind === 'spawn'
+          ? sidecarProjection(node, arg)
+          : forwarded || (/\benv:/.test(call) && /runtimeEnvironment\(/.test(call));
+      if (!projected) unprojected.push(kind);
     }
     ts.forEachChild(node, visit);
   }
@@ -104,6 +191,40 @@ function census(text: string, name: string): { count: number; unprojected: strin
 }
 
 describe('runtime launch adoption census', () => {
+  it('binds sidecar projection to the exact inline or preceding const launch argument', () => {
+    for (const source of [
+      "spawn(binary, argv, { env: buildSidecarSpawnEnv(plan), stdio: 'pipe' });",
+      'const env = buildSidecarSpawnEnv(plan); spawn(binary, argv, { env });',
+      'const projected = buildSidecarSpawnEnv(plan); spawn(binary, argv, { env: projected });',
+    ]) {
+      const result = census(`function boot() { ${source} }`, 'opencode/server-manager.ts');
+      expect(result).toEqual({ count: 1, unprojected: [] });
+    }
+  });
+
+  it('rejects unrelated, missing, mutable, overridden or later sidecar projection', () => {
+    for (const source of [
+      'const other = buildSidecarSpawnEnv(plan); spawn(binary, argv, { env });',
+      'const env = buildSidecarSpawnEnv(plan); spawn(binary, argv);',
+      'const env = buildSidecarSpawnEnv(plan); spawn(binary, argv, {});',
+      'let env = buildSidecarSpawnEnv(plan); spawn(binary, argv, { env });',
+      'spawn(binary, argv, { env }); const env = buildSidecarSpawnEnv(plan);',
+      'const env = buildSidecarSpawnEnv(plan); spawn(binary, argv, { env, ...extra });',
+      'const env = buildSidecarSpawnEnv(plan); spawn(binary, argv, { env, env: ambient });',
+      'const env = buildSidecarSpawnEnv(plan); spawn(binary, argv, { env, [key]: ambient });',
+      "const env = buildSidecarSpawnEnv(plan); spawn(binary, argv, { env, 'env': other });",
+      'spawn(binary, argv, { env: other, unrelated: runtimeEnvironment() });',
+      "const env = buildSidecarSpawnEnv(plan); env.KEY = 'changed'; spawn(binary, argv, { env });",
+      'const env = ambient; const other = buildSidecarSpawnEnv(plan); spawn(binary, argv, { env });',
+      '{ const env = buildSidecarSpawnEnv(plan); } spawn(binary, argv, { env });',
+    ]) {
+      expect(census(`function boot() { ${source} }`, 'opencode/server-manager.ts')).toEqual({
+        count: 1,
+        unprojected: ['spawn'],
+      });
+    }
+  });
+
   it('enumerates every real query/constructor/spawn/exec including promisified Ollama calls', () => {
     const found: Record<string, number> = {};
     for (const file of files(root)) {

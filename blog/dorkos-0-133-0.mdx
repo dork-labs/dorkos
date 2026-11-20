@@ -60,6 +60,8 @@ DorkOS 0.133.0 calls an agent's promises to-dos, lets a Claude Code agent at Ful
 
 This upgrade only goes one way. DorkOS saves a backup first, in `~/.dork/backups/`. If you came from 0.132.0, it's named `dork-<date>-<time>-pre-20261104081935_hook_decline_review.db` (the time is UTC).
 
+Newer backups start with `dork-auto-` instead of `dork-`. [Both filename forms restore the same way](/docs/self-hosting/docker#database-snapshots).
+
 To go back to 0.132.0, always restore that backup. Quit DorkOS, delete `dork.db-wal` and `dork.db-shm` from `~/.dork/`, copy the backup over `~/.dork/dork.db`, then install 0.132.0. You lose anything written since the upgrade. Without the restore, to-dos stop working, a hook request DorkOS couldn't read can count as a refusal again, and tasks one agent made for another run without the safety marks they carried.
 
 Settings saved for agents' to-do actions don't come back on 0.132.0 after the restore. They had no effect on either version (DOR-3936), so nothing changes in practice.

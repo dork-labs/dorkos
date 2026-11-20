@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The time on a DM reply's folded line (DOR-3075): nothing under a second,
  * whole seconds from there, then minutes and seconds.

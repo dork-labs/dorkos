@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, writeFile, appendFile, rename, utimes, stat } from 'fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, appendFile, rename, utimes, stat } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -339,5 +339,59 @@ describe('TranscriptHistoryCache', () => {
     expect(cache.size).toBe(0);
     await cache.read(file, SESSION);
     expect(cache.stats.fullParses).toBe(2);
+  });
+});
+
+describe('a refused turn on reload (DOR-4845)', () => {
+  let home: string;
+  beforeEach(async () => {
+    home = await mkdtemp(join(tmpdir(), 'history-cache-home-'));
+    vi.stubEnv('DORK_HOME', home);
+  });
+  afterEach(async () => {
+    vi.unstubAllEnvs();
+    await rm(home, { recursive: true, force: true });
+  });
+
+  const REASON = 'The service is paused for maintenance. Nothing was charged. Try again later.';
+  const refusal = JSON.stringify({
+    type: 'assistant',
+    uuid: 'refused-1',
+    isApiErrorMessage: true,
+    error: 'server_error',
+    message: {
+      role: 'assistant',
+      model: '<synthetic>',
+      content: [
+        {
+          type: 'text',
+          text: `API Error: 503 ${REASON} This is a server-side issue, usually temporary.`,
+        },
+      ],
+    },
+  });
+
+  /** Write the refusal as the transcript of a chat whose account folder is `root`. */
+  async function readFrom(root: string): Promise<unknown> {
+    const folder = join(root, 'projects', '-demo-project');
+    await mkdir(folder, { recursive: true });
+    const transcript = join(folder, `${SESSION}.jsonl`);
+    await writeFile(transcript, `${refusal}\n`);
+    const [message] = await new TranscriptHistoryCache().read(transcript, SESSION);
+    return message?.parts?.[0];
+  }
+
+  it('a credits chat quotes the reason DorkOS’s endpoint gave, as its live turn did', async () => {
+    expect(await readFrom(join(home, 'runtimes', 'claude-code', 'credits'))).toMatchObject({
+      type: 'error',
+      message: REASON,
+      category: 'execution_error',
+    });
+  });
+
+  it('a chat on a person’s own account keeps the generic sentence', async () => {
+    expect(await readFrom(join(home, 'not-credits', '.claude'))).toMatchObject({
+      message: 'Claude encountered a server error. Try again in a moment.',
+    });
   });
 });

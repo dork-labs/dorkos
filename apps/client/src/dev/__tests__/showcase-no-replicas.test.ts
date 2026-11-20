@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The playground must SHOW the product, not a drawing of it.
  *

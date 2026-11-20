@@ -16,6 +16,12 @@ import {
   type Harness,
 } from './isolation-harness.js';
 
+/** Block this process's event loop for `ms`, as a busy DorkOS would. */
+function stallHost(ms: number): void {
+  // Block this event loop without burning a core on the shared machine.
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
 /** Resolve with the first exit a host reports. */
 function exitOf(): { onExit: (exit: IsolatedExit) => void; exited: Promise<IsolatedExit> } {
   let onExit: (exit: IsolatedExit) => void = () => {};
@@ -69,6 +75,54 @@ describe('isolated child failures (real child processes)', () => {
     await new Promise((resolve) => setTimeout(resolve, 1_200));
     expect(host.running).toBe(true);
     expect(exits).toEqual([]);
+  });
+
+  // DOR-4785: DorkOS's own event loop stalling (a long synchronous job, a busy
+  // machine) is not the child hanging. People and Flow were killed this way
+  // about 90 times in a day. The stall here is real: this process blocks.
+  it('does not kill a healthy child when DorkOS itself stalls past the pong timeout', async () => {
+    const exits: IsolatedExit[] = [];
+    const host = makeHost(h, {
+      onExit: (e) => exits.push(e),
+      overrides: {
+        timings: { pingIntervalMs: 100, pongTimeoutMs: 500 },
+        testSeams: { probes: true },
+      },
+    });
+    await startOk(host);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    // Observe the real IPC channel without changing the child's behavior.
+    const child = host['child'];
+    if (!child) throw new Error('The healthy child did not start.');
+    const messages: unknown[] = [];
+    child.on('message', (message) => messages.push(message));
+    const lastPing = host['pingCount'];
+    stallHost(1_500);
+    // This sequence number was not sent before the stall. A real watchdog
+    // ping and its matching pong must cross the pipe after DorkOS resumes.
+    await expect.poll(() => messages).toContainEqual({ type: 'pong', n: lastPing + 1 });
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    expect(exits).toEqual([]);
+    expect(host.running).toBe(true);
+  });
+
+  // DOR-4785: crediting DorkOS's stall never shields a child that is really stuck.
+  it('still kills a hung child when DorkOS stalls as well', async () => {
+    const { onExit, exited } = exitOf();
+    const host = makeHost(h, {
+      onExit,
+      overrides: {
+        timings: { pingIntervalMs: 100, pongTimeoutMs: 500 },
+        testSeams: { probes: true },
+      },
+    });
+    await startOk(host);
+    await host.probe('hang');
+    stallHost(1_500);
+    const after = Date.now();
+    const exit = await exited;
+    expect(exit.reason).toBe('server_unresponsive');
+    expect(Date.now() - after).toBeLessThan(3_000);
   });
 
   // Purpose: limits.memoryMb is a real heap cap, and dying at it reads as

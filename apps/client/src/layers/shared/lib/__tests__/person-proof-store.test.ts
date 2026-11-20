@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The person proofs this page sends (DOR-3330): its own step-up's, and in the
  * desktop app the window sign-in's, so whichever session the cookie is, one

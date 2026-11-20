@@ -53,7 +53,7 @@ export const OFFLINE_PROXY_ENV: Readonly<Record<string, string>> = {
 };
 
 /** A file's SHA-256, read a megabyte at a time. */
-function sha256Of(file: string): string {
+export function sha256Of(file: string): string {
   const hash = createHash('sha256');
   const buffer = Buffer.alloc(1 << 20);
   const fd = fs.openSync(file, 'r');
@@ -115,6 +115,19 @@ export async function withUnchangedBinary<T>(
   }
 }
 
+/** Apply the pinned fixture's self-update restrictions to one launch environment. */
+export function pinnedOpenCodeEnvironment(env?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const config = JSON.parse(String(env?.OPENCODE_CONFIG_CONTENT ?? '{}')) as Record<
+    string,
+    unknown
+  >;
+  return {
+    ...env,
+    OPENCODE_DISABLE_AUTOUPDATE: '1',
+    OPENCODE_CONFIG_CONTENT: JSON.stringify({ ...config, autoupdate: false }),
+  };
+}
+
 /** Pin one real spawn, including sidecars launched through the production manager. */
 export function guardedOpenCodeSpawn(
   spawnBinary: (
@@ -128,17 +141,9 @@ export function guardedOpenCodeSpawn(
 ) {
   if (pinnedOpenCode() !== binary) throw new Error('Unexpected OpenCode binary');
   const expected = OPENCODE_PIN.sha256[`${process.platform}-${process.arch}`]!;
-  const config = JSON.parse(String(options.env?.OPENCODE_CONFIG_CONTENT ?? '{}')) as Record<
-    string,
-    unknown
-  >;
   const child = spawnBinary(binary, args, {
     ...options,
-    env: {
-      ...options.env,
-      OPENCODE_DISABLE_AUTOUPDATE: '1',
-      OPENCODE_CONFIG_CONTENT: JSON.stringify({ ...config, autoupdate: false }),
-    },
+    env: pinnedOpenCodeEnvironment(options.env),
   });
   const verified = withUnchangedBinary(
     binary,

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The inline boot sentinel in `index.html` (DOR-1451).
  *

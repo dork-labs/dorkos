@@ -1,5 +1,5 @@
 /**
- * No database snapshot keeps recorded turn text (DOR-4001): both kinds of
+ * New database snapshots keep no recorded turn text (DOR-4001): both kinds of
  * `dork.db` snapshot come out with the text gone, byte for byte, and the
  * hashes, sizes and token counts still there.
  */
@@ -68,7 +68,7 @@ describe('snapshots keep no recorded turn text', () => {
   });
 
   it('a pre-migration snapshot (VACUUM INTO) comes out empty of text, counts kept', () => {
-    const file = join(dir, 'backups', 'dork-20261108-000000-pre-x.db');
+    const file = join(dir, 'backups', 'dork-auto-20261108-000000-pre-0001_made_up.db');
     snapshotSqlite(db.$client, file);
     expect(readSnapshot(file)).toEqual({
       bodies: 0,
@@ -108,8 +108,47 @@ describe('snapshots keep no recorded turn text', () => {
 });
 
 describe('nothing around a snapshot keeps the text either', () => {
+  it('removes legacy unfinished copies and their WAL while preserving the completed backup', () => {
+    const backups = join(dir, 'backups');
+    const legacy = join(backups, 'dork-20261101-daily.db');
+    snapshotSqlite(db.$client, legacy);
+    const original = readFileSync(legacy);
+    writeFileSync(`${legacy}.partial`, SECRET_TEXT);
+    writeFileSync(`${legacy}.partial-wal`, SECRET_TEXT);
+    const foreign = join(backups, 'personal.db.partial');
+    writeFileSync(foreign, 'kept');
+    const invalid = join(backups, 'dork-20261301-daily.db.partial');
+    writeFileSync(invalid, 'kept');
+
+    expect(snapshotBeforeMigrations(db, { dir: backups })).toBeNull();
+
+    expect(existsSync(`${legacy}.partial`)).toBe(false);
+    expect(existsSync(`${legacy}.partial-wal`)).toBe(false);
+    expect(readFileSync(legacy).equals(original)).toBe(true);
+    expect(readFileSync(foreign, 'utf8')).toBe('kept');
+    expect(readFileSync(invalid, 'utf8')).toBe('kept');
+  });
+
+  it('leaves a legacy daily copy byte-for-byte untouched while scrubbing the new copy', async () => {
+    const backups = join(dir, 'backups');
+    snapshotSqlite(db.$client, join(backups, 'scratch.db'));
+    const legacy = join(backups, 'dork-20261108-daily.db');
+    db.$client.prepare('VACUUM INTO ?').run(legacy);
+    const original = readFileSync(legacy);
+    expect(original.includes(Buffer.from('oat milk only'))).toBe(true);
+
+    const written = await snapshotDaily(db, {
+      dir: backups,
+      now: new Date('2026-11-08T12:00:00Z'),
+    });
+
+    expect(written).toBe(join(backups, 'dork-auto-20261108-daily.db'));
+    expect(readFileSync(legacy).equals(original)).toBe(true);
+    expect(readSnapshot(written!).rawHasText).toBe(false);
+  });
+
   it('leaves no WAL or journal beside it, and no free pages inside it', async () => {
-    const pre = join(dir, 'backups', 'dork-20261108-000000-pre-x.db');
+    const pre = join(dir, 'backups', 'dork-auto-20261108-000000-pre-0001_made_up.db');
     snapshotSqlite(db.$client, pre);
     const daily = (await snapshotDaily(db, {
       dir: join(dir, 'backups'),
@@ -134,7 +173,7 @@ describe('nothing around a snapshot keeps the text either', () => {
     snapshotSqlite(db.$client, join(backups, 'first.db'));
     // What a process killed between the copy and the scrub would leave: a
     // `.partial` that still holds the text, and its journal.
-    const stale = join(backups, 'dork-20261101-000000-pre-y.db.partial');
+    const stale = join(backups, 'dork-auto-20261101-000000-pre-0001_made_up.db.partial');
     writeFileSync(stale, readFileSync(join(dir, 'dork.db')));
     writeFileSync(`${stale}-journal`, 'made-up journal');
 
@@ -151,10 +190,10 @@ describe('nothing around a snapshot keeps the text either', () => {
     }
   });
 
-  it('empties an existing snapshot it reuses: one written before the scrub, or by a process that died before it', async () => {
+  it('empties a new-format snapshot it reuses after an interrupted scrub', async () => {
     const backups = join(dir, 'backups');
-    const today = join(backups, 'dork-20261108-daily.db');
-    // An unscrubbed copy already at today's name, as an older build would leave.
+    const today = join(backups, 'dork-auto-20261108-daily.db');
+    // An unscrubbed copy at the new writer's destination after an interrupted write.
     snapshotSqlite(db.$client, join(backups, 'scratch.db'));
     db.$client.prepare('VACUUM INTO ?').run(today);
     expect(readFileSync(today).includes(Buffer.from('oat milk only'))).toBe(true);
@@ -177,7 +216,7 @@ describe('nothing around a snapshot keeps the text either', () => {
     const now = new Date('2026-11-08T12:00:00Z');
     await snapshotDaily(db, { dir: backups, now });
     // A crashed earlier day's copy, still holding the text.
-    const stale = join(backups, 'dork-20261101-daily.db.partial');
+    const stale = join(backups, 'dork-auto-20261101-daily.db.partial');
     writeFileSync(stale, readFileSync(join(dir, 'dork.db')));
 
     // Today's snapshot exists, so this writes nothing: only the boot sweep can remove it.

@@ -41,6 +41,7 @@ import {
 } from '../services/canvas/index.js';
 import { RoomError } from '../services/rooms/index.js';
 import { peekProjector } from '../services/session/session-state-projector.js';
+import { knownSessionCwd } from '../services/session/index.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
@@ -197,29 +198,34 @@ const APP_WIDGET_ACTION = errorBody(APP_WIDGET_REFUSAL, 'CANVAS_APP_WIDGET_ACTIO
 
 /**
  * Where a document the person opens records it was resolved: the session's own
- * agent folder, read from the server's binding row and never from the request.
+ * agent folder, or for a chat with no agent recorded (a schedule's run, say)
+ * the folder the server knows the chat runs in. Read from the server's own
+ * rows and the runtime's live binding, never from the request.
  *
- * The same placement an agent's own open records (`applyToSessionCanvas`), so a
- * file the person opens can be saved through the same folder and boundary
- * checks. Without it the row records no folder and every save of it is refused.
+ * The same placement an agent's own open records (`applyToSessionCanvas`, which
+ * records the turn's folder), so a file the person opens can be saved through
+ * the same folder and boundary checks. Without it the row records no folder and
+ * every save of it is refused (DOR-4844). It is recorded for every kind of
+ * document, as the agent's open records it, though only a file's is ever saved.
  *
- * A chat with no agent, a session with no binding row yet, or a database this
- * process cannot read records nothing: a missing folder only ever refuses a
- * save, so failing to read one must never invent one. A row opened that way is
- * filled in the next time the person opens the same file.
+ * A session the server cannot place, or a database this process cannot read,
+ * records nothing: a missing folder only ever refuses a save, so failing to
+ * read one must never invent one. A row opened that way is filled in the next
+ * time the person opens the same file.
  *
  * @param sessionId - The validated session id.
  * @returns The placement, or `undefined` to record no folder.
  */
 async function sessionTreeOf(sessionId: string): Promise<CanvasTreePlacement | undefined> {
-  let agentPath: string | null;
+  let folder: string | null;
   try {
-    agentPath = await runtimeRegistry.getSessionAgentPath(sessionId);
+    folder =
+      (await runtimeRegistry.getSessionAgentPath(sessionId)) ?? (await knownSessionCwd(sessionId));
   } catch {
     return undefined;
   }
-  if (!agentPath) return undefined;
-  return { resolvedCwd: agentPath, sourceLabel: null, treeKind: null, aheadOfMain: null };
+  if (!folder) return undefined;
+  return { resolvedCwd: folder, sourceLabel: null, treeKind: null, aheadOfMain: null };
 }
 
 const NO_SUCH_DOCUMENT = errorBody('No such document on this canvas', 'CANVAS_DOCUMENT_NOT_FOUND');

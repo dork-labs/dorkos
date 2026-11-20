@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * How an app's frame takes the host's look (DOR-4330): the host reads the
  * text size of the frame's place and its size scales, and the frame applies

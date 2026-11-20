@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The status line's capability gates — the conditions that decide whether an
  * item is BUILT at all.
