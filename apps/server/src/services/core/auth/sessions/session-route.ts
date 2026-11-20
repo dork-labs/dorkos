@@ -133,19 +133,21 @@ export interface RoutedSession {
   route?: string | null;
   /** When the sign-in was made. */
   createdAt?: Date | string;
-  /** When a request last used it; `null` or absent until its first use. */
+  /** When a request last used it; a code sign-in starts it when it is made. */
   lastActiveAt?: Date | string | null;
 }
 
 /**
- * Whether a Wi-Fi sign-in has sat unused past {@link WIFI_SESSION_IDLE_SECONDS}.
- * Unused since it was made counts from the sign-in itself.
+ * Whether a Wi-Fi sign-in has ended for lack of use: unused past
+ * {@link WIFI_SESSION_IDLE_SECONDS}, or never stamped. A code sign-in is
+ * stamped when it is made (`checked-sign-in.ts`), so one with no use time was
+ * made some other way, and ends.
  *
  * @param session - The session.
  * @param now - The current time, for tests.
  */
 export function wifiSessionIdle(session: RoutedSession, now = Date.now()): boolean {
-  const since = session.lastActiveAt ?? session.createdAt;
+  const since = session.lastActiveAt;
   if (since === undefined || since === null) return true;
   return !(now - new Date(since).getTime() <= WIFI_SESSION_IDLE_SECONDS * 1000);
 }

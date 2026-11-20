@@ -12,7 +12,7 @@ import path from 'node:path';
 import type { RequestListener } from 'node:http';
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { SoftAuthenticator } from '@dorkos/test-utils/soft-authenticator';
@@ -520,6 +520,39 @@ describe('what a Wi-Fi device may do', () => {
       .join('; ');
     const res = await turnFrom(token, true);
     expect(res.status).toBe(401);
+  });
+
+  it('a code sign-in is stamped when it is made and works on its first request', async () => {
+    resetWifiActivityForTests();
+    const device = await signInOverWifi();
+    const unstamped = db
+      .select({ id: session.id })
+      .from(session)
+      .where(and(eq(session.route, 'wifi'), isNull(session.lastActiveAt)))
+      .all();
+    expect(unstamped).toEqual([]);
+    expect((await turnFrom(device, true)).status).toBe(200);
+  });
+
+  it('a Wi-Fi sign-in with no use time is signed out at once, and is not opted in again', async () => {
+    const device = await signInOverWifi();
+    const id = (await turnFrom(device, true)).body.user.sessionId as string;
+    // As a sign-in made before the code sign-in existed: no use time, opted in.
+    db.update(session)
+      .set({ lastActiveAt: null, createdAt: new Date(), wifiAgentTurnsAt: new Date() })
+      .where(eq(session.id, id))
+      .run();
+    resetWifiActivityForTests();
+    const token = device
+      .split('; ')
+      .filter((pair) => pair.split('=', 1)[0]!.endsWith('.session_token'))
+      .join('; ');
+    expect((await turnFrom(token, true)).status).toBe(401);
+    expect((await turnFrom(token, true)).status).toBe(401);
+    const row = db.select().from(session).where(eq(session.id, id)).get();
+    expect(row?.lastActiveAt ?? null).toBeNull();
+    const again = await signInOverWifi();
+    expect((await turnFrom(again, true)).body.held).toBe(true);
   });
 
   it('a Wi-Fi sign-in older than 7 days ends, however recently used', async () => {

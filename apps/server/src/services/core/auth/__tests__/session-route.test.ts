@@ -66,13 +66,24 @@ describe('sessionWorksOn', () => {
       );
     expect(used(idle)).toBe(true);
     expect(used(idle + 1)).toBe(false);
-    // Never used since it was made: counted from the sign-in.
-    expect(sessionWorksOn({ route: 'wifi', createdAt: new Date(NOW - idle) }, 'wifi', NOW)).toBe(
-      true
-    );
-    expect(
-      sessionWorksOn({ route: 'wifi', createdAt: new Date(NOW - idle - 1) }, 'wifi', NOW)
-    ).toBe(false);
+  });
+
+  it('ends a Wi-Fi session with no use time, however new (DOR-4744)', () => {
+    for (const lastActiveAt of [null, undefined]) {
+      expect(
+        sessionWorksOn({ route: 'wifi', createdAt: new Date(NOW), lastActiveAt }, 'wifi', NOW)
+      ).toBe(false);
+    }
+  });
+
+  it('keeps every other route working with no use time', () => {
+    for (const route of ['local', 'tunnel', 'managed'] as const) {
+      for (const lastActiveAt of [null, undefined]) {
+        expect(sessionWorksOn({ route, createdAt: new Date(NOW), lastActiveAt }, route, NOW)).toBe(
+          true
+        );
+      }
+    }
   });
 
   it('a recent use never stretches a Wi-Fi session past 7 days', () => {

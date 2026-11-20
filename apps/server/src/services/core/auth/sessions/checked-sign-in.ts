@@ -26,7 +26,11 @@ export function checkedSignInPlugin() {
         async (ctx) => {
           const user = await ctx.context.internalAdapter.findUserById(ctx.body.userId);
           if (!user) throw ctx.error('NOT_FOUND', { message: 'No such account.' });
-          const session = await ctx.context.internalAdapter.createSession(user.id, false);
+          // Stamped at the mint: a Wi-Fi sign-in with no first-use time was not
+          // made here and is refused (`wifiSessionIdle`).
+          const session = await ctx.context.internalAdapter.createSession(user.id, false, {
+            lastActiveAt: new Date(),
+          });
           await setSessionCookie(ctx, { session, user });
           return ctx.json({ sessionId: session.id });
         }

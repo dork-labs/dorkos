@@ -10,7 +10,7 @@
  *
  * @module services/core/auth/sessions/wifi-activity
  */
-import { eq, session } from '@dorkos/db';
+import { and, eq, isNotNull, session } from '@dorkos/db';
 
 import { readAuthDb } from '../index.js';
 
@@ -39,7 +39,8 @@ export function noteWifiSessionUsed(sessionId: string, now = Date.now()): void {
   if (lastWrite.size > MAX_REMEMBERED) lastWrite.delete(lastWrite.keys().next().value!);
   db.update(session)
     .set({ lastActiveAt: new Date(now) })
-    .where(eq(session.id, sessionId))
+    // Only a sign-in that was stamped when made; an unstamped one stays ended.
+    .where(and(eq(session.id, sessionId), isNotNull(session.lastActiveAt)))
     .run();
 }
 

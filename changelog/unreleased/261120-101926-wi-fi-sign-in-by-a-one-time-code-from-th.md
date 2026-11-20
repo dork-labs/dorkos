@@ -5,6 +5,8 @@ covers:
   - 'fix(auth): review fixes and final copy for Wi-Fi sign-in and sign-in checks (DOR-4744, DOR-3647)'
   - 'fix(auth): the second step reads every sign-in body it lets through (DOR-3647)'
   - "fix(auth): use the app's word for a sign-in on the Wi-Fi warning (DOR-4744)"
+  - 'fix(auth): every Wi-Fi sign-in from before the code sign-in signs in again (DOR-4744)'
+  - 'test(server): list the sign-in and sign-in check routes in the route censuses (DOR-4744, DOR-3647)'
 ---
 
 ### Added
@@ -12,3 +14,7 @@ covers:
 - **Sign in on Wi-Fi with a code.** A phone or laptop on your Wi-Fi now signs in with a short code you approve on the computer DorkOS runs on, instead of your password. Check the code on both screens, approve with a passkey, then type the one-time code on the device. Wi-Fi sign-ins also end after 12 hours unused.
 - **Choose which Wi-Fi devices run your agents.** Each Wi-Fi device starts at the safer level. Turn on **Run agents from this device** for one device, on the computer DorkOS runs on. It turns off by itself after 12 hours unused.
 - **A second step for other devices.** Add a passkey or an authenticator app in **Settings → Login & security**. Then signing in from another device needs it too. The computer DorkOS runs on never asks, so you can always get back in there.
+
+### Changed
+
+- **Wi-Fi devices sign in again after updating.** Phones and other devices signed in over Wi-Fi sign in again with a code after updating. **Run agents from this device** starts off for each of them.
