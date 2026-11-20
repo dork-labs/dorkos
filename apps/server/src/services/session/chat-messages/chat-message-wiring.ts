@@ -68,6 +68,7 @@ import { getSpinOffStartup } from './startup/spin-off-startup.js';
 import { wireSpinOffStartup } from './startup/wire-spin-off-startup.js';
 import { readOperatorDisplayName } from '../../core/config/operator-display-name.js';
 import { setQueuedChatActionsDeps } from './queued/queued-chat-actions.js';
+import { chatUsagePauseOf } from './sending/chat-usage-pause.js';
 
 /** How far down a chat's chain of spin-offs a reader may follow. */
 const DESCENDANT_DEPTH = 8;
@@ -279,6 +280,7 @@ export function wireChatMessaging(deps: WireChatMessagingDeps): {
     chatTitle: chatTitleOf,
     sessionCwd: liveSessionCwd,
     isBusy: isSessionBusy,
+    usagePauseOf: chatUsagePauseOf,
     interruptTurn: interruptChatTurn,
     // A steer that lands carries its sender into the running turn (DOR-3703, M7).
     steerInto: async (sessionId, content, messageId) => {
