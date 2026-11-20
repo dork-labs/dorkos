@@ -26,11 +26,13 @@ import {
   UpdateTodoPromiseRequestSchema,
 } from '@dorkos/shared/todo-promise-schemas';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { presentsProgramCredential } from '../lib/caller-authority.js';
 import { errorBody, validationFailureBody } from '../lib/route-utils.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
+import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 import {
   TodoPromiseError,
   type TodoPromiseActor,
@@ -59,12 +61,19 @@ export interface TodoPromiseRouterDeps {
   isOwner(facts: RequestFacts): boolean;
   /**
    * Whether this request proves the owner in person: the owner's own session cookie
-   * (`personProof`). Only then does a change carry `person` authority (DOR-3088); the open gate
-   * `isOwner` passes with login off is not proof, since any program here can reach it.
+   * (`personProof`). Once an owner account exists, only then does a change carry `person`
+   * authority (DOR-3088); the open gate `isOwner` passes with login off is not proof, since any
+   * program here can reach it.
    *
    * @param facts - The request's facts, carrying the resolved caller.
    */
   personProven(facts: RequestFacts): boolean;
+  /**
+   * Whether this install has an owner account. When it has none, nobody can be proven, and a
+   * person at this computer writes as the person (DOR-3832). A failed lookup must read as an
+   * owner, so this fails closed.
+   */
+  ownerExists(): boolean;
   /** Takes a person's answer to "was it kept?" (DOR-3034). */
   confirm: Pick<TodoConfirm, 'answer'>;
 }
@@ -115,7 +124,32 @@ function actorOf(
     };
   }
   if (!deps.isOwner(facts)) return { refused: c.json(errorBody(NOT_YOUR_AGENT, 'NOT_YOURS'), 403) };
-  return { actor: { kind: 'person', proven: deps.personProven(facts) } };
+  return { actor: personOf(facts, deps) };
+}
+
+/**
+ * The person behind a request that already passed the agent and owner checks: proven by the
+ * owner's session, or the only person there is (DOR-3832). That takes both an install with no
+ * owner account and a request the gate's own classifier places at this computer
+ * (`isAtThisComputer`: this machine, or a container's published port) that carries no program
+ * credential: no owner alone is not enough, so a request from another device, or a program
+ * sending a key, stays the stranger bound.
+ *
+ * Not the same rule as `/api/todos`: there `ownerless` widens only what an unproven person may
+ * change (`todo-policy`), and its writes keep the stranger bound. Whether to-dos should carry
+ * `person` authority the way promises do is a follow-up (DOR-4837), not this route.
+ */
+function personOf(
+  facts: RequestFacts,
+  deps: TodoPromiseRouterDeps
+): Extract<TodoPromiseActor, { kind: 'person' }> {
+  const proven = deps.personProven(facts);
+  if (proven) return { kind: 'person', proven };
+  // Where the request came from first: the owner lookup fails closed on its own. A key, token or
+  // bearer is a program, not the app, as in `requirePersonAtThisComputer`.
+  const ownerless =
+    isAtThisComputer(facts) && !presentsProgramCredential(facts) && !deps.ownerExists();
+  return { kind: 'person', proven, ownerless };
 }
 
 /**
@@ -194,8 +228,7 @@ export function createAgentTodoPromisesRoutes(deps: TodoPromiseRouterDeps): Hono
       return c.json(errorBody('No agent on the team has that id.', 'UNKNOWN_AGENT'), 404);
     }
     try {
-      const assigner = { kind: 'person', proven: deps.personProven(facts) } as const;
-      return c.json(deps.service.create(agentId, body.data, assigner), 201);
+      return c.json(deps.service.create(agentId, body.data, personOf(facts, deps)), 201);
     } catch (err) {
       return refusal(c, err);
     }

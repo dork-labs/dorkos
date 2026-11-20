@@ -165,7 +165,14 @@ export function credentialGated(facts: ClassifierFacts): boolean {
 /** The methods that only read. */
 const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
-/** Whether an owner account exists; a lookup that fails reads as yes, so a bar fails closed. */
+/**
+ * Whether an owner account exists; a lookup that fails reads as yes, so a bar fails closed.
+ *
+ * Before `initAuth` runs, `readOwnerAccount` has no store and answers null, so this reads as no
+ * owner. No request can see that: startup runs `initAuth` in `wireCoreStores`, before the
+ * session services, the routes and the listener (`apps/server/src/index.ts`), so the first
+ * request already reads the real store.
+ */
 export function ownerAccountExists(): boolean {
   try {
     return readOwnerAccount() !== null;

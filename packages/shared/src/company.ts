@@ -46,13 +46,13 @@ export const company = {
     /** The owner contact the Dork Labs marketplace registry publishes. */
     marketplace: 'hello@dorkos.ai',
   },
-  /** The company's registered postal address. */
+  /** The company's mailing and contact address. */
   address: {
-    street: '6028 Toscana Ave',
+    street: '605 W 9th Street, Unit #4144',
     city: 'Austin',
     /** The two-letter state code. */
     region: 'TX',
-    postalCode: '78724',
+    postalCode: '78701',
     country: 'United States',
   },
 } as const;
@@ -68,7 +68,7 @@ export type CompanyAddress = Company['address'];
 
 /**
  * The postal address on one line, as a legal page prints it:
- * "6028 Toscana Ave, Austin, TX 78724, United States".
+ * "605 W 9th Street, Unit #4144, Austin, TX 78701, United States".
  *
  * @param address - The address to format; defaults to the company's own.
  * @param options - Set `country: false` to leave the country off.

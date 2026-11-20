@@ -9,8 +9,8 @@
  *
  * @vitest-environment jsdom
  */
-import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
+import { describe, it, expect, beforeAll, beforeEach, afterEach, vi, type Mock } from 'vitest';
+import { render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -161,6 +161,17 @@ let user: ReturnType<typeof userEvent.setup>;
 async function pick(testId: string, optionName: string | RegExp) {
   await user.click(await screen.findByTestId(testId));
   await user.click(await screen.findByRole('option', { name: optionName }));
+}
+
+/**
+ * Answer the one confirm a save takes at a level that acts without asking
+ * (DOR-3841). Codex's Act never asks, so a schedule saved there asks first, and
+ * nothing is written until this is pressed.
+ */
+async function confirmNeverAskingSave(save: Mock) {
+  const confirm = await screen.findByRole('alertdialog');
+  expect(save).not.toHaveBeenCalled();
+  fireEvent.click(within(confirm).getByRole('button', { name: 'Turn on Act' }));
 }
 
 describe('the task form Runs-on controls', () => {
@@ -373,8 +384,9 @@ describe('the task form Runs-on controls', () => {
   describe('moving a task onto a runtime that reads its mode as never-asking', () => {
     // `acceptEdits` asks before a command on Claude Code and cannot ask at all
     // on Codex. Moving the runtime used to open an "unattended" consent dialog;
-    // trusted by default (ADR 261006-225605), it is just a change.
-    it('moves straight away with no dialog, and saves only the runtime', async () => {
+    // trusted by default (ADR 261006-225605), it is just a change. Saving it
+    // takes the one confirm a never-asking level takes (DOR-3841).
+    it('moves with no dialog on the pick, asks once on save, and saves only the runtime', async () => {
       const updateTask = vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-1' }));
       const transport = transportWithAgent(null, { updateTask });
       renderEditTask(
@@ -389,6 +401,7 @@ describe('the task form Runs-on controls', () => {
       expect(screen.queryByRole('alertdialog')).toBeNull();
 
       fireEvent.click(screen.getByText('Save'));
+      await confirmNeverAskingSave(updateTask);
       await waitFor(() =>
         expect(updateTask).toHaveBeenCalledWith(
           'sched-1',
@@ -467,7 +480,7 @@ describe('the task form Runs-on controls', () => {
       );
     }
 
-    it('takes the pick straight away, with no dialog, and files the task against it', async () => {
+    it('takes the pick with no dialog, asks once on save, and files the task against it', async () => {
       const createTask = vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-new' }));
       const transport = transportWithAgentPerRuntime({ createTask });
       renderNewTaskOnClaude(transport);
@@ -479,6 +492,7 @@ describe('the task form Runs-on controls', () => {
 
       fillRequiredFields();
       fireEvent.click(screen.getByText('Create task'));
+      await confirmNeverAskingSave(createTask);
       await waitFor(() =>
         expect(createTask).toHaveBeenCalledWith(
           expect.objectContaining({ target: CODEX_AGENT.id, permissionMode: 'acceptEdits' })
@@ -576,7 +590,7 @@ describe('the task form Runs-on controls', () => {
         expect(screen.queryByText(/isn’t registered/)).toBeNull();
       });
 
-      it('prices the dial against the stored agent, and takes the middle stop with no dialog', async () => {
+      it('prices the dial against the stored agent, and asks once when the middle stop is saved', async () => {
         // The reviewer's repro, run to its end. There is no phantom pick to
         // re-caption the dial, so the stops are Codex's own.
         const updateTask = renderCodexTaskAt(
@@ -601,6 +615,7 @@ describe('the task form Runs-on controls', () => {
         expect(screen.queryByRole('alertdialog')).toBeNull();
 
         fireEvent.click(screen.getByText('Save'));
+        await confirmNeverAskingSave(updateTask);
         await waitFor(() =>
           expect(updateTask).toHaveBeenCalledWith(
             'sched-1',
@@ -662,11 +677,12 @@ describe('the task form Runs-on controls', () => {
       );
     }, 20_000);
 
-    it('applies a pick made before the manifests land, without waiting on them', async () => {
+    it('applies a pick made before the manifests land, and holds Create until they do', async () => {
       // The picker is clickable the moment the agent LIST arrives, and the
-      // manifests behind it are a second round trip. A pick in that window used
-      // to be held until it could be priced for the consent dialog; with no
-      // dialog there is nothing to price, so it applies at once.
+      // manifests behind it are a second round trip. A pick in that window
+      // applies at once. Saving waits (DOR-3841): until the manifest says the
+      // agent runs on Codex, its Act reads like Claude Code's, which asks, and
+      // a save then would skip the confirm Codex's Act takes.
       const createTask = vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-new' }));
       const transport = transportWithAgentPerRuntime({
         createTask,
@@ -681,10 +697,11 @@ describe('the task form Runs-on controls', () => {
       expect(screen.queryByText('claude-bot')).toBeNull();
 
       fillRequiredFields();
-      fireEvent.click(screen.getByText('Create task'));
-      await waitFor(() =>
-        expect(createTask).toHaveBeenCalledWith(expect.objectContaining({ target: CODEX_AGENT.id }))
-      );
+      const create = screen.getByRole('button', { name: 'Create task' });
+      expect(create).toBeDisabled();
+      fireEvent.click(create);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(createTask).not.toHaveBeenCalled();
     });
   });
 
@@ -861,6 +878,7 @@ describe('the task form Runs-on controls', () => {
       await pick('task-effort-select', 'High');
 
       fireEvent.click(screen.getByText('Create task'));
+      await confirmNeverAskingSave(createTask);
 
       await waitFor(() =>
         expect(createTask).toHaveBeenCalledWith(
@@ -885,6 +903,10 @@ describe('the task form Runs-on controls', () => {
       fireEvent.change(
         screen.getByPlaceholderText('Review all pending PRs and summarize findings…'),
         { target: { value: 'Run the nightly build' } }
+      );
+      // Create waits until the runtime's modes are read (DOR-3841).
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Create task' })).toBeEnabled()
       );
       fireEvent.click(screen.getByText('Create task'));
 

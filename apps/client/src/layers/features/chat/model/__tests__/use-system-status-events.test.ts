@@ -200,4 +200,29 @@ describe('useSystemStatusEvents — session hooks', () => {
     rerender({ turn: [{ seq: 1, type: 'turn_start' }, waiting, textDelta(3)] });
     expect(setStatus).toHaveBeenLastCalledWith(null);
   });
+
+  it('surfaces a heavy job waiting for the computer, each new place in line, and clears it once it runs (DOR-4209)', () => {
+    const setOp = vi.fn();
+    const setStatus = vi.fn();
+    const waiting = (seq: number, message: string): SessionEvent => ({
+      seq,
+      type: 'system_status',
+      message,
+      status: 'waiting_for_load',
+    });
+    const SECOND = 'Waiting for the computer to calm down. 2nd in line.';
+    const NEXT = 'Waiting for the computer to calm down. Next in line.';
+    const second = waiting(3, SECOND);
+    const next = waiting(4, NEXT);
+    const start: SessionEvent[] = [{ seq: 1, type: 'turn_start' }, textDelta(2)];
+    const { rerender } = renderHook(
+      ({ turn }: { turn: SessionEvent[] }) => useSystemStatusEvents(SID, turn, setOp, setStatus),
+      { initialProps: { turn: [...start, second] } }
+    );
+    expect(setStatus).toHaveBeenLastCalledWith({ message: SECOND });
+    rerender({ turn: [...start, second, next] });
+    expect(setStatus).toHaveBeenLastCalledWith({ message: NEXT });
+    rerender({ turn: [...start, second, next, textDelta(5)] });
+    expect(setStatus).toHaveBeenLastCalledWith(null);
+  });
 });

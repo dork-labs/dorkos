@@ -744,7 +744,7 @@ With `autonomy`, every new chat starts with the approval prompts turned off, so 
     },
     'runtimes.loadGate.enabled': {
       description:
-        'Whether your agents’ big jobs, like builds, test runs and installs, wait their turn while your computer is busy. Nothing reads this yet: an upcoming update turns the wait on. Only you can change any `loadGate` setting.',
+        'Whether your agents’ big jobs, like builds, test runs and installs, wait their turn while your computer is busy. A waiting chat shows its place in line. This covers agents that run on Claude Code; Codex and OpenCode agents do not wait yet. A big job an agent sends to the background waits for its turn to start, but does not keep its turn while it runs. Only you can change any `loadGate` setting.',
       type: 'boolean',
       default: 'true',
     },
