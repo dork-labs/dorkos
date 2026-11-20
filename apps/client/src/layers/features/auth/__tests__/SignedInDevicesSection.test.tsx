@@ -223,12 +223,13 @@ describe('SignedInDevicesSection', () => {
     vi.stubGlobal('electronAPI', { getServerPort: () => 4242, openExternal });
     try {
       const { transport } = setup(listWith(true));
+      // Everything here is what the device chose to send, so none of it may steer the button.
       vi.mocked(transport.listWifiSignInRequests).mockResolvedValue({
         requests: [
           {
-            id: 'req-1',
-            deviceName: 'Firefox on Linux',
-            address: '192.168.1.40',
+            id: 'req-1/../../https://evil.example',
+            deviceName: 'https://evil.example/?settings=security',
+            address: '//evil.example:443',
             requestedAt: NOW,
             expiresAt: NOW,
             matchCode: 'K7QX',
@@ -241,7 +242,10 @@ describe('SignedInDevicesSection', () => {
       ).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
       await userEvent.click(screen.getByRole('button', { name: 'Open in browser' }));
-      expect(openExternal).toHaveBeenCalledWith(`${window.location.origin}/`);
+      // A fixed address: nothing from the request is in it.
+      expect(openExternal).toHaveBeenCalledTimes(1);
+      expect(openExternal).toHaveBeenCalledWith(`${window.location.origin}/?settings=security`);
+      expect(String(openExternal.mock.calls[0]![0])).not.toContain('evil');
       expect(transport.approveWifiSignIn).not.toHaveBeenCalled();
       // Declining needs no passkey, so it stays.
       expect(screen.getByRole('button', { name: 'Decline' })).toBeInTheDocument();
@@ -269,9 +273,12 @@ describe('SignedInDevicesSection', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Approve' }));
     expect(
       await screen.findByText(
-        'Add a passkey on this computer first (Safari or Chrome), then try again.'
+        'Add a passkey on this computer first (Safari or Chrome), then approve here.'
       )
     ).toBeInTheDocument();
+    // In the card: Approve waits, and the way to add one is right there.
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Add a passkey' })).toBeInTheDocument();
   });
 });
 

@@ -20,6 +20,7 @@ import {
 } from '@/layers/shared/ui';
 import { passkeysAvailable } from '../lib/passkey-ceremony';
 import { useOwnerFactors } from '../model/use-owner-factors';
+import { SIGN_IN_CHECKS_ID } from './WifiSignInRequests';
 
 /**
  * Settings › Login & security › Signing in from other devices (DOR-3647): the
@@ -37,7 +38,7 @@ export function OwnerFactorsSection() {
   const here = factors.factors.filter((factor) => !factor.worksFromAway);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" id={SIGN_IN_CHECKS_ID}>
       <div className="space-y-1">
         <div className="flex items-center gap-2">
           <KeyRound className="text-muted-foreground size-4" />

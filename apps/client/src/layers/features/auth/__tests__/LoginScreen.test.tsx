@@ -67,6 +67,22 @@ describe('LoginScreen', () => {
     view.rerender(<LoginScreen />);
   }
 
+  it('before the password step, says nothing about passkeys, whatever the owner has', () => {
+    vi.stubGlobal('isSecureContext', true);
+    vi.stubGlobal('PublicKeyCredential', function PublicKeyCredential() {});
+    Object.defineProperty(navigator, 'credentials', {
+      value: { get: vi.fn() },
+      configurable: true,
+    });
+    try {
+      render(<LoginScreen />);
+      expect(screen.queryByRole('button', { name: /passkey/i })).not.toBeInTheDocument();
+      expect(screen.queryByText(/passkey/i)).not.toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('offers a passkey quietly beside the code only when the server says one works from here', async () => {
     try {
       await secondStepWith(['authenticator', 'passkey']);

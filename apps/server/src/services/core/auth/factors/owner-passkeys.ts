@@ -103,20 +103,13 @@ export function thisComputerPasskeyOrigins(): string[] {
 }
 
 /**
- * Every name this computer goes by, for telling a passkey made here from one
- * made for another address. A fixed set, not just the origins served right
- * now: a passkey made at `localhost`, at another port or in development is
- * still this computer's, and never counts as one that works from away.
+ * The names only this computer can reach itself by: loopback, on any port. A
+ * passkey made for one of them works only here. Fixed, never read from Host,
+ * settings or the served origins: the computer's network name, its Wi-Fi
+ * address and a tunnel's address are all reachable from other devices, so a
+ * passkey made for any of them counts as working from away.
  */
-function thisComputerHosts(): ReadonlySet<string> {
-  return new Set([
-    'localhost',
-    '127.0.0.1',
-    '::1',
-    '[::1]',
-    ...thisComputerPasskeyOrigins().map((origin) => new URL(origin).hostname),
-  ]);
-}
+const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 
 /**
  * The addresses of this computer a person has a passkey for, whatever address
@@ -126,7 +119,7 @@ function thisComputerHosts(): ReadonlySet<string> {
  * @param userId - Whose.
  */
 export function thisComputerPasskeyHosts(userId: string): string[] {
-  const here = thisComputerHosts();
+  const here = LOOPBACK_HOSTS;
   const hosts = confirmedFactors(userId, 'passkey')
     .map((row) => row.rpId)
     .filter((rpId): rpId is string => rpId !== null && here.has(rpId));
@@ -144,7 +137,7 @@ export function worksFromOtherDevices(row: OwnerFactorRow): boolean {
   if (row.kind === 'totp') return true;
   // Judged by the address the passkey was made for, which every row stores,
   // so one saved before this rule is judged the same way.
-  return row.rpId !== null && !thisComputerHosts().has(row.rpId.toLowerCase());
+  return row.rpId !== null && !LOOPBACK_HOSTS.has(row.rpId.toLowerCase());
 }
 
 /**

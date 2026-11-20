@@ -157,18 +157,20 @@ export function buildSecondFactorGate(): MiddlewareHandler<RequestFactsEnv> {
     if (ingressOf(c.env.incoming) === 'wifi') return next();
     const requestClass = classifyRequest(honoRequestFacts(c), currentServerRole());
     if (requestClass.kind === 'this-computer') return next();
-    const owner = readOwnerAccount();
-    if (!owner) return next();
-    const usable = usableRemotely(owner.id);
-    if (!usable.ever) return next();
-    const body = await signInBodyOf(c.req.raw);
     // A body this gate cannot read is never passed on: Better Auth might read it.
+    // Refused before anything about the owner is looked at, so the answer is
+    // the same whether or not a check exists.
+    const body = await signInBodyOf(c.req.raw);
     if (!body) {
       return c.json(
         { code: SIGN_IN_UNREADABLE, message: 'That sign-in couldn’t be read. Try again.' },
         400
       );
     }
+    const owner = readOwnerAccount();
+    if (!owner) return next();
+    const usable = usableRemotely(owner.id);
+    if (!usable.ever) return next();
     const ownerEmail = getUserById(owner.id)?.email.toLowerCase();
     // Only the owner's own sign-in is asked; anyone else's goes on as before.
     if (!body?.email || body.email.trim().toLowerCase() !== ownerEmail) return next();

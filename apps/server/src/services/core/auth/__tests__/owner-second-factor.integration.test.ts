@@ -37,6 +37,7 @@ import {
 import { MainRequestAdmission } from '../../lifecycle/main-request-admission.js';
 import { configManager, initConfigManager } from '../../config-manager.js';
 import { markIngress, type RequestIngress } from '../../remote/ingress-mark.js';
+import { tunnelManager } from '../../tunnel-manager.js';
 import {
   addPasskey,
   addPendingTotp,
@@ -141,7 +142,68 @@ beforeEach(() => {
   resetPasskeyChallengesForTests();
 });
 
+/** A wrong-password sign-in from away, as it answers before any check works from away. */
+let wrongBeforeAnyCheck: { status: number; body: unknown } | null = null;
+/** A sign-in from away the server can't read, as it answers before any check works from away. */
+let unreadableBeforeAnyCheck: { status: number; body: unknown } | null = null;
+
+/** A sign-in from away whose body is not JSON. */
+function unreadableFromAway() {
+  return post('/api/auth/sign-in/email', 'own-tunnel').send('{"email": "owner');
+}
+
+/** A sign-in from away with the wrong password, without a code. */
+function wrongPasswordFromAway() {
+  return post('/api/auth/sign-in/email', 'own-tunnel').send({
+    email: EMAIL,
+    password: 'not-the-password',
+  });
+}
+
 describe('before any second factor works remotely', () => {
+  it('a wrong password gets its ordinary answer', async () => {
+    const res = await wrongPasswordFromAway();
+    expect(res.status).toBe(401);
+    wrongBeforeAnyCheck = { status: res.status, body: res.body };
+    const unreadable = await unreadableFromAway();
+    expect(unreadable.status).toBe(400);
+    unreadableBeforeAnyCheck = { status: unreadable.status, body: unreadable.body };
+  });
+
+  it('a passkey for the tunnel’s address works from away, with the tunnel on or off', () => {
+    const row = {
+      kind: 'passkey',
+      rpId: 'studio.example',
+    } as Parameters<typeof worksFromOtherDevices>[0];
+    const real = tunnelManager.status;
+    const on = vi
+      .spyOn(tunnelManager, 'status', 'get')
+      .mockReturnValue({ ...real, url: 'https://studio.example' });
+    try {
+      expect(worksFromOtherDevices(row)).toBe(true);
+    } finally {
+      on.mockRestore();
+    }
+    const off = vi.spyOn(tunnelManager, 'status', 'get').mockReturnValue({ ...real, url: null });
+    try {
+      expect(worksFromOtherDevices(row)).toBe(true);
+      expect(worksFromOtherDevices({ ...row, rpId: 'localhost' })).toBe(false);
+    } finally {
+      off.mockRestore();
+    }
+  });
+
+  it('a passkey for the computer’s network name or its Wi-Fi address works from away', () => {
+    // Other devices reach both, so only the loopback names mean "this computer only".
+    for (const rpId of ['dc-mbp-m4-2.lan', '192.168.1.42', 'studio.local']) {
+      expect(
+        worksFromOtherDevices({ kind: 'passkey', rpId } as Parameters<
+          typeof worksFromOtherDevices
+        >[0])
+      ).toBe(true);
+    }
+  });
+
   it('a password signs in from another device as before', async () => {
     expect((await signIn('own-tunnel')).status).toBe(200);
   });
@@ -672,6 +734,16 @@ describe('with an authenticator app set up', () => {
       expect(String(res.headers['set-cookie'] ?? '')).not.toMatch(/session_token=[^;]/);
     }
   );
+
+  it('before the password matches, the answer is the same as with no check at all', async () => {
+    // Nothing before the password says whether a check exists, or which kind.
+    const res = await wrongPasswordFromAway();
+    expect(wrongBeforeAnyCheck).not.toBeNull();
+    expect({ status: res.status, body: res.body }).toEqual(wrongBeforeAnyCheck);
+    const unreadable = await unreadableFromAway();
+    expect(unreadableBeforeAnyCheck).not.toBeNull();
+    expect({ status: unreadable.status, body: unreadable.body }).toEqual(unreadableBeforeAnyCheck);
+  });
 
   it('a wrong password with any code gets the ordinary refusal, and the code is never tried', async () => {
     const code = codeNow();

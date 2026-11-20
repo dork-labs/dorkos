@@ -19,10 +19,6 @@ export function WifiSignInRequests({ trust }: { trust: DeviceTrust }) {
       {trust.requests.map((request) => (
         <RequestCard key={request.id} request={request} trust={trust} />
       ))}
-      <p className="text-muted-foreground text-xs">
-        Anyone on this Wi-Fi can copy a sign-in made here.
-      </p>
-      <p className="text-muted-foreground text-xs">Use it only on networks you trust.</p>
     </div>
   );
 }
@@ -31,6 +27,8 @@ function RequestCard({ request, trust }: { request: WifiSignInRequest; trust: De
   const shown = trust.codes[request.id];
   const busy = trust.pendingId === request.id;
   const inMacApp = isDesktopShell();
+  // Known once Approve was tried: there is no passkey here to approve with.
+  const noPasskey = trust.lastId === request.id && trust.needsPasskey;
   return (
     <div className="space-y-2 rounded-md border px-3 py-2">
       <div className="flex items-start justify-between gap-2">
@@ -59,9 +57,20 @@ function RequestCard({ request, trust }: { request: WifiSignInRequest; trust: De
             <p className="text-muted-foreground text-xs">Match code</p>
             <CodeGroups code={request.matchCode} className="text-base" />
           </div>
-          <p className="text-muted-foreground text-xs">
-            Approve only if {request.deviceName} shows the same match code.
-          </p>
+          {noPasskey ? (
+            <p className="text-muted-foreground text-xs" role="status">
+              Add a passkey on this computer first (Safari or Chrome), then approve here.
+            </p>
+          ) : (
+            <p className="text-muted-foreground text-xs">
+              Approve only if {request.deviceName} shows the same match code.
+            </p>
+          )}
+          {/* Part of this decision, so inside its card. */}
+          <div className="text-muted-foreground space-y-0.5 text-xs">
+            <p>Anyone on this Wi-Fi can copy a sign-in made here.</p>
+            <p>Use it only on networks you trust.</p>
+          </div>
           {inMacApp && (
             <p className="text-muted-foreground text-xs">
               Open DorkOS in your browser on this computer to approve.
@@ -70,12 +79,21 @@ function RequestCard({ request, trust }: { request: WifiSignInRequest; trust: De
           <div className="flex gap-2">
             {inMacApp ? (
               // The Mac app has no passkey check yet; the browser on this computer does.
-              <Button size="sm" onClick={() => openExternalLink(`${window.location.origin}/`)}>
+              <Button size="sm" onClick={() => openExternalLink(requestsPageUrl())}>
                 Open in browser
               </Button>
             ) : (
-              <Button size="sm" onClick={() => void trust.approve(request.id)} disabled={busy}>
+              <Button
+                size="sm"
+                onClick={() => void trust.approve(request.id)}
+                disabled={busy || noPasskey}
+              >
                 {busy ? 'Checking…' : 'Approve'}
+              </Button>
+            )}
+            {noPasskey && (
+              <Button size="sm" variant="outline" onClick={showSignInChecks}>
+                Add a passkey
               </Button>
             )}
             <Button
@@ -87,11 +105,29 @@ function RequestCard({ request, trust }: { request: WifiSignInRequest; trust: De
               Decline
             </Button>
           </div>
-          {trust.lastId === request.id && <TrustNote trust={trust} />}
+          {trust.lastId === request.id && !noPasskey && <TrustNote trust={trust} />}
         </>
       )}
     </div>
   );
+}
+
+/** The id of the sign-in checks section, where a passkey is added. */
+export const SIGN_IN_CHECKS_ID = 'sign-in-checks';
+
+/** Bring the sign-in checks section into view, to add a passkey there. */
+function showSignInChecks(): void {
+  document
+    .getElementById(SIGN_IN_CHECKS_ID)
+    ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/**
+ * Where the browser opens from the Mac app: this computer's own DorkOS page,
+ * at Login & security. Fixed: never built from anything a request carries.
+ */
+function requestsPageUrl(): string {
+  return `${window.location.origin}/?settings=security`;
 }
 
 /**
