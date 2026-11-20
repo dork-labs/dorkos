@@ -11,6 +11,10 @@ import {
   waitingForAgents,
 } from '../../../extensions/extension-agent-text.js';
 import { listPendingExtensionApprovals } from '../../../extensions/extension-approval-queue.js';
+import {
+  MINI_APP_STORY_SECTION,
+  MINI_APP_STORY_TEXT,
+} from '../../../extensions/guidance/mini-app-story.js';
 import type { PendingExtensionApproval } from '@dorkos/shared/extension-approval-schemas';
 import {
   createCreateExtensionHandler,
@@ -29,6 +33,7 @@ export { createCreateExtensionHandler, type ExtensionCreatorResolver };
  */
 const EXTENSION_API_REFERENCE = `# DorkOS Extension API Reference
 
+${MINI_APP_STORY_SECTION}
 ## Client-Side: ExtensionModule Interface
 
 Runs in a sandboxed frame: no network, cookies or parent window; use \`api\`.
@@ -150,18 +155,15 @@ Manifest declaration (a category grants all its kinds):
 
 ## Usage Examples
 
-### Dashboard Section
+### Command Palette Item
 \`\`\`typescript
-export function activate(api: ExtensionAPI) {
-  api.registerComponent('dashboard.sections', 'my-section', MyComponent, { priority: 50 });
-}
+api.registerCommand('greet', 'Say Hello', () => api.notify('Hello!'));
 \`\`\`
 
 ### Right-Panel Tab (contextual inspector)
 \`\`\`typescript
 export function activate(api: ExtensionAPI) {
-  // label names the tab; priority sorts the strip (lower = leftward). The panel
-  // container owns the header (tab strip + close), so MyPanel renders only the body.
+  // The panel owns the header, so MyPanel renders only the body.
   api.registerComponent('right-panel', 'my-panel', MyPanel, {
     label: 'My Panel',
     priority: 50,
@@ -170,31 +172,9 @@ export function activate(api: ExtensionAPI) {
 }
 \`\`\`
 
-### Command Palette Item
-\`\`\`typescript
-export function activate(api: ExtensionAPI) {
-  api.registerCommand('greet', 'Say Hello', () => {
-    api.notify('Hello from my extension!', { type: 'success' });
-  });
-}
-\`\`\`
-
-### Settings Tab with Persistence
-\`\`\`typescript
-export function activate(api: ExtensionAPI) {
-  api.registerSettingsTab('config', 'My Settings', MySettingsPanel);
-}
-\`\`\`
-
 ### Subscribing to Events (declare capabilities.events in the manifest)
 \`\`\`typescript
-export function activate(api: ExtensionAPI) {
-  return api.events.subscribe(['turn.completed', 'tool.activity'], (event) => {
-    if (event.kind === 'turn.completed') {
-      api.notify(\`Turn done in \${event.durationMs}ms (\${event.toolCallCount} tools)\`);
-    }
-  });
-}
+return api.events.subscribe(['turn.completed'], (e) => api.notify(\`Took \${e.durationMs}ms\`));
 \`\`\`
 
 ### Storage
@@ -538,8 +518,8 @@ export function extensionToolDefinitions(
         'Called from your own chat, it is always created in your own folder, at .dork/extensions/<name>, whatever scope says. ' +
         'There, once it runs separately ("runtime": "subprocess"), edits to its server code load without a click from the person. ' +
         'Edits to its screen code (what the app shows) still wait for the person to approve them. ' +
-        'In a turn that read words from someone other than your owner (a room with another person, Telegram, Slack), or one held to a limit, ' +
-        'your folder is read-only, so it creates nothing and its reply says how to build in the personal marketplace instead.',
+        'In a marked turn, or one held to a limit, it creates nothing and its reply says how to build in the personal marketplace instead. ' +
+        MINI_APP_STORY_TEXT,
       {
         name: z
           .string()
