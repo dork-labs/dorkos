@@ -1,7 +1,7 @@
 import { Wifi } from 'lucide-react';
 import type { WifiSignInRequest } from '@dorkos/shared/signed-in-devices';
 import { Button } from '@/layers/shared/ui';
-import { formatRelativeTime } from '@/layers/shared/lib';
+import { formatRelativeTime, isDesktopShell, openExternalLink } from '@/layers/shared/lib';
 import type { DeviceTrust } from '../model/use-device-trust';
 import { CodeGroups } from './CodeGroups';
 
@@ -30,6 +30,7 @@ export function WifiSignInRequests({ trust }: { trust: DeviceTrust }) {
 function RequestCard({ request, trust }: { request: WifiSignInRequest; trust: DeviceTrust }) {
   const shown = trust.codes[request.id];
   const busy = trust.pendingId === request.id;
+  const inMacApp = isDesktopShell();
   return (
     <div className="space-y-2 rounded-md border px-3 py-2">
       <div className="flex items-start justify-between gap-2">
@@ -57,10 +58,22 @@ function RequestCard({ request, trust }: { request: WifiSignInRequest; trust: De
           <p className="text-muted-foreground text-xs">
             Approve only if you started this on that device and its code matches.
           </p>
+          {inMacApp && (
+            <p className="text-muted-foreground text-xs">
+              Open DorkOS in your browser on this computer to approve.
+            </p>
+          )}
           <div className="flex gap-2">
-            <Button size="sm" onClick={() => void trust.approve(request.id)} disabled={busy}>
-              {busy ? 'Checking…' : 'Approve'}
-            </Button>
+            {inMacApp ? (
+              // The Mac app has no passkey check yet; the browser on this computer does.
+              <Button size="sm" onClick={() => openExternalLink(`${window.location.origin}/`)}>
+                Open in browser
+              </Button>
+            ) : (
+              <Button size="sm" onClick={() => void trust.approve(request.id)} disabled={busy}>
+                {busy ? 'Checking…' : 'Approve'}
+              </Button>
+            )}
             <Button
               size="sm"
               variant="ghost"

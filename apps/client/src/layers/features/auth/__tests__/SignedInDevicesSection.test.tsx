@@ -218,6 +218,38 @@ describe('SignedInDevicesSection', () => {
     );
   });
 
+  it('in the Mac app, sends approving to the browser on this computer and never asks for a passkey', async () => {
+    const openExternal = vi.fn().mockResolvedValue(true);
+    vi.stubGlobal('electronAPI', { getServerPort: () => 4242, openExternal });
+    try {
+      const { transport } = setup(listWith(true));
+      vi.mocked(transport.listWifiSignInRequests).mockResolvedValue({
+        requests: [
+          {
+            id: 'req-1',
+            deviceName: 'Firefox on Linux',
+            address: '192.168.1.40',
+            requestedAt: NOW,
+            expiresAt: NOW,
+            matchCode: 'K7QX',
+            approved: false,
+          },
+        ],
+      });
+      expect(
+        await screen.findByText('Open DorkOS in your browser on this computer to approve.')
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole('button', { name: 'Open in browser' }));
+      expect(openExternal).toHaveBeenCalledWith(`${window.location.origin}/`);
+      expect(transport.approveWifiSignIn).not.toHaveBeenCalled();
+      // Declining needs no passkey, so it stays.
+      expect(screen.getByRole('button', { name: 'Decline' })).toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('with no passkey on this computer, says to add one and shows no code', async () => {
     const { transport } = setup(listWith(true));
     vi.mocked(transport.listWifiSignInRequests).mockResolvedValue({

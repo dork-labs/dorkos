@@ -15,6 +15,7 @@ covers:
   - 'fix(auth): taking back an unfinished sign-in check touches only that check (DOR-3647)'
   - 'fix(auth): Wi-Fi device rows fit a phone, and each note sits by what it is about (DOR-4744)'
   - 'fix(auth): one main action on each sign-in screen, and added checks read as a list (DOR-3647, DOR-4744)'
+  - 'feat(auth): in the Mac app, a Wi-Fi sign-in request opens the browser to approve (DOR-4744)'
 ---
 
 ### Added
