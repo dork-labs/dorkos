@@ -2,8 +2,8 @@
  * The words the unattended consent dialog uses, written once.
  *
  * {@link UnattendedAutonomyDialog} asks a person to confirm a mode that will
- * not stop to ask on a chat binding. The copy that is ABOUT THE MODE lives here;
- * the consequence stays with its caller.
+ * not stop to ask, on a chat binding or when saving a schedule. The copy that
+ * is ABOUT THE MODE lives here; the consequence stays with its caller.
  *
  * Everything is derived from the descriptor the runtime declared. No mode ids,
  * no runtime names (spec `trust-dial`, decision 2A).

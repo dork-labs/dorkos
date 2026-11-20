@@ -30,6 +30,7 @@ beforeEach(() => {
   fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
   file = path.join(home, '.claude', 'settings.local.json');
   fs.writeFileSync(file, JSON.stringify(SETTINGS, null, 2) + '\n', { mode: 0o640 });
+  if (process.platform !== 'win32') fs.chmodSync(file, 0o640);
 });
 
 afterEach(() => {
@@ -39,6 +40,7 @@ afterEach(() => {
 describe('removing one standing yes (DOR-4118)', () => {
   it('removes exactly that rule and leaves every other line as it was', async () => {
     const before = fs.readFileSync(file, 'utf8');
+    if (process.platform !== 'win32') expect(fs.statSync(file).mode & 0o777).toBe(0o640);
     expect(await removeStandingAllow(home, 'mcp__tracker')).toBe('removed');
 
     const after = fs.readFileSync(file, 'utf8');
@@ -50,7 +52,7 @@ describe('removing one standing yes (DOR-4118)', () => {
     expect(before.split('\n').filter((line) => line !== '      "mcp__tracker",')).toEqual(
       after.split('\n')
     );
-    expect(fs.statSync(file).mode & 0o777).toBe(0o640);
+    if (process.platform !== 'win32') expect(fs.statSync(file).mode & 0o777).toBe(0o640);
     expect(fs.readdirSync(path.join(home, '.claude'))).toEqual(['settings.local.json']);
   });
 

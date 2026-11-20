@@ -252,6 +252,16 @@ export interface CapabilityDefinition<
    */
   approvalViewDetail?: (input: unknown) => string | undefined;
   /**
+   * The card's whole sentence after the asker's name, for a card the usual
+   * "wants to run <title> with <fields>" reads badly on (DOR-4775:
+   * `wants to change 9 settings. 4 need you: tunnel.enabled, …`). Takes the
+   * place of {@link approvalDisplayFields} in the sentence only; they are still
+   * declared, for the conformance rules. Core capabilities only: an extension's
+   * definition never carries it. Swept for secrets like every sentence, and must
+   * name nothing secret.
+   */
+  approvalSentence?: (input: unknown) => string;
+  /**
    * Which argument names the thing being acted on, and which registry knows it
    * by name (DOR-1929). Expected on any action that can raise a card and whose
    * target is an opaque id, so the card says WHICH room, agent or task it is

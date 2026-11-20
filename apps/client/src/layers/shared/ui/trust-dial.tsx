@@ -64,16 +64,23 @@ export function stopLabel(stop: PermissionStop): string {
 }
 
 /**
- * The three stops as descriptors, for the ONE dial that belongs to no runtime:
- * Settings' "New sessions start in", which sets a runtime-neutral stop that
- * every runtime then resolves through its own profile (spec `trust-dial`,
- * decision 6).
+ * The three stops as descriptors, for the places that have no runtime to ask.
  *
- * The `id`s are the stop names, and that is the point — this dial's value IS the
- * stop, so a caller reads `id` as one. Every other dial in the product is
- * rendered from a runtime's declared modes and must stay that way; this one has
- * no runtime to ask, and the honest thing at that moment is the canonical
- * promise with the per-runtime consequences spelled out beneath it.
+ * Its main use is the ONE dial that belongs to no runtime: Settings' "New
+ * sessions start in", which sets a runtime-neutral stop that every runtime then
+ * resolves through its own profile (spec `trust-dial`, decision 6). The `id`s
+ * are the stop names, and that is the point — this dial's value IS the stop, so
+ * a caller reads `id` as one. Every other dial in the product is rendered from
+ * a runtime's declared modes and must stay that way; this one has no runtime to
+ * ask, and the honest thing at that moment is the canonical promise with the
+ * per-runtime consequences spelled out beneath it.
+ *
+ * It is also borrowed, never drawn as a dial, by the schedule form's save
+ * confirm (`features/tasks/lib/full-autonomy-confirm`, DOR-3841): when a
+ * schedule is saved at a known Full autonomy mode before any runtime has said
+ * what its modes mean, the confirm speaks in the autonomy stop's words. That
+ * caller replaces `id` and `label` with the mode's own, so a stop name never
+ * reaches anything that reads `id` as a mode.
  *
  * The `promise` sentences are the stops' canonical meaning — what a person is
  * entitled to expect from the position they picked, before any runtime speaks
