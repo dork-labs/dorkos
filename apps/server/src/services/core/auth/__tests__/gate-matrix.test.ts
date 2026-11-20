@@ -37,7 +37,13 @@ vi.mock('../index.js', () => ({
         const route = made === 'legacy' ? null : made;
         return {
           user: { id: 'owner' },
-          session: { id: `session-${made}`, route, createdAt: new Date() },
+          // Made by the code sign-in, which stamps its first use (DOR-4744).
+          session: {
+            id: `session-${made}`,
+            route,
+            createdAt: new Date(),
+            lastActiveAt: new Date(),
+          },
         };
       },
       verifyApiKey: async () => ({ valid: false }),
