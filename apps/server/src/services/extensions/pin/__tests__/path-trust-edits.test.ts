@@ -6,7 +6,7 @@ import type { ExtensionRecord } from '@dorkos/extension-api';
 import { setMarkedFullActivity } from '../../../core/turn-power/full-autonomy.js';
 import { isApprovedByPath } from '../../extension-load-policy.js';
 import { grantsDigestOf } from '../extension-path-trust.js';
-import { notePathTrustEdits } from '../path-trust-edits.js';
+import { notePathTrustEdits, notePersonApproval } from '../path-trust-edits.js';
 
 const HOME = '/agents/ana';
 const manifest = {
@@ -35,7 +35,7 @@ describe('notePathTrustEdits', () => {
     approvedToRun: string[];
     approvedSources: Record<
       string,
-      { path: string; authorHome: string; grants: string; digest?: string }
+      { path: string; authorHome?: string; grants: string; digest?: string }
     >;
   };
   const deps = {
@@ -67,13 +67,14 @@ describe('notePathTrustEdits', () => {
         desk: { path: copyAt('x').path, authorHome: HOME, grants: grantsDigestOf(manifest) },
       },
     };
+    await notePersonApproval(dorkHome, copyAt('sha256:1'), 'sha256:1', deps.filesOf);
   });
   afterEach(async () => {
     setMarkedFullActivity(undefined);
     await fs.rm(dorkHome, { recursive: true, force: true });
   });
 
-  it('at Full: an edit runs and writes one line; first sight and no change write none', async () => {
+  it('at Full: an edit runs and writes one line; approved unchanged files write none', async () => {
     await scan('sha256:1');
     await scan('sha256:1');
     expect(emit).not.toHaveBeenCalled();
@@ -192,8 +193,20 @@ describe('notePathTrustEdits', () => {
   });
 
   it('leaves a copy pinned to its files alone', async () => {
+    delete approvals.approvedSources.desk!.authorHome;
     approvals.approvedSources.desk!.digest = 'sha256:1';
     await scan('sha256:2');
     expect(emit).not.toHaveBeenCalled();
+    expect(runs('sha256:2')).toBe(false);
+    expect(approvals.approvedSources.desk!.digest).toBe('sha256:1');
+  });
+
+  it('a traced Full edit of a temporarily pinned path-trust copy lifts the pin and audits it', async () => {
+    approvals.approvedSources.desk!.digest = 'sha256:1';
+    await scan('sha256:2');
+    expect(runs('sha256:2')).toBe(true);
+    expect(approvals.approvedSources.desk!.digest).toBeUndefined();
+    expect(emit).toHaveBeenCalledTimes(1);
+    expect(emit.mock.calls[0]![0]).toMatchObject({ actorId: HOME, resourceId: 'extension.edit' });
   });
 });

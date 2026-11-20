@@ -336,6 +336,7 @@ describe('on disk', () => {
     const isolatedDir = path.join(home, '.dork', 'extensions', 'notes');
     await writeExtension(isolatedDir, ISOLATED);
     await approveNewScaffold(
+      dorkHome,
       'notes',
       {
         targetDir: isolatedDir,
@@ -352,6 +353,7 @@ describe('on disk', () => {
     const globalDir = path.join(dorkHome, 'extensions', 'card');
     await writeExtension(globalDir, { ...IN_PROCESS, id: 'card' });
     await approveNewScaffold(
+      dorkHome,
       'card',
       {
         targetDir: globalDir,

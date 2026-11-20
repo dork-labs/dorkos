@@ -14,6 +14,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import type { ExtensionApprovedSource } from '@dorkos/shared/config-schema';
 
 /** The stored config the mocked config manager reports. */
 const state = vi.hoisted(() => ({
@@ -21,14 +22,19 @@ const state = vi.hoisted(() => ({
     enabled: [] as string[],
     disabled: [] as string[],
     approvedToRun: [] as string[],
-    approvedSources: {} as Record<string, { path: string; plugin?: string }>,
+    approvedSources: {} as Record<string, ExtensionApprovedSource>,
     dismissedApprovals: {} as Record<string, unknown>,
   },
 }));
 
 vi.mock('../../core/config-manager.js', () => ({
   configManager: {
-    get: (key: string) => (key === 'auth' ? { enabled: false } : state.extensions),
+    get: (key: string) =>
+      key === 'auth'
+        ? { enabled: false }
+        : key === 'runtimes'
+          ? { defaultTrustStop: 'autonomy' }
+          : state.extensions,
     set: (key: string, value: unknown) => {
       if (key === 'extensions') state.extensions = value as typeof state.extensions;
     },
@@ -82,6 +88,13 @@ import {
 import { createExtensionsRoutes } from '../../../routes/extensions.js';
 import { honoGroupListener } from '../../../http/__tests__/hono-group-listener.js';
 import { extensionApprovalSubjectId } from '@dorkos/shared/extension-approval-schemas';
+import { FakeAgentRuntime } from '@dorkos/test-utils';
+import { ExtensionServerLifecycle } from '../extension-server-lifecycle.js';
+import { ExtensionFileWatcher } from '../copies/extension-file-watcher.js';
+import { runtimeRegistry } from '../../core/runtime-registry.js';
+import { noteScaffoldTrusted } from '../pin/path-trust-edits.js';
+import { grantsDigestOf, bundleDigestOf } from '../pin/extension-path-trust.js';
+import { liveDigestOf } from '../pin/extension-content-pin.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PLUGIN_FIXTURE = path.resolve(HERE, '../../marketplace/fixtures/valid-plugin');
@@ -176,7 +189,7 @@ async function pending() {
 }
 
 beforeEach(async () => {
-  dorkHome = fs.mkdtempSync(path.join(os.tmpdir(), 'dork-ext-approval-'));
+  dorkHome = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dork-ext-approval-')));
   state.extensions = {
     enabled: [],
     disabled: [],
@@ -209,6 +222,255 @@ afterEach(() => {
   setNotificationService(null);
   vi.restoreAllMocks();
   fs.rmSync(dorkHome, { recursive: true, force: true });
+});
+
+describe('a waiting copy whose folder is gone', () => {
+  it('retires the card on a native delete signal before discovery runs', async () => {
+    await installPlugin();
+    const refresh = vi.fn();
+    const watcher = new ExtensionFileWatcher({
+      source: {
+        dorkHome,
+        listRecords: () => manager.listRecords(),
+        onChange: (listener) => manager.onChange(listener),
+        requestRefresh: refresh,
+        whenIdle: async () => undefined,
+      },
+      presenceChanged: () => {
+        void queue.sync();
+      },
+    });
+    try {
+      await watcher.start();
+      await vi.waitFor(() => expect(refresh).toHaveBeenCalled(), { timeout: 10_000 });
+      await queue.sync();
+      refresh.mockClear();
+      fs.rmSync(extensionDir('flow'), { recursive: true });
+
+      await vi.waitFor(() => expect(broadcasts('standing_resolved')).toHaveLength(1), {
+        timeout: 10_000,
+      });
+      expect(await pending()).toEqual([]);
+      expect(manager.listRecords()).toHaveLength(1);
+      expect(refresh).toHaveBeenCalledWith({ establishBaseline: false });
+      expect(historyRows()).toEqual([]);
+    } finally {
+      await watcher.stop();
+    }
+  });
+
+  it('leaves the live list and retires its arrival without a discovery pass', async () => {
+    await installPlugin();
+    expect(await pending()).toHaveLength(1);
+    fs.rmSync(extensionDir('flow'), { recursive: true });
+
+    expect(await pending()).toEqual([]);
+    await queue.sync();
+
+    expect(manager.listRecords()).toHaveLength(1);
+    expect(broadcasts('standing_resolved')).toHaveLength(1);
+    expect(historyRows()).toEqual([]);
+  });
+
+  it('refuses an approval for a vanished folder without changing its approval', async () => {
+    await installPlugin();
+    const shown = card();
+    const before = structuredClone(state.extensions);
+    fs.rmSync(extensionDir('flow'), { recursive: true });
+
+    // The manager checks presence even without a supplied digest.
+    await expect(manager.approveToRun(EXT_ID)).rejects.toMatchObject({ reason: 'stale' });
+
+    const response = await request(server).post(`/api/extensions/${EXT_ID}/approve`).send(shown);
+
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe('stale_approval');
+    expect(state.extensions).toEqual(before);
+    expect(await pending()).toEqual([]);
+  });
+});
+
+describe('an approved copy changed outside file tools', () => {
+  it('holds an author copy with no saved baseline until a person approves its exact files', async () => {
+    const runtime = new FakeAgentRuntime();
+    vi.spyOn(runtimeRegistry, 'getAllCapabilities').mockReturnValue({
+      [runtimeRegistry.getDefaultType()]: runtime.getCapabilities(),
+    });
+    const author = path.join(dorkHome, 'agents', 'rowan');
+    const folder = path.join(author, '.dork', 'extensions', 'desk');
+    const manifest = {
+      id: 'desk',
+      name: 'Desk',
+      version: '1.0.0',
+      serverCapabilities: { serverEntry: './server.ts', runtime: 'subprocess' as const },
+    };
+    fs.mkdirSync(folder, { recursive: true });
+    fs.writeFileSync(path.join(folder, 'extension.json'), JSON.stringify(manifest));
+    fs.writeFileSync(path.join(folder, 'server.ts'), 'export default () => {};');
+    fs.writeFileSync(path.join(folder, 'index.ts'), 'export function activate() {}');
+    state.extensions.enabled = ['desk'];
+    state.extensions.approvedToRun = ['desk'];
+    state.extensions.approvedSources = {
+      desk: { path: folder, authorHome: author, grants: grantsDigestOf(manifest) },
+    };
+    manager.followProjects({ roots: async () => [author], onChange: () => () => undefined });
+    await manager.reload();
+    await queue.sync();
+    const record = manager.listPublic().find((copy) => copy.id === 'desk')!;
+    expect(record.approvedToRun).toBe(false);
+    expect(await pending()).toHaveLength(1);
+    expect(approvalArrivals()).toHaveLength(1);
+
+    const response = await request(server).post('/api/extensions/desk/approve').send({
+      version: record.manifest.version,
+      expectedDigest: record.digest,
+    });
+    expect(response.status).toBe(200);
+    await queue.sync();
+    expect(await pending()).toEqual([]);
+    const seen = JSON.parse(
+      fs.readFileSync(path.join(dorkHome, 'extension-data', 'path-trust-seen.json'), 'utf8')
+    );
+    expect(seen.trusted.desk.digest).toBe(record.digest);
+    expect(seen.untied).not.toContain('desk');
+  });
+
+  it('stops a plain fs.writeFile server edit and raises exactly one approval card', async () => {
+    const runtime = new FakeAgentRuntime();
+    vi.spyOn(runtimeRegistry, 'getAllCapabilities').mockReturnValue({
+      [runtimeRegistry.getDefaultType()]: runtime.getCapabilities(),
+    });
+    const author = path.join(dorkHome, 'agents', 'rowan');
+    const folder = path.join(author, '.dork', 'extensions', 'desk');
+    const manifest = {
+      id: 'desk',
+      name: 'Desk',
+      version: '1.0.0',
+      serverCapabilities: { serverEntry: './server.ts', runtime: 'subprocess' as const },
+    };
+    fs.mkdirSync(folder, { recursive: true });
+    fs.writeFileSync(path.join(folder, 'extension.json'), JSON.stringify(manifest));
+    fs.writeFileSync(path.join(folder, 'server.ts'), 'export default () => {};');
+    fs.writeFileSync(path.join(folder, 'index.ts'), 'export function activate() {}');
+    fs.mkdirSync(path.join(folder, 'src'));
+    fs.writeFileSync(path.join(folder, 'src', 'nested.ts'), 'export const value = 1;');
+    const digest = await liveDigestOf({ path: folder });
+    expect(await noteScaffoldTrusted(dorkHome, 'desk', { targetDir: folder, digest })).toBe(true);
+    state.extensions.enabled = ['desk'];
+    state.extensions.approvedToRun = ['desk'];
+    state.extensions.approvedSources = {
+      desk: {
+        path: folder,
+        authorHome: author,
+        grants: grantsDigestOf(manifest),
+        clientDigest: bundleDigestOf('export function activate() {}'),
+      },
+    };
+    manager.followProjects({ roots: async () => [author], onChange: () => () => undefined });
+    await manager.reload();
+    await queue.sync();
+    expect(manager.listPublic().find((copy) => copy.id === 'desk')?.approvedToRun).toBe(true);
+    expect(await pending()).toEqual([]);
+    const lifecycle = vi.mocked(ExtensionServerLifecycle).mock.results.at(-1);
+    if (lifecycle?.type !== 'return') throw new Error('Missing test lifecycle');
+    const refresh = vi.spyOn(manager, 'requestRefresh');
+    try {
+      await manager.startFileWatcher();
+      // Wait for ready's catch-up pass before measuring the outside write.
+      await vi.waitFor(() => expect(refresh).toHaveBeenCalled(), { timeout: 10_000 });
+      await manager.whenIdle();
+      await queue.sync();
+      vi.mocked(lifecycle.value.shutdown).mockClear();
+      refresh.mockClear();
+      sent = [];
+
+      await fs.promises.writeFile(
+        path.join(folder, 'server.ts'),
+        'export default () => "changed";'
+      );
+
+      await vi.waitFor(
+        () => {
+          expect(manager.listPublic().find((copy) => copy.id === 'desk')?.approvedToRun).toBe(
+            false
+          );
+        },
+        { timeout: 10_000 }
+      );
+      await queue.sync();
+      expect(lifecycle.value.shutdown).toHaveBeenCalledWith('desk');
+      expect(await pending()).toHaveLength(1);
+      expect(approvalArrivals()).toHaveLength(1);
+      expect(refresh).toHaveBeenCalledTimes(1);
+      const seen = JSON.parse(
+        fs.readFileSync(path.join(dorkHome, 'extension-data', 'path-trust-seen.json'), 'utf8')
+      );
+      expect(seen.untied).toContain('desk');
+      expect(await manager.readBundle('desk')).toBeNull();
+
+      const held = manager.listPublic().find((copy) => copy.id === 'desk')!;
+      const allow = await request(server).post('/api/extensions/desk/approve').send({
+        version: held.manifest.version,
+        expectedDigest: held.digest,
+      });
+      expect(allow.status).toBe(200);
+      await manager.whenIdle();
+      await queue.sync();
+      expect(await pending()).toEqual([]);
+      sent = [];
+      refresh.mockClear();
+      const beforeBurst = manager.listPublic().find((copy) => copy.id === 'desk')?.digest;
+      await Promise.all([
+        fs.promises.writeFile(path.join(folder, 'server.ts'), 'export default () => "again";'),
+        fs.promises.writeFile(
+          path.join(folder, 'index.ts'),
+          'export function activate() { return 2; }'
+        ),
+        fs.promises.writeFile(
+          path.join(folder, 'src', 'replacement.tmp'),
+          'export const value = 2;'
+        ),
+      ]);
+      await fs.promises.rename(
+        path.join(folder, 'src', 'replacement.tmp'),
+        path.join(folder, 'src', 'nested.ts')
+      );
+      await vi.waitFor(
+        () => {
+          expect(manager.listPublic().find((copy) => copy.id === 'desk')?.digest).not.toBe(
+            beforeBurst
+          );
+        },
+        { timeout: 10_000 }
+      );
+      await queue.sync();
+      expect(await pending()).toHaveLength(1);
+      expect(approvalArrivals()).toHaveLength(1);
+      expect(refresh).toHaveBeenCalledTimes(1);
+
+      const repairedDigest = manager.listPublic().find((copy) => copy.id === 'desk')?.digest;
+      expect(repairedDigest).toBeTruthy();
+      const link = path.join(folder, 'temporary-link');
+      await fs.promises.symlink(path.join(folder, 'server.ts'), link);
+      await vi.waitFor(
+        () => {
+          expect(manager.listPublic().find((copy) => copy.id === 'desk')?.digest).toBeUndefined();
+        },
+        { timeout: 10_000 }
+      );
+      await fs.promises.unlink(link);
+      await vi.waitFor(
+        () => {
+          expect(manager.listPublic().find((copy) => copy.id === 'desk')?.digest).toBe(
+            repairedDigest
+          );
+        },
+        { timeout: 10_000 }
+      );
+    } finally {
+      await manager.stopFileWatcher();
+    }
+  });
 });
 
 describe('an extension waiting to run asks in the inbox', () => {

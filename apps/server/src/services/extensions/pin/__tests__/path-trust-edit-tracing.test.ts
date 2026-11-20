@@ -16,7 +16,12 @@ import {
 } from '../../../core/turn-power/live-outsider-turns.js';
 import { isApprovedByPath } from '../../extension-load-policy.js';
 import { grantsDigestOf } from '../extension-path-trust.js';
-import { notePathTrustEdits, notePersonApproval } from '../path-trust-edits.js';
+import {
+  notePathTrustEdits,
+  notePersonApproval,
+  noteScaffoldTrusted,
+} from '../path-trust-edits.js';
+import { installFolderDigest } from '../../../marketplace/lib/install-digest.js';
 import { noteWriteDone, noteWriteStarting, resetPathTrustWriters } from '../path-trust-writers.js';
 
 const manifest = {
@@ -107,6 +112,8 @@ describe('path-trust edits traced file by file', () => {
         desk: { path: folder, authorHome: home, grants: grantsDigestOf(manifest) },
       },
     };
+    // The edit tests begin with a person's recorded approval of these exact files.
+    await approve('sha256:1');
   });
   afterEach(async () => {
     setMarkedFullActivity(undefined);
@@ -121,6 +128,176 @@ describe('path-trust edits traced file by file', () => {
     await scan('sha256:2');
     expect(runs('sha256:2')).toBe(true);
     expect(emit).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the scaffold baseline when files change before their first scan', async () => {
+    const original = await installFolderDigest(folder);
+    if (original.kind !== 'digest') throw new Error('Fixture must have a digest');
+    expect(
+      await noteScaffoldTrusted(dorkHome, 'desk', {
+        targetDir: folder,
+        digest: original.digest,
+      })
+    ).toBe(true);
+    await unseenWrite('server.ts', 'v2');
+
+    await scan('sha256:changed');
+
+    expect(runs('sha256:changed')).toBe(false);
+    const saved = JSON.parse(await fs.readFile(seenFile(), 'utf8'));
+    expect(saved.trusted.desk.digest).toBe(original.digest);
+    expect(saved.untied).toContain('desk');
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it('leaves a new copy waiting when an automatic file check finds it', async () => {
+    await fs.rm(seenFile());
+    await notePathTrustEdits([copyAt('sha256:new')], approvals, dorkHome, {
+      ...deps,
+      establishBaseline: false,
+    });
+    expect(runs('sha256:new')).toBe(false);
+    const saved = JSON.parse(await fs.readFile(seenFile(), 'utf8'));
+    expect(saved.trusted).not.toHaveProperty('desk');
+    expect(saved.untied).toContain('desk');
+    expect(saved.legacyBaselines ?? {}).not.toHaveProperty('desk');
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it('keeps an unseen copy held through normal scans until its files are approved', async () => {
+    await fs.rm(seenFile());
+    const staleApproval = structuredClone(approvals);
+    await notePathTrustEdits([copyAt('sha256:new')], approvals, dorkHome, {
+      ...deps,
+      establishBaseline: true,
+    });
+    expect(runs('sha256:new')).toBe(false);
+    await notePathTrustEdits([copyAt('sha256:new')], staleApproval, dorkHome, deps);
+    expect(runs('sha256:new')).toBe(false);
+    await notePathTrustEdits([copyAt('sha256:new')], approvals, dorkHome, {
+      ...deps,
+      establishBaseline: true,
+    });
+    expect(runs('sha256:new')).toBe(false);
+    const saved = JSON.parse(await fs.readFile(seenFile(), 'utf8'));
+    expect(saved.trusted).not.toHaveProperty('desk');
+    expect(saved.legacyBaselines ?? {}).not.toHaveProperty('desk');
+
+    await approve('sha256:new');
+    await scan('sha256:new');
+    expect(runs('sha256:new')).toBe(true);
+  });
+
+  it('does not invent trusted files from a legacy digest during an automatic check', async () => {
+    await fs.mkdir(path.dirname(seenFile()), { recursive: true });
+    await fs.writeFile(seenFile(), JSON.stringify({ digests: { desk: 'sha256:old' } }));
+
+    await notePathTrustEdits([copyAt('sha256:old')], approvals, dorkHome, {
+      ...deps,
+      establishBaseline: false,
+    });
+
+    expect(runs('sha256:old')).toBe(false);
+    const saved = JSON.parse(await fs.readFile(seenFile(), 'utf8'));
+    expect(saved.trusted).not.toHaveProperty('desk');
+    expect(saved.untied).toContain('desk');
+    expect(emit).not.toHaveBeenCalled();
+  });
+
+  it('upgrades matching legacy files on the next normal scan after an observer hold', async () => {
+    await fs.mkdir(path.dirname(seenFile()), { recursive: true });
+    await fs.writeFile(seenFile(), JSON.stringify({ digests: { desk: 'sha256:old' } }));
+    await notePathTrustEdits([copyAt('sha256:old')], approvals, dorkHome, {
+      ...deps,
+      establishBaseline: false,
+    });
+    expect(runs('sha256:old')).toBe(false);
+    // Snapshot placement's incidental recheck cannot turn an observer into a baseline scan.
+    await scan('sha256:old');
+    // A one-copy check elsewhere is not a discovery of the complete installed set.
+    await notePathTrustEdits([], approvals, dorkHome, deps);
+    expect(runs('sha256:old')).toBe(false);
+
+    await notePathTrustEdits([copyAt('sha256:old')], approvals, dorkHome, {
+      ...deps,
+      establishBaseline: true,
+    });
+
+    expect(runs('sha256:old')).toBe(true);
+    const saved = JSON.parse(await fs.readFile(seenFile(), 'utf8'));
+    expect(saved.trusted.desk.digest).toBe('sha256:old');
+    expect(saved.untied).not.toContain('desk');
+  });
+
+  it('keeps changed legacy files held on the next normal scan', async () => {
+    await fs.mkdir(path.dirname(seenFile()), { recursive: true });
+    await fs.writeFile(seenFile(), JSON.stringify({ digests: { desk: 'sha256:old' } }));
+    await notePathTrustEdits([copyAt('sha256:old')], approvals, dorkHome, {
+      ...deps,
+      establishBaseline: false,
+    });
+    await unseenWrite('server.ts', 'changed');
+
+    await notePathTrustEdits([copyAt('sha256:new')], approvals, dorkHome, {
+      ...deps,
+      establishBaseline: true,
+    });
+
+    expect(runs('sha256:new')).toBe(false);
+    const saved = JSON.parse(await fs.readFile(seenFile(), 'utf8'));
+    expect(saved.trusted).not.toHaveProperty('desk');
+    expect(saved.untied).toContain('desk');
+    expect(saved.legacyBaselines).not.toHaveProperty('desk');
+  });
+
+  it('never records a legacy recovery candidate when files already differ', async () => {
+    await fs.writeFile(seenFile(), JSON.stringify({ digests: { desk: 'sha256:old' } }));
+    await notePathTrustEdits([copyAt('sha256:new')], approvals, dorkHome, {
+      ...deps,
+      establishBaseline: false,
+    });
+    await notePathTrustEdits([copyAt('sha256:new')], approvals, dorkHome, {
+      ...deps,
+      establishBaseline: true,
+    });
+    const saved = JSON.parse(await fs.readFile(seenFile(), 'utf8'));
+    expect(saved.trusted).not.toHaveProperty('desk');
+    expect(saved.legacyBaselines ?? {}).not.toHaveProperty('desk');
+    expect(runs('sha256:new')).toBe(false);
+  });
+
+  it('discards legacy recovery when the protected approval changes', async () => {
+    await fs.writeFile(seenFile(), JSON.stringify({ digests: { desk: 'sha256:old' } }));
+    await notePathTrustEdits([copyAt('sha256:old')], approvals, dorkHome, {
+      ...deps,
+      establishBaseline: false,
+    });
+    approvals.approvedSources.desk!.authorHome = path.join(root, 'another-author');
+    await notePathTrustEdits([copyAt('sha256:old')], approvals, dorkHome, {
+      ...deps,
+      establishBaseline: true,
+    });
+    const saved = JSON.parse(await fs.readFile(seenFile(), 'utf8'));
+    expect(saved.trusted).not.toHaveProperty('desk');
+    expect(saved.legacyBaselines).not.toHaveProperty('desk');
+    expect(runs('sha256:old')).toBe(false);
+  });
+
+  it('discards legacy recovery if the ordinary verification cannot read its files', async () => {
+    await fs.writeFile(seenFile(), JSON.stringify({ digests: { desk: 'sha256:old' } }));
+    await notePathTrustEdits([copyAt('sha256:old')], approvals, dorkHome, {
+      ...deps,
+      establishBaseline: false,
+    });
+    await notePathTrustEdits([copyAt('sha256:old')], approvals, dorkHome, {
+      ...deps,
+      establishBaseline: true,
+      filesOf: async () => null,
+    });
+    const saved = JSON.parse(await fs.readFile(seenFile(), 'utf8'));
+    expect(saved.trusted).not.toHaveProperty('desk');
+    expect(saved.legacyBaselines).not.toHaveProperty('desk');
+    expect(runs('sha256:old')).toBe(false);
   });
 
   it('the author’s edit loop keeps running edit after edit', async () => {
