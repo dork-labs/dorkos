@@ -4,7 +4,8 @@
  * Open to-dos first, soonest due first, with overdue ones marked. A promise its agent just marked
  * kept waits under them for the person's Yes or Not yet, for a day (DOR-3034). Kept,
  * missed and dropped ones sit folded under them. A person marks one kept or
- * drops it (with an Undo), and, on one agent's list, adds one for that agent.
+ * drops it (with an Undo), and, on one agent's list, adds one for that agent. A change that
+ * fails is reported once, by the app's toast with the server's reason (DOR-3832).
  * A read-only list (someone else's agent) shows the same rows as facts, with
  * no controls.
  *
@@ -145,11 +146,6 @@ export function TodoPromiseList({
             />
           ))}
         </ul>
-      )}
-      {(update.isError || confirm.isError) && (
-        <p role="alert" className="text-destructive text-xs">
-          Couldn’t change that to-do. Try again.
-        </p>
       )}
       {closed.length > 0 && (
         <Collapsible>
