@@ -5,7 +5,7 @@ import type {
   LocalBrowserPersonState,
   LocalBrowserState,
 } from '@dorkos/shared/local-browser';
-import { useLocalBrowser, LOCAL_BROWSER_STATE_KEY } from '@/layers/entities/local-browser';
+import { useLocalBrowser, localBrowserStateKey } from '@/layers/entities/local-browser';
 import { cn } from '@/layers/shared/lib';
 import { useAppStore, useTransport } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui';
@@ -47,7 +47,8 @@ export function LocalBrowserPanel({
 }: LocalBrowserPanelProps) {
   const transport = useTransport();
   const queryClient = useQueryClient();
-  const { state: query, capabilities: capabilityQuery } = useLocalBrowser();
+  const { state: query, capabilities: capabilityQuery } = useLocalBrowser(sessionId);
+  const stateKey = localBrowserStateKey(sessionId);
   const state = query.data;
   const capabilities = capabilityQuery.data;
   const readCode = ((query.error ?? capabilityQuery.error) as { code?: string } | null)?.code;
@@ -125,16 +126,16 @@ export function LocalBrowserPanel({
     try {
       if (setup) {
         // A poll from a previous setup cannot become the new request's progress.
-        await queryClient.cancelQueries({ queryKey: LOCAL_BROWSER_STATE_KEY });
+        await queryClient.cancelQueries({ queryKey: stateKey });
         if (ticket !== operation.current) return false;
       }
       const next = await run();
       if (ticket !== operation.current) return false;
       // An older poll must not overwrite a just-observed connect, tab choice, or pause.
-      await queryClient.cancelQueries({ queryKey: LOCAL_BROWSER_STATE_KEY });
+      await queryClient.cancelQueries({ queryKey: stateKey });
       if (ticket !== operation.current) return false;
       // A plain browser answer says nothing about a handoff, so what's known about it stays.
-      queryClient.setQueryData<LocalBrowserPersonState>(LOCAL_BROWSER_STATE_KEY, (known) => ({
+      queryClient.setQueryData<LocalBrowserPersonState>(stateKey, (known) => ({
         handoff: known?.handoff ?? null,
         signIn: known?.signIn ?? null,
         takenOver: known?.takenOver ?? false,
@@ -146,9 +147,9 @@ export function LocalBrowserPanel({
       setError(browserErrorMessage(cause));
       // A sign-in started since the last read: show its handoff now, not on the next poll.
       if ((cause as { code?: string } | null)?.code === 'signing_in')
-        void queryClient.invalidateQueries({ queryKey: LOCAL_BROWSER_STATE_KEY }).then(() => {
+        void queryClient.invalidateQueries({ queryKey: stateKey }).then(() => {
           // Waiting for you already says to finish, so the refusal isn't said twice.
-          const read = queryClient.getQueryData<LocalBrowserPersonState>(LOCAL_BROWSER_STATE_KEY);
+          const read = queryClient.getQueryData<LocalBrowserPersonState>(stateKey);
           const waiting = read?.handoff?.outcome === null && read.handoff.sessionId === sessionId;
           if (ticket === operation.current && waiting && read.status !== 'connected')
             setError(null);
@@ -189,9 +190,9 @@ export function LocalBrowserPanel({
     const setup = pendingSetup.current;
     setCancelling(true);
     try {
-      const stopped = await action(() => transport.disconnectLocalBrowser());
+      const stopped = await action(() => transport.disconnectLocalBrowser(sessionId));
       if (stopped) {
-        await queryClient.invalidateQueries({ queryKey: LOCAL_BROWSER_STATE_KEY });
+        await queryClient.invalidateQueries({ queryKey: stateKey });
       }
       // Disconnect can answer before the original setup has finished cancelling.
       await setup;
@@ -215,11 +216,13 @@ export function LocalBrowserPanel({
     rememberFocus(from);
     const asked = state?.handoff?.outcome === null ? state.handoff.id : null;
     let answer: LocalBrowserPersonState | undefined;
-    void action(async () => (answer = await transport.disconnectLocalBrowser())).then((closed) => {
-      const ended = answer?.handoff;
-      if (closed && ended?.id === asked && ended?.outcome === 'window-closed')
-        void transport.interruptSession(ended.sessionId).catch(() => {});
-    });
+    void action(async () => (answer = await transport.disconnectLocalBrowser(sessionId))).then(
+      (closed) => {
+        const ended = answer?.handoff;
+        if (closed && ended?.id === asked && ended?.outcome === 'window-closed')
+          void transport.interruptSession(ended.sessionId).catch(() => {});
+      }
+    );
   };
   // Open browser is the one main action while nothing is open, so focus starts there.
   useFirstFocus(
@@ -269,8 +272,8 @@ export function LocalBrowserPanel({
       busy={busy}
       onDone={() =>
         void action(async () => {
-          await transport.finishLocalBrowserSignIn();
-          return transport.getLocalBrowserState();
+          await transport.finishLocalBrowserSignIn(undefined, sessionId);
+          return transport.getLocalBrowserState(sessionId);
         })
       }
     />
@@ -324,6 +327,7 @@ export function LocalBrowserPanel({
               (DOR-4429). DorkOS draws both outside the page, so the page can't hide or fake them. */}
           </div>
           <LocalBrowserView
+            sessionId={sessionId}
             streamChatId={capabilities?.watchStream ? sessionId : null}
             tab={selected ?? null}
             connectionId={state.connectionId ?? null}
@@ -354,7 +358,7 @@ export function LocalBrowserPanel({
             agentDriving={pill?.kind === 'driving'}
             onTakeOver={
               pill && chromeTakesOver(pill)
-                ? () => void action(() => transport.takeOverLocalBrowser())
+                ? () => void action(() => transport.takeOverLocalBrowser(sessionId))
                 : undefined
             }
             status={

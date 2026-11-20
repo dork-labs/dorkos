@@ -27,6 +27,8 @@ const EMPTY_PAGE_LINE = 'Type an address or a search above.';
 
 /** Props for {@link LocalBrowserView}. */
 export interface LocalBrowserViewProps {
+  /** The exact person-selected page; null is Your browser. */
+  sessionId?: string | null;
   /** The requested chat when the owner-only stream is enabled; absent preserves the window bridge. */
   streamChatId?: string | null;
   /** The tab the person is looking at, or `null` before one is chosen (no chrome then). */
@@ -80,6 +82,7 @@ export interface LocalBrowserViewProps {
  * the page never blinks out; with no still, the button keeps a plain hint.
  */
 export function LocalBrowserView({
+  sessionId = null,
   streamChatId,
   tab,
   connectionId,
@@ -117,7 +120,8 @@ export function LocalBrowserView({
     if (!refused || !tab) return;
     if (refused.action.kind === 'own-window') onOpenOwnWindow?.(tab.url);
     // The plain window opens on the site's origin, never the page's own path.
-    else void action(() => transport.signInLocalBrowser({ url: new URL(tab.url).origin }));
+    else
+      void action(() => transport.signInLocalBrowser({ url: new URL(tab.url).origin }, sessionId));
   };
   const [focusAddress, setFocusAddress] = useState(0);
   // What the person last typed and went to: only their own words are ever searched for.
@@ -161,8 +165,8 @@ export function LocalBrowserView({
     await action(async () => {
       try {
         return await (fallback
-          ? transport.navigateLocalBrowser(url, { httpFallback: true })
-          : transport.navigateLocalBrowser(url));
+          ? transport.navigateLocalBrowser(url, { httpFallback: true, sessionId })
+          : transport.navigateLocalBrowser(url, { sessionId }));
       } catch (cause) {
         failed = true;
         throw cause;
@@ -182,11 +186,11 @@ export function LocalBrowserView({
     const tabId = tab?.id;
     void action(async () => {
       try {
-        return await transport.stepLocalBrowserHistory(direction);
+        return await transport.stepLocalBrowserHistory(direction, sessionId);
       } catch (cause) {
         if ((cause as { code?: string } | null)?.code !== 'history_refused' || !tabId) throw cause;
         setStepNotice({ tabId, text: browserErrorMessage(cause) });
-        return transport.getLocalBrowserState();
+        return transport.getLocalBrowserState(sessionId);
       }
     });
   };

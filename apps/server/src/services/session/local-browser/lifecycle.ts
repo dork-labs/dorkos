@@ -37,6 +37,10 @@ export class BrowserActionFlight {
   get active(): boolean {
     return !!this.original;
   }
+  /** Custody waits for the physical effect, even after its response timed out. */
+  async settled(): Promise<void> {
+    await this.original?.catch(() => undefined);
+  }
 
   async run(
     operation: (admit: () => void, dispatch: () => void) => Promise<void>,
@@ -114,7 +118,7 @@ import type { Browser, BrowserContext } from 'playwright-core';
  */
 export async function closeConnectionHolders(
   browser: Browser | undefined,
-  context: BrowserContext | undefined,
+  context: Pick<BrowserContext, 'close'> | undefined,
   embeddedClose: (() => Promise<void>) | undefined
 ): Promise<void> {
   await Promise.all([

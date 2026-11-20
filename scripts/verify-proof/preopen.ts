@@ -173,12 +173,12 @@ export function planPreopen(cwd: string, root: string): PreopenStep[] {
  * @param exec - Runs one step and returns its exit code.
  * @returns 0 when every step passed, otherwise the failing step's exit code.
  */
-export function runPreopen(
+export async function runPreopen(
   steps: readonly PreopenStep[],
-  exec: (step: PreopenStep) => number
-): number {
+  exec: (step: PreopenStep) => number | Promise<number>
+): Promise<number> {
   for (const step of steps) {
-    const status = exec(step);
+    const status = await exec(step);
     if (status !== 0) return status;
   }
   return 0;

@@ -482,6 +482,11 @@ export interface ToolApprovalContext {
  * @param outsideChecks - Whether the turn is marked, and whether the chat read outside words by the
  *   DOR-4029 test (`turnOutsideChecks`), for the status reads. Absent, both count as yes, so a
  *   caller that forgets them gets no status read unasked.
+ * @param onCard - Told the tool-use id of a call that is put to a person, just before its card
+ *   (or its refusal for want of anyone to ask). A launch gives back the call's heavy-job slot here
+ *   (DOR-4209): the person's answer is the gate now, so the call never waits in line again. It must
+ *   never throw (a throw would reject this callback instead of raising the card); the launch's
+ *   `releaseCall` guards itself.
  */
 export function createCanUseTool(
   session: InteractiveSession & CeilingedMode<PermissionModeId>,
@@ -493,7 +498,8 @@ export function createCanUseTool(
   readFolders: ReadFolders | undefined = session.cwd
     ? { cwd: session.cwd, roots: [session.cwd] }
     : undefined,
-  outsideChecks = FAIL_CLOSED_CHECKS
+  outsideChecks = FAIL_CLOSED_CHECKS,
+  onCard: (toolUseId: string) => void = () => {}
 ): (
   toolName: string,
   input: Record<string, unknown>,
@@ -613,6 +619,7 @@ export function createCanUseTool(
       // A held turn offers no "Always allow" (DOR-3204): it must not write a
       // standing rule into the folder.
       const offered = carriesOutsiderMark(session) ? { ...context, suggestions: [] } : context;
+      onCard(context.toolUseID);
       // A yes on a server for every agent's tool stays with this agent (DOR-3213 T9).
       return handleToolApproval(
         session,

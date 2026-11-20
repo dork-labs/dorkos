@@ -337,17 +337,16 @@ export async function withDispatchMutex<T>(
 /**
  * Builds the runtime-neutral port `triggerTurn` needs from a resolved runtime.
  *
- * The builder itself (`turnDeps`) stays in `message-dispatcher.ts`, because that
- * file is the one place a runtime's turn-starting methods may be called from
- * (`dispatcher-single-ingress.test.ts`). It registers itself here when that
- * module loads, which is before any message can be launched.
+ * The builder itself lives in `turn-deps.ts`, inside the dispatcher boundary
+ * (`dispatcher-single-ingress.test.ts`). `message-dispatcher.ts` registers it
+ * here when that module loads, before any message can be launched.
  */
 let turnDepsBuilder: ((runtime: AgentRuntime) => TriggerTurnDeps) | undefined;
 
 /**
  * Register the builder {@link buildTurnDeps} calls.
  *
- * @param builder - `turnDeps` from `message-dispatcher.ts`
+ * @param builder - The dispatcher-owned `turnDeps` port
  */
 export function setTurnDepsBuilder(builder: (runtime: AgentRuntime) => TriggerTurnDeps): void {
   turnDepsBuilder = builder;

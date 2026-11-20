@@ -99,6 +99,15 @@ beforeEach(async () => {
   const auth = initAuth(db, directory);
   let navigation = new AbortController();
   let page: ViewerPage = {
+    binding: {
+      sessionId: 'fixture-chat',
+      profileId: 'fixture-profile',
+      connectionId: 'fixture-connection',
+      profileConnectionGeneration: 'fixture-generation',
+      leaseId: 'fixture-tab',
+      tabId: 'fixture-tab',
+    },
+    close: async () => undefined,
     identity: {
       chatId: 'fixture-chat',
       profileId: 'fixture-profile',
@@ -127,13 +136,18 @@ beforeEach(async () => {
   app.route(
     '/api/local-browser',
     createLocalBrowserRoutes({
-      handover: {
-        navigate: async () => {
-          navigation.abort();
-          navigation = new AbortController();
-          page = { ...page, signal: navigation.signal };
-          return { ok: true };
-        },
+      personSession: (id: string | null) => {
+        expect(id).toBe('fixture-chat');
+        return {
+          handover: {
+            navigate: async () => {
+              navigation.abort();
+              navigation = new AbortController();
+              page = { ...page, signal: navigation.signal };
+              return { ok: true };
+            },
+          },
+        };
       },
     } as unknown as LocalBrowserService)
   );
@@ -205,7 +219,7 @@ describe('viewer sessions on the real HTTP chain', () => {
       .then((response) => response);
     await ready;
     const navigated = await asOwner(
-      request(target.server).post('/api/local-browser/navigate')
+      request(target.server).post('/api/local-browser/navigate?sessionId=fixture-chat')
     ).send({ url: 'https://example.test/' });
     expect(navigated.status).toBe(200);
     expect((await pending).status).toBe(409);

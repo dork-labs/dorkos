@@ -3,6 +3,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { HeartbeatMeasures, HeartbeatStatus } from '@dorkos/shared/heartbeat-schemas';
+import {
+  PERMISSION_AREAS,
+  type AgentPermissionsResponse,
+  type PermissionState,
+} from '@dorkos/shared/permissions';
 import type { Transport } from '@dorkos/shared/transport';
 import { Button } from '@/layers/shared/ui';
 import { TransportProvider } from '@/layers/shared/model';
@@ -56,6 +61,7 @@ const STATES: { id: string; label: string; page?: ProfilePageId }[] = [
   { id: 'agent-warden', label: 'Pushed page: Sessions', page: 'sessions' },
   { id: 'agent-warden', label: 'Pushed page: Instructions', page: 'instructions' },
   { id: 'agent-warden', label: 'Pushed page: Memory', page: 'memory' },
+  { id: 'agent-warden', label: 'Pushed page: What Warden knows', page: 'told' },
   { id: 'agent-warden', label: 'Pushed page: Heartbeat', page: 'heartbeat' },
 ];
 
@@ -214,8 +220,48 @@ function fixtureMeasures(since: string): HeartbeatMeasures {
   };
 }
 
+/** Warden's levels where they are not Ask: a mix, so every chip draws. */
+const FIXTURE_LEVELS: Partial<Record<string, PermissionState>> = {
+  rooms: 'allowed',
+  messages: 'allowed',
+  todos: 'allowed',
+  own_chat: 'allowed',
+  safety: 'blocked',
+  reach: 'blocked',
+};
+
+/** What "What Warden knows" reads: one level per area, and a Files & commands stop. */
+function fixturePermissions(): AgentPermissionsResponse {
+  return {
+    agentId: 'agent-warden',
+    agentName: 'Warden',
+    overrides: {},
+    filesAndCommands: {
+      stop: 'act',
+      source: 'default',
+      inherited: { stop: 'act', source: 'default' },
+    },
+    areas: PERMISSION_AREAS.filter((area) => area.kind === 'state').map((area) => {
+      const resolved = {
+        state: FIXTURE_LEVELS[area.id] ?? 'ask',
+        source: 'preset',
+        layer: 'default',
+      } as const;
+      return {
+        ...area,
+        id: area.id as AgentPermissionsResponse['areas'][number]['id'],
+        kind: 'state' as const,
+        actions: [],
+        resolved,
+        inherited: resolved,
+        changedOutsideAt: null,
+      };
+    }),
+  };
+}
+
 /**
- * The playground's transport, with one answer filled in.
+ * The playground's transport, with a few answers filled in.
  *
  * Everything else stays `null` (`createPlaygroundTransport`), which is what
  * gives the Sessions, Tasks and Skills pages their honest empty states.
@@ -227,6 +273,7 @@ function useFixtureTransport(): Transport {
       get: (target, prop) => {
         if (prop === 'getAgentByPath') return async () => FIXTURE_MANIFEST;
         if (prop === 'getAgentHeartbeat') return async () => fixtureHeartbeat();
+        if (prop === 'getAgentPermissions') return async () => fixturePermissions();
         return Reflect.get(target, prop);
       },
     });
@@ -257,9 +304,9 @@ export function ProfileShowcases() {
   return (
     <PlaygroundSection
       title="Profile"
-      description="One panel for any identity, in the six shapes it takes: your own row, another person, somebody bridged in over Telegram, an agent you manage, an agent somebody else manages, and DorkBot. What changes between them is which facts are true — the status line, who is above the button, whether the button exists at all, and which rows have arrows. Two things this fixture invents: a second local person, so the 'another person' rows have somebody to be about, and one agent manifest, so the pushed pages have a file and a description to draw. Little else is answered, which is why the Sessions and Tasks pages show their empty states. The Instructions and Memory pages link to What this agent is told, which the server writes with the same builders a real turn uses. The Heartbeat page is answered too: a timed agent, three past checks that ended three ways, one message held for the morning, a report with three items so far, and a week of measures."
+      description="One panel for any identity, in the six shapes it takes: your own row, another person, somebody bridged in over Telegram, an agent you manage, an agent somebody else manages, and DorkBot. What changes between them is which facts are true — the status line, who is above the button, whether the button exists at all, and which rows have arrows. Two things this fixture invents: a second local person, so the 'another person' rows have somebody to be about, and one agent manifest, so the pushed pages have a file and a description to draw. Little else is answered, which is why the Sessions and Tasks pages show their empty states. The Instructions and Memory pages link to What Warden knows: what it can do, each area at its live level (answered here with a mix), then everything it is told, which the server writes with the same builders a real turn uses. The Heartbeat page is answered too: a timed agent, three past checks that ended three ways, one message held for the morning, a report with three items so far, and a week of measures."
     >
-      <ShowcaseLabel>The six relationships, and five pushed pages</ShowcaseLabel>
+      <ShowcaseLabel>The six relationships, and six pushed pages</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="flex flex-wrap gap-2">
           {STATES.map((state) => (

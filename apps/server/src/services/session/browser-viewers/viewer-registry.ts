@@ -12,6 +12,8 @@ import {
 } from './viewer-contract.js';
 
 interface Producer {
+  key: string;
+  closing: boolean;
   page: ViewerPage;
   stop: Promise<() => Promise<void>>;
   sequence: number;
@@ -23,6 +25,8 @@ interface Viewer {
   id: string;
   nonce: string;
   principal: ViewerPrincipal;
+  page: ViewerPage;
+  cleanup?: Promise<void>;
   producer: Producer;
   expiresAt: number;
   idle: ReturnType<typeof setTimeout>;
@@ -69,8 +73,9 @@ function sameSecret(a: string, b: string): boolean {
 /** Volatile owner-bound subscriptions. Viewer lifetime never owns the browser lifetime. */
 export class BrowserViewerRegistry {
   private readonly viewers = new Map<string, Viewer>();
-  private readonly producers = new Map<ViewerPage, Producer>();
+  private readonly producers = new Map<string, Producer>();
   private closed = false;
+  private readonly draining = new Set<Promise<void>>();
   private readonly budget = new ByteBudget(
     VIEWER_LIMITS.installBytesPerSecond,
     VIEWER_LIMITS.installBytesPerSecond
@@ -88,18 +93,33 @@ export class BrowserViewerRegistry {
     binding: ViewerPageIdentity;
   }> {
     if (this.closed) throw new BrowserViewerError('viewer_unavailable');
-    const page = await this.resolve(chatId);
-    if (page.identity.chatId !== chatId) throw new BrowserViewerError('viewer_denied');
-    await page.assertCurrent();
-    if (this.closed) throw new BrowserViewerError('viewer_unavailable');
-    let producer = this.producers.get(page);
+    const id = opaque();
+    const page = await this.resolve(chatId, principal, id);
+    try {
+      if (page.identity.chatId !== chatId) throw new BrowserViewerError('viewer_denied');
+      await page.assertCurrent();
+      if (this.closed) throw new BrowserViewerError('viewer_unavailable');
+    } catch (error) {
+      await page.close();
+      throw error;
+    }
+    const key = bindingKey(page);
+    let producer = this.producers.get(key);
+    if (producer?.closing) {
+      await page.close();
+      throw new BrowserViewerError('viewer_busy');
+    }
     if (
       this.viewers.size >= VIEWER_LIMITS.viewers ||
       (producer?.viewers.size ?? 0) >= VIEWER_LIMITS.viewersPerPage
-    )
+    ) {
+      await page.close();
       throw new BrowserViewerError('viewer_limit');
+    }
     if (!producer) {
       const owned: Producer = {
+        key,
+        closing: false,
         page,
         sequence: 0,
         viewers: new Set(),
@@ -109,15 +129,15 @@ export class BrowserViewerRegistry {
         },
       };
       producer = owned;
-      this.producers.set(page, owned);
+      this.producers.set(key, owned);
       page.signal.addEventListener('abort', owned.revoke, { once: true });
       // Registration precedes the await, so simultaneous subscribers share one producer.
     }
-    const id = opaque();
     const viewer: Viewer = {
       id,
       nonce: opaque(),
       principal: { ...principal },
+      page,
       producer,
       expiresAt: Date.now() + VIEWER_LIMITS.lifetimeMs,
       idle: setTimeout(() => void this.remove(viewer), VIEWER_LIMITS.idleMs),
@@ -184,9 +204,9 @@ export class BrowserViewerRegistry {
   assertLive(principal: ViewerPrincipal, id: string, nonce: string): void {
     const viewer = this.find(principal, id, nonce);
     try {
-      if (viewer.producer.page.signal.aborted || Date.now() >= viewer.expiresAt)
+      if (viewer.page.signal.aborted || Date.now() >= viewer.expiresAt)
         throw new BrowserViewerError('viewer_denied');
-      viewer.producer.page.assertLive();
+      viewer.page.assertLive();
     } catch {
       void this.remove(viewer);
       throw new BrowserViewerError('viewer_denied');
@@ -202,6 +222,7 @@ export class BrowserViewerRegistry {
   async close(): Promise<void> {
     this.closed = true;
     await Promise.all([...this.viewers.values()].map((viewer) => this.remove(viewer)));
+    await Promise.all([...this.draining]);
   }
 
   private find(principal: ViewerPrincipal, id: string, nonce: string): Viewer {
@@ -222,9 +243,9 @@ export class BrowserViewerRegistry {
     try {
       if (!this.viewers.has(viewer.id) || Date.now() >= viewer.expiresAt)
         throw new BrowserViewerError('viewer_unavailable');
-      if (viewer.producer.page.signal.aborted) throw new BrowserViewerError('viewer_unavailable');
-      await viewer.producer.page.assertCurrent();
-      if (!this.viewers.has(viewer.id) || viewer.producer.page.signal.aborted)
+      if (viewer.page.signal.aborted) throw new BrowserViewerError('viewer_unavailable');
+      await viewer.page.assertCurrent();
+      if (!this.viewers.has(viewer.id) || viewer.page.signal.aborted)
         throw new BrowserViewerError('viewer_unavailable');
     } catch {
       await this.remove(viewer);
@@ -243,7 +264,8 @@ export class BrowserViewerRegistry {
 
   private publish(producer: Producer, frame: ViewerFrame): void {
     if (
-      this.producers.get(producer.page) !== producer ||
+      this.producers.get(producer.key) !== producer ||
+      producer.closing ||
       !Number.isSafeInteger(frame.sequence) ||
       frame.sequence <= producer.sequence ||
       !Number.isSafeInteger(frame.generation) ||
@@ -282,8 +304,9 @@ export class BrowserViewerRegistry {
     });
   }
 
-  private async remove(viewer: Viewer): Promise<void> {
-    if (!this.viewers.delete(viewer.id)) return;
+  private remove(viewer: Viewer): Promise<void> {
+    if (viewer.cleanup) return viewer.cleanup;
+    if (!this.viewers.delete(viewer.id)) return Promise.resolve();
     clearTimeout(viewer.idle);
     viewer.unregisterSession?.();
     viewer.unregisterSession = undefined;
@@ -292,10 +315,44 @@ export class BrowserViewerRegistry {
     viewer.wake?.();
     const producer = viewer.producer;
     producer.viewers.delete(viewer);
-    if (!producer.viewers.size) {
-      this.producers.delete(producer.page);
-      producer.page.signal.removeEventListener('abort', producer.revoke);
-      await producer.stop.then((stop) => stop()).catch(() => undefined);
-    }
+    const last = !producer.viewers.size;
+    if (last) producer.closing = true;
+    viewer.cleanup = (async () => {
+      try {
+        // A producer's first handle outlives its subscriber; its controller does not.
+        // The producer keeps its first read-only handle until the last watcher leaves.
+        if (viewer.page !== producer.page) await viewer.page.close();
+      } catch {
+        // A failed reset leaves custody held in the broker; closing never resumes agents.
+      } finally {
+        if (last) {
+          producer.page.signal.removeEventListener('abort', producer.revoke);
+          try {
+            await producer.stop.then((stop) => stop());
+          } catch {
+            /* The broker keeps unresolved physical teardown reserved. */
+          } finally {
+            await producer.page.close().catch(() => undefined);
+            if (this.producers.get(producer.key) === producer) this.producers.delete(producer.key);
+          }
+        }
+      }
+    })();
+    this.draining.add(viewer.cleanup);
+    void viewer.cleanup.finally(() => this.draining.delete(viewer.cleanup!));
+    return viewer.cleanup;
   }
+}
+
+/** Full server binding; owner/session/client authority remains on each viewer's handle. */
+function bindingKey(page: ViewerPage): string {
+  const b = page.binding;
+  return JSON.stringify([
+    b.sessionId,
+    b.profileId,
+    b.connectionId,
+    b.profileConnectionGeneration,
+    b.leaseId,
+    b.tabId,
+  ]);
 }

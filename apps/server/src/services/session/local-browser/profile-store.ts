@@ -50,7 +50,8 @@ function sameSignature(a: string, b: string): boolean {
  */
 export function createLocalBrowserProfileStore(
   db: Db,
-  bindingKey: () => Buffer
+  bindingKey: () => Buffer,
+  revoked: (profileId: string, agentId?: string) => void = () => undefined
 ): LocalBrowserProfileStore {
   const agentIds = (profileId: string) =>
     db
@@ -120,6 +121,7 @@ export function createLocalBrowserProfileStore(
     },
     unbind(profileId, agentId) {
       db.delete(agentBrowserProfileAgents).where(matching(profileId, agentId)).run();
+      revoked(profileId, agentId);
     },
     remove(profileId) {
       db.transaction((tx) => {
@@ -128,6 +130,7 @@ export function createLocalBrowserProfileStore(
           .run();
         tx.delete(agentBrowserProfiles).where(eq(agentBrowserProfiles.id, profileId)).run();
       });
+      revoked(profileId);
     },
   };
 }

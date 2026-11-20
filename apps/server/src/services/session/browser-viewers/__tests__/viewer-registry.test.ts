@@ -18,6 +18,15 @@ function fixture() {
   let publish: ((frame: ViewerFrame) => void) | undefined;
   const stop = vi.fn(async () => undefined);
   const page: ViewerPage = {
+    binding: {
+      sessionId: 'chat-a',
+      profileId: 'profile-a',
+      connectionId: 'connection-a',
+      profileConnectionGeneration: 'connection-generation',
+      leaseId: 'tab-a',
+      tabId: 'tab-a',
+    },
+    close: vi.fn(async () => undefined),
     signal: lifetime.signal,
     assertLive: () => {
       if (!current) throw Error('changed');

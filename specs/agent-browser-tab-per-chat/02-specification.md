@@ -33,9 +33,9 @@ Keep our Agent browser and borrow patterns from others (research report, path A)
 3. **Actions queue per page, not globally.** Two chats act at once on their own tabs. Each lease keeps today's stale-page and Cloud-origin refusal. A Cloud refusal pauses only that lease.
 4. **Opening.** If the window is open, Open browser in a chat adds a tab for that chat. If not, it launches the window with that chat's tab. Closing a chat's tab ends only its lease. Closing the window ends all of them.
 5. **Agents see only their own tab.** `agentState` and every tool read the lease's page only.
-6. **Popups join the opener's chat.** A tab opened by a chat's page belongs to that chat.
+6. **Popups follow the opener’s custody.** An agent popup may join only its opener’s lease, after address and sign-in checks. A person-created page, a page without an opener, or a child created during person custody stays unowned. Hand back does not grant those children to an agent.
 7. **Unowned tabs belong to the person.** A tab the person opened is no chat's. The person can give a tab to a chat. Moving a tab to another chat needs the person's OK.
-8. **Adopt after a restart.** A chat that restarts can adopt its own orphaned tab, matched on the server-stamped chat id.
+8. **Reconnect to a live lease.** A runtime reconnect with the same server-stamped chat id may reuse its still-live lease. A server restart invalidates every in-memory grant. Never rebuild ownership from a URL, title, tab order or CDP target. The person opens a fresh page after restart.
 9. **Panel.** Until streaming ships, the panel is **Your browser** only; agent tabs live in their own real Chrome window (DOR-4741). For an agent page, the panel shows **This page is in its own window** and **Show window**. DOR-2667 will stream the current chat's Chrome page into the panel. Both views will use the same agent profile and sign-ins, with no cookie sync. DOR-4289 is canceled.
 
 ### Answering BrowserOS's two objections
@@ -43,12 +43,12 @@ Keep our Agent browser and borrow patterns from others (research report, path A)
 BrowserOS removed enforced tab ownership on purpose (`page_ownership_notice.rs`). The design has to answer both reasons:
 
 - **"The person's tabs became unreachable."** In DorkOS the person drives through the UI, not through the agent tools. Unowned tabs stay the person's, and the person can give a tab to a chat (design point 7).
-- **"A lost session handle orphaned the agent's pages."** Our key is the chat id, which DorkOS stamps on the server, not a protocol session handle. A restarted chat can still adopt its orphaned tab (design point 8).
+- **"A lost session handle orphaned the agent's pages."** Our key is the chat id, which DorkOS stamps on the server, not a protocol session handle. A reconnected runtime can reuse its live lease. A server restart requires a fresh page; it never guesses which existing page belongs to a chat (design point 8).
 
 ## Security Musts (DOR-4273, Nov 13)
 
 1. **Each page belongs to one chat, enforced by the server.** The owner comes from DorkOS's chat id, never from a tool argument. No chat can list, read, screenshot, record or drive another chat's page.
-2. **A handed-off page belongs to the person.** While the person holds it, no agent can attach to it, read it or screenshot it, including through whole-window captures. Only the person hands it back.
+2. **A handed-off page belongs to the person.** While the person holds it, no agent can attach to it, read it or screenshot it, including through whole-window captures. Only the person hands it back. While any page is person-held or has an active handoff, sibling leases on the same browser refuse agent actions and navigation with `profile_held` before dispatch; other browsers remain independent. Already-dispatched sibling work drains before person input is granted.
 3. **An audit line per page:** agent, chat, page id, each origin visited (no full URLs or tokens), and the open, close and handoff events.
 4. **Every existing rule works per page:** site blocks and allows, outsider holds, one active handoff. Test it with two chats at once, one marked outsider, and show the hold applies only to that chat's page.
 
@@ -76,7 +76,7 @@ All permissive licences (MIT, Apache-2.0 with NOTICE, ISC). Copied code keeps it
 
 Put the broker in one directory with **no server imports**, so it can become a package later (report §8; API and publishing criteria in [`specs/agent-browser-tab-broker/`](../agent-browser-tab-broker/02-specification.md)). It holds:
 
-- owner ids, bind, adopt and release, popups following the opener, idle cleanup and the tab cap, with persistence through an injected store;
+- owner ids, live-lease lookup and release, checked opener custody, and the page cap; no durable Page adoption;
 - the takeover lease: hold, release, idle timeout, refusing agent input;
 - the per-tab action queue;
 - URL policy (allow, block, scheme, private network);
@@ -88,8 +88,9 @@ These stay in DorkOS, outside the broker: chat, room and agent identity; permiss
 
 - Two chats with the same agent browse different sites at once in that agent's Chrome window, sharing its sign-ins.
 - Each agent reads and acts only on its own tab. A request for another chat's tab gets `tab_locked`; a closed tab gets `tab_gone`.
-- Tests cover parallel actions, one lease's pause or Cloud refusal not touching the other, a closed tab ending only its lease, adopting an orphaned tab after a restart, and every Security Must, with two chats at once and one marked outsider.
-- **Memory check:** measure the browser's memory (RSS) with 1, 3 and 5 chats open, each on its own made-up local page. Record the numbers in the PR. Run it in CI or a sealed container, never by launching Chrome on a developer Mac.
+- Tests cover parallel actions, one lease's pause or Cloud refusal not touching the other, a closed tab ending only its lease, reconnecting to a live lease and refusing to rebuild grants after a server restart, and every Security Must, with two chats at once and one marked outsider.
+- **Resource bound:** six agent page leases per install, including pending acquisition, held pages and owned popups. Opening another page refuses without eviction. Plain sign-in requires exclusive use of its profile; sibling leases produce `profile_busy` without closing them.
+- **Memory check:** measure browser-process-tree RSS with 1, 3 and 5 same-profile chats, then 1, 3 and 5 distinct-agent profiles, each on a made-up local page. Record the numbers in the PR. Run it in CI or a sealed container, never by launching Chrome on a developer Mac.
 - The agent-facing instruction block ships in the same release (release gate).
 - Security's deep read of the design before build and of the PR before arming.
 

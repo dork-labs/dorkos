@@ -22,6 +22,7 @@ import {
 import { fireLaunchProbes } from './launch-probes.js';
 import { recordClaudeTurnContext, systemAppendOf } from './turn-context/turn-context-record.js';
 import { launchQuery } from '../sdk/launch-query.js';
+import { releaseHeavyJobsOf } from '../tool-gate/load-gate-hook.js';
 import type { AgentSession } from '../agent-types.js';
 import { createToolState, stopWasAimedAt } from '../agent-types.js';
 import {
@@ -658,6 +659,13 @@ export async function* executeSdkQuery(
     // otherwise a rejected SDK promise would leave a live timer behind.
     deferredClose.release();
     endStdin();
+    // This path's process ends with its turn, however the turn ends, and a dead
+    // process runs no hook: the heavy-job slots it held come back here (DOR-4209).
+    // This can run a little before the CLI process is really gone (the stall
+    // guard abandoning the turn, a close still landing); a job still running then
+    // loses its slot early, which only lets the next one start sooner: it fails
+    // open, never holding the line for a process that is gone.
+    releaseHeavyJobsOf(sdkOptions);
     // Preserve the query reference for post-stream control methods (e.g.
     // reloadPlugins) — but only when this frame still OWNS the active query
     // (DOR-1088). Unconditional, this cleared whatever query happened to be

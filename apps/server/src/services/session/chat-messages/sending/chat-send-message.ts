@@ -18,6 +18,7 @@ import { resolveChatSeatTarget } from './chat-seat-target.js';
 import { renderSeatMessage, seatCarryOf } from '../../../rooms/handoff/seat-message-prompt.js';
 import { CHAT_SUMMARY_MAX } from './chat-message-limits.js';
 import { redirectedChatReceipt } from '../chat-message-receipt.js';
+import { assertChatUsageAvailable } from './chat-usage-recovery.js';
 
 interface SendOptions {
   deps: ChatMessageServiceDeps;
@@ -49,6 +50,7 @@ export async function sendChatMessage(options: SendOptions): Promise<ChatSendRec
     ? seatTarget.replyToId
     : (target.redirectedReplyTo ??
       replyTargetOf(deps.store, caller, target.sessionId, input.replyTo));
+  if (!seatTarget) await assertChatUsageAvailable(deps, target);
   const messageId = crypto.randomUUID();
   const words = input.message.trim();
   const rendered = renderChatMessage(

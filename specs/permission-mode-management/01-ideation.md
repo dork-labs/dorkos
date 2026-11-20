@@ -16,7 +16,7 @@ status: ideation
 
 ## Source Material
 
-- **Existing spec #135:** `specs/agent-permission-mode/01-ideation.md` and `02-specification.md` — covers adapter binding permission modes only (never implemented, 0/7 tasks). This new spec supersedes #135 by addressing the full permission mode story across both chat UI and adapter bindings.
+- **Existing spec #135:** [`agent-permission-mode/01-ideation.md`](https://github.com/dork-labs/dorkos/blob/2b98f06e42fab0c9f36c789387138bfc1b211116/specs/agent-permission-mode/01-ideation.md) and [`02-specification.md`](https://github.com/dork-labs/dorkos/blob/2b98f06e42fab0c9f36c789387138bfc1b211116/specs/agent-permission-mode/02-specification.md) — covers adapter binding permission modes only (never implemented, 0/7 tasks). This new spec supersedes #135 by addressing the full permission mode story across both chat UI and adapter bindings.
 
 ---
 
@@ -54,7 +54,7 @@ status: ideation
 - `apps/server/src/routes/capabilities.ts`: `GET /api/capabilities` returns `RuntimeCapabilities` including `supportedPermissionModes`
 - `apps/server/src/routes/models.ts`: `GET /api/models` returns `ModelOption[]` — the caching pattern we reference
 - `packages/test-utils/src/fake-agent-runtime.ts`: `FakeAgentRuntime` implements all `AgentRuntime` methods as `vi.fn()` spies
-- `specs/agent-permission-mode/02-specification.md`: Existing spec #135 for adapter binding permission modes (never implemented)
+- [`agent-permission-mode/02-specification.md`](https://github.com/dork-labs/dorkos/blob/2b98f06e42fab0c9f36c789387138bfc1b211116/specs/agent-permission-mode/02-specification.md): Existing spec #135 for adapter binding permission modes (never implemented)
 
 ## 3) Codebase Map
 

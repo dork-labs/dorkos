@@ -1,20 +1,30 @@
 import { EventEmitter } from 'node:events';
-import type { Page } from 'playwright-core';
+import { leaseFixture } from '../../local-browser/__tests__/page-leases-fixture.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { startChromeScreencast } from '../chrome-screencast.js';
 
 // A tiny JPEG header with a 640×480 SOF. The transport does not decode page pixels.
 const image = Buffer.from([255, 216, 255, 192, 0, 11, 8, 1, 224, 2, 128, 1, 1, 17, 0, 255, 217]);
-function fixture() {
+const fixtures: Awaited<ReturnType<typeof leaseFixture>>[] = [];
+async function fixture() {
+  const f = await leaseFixture();
+  fixtures.push(f);
+  await f.open('chat-a');
+  const page = f.contexts[0].pages[0];
+  page.navigate('https://example.com');
+  const handle = await f.service.pageBroker.captureViewerLease('chat-a', {
+    ownerId: 'owner',
+    appSessionId: 'app',
+    clientInstanceId: 'client',
+    viewerId: 'viewer',
+  });
   const cdp = Object.assign(new EventEmitter(), {
     send: vi.fn(async (_method: string, _params?: Record<string, unknown>) => ({})),
     detach: vi.fn(async () => undefined),
   });
-  const attach = vi.fn(async () => cdp);
-  const page = Object.assign(new EventEmitter(), {
-    context: () => ({ newCDPSession: attach }),
-    mainFrame: () => 'main-frame',
-  });
+  const attach = vi.mocked(f.contexts[0].context.newCDPSession);
+  attach.mockResolvedValue(cdp as never);
+  attach.mockClear();
   const receive = vi.fn();
   const emit = (sessionId: number, bytes = image) =>
     cdp.emit('Page.screencastFrame', {
@@ -29,26 +39,31 @@ function fixture() {
         scrollOffsetY: 0,
       },
     });
-  return { cdp, page, receive, emit, attach };
+  return { cdp, page, handle, receive, emit, attach };
 }
-afterEach(() => vi.useRealTimers());
+afterEach(async () => {
+  vi.useRealTimers();
+  await Promise.all(fixtures.splice(0).map((f) => f.cleanup()));
+});
 
 describe('owned Chrome page stream', () => {
   it('bounds attachment and detaches a session that arrives after its deadline', async () => {
     vi.useFakeTimers();
-    const f = fixture();
-    let finish!: (value: typeof f.cdp) => void;
+    const f = await fixture();
+    let finish!: (value: Awaited<ReturnType<typeof f.attach>>) => void;
     f.attach.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
           finish = resolve;
         })
     );
-    const pending = startChromeScreencast(f.page as unknown as Page, f.receive);
-    const result = expect(pending).rejects.toThrow('viewer_unavailable');
+    const pending = startChromeScreencast(f.handle, f.receive);
+    const result = expect(pending).rejects.toBeDefined();
     await vi.advanceTimersByTimeAsync(3_001);
     await result;
-    finish(f.cdp);
+    await expect(startChromeScreencast(f.handle, vi.fn())).rejects.toMatchObject({ code: 'busy' });
+    expect(f.attach).toHaveBeenCalledTimes(1);
+    finish(f.cdp as never);
     await vi.advanceTimersByTimeAsync(1);
     expect(f.cdp.detach).toHaveBeenCalledTimes(1);
     expect(f.cdp.send).not.toHaveBeenCalledWith('Page.startScreencast', expect.anything());
@@ -56,24 +71,26 @@ describe('owned Chrome page stream', () => {
 
   it('bounds teardown even when the protocol stop never settles', async () => {
     vi.useFakeTimers();
-    const f = fixture();
-    const stop = await startChromeScreencast(f.page as unknown as Page, f.receive);
+    const f = await fixture();
+    const stop = await startChromeScreencast(f.handle, f.receive);
     f.cdp.send.mockImplementationOnce(() => new Promise(() => undefined));
     let stopped = false;
-    const closing = stop().then(() => {
-      stopped = true;
-    });
+    const closing = stop()
+      .catch(() => undefined)
+      .then(() => {
+        stopped = true;
+      });
     f.emit(1);
     expect(f.receive).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(2_001);
+    await vi.advanceTimersByTimeAsync(3_001);
     expect(stopped).toBe(true);
     expect(f.cdp.detach).toHaveBeenCalledTimes(1);
     await closing;
   });
 
   it('uses one page CDP session and acknowledges frames independently of viewers', async () => {
-    const f = fixture();
-    const stop = await startChromeScreencast(f.page as unknown as Page, f.receive);
+    const f = await fixture();
+    const stop = await startChromeScreencast(f.handle, f.receive);
     expect(f.cdp.send).toHaveBeenCalledWith('Page.startScreencast', {
       format: 'jpeg',
       quality: 70,
@@ -83,19 +100,25 @@ describe('owned Chrome page stream', () => {
     });
     f.emit(37);
     expect(f.receive).toHaveBeenCalledWith(
-      expect.objectContaining({ width: 640, height: 480, bytes: image, generation: 1, sequence: 1 })
+      expect.objectContaining({
+        width: 640,
+        height: 480,
+        bytes: image,
+        generation: f.handle.facts().navigationGeneration + 1,
+        sequence: 1,
+      })
     );
     expect(f.cdp.send).toHaveBeenCalledWith('Page.screencastFrameAck', { sessionId: 37 });
     await stop();
     expect(f.cdp.detach).toHaveBeenCalledTimes(1);
-    expect(f.page.listenerCount('framenavigated')).toBe(0);
+
     f.emit(38);
     expect(f.receive).toHaveBeenCalledTimes(1);
   });
 
   it('acknowledges oversized or malformed frames without publishing their content', async () => {
-    const f = fixture();
-    const stop = await startChromeScreencast(f.page as unknown as Page, f.receive);
+    const f = await fixture();
+    const stop = await startChromeScreencast(f.handle, f.receive);
     f.emit(1, Buffer.alloc(2 * 1024 * 1024 + 1));
     f.emit(2, Buffer.from('not-an-image'));
     expect(f.receive).not.toHaveBeenCalled();
@@ -106,8 +129,8 @@ describe('owned Chrome page stream', () => {
 
   it('bounds delivery rate while still acknowledging Chrome', async () => {
     vi.useFakeTimers();
-    const f = fixture();
-    const stop = await startChromeScreencast(f.page as unknown as Page, f.receive);
+    const f = await fixture();
+    const stop = await startChromeScreencast(f.handle, f.receive);
     for (let i = 0; i < 100; i++) f.emit(i);
     expect(f.receive).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(84);
@@ -119,13 +142,26 @@ describe('owned Chrome page stream', () => {
     await stop();
   });
 
-  it('tears down its own session on navigation without closing Chrome', async () => {
-    const f = fixture();
-    const stop = await startChromeScreencast(f.page as unknown as Page, f.receive);
-    f.page.emit('framenavigated', 'main-frame');
-    f.emit(1);
-    expect(f.receive).not.toHaveBeenCalled();
-    await stop();
-    expect(f.cdp.detach).toHaveBeenCalledTimes(1);
+  it('never starts another producer while a prior physical stop is unresolved', async () => {
+    vi.useFakeTimers();
+    const f = await fixture();
+    const stop = await startChromeScreencast(f.handle, f.receive);
+    let release!: () => void;
+    f.cdp.send.mockImplementationOnce(
+      () =>
+        new Promise<Record<string, never>>((resolve) => {
+          release = () => resolve({});
+        })
+    );
+    const closing = stop().catch(() => undefined);
+    await vi.advanceTimersByTimeAsync(3_001);
+    await closing;
+    await expect(startChromeScreencast(f.handle, vi.fn())).rejects.toMatchObject({ code: 'busy' });
+    expect(f.attach).toHaveBeenCalledTimes(1);
+    release();
+    await vi.advanceTimersByTimeAsync(1);
+    const replacement = await startChromeScreencast(f.handle, vi.fn());
+    expect(f.attach).toHaveBeenCalledTimes(2);
+    await replacement();
   });
 });

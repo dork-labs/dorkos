@@ -13,8 +13,8 @@ import { TOOL_NAME_NOTE } from '../tool-name-note.js';
  * answers twice, or apologises for a gap it did not cause. The rules are few
  * and only matter once it happens, so they live here rather than in every turn.
  *
- * Moving a seat by hand (`reseat_room_agent`) is people-only for now, so the
- * page says so instead of teaching the tool.
+ * An agent may move its own seat from another chat within the move tool's
+ * usage and account limits, once it has finished answering in that room.
  */
 export const continuingOnAnotherAccount: OperatingSkill = {
   name: 'continuing-on-another-account',
@@ -68,9 +68,14 @@ The turn you wake up in is usually the message the old session was answering.
 
 DorkOS moves you on its own when your account runs out or is almost out, at most
 once per message. A person can also move you from your menu in the room
-("Continue on another account…"). You cannot move yourself: the move tool is
-for people only for now. If you think you need another account, say so to the
-person in the room and they can move you.
+("Continue on another account…").
+
+From another chat, you can move your own seat with \`reseat_room_agent\`
+once your account reaches the usage threshold (80%). Call it from an unmarked turn,
+not while you are answering in that room. Wait until that answer ends.
+Use the room's id and your own author id from its roster. Leave the account out
+for the best allowed account. The move never picks the main account or one kept
+out of automatic moves.
 
 DorkOS credits are never picked for you. Only a person chooses those, in a chat.
 `,

@@ -1,135 +1,95 @@
-import type { Page } from 'playwright-core';
+import type { BrowserPageBroker } from '../local-browser/leases/page-broker.js';
+import type { BrowserViewerPageHandle } from '../local-browser/leases/broker-contract.js';
 import { startChromeScreencast } from './chrome-screencast.js';
-import { BrowserViewerError, type ViewerPage, type ViewerPageIdentity } from './viewer-contract.js';
+import { BrowserViewerError, type ViewerPage, type ViewerPrincipal } from './viewer-contract.js';
 
-/** Existing service facts only. No address, browser handle or acquisition operation crosses this seam. */
-export interface ViewerSelection {
-  readonly identity: ViewerPageIdentity;
-  readonly page: Page;
-}
-
-interface Binding {
-  selection: ViewerSelection;
-  controller: AbortController;
-  view: ViewerPage;
-}
-
-function sameSelection(a: ViewerSelection, b: ViewerSelection | undefined): boolean {
-  return (
-    b !== undefined &&
-    a.page === b.page &&
-    a.identity.chatId === b.identity.chatId &&
-    a.identity.profileId === b.identity.profileId &&
-    a.identity.connectionId === b.identity.connectionId &&
-    a.identity.tabId === b.identity.tabId &&
-    !a.page.isClosed()
-  );
-}
-
-/** Adapts the existing single holder until the page broker supplies this read-only port. */
-export class BrowserViewerBinding {
-  private binding?: Binding;
-
-  constructor(
-    private readonly selected: () => ViewerSelection | undefined,
-    private readonly authorize: (chatId: string) => Promise<void>,
-    private readonly protect: () => void = () => undefined
-  ) {}
-
-  /** Resolve only the current chat's exact existing Page, checking grants around awaits. */
-  readonly resolve = async (chatId: string): Promise<ViewerPage> => {
-    this.refresh();
-    const selection = this.selected();
-    if (!selection || selection.identity.chatId !== chatId || selection.page.isClosed())
+/** Capture server-derived authority once. No raw Page, context or later target lookup escapes. */
+export async function captureViewerPage(
+  broker: BrowserPageBroker,
+  chatId: string,
+  principal: ViewerPrincipal,
+  viewerId: string
+): Promise<ViewerPage> {
+  let handle: BrowserViewerPageHandle;
+  try {
+    handle = await broker.captureViewerLease(chatId, {
+      ownerId: principal.ownerId,
+      appSessionId: principal.sessionId,
+      clientInstanceId: principal.clientId,
+      viewerId,
+    });
+  } catch {
+    throw new BrowserViewerError('viewer_unavailable');
+  }
+  const lifetime = new AbortController();
+  const navigation = handle.facts().navigationGeneration;
+  const ended = () => lifetime.abort();
+  const offRevoke = handle.onRevoked(ended);
+  // Preserve PR1's explicit reopen after navigation until the paint/address range lands.
+  const offChange = handle.onPageChange((facts) => {
+    if (facts.navigationGeneration !== navigation) ended();
+  });
+  const assertLive = () => {
+    try {
+      if (lifetime.signal.aborted) throw new BrowserViewerError('viewer_unavailable');
+      handle.assertCurrent();
+      handle.assertWatchAllowed();
+    } catch {
+      ended();
       throw new BrowserViewerError('viewer_unavailable');
-    if (!this.binding) this.binding = this.create(selection);
-    const view = this.binding.view;
-    await view.assertCurrent();
-    return view;
+    }
   };
-
-  /** Called synchronously when service ownership or connection facts change. */
-  refresh(): void {
-    const binding = this.binding;
-    if (binding && !sameSelection(binding.selection, this.selected())) binding.controller.abort();
-  }
-
-  /** End the current generation before asynchronous connection teardown starts. */
-  revoke(): void {
-    this.binding?.controller.abort();
-  }
-
-  private create(current: ViewerSelection): Binding {
-    const selection = { page: current.page, identity: Object.freeze({ ...current.identity }) };
-    const controller = new AbortController();
-    const { page } = selection;
-    const refuse = () => {
+  const assertCurrent = async () => {
+    try {
+      assertLive();
+      await handle.assertAuthorized();
+      assertLive();
+    } catch {
+      ended();
+      throw new BrowserViewerError('viewer_unavailable');
+    }
+  };
+  return {
+    binding: handle.binding,
+    identity: Object.freeze({
+      chatId,
+      profileId: handle.binding.profileId,
+      connectionId: handle.binding.connectionId,
+      tabId: handle.binding.tabId,
+    }),
+    signal: lifetime.signal,
+    assertLive,
+    assertCurrent,
+    async close() {
+      ended();
+      offChange();
+      offRevoke();
+      await handle.close();
+    },
+    async start(receive) {
+      await assertCurrent();
+      const stop = await startChromeScreencast(handle, (frame) => {
+        try {
+          assertLive();
+          receive(frame);
+        } catch {
+          /* Revocation fences publication. */
+        }
+      });
+      const detach = () => {
+        void stop().catch(() => undefined);
+      };
+      lifetime.signal.addEventListener('abort', detach, { once: true });
       try {
-        if (controller.signal.aborted || !sameSelection(selection, this.selected()))
-          throw new BrowserViewerError('viewer_unavailable');
-        this.protect();
-      } catch {
-        controller.abort();
-        throw new BrowserViewerError('viewer_unavailable');
+        await assertCurrent();
+      } catch (error) {
+        await stop();
+        throw error;
       }
-    };
-    const assertCurrent = async () => {
-      try {
-        refuse();
-        await this.authorize(selection.identity.chatId);
-        refuse();
-      } catch {
-        controller.abort();
-        throw new BrowserViewerError('viewer_unavailable');
-      }
-    };
-    const ended = () => controller.abort();
-    const navigated = (frame: unknown) => {
-      if (frame === page.mainFrame()) ended();
-    };
-    const binding: Binding = {
-      selection,
-      controller,
-      view: {
-        identity: selection.identity,
-        signal: controller.signal,
-        assertLive: refuse,
-        assertCurrent,
-        start: async (receive) => {
-          await assertCurrent();
-          const stop = await startChromeScreencast(page, (frame) => {
-            // No async admission here: delivery checks grants; this fence drops late callbacks.
-            if (!controller.signal.aborted && sameSelection(selection, this.selected()))
-              receive(frame);
-          });
-          const detach = () => {
-            void stop();
-          };
-          controller.signal.addEventListener('abort', detach, { once: true });
-          try {
-            await assertCurrent();
-          } catch (error) {
-            await stop();
-            throw error;
-          }
-          return async () => {
-            controller.signal.removeEventListener('abort', detach);
-            await stop();
-          };
-        },
-      },
-    };
-    controller.signal.addEventListener(
-      'abort',
-      () => {
-        page.off('framenavigated', navigated);
-        page.off('close', ended);
-        if (this.binding === binding) this.binding = undefined;
-      },
-      { once: true }
-    );
-    page.on('framenavigated', navigated);
-    page.on('close', ended);
-    return binding;
-  }
+      return async () => {
+        lifetime.signal.removeEventListener('abort', detach);
+        await stop();
+      };
+    },
+  };
 }

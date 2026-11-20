@@ -112,7 +112,11 @@ describe('owner-only watch routes', () => {
     const f = fixture();
     const response = await f.call('POST', '', {}, { chatId: 'chat-a' });
     expect(response.status).toBe(409);
-    expect(f.resolve).toHaveBeenCalledExactlyOnceWith('chat-a');
+    expect(f.resolve).toHaveBeenCalledExactlyOnceWith(
+      'chat-a',
+      { ownerId: 'viewer-owner', sessionId: 'signed-in-session', clientId: 'owner-window' },
+      expect.stringMatching(/^[\w-]{43}$/)
+    );
     expect(await response.text()).not.toContain('no-page');
     expect(response.headers.get('cache-control')).toContain('no-store');
     await f.registry.close();

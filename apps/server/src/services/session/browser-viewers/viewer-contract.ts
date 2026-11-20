@@ -1,3 +1,4 @@
+import type { BrowserPageBinding } from '../local-browser/leases/broker-contract.js';
 /** The authenticated person and app instance owning a viewer. Never supplied in JSON. */
 export interface ViewerPrincipal {
   readonly ownerId: string;
@@ -24,6 +25,8 @@ export interface ViewerFrame {
 
 /** The narrow read-only broker seam. It cannot launch, select, navigate or type. */
 export interface ViewerPage {
+  readonly binding: BrowserPageBinding;
+  close(): Promise<void>;
   readonly identity: ViewerPageIdentity;
   /** Synchronous revocation of this exact page generation, including waiting deliveries. */
   readonly signal: AbortSignal;
@@ -36,7 +39,11 @@ export interface ViewerPage {
 }
 
 /** Resolve an existing page for a person's selected chat, without opening anything. */
-export type ResolveViewerPage = (chatId: string) => Promise<ViewerPage>;
+export type ResolveViewerPage = (
+  chatId: string,
+  principal: ViewerPrincipal,
+  viewerId: string
+) => Promise<ViewerPage>;
 
 /** A sent frame's opaque, one-use paint receipt. */
 export interface DeliveredViewerFrame extends ViewerFrame {

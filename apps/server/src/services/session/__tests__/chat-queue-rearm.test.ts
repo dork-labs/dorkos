@@ -145,6 +145,46 @@ async function settle(): Promise<void> {
 }
 
 describe('a restart leaves another chat’s message queued for an idle chat', () => {
+  it('delivers an older peer message before the done chat’s own timer turn', async () => {
+    const { sent } = leftoverChatRow('the answer its next check needs');
+    const timer = () =>
+      dispatchMessage({
+        sessionId: session,
+        projector: getOrCreateProjector(session),
+        runtime,
+        clientId: 'own-timer',
+        content: 'check the work again',
+        turnStarter: 'agent',
+        whenBusy: 'refuse-foreign',
+      });
+
+    await timer();
+    await vi.waitFor(() => expect(chats.get(sent.id)?.status).toBe('delivered'));
+    expect(runtime.sendMessage.mock.calls[0]![1]).toBe('the answer its next check needs');
+    expect(queue.list(session)).toEqual([]);
+
+    await timer();
+    await vi.waitFor(() => expect(runtime.sendMessage).toHaveBeenCalledTimes(2));
+    expect(runtime.sendMessage.mock.calls[1]![1]).toBe('check the work again');
+  });
+
+  it('lets a person act immediately while an older peer message waits', async () => {
+    leftoverChatRow('peer message');
+    const result = await dispatchMessage({
+      sessionId: session,
+      projector: getOrCreateProjector(session),
+      runtime,
+      clientId: 'widget-action',
+      content: 'person action',
+      turnStarter: 'person',
+      whenBusy: 'refuse',
+    });
+    expect(result.accepted).toBe(true);
+    await vi.waitFor(() => expect(runtime.sendMessage).toHaveBeenCalled());
+    expect(runtime.sendMessage.mock.calls[0]![1]).toBe('person action');
+    await vi.waitFor(() => expect(queue.list(session)).toEqual([]));
+  });
+
   it('starts it from the queue sweep, without waiting for a newer message', async () => {
     // Sent from a turn a teammate's room message started: the one power a chat
     // message carries, which must survive the restart with it.

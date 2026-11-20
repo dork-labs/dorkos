@@ -1,58 +1,26 @@
-import { EventEmitter } from 'node:events';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
-import type { BrowserContext, Page } from 'playwright-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { LocalBrowserService } from '../../local-browser/service.js';
+import { leaseFixture } from '../../local-browser/__tests__/page-leases-fixture.js';
 
-const directories: string[] = [];
+const principal = { ownerId: 'owner', sessionId: 'app', clientId: 'client' };
+const fixtures: Awaited<ReturnType<typeof leaseFixture>>[] = [];
 afterEach(async () => {
-  await Promise.all(directories.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+  await Promise.all(fixtures.splice(0).map((fixture) => fixture.cleanup()));
 });
 
 async function fixture() {
-  const dir = await mkdtemp(path.join(tmpdir(), 'viewer-adapter-'));
-  directories.push(dir);
-  const events = new EventEmitter();
-  const mainFrame = {};
-  const page = {
-    on: events.on.bind(events),
-    off: events.off.bind(events),
-    mainFrame: () => mainFrame,
-    frames: () => [],
-    url: () => 'https://fixture.test/',
-    title: async () => 'Fixture',
-    isClosed: () => false,
-    bringToFront: async () => undefined,
-  } as unknown as Page;
-  const context = {
-    pages: () => [page],
-    on: vi.fn(),
-    close: vi.fn(async () => undefined),
-  } as unknown as BrowserContext;
-  const launch = vi.fn(async () => context);
-  const service = new LocalBrowserService(
-    dir,
-    undefined,
-    {
-      launch,
-      connect: vi.fn(async () => {
-        throw Error('not used');
-      }),
-    },
-    undefined,
-    () => ({ platform: 'darwin' })
-  );
+  const f = await leaseFixture();
+  fixtures.push(f);
   const access = vi.fn(async () => undefined);
-  service.useProfileAccess(access, () => true);
-  return { service, launch, context, access, events, mainFrame };
+  f.service.useProfileAccess(access, () => true);
+  return { service: f.service, launch: f.backend.launch, access };
 }
 
 describe('existing agent window viewer adapter', () => {
   it('never acquires a browser for a viewer', async () => {
     const f = await fixture();
-    await expect(f.service.viewerPages.resolve('chat')).rejects.toThrow('viewer_unavailable');
+    await expect(f.service.viewerPages.resolve('chat', principal, 'viewer')).rejects.toThrow(
+      'viewer_unavailable'
+    );
     expect(f.launch).not.toHaveBeenCalled();
   });
 
@@ -64,20 +32,22 @@ describe('existing agent window viewer adapter', () => {
         sessionId: 'chat',
         profileId: 'profile',
       });
-      const view = await f.service.viewerPages.resolve('chat');
+      const view = await f.service.viewerPages.resolve('chat', principal, 'viewer');
       expect(view.identity).toEqual({
         chatId: 'chat',
         profileId: 'profile',
         connectionId: state.connectionId,
         tabId: state.selectedTabId,
       });
-      await expect(f.service.viewerPages.resolve('other')).rejects.toThrow('viewer_unavailable');
+      await expect(f.service.viewerPages.resolve('other', principal, 'viewer')).rejects.toThrow(
+        'viewer_unavailable'
+      );
       f.access.mockRejectedValueOnce(Error('grant ended'));
       await expect(view.assertCurrent()).rejects.toThrow('viewer_unavailable');
       expect(view.signal.aborted).toBe(true);
       expect(f.launch).toHaveBeenCalledTimes(1);
     } finally {
-      await f.service.disconnect();
+      await f.service.closeAll();
     }
   });
 
@@ -85,17 +55,19 @@ describe('existing agent window viewer adapter', () => {
     const f = await fixture();
     try {
       await f.service.open({ mode: 'new-window' });
-      await expect(f.service.viewerPages.resolve('chat')).rejects.toThrow('viewer_unavailable');
+      await expect(f.service.viewerPages.resolve('chat', principal, 'viewer')).rejects.toThrow(
+        'viewer_unavailable'
+      );
     } finally {
-      await f.service.disconnect();
+      await f.service.closeAll();
     }
   });
 
   it('revokes viewers before connection cleanup awaits Chrome', async () => {
     const f = await fixture();
     await f.service.open({ mode: 'new-window', sessionId: 'chat' });
-    const view = await f.service.viewerPages.resolve('chat');
-    const closing = f.service.disconnect();
+    const view = await f.service.viewerPages.resolve('chat', principal, 'viewer');
+    const closing = f.service.closeAll();
     expect(view.signal.aborted).toBe(true);
     await closing;
   });
