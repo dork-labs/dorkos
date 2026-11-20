@@ -9,6 +9,21 @@ export interface ChatUsagePause {
   resetsAt: string | null;
 }
 
+/** A reset today needs only its time; another day also needs its weekday. */
+function resetTime(at: string, now: number): string {
+  const reset = new Date(at);
+  const today = new Date(now);
+  const sameDay =
+    reset.getFullYear() === today.getFullYear() &&
+    reset.getMonth() === today.getMonth() &&
+    reset.getDate() === today.getDate();
+  return new Intl.DateTimeFormat('en-US', {
+    ...(sameDay ? {} : { weekday: 'short' as const }),
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(reset);
+}
+
 /**
  * Refuse an unavailable destination before its message is recorded as accepted.
  * An ongoing turn keeps its queue and a person's pause keeps its resume behavior.
@@ -39,7 +54,7 @@ export async function assertChatUsageAvailable(
   throw new ChatMessageError(
     'UNAVAILABLE',
     known
-      ? `That chat is paused until ${at}. Send again after reset.`
-      : 'That chat is paused; its reset time is unknown. Try another chat.'
+      ? `That chat hit its usage limit. It's paused until ${resetTime(at, deps.now?.() ?? Date.now())}. Send again after that.`
+      : "That chat hit its usage limit, and its reset time isn't known. Try another chat."
   );
 }

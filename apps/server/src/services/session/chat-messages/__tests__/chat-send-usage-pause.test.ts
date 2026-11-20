@@ -6,7 +6,8 @@ import { ChatMessageService } from '../chat-message-service.js';
 
 const caller = { sessionId: 'chat-a', agentPath: '/agents/ana' };
 const agents = [{ id: 'agent-bo', name: 'bo', displayName: 'Bo', projectPath: '/agents/bo' }];
-const RESET = '2026-11-21T07:00:00.000Z';
+const NOW = '2026-11-20T20:00:00.000Z';
+const RESET = '2026-11-20T21:40:00.000Z';
 
 let service: ChatMessageService;
 let store: ChatMessageStore;
@@ -15,6 +16,7 @@ let busy: boolean;
 let pause: { resetsAt: string | null } | null;
 
 beforeEach(() => {
+  vi.stubEnv('TZ', 'America/Chicago');
   store = new ChatMessageStore(createTestDb());
   store.keepDmChat(caller.agentPath, 'agent-bo', 'paused-dm');
   busy = false;
@@ -51,33 +53,51 @@ beforeEach(() => {
     turnLevelOf: () => undefined,
     emitActivity: () => {},
     onLifecycle: () => () => {},
+    now: () => Date.parse(NOW),
   });
 });
 
-afterEach(() => service.stop());
+afterEach(() => {
+  service.stop();
+  vi.unstubAllEnvs();
+});
 
 describe('sending to an account-limited DM', () => {
   it('tells the sender when it is paused, without claiming acceptance', async () => {
     await expect(
       service.send(caller, { to: 'agent-bo', message: 'Please review.' })
-    ).rejects.toThrow(`paused until ${RESET}`);
+    ).rejects.toThrow(
+      "That chat hit its usage limit. It's paused until 3:40 PM. Send again after that."
+    );
     expect(dispatch).not.toHaveBeenCalled();
     expect(store.listSentFrom(caller.sessionId)).toEqual([]);
     expect(store.dmChat(caller.agentPath, 'agent-bo')).toBe('paused-dm');
+  });
+
+  it('includes the local weekday when the reset is on another day', async () => {
+    pause!.resetsAt = '2026-11-27T21:40:00.000Z';
+    await expect(
+      service.send(caller, { to: 'agent-bo', message: 'Please review.' })
+    ).rejects.toThrow(
+      "That chat hit its usage limit. It's paused until Fri 3:40 PM. Send again after that."
+    );
+    expect(dispatch).not.toHaveBeenCalled();
   });
 
   it('reports an unknown reset honestly', async () => {
     pause!.resetsAt = null;
     await expect(
       service.send(caller, { to: 'agent-bo', message: 'Please review.' })
-    ).rejects.toThrow('reset time is unknown');
+    ).rejects.toThrow(
+      "That chat hit its usage limit, and its reset time isn't known. Try another chat."
+    );
     expect(dispatch).not.toHaveBeenCalled();
   });
 
   it('never replaces a chat the sender explicitly named', async () => {
     await expect(
       service.send(caller, { to: 'paused-dm', message: 'Please review.' })
-    ).rejects.toThrow(`paused until ${RESET}`);
+    ).rejects.toThrow('paused until 3:40 PM');
     expect(dispatch).not.toHaveBeenCalled();
   });
 
