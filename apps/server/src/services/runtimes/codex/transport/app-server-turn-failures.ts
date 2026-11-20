@@ -5,6 +5,7 @@
  * @module services/runtimes/codex/transport/app-server-turn-failures
  */
 import type { StreamEvent } from '@dorkos/shared/types';
+import { runsInDockerImage } from '../../../../lib/distribution/index.js';
 import { logger } from '../../../../lib/logger.js';
 import { creditsRefusalEvent } from '../../../core/cloud/credits-protocols.js';
 import { CodexCrashLoopError } from '../app-server/process-pool.js';
@@ -12,6 +13,7 @@ import { codexErrorCopy } from '../event-mapper.js';
 import type { AppServerTurnMapper } from '../app-server/notification-mapper.js';
 import {
   APPARMOR_MOUNT_REFUSAL,
+  NAMESPACE_REFUSAL,
   CodexProcessExitedError,
   isCodexRpcError,
 } from '../app-server/protocol/errors.js';
@@ -23,26 +25,38 @@ import { CodexGitMetadataPolicyError } from '../policy/git-metadata.js';
 const SANDBOX_UNAVAILABLE_COPY =
   'This computer blocks Codex’s sandbox. Its owner can check Linux setup: https://developers.openai.com/codex/concepts/sandboxing/#prerequisites';
 
+/** The DorkOS guide section for Codex in Docker, linked from both Docker copies. */
+const DOCKER_GUIDE_LINE =
+  'Running Codex in Docker: https://dorkos.ai/docs/self-hosting/docker#running-codex-in-docker';
+
 /**
- * The same refusal from AppArmor in Docker (Ubuntu, Debian): name what works
- * instead. One short line each; the chat keeps the line breaks (DOR-3800).
+ * In the Docker image, AppArmor refused the sandbox (Ubuntu, Debian): name
+ * what works instead. One short line each; the chat keeps the line breaks.
  */
 const DOCKER_APPARMOR_COPY = [
   'Codex can’t run in this Docker setup yet.',
   'Use Claude Code, or run DorkOS outside Docker.',
-  'Running Codex in Docker: https://dorkos.ai/docs/self-hosting/docker#running-codex-in-docker',
+  DOCKER_GUIDE_LINE,
 ].join('\n');
 
+/** In the Docker image, seccomp refused the namespace: the profile is missing. */
+const DOCKER_NO_PROFILE_COPY = ['Codex needs DorkOS’s Docker profile.', DOCKER_GUIDE_LINE].join(
+  '\n'
+);
+
 /**
- * The chat copy for a sandbox Codex could not start. The turn ends either way:
- * nothing here retries Codex with the sandbox off or in a weaker mode.
+ * The chat copy for a sandbox Codex could not start. Docker wording only
+ * inside the Docker image; everywhere else, the Linux setup copy. The turn
+ * ends either way: nothing here retries Codex with the sandbox off or in a
+ * weaker mode (DOR-3800).
  *
  * @param err - The `sandbox-unavailable` refusal.
  */
 function sandboxRefusalCopy(err: unknown): string {
-  return err instanceof Error && APPARMOR_MOUNT_REFUSAL.test(err.message)
-    ? DOCKER_APPARMOR_COPY
-    : SANDBOX_UNAVAILABLE_COPY;
+  if (!runsInDockerImage() || !(err instanceof Error)) return SANDBOX_UNAVAILABLE_COPY;
+  if (APPARMOR_MOUNT_REFUSAL.test(err.message)) return DOCKER_APPARMOR_COPY;
+  if (NAMESPACE_REFUSAL.test(err.message)) return DOCKER_NO_PROFILE_COPY;
+  return SANDBOX_UNAVAILABLE_COPY;
 }
 
 /**

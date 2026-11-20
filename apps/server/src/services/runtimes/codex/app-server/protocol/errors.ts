@@ -33,6 +33,14 @@ export type CodexRpcErrorKind =
  */
 export const APPARMOR_MOUNT_REFUSAL = /bwrap: Failed to make \/ slave: Permission denied/i;
 
+/**
+ * bwrap could not create its namespace at all. Codex 0.163's bundled bwrap
+ * says "No permissions to create a new namespace" under Docker's default
+ * seccomp profile (DOR-3800); the form without "a" is kept for other builds.
+ */
+export const NAMESPACE_REFUSAL =
+  /bwrap: (?:Creating new namespace failed: Operation not permitted|No permissions to create (?:a )?new namespace)/i;
+
 /** The JSON-RPC code Codex answers `Server overloaded; retry later.` with. */
 export const OVERLOADED_CODE = -32001;
 
@@ -44,13 +52,7 @@ const MESSAGE_PATTERNS: ReadonlyArray<readonly [RegExp, CodexRpcErrorKind]> = [
   // Linux can refuse the filesystem helper before thread/start reads AGENTS.md.
   // Match the namespace refusal, not ordinary protected-file permission errors.
   [/bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted/i, 'sandbox-unavailable'],
-  // Codex 0.163's bundled bwrap says "No permissions to create a new
-  // namespace" (Docker's default seccomp profile, DOR-3800); the form without
-  // "a" is kept for other builds.
-  [
-    /bwrap: (?:Creating new namespace failed: Operation not permitted|No permissions to create (?:a )?new namespace)/i,
-    'sandbox-unavailable',
-  ],
+  [NAMESPACE_REFUSAL, 'sandbox-unavailable'],
   [APPARMOR_MOUNT_REFUSAL, 'sandbox-unavailable'],
   // bwrap could not build one of the masks while it set the sandbox up
   // (DOR-3950). The turn stays refused; only the person's copy changes.

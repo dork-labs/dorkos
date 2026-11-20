@@ -35,6 +35,7 @@ import { codexPermissionProfile } from '../turn-parts.js';
 import { CodexThreadLoader } from '../thread-loader.js';
 import { CodexRpcError } from '../protocol/errors.js';
 import type { CreditsRelay } from '../../../../core/cloud/credits-relay.js';
+import { env } from '../../../../../env.js';
 
 type Harness = ReturnType<typeof makeAppServerHarness>;
 const harnesses: Harness[] = [];
@@ -167,58 +168,74 @@ describe('a turn', () => {
     }
   );
 
-  // DOR-3800: a sandbox that cannot start in Docker ends the turn with the plain
-  // refusal. Nothing retries it with the sandbox off, a bypass flag or a weaker
-  // mode: one spawn with the stock args, one request at the failing step, and
-  // every request carries the mode the person chose.
+  // DOR-3800: a sandbox that cannot start ends the turn with a plain refusal.
+  // Nothing retries it with the sandbox off, a bypass flag or a weaker mode:
+  // one spawn with the stock args, one request at the failing step, and every
+  // request carries the mode the person chose. Docker wording only inside the
+  // Docker image (DORKOS_DISTRIBUTION=docker); elsewhere, the Linux copy.
+  const NAMESPACE_DETAIL =
+    "bwrap: No permissions to create a new namespace, likely because the kernel does not allow non-privileged user namespaces. On e.g. debian this can be enabled with 'sysctl kernel.unprivileged_userns_clone=1'.";
+  const APPARMOR_DETAIL = 'bwrap: Failed to make / slave: Permission denied';
+  const LOOPBACK_DETAIL = 'bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted';
+  const LINUX_COPY =
+    'This computer blocks Codex’s sandbox. Its owner can check Linux setup: https://developers.openai.com/codex/concepts/sandboxing/#prerequisites';
+  const GUIDE_LINE =
+    'Running Codex in Docker: https://dorkos.ai/docs/self-hosting/docker#running-codex-in-docker';
+  const refusalCases = [
+    { refusal: 'namespace', inDocker: false, detail: NAMESPACE_DETAIL, message: LINUX_COPY },
+    { refusal: 'AppArmor mount', inDocker: false, detail: APPARMOR_DETAIL, message: LINUX_COPY },
+    {
+      refusal: 'namespace',
+      inDocker: true,
+      detail: NAMESPACE_DETAIL,
+      message: ['Codex needs DorkOS’s Docker profile.', GUIDE_LINE].join('\n'),
+    },
+    {
+      refusal: 'AppArmor mount',
+      inDocker: true,
+      detail: APPARMOR_DETAIL,
+      message: [
+        'Codex can’t run in this Docker setup yet.',
+        'Use Claude Code, or run DorkOS outside Docker.',
+        GUIDE_LINE,
+      ].join('\n'),
+    },
+    { refusal: 'loopback', inDocker: true, detail: LOOPBACK_DETAIL, message: LINUX_COPY },
+  ];
   it.each(
     (['default', 'acceptEdits', 'bypassPermissions'] as const).flatMap((permissionMode) =>
-      (['thread/start', 'turn/start'] as const).flatMap((phase) => [
-        {
-          permissionMode,
-          phase,
-          refusal: 'Docker default seccomp',
-          detail:
-            "bwrap: No permissions to create a new namespace, likely because the kernel does not allow non-privileged user namespaces. On e.g. debian this can be enabled with 'sysctl kernel.unprivileged_userns_clone=1'.",
-          message:
-            'This computer blocks Codex’s sandbox. Its owner can check Linux setup: https://developers.openai.com/codex/concepts/sandboxing/#prerequisites',
-        },
-        {
-          permissionMode,
-          phase,
-          refusal: 'AppArmor mount',
-          detail: 'bwrap: Failed to make / slave: Permission denied',
-          // Only this refusal names what works instead (DOR-3800).
-          message: [
-            'Codex can’t run in this Docker setup yet.',
-            'Use Claude Code, or run DorkOS outside Docker.',
-            'Running Codex in Docker: https://dorkos.ai/docs/self-hosting/docker#running-codex-in-docker',
-          ].join('\n'),
-        },
-      ])
+      (['thread/start', 'turn/start'] as const).flatMap((phase) =>
+        refusalCases.map((row) => ({ ...row, permissionMode, phase }))
+      )
     )
   )(
-    'ends the turn on a $refusal refusal at $phase ($permissionMode) without an unsandboxed retry',
-    async ({ permissionMode, phase, detail, message }) => {
-      const h = harness();
-      const home = h.host.home(PERSON_HOME);
-      if (phase === 'thread/start') home.threadStartError = detail;
-      else home.turnStartError = detail;
-      const events = await h.run(
-        h.request({ sessionId: `docker-refusal-${phase}`, settings: { permissionMode } })
-      );
-      expect(events.map((event) => event.type)).toEqual(['error', 'done']);
-      expect(events[0]).toMatchObject({ data: { code: 'codex_sandbox_unavailable', message } });
-      expect(h.host.spawns).toHaveLength(1);
-      expect(h.host.spawns[0]!.args).toEqual([...APP_SERVER_ARGS]);
-      const proc = home.processes[0]!;
-      expect(proc.requestsOf(phase)).toHaveLength(1);
-      const sent = [...proc.requestsOf('thread/start'), ...proc.requestsOf('turn/start')];
-      expect(sent).toHaveLength(phase === 'thread/start' ? 1 : 2);
-      for (const params of sent) {
-        expect(params).toMatchObject({ permissions: codexPermissionProfile({ permissionMode }) });
-        expect(params).not.toHaveProperty('sandbox');
-        expect(params).not.toHaveProperty('sandboxPolicy');
+    'ends the turn on a $refusal refusal at $phase ($permissionMode, in Docker: $inDocker) without an unsandboxed retry',
+    async ({ permissionMode, phase, detail, message, inDocker }) => {
+      const before = env.DORKOS_DISTRIBUTION;
+      env.DORKOS_DISTRIBUTION = inDocker ? 'docker' : 'npm';
+      try {
+        const h = harness();
+        const home = h.host.home(PERSON_HOME);
+        if (phase === 'thread/start') home.threadStartError = detail;
+        else home.turnStartError = detail;
+        const events = await h.run(
+          h.request({ sessionId: `docker-refusal-${phase}`, settings: { permissionMode } })
+        );
+        expect(events.map((event) => event.type)).toEqual(['error', 'done']);
+        expect(events[0]).toMatchObject({ data: { code: 'codex_sandbox_unavailable', message } });
+        expect(h.host.spawns).toHaveLength(1);
+        expect(h.host.spawns[0]!.args).toEqual([...APP_SERVER_ARGS]);
+        const proc = home.processes[0]!;
+        expect(proc.requestsOf(phase)).toHaveLength(1);
+        const sent = [...proc.requestsOf('thread/start'), ...proc.requestsOf('turn/start')];
+        expect(sent).toHaveLength(phase === 'thread/start' ? 1 : 2);
+        for (const params of sent) {
+          expect(params).toMatchObject({ permissions: codexPermissionProfile({ permissionMode }) });
+          expect(params).not.toHaveProperty('sandbox');
+          expect(params).not.toHaveProperty('sandboxPolicy');
+        }
+      } finally {
+        env.DORKOS_DISTRIBUTION = before;
       }
     }
   );

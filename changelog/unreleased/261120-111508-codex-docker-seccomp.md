@@ -6,7 +6,7 @@ covers:
 ### Fixed
 
 - Codex now starts in the Docker image on Docker Desktop for Mac when you run it with the profile DorkOS ships. Docker's standard settings stopped Codex before it ran anything. The profile is opt-in and adds no capabilities, and the Docker guide shows the one line to add (DOR-3800)
-- When Docker blocks Codex's sandbox, the chat now says so plainly, instead of asking you to send your message again. Codex still never runs without its sandbox (DOR-3800)
+- When Docker blocks Codex's sandbox, the chat now says so plainly, instead of asking you to send your message again. DorkOS never retries it without the sandbox (DOR-3800)
 
 ### Note for people upgrading
 

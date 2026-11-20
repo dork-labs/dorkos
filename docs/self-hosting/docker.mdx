@@ -426,10 +426,12 @@ Where it works:
 ### Download the profile
 
 ```bash
-curl -O https://dorkos.ai/dorkos-codex.json
+curl -fO https://dorkos.ai/dorkos-codex.json
 ```
 
 This saves `dorkos-codex.json` in your current folder. Docker reads it from there when the container starts, so it doesn't go inside the image.
+
+The profile is licensed under Apache-2.0, from `moby/profiles` ([license text](https://github.com/dork-labs/dorkos/blob/main/docker/seccomp/LICENSE)).
 
 </Step>
 <Step>
