@@ -2,7 +2,7 @@
 id: 260919-204500
 title: 'Event-driven merge-tail: arm on workflow_run completion, keep the cron as a backstop'
 kind: experiment
-status: proposed
+status: withdrawn
 actor: agent
 gates:
   - wf.merge-tail.arm
@@ -28,3 +28,9 @@ which it does not yet.
 
 Revert if the event fan-out costs more runner minutes than it saves in lead time, or if
 `workflow_run` runs from forks ever reach the arming step.
+
+**Withdrawn 2026-11-19 (ci-steward, ledger 261119-131000).** Never built. Faster ticks would not fix
+the real flaw: a GitHub runner cannot see arm.sh's local gates (Security's review files, waivers,
+FREEZE, the local verify record), and merge-tail armed #3934 before QA's sign-off on 2026-11-18. Arming
+moves to a launchd sweep that only calls arm.sh. The GitHub-side end state is a gate App posting a
+required check, after per-role Apps (DOR-3183).
