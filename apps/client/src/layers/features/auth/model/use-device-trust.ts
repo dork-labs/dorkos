@@ -40,6 +40,11 @@ export interface DeviceTrust {
   readonly needsPasskey: boolean;
   /** The last failure, in a sentence; `null` when none. */
   readonly error: string | null;
+  /**
+   * The request or device the last action was for, so its passkey note or
+   * failure shows beside it; `null` before any.
+   */
+  readonly lastId: string | null;
   /** Approve one request after a fresh passkey check. */
   approve(id: string): Promise<void>;
   /** Decline one request. */
@@ -71,6 +76,7 @@ export function useDeviceTrust(enabled: boolean): DeviceTrust {
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [needsPasskey, setNeedsPasskey] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastId, setLastId] = useState<string | null>(null);
 
   const list = useQuery({
     queryKey: wifiSignInRequestsKey,
@@ -82,6 +88,7 @@ export function useDeviceTrust(enabled: boolean): DeviceTrust {
 
   const act = async (id: string, run: () => Promise<void>) => {
     setPendingId(id);
+    setLastId(id);
     setError(null);
     setNeedsPasskey(false);
     try {
@@ -101,6 +108,7 @@ export function useDeviceTrust(enabled: boolean): DeviceTrust {
     pendingId,
     needsPasskey,
     error,
+    lastId,
     approve: (id) =>
       act(id, async () => {
         const result = await withPasskeyCheck((passkey) =>

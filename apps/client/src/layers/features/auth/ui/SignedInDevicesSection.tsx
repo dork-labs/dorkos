@@ -20,7 +20,7 @@ import {
 import { formatRelativeTime } from '@/layers/shared/lib';
 import { useSignedInDevices } from '../model/use-signed-in-devices';
 import { useDeviceTrust, type DeviceTrust } from '../model/use-device-trust';
-import { WifiSignInRequests } from './WifiSignInRequests';
+import { TrustNote, WifiSignInRequests } from './WifiSignInRequests';
 
 /**
  * How each way in reads under a device's name. This computer says nothing: the
@@ -204,10 +204,10 @@ function RunsAgentsSwitch({
           aria-label={`Run agents from ${device.name}`}
         />
       </div>
-      {warning}
       {!trust && (
         <p className="text-muted-foreground text-xs">Change this on the computer DorkOS runs on.</p>
       )}
+      {trust?.lastId === device.id && <TrustNote trust={trust} />}
       <AlertDialog open={confirming} onOpenChange={setConfirming}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -244,15 +244,18 @@ function DeviceSummary({
   signingOut: boolean;
   onSignOut: () => void;
 }) {
+  // On a phone the name gets the whole width and wraps, and Sign out takes its
+  // own row: the name is what says which device this is.
   return (
-    <div className="flex items-center justify-between gap-2">
+    <div className="flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
       <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <p className="truncate text-sm font-medium">{device.name}</p>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <p className="text-sm font-medium break-words sm:truncate">{device.name}</p>
           {device.current && <Badge variant="secondary">This device</Badge>}
           {device.route === 'wifi' && (
             <Badge
               variant="outline"
+              className="hidden sm:inline-flex"
               title="Not encrypted between this device and the computer DorkOS runs on."
             >
               Plain Wi-Fi
@@ -272,6 +275,7 @@ function DeviceSummary({
           onClick={onSignOut}
           disabled={signingOut}
           aria-label={`Sign out ${device.name}`}
+          className="-ml-2 sm:ml-0"
         >
           <LogOut className="mr-1.5 size-3.5" />
           {signingOut ? 'Signing out…' : 'Sign out'}

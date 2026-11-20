@@ -128,12 +128,17 @@ describe('SignedInDevicesSection', () => {
     const get = vi.fn().mockResolvedValue(fakeAssertion());
     Object.defineProperty(navigator, 'credentials', { value: { get }, configurable: true });
 
+    // The risk is said once, in the confirm, not again on the row.
+    const toggle = await screen.findByRole('switch', { name: 'Run agents from Safari on iPhone' });
     expect(
-      await screen.findByText('Anyone on the same Wi-Fi could take over this sign-in.')
+      screen.queryByText('Anyone on the same Wi-Fi could take over this sign-in.')
+    ).not.toBeInTheDocument();
+    await userEvent.click(toggle);
+    expect(await screen.findByText('Run agents from Safari on iPhone?')).toBeInTheDocument();
+    expect(
+      screen.getByText('Anyone on the same Wi-Fi could take over this sign-in.')
     ).toBeInTheDocument();
     expect(screen.getByText('It turns off after 12 hours idle.')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('switch', { name: 'Run agents from Safari on iPhone' }));
-    expect(await screen.findByText('Run agents from Safari on iPhone?')).toBeInTheDocument();
     expect(transport.setDeviceRunsAgents).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', { name: 'Turn on' }));
     await waitFor(() => expect(transport.setDeviceRunsAgents).toHaveBeenCalledTimes(2));
@@ -185,6 +190,32 @@ describe('SignedInDevicesSection', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
     expect(await screen.findByLabelText('A B C 2 3 4')).toBeInTheDocument();
     expect(screen.getByText('Expires in 5 minutes.')).toBeInTheDocument();
+    // Only the code to type is left.
+    expect(screen.queryByLabelText('K 7 Q X')).not.toBeInTheDocument();
+  });
+
+  it('a failed approve says so inside that request’s card', async () => {
+    const { transport } = setup(listWith(true));
+    vi.mocked(transport.listWifiSignInRequests).mockResolvedValue({
+      requests: [
+        {
+          id: 'req-1',
+          deviceName: 'Firefox on Linux',
+          address: '192.168.1.40',
+          requestedAt: NOW,
+          expiresAt: NOW,
+          matchCode: 'K7QX',
+          approved: false,
+        },
+      ],
+    });
+    vi.mocked(transport.approveWifiSignIn).mockRejectedValue(new Error('down'));
+    await userEvent.click(await screen.findByRole('button', { name: 'Approve' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('That didn’t work. Nothing changed. Try again.');
+    expect(alert.closest('.rounded-md')).toContainElement(
+      screen.getByRole('button', { name: 'Approve' })
+    );
   });
 
   it('with no passkey on this computer, says to add one and shows no code', async () => {
@@ -206,7 +237,7 @@ describe('SignedInDevicesSection', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Approve' }));
     expect(
       await screen.findByText(
-        'Add a passkey on this computer first (Safari or Chrome), then approve here.'
+        'Add a passkey on this computer first (Safari or Chrome), then try again.'
       )
     ).toBeInTheDocument();
   });

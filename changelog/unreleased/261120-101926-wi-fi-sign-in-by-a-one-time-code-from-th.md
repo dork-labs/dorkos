@@ -13,6 +13,7 @@ covers:
   - 'fix(auth): removing the last sign-in check says other devices wait for a new one (DOR-3647)'
   - 'fix(auth): a sign-in check counts only once the earlier sign-ins have ended (DOR-3647)'
   - 'fix(auth): taking back an unfinished sign-in check touches only that check (DOR-3647)'
+  - 'fix(auth): Wi-Fi device rows fit a phone, and each note sits by what it is about (DOR-4744)'
 ---
 
 ### Added

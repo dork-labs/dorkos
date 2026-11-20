@@ -23,16 +23,6 @@ export function WifiSignInRequests({ trust }: { trust: DeviceTrust }) {
         Anyone on this Wi-Fi can copy a sign-in made here.
       </p>
       <p className="text-muted-foreground text-xs">Use it only on networks you trust.</p>
-      {trust.needsPasskey && (
-        <p className="text-muted-foreground text-xs" role="status">
-          Add a passkey on this computer first (Safari or Chrome), then approve here.
-        </p>
-      )}
-      {trust.error && (
-        <p className="text-destructive text-xs" role="alert">
-          {trust.error}
-        </p>
-      )}
     </div>
   );
 }
@@ -53,7 +43,8 @@ function RequestCard({ request, trust }: { request: WifiSignInRequest; trust: De
             {formatRelativeTime(request.requestedAt)}
           </p>
         </div>
-        <CodeGroups code={request.matchCode} className="text-base" />
+        {/* Once approved, the only code left is the one to type. */}
+        {!shown && <CodeGroups code={request.matchCode} className="text-base" />}
       </div>
       {shown ? (
         <div className="space-y-1 text-center">
@@ -79,9 +70,32 @@ function RequestCard({ request, trust }: { request: WifiSignInRequest; trust: De
               Decline
             </Button>
           </div>
+          {trust.lastId === request.id && <TrustNote trust={trust} />}
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * Why the last action on a request or device didn't go through, shown beside
+ * it: no passkey here yet, or the failure. Nothing when it went through.
+ *
+ * @param props.trust - The device trust state.
+ */
+export function TrustNote({ trust }: { trust: DeviceTrust }) {
+  if (trust.needsPasskey) {
+    return (
+      <p className="text-muted-foreground text-xs" role="status">
+        Add a passkey on this computer first (Safari or Chrome), then try again.
+      </p>
+    );
+  }
+  if (!trust.error) return null;
+  return (
+    <p className="text-destructive text-xs" role="alert">
+      {trust.error}
+    </p>
   );
 }
 
