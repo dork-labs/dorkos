@@ -674,6 +674,8 @@ jobs:
       scope: ${{ steps.plan.outputs.scope }}
       packages: ${{ steps.plan.outputs.packages }}
       tests: ${{ steps.noscope.outputs.run }}
+      text_only: ${{ steps.textonly.outputs.text_only || 'false' }}
+      vitest_files: ${{ steps.textonly.outputs.vitest_files || '[]' }}
     steps:
       # A canary run is against `main` or it is nothing.
       #
@@ -719,6 +721,57 @@ jobs:
         with:
           fetch-depth: 2
           persist-credentials: false
+      # THE TEXT-ONLY LANE (DOR-4834, ledger 261120-043306). Decides, from
+      # scripts/text-only-scope.mjs, whether this change only rewrites strings,
+      # comments and Markdown, by comparing both sides' TypeScript syntax
+      # trees. When it does, ON A PULL REQUEST ONLY, the test sweep and the
+      # browser suites stand down and `vitest related` and the browser specs
+      # that quote the old text run instead; the required fan-ins read that as
+      # they read any green. No `if:`: every other event answers false without
+      # looking, a release pull request included, and so does the merge queue,
+      # which runs every shard and the whole browser suite exactly as for any
+      # other change: the queue is the safety net under a wrong "text only".
+      #
+      # The classifier and the security list it reads come from the BASE
+      # commit, never this checkout (Security, #3238), with the TypeScript the
+      # base pins installed beside that copy. A pull request diffs the
+      # test-merge commit against its first parent. Every failure answers
+      # false, which runs everything as before. Keep this block identical in
+      # test.yml and browser-test.yml.
+      - name: Decide whether this change only rewrites text
+        id: textonly
+        env:
+          EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
+        run: |
+          set -uo pipefail
+          not_text_only() {
+            echo "not text only ($1); every suite runs"
+            printf 'text_only=false\nvitest_files=[]\nbrowser=full\nspecs=[]\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          case $EVENT in
+            pull_request)
+              if ! git rev-parse --verify --quiet 'HEAD^2' >/dev/null || ! base=$(git rev-parse --verify --quiet 'HEAD^1'); then
+                not_text_only 'no test-merge commit to diff'
+              fi
+              ;;
+            merge_group) not_text_only 'a merge queue build; the queue runs every suite' ;;
+            *) not_text_only "a $EVENT run" ;;
+          esac
+          lane=$RUNNER_TEMP/text-only
+          mkdir -p "$lane"
+          git archive "$base" scripts/text-only-scope.mjs .github/scripts .github/workflows/security-gate.yml | tar -x -C "$lane" ||
+            not_text_only 'the base commit has no scripts/text-only-scope.mjs'
+          version=$(git cat-file blob "$base:package.json" | jq -er '.devDependencies.typescript') ||
+            not_text_only 'the base package.json pins no typescript'
+          npm install --silent --no-save --no-package-lock --no-audit --no-fund --prefix "$lane" "typescript@$version" ||
+            not_text_only 'typescript did not install'
+          node "$lane/scripts/text-only-scope.mjs" "$base" HEAD > "$lane/outputs" || not_text_only 'the classifier failed'
+          reason=$(sed -n 's/^reason=//p' "$lane/outputs")
+          [ -n "$reason" ] || not_text_only 'the classifier printed no answer'
+          grep -qx 'text_only=true' "$lane/outputs" || not_text_only "$reason"
+          echo "::notice title=Text-only lane::$reason. The test sweep and the browser suites stand down; vitest related and the specs that quote the old text run instead."
+          cat "$lane/outputs" >> "$GITHUB_OUTPUT"
       # Decides whether a pull request can affect any test, from
       # scripts/no-code-scope.sh, and hands test-shard and test-binary the
       # answer as `tests`. A release PR bumps "version" in package.json files,
@@ -743,6 +796,7 @@ jobs:
         id: noscope
         env:
           EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
+          TEXT_ONLY: ${{ steps.textonly.outputs.text_only }}
         run: |
           set -uo pipefail
           if [ "$EVENT" != 'pull_request' ]; then
@@ -761,7 +815,10 @@ jobs:
           else
             echo "cannot diff this pull request against its base (no test-merge commit); running the tests"
           fi
-          if [ "$verdict" != false ]; then
+          if [ "${TEXT_ONLY:-}" = true ]; then
+            verdict=false
+            echo 'a text-only change: test-shard runs vitest related instead of the affected suites, and test-binary runs nothing.'
+          elif [ "$verdict" != false ]; then
             verdict=true
           else
             echo "::notice title=No-code scope::only changelog, docs or version lines changed, so test-shard and test-binary run no suite here. The merge queue runs the full suite."
@@ -812,6 +869,7 @@ jobs:
           EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
           SCOPE: ${{ steps.plan.outputs.scope }}
           DIRS: ${{ steps.plan.outputs.dirs }}
+          TEXT_ONLY: ${{ steps.textonly.outputs.text_only }}
         run: |
           set -uo pipefail
           six='[1, 2, 3, 4, 5, 6]'
@@ -840,6 +898,12 @@ jobs:
               matrix=$six
               echo "the test plan reaches apps/server or packages/shared: six shards"
             fi
+          fi
+          # A text-only pull request runs `vitest related` on one shard; the queue
+          # never gets here (its decision is always false) and keeps six.
+          if [ "${TEXT_ONLY:-}" = true ]; then
+            matrix='[1]'
+            echo "a text-only change: one shard, for vitest related"
           fi
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
@@ -1165,9 +1229,10 @@ jobs:
         id: deps
         env:
           EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
+          TEXT_ONLY: ${{ needs.test-shard-count.outputs.text_only }}
         run: |
-          if [ "$EVENT" = 'pull_request' ]; then
-            echo 'the pull request leg builds its own set, inside its suite step below.'
+          if [ "$EVENT" = 'pull_request' ] || [ "${TEXT_ONLY:-}" = true ]; then
+            echo 'the pull request leg and the text-only lane build their own set, inside their steps below.'
             exit 0
           fi
           bash scripts/build-test-deps.sh
@@ -1235,11 +1300,15 @@ jobs:
         env:
           EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
           TESTS: ${{ needs.test-shard-count.outputs.tests }}
+          TEXT_ONLY: ${{ needs.test-shard-count.outputs.text_only }}
         run: |
           set -uo pipefail
           if [ "$EVENT" != 'pull_request' ]; then
             echo "$EVENT run: the shards always run here"
             run=true
+          elif [ "${TEXT_ONLY:-}" = true ]; then
+            echo "A text-only change, so the affected suites did not run here; vitest related runs below instead."
+            run=false
           elif [ "${TESTS:-}" = false ]; then
             echo "Only changelog, docs or version lines changed, so the shards did not run here. The merge queue runs the full suite."
             run=false
@@ -1300,6 +1369,24 @@ jobs:
           # (`--only`). scripts/build-test-deps.sh says why (DOR-4625).
           bash scripts/build-test-deps.sh "${filters[@]}"
           pnpm exec turbo test --continue --concurrency=1 --only "${filters[@]}" -- --run --shard=${{ matrix.shard }}/${{ strategy.job-total }} --config=../../scripts/sharding/config.ts --passWithNoTests --exclude='**/*.binary.test.ts'
+
+      # THE TEXT-ONLY LANE (DOR-4834). On a pull request test-shard-count found
+      # to rewrite only strings, comments and Markdown (never in the queue,
+      # which runs every suite), this is the whole of the one shard: `vitest
+      # related` in each package that owns a file the classifier named, which
+      # includes every test that quotes a changed string's old text
+      # (scripts/text-only-tests.sh says how). Gated in the script, not with a step `if:`, so this required
+      # job never skips it; on any other change it says so and exits 0.
+      - name: Run the tests a text-only change can reach
+        env:
+          TEXT_ONLY: ${{ needs.test-shard-count.outputs.text_only }}
+          VITEST_FILES: ${{ needs.test-shard-count.outputs.vitest_files }}
+        run: |
+          if [ "${TEXT_ONLY:-}" != true ]; then
+            echo 'not a text-only change; the suites run in the steps beside this one.'
+            exit 0
+          fi
+          bash scripts/text-only-tests.sh "$VITEST_FILES"
 
       # THE POINT OF THIS STEP: turbo caches `test`, and a full cache hit prints
       # "Tasks: 31 successful, 31 total" — one per package declaring a `test`
@@ -1635,6 +1722,7 @@ jobs:
           SCOPE: ${{ needs.test-shard-count.outputs.scope }}
           PACKAGES: ${{ needs.test-shard-count.outputs.packages }}
           TESTS: ${{ needs.test-shard-count.outputs.tests }}
+          TEXT_ONLY: ${{ needs.test-shard-count.outputs.text_only }}
         run: |
           set -uo pipefail
           all=$(git ls-files -- 'apps/*.binary.test.ts' 'packages/*.binary.test.ts') ||
@@ -1651,6 +1739,9 @@ jobs:
           if [ ! -s "$RUNNER_TEMP/binary-files.txt" ]; then
             run=false
             echo "no binary suite outside codex/ in this tree; nothing to run"
+          elif [ "${TEXT_ONLY:-}" = true ]; then
+            run=false
+            echo "a text-only change (DOR-4834): test-shard runs vitest related, and no binary suite runs here."
           elif [ "$EVENT" = 'pull_request' ] && [ "${TESTS:-}" = false ]; then
             run=false
             echo "only changelog, docs or version lines changed, so the shards run no suite here and neither does this job."
@@ -1926,7 +2017,8 @@ jobs:
   # scoped Linux Codex suite.
   # `always()` lets it report a failure rather than skip when a dependency is red.
   test:
-    needs: [test-shard, test-binary, community-pg, community-packaged, codex-sandbox]
+    needs:
+      [test-shard-count, test-shard, test-binary, community-pg, community-packaged, codex-sandbox]
     if: ${{ always() }}
     runs-on: ubuntu-latest
     # This job runs no tests any more, so this is a ceiling on a gate, an
@@ -2040,6 +2132,14 @@ jobs:
       # when a shard is red — without it, GitHub would skip this job and a
       # SKIPPED check run satisfies a required check, which is precisely the
       # false green this workflow exists to prevent.
+      # The shard plan, the shard count and the text-only decision all come
+      # from test-shard-count, and the steps below read its outputs.
+      - name: Require the shard plan green
+        run: |
+          result="${{ needs.test-shard-count.result }}"
+          echo "shard plan result: $result"
+          [ "$result" = "success" ]
+
       - name: Require all shards green
         run: |
           result="${{ needs.test-shard.result }}"
