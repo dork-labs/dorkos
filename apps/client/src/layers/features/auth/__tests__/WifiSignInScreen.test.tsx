@@ -86,5 +86,10 @@ describe('WifiSignInScreen', () => {
       await screen.findByText('That code didn’t match. Check it and try again.')
     ).toBeInTheDocument();
     expect(getAuthRequired()).toBe(true);
+    // The code stays, selected, so a typo is one keystroke to fix.
+    const field = screen.getByLabelText('Code') as HTMLInputElement;
+    expect(field).toHaveValue('WRONG123');
+    expect(field.selectionStart).toBe(0);
+    expect(field.selectionEnd).toBe('WRONG123'.length);
   });
 });

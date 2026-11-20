@@ -42,6 +42,24 @@ describe('LoginScreen', () => {
     );
   });
 
+  it('with passkeys on this browser, the code stays the main way and a passkey is offered beside it', () => {
+    vi.stubGlobal('isSecureContext', true);
+    vi.stubGlobal('PublicKeyCredential', function PublicKeyCredential() {});
+    Object.defineProperty(navigator, 'credentials', {
+      value: { get: vi.fn() },
+      configurable: true,
+    });
+    try {
+      signIn.error = { message: 'needs more', status: 401, code: 'SECOND_FACTOR_REQUIRED' };
+      render(<LoginScreen />);
+      expect(screen.getByLabelText('Enter the code from your authenticator app.')).toBeVisible();
+      expect(screen.getByRole('button', { name: 'Sign in' })).toBeVisible();
+      expect(screen.getByRole('button', { name: 'Use a passkey instead' })).toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   // A real form action must keep its explicit submit type and credential hints.
   it('submits credentials and keeps password manager hints', async () => {
     const onSignedIn = vi.fn();

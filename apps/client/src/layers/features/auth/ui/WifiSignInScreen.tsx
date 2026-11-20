@@ -1,4 +1,4 @@
-import { useId, useState, type FormEvent } from 'react';
+import { useId, useRef, useState, type FormEvent } from 'react';
 import { Wifi } from 'lucide-react';
 import { Button, Field, FieldLabel, Input, Notice } from '@/layers/shared/ui';
 import { useWifiCodeSignIn } from '../model/use-auth-session';
@@ -14,13 +14,15 @@ export function WifiSignInScreen() {
   const codeId = useId();
   const errorId = useId();
   const [code, setCode] = useState('');
+  const codeRef = useRef<HTMLInputElement>(null);
   const signIn = useWifiCodeSignIn();
   const waiting = signIn.step === 'waiting' || signIn.step === 'signing-in';
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (signIn.step !== 'waiting' || !code.trim()) return;
-    if (!(await signIn.finish(code))) setCode('');
+    // A refused code stays in the field, selected: a one-character typo is a quick fix.
+    if (!(await signIn.finish(code))) codeRef.current?.select();
   }
 
   return (
@@ -31,9 +33,12 @@ export function WifiSignInScreen() {
             <Wifi className="size-5" />
           </div>
           <h1 className="text-lg font-semibold">Sign in to DorkOS</h1>
-          <p className="text-muted-foreground mt-1 text-sm">
-            On Wi-Fi, this device signs in with a code from the computer DorkOS runs on.
-          </p>
+          {/* While waiting, the steps below say this again. */}
+          {!waiting && (
+            <p className="text-muted-foreground mt-1 text-sm">
+              On Wi-Fi, this device signs in with a code from the computer DorkOS runs on.
+            </p>
+          )}
         </div>
 
         {!waiting ? (
@@ -62,6 +67,7 @@ export function WifiSignInScreen() {
             <Field className="gap-1.5">
               <FieldLabel htmlFor={codeId}>Code</FieldLabel>
               <Input
+                ref={codeRef}
                 id={codeId}
                 autoComplete="one-time-code"
                 autoCapitalize="characters"

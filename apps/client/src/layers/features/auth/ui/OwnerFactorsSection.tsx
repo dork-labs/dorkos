@@ -69,21 +69,28 @@ export function OwnerFactorsSection() {
           onCancel={factors.cancelAuthenticator}
         />
       ) : (
-        <div className="space-y-1.5">
+        // Buttons, not rows: an added check and a way to add one never look alike.
+        <div className="flex flex-wrap gap-2">
           {canMakePasskey && (
-            <AddRow
-              icon={KeyRound}
-              label="Passkey"
-              busy={factors.busy}
-              onAdd={() => void factors.addPasskey()}
-            />
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void factors.addPasskey()}
+              disabled={factors.busy}
+            >
+              <KeyRound className="mr-1.5 size-3.5" />
+              Add a passkey
+            </Button>
           )}
-          <AddRow
-            icon={Smartphone}
-            label="Authenticator app"
-            busy={factors.busy}
-            onAdd={() => void factors.startAuthenticator()}
-          />
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void factors.startAuthenticator()}
+            disabled={factors.busy}
+          >
+            <Smartphone className="mr-1.5 size-3.5" />
+            Add an authenticator app
+          </Button>
         </div>
       )}
 
@@ -96,36 +103,6 @@ export function OwnerFactorsSection() {
           {factors.error}
         </p>
       )}
-    </div>
-  );
-}
-
-function AddRow({
-  icon: Icon,
-  label,
-  busy,
-  onAdd,
-}: {
-  icon: typeof KeyRound;
-  label: string;
-  busy: boolean;
-  onAdd: () => void;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-2 rounded-md border px-3 py-2">
-      <div className="flex items-center gap-2">
-        <Icon className="text-muted-foreground size-4 shrink-0" />
-        <p className="text-sm">{label}</p>
-      </div>
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={onAdd}
-        disabled={busy}
-        aria-label={`Add ${label}`}
-      >
-        Add
-      </Button>
     </div>
   );
 }
@@ -151,7 +128,7 @@ function FactorRow({
     <div className="flex items-center justify-between gap-2 rounded-md border px-3 py-2">
       <div className="flex min-w-0 items-center gap-2">
         <Icon className="text-muted-foreground size-4 shrink-0" />
-        <p className="truncate text-sm">{meta}</p>
+        <p className="text-sm [overflow-wrap:anywhere]">{meta}</p>
       </div>
       <AlertDialog>
         <AlertDialogTrigger asChild>
@@ -172,7 +149,9 @@ function FactorRow({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={onRemove}>Remove</AlertDialogAction>
+            <AlertDialogAction onClick={onRemove} variant="destructive">
+              Remove
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -218,6 +197,7 @@ function AuthenticatorSetup({
           id={codeId}
           inputMode="numeric"
           autoComplete="one-time-code"
+          className="w-32 font-mono tracking-widest"
           value={code}
           onChange={(e) => setCode(e.target.value)}
           required

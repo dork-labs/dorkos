@@ -40,7 +40,7 @@ describe('OwnerFactorsSection', () => {
 
   it('adds an authenticator app once one of its codes is confirmed', async () => {
     const transport = setup();
-    fireEvent.click(await screen.findByRole('button', { name: 'Add Authenticator app' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Add an authenticator app' }));
     expect(await screen.findByText('Scan this with your authenticator app.')).toBeInTheDocument();
     expect(screen.getByText('ABCD EFGH')).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Type the 6-digit code it shows.'), {

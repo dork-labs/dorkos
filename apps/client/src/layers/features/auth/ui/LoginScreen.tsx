@@ -31,15 +31,12 @@ export function LoginScreen({ onSignedIn }: LoginScreenProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
-  const [codeInstead, setCodeInstead] = useState(false);
   const { run, isPending, error } = useSignIn();
   const passkey = usePasskeySignIn();
   const needsSecondStep =
     error?.code === SECOND_FACTOR_REQUIRED || error?.code === SECOND_FACTOR_REFUSED;
-  // A passkey is the main way; the code field shows on asking, or when there is no passkey here.
+  // The code is the one main way; a passkey is offered beside it, quietly.
   const offerPasskey = needsSecondStep && passkeysAvailable();
-  const showCode =
-    needsSecondStep && (!offerPasskey || codeInstead || error?.code === SECOND_FACTOR_REFUSED);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -81,28 +78,6 @@ export function LoginScreen({ onSignedIn }: LoginScreenProps) {
           </p>
         </div>
 
-        {offerPasskey && (
-          <div className="mb-4 space-y-2">
-            <Button
-              className="w-full"
-              onClick={() => void handlePasskey()}
-              disabled={passkey.isPending}
-            >
-              {passkey.isPending ? 'Checking…' : 'Use a passkey'}
-            </Button>
-            {passkeyError && (
-              <p className="text-destructive text-xs" role="alert">
-                {passkeyError}
-              </p>
-            )}
-            {!showCode && (
-              <Button variant="link" className="w-full" onClick={() => setCodeInstead(true)}>
-                Use your authenticator app instead
-              </Button>
-            )}
-          </div>
-        )}
-
         <form onSubmit={handleSubmit} className="space-y-4">
           <Field className="gap-1.5" hidden={needsSecondStep}>
             <FieldLabel htmlFor={emailId}>Email</FieldLabel>
@@ -128,7 +103,7 @@ export function LoginScreen({ onSignedIn }: LoginScreenProps) {
               required
             />
           </Field>
-          {showCode && (
+          {needsSecondStep && (
             <Field className="gap-1.5">
               <FieldLabel htmlFor={codeId}>Enter the code from your authenticator app.</FieldLabel>
               <Input
@@ -154,15 +129,28 @@ export function LoginScreen({ onSignedIn }: LoginScreenProps) {
             </Notice>
           )}
 
-          <Button
-            type="submit"
-            className="w-full"
-            hidden={needsSecondStep && !showCode}
-            disabled={isPending}
-          >
+          <Button type="submit" className="w-full" disabled={isPending}>
             {isPending ? 'Signing in…' : 'Sign in'}
           </Button>
         </form>
+
+        {offerPasskey && (
+          <div className="mt-2 space-y-2">
+            <Button
+              variant="link"
+              className="w-full"
+              onClick={() => void handlePasskey()}
+              disabled={passkey.isPending}
+            >
+              {passkey.isPending ? 'Checking…' : 'Use a passkey instead'}
+            </Button>
+            {passkeyError && (
+              <p className="text-destructive text-xs" role="alert">
+                {passkeyError}
+              </p>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
