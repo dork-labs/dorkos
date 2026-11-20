@@ -3,10 +3,12 @@ import type { AddressInfo } from 'node:net';
 import type { Page, Route } from '@playwright/test';
 import { test, expect } from '../../fixtures';
 import { LocalBrowserPage } from '../../pages/LocalBrowserPage';
+import { fakeBrowserState } from '../../pages/fake-browser-state';
 import {
   cdpPageHistory,
   historyAvailability,
   stepPageHistory,
+  type PageHistoryPort,
 } from '../../../server/src/services/session/local-browser/history/page-history.js';
 import { historyAddressAllowed } from '../../../server/src/services/session/local-browser/errors.js';
 
@@ -20,6 +22,12 @@ import { historyAddressAllowed } from '../../../server/src/services/session/loca
  * The second is the panel in the real app, with the browser's state faked as
  * the handoff spec does: a real Agent browser opens a real Chrome window.
  */
+
+/** The open entry's address, read straight from the browser so a failed read shows why. */
+async function openEntry(page: Page, history: PageHistoryPort): Promise<string | undefined> {
+  const { index, entries } = await history.read(page as never);
+  return entries[index]?.url;
+}
 
 /** A made-up site whose pages can be told to redirect, counting what it served. */
 async function madeUpSite() {
@@ -68,16 +76,20 @@ test.describe('Agent browser history steps in real Chromium', () => {
     await page.goto(`${site.origin}/fares`);
     await page.goto(`${site.origin}/fares/lisbon`);
     const history = cdpPageHistory();
-    expect(await historyAvailability(page as never, history, allowed)).toEqual({
-      canGoBack: true,
-      canGoForward: false,
-    });
+    // DOR-4615: a read straight after a move can still see the old entry, and
+    // historyAvailability turns any failed read into "neither". So wait until the
+    // browser's own history shows the move (a failed read fails with its own error),
+    // then wait for the answer, never reading it once.
+    await expect.poll(() => openEntry(page, history)).toBe(`${site.origin}/fares/lisbon`);
+    await expect
+      .poll(() => historyAvailability(page as never, history, allowed))
+      .toEqual({ canGoBack: true, canGoForward: false });
     await step(page, 'back');
     expect(page.url()).toBe(`${site.origin}/fares`);
-    expect(await historyAvailability(page as never, history, allowed)).toEqual({
-      canGoBack: true,
-      canGoForward: true,
-    });
+    await expect.poll(() => openEntry(page, history)).toBe(`${site.origin}/fares`);
+    await expect
+      .poll(() => historyAvailability(page as never, history, allowed))
+      .toEqual({ canGoBack: true, canGoForward: true });
     await step(page, 'forward');
     expect(page.url()).toBe(`${site.origin}/fares/lisbon`);
   });
@@ -140,20 +152,17 @@ test.describe('Agent browser Back and Forward in the panel', () => {
     await chatPage.sendMessage('Compare fares to Lisbon.');
     await expect(page.getByTestId('transcript-feed').getByText(/Echo:/).first()).toBeVisible();
     const sessionId = new URL(page.url()).searchParams.get('session')!;
-    const state = (url: string, canGoBack: boolean, canGoForward: boolean, paused = false) => ({
-      connectionId: 'c1',
-      sessionId,
-      mode: 'new-window',
-      status: 'connected',
-      paused,
-      tabs: [{ id: 't1', url, title: 'Fares', canGoBack, canGoForward }],
-      selectedTabId: 't1',
-      revision: 1,
-      preparation: null,
-      signIn: null,
-      handoff: null,
-      takenOver: false,
-    });
+    const state = (url: string, canGoBack: boolean, canGoForward: boolean, paused = false) =>
+      fakeBrowserState({
+        connectionId: 'c1',
+        sessionId,
+        mode: 'new-window',
+        status: 'connected',
+        paused,
+        tabs: [{ id: 't1', url, title: 'Fares', canGoBack, canGoForward }],
+        selectedTabId: 't1',
+        revision: 1,
+      });
     let current = state('https://northwind.example/fares/lisbon', true, false);
     const steps: string[] = [];
     await page.route('**/api/local-browser/**', async (route: Route) => {
