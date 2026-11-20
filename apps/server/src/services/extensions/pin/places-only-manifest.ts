@@ -88,14 +88,17 @@ export interface ManifestMove {
   fromVersion: string;
   /** The new manifest's version. */
   toVersion: string;
+  /** How many places the new manifest adds. */
+  added: number;
 }
 
 /**
  * How two manifest texts differ, when they differ only by newly added places
- * (each exactly `true`) and at most their `version`. Pure. A changed version
- * alone is not enough: at least one place must be added. Whether the version
- * may change is the caller's rule: only for a dork-apps rebuild, and never
- * downward; for any other app a changed version counts as changed.
+ * (each exactly `true`) and at most their `version`. Pure. Whether the
+ * version may change, and whether no added place is enough, are the caller's
+ * rules: a dork-apps rebuild may bump the version, never downward, and need
+ * add no place; any other app must add at least one, and a changed version
+ * counts as changed.
  *
  * @param before - The approved `extension.json`, as text.
  * @param after - The one installed now, as text.
@@ -118,21 +121,25 @@ export function placesOnlyManifestMove(before: string, after: string): ManifestM
     if (!Object.hasOwn(is, key) || is[key] !== value) return null;
   }
   const added = Object.keys(is).filter((key) => !Object.hasOwn(was, key));
-  if (added.length === 0 || !added.every((key) => isContributionKey(key) && is[key] === true)) {
-    return null;
-  }
-  return { id: String(now.id), fromVersion: oldVersion, toVersion: newVersion };
+  if (!added.every((key) => isContributionKey(key) && is[key] === true)) return null;
+  return {
+    id: String(now.id),
+    fromVersion: oldVersion,
+    toVersion: newVersion,
+    added: added.length,
+  };
 }
 
 /**
  * Whether two manifest texts differ only by newly added places, each set to
- * exactly `true`, with the same `version`: the rule for an app no build tool
- * stamps, where a changed version counts as changed. Pure.
+ * exactly `true`, with the same `version` and at least one place added: the
+ * rule for an app no build tool stamps, where a changed version counts as
+ * changed. Pure.
  *
  * @param before - The approved `extension.json`, as text.
  * @param after - The one installed now, as text.
  */
 export function manifestOnlyAddsPlaces(before: string, after: string): boolean {
   const move = placesOnlyManifestMove(before, after);
-  return move !== null && move.fromVersion === move.toVersion;
+  return move !== null && move.added > 0 && move.fromVersion === move.toVersion;
 }

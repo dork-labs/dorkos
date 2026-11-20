@@ -35,9 +35,14 @@ vi.mock('../../../../lib/logger.js', () => ({
 }));
 
 import { grantsDigestOf, keepsPathTrust } from '../extension-path-trust.js';
-import { mayRunExtensionCode, type ExtensionApprovals } from '../../extension-load-policy.js';
+import {
+  isDismissedCopy,
+  mayRunExtensionCode,
+  type ExtensionApprovals,
+} from '../../extension-load-policy.js';
 import {
   approvalFor,
+  approvedVersionOf,
   awaitsNextScan,
   changedFilesSince,
   liveDigestOf,
@@ -63,7 +68,7 @@ import { placeSnapshots, recheckAtItsLevel } from '../extension-snapshot-placeme
 import { isPendingApproval } from '../../extension-approval-queue.js';
 import { toPublic } from '../../extension-manager-types.js';
 import { initAuditTrail, resetAuditTrail, type AuditTrail } from '../../../audit/audit-trail.js';
-import { allowedPlacesOf, waitingPlacesOf } from '../../isolation/place-grace.js';
+import { allowedPlacesOf, placeGraceOf, waitingPlacesOf } from '../../isolation/place-grace.js';
 
 const ISOLATED: ExtensionManifest = {
   id: 'notes',
@@ -544,6 +549,68 @@ describe('an update that only adds places keeps its app running (DOR-4282, C2)',
     );
   });
 
+  // Purpose (R1): an approval from before places were recorded keeps its
+  // undeclared panel tab and Settings page only until its files change. A
+  // places-only update never moves its pin, so the grace ends and the normal
+  // card asks; an approval that recorded its places still moves.
+  it('never moves the pin of an approval with no places, so its grace ends', async () => {
+    const pluginRoot = path.join(dorkHome, 'plugins', 'notes-kit');
+    const appDir = path.join(pluginRoot, '.dork', 'extensions', 'notes');
+    await fs.mkdir(appDir, { recursive: true });
+    await fs.writeFile(path.join(appDir, 'extension.json'), JSON.stringify(IN_PROCESS));
+    await fs.writeFile(path.join(appDir, 'index.js'), 'export function activate() {}');
+    await fs.writeFile(path.join(appDir, 'server.ts'), 'export default () => {};');
+    const installed = (manifest: ExtensionManifest) =>
+      copy({
+        path: appDir,
+        realPath: appDir,
+        scope: 'global',
+        manifest,
+        sourcePlugin: 'notes-kit',
+        trustedOrigin: { plugin: 'notes-kit', source: 'dork-labs/marketplace' },
+      });
+    const approved = installed(IN_PROCESS);
+    const digest = (await liveDigestOf(approved))!;
+    approved.currentDigest = digest;
+    expect(await ensureSnapshot(dorkHome, pluginRoot, digest)).not.toBeNull();
+    const inProcess = { runtime: 'in-process' as const, net: [], run: [], agents: false };
+    const oldYes = (): ExtensionApprovals => ({
+      approvedToRun: ['notes'],
+      approvedSources: {
+        notes: { path: appDir, plugin: 'notes-kit', digest, personApprovedDigest: digest },
+      },
+      approvedPermissions: { notes: inProcess },
+    });
+    stored.extensions = { enabled: ['notes'], disabled: [], ...oldYes() };
+    expect(placeGraceOf(approved, approvals())).toEqual(['right-panel', 'settings.tabs']);
+
+    const withPage = { ...IN_PROCESS, contributions: { pages: true } } as ExtensionManifest;
+    await fs.writeFile(path.join(appDir, 'extension.json'), JSON.stringify(withPage));
+    const updated = installed(withPage);
+    updated.currentDigest = (await liveDigestOf(updated))!;
+
+    const before = approvals();
+    const after = await repinPlacesOnlyUpdates(dorkHome, [updated], before);
+
+    expect(after).toBe(before);
+    expect(after.approvedSources!.notes!.digest).toBe(digest);
+    expect(updated.pinnedDigest).toBeUndefined();
+    expect(mayRunExtensionCode(updated, after)).toBe(false);
+    expect(placeGraceOf(updated, after)).toEqual([]);
+    expect(isPendingApproval(updated, { ...after, dismissedApprovals: {} })).toBe(true);
+
+    // The same update under a yes that recorded its places moves the pin.
+    stored.extensions = {
+      enabled: ['notes'],
+      disabled: [],
+      ...oldYes(),
+      approvedPermissions: { notes: { ...inProcess, slots: ['right-panel'] } },
+    };
+    const moved = await repinPlacesOnlyUpdates(dorkHome, [updated], approvals());
+    expect(moved.approvedSources!.notes!.digest).toBe(updated.currentDigest);
+    expect(mayRunExtensionCode(updated, moved)).toBe(true);
+  });
+
   // Purpose: a pin that misses between scans only pauses. No card, no config
   // write; the next scan decides, and a places-only update keeps its yes.
   it('pauses silently between scans, then recovers at the next scan', async () => {
@@ -888,6 +955,92 @@ describe('an update that only adds places keeps its app running (DOR-4282, C2)',
         ],
       })
     );
+  });
+
+  // Purpose (R3): the approved version is read from the pin's own snapshot,
+  // so it follows the pin when a rebuild moves it.
+  it('moves the approved version with the pin', async () => {
+    const { digest, record } = await rebuiltDorkApp();
+    expect(await approvedVersionOf(dorkHome, record, digest)).toBe('1.0.0');
+
+    const after = await repinPlacesOnlyUpdates(dorkHome, [record], approvals());
+
+    const moved = after.approvedSources!.notes!.digest!;
+    expect(moved).toBe(record.currentDigest);
+    expect(await approvedVersionOf(dorkHome, record, moved)).toBe('1.1.0');
+  });
+
+  // Purpose (R3): "Not now" is keyed by version. A rebuild that moves the pin
+  // to a new version carries the person's dismissal along in the same write,
+  // so the card they put off does not come back.
+  it('keeps a person’s "Not now" across a rebuild that moves the version', async () => {
+    const { record } = await rebuiltDorkApp();
+    const dismissedAt = '2026-11-19T00:00:00.000Z';
+    const other = { path: '/elsewhere/notes', version: '1.0.0', dismissedAt };
+    stored.extensions = {
+      ...stored.extensions,
+      dismissedApprovals: { notes: { path: dir, version: '1.0.0', dismissedAt }, other },
+    };
+
+    const after = await repinPlacesOnlyUpdates(dorkHome, [record], approvals());
+
+    const extensions = after as ExtensionApprovals & {
+      dismissedApprovals: Record<string, { path: string; version: string; dismissedAt: string }>;
+    };
+    expect(after.approvedSources!.notes!.digest).toBe(record.currentDigest);
+    expect(extensions.dismissedApprovals.notes).toEqual({
+      path: dir,
+      version: '1.1.0',
+      dismissedAt,
+    });
+    expect(extensions.dismissedApprovals.other).toEqual(other);
+    expect(waitingPlacesOf(record, after)).toEqual(['pages']);
+    expect(isDismissedCopy(record, extensions)).toBe(true);
+    expect(isPendingApproval(record, extensions)).toBe(false);
+  });
+
+  // Purpose (R3): only a dismissal of this very copy at the old version is
+  // carried; one for another folder stays where it was.
+  it('leaves a "Not now" for another folder of the same id alone', async () => {
+    const { record } = await rebuiltDorkApp();
+    const elsewhere = { path: '/elsewhere/notes', version: '1.0.0', dismissedAt: 'then' };
+    stored.extensions = { ...stored.extensions, dismissedApprovals: { notes: elsewhere } };
+
+    const after = (await repinPlacesOnlyUpdates(dorkHome, [record], approvals())) as unknown as {
+      dismissedApprovals: Record<string, unknown>;
+    };
+
+    expect(after.dismissedApprovals.notes).toEqual(elsewhere);
+  });
+
+  // Purpose (R2): a rebuild that adds no place is still only what the build
+  // tool restamps, so its pin moves too.
+  it('re-pins a dork-apps rebuild that adds no place', async () => {
+    for (const name of await fs.readdir(dir))
+      await fs.rm(path.join(dir, name), { recursive: true });
+    await writeDorkAppBuild(dir, BASE_BUILD);
+    await approveNow();
+    await writeDorkAppBuild(dir, { ...HEAD_BUILD, contributions: BASE_BUILD.contributions });
+    const manifest = JSON.parse(
+      await fs.readFile(path.join(dir, 'extension.json'), 'utf8')
+    ) as ExtensionManifest;
+    const record = await rescanned(manifest);
+
+    const after = await repinPlacesOnlyUpdates(dorkHome, [record], approvals());
+
+    expect(after.approvedSources!.notes!.digest).toBe(record.currentDigest);
+    expect(mayRunExtensionCode(record, after)).toBe(true);
+    expect(waitingPlacesOf(record, after)).toEqual([]);
+  });
+
+  // Purpose (R2): an app no build tool stamps must still add a place; a
+  // manifest that only reads differently (spacing) gets the normal card.
+  it('leaves a manifest change that adds no place for the normal card', async () => {
+    await approveNow();
+    const spaced = JSON.stringify(PANEL, null, 2);
+    expect(manifestOnlyAddsPlaces(JSON.stringify(PANEL), spaced)).toBe(false);
+    await fs.writeFile(path.join(dir, 'extension.json'), spaced);
+    await expectNormalCard(await rescanned(PANEL));
   });
 
   // Purpose (W4): after a re-pin the copy runs from the snapshot of the new

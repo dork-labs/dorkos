@@ -67,6 +67,16 @@ describe('a dork-apps rebuild that only adds places', () => {
     });
   });
 
+  // Guards R2: a rebuild that adds no place still counts, because its
+  // banners and BUILD.json are checked; only an app no build tool stamps
+  // must add one.
+  it('is places-only when a rebuild adds no place', async () => {
+    expect(await compareWith({ ...HEAD_BUILD, contributions: BASE_BUILD.contributions })).toEqual({
+      version: { from: '1.0.0', to: '1.1.0' },
+      commit: { from: 'abc1234', to: 'def5678' },
+    });
+  });
+
   // Guards W2's whole-line match and the ASCII-only rule: JS ends a `//`
   // comment at U+2028, so code after it would run.
   it('refuses a banner with U+2028 and code after it', async () => {
@@ -280,6 +290,17 @@ describe('an app the dork-apps tool did not build', () => {
     expect(await snapshotsOnlyAddPlaces(base, head, 'extension.json')).toEqual({
       version: { from: '1.0.0', to: '1.0.0' },
     });
+  });
+
+  // Guards R2's other half: without BUILD.json, a manifest that adds no
+  // place is not places-only, even with every other file byte-identical.
+  it('refuses a change that adds no place in an app without BUILD.json', async () => {
+    await writeDorkAppBuild(head, BASE_BUILD);
+    await withoutBuildRecords();
+    // Spacing only: the parsed manifests are equal and no place is added.
+    const manifest = path.join(head, 'extension.json');
+    await fs.writeFile(manifest, JSON.stringify(JSON.parse(await fs.readFile(manifest, 'utf8'))));
+    expect(await snapshotsOnlyAddPlaces(base, head, 'extension.json')).toBe(false);
   });
 
   // Guards that banner changes are allowed only beside a BUILD.json.

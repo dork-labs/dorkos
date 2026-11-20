@@ -27,7 +27,17 @@
  *   `contributions` is left out (`places-only-manifest.ts`). Only a dork-apps
  *   rebuild may also change `version`, and never downward.
  * - **Places only added.** Every place the old manifest named keeps its value,
- *   and each new one is a known place set to exactly `true`. At least one is.
+ *   and each new one is a known place set to exactly `true`. At least one is,
+ *   except for a dork-apps rebuild: one that adds no place is still only what
+ *   the build tool restamps.
+ * - **An approval that recorded its places.** An approval with no `slots`
+ *   (from before places were recorded) is never moved: its grace for
+ *   undeclared places (`isolation/place-grace.ts`) ends on any change to the
+ *   files, and a moved pin would carry it across an update.
+ *
+ * A move keeps the person's "Not now" too: a dismissal of the old version of
+ * the same copy is re-keyed to the new version in the same config write, so
+ * a version bump never brings back a card the person put off.
  *
  * @module services/extensions/pin/places-only-update
  */
@@ -45,7 +55,12 @@ import {
   type CoveredTree,
 } from '../../marketplace/lib/install-digest.js';
 import { logger } from '../../../lib/logger.js';
-import { isSameStoredCopy, type ExtensionApprovals } from '../extension-load-policy.js';
+import type { ExtensionsConfig } from '../extension-enable-resolution.js';
+import {
+  isDismissedCopy,
+  isSameStoredCopy,
+  type ExtensionApprovals,
+} from '../extension-load-policy.js';
 import { digestRootOf } from './extension-content-pin.js';
 import { ensureSnapshot, snapshotRootOf } from './extension-snapshots.js';
 import { isPathTrustApproval } from './extension-path-trust.js';
@@ -133,8 +148,9 @@ export async function snapshotsOnlyAddPlaces(
   if (!move) return false;
   const version = { from: move.fromVersion, to: move.toVersion };
   // An app no build tool stamps: only added places may differ, so a changed
-  // version counts as changed (C2 as first ruled).
-  if (!rebuilt) return version.from === version.to ? { version } : false;
+  // version counts as changed, and at least one place is added (C2 as first
+  // ruled). A rebuild may add none: its banners and BUILD.json are checked.
+  if (!rebuilt) return version.from === version.to && move.added > 0 ? { version } : false;
   const commit = rebuildOnlyRestamps(
     { id: move.id, version: move.fromVersion, files: oldFiles },
     { id: move.id, version: move.toVersion, files: newFiles },
@@ -205,17 +221,55 @@ async function onlyPlacesAddedSince(
   }
 }
 
-/** Whether this copy's approval is a digest pin its files no longer match. */
+/**
+ * Whether this copy's approval is a digest pin its files no longer match, and
+ * one that recorded its places. An approval with no `slots` keeps undeclared
+ * places on grace only until its files change, so it is never moved: it gets
+ * the normal files-changed card.
+ */
 function changedPinOf(
   record: ExtensionRecord,
   approvals: ExtensionApprovals
 ): ExtensionApprovedSource | null {
   if (record.origin !== 'user' || record.devLink || !record.currentDigest) return null;
   if (!approvals.approvedToRun.includes(record.id)) return null;
+  if (approvals.approvedPermissions?.[record.id]?.slots === undefined) return null;
   const source = approvals.approvedSources?.[record.id];
   if (!source?.digest || source.digest === record.currentDigest) return null;
   if (!isSameStoredCopy(record, source) || isPathTrustApproval(source)) return null;
   return source;
+}
+
+/** The "Not now" map, `config.extensions.dismissedApprovals`. */
+type Dismissals = NonNullable<ExtensionsConfig['dismissedApprovals']>;
+
+/** One pin a places-only update moves. */
+interface MovedPin {
+  record: ExtensionRecord;
+  from: string;
+  to: string;
+  move: PlacesOnlyMove;
+}
+
+/**
+ * The "Not now" map with each moved copy's dismissal of its old version
+ * re-keyed to the new one, or null when none needs it. Only a dismissal of
+ * this very copy (path and plugin) at the version the pin moved from.
+ */
+function carriedDismissals(
+  stored: ExtensionApprovals & Pick<ExtensionsConfig, 'dismissedApprovals'>,
+  moved: readonly MovedPin[]
+): Dismissals | null {
+  let carried: Dismissals | null = null;
+  for (const { record, move } of moved) {
+    const dismissed = stored.dismissedApprovals?.[record.id];
+    if (!dismissed || move.version.from === move.version.to) continue;
+    const was = { ...record, manifest: { ...record.manifest, version: move.version.from } };
+    if (!isDismissedCopy(was, stored)) continue;
+    carried ??= { ...stored.dismissedApprovals };
+    carried[record.id] = { ...dismissed, version: move.version.to };
+  }
+  return carried;
 }
 
 /** The fixed audit line a moved pin leaves, whatever app it was. */
@@ -234,7 +288,8 @@ export const PIN_MOVED_SUMMARY = 'pin moved by places-only update';
  * config write that moves every pin, so a failed write moves neither, and the
  * copy stays paused for the normal card. Each moved pin leaves one audit line,
  * {@link PIN_MOVED_SUMMARY}, naming the app, both digests, both versions and,
- * for a dork-apps rebuild, both build commits.
+ * for a dork-apps rebuild, both build commits. The same write re-keys a
+ * "Not now" for the old version to the new one ({@link carriedDismissals}).
  *
  * @param dorkHome - DorkOS's data directory.
  * @param records - The copies this scan chose; a moved copy's `pinnedDigest`
@@ -248,12 +303,7 @@ export async function repinPlacesOnlyUpdates(
   approvals: ExtensionApprovals
 ): Promise<ExtensionApprovals> {
   const moved: Record<string, ExtensionApprovedSource> = {};
-  const movedRecords: Array<{
-    record: ExtensionRecord;
-    from: string;
-    to: string;
-    move: PlacesOnlyMove;
-  }> = [];
+  const movedRecords: MovedPin[] = [];
   for (const record of records) {
     const source = changedPinOf(record, approvals);
     if (!source?.digest || !record.currentDigest) continue;
@@ -275,11 +325,14 @@ export async function repinPlacesOnlyUpdates(
   }
   if (movedRecords.length === 0) return approvals;
   const before = configManager.get('extensions');
+  const dismissedApprovals = carriedDismissals(before, movedRecords);
   try {
-    // One write: each pin and its person's yes land together or not at all.
+    // One write: each pin, its person's yes and their "Not now" land
+    // together or not at all.
     configManager.set('extensions', {
       ...before,
       approvedSources: { ...(before.approvedSources ?? {}), ...moved },
+      ...(dismissedApprovals ? { dismissedApprovals } : {}),
     });
   } catch (err) {
     logger.warn('[Extensions] Could not move a pin for an update that only adds places', err);
