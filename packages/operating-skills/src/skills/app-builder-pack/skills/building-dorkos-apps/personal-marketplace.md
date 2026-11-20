@@ -15,15 +15,19 @@ person approves in DorkOS.
    `extension.json`, `index.ts` and, only if needed, `server.ts` as in SKILL.md.
 3. `marketplace_install(name, marketplace: "personal")` the first time. It asks the
    person first.
-4. For each new version: change the files, raise `version` in the package's
-   `.dork/manifest.json` and in the app's `extension.json`, then
+4. For each new version: change the files, then raise `version` in all three of the
+   package's `.claude-plugin/plugin.json` (DorkOS reads this one first), its
+   `.dork/manifest.json` and the app's `extension.json`. Then
    `marketplace_update(names: [name], apply: true)`. Without `apply` it only checks,
    and in a marked turn even the check asks for a card.
 5. An app with server code also waits for the person to allow it in Activity, after
    the first install and after each version that changes its files. Say so.
 
-Everything else in SKILL.md still applies: least privilege, `test_extension`, checking
-`serverStatus`, the screenshots and the reach list.
+Below Full, your writes into the package folder may each ask the person too, since
+it sits outside your own folder.
+
+Everything else in SKILL.md still applies: least privilege, the screenshots and the
+reach list. `test_extension` and `serverStatus` work once the app is installed.
 
 Never ask the person to copy files in from Terminal, and never write into
 `~/.dork/plugins/` or any other installed copy yourself.

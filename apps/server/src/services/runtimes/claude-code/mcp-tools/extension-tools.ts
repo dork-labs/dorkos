@@ -538,7 +538,7 @@ export function extensionToolDefinitions(
         'Called from your own chat, it is always created in your own folder, at .dork/extensions/<name>, whatever scope says. ' +
         'There, once it runs separately ("runtime": "subprocess"), edits to its server code load without a click from the person. ' +
         'Edits to its screen code (what the app shows) still wait for the person to approve them. ' +
-        'In a turn that read words from someone other than your owner (a room with another person, Telegram, Slack), ' +
+        'In a turn that read words from someone other than your owner (a room with another person, Telegram, Slack), or one held to a limit, ' +
         'your folder is read-only, so it creates nothing and its reply says how to build in the personal marketplace instead.',
       {
         name: z

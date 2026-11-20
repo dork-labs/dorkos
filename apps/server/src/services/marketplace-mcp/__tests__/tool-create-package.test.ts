@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtemp, rm, readFile, access } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
@@ -60,6 +60,7 @@ function buildTokenProvider() {
 import type { MarketplaceMcpDeps } from '../marketplace-mcp-tools.js';
 import type { MarketplaceSource } from '../../marketplace/types.js';
 import type { MarketplaceSourceManager } from '../../marketplace/sources/marketplace-source-manager.js';
+import { readDeclaredVersion } from '@dorkos/marketplace/package-validator';
 import { createCreatePackageHandler } from '../tool-create-package.js';
 
 /** Build a logger whose every method is a `vi.fn()` spy. */
@@ -323,6 +324,32 @@ describe('createCreatePackageHandler', () => {
     expect(fetchMarketplaceJson).toHaveBeenCalledWith(personal);
     // Read after the package was registered, never before.
     expect(listed).toEqual([['fresh-pkg']]);
+  });
+
+  // The route an agent with a read-only folder is told (DOR-4851): each new version raises
+  // "version" in plugin.json too, because that is the file a version is read from.
+  it('a new version shows only once plugin.json says so, as the read-only-folder guidance tells', async () => {
+    const handler = createCreatePackageHandler(
+      buildDeps({
+        dorkHome,
+        confirmationProvider: new AlwaysApprovesConfirmationProvider(),
+        logger,
+      })
+    );
+    const { payload } = parseResult(
+      await handler({ name: 'versioned-app', type: 'plugin', description: 'Made up.' })
+    );
+    const pkg = payload.packagePath as string;
+    const bump = async (rel: string) => {
+      const file = join(pkg, rel);
+      const json = JSON.parse(await readFile(file, 'utf-8')) as { version: string };
+      await writeFile(file, JSON.stringify({ ...json, version: '0.0.2' }, null, 2));
+    };
+    expect(await readDeclaredVersion(pkg)).toBe('0.0.1');
+    await bump('.dork/manifest.json');
+    expect(await readDeclaredVersion(pkg)).toBe('0.0.1');
+    await bump('.claude-plugin/plugin.json');
+    expect(await readDeclaredVersion(pkg)).toBe('0.0.2');
   });
 
   it('still returns created when the re-read fails, with a warning', async () => {

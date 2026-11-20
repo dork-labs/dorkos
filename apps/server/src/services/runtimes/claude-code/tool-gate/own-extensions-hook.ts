@@ -6,11 +6,13 @@
  * answers it with a bare "permission denied" that names no rule, so an agent building an app for
  * a person in a room guessed, and handed the person a Terminal copy (FB-76). This `PreToolUse`
  * hook refuses the same writes first, with the rule and the route that works
- * ({@link ownExtensionsReadOnlyMessage}). It only ever refuses, and only what the rule already
- * refuses: an unheld turn, a file outside the folder or any other tool gets no answer from it.
+ * ({@link ownExtensionsReadOnlyMessage}). It only ever refuses, never allows: an unheld turn, a
+ * file outside the folder, a home whose folder is the global one, or any other tool gets no
+ * answer from it.
  *
- * Held is read at launch and again at each call, so a write is refused if either says so: the
- * launch's deny rule is fixed for the process, and a mark can arrive after it started.
+ * Held is read at launch and again at each call (through the session's current id), so a write
+ * is refused if either says so. That can refuse a little more than the rule, which is fixed at
+ * launch: a mark that arrives after the process started. A narrowing, on purpose.
  *
  * @module services/runtimes/claude-code/tool-gate/own-extensions-hook
  */
@@ -19,6 +21,7 @@ import type { HookCallback, HookCallbackMatcher } from '@anthropic-ai/claude-age
 import { editToolFilePath, isEditFamilyTool } from '@dorkos/shared/diff-tools';
 import {
   isInOwnExtensions,
+  ownExtensionsDeniable,
   ownExtensionsReadOnlyMessage,
   ownExtensionsWritable,
 } from '../folder-settings/agent-extensions-deny.js';
@@ -37,7 +40,8 @@ export function createOwnExtensionsHook(
   session: HookSession,
   turn: { sessionId: string; cwd: string; agentHome: string | null | undefined }
 ): HookCallback {
-  const home = turn.agentHome ?? undefined;
+  // A home whose folder is the global one (a home of `~`) is never denied, so never refused here.
+  const home = turn.agentHome && ownExtensionsDeniable(turn.agentHome) ? turn.agentHome : undefined;
   const heldNow = (): boolean => {
     if (!home) return false;
     try {

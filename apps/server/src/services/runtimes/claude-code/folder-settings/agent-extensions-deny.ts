@@ -68,6 +68,23 @@ function canonicalExtensionsOf(home: string): string {
 }
 
 /**
+ * Whether `home`'s own `.dork/extensions` folder is one the deny rule can keep a held turn out
+ * of: every home's but one whose folder IS DorkOS's global extensions folder (a home of `~`),
+ * which {@link otherAgentsExtensionsDenyRules} never denies.
+ *
+ * @param home - The agent's home.
+ * @param dorkHome - DorkOS's data directory.
+ */
+export function ownExtensionsDeniable(home: string, dorkHome: string = resolveDorkHome()): boolean {
+  const global = path.join(path.resolve(dorkHome), 'extensions');
+  const realGlobal = path.join(
+    realpathOrUndefined(path.resolve(dorkHome)) ?? path.resolve(dorkHome),
+    'extensions'
+  );
+  return !extensionFolderNames(home).some((name) => name === global || name === realGlobal);
+}
+
+/**
  * Whether `file` is inside `home`'s own `.dork/extensions` folder, by any spelling
  * {@link extensionFolderNames} knows. The file need not exist yet: its closest existing
  * parent is read through its real path.
@@ -105,10 +122,11 @@ export function ownExtensionsReadOnlyMessage(folder?: string): string {
     'runs without a click. That rule is on purpose. ' +
     'Build in your owner’s personal marketplace instead: ' +
     'marketplace_create_package (type "plugin") once, then write the app into ' +
-    '<package>/.dork/extensions/<app id>/ and raise "version" in the package’s ' +
-    '.dork/manifest.json for each new version. Then marketplace_install (first time) or ' +
-    'marketplace_update with names and apply: true. Each version is one card your owner ' +
-    'approves in DorkOS; an app with server code also waits for them to allow it in Activity. ' +
+    '<package>/.dork/extensions/<app id>/. For each new version raise "version" in the ' +
+    'package’s .claude-plugin/plugin.json (read first) and .dork/manifest.json, and in the ' +
+    'app’s extension.json. Then marketplace_install (first time) or marketplace_update with ' +
+    'names and apply: true. Each version is one install card your owner approves in DorkOS; ' +
+    'an app with server code also waits for them to allow it in Activity. ' +
     'Never ask anyone to copy files in from Terminal.'
   );
 }

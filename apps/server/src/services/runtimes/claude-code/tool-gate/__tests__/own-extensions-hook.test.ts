@@ -2,7 +2,7 @@
  * A held turn's write into its agent's own mini apps folder is refused with the rule and the
  * personal-marketplace route named, and nothing else is touched (DOR-4851).
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -66,6 +66,7 @@ describe('own mini apps folder refusal', () => {
   });
   afterEach(async () => {
     resetLiveOutsiderTurns();
+    vi.unstubAllEnvs();
     await fs.rm(root, { recursive: true, force: true });
   });
 
@@ -81,6 +82,7 @@ describe('own mini apps folder refusal', () => {
     expect(reason).toContain('someone other than your owner');
     expect(reason).toContain('marketplace_create_package');
     expect(reason).toContain('marketplace_update');
+    expect(reason).toContain('.claude-plugin/plugin.json');
     expect(reason).toContain('Terminal');
   });
 
@@ -123,6 +125,17 @@ describe('own mini apps folder refusal', () => {
       {}
     );
     expect(await answer(held, 'Read', path.join(app, 'index.ts'))).toEqual({});
+  });
+
+  it('never refuses a home whose folder is the global one, which the rule never denies', async () => {
+    // A home of `~`: its `.dork/extensions` IS DorkOS's own, a person's, pinned by content.
+    vi.stubEnv('DORK_HOME', path.join(home, '.dork'));
+    const hook = createOwnExtensionsHook(CEILING as never, {
+      sessionId: 'own-ext-7',
+      cwd: home,
+      agentHome: home,
+    });
+    expect(await answer(hook, 'Write', path.join(app, 'index.ts'))).toEqual({});
   });
 
   it('a turn that runs as no agent gets nothing from it', async () => {

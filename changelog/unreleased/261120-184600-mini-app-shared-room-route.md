@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(extensions): an agent building a mini app in a shared room is told why its folder is read-only and how to publish instead (DOR-4851)'
+  - 'fix(extensions): review fixes for the read-only mini apps route (DOR-4851)'
 ---
 
 ### Fixed

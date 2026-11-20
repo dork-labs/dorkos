@@ -305,6 +305,23 @@ describe('create_extension from an agent', () => {
     expect(reply.status).toBe('not_created');
   });
 
+  it('still creates for a held agent whose folder is the global one, which stays writable', async () => {
+    // A home of `~`: its `.dork/extensions` IS DorkOS's own, which no deny rule names.
+    vi.stubEnv('DORK_HOME', '/made-up/home/.dork');
+    try {
+      const { createExtension, handler } = handlerFor({
+        agentPath: '/made-up/home',
+        ceilinged: true,
+      });
+      await handler({ name: 'notes' });
+      expect(createExtension).toHaveBeenCalledWith(
+        expect.objectContaining({ agentHome: '/made-up/home', approveIfTrusted: false })
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('still creates, waiting for a person, from the external server where no agent is named', async () => {
     stored.marks = { outsider: true };
     const { createExtension, handler } = handlerFor({});

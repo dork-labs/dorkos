@@ -11,6 +11,7 @@ import { jsonContent } from './types.js';
 import { resolveProposerName } from '../../../tasks/task-provenance.js';
 import { turnReadOutsideWords } from '../../../core/turn-power/outsider-turn.js';
 import {
+  ownExtensionsDeniable,
   ownExtensionsHeldByMark,
   ownExtensionsReadOnlyMessage,
 } from '../folder-settings/agent-extensions-deny.js';
@@ -84,6 +85,7 @@ export function createCreateExtensionHandler(
       // and its id would stand in the way of the same app published to the personal marketplace.
       if (
         agentPath &&
+        ownExtensionsDeniable(agentPath) &&
         (creator?.ceilinged === true || ownExtensionsHeldByMark(creator?.sessionId, agentPath))
       ) {
         return jsonContent({
