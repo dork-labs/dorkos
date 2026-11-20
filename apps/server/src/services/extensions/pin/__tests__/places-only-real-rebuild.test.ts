@@ -1,31 +1,42 @@
 /**
  * Real dork-apps rebuilds that only add places count as places-only
- * (DOR-4282, C2 widened). Each pair lives in
- * `fixtures/rebuilt-249/<app>/{base,head}/`, copied from two real builds of
- * one app. Guards that the rules match the build tool's real output, not
- * only the made-up builds in `places-only-rebuild.test.ts`.
+ * (DOR-4282, C2 widened). The pairs are real builds of private apps, so they
+ * never live in this repo: point `DORKOS_REBUILT_APPS_DIR` at a folder holding
+ * `<app>/{base,head}/` to run it. Unset, this skips; the made-up builds in
+ * `places-only-rebuild.test.ts` pin the same format in CI. Set to a folder
+ * with no such pairs, it fails, so a wrong path never reads as a pass.
  *
  * @module services/extensions/pin/__tests__/places-only-real-rebuild
  */
 import { existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { snapshotsOnlyAddPlaces } from '../places-only-update.js';
 
-const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'rebuilt-249');
-const apps = existsSync(FIXTURES)
-  ? readdirSync(FIXTURES, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)
-      .sort()
-  : [];
+const FIXTURES = process.env.DORKOS_REBUILT_APPS_DIR ?? '';
+const apps =
+  FIXTURES && existsSync(FIXTURES)
+    ? readdirSync(FIXTURES, { withFileTypes: true })
+        .filter(
+          (entry) =>
+            entry.isDirectory() &&
+            existsSync(path.join(FIXTURES, entry.name, 'base')) &&
+            existsSync(path.join(FIXTURES, entry.name, 'head'))
+        )
+        .map((entry) => entry.name)
+        .sort()
+    : [];
 
 describe('real dork-apps rebuilds', () => {
+  if (!FIXTURES) {
+    // Skipped, not passed: without real builds there is nothing real to compare.
+    it.skip('skipped: DORKOS_REBUILT_APPS_DIR is not set', () => {});
+    return;
+  }
   if (apps.length === 0) {
-    // Skipped, not passed: the pairs are copied into fixtures/rebuilt-249/
-    // separately, and until then there is nothing real to compare.
-    it.skip('skipped: fixtures/rebuilt-249/<app>/{base,head}/ is absent', () => {});
+    it('finds <app>/{base,head}/ pairs in DORKOS_REBUILT_APPS_DIR', () => {
+      expect.fail(`DORKOS_REBUILT_APPS_DIR (${FIXTURES}) holds no <app>/{base,head}/ pairs`);
+    });
     return;
   }
   it.each(apps)('%s: base to head is places-only', async (app) => {
