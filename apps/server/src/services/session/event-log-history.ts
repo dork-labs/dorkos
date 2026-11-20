@@ -503,7 +503,7 @@ export function reconstructHistoryFromEvents(
         break;
       case 'model_substituted':
         // A turn that ran on another model than its session names, because
-        // DorkOS credits do not cover it (DOR-2636). For a log-backed runtime
+        // its account or credits cannot use it. For a log-backed runtime
         // this stream IS the transcript, so the notice survives a reopen only
         // if it is rebuilt here: the same lasting row the Claude Code overlay
         // puts back, in the turn it opened (after the person's message, before

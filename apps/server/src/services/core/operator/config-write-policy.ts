@@ -854,6 +854,17 @@ export const CONFIG_WRITE_POLICY = {
   // agents from launching agents until the machine falls over. An agent that
   // could raise it would be raising its own limit, so only a person may.
   'runtimes.maxAgentChats': 'operator-only',
+  // The machine-wide load gate every agent's heavy shell jobs wait behind
+  // (DOR-4209). Every leaf is the person's: an agent that could switch it off,
+  // raise the limit, add slots, shorten the hard cap or take a command off the
+  // heavy list would be letting its own job past the wait.
+  'runtimes.loadGate.enabled': 'operator-only',
+  'runtimes.loadGate.maxLoad': 'operator-only',
+  'runtimes.loadGate.slots': 'operator-only',
+  'runtimes.loadGate.maxWaitMinutes': 'operator-only',
+  'runtimes.loadGate.hardCapMinutes': 'operator-only',
+  'runtimes.loadGate.heavyCommands.add': 'operator-only',
+  'runtimes.loadGate.heavyCommands.remove': 'operator-only',
   'runtimes.opencode.defaultModel': 'agent-writable',
   'runtimes.codex.defaultModel': 'agent-writable',
   'runtimes.codex.defaultEffort': 'agent-writable',

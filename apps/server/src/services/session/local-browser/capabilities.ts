@@ -38,7 +38,13 @@ function requireSession(service: LocalBrowserService, context: CapabilityHandler
   try {
     service.handover.refuseStopped(context.sessionId);
     if (service.handover.isOpenFor(context.sessionId)) return;
-    service.requireSharedSession(context.sessionId);
+    try {
+      service.requireSharedSession(context.sessionId);
+    } catch (error) {
+      // A sign-in window closed the agent's browser: say so, not "open it" (DOR-4731).
+      service.handover.refuseWhileSigningIn();
+      throw error;
+    }
   } catch (error) {
     if (error instanceof LocalBrowserError)
       throw new CapabilityToolError({ ...error.fields, code: error.code, error: error.message });

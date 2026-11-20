@@ -291,6 +291,32 @@ name: test
 # also re-warms the `refs/heads/main` Actions caches (pnpm store, Playwright
 # browsers), which have had no writer since the push-to-main legs were retired
 # on 2026-09-19 and which every PR branch restores from.
+# PULL REQUESTS INTO A RELEASE BRANCH RUN THE FULL SWEEP (DOR-4639).
+#
+# Releases ship from `release/v<X.Y.Z>` branches cut from a QA-pinned main
+# commit (decision DOR-4636), and changes reach one only by pull request. Such
+# a pull request is the last gate before npm and the desktop app, and there is
+# no merge queue behind it to run the full suite, so it runs what the queue
+# runs: every suite on six shards, the binary and community jobs, the retry
+# budget, the quarantine lane and the union proof. Nothing is scoped: no shard
+# plan, no no-code skip, no two-shard matrix.
+#
+# How: wherever this file said "full on every event but a pull request", it now
+# says "full on every event but a pull request whose base is not a release
+# branch". In `if:` that is
+#
+#   github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/')
+#
+# and the scoped PR leg's own step reads the negation. Step bodies branch on
+# `$EVENT`, so every non-canary `EVENT:` maps such a pull request to the
+# pseudo-event `release_pull_request`, which every body treats as not a pull
+# request, i.e. full. The canary guards keep the plain event name (they are
+# byte-identical by test and a release PR is not a canary event either way).
+#
+# FAILS CLOSED ON THE SIDE OF MORE TESTING: the prefix is `release/`, wider
+# than the `release/v*` the branches use, so any base under release/ gets the
+# full sweep. `runs-on` is NOT widened: only `merge_group` may use the opt-in
+# queue runner, so a release PR stays on GitHub's hosted runner like any PR.
 on:
   pull_request:
   merge_group:
@@ -338,7 +364,7 @@ jobs:
   # division of labour the shards already run on. Not a required context
   # itself, so this job-level `if:` skips nothing the ruleset reads.
   community-pg:
-    if: ${{ github.event_name != 'pull_request' }}
+    if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
     # Queue runs only may use the opt-in `RUNNER_LABEL`; every other event, and
     # every run while it is unset, stays on GitHub's hosted runner. Never drop
     # the event check: a `pull_request` run executes a fork's code, and it must
@@ -562,7 +588,7 @@ jobs:
       - name: Decide whether this change can reach the packaged proof
         id: scope
         env:
-          EVENT: ${{ github.event_name }}
+          EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
         run: |
           set -euo pipefail
           if [ "$EVENT" != 'pull_request' ]; then
@@ -716,7 +742,7 @@ jobs:
       - name: Decide whether this change can affect a test
         id: noscope
         env:
-          EVENT: ${{ github.event_name }}
+          EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
         run: |
           set -uo pipefail
           if [ "$EVENT" != 'pull_request' ]; then
@@ -755,7 +781,7 @@ jobs:
       - name: Plan this pull request's suites
         id: plan
         env:
-          EVENT: ${{ github.event_name }}
+          EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
         run: |
           set -uo pipefail
           scope=full
@@ -783,7 +809,7 @@ jobs:
       - name: Pick the shard count
         id: count
         env:
-          EVENT: ${{ github.event_name }}
+          EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
           SCOPE: ${{ steps.plan.outputs.scope }}
           DIRS: ${{ steps.plan.outputs.dirs }}
         run: |
@@ -1110,7 +1136,7 @@ jobs:
       # writes an empty list and says so, and an empty list means every test
       # blocks as it always did.
       - name: Read the quarantine lane
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
         run: |
           node packages/ci-steward/src/cli.ts quarantine-list \
             --runner vitest \
@@ -1138,7 +1164,7 @@ jobs:
       - name: Build what the suites import, once, with no test arguments
         id: deps
         env:
-          EVENT: ${{ github.event_name }}
+          EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
         run: |
           if [ "$EVENT" = 'pull_request' ]; then
             echo 'the pull request leg builds its own set, inside its suite step below.'
@@ -1148,7 +1174,7 @@ jobs:
 
       - name: Run every package's test suite (shard ${{ matrix.shard }}/6)
         id: sweep
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
         run: |
           set +e
           pnpm exec turbo test --summarize --continue --concurrency=1 --only -- --run --shard=${{ matrix.shard }}/6 --config=../../scripts/sharding/config.ts --retry=1 --passWithNoTests --exclude='**/*.binary.test.ts' --reporter=default --reporter=json --outputFile.json=vitest-shard-report.json --reporter=../../scripts/vitest-flake-reporter.ts
@@ -1171,7 +1197,7 @@ jobs:
       # check also requires every such file by name (DOR-4190, ledger
       # 261115-203006). Quarantine itself excludes no file.
       - name: Refuse any failure the quarantine lane does not cover
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
         run: |
           args=()
           while IFS= read -r report; do args+=(--reports "$report"); done < <(
@@ -1207,7 +1233,7 @@ jobs:
       - name: Decide whether this change can affect a test
         id: noscope
         env:
-          EVENT: ${{ github.event_name }}
+          EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
           TESTS: ${{ needs.test-shard-count.outputs.tests }}
         run: |
           set -uo pipefail
@@ -1257,7 +1283,7 @@ jobs:
       # set; the old per-shard `--affected` needed a pinned base SHA for the
       # same reason.
       - name: Run the affected packages' test suites (shard ${{ matrix.shard }}/${{ strategy.job-total }})
-        if: ${{ github.event_name == 'pull_request' && steps.noscope.outputs.run == 'true' }}
+        if: ${{ github.event_name == 'pull_request' && !startsWith(github.base_ref, 'release/') && steps.noscope.outputs.run == 'true' }}
         env:
           SCOPE: ${{ needs.test-shard-count.outputs.scope }}
           PACKAGES: ${{ needs.test-shard-count.outputs.packages }}
@@ -1302,7 +1328,7 @@ jobs:
       # is exactly the weakening its header refuses. The PR leg gets no
       # execution proof because it never had one.
       - name: Prove the suite actually executed
-        if: ${{ success() && github.event_name != 'pull_request' }}
+        if: ${{ success() && (github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/')) }}
         run: bash scripts/assert-tests-executed.sh
 
       # The price of the retry on the suite line above: every test it absorbed
@@ -1337,7 +1363,7 @@ jobs:
       # reporter loaded, so this step would fail on a missing report — which is
       # correct behaviour for the queue and meaningless noise for a PR.
       - name: Name the tests that only passed on a retry
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
         run: |
           # pipefail, because every read below is the LAST stage of a pipe and
           # bash otherwise reports the exit status of that last stage only. A
@@ -1386,7 +1412,7 @@ jobs:
       # The lane this shard read, handed to the fan-in, which has no install and
       # cannot read the data branch itself.
       - name: Hand this shard's quarantine lane to the fan-in
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
         uses: actions/upload-artifact@v7
         with:
           name: quarantine-lane-shard-${{ matrix.shard }}-vitest
@@ -1398,7 +1424,7 @@ jobs:
           retention-days: 7
 
       - name: Record the test files this shard collected
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
         run: |
           reports=$(find apps packages -mindepth 2 -maxdepth 2 -name vitest-shard-report.json)
           [ -n "$reports" ] || { echo 'no vitest-shard-report.json found in any package — the json reporter passthrough is broken' >&2; exit 1; }
@@ -1406,7 +1432,7 @@ jobs:
           wc -l shard-files-${{ matrix.shard }}.txt
 
       - uses: actions/upload-artifact@v7
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
         with:
           name: shard-files-${{ matrix.shard }}
           path: shard-files-${{ matrix.shard }}.txt
@@ -1424,7 +1450,7 @@ jobs:
       # `!cancelled()` so a red shard uploads too: flaky-test-runs sampled from
       # green shards only would never see a test that failed twice.
       - name: Upload this shard's vitest reports for CI Steward
-        if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+        if: ${{ !cancelled() && (github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/')) }}
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
@@ -1605,7 +1631,7 @@ jobs:
       - name: Decide which binary suites run
         id: plan
         env:
-          EVENT: ${{ github.event_name }}
+          EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
           SCOPE: ${{ needs.test-shard-count.outputs.scope }}
           PACKAGES: ${{ needs.test-shard-count.outputs.packages }}
           TESTS: ${{ needs.test-shard-count.outputs.tests }}
@@ -1643,7 +1669,7 @@ jobs:
 
       # The lane, as each shard reads it; see test-shard. Full-sweep events only.
       - name: Read the quarantine lane
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
         run: |
           node packages/ci-steward/src/cli.ts quarantine-list \
             --runner vitest \
@@ -1677,7 +1703,7 @@ jobs:
       - name: Run the binary CLI suites
         id: sweep
         env:
-          EVENT: ${{ github.event_name }}
+          EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
           RUN: ${{ steps.plan.outputs.run }}
         run: |
           # +e: the default shell is `bash -e`, and the suites' exit code must be
@@ -1708,7 +1734,7 @@ jobs:
           exit 0
 
       - name: Refuse any failure the quarantine lane does not cover
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
         run: |
           args=()
           while IFS= read -r report; do args+=(--reports "$report"); done < <(
@@ -2046,7 +2072,7 @@ jobs:
       # queue build or canary run that skipped it fails here.
       - name: Require real community Postgres tests green
         env:
-          EVENT: ${{ github.event_name }}
+          EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
         run: |
           result="${{ needs.community-pg.result }}"
           echo "community Postgres result: $result"
@@ -2060,11 +2086,11 @@ jobs:
       # that needs history or tags. (The DOR-884/DOR-339 tag reasoning lives on
       # the shard job's checkout, which is where the suites run.)
       - uses: actions/checkout@v7
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
 
       # ---- merge_group leg: the union check ----
       - uses: actions/download-artifact@v8
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
         with:
           pattern: shard-files-*
           merge-multiple: true
@@ -2092,14 +2118,14 @@ jobs:
       # exactly backwards. Each copy carries its own `i/N`, so a missing,
       # duplicated or stale one is refused by name.
       - name: Collect every shard's quarantine lane
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
         uses: actions/download-artifact@v8
         with:
           pattern: quarantine-lane-shard-*-vitest
           path: lane
 
       - name: Agree on the lane this build ran under
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
         run: |
           shopt -s nullglob
           lanes=(lane/*/quarantine.txt)
@@ -2145,7 +2171,7 @@ jobs:
       # them cannot see one go missing; test-binary and codex-sandbox upload
       # what they collected as shard-files-binary and shard-files-codex.
       - name: Prove the shards' union covers every package
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
         run: |
           git ls-files -- 'apps/*.binary.test.ts' 'packages/*.binary.test.ts' > "$RUNNER_TEMP/binary-test-files.txt"
           bash scripts/assert-shard-union.sh \

@@ -20,9 +20,11 @@ export function BrowserHandoffCard({ sessionId }: BrowserHandoffCardProps) {
     step,
     canShowWindow,
     sharedProfile,
+    needsQuit,
     busy,
     error,
     continueAgent,
+    doneSigningIn,
     signIn,
     openWindow,
     showWindow,
@@ -47,9 +49,11 @@ export function BrowserHandoffCard({ sessionId }: BrowserHandoffCardProps) {
             step={step}
             canShowWindow={canShowWindow}
             sharedProfile={sharedProfile}
+            needsQuit={needsQuit}
             busy={busy}
             error={error}
             onContinue={() => void continueAgent()}
+            onDone={doneSigningIn}
             onSignIn={signIn}
             onOpenWindow={openWindow}
             onShowWindow={showWindow}
