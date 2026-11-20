@@ -57,16 +57,17 @@ export type TodoPromiseActor =
        */
       proven?: boolean;
       /**
-       * True when the install has no owner account, so no request can ever be proven (DOR-3832).
-       * Set by the server from its own account store, never from a request.
+       * True when the install has no owner account, so no request can ever be proven, and the
+       * request is at this computer (DOR-3832). Set by the server from its own account store and
+       * request classifier, never from a request body.
        */
       ownerless?: boolean;
     };
 
 /**
  * Whether a person's words on a promise count as the person's own (DOR-3832): proven by the
- * owner's session, or on an install with no owner account, where there is nobody to prove and the
- * person in the app is the only person there is. Anything less is the stranger bound.
+ * owner's session, or at this computer on an install with no owner account, where there is nobody
+ * to prove and the person there is the only person there is. Anything less is the stranger bound.
  *
  * @param actor - The person acting.
  */

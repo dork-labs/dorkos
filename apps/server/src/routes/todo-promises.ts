@@ -31,6 +31,7 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
+import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
 import {
   TodoPromiseError,
   type TodoPromiseActor,
@@ -67,9 +68,9 @@ export interface TodoPromiseRouterDeps {
    */
   personProven(facts: RequestFacts): boolean;
   /**
-   * Whether this install has an owner account. When it has none, nobody can be proven, and the
-   * person in the app writes as the person (DOR-3832). A failed lookup must read as an owner, so
-   * this fails closed.
+   * Whether this install has an owner account. When it has none, nobody can be proven, and a
+   * person at this computer writes as the person (DOR-3832). A failed lookup must read as an
+   * owner, so this fails closed.
    */
   ownerExists(): boolean;
   /** Takes a person's answer to "was it kept?" (DOR-3034). */
@@ -127,17 +128,19 @@ function actorOf(
 
 /**
  * The person behind a request that already passed the agent and owner checks: proven by the
- * owner's session, or, on an install with no owner account, the only person there is (DOR-3832,
- * the same shape as `routes/todos.ts`).
+ * owner's session, or the only person there is (DOR-3832). That takes both an install with no
+ * owner account and a request the gate's own classifier places at this computer
+ * (`isAtThisComputer`: this machine, or a container's published port): no owner alone is not
+ * enough, so a request from another device stays the stranger bound.
  */
 function personOf(
   facts: RequestFacts,
   deps: TodoPromiseRouterDeps
 ): Extract<TodoPromiseActor, { kind: 'person' }> {
   const proven = deps.personProven(facts);
-  return proven
-    ? { kind: 'person', proven }
-    : { kind: 'person', proven, ownerless: !deps.ownerExists() };
+  if (proven) return { kind: 'person', proven };
+  // Where the request came from first: the owner lookup fails closed on its own.
+  return { kind: 'person', proven, ownerless: isAtThisComputer(facts) && !deps.ownerExists() };
 }
 
 /**

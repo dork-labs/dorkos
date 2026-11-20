@@ -11,6 +11,7 @@ import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { TodoPromiseService, TodoPromiseStore } from '../../services/todos/index.js';
 import { TodoConfirm } from '../../services/todos/notice/todo-confirm.js';
 import { AGENT_IDENTITY_HEADER } from '../../middleware/agent-identity.js';
+import { markIngress } from '../../services/core/remote/ingress-mark.js';
 import { personProof } from '../../services/todos/caller.js';
 import { todos, eq, type Db } from '@dorkos/db';
 
@@ -27,6 +28,9 @@ const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
 
 const AGENTS: Record<string, string> = { '/agents/ana': 'agent-ana', '/agents/bo': 'agent-bo' };
+
+/** A test-only header: mark the request as arriving over Wi-Fi, as the Wi-Fi listener does. */
+const VIA_WIFI = 'x-test-via-wifi';
 
 describe('to-do routes', () => {
   let service: TodoPromiseService;
@@ -73,6 +77,7 @@ describe('to-do routes', () => {
         // Stand in for the agent-identity step: the header names a home folder,
         // and an unknown one resolves to nothing (a token that did not verify).
         before: (c, next) => {
+          if (c.req.header(VIA_WIFI)) markIngress(c.env.incoming, 'wifi');
           const home = c.req.header(AGENT_IDENTITY_HEADER);
           if (home && AGENTS[home]) {
             c.set('agentIdentity', { agentPath: home, displayName: home, createdAt: '' });
@@ -134,7 +139,7 @@ describe('to-do routes', () => {
       ownerAccount = false;
     });
 
-    it('saves a promise a person adds as theirs, not at the stranger bound', async () => {
+    it('saves a promise a person at this computer adds as theirs, not at the stranger bound', async () => {
       const res = await request(fixtureServer)
         .post('/api/agents/agent-ana/todo-promises')
         .send({ what: 'Send Acme the quote' });
@@ -152,6 +157,40 @@ describe('to-do routes', () => {
       expect(res.status).toBe(200);
       expect(res.body.state).toBe('dropped');
       expect(power(added.body.id)).toEqual({ authority: 'person', marks: '{}' });
+    });
+
+    it('never counts a Wi-Fi request as the person: its add stays the stranger bound, its drop needs a note', async () => {
+      const given = service.create(
+        'agent-ana',
+        { what: 'Ship it' },
+        { kind: 'person', proven: true }
+      );
+      const add = await request(fixtureServer)
+        .post('/api/agents/agent-ana/todo-promises')
+        .set(VIA_WIFI, '1')
+        .send({ what: 'Delete the staging bucket' });
+      expect(add.status).toBe(201);
+      expect(power(add.body.id)).toEqual({
+        authority: 'runtime-default',
+        marks: '{"outsider":true}',
+      });
+      const drop = await request(fixtureServer)
+        .patch(`/api/todo-promises/${given.id}`)
+        .set(VIA_WIFI, '1')
+        .send({ state: 'dropped' });
+      expect(drop.status).toBe(400);
+      expect(drop.body.code).toBe('NOTHING_TO_CHANGE');
+      expect(service.get(given.id)!.state).toBe('open');
+      expect(power(given.id)).toEqual({ authority: 'person', marks: '{}' });
+    });
+
+    it('refuses a request naming another host on the network before the promise service', async () => {
+      const add = await request(fixtureServer)
+        .post('/api/agents/agent-ana/todo-promises')
+        .set('host', '192.168.1.20:4243')
+        .send({ what: 'Delete the staging bucket' });
+      expect(add.status).toBe(403);
+      expect(service.list()).toEqual([]);
     });
 
     it('still refuses every agent caller, verified or not, on add and on change', async () => {
