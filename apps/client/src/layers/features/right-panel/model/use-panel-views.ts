@@ -65,7 +65,8 @@ export function usePanelViews(contributions: RightPanelContribution[], pathname:
   const directSessionId = pathname === '/session' ? routeSessionId : null;
   const browserScope = directSessionId ? `chat/${encodeURIComponent(directSessionId)}` : 'human';
   const { data: localBrowser } = useLocalBrowserState(
-    contributions.some((view) => view.id === 'local-browser')
+    contributions.some((view) => view.id === 'local-browser'),
+    directSessionId
   );
   const browserConnection =
     localBrowser?.status === 'connected' &&

@@ -220,9 +220,10 @@ function applyLateReceipts(messages: HistoryMessage[], late: Map<string, Approva
 }
 
 /**
- * Map an accumulated `error` event to an {@link ErrorPart}. `ErrorPart` carries
- * no `code` field, so a code is folded into the details string (prefixed
- * `[code]`) rather than dropped.
+ * Map an accumulated `error` event to an {@link ErrorPart}. Keep the existing
+ * `[code]` diagnostic prefix. Only the Git-folder refusal also carries its
+ * structured code so completed history retains its actionable heading without
+ * changing other historical error-card behavior.
  */
 function toErrorPart(error: ErrorSessionEvent): ErrorPart {
   const modelError = describeKnownModelError(error.message);
@@ -240,6 +241,7 @@ function toErrorPart(error: ErrorSessionEvent): ErrorPart {
   return {
     type: 'error',
     message: modelError?.message ?? error.message,
+    ...(error.code === 'codex_git_metadata_unavailable' ? { code: error.code } : {}),
     ...(modelError?.category !== undefined
       ? { category: modelError.category }
       : error.category !== undefined

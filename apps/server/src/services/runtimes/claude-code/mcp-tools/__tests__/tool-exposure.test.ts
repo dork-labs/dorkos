@@ -29,7 +29,6 @@
  * @vitest-environment node
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { z } from 'zod';
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -65,7 +64,6 @@ import { composeDorkOsCapabilityRegistry } from '../../../../core/self-descripti
 import {
   capabilitiesForMcpServer,
   capabilityMcpInputObject,
-  approvalTokenArgument,
   deriveMcpAnnotations,
 } from '../../../../core/capabilities/mcp-projection.js';
 import { toolSurfaceDigest } from '../tool-surface.js';
@@ -859,10 +857,7 @@ describe('complete full-object wire surface', () => {
         ...privateCaps.map((cap) => ({
           name: cap.id,
           description: cap.description,
-          inputSchema:
-            cap.tier === 'destructive'
-              ? (cap.input as z.ZodObject).extend(approvalTokenArgument())
-              : cap.input,
+          inputSchema: capabilityMcpInputObject(cap),
         })),
       ];
       const [a, b] = InMemoryTransport.createLinkedPair();

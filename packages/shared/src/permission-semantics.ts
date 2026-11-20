@@ -271,8 +271,9 @@ export function isAutonomyStop(descriptor: PermissionModeDescriptor): boolean {
  * audit trail is the record). What still reads it: the rule that no runtime is
  * BORN at such a mode (`runtimeConformance`), the "Always allow" card that may
  * not adopt one for a whole session, `session_start`'s rule that such a level
- * is named rather than inherited, and the scope notes that say what such a mode
- * covers.
+ * is named rather than inherited, the scope notes that say what such a mode
+ * covers, the chat-binding confirm, and the one confirm saving a schedule at
+ * such a mode takes in the app (DOR-3841).
  *
  * {@link isBypassSemantics} is this same shape narrowed to `reach:
  * 'everything'`, a strict subset of clause 2; it drives a different question

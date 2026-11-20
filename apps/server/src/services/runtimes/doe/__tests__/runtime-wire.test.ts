@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { StreamEvent } from '@dorkos/shared/types';
+import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { DoeInferenceConfig } from '@dorkos/shared/config-schema';
 import type { ToolDescriptor } from '@dorkos/doe';
 import { protocolFixture } from '../../../../../../../packages/doe/src/__tests__/protocol-fixture.js';
@@ -90,6 +91,42 @@ function terminal(events: StreamEvent[]) {
     .find((data) => data.terminalReason);
 }
 
+function roomReply(addressedNow: boolean, answerOwed?: 'lead'): MessageOpts {
+  return {
+    roomTurn: { roomId: 'fixture-room', authorId: 'fixture-author', turnId: 'fixture-turn' },
+    additionalContext: [
+      {
+        kind: 'room_context',
+        scope: 'per-turn',
+        data: {
+          room: { id: 'fixture-room', name: '#team', kind: 'channel', bridged: false },
+          thread: null,
+          members: [],
+          working: [],
+          pending: [],
+          pendingTruncated: false,
+          ownRecent: [],
+          acknowledgments: [],
+          triggerEntryId: 'fixture-message',
+          triggerAttachments: [],
+          addressing: {
+            responseMode: 'engaged',
+            engagedUntil: null,
+            engagedPostsLeft: null,
+            addressedNow,
+            ...(answerOwed ? { answerOwed } : {}),
+          },
+          budget: {
+            automaticRepliesLeftInThisRoomThisHour: 1,
+            automaticRepliesLeftInTotalThisHour: 1,
+            repliesLeftInThisChain: 1,
+          },
+        },
+      },
+    ],
+  };
+}
+
 describe('DoeRuntime actual SDK wire', () => {
   for (const protocol of [
     'anthropic-messages',
@@ -127,6 +164,68 @@ describe('DoeRuntime actual SDK wire', () => {
       expect(runtime.isTurnOpen(id)).toBe(false);
     });
   }
+
+  it.each([
+    { description: 'empty', textChunks: [], room: roomReply(true) },
+    { description: 'whitespace-only', textChunks: [' ', '\n'], room: roomReply(false, 'lead') },
+  ])('reports a $description local completion as a failed reply', async ({ textChunks, room }) => {
+    const { runtime, wire, id } = await setup('openai-completions', { textChunks });
+    const events = await collect(runtime.sendMessage(id, 'Answer locally', room));
+
+    expect(text(events).trim()).toBe('');
+    expect(wire.requests()).toBe(1);
+    expect(events.filter((event) => event.type === 'error')).toEqual([
+      {
+        type: 'error',
+        data: {
+          category: 'execution_error',
+          message: 'The model returned an empty reply. Try again or choose a different model.',
+        },
+      },
+    ]);
+    expect(terminal(events)).toMatchObject({ terminalReason: 'model_error' });
+    expect(events.filter((event) => event.type === 'done')).toHaveLength(1);
+    expect(runtime.isTurnOpen(id)).toBe(false);
+  });
+
+  it('allows a local model to stay quiet in an unaddressed room turn', async () => {
+    const { runtime, wire, id } = await setup('openai-completions', { textChunks: [] });
+    const events = await collect(runtime.sendMessage(id, 'For your information', roomReply(false)));
+
+    expect(wire.requests()).toBe(1);
+    expect(events.filter((event) => event.type === 'error')).toEqual([]);
+    expect(terminal(events)).toMatchObject({ terminalReason: 'completed' });
+  });
+
+  it('accepts an addressed local turn with a tool result and no text', async () => {
+    const effect = vi.fn(async () => ({ content: [] }));
+    const { runtime, wire, id } = await setup(
+      'openai-completions',
+      { tool: 'fixture_reply', textChunks: [] },
+      {},
+      {
+        name: 'fixture_reply',
+        description: 'Record a fixture reply',
+        initialLoad: true,
+        schema: { type: 'object', properties: {} },
+        execute: effect,
+      }
+    );
+    const events: StreamEvent[] = [];
+    for await (const event of runtime.sendMessage(id, 'Answer locally', roomReply(true))) {
+      events.push(event);
+      if (event.type === 'approval_required') {
+        expect(
+          runtime.approveTool(id, (event.data as { toolCallId: string }).toolCallId, true)
+        ).toBe(true);
+      }
+    }
+    expect(wire.requests()).toBe(2);
+    expect(effect).toHaveBeenCalledOnce();
+    expect(text(events).trim()).toBe('');
+    expect(events.filter((event) => event.type === 'error')).toEqual([]);
+    expect(terminal(events)).toMatchObject({ terminalReason: 'completed' });
+  });
 
   for (const approved of [true, false]) {
     it(`RT-TOOL-01: answers a live wire tool approval ${approved ? 'allow' : 'deny'} before executing its effect`, async () => {

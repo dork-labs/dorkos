@@ -44,7 +44,7 @@ import {
   type ConnectionWayHealthPort,
 } from '../readiness/connection-readiness.js';
 import { agentGrantScope, type AgentGrantDenial } from './agent-grant-scope.js';
-import { describeServiceAction } from './approval-service-action.js';
+import { describeServiceAction } from './approval-card/service-action.js';
 import { grantRefusal } from './grant-refusal.js';
 import { managedAgentAccess } from './managed-agent-access.js';
 import { preflightResultOf } from './reaches-outside.js';

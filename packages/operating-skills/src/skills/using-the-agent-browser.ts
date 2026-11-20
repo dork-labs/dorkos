@@ -49,6 +49,15 @@ a separate implementation stack. Its private contracts are not another tool
 set you can invoke. The CLI's \`browser install\` and \`status --runtime\` check
 its files; they do not share a page or prove that browsing is ready.
 
+## This chat’s page
+
+Each chat owns its page. Chats of one agent share sign-ins; different agents have separate windows.
+- On \`not_opened\` or \`tab_gone\`, ask the person to open this chat’s browser.
+- If a sign-in is busy or a person holds this browser, wait. Never close another chat’s page.
+- While the person holds the page, stop reading, taking screenshots and acting until they return it.
+- Reconnecting never lifts Stop. After a server restart, the person opens a fresh page.
+- Never recover ownership from a URL, title, tab order or debugger target.
+
 ## What the older signed-in browser saves
 
 - Every signed-in browser starts signed in to the saved sites.
