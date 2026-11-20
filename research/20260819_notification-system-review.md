@@ -21,7 +21,7 @@ tags:
 related:
   - specs/notification-system
   - specs/sidebar-simplification
-  - specs/feature-promo-system
+  - https://github.com/dork-labs/dorkos/tree/2b98f06e42fab0c9f36c789387138bfc1b211116/specs/feature-promo-system
   - specs/task-completion-notifications
   - specs/dashboard-content
   - specs/attention-item-detail-navigation
