@@ -298,6 +298,12 @@ docker run --rm -v dorkos-data:/data -v "$(pwd)":/backup alpine \
   tar xzf /backup/dorkos-backup.tgz -C /data
 ```
 
+#### Database snapshots
+
+DorkOS also saves database copies in `backups/` inside the data folder. New daily copies use `dork-auto-YYYYMMDD-daily.db`; older copies use `dork-YYYYMMDD-daily.db`. Pre-upgrade copies use `dork-auto-YYYYMMDD-HHMMSS-pre-<migration>.db` or the older `dork-YYYYMMDD-HHMMSS-pre-<migration>.db`. Dates and times are UTC. Both naming forms are standalone database copies.
+
+To restore one, stop DorkOS and save the current data folder somewhere safe first. Copy the chosen completed `.db` file over `dork.db` in that folder. Remove the old `dork.db-wal` and `dork.db-shm` files before starting DorkOS again. Files ending in `.partial` are unfinished copies; do not restore those. Changes made after the chosen snapshot are lost, including later access changes, so apply those again after restoring.
+
 ## Docker Compose
 
 The `docker run` commands above work fine for trying DorkOS out, but they're unwieldy to maintain. You end up with long shell commands that are easy to mistype and hard to version control. Docker Compose captures the full configuration in one file, so it's reproducible, easy to update, and simple to tear down with `docker compose down`.
