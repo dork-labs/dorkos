@@ -257,6 +257,14 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     'POST /api/step-up/:heldActionId/change-password',
     'POST /api/step-up/:heldActionId/password',
   ],
+  // DOR-4744, DOR-3647: a Wi-Fi device asks for a code and types it, with no
+  // password; a passkey sign-in is refused on Wi-Fi by the route itself.
+  'Signing in: a Wi-Fi device by a code from this computer; a passkey from other devices only': [
+    'POST /api/wifi-sign-in/start',
+    'POST /api/wifi-sign-in/finish',
+    'POST /api/owner-sign-in/passkey/options',
+    'POST /api/owner-sign-in/passkey/finish',
+  ],
   'Already this computer only: the route refuses every other caller': [
     'POST /api/system/shell-check/continue',
     'POST /api/desktop/sign-in',
@@ -315,6 +323,7 @@ const MOUNTS: Readonly<Record<string, string>> = {
   'ALL /api/connectors/connections/:connectionId/events/*': 'An app’s event stream.',
   'ALL /api/connectors/providers/*': 'Group middleware; stored keys are refused by path.',
   'ALL /api/devices/*': 'Group middleware; sign-out-all is refused by path.',
+  'ALL /api/owner-factors/*': 'Group middleware; its writes are refused by path.',
   'ALL /api/docs': 'The API reference, read only.',
   'ALL /api/docs/*': 'The API reference, read only.',
   'ALL /api/ext/:id': 'An extension’s own page; extensions are turned on at the computer.',
