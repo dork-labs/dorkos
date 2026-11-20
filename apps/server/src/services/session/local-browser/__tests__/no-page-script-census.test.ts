@@ -27,6 +27,10 @@ const ALLOWED_CDP = new Set([
   'Page.createIsolatedWorld',
   'Page.getNavigationHistory',
   'Page.navigateToHistoryEntry',
+  // Only from `leases/page-screencast.ts`: pictures of the page for the live view.
+  'Page.startScreencast',
+  'Page.screencastFrameAck',
+  'Page.stopScreencast',
   // Only from `agent-window/full-screen-guard.ts`, with a fixed expression.
   'Runtime.evaluate',
 ]);
