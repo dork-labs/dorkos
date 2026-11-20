@@ -294,7 +294,7 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
     readsInFull && notification.actions?.some((action) => action.id === 'pause') === true;
   const refusalTitle =
     notification.mark === 'refused' ? refusalTitleParts(notification.title) : null;
-  const tone = notificationRowTone(notification);
+  const tone = restarted ? 'neutral' : notificationRowTone(notification);
   const unread = notification.readAt === undefined;
   const visual = tone !== 'error' && agent != null ? resolveAgentVisual(agent) : null;
 

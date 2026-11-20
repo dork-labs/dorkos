@@ -51,16 +51,22 @@ describe('Restart on a stopped extension’s notice', () => {
     const { container } = wrap(<InboxRow notification={OFF} onOpen={() => {}} />);
     const slot = container.querySelector('[data-slot="inbox-row-restart-slot"]');
     const button = screen.getByRole('button', { name: 'Restart' });
+    const glyph = container.querySelector('[data-slot="inbox-row-glyph"] svg');
+    expect(slot).not.toHaveClass('hidden');
+    expect(glyph).toHaveClass('text-status-warning/70');
     fireEvent.click(screen.getByRole('button', { name: 'Restart' }));
     expect(await screen.findByRole('status')).toHaveTextContent('The People app is back on');
     expect(screen.queryByText(OFF.title)).not.toBeInTheDocument();
     expect(screen.queryByText(OFF.body!)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Restart' })).not.toBeInTheDocument();
-    // Retain the same slot and button footprint, without an actionable hidden control.
+    // Phones reclaim the action row; larger widths retain its footprint.
     expect(container.querySelector('[data-slot="inbox-row-restart-slot"]')).toBe(slot);
+    expect(slot).toHaveClass('hidden', 'sm:block');
     expect(button).toHaveClass('invisible');
     expect(button).toBeDisabled();
     expect(button).toHaveAttribute('aria-hidden', 'true');
+    expect(glyph).toHaveClass('text-muted-foreground');
+    expect(glyph).not.toHaveClass('text-status-warning/70');
     expect(transport.restartExtension).toHaveBeenCalledExactlyOnceWith('people');
   });
 
@@ -75,6 +81,12 @@ describe('Restart on a stopped extension’s notice', () => {
     expect(within(text).getByRole('alert')).toBe(alert);
     expect(text.querySelector('[data-slot="inbox-row-body"]')?.nextElementSibling).toBe(alert);
     expect(screen.getByRole('button', { name: 'Restart' })).toBeEnabled();
+    expect(container.querySelector('[data-slot="inbox-row-restart-slot"]')).not.toHaveClass(
+      'hidden'
+    );
+    expect(container.querySelector('[data-slot="inbox-row-glyph"] svg')).toHaveClass(
+      'text-status-warning/70'
+    );
     expect(screen.getByText(OFF.title)).toBeVisible();
     expect(transport.markNotificationRead).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Restart' }));

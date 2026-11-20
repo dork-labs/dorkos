@@ -43,7 +43,7 @@ export interface RestartExtensionActionProps {
 
 /**
  * "Restart": starts the extension again and reports the result to its notice.
- * A successful restart reserves the button's footprint so the text never shifts.
+ * A successful restart reserves the button's width from `sm`; phones reclaim its row.
  *
  * @param props - The extension and the notice.
  */
@@ -70,7 +70,10 @@ export function RestartExtensionAction({
   });
 
   return (
-    <div data-slot="inbox-row-restart-slot" className="w-full shrink-0 sm:w-auto">
+    <div
+      data-slot="inbox-row-restart-slot"
+      className={cn('w-full shrink-0 sm:w-auto', restart.isSuccess && 'hidden sm:block')}
+    >
       <Button
         ref={button}
         type="button"
