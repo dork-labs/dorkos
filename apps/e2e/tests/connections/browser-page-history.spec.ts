@@ -76,10 +76,11 @@ test.describe('Agent browser history steps in real Chromium', () => {
     await page.goto(`${site.origin}/fares`);
     await page.goto(`${site.origin}/fares/lisbon`);
     const history = cdpPageHistory();
-    // DOR-4615: a read straight after a move can still see the old entry, and
-    // historyAvailability turns any failed read into "neither". So wait until the
-    // browser's own history shows the move (a failed read fails with its own error),
-    // then wait for the answer, never reading it once.
+    // DOR-4615: historyAvailability gives up on a read after 1s and answers
+    // "neither" (the panel's next poll asks again), so on a slow runner one read
+    // straight after a move can say false/false. Wait until the browser's own
+    // history shows the move (a failed read fails with its own error), then wait
+    // for the answer, as the panel does, never reading it once.
     await expect.poll(() => openEntry(page, history)).toBe(`${site.origin}/fares/lisbon`);
     await expect
       .poll(() => historyAvailability(page as never, history, allowed))
