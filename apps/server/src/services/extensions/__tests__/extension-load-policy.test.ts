@@ -566,9 +566,19 @@ describe('the dev loop stays free after one approval, for the approved files', (
     folderDigest.value = D2;
 
     const router = new Hono<ApiEnv>();
+    router.use(async (c, next) => {
+      c.set('user', { userId: 'owner', credential: 'cookie' });
+      await next();
+    });
     registerExtensionRestartRoute(router, manager, /^[a-z0-9][a-z0-9-]*$/, () => {});
     mockCompileServer.mockClear();
-    const res = await router.request('/my-ext/restart', { method: 'POST' });
+    const res = await router.request(
+      '/my-ext/restart',
+      { method: 'POST' },
+      {
+        incoming: { headers: {}, socket: { remoteAddress: '127.0.0.1' }, method: 'POST' },
+      }
+    );
 
     expect(res.status).toBe(409);
     expect(await res.json()).toMatchObject({ code: 'needs_approval' });

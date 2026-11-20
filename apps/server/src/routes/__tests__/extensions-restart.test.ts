@@ -6,15 +6,13 @@
  * The manager is a narrow fake; the route runs the real shared person bar
  * before calling the reload for the id it was given and answering for it.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-
-// Gate posture is controlled here; the route runs the real shared person bar.
-const gate = vi.hoisted(() => ({ required: false }));
-vi.mock('../../services/core/auth/gate-policy.js', () => ({
-  personSessionRequired: () => gate.required,
-}));
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { Hono } from 'hono';
 import type { ApiEnv } from '../../http/api-chain.js';
+import { configManager, initConfigManager } from '../../services/core/config-manager.js';
 import type { ReloadExtensionResult } from '../../services/extensions/extension-manager-types.js';
 import type { ExtensionRecord } from '@dorkos/extension-api';
 import {
@@ -34,9 +32,17 @@ let serverError: { code: string; message: string } | undefined;
 let router: Hono<ApiEnv>;
 let user: ApiEnv['Variables']['user'];
 
+// A throwaway config drives the real gate; no application module is mocked.
+let configDir: string;
+beforeAll(() => {
+  configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-restart-route-'));
+  initConfigManager(configDir);
+});
+afterAll(() => fs.rmSync(configDir, { recursive: true, force: true }));
+
 beforeEach(() => {
-  gate.required = false;
-  user = undefined;
+  configManager.set('auth', { enabled: false });
+  user = { userId: 'owner', credential: 'cookie' };
   reloaded = [];
   broadcast = [];
   approved = { before: true, after: true };
@@ -92,7 +98,8 @@ describe('POST /api/extensions/:id/restart', () => {
   });
 
   it('requires a browser session when the gate asks for one', async () => {
-    gate.required = true;
+    configManager.set('auth', { enabled: true });
+    user = undefined;
     expect((await restart('people')).status).toBe(403);
     user = { userId: 'owner', credential: 'api-key' };
     expect((await restart('people')).status).toBe(403);
