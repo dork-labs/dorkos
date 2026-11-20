@@ -19,6 +19,7 @@ import {
 } from '../showcases/HarnessStatusShowcases';
 import { PipPanelShowcases } from '../showcases/PipPanelShowcases';
 import { ApprovalsShowcases } from '../showcases/ApprovalsShowcases';
+import { SendRecipientsShowcases } from '../showcases/SendRecipientsShowcases';
 import { ScheduleApprovalShowcases } from '../showcases/ScheduleApprovalShowcases';
 import { BrowserHandoffShowcases } from '../showcases/BrowserHandoffShowcases';
 import { LocalBrowserPanelShowcases } from '../showcases/LocalBrowserPanelShowcases';
@@ -106,6 +107,7 @@ export function HomeInboxPage() {
     >
       <PipPanelShowcases />
       <ApprovalsShowcases />
+      <SendRecipientsShowcases />
       <ScheduleApprovalShowcases />
       <BrowserHandoffShowcases />
       <BrowserChromeShowcases />

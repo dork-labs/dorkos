@@ -29,7 +29,7 @@ import {
 import { eventFanOut } from '../../../core/event-fan-out.js';
 import { ConnectorRegistry } from '../../registry.js';
 import { createServerPrincipal } from '../../principal/server-principal.js';
-import { describeServiceAction, type ServiceActionFacts } from '../approval-service-action.js';
+import { describeServiceAction, type ServiceActionFacts } from '../approval-card/service-action.js';
 import { ConnectorExecutionAuthorizationService } from '../authorization-service.js';
 import type { ConnectorExecutionBroker } from '../execution-broker.js';
 import type { ConnectorAccessQueryService } from '../access-query-service.js';

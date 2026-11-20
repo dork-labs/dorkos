@@ -62,7 +62,7 @@ linearIssue: DOR-128
   inline slash commands and agent-registered actions.
 - `packages/shared/src/schemas.ts` (`UiCommandSchema`, DOR-104) — agent->client UI
   control; opposite direction, not user slash commands.
-- specs/sdk-command-discovery (#133) — the runtime command-source contract.
+- [sdk-command-discovery](https://github.com/dork-labs/dorkos/tree/2b98f06e42fab0c9f36c789387138bfc1b211116/specs/sdk-command-discovery) (#133) — the runtime command-source contract.
 
 ## 3) Codebase Map
 

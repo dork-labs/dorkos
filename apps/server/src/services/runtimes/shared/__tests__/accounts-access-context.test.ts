@@ -76,6 +76,11 @@ describe('Accounts turn awareness', () => {
       expect(text).not.toContain('openUrl');
       // Setup waits on the person, so the agent never promises a time (DOR-2850).
       expect(text).toContain('Never promise how long it takes or say it is instant');
+      expect(text).toContain('approval_required');
+      expect(text).toContain('top-level approvalToken');
+      expect(text).toContain('never inside arguments');
+      expect(text).toContain('including after the ten-minute wait ends');
+      expect(text).toContain('Never reuse a token after success');
     }
   );
 

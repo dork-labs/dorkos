@@ -16,6 +16,7 @@
 import type { CDPSession, Page } from 'playwright-core';
 import { logger } from '../../../../lib/logger.js';
 import { LocalBrowserError } from '../errors.js';
+import type { PageWorkTracker } from '../leases/page-work.js';
 
 const CHECK_TIMEOUT_MS = 2_000;
 
@@ -44,7 +45,9 @@ export class FullScreenGuard {
 
   constructor(
     private readonly open: (page: Page) => Promise<GuardSession> = (page) =>
-      page.context().newCDPSession(page)
+      page.context().newCDPSession(page),
+    private readonly trackWork: PageWorkTracker = (operation) => operation,
+    private readonly admit: () => void = () => undefined
   ) {}
 
   /**
@@ -77,7 +80,7 @@ export class FullScreenGuard {
       const session = this.sessions.get(page);
       if (!session) return null;
       const answer = await Promise.race([
-        session.then((cdp) => this.read(cdp)),
+        this.trackWork(session.then((cdp) => this.read(cdp))),
         new Promise<null>((resolve) => {
           timer = setTimeout(() => resolve(null), CHECK_TIMEOUT_MS);
         }),
@@ -107,16 +110,20 @@ export class FullScreenGuard {
   }
 
   private async read(cdp: GuardSession): Promise<boolean | undefined> {
+    this.admit();
     const { frameTree } = await cdp.send('Page.getFrameTree');
+    this.admit();
     const { executionContextId } = await cdp.send('Page.createIsolatedWorld', {
       frameId: frameTree.frame.id,
       worldName: 'dorkos-full-screen-check',
     });
+    this.admit();
     const { result } = await cdp.send('Runtime.evaluate', {
       expression: 'document.fullscreenElement !== null',
       contextId: executionContextId,
       returnByValue: true,
     });
+    this.admit();
     return typeof result.value === 'boolean' ? result.value : undefined;
   }
 

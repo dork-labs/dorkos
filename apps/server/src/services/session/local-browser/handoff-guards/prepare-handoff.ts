@@ -39,26 +39,39 @@ export function prepareHandoffPage(
     throw new LocalBrowserError('shared_elsewhere', 'The browser is shared with another chat.');
   const site = new URL(tab.url).host;
   if (!site) throw new LocalBrowserError('no_site', 'Open the website first, then ask again.');
-  if (state.mode === 'new-window') assertSignInUrl(tab.url);
+  if (state.mode === 'new-window') {
+    assertSignInUrl(tab.url);
+    browser.requireExclusiveProfile?.();
+  }
   // Read before pausing clears proof; nothing supplied by the agent marks a refusal.
   const refused = browser.lastRefusalHost?.() === site;
   const profileId = browser.currentProfileId();
-  return { tab, site, refused, profileId };
+  return Object.freeze({
+    tab: Object.freeze({ ...tab }),
+    site,
+    refused,
+    profileId,
+    chatId: sessionId,
+    ownerChatId: state.sessionId,
+    mode: state.mode,
+    connectionId: state.connectionId,
+    close: browser.captureHandoffClose?.(state, profileId),
+  });
 }
 
 /** Recheck the returned pause synchronously, without introducing a new await boundary. */
 export function requireHandoffPage(
   browser: HandoverBrowser,
-  state: LocalBrowserState,
-  handed: LocalBrowserState,
-  profileId: string | null
+  snapshot: ReturnType<typeof prepareHandoffPage>,
+  handed: LocalBrowserState
 ): void {
-  const tab = state.tabs.find((candidate) => candidate.id === state.selectedTabId)!;
+  if (snapshot.close?.completed()) return;
+  const { tab, profileId } = snapshot;
   const handedTab = handed.tabs.find((candidate) => candidate.id === handed.selectedTabId);
   if (
-    handed.connectionId !== state.connectionId ||
+    handed.connectionId !== snapshot.connectionId ||
     handed.selectedTabId !== tab.id ||
-    handed.sessionId !== state.sessionId ||
+    handed.sessionId !== snapshot.ownerChatId ||
     handedTab?.url !== tab.url ||
     browser.currentProfileId() !== profileId
   )

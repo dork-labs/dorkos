@@ -23,6 +23,18 @@ export interface PermissionModeScopeNoteProps {
    * mode DOES; without one it falls back to the mode's name.
    */
   descriptor?: PermissionModeDescriptor;
+  /**
+   * Leave out the last line, the one about stopping an ask. Only the schedule
+   * surfaces pass it, at a stop that acts without asking (DOR-3841, design
+   * review), which is the only stop this note renders at; every other picker
+   * keeps the line.
+   */
+  omitAskLine?: boolean;
+  /**
+   * Leave out the first line, what the mode covers. Only for a dialog whose
+   * screen already shows that line beside the control it opened from.
+   */
+  omitCoversLine?: boolean;
   /** Extra classes for the wrapper around the three paragraphs. */
   className?: string;
 }
@@ -115,6 +127,8 @@ export interface PermissionModeScopeNoteProps {
 export function PermissionModeScopeNote({
   mode,
   descriptor,
+  omitAskLine = false,
+  omitCoversLine = false,
   className,
 }: PermissionModeScopeNoteProps) {
   const covers = descriptor ? actsWithoutAsking(descriptor) : isBypassPermissionMode(mode);
@@ -127,9 +141,13 @@ export function PermissionModeScopeNote({
       data-slot="permission-mode-scope-note"
       className={cn('text-muted-foreground space-y-1 text-xs', className)}
     >
-      <p>This covers editing files, running commands and working outside this project.</p>
+      {!omitCoversLine && (
+        <p>This covers editing files, running commands and working outside this project.</p>
+      )}
       <p>DorkOS’s own actions, like deleting a schedule, follow your Permissions settings.</p>
-      <p>To stop an ask, choose Always allow on its card, or in Settings under Permissions.</p>
+      {!omitAskLine && (
+        <p>To stop an ask, choose Always allow on its card, or in Settings under Permissions.</p>
+      )}
     </div>
   );
 }
