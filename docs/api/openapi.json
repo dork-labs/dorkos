@@ -44049,7 +44049,7 @@
           "Auth"
         ],
         "summary": "Start adding a passkey",
-        "description": "After \"Confirm it’s you\", a challenge to make a passkey on this computer’s own address. The person is always verified. At this computer only.",
+        "description": "After a passkey check when this computer has a passkey, then \"Confirm it’s you\": a challenge to make a passkey on this computer’s own address. The person is always verified. At this computer only.",
         "requestBody": {
           "content": {
             "application/json": {
