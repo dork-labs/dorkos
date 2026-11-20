@@ -58,6 +58,55 @@ describe('createTrackedSpawn', () => {
     });
   });
 
+  it('says when the child starts and when that child exits, cleanly or killed (DOR-4209)', async () => {
+    const ledger = new WarmProcessLedger(dorkHome);
+    const cleanExit = vi.fn();
+    const started = vi.fn(() => cleanExit);
+    createTrackedSpawn(ledger, started)(optionsFor('process.exit(0)'));
+    expect(started).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(cleanExit).toHaveBeenCalledTimes(1));
+
+    const killed = vi.fn();
+    spawned = createTrackedSpawn(ledger, () => killed)(optionsFor('setTimeout(() => {}, 30000)'));
+    expect(killed).not.toHaveBeenCalled();
+    spawned.kill('SIGKILL');
+    await vi.waitFor(() => expect(killed).toHaveBeenCalledTimes(1));
+  });
+
+  it('never lets a lifecycle callback that throws break the spawn or the exit', async () => {
+    const ledger = new WarmProcessLedger(dorkHome);
+    const { logger } = await import('../../../../../lib/logger.js');
+    vi.mocked(logger.warn).mockClear();
+    // Throws at spawn: the child is still handed back, recorded, and forgotten on exit.
+    const child = createTrackedSpawn(ledger, () => {
+      throw new Error('/secret/path at spawn');
+    })(optionsFor('process.exit(0)'));
+    expect(child.killed).toBe(false);
+    await vi.waitFor(() => expect(ledger.read()?.processes ?? []).toEqual([]));
+    // Throws at exit: the exit still forgets the child.
+    createTrackedSpawn(ledger, () => () => {
+      throw new Error('/secret/path at exit');
+    })(optionsFor('process.exit(0)'));
+    await vi.waitFor(() =>
+      expect(logger.warn).toHaveBeenCalledWith(
+        '[tracked-spawn] a process lifecycle callback failed',
+        {
+          when: 'exit',
+          error: 'Error',
+        }
+      )
+    );
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[tracked-spawn] a process lifecycle callback failed',
+      {
+        when: 'spawn',
+        error: 'Error',
+      }
+    );
+    expect(JSON.stringify(vi.mocked(logger.warn).mock.calls)).not.toMatch(/secret/);
+    await vi.waitFor(() => expect(ledger.read()?.processes ?? []).toEqual([]));
+  });
+
   it('gives the SDK a usable process: stdin, stdout, exit and kill all work', async () => {
     const ledger = new WarmProcessLedger(dorkHome);
     spawned = createTrackedSpawn(ledger)(

@@ -876,7 +876,7 @@ These items were initially open questions, now resolved with provisional default
 
 - **Ideation document**: `specs/settings-ui-ux-disambiguation/01-ideation.md` -- parent spec decisions, architecture diagram, Agent Hub design context
 - **Research: Multi-Panel Toggle UX Patterns**: `research/20260328_multi_panel_toggle_ux_patterns.md` -- toggle button placement, keyboard shortcut conventions, mobile patterns, state indicators
-- **Canvas persistence spec**: `specs/canvas-persistence-and-toggle/02-specification.md` -- localStorage per-session pattern that canvas migration must preserve
+- **Canvas persistence spec**: [`canvas-persistence-and-toggle/02-specification.md`](https://github.com/dork-labs/dorkos/blob/2b98f06e42fab0c9f36c789387138bfc1b211116/specs/canvas-persistence-and-toggle/02-specification.md) -- localStorage per-session pattern that canvas migration must preserve
 - **Extension registry spec**: `specs/ext-platform-02-extension-registry/02-specification.md` -- slot contribution map design, `useSlotContributions` hook, `initializeExtensions()` pattern
 - **react-resizable-panels**: https://github.com/bvaughn/react-resizable-panels -- PanelGroup, Panel, PanelResizeHandle API; autoSaveId for layout persistence; collapsible panel callbacks
 - **Shadcn Sidebar component**: `apps/client/src/layers/shared/ui/sidebar.tsx` -- reference implementation for `SidebarTrigger` button that the `RightPanelToggle` mirrors

@@ -1,0 +1,44 @@
+---
+title: DorkOS 0.139.0
+description: Agent browser sign-in finishes with Done signing in, Codex chats switch to a model that works, and quitting during startup closes cleanly.
+date: 2026-11-20
+author: DorkOS Team
+category: release
+tags: [release, browser, codex]
+---
+
+DorkOS 0.139.0 lets you finish signing in through the Agent browser with a Done signing in button. Codex chats switch to a model that works instead of stopping, and quitting while DorkOS starts no longer crashes it.
+
+## All Changes
+
+### Note for people upgrading
+
+- If you reach DorkOS from your other devices, use a long password you don't use anywhere else, and turn on Wi-Fi access only on networks you trust, like your home network.
+- **Codex chats on your own sign-in now check their model against the models your OpenAI account lists.** A model that isn't listed, even one set in Codex's own settings, is swapped for your account's default, and that chat keeps it. (DOR-3168)
+- In a room bridged to Telegram or Slack, your own phone's posts still count as someone else's for now. (DOR-4453)
+- On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
+- On a Mac, Codex chats can't delete or move folders (rm -r, rmdir, mv). We're fixing it (DOR-4358).
+- Known issue: offline, OpenCode's first turn in a new folder can take about a minute. Online, the first turn waits about 10 seconds once. A fix is coming in a later release (DOR-4422).
+- Known issue: Codex won't start in a folder whose Git path has `* ? [ ] { }` in its name, like `site [old]`, or in a worktree whose Git folder is gone, at any level. Use another folder for now. We're fixing it (DOR-4542).
+
+### Security
+
+- An approval stays tied to exactly the action you saw. If DorkOS can't describe an action that exactly, it turns it down instead of asking you. (DOR-3137)
+- Shell commands on the DorkOS runtime now say they come from an agent, as they already did on Claude Code, Codex and OpenCode. Tools that check, like the /flow plugin, can tell an agent ran them. (DOR-3717)
+
+### Fixed
+
+- Sign-in no longer reports success to your agent without opening a window. If the sign-in window doesn't open, asking again opens it or says why not. (DOR-4731)
+- When your agent hands you the Agent browser to sign in, the card now has a **Done signing in** button from the moment the sign-in window opens. Press it to close the window, save your sign-in and hand the browser back. On a Mac, closing that window left Chrome running, so your agent waited forever. There, Done signing in quits it the way ⌘Q does. If it doesn't quit, the card asks you to click it and press ⌘Q, and your sign-in still saves. If the sign-in can't be saved, the card says so and offers **Sign in again**. **Stop task** leaves the window open for you, and the browser panel offers **Done signing in** for any sign-in window still open. (DOR-4731)
+- When the model a Codex chat on your own sign-in asks for isn't available, the chat no longer stops. It switches to your account's default model, keeps using it, and tells you which one. This doesn't apply on DorkOS credits or a custom model server. (DOR-3168)
+- After you change the DorkOS runtime's default model, picking an older chat's own model in its model menu works again instead of being refused, including after you restart DorkOS. (DOR-4488)
+- Quitting or updating DorkOS while it's still starting no longer crashes it. It closes cleanly. (DOR-4689)
+
+### Going back
+
+0.139.0 adds no database changes. It adds one group of settings, `runtimes.loadGate`, for a feature that isn't turned on yet. 0.138.0 ignores it and leaves it in your settings file. To go back, install 0.138.0. It starts normally.
+
+- If you go back to 0.138.0, a Codex chat that switched models shows "This part of the chat couldn't be shown." where the note naming the new model was. The rest of the chat shows normally. It's cosmetic.
+- Codex chats that already switched keep the model they switched to. Others whose model isn't available stop again instead of using your account's default.
+- The sign-in card loses its Done signing in button, and on a Mac, closing the sign-in window can leave your agent waiting again.
+- Picking an older chat's own model on the DorkOS runtime can be refused again after you change its default model.

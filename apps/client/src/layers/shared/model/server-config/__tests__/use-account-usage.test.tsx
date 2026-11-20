@@ -14,6 +14,7 @@ import {
   mergeAccountUsage,
   seedAccountUsage,
   useAccountUsage,
+  useAccountUsageRecord,
   type UseAccountUsageOptions,
 } from '../use-account-usage';
 
@@ -176,5 +177,58 @@ describe('useAccountUsage', () => {
 
     expect(result.current.byId.size).toBe(0);
     expect(result.current.byPath.get('/Users/test/.claude')).toEqual(root);
+  });
+});
+
+describe('useAccountUsageRecord beside useAccountUsage (DOR-4845)', () => {
+  /** A sidebar row's record hook, mounted after a header's usage hook, as the app does. */
+  function renderBoth(queryClient: QueryClient, transport: Transport, fetch: boolean) {
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>{children}</TransportProvider>
+      </QueryClientProvider>
+    );
+    return renderHook(
+      () => {
+        const view = useAccountUsage('claude-code', { accountId: 'acct-2', fetch });
+        const record = useAccountUsageRecord('claude-code', {
+          accountId: 'acct-2',
+          path: ACCT_2.path,
+        });
+        return { view, record };
+      },
+      { wrapper }
+    );
+  }
+
+  it('refreshing every account read still fetches usage, never "Missing queryFn"', async () => {
+    // Choosing DorkOS credits refreshes every account read (`accountKeys.all`).
+    // The row's cache-only hook must not leave the shared entry with no fetcher.
+    const queryClient = createTestQueryClient();
+    const transport = createMockTransport({
+      getAccountUsage: vi.fn().mockResolvedValue({ accounts: [ACCT_2] }),
+    });
+    seedAccountUsage(queryClient, [ACCT_2]);
+    const { result } = renderBoth(queryClient, transport, true);
+    await waitFor(() => expect(transport.getAccountUsage).toHaveBeenCalledTimes(1));
+
+    await queryClient.invalidateQueries({ queryKey: accountKeys.all });
+
+    expect(transport.getAccountUsage).toHaveBeenCalledTimes(2);
+    expect(queryClient.getQueryState(accountKeys.usage('claude-code'))?.error).toBeNull();
+    expect(result.current.record).toEqual(ACCT_2);
+  });
+
+  it('a refresh with only cache readers asks nothing and fails nothing', async () => {
+    const queryClient = createTestQueryClient();
+    const transport = createMockTransport();
+    seedAccountUsage(queryClient, [ACCT_2]);
+    const { result } = renderBoth(queryClient, transport, false);
+
+    await queryClient.invalidateQueries({ queryKey: accountKeys.all });
+
+    expect(transport.getAccountUsage).not.toHaveBeenCalled();
+    expect(queryClient.getQueryState(accountKeys.usage('claude-code'))?.error).toBeNull();
+    expect(result.current.record).toEqual(ACCT_2);
   });
 });

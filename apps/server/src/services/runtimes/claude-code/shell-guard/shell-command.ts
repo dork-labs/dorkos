@@ -137,8 +137,14 @@ export function scriptTexts(segment: ShellSegment): string[] {
   return [...segment.scripts, ...inline];
 }
 
-/** Add what a segment runs through a shell, `eval` or `$(…)`, as segments of their own. */
-function withNested(segments: ShellSegment[], depth = 0): ShellSegment[] {
+/**
+ * Add what a segment runs through a shell, `eval` or `$(…)`, as segments of their own. The load
+ * gate's classifier reads the same expansion (DOR-4209), so both agree on what a command runs.
+ *
+ * @param segments - The commands {@link parseShell} found.
+ * @param depth - How many shells deep this already is; callers leave it out.
+ */
+export function withNested(segments: ShellSegment[], depth = 0): ShellSegment[] {
   if (depth >= MAX_NESTING) return segments;
   const out: ShellSegment[] = [];
   for (const segment of segments) {

@@ -268,9 +268,14 @@ FILTERED_SPECS=(
 #     read a connected app (DOR-3547). Registered into connections.spec.ts for
 #     the same reason: it needs the scripted provider's accounts, which that
 #     file resets before every test.
+#   chat/git-refusal-heading.ts — a known Codex Git refusal names the next step,
+#     live and after a durable replay, on phone and desktop (DOR-4534). Registered
+#     into chat-mock-session.spec.ts: its `codex-git-refusal` scenario exists only
+#     behind DORKOS_TEST_RUNTIME, and the same `tests/chat/` extension rule applies.
 REGISTERED_MODULES=(
   'chat/compaction.ts'
   'chat/composer-escape-and-ime.ts'
+  'chat/git-refusal-heading.ts'
   'chat/held-process.ts'
   'chat/interactive-prompts.ts'
   'chat/live-turn-visibility.ts'

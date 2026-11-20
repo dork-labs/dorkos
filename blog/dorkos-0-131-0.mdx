@@ -22,6 +22,8 @@ DorkOS 0.131.0 fixes the bar at the top that stayed in place after you left a pa
 
 This upgrade only goes one way. DorkOS saves a backup first, in `~/.dork/backups/`. If you came from 0.130.0, it's named `dork-<date>-<time>-pre-20261102213849_dor3088_todos.db`.
 
+Newer backups start with `dork-auto-` instead of `dork-`. [Both filename forms restore the same way](/docs/self-hosting/docker#database-snapshots).
+
 To go back to 0.130.0, always restore that backup. Quit DorkOS, delete `dork.db-wal` and `dork.db-shm` from `~/.dork/`, copy the backup over `~/.dork/dork.db`, then install 0.130.0. You lose anything written since the upgrade. Going back without the restore looks fine until an agent's promise fails.
 
 Going back can undo things you changed since the upgrade. If you removed access or revoked a connection, do it again.

@@ -4,12 +4,20 @@
  *
  * @module services/runtimes/codex/transport/app-server-turn-failures
  */
+import { docsUrl } from '@dorkos/shared/links';
 import type { StreamEvent } from '@dorkos/shared/types';
+import { runsInDockerImage } from '../../../../lib/distribution/index.js';
 import { logger } from '../../../../lib/logger.js';
 import { creditsRefusalEvent } from '../../../core/cloud/credits-protocols.js';
 import { CodexCrashLoopError } from '../app-server/process-pool.js';
+import { codexErrorCopy } from '../event-mapper.js';
 import type { AppServerTurnMapper } from '../app-server/notification-mapper.js';
-import { CodexProcessExitedError, isCodexRpcError } from '../app-server/protocol/errors.js';
+import {
+  APPARMOR_MOUNT_REFUSAL,
+  NAMESPACE_REFUSAL,
+  CodexProcessExitedError,
+  isCodexRpcError,
+} from '../app-server/protocol/errors.js';
 import { CodexWritableMissingTargetsError } from '../policy/writable-missing-targets.js';
 import { ProtectedPathNotDirectoryError } from '../policy/collapse-protected-paths.js';
 import { CodexGitMetadataPolicyError } from '../policy/git-metadata.js';
@@ -17,6 +25,41 @@ import { CodexGitMetadataPolicyError } from '../policy/git-metadata.js';
 /** The machine refused Linux isolation; retrying the reply cannot repair it. */
 const SANDBOX_UNAVAILABLE_COPY =
   'This computer blocks Codex’s sandbox. Its owner can check Linux setup: https://developers.openai.com/codex/concepts/sandboxing/#prerequisites';
+
+/** The DorkOS guide section for Codex in Docker, linked from both Docker copies. */
+const DOCKER_GUIDE_LINE = `Running Codex in Docker: ${docsUrl('/self-hosting/docker#running-codex-in-docker')}`;
+
+/**
+ * In the Docker image, AppArmor refused the sandbox (Ubuntu, Debian): name
+ * what works instead. One short line each; the chat keeps the line breaks.
+ */
+const DOCKER_APPARMOR_COPY = [
+  'Codex can’t run in this Docker setup yet.',
+  'Use Claude Code, or run DorkOS outside Docker.',
+  DOCKER_GUIDE_LINE,
+].join('\n');
+
+/** In the Docker image, seccomp refused the namespace: the profile is missing. */
+const DOCKER_NO_PROFILE_COPY = [
+  'Codex needs DorkOS’s Docker profile.',
+  'Restart the container with it, or use Claude Code.',
+  DOCKER_GUIDE_LINE,
+].join('\n');
+
+/**
+ * The chat copy for a sandbox Codex could not start. Docker wording only
+ * inside the Docker image; everywhere else, the Linux setup copy. The turn
+ * ends either way: nothing here retries Codex with the sandbox off or in a
+ * weaker mode (DOR-3800).
+ *
+ * @param err - The `sandbox-unavailable` refusal.
+ */
+function sandboxRefusalCopy(err: unknown): string {
+  if (!runsInDockerImage() || !(err instanceof Error)) return SANDBOX_UNAVAILABLE_COPY;
+  if (APPARMOR_MOUNT_REFUSAL.test(err.message)) return DOCKER_APPARMOR_COPY;
+  if (NAMESPACE_REFUSAL.test(err.message)) return DOCKER_NO_PROFILE_COPY;
+  return SANDBOX_UNAVAILABLE_COPY;
+}
 
 /**
  * The events a turn that could not be opened ends with: a credits refusal,
@@ -61,6 +104,11 @@ export function* failedSetup(sessionId: string, err: unknown): Generator<StreamE
         details: err.cause instanceof Error ? err.cause.message : err.message,
       },
     };
+  } else if (err instanceof Error && codexErrorCopy(err.message).category === 'model_unavailable') {
+    yield {
+      type: 'error',
+      data: { ...codexErrorCopy(err.message), code: 'codex_model_unavailable' },
+    };
   } else {
     logger.warn('[CodexAppServer] could not open the turn', { sessionId, err: String(err) });
     const sandboxUnavailable = isCodexRpcError(err, 'sandbox-unavailable');
@@ -68,7 +116,7 @@ export function* failedSetup(sessionId: string, err: unknown): Generator<StreamE
       type: 'error',
       data: {
         message: sandboxUnavailable
-          ? SANDBOX_UNAVAILABLE_COPY
+          ? sandboxRefusalCopy(err)
           : 'Codex could not start this reply. Send your message again to retry.',
         code: sandboxUnavailable ? 'codex_sandbox_unavailable' : 'codex_unavailable',
         details: err instanceof Error ? err.message : String(err),
@@ -110,12 +158,17 @@ export function failedCompaction(mapper: AppServerTurnMapper, err: unknown): Str
  */
 export function failedStart(mapper: AppServerTurnMapper, err: unknown): StreamEvent[] {
   if (err instanceof CodexProcessExitedError) return mapper.closeOnCrash(err.detail);
+  if (err instanceof Error) {
+    const copy = codexErrorCopy(err.message, { code: 'codex_model_unavailable' });
+    if (copy.category === 'model_unavailable')
+      return mapper.closeQuietly({ ...copy, code: 'codex_model_unavailable' });
+  }
   logger.warn('[CodexAppServer] turn/start failed', { err: String(err) });
   if (err instanceof CodexGitMetadataPolicyError)
     return mapper.closeQuietly({ message: err.message, code: 'codex_git_metadata_unavailable' });
   if (isCodexRpcError(err, 'sandbox-unavailable')) {
     return mapper.closeQuietly({
-      message: SANDBOX_UNAVAILABLE_COPY,
+      message: sandboxRefusalCopy(err),
       code: 'codex_sandbox_unavailable',
     });
   }

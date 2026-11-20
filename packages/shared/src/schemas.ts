@@ -2578,6 +2578,17 @@ export const SLOT_WAIT_STATUS = 'waiting_for_slot';
 export const SLOT_WAIT_TEXT = 'Waiting to start: every agent on this computer is busy.';
 
 /**
+ * The `status` a turn carries while one of its heavy shell jobs (a build, a
+ * test suite, an install) waits for the computer to calm down (DOR-4209). Shown
+ * like {@link SLOT_WAIT_STATUS}: the chat's status strip reads its `message`,
+ * which gives the job's place in line and nothing about the jobs ahead. Sent
+ * again every minute while the job waits. It never pauses a run's time limit
+ * (`isWaitingToStart` in `run-time-limit.ts` reads the slot wait alone): the
+ * turn has started.
+ */
+export const LOAD_WAIT_STATUS = 'waiting_for_load';
+
+/**
  * The named long-running operations a runtime can report progress for. An
  * extensible union: today only `compaction` (context-window summarization), but
  * a runtime that exposes indexing, cloning, or model-download progress adds its
@@ -2868,7 +2879,8 @@ export type PermissionDeniedEvent = z.infer<typeof PermissionDeniedEventSchema>;
 
 /**
  * Emitted when a turn ran on another model than the one its session names,
- * because who pays for it does not serve that model (DOR-2636): a session on
+ * because the account cannot use it (DOR-3168), or who pays does not serve it
+ * (DOR-2636): a session on
  * DorkOS credits naming a model credits do not cover runs on the service's
  * suggestion instead. Never a silent switch, so it is recorded durably and
  * rendered as a lasting notice in the conversation, on every surface that ran
@@ -2884,8 +2896,8 @@ export const ModelSubstitutedEventSchema = z
     to: z.string(),
     /** That model's display name, as the service names it. */
     toName: z.string(),
-    /** Why: the credits list does not cover the named model. */
-    reason: z.enum(['credits-not-covered']),
+    /** Why: credits do not cover the model, or the signed-in account cannot use it. */
+    reason: z.enum(['credits-not-covered', 'account-not-available']),
   })
   .openapi('ModelSubstitutedEvent');
 

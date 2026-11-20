@@ -295,3 +295,60 @@ it('DOR-4380: the builder receives the server chat id instead of ambient or prom
     vi.unstubAllEnvs();
   }
 });
+
+it.skipIf(process.platform === 'win32')(
+  'DOR-3717: an actual builder shell identifies its Doe turn instead of a person',
+  async () => {
+    const shellResults: unknown[] = [];
+    const runtime = makeRuntime({
+      engineFactory: () =>
+        engine(async (request) => {
+          if (request.context.scope === 'main') {
+            const builder = request.tools.find((tool) => tool.name === 'builder');
+            expect(builder).toBeDefined();
+            const result = await builder!.execute(
+              { task: 'Inspect shell identity' },
+              request.context
+            );
+            expect(result.isError, JSON.stringify(result)).not.toBe(true);
+          } else {
+            const shell = request.tools.find((tool) => tool.name === 'shell');
+            expect(shell).toBeDefined();
+            const script =
+              'process.stdout.write(JSON.stringify({runtime:process.env.FLOW_RUNTIME,harness:process.env.FLOW_HARNESS,session:process.env.DORKOS_SESSION_ID}))';
+            const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
+            const result = await shell!.execute(
+              { command: `${quote(process.execPath)} -e ${quote(script)}` },
+              request.context
+            );
+            expect(result.isError, JSON.stringify(result)).not.toBe(true);
+            shellResults.push(result.content);
+          }
+          return {
+            messages: [{ role: 'assistant', content: 'Shell identity inspected.' }],
+            scope: request.context.scope,
+            stopReason: 'stop',
+          };
+        }),
+    });
+    vi.stubEnv('FLOW_RUNTIME', 'person');
+    vi.stubEnv('FLOW_HARNESS', 'spoof');
+    try {
+      runtime.ensureSession('doe-shell-chat', {
+        cwd: projectDir,
+        permissionMode: 'bypassPermissions',
+      });
+      const events = await collect(runtime.sendMessage('doe-shell-chat', 'Inspect shell identity'));
+      expect(events.filter((event) => event.type === 'error')).toEqual([]);
+      expect(shellResults).toHaveLength(1);
+      expect(JSON.stringify(shellResults[0])).toContain(
+        JSON.stringify({ runtime: 'doe', harness: 'dorkos', session: 'doe-shell-chat' }).replaceAll(
+          '"',
+          '\\"'
+        )
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  }
+);

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { SETTINGS_TAB_DIRECTORY } from '@/layers/shared/lib';

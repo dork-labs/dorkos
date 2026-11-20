@@ -224,6 +224,7 @@ export type { TurnWindowWatcher } from './turn-window-signal.js';
 export { toRawSessionEvent, feedProjector } from './session-event-normalizer.js';
 export {
   callerNamedCwd,
+  knownSessionCwd,
   resolveSessionCwdOrDefault,
   resolveSessionCwdOrNull,
 } from './resolution/resolve-read-cwd.js';

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { createMockTransport } from '@dorkos/test-utils';
 import { ownDocChannelConnection } from '../doc-channel-ownership';
 const producer = ownDocChannelConnection(createMockTransport(), new AbortController().signal);

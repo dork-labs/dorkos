@@ -135,13 +135,20 @@ describe('readTerminalCommand', () => {
 
 describe('installTerminalCommand', () => {
   it('writes the script, runnable, without an admin password', async () => {
+    // A fresh reference file captures the effective mode under the inherited umask.
+    const referenceScript = path.join(home, 'reference-script');
+    writeFileSync(referenceScript, '', { mode: 0o755, flag: 'wx' });
+    const expectedMode = statSync(referenceScript).mode & 0o777;
+
     const result = await installTerminalCommand(deps(file));
     expect(result).toEqual({
       ok: true,
       status: { state: 'installed', path: '~/.local/bin/dorkos' },
     });
     expect(readFileSync(file, 'utf8')).toBe(terminalCommandScript(target));
-    expect(statSync(file).mode & 0o777).toBe(0o755);
+    const installedMode = statSync(file).mode & 0o777;
+    expect(installedMode & 0o100).toBe(0o100);
+    expect(installedMode).toBe(expectedMode);
   });
 
   it('rewrites a script for a moved copy of the app', async () => {

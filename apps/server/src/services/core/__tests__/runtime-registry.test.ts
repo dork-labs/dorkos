@@ -1,3 +1,4 @@
+import type { SessionBirthWriteContext } from '../runtime-seam/session-birth-write.js';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   RuntimeRegistry,
@@ -12,6 +13,10 @@ import { SessionSettingsSchema } from '@dorkos/shared/schemas';
 import { createTestDb } from '@dorkos/test-utils/db';
 import {
   sessionContext,
+  sessionBirthAllocations,
+  sessionLocations,
+  authors,
+  roomSessions,
   sessionMetadata,
   sessionNativeBindings,
   eq,
@@ -1251,6 +1256,33 @@ describe('RuntimeRegistry', () => {
       expect(row?.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     });
 
+    it('updates the model only while the captured row and owner still match', async () => {
+      const session = 'codex-session';
+      expect(registry.captureCodexModel(session)).toBeUndefined();
+      await registry.saveSessionSettings(session, { effort: 'medium' });
+      expect(registry.captureCodexModel(session)?.model).toBeNull();
+      const unbound = registry.captureCodexModel(session)!;
+
+      db.update(sessionMetadata)
+        .set({ runtime: 'codex' })
+        .where(eq(sessionMetadata.sessionId, session))
+        .run();
+      expect(unbound.replaceIfCurrent('stale')).toBe(false);
+      const bound = registry.captureCodexModel(session)!;
+      expect(bound.replaceIfCurrent('available')).toBe(true);
+      expect(await registry.getSessionSettings(session)).toMatchObject({
+        effort: 'medium',
+        model: 'available',
+      });
+
+      const removed = registry.captureCodexModel(session)!;
+      await registry.discardSessionSettings(session);
+      expect(removed.replaceIfCurrent('stale')).toBe(false);
+      expect(await registry.getSessionSettings(session)).toBeNull();
+      await registry.persistSessionRuntime(session, 'claude-code', A_PERSON);
+      expect(registry.captureCodexModel(session)).toBeUndefined();
+    });
+
     it('discardSessionSettings removes one row, bound or not, and nothing else', async () => {
       await registry.saveSessionSettings('never-started', { model: 'sonnet' });
       await registry.persistSessionRuntime('bound-then-dropped', 'test-mode', A_PERSON);
@@ -2115,6 +2147,49 @@ describe('RuntimeRegistry', () => {
       });
     });
 
+    it.each([
+      ['old', true],
+      ['new', true],
+      ['new', false],
+    ] as const)(
+      'preserves an unconsumed allocation at %s before moving ordinary rekey state (source metadata: %s)',
+      async (allocatedId, hasSourceMetadata) => {
+        if (hasSourceMetadata) await registry.persistSessionRuntime('old', 'claude-code', A_PERSON);
+        db.insert(sessionContext)
+          .values({
+            sessionId: 'old',
+            contextTokens: 120_000,
+            contextMaxTokens: 200_000,
+            observedAt: '2026-09-27T10:00:00.000Z',
+          })
+          .run();
+        db.insert(sessionBirthAllocations)
+          .values({
+            sessionId: allocatedId,
+            version: 1,
+            createdAt: 'owned-allocation',
+            sourceKind: 'internal',
+            internalSource: {
+              kind: 'server-mint',
+              owner: 'chat-start',
+              mintedSessionId: allocatedId,
+            },
+          })
+          .run();
+        const before = allRows();
+        const allocations = db.select().from(sessionBirthAllocations).all();
+        const context = db.select().from(sessionContext).all();
+
+        await expect(registry.rekeySessionSettings('old', 'new')).rejects.toThrow(
+          'Required session identity could not be preserved.'
+        );
+
+        expect(allRows()).toEqual(before);
+        expect(db.select().from(sessionBirthAllocations).all()).toEqual(allocations);
+        expect(db.select().from(sessionContext).all()).toEqual(context);
+      }
+    );
+
     it('is a no-op when the source has no row', async () => {
       await registry.saveSessionSettings('new', { permissionMode: 'plan' });
 
@@ -2130,6 +2205,431 @@ describe('RuntimeRegistry', () => {
       await registry.rekeySessionSettings('same', 'same');
 
       expect(await registry.getSessionSettings('same')).toEqual({ permissionMode: 'plan' });
+    });
+  });
+  describe('native import and automatic resume never consume a fresh birth', () => {
+    let db: Db;
+    const sessionId = '569a9c40-1f42-4e51-8b73-fbce108b97e1';
+    const read = () =>
+      db.select().from(sessionMetadata).where(eq(sessionMetadata.sessionId, sessionId)).get();
+    const allocate = () => {
+      db.insert(sessionBirthAllocations)
+        .values({
+          sessionId,
+          version: 1,
+          createdAt: 'owned-allocation',
+          sourceKind: 'internal',
+          internalSource: { kind: 'server-mint', owner: 'chat-start', mintedSessionId: sessionId },
+        })
+        .run();
+    };
+    const native = (): import('@dorkos/shared/types').Session => ({
+      id: sessionId,
+      title: 'Existing native conversation',
+      runtime: 'opencode',
+      cwd: process.cwd(),
+      account: 'owned-native-account',
+      permissionMode: 'default',
+      createdAt: '2026-11-19T00:00:00.000Z',
+      updatedAt: '2026-11-19T00:00:00.000Z',
+    });
+    beforeEach(() => {
+      db = createTestDb();
+      registry.setDb(db);
+    });
+
+    it.each([false, true])(
+      'refuses native import with an unconsumed allocation and existing row %s',
+      async (existing) => {
+        await (await import('../../../lib/boundary.js')).initBoundary(process.cwd());
+        if (existing)
+          db.insert(sessionMetadata)
+            .values({
+              sessionId,
+              runtime: 'opencode',
+              model: 'winner',
+              permissionMode: 'plan',
+              modelLaunchState: 'established-v1',
+              createdAt: 'existing',
+            })
+            .run();
+        allocate();
+        const before = read();
+        const allocation = db.select().from(sessionBirthAllocations).all();
+        await expect(
+          registry.rememberNativeSession(native(), { kind: 'operator' })
+        ).rejects.toMatchObject({ code: 'SESSION_BIRTH_CONTEXT_UNAVAILABLE' });
+        expect(read()).toEqual(before);
+        expect(db.select().from(sessionBirthAllocations).all()).toEqual(allocation);
+        expect(db.select().from(sessionNativeBindings).all()).toEqual([]);
+      }
+    );
+
+    it('keeps authorized native import legacy without an allocation and preserves its explicit choices', async () => {
+      await (await import('../../../lib/boundary.js')).initBoundary(process.cwd());
+      await registry.rememberNativeSession(native(), { kind: 'operator' });
+      expect(read()).toMatchObject({ runtime: 'opencode', modelLaunchState: null });
+      db.update(sessionMetadata)
+        .set({ model: 'explicit', permissionMode: 'plan', modelLaunchState: 'attempted-v1' })
+        .where(eq(sessionMetadata.sessionId, sessionId))
+        .run();
+      await registry.rememberNativeSession(native(), { kind: 'operator' });
+      expect(read()).toMatchObject({
+        model: 'explicit',
+        permissionMode: 'plan',
+        modelLaunchState: 'attempted-v1',
+      });
+      expect(registry.getNativeSessionAccount(sessionId)).toBe('owned-native-account');
+    });
+
+    it('retains the ineligible native-import no-op without touching an allocation', async () => {
+      allocate();
+      await registry.rememberNativeSession(native(), { kind: 'agent' });
+      await registry.rememberNativeSession({ ...native(), cwd: undefined }, { kind: 'operator' });
+      expect(read()).toBeUndefined();
+      expect(db.select().from(sessionBirthAllocations).all()).toHaveLength(1);
+      expect(db.select().from(sessionNativeBindings).all()).toEqual([]);
+    });
+
+    it.each([false, true])(
+      'refuses automatic resume with an unconsumed allocation and existing row %s',
+      (existing) => {
+        if (existing)
+          db.insert(sessionMetadata)
+            .values({
+              sessionId,
+              runtime: 'codex',
+              model: 'winner',
+              permissionMode: 'plan',
+              lastAutoResumeFor: 'prior',
+              modelLaunchState: 'established-v1',
+              createdAt: 'existing',
+            })
+            .run();
+        allocate();
+        const before = read();
+        const allocation = db.select().from(sessionBirthAllocations).all();
+        expect(() => registry.markAutoResumed(sessionId, 'next')).toThrow(
+          'Session birth write refused'
+        );
+        expect(read()).toEqual(before);
+        expect(db.select().from(sessionBirthAllocations).all()).toEqual(allocation);
+      }
+    );
+
+    it('preserves the old unbound resume marker and clear paths without fresh proof', () => {
+      registry.markAutoResumed(sessionId, 'episode');
+      expect(read()).toMatchObject({
+        runtime: null,
+        modelLaunchState: null,
+        lastAutoResumeFor: 'episode',
+      });
+      db.update(sessionMetadata)
+        .set({
+          runtime: 'codex',
+          model: 'explicit',
+          permissionMode: 'plan',
+          modelLaunchState: 'established-v1',
+        })
+        .where(eq(sessionMetadata.sessionId, sessionId))
+        .run();
+      registry.markAutoResumed(sessionId, null);
+      expect(read()).toMatchObject({
+        runtime: 'codex',
+        model: 'explicit',
+        permissionMode: 'plan',
+        modelLaunchState: 'established-v1',
+        lastAutoResumeFor: null,
+      });
+    });
+
+    it('rolls back native metadata if the real native-binding write fails', async () => {
+      await (await import('../../../lib/boundary.js')).initBoundary(process.cwd());
+      db.$client.exec(
+        "CREATE TEMP TRIGGER reject_birth_native BEFORE INSERT ON session_native_bindings BEGIN SELECT RAISE(ABORT, 'owned-native-write-refused'); END;"
+      );
+      await expect(registry.rememberNativeSession(native(), { kind: 'program' })).rejects.toThrow(
+        'owned-native-write-refused'
+      );
+      expect(read()).toBeUndefined();
+      expect(db.select().from(sessionNativeBindings).all()).toEqual([]);
+    });
+  });
+  describe('birth transfer at settings INSERT and runtime binding', () => {
+    let db: Db;
+    const id = 'owned-birth';
+    const read = () =>
+      db.select().from(sessionMetadata).where(eq(sessionMetadata.sessionId, id)).get();
+    const allocations = () => db.select().from(sessionBirthAllocations).all();
+    function birth(): Extract<SessionBirthWriteContext, { kind: 'person-location' }> {
+      db.insert(sessionLocations)
+        .values({ id: 'owned-location', ownerId: 'person', cwd: '/owned', createdAt: 'stamp' })
+        .run();
+      db.insert(sessionBirthAllocations)
+        .values({
+          sessionId: id,
+          version: 1,
+          createdAt: 'stamp',
+          sourceKind: 'person-location',
+          ownerId: 'person',
+          locationId: 'owned-location',
+        })
+        .run();
+      return {
+        kind: 'person-location',
+        allocationCreatedAt: 'stamp',
+        ownerId: 'person',
+        locationId: 'owned-location',
+        cwd: '/owned',
+      };
+    }
+    beforeEach(() => {
+      db = createTestDb();
+      registry.setDb(db);
+      const runtime = createMockRuntime('claude-code');
+      const modes = runtime.getCapabilities().permissionModes;
+      registry.register(
+        createMockRuntime('claude-code', {
+          permissionModes: {
+            ...modes,
+            values: [...modes.values, { ...modes.values[0]!, id: 'plan', label: 'Plan' }],
+          },
+        })
+      );
+      // Default is the configured and first strictest alternative; explicit Plan must survive.
+      serverDefaults = { permissionMode: 'default' };
+    });
+
+    it('refuses person allocation with a real nonperson room origin', async () => {
+      const context = birth();
+      const before = allocations();
+      await expect(
+        registry.persistSessionRuntime(
+          id,
+          'claude-code',
+          { kind: 'room', externalAuthor: false },
+          undefined,
+          context
+        )
+      ).rejects.toMatchObject({ code: 'SESSION_BIRTH_CONTEXT_UNAVAILABLE' });
+      expect(read()).toBeUndefined();
+      expect(allocations()).toEqual(before);
+    });
+
+    it('retains the owner session-relay origin for a real person allocation', async () => {
+      const context = birth();
+      expect(
+        await registry.persistSessionRuntime(
+          id,
+          'claude-code',
+          { kind: 'session-relay' },
+          undefined,
+          context
+        )
+      ).toBe(true);
+      expect(read()).toMatchObject({
+        modelLaunchState: 'pending-v1',
+        launchOrigin: 'session-relay',
+      });
+    });
+
+    it.each([undefined, '/different', '/actual-agent'])(
+      'compares the actual room-seat agent against the binding path %s',
+      async (agentPath) => {
+        db.insert(authors)
+          .values({
+            id: 'seat-author',
+            kind: 'agent',
+            naturalKey: '/actual-agent',
+            displayName: 'Seat agent',
+            createdAt: 'stamp',
+          })
+          .run();
+        db.insert(roomSessions)
+          .values({ roomId: 'room', authorId: 'seat-author', sessionId: id, createdAt: 'stamp' })
+          .run();
+        db.insert(sessionBirthAllocations)
+          .values({
+            sessionId: id,
+            version: 1,
+            sourceKind: 'internal',
+            createdAt: 'stamp',
+            internalSource: {
+              kind: 'room-seat',
+              roomId: 'room',
+              authorId: 'seat-author',
+              boundSessionId: id,
+              seatCreatedAt: 'stamp',
+            },
+          })
+          .run();
+        const context: SessionBirthWriteContext = {
+          kind: 'room-seat',
+          allocationCreatedAt: 'stamp',
+          roomId: 'room',
+          authorId: 'seat-author',
+          agentPath: '/actual-agent',
+          seatCreatedAt: 'stamp',
+        };
+        const pending = registry.persistSessionRuntime(
+          id,
+          'claude-code',
+          { kind: 'room', externalAuthor: false },
+          agentPath,
+          context
+        );
+        if (agentPath === '/actual-agent') {
+          await expect(pending).resolves.toBe(true);
+          expect(read()).toMatchObject({ modelLaunchState: 'pending-v1', agentPath });
+          expect(allocations()).toEqual([]);
+        } else {
+          await expect(pending).rejects.toMatchObject({
+            code: 'SESSION_BIRTH_CONTEXT_UNAVAILABLE',
+          });
+          expect(read()).toBeUndefined();
+          expect(allocations()).toHaveLength(1);
+        }
+      }
+    );
+
+    it('transfers a real settings-first birth and retains explicit model and mode when claimed', async () => {
+      const context = birth();
+      await registry.saveSessionSettings(
+        id,
+        { model: 'explicit', permissionMode: 'plan' },
+        context
+      );
+      expect(read()).toMatchObject({
+        runtime: null,
+        model: 'explicit',
+        permissionMode: 'plan',
+        modelLaunchState: 'pending-v1',
+      });
+      expect(allocations()).toEqual([]);
+      expect(await registry.persistSessionRuntime(id, 'claude-code', A_PERSON)).toBe(true);
+      expect(read()).toMatchObject({
+        runtime: 'claude-code',
+        model: 'explicit',
+        permissionMode: 'plan',
+        modelLaunchState: 'pending-v1',
+      });
+    });
+
+    it('transfers a real direct binding birth with the original seed and insertion result', async () => {
+      const context = birth();
+      serverDefaults = { model: 'configured', permissionMode: 'plan' };
+      expect(
+        await registry.persistSessionRuntime(id, 'claude-code', A_PERSON, undefined, context)
+      ).toBe(true);
+      expect(read()).toMatchObject({
+        runtime: 'claude-code',
+        model: 'configured',
+        modelLaunchState: 'pending-v1',
+      });
+      expect(allocations()).toEqual([]);
+      expect(await registry.persistSessionRuntime(id, 'claude-code', A_PERSON)).toBe(false);
+    });
+
+    it.each(['settings', 'binding'] as const)(
+      'refuses the %s writer without prepared context and keeps allocation intact',
+      async (writer) => {
+        birth();
+        const before = allocations();
+        const pending =
+          writer === 'settings'
+            ? registry.saveSessionSettings(id, { model: 'unowned' })
+            : registry.persistSessionRuntime(id, 'claude-code', A_PERSON);
+        await expect(pending).rejects.toMatchObject({ code: 'SESSION_BIRTH_CONTEXT_UNAVAILABLE' });
+        expect(read()).toBeUndefined();
+        expect(allocations()).toEqual(before);
+      }
+    );
+
+    it.each(['settings', 'binding'] as const)(
+      'checks the actual owner for the %s writer inside SQL',
+      async (writer) => {
+        const context = birth();
+        context.ownerId = 'different-person';
+        const before = allocations();
+        const pending =
+          writer === 'settings'
+            ? registry.saveSessionSettings(id, { model: 'unowned' }, context)
+            : registry.persistSessionRuntime(id, 'claude-code', A_PERSON, undefined, context);
+        await expect(pending).rejects.toMatchObject({ code: 'SESSION_BIRTH_CONTEXT_UNAVAILABLE' });
+        expect(read()).toBeUndefined();
+        expect(allocations()).toEqual(before);
+      }
+    );
+
+    it('rereads location after the actual awaited default read before binding', async () => {
+      const context = birth();
+      const pending = registry.persistSessionRuntime(
+        id,
+        'claude-code',
+        A_PERSON,
+        undefined,
+        context
+      );
+      db.update(sessionLocations)
+        .set({ cwd: '/changed' })
+        .where(eq(sessionLocations.id, 'owned-location'))
+        .run();
+      await expect(pending).rejects.toMatchObject({ code: 'SESSION_BIRTH_CONTEXT_UNAVAILABLE' });
+      expect(read()).toBeUndefined();
+      expect(allocations()).toHaveLength(1);
+    });
+
+    it('preserves a real winning existing metadata row and its inconsistent allocation', async () => {
+      const context = birth();
+      db.insert(sessionMetadata)
+        .values({
+          sessionId: id,
+          runtime: 'codex',
+          model: 'winner',
+          permissionMode: 'plan',
+          modelLaunchState: 'established-v1',
+          createdAt: 'prior',
+        })
+        .run();
+      const before = read();
+      await expect(
+        registry.persistSessionRuntime(id, 'claude-code', A_PERSON, undefined, context)
+      ).rejects.toMatchObject({ code: 'SESSION_BIRTH_CONTEXT_UNAVAILABLE' });
+      expect(read()).toEqual(before);
+      expect(allocations()).toHaveLength(1);
+    });
+
+    it('rolls back both metadata and allocation consumption on a real delete failure', async () => {
+      const context = birth();
+      db.$client.exec(
+        "CREATE TEMP TRIGGER reject_birth_consume BEFORE DELETE ON session_birth_allocations BEGIN SELECT RAISE(ABORT, 'owned-consumption-refused'); END;"
+      );
+      await expect(
+        registry.saveSessionSettings(id, { model: 'explicit' }, context)
+      ).rejects.toThrow('owned-consumption-refused');
+      expect(read()).toBeUndefined();
+      expect(allocations()).toHaveLength(1);
+    });
+
+    it('keeps an empty settings patch inert and legacy settings-first claim unchanged', async () => {
+      const context = birth();
+      await registry.saveSessionSettings(id, {}, context);
+      expect(read()).toBeUndefined();
+      expect(allocations()).toHaveLength(1);
+      await registry.saveSessionSettings('legacy-choice', {
+        model: 'explicit',
+        permissionMode: 'plan',
+      });
+      expect(await registry.persistSessionRuntime('legacy-choice', 'claude-code', A_PERSON)).toBe(
+        true
+      );
+      expect(
+        db
+          .select()
+          .from(sessionMetadata)
+          .where(eq(sessionMetadata.sessionId, 'legacy-choice'))
+          .get()
+      ).toMatchObject({ model: 'explicit', permissionMode: 'plan', modelLaunchState: null });
     });
   });
 });

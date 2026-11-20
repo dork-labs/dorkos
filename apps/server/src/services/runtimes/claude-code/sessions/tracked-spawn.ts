@@ -82,13 +82,39 @@ function recordWhileAlive(
 }
 
 /**
+ * Run a caller's spawn or exit callback so that it can never throw into the
+ * spawn path every warm launch shares. Only the error's name is logged.
+ *
+ * @param callback - The callback, or nothing
+ * @param when - Which moment it was for, for the log
+ * @returns What the callback returned, or `undefined` when it threw or was absent
+ */
+function guarded<T>(callback: (() => T) | undefined, when: 'spawn' | 'exit'): T | undefined {
+  try {
+    return callback?.();
+  } catch (error) {
+    logger.warn('[tracked-spawn] a process lifecycle callback failed', {
+      when,
+      error: error instanceof Error ? error.name : 'unknown',
+    });
+    return undefined;
+  }
+}
+
+/**
  * Build the `spawnClaudeCodeProcess` a warm launch runs through.
  *
  * @param ledger - Where the spawned pid is written down, synchronously, before
  *   the child is handed back to the SDK
+ * @param onSpawn - Told when a child is spawned; returns what to tell when THAT
+ *   child exits, however it ends: a crash, a kill, a `close()`. What the process
+ *   held that outlives it (a heavy-job slot, DOR-4209) is given back there,
+ *   since a dead process runs no hook. Neither call may break the spawn or the
+ *   exit: a throw is logged and dropped.
  */
 export function createTrackedSpawn(
-  ledger: WarmProcessLedger
+  ledger: WarmProcessLedger,
+  onSpawn?: () => () => void
 ): (opts: SpawnOptions) => SpawnedProcess {
   return ({ command, args, cwd, env, signal }) => {
     const child = spawn(command, args, {
@@ -103,6 +129,7 @@ export function createTrackedSpawn(
     // recorded is precisely the orphan this module exists to prevent.
     const pid = child.pid;
     if (pid !== undefined && !ledger.record(pid)) recordWhileAlive(ledger, child, pid);
+    const onExit = guarded(onSpawn, 'spawn');
 
     // The DATA handler is the load-bearing one: it is what puts stderr into
     // flowing mode. Without it the pipe fills at 64 KB and the child BLOCKS
@@ -121,6 +148,7 @@ export function createTrackedSpawn(
 
     child.once('exit', (code, exitSignal) => {
       if (pid !== undefined) ledger.forget(pid);
+      guarded(onExit, 'exit');
       if (code === 0 || code === null) return;
       logger.warn('[tracked-spawn] a warm agent process exited badly', {
         pid,

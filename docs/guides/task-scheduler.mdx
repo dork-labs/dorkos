@@ -290,14 +290,17 @@ Click a template card to pre-fill a scheduled task you can edit, or click "Start
 - **Agent**: which agent runs the job, and in which project. This also decides the job's working directory.
 - **Name** and **Description**: what to call this scheduled task.
 - **Prompt**: the instruction the agent gets each time it runs, e.g. "Check for outdated npm dependencies and summarize what needs updating."
+- **Permissions**: how much the agent may do on each run without asking: **Ask first**, **Act**, or **Full autonomy**. The line under it says what the level you picked allows. A new task starts at your own default, which is Full autonomy on Trusted.
 - **When it runs** and **Timezone** (under "Schedule"): a cron expression is just a compact way to say "every Monday at 10am" or "every weekday at 9am." The visual builder in the form writes it for you, so you don't need to memorize the syntax (though [the reference below](#cron-syntax) has the full pattern if you're curious).
 - **Runs on** (under "Advanced settings"): which runtime, model and effort this job uses. All three start at "follow the agent", which is the right answer for most tasks. See [Pick where it runs](#pick-where-it-runs).
-- **Permissions** and **Stop after** (under "Advanced settings"): how much autonomy the agent gets and how long it's allowed to run before DorkOS stops it.
+- **Stop after** (under "Advanced settings"): how long it's allowed to run before DorkOS stops it.
 
 </Step>
 <Step>
 
 ### Save it
+
+If the task is set to **Full autonomy**, or to another level that never stops to ask, saving asks you to confirm it once. Cancel saves nothing. A level that asks saves straight away, and so does an edit that leaves the level as it was.
 
 It shows up on the Schedules tab right away, along with its next run time. DorkOS writes it out as a real skill file, so your agent can read and use it like any other skill. Every run lands in the run history, which records the runtime and model that run actually used, so a task you move next week doesn't rewrite what its old runs did.
 

@@ -3,7 +3,7 @@
   "slug": "agent-browser-page-stream",
   "title": "Agent browser: watch and take over the live page from anywhere",
   "created": "2026-11-13",
-  "status": "draft",
+  "status": "specified",
   "project": "After launch: agent browser profiles and global MCP polish",
   "linearIssue": "DOR-2667"
 }

@@ -6,6 +6,7 @@
  */
 import { existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
+import { z } from 'zod';
 import {
   FloorsSchema,
   LatestSchema,
@@ -23,7 +24,7 @@ import {
 } from './data.ts';
 import { floorValues, pickConstraint, updateFloors, type FloorRelease } from './floors.ts';
 import { machineReading } from './machine.ts';
-import type { Gh } from './gh.ts';
+import { BudgetExhausted, type Gh } from './gh.ts';
 import type { HandFiles } from './load.ts';
 import { renderReport } from './report.ts';
 import { computeSlos, sloRuler } from './slo.ts';
@@ -40,6 +41,28 @@ export interface StewardContext {
 }
 
 const LOCAL_SLOS = new Set(['local-commit', 'local-push']);
+
+/**
+ * `ledger-prs/<ledger-id>.json`: the PR that added a ledger entry's file to the
+ * default branch, for an entry whose own `prs:` is empty. An entry lands in the
+ * PR that ships its change, so this is its anchor. Looked up once and kept;
+ * `pr: null` records that the file's first commit came through no merged PR.
+ */
+export const LedgerPrSchema = z
+  .object({
+    schema: z.literal(1),
+    id: z.string(),
+    /** The ledger file the lookup was made for, repo-relative. */
+    file: z.string(),
+    pr: z.number().int().positive().nullable(),
+    merged_at: z.string().nullable(),
+    /** The commit that added the file. */
+    sha: z.string(),
+    resolved_at: z.string(),
+  })
+  .strict();
+/** One resolved landing PR. */
+export type LedgerPr = z.infer<typeof LedgerPrSchema>;
 
 /**
  * Every SLO over the 7 days ending `to`, against the current floors.
@@ -126,19 +149,198 @@ export function writeLatest(
  * @param gh - The client.
  * @param repo - `owner/name`.
  * @param ledger - The ledger entries.
+ * @param known - Merge times already in hand (the landing-PR cache); not re-fetched.
  */
 export function fetchMergeTimes(
   gh: Gh,
   repo: string,
-  ledger: readonly LedgerEntry[]
+  ledger: readonly LedgerEntry[],
+  known: ReadonlyMap<number, string> = new Map()
 ): Map<number, string> {
   const out = new Map<number, string>();
   const prs = [...new Set(ledger.flatMap((e) => e.prs))].sort((a, b) => a - b);
   for (const n of prs) {
+    const at = known.get(n);
+    if (at !== undefined) {
+      out.set(n, at);
+      continue;
+    }
     const pr = gh.rest(`repos/${repo}/pulls/${n}`) as { merged_at?: string | null };
     if (typeof pr.merged_at === 'string') out.set(n, pr.merged_at);
   }
   return out;
+}
+
+/** Fresh landing-PR lookups one run may make (two requests each); the rest wait for the next run. */
+export const LANDING_LOOKUPS_PER_RUN = 50;
+
+/** Where an entry's landing PR is cached in the data directory. */
+export const ledgerPrPath = (id: string): string => `ledger-prs/${id}.json`;
+
+/** The cached landing PR of an entry; `null` when absent or unreadable. */
+function cachedLandingPr(dataDir: string, id: string): LedgerPr | null {
+  try {
+    return readData(dataDir, ledgerPrPath(id), LedgerPrSchema);
+  } catch {
+    return null;
+  }
+}
+
+/** True when the entry needs a landing PR and the cache has no answer for it yet. */
+function needsLookup(dataDir: string, e: LedgerEntry): boolean {
+  return (
+    e.prs.length === 0 &&
+    e.file !== undefined &&
+    !existsSync(path.join(dataDir, ledgerPrPath(e.id)))
+  );
+}
+
+/**
+ * How many entries a landing-PR lookup would query this run, capped at
+ * {@link LANDING_LOOKUPS_PER_RUN}: the caller budgets two requests for each.
+ *
+ * @param dataDir - A working tree of the data branch.
+ * @param ledger - The authored ledger entries.
+ */
+export function pendingLandingLookups(dataDir: string, ledger: readonly LedgerEntry[]): number {
+  return Math.min(ledger.filter((e) => needsLookup(dataDir, e)).length, LANDING_LOOKUPS_PER_RUN);
+}
+
+/**
+ * The PR that landed each ledger entry whose own `prs:` is empty.
+ *
+ * Authors rarely come back to fill in `prs:` once their PR merges, but an entry
+ * reaches the default branch in the same PR that ships its change, so the PR
+ * that added the entry's file is its anchor. That is the merged PR, into the
+ * default branch, of the OLDEST commit touching the file.
+ *
+ * Each answer is cached at `ledger-prs/<id>.json`, so an entry costs one lookup
+ * ever; a file whose first commit came through no merged PR is cached as
+ * `pr: null`. A failed request skips that entry for this run (nothing is
+ * cached, so the next run asks again) and never throws; a spent budget ends
+ * the lookups for this run.
+ *
+ * @param gh - The client.
+ * @param repo - `owner/name`.
+ * @param dataDir - A working tree of the data branch.
+ * @param ledger - The authored ledger entries.
+ * @param opts - The clock, the default branch, and the per-run lookup cap.
+ * @returns Entry id -> its landing PR, only for entries that resolved to one.
+ */
+export function resolveLandingPrs(
+  gh: Gh,
+  repo: string,
+  dataDir: string,
+  ledger: readonly LedgerEntry[],
+  opts: { now: Date; base?: string; limit?: number }
+): Map<string, LedgerPr & { pr: number; merged_at: string }> {
+  const base = opts.base ?? 'main';
+  let lookups = opts.limit ?? LANDING_LOOKUPS_PER_RUN;
+  const out = new Map<string, LedgerPr & { pr: number; merged_at: string }>();
+  const keep = (e: LedgerEntry, r: LedgerPr | null) => {
+    if (r && r.pr !== null && r.merged_at !== null)
+      out.set(e.id, { ...r, pr: r.pr, merged_at: r.merged_at });
+  };
+  for (const e of ledger) {
+    if (e.prs.length > 0 || e.file === undefined) continue;
+    if (!needsLookup(dataDir, e)) {
+      keep(e, cachedLandingPr(dataDir, e.id));
+      continue;
+    }
+    if (lookups <= 0) continue;
+    lookups -= 1;
+    try {
+      const commits = gh.rest(`repos/${repo}/commits?path=${e.file}&per_page=100`);
+      const sha = Array.isArray(commits)
+        ? (commits.at(-1) as { sha?: unknown } | undefined)?.sha
+        : undefined;
+      // Not on the default branch (yet): nothing to cache.
+      if (typeof sha !== 'string') continue;
+      const pulls = gh.rest(`repos/${repo}/commits/${sha}/pulls`);
+      const landed = (Array.isArray(pulls) ? pulls : [])
+        .map((p) => p as { number?: unknown; merged_at?: unknown; base?: { ref?: unknown } })
+        .filter(
+          (p): p is { number: number; merged_at: string } =>
+            typeof p.number === 'number' && typeof p.merged_at === 'string' && p.base?.ref === base
+        )
+        .sort((a, b) => a.merged_at.localeCompare(b.merged_at))[0];
+      const r: LedgerPr = {
+        schema: 1,
+        id: e.id,
+        file: e.file,
+        pr: landed?.number ?? null,
+        merged_at: landed?.merged_at ?? null,
+        sha,
+        resolved_at: opts.now.toISOString(),
+      };
+      writeData(dataDir, ledgerPrPath(e.id), r);
+      keep(e, r);
+    } catch (err) {
+      if (err instanceof BudgetExhausted) break;
+      // One entry's failure skips that entry; the next run asks again.
+    }
+  }
+  return out;
+}
+
+/**
+ * The ledger as the verdict engine reads it: an entry with no `prs:` of its
+ * own takes the PR that landed it, and a `proposed` entry that landed is
+ * `active`, because being on the default branch is what makes it live.
+ * Explicit `prs:` and every other status are kept. The files are never
+ * rewritten; `ledger-check` still validates what was authored.
+ *
+ * @param ledger - The authored ledger entries.
+ * @param landing - Entry id -> landing PR, from {@link resolveLandingPrs}.
+ */
+export function effectiveLedger(
+  ledger: readonly LedgerEntry[],
+  landing: ReadonlyMap<string, { pr: number }>
+): LedgerEntry[] {
+  return ledger.map((e) => {
+    const l = e.prs.length === 0 ? landing.get(e.id) : undefined;
+    if (!l) return e;
+    return { ...e, prs: [l.pr], status: e.status === 'proposed' ? 'active' : e.status };
+  });
+}
+
+/**
+ * Merge times already known from the landing-PR cache: pr -> ISO time.
+ *
+ * @param landing - Entry id -> landing PR, from {@link resolveLandingPrs}.
+ */
+export function landingMergeTimes(
+  landing: ReadonlyMap<string, { pr: number; merged_at: string }>
+): Map<number, string> {
+  return new Map([...landing.values()].map((l) => [l.pr, l.merged_at]));
+}
+
+/**
+ * The ledger as verdicts read it ({@link effectiveLedger}), and the merge time
+ * of every PR it names. What `verdicts` and `daily` pass to `runVerdicts`.
+ *
+ * Its own small budget: one request per PR the ledger names plus two per fresh
+ * landing-PR lookup, so a day the collector spent its whole budget on still
+ * gets its verdicts.
+ *
+ * @param ghFor - Builds a client with a request budget.
+ * @param repo - `owner/name`.
+ * @param dataDir - A working tree of the data branch.
+ * @param authored - The ledger entries as read from disk.
+ * @param opts - The clock and the default branch.
+ */
+export function verdictInputs(
+  ghFor: (budget: number) => Gh,
+  repo: string,
+  dataDir: string,
+  authored: readonly LedgerEntry[],
+  opts: { now: Date; base: string }
+): { ledger: LedgerEntry[]; merged: Map<number, string> } {
+  const explicit = new Set(authored.flatMap((e) => e.prs)).size;
+  const gh = ghFor(explicit + 2 * pendingLandingLookups(dataDir, authored) + 5);
+  const landing = resolveLandingPrs(gh, repo, dataDir, authored, opts);
+  const ledger = effectiveLedger(authored, landing);
+  return { ledger, merged: fetchMergeTimes(gh, repo, ledger, landingMergeTimes(landing)) };
 }
 
 /**

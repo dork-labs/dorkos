@@ -5,6 +5,7 @@ import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
 import { describeAssistantError, SURFACED_ASSISTANT_ERRORS } from '../sdk-error-mapping.js';
 import { buildApiErrorPart } from '../api-error-record.js';
 import { reportSessionLimit } from '../../accounts/session-limit.js';
+import { isCreditsClaudeRoot } from '../../credits-root.js';
 import {
   parseCreatedTaskId,
   buildTaskIdAssignedEvent,
@@ -169,7 +170,13 @@ export async function* mapMessageEvent(
       // in `details` so the request id is never lost — the reload path
       // (`api-error-record.ts`) already kept it; the live path dropped it.
       const noticeText = apiErrorNoticeText(assistantBody);
-      const described = describeAssistantError(assistantError, noticeText);
+      // Only DorkOS's own endpoint may put its words on the card (DOR-4845).
+      // The account the running process really started on comes first.
+      const root =
+        session.sdkReportedBilling?.root ?? session.launchedAccountRoot ?? session.accountRoot;
+      const described = describeAssistantError(assistantError, noticeText, {
+        fromDorkosEndpoint: root !== undefined && isCreditsClaudeRoot(root),
+      });
       yield {
         type: 'error',
         data: {
@@ -177,9 +184,12 @@ export async function* mapMessageEvent(
           code: assistantError,
           // Auth failures (revoked/expired sign-in) get the re-auth category so
           // the client offers a "Fix sign-in" affordance; keep the human message.
-          category: detectAuthError({ message: described, code: assistantError })
-            ? 'auth_error'
-            : 'execution_error',
+          // A server error is never one, whatever an endpoint's quoted words say.
+          category:
+            assistantError !== 'server_error' &&
+            detectAuthError({ message: described, code: assistantError })
+              ? 'auth_error'
+              : 'execution_error',
           ...(noticeText !== undefined && { details: noticeText }),
         },
       };

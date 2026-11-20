@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * "Continue on another account…" for an agent in a room: lists where its seat
  * can move, picks the best one that can take it, moves it, and says plainly

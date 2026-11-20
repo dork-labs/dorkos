@@ -393,10 +393,10 @@ async function advisedRanking(
     const candidate = byKey.get(`${row.runtime}\u0000${row.id}`);
     if (!candidate) return [];
     const { account, usage } = candidate;
-    // The advisor ranks; it cannot offer a sign-in DorkOS may not pick alone.
+    // The advisor ranks; it cannot make a limited account or an unavailable sign-in usable.
     const identityOk = identityAllowsAutoPick(account.runtime, signinRoot(account));
     const signedOut = seenSignedOut(account.runtime, signinRoot(account));
-    const eligible = row.eligible && identityOk;
+    const eligible = row.eligible && identityOk && usage.state !== 'limited';
     return {
       runtime: row.runtime,
       id: row.id,
@@ -404,7 +404,10 @@ async function advisedRanking(
       color: account.color,
       usage,
       eligible,
-      reason: signinReason(identityOk, eligible, signedOut, row.reason),
+      reason:
+        usage.state === 'limited'
+          ? defaultReason(usage, false)
+          : signinReason(identityOk, eligible, signedOut, row.reason),
       ...(row.badge ? { badge: row.badge } : {}),
       ...(account.noAutoMove ? { noAutoMove: true as const } : {}),
       ...(account.isDefault ? { isDefault: true as const } : {}),

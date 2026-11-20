@@ -60,6 +60,14 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     category: 'Approvals',
     keywords: ['approval', 'error', 'offline', 'retry', 'unavailable', 'failed read'],
   },
+  // SendRecipientsShowcases
+  {
+    id: 'send-recipients',
+    title: 'Send recipients',
+    page: 'home-inbox',
+    category: 'Approvals',
+    keywords: ['approval', 'send', 'email', 'recipients', 'to', 'cc', 'bcc', 'decline only'],
+  },
   // InboxShowcases
   {
     id: 'inbox-bell',
@@ -84,6 +92,13 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     page: 'home-inbox',
     category: 'Inbox',
     keywords: ['inbox', 'notification', 'row', 'unread', 'read', 'activity', 'history'],
+  },
+  {
+    id: 'stopped-app-rows',
+    title: 'Stopped app rows',
+    page: 'home-inbox',
+    category: 'Inbox',
+    keywords: ['extension', 'mini app', 'stopped', 'restart', 'watchdog', 'off'],
   },
   {
     id: 'access-change-rows',

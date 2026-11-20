@@ -1,10 +1,9 @@
 /** Exact authenticated MCP projection for connector execution capabilities. */
 import { MCP_SERVER_OPTIONS } from '../../core/capabilities/mcp-input/limits.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
 import type { CapabilityRegistry } from '../../core/capabilities/index.js';
 import {
-  approvalTokenArgument,
+  capabilityMcpInputObject,
   deriveMcpAnnotations,
   invokeCapabilityAsMcpResult,
 } from '../../core/capabilities/mcp-projection.js';
@@ -12,16 +11,6 @@ import { SERVER_VERSION } from '../../../lib/version.js';
 import type { ServerPrincipalProof } from '../principal/server-principal.js';
 import { CONNECTOR_RUNTIME_CAPABILITY_IDS } from '../runtime-capability-scope.js';
 import { abortSignalOf } from '../../core/capabilities/index.js';
-
-function strictRuntimeInputSchema(registry: CapabilityRegistry, capabilityId: string) {
-  const capability = registry.get(capabilityId);
-  if (!capability || !(capability.input instanceof z.ZodObject)) {
-    throw new Error(`Connector runtime capability '${capabilityId}' has no object input schema.`);
-  }
-  return capability.tier === 'destructive'
-    ? capability.input.extend(approvalTokenArgument())
-    : capability.input;
-}
 
 /**
  * Build one request-scoped MCP server exposing exact principal-bound discovery and execution tools.
@@ -47,7 +36,7 @@ export function createConnectorRuntimeMcpServer(
       capability.id,
       {
         description: capability.description,
-        inputSchema: strictRuntimeInputSchema(registry, capabilityId),
+        inputSchema: capabilityMcpInputObject(capability),
         annotations: deriveMcpAnnotations(capability),
       },
       async (args: Record<string, unknown>, extra: unknown) =>

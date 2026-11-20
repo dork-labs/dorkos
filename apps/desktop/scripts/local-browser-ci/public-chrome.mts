@@ -2,11 +2,13 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { execFile } from 'node:child_process';
+import { appendFileSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { chromium, type BrowserContext } from 'playwright-core';
+import { browserProofPage } from './proof-page.js';
 import { LocalBrowserService } from '../../../server/src/services/session/local-browser/service.js';
 import { BrowserHandover } from '../../../server/src/services/session/local-browser/handover.js';
 import { SignInWindow } from '../../../server/src/services/session/local-browser/sign-in-window.js';
@@ -18,10 +20,12 @@ import {
   FORBIDDEN_PLAIN_FLAGS,
   plainChromiumArgs,
   spawnPlainChromium,
+  profileHeld,
   profileLockPid,
   type PlainChromium,
 } from '../../../server/src/services/session/local-browser/plain-chromium.js';
 import { installedChromePath } from '../../../server/src/services/session/local-browser/connection/chrome-installation.js';
+import { CLOSE_RESPONSE_TIMEOUT_MS } from '../../../server/src/services/session/local-browser/lifecycle.js';
 
 const run = promisify(execFile);
 const evidence = process.env.DORKOS_PUBLIC_CHROME_ARTIFACTS!;
@@ -31,7 +35,54 @@ assert(installedChromePath(), 'Install Google Chrome before the public-site proo
 await mkdir(evidence, { recursive: true });
 let context: BrowserContext | undefined;
 let agentPid: number | undefined;
+let agentProfileFolder: string | undefined;
 let plain: PlainChromium | undefined;
+let agentWindow = 0;
+/** CI evidence only: a context-close event never stands in for close-promise settlement. */
+function recordAgentClose(launched: BrowserContext, folder: string, pid: number): void {
+  const window = ++agentWindow;
+  const close = launched.close.bind(launched);
+  let startedAt: number | undefined;
+  let closeCalls = 0;
+  const record = (phase: string) => {
+    const line = JSON.stringify({
+      window,
+      pid,
+      phase,
+      closeCalls,
+      responseTimeoutMs: CLOSE_RESPONSE_TIMEOUT_MS,
+      at: new Date().toISOString(),
+      elapsedMs: startedAt === undefined ? null : performance.now() - startedAt,
+      contextClosed: launched.isClosed(),
+      profileHeld: profileHeld(folder),
+      profileLockPid: profileLockPid(folder) ?? null,
+    });
+    console.error(`Agent close timing: ${line}`);
+    try {
+      // Survives a thrown handoff or a child killed before asynchronous output could flush.
+      appendFileSync(path.join(evidence, 'agent-close-timing.ndjson'), `${line}\n`);
+    } catch {
+      console.error('Could not write the agent close timing artifact.');
+    }
+  };
+  launched.on('close', () => record('context-close-event'));
+  launched.close = async (options) => {
+    startedAt ??= performance.now();
+    closeCalls += 1;
+    const boundary = setTimeout(() => record('response-deadline'), CLOSE_RESPONSE_TIMEOUT_MS);
+    boundary.unref();
+    record('close-start');
+    try {
+      await close(options);
+      record('close-resolved');
+    } catch (error) {
+      record('close-rejected');
+      throw error;
+    } finally {
+      clearTimeout(boundary);
+    }
+  };
+}
 const signIns = new SignInWindow({
   spawner(executable, args) {
     assert.equal(executable, installedChromePath());
@@ -48,14 +99,23 @@ const backend = {
   ...productionBackend,
   async launch(...args: Parameters<typeof productionBackend.launch>) {
     context = await productionBackend.launch(...args);
+    agentProfileFolder = args[0];
+    appendFileSync(
+      path.join(evidence, 'agent-launch-pages.ndjson'),
+      `${JSON.stringify({
+        phase: 'launch-returned',
+        window: agentWindow + 1,
+        pages: context.pages().length,
+        blankPages: context.pages().filter((page) => page.url() === 'about:blank').length,
+      })}\n`
+    );
     agentPid = profileLockPid(args[0]);
     assert(agentPid, 'The throwaway agent profile must name its own Chrome process');
+    recordAgentClose(context, args[0], agentPid);
     return context;
   },
 };
 const browser = new LocalBrowserService(process.env.DORK_HOME!, undefined, backend);
-const handover = new BrowserHandover(browser, signIns, () => process.env.DORK_HOME!);
-handover.useOutsideTurnCheck(async () => null);
 type Identity = {
   ua: string;
   brands: { brand: string; version: string }[];
@@ -63,6 +123,10 @@ type Identity = {
   headers?: Record<string, unknown>;
 };
 let receipt: Identity | undefined;
+// DOR-4731: each visit to the made-up page sets a cookie naming that visit, and records the
+// cookie it arrived with, to prove Done signing in saves what the person's window was given.
+let visits = 0;
+const arrivedWith: string[] = [];
 const echo = createServer((request, response) => {
   if (request.method === 'POST') {
     let body = '';
@@ -74,6 +138,11 @@ const echo = createServer((request, response) => {
       response.end('saved');
     });
   } else {
+    if (request.url === '/') {
+      arrivedWith.push(String(request.headers.cookie ?? ''));
+      visits += 1;
+      response.setHeader('Set-Cookie', `made_up_visit=${visits}; Max-Age=86400; Path=/`);
+    }
     response.setHeader('Content-Type', 'text/html');
     response.end(`<h1>Made-up browser check</h1><pre id="result"></pre><script>
       const identity={ua:navigator.userAgent,brands:navigator.userAgentData.brands,webdriver:navigator.webdriver};
@@ -82,6 +151,11 @@ const echo = createServer((request, response) => {
     </script>`);
   }
 });
+/** A time in the form `log show --start` takes. */
+function logTime(at: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}`;
+}
 async function until<T>(read: () => Promise<T | undefined>, timeout = 30000): Promise<T> {
   const deadline = Date.now() + timeout;
   do {
@@ -189,8 +263,41 @@ try {
     ['godaddy', 'https://sso.godaddy.com/'],
   ] as const;
   await browser.open({ mode: 'new-window', sessionId: 'made-up-ci-browser' });
+  const handover = new BrowserHandover(
+    browser.personSession('made-up-ci-browser'),
+    signIns,
+    () => process.env.DORK_HOME!
+  );
+  handover.useOutsideTurnCheck(async () => null);
   for (const [name, url] of pages) {
-    const page = context!.pages()[0]!;
+    const page = await browserProofPage(
+      browser.personSession('made-up-ci-browser').pageConnection()
+    );
+    assert(context, 'The chat must have its launched context');
+    assert.deepEqual(
+      context.pages(),
+      [page],
+      'A fresh or reopened launch must leave only the chat page'
+    );
+    assert(agentProfileFolder, 'The agent launch must retain its invented profile folder');
+    const prefs = JSON.parse(
+      await readFile(path.join(agentProfileFolder, 'Default', 'Preferences'), 'utf8')
+    );
+    assert.equal(
+      prefs.session?.restore_on_startup,
+      5,
+      'The owned profile must start with restore disabled'
+    );
+    appendFileSync(
+      path.join(evidence, 'agent-launch-pages.ndjson'),
+      `${JSON.stringify({
+        phase: 'chat-page-created',
+        window: agentWindow,
+        pages: context.pages().length,
+        restoreOnStartup: prefs.session.restore_on_startup,
+      })}\n`
+    );
+    await page.bringToFront();
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
     if (name === 'godaddy')
       await page.locator('input[type="password"]').waitFor({ state: 'visible', timeout: 30000 });
@@ -227,6 +334,11 @@ try {
             : /Test Results|Webdriver/i.test(text),
       agentPid
     );
+    assert.equal(
+      await page.evaluate(() => document.visibilityState === 'visible'),
+      true,
+      'The chat’s page must be the visible tab in its native window'
+    );
     await recordTitle(`${name}-agent-native`);
     receipt = undefined;
     const agentPages = new Set(context?.pages() ?? []);
@@ -258,9 +370,55 @@ try {
       await handover.stop(handoffId);
       assert.equal(signIns.active, true, 'Stop must leave the hook-free window open');
     }
-    signIns.close();
-    await until(async () => (signIns.current?.status === 'saved' ? true : undefined));
+    // The person's own visit set the cookie the agent's reopened window must arrive with.
+    const personVisit = visits;
+    // Done signing in, as the card's button does: Chrome on a Mac keeps running when its
+    // window closes, so this quit is what saves the sign-in (DOR-4731).
+    const quitWindow = plain;
+    const quitAt = Date.now();
+    const tccFrom = logTime(new Date(quitAt - 1000));
+    let exitedAfterMs: number | undefined;
+    void quitWindow?.exited.then(() => (exitedAfterMs = Date.now() - quitAt));
+    signIns.done();
+    await until(async () =>
+      signIns.current?.status === 'saved' || signIns.current?.needsQuit ? true : undefined
+    );
+    // A Mac quit that hangs is how a hidden permission prompt would show on a runner.
+    assert.notEqual(signIns.current?.needsQuit, true, `${name}: the quit didn’t finish in 10 s`);
+    assert(exitedAfterMs !== undefined && exitedAfterMs < 10_000, `${name}: quit took too long`);
+    const savedAfterMs = Date.now() - quitAt;
+    // Security (DOR-4731): the quit must ask macOS for no Apple Events consent. A prompt a
+    // person accepted would give every agent under DorkOS Automation over their real Chrome.
+    const tcc = await run('/usr/bin/log', [
+      'show',
+      '--start',
+      tccFrom,
+      '--predicate',
+      'subsystem == "com.apple.TCC"',
+      '--style',
+      'compact',
+    ]);
+    const appleEvents = tcc.stdout.split('\n').filter((line) => /AppleEvents/.test(line));
+    await writeFile(path.join(evidence, `${name}-tcc-apple-events.txt`), appleEvents.join('\n'));
+    assert.deepEqual(appleEvents, [], `${name}: the quit asked macOS for Apple Events consent`);
+    // How the person's window ended: by the signal, or a clean exit (Security's check, DOR-4731).
+    const quitExit = await quitWindow?.exited;
+    // Counted before the hand back: it reopens the agent's page and waits for that load.
+    const before = arrivedWith.length;
     if (name !== 'godaddy') await handover.handBack(handoffId);
+    if (name === 'echo') {
+      await until(async () => (arrivedWith.length > before ? true : undefined));
+      // Made-up visit numbers only: what the reopened window arrived with, for the record.
+      await writeFile(
+        path.join(evidence, 'cookie-proof.json'),
+        JSON.stringify({ personVisit, arrivedWith, quitExit, exitedAfterMs, savedAfterMs }, null, 2)
+      );
+      assert.match(
+        arrivedWith.at(-1)!,
+        new RegExp(`(^|; )made_up_visit=${personVisit}($|;)`),
+        'Done signing in must save the cookie the person’s window was given'
+      );
+    }
   }
   await fallbackProof(pages[0][1]);
   await writeFile(path.join(evidence, 'window-titles.json'), JSON.stringify(titles, null, 2));
@@ -273,14 +431,18 @@ try {
         signedIn: false,
         realProfileUsed: false,
         stopLeftDetached: true,
+        doneSavedPersonCookie: true,
       },
       null,
       2
     )
   );
 } finally {
-  signIns.close();
-  if (plain) await plain.exited;
-  await browser.disconnect();
+  // Cleanup must never replace the proof's own failure, so each step reports and moves on.
+  const cleanup = async (step: string, run: () => Promise<unknown>) =>
+    run().catch((error: unknown) => console.error(`cleanup ${step}: ${String(error)}`));
+  signIns.done();
+  if (plain) await cleanup('sign-in window', () => plain!.exited);
+  await cleanup('browser', () => browser.closeAll());
   await new Promise<void>((resolve) => echo.close(() => resolve()));
 }

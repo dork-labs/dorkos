@@ -394,6 +394,17 @@ describe('approvals from the web with a passkey', () => {
       expect(h.approveTool).not.toHaveBeenCalled();
     });
 
+    it('when the input gained a key after the challenge was issued', async () => {
+      const h = harness();
+      const body = h.bodyOf(await h.challenge());
+      const original = SECRET_INPUT.slice(1, -1);
+      h.cards.set('t1', { toolName: 'Bash', input: `{"__proto__":{"x":1},${original}}` });
+      const answer = await h.respond('approve', h.sign(body));
+      expect(errorOf(answer)?.message).toBe(PROOF_FAILED);
+      expect(h.audits.at(-1)).toMatchObject({ error: 'input-changed' });
+      expect(h.approveTool).not.toHaveBeenCalled();
+    });
+
     it('when the chat stopped waiting', async () => {
       const h = harness();
       const body = h.bodyOf(await h.challenge());
@@ -568,6 +579,17 @@ describe('approvals from the web with a passkey', () => {
         message: 'Too large to approve from the web. Approve it at the computer.',
       });
     });
+
+    it.each(['__proto__', 'constructor', 'prototype'])(
+      'an input holding a prototype-named %s key',
+      async (key) => {
+        const h = harness();
+        h.cards.set('t1', { toolName: 'WebFetch', input: `{"${key}":{"x":1},"url":"a"}` });
+        const frame = await h.challenge();
+        expect(errorOf(frame)).toMatchObject({ status: 403, code: 'refused' });
+        expect(h.approveTool).not.toHaveBeenCalled();
+      }
+    );
 
     it('a ninth live challenge on one connection', async () => {
       const h = harness();

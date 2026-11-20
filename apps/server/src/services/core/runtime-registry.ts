@@ -1,3 +1,9 @@
+import { bindSessionWrite } from './runtime-seam/bind-session-write.js';
+import { writeNativeSession } from './runtime-seam/native-session-write.js';
+import {
+  withSessionBirthWrite,
+  type SessionBirthWriteContext,
+} from './runtime-seam/session-birth-write.js';
 import { readSessionBindings, type SessionBinding } from './runtime-seam/session-bindings.js';
 export type { SessionBinding } from './runtime-seam/session-bindings.js';
 import { peekProjector } from '../session/session-state-projector.js';
@@ -5,6 +11,7 @@ import { onRequiredSessionRekey } from '../session/turn-identity/durable-rekey.j
 import { RequiredSessionIdentityError } from '../../lib/replay/required-session-identity-error.js';
 import { RequiredRoomLaunchStore } from '../rooms/reseat/required-launch-store.js';
 import {
+  assertNoOutstandingRekeyBirth,
   rekeySessionMetadata,
   rekeyRequiredSessionIdentity,
   moveSessionContext,
@@ -47,27 +54,18 @@ import {
   type OriginPermissionSeed,
   type TurnOrigin,
 } from '../session/origin/turn-origin.js';
-import {
-  sessionMetadata,
-  sessionNativeBindings,
-  eq,
-  inArray,
-  isNull,
-  sql,
-  type Db,
-} from '@dorkos/db';
+import { sessionMetadata, sessionNativeBindings, eq, inArray, sql, type Db } from '@dorkos/db';
 import { logger } from '../../lib/logger.js';
 import { withSessionLimitStore } from '../session/fleet/session-limit-store.js';
 import { getSessionStartedByStore } from '../session/origin/session-started-by-store.js';
 import { getSessionTouchStore } from '../session/origin/session-touch-store.js';
 import { decorateRuntime } from './runtime-seam/decorate-runtime.js';
 import {
-  keepRecordedAgent,
   refuseAgentChange,
   rowToSettings,
-  fillNullsWith,
-  launchColumns,
+  readSessionSettings,
   pickSettings,
+  captureCodexModel,
   keptPermissionMode,
   type SettingsUpdate,
 } from './runtime-seam/session-metadata-columns.js';
@@ -251,6 +249,7 @@ export class RuntimeRegistry {
    *   does not declare and so cannot run, which is the one case where a choice
    *   somebody made does not survive.
    * @param agentPath - Optional path to the agent that owns this session
+   * @param birth - Prepared server-owned first-write context after the caller’s existing admission.
    * @returns `true` when this call BOUND the session — whether it inserted the
    *   row or claimed an unbound one — and `false` when the session was already
    *   bound. Lets the caller fire a once-per-session side effect (e.g. the
@@ -262,9 +261,11 @@ export class RuntimeRegistry {
     sessionId: string,
     runtime: string,
     origin: TurnOrigin,
-    agentPath?: string
+    agentPath?: string,
+    birth?: SessionBirthWriteContext
   ): Promise<boolean> {
     const db = this.requireDb('persistSessionRuntime');
+    const preparedBirth = birth === undefined ? undefined : structuredClone(birth);
     const required = this.requiredLaunches().forSession(sessionId);
     if (required && required.destinationSessionId !== sessionId)
       throw new RequiredSessionIdentityError('Recovery alias requires its canonical chat.');
@@ -278,52 +279,20 @@ export class RuntimeRegistry {
     // they honour different halves of the same answer.
     const seedPolicy = permissionSeedForOrigin(origin);
     const seed = this.seedForNewRow(runtime, { agent, seedPolicy });
-    const result = await db
-      .insert(sessionMetadata)
-      .values({
-        sessionId,
+    return bindSessionWrite(
+      db,
+      sessionId,
+      runtime,
+      origin,
+      agentPath,
+      seed,
+      this.claimedPermissionMode(
         runtime,
-        agentPath: agentPath ?? null,
-        // What started it, server-held and never overwritten: the fact that
-        // decides whether a limited session may carry its work to another
-        // account (spec `claude-account-fleet` D9).
-        ...launchColumns(origin),
-        createdAt: new Date().toISOString(),
-        ...seed,
-      })
-      .onConflictDoUpdate({
-        target: sessionMetadata.sessionId,
-        set: {
-          runtime,
-          // The binding write is what establishes identity, so the agent it
-          // names is the session's — but only when it names one, so a caller
-          // with no agent never erases a path some other write knew. And only
-          // into an empty column: a recorded agent never changes once recorded,
-          // not even by the claim (DOR-3706, R3).
-          ...keepRecordedAgent(agentPath),
-          ...fillNullsWith(seed),
-          // The claim names what started the session only when nothing has yet.
-          ...launchColumns(origin, 'claim'),
-          // **The UPDATE branch is a CLAIM, and not every origin may seed one.**
-          // This row already exists: something created it before the session
-          // started, which for a person is their own pre-launch settings change
-          // and for a room is evidence the conversation is not new. So an
-          // insert-only origin hands nothing down here, and the stored mode is
-          // left to stand or fall on its own (`configured-stop-on-insert` in
-          // {@link permissionSeedForOrigin}, DOR-2105 review). The INSERT branch
-          // above is unaffected: a row this call mints is new by definition.
-          ...this.claimedPermissionMode(
-            runtime,
-            seedPolicy === 'configured-stop' ? seed.permissionMode : undefined
-          ),
-        },
-        // The whole guard: claim a row nobody has bound, never re-bind one.
-        setWhere: isNull(sessionMetadata.runtime),
-      });
-    // better-sqlite3 RunResult: `changes` is the number of rows actually written
-    // — 1 for a fresh insert, 1 for a claim, and 0 when `setWhere` refused an
-    // already-bound row. That is exactly "this call bound the session".
-    return result.changes > 0;
+        seedPolicy === 'configured-stop' ? seed.permissionMode : undefined
+      ),
+      required?.id,
+      preparedBirth
+    );
   }
 
   /**
@@ -498,44 +467,7 @@ export class RuntimeRegistry {
     if (!session.cwd) return;
     await validateBoundaryOrDorkHome(session.cwd);
     const db = this.requireDb('rememberNativeSession');
-    db.transaction((tx) => {
-      const existing = tx
-        .select()
-        .from(sessionMetadata)
-        .where(eq(sessionMetadata.sessionId, session.id))
-        .get();
-      if (existing?.runtime && existing.runtime !== session.runtime)
-        throw new AmbiguousSessionError();
-      const source = tx
-        .select()
-        .from(sessionNativeBindings)
-        .where(eq(sessionNativeBindings.sessionId, session.id))
-        .get();
-      if (source?.account && session.account && source.account !== session.account)
-        throw new AmbiguousSessionError();
-      const createdAt = new Date().toISOString();
-      tx.insert(sessionMetadata)
-        .values({ sessionId: session.id, runtime: session.runtime, createdAt })
-        .onConflictDoUpdate({
-          target: sessionMetadata.sessionId,
-          set: { runtime: session.runtime },
-          setWhere: isNull(sessionMetadata.runtime),
-        })
-        .run();
-      tx.insert(sessionNativeBindings)
-        .values({
-          sessionId: session.id,
-          runtime: session.runtime,
-          cwd: session.cwd!,
-          account: session.account ?? source?.account ?? null,
-          createdAt,
-        })
-        .onConflictDoUpdate({
-          target: sessionNativeBindings.sessionId,
-          set: { cwd: session.cwd!, account: session.account ?? source?.account ?? null },
-        })
-        .run();
-    });
+    writeNativeSession(db, session);
   }
 
   /** Private native source, never part of a navigation URL. */
@@ -668,18 +600,21 @@ export class RuntimeRegistry {
    */
   markAutoResumed(sessionId: string, episode: string | null): void {
     const db = this.requireDb('markAutoResumed');
-    db.insert(sessionMetadata)
-      .values({
-        sessionId,
-        runtime: null,
-        createdAt: new Date().toISOString(),
-        lastAutoResumeFor: episode,
-      })
-      .onConflictDoUpdate({
-        target: sessionMetadata.sessionId,
-        set: { lastAutoResumeFor: episode },
-      })
-      .run();
+    withSessionBirthWrite(db, sessionId, undefined, (tx) =>
+      tx
+        .insert(sessionMetadata)
+        .values({
+          sessionId,
+          runtime: null,
+          createdAt: new Date().toISOString(),
+          lastAutoResumeFor: episode,
+        })
+        .onConflictDoUpdate({
+          target: sessionMetadata.sessionId,
+          set: { lastAutoResumeFor: episode },
+        })
+        .run()
+    );
   }
 
   /**
@@ -706,18 +641,12 @@ export class RuntimeRegistry {
    * @param sessionId - Session identifier
    */
   async getSessionSettings(sessionId: string): Promise<SessionSettings | null> {
-    const db = this.requireDb('getSessionSettings');
-    const row = db
-      .select({
-        permissionMode: sessionMetadata.permissionMode,
-        model: sessionMetadata.model,
-        effort: sessionMetadata.effort,
-        fastMode: sessionMetadata.fastMode,
-      })
-      .from(sessionMetadata)
-      .where(eq(sessionMetadata.sessionId, sessionId))
-      .get();
-    return row ? rowToSettings(row) : null;
+    return readSessionSettings(this.requireDb('getSessionSettings'), sessionId);
+  }
+
+  /** Capture the current Codex model for a conditional replacement after discovery. */
+  captureCodexModel(sessionId: string) {
+    return captureCodexModel(this.requireDb('captureCodexModel'), sessionId);
   }
 
   /**
@@ -744,23 +673,32 @@ export class RuntimeRegistry {
    *
    * @param sessionId - Session identifier
    * @param settings - Partial settings to persist (omitted keys are untouched)
+   * @param birth - Prepared server-owned first-write context, consumed only with a validated allocation.
    */
-  async saveSessionSettings(sessionId: string, settings: SessionSettings): Promise<void> {
+  async saveSessionSettings(
+    sessionId: string,
+    settings: SessionSettings,
+    birth?: SessionBirthWriteContext
+  ): Promise<void> {
     const db = this.requireDb('saveSessionSettings');
     const patch = pickSettings(settings);
     if (Object.keys(patch).length === 0) return;
-    db.insert(sessionMetadata)
-      .values({
-        sessionId,
-        // No owner: a preference chosen in a picker is not a binding.
-        runtime: null,
-        createdAt: new Date().toISOString(),
-        ...patch,
-      })
-      // The UPDATE branch carries the patch alone — it must not disturb a
-      // binding, and there is nothing else here to write.
-      .onConflictDoUpdate({ target: sessionMetadata.sessionId, set: patch })
-      .run();
+    withSessionBirthWrite(db, sessionId, birth, (tx, insertBirth) =>
+      tx
+        .insert(sessionMetadata)
+        .values({
+          sessionId,
+          // No owner: a preference chosen in a picker is not a binding.
+          runtime: null,
+          createdAt: new Date().toISOString(),
+          ...patch,
+          ...insertBirth,
+        })
+        // The UPDATE branch carries the patch alone — it must not disturb a
+        // binding, and there is nothing else here to write.
+        .onConflictDoUpdate({ target: sessionMetadata.sessionId, set: patch })
+        .run()
+    );
   }
 
   /**
@@ -990,6 +928,7 @@ export class RuntimeRegistry {
       )
     )
       return;
+    assertNoOutstandingRekeyBirth(db, fromId, toId);
     const rowFor = (id: string) =>
       db.select().from(sessionMetadata).where(eq(sessionMetadata.sessionId, id)).get();
     const source = rowFor(fromId);

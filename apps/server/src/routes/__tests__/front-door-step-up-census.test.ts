@@ -189,7 +189,8 @@ const OTHER_FRONT_DOOR_CALLERS: Record<string, string> = {
   'account-signin.ts': 'Runtime account sign-in is N.',
   'computers.ts': 'Computer naming and removal; own separate owner checks.',
   'heartbeats.ts': 'Beat preferences and schedule ownership; no front-door credentials.',
-  'local-browser.ts': 'Browser actions retain their existing person checks.',
+  'local-browser.ts':
+    'Browser controls and handoff-state reads are local owner-only; actions retain their person checks.',
   'local-browser-profiles.ts': 'Browser profiles retain their existing person checks.',
   'local-browser-profile-removal.ts': 'Only removes access.',
   'your-browser.ts': 'Browser handoff retains its existing person checks.',
@@ -224,6 +225,8 @@ const OTHER_FRONT_DOOR_CALLERS: Record<string, string> = {
   'connector-execution.ts': 'Runs a call under grants already given; grants nothing (N).',
   'connector-mini-app-access.ts': 'Only revokes a mini app’s account access (N).',
   'extensions-removal.ts': 'Only removes or forgets an extension (N).',
+  'extensions-restart.ts':
+    'Restarts one extension that is already on and approved; turns nothing on and approves nothing, like POST /reload (N).',
   'extensions-start-work.ts': 'Starts one chat, capped from Wi-Fi; grants nothing lasting (N).',
   'extensions-step-up.ts': 'Moves an extension out; the moved copy is never re-trusted (N).',
   'hook-review-routes.ts': 'Asks about a hook again; grants nothing (N).',

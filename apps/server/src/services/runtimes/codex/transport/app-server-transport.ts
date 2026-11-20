@@ -17,7 +17,9 @@
  *
  * **Approvals (spec §10).** `on-request` for every mode but full access, so
  * Codex stops and asks; each server request becomes a card in the open turn
- * (`app-server/server-requests.ts`), answered only by a person.
+ * (`app-server/server-requests.ts`), answered only by a person. A heavy
+ * command's ask first waits for the machine's line (`app-server/load-gate-hold.ts`,
+ * DOR-4209); a command Codex runs without asking is never held (DOR-4743).
  *
  * **Work that outlives the turn (spec §12).** A background command or helper
  * agent still running at `turn/completed` is tracked
@@ -27,6 +29,7 @@
  * @module services/runtimes/codex/transport/app-server-transport
  */
 import { recordMountTargets } from '../policy/mount-target-ledger.js';
+import { CodexLaunchModels, type PreparedLaunchModel } from '../app-server/launch-model.js';
 import type { InterruptReceipt, StreamEvent } from '@dorkos/shared/types';
 import type {
   DeliverIntoTurnOpts,
@@ -39,7 +42,7 @@ import type { CreditsRelay } from '../../../core/cloud/credits-relay.js';
 import { keepAwakeService } from '../../../core/keep-awake/index.js';
 import { CreditsUnavailableError } from '../../../core/cloud/credits-protocols.js';
 import { creditsCodexHome } from '../codex-home.js';
-import { buildSteerText, EFFORT_TO_REASONING, promptToSend } from '../turn-input.js';
+import { buildSteerText } from '../turn-input.js';
 import {
   CodexAppServerPool,
   codexAppServerPool,
@@ -53,7 +56,7 @@ import {
 import { ThreadChannel, turnIdOf, type TurnSink } from '../app-server/thread-channel.js';
 import { AppServerTurnMapper } from '../app-server/notification-mapper.js';
 import { mergeRateLimits, rateLimitsToRolloutShape } from '../app-server/rate-limits.js';
-import { approvalPolicyFor, EventQueue, codexPermissionProfile } from '../app-server/turn-parts.js';
+import { codexTurnParams, EventQueue } from '../app-server/turn-parts.js';
 import { CODEX_APP_SERVER_CAPABILITIES } from '../runtime-constants.js';
 import {
   BACKGROUND_CEILING_MS,
@@ -63,17 +66,14 @@ import {
   type BackgroundWake,
 } from '../app-server/background-work.js';
 import { CodexProcessExitedError, isCodexRpcError } from '../app-server/protocol/errors.js';
-import type {
-  ServerNotification,
-  ServerRequest,
-  TurnStartParams,
-} from '../app-server/protocol/methods.js';
+import type { ServerNotification, ServerRequest } from '../app-server/protocol/methods.js';
 import {
   CodexServerRequestBroker,
   logRefusedServerRequest,
   mapServerRequest,
   type ServerRequestTurnView,
 } from '../app-server/server-requests.js';
+import { CodexHeavyAsks, requestTurn, type HeavyAskDeps } from '../app-server/load-gate-hold.js';
 import type {
   CodexCompactRequest,
   CodexTransport,
@@ -146,6 +146,8 @@ export interface AppServerTransportOptions {
   readonly interactionCountdownMs?: number;
   /** When an unanswered request is declined (default: the park ceiling). */
   readonly interactionExpireMs?: number;
+  /** The machine-wide load gate a heavy command's ask waits in (tests; the server's own otherwise). */
+  readonly loadGate?: HeavyAskDeps;
   /** Background-work timings (tests). */
   readonly backgroundWork?: {
     readonly coalesceMs?: number;
@@ -240,11 +242,15 @@ export class AppServerCodexTransport implements CodexTransport {
   private readonly rateLimits = new Map<string, unknown>();
   /** Relay keys per credits process, revoked when it stops. */
   private readonly relayKeys = new Map<string, { baseUrl: string; key: string }>();
+  /** Personal model selection and reporting, independent of turn routing. */
+  private readonly launchModels = new CodexLaunchModels();
   /** Config warnings to say once, per process, in its next turn. */
   private readonly pendingWarnings = new Map<string, string[]>();
   private readonly watched = new WeakSet<CodexAppServerProcess>();
   /** Approvals, questions and elicitations waiting on a person (spec §10). */
   private readonly requests: CodexServerRequestBroker;
+  /** Heavy commands' asks waiting for the machine's line, before any card (DOR-4209). */
+  private readonly heavyAsks: CodexHeavyAsks;
   /** Background terminals and helper agents that outlive their turn (spec §12). */
   private readonly background: CodexBackgroundWork;
   /** Where a wake goes; the runtime installs it with {@link onWake}. */
@@ -269,6 +275,7 @@ export class AppServerCodexTransport implements CodexTransport {
         ? { expireMs: options.interactionExpireMs }
         : {}),
     });
+    this.heavyAsks = new CodexHeavyAsks(options.loadGate);
     this.background = new CodexBackgroundWork({
       onWake: (wake) => this.wakeListener?.(wake) ?? false,
       terminate: (task) => this.terminateForCeiling(task),
@@ -341,6 +348,7 @@ export class AppServerCodexTransport implements CodexTransport {
     // Whether the thread this turn runs on has no turn of DorkOS's still
     // winding down in Codex.
     let clear: boolean;
+    let modelChoice: PreparedLaunchModel;
     try {
       const filePolicy = await prepareCodexFilePolicy(request, this.options.mountTargets);
       process = this.watch(
@@ -348,6 +356,13 @@ export class AppServerCodexTransport implements CodexTransport {
       );
       if (!onCredits && !this.rateLimits.has(process.key)) this.readRateLimits(process);
       release = process.hold();
+      modelChoice = await this.launchModels.prepare(process, request, mode);
+      request = modelChoice.request;
+      if (request.signal.aborted) {
+        release();
+        yield { type: 'done', data: { sessionId } };
+        return;
+      }
       relay = onCredits ? this.relayFor(process) : undefined;
       loadInput = {
         process,
@@ -525,6 +540,11 @@ export class AppServerCodexTransport implements CodexTransport {
     request.signal.addEventListener('abort', onAbort, { once: true });
 
     try {
+      const modelError = yield* modelChoice.report();
+      if (modelError) {
+        yield* finish(mapper.closeQuietly(modelError));
+        return;
+      }
       if (loaded.notice) yield loaded.notice;
       for (const message of this.takeWarnings(process)) {
         yield { type: 'system_status', data: { message } };
@@ -541,7 +561,10 @@ export class AppServerCodexTransport implements CodexTransport {
       }
       let turnId: string;
       try {
-        const result = await process.client.request('turn/start', this.turnParams(request, loaded));
+        const result = await process.client.request(
+          'turn/start',
+          codexTurnParams(request, loaded.threadId, loaded.modelNote)
+        );
         turnId = result.turn.id;
       } catch (err) {
         yield* finish(failedStart(mapper, err));
@@ -1147,7 +1170,12 @@ export class AppServerCodexTransport implements CodexTransport {
     const unsubscribe = process.client.subscribeProcess((notification) =>
       this.onProcessNotification(process, notification)
     );
-    process.client.setServerRequestHandler((request) => this.onServerRequest(process, request));
+    // A heavy command's ask waits its turn first; then the normal handling runs, unchanged.
+    process.client.setServerRequestHandler((request) =>
+      this.heavyAsks.hold(process, request, this.openByThread, () =>
+        this.onServerRequest(process, request)
+      )
+    );
     process.onExit(() => {
       unsubscribe();
       // Its background commands outlive it (measured on 0.154): say DorkOS
@@ -1176,15 +1204,8 @@ export class AppServerCodexTransport implements CodexTransport {
     process: CodexAppServerProcess,
     request: ServerRequest
   ): Promise<unknown> | unknown {
-    const params = (request.params ?? {}) as { threadId?: unknown; turnId?: unknown };
-    const turn =
-      typeof params.threadId === 'string' ? this.openByThread.get(params.threadId) : undefined;
-    const wrongTurn =
-      turn !== undefined &&
-      typeof params.turnId === 'string' &&
-      turn.turnId !== undefined &&
-      params.turnId !== turn.turnId;
-    if (!turn || turn.process !== process || wrongTurn) {
+    const turn = requestTurn(this.openByThread, process, request);
+    if (!turn) {
       // Nobody is in a turn to ask: never answered yes on their behalf.
       logRefusedServerRequest(request.method, 'no DorkOS turn is open on that thread');
       return undefined;
@@ -1287,6 +1308,7 @@ export class AppServerCodexTransport implements CodexTransport {
         (notification) => {
           if (notification.method === 'serverRequest/resolved') {
             const params = notification.params as { requestId?: unknown } | undefined;
+            this.heavyAsks.resolvedByServer(process.key, params?.requestId);
             this.requests.resolvedByServer(process.key, params?.requestId);
             return;
           }
@@ -1401,9 +1423,7 @@ export class AppServerCodexTransport implements CodexTransport {
     if (this.openByThread.get(threadId)?.turnId === turnId) return;
     logger.warn(
       '[CodexAppServer] a late compaction opened after DorkOS gave up on it; stopping it',
-      {
-        threadId,
-      }
+      { threadId }
     );
     const stopWatching = process.onExit(() => {
       if (this.lingering.get(threadId)?.process === process) this.clearLingering(threadId);
@@ -1493,26 +1513,6 @@ export class AppServerCodexTransport implements CodexTransport {
     const deadline = Date.now() + this.stopAckMs;
     while (this.lingering.has(threadId) && Date.now() < deadline) await sleep(20);
     return !this.lingering.has(threadId);
-  }
-
-  private turnParams(request: CodexTurnRequest, loaded: LoadedThread): TurnStartParams {
-    const effort =
-      request.settings.effort !== undefined
-        ? EFFORT_TO_REASONING[request.settings.effort]
-        : undefined;
-    return {
-      threadId: loaded.threadId,
-      // A fresh load's notice for the model rides with the prompt (DOR-4447).
-      input: [{ type: 'text', text: promptToSend(request, loaded.modelNote), text_elements: [] }],
-      ...(request.messageId !== undefined ? { clientUserMessageId: request.messageId } : {}),
-      // Sent every turn (they are sticky): a mode or model change between turns lands.
-      cwd: request.cwd,
-      approvalPolicy: approvalPolicyFor(request.settings),
-      permissions: codexPermissionProfile(request.settings),
-      ...(request.settings.model !== undefined ? { model: request.settings.model } : {}),
-      ...(effort !== undefined ? { effort } : {}),
-      summary: 'auto',
-    };
   }
 }
 

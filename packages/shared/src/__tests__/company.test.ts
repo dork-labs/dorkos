@@ -77,6 +77,16 @@ const PERSONAL_COPYRIGHT = new Map([
 ]);
 
 /**
+ * Upstream license texts kept beside a file vendored from another project.
+ * They are that project's license, not ours, so they name no copyright holder
+ * here; each must still be the license its project ships.
+ */
+const THIRD_PARTY_LICENSES = new Map([
+  // Docker's seccomp profile, vendored from moby/profiles (DOR-3800).
+  ['docker/seccomp/LICENSE', 'Apache License'],
+]);
+
+/**
  * The only files under apps/ and packages/ allowed to type the legal name:
  * the module itself, files that cannot import it, and one test that pins the
  * rendered About panel against an independent literal.
@@ -230,9 +240,11 @@ describe('company facts', { timeout: 30_000 }, () => {
   });
 
   it('formats the postal address on one line', () => {
-    expect(formatCompanyAddress()).toBe('6028 Toscana Ave, Austin, TX 78724, United States');
+    expect(formatCompanyAddress()).toBe(
+      '605 W 9th Street, Unit #4144, Austin, TX 78701, United States'
+    );
     expect(formatCompanyAddress(company.address, { country: false })).toBe(
-      '6028 Toscana Ave, Austin, TX 78724'
+      '605 W 9th Street, Unit #4144, Austin, TX 78701'
     );
   });
 
@@ -323,9 +335,14 @@ describe('company facts', { timeout: 30_000 }, () => {
   });
 
   it('every license file names the company, except the listed personal ones', () => {
-    const licenses = trackedLicenses();
-    expect(licenses).toContain('LICENSE');
-    for (const path of PERSONAL_COPYRIGHT.keys()) expect(licenses).toContain(path);
+    const all = trackedLicenses();
+    expect(all).toContain('LICENSE');
+    for (const path of PERSONAL_COPYRIGHT.keys()) expect(all).toContain(path);
+    for (const [path, title] of THIRD_PARTY_LICENSES) {
+      expect(all).toContain(path);
+      expect(read(path), path).toContain(title);
+    }
+    const licenses = all.filter((path) => !THIRD_PARTY_LICENSES.has(path));
 
     const holders = Object.fromEntries(licenses.map((path) => [path, copyrightHolder(read(path))]));
     const expected = Object.fromEntries(
