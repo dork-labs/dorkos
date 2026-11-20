@@ -11,14 +11,18 @@
  * @module features/profile/ui/pages/registry
  */
 import { lazy, type ComponentType, type LazyExoticComponent } from 'react';
+import type { TeamMember } from '@dorkos/shared/team-schemas';
 
 import type { ProfilePageId } from '../../model/profile-stack';
 import type { ProfilePageContentProps } from './types';
 
 /** One registered page: its title, and the content under it. */
 export interface ProfilePageDefinition {
-  /** The `h2` at the top of the page. */
-  title: string;
+  /**
+   * The `h2` at the top of the page: fixed, or written from the identity it is
+   * about ("What Warden knows"). Read it through {@link profilePageTitle}.
+   */
+  title: string | ((member: Pick<TeamMember, 'displayName'>) => string);
   /** The content, code-split — a profile that never opens a page loads none of them. */
   component: LazyExoticComponent<ComponentType<ProfilePageContentProps>>;
 }
@@ -116,7 +120,7 @@ const PROFILE_PAGES: Partial<Record<ProfilePageId, ProfilePageDefinition>> = {
     component: lazy(() => import('./ConventionPage').then((m) => ({ default: m.BoundariesPage }))),
   },
   told: {
-    title: 'What this agent is told',
+    title: (member) => `What ${member.displayName} knows`,
     component: lazy(() => import('./ToldPage').then((m) => ({ default: m.ToldPage }))),
   },
   memory: {
@@ -133,6 +137,19 @@ const PROFILE_PAGES: Partial<Record<ProfilePageId, ProfilePageDefinition>> = {
  */
 export function profilePage(id: ProfilePageId): ProfilePageDefinition | null {
   return PROFILE_PAGES[id] ?? null;
+}
+
+/**
+ * The title a page shows for one identity.
+ *
+ * @param definition - The page.
+ * @param member - The identity the page is about.
+ */
+export function profilePageTitle(
+  definition: ProfilePageDefinition,
+  member: Pick<TeamMember, 'displayName'>
+): string {
+  return typeof definition.title === 'function' ? definition.title(member) : definition.title;
 }
 
 /**

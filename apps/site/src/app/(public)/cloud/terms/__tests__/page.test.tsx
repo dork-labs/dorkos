@@ -15,7 +15,9 @@ describe('the Terms for DorkOS Cloud page', () => {
     expect(text).toContain('DorkOS is made by 144 Studio, LLC.');
     expect(text).toContain('defend and indemnify 144 Studio, LLC against claims');
     expect(text).toContain('governed by the law of Texas, without regard');
-    expect(text).toContain('144 Studio, LLC, 6028 Toscana Ave, Austin, TX 78724, United States.');
+    expect(text).toContain(
+      '144 Studio, LLC, 605 W 9th Street, Unit #4144, Austin, TX 78701, United States.'
+    );
   });
 
   it('leaves no draft placeholder behind', () => {

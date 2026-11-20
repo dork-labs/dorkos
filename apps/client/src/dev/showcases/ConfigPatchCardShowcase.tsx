@@ -1,8 +1,9 @@
 /**
  * An agent changing several settings at once (DOR-4775): the sentence counts
- * them and the detail lists every one, riskiest first. The agent sent the long
- * harmless keys first; the text is exactly what `config-patch-card.ts` builds
- * for that patch.
+ * them and names the riskiest that need a person; the detail lists every one
+ * old → new, riskiest first, each a person must decide marked. The agent sent
+ * the long harmless keys first; the text is what `config-patch-card.ts` builds
+ * for that patch against a made-up stored config.
  *
  * @module dev/showcases/ConfigPatchCardShowcase
  */
@@ -16,15 +17,18 @@ const LOADED_AT = Date.now();
 
 /** The card's detail, one setting per line, as the server writes it. */
 const CONFIG_PATCH_CARD_DETAIL = [
-  'mesh.scanRoots',
-  'tunnel.enabled: yes',
-  'extensions.enabled',
-  'scheduler.maxConcurrentRuns: 4',
-  'ui.collapseFinishedToolCallsAfterTheTurnEnds: yes',
-  'ui.highlightMentionsOfYourNameInRoomMessages: yes',
-  'ui.keepTheComposerOpenAfterSendingAMessage: yes',
-  'ui.showAgentActivityInTheSidebarWhileAChatIsRunning: yes',
-  'ui.theme: "dark"',
+  'runtimes.claudeCode.projectAccounts["/Users/kai/client-app"].allow: adds "Work", removes "Main" (needs you)',
+  'runtimes.doe.inference.credentialEndpoint: "https://keys.example.test/v1" → "https://keys.north-shop.test/v1" (needs you)',
+  'mesh.scanRoots: adds "/Users/kai/clients" (needs you)',
+  'tunnel.enabled: no → yes (needs you)',
+  'connectors.rawMcpServers: adds "CRM" at "https://crm.example.test/mcp" (needs you)',
+  'extensions.enabled: adds "invoice-helper" (needs you)',
+  'scheduler.maxConcurrentRuns: 2 → 4 (needs you)',
+  'ui.collapseFinishedToolCallsAfterTheTurnEnds: no → yes',
+  'ui.highlightMentionsOfYourNameInRoomMessages: no → yes',
+  'ui.keepTheComposerOpenAfterSendingAMessage: no → yes',
+  'ui.showAgentActivityInTheSidebarWhileAChatIsRunning: no → yes',
+  'ui.theme: "light" → "dark"',
 ].join('\n');
 
 const CARD: PendingApproval = {
@@ -38,7 +42,7 @@ const CARD: PendingApproval = {
   alwaysOffered: false,
   answerNeedsStepUp: false,
   summary:
-    'Scout wants to run "Update configuration" with changes: "mesh.scanRoots, tunnel.enabled, extensions.enabled and 6 more, 4 need you"',
+    '"Scout" wants to change 12 settings. 7 need you: projectAccounts.allow, inference.credentialEndpoint, mesh.scanRoots and 4 more',
   detail: CONFIG_PATCH_CARD_DETAIL,
   requestedAt: new Date(LOADED_AT).toISOString(),
   expiresAt: new Date(LOADED_AT + 90 * 60_000).toISOString(),
@@ -48,7 +52,9 @@ const CARD: PendingApproval = {
 export function ConfigPatchCardShowcase() {
   return (
     <>
-      <ShowcaseLabel>An agent changing several settings at once, riskiest first</ShowcaseLabel>
+      <ShowcaseLabel>
+        An agent changing several settings at once, old → new, riskiest first
+      </ShowcaseLabel>
       <ShowcaseDemo responsive>
         <ApprovalList approvals={[CARD]} />
       </ShowcaseDemo>

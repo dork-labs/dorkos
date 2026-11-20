@@ -79,10 +79,9 @@ const CONFIG_KEYS: Record<LedgerRuntime, string> = {
 const ELIGIBILITY_FLOW_ONLY = new Set([
   // The reserve is flow's routing policy; DorkOS has none.
   'the weekly window counts the reserve',
-  // A window at 100% with no status reads as a warning in the app, not a limit.
-  'a Codex window:<minutes> at 100 has no room',
   // The app shows a model bucket as a window; flow's room ignores it.
   'only model buckets is unknown',
+  'a full model bucket does not block the account',
 ]);
 
 /** The runner for each case file this suite runs, by file name. */
@@ -137,7 +136,7 @@ const RUNNERS: Record<string, (c: Case) => void> = {
     );
   },
 
-  'eligibility.cases.json': ({ name, input, expected }) => {
+  'eligibility.cases.json': ({ input, expected }) => {
     const usage = toAccountUsage(
       (input.ledger as UsageLedger | null) ?? null,
       {

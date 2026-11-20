@@ -178,6 +178,18 @@ tracked:
       armed on the logged `--no-verify-proof` escape or a coordinator
       override. Hand-audited from the arm log and escapes.jsonl in the common
       git dir; not computed by the daily collector, which cannot see either.
+  - id: tracked.unfinished-verify-proofs
+    unit: count
+    definition: >-
+      `pnpm verify` proofs recorded per 7 days for a run that did not finish:
+      a signal stopped it, or a turbo step started tasks it never finished,
+      and the gate still exited 0. Since DOR-4616 the CLI refuses such a run
+      and records every refusal with its reason in `refusals.jsonl` beside the
+      proofs in the common git dir (and as a `verify_stopped` or
+      `verify_unfinished` note when the run is inside a hook), so a reported
+      stop with a proof and no refusal line is a miss, and the refusal lines
+      are what the revert condition counts. Read by hand; not computed by the
+      daily collector, which sees neither file.
   - id: tracked.first-run-green-share
     unit: ratio
     definition: >-

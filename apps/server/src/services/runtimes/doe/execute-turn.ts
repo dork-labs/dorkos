@@ -326,6 +326,15 @@ export async function executeDoeTurn(
       }
       if (result.stopReason === 'aborted') reason = 'interrupted';
       else if (result.stopReason === 'length') reason = 'max_turns';
+      else if (config.source === 'local' && !mapper.hasParentOutput && !result.approvalDenied) {
+        // The room already knows which answers are owed. An overheard message can end quietly.
+        const room = opts?.additionalContext?.find((entry) => entry.kind === 'room_context')?.data;
+        if (room?.addressing.addressedNow || room?.addressing.answerOwed) {
+          throw new Error(
+            'The model returned an empty reply. Try again or choose a different model.'
+          );
+        }
+      }
     }
   } catch (error) {
     if (controller.signal.aborted) reason = 'interrupted';
