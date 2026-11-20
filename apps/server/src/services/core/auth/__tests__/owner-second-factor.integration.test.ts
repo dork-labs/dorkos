@@ -647,7 +647,10 @@ describe('sign-in checks change only at this computer', () => {
     expect(factorRow(older)).toBeDefined();
     removeOwnerFactor(userId, older);
     discardOwnerFactor(userId, older, 0);
-    expect(factorRow(older)?.removedAt).not.toBeNull();
+    // Still there, and still marked removed: a removed row's history is never taken.
+    const kept = factorRow(older);
+    expect(kept).toBeDefined();
+    expect(kept!.removedAt).not.toBeNull();
     // Back to no check from other devices, for the tests after this one.
     db.delete(ownerFactors).where(eq(ownerFactors.id, older)).run();
   });
