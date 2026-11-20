@@ -195,7 +195,14 @@ describe('notePathTrustEdits', () => {
   it('leaves a copy pinned to its files alone', async () => {
     delete approvals.approvedSources.desk!.authorHome;
     approvals.approvedSources.desk!.digest = 'sha256:1';
-    await scan('sha256:2');
+    const tiedToAuthor = vi.fn(() => {
+      throw new Error('consulted');
+    });
+    await notePathTrustEdits([copyAt('sha256:2')], approvals, dorkHome, {
+      ...deps,
+      tiedToAuthor,
+    });
+    expect(tiedToAuthor).not.toHaveBeenCalled();
     expect(emit).not.toHaveBeenCalled();
     expect(runs('sha256:2')).toBe(false);
     expect(approvals.approvedSources.desk!.digest).toBe('sha256:1');

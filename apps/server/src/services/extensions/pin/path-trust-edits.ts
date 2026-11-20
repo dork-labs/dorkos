@@ -383,7 +383,12 @@ async function scan(
         !untied.has(record.id) &&
         !below.has(record.id) &&
         (!source.digest || source.digest === before);
-      if (!trusted[record.id] && (before === undefined || settled)) await trust(record, digest);
+      if (
+        deps.establishBaseline === true &&
+        !trusted[record.id] &&
+        (before === undefined || settled)
+      )
+        await trust(record, digest);
       if (!atFull) {
         if (!below.has(record.id)) {
           below.add(record.id);

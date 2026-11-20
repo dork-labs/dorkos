@@ -229,6 +229,21 @@ describe('path-trust edits traced file by file', () => {
     expect(saved.untied).not.toContain('desk');
   });
 
+  it('only an explicit normal discovery establishes a saved legacy baseline', async () => {
+    await fs.writeFile(seenFile(), JSON.stringify({ digests: { desk: 'sha256:old' } }));
+
+    await notePathTrustEdits([copyAt('sha256:old')], approvals, dorkHome, deps);
+    const incidental = JSON.parse(await fs.readFile(seenFile(), 'utf8'));
+    expect(incidental.trusted ?? {}).not.toHaveProperty('desk');
+
+    await notePathTrustEdits([copyAt('sha256:old')], approvals, dorkHome, {
+      ...deps,
+      establishBaseline: true,
+    });
+    const discovered = JSON.parse(await fs.readFile(seenFile(), 'utf8'));
+    expect(discovered.trusted.desk.digest).toBe('sha256:old');
+  });
+
   it('keeps changed legacy files held on the next normal scan', async () => {
     await fs.mkdir(path.dirname(seenFile()), { recursive: true });
     await fs.writeFile(seenFile(), JSON.stringify({ digests: { desk: 'sha256:old' } }));

@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(extensions): notice changed mini apps and retire missing approval cards (DOR-4855)'
+  - 'fix(extensions): keep approval checks consistent across refreshes (DOR-4855)'
 ---
 
 ### Fixed

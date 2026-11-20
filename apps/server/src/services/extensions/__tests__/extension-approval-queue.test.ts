@@ -291,6 +291,42 @@ describe('a waiting copy whose folder is gone', () => {
 });
 
 describe('an approved copy changed outside file tools', () => {
+  it('requires readable approved files when client compilation is pending', async () => {
+    const author = path.join(dorkHome, 'agents', 'rowan');
+    const folder = path.join(author, '.dork', 'extensions', 'desk');
+    const manifest = {
+      id: 'desk',
+      name: 'Desk',
+      version: '1.0.0',
+      serverCapabilities: { serverEntry: './server.ts', runtime: 'subprocess' as const },
+    };
+    fs.mkdirSync(folder, { recursive: true });
+    fs.writeFileSync(path.join(folder, 'extension.json'), JSON.stringify(manifest));
+    fs.writeFileSync(path.join(folder, 'server.ts'), 'export default () => {};');
+    fs.writeFileSync(path.join(folder, 'index.ts'), 'export function activate() {}');
+    const digest = await liveDigestOf({ path: folder });
+    expect(await noteScaffoldTrusted(dorkHome, 'desk', { targetDir: folder, digest })).toBe(true);
+    state.extensions.enabled = ['desk'];
+    state.extensions.approvedToRun = ['desk'];
+    state.extensions.approvedSources = {
+      desk: { path: folder, authorHome: author, grants: grantsDigestOf(manifest) },
+    };
+    manager.followProjects({ roots: async () => [author], onChange: () => () => undefined });
+    await manager.reload();
+    await queue.sync();
+    manager.get('desk')!.bundleReady = false;
+    const before = structuredClone(state.extensions);
+    // The first presence check succeeds; the subsequent digest finds no source files.
+    vi.spyOn(fs.promises, 'stat').mockImplementationOnce(async (target) => {
+      expect(target).toBe(folder);
+      fs.rmSync(folder, { recursive: true });
+      return { isDirectory: () => true } as never;
+    });
+
+    await expect(manager.approveToRun('desk')).rejects.toMatchObject({ reason: 'unpinnable' });
+    expect(state.extensions).toEqual(before);
+  });
+
   it('holds an author copy with no saved baseline until a person approves its exact files', async () => {
     const runtime = new FakeAgentRuntime();
     vi.spyOn(runtimeRegistry, 'getAllCapabilities').mockReturnValue({
