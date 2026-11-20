@@ -132,6 +132,10 @@ function actorOf(
  * owner account and a request the gate's own classifier places at this computer
  * (`isAtThisComputer`: this machine, or a container's published port): no owner alone is not
  * enough, so a request from another device stays the stranger bound.
+ *
+ * Not the same rule as `/api/todos`: there `ownerless` widens only what an unproven person may
+ * change (`todo-policy`), and its writes keep the stranger bound. Whether to-dos should carry
+ * `person` authority the way promises do is a follow-up, not this route.
  */
 function personOf(
   facts: RequestFacts,

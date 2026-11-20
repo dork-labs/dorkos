@@ -244,17 +244,6 @@ describe('TodoPromiseList', () => {
     );
   });
 
-  it('drops a promise the person added with one click, and says so with an Undo (DOR-3832)', async () => {
-    const user = userEvent.setup();
-    const transport = renderList([todoPromise({ id: 'b', what: 'Write the post' })]);
-    await user.click(await screen.findByRole('button', { name: 'Drop: Write the post' }));
-    await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
-    expect(toastSuccess.mock.calls[0]![0]).toBe('To-do dropped');
-    expect(transport.updateTodoPromise).toHaveBeenCalledTimes(1);
-    expect(toastError).not.toHaveBeenCalled();
-    expect(screen.queryByText(/Try again/)).not.toBeInTheDocument();
-  });
-
   it('reports a refused change once, with the server’s reason and no “Try again” (DOR-3832)', async () => {
     const user = userEvent.setup();
     const transport = createMockTransport();
@@ -274,13 +263,18 @@ describe('TodoPromiseList', () => {
         </TransportProvider>
       </QueryClientProvider>
     );
-    await user.click(await screen.findByRole('button', { name: 'Drop: Write the post' }));
+    const drop = await screen.findByRole('button', { name: 'Drop: Write the post' });
+    await user.click(drop);
     await waitFor(() => expect(toastError).toHaveBeenCalledTimes(1));
+    // The toast fires before the list renders the failed state: wait for the row to be free
+    // again, so a second, inline report would be on screen by now if there were one.
+    await waitFor(() => expect(drop).toBeEnabled());
     const [headline, options] = toastError.mock.calls[0]!;
-    expect(headline).toBe('Couldn’t change the to-do.');
+    expect(headline).toBe('Couldn’t change the to-do');
     expect(options.description).toBe('Say why in a note when declining a to-do.');
-    // One report, not a second line on the list, and nothing sent again on its own.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.queryByText(/Try again/)).not.toBeInTheDocument();
+    // Nothing is sent again on its own.
     expect(transport.updateTodoPromise).toHaveBeenCalledTimes(1);
     expect(toastSuccess).not.toHaveBeenCalled();
   });

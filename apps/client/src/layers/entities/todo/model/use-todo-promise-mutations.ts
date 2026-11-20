@@ -38,7 +38,7 @@ export function useCreateTodoPromise() {
  * The headline of the one failure report a change gets: the app's toast, with the server's own
  * sentence under it. Not "Try again": a refusal says why, and trying again would not change it.
  */
-const CHANGE_FAILED = 'Couldn’t change the to-do.';
+const CHANGE_FAILED = 'Couldn’t change the to-do';
 
 /**
  * Mark a promise kept, missed or dropped, or move its date.

@@ -280,7 +280,7 @@ export class TodoPromiseService {
    * @param agentId - The Mesh id of the agent that promised.
    * @param input - What, to whom, by when, and where it was made.
    * @param assigner - Who made it: the agent itself (the default), or a person (`person`
-   *   authority only when proven, or on an install with no owner account: {@link speaksAsPerson}).
+   *   authority only when proven, or at this computer with no owner account: {@link speaksAsPerson}).
    * @throws {TodoPromiseError} `PAST_DUE` when the due date has passed.
    */
   create(
@@ -292,6 +292,8 @@ export class TodoPromiseService {
       throw new TodoPromiseError('NOT_YOURS', 'An agent records only its own promises.');
     }
     const dueAt = input.dueAt ? this.futureDue(input.dueAt) : null;
+    // The promise rule is decided here and handed on as `proven`: the shared `authorityOf` ignores
+    // `ownerless` on purpose, since `/api/todos` keeps the stranger bound for it (DOR-3832).
     const own =
       assigner.kind === 'agent'
         ? {
@@ -374,8 +376,9 @@ export class TodoPromiseService {
         "Only an agent's own promise can be missed. Mark a to-do kept, or dropped with a note."
       );
     }
-    // An agent declining a to-do somebody gave it says why. The person who gave it needs no note
-    // to take it back (DOR-3832); one who cannot vouch for being that person still writes one.
+    // Dropping any to-do that isn't the agent's own promise needs a note from an agent, saying why
+    // it declines. The person (`speaksAsPerson`) needs none, whoever gave it (DOR-3832); a caller
+    // that can't vouch for being the person still writes one.
     if (
       change.state === 'dropped' &&
       !isOwnPromise(row) &&
@@ -455,7 +458,8 @@ export class TodoPromiseService {
                   level: actor.level,
                   marks: actor.marks ?? NO_MARKS,
                 }
-              : { kind: 'person', proven: speaksAsPerson(actor) }
+              : // As in `create`: the promise rule, handed on as `proven`.
+                { kind: 'person', proven: speaksAsPerson(actor) }
           );
     if (floor.authority === row.authority && floor.authorityMarks === row.authorityMarks) return;
     const updated = this.store.update(row.id, floor)!;
