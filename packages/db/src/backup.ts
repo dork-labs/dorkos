@@ -30,8 +30,9 @@
  * a failed write cleans up after itself ({@link snapshotSqlite}), and every site
  * that reuses an existing file verifies its contents first.
  *
- * **No snapshot keeps recorded turn text.** Both writers empty it out of the
+ * **New snapshots keep no recorded turn text.** Both writers empty it out of the
  * copy before anyone can rely on the file (`snapshot-scrub.ts`, DOR-4001).
+ * Legacy copies are left as they were; automatic retention never adopts them.
  *
  * Snapshots are a **manual** escape hatch. Nothing here ever restores one, and
  * nothing here ever deletes, moves or recreates a live database — see
@@ -48,6 +49,7 @@ import { migrationsFolder } from './migrations-folder.js';
 import { scrubSnapshot } from './snapshot-scrub.js';
 import {
   inspectSnapshot,
+  isManagedSnapshotName,
   PRE_MIGRATION_MAX_AGE_DAYS,
   pruneSnapshots,
   SNAPSHOT_RETENTION,
@@ -95,13 +97,15 @@ export class SnapshotFailedError extends Error {
  * Filename shapes, one per snapshot kind, used both to name a new snapshot and
  * to decide which existing files a prune is allowed to delete.
  *
+ * New dork.db copies carry `dork-auto-`: older `dork-` names are never adopted
+ * into automatic retention, even after a clock rollback or a server restart.
  * Each begins with a fixed prefix followed by a zero-padded UTC timestamp, so
  * plain lexicographic sort over matching names is chronological order — which is
  * what {@link pruneSnapshots} relies on instead of reading mtimes (an mtime is
  * rewritten by a file copy; the name is not).
  */
-const PRE_MIGRATION_PATTERN = /^dork-\d{8}-\d{6}-pre-(?:\d{4}|\d{14})_[a-z0-9_]+\.db$/;
-const DAILY_PATTERN = /^dork-\d{8}-daily\.db$/;
+const PRE_MIGRATION_PATTERN = /^dork-auto-\d{8}-\d{6}-pre-(?:\d{4}|\d{14})_[a-z0-9_]+\.db$/;
+const DAILY_PATTERN = /^dork-auto-\d{8}-daily\.db$/;
 const EXTENSION_PATTERN = /^store-\d{8}-\d{6}-pre-v\d+\.db$/;
 
 /** Drizzle's own ledger of which migrations a database has applied. */
@@ -171,23 +175,27 @@ export function snapshotSqlite(sqlite: BetterSqlite3.Database, destPath: string)
 const PARTIAL_SUFFIX = '.partial';
 
 /**
- * Remove what an earlier snapshot left when its process died part way: a
+ * Remove what a new-format snapshot left when its process died part way: a
  * `.partial` copy, which may still hold recorded turn text, and its sidecars.
  * Snapshots of one folder are taken one at a time (the pre-migration one at
  * boot, before anything else runs; the daily one serialized by its own lock),
- * so no `.partial` here is still being written.
+ * so no managed `.partial` here is still being written. Legacy dork names and
+ * foreign files are never swept, even if they end in `.partial`.
  *
  * @param dir - The snapshot folder
  */
 export function removeStalePartials(dir: string): void {
   let names: string[];
   try {
+    // Do not follow a substituted backups directory to somebody else's files.
+    if (!fs.lstatSync(dir).isDirectory()) return;
     names = fs.readdirSync(dir);
   } catch {
     return;
   }
   for (const name of names) {
-    if (/\.db\.partial(?:-journal|-wal|-shm)?$/.test(name)) {
+    const partial = /^(.*\.db)\.partial(?:-journal|-wal|-shm)?$/.exec(name);
+    if (partial && isManagedSnapshotName(partial[1])) {
       fs.rmSync(path.join(dir, name), { force: true });
     }
   }
@@ -433,15 +441,15 @@ export function snapshotBeforeMigrations(db: Db, options: SnapshotOptions): stri
   // Named for the FIRST pending migration: the snapshot is the state that
   // migration was applied to, which is what a person reading the folder wants
   // to know.
-  const dest = path.join(options.dir, `dork-${utcStamp(now)}-pre-${pending[0]}.db`);
+  const dest = path.join(options.dir, `dork-auto-${utcStamp(now)}-pre-${pending[0]}.db`);
   // A real snapshot already at this name captured this same state, one second
   // ago, from a boot that then failed — reuse it rather than turning a name
   // collision into a server that will not start. Wreckage at this name is
   // cleared instead, because trusting it would mean migrating unprotected while
   // logging that a snapshot was taken.
   try {
-    // A reused snapshot is emptied of recorded turn text too: it may predate
-    // the scrub, or have been written by a process that died before it (DOR-4001).
+    // A reused new-format snapshot is emptied of recorded turn text too, in
+    // case a process died before completing the scrub (DOR-4001).
     if (reuseOrClear(dest, DRIZZLE_MIGRATIONS_TABLE)) scrubSnapshot(dest);
     else snapshotSqlite(db.$client, dest);
   } catch (err) {
@@ -471,7 +479,7 @@ export function snapshotBeforeMigrations(db: Db, options: SnapshotOptions): stri
  */
 export async function snapshotDaily(db: Db, options: SnapshotOptions): Promise<string | null> {
   const now = options.now ?? new Date();
-  const dest = path.join(options.dir, `dork-${utcDay(now)}-daily.db`);
+  const dest = path.join(options.dir, `dork-auto-${utcDay(now)}-daily.db`);
   // Runs at boot and on the hourly tick, so it is where a stale `.partial` from
   // a crashed snapshot is found even on a day nothing new is written (DOR-4001).
   removeStalePartials(options.dir);

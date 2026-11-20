@@ -173,7 +173,10 @@ describe('snapshotBeforeMigrations', () => {
     });
 
     expect(written).toBe(
-      path.join(backups, `dork-20260815-090703-pre-${JOURNAL_TAGS[PARTIAL_MIGRATION_IDX + 1]}.db`)
+      path.join(
+        backups,
+        `dork-auto-20260815-090703-pre-${JOURNAL_TAGS[PARTIAL_MIGRATION_IDX + 1]}.db`
+      )
     );
     expect(existsSync(written!)).toBe(true);
   });
@@ -301,7 +304,7 @@ describe('snapshotBeforeMigrations', () => {
     const now = new Date('2026-08-15T09:07:03Z');
     const dest = path.join(
       backups,
-      `dork-20260815-090703-pre-${JOURNAL_TAGS[PARTIAL_MIGRATION_IDX + 1]}.db`
+      `dork-auto-20260815-090703-pre-${JOURNAL_TAGS[PARTIAL_MIGRATION_IDX + 1]}.db`
     );
     mkdirSync(backups, { recursive: true });
     writeFileSync(dest, '');
@@ -398,6 +401,74 @@ describe('snapshotBeforeMigrations', () => {
 });
 
 describe('snapshotDaily', () => {
+  it('preserves ten existing copies of each kind on upgrade and bounds only new copies', async () => {
+    const home = tempDir();
+    vi.stubEnv('DORK_HOME', home);
+    const backups = path.join(home, 'backups');
+    const source = new Database(':memory:');
+    source.exec('CREATE TABLE made_up (id INTEGER PRIMARY KEY)');
+    const old = new Map<string, { bytes: Buffer; mtimeMs: number }>();
+    for (let day = 11; day <= 20; day++) {
+      for (const suffix of ['daily', `120000-pre-${JOURNAL_TAGS[PARTIAL_MIGRATION_IDX + 1]}`]) {
+        const file = path.join(backups, `dork-202611${day}-${suffix}.db`);
+        snapshotSqlite(source, file);
+        if (day === 20) writeFileSync(file, '');
+        old.set(file, { bytes: readFileSync(file), mtimeMs: statSync(file).mtimeMs });
+      }
+    }
+    source.close();
+    for (const file of [...old.keys()]) {
+      for (const suffix of ['.partial', '.partial-journal', '.partial-wal', '.partial-shm']) {
+        const partial = `${file}${suffix}`;
+        writeFileSync(partial, 'made-up legacy partial');
+        old.set(partial, { bytes: readFileSync(partial), mtimeMs: statSync(partial).mtimeMs });
+      }
+    }
+    const db = createDb(':memory:');
+    runMigrations(db);
+    const pending = createDb(':memory:');
+    migrate(pending, { migrationsFolder: migrationsFolderThrough(PARTIAL_MIGRATION_IDX) });
+    const assertOldUntouched = () => {
+      expect(readdirSync(backups).filter((name) => /^dork-\d.*\.db$/.test(name))).toHaveLength(20);
+      for (const [file, original] of old) {
+        expect(existsSync(file), path.basename(file)).toBe(true);
+        expect(readFileSync(file).equals(original.bytes)).toBe(true);
+        expect(statSync(file).mtimeMs).toBe(original.mtimeMs);
+      }
+    };
+    try {
+      const now = new Date('2026-11-20T12:00:00Z');
+      expect(snapshotBeforeMigrations(db, { dir: backups, now })).toBeNull();
+      snapshotBeforeMigrations(pending, { dir: backups, now });
+      await snapshotDaily(db, { dir: backups, now });
+      assertOldUntouched();
+      const daily: string[] = [];
+      const pre: string[] = [];
+      // Earlier dates also prove a clock rollback cannot bring old copies into the pool.
+      for (let day = 1; day <= 5; day++) {
+        const date = new Date(`2026-11-0${day}T12:00:00Z`);
+        daily.push(path.basename((await snapshotDaily(db, { dir: backups, now: date }))!));
+        pre.push(path.basename(snapshotBeforeMigrations(pending, { dir: backups, now: date })!));
+      }
+      assertOldUntouched();
+      const names = readdirSync(backups);
+      expect(
+        names.filter((name) => !/^dork-\d/.test(name) && name.endsWith('-daily.db'))
+      ).toHaveLength(3);
+      expect(names.filter((name) => !/^dork-\d/.test(name) && name.includes('-pre-'))).toHaveLength(
+        3
+      );
+      expect(existsSync(path.join(backups, daily[0]))).toBe(false);
+      expect(existsSync(path.join(backups, pre[0]))).toBe(false);
+      expect(existsSync(path.join(backups, daily.at(-1)!))).toBe(true);
+      expect(existsSync(path.join(backups, pre.at(-1)!))).toBe(true);
+    } finally {
+      db.$client.close();
+      pending.$client.close();
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('writes one snapshot per UTC day, however often it is called', async () => {
     const home = tempDir();
     const db = createDb(path.join(home, 'dork.db'));
@@ -411,12 +482,12 @@ describe('snapshotDaily', () => {
       now: new Date('2026-08-16T04:00:00Z'),
     });
 
-    expect(path.basename(first!)).toBe('dork-20260815-daily.db');
+    expect(path.basename(first!)).toBe('dork-auto-20260815-daily.db');
     expect(again).toBeNull();
-    expect(path.basename(nextDay!)).toBe('dork-20260816-daily.db');
+    expect(path.basename(nextDay!)).toBe('dork-auto-20260816-daily.db');
     expect(readdirSync(backups).sort()).toEqual([
-      'dork-20260815-daily.db',
-      'dork-20260816-daily.db',
+      'dork-auto-20260815-daily.db',
+      'dork-auto-20260816-daily.db',
     ]);
   });
 
@@ -434,9 +505,9 @@ describe('snapshotDaily', () => {
     }
 
     expect(readdirSync(backups).sort()).toEqual([
-      'dork-20260808-daily.db',
-      'dork-20260809-daily.db',
-      'dork-20260810-daily.db',
+      'dork-auto-20260808-daily.db',
+      'dork-auto-20260809-daily.db',
+      'dork-auto-20260810-daily.db',
     ]);
     expect(readdirSync(backups)).toHaveLength(SNAPSHOT_RETENTION.daily);
   });
@@ -449,22 +520,22 @@ describe('snapshotDaily', () => {
     mkdirSync(backups);
     const now = new Date('2026-11-20T12:00:00Z');
     for (let day = 16; day <= 20; day++) {
-      snapshotSqlite(db.$client, path.join(backups, `dork-202611${day}-daily.db`));
+      snapshotSqlite(db.$client, path.join(backups, `dork-auto-202611${day}-daily.db`));
     }
     for (const day of ['01', '02', '19']) {
       snapshotSqlite(
         db.$client,
-        path.join(backups, `dork-202611${day}-120000-pre-${JOURNAL_TAGS.at(-1)}.db`)
+        path.join(backups, `dork-auto-202611${day}-120000-pre-${JOURNAL_TAGS.at(-1)}.db`)
       );
     }
 
     expect(await snapshotDaily(db, { dir: backups, now })).toBeNull();
 
     expect(readdirSync(backups).sort()).toEqual([
-      'dork-20261118-daily.db',
-      `dork-20261119-120000-pre-${JOURNAL_TAGS.at(-1)}.db`,
-      'dork-20261119-daily.db',
-      'dork-20261120-daily.db',
+      'dork-auto-20261118-daily.db',
+      `dork-auto-20261119-120000-pre-${JOURNAL_TAGS.at(-1)}.db`,
+      'dork-auto-20261119-daily.db',
+      'dork-auto-20261120-daily.db',
     ]);
     db.$client.close();
   });
@@ -478,7 +549,7 @@ describe('snapshotDaily', () => {
     runMigrations(db);
     const backups = path.join(home, 'backups');
     const now = new Date('2026-08-15T12:00:00Z');
-    const dest = path.join(backups, 'dork-20260815-daily.db');
+    const dest = path.join(backups, 'dork-auto-20260815-daily.db');
     mkdirSync(backups, { recursive: true });
     writeFileSync(dest, '');
 
@@ -496,7 +567,7 @@ describe('snapshotDaily', () => {
     runMigrations(db);
     const backups = path.join(home, 'backups');
     const now = new Date('2026-11-20T12:00:00Z');
-    const dest = path.join(backups, 'dork-20261120-daily.db');
+    const dest = path.join(backups, 'dork-auto-20261120-daily.db');
     snapshotSqlite(db.$client, dest);
     const bytes = readFileSync(dest);
     const lock = new Database(dest);
@@ -681,20 +752,24 @@ describe('pruneSnapshots', () => {
   it('deletes only files matching its own pattern', () => {
     const dir = tempDir();
     for (const name of [
-      'dork-20260801-daily.db',
-      'dork-20260802-daily.db',
-      'dork-20260803-daily.db',
-      'dork-20260801-120000-pre-0001_thing.db',
+      'dork-auto-20260801-daily.db',
+      'dork-auto-20260802-daily.db',
+      'dork-auto-20260803-daily.db',
+      'dork-auto-20260801-120000-pre-0001_thing.db',
     ]) {
       plantSnapshot(dir, name);
     }
     writeFileSync(path.join(dir, 'notes.txt'), 'x');
 
-    const deleted = pruneSnapshots(dir, /^dork-\d{8}-daily\.db$/, 1);
+    const deleted = pruneSnapshots(dir, /^dork-auto-\d{8}-daily\.db$/, 1);
 
-    expect(deleted).toEqual(['dork-20260801-daily.db', 'dork-20260802-daily.db']);
+    expect(deleted).toEqual(['dork-auto-20260801-daily.db', 'dork-auto-20260802-daily.db']);
     expect(readdirSync(dir).sort()).toEqual(
-      ['dork-20260803-daily.db', 'dork-20260801-120000-pre-0001_thing.db', 'notes.txt'].sort()
+      [
+        'dork-auto-20260803-daily.db',
+        'dork-auto-20260801-120000-pre-0001_thing.db',
+        'notes.txt',
+      ].sort()
     );
   });
 
@@ -703,15 +778,18 @@ describe('pruneSnapshots', () => {
     // will ever write again. Counting it toward `keep` would quietly shrink how
     // far back the operator can reach, for as long as it took to age out.
     const dir = tempDir();
-    plantSnapshot(dir, 'dork-20260801-daily.db');
-    plantSnapshot(dir, 'dork-20260802-daily.db');
-    writeFileSync(path.join(dir, 'dork-20260731-daily.db'), '');
+    plantSnapshot(dir, 'dork-auto-20260801-daily.db');
+    plantSnapshot(dir, 'dork-auto-20260802-daily.db');
+    writeFileSync(path.join(dir, 'dork-auto-20260731-daily.db'), '');
 
-    const deleted = pruneSnapshots(dir, /^dork-\d{8}-daily\.db$/, 2);
+    const deleted = pruneSnapshots(dir, /^dork-auto-\d{8}-daily\.db$/, 2);
 
     // The decoy goes even though the pool is only at its limit once it is gone.
-    expect(deleted).toEqual(['dork-20260731-daily.db']);
-    expect(readdirSync(dir).sort()).toEqual(['dork-20260801-daily.db', 'dork-20260802-daily.db']);
+    expect(deleted).toEqual(['dork-auto-20260731-daily.db']);
+    expect(readdirSync(dir).sort()).toEqual([
+      'dork-auto-20260801-daily.db',
+      'dork-auto-20260802-daily.db',
+    ]);
   });
 
   it('is a no-op on a directory that does not exist', () => {

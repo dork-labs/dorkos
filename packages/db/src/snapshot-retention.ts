@@ -9,7 +9,7 @@ const PRE_MIGRATION_SNAPSHOT_LIMIT = 3;
 /** Five store recovery points preserve each extension's separate migration history. */
 const EXTENSION_SNAPSHOT_LIMIT = 5;
 
-/** Snapshot counts stay bounded even when several upgrades happen in one day. */
+/** New snapshot counts stay bounded; pre-upgrade `dork-` copies are excluded. */
 export const SNAPSHOT_RETENTION = {
   /** Keep at most three pre-migration copies within the last seven days. */
   preMigration: PRE_MIGRATION_SNAPSHOT_LIMIT,
@@ -22,9 +22,13 @@ export const SNAPSHOT_RETENTION = {
 /** A week covers recent upgrades without retaining full database copies indefinitely. */
 export const PRE_MIGRATION_MAX_AGE_DAYS = 7;
 
-/** Final names emitted by the database snapshot writers; partials never match. */
+/**
+ * Only new dork-auto names opt in to retention. Never inspect or prune legacy
+ * dork names, including incomplete copies; their cleanup belongs to the person.
+ * Extension retention is unchanged. Partials never match either writer.
+ */
 const OWNED_NAME =
-  /^(?:dork-(\d{8})-(?:daily|([0-9]{6})-pre-(?:\d{4}|\d{14})_[a-z0-9_]+)|store-(\d{8})-([0-9]{6})-pre-v\d+)\.db$/;
+  /^(?:dork-auto-(\d{8})-(?:daily|([0-9]{6})-pre-(?:\d{4}|\d{14})_[a-z0-9_]+)|store-(\d{8})-([0-9]{6})-pre-v\d+)\.db$/;
 
 /** The existing log port, shared by snapshot writers and retention. */
 export interface SnapshotLog {
@@ -53,6 +57,15 @@ function snapshotTime(name: string): number | null {
   const iso = `${day.slice(0, 4)}-${day.slice(4, 6)}-${day.slice(6, 8)}T${clock.slice(0, 2)}:${clock.slice(2, 4)}:${clock.slice(4, 6)}.000Z`;
   const time = Date.parse(iso);
   return Number.isFinite(time) && new Date(time).toISOString() === iso ? time : null;
+}
+
+/**
+ * Whether a completed filename belongs to a writer with automatic cleanup.
+ *
+ * @param name - Filename without any partial or journal suffix
+ */
+export function isManagedSnapshotName(name: string): boolean {
+  return snapshotTime(name) !== null;
 }
 
 /** Distinguish a confirmed incomplete copy from a copy that cannot currently be checked. */
