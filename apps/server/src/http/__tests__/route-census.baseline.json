@@ -246,6 +246,7 @@
     "GET /api/keep-awake",
     "GET /api/lan-access",
     "GET /api/local-browser/capabilities",
+    "GET /api/local-browser/handoff/state",
     "GET /api/local-browser/profiles",
     "GET /api/local-browser/state",
     "GET /api/marketplace/cache",

@@ -7,10 +7,12 @@ import type {
   LocalBrowserPersonState,
   LocalBrowserSignIn,
 } from '@dorkos/shared/local-browser';
+import { localBrowserStateKey } from '@/layers/entities/local-browser';
 import { BrowserHandoffCard, BrowserHandoffInboxItem } from '../index';
 
 const transport = vi.hoisted(() => ({
   getLocalBrowserState: vi.fn(),
+  getLocalBrowserHandoffState: vi.fn(),
   handBackLocalBrowser: vi.fn(),
   stopLocalBrowserHandoff: vi.fn(),
   signInLocalBrowser: vi.fn(),
@@ -201,7 +203,7 @@ describe('BrowserHandoffCard', () => {
       // The next state read says it ended, however that happened.
       act(() => {
         view.client.setQueryData(
-          ['local-browser', 'state'],
+          localBrowserStateKey('chat-one'),
           person({ handoff: { ...handoff, outcome } })
         );
       });
@@ -278,7 +280,9 @@ describe('BrowserHandoffCard', () => {
     transport.selectLocalBrowserTab.mockResolvedValue(person({ handoff: undefined }));
     mount();
     fireEvent.click(await button('Show window'));
-    await waitFor(() => expect(transport.selectLocalBrowserTab).toHaveBeenCalledWith('t1'));
+    await waitFor(() =>
+      expect(transport.selectLocalBrowserTab).toHaveBeenCalledWith('t1', 'chat-one')
+    );
     expect(await button('Continue')).toBeTruthy();
   });
 
@@ -629,7 +633,7 @@ describe('BrowserHandoffCard', () => {
     }
 
     it('shows whichever handoff is open, and answers it with the chat closed', async () => {
-      transport.getLocalBrowserState.mockResolvedValue(person());
+      transport.getLocalBrowserHandoffState.mockResolvedValue(person());
       transport.handBackLocalBrowser.mockResolvedValue(
         person({ handoff: { ...handoff, outcome: 'handed-back' } })
       );
@@ -642,7 +646,7 @@ describe('BrowserHandoffCard', () => {
     });
 
     it('carries Stop task, and leaves the stopped receipt', async () => {
-      transport.getLocalBrowserState.mockResolvedValue(person());
+      transport.getLocalBrowserHandoffState.mockResolvedValue(person());
       transport.stopLocalBrowserHandoff.mockResolvedValue(
         person({ handoff: { ...handoff, outcome: 'stopped' } })
       );
@@ -656,9 +660,9 @@ describe('BrowserHandoffCard', () => {
     });
 
     it('draws nothing when no handoff is open', async () => {
-      transport.getLocalBrowserState.mockResolvedValue(person({ handoff: null }));
+      transport.getLocalBrowserHandoffState.mockResolvedValue(person({ handoff: null }));
       const { container } = mountItem();
-      await waitFor(() => expect(transport.getLocalBrowserState).toHaveBeenCalled());
+      await waitFor(() => expect(transport.getLocalBrowserHandoffState).toHaveBeenCalled());
       expect(container.querySelector('[data-slot="browser-handoff-card"]')).toBeNull();
     });
   });

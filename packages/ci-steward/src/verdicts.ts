@@ -44,8 +44,11 @@ import { computeSlos, deadlineMinutes } from './slo.ts';
 import type { LedgerFrontmatter } from './schemas.ts';
 import { addDays, dayOf, dayRange, daysBetween, minutesBetween, quantile, round } from './time.ts';
 
-/** A parsed ledger entry. */
-export type LedgerEntry = LedgerFrontmatter;
+/**
+ * A parsed ledger entry. `file` is its repo-relative path, present when it was
+ * read from disk; the landing-PR lookup needs it.
+ */
+export type LedgerEntry = LedgerFrontmatter & { file?: string };
 
 /** A metric's reading over one window. */
 interface MetricReading {
