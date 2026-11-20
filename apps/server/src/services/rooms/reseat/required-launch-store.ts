@@ -1,4 +1,12 @@
 /** Durable destination-owned recovery constraints plus process-local pending ownership. */
+import type { SessionSettings } from '@dorkos/shared/types';
+import { pickSettings } from '../../core/runtime-seam/session-metadata-columns.js';
+import { withinSessionBirthWrite } from '../../core/runtime-seam/session-birth-write.js';
+import {
+  currentRecoveryBirthSource,
+  recoveryBirthMatchesInput,
+  type RecoveryBirthContext,
+} from '../../core/runtime-seam/recovery-birth-source.js';
 import { z } from 'zod';
 import { currentDispatchId } from '../../../lib/dispatch-context.js';
 import { randomUUID } from 'node:crypto';
@@ -6,9 +14,11 @@ import { resolve } from 'node:path';
 import {
   and,
   eq,
+  ne,
   roomSessions,
   roomSessionRetirements,
   sessionMetadata,
+  sessionBirthAllocations,
   sessionNativeBindings,
   roomSeatLaunchRequirements,
   type Db,
@@ -49,6 +59,11 @@ export interface RecoveryLaunchInput extends RecoveryAuthority {
 export interface RequiredRoomLaunch extends RecoveryLaunchInput {
   state: 'pending' | 'settled' | 'refused';
 }
+
+type RecoveryReplacement = {
+  birth: RecoveryBirthContext;
+  settings: SessionSettings;
+};
 
 /** Atomic publication, strict reads and ownership for this recovery path only. */
 export class RequiredRoomLaunchStore {
@@ -95,8 +110,113 @@ export class RequiredRoomLaunchStore {
     return { ...authority, ...row, state: row.state };
   }
 
-  /** Publish requirement, immutable session reference and expected binding in one transaction. */
-  publish(input: RecoveryLaunchInput, currentGuardsAllow: () => boolean): symbol {
+  /** Capture the exact earlier seat before settings reads without writing a destination. */
+  prepareReplacement(
+    input: RecoveryLaunchInput,
+    agentPath: string,
+    currentGuardsAllow: () => boolean
+  ): RecoveryBirthContext {
+    const handoffDispatchId = currentDispatchId();
+    if (!handoffDispatchId || !currentGuardsAllow())
+      throw new Error('Recovery birth is not owned.');
+    return this.db.transaction((tx) => {
+      const seat = tx
+        .select()
+        .from(roomSessions)
+        .where(
+          and(eq(roomSessions.roomId, input.roomId), eq(roomSessions.authorId, input.authorId))
+        )
+        .get();
+      const context: RecoveryBirthContext = {
+        kind: 'required-recovery',
+        allocationCreatedAt: new Date().toISOString(),
+        requirementId: input.id,
+        destinationSessionId: input.destinationSessionId,
+        sourceSessionId: input.sourceSessionId,
+        sourceDispatchId: input.sourceDispatchId,
+        startSeq: input.startSeq,
+        endSeq: input.endSeq,
+        roomId: input.roomId,
+        authorId: input.authorId,
+        agentPath,
+        seatCreatedAt: seat?.createdAt ?? '',
+        handoffDispatchId,
+        root: input.root,
+      };
+      this.assertBirthAvailable(tx, input, context, currentGuardsAllow);
+      return context;
+    });
+  }
+
+  private assertBirthAvailable(
+    tx: DbTransaction,
+    input: RecoveryLaunchInput,
+    context: RecoveryBirthContext,
+    currentGuardsAllow: () => boolean
+  ): void {
+    if (
+      !currentGuardsAllow() ||
+      !currentRecoveryBirthSource(tx, context) ||
+      tx
+        .select()
+        .from(sessionMetadata)
+        .where(eq(sessionMetadata.sessionId, input.destinationSessionId))
+        .get() ||
+      tx
+        .select()
+        .from(sessionNativeBindings)
+        .where(eq(sessionNativeBindings.sessionId, input.destinationSessionId))
+        .get() ||
+      tx
+        .select()
+        .from(roomSeatLaunchRequirements)
+        .where(eq(roomSeatLaunchRequirements.id, input.id))
+        .get() ||
+      tx
+        .select()
+        .from(roomSeatLaunchRequirements)
+        .where(eq(roomSeatLaunchRequirements.destinationSessionId, input.destinationSessionId))
+        .get() ||
+      tx
+        .select()
+        .from(roomSessionRetirements)
+        .where(eq(roomSessionRetirements.retiredSessionId, input.destinationSessionId))
+        .get()
+    )
+      throw new Error('Recovery birth source changed.');
+  }
+
+  private reserveBirth(
+    tx: DbTransaction,
+    input: RecoveryLaunchInput,
+    context: RecoveryBirthContext,
+    currentGuardsAllow: () => boolean
+  ): void {
+    this.assertBirthAvailable(tx, input, context, currentGuardsAllow);
+    tx.insert(sessionBirthAllocations)
+      .values({
+        sessionId: input.destinationSessionId,
+        version: 1,
+        createdAt: context.allocationCreatedAt,
+        sourceKind: 'internal',
+        internalSource: {
+          kind: 'required-recovery',
+          requirementId: input.id,
+          mintedSessionId: input.destinationSessionId,
+        },
+      })
+      .run();
+  }
+
+  /** Publish the requirement and binding, writing any newly prepared settings in the same transaction. */
+  publish(
+    input: RecoveryLaunchInput,
+    currentGuardsAllow: () => boolean,
+    replacement?: RecoveryReplacement
+  ): symbol {
+    const birth = replacement?.birth;
+    if (birth && !recoveryBirthMatchesInput(birth, input))
+      throw new Error('Recovery birth publication disagrees.');
     const dispatchId = currentDispatchId();
     if (!dispatchId) throw new Error('Recovery requires an owned handoff dispatch.');
     const authority = authoritySchema.parse({
@@ -116,7 +236,10 @@ export class RequiredRoomLaunchStore {
       !currentGuardsAllow()
     )
       throw new Error('Recovery launch is not allowed.');
+    const settings = replacement ? pickSettings(replacement.settings) : {};
     this.db.transaction((tx) => {
+      // The mover has finished all awaits. A failed publication leaves no detached destination.
+      if (birth) this.reserveBirth(tx, input, birth, currentGuardsAllow);
       const latest = latestClaudeRoomServerFailure(
         new SessionEventStore(tx as unknown as Db).readLatestTurnStrict(input.sourceSessionId),
         input.roomId
@@ -130,6 +253,8 @@ export class RequiredRoomLaunchStore {
       ) {
         throw new Error('The failed seat changed before recovery.');
       }
+      if (birth && !recoveryBirthMatchesInput(birth, input))
+        throw new Error('Recovery birth publication proof changed.');
       if (
         tx
           .select()
@@ -159,13 +284,22 @@ export class RequiredRoomLaunchStore {
           createdAt,
         })
         .run();
-      tx.insert(sessionMetadata)
-        .values({ sessionId: input.destinationSessionId, requiredLaunchId: input.id, createdAt })
-        .onConflictDoUpdate({
-          target: sessionMetadata.sessionId,
-          set: { requiredLaunchId: input.id },
-        })
-        .run();
+      withinSessionBirthWrite(tx, input.destinationSessionId, birth, (writer, insertBirth) =>
+        writer
+          .insert(sessionMetadata)
+          .values({
+            sessionId: input.destinationSessionId,
+            requiredLaunchId: input.id,
+            createdAt,
+            ...settings,
+            ...insertBirth,
+          })
+          .onConflictDoUpdate({
+            target: sessionMetadata.sessionId,
+            set: { requiredLaunchId: input.id },
+          })
+          .run()
+      );
       const moved = tx
         .update(roomSessions)
         .set({ sessionId: input.destinationSessionId })
@@ -283,6 +417,19 @@ export class RequiredRoomLaunchStore {
       if (!source && !destination) return;
       if (!source || (destination && destination.id !== source.id))
         throw new Error('Recovery alias requirements conflict.');
+      // A required alias already has metadata. An unconsumed birth at either id
+      // contradicts that owner and cannot be repaired by treating a rename as birth.
+      for (const sessionId of new Set([from, to, source.destinationSessionId])) {
+        if (
+          tx
+            .select()
+            .from(sessionBirthAllocations)
+            .where(eq(sessionBirthAllocations.sessionId, sessionId))
+            .get()
+        )
+          throw new Error('Recovery alias has an unconsumed birth allocation.');
+      }
+
       const metadata = tx
         .select()
         .from(sessionMetadata)
@@ -293,6 +440,13 @@ export class RequiredRoomLaunchStore {
         .from(sessionMetadata)
         .where(eq(sessionMetadata.sessionId, from))
         .get();
+      const canonicalMetadata = tx
+        .select()
+        .from(sessionMetadata)
+        .where(eq(sessionMetadata.sessionId, source.destinationSessionId))
+        .get();
+      if (canonicalMetadata?.requiredLaunchId !== source.id)
+        throw new Error('Recovery canonical lifecycle owner is missing.');
       if (metadata && metadata.requiredLaunchId !== source.id)
         throw new Error('Recovery destination is independently occupied.');
       if (
@@ -313,11 +467,25 @@ export class RequiredRoomLaunchStore {
         throw new Error('Recovery alias native identity conflicts.');
       }
       tx.insert(sessionMetadata)
-        .values({ sessionId: to, requiredLaunchId: source.id, createdAt: new Date().toISOString() })
+        .values({
+          sessionId: to,
+          requiredLaunchId: source.id,
+          createdAt: new Date().toISOString(),
+          // Only the absent destination inherits its actual required owner's state.
+          // The UPDATE branch preserves an existing destination's evidence, including unknown.
+          modelLaunchState: canonicalMetadata.modelLaunchState,
+        })
         .onConflictDoUpdate({
           target: sessionMetadata.sessionId,
           set: { requiredLaunchId: source.id },
         })
+        .run();
+      // Every alias of this exact requirement retains its restriction without birth proof.
+      tx.update(sessionMetadata)
+        .set({ modelLaunchState: null })
+        .where(
+          and(eq(sessionMetadata.requiredLaunchId, source.id), ne(sessionMetadata.sessionId, to))
+        )
         .run();
       tx.update(roomSeatLaunchRequirements)
         .set({ destinationSessionId: to })

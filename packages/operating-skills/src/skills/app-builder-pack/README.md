@@ -20,5 +20,6 @@ Files:
 - `skills/building-dorkos-apps/placement.md`: the interview, every surface and how to add it, open platform gaps
 - `skills/building-dorkos-apps/pitfalls.md`: mistakes that pass tests and fail in DorkOS
 - `skills/building-dorkos-apps/example.md`: a worked example, scaffold to test
+- `skills/building-dorkos-apps/personal-marketplace.md`: building when your own folder is read-only
 
 The pack runs nothing and holds no keys. It's instructions only.

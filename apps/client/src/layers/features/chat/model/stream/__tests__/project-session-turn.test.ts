@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import type { HistoryMessage, PendingInteractionDTO } from '@dorkos/shared/types';
 import type { SessionEvent } from '@dorkos/shared/session-stream';

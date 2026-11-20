@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { dehydrate, QueryClient } from '@tanstack/react-query';
 import { persistQueryClientRestore } from '@tanstack/react-query-persist-client';

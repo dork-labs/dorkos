@@ -1,7 +1,9 @@
 /** Canonical settings/native rekey with atomic recovery identity preservation. */
 import {
   eq,
+  inArray,
   or,
+  sessionBirthAllocations,
   sessionMetadata,
   sessionNativeBindings,
   sessionContext,
@@ -24,6 +26,22 @@ import { moveScheduledChats } from '../origin/rekey-moves.js';
 import { RequiredRoomLaunchStore } from '../../rooms/reseat/required-launch-store.js';
 import { mergedSessionRow } from '../../core/runtime-seam/session-metadata-columns.js';
 type Metadata = typeof sessionMetadata.$inferSelect;
+
+/** An alias may carry existing metadata, never claim someone else's outstanding birth. */
+export function assertNoOutstandingRekeyBirth(
+  db: Db | DbTransaction,
+  from: string,
+  to: string
+): void {
+  const allocation = db
+    .select({ sessionId: sessionBirthAllocations.sessionId })
+    .from(sessionBirthAllocations)
+    .where(inArray(sessionBirthAllocations.sessionId, [from, to]))
+    .get();
+  if (allocation)
+    throw new RequiredSessionIdentityError('Canonical rekey has an unconsumed birth allocation.');
+}
+
 /** Move settings and native rows without silently merging a recovery billing conflict. */
 export function rekeySessionMetadata(
   db: Db | DbTransaction,
@@ -33,6 +51,7 @@ export function rekeySessionMetadata(
   destination: Metadata | undefined
 ): void {
   db.transaction((tx) => {
+    assertNoOutstandingRekeyBirth(tx, from, to);
     const store = new RequiredRoomLaunchStore(tx);
     const requiredSource = store.forSession(from);
     const requiredDestination = store.forSession(to);
@@ -42,6 +61,13 @@ export function rekeySessionMetadata(
     ) {
       throw new Error('Recovery alias requirements conflict.');
     }
+    const canonicalLifecycle = requiredSource
+      ? (tx
+          .select({ state: sessionMetadata.modelLaunchState })
+          .from(sessionMetadata)
+          .where(eq(sessionMetadata.sessionId, requiredSource.destinationSessionId))
+          .get()?.state ?? null)
+      : source.modelLaunchState;
     const native = tx
       .select()
       .from(sessionNativeBindings)
@@ -70,7 +96,7 @@ export function rekeySessionMetadata(
     tx.delete(sessionMetadata).where(eq(sessionMetadata.sessionId, from)).run();
     if (!destination)
       tx.insert(sessionMetadata)
-        .values({ ...source, sessionId: to })
+        .values({ ...source, sessionId: to, modelLaunchState: canonicalLifecycle })
         .run();
     else
       tx.update(sessionMetadata)
@@ -84,7 +110,13 @@ export function rekeySessionMetadata(
     if (requiredSource) {
       // Old-id sends retain the same restriction after canonicalization.
       tx.insert(sessionMetadata)
-        .values({ ...source, sessionId: from, runtime: null, requiredLaunchId: requiredSource.id })
+        .values({
+          ...source,
+          sessionId: from,
+          runtime: null,
+          requiredLaunchId: requiredSource.id,
+          modelLaunchState: null,
+        })
         .run();
       store.rekey(from, to);
     }

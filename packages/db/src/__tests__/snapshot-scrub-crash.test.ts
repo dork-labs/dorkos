@@ -2,8 +2,8 @@
  * A process killed in the middle of emptying a snapshot (DOR-4001, Security
  * M1 on #3569): a real child process takes a real snapshot of each kind and is
  * SIGKILLed after the scrub's DELETE has run but before it commits, leaving a
- * hot journal that would roll the text back. Nothing at a snapshot's name may
- * hold the text, then or after, and the next boot's sweep removes the rest.
+ * hot journal that would roll the text back. New completed snapshots must not
+ * hold the text, then or after, and the next boot sweeps managed partials.
  */
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -16,8 +16,8 @@ import { snapshotBeforeMigrations, snapshotDaily } from '../backup.js';
 const MARKER = 'made-up-marker-oat-milk-only';
 const PACKAGE = resolve(__dirname, '../..');
 const TSX = resolve(PACKAGE, '../../node_modules/.bin/tsx');
-/** Any file a snapshot is kept under: what a restore, or a person, would trust. */
-const SNAPSHOT_NAME = /^(?:dork-\d{8}-\d{6}-pre-.+|dork-\d{8}-daily)\.db$/;
+/** New completed filenames; a partial must never be exposed under these names. */
+const SNAPSHOT_NAME = /^(?:dork-auto-\d{8}-\d{6}-pre-.+|dork-auto-\d{8}-daily)\.db$/;
 
 /** The child: take one snapshot, and die the instant the scrub's DELETE has run uncommitted. */
 const CHILD = `
@@ -36,8 +36,8 @@ Database.prototype.exec = function (sql) {
 const [kind, src, dir] = process.argv.slice(2);
 const backup = await import(${JSON.stringify(join(PACKAGE, 'src/backup.ts'))});
 const sqlite = new Database(src);
-if (kind === 'pre') backup.snapshotSqlite(sqlite, dir + '/dork-20261108-000000-pre-x.db');
-else await backup.snapshotSqliteInSteps(sqlite, dir + '/dork-20261108-daily.db');
+if (kind === 'pre') backup.snapshotSqlite(sqlite, dir + '/dork-auto-20261108-000000-pre-0001_made_up.db');
+else await backup.snapshotSqliteInSteps(sqlite, dir + '/dork-auto-20261108-daily.db');
 console.log('survived');
 `;
 

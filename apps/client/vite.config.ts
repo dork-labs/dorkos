@@ -19,7 +19,11 @@ export default defineConfig({
     // apps/server/vitest.config.ts. Pinned for every project by
     // scripts/__tests__/vitest-projects.test.ts (DOR-1822).
     name: 'client',
-    environment: 'jsdom',
+    // Node unless a file declares `// @vitest-environment jsdom` (DOR-4190).
+    // jsdom costs ~0.72 s of setup per file, which pure-logic tests do not need.
+    // A file that needs a DOM and lacks the docblock usually fails loudly
+    // (`window is not defined`); when unsure, add the docblock.
+    environment: 'node',
     // The two lint guards' fixture slices have to sit inside `src/layers/` — the
     // rules they prove are scoped by path — but creating and removing them from
     // a suite's own hooks mutated `src/` while eight other suites walked it with

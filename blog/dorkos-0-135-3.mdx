@@ -56,3 +56,5 @@ DorkOS 0.135.3 lets you see what every agent is told, lets scheduled tasks use t
 On 0.135.2, the saved record of what agents were told is no longer deleted after 30 days or when a chat is deleted, and backups made on 0.135.2 include its text. To remove it, restore the backup below. Lines about missed or failed scheduled runs show there as a plain notice, with no link to the run.
 
 DorkOS still saves a backup before it changes the database, in `~/.dork/backups/`. If you came from 0.135.2, it's named `dork-<date>-<time>-pre-20261109151737_turn_context.db` (the time is UTC). To restore it, quit DorkOS, delete `dork.db-wal` and `dork.db-shm` from `~/.dork/`, copy the backup over `~/.dork/dork.db`, then install 0.135.2. You lose anything written since the upgrade, so if you removed access or revoked a connection since then, do it again.
+
+Newer backups start with `dork-auto-` instead of `dork-`. [Both filename forms restore the same way](/docs/self-hosting/docker#database-snapshots).

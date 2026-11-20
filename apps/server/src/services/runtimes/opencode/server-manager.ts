@@ -20,6 +20,7 @@
  * @module services/runtimes/opencode/server-manager
  */
 import { OpenCodeSessionEnvironment } from './session-environment.js';
+import { SidecarCustodyAttempt, type SidecarSpawnPort } from './sidecar-custody.js';
 import { runtimeEnvironment } from '../shared/runtime-environment-config.js';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -166,6 +167,8 @@ export interface OpenCodeSidecarPlanners {
 export interface OpenCodeServerManagerOptions extends Partial<OpenCodeSidecarPlanners> {
   /** Whether OpenCode's recorded choice is credits, read on every client hand-out. */
   runsOnCredits?: () => boolean;
+  /** Explicit custody composition for gated callers. */
+  custody?: SidecarSpawnPort;
 }
 
 /**
@@ -187,6 +190,11 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
   private starting: Promise<OpencodeClient> | null = null;
   private restartTimer: ReturnType<typeof setTimeout> | null = null;
   private restartAttempts = 0;
+  private rejectRestart?: (error: Error) => void;
+  private restartGeneration = 0;
+  private readonly custody?: SidecarSpawnPort;
+  private attempt?: SidecarCustodyAttempt;
+  private retirement?: Promise<void>;
   private readyAt = 0;
   /** What the running (or booting) sidecar runs on; `null` while none is up. */
   private running: OpenCodeSidecarPlan | null = null;
@@ -205,6 +213,7 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
    * @param options - Planning seams.
    */
   constructor(options: OpenCodeServerManagerOptions = {}) {
+    this.custody = options.custody;
     this.runsOnCredits = options.runsOnCredits ?? openCodeRunsOnCredits;
     this.planSidecar = options.planSidecar ?? (() => planSidecarWithoutCloud(this.runsOnCredits));
     this.planTurn = options.planTurn ?? (() => planTurnWithoutCloud(this.runsOnCredits));
@@ -255,6 +264,10 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
     // is never ended or moved by a switch. Reads (lists, history) keep using
     // it meanwhile, and the switch happens when the last turn settles.
     if (this.client && this.mismatched() && !this.busy()) await this.recycle();
+    if (this.retirement) await this.retirement;
+    if (this.custody && this.isStopped())
+      throw new Error('OpenCode sidecar manager has been shut down');
+    if (this.attempt?.blocked) throw new Error('OpenCode sidecar cleanup could not be confirmed');
     if (this.client) return this.client;
     if (this.starting) return this.starting;
     return this.trackBoot(this.boot());
@@ -369,12 +382,12 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
    * never booted; the manager rejects all further `getClient()` calls.
    */
   async shutdown(): Promise<void> {
-    if (this.phase === 'stopped') return;
-    this.phase = 'stopped';
-    if (this.restartTimer) {
-      clearTimeout(this.restartTimer);
-      this.restartTimer = null;
+    if (this.phase === 'stopped') {
+      if (this.attempt) await this.confirmCustodyStop('shutdown');
+      return;
     }
+    this.phase = 'stopped';
+    this.cancelRestart();
     this.client = null;
     this.starting = null;
     this.clearRunning();
@@ -384,6 +397,7 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
       await this.killChild(child);
       logger.info('[OpenCode] sidecar stopped');
     }
+    if (this.attempt) await this.confirmCustodyStop('shutdown');
     await this.sessionEnvironment.close();
   }
 
@@ -404,10 +418,7 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
    */
   async recycle(): Promise<void> {
     if (this.phase === 'stopped') return;
-    if (this.restartTimer) {
-      clearTimeout(this.restartTimer);
-      this.restartTimer = null;
-    }
+    this.cancelRestart();
     const child = this.child;
     // Flip state BEFORE the await: detach the child so its exit handler no-ops
     // (the guard needs phase 'ready' AND this.child === child), and clear the
@@ -422,6 +433,49 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
       await this.killChild(child);
       logger.info('[OpenCode] sidecar recycled — next use reboots with fresh provider env');
     }
+    if (this.attempt) await this.confirmCustodyStop('recycle');
+  }
+
+  private cancelRestart(): void {
+    if (this.restartTimer) clearTimeout(this.restartTimer);
+    this.restartTimer = null;
+    if (this.custody) this.restartGeneration++;
+    this.rejectRestart?.(new Error('OpenCode sidecar restart was cancelled'));
+    this.rejectRestart = undefined;
+  }
+
+  private stopCustody(reason: string): Promise<void> {
+    const stopped = this.attempt!.stop(reason);
+    this.retirement = stopped;
+    void stopped.then(() => {
+      if (this.retirement === stopped) this.retirement = undefined;
+    });
+    return stopped;
+  }
+
+  private async confirmCustodyStop(reason: string): Promise<void> {
+    const attempt = this.attempt!;
+    await this.stopCustody(reason);
+    if (attempt.blocked) throw new Error('OpenCode sidecar cleanup could not be confirmed');
+  }
+
+  private custodyClosed(attempt: SidecarCustodyAttempt, detail: string): void {
+    if (this.phase !== 'ready' || this.attempt !== attempt) return;
+    this.client = null;
+    this.clearRunning();
+    this.phase = 'idle';
+    if (Date.now() - this.readyAt >= SIDECAR_TIMING.backoffResetUptimeMs) this.restartAttempts = 0;
+    logger.warn(`[OpenCode] owned sidecar ended unexpectedly (${detail})`);
+    const restartGeneration = this.restartGeneration;
+    void this.stopCustody('unexpected-terminal').then(() => {
+      if (
+        this.attempt === attempt &&
+        this.phase === 'idle' &&
+        !attempt.blocked &&
+        restartGeneration === this.restartGeneration
+      )
+        this.maybeScheduleRestart();
+    });
   }
 
   /** Whether `shutdown()` has run. A method (not an inline compare) so async code paths can re-check after `await` without CFA narrowing lying to them. */
@@ -449,9 +503,24 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
    * server picks 4096 or an ephemeral port and prints it — NOTES.md §3) using
    * the per-boot basic-auth secret.
    */
-  private async boot(): Promise<OpencodeClient> {
+  private boot(): Promise<OpencodeClient> {
+    if (!this.custody) return this.bootSidecar();
+    const attempt = new SidecarCustodyAttempt(this.custody);
+    this.attempt = attempt;
+    return this.bootSidecar(attempt).catch(async (error: unknown) => {
+      if (this.attempt === attempt) {
+        this.clearRunning();
+        await this.stopCustody('startup-failed');
+        if (this.attempt === attempt && !this.isStopped()) this.phase = 'idle';
+      }
+      throw error;
+    });
+  }
+
+  private async bootSidecar(attempt?: SidecarCustodyAttempt): Promise<OpencodeClient> {
     this.phase = 'starting';
     const binary = await resolveOpenCodeBinaryPath();
+    attempt?.checkCurrent();
     if (!binary) {
       // resolveOpenCodeBinaryPath() is async, so shutdown() may have flipped the
       // phase to 'stopped' while we awaited it. Never resurrect a stopped manager
@@ -472,8 +541,10 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
     // dangling reference yields `{}` and the sidecar keeps its own auth. On
     // credits, none of that is read.
     const plan = this.nextPlan ?? (await this.planSidecar());
+    attempt?.checkCurrent();
     this.nextPlan = null;
     const providerEnv = plan.mode === 'own' ? await resolveOpenCodeProviderEnv() : {};
+    attempt?.checkCurrent();
     // A credits boot that can pay gets a relay key of its own, revoked when
     // this sidecar stops; the token itself stays in DorkOS.
     const grant =
@@ -481,16 +552,27 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
         ? this.relay.issue('openai-chat-completions', OPENCODE_LABEL)
         : null;
     this.grantKey = grant?.key ?? null;
-    const child = spawn(binary, ['serve', `--hostname=${SIDECAR_HOSTNAME}`, `--port=${port}`], {
-      env: buildSidecarSpawnEnv(
-        plan,
-        password,
-        providerEnv,
-        grant,
-        this.sessionEnvironment.plugin()
-      ),
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    const argv = ['serve', `--hostname=${SIDECAR_HOSTNAME}`, `--port=${port}`];
+    const env = buildSidecarSpawnEnv(
+      plan,
+      password,
+      providerEnv,
+      grant,
+      this.sessionEnvironment.plugin()
+    );
+    if (attempt) {
+      this.running = plan;
+      const url = await attempt.start(
+        binary,
+        argv,
+        env,
+        SIDECAR_TIMING.startupTimeoutMs,
+        (detail) => this.custodyClosed(attempt, detail)
+      );
+      attempt.checkReady();
+      return this.publishClient(url, password);
+    }
+    const child = spawn(binary, argv, { env, stdio: ['ignore', 'pipe', 'pipe'] });
     this.child = child;
     this.running = plan;
 
@@ -548,6 +630,10 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
       }
     });
 
+    return this.publishClient(url, password);
+  }
+
+  private publishClient(url: string, password: string): OpencodeClient {
     const client = createOpencodeClient({
       baseUrl: url,
       headers: {
@@ -646,7 +732,7 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
    * of spawning eagerly; a failed restart boot re-enters this method.
    */
   private maybeScheduleRestart(): void {
-    if (this.phase === 'stopped') return;
+    if (this.phase === 'stopped' || this.attempt?.blocked) return;
     if (this.restartAttempts >= SIDECAR_TIMING.maxRestartAttempts) {
       logger.error(
         `[OpenCode] sidecar restart attempts exhausted (${SIDECAR_TIMING.maxRestartAttempts}) — giving up until the next use`
@@ -664,16 +750,19 @@ export class OpenCodeServerManager implements OpenCodeClientProvider {
       `[OpenCode] restarting sidecar in ${delay}ms (attempt ${this.restartAttempts}/${SIDECAR_TIMING.maxRestartAttempts})`
     );
 
+    const restartGeneration = this.restartGeneration;
     const restart = this.trackBoot(
       new Promise<OpencodeClient>((resolve, reject) => {
+        if (this.custody) this.rejectRestart = reject;
         this.restartTimer = setTimeout(() => {
           this.restartTimer = null;
+          this.rejectRestart = undefined;
           this.boot().then(resolve, reject);
         }, delay);
       })
     );
     restart.catch((err: unknown) => {
-      if (this.phase === 'stopped') return;
+      if (this.phase === 'stopped' || restartGeneration !== this.restartGeneration) return;
       logger.warn('[OpenCode] sidecar restart attempt failed', logError(err));
       this.maybeScheduleRestart();
     });

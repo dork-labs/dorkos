@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The pulse's reduced-motion gate, tested where it can be tested.
  *

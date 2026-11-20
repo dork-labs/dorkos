@@ -150,3 +150,18 @@ export function currentDistribution(): Distribution {
     version: SERVER_VERSION,
   });
 }
+
+/**
+ * Whether this process runs inside the DorkOS Docker image, from the image's
+ * own `DORKOS_DISTRIBUTION=docker` (Dockerfile `served` stage).
+ *
+ * Unlike {@link currentDistribution}, a checkout started inside the container
+ * still answers yes: the question is which container rules apply to this
+ * process, and an inherited variable answers it the same way. Used to word
+ * Codex's sandbox refusals for Docker (DOR-3800).
+ *
+ * @returns True inside the Docker image.
+ */
+export function runsInDockerImage(): boolean {
+  return env.DORKOS_DISTRIBUTION?.trim().toLowerCase() === 'docker';
+}

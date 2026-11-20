@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
 import { FILE_PATH_DRAG_TYPE, hasFilePathDrag, readFilePathDrag } from '../file-drag';
 

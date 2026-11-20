@@ -339,7 +339,7 @@ it.each(['eligible', 'paused'] as const)(
       newSeatRuntime: async () => 'claude-code',
       rebind: (r, a, s) => h.store.rebindRoomSession(r, a, s),
       settingsOf: (id) => runtimeRegistry.getSessionSettings(id),
-      saveSettings: (id, s) => runtimeRegistry.saveSessionSettings(id, s),
+      saveSettings: (id, settings) => runtimeRegistry.saveSessionSettings(id, settings),
       declaredModes: () => CLAUDE_CODE_CAPABILITIES.permissionModes,
       effectiveModeOf: async () => 'plan',
       ranking: async () => {

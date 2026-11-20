@@ -14,6 +14,7 @@ import { QuestionItemSchema } from '@dorkos/shared/schemas';
 import { CONTEXT_TAG, stripInjectedTagBlocks } from '@dorkos/shared/additional-context';
 import { extractToolResultImages, type ToolResultImage } from '../tool-result-images.js';
 import { apiErrorCode, buildApiErrorPart, isApiErrorRecord } from '../sdk/api-error-record.js';
+import type { AssistantErrorContext } from '../sdk/sdk-error-mapping.js';
 import { mapSdkAnswersToIndices } from './question-answers.js';
 import { applyToolResult } from './tool-result-outcome.js';
 import { classifyOrigin } from './classify-origin.js';
@@ -396,8 +397,11 @@ export interface TranscriptParser {
  *
  * Implements a state machine that tracks pending slash commands, tool call
  * correlation, and Skill tool args across user/assistant message pairs.
+ *
+ * @param context - Where the transcript's session ran; an API-error card reads
+ *   it exactly as the live path does (DOR-4845). Absent keeps generic copy.
  */
-export function createTranscriptParser(): TranscriptParser {
+export function createTranscriptParser(context: AssistantErrorContext = {}): TranscriptParser {
   const messages: HistoryMessage[] = [];
   let pendingCommand: { commandName: string; commandArgs: string; uuid?: string } | null = null;
   let pendingSkillArgs: string | null = null;
@@ -604,7 +608,11 @@ export function createTranscriptParser(): TranscriptParser {
           role: 'assistant',
           content: '',
           parts: [
-            buildApiErrorPart(apiErrorCode(parsed), extractTextContent(contentBlocks).trim()),
+            buildApiErrorPart(
+              apiErrorCode(parsed),
+              extractTextContent(contentBlocks).trim(),
+              context
+            ),
           ],
           timestamp: parsed.timestamp,
         });

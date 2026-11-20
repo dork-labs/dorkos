@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The review a person sees before creating an agent from a template that
  * brings settings (DOR-2325): each settings file's contents, written out in a
