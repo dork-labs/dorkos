@@ -6,14 +6,14 @@
  */
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, fireEvent } from '@testing-library/react';
+import { cleanup, render, screen, fireEvent, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { createTestQueryClient } from '@dorkos/test-utils/react-helpers';
 import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
 import { TransportProvider } from '@/layers/shared/model';
-import { RestartExtensionAction, extensionIdOfStoppedNotice } from '../ui/RestartExtensionAction';
+import { extensionIdOfStoppedNotice } from '../ui/RestartExtensionAction';
 import { InboxRow } from '../ui/InboxRow';
 
 let transport: ReturnType<typeof createMockTransport>;
@@ -48,18 +48,45 @@ const OFF: NotificationDTO = {
 
 describe('Restart on a stopped extension’s notice', () => {
   it('restarts exactly the named extension, then says so', async () => {
-    wrap(<RestartExtensionAction extensionId="people" notificationId="n-1" />);
+    const { container } = wrap(<InboxRow notification={OFF} onOpen={() => {}} />);
+    const slot = container.querySelector('[data-slot="inbox-row-restart-slot"]');
+    const button = screen.getByRole('button', { name: 'Restart' });
     fireEvent.click(screen.getByRole('button', { name: 'Restart' }));
-    expect(await screen.findByText('Restarted')).toBeVisible();
+    expect(await screen.findByRole('status')).toHaveTextContent('The People app is back on');
+    expect(screen.queryByText(OFF.title)).not.toBeInTheDocument();
+    expect(screen.queryByText(OFF.body!)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Restart' })).not.toBeInTheDocument();
+    // Retain the same slot and button footprint, without an actionable hidden control.
+    expect(container.querySelector('[data-slot="inbox-row-restart-slot"]')).toBe(slot);
+    expect(button).toHaveClass('invisible');
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('aria-hidden', 'true');
     expect(transport.restartExtension).toHaveBeenCalledExactlyOnceWith('people');
   });
 
   it('says it could not, and keeps the button, when the server refuses', async () => {
     vi.mocked(transport.restartExtension).mockRejectedValueOnce(new Error('Not approved'));
-    wrap(<RestartExtensionAction extensionId="people" notificationId="n-1" />);
+    const { container } = wrap(<InboxRow notification={OFF} onOpen={() => {}} />);
     fireEvent.click(screen.getByRole('button', { name: 'Restart' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Couldn’t restart it.');
-    expect(screen.getByRole('button', { name: 'Restart' })).toBeInTheDocument();
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Couldn’t restart it. Open Settings to check.');
+    expect(alert).toHaveClass('block', 'w-full', 'text-destructive');
+    const text = container.querySelector('[data-slot="inbox-row-text"]') as HTMLElement;
+    expect(within(text).getByRole('alert')).toBe(alert);
+    expect(text.querySelector('[data-slot="inbox-row-body"]')?.nextElementSibling).toBe(alert);
+    expect(screen.getByRole('button', { name: 'Restart' })).toBeEnabled();
+    expect(screen.getByText(OFF.title)).toBeVisible();
+    expect(transport.markNotificationRead).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Restart' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('The People app is back on');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(transport.restartExtension).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps an app suffix in its name without adding it twice', async () => {
+    wrap(<InboxRow notification={{ ...OFF, title: 'The Notes app is off' }} onOpen={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Restart' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('The Notes app is back on');
   });
 
   it('is drawn on the notice row only when the notice offers it', () => {

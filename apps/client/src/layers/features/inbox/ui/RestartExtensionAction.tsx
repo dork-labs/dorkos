@@ -8,11 +8,15 @@
 import { useRef } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { useMarkRead } from '@/layers/entities/notifications';
+import { cn } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 import { Button } from '@/layers/shared/ui/button';
 
 /** The notice action that asks for this button. */
 export const RESTART_EXTENSION_ACTION_ID = 'restart-extension';
+
+/** Feedback the notice draws in its text column, separate from the action. */
+export type RestartExtensionStatus = 'idle' | 'pending' | 'success' | 'error';
 
 /** The prefix of an `extension.stopped` notice's subject id: `extension:<id>`. */
 const SUBJECT_PREFIX = 'extension:';
@@ -33,17 +37,20 @@ export interface RestartExtensionActionProps {
   extensionId: string;
   /** The notice, marked read once the restart went through. */
   notificationId: string;
+  /** Keep the notice's title, description and error in sync with the action. */
+  onStatusChange?: (status: RestartExtensionStatus) => void;
 }
 
 /**
- * "Restart": starts the extension again, then reads "Restarted". Refused (turned
- * off since, or it no longer builds), it says so and keeps the button.
+ * "Restart": starts the extension again and reports the result to its notice.
+ * A successful restart reserves the button's footprint so the text never shifts.
  *
  * @param props - The extension and the notice.
  */
 export function RestartExtensionAction({
   extensionId,
   notificationId,
+  onStatusChange,
 }: RestartExtensionActionProps) {
   const transport = useTransport();
   const read = useMarkRead();
@@ -51,23 +58,19 @@ export function RestartExtensionAction({
   const restart = useMutation({
     mutationFn: () => transport.restartExtension(extensionId),
     meta: { suppressErrorToast: true },
-    onSuccess: () => read.mutate(notificationId),
-    onError: () => requestAnimationFrame(() => button.current?.focus()),
+    onMutate: () => onStatusChange?.('pending'),
+    onSuccess: () => {
+      onStatusChange?.('success');
+      read.mutate(notificationId);
+    },
+    onError: () => {
+      onStatusChange?.('error');
+      requestAnimationFrame(() => button.current?.focus());
+    },
   });
 
-  if (restart.isSuccess) {
-    return (
-      <span
-        role="status"
-        data-slot="inbox-row-restarted"
-        className="text-muted-foreground shrink-0 px-2 py-1 text-xs"
-      >
-        Restarted
-      </span>
-    );
-  }
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div data-slot="inbox-row-restart-slot" className="w-full shrink-0 sm:w-auto">
       <Button
         ref={button}
         type="button"
@@ -75,18 +78,15 @@ export function RestartExtensionAction({
         size="xs"
         data-slot="inbox-row-restart-extension"
         // Full width and 44px tall on a phone, under the text; beside it from `sm`.
-        className="h-11 w-full shrink-0 sm:h-auto sm:w-auto"
-        disabled={restart.isPending}
+        className={cn('h-11 w-full shrink-0 sm:h-auto sm:w-auto', restart.isSuccess && 'invisible')}
+        disabled={restart.isPending || restart.isSuccess}
+        aria-hidden={restart.isSuccess || undefined}
+        tabIndex={restart.isSuccess ? -1 : undefined}
         aria-busy={restart.isPending || undefined}
         onClick={() => restart.mutate()}
       >
         Restart
       </Button>
-      {restart.isError && (
-        <p role="alert" className="text-destructive text-xs">
-          Couldn’t restart it. Open Settings to check.
-        </p>
-      )}
     </div>
   );
 }

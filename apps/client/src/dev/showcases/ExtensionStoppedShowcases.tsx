@@ -1,7 +1,7 @@
 /**
  * The notices DorkOS posts when a mini app stops on its own (DOR-4785), drawn
- * without a server: a quiet "restarted" row, and the "is off" row with
- * Restart. The words are exactly what `extension-stopped-notice.ts` builds.
+ * without a server: a quiet "restarting" row, and two "is off" rows with
+ * Restart. People succeeds; Notes refuses so the error and retry can be reviewed.
  *
  * @module dev/showcases/ExtensionStoppedShowcases
  */
@@ -16,8 +16,18 @@ import { ShowcaseDemo } from '../ShowcaseDemo';
 import { minutesAgo } from '../mock-samples/inbox';
 import { createPlaygroundTransport } from '../playground-transport';
 
-/** The two rows one stretch of trouble leaves, newest first. */
+/** Off rows exercise success and refusal; the quiet row has no action. */
 const ROWS: NotificationDTO[] = [
+  {
+    id: '01JZS0000000000000000003',
+    kind: 'extension.stopped',
+    tier: 'notable',
+    subject: { type: 'system', id: 'extension:notes' },
+    title: 'The Notes app is off',
+    body: 'It stopped 3 times in 10 minutes, so DorkOS left it off.',
+    actions: [{ id: 'restart-extension', label: 'Restart', style: 'primary' }],
+    createdAt: minutesAgo(3),
+  },
   {
     id: '01JZS0000000000000000002',
     kind: 'extension.stopped',
@@ -46,7 +56,10 @@ export function ExtensionStoppedShowcases() {
     () =>
       new Proxy(createPlaygroundTransport(), {
         get(target, prop, receiver) {
-          if (prop === 'restartExtension') return async () => undefined;
+          if (prop === 'restartExtension')
+            return async (extensionId: string) => {
+              if (extensionId === 'notes') throw new Error('Showcase refusal');
+            };
           if (prop === 'markNotificationRead') return async () => ({ updated: 1, unreadCount: 0 });
           return Reflect.get(target, prop, receiver);
         },
@@ -58,7 +71,7 @@ export function ExtensionStoppedShowcases() {
       title="Stopped app rows"
       description="Restart appears only when DorkOS leaves an app off."
     >
-      <ShowcaseLabel>Restarting, then left off after 3 stops in 10 minutes</ShowcaseLabel>
+      <ShowcaseLabel>Restart People for success, Notes for the retry state</ShowcaseLabel>
       <ShowcaseDemo>
         <QueryClientProvider client={client}>
           <TransportProvider transport={transport}>
