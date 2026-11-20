@@ -8,9 +8,10 @@ description: Run DorkOS in a Docker container with persistent data, custom confi
 Run DorkOS as a container. The official image bundles Node.js, the DorkOS CLI, and the built client, so Docker is the only thing you need on the host.
 
 <Callout type="warn">
-  On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that
-  includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it
-  (DOR-3965).
+  Codex needs one extra setting to start in Docker: see [Running Codex in
+  Docker](#running-codex-in-docker). Even with it, Codex at Full access doesn't start on Linux if
+  Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or
+  Workspace write there for now. We're fixing it (DOR-3965).
 </Callout>
 
 ## Quick Start
@@ -405,6 +406,55 @@ dorkos.example.com {
 <Callout type="info">
   `flush_interval -1` disables response buffering, which is required for SSE streaming. See the
   [reverse proxy guide](/docs/self-hosting/reverse-proxy) for nginx configuration.
+</Callout>
+
+## Running Codex in Docker
+
+Skip this section unless you use Codex. Claude Code and the rest of DorkOS work without it.
+
+Codex runs each command in a sandbox: a closed-off space where the command can only change the folders it's allowed to. Docker's standard security settings block that sandbox, so Codex stops before it runs anything. DorkOS ships a seccomp profile (the list of low-level requests a container may make to the Linux kernel) that lets the sandbox start.
+
+<Steps>
+<Step>
+
+### Download the profile
+
+Get the copy that matches the DorkOS version you run. Change `0.140.0` to your version:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/dork-labs/dorkos/v0.140.0/docker/seccomp/dorkos-codex.json
+```
+
+This saves `dorkos-codex.json` in your current folder. Docker reads it from there when the container starts, so it doesn't go inside the image.
+
+</Step>
+<Step>
+
+### Start the container with it
+
+Add the `--security-opt` line to the command you already use:
+
+```bash
+docker run -d --name dorkos \
+  -p 4242:4242 \
+  -e ANTHROPIC_API_KEY=your-key-here \
+  --security-opt seccomp=dorkos-codex.json \
+  -v dorkos-data:/home/node/.dork \
+  ghcr.io/dork-labs/dorkos:latest
+```
+
+Then sign Codex in as the [runtimes guide](/docs/guides/runtimes#set-up-a-coding-runtime) shows.
+
+</Step>
+</Steps>
+
+The profile is Docker's own default profile with one addition: it allows the five requests Codex's sandbox uses to set itself up. It gives the container no extra powers. DorkOS still runs as the regular `node` user, and the sandbox still keeps each command out of folders it isn't allowed to change, like your DorkOS data. What changed, and where the rest of the file comes from, is in the [profile's README](https://github.com/dork-labs/dorkos/tree/main/docker/seccomp).
+
+<Callout type="warn">
+  Some Linux computers block this kind of sandbox for every program, containers included. On those
+  computers Codex can't run in Docker, even with the profile, and DorkOS doesn't support that setup.
+  Don't loosen the computer's own security settings or switch seccomp off to make it work. Run Codex
+  on a computer that allows it instead.
 </Callout>
 
 ## Health Check

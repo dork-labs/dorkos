@@ -160,3 +160,10 @@ scripts/fixtures/security-path-variants.json
 # (DOR-4061). Its MANIFEST.sha256 lists a SHA-256 per file and a test checks it,
 # so a reformat would break the pin on files nobody edited.
 packages/operating-skills/src/skills/app-builder-pack/
+
+# Docker's default seccomp profile at one pinned moby/profiles commit, and the
+# DorkOS Codex profile built from it by adding one rule (DOR-3800). The upstream
+# copy is checked by sha256 in scripts/__tests__/codex-seccomp-profile.test.ts,
+# and keeping both in upstream's tab layout is what lets a plain `diff` of the
+# two show the added rule and nothing else.
+docker/seccomp/*.json
