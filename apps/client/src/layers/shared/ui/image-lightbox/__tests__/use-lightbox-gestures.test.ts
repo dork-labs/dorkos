@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The viewer's finger gestures, fed pointer events by hand: jsdom has no
  * touch screen, and what matters is which way a drag is read and what it asks.

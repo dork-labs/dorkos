@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The app window's `fetch` and "Confirm it's you" for one action (DOR-3234): a
  * held action waits on the sheet, a confirmed one answers with the action's
