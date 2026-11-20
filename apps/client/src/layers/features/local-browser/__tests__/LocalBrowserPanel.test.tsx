@@ -126,6 +126,31 @@ afterEach(() => {
 });
 
 describe('owner watch stream panel wiring', () => {
+  it('shows the address prompt for an empty streamed page, then subscribes after navigation', async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+    transport.getLocalBrowserCapabilities.mockResolvedValue({ ...capabilities, watchStream: true });
+    const empty = {
+      ...connected,
+      tabs: [{ id: 'one', title: '', url: 'about:blank' }],
+    };
+    transport.getLocalBrowserState.mockResolvedValue(empty);
+    transport.navigateLocalBrowser.mockImplementation(async () => {
+      transport.getLocalBrowserState.mockResolvedValue(connected);
+      return connected;
+    });
+    const view = mount();
+    await screen.findByText('Type an address or a search above.');
+    expect(screen.queryByText('Connecting to the browser…')).not.toBeInTheDocument();
+    expect(transport.subscribeBrowserViewer).not.toHaveBeenCalled();
+    await typeAddress('https://example.com');
+    await waitFor(() =>
+      expect(transport.navigateLocalBrowser).toHaveBeenCalledWith('https://example.com')
+    );
+    await waitFor(() => expect(transport.subscribeBrowserViewer).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText('Type an address or a search above.')).not.toBeInTheDocument();
+    view.unmount();
+  });
+
   it('uses the stream for an agent window only when the server enables it', async () => {
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
     transport.getLocalBrowserCapabilities.mockResolvedValue({ ...capabilities, watchStream: true });

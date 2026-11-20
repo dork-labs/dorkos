@@ -3,12 +3,91 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 import { assertOwnedBrowserProofHome } from './local-browser-installed-proof';
-import { ensureTestOwner, actAsPersonInPage } from '../fixtures/person-step-up';
+import { PERSON_PROOF_STORAGE_KEY, PERSON_SESSION_PATH } from '@dorkos/shared/person-session';
+import type { TestOwner } from '../fixtures/person-step-up';
 import { LocalBrowserPage } from './LocalBrowserPage';
 
 const exec = promisify(execFile);
+
+/** Register and step up through the app page, as the browser does during sign-in. */
+export async function signInBrowserViewerOwner(page: Page, baseURL: string, owner: TestOwner) {
+  await page.evaluate(
+    async ({ origin, owner, sessionPath, storageKey }) => {
+      if (window.location.origin !== origin) throw Error('Sign in from the owned app origin');
+      const registered = await fetch(`${origin}/api/auth/sign-up/email`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(owner),
+      });
+      if (!registered.ok)
+        throw Error(`Fresh viewer owner registration failed (${registered.status})`);
+      const session = await fetch(`${origin}${sessionPath}`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: owner.password }),
+      });
+      if (!session.ok) throw Error(`Viewer owner step-up failed (${session.status})`);
+      const body: unknown = await session.json();
+      if (
+        !body ||
+        typeof body !== 'object' ||
+        !('ok' in body) ||
+        body.ok !== true ||
+        !('proof' in body) ||
+        typeof body.proof !== 'string' ||
+        !body.proof.length
+      )
+        throw Error('Viewer owner step-up returned no proof');
+      window.localStorage.setItem(storageKey, body.proof);
+    },
+    {
+      origin: new URL(baseURL).origin,
+      owner,
+      sessionPath: PERSON_SESSION_PATH,
+      storageKey: PERSON_PROOF_STORAGE_KEY,
+    }
+  );
+}
+
+/** Observe cookie persistence without a get-session poller that could refresh the session. */
+export async function assertBrowserViewerSessionSurvivesReload(page: Page, baseURL: string) {
+  const before = (await page.context().cookies(baseURL)).filter((cookie) =>
+    cookie.name.endsWith('.session_token')
+  );
+  expect(before.length === 1, 'Browser sign-in must leave exactly one session cookie').toBe(true);
+  const secureSessionCookie = before.every(
+    (cookie) => cookie.secure && cookie.name.startsWith('__Secure-')
+  );
+  expect(
+    secureSessionCookie,
+    'Installed production fixture must use its secure session cookie'
+  ).toBe(true);
+  await page.reload();
+  const after = (await page.context().cookies(baseURL)).filter((cookie) =>
+    cookie.name.endsWith('.session_token')
+  );
+  const sessionCookieSurvivedReload =
+    after.length === 1 &&
+    after[0]!.name === before[0]!.name &&
+    after[0]!.value === before[0]!.value &&
+    after[0]!.secure;
+  expect(
+    sessionCookieSurvivedReload,
+    'Browser-set session cookie must survive top-level reload'
+  ).toBe(true);
+  return { secureSessionCookie, sessionCookieSurvivedReload };
+}
+
+/** Wait for the visible canvas to be hidden or removed after sign-out. */
+export async function assertViewerCanvasHidden(canvas: Locator) {
+  // The role locator excludes hidden canvases; count also works when the node was removed.
+  await expect.poll(() => canvas.count()).toBe(0);
+}
+
 type CensusRunner = (command: string, args: string[]) => Promise<{ stdout: string }>;
 const runCensus: CensusRunner = async (command, args) => {
   try {
@@ -90,10 +169,8 @@ export async function proveOwnedBrowserViewer(page: Page, baseURL: string, dataD
     password: `fixture-${randomUUID()}`,
     name: 'Viewer fixture owner',
   };
-  const registered = await ensureTestOwner(page.request, baseURL, owner);
-  expect(registered.ok(), 'Viewer proof requires a fresh isolated owner').toBe(true);
-  await actAsPersonInPage(page, baseURL, owner.password);
-  await page.reload();
+  await signInBrowserViewerOwner(page, baseURL, owner);
+  const session = await assertBrowserViewerSessionSurvivesReload(page, baseURL);
   await ui.open();
 
   // Only made-up content is displayed, and it exists in memory rather than a saved page fixture.
@@ -140,8 +217,7 @@ export async function proveOwnedBrowserViewer(page: Page, baseURL: string, dataD
       headers: { origin: baseURL },
     });
     expect(signedOut.ok()).toBe(true);
-    await expect(canvas).toBeHidden();
-    await expect.poll(() => canvas.evaluate((node) => (node as HTMLCanvasElement).width)).toBe(0);
+    await assertViewerCanvasHidden(canvas);
     const storageHasContent = await page.evaluate(
       (planted) =>
         [localStorage, sessionStorage].some((storage) =>
@@ -160,6 +236,7 @@ export async function proveOwnedBrowserViewer(page: Page, baseURL: string, dataD
       jpegPainted: true,
       clearedAfterSignOut: true,
       noContentInWebStorage: true,
+      ...session,
       before,
       watching,
       signedOutCensus,

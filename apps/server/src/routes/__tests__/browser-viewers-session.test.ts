@@ -30,6 +30,9 @@ import type {
   ViewerPage,
 } from '../../services/session/browser-viewers/viewer-contract.js';
 import { browserViewerBodyRule, createBrowserViewerRoutes } from '../browser-viewers.js';
+import { createPersonSessionRoutes } from '../person-session.js';
+import { createLocalBrowserRoutes } from '../local-browser.js';
+import type { LocalBrowserService } from '../../services/session/local-browser/service.js';
 
 const target = swappableServer();
 const origin = `http://localhost:${env.DORKOS_PORT}`;
@@ -94,14 +97,15 @@ beforeEach(async () => {
     },
   });
   const auth = initAuth(db, directory);
-  const page: ViewerPage = {
+  let navigation = new AbortController();
+  let page: ViewerPage = {
     identity: {
       chatId: 'fixture-chat',
       profileId: 'fixture-profile',
       connectionId: 'fixture-connection',
       tabId: 'fixture-tab',
     },
-    signal: new AbortController().signal,
+    signal: navigation.signal,
     assertLive: () => undefined,
     assertCurrent: async () => {
       const ready = admitted;
@@ -119,6 +123,20 @@ beforeEach(async () => {
     bodyRules: [browserViewerBodyRule],
     beforeBodyParsing: (early) => mountBetterAuth(early, { auth, maxAttempts: 1000 }),
   });
+  app.route('/api/person-session', createPersonSessionRoutes());
+  app.route(
+    '/api/local-browser',
+    createLocalBrowserRoutes({
+      handover: {
+        navigate: async () => {
+          navigation.abort();
+          navigation = new AbortController();
+          page = { ...page, signal: navigation.signal };
+          return { ok: true };
+        },
+      },
+    } as unknown as LocalBrowserService)
+  );
   // The real session/proof gate runs first; only the router's transport facts change.
   app.use('/api/browser-viewers/*', async (c, next) => {
     if (tunnelFacts) {
@@ -164,6 +182,50 @@ afterEach(async () => {
 });
 
 describe('viewer sessions on the real HTTP chain', () => {
+  it('keeps the stepped-up owner after navigation, reconnect and an idle frame', async () => {
+    const steppedUp = await request(target.server)
+      .post('/api/person-session')
+      .set('Host', `localhost:${env.DORKOS_PORT}`)
+      .set('Origin', origin)
+      .set('Cookie', cookie)
+      .send({ password: 'made-up-owner-password-123' });
+    expect(steppedUp.status).toBe(200);
+    cookie = (steppedUp.headers['set-cookie'] as unknown as string[])
+      .map((value) => value.split(';')[0])
+      .join('; ');
+    proof = steppedUp.body.proof;
+    const first = await subscribe();
+    const ready = new Promise<void>((resolve) => {
+      admitted = resolve;
+    });
+    const pending = asOwner(
+      request(target.server).post(`/api/browser-viewers/${first.viewerId}/frame`)
+    )
+      .send({ nonce: first.nonce })
+      .then((response) => response);
+    await ready;
+    const navigated = await asOwner(
+      request(target.server).post('/api/local-browser/navigate')
+    ).send({ url: 'https://example.test/' });
+    expect(navigated.status).toBe(200);
+    expect((await pending).status).toBe(409);
+    const next = await subscribe();
+    frame();
+    const delivered = await asOwner(
+      request(target.server).post(`/api/browser-viewers/${next.viewerId}/frame`)
+    ).send({ nonce: next.nonce });
+    expect(delivered.status).toBe(200);
+    const idle = await asOwner(
+      request(target.server).post(`/api/browser-viewers/${next.viewerId}/frame`)
+    ).send({ nonce: next.nonce, receipt: delivered.headers['x-frame-receipt'] });
+    expect(idle.status).toBe(204);
+    publish({ sequence: 2, generation: 1, width: 640, height: 480, bytes: Buffer.from(marker) });
+    const resumed = await asOwner(
+      request(target.server).post(`/api/browser-viewers/${next.viewerId}/frame`)
+    ).send({ nonce: next.nonce });
+    expect(resumed.status).toBe(200);
+  });
+
   it('keeps local viewing local for an owner over an encrypted tunnel', async () => {
     tunnelFacts = true;
     const response = await asOwner(request(target.server).post('/api/browser-viewers')).send({

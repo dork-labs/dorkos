@@ -339,12 +339,18 @@ export function LocalBrowserView({
           )}
         </BrowserPageArea>
       ) : streamChatId ? (
-        <BrowserViewer
-          chatId={streamChatId}
-          connectionId={connectionId}
-          tabId={tab?.id ?? null}
-          visible={pageVisible}
-        />
+        tab?.url === EMPTY_PAGE ? (
+          <PageAreaBlock>
+            <p className="text-muted-foreground text-center text-sm">{EMPTY_PAGE_LINE}</p>
+          </PageAreaBlock>
+        ) : (
+          <BrowserViewer
+            chatId={streamChatId}
+            connectionId={connectionId}
+            tabId={tab?.id ?? null}
+            visible={pageVisible}
+          />
+        )
       ) : (
         <PageAreaBlock>
           <p className="text-muted-foreground text-center text-sm">
