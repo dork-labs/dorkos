@@ -60,7 +60,7 @@ export function TaskAutonomyField({
     );
   }
   return (
-    <fieldset disabled={disabled} className="min-w-0 space-y-2" data-testid="task-autonomy-field">
+    <fieldset disabled={disabled} className="min-w-0 space-y-2">
       <legend className="mb-1.5 text-sm font-medium">Permissions</legend>
       <TrustDial
         mode={mode}

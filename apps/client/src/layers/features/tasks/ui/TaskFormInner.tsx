@@ -28,7 +28,7 @@ import { TaskAgentField, type TaskAgentRoster } from './TaskAgentField';
 import { TaskAutonomyConfirm } from './autonomy/TaskAutonomyConfirm';
 import { TaskAutonomyField } from './autonomy/TaskAutonomyField';
 import { TaskExecutionFields } from './TaskExecutionFields';
-import { useAgentRuntime, useTaskExecution } from './use-task-execution';
+import { useAgentRuntimeState, useTaskExecution } from './use-task-execution';
 import {
   DEFAULT_MAX_RUNTIME,
   MAX_NAME_LENGTH,
@@ -92,7 +92,6 @@ export interface ScheduleFormProps {
   onSubmitSuccess: () => void;
   onCancel: () => void;
   onDeleteClick: () => void;
-  isPending: boolean;
   /**
    * Make the person their own copy of a schedule that came with an installed
    * package: called with the form's current values (DOR-2272). Omitted, no copy
@@ -113,7 +112,6 @@ export function ScheduleForm({
   onSubmitSuccess,
   onCancel,
   onDeleteClick,
-  isPending,
   onMakeCopy,
   leading,
   defaultTimezone,
@@ -169,6 +167,9 @@ export function ScheduleForm({
   const form = useAppForm({
     defaultValues,
     onSubmit: ({ value }) => {
+      // The disabled button is the first lock; this is the second, for an
+      // Enter key in a field while a save is in flight.
+      if (isSaving || !canJudgeSave) return;
       const descriptor = autonomyToConfirm({
         value,
         opening: editTask ? defaultValues : undefined,
@@ -207,7 +208,10 @@ export function ScheduleForm({
   ].filter(Boolean).length;
 
   // The selected agent's own runtime, off the manifest that owns it (ADR-0043).
-  const agentRuntime = useAgentRuntime(roster.agents, agentId);
+  const { runtime: agentRuntime, known: agentManifestKnown } = useAgentRuntimeState(
+    roster.agents,
+    agentId
+  );
 
   const execution = useTaskExecution({
     runtime: runtimeOverride,
@@ -221,7 +225,7 @@ export function ScheduleForm({
   // Pinned to `claude-code` this used to caption a Codex run with Claude Code's
   // promises, which is the defect the retired `TASK_RUNTIME` constant named in
   // its own comment.
-  const { data: capabilityMap } = useRuntimeCapabilities();
+  const { data: capabilityMap, isPending: capabilitiesPending } = useRuntimeCapabilities();
   // Every `?.` down to the LAST link, which is not stylistic. A task's `runtime`
   // is any non-empty string (`UpdateTaskRequestSchema`), so it can be
   // `constructor` or `toString` — and `capabilities['constructor']` answers with
@@ -232,6 +236,27 @@ export function ScheduleForm({
     (execution.effectiveRuntime
       ? capabilityMap?.capabilities[execution.effectiveRuntime]?.permissionModes?.values
       : undefined) ?? [];
+
+  // Whether the modes a save is judged against are an answer yet (DOR-3841).
+  // Until the runtime list and the agent's own runtime are read, Codex's Act
+  // and Claude Code's look alike, and a save could skip the confirm one of
+  // them needs, so Save waits. A failed read counts as answered, so a broken
+  // lookup never holds the form shut; the confirm then reads the mode's id.
+  // An edit that keeps its mode and runtime never asks (`autonomyToConfirm`),
+  // so only a save that could ask waits.
+  const permissionMode = useStore(form.store, (s) => s.values.permissionMode);
+  const saveCouldAsk =
+    !editTask ||
+    permissionMode !== defaultValues.permissionMode ||
+    runtimeOverride !== defaultValues.runtime;
+  const canJudgeSave =
+    !saveCouldAsk ||
+    (!capabilitiesPending &&
+      (runtimeOverride !== '' ||
+        !agentId ||
+        ((roster.answered || roster.unreadable) && agentManifestKnown)));
+  // This form's own two mutations: the ones a save goes through.
+  const isSaving = createTask.isPending || updateTask.isPending;
 
   return (
     <form.AppForm>
@@ -514,9 +539,9 @@ export function ScheduleForm({
               type="submit"
               size="sm"
               form="schedule-form"
-              disabled={!isFormValid || isPending}
+              disabled={!isFormValid || isSaving || !canJudgeSave}
             >
-              {isPending ? 'Saving…' : editTask ? 'Save' : 'Create task'}
+              {isSaving ? 'Saving…' : editTask ? 'Save' : 'Create task'}
             </Button>
           )}
         </form.Subscribe>

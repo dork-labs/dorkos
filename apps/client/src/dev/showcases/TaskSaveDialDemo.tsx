@@ -7,9 +7,8 @@
 import { useState } from 'react';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import type { PermissionMode } from '@dorkos/shared/types';
-import { TaskAutonomyConfirm, TaskAutonomyField } from '@/layers/features/tasks';
+import { autonomyToConfirm, TaskAutonomyConfirm, TaskAutonomyField } from '@/layers/features/tasks';
 import { Button } from '@/layers/shared/ui';
-import { actsWithoutAsking } from '@/layers/shared/lib';
 
 /**
  * The real field and the real confirm: a stop that acts without asking takes
@@ -27,8 +26,12 @@ export function TaskSaveDial({ descriptors }: { descriptors: PermissionModeDescr
       <Button
         size="sm"
         onClick={() => {
-          const descriptor = descriptors.find((d) => d.id === mode);
-          if (descriptor && actsWithoutAsking(descriptor)) setPending(descriptor);
+          // The form's own rule, so the demo cannot drift from it.
+          const descriptor = autonomyToConfirm({
+            value: { permissionMode: mode, runtime: '' },
+            descriptors,
+          });
+          if (descriptor) setPending(descriptor);
           else setSaved(mode);
         }}
       >

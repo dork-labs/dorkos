@@ -11,6 +11,7 @@ import type { TaskTemplate } from '@dorkos/shared/types';
 import { createMockTransport, createMockSchedule } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { queryClient as appQueryClient } from '@/layers/shared/lib/query-client';
+import { configKeys } from '@/layers/entities/config';
 import { toast } from 'sonner';
 import { CreateTaskDialog } from '../ui/CreateTaskDialog';
 
@@ -83,13 +84,14 @@ vi.mock('cronstrue', () => ({
   },
 }));
 
-function createWrapper(transport: Transport) {
+function createWrapper(transport: Transport, seed?: (client: QueryClient) => void) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false, gcTime: 0 },
       mutations: { retry: false },
     },
   });
+  seed?.(queryClient);
   return ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>{children}</TransportProvider>
@@ -254,6 +256,8 @@ describe('CreateTaskDialog', () => {
       target: { value: '0 0 * * *' },
     });
 
+    // Create waits until the runtime's modes are read (DOR-3841).
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Create task' })).toBeEnabled());
     fireEvent.click(screen.getByText('Create task'));
 
     await waitFor(() => {
@@ -596,6 +600,9 @@ describe('CreateTaskDialog', () => {
         target: { value: 'I sweep my way.' },
       });
       expect(transport.createTask).not.toHaveBeenCalled();
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Create task' })).toBeEnabled()
+      );
       fireEvent.click(screen.getByText('Create task'));
 
       await waitFor(() =>
@@ -610,6 +617,37 @@ describe('CreateTaskDialog', () => {
       );
       await waitFor(() =>
         expect(transport.updateTask).toHaveBeenCalledWith('sched-pkg', { enabled: false })
+      );
+    });
+
+    it('asks once before creating a copy of a package’s schedule at Full (DOR-3841)', async () => {
+      // A copy is a NEW schedule, so its Full mode is a new choice even though
+      // the person never touched the dial.
+      const transport = transportWith({
+        updateTask: vi.fn().mockResolvedValue(packaged('record')),
+        createTask: vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-mine' })),
+      });
+      await open(transport, { ...packaged('record'), permissionMode: 'bypassPermissions' });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Make a copy' }));
+      expect(await screen.findByText('New schedule')).toBeTruthy();
+      await waitFor(() =>
+        expect(screen.getByRole('radio', { name: 'Full autonomy' })).toBeChecked()
+      );
+      const create = await screen.findByRole('button', { name: 'Create task' });
+      await waitFor(() => expect(create).toBeEnabled());
+      fireEvent.click(create);
+
+      const confirm = await screen.findByRole('alertdialog');
+      expect(transport.createTask).not.toHaveBeenCalled();
+      fireEvent.click(within(confirm).getByRole('button', { name: 'Turn on Full autonomy' }));
+      await waitFor(() =>
+        expect(transport.createTask).toHaveBeenCalledWith(
+          expect.objectContaining({
+            name: 'nightly-sweep-copy',
+            permissionMode: 'bypassPermissions',
+          })
+        )
       );
     });
 
@@ -1028,7 +1066,6 @@ describe('CreateTaskDialog', () => {
         </Wrapper>
       );
       fireEvent.click(screen.getByText('Start from scratch'));
-      await openAdvanced();
 
       const dial = await screen.findByRole('radiogroup', { name: /how much/i });
       expect(
@@ -1049,7 +1086,6 @@ describe('CreateTaskDialog', () => {
         </Wrapper>
       );
       fireEvent.click(screen.getByText('Start from scratch'));
-      await openAdvanced();
 
       // `acceptEdits` still asks before commands, and nobody is there to answer.
       // The runtime turns the ask down AT ONCE and the turn CARRIES ON. It does
@@ -1080,7 +1116,6 @@ describe('CreateTaskDialog', () => {
           <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={asking} />
         </Wrapper>
       );
-      await openAdvanced();
       expect(await screen.findByTestId('task-unattended-warning')).toBeInTheDocument();
       unmount();
 
@@ -1090,7 +1125,6 @@ describe('CreateTaskDialog', () => {
           <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={quiet} />
         </Wrapper>
       );
-      await openAdvanced();
       await waitFor(() =>
         expect(screen.getByRole('radio', { name: 'Full autonomy' })).toBeChecked()
       );
@@ -1202,7 +1236,6 @@ describe('CreateTaskDialog', () => {
           <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={schedule} />
         </Wrapper>
       );
-      await openAdvanced();
 
       await waitFor(() => expect(screen.getByRole('radio', { name: 'Ask first' })).toBeChecked());
       expect(screen.queryByRole('radio', { name: /plan/i })).toBeNull();
@@ -1227,7 +1260,6 @@ describe('CreateTaskDialog', () => {
           <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={schedule} />
         </Wrapper>
       );
-      await openAdvanced();
 
       const note = await screen.findByTestId('trust-dial-unavailable');
       expect(note).toHaveTextContent(/Bypass permissions/);
@@ -1287,7 +1319,6 @@ describe('CreateTaskDialog', () => {
           <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={schedule} />
         </Wrapper>
       );
-      await openAdvanced();
 
       await screen.findByRole('radiogroup', { name: /how much/i });
       fireEvent.click(screen.getByRole('radio', { name: 'Act' }));
@@ -1435,6 +1466,102 @@ describe('CreateTaskDialog', () => {
       );
     });
 
+    it('asks for a new schedule that opens at Full from the owner’s default, untouched', async () => {
+      // Trusted by default: the owner's stop is Full, so a new schedule opens
+      // there with nobody touching the dial. Saving it is still a choice.
+      const transport = createMockTransport({
+        createTask: vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-new' })),
+      });
+      const [capabilities, config] = await Promise.all([
+        transport.getCapabilities(),
+        transport.getConfig(),
+      ]);
+      const Wrapper = createWrapper(transport, (client) => {
+        client.setQueryData(['capabilities'], capabilities);
+        client.setQueryData(configKeys.current(), {
+          ...config,
+          executionDefaults: { trustStop: 'autonomy', perRuntime: [] },
+        });
+      });
+
+      render(
+        <Wrapper>
+          <CreateTaskDialog open={true} onOpenChange={vi.fn()} />
+        </Wrapper>
+      );
+      fireEvent.click(screen.getByText('Start from scratch'));
+      fillRequired();
+      await waitFor(() =>
+        expect(screen.getByRole('radio', { name: 'Full autonomy' })).toBeChecked()
+      );
+
+      fireEvent.click(screen.getByText('Create task'));
+      await screen.findByRole('alertdialog');
+      expect(transport.createTask).not.toHaveBeenCalled();
+    });
+
+    it('creates once when Create is pressed again while saving', async () => {
+      // The button used to read a pending flag from mutations the form never
+      // used, so it stayed live while the real save was in flight.
+      const transport = createMockTransport({
+        createTask: vi.fn().mockReturnValue(new Promise(() => {})),
+      });
+      const Wrapper = createWrapper(transport);
+
+      render(
+        <Wrapper>
+          <CreateTaskDialog open={true} onOpenChange={vi.fn()} />
+        </Wrapper>
+      );
+      fireEvent.click(screen.getByText('Start from scratch'));
+      fillRequired();
+      await screen.findByRole('radiogroup', { name: /how much/i });
+      fireEvent.click(screen.getByRole('radio', { name: 'Ask first' }));
+
+      fireEvent.click(screen.getByRole('button', { name: 'Create task' }));
+      const saving = await screen.findByRole('button', { name: 'Saving…' });
+      expect(saving).toBeDisabled();
+      fireEvent.click(saving);
+      fireEvent.submit(document.getElementById('schedule-form')!);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(transport.createTask).toHaveBeenCalledTimes(1);
+    });
+
+    it('holds Create until the modes are known, then asks for a never-asking Act', async () => {
+      // Before the runtime list answers, Codex's Act (never asks) and Claude
+      // Code's (asks) look alike, so a save then would skip the confirm.
+      let answer: (value: unknown) => void = () => {};
+      const transport = createMockTransport({
+        getCapabilities: vi.fn().mockReturnValue(
+          new Promise((resolve) => {
+            answer = resolve;
+          })
+        ),
+        createTask: vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-new' })),
+      });
+      const codex = (await createMockTransport().getCapabilities()).capabilities.codex!;
+      const Wrapper = createWrapper(transport);
+
+      render(
+        <Wrapper>
+          <CreateTaskDialog open={true} onOpenChange={vi.fn()} />
+        </Wrapper>
+      );
+      fireEvent.click(screen.getByText('Start from scratch'));
+      fillRequired();
+      const create = screen.getByRole('button', { name: 'Create task' });
+      expect(create).toBeDisabled();
+      fireEvent.click(create);
+      expect(transport.createTask).not.toHaveBeenCalled();
+
+      answer({ defaultRuntime: 'codex', capabilities: { codex } });
+      await waitFor(() => expect(create).toBeEnabled());
+      fireEvent.click(create);
+      const confirm = await screen.findByRole('alertdialog');
+      expect(within(confirm).getByTestId('consent-asks-note')).toBeInTheDocument();
+      expect(transport.createTask).not.toHaveBeenCalled();
+    });
+
     it('does not ask again when a Full schedule is saved still at Full', async () => {
       const schedule = createMockSchedule({
         id: 'sched-full',
@@ -1483,7 +1610,6 @@ describe('CreateTaskDialog', () => {
           <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={schedule} />
         </Wrapper>
       );
-      await openAdvanced();
 
       const note = await screen.findByTestId('trust-dial-stranded');
       // The runtime's own word ("Plan"), not the id table's ("Plan Mode").
@@ -1510,7 +1636,6 @@ describe('CreateTaskDialog', () => {
           <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={schedule} />
         </Wrapper>
       );
-      await openAdvanced();
 
       await waitFor(() => {
         expect(screen.getByDisplayValue('Old Name')).toBeTruthy();
@@ -1547,7 +1672,6 @@ describe('CreateTaskDialog', () => {
           <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={schedule} />
         </Wrapper>
       );
-      await openAdvanced();
 
       await waitFor(() => {
         expect(screen.getByDisplayValue('Old Name')).toBeTruthy();
@@ -1579,7 +1703,6 @@ describe('CreateTaskDialog', () => {
           <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={schedule} />
         </Wrapper>
       );
-      await openAdvanced();
 
       expect(await screen.findByTestId('trust-dial-stranded')).toHaveTextContent(/Auto/);
     });
@@ -1594,7 +1717,6 @@ describe('CreateTaskDialog', () => {
           <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={schedule} />
         </Wrapper>
       );
-      await openAdvanced();
 
       await waitFor(() => {
         expect(screen.getByRole('radio', { name: 'Act' })).toBeChecked();
