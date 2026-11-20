@@ -23,6 +23,15 @@ import type { PreopenStep } from './preopen.ts';
  */
 export type ProofLevel = 'full' | 'preopen';
 
+/**
+ * How many turbo runs each gate makes, every one with `--summarize`: `verify:checks`
+ * has the typecheck-and-lint step and the test step, and preopen has only the first
+ * (`verify:preopen:turbo`). A proof records the number its completion check judged,
+ * and a check accepts only this one. scripts/__tests__/verify-proof.test.ts holds
+ * these to package.json.
+ */
+export const TURBO_RUNS: Readonly<Record<ProofLevel, number>> = { full: 2, preopen: 1 };
+
 /** The proof file for a commit at a level; the two never share a path. */
 const proofFile = (dir: string, sha: string, level: ProofLevel): string =>
   path.join(dir, level === 'full' ? sha : `${sha}.preopen`);
@@ -78,6 +87,12 @@ export interface VerificationOptions {
    * An exit code of 0 alone is not proof (DOR-4616).
    */
   unfinished?: () => string | undefined;
+  /**
+   * How many turbo run summaries `unfinished` judged, recorded in the proof beside
+   * `finished: true`; a check accepts only {@link TURBO_RUNS} for the level. 0 when
+   * nothing judged any, which no check accepts.
+   */
+  turboRuns?: number;
 }
 
 /**
@@ -93,7 +108,7 @@ export async function runVerification(
   cwd: string,
   verify: (excluded: readonly string[]) => number | Promise<number>,
   excluded: readonly string[] = [],
-  { level = 'full', unfinished = () => undefined }: VerificationOptions = {}
+  { level = 'full', unfinished = () => undefined, turboRuns = 0 }: VerificationOptions = {}
 ): Promise<number> {
   const before = commit(cwd, 'HEAD');
   const dir = proofDir(cwd);
@@ -120,7 +135,14 @@ export async function runVerification(
   try {
     writeFileSync(
       temporary,
-      JSON.stringify({ ...before, level, excluded, passedAt: new Date().toISOString() }) + '\n'
+      JSON.stringify({
+        ...before,
+        level,
+        excluded,
+        finished: true,
+        turboRuns,
+        passedAt: new Date().toISOString(),
+      }) + '\n'
     );
     renameSync(temporary, destination);
   } finally {
@@ -131,24 +153,29 @@ export async function runVerification(
 
 /**
  * Whether a parsed proof file is a pass for this commit at exactly this level.
- * A proof with no `level` predates DOR-4728, when every proof was a full one.
+ *
+ * It must say the run finished (DOR-4616): `finished: true`, and the number of turbo
+ * run summaries its completion check judged. A proof recorded before that carries
+ * neither, and neither does one from a branch cut before the fix, which runs its own
+ * older copy of this file. Both are refused, even where they were real passes. That
+ * ends the earlier rule that older proofs stay valid, and on purpose: a run that a
+ * signal stopped wrote exactly the same file, so an unmarked proof cannot be told
+ * from a false one, and running `pnpm verify` again costs far less than arming a head
+ * whose checks never finished.
  */
 function isPass(proof: unknown, sha: string, tree: string, level: ProofLevel): boolean {
   if (typeof proof !== 'object' || proof === null) return false;
   const record = proof as Record<string, unknown>;
   return (
-    (level === 'full'
-      ? record.level === undefined || record.level === 'full'
-      : record.level === 'preopen') &&
+    record.level === level &&
     record.sha === sha &&
     record.tree === tree &&
     typeof record.passedAt === 'string' &&
     Number.isFinite(Date.parse(record.passedAt)) &&
-    // Proofs recorded before DOR-4501 carry no list; they excluded nothing, so they
-    // covered at least as much as a new one and stay valid.
-    (record.excluded === undefined ||
-      (Array.isArray(record.excluded) &&
-        record.excluded.every((glob: unknown) => typeof glob === 'string')))
+    Array.isArray(record.excluded) &&
+    record.excluded.every((glob: unknown) => typeof glob === 'string') &&
+    record.finished === true &&
+    record.turboRuns === TURBO_RUNS[level]
   );
 }
 
@@ -304,16 +331,9 @@ function stoppableRunner(): StoppableRunner {
 }
 
 /**
- * How many turbo runs each gate makes, every one with `--summarize`: `verify:checks`
- * has the typecheck-and-lint step and the test step, and preopen has only the first
- * (`verify:preopen:turbo`). scripts/__tests__/verify-proof.test.ts holds these to
- * package.json.
- */
-const TURBO_RUNS: Record<ProofLevel, number> = { full: 2, preopen: 1 };
-
-/**
  * Run one gate to its proof, refusing a run that a signal stopped or whose turbo steps
- * did not finish every task.
+ * did not finish every task. Every way out clears the turbo summaries the run wrote
+ * but the newest unfinished one, and every refusal is recorded (refusals.ts).
  */
 async function runGate(
   level: ProofLevel,
@@ -321,20 +341,43 @@ async function runGate(
   excluded: readonly string[] = []
 ): Promise<number> {
   const cwd = process.cwd();
-  const { watchTurboRuns } = await import('./turbo-runs.ts');
+  const [{ watchTurboRuns }, { recordRefusal }] = await Promise.all([
+    import('./turbo-runs.ts'),
+    import('./refusals.ts'),
+  ]);
+  const { sha } = commit(cwd, 'HEAD');
+  const dir = proofDir(cwd);
   const turbo = watchTurboRuns(git(cwd, 'rev-parse', '--show-toplevel'), TURBO_RUNS[level]);
   const runner = stoppableRunner();
-  const status = await runVerification(cwd, (globs) => verify(runner, globs), excluded, {
-    level,
-    unfinished: () => {
-      const signal = runner.stoppedBy();
-      return signal ? `stopped by ${signal}` : turbo.unfinished();
-    },
-  });
+  let unfinishedBecause: string | undefined;
+  let status: number;
+  try {
+    status = await runVerification(cwd, (globs) => verify(runner, globs), excluded, {
+      level,
+      turboRuns: TURBO_RUNS[level],
+      unfinished: () => {
+        const signal = runner.stoppedBy();
+        unfinishedBecause = signal ? undefined : turbo.unfinished();
+        return signal ? `stopped by ${signal}` : unfinishedBecause;
+      },
+    });
+  } finally {
+    const kept = turbo.tidy();
+    if (kept) console.error(`turbo's unfinished run summary is kept at ${kept}`);
+  }
   const signal = runner.stoppedBy();
-  if (!signal) return status;
-  console.error(`${gateName(level)} was stopped by ${signal}; no proof recorded`);
-  return signalStatus(signal);
+  if (signal) {
+    // A signal that lands after the proof is written still means the run was stopped.
+    rmSync(proofFile(dir, sha, level), { force: true });
+    const why = `${gateName(level)} was stopped by ${signal}; no proof recorded`;
+    console.error(why);
+    recordRefusal(dir, { sha, level, kind: 'stopped', why, status: signalStatus(signal) });
+    return signalStatus(signal);
+  }
+  if (unfinishedBecause !== undefined) {
+    recordRefusal(dir, { sha, level, kind: 'unfinished', why: unfinishedBecause });
+  }
+  return status;
 }
 
 if (isMain()) {
