@@ -2868,7 +2868,8 @@ export type PermissionDeniedEvent = z.infer<typeof PermissionDeniedEventSchema>;
 
 /**
  * Emitted when a turn ran on another model than the one its session names,
- * because who pays for it does not serve that model (DOR-2636): a session on
+ * because the account cannot use it (DOR-3168), or who pays does not serve it
+ * (DOR-2636): a session on
  * DorkOS credits naming a model credits do not cover runs on the service's
  * suggestion instead. Never a silent switch, so it is recorded durably and
  * rendered as a lasting notice in the conversation, on every surface that ran
@@ -2884,8 +2885,8 @@ export const ModelSubstitutedEventSchema = z
     to: z.string(),
     /** That model's display name, as the service names it. */
     toName: z.string(),
-    /** Why: the credits list does not cover the named model. */
-    reason: z.enum(['credits-not-covered']),
+    /** Why: credits do not cover the model, or the signed-in account cannot use it. */
+    reason: z.enum(['credits-not-covered', 'account-not-available']),
   })
   .openapi('ModelSubstitutedEvent');
 
@@ -6748,6 +6749,25 @@ export const UpdateTaskRequestSchema = z
   .openapi('UpdateTaskRequest');
 
 export type UpdateTaskRequest = z.infer<typeof UpdateTaskRequestSchema>;
+
+/**
+ * What "Try it once now" may send to `POST /api/tasks/:id/trigger` (DOR-4336): the mode the
+ * person picked on the approval card. The run uses it or the trial's cap, whichever is stricter;
+ * a pick never loosens a run. With none, the cap alone decides.
+ */
+export const TriggerTaskRequestSchema = z
+  .object({
+    permissionMode: z
+      .string()
+      .min(1)
+      .optional()
+      .describe('The mode picked on the approval card; the stricter of it and the cap runs.'),
+  })
+  .strict()
+  .openapi('TriggerTaskRequest');
+
+/** The body of a manual trigger. */
+export type TriggerTaskRequest = z.infer<typeof TriggerTaskRequestSchema>;
 
 export const ListTaskRunsQuerySchema = z
   .object({

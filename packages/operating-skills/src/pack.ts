@@ -436,8 +436,18 @@ export interface OperatingSkill {
  * - 60: `scheduling-tasks` teaches moving an agent's own live Bypass task to Don't
  *   ask with its own exact commands, in one call and with no card (DOR-4315 PR 2).
  *   An agent seeded at 59 would leave a narrowable task at Bypass, or ask a person.
+ * - 61: `building-dorkos-apps` moves to App Builder Pack 1.1.4 (DOR-4061, DOR-4756;
+ *   it replaces 1.1.3, which never shipped). The agent checks a request's source
+ *   itself for files and commands, since DorkOS marks only outside messages, web
+ *   pages, searches, connected-app reads and other servers' tools; a change to an
+ *   app's server code at Full runs without a card only when made with Claude Code's
+ *   own file tools in an unmarked turn. It never links app source into DorkOS, never
+ *   writes an app's stored data or secrets on disk, keeps private strings out of app
+ *   code, gives the reach list while approval waits, and names the app on every ⌘K
+ *   label and dialog. An agent seeded at 60 would believe DorkOS refuses a marked turn's
+ *   build, and that every server-code change at Full runs at once.
  */
-export const OPERATING_SKILLS_VERSION = 60;
+export const OPERATING_SKILLS_VERSION = 61;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

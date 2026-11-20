@@ -39,6 +39,7 @@ import {
 import { eventFanOut } from '../../../core/event-fan-out.js';
 import { recordTurnLevels } from '../../../core/turn-power/turn-levels.js';
 import { resetChosenTurns } from '../../../core/turn-power/full-autonomy.js';
+import { noteOwnersCleanSend } from '../../../core/turn-power/held-chat-mark.js';
 import { resetLiveOutsiderTurns } from '../../../core/turn-power/live-outsider-turns.js';
 import {
   linkSessionId,
@@ -323,11 +324,22 @@ describe('a connected-app read marks the turn it ran in, at Full', () => {
     expect(sent).toHaveBeenCalledTimes(1);
   });
 
-  it("ends with the chat's next real turn", async () => {
+  // DOR-4515: the chat's transcript keeps what the read handed it, so only the owner's own clean
+  // send ends the mark. A later turn nobody newly asked for re-reads it, and stays marked.
+  it("keeps through the chat's next turn that is not the owner's own clean send", async () => {
     const chat = fresh();
     await ranAtFull(chat);
     await read(chat);
     await ranAtFull(chat);
+    expect(await send(chat)).toEqual({ outcome: 'approval_required', cards: 1 });
+  });
+
+  it("ends with the owner's own clean send", async () => {
+    const chat = fresh();
+    await ranAtFull(chat);
+    await read(chat);
+    noteOwnersCleanSend('owner-read-1', chat);
+    await ranAtFull(chat, { turnStarter: 'person', messageId: 'owner-read-1' });
     expect(await send(chat)).toEqual({ outcome: 'ran', cards: 0 });
   });
 
@@ -350,12 +362,15 @@ describe('a connected-app read marks the turn it ran in, at Full', () => {
     expect(sent).not.toHaveBeenCalled();
   });
 
-  it('marks the agent for a caller that names no chat, until that chat starts a new turn', async () => {
+  it('marks the agent for a caller that names no chat, until the owner’s own clean send in that chat', async () => {
     const chat = fresh();
     await ranAtFull(chat);
     await read(chat);
     expect(await send(undefined)).toEqual({ outcome: 'approval_required', cards: 1 });
     await ranAtFull(chat);
+    expect((await send(undefined)).outcome).toBe('approval_required');
+    noteOwnersCleanSend('owner-read-2', chat);
+    await ranAtFull(chat, { turnStarter: 'person', messageId: 'owner-read-2' });
     const after = await send(undefined);
     expect(after.outcome).toBe('ran');
   });

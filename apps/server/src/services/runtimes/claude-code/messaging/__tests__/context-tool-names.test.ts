@@ -529,7 +529,9 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // no prompt block names them, so they stay deferred.
     // 152 -> 153 for `update_agent_config` (DOR-4266): no prompt block names it,
     // so it stays deferred.
-    expect(advertised.size).toBe(153);
+    // 153 -> 154 for `withdraw_approval_request` (DOR-4586): no prompt block names it,
+    // so it stays deferred.
+    expect(advertised.size).toBe(154);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',
@@ -1064,7 +1066,7 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
       'working-with-spin-off-chats',
     ]);
 
-    // `building-dorkos-apps` is App Builder Pack 1.1.2 vendored byte for byte
+    // `building-dorkos-apps` is App Builder Pack 1.1.4 vendored byte for byte
     // (DOR-4061): Security reviewed that exact text, so DorkOS may not add the
     // note to it. The note belongs in the next pack version, upstream. Only the
     // note is waived; the prefix rule below still holds for it.

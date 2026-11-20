@@ -65,9 +65,11 @@ import {
   keepRecordedAgent,
   refuseAgentChange,
   rowToSettings,
+  readSessionSettings,
   fillNullsWith,
   launchColumns,
   pickSettings,
+  captureCodexModel,
   keptPermissionMode,
   type SettingsUpdate,
 } from './runtime-seam/session-metadata-columns.js';
@@ -706,18 +708,12 @@ export class RuntimeRegistry {
    * @param sessionId - Session identifier
    */
   async getSessionSettings(sessionId: string): Promise<SessionSettings | null> {
-    const db = this.requireDb('getSessionSettings');
-    const row = db
-      .select({
-        permissionMode: sessionMetadata.permissionMode,
-        model: sessionMetadata.model,
-        effort: sessionMetadata.effort,
-        fastMode: sessionMetadata.fastMode,
-      })
-      .from(sessionMetadata)
-      .where(eq(sessionMetadata.sessionId, sessionId))
-      .get();
-    return row ? rowToSettings(row) : null;
+    return readSessionSettings(this.requireDb('getSessionSettings'), sessionId);
+  }
+
+  /** Capture the current Codex model for a conditional replacement after discovery. */
+  captureCodexModel(sessionId: string) {
+    return captureCodexModel(this.requireDb('captureCodexModel'), sessionId);
   }
 
   /**

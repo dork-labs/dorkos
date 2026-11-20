@@ -35,6 +35,7 @@ import { registerDomainOpenApi } from './openapi/domains.js';
 import { registerExtensionDecisionsOpenApi } from '../extensions/inbox/extension-decisions-openapi.js';
 import { registerExtensionRemovalOpenApi } from '../extensions/removal/extension-removal-openapi.js';
 import { registerExtensionApprovalSetOpenApi } from '../extensions/groups/extension-approval-set-openapi.js';
+import { registerExtensionMediaOpenApi } from '../extensions/http/media-openapi.js';
 import {
   PermissionModeSchema,
   SessionSchema,
@@ -72,6 +73,7 @@ import {
   CancelTaskRunResponseSchema,
   CreateTaskRequestSchema,
   UpdateTaskRequestSchema,
+  TriggerTaskRequestSchema,
   ListTaskRunsQuerySchema,
   ModelOptionSchema,
   ForkShapeRequestSchema,
@@ -2102,11 +2104,19 @@ registry.registerPath({
   summary: 'Manually trigger a schedule run',
   request: {
     params: z.object({ id: z.string() }),
+    body: {
+      content: { 'application/json': { schema: TriggerTaskRequestSchema } },
+      required: false,
+    },
   },
   responses: {
     201: {
       description: 'Run started',
       content: { 'application/json': { schema: z.object({ runId: z.string() }) } },
+    },
+    400: {
+      description: 'The body is not valid, or the picked mode is not one the task can run in',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     404: {
       description: 'Schedule not found',
@@ -8623,6 +8633,7 @@ registerCapabilitiesInOpenApi(composeCapabilityRegistryForDocs(), registry);
 registerExtensionDecisionsOpenApi(registry);
 registerExtensionRemovalOpenApi(registry);
 registerExtensionApprovalSetOpenApi(registry);
+registerExtensionMediaOpenApi(registry);
 
 documentFrontDoorStepUps(registry);
 

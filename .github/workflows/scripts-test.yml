@@ -529,6 +529,14 @@ jobs:
       - name: Heavy-run lock fixtures
         run: bash scripts/test-heavy-run-lock.sh
 
+      # Under pipefail, `… | grep -q` is a coin toss: grep exits at its first
+      # match, the writer dies of SIGPIPE, and the pipeline reads as a miss on
+      # input that matched (76 in 5,000 on a loaded runner, dorkos-cloud #463).
+      # Under `if !` that miss fails OPEN. This lint keeps the shape out of
+      # scripts, hooks and workflows. A grep over files, a few milliseconds.
+      - name: No pipe into grep -q
+        run: bash scripts/test-no-early-exit-grep.sh
+
       # sweep-ephemeral-docker.sh reclaims the containers, volumes and networks a
       # SIGKILLed run leaves behind, and it is the one gate script whose failure
       # mode is DELETING something rather than missing something. Its fixtures
@@ -673,6 +681,14 @@ jobs:
       # should make to the merge queue, as ejections. Hermetic, no pnpm.
       - name: No-code scope fixtures
         run: bash scripts/test-no-code-scope.sh
+
+      # release-branch-contents.sh is the rule for what a pull request into a
+      # release/v<X.Y.Z> branch may carry (DOR-4639): only cherry-picks of main
+      # with a matching patch-id and the release commit. A rule that quietly
+      # loosens lets a commit main never saw ship to npm. Hermetic (throwaway
+      # repos with a local origin), git and jq, no pnpm.
+      - name: Release-branch contents fixtures
+        run: bash scripts/test-release-branch-contents.sh
 
   # The TypeScript under scripts/ belongs to no pnpm workspace, so `pnpm verify`'s
   # affected-only turbo run resolves a scripts-only change to 0 affected packages

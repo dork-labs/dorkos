@@ -82,6 +82,7 @@ export const WorkQueueHoldSchema = z
     'disk',
     'load',
     'accounts',
+    'signed-out',
     'chat-cap',
     'permission',
     'agent-paused',

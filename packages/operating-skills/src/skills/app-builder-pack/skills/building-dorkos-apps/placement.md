@@ -57,8 +57,9 @@ Rules of thumb:
   unless the person asked for everywhere.
 - **The status bar is shared and scarce.** Use `when` so the item only shows when it has
   something to say. Keep `when` and `urgent` pure: read only `ctx`.
-- **Nothing may pass for DorkOS.** DorkOS draws the app's name itself on dialogs, ⌘K
-  entries and inbox cards, so don't add it to titles. Instead:
+- **Nothing may pass for DorkOS.** DorkOS draws the app's name itself only on inbox
+  cards. Until it does on dialogs and ⌘K rows too, start every ⌘K label with the app's
+  name ("Weather: refresh") and put the name in each dialog's heading. Also:
   - Pick a name that isn't reserved: nothing starting "DorkOS", and no names of DorkOS
     surfaces or of agents.
   - Keep titles and labels plain text, and never style anything like an approval card or

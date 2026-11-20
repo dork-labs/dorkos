@@ -128,6 +128,15 @@ describe('the host guard in the chain', () => {
       );
     });
 
+    // Security condition 4 (DOR-4321): a video link's ticket is a capability.
+    it('logs a video link with its ticket written as [ticket]', () => {
+      const ticket = 'A'.repeat(43);
+      refuseUntrustedHost('evil.com', 'GET', `/api/extensions/media/${ticket}`);
+      const logged = JSON.stringify(vi.mocked(logger.warn).mock.calls);
+      expect(logged).toContain('/api/extensions/media/[ticket]');
+      expect(logged).not.toContain(ticket);
+    });
+
     it('rejects a request with no Host header (HTTP/1.1 requires one)', async () => {
       // supertest always sets Host, so ask the guard's decision directly.
       expect(refuseUntrustedHost(undefined, 'GET', '/api/health')).toMatchObject({

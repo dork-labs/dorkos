@@ -8,6 +8,7 @@ import type {
   TaskRun,
   CreateTaskInput,
   UpdateTaskRequest,
+  TriggerTaskRequest,
   ListTaskRunsQuery,
   TaskTemplate,
   CancelTaskRunResponse,
@@ -55,9 +56,10 @@ export function createTasksMethods(baseUrl: string) {
       });
     },
 
-    triggerTask(id: string): Promise<{ runId: string }> {
+    triggerTask(id: string, opts?: TriggerTaskRequest): Promise<{ runId: string }> {
       return fetchJSON<{ runId: string }>(baseUrl, `/tasks/${id}/trigger`, {
         method: 'POST',
+        ...(opts?.permissionMode ? { body: JSON.stringify(opts) } : {}),
       });
     },
 

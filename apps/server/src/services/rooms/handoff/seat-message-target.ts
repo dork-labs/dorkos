@@ -1,7 +1,7 @@
 /** Authoritative seat scope checks, independent of timestamp uniqueness. */
 import type { RoomCore } from '../service/room-core.js';
 import { isLiveAuthor } from '../handles/author-handles.js';
-import type { SeatMessageTarget } from './seat-message-types.js';
+import type { SeatMessagePending, SeatMessageTarget } from './seat-message-types.js';
 
 /** Resolve only a currently bound ledger identity, including genuine native retirement links. */
 export function resolveSeatMessageTarget(
@@ -42,7 +42,12 @@ export function resolveSeatMessageTarget(
   };
 }
 
-/** A removed/recreated binding cannot inherit admission, even when joinedAt is unchanged. */
+/**
+ * A removed/recreated binding cannot inherit admission, even when joinedAt is unchanged.
+ *
+ * Any field compared here must also be in {@link seatTargetKey}, or {@link seatBatchStillCurrent}
+ * would treat a stale target as already checked and let it through.
+ */
 export function currentSeatMessageTarget(
   core: RoomCore,
   expected: SeatMessageTarget
@@ -61,4 +66,47 @@ export function currentSeatMessageTarget(
   )
     return null;
   return core.store.getRoomSession(expected.roomId, expected.authorId);
+}
+
+/** Every field {@link currentSeatMessageTarget} compares, so equal keys always get equal answers. */
+function seatTargetKey(target: SeatMessageTarget): string {
+  const bridge = target.bridgeOwnership;
+  return JSON.stringify([
+    target.roomId,
+    target.authorId,
+    target.sessionId,
+    target.joinedAt,
+    target.agentPath,
+    bridge ? [bridge.bindingId, bridge.adapterId, bridge.chatId] : null,
+  ]);
+}
+
+/**
+ * Whether a whole batch may still run: each distinct admitted seat is still current, and no
+ * unsolicited item's room has become bridged. One stale target refuses the whole batch.
+ *
+ * Each distinct target and room is read once per call, not once per item: a busy seat rechecks
+ * its full batch every 30 seconds for up to an hour (DOR-4722).
+ *
+ * @param core - The room core the seat lives in.
+ * @param batch - The pending items about to share one private turn.
+ * @returns `true` when every item may still be delivered.
+ */
+export function seatBatchStillCurrent(
+  core: RoomCore,
+  batch: readonly SeatMessagePending[]
+): boolean {
+  const checked = new Set<string>();
+  const unbridged = new Set<string>();
+  for (const item of batch) {
+    const key = seatTargetKey(item.target);
+    if (!checked.has(key)) {
+      if (currentSeatMessageTarget(core, item.target) === null) return false;
+      checked.add(key);
+    }
+    if (!item.unsolicited || unbridged.has(item.target.roomId)) continue;
+    if (core.bridges.findBridgeByRoom(item.target.roomId) !== null) return false;
+    unbridged.add(item.target.roomId);
+  }
+  return true;
 }

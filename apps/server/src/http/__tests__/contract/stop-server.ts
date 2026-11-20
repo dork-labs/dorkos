@@ -15,7 +15,7 @@ import { rm } from 'node:fs/promises';
 export const STOP_GRACE_MS = 10_000;
 
 /** How long to wait for confirmed `exit` after SIGKILL before refusing cleanup. */
-const KILL_WAIT_MS = 5_000;
+export const KILL_WAIT_MS = 5_000;
 
 /**
  * Resolves once `child` has exited, whenever that happens. Call it right after

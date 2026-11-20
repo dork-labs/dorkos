@@ -257,8 +257,11 @@ export function adoptAcceptedPrivateMessages(opts: AdoptQueuedMessagesOpts): num
         privateReceiptId: receipt.id,
         // An outside service's event (a signed webhook, reachable over a
         // tunnel) starts this turn, so it carries the outsider mark, never a
-        // person's (DOR-3650, Security's condition 4). The mark lowers nothing.
-        ...(receipt.sourceKind === 'connector_event'
+        // person's (DOR-3650, Security's condition 4). So does a page's event
+        // on a canvas document: the page's text is someone else's words, as a
+        // mini app's message is (DOR-4603). The mark lowers nothing.
+        ...(receipt.sourceKind === 'connector_event' ||
+        receipt.sourceKind === 'document_event_batch'
           ? { carriedMarks: { outsider: true as const } }
           : {}),
         ...(opts.privateDispatchSignal

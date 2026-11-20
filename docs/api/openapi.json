@@ -1957,6 +1957,7 @@
           "disk",
           "load",
           "accounts",
+          "signed-out",
           "chat-cap",
           "permission",
           "agent-paused",
@@ -5806,7 +5807,8 @@
           "reason": {
             "type": "string",
             "enum": [
-              "credits-not-covered"
+              "credits-not-covered",
+              "account-not-available"
             ]
           }
         },
@@ -7105,7 +7107,8 @@
               "reason": {
                 "type": "string",
                 "enum": [
-                  "credits-not-covered"
+                  "credits-not-covered",
+                  "account-not-available"
                 ]
               }
             },
@@ -12282,6 +12285,17 @@
           "active",
           "pending_approval"
         ]
+      },
+      "TriggerTaskRequest": {
+        "type": "object",
+        "properties": {
+          "permissionMode": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The mode picked on the approval card; the stricter of it and the cap runs."
+          }
+        },
+        "additionalProperties": false
       },
       "TaskRun": {
         "type": "object",
@@ -22024,6 +22038,31 @@
           "members",
           "setHash"
         ]
+      },
+      "ExtensionMediaTicket": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Where the video plays: `/api/extensions/media/<ticket>`, on this server."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "ExtensionMediaTicketRequest": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 4000,
+            "description": "The path below the app, e.g. `/videos/intro.mp4`. No query, no empty, `.` or `..` part, and no `%`, `\\`, `#` or control character."
+          }
+        },
+        "required": [
+          "path"
+        ]
       }
     },
     "parameters": {}
@@ -29065,6 +29104,16 @@
                     },
                     "code": {
                       "type": "string"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_SESSION",
+                        "NO_RECORDED_FOLDER",
+                        "ROOT_MISMATCH",
+                        "FOLDER_GONE",
+                        "OUTSIDE_BOUNDARY"
+                      ]
                     }
                   },
                   "required": [
@@ -29087,6 +29136,16 @@
                     },
                     "code": {
                       "type": "string"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_SESSION",
+                        "NO_RECORDED_FOLDER",
+                        "ROOT_MISMATCH",
+                        "FOLDER_GONE",
+                        "OUTSIDE_BOUNDARY"
+                      ]
                     }
                   },
                   "required": [
@@ -29109,6 +29168,16 @@
                     },
                     "code": {
                       "type": "string"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_SESSION",
+                        "NO_RECORDED_FOLDER",
+                        "ROOT_MISMATCH",
+                        "FOLDER_GONE",
+                        "OUTSIDE_BOUNDARY"
+                      ]
                     }
                   },
                   "required": [
@@ -29445,6 +29514,16 @@
                     },
                     "code": {
                       "type": "string"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_SESSION",
+                        "NO_RECORDED_FOLDER",
+                        "ROOT_MISMATCH",
+                        "FOLDER_GONE",
+                        "OUTSIDE_BOUNDARY"
+                      ]
                     }
                   },
                   "required": [
@@ -29467,6 +29546,16 @@
                     },
                     "code": {
                       "type": "string"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_SESSION",
+                        "NO_RECORDED_FOLDER",
+                        "ROOT_MISMATCH",
+                        "FOLDER_GONE",
+                        "OUTSIDE_BOUNDARY"
+                      ]
                     }
                   },
                   "required": [
@@ -29489,6 +29578,16 @@
                     },
                     "code": {
                       "type": "string"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_SESSION",
+                        "NO_RECORDED_FOLDER",
+                        "ROOT_MISMATCH",
+                        "FOLDER_GONE",
+                        "OUTSIDE_BOUNDARY"
+                      ]
                     }
                   },
                   "required": [
@@ -29573,7 +29672,7 @@
             }
           },
           "404": {
-            "description": "Existing file not found",
+            "description": "Existing file not found, or the document save was refused; a refused save may name which check refused (DOR-4442)",
             "content": {
               "application/json": {
                 "schema": {
@@ -29584,6 +29683,16 @@
                     },
                     "code": {
                       "type": "string"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_SESSION",
+                        "NO_RECORDED_FOLDER",
+                        "ROOT_MISMATCH",
+                        "FOLDER_GONE",
+                        "OUTSIDE_BOUNDARY"
+                      ]
                     }
                   },
                   "required": [
@@ -33400,6 +33509,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -33772,6 +33887,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -34381,6 +34502,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -34739,6 +34866,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -35098,6 +35231,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -35673,6 +35812,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -36441,6 +36586,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -36818,6 +36969,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -36895,6 +37052,143 @@
           },
           "409": {
             "description": "The browser cannot complete this request in its current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The browser operation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/local-browser/sign-in/done": {
+      "post": {
+        "tags": [
+          "Local browser"
+        ],
+        "summary": "Finish the open sign-in window",
+        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Quits the sign-in window DorkOS opened, so its sign-in saves. Names the handoff it answers, or none for a window no handoff waits on. Answers at once; the state says when it saved or failed, and a saved one is handed back to the handoff named.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "handoffId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "The window was asked to quit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accepted": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "accepted"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not the owner on this computer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No sign-in window of this handoff can be finished",
             "content": {
               "application/json": {
                 "schema": {
@@ -37196,6 +37490,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -37574,6 +37874,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -44803,7 +45109,8 @@
                         "reason": {
                           "type": "string",
                           "enum": [
-                            "credits-not-covered"
+                            "credits-not-covered",
+                            "account-not-available"
                           ]
                         }
                       },
@@ -48337,6 +48644,16 @@
             "in": "path"
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TriggerTaskRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "201": {
             "description": "Run started",
@@ -48352,6 +48669,16 @@
                   "required": [
                     "runId"
                   ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not valid, or the picked mode is not one the task can run in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -103670,7 +103997,7 @@
           "Audit"
         ],
         "summary": "See every running chat",
-        "description": "Every chat running right now, per agent, spin-offs, room turns and scheduled runs included: its title, a ready markdown link, whether it is working or waiting on an answer, and who started it. A chat whose turn ended while its helpers, shells or Monitors still run is listed as `background`; `backgroundWork` is true while such work runs, and absent when nothing says so. Every registered agent is listed, zero included, so you can see who is free. `total` is the live count for this server. A person’s own chat is counted in `privateCount` and never named. A `title` is null when the chat has no title yet or it can't be read, or in a Never ask run, which leaves every title out because anyone in a bridged chat can set one; the link still opens the chat. Use the link, never the id, when you tell a person about a chat. `capacity` reports each capped backend’s live records and available starts, including reclaimable idle records. When every record is busy, its message says to wait for a chat to finish; restarting is not needed.",
+        "description": "Every chat running right now, per agent, spin-offs, room turns and scheduled runs included: its title, a ready markdown link, whether it is working or waiting on an answer, and who started it. A chat whose turn ended while its helpers, shells or Monitors still run is listed as `background`; `backgroundWork` is true while such work runs, and absent when nothing says so. Every registered agent is listed, zero included, so you can see who is free. `total` is the live count for this server. A person’s own chat is counted in `privateCount` and never named. A `title` is null when the chat has no title yet or it can't be read, or in a Claude Code run at Never ask, Ask first or Accept edits, which leaves every title out because anyone in a bridged chat can set one; the link still opens the chat. Use the link, never the id, when you tell a person about a chat. `capacity` reports each capped backend’s live records and available starts, including reclaimable idle records. When every record is busy, its message says to wait for a chat to finish; restarting is not needed.",
         "responses": {
           "200": {
             "description": "See every running chat result",
@@ -105434,6 +105761,172 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/extensions/{id}/media-tickets": {
+      "post": {
+        "tags": [
+          "Extensions"
+        ],
+        "summary": "Get a video link for an app’s frame",
+        "description": "What `api.mediaUrl(path)` asks for. Only a person’s DorkOS window may ask: the request must name a trusted `Origin`, and an agent or an API key is refused. The app must use the frame (`clientApiVersion: 2`), declare `capabilities.http`, and be running with a `fetch` handler or in its own process. The link works for 10 minutes after its last use and 2 hours at most, an app keeps 16, and every link of an app ends when it stops, reloads or updates. It plays that one path and acts as no person.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExtensionMediaTicketRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The video link",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExtensionMediaTicket"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid extension id, or a path that is not plainly inside the app",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login is enabled and the caller is not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a person’s DorkOS window, or a write stamped by another app",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The app is not running, does not use the frame, or cannot stream video",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/extensions/media/{ticket}": {
+      "get": {
+        "tags": [
+          "Extensions"
+        ],
+        "summary": "Play an app’s video by its link",
+        "description": "Needs no sign-in: the ticket is the credential. DorkOS asks the app’s own route for the ticket’s path with only `Range` and `If-Range`, tells the app its caller is not a person, and streams the answer. A query string is ignored. `HEAD` answers the headers only; any other method is answered `405`. Only `200`, `206` and `416` pass, a success must be `video/mp4` or `video/webm`, and only `Content-Type`, `Content-Length`, `Content-Range`, `Accept-Ranges`, `ETag` and `Last-Modified` cross from the app. Every answer carries `X-Content-Type-Options: nosniff`, `Content-Security-Policy: sandbox; default-src 'none'`, `Content-Disposition: inline`, `Cache-Control: private, no-store`, `Referrer-Policy: no-referrer` and `Cross-Origin-Resource-Policy: cross-origin`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "ticket",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "range",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "if-range",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The whole video",
+            "content": {
+              "video/mp4": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "video/webm": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "206": {
+            "description": "The range asked for"
+          },
+          "404": {
+            "description": "The link is unknown or has expired (the same answer for both)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Only GET and HEAD",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The app answered with something that is not MP4 or WebM"
+          },
+          "416": {
+            "description": "The range asked for is not in the video"
+          },
+          "502": {
+            "description": "The app did not answer, or answered with another status"
           }
         }
       }

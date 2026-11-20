@@ -5,6 +5,7 @@
  */
 import cronstrue from 'cronstrue';
 import type { Task } from '@dorkos/shared/types';
+import { nextRunWhen } from '@dorkos/shared/schedule-notice-copy';
 
 /** A cron expression's one fixed wall-clock time. */
 export interface FixedCronTime {
@@ -94,12 +95,13 @@ export function describeTaskTiming(task: Task, viewerTimezone: string): string {
 }
 
 /**
- * Format the next run with a short viewer-local day and a 12-hour clock.
+ * The next run in the viewer's zone, worded as every surface words it
+ * ({@link nextRunWhen}, DOR-4483).
  *
  * @param nextRun - The next run instant.
  * @param viewerTimezone - The viewer's IANA zone.
  * @param now - Clock injection for deterministic tests.
- * @returns Text beginning with “Next”, or `null` for an unreadable instant.
+ * @returns Text beginning with “Next”, or `null` for an unreadable instant or zone.
  */
 export function formatNextRun(
   nextRun: string,
@@ -109,23 +111,7 @@ export function formatNextRun(
   const next = new Date(nextRun);
   if (Number.isNaN(next.getTime())) return null;
   try {
-    const difference = calendarDay(next, viewerTimezone) - calendarDay(now, viewerTimezone);
-    const day =
-      difference === 0
-        ? 'today'
-        : difference === 1
-          ? 'tomorrow'
-          : difference > 1 && difference < 7
-            ? new Intl.DateTimeFormat('en-US', {
-                timeZone: viewerTimezone,
-                weekday: 'short',
-              }).format(next)
-            : new Intl.DateTimeFormat('en-US', {
-                timeZone: viewerTimezone,
-                month: 'short',
-                day: 'numeric',
-              }).format(next);
-    return `Next ${day} ${formatInstantTime(nextRun, viewerTimezone)}`;
+    return `Next ${nextRunWhen(next, now, viewerTimezone)}`;
   } catch {
     return null;
   }

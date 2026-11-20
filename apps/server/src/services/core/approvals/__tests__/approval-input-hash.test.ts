@@ -86,6 +86,36 @@ describe('hashApprovalInput', () => {
     });
   });
 
+  describe('refuses prototype-named keys for approvals', () => {
+    it.each(['__proto__', 'constructor', 'prototype'])('an own %s key', (key) => {
+      const cases: [string, string][] = [
+        [`{"${key}":{"x":1},"a":1}`, `input.${key}`],
+        [`{"outer":{"${key}":{"x":1}}}`, `input.outer.${key}`],
+        [`{"items":[{"ok":true},{"${key}":1}]}`, `input.items[1].${key}`],
+      ];
+      for (const [text, path] of cases) {
+        const input: unknown = JSON.parse(text);
+        expect(() => hashApprovalInput(input)).toThrow(ApprovalInputNotBindableError);
+        expect(() => assertBindableInput(input)).toThrow(path);
+        try {
+          assertBindableInput(input);
+        } catch (error) {
+          expect((error as ApprovalInputNotBindableError).path).toBe(path);
+        }
+      }
+    });
+
+    it('leaves shared prototypes untouched when it refuses', () => {
+      const input: unknown = JSON.parse('{"__proto__":{"extra":true}}');
+      expect(() => hashApprovalInput(input)).toThrow(ApprovalInputNotBindableError);
+      expect(({} as Record<string, unknown>).extra).toBeUndefined();
+    });
+
+    it('still binds a value that merely mentions those words', () => {
+      expect(() => hashApprovalInput({ note: '__proto__', list: ['constructor'] })).not.toThrow();
+    });
+  });
+
   it('names the offending path so the fix is obvious', () => {
     expect(() => assertBindableInput({ schedule: { runAt: new Date(0) } })).toThrow(
       /input\.schedule\.runAt is a Date instance/

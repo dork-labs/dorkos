@@ -258,6 +258,21 @@ export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
       'A tightened cap on how many spin-off chats may run at once (DOR-3413). A person who lowered it to spare the machine must not get the default back from a wipe.',
   },
   {
+    path: 'runtimes.loadGate.maxLoad',
+    direction: 'lower',
+    reason: 'A tightened limit on how busy the machine may get before heavy jobs wait (DOR-4209).',
+  },
+  {
+    path: 'runtimes.loadGate.slots',
+    direction: 'lower',
+    reason: 'A tightened cap on how many heavy jobs may run at once on this machine (DOR-4209).',
+  },
+  {
+    path: 'runtimes.loadGate.hardCapMinutes',
+    direction: 'higher',
+    reason: 'A longer wait before a held heavy job runs anyway; it holds more back (DOR-4209).',
+  },
+  {
     path: 'uploads.allowedTypes',
     direction: 'restricted',
     wildcard: '*/*',

@@ -314,7 +314,12 @@ export interface ConfigReadParams {
 
 /** `config/read` result (the part DorkOS reads). */
 export interface ConfigReadResult {
-  config: { projects?: Record<string, { trust_level?: string } | undefined> | null };
+  config: {
+    model?: string | null;
+    model_provider?: string | null;
+    model_providers?: Record<string, unknown> | null;
+    projects?: Record<string, { trust_level?: string } | undefined> | null;
+  };
 }
 
 /** Params and results by method, for the typed client. */

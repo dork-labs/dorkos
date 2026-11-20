@@ -100,3 +100,28 @@ export const FileSaveRecoverResultSchema = z
 export type FileSaveRecoveryEntry = z.infer<typeof FileSaveRecoveryEntrySchema>;
 export type FileSaveDiscovery = z.infer<typeof FileSaveDiscoverySchema>;
 export type FileSaveRecoverResult = z.infer<typeof FileSaveRecoverResultSchema>;
+
+/**
+ * Why a chat's canvas will not save its file (DOR-4442), told only to the owner
+ * of this DorkOS once they are known to be asking. Codes, never paths: each
+ * names which check refused, so the canvas can say why in plain words.
+ *
+ * - `NOT_SESSION`: the document is not on a chat's canvas.
+ * - `NO_RECORDED_FOLDER`: no folder was recorded when the file was opened.
+ * - `ROOT_MISMATCH`: the recorded folder is not the chat's agent folder now.
+ * - `FOLDER_GONE`: a folder the save relies on (the agent's, or the one recorded) was deleted or moved.
+ * - `OUTSIDE_BOUNDARY`: the file is outside that folder or the allowed area.
+ */
+export const DOC_SAVE_REFUSAL_REASONS = [
+  'NOT_SESSION',
+  'NO_RECORDED_FOLDER',
+  'ROOT_MISMATCH',
+  'FOLDER_GONE',
+  'OUTSIDE_BOUNDARY',
+] as const;
+
+/** One {@link DOC_SAVE_REFUSAL_REASONS} code. */
+export type DocSaveRefusalReason = (typeof DOC_SAVE_REFUSAL_REASONS)[number];
+
+/** Zod schema for {@link DocSaveRefusalReason}, for the refusal body and the client. */
+export const DocSaveRefusalReasonSchema = z.enum(DOC_SAVE_REFUSAL_REASONS);

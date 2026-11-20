@@ -243,7 +243,7 @@
     },
     {
       "guide": "browser-verification.md",
-      "description": "Real-browser verification, browser stack names, isolated instances, live local page tools and artifact proof limits",
+      "description": "Real-browser verification, browser stack names, isolated instances, live local page tools, artifact proof limits and live Agent browser release checks",
       "patterns": [
         "apps/e2e/multi-window/",
         "browser-verification",

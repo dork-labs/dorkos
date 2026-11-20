@@ -149,8 +149,8 @@ export class RoomService {
     // identities here keeps the private inbox factory and lifecycle composition on the same
     // core, bridge store and publisher; no lazy resolution is needed.
     this.triggers = this.parts.core.triggers;
-    this.createSeatMessages = (store, emit) =>
-      new RoomSeatMessages(this.parts.core, this.parts.publisher, store, emit);
+    this.createSeatMessages = (store, emit, limits) =>
+      new RoomSeatMessages(this.parts.core, this.parts.publisher, store, emit, limits);
     this.follow = this.parts.follow;
     this.canvas = this.parts.canvas;
     this.handoffs = this.parts.handoffs;

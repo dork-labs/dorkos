@@ -274,7 +274,7 @@ export function registerRightPanelTabs(register: RegisterFn): void {
     title: 'Browser',
     icon: Globe,
     component: lazy(() =>
-      import('@/layers/features/local-browser').then((m) => ({ default: m.LocalBrowserContent }))
+      import('@/layers/widgets/browser-panel').then((m) => ({ default: m.BrowserPanel }))
     ),
     visibleWhen: ({ pathname, transport }) =>
       (pathname === '/session' || routeShowsRoom(pathname)) &&
