@@ -9,6 +9,18 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  createByteLane,
+  RunStartError,
+  type RunChild,
+  type RunRequest,
+} from '@dorkos/test-utils/run-custody';
+import { WorkerCleanupError } from './custody/worker.js';
+import {
+  guardPinnedOpenCodePort,
+  isPinnedFixtureCleanupUncertain,
+  runOwnedPinnedOpenCode,
+} from './pinned-opencode-owned.js';
+import {
   OPENCODE_PIN,
   pinnedOpenCode,
   withUnchangedBinary,
@@ -92,6 +104,212 @@ describe('fresh binary integrity checks', () => {
       fs.rmSync(root, { recursive: true, force: true });
     }
   }
+
+  function owned(executable: string, hash: string) {
+    const stdin = createByteLane();
+    const stdout = createByteLane();
+    let close!: (value: Awaited<RunChild['close']>) => void;
+    const closed = new Promise<Awaited<RunChild['close']>>((resolve) => {
+      close = resolve;
+    });
+    const identity = { pid: 721, executable, birth: 'synthetic' };
+    const stopAndJoin = vi
+      .fn<RunChild['stopAndJoin']>()
+      .mockResolvedValue({ kind: 'cleaned-owned' });
+    const child: RunChild = {
+      ...identity,
+      stdin: stdin.writer,
+      stdout: stdout.reader,
+      spawn: Promise.resolve({ kind: 'spawned', ...identity }),
+      exit: Promise.resolve({ kind: 'exited', code: 0, signal: null }),
+      close: closed,
+      stopAndJoin,
+    };
+    const start = vi.fn(async (_request: RunRequest) => child);
+    const port = guardPinnedOpenCodePort({ start }, () => ({ executable, sha256: hash }));
+    const run = (env: RunRequest['env'] = {}) =>
+      port.start(
+        {
+          executable,
+          argv: ['run'],
+          cwd: path.dirname(executable),
+          env,
+          stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
+        },
+        new AbortController().signal
+      );
+    return { child, run, start, close, stdin, stdout, stopAndJoin, identity };
+  }
+
+  it('checks selected bytes at PRE and native close and joins after the fixture operation', async () => {
+    await fixture(async (file, hash) => {
+      const f = owned(file, hash);
+      let observer: NonNullable<RunRequest['observer']>;
+      f.start.mockImplementation(async (request) => {
+        observer = request.observer!;
+        expect(request.env.OPENCODE_DISABLE_AUTOUPDATE).toBe('1');
+        expect(JSON.parse(String(request.env.OPENCODE_CONFIG_CONTENT))).toEqual({
+          autoupdate: false,
+          model: 'fixture',
+        });
+        await observer.beforeSpawn!(file);
+        await observer.onSpawn(f.identity);
+        await f.stdout.writer.write(new Uint8Array([42]));
+        f.stdout.writer.end();
+        return f.child;
+      });
+      const child = await f.run({
+        OPENCODE_CONFIG_CONTENT: '{"autoupdate":true,"model":"fixture"}',
+      });
+      f.stopAndJoin.mockImplementation(async () => {
+        await observer.onClose({ integrity: 'unobserved' });
+        f.close({ kind: 'native-closed', integrity: 'verified' });
+        return { kind: 'cleaned-owned' };
+      });
+      await expect(
+        runOwnedPinnedOpenCode(child, async (runChild) => {
+          expect(await f.stdin.reader.read()).toEqual({ kind: 'eof' });
+          expect(await runChild.stdout!.read()).toEqual({
+            kind: 'bytes',
+            frame: new Uint8Array([42]),
+          });
+          return 42;
+        })
+      ).resolves.toBe(42);
+      expect(f.stopAndJoin).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('rejects wrong executable before admitting a native creation', async () => {
+    await fixture(async (file, hash) => {
+      const f = owned(file, hash);
+      const admitted = vi.fn();
+      const wrapper = path.join(path.dirname(file), 'wrapper');
+      fs.writeFileSync(wrapper, fs.readFileSync(file));
+      f.start.mockImplementation(async (request) => {
+        await request.observer!.beforeSpawn!(wrapper);
+        admitted();
+        return f.child;
+      });
+      await expect(f.run()).rejects.toThrow('Unexpected native executable');
+      expect(admitted).not.toHaveBeenCalled();
+    });
+  });
+
+  it.each(['skipped', 'out-of-order'] as const)(
+    'rejects %s PRE and joins an already returned child',
+    async (mode) => {
+      await fixture(async (file, hash) => {
+        const f = owned(file, hash);
+        f.start.mockImplementation(async (request) => {
+          if (mode === 'out-of-order') {
+            await expect(
+              Promise.resolve().then(() => request.observer!.onSpawn(f.identity))
+            ).rejects.toThrow(/out of order/);
+          }
+          return f.child;
+        });
+        const failed = f.run();
+        await expect(failed).rejects.toBeInstanceOf(RunStartError);
+        await expect(failed).rejects.toMatchObject({
+          outcome: { kind: 'spawn-failed', cleanup: { kind: 'cleaned-owned' } },
+        });
+        expect(f.stopAndJoin).toHaveBeenCalledTimes(1);
+      });
+    }
+  );
+
+  it.each(['mutation', 'lost'] as const)(
+    'preserves primary and integrity failure after %s while joining',
+    async (mode) => {
+      await fixture(async (file, hash) => {
+        const f = owned(file, hash);
+        let observer: NonNullable<RunRequest['observer']>;
+        f.start.mockImplementation(async (request) => {
+          observer = request.observer!;
+          await observer.beforeSpawn!(file);
+          await observer.onSpawn(f.identity);
+          return f.child;
+        });
+        const child = await f.run();
+        f.stopAndJoin.mockImplementation(async () => {
+          if (mode === 'mutation') {
+            fs.writeFileSync(file, 'mutated after launch');
+            await expect(
+              Promise.resolve().then(() => observer.onClose({ integrity: 'unobserved' }))
+            ).rejects.toThrow(/SHA-256 changed/);
+            f.close({ kind: 'native-closed', integrity: 'failed' });
+          } else {
+            f.close({ kind: 'transport-lost' });
+          }
+          return { kind: 'cleaned-owned' };
+        });
+        const primary = new Error('fixture consumer failed');
+        await expect(
+          runOwnedPinnedOpenCode(child, async () => {
+            throw primary;
+          })
+        ).rejects.toMatchObject({
+          errors: [
+            primary,
+            expect.objectContaining({
+              message: 'Pinned OpenCode POST was not verified at native close',
+            }),
+          ],
+        });
+        expect(f.stopAndJoin).toHaveBeenCalledTimes(1);
+      });
+    }
+  );
+
+  it('retains uncertainty from typed startup and worker outcomes only', () => {
+    const never = new RunStartError({ kind: 'never-acquired', reason: 'no-target' });
+    const uncertain = new RunStartError({
+      kind: 'interrupted',
+      reason: 'owner-lost',
+      cleanup: { kind: 'cleanup-uncertain', reason: 'deadline' },
+    });
+    const worker = new WorkerCleanupError({ channel: 'pending', request: 'closed' }, 'deadline');
+    expect(isPinnedFixtureCleanupUncertain(never)).toBe(false);
+    expect(isPinnedFixtureCleanupUncertain(new Error(worker.message))).toBe(false);
+    expect(isPinnedFixtureCleanupUncertain(uncertain)).toBe(true);
+    expect(isPinnedFixtureCleanupUncertain(new AggregateError([never, worker]))).toBe(true);
+  });
+
+  it.each(['uncertain', 'unacquired', 'rejected'] as const)(
+    'retains a returned child on %s join and keeps the primary failure',
+    async (mode) => {
+      await fixture(async (file, hash) => {
+        const f = owned(file, hash);
+        let observer: NonNullable<RunRequest['observer']>;
+        f.start.mockImplementation(async (request) => {
+          observer = request.observer!;
+          await observer.beforeSpawn!(file);
+          await observer.onSpawn(f.identity);
+          return f.child;
+        });
+        const child = await f.run();
+        const joinError = new Error('fixture join error');
+        f.stopAndJoin.mockImplementation(async () => {
+          await observer.onClose({ integrity: 'unobserved' });
+          f.close({ kind: 'native-closed', integrity: 'verified' });
+          if (mode === 'rejected') throw joinError;
+          return mode === 'uncertain'
+            ? { kind: 'cleanup-uncertain', reason: 'deadline' }
+            : { kind: 'never-acquired', reason: 'contradictory-returned-child' };
+        });
+        const primary = new Error('fixture consumer failed');
+        const failure = await runOwnedPinnedOpenCode(child, async () => {
+          throw primary;
+        }).catch((error: unknown) => error);
+        expect(failure).toBeInstanceOf(AggregateError);
+        expect(failure).toMatchObject({ errors: [primary, expect.any(Error)] });
+        expect(isPinnedFixtureCleanupUncertain(failure)).toBe(true);
+        if (mode === 'rejected')
+          expect(failure).toMatchObject({ errors: [primary, { cause: joinError }] });
+      });
+    }
+  );
 
   it('returns the result when the binary is unchanged', async () => {
     await fixture(async (file, hash) => {
