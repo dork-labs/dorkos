@@ -339,6 +339,8 @@ describe('sign-in checks change only at this computer', () => {
   });
 
   it('the first check that works from other devices signs out sign-ins made from them before it', async () => {
+    // Wi-Fi sign-ins end by the same rule (every route but this computer's);
+    // this app has no Wi-Fi sign-in, which can't make API keys anyway.
     const tunnel = cookiesOf(await signIn('own-tunnel'));
     const managed = cookiesOf(await signIn('managed'));
     const otherDesk = cookiesOf(await signIn('direct'));
