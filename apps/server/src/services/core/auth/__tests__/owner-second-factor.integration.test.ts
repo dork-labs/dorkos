@@ -166,6 +166,22 @@ describe('with an authenticator app set up', () => {
     expect((await signIn('own-tunnel', code)).status).toBe(200);
   });
 
+  it('never passes on a body it cannot read: one padded past its limit', async () => {
+    const res = await post('/api/auth/sign-in/email', 'own-tunnel').send(
+      JSON.stringify({ email: EMAIL, password: PASSWORD, pad: ' '.repeat(9000) })
+    );
+    expect(res.status).not.toBe(200);
+    expect(String(res.headers['set-cookie'] ?? '')).not.toMatch(/session_token=[^;]/);
+  });
+
+  it('reads a body with a byte-order mark the way Better Auth does', async () => {
+    const res = await post('/api/auth/sign-in/email', 'own-tunnel').send(
+      '\uFEFF' + JSON.stringify({ email: EMAIL, password: PASSWORD })
+    );
+    expect(res.status).not.toBe(200);
+    expect(String(res.headers['set-cookie'] ?? '')).not.toMatch(/session_token=[^;]/);
+  });
+
   it('refuses a wrong code', async () => {
     const res = await signIn('own-tunnel', '000000' === codeNow() ? '111111' : '000000');
     expect(res.status).toBe(401);

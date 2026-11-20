@@ -30,7 +30,6 @@ import { honoRequestFacts, type RequestFactsEnv } from '../http/request-facts.js
 import { classifyRequest } from '../lib/request-classifier.js';
 import { currentServerRole } from '../lib/server-role.js';
 import { account, and, eq } from '@dorkos/db';
-import { getTunnelOrigins } from '../lib/trusted-origins.js';
 import { getUserById, readAuthDb, readOwnerAccount } from '../services/core/auth/index.js';
 import { verifyOwnerPassword } from '../services/core/auth/passwords/password-hash.js';
 import {
@@ -39,11 +38,15 @@ import {
   useTotpStep,
 } from '../services/core/auth/factors/owner-factors.js';
 import { verifyTotp } from '../services/core/auth/factors/totp.js';
+import { thisComputerPasskeyOrigins } from '../services/core/auth/factors/owner-passkeys.js';
 import { ingressOf } from '../services/core/remote/ingress-mark.js';
 import { readCappedBody } from './auth-rate-limit.js';
 
 /** Refusal code when a sign-in from another device needs the second factor. */
 export const SECOND_FACTOR_REQUIRED = 'SECOND_FACTOR_REQUIRED';
+
+/** Refusal code when a sign-in's body is too large or not plain JSON. */
+export const SIGN_IN_UNREADABLE = 'SIGN_IN_UNREADABLE';
 
 /** Refusal code when the second factor given did not check out. */
 export const SECOND_FACTOR_REFUSED = 'SECOND_FACTOR_REFUSED';
@@ -71,7 +74,8 @@ async function signInBodyOf(request: Request): Promise<SignInBody | null> {
   try {
     const text = await readCappedBody(request);
     if (!text) return null;
-    const parsed = JSON.parse(text) as Record<string, unknown>;
+    // A leading byte-order mark is dropped, as the body parser Better Auth uses drops it.
+    const parsed = JSON.parse(text.replace(/^\uFEFF/, '')) as Record<string, unknown>;
     const pick = (key: string) => (typeof parsed[key] === 'string' ? parsed[key] : undefined);
     return { email: pick('email'), password: pick('password'), totpCode: pick('totpCode') };
   } catch {
@@ -98,16 +102,17 @@ async function ownerPasswordMatches(userId: string, password: string): Promise<b
 
 /**
  * The owner's factors that can prove a sign-in on another device's route: any
- * authenticator app, and a passkey made for the live tunnel or managed
- * address. A passkey made for this computer only works here, so it is never
+ * authenticator app, and a passkey made for any address but this computer's. A passkey made for this computer only works here, so it is never
  * asked for elsewhere.
  */
 function usableRemotely(userId: string): { totp: boolean; passkey: boolean } {
-  const hosts = new Set(getTunnelOrigins().map((origin) => new URL(origin).hostname));
+  const here = new Set(thisComputerPasskeyOrigins().map((origin) => new URL(origin).hostname));
   return {
     totp: confirmedFactors(userId, 'totp').length > 0,
+    // Whether or not that address is live right now: a passkey for another
+    // address keeps counting while its tunnel is down.
     passkey: confirmedFactors(userId, 'passkey').some(
-      (row) => row.rpId !== null && hosts.has(row.rpId)
+      (row) => row.rpId !== null && !here.has(row.rpId)
     ),
   };
 }
@@ -148,6 +153,13 @@ export function buildSecondFactorGate(): MiddlewareHandler<RequestFactsEnv> {
     const usable = usableRemotely(owner.id);
     if (!usable.totp && !usable.passkey) return next();
     const body = await signInBodyOf(c.req.raw);
+    // A body this gate cannot read is never passed on: Better Auth might read it.
+    if (!body) {
+      return c.json(
+        { code: SIGN_IN_UNREADABLE, message: 'That sign-in couldn’t be read. Try again.' },
+        400
+      );
+    }
     const ownerEmail = getUserById(owner.id)?.email.toLowerCase();
     // Only the owner's own sign-in is asked; anyone else's goes on as before.
     if (!body?.email || body.email.trim().toLowerCase() !== ownerEmail) return next();

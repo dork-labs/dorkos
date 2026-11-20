@@ -87,7 +87,7 @@ export function mountWifiSignIn(app: Hono<ApiEnv>, auth: Auth): void {
     const { headers } = await withRegistrationCaller(requestClass, () =>
       auth.api.signInCheckedAccount({
         body: { userId: redeemed.userId },
-        // The device's own browser and address, so Signed-in devices can name it.
+        // The device's own browser, so Signed-in devices can name it.
         headers: deviceHeaders(facts.headers),
         returnHeaders: true,
       })
