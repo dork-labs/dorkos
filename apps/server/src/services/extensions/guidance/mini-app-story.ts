@@ -18,8 +18,23 @@ export const MINI_APP_STORY = [
   "App settings and secrets are your owner's, set in Settings > Add-ons on the app's tab once it runs. Never write them yourself.",
 ] as const;
 
-/** {@link MINI_APP_STORY} as one paragraph, for a tool description. */
-export const MINI_APP_STORY_TEXT = MINI_APP_STORY.join(' ');
+/**
+ * {@link MINI_APP_STORY} as one paragraph, for a tool description. A description names other
+ * tools by what they do, never by a name some harness may not expose (`context-tool-names.test.ts`).
+ */
+export const MINI_APP_STORY_TEXT = MINI_APP_STORY.join(' ')
+  .replace(
+    'marketplace_create_package, write the app into it,',
+    'create a package with the marketplace tool, write the app into it,'
+  )
+  .replace(
+    'then marketplace_install or marketplace_update with apply: true',
+    'then install it, or apply an update, with the marketplace tools'
+  )
+  .replace(
+    'list_extensions shows waitsForPerson: true',
+    'the extension list shows waitsForPerson: true'
+  );
 
 /** {@link MINI_APP_STORY} as a markdown section, for `get_extension_api`. */
 export const MINI_APP_STORY_SECTION = `## Where to build, and who approves\n\n${MINI_APP_STORY.map(

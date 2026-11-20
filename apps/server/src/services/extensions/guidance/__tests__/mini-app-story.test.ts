@@ -36,8 +36,14 @@ describe('the mini app story', () => {
     POINTS.forEach((phrase, index) => expect(MINI_APP_STORY[index]).toContain(phrase));
   });
 
-  it('is in create_extension’s description word for word', () => {
-    expect(toolNamed('create_extension').description).toContain(MINI_APP_STORY_TEXT);
+  it('is in create_extension’s description, naming no other tool', () => {
+    const description = toolNamed('create_extension').description;
+    expect(description).toContain(MINI_APP_STORY_TEXT);
+    for (const name of ['marketplace_create_package', 'marketplace_install', 'list_extensions'])
+      expect(description).not.toContain(name);
+    POINTS.filter((phrase) => phrase !== 'waitsForPerson: true').forEach((phrase) =>
+      expect(MINI_APP_STORY_TEXT).toContain(phrase)
+    );
   });
 
   it('opens what get_extension_api returns', async () => {
