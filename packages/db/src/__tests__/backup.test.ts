@@ -375,7 +375,7 @@ describe('snapshotBeforeMigrations', () => {
     expect(error.message).toMatch(/Free up disk space/);
   });
 
-  it('keeps only the ten newest pre-migration snapshots', () => {
+  it('keeps only the pre-migration copies from the last seven days', () => {
     const home = tempDir();
     const db = createDb(path.join(home, 'dork.db'));
     migrate(db, { migrationsFolder: migrationsFolderThrough(PARTIAL_MIGRATION_IDX) });
@@ -393,7 +393,7 @@ describe('snapshotBeforeMigrations', () => {
       );
     }
 
-    expect(readdirSync(backups).sort()).toEqual(written.slice(-SNAPSHOT_RETENTION.preMigration));
+    expect(readdirSync(backups).sort()).toEqual(written.slice(-8));
   });
 });
 
@@ -420,7 +420,7 @@ describe('snapshotDaily', () => {
     ]);
   });
 
-  it('keeps a week of days and drops the oldest', async () => {
+  it('keeps three daily copies and drops the oldest', async () => {
     const home = tempDir();
     const db = createDb(path.join(home, 'dork.db'));
     runMigrations(db);
@@ -434,15 +434,39 @@ describe('snapshotDaily', () => {
     }
 
     expect(readdirSync(backups).sort()).toEqual([
-      'dork-20260804-daily.db',
-      'dork-20260805-daily.db',
-      'dork-20260806-daily.db',
-      'dork-20260807-daily.db',
       'dork-20260808-daily.db',
       'dork-20260809-daily.db',
       'dork-20260810-daily.db',
     ]);
     expect(readdirSync(backups)).toHaveLength(SNAPSHOT_RETENTION.daily);
+  });
+
+  it('prunes both kinds on an already-covered day without waiting for another upgrade', async () => {
+    const home = tempDir();
+    const db = createDb(path.join(home, 'dork.db'));
+    runMigrations(db);
+    const backups = path.join(home, 'backups');
+    mkdirSync(backups);
+    const now = new Date('2026-11-20T12:00:00Z');
+    for (let day = 16; day <= 20; day++) {
+      snapshotSqlite(db.$client, path.join(backups, `dork-202611${day}-daily.db`));
+    }
+    for (const day of ['01', '02', '19']) {
+      snapshotSqlite(
+        db.$client,
+        path.join(backups, `dork-202611${day}-120000-pre-${JOURNAL_TAGS.at(-1)}.db`)
+      );
+    }
+
+    expect(await snapshotDaily(db, { dir: backups, now })).toBeNull();
+
+    expect(readdirSync(backups).sort()).toEqual([
+      'dork-20261118-daily.db',
+      `dork-20261119-120000-pre-${JOURNAL_TAGS.at(-1)}.db`,
+      'dork-20261119-daily.db',
+      'dork-20261120-daily.db',
+    ]);
+    db.$client.close();
   });
 
   it('retakes a day whose snapshot is a zero-byte decoy', async () => {
@@ -464,6 +488,29 @@ describe('snapshotDaily', () => {
     expect(statSync(dest).size).toBeGreaterThan(0);
     // And a real one on the same day is still left alone.
     expect(await snapshotDaily(db, { dir: backups, now })).toBeNull();
+  });
+
+  it('refuses to replace an existing daily copy that cannot currently be checked', async () => {
+    const home = tempDir();
+    const db = createDb(path.join(home, 'dork.db'));
+    runMigrations(db);
+    const backups = path.join(home, 'backups');
+    const now = new Date('2026-11-20T12:00:00Z');
+    const dest = path.join(backups, 'dork-20261120-daily.db');
+    snapshotSqlite(db.$client, dest);
+    const bytes = readFileSync(dest);
+    const lock = new Database(dest);
+    lock.exec('BEGIN EXCLUSIVE');
+    try {
+      await expect(snapshotDaily(db, { dir: backups, now })).rejects.toBeInstanceOf(
+        SnapshotFailedError
+      );
+      expect(readFileSync(dest)).toEqual(bytes);
+    } finally {
+      lock.exec('ROLLBACK');
+      lock.close();
+      db.$client.close();
+    }
   });
 
   it('opens on its own, holding what the database held', async () => {

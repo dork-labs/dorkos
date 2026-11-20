@@ -46,6 +46,15 @@ import path from 'path';
 import type { Db } from './index.js';
 import { migrationsFolder } from './migrations-folder.js';
 import { scrubSnapshot } from './snapshot-scrub.js';
+import {
+  inspectSnapshot,
+  PRE_MIGRATION_MAX_AGE_DAYS,
+  pruneSnapshots,
+  SNAPSHOT_RETENTION,
+  type SnapshotLog,
+} from './snapshot-retention.js';
+
+export { pruneSnapshots, SNAPSHOT_RETENTION, type SnapshotLog } from './snapshot-retention.js';
 
 /**
  * Thrown when a snapshot could not be written.
@@ -83,22 +92,6 @@ export class SnapshotFailedError extends Error {
 }
 
 /**
- * How many snapshots of each kind are kept before the oldest is deleted.
- *
- * `dork.db` is a couple of megabytes, so these are sized by how far back a
- * person might need to reach, not by disk cost: ten upgrades of history, and a
- * week of ordinary days.
- */
-export const SNAPSHOT_RETENTION = {
-  /** Pre-migration snapshots of `dork.db`. */
-  preMigration: 10,
-  /** Daily snapshots of `dork.db`. */
-  daily: 7,
-  /** Pre-migration snapshots of one extension's `store.db`. */
-  extension: 5,
-} as const;
-
-/**
  * Filename shapes, one per snapshot kind, used both to name a new snapshot and
  * to decide which existing files a prune is allowed to delete.
  *
@@ -107,7 +100,7 @@ export const SNAPSHOT_RETENTION = {
  * what {@link pruneSnapshots} relies on instead of reading mtimes (an mtime is
  * rewritten by a file copy; the name is not).
  */
-const PRE_MIGRATION_PATTERN = /^dork-\d{8}-\d{6}-pre-.+\.db$/;
+const PRE_MIGRATION_PATTERN = /^dork-\d{8}-\d{6}-pre-(?:\d{4}|\d{14})_[a-z0-9_]+\.db$/;
 const DAILY_PATTERN = /^dork-\d{8}-daily\.db$/;
 const EXTENSION_PATTERN = /^store-\d{8}-\d{6}-pre-v\d+\.db$/;
 
@@ -276,111 +269,25 @@ export async function snapshotSqliteInSteps(
 const BACKUP_PAGES_PER_STEP = 100;
 
 /**
- * Is the file at `snapshotPath` a snapshot, rather than the wreckage of one?
- *
- * A process killed mid-`VACUUM INTO` leaves a file that {@link snapshotSqlite}'s
- * own cleanup never gets to run for, so existence proves nothing and this is the
- * check that does. Two questions, cheapest first: is there any content at all
- * (a zero-byte file is a valid EMPTY database — it opens, and
- * `integrity_check` says `ok`, which is exactly how the wreckage disguises
- * itself), and does the database inside hold what a real snapshot would.
- *
- * @param snapshotPath - Absolute path of the file to inspect
- * @param requiredTable - A table the snapshot must contain; when omitted, any
- *   non-`sqlite_%` table will do
- */
-function isUsableSnapshot(snapshotPath: string, requiredTable?: string): boolean {
-  let size: number;
-  try {
-    size = fs.statSync(snapshotPath).size;
-  } catch {
-    return false;
-  }
-  if (size === 0) return false;
-
-  let snapshot: BetterSqlite3.Database;
-  try {
-    snapshot = new Database(snapshotPath, { readonly: true });
-  } catch {
-    return false;
-  }
-  try {
-    const found = requiredTable
-      ? snapshot
-          .prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`)
-          .get(requiredTable)
-      : snapshot
-          .prepare(
-            `SELECT 1 FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' LIMIT 1`
-          )
-          .get();
-    return found !== undefined;
-  } catch {
-    return false;
-  } finally {
-    snapshot.close();
-  }
-}
-
-/**
  * Decide what to do about a file already sitting at a snapshot's destination.
  *
  * @param dest - Absolute path the caller is about to write
- * @param requiredTable - Passed through to {@link isUsableSnapshot}
+ * @param requiredTable - Passed through to {@link inspectSnapshot}
  * @returns `true` when `dest` already holds a real snapshot and the caller
  *   should reuse it; `false` once the path is clear to write
  */
 function reuseOrClear(dest: string, requiredTable?: string): boolean {
   if (!fs.existsSync(dest)) return false;
-  if (isUsableSnapshot(dest, requiredTable)) return true;
+  const state = inspectSnapshot(dest, requiredTable);
+  if (state === 'usable') return true;
+  if (state === 'unavailable')
+    throw new Error(`The existing backup copy cannot be checked: ${dest}`);
   // Not a snapshot, so it is a decoy — and leaving it costs more than deleting
   // it: `VACUUM INTO` will not write over it, so every future attempt at this
   // name fails, and the retention pool counts it as one of the copies being
   // kept. It is removed only after being read and found wanting.
   fs.rmSync(dest, { force: true });
   return false;
-}
-
-/**
- * Delete the wreckage and then the oldest snapshots in `dir`, until at most
- * `keep` real ones remain.
- *
- * Only files whose names match `pattern` are considered, so one kind of snapshot
- * can never prune another's — and nothing a person dropped into the folder by
- * hand is ever touched. A missing directory is not an error.
- *
- * Files that match the pattern but are not readable databases go first and do
- * not count toward `keep`. A process killed mid-`VACUUM INTO` leaves a
- * zero-byte file under a timestamped name that nothing will ever try to write
- * again, so without this it would sit in the folder holding one of the slots a
- * real snapshot should have — quietly reducing how far back the operator can
- * reach, for as long as it takes to age out.
- *
- * @param dir - Directory holding the snapshots
- * @param pattern - Which filenames this prune owns; must sort chronologically
- * @param keep - How many of the newest real snapshots to keep
- * @returns The filenames that were deleted, wreckage first then oldest first
- */
-export function pruneSnapshots(dir: string, pattern: RegExp, keep: number): string[] {
-  let names: string[];
-  try {
-    names = fs.readdirSync(dir);
-  } catch {
-    return [];
-  }
-  const matching = names.filter((name) => pattern.test(name)).sort();
-
-  const wreckage: string[] = [];
-  const real: string[] = [];
-  for (const name of matching) {
-    (isUsableSnapshot(path.join(dir, name)) ? real : wreckage).push(name);
-  }
-
-  const doomed = [...wreckage, ...real.slice(0, Math.max(0, real.length - keep))];
-  for (const name of doomed) {
-    fs.rmSync(path.join(dir, name), { force: true });
-  }
-  return doomed;
 }
 
 /**
@@ -476,6 +383,21 @@ export interface SnapshotOptions {
   dir: string;
   /** Clock override for tests. Defaults to now. */
   now?: Date;
+  /** Server logger for pruning; defaults to the process log. */
+  log?: SnapshotLog;
+}
+
+/** Reconcile both dork.db pools, including on boots with no new snapshot. */
+function pruneDatabaseSnapshots(options: SnapshotOptions, protectedPath?: string): void {
+  pruneSnapshots(options.dir, PRE_MIGRATION_PATTERN, SNAPSHOT_RETENTION.preMigration, {
+    ...options,
+    protectedPath,
+    maxAgeDays: PRE_MIGRATION_MAX_AGE_DAYS,
+  });
+  pruneSnapshots(options.dir, DAILY_PATTERN, SNAPSHOT_RETENTION.daily, {
+    ...options,
+    protectedPath,
+  });
 }
 
 /**
@@ -502,7 +424,10 @@ export function snapshotBeforeMigrations(db: Db, options: SnapshotOptions): stri
   // remove a `.partial` a process that died mid-snapshot left (DOR-4001).
   removeStalePartials(options.dir);
   const { pending, fresh } = readMigrationState(db);
-  if (fresh || pending.length === 0) return null;
+  if (fresh || pending.length === 0) {
+    pruneDatabaseSnapshots(options);
+    return null;
+  }
 
   const now = options.now ?? new Date();
   // Named for the FIRST pending migration: the snapshot is the state that
@@ -522,7 +447,7 @@ export function snapshotBeforeMigrations(db: Db, options: SnapshotOptions): stri
   } catch (err) {
     throw new SnapshotFailedError(options.dir, err);
   }
-  pruneSnapshots(options.dir, PRE_MIGRATION_PATTERN, SNAPSHOT_RETENTION.preMigration);
+  pruneDatabaseSnapshots(options, dest);
   return dest;
 }
 
@@ -534,7 +459,7 @@ export function snapshotBeforeMigrations(db: Db, options: SnapshotOptions): stri
  * every boot and again on a timer writes one file per day and returns `null`
  * for the rest. A day whose file exists but is not a readable database counts
  * as a day with no snapshot, and is retaken — otherwise one failed write would
- * mark the day permanently done and hold a slot in the week's retention pool.
+ * mark the day permanently done and hold a slot in the retention pool.
  *
  * Written in steps ({@link snapshotSqliteInSteps}), so the server keeps
  * answering while it is taken.
@@ -550,28 +475,18 @@ export async function snapshotDaily(db: Db, options: SnapshotOptions): Promise<s
   // Runs at boot and on the hourly tick, so it is where a stale `.partial` from
   // a crashed snapshot is found even on a day nothing new is written (DOR-4001).
   removeStalePartials(options.dir);
-  if (reuseOrClear(dest)) {
-    try {
-      scrubSnapshot(dest);
-    } catch (err) {
-      throw new SnapshotFailedError(options.dir, err);
-    }
-    return null;
-  }
-
   try {
+    if (reuseOrClear(dest)) {
+      scrubSnapshot(dest);
+      pruneDatabaseSnapshots(options, dest);
+      return null;
+    }
     await snapshotSqliteInSteps(db.$client, dest);
   } catch (err) {
     throw new SnapshotFailedError(options.dir, err);
   }
-  pruneSnapshots(options.dir, DAILY_PATTERN, SNAPSHOT_RETENTION.daily);
+  pruneDatabaseSnapshots(options, dest);
   return dest;
-}
-
-/** What {@link takeDailySnapshot} logs through. */
-export interface SnapshotLog {
-  info(message: string): void;
-  warn(message: string, meta?: unknown): void;
 }
 
 /**
@@ -604,7 +519,7 @@ let dailyInFlight: Promise<void> | null = null;
 /** {@link takeDailySnapshot}'s body, once per call that is not already running. */
 async function runDailySnapshot(db: Db, backupsDir: string, log: SnapshotLog): Promise<void> {
   try {
-    const written = await snapshotDaily(db, { dir: backupsDir });
+    const written = await snapshotDaily(db, { dir: backupsDir, log });
     if (written) log.info(`[DB] Daily snapshot written to ${written}`);
   } catch (err) {
     log.warn('[DB] Daily snapshot failed — your data is fine, the backup is not', {
@@ -637,13 +552,13 @@ export function snapshotBeforeExtensionMigration(
   const dest = path.join(dir, `store-${utcStamp(now)}-pre-v${options.toVersion}.db`);
   // Same second, same target version, so the same state — see the equivalent
   // note in `snapshotBeforeMigrations`.
-  if (!reuseOrClear(dest)) {
-    try {
+  try {
+    if (!reuseOrClear(dest)) {
       snapshotSqlite(sqlite, dest);
-    } catch (err) {
-      throw new SnapshotFailedError(dir, err);
     }
+  } catch (err) {
+    throw new SnapshotFailedError(dir, err);
   }
-  pruneSnapshots(dir, EXTENSION_PATTERN, SNAPSHOT_RETENTION.extension);
+  pruneSnapshots(dir, EXTENSION_PATTERN, SNAPSHOT_RETENTION.extension, { protectedPath: dest });
   return dest;
 }
