@@ -131,12 +131,7 @@ Scoping: \`turn.*\` and \`tool.*\` are foreground-gated (active session only);
 all console relay traffic); \`session.switched\` describes the foreground itself.
 
 \`\`\`typescript
-type ExtensionEventKind =
-  | 'session.started' | 'session.ended' | 'session.switched'  // category: session
-  | 'turn.started' | 'turn.completed'                         // category: turn
-  | 'tool.activity'                                           // category: tool
-  | 'relay.message';                                          // category: relay
-
+// A kind's category is the part before the dot: session, turn, tool, relay.
 type ExtensionEvent =
   | { kind: 'session.started'; sessionId: string }
   | { kind: 'session.ended'; sessionId: string }
@@ -174,7 +169,9 @@ export function activate(api: ExtensionAPI) {
 
 ### Subscribing to Events (declare capabilities.events in the manifest)
 \`\`\`typescript
-return api.events.subscribe(['turn.completed'], (e) => api.notify(\`Took \${e.durationMs}ms\`));
+// inside activate(api):
+return api.events.subscribe(['turn.completed'], (e) =>
+  e.kind === 'turn.completed' && api.notify(\`Took \${e.durationMs ?? '?'}ms\`));
 \`\`\`
 
 ### Storage

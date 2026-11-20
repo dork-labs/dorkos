@@ -11,7 +11,7 @@ import { BUILDING_DORKOS_APPS_FILES } from './building-dorkos-apps.files.js';
 export const APP_BUILDER_PACK_PIN = {
   name: 'app-builder-pack',
   version: '1.1.6',
-  manifestSha256: '9494f13969218778d6dbd98494f88846a1a6718be65da2e0f595fab3f31efa3b',
+  manifestSha256: '07e0bab73a88a5e440c93d343dd81bccb06bfa597c0a727fcce165547ee76305',
 } as const;
 
 const { 'SKILL.md': skillFile, ...supportingFiles } = BUILDING_DORKOS_APPS_FILES;

@@ -2,6 +2,8 @@
  * Every agent-facing text about building a mini app tells the same five-point story (DOR-4854).
  */
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
 import { extensionToolDefinitions } from '../../../runtimes/claude-code/mcp-tools/extension-tools.js';
 import { buildDorkosAreasBlock } from '../../../runtimes/shared/awareness/dorkos-areas.js';
@@ -49,5 +51,39 @@ describe('the mini app story', () => {
 
   it('is named in the DorkOS block’s Tools line, which has no room for more', () => {
     expect(buildDorkosAreasBlock()).toContain('build mini apps a person approves');
+  });
+
+  /** The repo root, from this test's folder. */
+  const ROOT = path.resolve(import.meta.dirname, '../../../../../../..');
+  const read = (rel: string) => readFileSync(path.join(ROOT, rel), 'utf8');
+
+  it('is in the building-dorkos-apps skill, point by point', () => {
+    const skill = ['SKILL.md', 'personal-marketplace.md']
+      .map((file) =>
+        read(
+          `packages/operating-skills/src/skills/app-builder-pack/skills/building-dorkos-apps/${file}`
+        )
+      )
+      .join('\n');
+    for (const phrase of [
+      'folder is read-only',
+      'personal marketplace',
+      'shell command',
+      'waitsForPerson: true',
+      'Settings > Add-ons',
+    ])
+      expect(skill).toContain(phrase);
+  });
+
+  it('is in the docs page on extensions, point by point', () => {
+    const docs = read('docs/integrations/extensions.mdx');
+    for (const phrase of [
+      "can't change files in that folder",
+      'personal marketplace',
+      'never asks you to run a command',
+      'Turn on <app>?',
+      'Settings → Add-ons',
+    ])
+      expect(docs).toContain(phrase);
   });
 });

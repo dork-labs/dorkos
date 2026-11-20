@@ -135,10 +135,10 @@ The host discovers extensions from two directories: `.dork/extensions/<id>/` in 
 ### Mini apps your agents build
 
 - **Where it lives.** A mini app an agent makes lives in that agent's own folder, at `.dork/extensions/<id>/`, and shows in the app whichever agent or folder you have open. If it runs separately, the agent can change its behind-the-scenes code from its own chat with its file tools, and it keeps running. A change made any other way, such as from a command line, waits for you to approve it. So does a change to what it shows on screen.
-- **When someone else is in the chat.** The agent can't change files in that folder while someone other than you is in the chat, such as a room with another person in it, or Telegram or Slack. Instead, it publishes the app to your personal marketplace. Each new version reaches you as one install card to approve.
+- **When someone else is in the chat.** The agent can't change files in that folder while someone other than you is in the chat, such as a room with another person in it, or Telegram or Slack. Instead, it publishes the app to your personal marketplace. Each new version reaches you as one install card to approve. An app with behind-the-scenes code also asks you to turn it on in Activity.
 - **No commands to copy.** An agent never asks you to run a command to install or update an app. If one does, say no and ask it to publish to your personal marketplace.
-- **What waiting looks like.** A version that waits for you doesn't run. Activity shows `Turn on <app>?`, and the app's card in **Settings → Extensions** shows the version that waits.
-- **Its settings are yours.** Settings and keys an app asks for, such as a data folder, are set by you in **Settings → Add-ons**, on the app's own tab. Agents don't set them for you.
+- **What waiting looks like.** Some or all of a version that waits for you doesn't run. Activity shows `Turn on <app>?`, and the app's card in **Settings → Extensions** shows the version that waits.
+- **Its settings are yours.** Settings and keys an app asks for, such as a data folder, are set by you in **Settings → Add-ons**, on the app's own tab, which appears once the app is turned on. Agents don't set them for you.
 
 An extension that saves files into its own folder changes the files you approved, so it stops and waits for you. Save data with `loadData`/`saveData` instead.
 

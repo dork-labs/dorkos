@@ -63,7 +63,8 @@ Start with nothing and add only what the request names.
 - **Never write an app's stored data, settings or secrets on disk** (its
   `extension-data/` folder, its settings, the secrets store) to set a decision, an
   approval or a limit. Go through the app's person-only route, or ask the person.
-  App settings, such as a data folder, are theirs: they set them in Settings > Add-ons.
+  App settings, such as a data folder, are theirs: they set them in Settings > Add-ons
+  once the app runs.
 - **No private strings in app code or manifests:** no names, emails, internal hostnames,
   account ids, tokens or paths under a home folder. Apps can end up in a public
   marketplace.
@@ -144,7 +145,7 @@ Every version goes back to the person for approval, and to your team's security
 reviewer for a placement check if you have one. Bump `version` in `extension.json`,
 rerun `test_extension`, check `serverStatus` again, redo the screenshots for any surface
 that changed, and repeat the reach list with what changed marked. Until they allow it,
-the new version is held: it doesn't run, `list_extensions` shows `waitsForPerson: true`,
+the new version is held: some or all of it won't run, `list_extensions` shows `waitsForPerson: true`,
 and they see "Turn on <app>?" in Activity. Never hand them a shell command instead.
 
 ## When the docs don't answer

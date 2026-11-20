@@ -19,7 +19,7 @@ import { BUILDING_DORKOS_APPS_FILES } from '../skills/building-dorkos-apps.files
  */
 
 /** The pinned tree's `MANIFEST.sha256`, hashed: the exact value Security reviews. */
-const REVIEWED_MANIFEST_SHA256 = '9494f13969218778d6dbd98494f88846a1a6718be65da2e0f595fab3f31efa3b';
+const REVIEWED_MANIFEST_SHA256 = '07e0bab73a88a5e440c93d343dd81bccb06bfa597c0a727fcce165547ee76305';
 
 const PACK_DIR = fileURLToPath(new URL('../skills/app-builder-pack/', import.meta.url));
 const SKILL_DIR = path.join(PACK_DIR, 'skills', 'building-dorkos-apps');
