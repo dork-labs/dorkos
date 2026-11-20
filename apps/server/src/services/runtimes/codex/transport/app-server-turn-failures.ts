@@ -4,6 +4,7 @@
  *
  * @module services/runtimes/codex/transport/app-server-turn-failures
  */
+import { docsUrl } from '@dorkos/shared/links';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { runsInDockerImage } from '../../../../lib/distribution/index.js';
 import { logger } from '../../../../lib/logger.js';
@@ -26,8 +27,7 @@ const SANDBOX_UNAVAILABLE_COPY =
   'This computer blocks Codex’s sandbox. Its owner can check Linux setup: https://developers.openai.com/codex/concepts/sandboxing/#prerequisites';
 
 /** The DorkOS guide section for Codex in Docker, linked from both Docker copies. */
-const DOCKER_GUIDE_LINE =
-  'Running Codex in Docker: https://dorkos.ai/docs/self-hosting/docker#running-codex-in-docker';
+const DOCKER_GUIDE_LINE = `Running Codex in Docker: ${docsUrl('/self-hosting/docker#running-codex-in-docker')}`;
 
 /**
  * In the Docker image, AppArmor refused the sandbox (Ubuntu, Debian): name
