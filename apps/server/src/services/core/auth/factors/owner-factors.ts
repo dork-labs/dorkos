@@ -12,7 +12,7 @@
  */
 import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'node:crypto';
 import { ulid } from 'ulidx';
-import { and, eq, isNotNull, isNull, ownerFactors, type Db } from '@dorkos/db';
+import { and, eq, gte, isNotNull, isNull, or, ownerFactors, type Db } from '@dorkos/db';
 
 import { getAuth, readAuthDb } from '../index.js';
 
@@ -336,14 +336,23 @@ export function removeOwnerFactor(userId: string, id: string, now = Date.now()):
 /**
  * Take back a factor whose add did not finish. Unlike
  * {@link removeOwnerFactor}, nothing is kept: it never counted, so it is not
- * one the person once had.
+ * one the person once had. Only a row still waiting, or confirmed at or after
+ * `since`, and never removed, is taken: an older factor's history stays.
  *
  * @param userId - Whose.
  * @param id - The factor id.
+ * @param since - When the request that added it began.
  */
-export function discardOwnerFactor(userId: string, id: string): void {
+export function discardOwnerFactor(userId: string, id: string, since: number): void {
   db()
     .delete(ownerFactors)
-    .where(and(eq(ownerFactors.userId, userId), eq(ownerFactors.id, id)))
+    .where(
+      and(
+        eq(ownerFactors.userId, userId),
+        eq(ownerFactors.id, id),
+        isNull(ownerFactors.removedAt),
+        or(isNull(ownerFactors.confirmedAt), gte(ownerFactors.confirmedAt, new Date(since)))
+      )
+    )
     .run();
 }

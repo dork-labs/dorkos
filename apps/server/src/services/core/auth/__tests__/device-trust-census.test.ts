@@ -34,6 +34,7 @@ const GUARDED: Record<string, readonly string[]> = {
   addPendingTotp: ['routes/owner-factors.ts'],
   confirmTotp: ['routes/owner-factors.ts'],
   removeOwnerFactor: ['routes/owner-factors.ts'],
+  discardOwnerFactor: ['routes/owner-factors.ts'],
   addPasskey: ['services/core/auth/factors/owner-passkeys.ts'],
 };
 
@@ -47,6 +48,7 @@ const HOME: Record<string, string> = {
   addPendingTotp: 'services/core/auth/factors/owner-factors.ts',
   confirmTotp: 'services/core/auth/factors/owner-factors.ts',
   removeOwnerFactor: 'services/core/auth/factors/owner-factors.ts',
+  discardOwnerFactor: 'services/core/auth/factors/owner-factors.ts',
   addPasskey: 'services/core/auth/factors/owner-factors.ts',
 };
 

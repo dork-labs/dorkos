@@ -42,6 +42,7 @@ import {
   addPendingTotp,
   confirmTotp,
   confirmedFactors,
+  discardOwnerFactor,
   removeOwnerFactor,
 } from '../factors/owner-factors.js';
 import { resetPasskeyChallengesForTests } from '../factors/owner-passkeys.js';
@@ -497,6 +498,19 @@ describe('sign-in checks change only at this computer', () => {
     expect((await readVia(sinceCookie, 'own-tunnel')).status).toBe(401);
     expect((await readVia(deskCookie, 'direct')).status).toBe(200);
     db.delete(ownerFactors).where(eq(ownerFactors.id, again.id)).run();
+  });
+
+  it('taking a check back never touches one confirmed before the request, or one removed', async () => {
+    const userId = readOwnerAccount()!.id;
+    const older = await addPendingTotp(userId, 'Older', newTotpSecret());
+    confirmTotp(older, 1, Date.now() - 60_000);
+    discardOwnerFactor(userId, older, Date.now() - 1_000);
+    expect(factorRow(older)).toBeDefined();
+    removeOwnerFactor(userId, older);
+    discardOwnerFactor(userId, older, 0);
+    expect(factorRow(older)?.removedAt).not.toBeNull();
+    // Back to no check from other devices, for the tests after this one.
+    db.delete(ownerFactors).where(eq(ownerFactors.id, older)).run();
   });
 
   it('the first check that works from other devices signs out sign-ins made from them before it', async () => {

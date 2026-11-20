@@ -12,6 +12,7 @@ covers:
   - 'fix(auth): the first sign-in check from other devices ends earlier sign-ins before it counts (DOR-3647)'
   - 'fix(auth): removing the last sign-in check says other devices wait for a new one (DOR-3647)'
   - 'fix(auth): a sign-in check counts only once the earlier sign-ins have ended (DOR-3647)'
+  - 'fix(auth): taking back an unfinished sign-in check touches only that check (DOR-3647)'
 ---
 
 ### Added

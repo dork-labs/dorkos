@@ -125,18 +125,20 @@ function notSignedOut(c: Context<ApiEnv>): Response {
  * @param owner - The owner and the confirming sign-in.
  * @param first - Whether no such check had existed before this one.
  * @param factorId - The check just saved.
+ * @param since - When this request began, so only a check it saved is taken back.
  * @returns Whether they were ended.
  */
 async function endedOrTakenBack(
   owner: { userId: string; sessionId: string },
   first: boolean,
-  factorId: string
+  factorId: string,
+  since: number
 ): Promise<boolean> {
   try {
     await endSignInsFromBefore(owner, first);
     return true;
   } catch {
-    discardOwnerFactor(owner.userId, factorId);
+    discardOwnerFactor(owner.userId, factorId, since);
     return false;
   }
 }
@@ -219,6 +221,7 @@ export function createOwnerFactorRoutes(): Hono<ApiEnv> {
       return c.json(errorBody('Send the new passkey.', 'INVALID_BODY'), 400);
     }
     const first = !everHadRemoteFactor(owner.userId);
+    const since = Date.now();
     const added = await finishAddingPasskey({
       userId: owner.userId,
       sessionId: owner.sessionId,
@@ -230,7 +233,8 @@ export function createOwnerFactorRoutes(): Hono<ApiEnv> {
     const here = thisComputerPasskeyOrigins().some(
       (origin) => new URL(origin).hostname === added.host
     );
-    if (!here && !(await endedOrTakenBack(owner, first, added.factorId))) return notSignedOut(c);
+    if (!here && !(await endedOrTakenBack(owner, first, added.factorId, since)))
+      return notSignedOut(c);
     recordSignInTrustChange(owner.userId, here ? 'passkey-added-here' : 'passkey-added');
     void notify('signin.check_added', {
       factorId: added.factorId,
@@ -290,6 +294,7 @@ export function createOwnerFactorRoutes(): Hono<ApiEnv> {
       return c.json(errorBody('That code didn’t match. Try the newest one.', 'CODE_REFUSED'), 400);
     }
     const first = !everHadRemoteFactor(owner.userId);
+    const since = Date.now();
     // The earlier sign-ins end first: if that fails, the check is not confirmed.
     try {
       await endSignInsFromBefore(owner, first);
@@ -298,7 +303,7 @@ export function createOwnerFactorRoutes(): Hono<ApiEnv> {
     }
     confirmTotp(factor.id, step);
     // And again, for any made in the moment between.
-    if (!(await endedOrTakenBack(owner, first, factor.id))) return notSignedOut(c);
+    if (!(await endedOrTakenBack(owner, first, factor.id, since))) return notSignedOut(c);
     recordSignInTrustChange(owner.userId, 'authenticator-added');
     void notify('signin.check_added', { factorId: factor.id, kind: 'authenticator' });
     return c.json({ id: factor.id });
