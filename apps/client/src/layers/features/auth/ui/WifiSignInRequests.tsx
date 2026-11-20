@@ -76,7 +76,7 @@ function RequestCard({ request, trust }: { request: WifiSignInRequest; trust: De
               Open DorkOS in your browser on this computer to approve.
             </p>
           )}
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {inMacApp ? (
               // The Mac app has no passkey check yet; the browser on this computer does.
               <Button size="sm" onClick={() => openExternalLink(requestsPageUrl())}>

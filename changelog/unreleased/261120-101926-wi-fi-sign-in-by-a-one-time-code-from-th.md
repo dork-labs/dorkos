@@ -18,6 +18,7 @@ covers:
   - 'feat(auth): in the Mac app, a Wi-Fi sign-in request opens the browser to approve (DOR-4744)'
   - "fix(auth): a passkey for this computer is listed as this computer's, never as covering other devices (DOR-3647)"
   - 'fix(auth): only loopback names mean this computer, and the sign-in step answers alike before the password (DOR-3647, DOR-4744)'
+  - "fix(auth): a sign-in request's buttons wrap on a phone (DOR-4744)"
 ---
 
 ### Added
