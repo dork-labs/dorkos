@@ -80,7 +80,7 @@ test.describe('Agent browser history steps in real Chromium', () => {
     // "neither" (the panel's next poll asks again), so on a slow runner one read
     // straight after a move can say false/false. Wait until the browser's own
     // history shows the move (a failed read fails with its own error), then wait
-    // for the answer, as the panel does, never reading it once.
+    // for the answer, as the panel does, rather than trusting a single read.
     await expect.poll(() => openEntry(page, history)).toBe(`${site.origin}/fares/lisbon`);
     await expect
       .poll(() => historyAvailability(page as never, history, allowed))

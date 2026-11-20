@@ -14,9 +14,7 @@ import { fakeBrowserState } from '../../pages/fake-browser-state';
 
 const ASKED_AT = '2026-11-15T11:58:00.000Z';
 
-type BrowserState = LocalBrowserPersonState;
-
-function drivenBy(sessionId: string): BrowserState {
+function drivenBy(sessionId: string): LocalBrowserPersonState {
   return fakeBrowserState({
     connectionId: 'c1',
     sessionId,
@@ -37,7 +35,7 @@ async function chatWithBrowser(
   chatPage: { goto: (id?: string, opts?: { dir: string }) => Promise<void> } & {
     sendMessage: (text: string) => Promise<void>;
   },
-  initial: (sessionId: string) => BrowserState = drivenBy
+  initial: (sessionId: string) => LocalBrowserPersonState = drivenBy
 ) {
   const seed = await page.request.post('/api/test/seed-agent');
   expect(seed.ok()).toBe(true);
