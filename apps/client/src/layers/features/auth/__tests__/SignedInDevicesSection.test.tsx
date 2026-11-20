@@ -67,7 +67,7 @@ describe('SignedInDevicesSection', () => {
     expect(screen.queryByText(/This computer/)).not.toBeInTheDocument();
     expect(screen.getByText('This device')).toBeInTheDocument();
     expect(screen.getByText('Last active just now')).toBeInTheDocument();
-    expect(screen.getByText('Wi-Fi · Last active just now')).toBeInTheDocument();
+    expect(screen.getByText('Plain Wi-Fi · Last active just now')).toBeInTheDocument();
   });
 
   it('at this computer, signs out another device and everywhere else', async () => {
@@ -116,4 +116,105 @@ describe('SignedInDevicesSection', () => {
       screen.getByText('Sign out other devices on the computer DorkOS runs on.')
     ).toBeInTheDocument();
   });
+
+  it('at this computer, lets a Wi-Fi device run agents only after a passkey check', async () => {
+    const list = listWith(true);
+    list.sessions[1] = { ...list.sessions[1]!, runsAgents: false };
+    const { transport } = setup(list);
+    vi.mocked(transport.setDeviceRunsAgents)
+      .mockResolvedValueOnce({ kind: 'passkey-check', options: { challenge: 'Y2hhbGxlbmdl' } })
+      .mockResolvedValueOnce({ kind: 'done' });
+    const get = vi.fn().mockResolvedValue(fakeAssertion());
+    Object.defineProperty(navigator, 'credentials', { value: { get }, configurable: true });
+
+    expect(
+      await screen.findByText('Anyone on the same Wi-Fi could take over this session.')
+    ).toBeInTheDocument();
+    expect(screen.getByText('It turns off after 12 hours idle.')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('switch', { name: 'Run agents from Safari on iPhone' }));
+    await waitFor(() => expect(transport.setDeviceRunsAgents).toHaveBeenCalledTimes(2));
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(transport.setDeviceRunsAgents).mock.calls[1]![2]).toMatchObject({
+      response: { signature: expect.any(String) },
+    });
+  });
+
+  it('elsewhere, shows the switch but never changes it', async () => {
+    const list = listWith(false);
+    list.sessions[1] = { ...list.sessions[1]!, runsAgents: false };
+    const { transport } = setup(list);
+    const toggle = await screen.findByRole('switch', { name: 'Run agents from Safari on iPhone' });
+    expect(toggle).toBeDisabled();
+    expect(transport.listWifiSignInRequests).not.toHaveBeenCalled();
+  });
+
+  it('shows a waiting device with its match code, and its code once approved', async () => {
+    const { transport } = setup(listWith(true));
+    vi.mocked(transport.listWifiSignInRequests).mockResolvedValue({
+      requests: [
+        {
+          id: 'req-1',
+          deviceName: 'Firefox on Linux',
+          address: '192.168.1.40',
+          requestedAt: NOW,
+          expiresAt: NOW,
+          matchCode: 'K7QX',
+          approved: false,
+        },
+      ],
+    });
+    vi.mocked(transport.approveWifiSignIn)
+      .mockResolvedValueOnce({ kind: 'passkey-check', options: { challenge: 'Y2hhbGxlbmdl' } })
+      .mockResolvedValueOnce({ kind: 'approved', code: 'ABCD2345', expiresAt: NOW });
+    Object.defineProperty(navigator, 'credentials', {
+      value: { get: vi.fn().mockResolvedValue(fakeAssertion()) },
+      configurable: true,
+    });
+
+    expect(await screen.findByText('Firefox on Linux')).toBeInTheDocument();
+    expect(screen.getByLabelText('K 7 Q X')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    expect(await screen.findByLabelText('A B C D 2 3 4 5')).toBeInTheDocument();
+    expect(screen.getByText('Expires in 5 minutes.')).toBeInTheDocument();
+  });
+
+  it('with no passkey on this computer, says to add one and shows no code', async () => {
+    const { transport } = setup(listWith(true));
+    vi.mocked(transport.listWifiSignInRequests).mockResolvedValue({
+      requests: [
+        {
+          id: 'req-1',
+          deviceName: 'Firefox on Linux',
+          address: '192.168.1.40',
+          requestedAt: NOW,
+          expiresAt: NOW,
+          matchCode: 'K7QX',
+          approved: false,
+        },
+      ],
+    });
+    vi.mocked(transport.approveWifiSignIn).mockResolvedValue({ kind: 'needs-passkey' });
+    await userEvent.click(await screen.findByRole('button', { name: 'Approve' }));
+    expect(
+      await screen.findByText(
+        'Add a passkey on this computer first, in Signing in from other devices.'
+      )
+    ).toBeInTheDocument();
+  });
 });
+
+/** A browser passkey answer, as `navigator.credentials.get` resolves; no real authenticator. */
+function fakeAssertion() {
+  const bytes = (text: string) => new TextEncoder().encode(text).buffer;
+  return {
+    id: 'cred-1',
+    rawId: bytes('cred-1'),
+    type: 'public-key',
+    response: {
+      clientDataJSON: bytes('{}'),
+      authenticatorData: bytes('auth'),
+      signature: bytes('sig'),
+      userHandle: null,
+    },
+  };
+}

@@ -93,6 +93,8 @@ const EXCEPTIONS: Record<string, string> = {
   'devices POST /sign-in-requests/:id/approve':
     'Held by a fresh passkey check at this computer instead of a password (DOR-4744).',
   'devices POST /sign-in-requests/:id/decline': 'Turns a device away; grants nothing.',
+  'devices PUT /sessions/:id/runs-agents':
+    'Held by a fresh passkey check at this computer instead of a password (DOR-4744).',
   'owner-factors POST /passkeys/finish':
     'Consumes the one-use challenge from the confirmed /passkeys/options.',
   'owner-factors POST /authenticator/confirm':

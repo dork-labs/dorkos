@@ -4,12 +4,15 @@
  *
  * Over Wi-Fi a device never types the owner's password. Instead:
  *
- * 1. **The device asks.** It starts a sign-in request and keeps the request's
- *    secret id ({@link startWifiSignIn}). Nothing is approved yet.
+ * 1. **The device asks.** It starts a sign-in request, keeps the request's
+ *    secret id, and shows a short match code ({@link startWifiSignIn}).
+ *    Nothing is approved yet.
  * 2. **The owner approves at this computer.** The request shows in the app at
- *    this computer, with the device's name and when it asked, under a second,
- *    separate id. Approving it there makes a one-time code bound to that one
- *    request ({@link approveWifiSignIn}), and the app shows it.
+ *    this computer, with the device's name, when it asked and the same match
+ *    code, under a second, separate id. The owner approves only the request
+ *    whose code matches the one on the device. Approving it makes a one-time
+ *    code bound to that one request ({@link approveWifiSignIn}), and the app
+ *    shows it.
  * 3. **The device types the code.** The code signs in only the request it was
  *    made for, once, within {@link WIFI_SIGN_IN_CODE_TTL_MS}
  *    ({@link redeemWifiSignIn}). The sign-in it makes is an ordinary Wi-Fi
@@ -23,6 +26,9 @@
  * {@link MAX_STARTS_PER_ADDRESS} per {@link START_WINDOW_MS}; a request survives
  * {@link MAX_MISSES_PER_REQUEST} wrong codes; the listener as a whole takes
  * {@link MAX_MISSES_PER_WINDOW} wrong codes per {@link MISS_WINDOW_MS}.
+ *
+ * A code typed for the wrong request ends the request it was made for too:
+ * whoever typed it may have read it off the network, so neither signs in.
  *
  * Every refusal reads the same, so a caller cannot tell an unknown id from an
  * expired or used one.
@@ -61,6 +67,9 @@ const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 /** Code length: 8 characters, about 39 bits. */
 export const WIFI_SIGN_IN_CODE_LENGTH = 8;
 
+/** Match code length: 4 characters, enough to tell two requests apart by eye. */
+export const WIFI_SIGN_IN_MATCH_LENGTH = 4;
+
 /** What the app at this computer shows about one open request. Never its secret. */
 export interface WifiSignInRequestView {
   /** The id the app approves or declines it by. Not the device's secret. */
@@ -73,6 +82,8 @@ export interface WifiSignInRequestView {
   readonly requestedAt: string;
   /** When it stops waiting (ISO 8601). */
   readonly expiresAt: string;
+  /** The short code the device shows, to match before approving. */
+  readonly matchCode: string;
   /** Whether a code was already shown for it. */
   readonly approved: boolean;
 }
@@ -89,6 +100,7 @@ interface OpenRequest {
   address: string;
   requestedAt: number;
   expiresAt: number;
+  matchCode: string;
   /** Set once approved: who it signs in, the code's hash, when the code ends. */
   approval: { userId: string; codeHash: Buffer; expiresAt: number } | null;
   misses: number;
@@ -107,9 +119,9 @@ function hash(value: string): Buffer {
 }
 
 /** A fresh code from {@link CODE_ALPHABET}. */
-function newCode(): string {
+function newCode(length = WIFI_SIGN_IN_CODE_LENGTH): string {
   let code = '';
-  for (let i = 0; i < WIFI_SIGN_IN_CODE_LENGTH; i += 1) {
+  for (let i = 0; i < length; i += 1) {
     code += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)];
   }
   return code;
@@ -156,13 +168,13 @@ export interface WifiSignInStart {
  *
  * @param device - See {@link WifiSignInStart}.
  * @param now - The current time, for tests.
- * @returns The request's secret id and when it stops waiting, or `null` when
+ * @returns The request's secret id, its match code and when it stops waiting, or `null` when
  *   too many are open or this address has started too many.
  */
 export function startWifiSignIn(
   device: WifiSignInStart,
   now = Date.now()
-): { requestId: string; expiresAt: string } | null {
+): { requestId: string; matchCode: string; expiresAt: string } | null {
   sweep(now);
   if (open.size >= MAX_OPEN_REQUESTS) return null;
   const recent = starts.get(device.address) ?? [];
@@ -172,6 +184,7 @@ export function startWifiSignIn(
   const requestId = randomBytes(32).toString('base64url');
   const viewId = randomBytes(16).toString('base64url');
   const expiresAt = now + WIFI_SIGN_IN_REQUEST_TTL_MS;
+  const matchCode = newCode(WIFI_SIGN_IN_MATCH_LENGTH);
   open.set(viewId, {
     secretHash: hash(requestId),
     viewId,
@@ -179,10 +192,11 @@ export function startWifiSignIn(
     address: device.address,
     requestedAt: now,
     expiresAt,
+    matchCode,
     approval: null,
     misses: 0,
   });
-  return { requestId, expiresAt: new Date(expiresAt).toISOString() };
+  return { requestId, matchCode, expiresAt: new Date(expiresAt).toISOString() };
 }
 
 /**
@@ -200,6 +214,7 @@ export function listWifiSignInRequests(now = Date.now()): WifiSignInRequestView[
       address: request.address,
       requestedAt: new Date(request.requestedAt).toISOString(),
       expiresAt: new Date(request.expiresAt).toISOString(),
+      matchCode: request.matchCode,
       approved: request.approval !== null,
     }));
 }
@@ -254,16 +269,24 @@ export function redeemWifiSignIn(
 ): { userId: string } | { refusal: WifiSignInRefusal } {
   sweep(now);
   if (misses.length >= MAX_MISSES_PER_WINDOW) return { refusal: 'too-many-tries' };
+  const typedHash = hash(normalizeWifiSignInCode(typed));
   const request = bySecret(requestId);
-  if (!request?.approval) {
-    misses.push(now);
-    return { refusal: 'refused' };
-  }
-  if (timingSafeEqual(hash(normalizeWifiSignInCode(typed)), request.approval.codeHash)) {
+  if (request?.approval && timingSafeEqual(typedHash, request.approval.codeHash)) {
     open.delete(request.viewId);
     return { userId: request.approval.userId };
   }
+  // A code made for another request ends that request too (see the module doc).
+  for (const other of open.values()) {
+    if (
+      other !== request &&
+      other.approval &&
+      timingSafeEqual(typedHash, other.approval.codeHash)
+    ) {
+      open.delete(other.viewId);
+    }
+  }
   misses.push(now);
+  if (!request?.approval) return { refusal: 'refused' };
   request.misses += 1;
   if (request.misses >= MAX_MISSES_PER_REQUEST) {
     open.delete(request.viewId);

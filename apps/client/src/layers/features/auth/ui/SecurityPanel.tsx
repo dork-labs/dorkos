@@ -17,6 +17,7 @@ import { OwnerSetupScreen } from './OwnerSetupScreen';
 import { OwnerSignInScreen } from './OwnerSignInScreen';
 import { ApiKeysSection } from './ApiKeysSection';
 import { SignedInDevicesSection } from './SignedInDevicesSection';
+import { OwnerFactorsSection } from './OwnerFactorsSection';
 import { useCurrentUser, useSignOut } from '../model/use-auth-session';
 
 /** Which step turning login on needs: create the owner, or sign in as the one that exists. */
@@ -127,6 +128,16 @@ export function SecurityPanel() {
         <FieldCard>
           <FieldCardContent>
             <SignedInDevicesSection />
+          </FieldCardContent>
+        </FieldCard>
+      )}
+
+      {/* The owner's passkeys and authenticator apps (DOR-3647). The section
+          hides itself for anyone the server will not show them to. */}
+      {currentUser && (
+        <FieldCard>
+          <FieldCardContent>
+            <OwnerFactorsSection />
           </FieldCardContent>
         </FieldCard>
       )}

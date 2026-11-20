@@ -49,8 +49,6 @@ const LABELS: Partial<Record<StepUpActionKind, string>> = {
   'devices.sign-out-one': 'Sign it out',
   'devices.sign-out-others': 'Sign out others',
   'devices.sign-out-all': 'Sign out everywhere',
-  'devices.wifi-runs-agents': 'Allow',
-  'devices.wifi-sign-in-approve': 'Approve',
   'owner-factor.change': 'Confirm',
 };
 

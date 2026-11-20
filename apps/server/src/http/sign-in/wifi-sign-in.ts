@@ -2,7 +2,8 @@
  * A device on Wi-Fi asks to sign in, and trades a code from this computer for
  * its sign-in (DOR-4744; `services/core/auth/sessions/wifi-sign-in-requests.ts`).
  *
- * - `POST /api/wifi-sign-in/start`: open a request. Answers its secret id.
+ * - `POST /api/wifi-sign-in/start`: open a request. Answers its secret id, the
+ *   short match code to show, and what the device is called at the computer.
  * - `POST /api/wifi-sign-in/finish`: `{ requestId, code }`. Sets the Wi-Fi
  *   sign-in cookie when the code is the one this computer showed for that request.
  *
@@ -46,15 +47,14 @@ export function mountWifiSignIn(app: Hono<ApiEnv>, auth: Auth): void {
     if (ingressOf(c.env.incoming) !== 'wifi') return c.json({ error: 'Not found' }, 404);
     const facts = honoRequestFacts(c);
     if (!isOwnOriginJsonWrite(facts.headers)) return c.json(refused, 403);
-    const started = startWifiSignIn({
-      deviceName: describeUserAgent(facts.headers['user-agent']),
-      address: facts.peerAddress ?? 'unknown',
-    });
+    const deviceName = describeUserAgent(facts.headers['user-agent']);
+    const started = startWifiSignIn({ deviceName, address: facts.peerAddress ?? 'unknown' });
     c.header('Cache-Control', 'no-store');
     if (!started) {
       return c.json({ error: 'Too many sign-in requests. Try again in a few minutes.' }, 429);
     }
-    return c.json(started);
+    // What this device is called at the computer, so the person can find it there.
+    return c.json({ ...started, deviceName });
   });
 
   app.post('/api/wifi-sign-in/finish', async (c) => {

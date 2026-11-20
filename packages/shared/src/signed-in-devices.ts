@@ -92,6 +92,8 @@ export const WifiSignInRequestSchema = z.object({
   requestedAt: z.string(),
   /** When it stops waiting (ISO 8601). */
   expiresAt: z.string(),
+  /** The short code the device shows: approve only when the two match. */
+  matchCode: z.string(),
   /** Whether a code was already shown for it. */
   approved: z.boolean(),
 });
@@ -139,12 +141,14 @@ export interface SignedInDevicesTransport {
   signOutEverywhereElse(): Promise<SignOutEverywhereElseResult>;
   /**
    * Let one Wi-Fi device run agents at their own level, or stop it. At the
-   * computer DorkOS runs on only, after "Confirm it's you".
+   * computer DorkOS runs on only. Turning it on is called first with no
+   * passkey, which asks for a fresh passkey check, then with its response.
    *
    * @param id - The sign-in's opaque id from the list.
    * @param on - On or off.
+   * @param passkey - The browser's response to the passkey check, the second time.
    */
-  setDeviceRunsAgents(id: string, on: boolean): Promise<void>;
+  setDeviceRunsAgents(id: string, on: boolean, passkey?: unknown): Promise<PasskeyCheckedStep>;
   /** Devices on Wi-Fi waiting to be approved. At the computer DorkOS runs on only. */
   listWifiSignInRequests(): Promise<WifiSignInRequestList>;
   /**
@@ -162,13 +166,77 @@ export interface SignedInDevicesTransport {
    * @param id - The request's id from the list.
    */
   declineWifiSignIn(id: string): Promise<void>;
+  /** The owner's sign-in checks. In person only: at this computer or over https. */
+  listOwnerFactors(): Promise<{ factors: OwnerFactor[] }>;
+  /**
+   * Start adding a passkey on this page's address, after "Confirm it's you".
+   *
+   * @param label - What to call it.
+   * @returns The options to hand the browser.
+   */
+  startAddingPasskey(label: string): Promise<{ options: unknown }>;
+  /**
+   * Finish adding a passkey.
+   *
+   * @param response - The browser's new passkey.
+   */
+  finishAddingPasskey(response: unknown): Promise<{ id: string; host: string }>;
+  /**
+   * Start adding an authenticator app, after "Confirm it's you".
+   *
+   * @param label - What to call it.
+   */
+  startAddingAuthenticator(label: string): Promise<PendingAuthenticator>;
+  /**
+   * Confirm a new authenticator app with one of its codes.
+   *
+   * @param id - The pending authenticator's id.
+   * @param code - A code it shows now.
+   */
+  confirmAuthenticator(id: string, code: string): Promise<{ id: string }>;
+  /**
+   * Remove one sign-in check, after "Confirm it's you".
+   *
+   * @param id - Its id.
+   */
+  removeOwnerFactor(id: string): Promise<void>;
 }
+
+/** One of the owner's sign-in checks: a passkey or an authenticator app (DOR-3647). */
+export const OwnerFactorSchema = z.object({
+  id: z.string(),
+  kind: z.enum(['totp', 'passkey']),
+  /** What the owner called it. */
+  label: z.string(),
+  /** A passkey's address, the only one it works on. */
+  host: z.string().optional(),
+  addedAt: z.string(),
+  lastUsedAt: z.string().optional(),
+});
+
+/** See {@link OwnerFactorSchema}. */
+export type OwnerFactor = z.infer<typeof OwnerFactorSchema>;
+
+/** A new authenticator app waiting for its first code. */
+export interface PendingAuthenticator {
+  readonly id: string;
+  /** The shared secret, to type in by hand. */
+  readonly secret: string;
+  /** The `otpauth://` address to scan. */
+  readonly uri: string;
+}
+
+/** Where an action behind a fresh passkey check stands after one call. */
+export type PasskeyCheckedStep =
+  /** Done. */
+  | { kind: 'done' }
+  /** Run this passkey check, then call again with its response. */
+  | { kind: 'passkey-check'; options: unknown }
+  /** There is no passkey on this computer to check with yet. */
+  | { kind: 'needs-passkey' };
 
 /** Where approving a Wi-Fi sign-in stands after one call. */
 export type WifiSignInApprovalStep =
-  /** Run this passkey check, then call again with its response. */
-  | { kind: 'passkey-check'; options: unknown }
+  | Exclude<PasskeyCheckedStep, { kind: 'done' }>
   /** Approved: show this code. */
-  | { kind: 'approved'; code: string; expiresAt: string }
-  /** There is no passkey on this computer to check with yet. */
-  | { kind: 'needs-passkey' };
+  | { kind: 'approved'; code: string; expiresAt: string };

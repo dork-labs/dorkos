@@ -90,6 +90,21 @@ describe('a code', () => {
     expect(redeemWifiSignIn(other.requestId, mine.code, NOW)).toEqual({ refusal: 'refused' });
   });
 
+  it('typed for another request, it ends the request it was made for too', () => {
+    const a = approved('10.0.0.1');
+    const b = startWifiSignIn({ ...PHONE, address: '10.0.0.2' }, NOW)!;
+    expect(redeemWifiSignIn(b.requestId, a.code, NOW)).toEqual({ refusal: 'refused' });
+    expect(redeemWifiSignIn(a.requestId, a.code, NOW)).toEqual({ refusal: 'refused' });
+    expect(listWifiSignInRequests(NOW).some((r) => r.id === a.viewId)).toBe(false);
+  });
+
+  it('shows the device and the desk the same short match code', () => {
+    const started = startWifiSignIn(PHONE, NOW)!;
+    const [view] = listWifiSignInRequests(NOW);
+    expect(started.matchCode).toHaveLength(4);
+    expect(view!.matchCode).toBe(started.matchCode);
+  });
+
   it('stops working after 5 minutes', () => {
     const { requestId, code } = approved();
     expect(redeemWifiSignIn(requestId, code, NOW + WIFI_SIGN_IN_CODE_TTL_MS)).toEqual({

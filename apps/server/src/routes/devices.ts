@@ -117,7 +117,7 @@ async function resolveCaller(c: Context<ApiEnv>): Promise<DevicesCaller | null |
     c.set('user', user);
     return { userId: user.userId, sessionId: user.sessionId, atThisComputer };
   }
-  if (!atThisComputer) return c.json(authRequiredBody(), 401);
+  if (!atThisComputer) return c.json(authRequiredBody(facts.ingress), 401);
   // The person at this computer, with no sign-in of their own: the owner's.
   const owner = readOwnerAccount();
   return owner ? { userId: owner.id, atThisComputer } : null;
@@ -185,55 +185,10 @@ export function createDevicesRoutes(auth: () => Auth | undefined = getAuth): Hon
     });
   });
 
-  router.put('/sessions/:id/runs-agents', async (c) => {
-    const instance = auth();
-    const notFound = (): Response =>
-      c.json(errorBody('That sign-in has already ended.', 'DEVICE_NOT_FOUND'), 404);
-    if (!instance) return notFound();
-    if (!isOwnOriginJsonWrite(honoRequestFacts(c).headers)) {
-      return c.json(errorBody('Change this in the DorkOS app.', NOT_FROM_OWN_PAGE), 403);
-    }
-    const body = (readJsonBody(c) ?? null) as { on?: unknown } | null;
-    if (typeof body?.on !== 'boolean') {
-      return c.json(errorBody('Say whether this device may run agents.', 'INVALID_BODY'), 400);
-    }
-    const on = body.on;
-    const caller = await resolveCaller(c);
-    if (caller instanceof Response) return caller;
-    if (!caller) return notFound();
-    if (!caller.atThisComputer) {
-      return c.json(
-        errorBody('Change this on the computer DorkOS runs on.', NEEDS_PERSON_AT_THIS_COMPUTER),
-        403
-      );
-    }
-    const deviceId = c.req.param('id');
-    const sessionId = await findSignedInDevice(instance, caller.userId, deviceId);
-    if (!sessionId) return notFound();
-    const run = async () => {
-      if (!setWifiAgentTurns(caller.userId, sessionId, on)) return notFound();
-      recordSignInTrustChange(
-        caller.userId,
-        on ? 'device-runs-agents-on' : 'device-runs-agents-off'
-      );
-      return c.body(null, 204);
-    };
-    // Turning it off only takes power away: no confirmation needed.
-    if (!on) return run();
-    return runFrontDoorWrite(c, {
-      kind: 'devices.wifi-runs-agents',
-      target: deviceId,
-      input: { deviceId, userId: caller.userId, on },
-      reason: 'Let this Wi-Fi device run your agents.',
-      subject: 'signed-in devices',
-      run,
-    });
-  });
-
   /**
-   * The bar for the Wi-Fi sign-in requests: the owner, signed in, at this
-   * computer by the classifier's verdict (never an encrypted route, never a
-   * header), from one of this server's own pages.
+   * The bar for approving a Wi-Fi device or letting one run agents: the owner,
+   * signed in, at this computer by the classifier's verdict (never an
+   * encrypted route, never a header), from one of this server's own pages.
    */
   const ownerAtTheMac = async (
     c: Context<ApiEnv>,
@@ -241,19 +196,83 @@ export function createDevicesRoutes(auth: () => Auth | undefined = getAuth): Hon
   ): Promise<{ userId: string; sessionId: string } | Response> => {
     const facts = honoRequestFacts(c);
     if (write && !isOwnOriginJsonWrite(facts.headers)) {
-      return c.json(errorBody('Approve this in the DorkOS app.', NOT_FROM_OWN_PAGE), 403);
+      return c.json(errorBody('Do this in the DorkOS app.', NOT_FROM_OWN_PAGE), 403);
     }
     const caller = await resolveCaller(c);
     if (caller instanceof Response) return caller;
     const atTheMac = isAtThisComputer(facts);
     if (!caller || !caller.atThisComputer || !atTheMac || caller.sessionId === undefined) {
       return c.json(
-        errorBody('Approve this on the computer DorkOS runs on.', NEEDS_PERSON_AT_THIS_COMPUTER),
+        errorBody('Do this on the computer DorkOS runs on.', NEEDS_PERSON_AT_THIS_COMPUTER),
         403
       );
     }
     return { userId: caller.userId, sessionId: caller.sessionId };
   };
+
+  /**
+   * A fresh passkey check for one action, done by the person at this computer
+   * (DOR-4744). The first call answers `428` with the check; the second sends
+   * the browser's response in `passkey`. Each check covers this one action
+   * once. Never a password: with no passkey here, `409` says to add one.
+   *
+   * @returns `true` once checked, otherwise the answer to send.
+   */
+  const passkeyChecked = async (
+    c: Context<ApiEnv>,
+    owner: { userId: string; sessionId: string },
+    action: string,
+    passkey: unknown
+  ): Promise<true | Response> => {
+    const purpose = { kind: 'confirm', ...owner, action } as const;
+    if (passkey === undefined) {
+      const options = await startPasskeyCheck(purpose, String(c.req.header('origin')));
+      if (options === 'no-passkey') {
+        return c.json(errorBody('Add a passkey on this computer first.', PASSKEY_NEEDED_CODE), 409);
+      }
+      if (typeof options === 'string') {
+        return c.json(errorBody('Do this in the DorkOS app.', NOT_FROM_OWN_PAGE), 403);
+      }
+      c.header('Cache-Control', 'no-store');
+      return c.json({ code: PASSKEY_CHECK_CODE, options }, 428);
+    }
+    const checked = await finishPasskeyCheck(
+      purpose,
+      passkey as Parameters<typeof finishPasskeyCheck>[1]
+    );
+    if (typeof checked === 'string') {
+      return c.json(
+        errorBody('That passkey check didn’t work. Try again.', 'PASSKEY_REFUSED'),
+        401
+      );
+    }
+    return true;
+  };
+
+  router.put('/sessions/:id/runs-agents', async (c) => {
+    const instance = auth();
+    const notFound = (): Response =>
+      c.json(errorBody('That sign-in has already ended.', 'DEVICE_NOT_FOUND'), 404);
+    if (!instance) return notFound();
+    const owner = await ownerAtTheMac(c, true);
+    if (owner instanceof Response) return owner;
+    const body = (readJsonBody(c) ?? null) as { on?: unknown; passkey?: unknown } | null;
+    if (typeof body?.on !== 'boolean') {
+      return c.json(errorBody('Say whether this device may run agents.', 'INVALID_BODY'), 400);
+    }
+    const on = body.on;
+    const deviceId = c.req.param('id');
+    const sessionId = await findSignedInDevice(instance, owner.userId, deviceId);
+    if (!sessionId) return notFound();
+    // Turning it on needs a fresh passkey check; turning it off only takes power away.
+    if (on) {
+      const checked = await passkeyChecked(c, owner, `wifi-runs-agents:${deviceId}`, body.passkey);
+      if (checked !== true) return checked;
+    }
+    if (!setWifiAgentTurns(owner.userId, sessionId, on)) return notFound();
+    recordSignInTrustChange(owner.userId, on ? 'device-runs-agents-on' : 'device-runs-agents-off');
+    return c.body(null, 204);
+  });
 
   router.get('/sign-in-requests', async (c) => {
     const owner = await ownerAtTheMac(c, false);
@@ -274,34 +293,8 @@ export function createDevicesRoutes(auth: () => Auth | undefined = getAuth): Hon
       return gone();
     }
     const body = (readJsonBody(c) ?? null) as { passkey?: unknown } | null;
-    const purpose = {
-      kind: 'confirm',
-      userId: owner.userId,
-      sessionId: owner.sessionId,
-      action: `wifi-sign-in-approve:${viewId}`,
-    } as const;
-    // First call: ask for a fresh passkey check. Never a password.
-    if (body?.passkey === undefined) {
-      const options = await startPasskeyCheck(purpose, String(c.req.header('origin')));
-      if (options === 'no-passkey') {
-        return c.json(errorBody('Add a passkey on this computer first.', PASSKEY_NEEDED_CODE), 409);
-      }
-      if (typeof options === 'string') {
-        return c.json(errorBody('Approve this in the DorkOS app.', NOT_FROM_OWN_PAGE), 403);
-      }
-      c.header('Cache-Control', 'no-store');
-      return c.json({ code: PASSKEY_CHECK_CODE, options }, 428);
-    }
-    const checked = await finishPasskeyCheck(
-      purpose,
-      body.passkey as Parameters<typeof finishPasskeyCheck>[1]
-    );
-    if (typeof checked === 'string') {
-      return c.json(
-        errorBody('That passkey check didn’t work. Try again.', 'PASSKEY_REFUSED'),
-        401
-      );
-    }
+    const checked = await passkeyChecked(c, owner, `wifi-sign-in-approve:${viewId}`, body?.passkey);
+    if (checked !== true) return checked;
     const approved = approveWifiSignIn(viewId, owner.userId);
     if (!approved) return gone();
     recordSignInTrustChange(owner.userId, 'wifi-sign-in-approved');

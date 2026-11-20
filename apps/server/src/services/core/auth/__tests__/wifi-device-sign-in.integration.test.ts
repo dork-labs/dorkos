@@ -38,7 +38,6 @@ import {
 } from '../sessions/wifi-sign-in-requests.js';
 import { resetWifiActivityForTests } from '../sessions/wifi-activity.js';
 import { WIFI_SESSION_IDLE_SECONDS } from '../sessions/session-route.js';
-import { confirmAuthFixture } from './confirm-write.js';
 import { env } from '../../../../env.js';
 
 const target = swappableServer();
@@ -93,6 +92,22 @@ let deskCookie = '';
 let desk: SoftAuthenticator;
 let db: Db;
 let tmpDir: string;
+
+/** The desk's passkey answering a challenge, as the browser sends it. */
+function passkeyResponse(challenge: string) {
+  const proof = desk.assert({ challenge });
+  return {
+    id: proof.credentialId,
+    rawId: proof.credentialId,
+    type: 'public-key',
+    clientExtensionResults: {},
+    response: {
+      clientDataJSON: proof.clientDataJSON,
+      authenticatorData: proof.authenticatorData,
+      signature: proof.signature,
+    },
+  };
+}
 
 /** Approve a request at the desk with a fresh passkey check; returns the code. */
 async function approveAtDesk(viewId: string): Promise<string> {
@@ -225,6 +240,31 @@ describe('a one-time code from this computer', () => {
     });
     expect(res.status).toBe(401);
     expect(mine.body.requestId).not.toBe(other.body.requestId);
+  });
+
+  it('shows the device a match code the desk sees beside the request', async () => {
+    const started = await post('/api/wifi-sign-in/start', 'wifi').send({});
+    const listed = await request(target.server)
+      .get('/api/devices/sign-in-requests')
+      .set('Host', LOCAL)
+      .set('Cookie', deskCookie);
+    expect(listed.body.requests[0].matchCode).toBe(started.body.matchCode);
+  });
+
+  it('a code typed for another request ends both', async () => {
+    const a = await post('/api/wifi-sign-in/start', 'wifi').send({});
+    const code = await approveAtDesk(await newestRequestId());
+    const b = await post('/api/wifi-sign-in/start', 'wifi').send({});
+    const wrong = await post('/api/wifi-sign-in/finish', 'wifi').send({
+      requestId: b.body.requestId,
+      code,
+    });
+    expect(wrong.status).toBe(401);
+    const late = await post('/api/wifi-sign-in/finish', 'wifi').send({
+      requestId: a.body.requestId,
+      code,
+    });
+    expect(late.status).toBe(401);
   });
 
   it('stops working once its 5 minutes are up', async () => {
@@ -396,18 +436,72 @@ describe('what a Wi-Fi device may do', () => {
     expect(asAgent.status).toBe(403);
     expect((await turnFrom(device, true)).body.held).toBe(true);
 
-    const allowed = await confirmAuthFixture(
-      post(url, 'direct', deskCookie, 'put').send({ on: true }),
-      target.server,
-      { Host: LOCAL, Origin: ORIGIN, Cookie: deskCookie },
-      PASSWORD
-    );
+    // A password never turns it on: only a fresh passkey check at the desk.
+    const asked = await post(url, 'direct', deskCookie, 'put').send({ on: true });
+    expect(asked.status).toBe(428);
+    expect((await turnFrom(device, true)).body.held).toBe(true);
+    const allowed = await post(url, 'direct', deskCookie, 'put').send({
+      on: true,
+      passkey: passkeyResponse(asked.body.options.challenge),
+    });
     expect(allowed.status).toBe(204);
     expect((await turnFrom(device, true)).body.held).toBe(false);
 
-    // Another device is still held.
+    // Another device is still held, and that check cannot be used again for it.
     const other = await signInOverWifi();
     expect((await turnFrom(other, true)).body.held).toBe(true);
+    const otherRow = (
+      await request(target.server)
+        .get('/api/devices/sessions')
+        .set('Host', LOCAL)
+        .set('Cookie', deskCookie)
+    ).body.sessions.find(
+      (s: { id: string; route: string }) => s.route === 'wifi' && s.id !== row.id
+    );
+    const reused = await post(
+      `/api/devices/sessions/${otherRow.id}/runs-agents`,
+      'direct',
+      deskCookie,
+      'put'
+    ).send({
+      on: true,
+      passkey: passkeyResponse(asked.body.options.challenge),
+    });
+    expect(reused.status).toBe(401);
+    expect((await turnFrom(other, true)).body.held).toBe(true);
+
+    // Turning it off answers at once.
+    const off = await post(url, 'direct', deskCookie, 'put').send({ on: false });
+    expect(off.status).toBe(204);
+    expect((await turnFrom(device, true)).body.held).toBe(true);
+  });
+
+  it('a passkey check made for approving a sign-in never lets a device run agents', async () => {
+    const device = await signInOverWifi();
+    await post('/api/wifi-sign-in/start', 'wifi').send({});
+    const viewId = await newestRequestId();
+    const asked = await post(
+      `/api/devices/sign-in-requests/${viewId}/approve`,
+      'direct',
+      deskCookie
+    ).send({});
+    const row = (
+      await request(target.server)
+        .get('/api/devices/sessions')
+        .set('Host', LOCAL)
+        .set('Cookie', deskCookie)
+    ).body.sessions.find((s: { route: string }) => s.route === 'wifi');
+    const res = await post(
+      `/api/devices/sessions/${row.id}/runs-agents`,
+      'direct',
+      deskCookie,
+      'put'
+    ).send({
+      on: true,
+      passkey: passkeyResponse(asked.body.options.challenge),
+    });
+    expect(res.status).toBe(401);
+    expect((await turnFrom(device, true)).body.held).toBe(true);
   });
 
   it('a device left unused for 12 hours is signed out, and its choice with it', async () => {

@@ -38,7 +38,7 @@ The email is a **local identifier only**: it is never verified and no email is e
 <Step>
 ### You're signed in
 
-Once the owner account exists, this computer asks for your password too, and every other device always does. Your sign-in lasts 30 days and renews each day you use DorkOS, so you stay signed in across reloads and restarts. On another device it ends after 90 days however often you use it, and after 7 days on Wi-Fi. Sign out anytime from **Settings → Login & security**. After too many wrong passwords for one account, sign-ins to it pause for a few minutes.
+Once the owner account exists, this computer asks for your password too, and every other device always does. Your sign-in lasts 30 days and renews each day you use DorkOS, so you stay signed in across reloads and restarts. On another device it ends after 90 days however often you use it. On Wi-Fi it ends after 7 days, or after 12 hours unused, whichever comes first. Sign out anytime from **Settings → Login & security**. After too many wrong passwords for one account, sign-ins to it pause for a few minutes.
 
 **Settings → Login & security → Signed-in devices** lists every browser and device your account is signed in on, how each one connects, and when it was last used. Signing one out ends everything it had open, its chat streams and terminals included, and stops any chat it started. You can sign this device out from anywhere. Other devices you can sign out from the computer DorkOS runs on, or from a device signed in over remote access or your own tunnel, but not over plain Wi-Fi.
 
@@ -81,6 +81,7 @@ Want to reach DorkOS from your phone or another computer? Create the owner accou
 To open DorkOS on a phone or tablet in the same home or office, you don't need a tunnel. On a Mac, in **Settings → Remote access**, turn on **Let devices on my Wi-Fi in**. On other computers, set `DORKOS_HOST` instead (see above).
 
 - With no owner account yet, DorkOS walks you into creating one first, the same way the tunnel does. Every device on the Wi-Fi then signs in as the owner.
+- A device on Wi-Fi signs in with a code, not your password. Tap **Ask for a code** on the device. It shows a short code. On the computer DorkOS runs on, open **Settings → Login & security**, find the device under **Waiting to sign in**, check the code matches, and choose **Approve**. Approving asks for a passkey on that computer (add one in **Signing in from other devices** first). DorkOS then shows a one-time code. Type it on the device within 5 minutes. Approve in a browser on the computer: the DorkOS app window can't check a passkey yet.
 - It takes effect right away, with no restart. Settings then shows this computer's address, like `http://studio.local:4242`, a QR code to scan, and its current IP address as a backup.
 - Turning it off closes the door at once.
 - The connection between the two devices is **not encrypted yet** (plain `http`). Someone else on the same Wi-Fi could read what passes between them, including your sign-in, and use it to get in. So use it on a network you trust, never on café or hotel Wi-Fi. Encrypted connections are planned.
@@ -88,7 +89,8 @@ To open DorkOS on a phone or tablet in the same home or office, you don't need a
 - If `DORKOS_HOST` or `DORKOS_ALLOW_INSECURE_BIND` is set, it decides where DorkOS listens, and the switch stays off.
 - The first time, your computer may ask whether DorkOS may accept incoming connections. Say yes.
 - A device signed in over Wi-Fi can chat, read, and answer your agents' requests. It can't open the terminal, edit files directly, manage API keys, install packages, or change how DorkOS is reached. Do those on the computer itself.
-- Your own messages from Wi-Fi, signed in as the owner in the app, run at the agent's own level. A chat anyone else starts or messages from Wi-Fi runs at **Default** at most, whatever the agent's own level, so the agent asks before every file or shell action. That holds for everything the chat sets off: another agent it mentions or messages, a chat it starts, every turn that picks the chat up on its own (an approval's answer, a resume after a usage limit), and a schedule it makes, which waits for your approval at this computer. Such a chat also can't change an agent's instructions or make a promise, and an agent's check-ins skip those messages.
+- A chat started or messaged from Wi-Fi runs at **Default** at most, whatever the agent's own level, so the agent asks before every file or shell action. That holds for everything the chat sets off: another agent it mentions or messages, a chat it starts, every turn that picks the chat up on its own (an approval's answer, a resume after a usage limit), and a schedule it makes, which waits for your approval at this computer. Such a chat also can't change an agent's instructions or make a promise, and an agent's check-ins skip those messages.
+- To let one Wi-Fi device run your agents at their own level, turn on **Run agents from this device** on its row in **Signed-in devices**, at the computer DorkOS runs on. It asks for a passkey there. Every device starts with it off, and it turns off by itself when the device signs out or goes unused for 12 hours. Anyone on the same Wi-Fi could take over that session, so turn it on only on a network you trust.
 - From Wi-Fi, an agent's request gets **Allow once** or **Deny**. **Always allow** is only available at this computer, and so is allowing a request to delete or remove something, or one that could change permissions, safety limits, packages, agents or tool servers.
 - When anyone else answers from Wi-Fi, a question from a chat that runs above Default means picking one of the answers it offers. Typed answers, and a reason with any Deny, work only from your own sign-in or at this computer.
 - From Wi-Fi you can lower permissions but not raise them: you can pick Careful, block something, or set a chat or a schedule to ask more, but loosening any of those, or undoing a permission change, works only at this computer. A schedule you make from Wi-Fi runs at Default, and one set higher can be paused from Wi-Fi but not run, edited or approved there. Editing an agent's instructions (SOUL.md, NOPE.md, MEMORY.md, HEARTBEAT.md, its persona or personality) and recording its promises work only at this computer. Resuming a paused agent works from Wi-Fi: it returns the agent to the level set at this computer.
@@ -187,6 +189,14 @@ curl -H "Authorization: Bearer dork_..." http://localhost:4242/mcp
 </Callout>
 
 The old global MCP key (and its `POST /api/config/mcp/generate-key` / `DELETE /api/config/mcp/api-key` endpoints) have been removed. If you had a global MCP key configured, it is **migrated automatically** into an owner-owned API key the first time you create the owner account (or on the next server start if an owner already exists), so existing MCP clients keep working without changes.
+
+## A second step for other devices
+
+In **Settings → Login & security → Signing in from other devices**, you can add a passkey or an authenticator app. Once you have one, signing in from another device (over remote access, your own tunnel, or another network) needs it as well as your password, or a passkey on its own. This computer never asks for it. Adding or removing one asks you to confirm it's you, and each new one shows in Activity.
+
+A passkey works on the address you added it on, for example your tunnel's address. An authenticator app works on any of them.
+
+**Lost your passkey or phone?** Sign in on the computer DorkOS runs on, which never asks for the second step, and remove it in **Signing in from other devices**. Then add a new one.
 
 ## Recovering a lost password
 

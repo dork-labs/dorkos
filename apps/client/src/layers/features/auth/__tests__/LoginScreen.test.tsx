@@ -8,7 +8,15 @@ const signIn = vi.hoisted(() => ({
   isPending: false,
   error: null as { message: string; status: number; code?: string } | null,
 }));
-vi.mock('../model/use-auth-session', () => ({ useSignIn: () => signIn }));
+const passkeySignIn = vi.hoisted(() => ({
+  run: vi.fn(),
+  isPending: false,
+  error: null as { message: string; status: number } | null,
+}));
+vi.mock('../model/use-auth-session', () => ({
+  useSignIn: () => signIn,
+  usePasskeySignIn: () => passkeySignIn,
+}));
 
 beforeEach(() => {
   signIn.run.mockReset();
@@ -19,6 +27,21 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('LoginScreen', () => {
+  it('asks for an authenticator code as a second step from another device', async () => {
+    signIn.error = { message: 'needs more', status: 401, code: 'SECOND_FACTOR_REQUIRED' };
+    render(<LoginScreen />);
+    expect(screen.getByText('One more step')).toBeInTheDocument();
+    const code = screen.getByLabelText('Code from your authenticator app');
+    expect(code).toHaveAttribute('autocomplete', 'one-time-code');
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'kai@example.com' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'secret' } });
+    fireEvent.change(code, { target: { value: '123456' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    await waitFor(() =>
+      expect(signIn.run).toHaveBeenCalledWith('kai@example.com', 'secret', '123456')
+    );
+  });
+
   // A real form action must keep its explicit submit type and credential hints.
   it('submits credentials and keeps password manager hints', async () => {
     const onSignedIn = vi.fn();

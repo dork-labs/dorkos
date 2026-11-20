@@ -9,6 +9,9 @@
 import {
   PASSKEY_CHECK_CODE,
   PASSKEY_NEEDED_CODE,
+  type OwnerFactor,
+  type PasskeyCheckedStep,
+  type PendingAuthenticator,
   type SignedInDeviceList,
   type SignOutEverywhereElseResult,
   type WifiSignInApprovalStep,
@@ -18,6 +21,19 @@ import { fetchJSON, fetchNoContent } from './http-client';
 
 /** The fields of an error `http-client` throws that these methods read. */
 type HttpError = Error & { code?: string; status?: number; body?: { options?: unknown } };
+
+/**
+ * The step a refusal from a passkey-checked action stands for, or `null`
+ * when it is a real failure to throw.
+ */
+function passkeyStepOf(error: unknown): Exclude<PasskeyCheckedStep, { kind: 'done' }> | null {
+  const { status, code, body } = error as HttpError;
+  if (status === 428 && code === PASSKEY_CHECK_CODE && body?.options) {
+    return { kind: 'passkey-check', options: body.options };
+  }
+  if (status === 409 && code === PASSKEY_NEEDED_CODE) return { kind: 'needs-passkey' };
+  return null;
+}
 
 /**
  * Create the signed-in devices methods bound to a base URL.
@@ -37,11 +53,22 @@ export function createDeviceMethods(baseUrl: string) {
     signOutEverywhereElse(): Promise<SignOutEverywhereElseResult> {
       return fetchJSON(baseUrl, '/devices/sign-out-all', { method: 'POST' });
     },
-    setDeviceRunsAgents(id: string, on: boolean): Promise<void> {
-      return fetchNoContent(baseUrl, `/devices/sessions/${encodeURIComponent(id)}/runs-agents`, {
-        method: 'PUT',
-        body: JSON.stringify({ on }),
-      });
+    async setDeviceRunsAgents(
+      id: string,
+      on: boolean,
+      passkey?: unknown
+    ): Promise<PasskeyCheckedStep> {
+      try {
+        await fetchNoContent(baseUrl, `/devices/sessions/${encodeURIComponent(id)}/runs-agents`, {
+          method: 'PUT',
+          body: JSON.stringify(passkey === undefined ? { on } : { on, passkey }),
+        });
+        return { kind: 'done' };
+      } catch (error) {
+        const step = passkeyStepOf(error);
+        if (step) return step;
+        throw error;
+      }
     },
     listWifiSignInRequests(): Promise<WifiSignInRequestList> {
       return fetchJSON(baseUrl, '/devices/sign-in-requests');
@@ -55,11 +82,8 @@ export function createDeviceMethods(baseUrl: string) {
         );
         return { kind: 'approved', ...approved };
       } catch (error) {
-        const { status, code, body } = error as HttpError;
-        if (status === 428 && code === PASSKEY_CHECK_CODE && body?.options) {
-          return { kind: 'passkey-check', options: body.options };
-        }
-        if (status === 409 && code === PASSKEY_NEEDED_CODE) return { kind: 'needs-passkey' };
+        const step = passkeyStepOf(error);
+        if (step) return step;
         throw error;
       }
     },
@@ -72,6 +96,38 @@ export function createDeviceMethods(baseUrl: string) {
           body: JSON.stringify({}),
         }
       );
+    },
+    listOwnerFactors(): Promise<{ factors: OwnerFactor[] }> {
+      return fetchJSON(baseUrl, '/owner-factors');
+    },
+    startAddingPasskey(label: string): Promise<{ options: unknown }> {
+      return fetchJSON(baseUrl, '/owner-factors/passkeys/options', {
+        method: 'POST',
+        body: JSON.stringify({ label }),
+      });
+    },
+    finishAddingPasskey(response: unknown): Promise<{ id: string; host: string }> {
+      return fetchJSON(baseUrl, '/owner-factors/passkeys/finish', {
+        method: 'POST',
+        body: JSON.stringify({ response }),
+      });
+    },
+    startAddingAuthenticator(label: string): Promise<PendingAuthenticator> {
+      return fetchJSON(baseUrl, '/owner-factors/authenticator/start', {
+        method: 'POST',
+        body: JSON.stringify({ label }),
+      });
+    },
+    confirmAuthenticator(id: string, code: string): Promise<{ id: string }> {
+      return fetchJSON(baseUrl, '/owner-factors/authenticator/confirm', {
+        method: 'POST',
+        body: JSON.stringify({ id, code }),
+      });
+    },
+    removeOwnerFactor(id: string): Promise<void> {
+      return fetchNoContent(baseUrl, `/owner-factors/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
     },
   };
 }

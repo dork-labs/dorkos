@@ -96,17 +96,30 @@ export function registerDevicesOpenApi(registry: OpenAPIRegistry): void {
     description:
       'Lets one Wi-Fi sign-in start turns at the agent’s own level, or stops it. Every ' +
       'sign-in starts with this off. Only the owner at the computer DorkOS runs on may ' +
-      'change it; turning it on asks "Confirm it’s you". It ends when the device signs out ' +
-      'or sits unused for 12 hours.',
+      'change it, from the app’s own page. Turning it on needs a fresh passkey check, as ' +
+      'approving a sign-in does: the first call answers `428` (`PASSKEY_CHECK_REQUIRED`), the ' +
+      'second sends `{ on, passkey }`. It ends when the device signs out or sits unused for ' +
+      '12 hours.',
     request: {
       params: z.object({ id: z.string() }),
-      body: { content: { 'application/json': { schema: z.object({ on: z.boolean() }) } } },
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({ on: z.boolean(), passkey: z.unknown().optional() }),
+          },
+        },
+      },
     },
     responses: {
       204: { description: 'Changed' },
-      401: SIGNED_OUT,
+      401: json(ErrorSchema, 'Not signed in, or the passkey check did not pass'),
       403: PEOPLE_ONLY,
       404: json(ErrorSchema, 'No live Wi-Fi sign-in of yours has that id'),
+      409: json(ErrorSchema, 'Add a passkey on this computer first'),
+      428: json(
+        z.object({ code: z.string(), options: z.unknown() }),
+        'Run this passkey check, then call again with its response'
+      ),
     },
   });
 
