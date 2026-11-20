@@ -114,8 +114,15 @@ export async function removeStandingAllow(
   const body = JSON.stringify(next, null, indent) + (text.endsWith('\n') ? '\n' : '');
   const { mode } = await fs.stat(file);
   const temp = path.join(folder, `.settings.local.json.${process.pid}.${Date.now()}.tmp`);
-  await fs.writeFile(temp, body, { mode: mode & 0o777, flag: 'wx' });
+  const handle = await fs.open(temp, 'wx', mode & 0o777);
   try {
+    try {
+      await handle.writeFile(body);
+      // Creation is masked by umask. Restore the original mode on this exact owned inode.
+      if (process.platform !== 'win32') await handle.chmod(mode & 0o777);
+    } finally {
+      await handle.close();
+    }
     // Checked again just before the swap: the folder may have changed meanwhile.
     await refuseUnlessReal(home, folder, 'dir');
     await fs.rename(temp, file);

@@ -43,8 +43,8 @@ status: ideation
 ### Project Docs & Specs
 
 - `specs/dashboard-content/00-brainstorm.md`: Wide-ranging brainstorm exploring dashboard header, sidebar, main content, empty states, delight moments, killer features, and Jobs/Ive design philosophy
-- `specs/dynamic-sidebar-content/02-specification.md`: Just implemented — created the route-aware sidebar/header slot system with `useSidebarSlot()` / `useHeaderSlot()` in AppShell, cross-fade animation, `DashboardSidebar` / `DashboardHeader` / `SessionSidebar` / `SessionHeader` components
-- `specs/dashboard-home-route/01-ideation.md`: Prior spec that established the signal hierarchy: Tier 1 (Needs Attention), Tier 2 (Active Now), Tier 3 (System Status + Recent)
+- [`dynamic-sidebar-content/02-specification.md`](https://github.com/dork-labs/dorkos/blob/2b98f06e42fab0c9f36c789387138bfc1b211116/specs/dynamic-sidebar-content/02-specification.md): Just implemented — created the route-aware sidebar/header slot system with `useSidebarSlot()` / `useHeaderSlot()` in AppShell, cross-fade animation, `DashboardSidebar` / `DashboardHeader` / `SessionSidebar` / `SessionHeader` components
+- [`dashboard-home-route/01-ideation.md`](https://github.com/dork-labs/dorkos/blob/2b98f06e42fab0c9f36c789387138bfc1b211116/specs/dashboard-home-route/01-ideation.md): Prior spec that established the signal hierarchy: Tier 1 (Needs Attention), Tier 2 (Active Now), Tier 3 (System Status + Recent)
 - `contributing/design-system.md`: Calm Tech design language — 8pt grid, status dots (`size-2 rounded-full`), color semantics, `shadow-soft`/`shadow-elevated`, `card-interactive` utility, typography scale
 - `contributing/animations.md`: Motion library patterns — fade+slide entrance, stagger lists (limit 8 items), height collapse, module-scope variants
 - `contributing/data-fetching.md`: TanStack Query patterns, conditional polling via `refetchInterval`

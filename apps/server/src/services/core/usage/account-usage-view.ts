@@ -102,3 +102,19 @@ export function usageOfRecord(
   const position = accounts.filter((a) => a.runtime === record.runtime).length;
   return memoryUsage(record, position, now);
 }
+
+/**
+ * What an account shows, minus the parts that change on every reading, so the
+ * store broadcasts only a change a client would show.
+ *
+ * @param usage - The account's usage.
+ */
+export function signatureOf(usage: AccountUsage): string {
+  return JSON.stringify({
+    ...usage,
+    updatedAt: null,
+    windows: usage.windows.map((w) => ({ ...w, observedAt: null })),
+    // Which windows are unknown matters to a client; since when does not (DOR-4620).
+    ...(usage.unknown ? { unknown: usage.unknown.map((w) => ({ ...w, since: null })) } : {}),
+  });
+}

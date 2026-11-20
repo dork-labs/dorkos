@@ -34,8 +34,8 @@ type OwnerId = string;
 interface TabBroker {
   /** Bind a page to an owner. Fails with `tab_locked` if another owner has it. */
   bind(page: Page, owner: OwnerId): TabLease;
-  /** Re-attach an owner to its own orphaned tab after a restart. */
-  adopt(owner: OwnerId): TabLease | null;
+  /** Resolve an existing live grant after a runtime reconnect; never infer one after server restart. */
+  live(owner: OwnerId): TabLease | null;
   /** End a lease. The tab becomes unowned (the person's). */
   release(lease: TabLease): void;
   /** Pages this owner may see. Never another owner's. */
@@ -64,7 +64,7 @@ Also in the broker:
 - **URL policy:** allow and block lists, schemes, private-network and redirect-chain checks (from OpenClaw's `navigation-guard.ts`), checked before every navigation.
 - **Page-text fencing:** page text is marked as outsider content before an agent reads it.
 - **An audit emitter:** open, close, bind, release, hold, hand-back and each origin visited. No full URLs, no tokens. DorkOS writes the lines into its own audit trail.
-- **Limits:** a per-owner tab cap and idle cleanup, with persistence through an injected store.
+- **Limits:** a per-owner tab cap and idle cleanup, with no durable Page adoption. A server restart invalidates all in-memory grants.
 - **Errors:** `tab_locked` (someone else's tab), `tab_gone` (your tab closed), `page_held` (the person has it), `url_blocked`.
 
 ## What stays out (in DorkOS)

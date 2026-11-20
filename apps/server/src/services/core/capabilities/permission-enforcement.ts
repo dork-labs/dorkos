@@ -664,19 +664,23 @@ export function blockedPermissionMessage(permission: CallPermission): string {
  *
  * A destructive action always can. An `act` action can when it has an area,
  * because the person may set that area to Ask. An `observe` action never asks
- * on its own. The request tool (`forwardsApproval`) always can: it raises the
- * card of whatever action it asks for, and a retry presents that card's token.
+ * on its own, but a live preflight can require approval for spending even on a
+ * read, or for outside words on an area-less write. The request tool
+ * (`forwardsApproval`) always can: it raises the card of whatever action it asks
+ * for, and a retry presents that card's token.
  *
- * @param action - The action's tier and area.
+ * @param action - The action's tier, area and live approval hooks.
  */
 export function canRaiseApproval(action: {
   tier: GatedAction['tier'];
   area?: PermissionAreaId | null;
   forwardsApproval?: boolean;
+  preflight?: (...args: never[]) => unknown;
 }): boolean {
   // The request tool raises the card of the action it asks for, so it carries
   // the token that answers it.
   if (action.forwardsApproval === true) return true;
+  if (action.preflight) return true;
   if (action.tier === 'destructive') return true;
   return action.tier === 'act' && action.area !== undefined && action.area !== null;
 }

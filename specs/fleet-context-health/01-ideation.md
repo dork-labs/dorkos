@@ -140,7 +140,7 @@ linearIssue: DOR-113
   and the Overview/Sessions tabs; where a per-row gauge and a summary bar land.
 - `research/20260322_agents_page_fleet_management_ux_deep_dive.md` — the fleet
   health summary bar pattern ("4 Healthy · 1 Warning · 0 Error"), Railway's
-  per-row resource mini-indicator, dense-list recommendation. `specs/agents-page`
+  per-row resource mini-indicator, dense-list recommendation. [`agents-page`](https://github.com/dork-labs/dorkos/tree/2b98f06e42fab0c9f36c789387138bfc1b211116/specs/agents-page)
   (#157) shipped this list; context health extends it.
 
 ## 3) Codebase Map
