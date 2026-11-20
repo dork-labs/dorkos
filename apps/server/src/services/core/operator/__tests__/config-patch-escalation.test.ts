@@ -168,8 +168,10 @@ describe('an agent patching a guarded setting', () => {
     const [pending] = approvals.listPending();
     expect(pending).toMatchObject({ area: 'reach', alwaysOffered: false });
     // The sentence names the riskiest settings; the detail lists each, never the patch object.
-    expect(pending!.summary).toContain('changes: "tunnel.enabled, 1 needs you"');
-    expect(pending!.detail).toBe('tunnel.enabled: yes');
+    expect(pending!.summary).toBe(
+      '"DorkBot" wants to change 1 setting. 1 needs you: tunnel.enabled'
+    );
+    expect(pending!.detail).toBe('tunnel.enabled: yes (needs you)');
     expect(written).toEqual([]);
   });
 
@@ -183,14 +185,14 @@ describe('an agent patching a guarded setting', () => {
     const [pending] = approvals.listPending();
     const lines = pending!.detail!.split('\n');
     expect(lines).toHaveLength(21);
-    expect(lines[0]).toBe('tunnel.enabled: yes');
+    expect(lines[0]).toBe('tunnel.enabled: yes (needs you)');
     for (let i = 0; i < 20; i++) {
       expect(lines.some((line) => line.startsWith(`ui.someLongHarmlessSettingName${i}: `))).toBe(
         true
       );
     }
     // DOR-4778: the riskiest setting leads the sentence, whatever the agent sent first.
-    expect(pending!.summary).toContain('changes: "tunnel.enabled, ');
+    expect(pending!.summary).toContain('wants to change 21 settings. 1 needs you: tunnel.enabled');
     // Names only: no value of any setting reaches the sentence.
     expect(pending!.summary).not.toContain('xxxx');
     expect(written).toEqual([]);

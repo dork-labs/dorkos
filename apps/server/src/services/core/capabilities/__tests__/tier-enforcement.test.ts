@@ -451,6 +451,29 @@ describe('enforceCapabilityTier', () => {
 });
 
 describe('describeGatedAttempt', () => {
+  describe('an action that writes its own sentence (DOR-4775)', () => {
+    const own = {
+      id: 'operator.config_patch',
+      title: 'Update configuration',
+      tier: 'act' as const,
+      approvalDisplayFields: ['patch'] as const,
+      approvalSentence: () => 'wants to change 2 settings. 1 needs you: tunnel.enabled',
+    };
+
+    it('puts it after the asker’s name in place of the title and fields', () => {
+      expect(describeGatedAttempt(own, { patch: {} })).toBe(
+        'An unidentified caller wants to change 2 settings. 1 needs you: tunnel.enabled'
+      );
+    });
+
+    it('never uses one on an extension’s action', () => {
+      const extension = { ...own, source: { kind: 'extension' as const, id: 'x', name: 'Mailer' } };
+      expect(describeGatedAttempt(extension, { patch: {} })).toContain(
+        'wants to run "Update configuration"'
+      );
+    });
+  });
+
   describe('the subject field renders by NAME (DOR-1929)', () => {
     // The reported defect, in miniature: `agentId: "01KX…"` names nothing a
     // person can act on. A resolved subject replaces that ONE argument with the
