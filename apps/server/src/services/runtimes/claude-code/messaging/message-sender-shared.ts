@@ -9,7 +9,12 @@
  *
  * @module services/runtimes/claude-code/messaging/message-sender-shared
  */
-import type { McpServerConfig, McpServerStatus, Options } from '@anthropic-ai/claude-agent-sdk';
+import type {
+  HookCallbackMatcher,
+  McpServerConfig,
+  McpServerStatus,
+  Options,
+} from '@anthropic-ai/claude-agent-sdk';
 import type {
   AgentRegistryPort,
   McpAppServerConnection,
@@ -282,6 +287,32 @@ export function createEditBaselineCapture(
     } catch (err) {
       logger.debug('[sendMessage] diff baseline capture failed', { session: sessionId, err });
     }
+  };
+}
+
+/**
+ * The `PreToolUse` registration that captures an edit's baseline before the tool runs, in every
+ * mode (DOR-212): `canUseTool` is skipped under `bypassPermissions`, hooks are not. It never
+ * blocks or changes the tool (`continue: true`).
+ *
+ * @param capture - The launch's {@link createEditBaselineCapture}.
+ */
+export function editBaselineMatcher(
+  capture: (toolName: string, input: Record<string, unknown>) => Promise<void>
+): HookCallbackMatcher {
+  return {
+    matcher: 'Edit|Write|MultiEdit|NotebookEdit',
+    hooks: [
+      async (hookInput) => {
+        if (hookInput.hook_event_name === 'PreToolUse') {
+          await capture(
+            hookInput.tool_name,
+            (hookInput.tool_input ?? {}) as Record<string, unknown>
+          );
+        }
+        return { continue: true };
+      },
+    ],
   };
 }
 

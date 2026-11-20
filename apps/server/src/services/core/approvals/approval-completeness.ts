@@ -4,6 +4,7 @@ import {
   APPROVAL_DETAIL_MAX_LENGTH,
   APPROVAL_DETAIL_STORED_MAX_LENGTH,
   APPROVAL_FULL_DETAIL_MAX_LENGTH,
+  ApprovalServiceActionSchema,
 } from '@dorkos/shared/approval-schemas';
 import type { ApprovalRow } from './approval-card.js';
 import type { ApprovalRequestInput } from './approval-request-input.js';
@@ -83,10 +84,31 @@ export function storablePackageRequest(input: ApprovalRequestInput): string | nu
     : null;
 }
 
+/**
+ * Whether a send's stored card leaves a recipient out of sight: past the
+ * card's limit, or too long to show whole (DOR-4592, Security). Read from the
+ * counts the server stored, never inferred from ellipses. A stored action that
+ * no longer parses can't show its recipients either.
+ */
+function hidesARecipient(serviceAction: string | null | undefined): boolean {
+  if (!serviceAction) return false;
+  const parsed = ApprovalServiceActionSchema.safeParse(JSON.parse(serviceAction));
+  if (!parsed.success) return true;
+  return parsed.data.recipientsCut !== undefined || parsed.data.recipientsShortened !== undefined;
+}
+
 /** Rebuild from full input at every read, grant and token retry; never infer from ellipses. */
 export function cannotAllowCard(
-  row: Pick<ApprovalRow, 'capabilityId' | 'inputHash' | 'packageRequest' | 'summary' | 'detail'>
+  row: Pick<
+    ApprovalRow,
+    'capabilityId' | 'inputHash' | 'packageRequest' | 'summary' | 'detail' | 'serviceAction'
+  >
 ): boolean {
+  try {
+    if (hidesARecipient(row.serviceAction)) return true;
+  } catch {
+    return true;
+  }
   if (!requiresCompleteCard(row.capabilityId)) return false;
   try {
     const full = packageRequest.parse(JSON.parse(row.packageRequest ?? 'null'));

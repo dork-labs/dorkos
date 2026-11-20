@@ -1,9 +1,14 @@
 import type { Page } from 'playwright-core';
 import type { LocalBrowserTab } from '@dorkos/shared/local-browser';
 import { openedOverHttp } from './history/opened-over-http.js';
+import type { PageWorkTracker } from './leases/page-work.js';
 
 /** Event-refreshed tab labels; polling never evaluates an unrelated page's document. */
 export class LocalBrowserTabMetadata {
+  constructor(
+    private readonly trackWork: PageWorkTracker = (operation) => operation,
+    private readonly readable: () => boolean = () => true
+  ) {}
   private tracked = new WeakSet<Page>();
   private entries = new WeakMap<Page, { title: string; url: string; pending: boolean }>();
 
@@ -52,6 +57,7 @@ export class LocalBrowserTabMetadata {
 
   /** Refresh without waiting, retaining same-document labels and deduplicating pending reads. */
   refresh(page: Page, options: { newDocument?: boolean } = {}): void {
+    if (!this.readable()) return;
     const entries = this.entries;
     const url = page.url();
     const previous = entries.get(page);
@@ -62,8 +68,7 @@ export class LocalBrowserTabMetadata {
       pending: true,
     };
     entries.set(page, record);
-    void page
-      .title()
+    void this.trackWork(page.title())
       .then((title) => {
         record.pending = false;
         if (

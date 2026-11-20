@@ -28,9 +28,12 @@
  * @module features/chat/model/use-system-status-events
  */
 import { useEffect, useRef } from 'react';
-import { SLOT_WAIT_STATUS } from '@dorkos/shared/schemas';
+import { LOAD_WAIT_STATUS, SLOT_WAIT_STATUS } from '@dorkos/shared/schemas';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { SystemStatusState, OperationProgressState } from './chat-types';
+
+/** The raw status tokens the strip shows; every other token is the SDK's own and stays hidden. */
+const SHOWN_STATUSES: ReadonlySet<string> = new Set([SLOT_WAIT_STATUS, LOAD_WAIT_STATUS]);
 
 /** The two transient strip states folded from one in-progress turn. */
 interface StripSignals {
@@ -70,9 +73,11 @@ function deriveStripFromTurn(turn: SessionEvent[]): StripSignals {
       // `status`. A generic status token (e.g. `'requesting'`, whose thinking
       // phase the activity label already owns) is deliberately NOT surfaced —
       // skip it so it neither shows nor clears a running hook flash.
-      // A turn waiting for a free agent slot is the one token that IS shown:
-      // nothing else on screen says why the turn has not started (DOR-3012).
-      if (!event.status || event.status === SLOT_WAIT_STATUS) {
+      // Two waits are tokens that ARE shown, because nothing else on screen
+      // says why the turn is quiet: a turn waiting for a free agent slot
+      // (DOR-3012), and a heavy shell job waiting for the computer to calm
+      // down (DOR-4209). The next event of the turn clears either.
+      if (!event.status || SHOWN_STATUSES.has(event.status)) {
         systemStatus = { message: event.message };
       }
       continue;
