@@ -15,6 +15,11 @@ import { AgentAvatar, resolveAgentVisual, type AgentVisualSource } from '@/layer
 import { UNDO_AGENT_MODE_ACTION_ID, UndoAgentModeAction } from './UndoAgentModeAction';
 import { RemoteStepUpAction } from './RemoteStepUpAction';
 import { AccessChangeActions, UNDO_ACCESS_CHANGE_ACTION_ID } from './AccessChangeActions';
+import {
+  RESTART_EXTENSION_ACTION_ID,
+  RestartExtensionAction,
+  extensionIdOfStoppedNotice,
+} from './RestartExtensionAction';
 
 /** The entrance each row inherits from its list's stagger container. */
 export const staggerItem = {
@@ -236,8 +241,20 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
   const signsOutDevice =
     notification.kind === 'step-up.remote-refused' &&
     notification.actions?.some((a) => a.id === 'sign-out-device') === true;
+  // A notice that DorkOS left an extension off offers Restart (DOR-4785).
+  const restartsExtension =
+    onOpen !== undefined &&
+    notification.kind === 'extension.stopped' &&
+    notification.actions?.some((a) => a.id === RESTART_EXTENSION_ACTION_ID) === true
+      ? extensionIdOfStoppedNotice(notification.subject.id)
+      : null;
   const hasAction =
-    opensSchedule || opensChat || undoesMode || undoesAccessChange || signsOutDevice;
+    opensSchedule ||
+    opensChat ||
+    undoesMode ||
+    undoesAccessChange ||
+    signsOutDevice ||
+    restartsExtension !== null;
   // The secret-files notice's body is what to do about it, so it gets the same
   // two lines below `sm` rather than being cut mid-sentence (DOR-3292). So does
   // a folder allow list too long to approve (DOR-4455).
@@ -261,6 +278,8 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
     notification.kind === 'mcp-server.tool_added' ||
     notification.kind === 'mcp-server.reserved_name' ||
     notification.kind === 'report.undelivered' ||
+    // The app's full name and restart status are the point of this notice.
+    notification.kind === 'extension.stopped' ||
     // The agent's reason is the point of a changed promise (DOR-3034).
     notification.kind === 'todo.changed';
   const isScheduleCreation =
@@ -449,6 +468,9 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
       )}
       {undoesAccessChange && (
         <AccessChangeActions changeId={notification.subject.id} notificationId={notification.id} />
+      )}
+      {restartsExtension !== null && (
+        <RestartExtensionAction extensionId={restartsExtension} notificationId={notification.id} />
       )}
     </motion.div>
   );
