@@ -8,6 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { chromium, type BrowserContext } from 'playwright-core';
+import { browserProofPage } from './proof-page.js';
 import { LocalBrowserService } from '../../../server/src/services/session/local-browser/service.js';
 import { BrowserHandover } from '../../../server/src/services/session/local-browser/handover.js';
 import { SignInWindow } from '../../../server/src/services/session/local-browser/sign-in-window.js';
@@ -258,7 +259,10 @@ try {
   );
   handover.useOutsideTurnCheck(async () => null);
   for (const [name, url] of pages) {
-    const page = context!.pages()[0]!;
+    const page = await browserProofPage(
+      browser.personSession('made-up-ci-browser').pageConnection()
+    );
+    await page.bringToFront();
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
     if (name === 'godaddy')
       await page.locator('input[type="password"]').waitFor({ state: 'visible', timeout: 30000 });
@@ -294,6 +298,11 @@ try {
             ? /password/i.test(text) && /username|customer|email/i.test(text)
             : /Test Results|Webdriver/i.test(text),
       agentPid
+    );
+    assert.equal(
+      await page.evaluate(() => document.visibilityState === 'visible'),
+      true,
+      'The chat’s page must be the visible tab in its native window'
     );
     await recordTitle(`${name}-agent-native`);
     receipt = undefined;
