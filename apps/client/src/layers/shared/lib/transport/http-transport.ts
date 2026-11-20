@@ -61,6 +61,7 @@ import { createDocLinkMethods } from './doc-link-methods';
 import { createFrameBridgeMethods } from './frame-bridge-methods';
 import { createMiniAppAccessMethods } from './mini-app-access-methods';
 import { createExtensionRestartMethods } from './extension-restart-methods';
+import { createBackupsMethods } from './backups-methods';
 
 // ---------------------------------------------------------------------------
 // Declaration merging
@@ -124,7 +125,8 @@ export interface HttpTransport
     ReturnType<typeof createDocLinkMethods>,
     ReturnType<typeof createFrameBridgeMethods>,
     ReturnType<typeof createMiniAppAccessMethods>,
-    ReturnType<typeof createExtensionRestartMethods> {}
+    ReturnType<typeof createExtensionRestartMethods>,
+    ReturnType<typeof createBackupsMethods> {}
 
 // ---------------------------------------------------------------------------
 // Class
@@ -191,7 +193,8 @@ export class HttpTransport implements Transport {
       createDocLinkMethods(baseUrl),
       createFrameBridgeMethods(baseUrl),
       createMiniAppAccessMethods(baseUrl),
-      createExtensionRestartMethods(baseUrl)
+      createExtensionRestartMethods(baseUrl),
+      createBackupsMethods(baseUrl)
     );
   }
 }

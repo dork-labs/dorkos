@@ -44,6 +44,13 @@ export interface DirectoryPickerProps {
   initialPath?: string | null;
   /** Map of directory path -> agent manifest for rendering agent identity in recents. */
   resolvedAgents?: Record<string, AgentManifest | null>;
+  /** The dialog's title, when it picks something other than a working folder. */
+  title?: string;
+  /**
+   * Open on the folder browser, ignoring recent working folders. For a pick
+   * where a project folder is not the usual answer (moving a backup, DOR-4253).
+   */
+  browseOnly?: boolean;
 }
 
 /** Modal dialog for browsing the filesystem and selecting a working directory. */
@@ -53,6 +60,8 @@ export function DirectoryPicker({
   onSelect,
   initialPath,
   resolvedAgents,
+  title = 'Select working folder',
+  browseOnly = false,
 }: DirectoryPickerProps) {
   const transport = useTransport();
   const queryClient = useQueryClient();
@@ -60,7 +69,7 @@ export function DirectoryPicker({
   const [currentPath, setCurrentPath] = useState(initialPath || '');
   const [showHidden, setShowHidden] = useState(false);
   const [view, setView] = useState<PickerView>(() =>
-    getInitialView(recentCwds, initialPath ?? null)
+    browseOnly ? 'browse' : getInitialView(recentCwds, initialPath ?? null)
   );
 
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
@@ -164,6 +173,8 @@ export function DirectoryPicker({
     }
   }, [isCreatingFolder]);
 
+  // A browse-only pick never offers recent working folders.
+  const showRecents = recentCwds.length > 0 && !browseOnly;
   const toggleBtn = (active: boolean, position: 'left' | 'right') =>
     `p-1.5 transition-colors ${position === 'left' ? 'rounded-l-md' : 'rounded-r-md'} ${
       active ? 'bg-accent text-foreground' : 'text-muted-foreground/40 hover:text-muted-foreground'
@@ -174,15 +185,13 @@ export function DirectoryPicker({
       <ResponsiveDialogContent className="max-h-[85vh] max-w-lg gap-0 overflow-hidden p-0 sm:rounded-xl">
         {/* Header */}
         <ResponsiveDialogHeader className="space-y-0 border-b px-4 py-3">
-          <ResponsiveDialogTitle className="text-sm font-medium">
-            Select working folder
-          </ResponsiveDialogTitle>
+          <ResponsiveDialogTitle className="text-sm font-medium">{title}</ResponsiveDialogTitle>
         </ResponsiveDialogHeader>
 
         {/* Navigation bar */}
         <div className="bg-muted/30 flex items-center gap-2 overflow-x-auto border-b px-4 py-2">
           <div className="flex flex-shrink-0 items-center rounded-md border">
-            {recentCwds.length > 0 && (
+            {showRecents && (
               <button
                 type="button"
                 onClick={() => handleViewChange('recent')}
@@ -199,7 +208,7 @@ export function DirectoryPicker({
                 handleViewChange('browse');
                 handleNavigate('');
               }}
-              className={toggleBtn(view === 'browse', recentCwds.length > 0 ? 'right' : 'left')}
+              className={toggleBtn(view === 'browse', showRecents ? 'right' : 'left')}
               aria-label="Browse folders"
               title="Browse"
             >

@@ -697,6 +697,10 @@
       "types": "./src/transport-local-browser.ts",
       "default": "./dist/transport-local-browser.js"
     },
+    "./transport-backups": {
+      "types": "./src/transport-backups.ts",
+      "default": "./dist/transport-backups.js"
+    },
     "./file-save/recovery": {
       "types": "./src/file-save/recovery.ts",
       "default": "./dist/file-save/recovery.js"
