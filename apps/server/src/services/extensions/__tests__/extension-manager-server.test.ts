@@ -317,12 +317,18 @@ describe('ExtensionManager — server lifecycle', () => {
 
     // Purpose: a pinned copy whose checked copy went away while it compiled
     // (a rescan cleared `runPath`) never starts from the folder it was found
-    // in: nothing is written, loaded or given a ctx (pin/run-dir).
-    it('refuses to start a pinned copy with no snapshot, before anything runs', async () => {
+    // in, inside DorkOS or in its own process: it is refused with the fixed
+    // words, never loaded or given a ctx, and the start does not throw
+    // (pin/run-dir).
+    it.each([
+      ['inside DorkOS', {}],
+      ['in its own process', { isolation: {} as ExtensionRecord['isolation'] }],
+    ])('refuses to start a pinned copy with no snapshot %s', async (_where, how) => {
       const record = makeRecord('pinned-srv', {
         status: 'compiled',
         hasServerEntry: true,
         serverEntryPath: '/fake/extensions/pinned-srv/server.ts',
+        ...how,
       });
       mockDiscover.mockResolvedValue([record]);
       mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
@@ -332,14 +338,15 @@ describe('ExtensionManager — server lifecycle', () => {
         return { code: makeCjsModule(), sourceHash: 'srvhash' };
       });
       await manager.initialize(null);
-      mockWriteFile.mockClear();
       mockCreateDataProviderContext.mockClear();
+      vi.mocked(logger.error).mockClear();
 
       const result = await manager.initializeServer('pinned-srv');
 
       expect(result).toEqual({ ok: false, error: runDirMissingMessage(record.manifest.name) });
-      expect(mockWriteFile).not.toHaveBeenCalled();
       expect(mockCreateDataProviderContext).not.toHaveBeenCalled();
+      // Refused before a start began, not a start that failed.
+      expect(logger.error).not.toHaveBeenCalled();
     });
 
     it('returns ok:false when register function throws', async () => {

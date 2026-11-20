@@ -426,10 +426,11 @@ export class ExtensionServerLifecycle {
     // Shut down the stale instance before its replacement takes over
     await this.stop(id);
 
+    const tempFile = await writeServerBundle(this.dorkHome, id, compiled.code);
     // A rescan while it compiled may have taken its checked copy away, and a
     // pinned copy never starts from the folder it was found in (`pin/run-dir.ts`).
+    // Asked after the last wait: both starts read its folder before any other.
     if (!runDirOf(record)) return { ok: false, error: runDirMissingMessage(record.manifest.name) };
-    const tempFile = await writeServerBundle(this.dorkHome, id, compiled.code);
 
     if (runsSeparately(record)) return this.startIsolated(id, record, tempFile, sourceKey);
     // Running inside DorkOS now: any connection it held is revoked (DOR-3547, N3).

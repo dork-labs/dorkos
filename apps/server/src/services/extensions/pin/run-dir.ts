@@ -31,7 +31,9 @@ export const RUN_DIR_MISSING_CODE = 'run_copy_missing';
  * (`extension-plugin-guard.ts`). That copy may be one nothing has approved yet,
  * or one installed for every project, and neither gets a snapshot. It is
  * recognised by its pin, never by a missing snapshot alone: `pinnedDigest` must
- * still be the digest the origin proof set (`originPinnedDigest`). Every pin
+ * still be the digest the origin proof set (`originPinnedDigest`). A person's
+ * yes for those very same files sets the same digest, so the two cannot be
+ * told apart; either way the folder is re-hashed around the build. Every pin
  * an approval sets runs from a snapshot (`placeSnapshots`), so a copy pinned
  * with no snapshot and no proven origin has nowhere it may be read from.
  *
