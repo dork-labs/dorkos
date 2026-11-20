@@ -35,6 +35,7 @@ assert(installedChromePath(), 'Install Google Chrome before the public-site proo
 await mkdir(evidence, { recursive: true });
 let context: BrowserContext | undefined;
 let agentPid: number | undefined;
+let agentProfileFolder: string | undefined;
 let plain: PlainChromium | undefined;
 let agentWindow = 0;
 /** CI evidence only: a context-close event never stands in for close-promise settlement. */
@@ -98,6 +99,16 @@ const backend = {
   ...productionBackend,
   async launch(...args: Parameters<typeof productionBackend.launch>) {
     context = await productionBackend.launch(...args);
+    agentProfileFolder = args[0];
+    appendFileSync(
+      path.join(evidence, 'agent-launch-pages.ndjson'),
+      `${JSON.stringify({
+        phase: 'launch-returned',
+        window: agentWindow + 1,
+        pages: context.pages().length,
+        blankPages: context.pages().filter((page) => page.url() === 'about:blank').length,
+      })}\n`
+    );
     agentPid = profileLockPid(args[0]);
     assert(agentPid, 'The throwaway agent profile must name its own Chrome process');
     recordAgentClose(context, args[0], agentPid);
@@ -261,6 +272,30 @@ try {
   for (const [name, url] of pages) {
     const page = await browserProofPage(
       browser.personSession('made-up-ci-browser').pageConnection()
+    );
+    assert(context, 'The chat must have its launched context');
+    assert.deepEqual(
+      context.pages(),
+      [page],
+      'A fresh or reopened launch must leave only the chat page'
+    );
+    assert(agentProfileFolder, 'The agent launch must retain its invented profile folder');
+    const prefs = JSON.parse(
+      await readFile(path.join(agentProfileFolder, 'Default', 'Preferences'), 'utf8')
+    );
+    assert.equal(
+      prefs.session?.restore_on_startup,
+      5,
+      'The owned profile must start with restore disabled'
+    );
+    appendFileSync(
+      path.join(evidence, 'agent-launch-pages.ndjson'),
+      `${JSON.stringify({
+        phase: 'chat-page-created',
+        window: agentWindow,
+        pages: context.pages().length,
+        restoreOnStartup: prefs.session.restore_on_startup,
+      })}\n`
     );
     await page.bringToFront();
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });

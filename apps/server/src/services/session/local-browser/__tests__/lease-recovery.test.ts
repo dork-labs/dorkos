@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { heldProtocolCall, leaseFixture } from './page-leases-fixture.js';
+import { prepareAgentLaunch } from '../connection/agent-launch.js';
 
 const fixtures: Awaited<ReturnType<typeof leaseFixture>>[] = [];
 afterEach(async () => {
@@ -18,6 +19,53 @@ function allowSignIn(f: Awaited<ReturnType<typeof setup>>) {
     startedAt: '2026-11-19T18:00:00.000Z',
   }));
 }
+
+it.each([false, true])(
+  'admits a single chat handoff after opening with startup page %s',
+  async (withStartupPage) => {
+    const f = await setup();
+    if (withStartupPage) {
+      const launch = vi.mocked(f.backend.launch).getMockImplementation()!;
+      vi.mocked(f.backend.launch).mockImplementation(async (...args) => {
+        const context = await launch(...args);
+        const startup = await context.newPage();
+        await startup.goto('about:blank');
+        await prepareAgentLaunch(context, args[4]!);
+        return context;
+      });
+    }
+    await f.open('chat-a');
+    const context = f.contexts[0];
+    const owned = f.service.personSession('chat-a').pageConnection()?.pages()[0];
+    expect(owned).toBe(context.pages.at(-1)?.page);
+    if (withStartupPage) expect(owned).not.toBe(context.pages[0].page);
+    expect(context.context.pages()).toEqual([owned]);
+    allowSignIn(f);
+    await expect(f.ask('chat-a')).resolves.toMatchObject({ handoffId: expect.any(String) });
+    expect(f.signIn).toHaveBeenCalledTimes(1);
+  }
+);
+
+it('opening a sibling on a running profile never closes an unowned blank page', async () => {
+  const f = await setup();
+  await f.open('chat-a');
+  const unowned = await f.contexts[0].context.newPage();
+  await unowned.goto('about:blank');
+  await f.open('chat-b');
+  expect(f.backend.launch).toHaveBeenCalledTimes(1);
+  expect(unowned.close).not.toHaveBeenCalled();
+  expect(f.contexts[0].context.pages()).toHaveLength(3);
+  await expect(f.ask('chat-a')).rejects.toMatchObject({ payload: { code: 'profile_busy' } });
+});
+
+it('a launch admission callback refuses after its physical generation is retired', async () => {
+  const f = await setup();
+  await f.open('chat-a');
+  const admit = vi.mocked(f.backend.launch).mock.calls[0][4]!;
+  await f.service.personSession('chat-a').disconnect();
+  await f.open('chat-b');
+  expect(() => admit()).toThrow();
+});
 
 it('releases unowned popups with the last chat page so a person can sign in', async () => {
   const f = await setup();

@@ -125,7 +125,11 @@ export class BrowserProfileConnections {
         pages: new Set(),
         failed: false,
         starting: Promise.resolve().then(() =>
-          this.backend.launch(folder, abort.signal, preparation, name)
+          this.backend.launch(folder, abort.signal, preparation, name, () => {
+            abort.signal.throwIfAborted();
+            admit();
+            if (current.closing || this.profiles.get(folder) !== current) throw profileBusy();
+          })
         ),
       };
       this.profiles.set(folder, profile);

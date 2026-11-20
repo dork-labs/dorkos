@@ -11,6 +11,7 @@ import {
 } from '../lifecycle.js';
 import { AUDIT_WRITE_RESPONSE_TIMEOUT_MS, LOAD_START_MS } from '../page-action.js';
 import { LocalBrowserPageSession } from '../leases/page-session.js';
+import { BrowserProfileConnections } from '../leases/profile-connection.js';
 import { BrowserHandover } from '../handover.js';
 import { SignInWindow } from '../sign-in-window.js';
 import { assertLocalBrowserUrl, httpFallbackAllowed, navigationRefusal } from '../errors.js';
@@ -184,17 +185,19 @@ afterEach(async () => {
   );
   await Promise.all(directories.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
-async function create(appOrigins?: () => readonly string[]) {
+async function create(appOrigins?: () => readonly string[], pooled = false) {
   const dir = await mkdtemp(path.join(tmpdir(), 'local-browser-unit-'));
   directories.push(dir);
   const f = fixture();
+  if (pooled) f.page.close = vi.fn(async () => undefined);
+  const backend = pooled ? new BrowserProfileConnections(f.backend).forChat() : f.backend;
   return {
     ...f,
     dir,
     service: trackedPageSession(
       dir,
       undefined,
-      f.backend,
+      backend,
       undefined,
       () => ({
         platform: 'darwin',
@@ -817,7 +820,7 @@ describe('local browser ownership and observations', () => {
     expect((await service.state()).status).toBe('disconnected');
   });
   it('reuses DorkOS saved logins and closes only its owned window', async () => {
-    const { service, backend, context, dir } = await create();
+    const { service, backend, context, dir } = await create(undefined, true);
     await service.open({ mode: 'new-window' });
     await service.disconnect();
     await service.open({ mode: 'new-window' });
@@ -826,14 +829,16 @@ describe('local browser ownership and observations', () => {
       path.join(dir, 'browser-profiles', 'default'),
       expect.any(AbortSignal),
       expect.any(Function),
-      null
+      null,
+      expect.any(Function)
     );
     expect(backend.launch).toHaveBeenNthCalledWith(
       2,
       path.join(dir, 'browser-profiles', 'default'),
       expect.any(AbortSignal),
       expect.any(Function),
-      null
+      null,
+      expect.any(Function)
     );
     expect(context.close).toHaveBeenCalledOnce();
   });
@@ -1283,7 +1288,7 @@ describe('named profiles (DOR-3218)', () => {
   const profileId = '00000000-0000-4000-8000-000000000001';
 
   it('opens a named profile in its own folder', async () => {
-    const f = await create();
+    const f = await create(undefined, true);
     f.service.useProfileAccess(
       async () => undefined,
       () => true
@@ -1293,7 +1298,8 @@ describe('named profiles (DOR-3218)', () => {
       path.join(f.dir, 'browser-profiles', profileId),
       expect.anything(),
       expect.anything(),
-      null
+      null,
+      expect.any(Function)
     );
     await f.service.disconnect();
   });
