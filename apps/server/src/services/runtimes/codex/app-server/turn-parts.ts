@@ -17,13 +17,28 @@ export class EventQueue {
   private waiting: (() => void) | undefined;
   private ended = false;
 
+  /** Retire a tool sink at the native terminal, before the consumer drains done. */
+  constructor(private readonly onEnd?: () => void) {}
+
   push(events: readonly StreamEvent[]): void {
     if (this.ended || events.length === 0) return;
     this.items.push(...events);
     this.wake();
   }
 
+  /** Keep externally delivered cards behind the same native turn-start ordering fence. */
+  deliveryBefore(
+    sink: { turnId: string | undefined },
+    early: StreamEvent[]
+  ): (events: StreamEvent[]) => void {
+    return (events) => {
+      if (sink.turnId === undefined) early.push(...events);
+      else this.push(events);
+    };
+  }
+
   end(): void {
+    if (!this.ended) this.onEnd?.();
     this.ended = true;
     this.wake();
   }

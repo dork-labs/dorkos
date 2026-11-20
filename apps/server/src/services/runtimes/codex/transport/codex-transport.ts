@@ -28,6 +28,7 @@ import type { DorkosMcpInjection } from '../../shared/dorkos-mcp-injection.js';
 import type { ConnectorRuntimeMcpInjection } from '../../connector-tools.js';
 import type { CodexFilePolicy } from '../policy/protected-profile.js';
 import type { CodexManagedMcpServers } from '../mcp-server-config.js';
+import type { CodexToolEventDelivery } from '../tool-turn/tool-turn-context.js';
 import type { CodexEventContext } from '../event-mapper.js';
 import type { BackgroundWake } from '../app-server/background-work.js';
 
@@ -91,6 +92,8 @@ export interface CodexTurnRequest {
   readonly signal: AbortSignal;
   /** The turn's mapping context (thread id, media state, usage reader). */
   readonly events: CodexEventContext;
+  /** Attach the current single-consumer stream sink; undefined retires it before close. */
+  onToolEvents?(deliver: CodexToolEventDelivery | undefined): void;
   /**
    * Persist the session ↔ thread binding. `replaces` names a bound thread the
    * transport found could not continue (spec §6), so the binding is replaced
