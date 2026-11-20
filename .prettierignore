@@ -167,3 +167,6 @@ packages/operating-skills/src/skills/app-builder-pack/
 # and keeping both in upstream's tab layout is what lets a plain `diff` of the
 # two show the added rule and nothing else.
 docker/seccomp/*.json
+# The copy dorkos.ai serves at /dorkos-codex.json; the same test holds it byte
+# for byte to docker/seccomp/dorkos-codex.json.
+apps/site/public/dorkos-codex.json

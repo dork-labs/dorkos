@@ -101,6 +101,17 @@ describe('the Codex seccomp profile', () => {
     expect(wideningProblems(upstream, profile)).toEqual([]);
   });
 
+  it('is the exact file dorkos.ai serves at /dorkos-codex.json', () => {
+    const served = readFileSync(path.join(repoRoot, 'apps/site/public/dorkos-codex.json'));
+    expect(served.equals(readFileSync(profilePath))).toBe(true);
+  });
+
+  it('carries the upstream licence beside it', () => {
+    const licence = readFileSync(path.join(dir, 'LICENSE'), 'utf8');
+    expect(licence).toContain('Apache License');
+    expect(licence).toContain('Version 2.0, January 2004');
+  });
+
   describe('refuses any other widening', () => {
     it('a sixth syscall in the added rule', () => {
       const p = shipped();
@@ -169,15 +180,42 @@ function codeLines(text: string): string {
 /** Ways to get the sandbox going by weakening the container or the host instead. */
 const WEAKENINGS = [
   /--privileged/,
+  /privileged:\s*true/,
   /--cap-add/,
   /cap_add/,
   /unconfined/,
   /sysctl\s+(-w|--write)/,
   /apparmor_parser/,
+  /aa-teardown/,
+  /aa-complain/,
+  /aa-disable/,
+  /systemctl\s+stop\s+apparmor/,
   /apparmor_restrict_unprivileged_userns\s*=/,
   /unprivileged_userns_clone\s*=/,
-  /\/proc\/sys\/(kernel|user)\/\S+\s*$/m,
+  /\/proc\/sys\//,
 ];
+
+/** The job's steps, read without a YAML parser: every `uses:` and every `run:` body. */
+function jobSteps(job: string): { uses: string[]; runs: string[] } {
+  const lines = job.split('\n');
+  const uses = lines.flatMap((line) => line.match(/^ {6}- uses: (\S+)$/)?.slice(1) ?? []);
+  const runs: string[] = [];
+  lines.forEach((line, i) => {
+    const run = line.match(/^ {8}run: (.*)$/)?.[1];
+    if (run === undefined) return;
+    if (run !== '|') return void runs.push(run);
+    const body: string[] = [];
+    for (const next of lines.slice(i + 1)) {
+      if (next.trim() !== '' && !next.startsWith(' '.repeat(10))) break;
+      body.push(next.slice(10));
+    }
+    runs.push(body.join('\n').trimEnd());
+  });
+  return { uses, runs };
+}
+
+const DOCKER_GUIDE = path.join('docs', 'self-hosting', 'docker.mdx');
+const CODEX_SECTION = '## Running Codex in Docker';
 
 describe('the profile stays opt-in and the host stays at its defaults', () => {
   it('appears only in the Codex section of the Docker guide', () => {
@@ -186,29 +224,37 @@ describe('the profile stays opt-in and the host stays at its defaults', () => {
       .map((file) => path.join('docs', file));
     const files = [...docs, 'apps/site/public/compose.yml', 'docker-compose.caddy.yml'];
     const hits: string[] = [];
+    let sawGuide = false;
     for (const rel of files) {
       let text = readFileSync(path.join(repoRoot, rel), 'utf8');
-      if (rel === path.join('docs', 'self-hosting', 'docker.mdx')) {
+      if (rel === DOCKER_GUIDE) {
+        sawGuide = true;
         const sections = text.split(/\n(?=## )/);
-        const codex = sections.filter((s) => s.startsWith('## Running Codex in Docker'));
+        const codex = sections.filter((s) => s.startsWith(CODEX_SECTION));
         expect(codex).toHaveLength(1);
-        // One opt-in line, naming the shipped profile and nothing else.
+        // One docker run line and one Compose entry, both naming the shipped profile.
         expect(codex[0]!.match(/--security-opt \S+/g)).toEqual([
           '--security-opt seccomp=dorkos-codex.json',
         ]);
-        text = sections.filter((s) => !s.startsWith('## Running Codex in Docker')).join('\n');
+        expect(codex[0]!.match(/security_opt:/g)).toHaveLength(1);
+        expect(codex[0]!.match(/seccomp=\S+/g)).toEqual([
+          'seccomp=dorkos-codex.json',
+          'seccomp=./dorkos-codex.json',
+        ]);
+        text = sections.filter((s) => !s.startsWith(CODEX_SECTION)).join('\n');
       }
       if (/security[-_]opt|seccomp=/.test(text)) hits.push(rel);
     }
+    // A scan that read nothing would pass; make sure it read the guide.
+    expect(sawGuide).toBe(true);
+    expect(docs.length).toBeGreaterThan(0);
     expect(hits).toEqual([]);
   });
 
   it('never tells anyone to weaken the container or the host', () => {
-    const docs = readdirSync(path.join(repoRoot, 'docs'), { recursive: true, encoding: 'utf8' })
-      .filter((file) => file.endsWith('.mdx'))
-      .map((file) => path.join('docs', file));
-    for (const rel of [...docs, 'docker/seccomp/README.md']) {
+    for (const rel of [DOCKER_GUIDE, 'docker/seccomp/README.md']) {
       const text = readFileSync(path.join(repoRoot, rel), 'utf8');
+      expect(text.length).toBeGreaterThan(0);
       for (const pattern of WEAKENINGS)
         expect(text, `${rel} matches ${pattern}`).not.toMatch(pattern);
     }
@@ -220,19 +266,34 @@ describe('the profile stays opt-in and the host stays at its defaults', () => {
       'utf8'
     );
     const job = workflow.split('\n  codex-docker-sandbox:\n')[1]!.split(/\n {2}[a-z][\w-]*:\n/)[0]!;
-    expect(job).toContain(
-      'bash scripts/codex-docker-sandbox-check.sh dorkos-runtime docker/seccomp/dorkos-codex.json'
-    );
-    expect(job).toContain('docker build --target runtime -t dorkos-runtime .');
-    expect(job).not.toMatch(/\bsudo\b/);
-    const script = readFileSync(
-      path.join(repoRoot, 'scripts/codex-docker-sandbox-check.sh'),
-      'utf8'
+    // Exactly these steps: nothing that runs before, after or beside the check.
+    expect(jobSteps(job)).toEqual({
+      uses: ['actions/checkout@v7', 'actions/download-artifact@v8'],
+      runs: [
+        'docker build --target runtime -t dorkos-runtime .',
+        [
+          'for knob in kernel.apparmor_restrict_unprivileged_userns kernel.unprivileged_userns_clone user.max_user_namespaces; do',
+          '  echo "$knob = $(sysctl -n "$knob" 2>/dev/null || echo absent)"',
+          'done',
+          'echo "apparmor enabled = $(cat /sys/module/apparmor/parameters/enabled 2>/dev/null || echo absent)"',
+          `echo "docker security options = $(docker info --format '{{json .SecurityOptions}}')"`,
+        ].join('\n'),
+        'bash scripts/codex-docker-sandbox-check.sh dorkos-runtime docker/seccomp/dorkos-codex.json',
+      ],
+    });
+    const code = codeLines(job);
+    // No run: hiding at another indent, no way to go green on a red step.
+    expect(code.match(/\brun:/g)).toHaveLength(3);
+    expect(code).not.toMatch(/continue-on-error/);
+    expect(code).not.toMatch(/^\s*if:/m);
+    const script = codeLines(
+      readFileSync(path.join(repoRoot, 'scripts/codex-docker-sandbox-check.sh'), 'utf8')
     );
     for (const [name, text] of [
-      ['the job', codeLines(job)],
-      ['the check script', codeLines(script)],
+      ['the job', code],
+      ['the check script', script],
     ] as const) {
+      expect(text, `${name} uses sudo`).not.toMatch(/\bsudo\b/);
       for (const pattern of WEAKENINGS)
         expect(text, `${name} matches ${pattern}`).not.toMatch(pattern);
     }
