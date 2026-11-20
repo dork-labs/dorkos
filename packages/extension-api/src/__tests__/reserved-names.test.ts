@@ -69,6 +69,29 @@ describe('reservedAppNameProblem', () => {
     expect(reservedAppNameProblem('Lеdgér')).toBe(MIXED_SCRIPT_APP_NAME_MESSAGE);
   });
 
+  // Purpose (S2): a name written wholly in Cyrillic passes the mixed-alphabet
+  // check, so only the look-alike fold can catch one that reads as DorkOS's.
+  it.each([
+    ['ԁогкоѕ', 'dorkos'],
+    ['Іпьох', 'inbox'],
+    ['ԁогкьот', 'dorkbot'],
+  ])('folds %j, written wholly in Cyrillic, to %j', (name, folded) => {
+    expect(normalizedAppName(name)).toBe(folded);
+  });
+
+  it.each([['ԁогкоѕ'], ['Іпьох'], ['ԁогкьот']])(
+    'refuses %j: whole-Cyrillic look-alikes of DorkOS’s own names',
+    (name) => {
+      expect(reservedAppNameProblem(name)).toBe(RESERVED_APP_NAME_MESSAGE);
+    }
+  );
+
+  // Purpose (S2): a real name in one other alphabet is still allowed. It is
+  // not reserved, and with no Latin letter beside it the mixed check passes.
+  it('allows a plain name written wholly in Cyrillic', () => {
+    expect(reservedAppNameProblem('Заметки')).toBeNull();
+  });
+
   it('refuses a name mixing Latin with Cyrillic or Greek letters', () => {
     // A Cyrillic letter the look-alike table has no entry for.
     expect(reservedAppNameProblem('Notes ж')).toBe(MIXED_SCRIPT_APP_NAME_MESSAGE);

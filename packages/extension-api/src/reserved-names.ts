@@ -65,6 +65,10 @@ const UNUSUAL_LETTERS = /[\u0250-\u02AF\u1D00-\u1DBF\uA720-\uA7FF\u115F\u1160\u3
 /**
  * Cyrillic and Greek letters that look like Latin ones, upper and lower case,
  * mapped before case is folded (Greek `Η` looks like `H`, its `η` like `n`).
+ * A name written wholly in one of those alphabets passes the mixed-alphabet
+ * check, so this table is what catches it: it covers every letter DorkOS's
+ * own names use that has a common look-alike (`ԁогкоѕ` folds to `dorkos`,
+ * `Іпьох` to `inbox`).
  */
 const LOOK_ALIKES: Readonly<Record<string, string>> = {
   // Cyrillic capitals
@@ -82,6 +86,13 @@ const LOOK_ALIKES: Readonly<Record<string, string>> = {
   Ѕ: 'S',
   І: 'I',
   Ј: 'J',
+  Ԁ: 'D',
+  Һ: 'H',
+  Ӏ: 'I',
+  Ԛ: 'Q',
+  Ԝ: 'W',
+  Ү: 'Y',
+  Ѵ: 'V',
   // Cyrillic small letters
   а: 'a',
   в: 'b',
@@ -102,6 +113,13 @@ const LOOK_ALIKES: Readonly<Record<string, string>> = {
   ԁ: 'd',
   ԛ: 'q',
   ԝ: 'w',
+  г: 'r',
+  п: 'n',
+  ь: 'b',
+  һ: 'h',
+  ӏ: 'l',
+  ү: 'y',
+  ѵ: 'v',
   // Greek capitals
   Α: 'A',
   Β: 'B',
@@ -117,6 +135,7 @@ const LOOK_ALIKES: Readonly<Record<string, string>> = {
   Τ: 'T',
   Υ: 'Y',
   Χ: 'X',
+  Ϲ: 'C',
   // Greek small letters
   α: 'a',
   ε: 'e',
@@ -130,6 +149,9 @@ const LOOK_ALIKES: Readonly<Record<string, string>> = {
   υ: 'u',
   χ: 'x',
   ω: 'w',
+  γ: 'y',
+  ϲ: 'c',
+  ϳ: 'j',
 };
 
 /**
