@@ -82,6 +82,12 @@ function needsDeclaration(file: string, text: string): boolean {
 
 const CLIENT_TESTS = clientTests();
 
+// Lex every file once, at load: two full passes inside `it` ran past the 5 s test
+// timeout on CI runners once the tree grew.
+const DECLARED = new Map(
+  [...CLIENT_TESTS].map(([file, text]) => [file, declaredEnvironment(text)] as const)
+);
+
 describe('client test environments (DOR-4190)', () => {
   it('walks a real, populated tree', () => {
     // A walk that silently found nothing would pass every assertion below.
@@ -114,7 +120,7 @@ describe('client test environments (DOR-4190)', () => {
 
   it('every test that renders declares its environment at the top of the file', () => {
     const missing = [...CLIENT_TESTS]
-      .filter(([file, text]) => needsDeclaration(file, text) && declaredEnvironment(text) === null)
+      .filter(([file, text]) => needsDeclaration(file, text) && DECLARED.get(file) === null)
       .map(([file]) => file)
       .sort();
 
@@ -128,8 +134,7 @@ describe('client test environments (DOR-4190)', () => {
   });
 
   it('declares only environments the client uses', () => {
-    const unknown = [...CLIENT_TESTS]
-      .map(([file, text]) => [file, declaredEnvironment(text)] as const)
+    const unknown = [...DECLARED]
       .filter(([, env]) => env !== null && !KNOWN_ENVIRONMENTS.has(env))
       .map(([file, env]) => `${file}: ${env}`)
       .sort();
