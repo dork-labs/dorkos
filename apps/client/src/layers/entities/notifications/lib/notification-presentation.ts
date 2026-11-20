@@ -107,6 +107,8 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   // Something an extension asks a person (spec `flow-multiproject` §7): a
   // question, whoever raised it.
   'extension.decision': MessageCircleQuestion,
+  // An extension that stopped on its own, restarted or left off (DOR-4785).
+  'extension.stopped': Puzzle,
   // Someone asked to take over a community this person owns (DOR-2543).
   'community.owner-replacement': TriangleAlert,
   'community.teammate-limit': CircleAlert,
@@ -341,10 +343,11 @@ export function notificationLink(notification: NotificationDTO): NotificationLin
     // one row in the inbox that has something to DO would draw as plain text.
     return { ...appRoutes.home(), search: { settings: RUNTIMES_SETTINGS_TAB } };
   }
-  if (kind === 'extension.approval') {
+  if (kind === 'extension.approval' || kind === 'extension.stopped') {
     // Settings → Extensions, where the same extension's card can turn it on —
     // the same place its phone-free arrival deep-links to
-    // (`standingDeepLink` in the server's `escalation-service.ts`).
+    // (`standingDeepLink` in the server's `escalation-service.ts`). An
+    // extension that stopped on its own shows why on that card (DOR-4785).
     return { ...appRoutes.home(), search: { settings: EXTENSIONS_SETTINGS_TAB } };
   }
   if (kind === 'account.signin_review') {

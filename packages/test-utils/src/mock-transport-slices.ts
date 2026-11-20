@@ -41,6 +41,7 @@ type SliceMethods =
   | 'undoAccessChange'
   | 'getMiniAppAccess'
   | 'revokeMiniAppAccess'
+  | 'restartExtension'
   | 'getSignInLanding'
   | 'retrySignIn'
   | 'getCanvasDocRoutes'
@@ -118,6 +119,7 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
       .fn()
       .mockImplementation(async (agentId: string) => ({ agentId, paused: false, changed: true })),
     getMiniAppAccess: vi.fn().mockResolvedValue({ waiting: [], allowed: [] }),
+    restartExtension: vi.fn().mockResolvedValue(undefined),
     revokeMiniAppAccess: vi
       .fn()
       .mockImplementation(async (approvalId: string) => ({ status: 'revoked', approvalId })),

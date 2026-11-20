@@ -23,6 +23,8 @@
  *   made to a person (DOR-3034).
  * - `runtimes/claude-code/folder-settings/folder-allow-notice.ts`: an agent's folder
  *   allow list is too long for its approval card (DOR-4455).
+ * - `extensions/isolation/notices/extension-stopped-notice.ts`: an extension that runs
+ *   separately stopped on its own (DOR-4785).
  *
  * @module services/notifications/declared-entries
  */
@@ -82,6 +84,10 @@ import {
   MCP_RESERVED_NAME_ENTRIES,
   type McpReservedNamePayloads,
 } from '../mesh/global-mcp/global-mcp-reserved-name-notice.js';
+import {
+  EXTENSION_STOPPED_ENTRIES,
+  type ExtensionStoppedPayloads,
+} from '../extensions/isolation/notices/extension-stopped-notice.js';
 
 /** The payloads of every declared kind, joined into `NotificationPayloads`. */
 export interface DeclaredPayloads
@@ -101,6 +107,7 @@ export interface DeclaredPayloads
     McpReservedNamePayloads,
     TodoChangePayloads,
     FolderRulesTooLongPayloads,
+    ExtensionStoppedPayloads,
     SpendingPayloads {}
 
 /** Every declared entry, spread into the registry's `ENTRIES`. */
@@ -120,6 +127,7 @@ export const DECLARED_ENTRIES = {
   ...MCP_RESERVED_NAME_ENTRIES,
   ...TODO_CHANGE_ENTRIES,
   ...FOLDER_RULES_TOO_LONG_ENTRIES,
+  ...EXTENSION_STOPPED_ENTRIES,
   ...SPENDING_ENTRIES,
 };
 
@@ -144,5 +152,6 @@ export const DECLARED_WIRED_KINDS = [
   'mcp-server.reserved_name',
   'todo.changed',
   'agent.folder_rules_too_long',
+  'extension.stopped',
   ...SPENDING_NOTIFICATION_KINDS,
 ] as const;
