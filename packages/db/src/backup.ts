@@ -49,7 +49,7 @@ import { migrationsFolder } from './migrations-folder.js';
 import { scrubSnapshot } from './snapshot-scrub.js';
 import {
   inspectSnapshot,
-  isManagedSnapshotName,
+  isSnapshotPartialBase,
   PRE_MIGRATION_MAX_AGE_DAYS,
   pruneSnapshots,
   SNAPSHOT_RETENTION,
@@ -175,12 +175,12 @@ export function snapshotSqlite(sqlite: BetterSqlite3.Database, destPath: string)
 const PARTIAL_SUFFIX = '.partial';
 
 /**
- * Remove what a new-format snapshot left when its process died part way: a
+ * Remove what a legacy or current snapshot left when its process died part way: a
  * `.partial` copy, which may still hold recorded turn text, and its sidecars.
  * Snapshots of one folder are taken one at a time (the pre-migration one at
  * boot, before anything else runs; the daily one serialized by its own lock),
- * so no managed `.partial` here is still being written. Legacy dork names and
- * foreign files are never swept, even if they end in `.partial`.
+ * so no managed `.partial` here is still being written. Only exact writer names
+ * are swept; completed backups and foreign files are never removed here.
  *
  * @param dir - The snapshot folder
  */
@@ -195,7 +195,7 @@ export function removeStalePartials(dir: string): void {
   }
   for (const name of names) {
     const partial = /^(.*\.db)\.partial(?:-journal|-wal|-shm)?$/.exec(name);
-    if (partial && isManagedSnapshotName(partial[1])) {
+    if (partial && isSnapshotPartialBase(partial[1])) {
       fs.rmSync(path.join(dir, name), { force: true });
     }
   }

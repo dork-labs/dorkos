@@ -3,6 +3,7 @@ covers:
   - 'fix(db): bound database snapshot retention'
   - 'fix(db): cap pre-migration snapshots at three'
   - 'fix(db): preserve backups made before bounded retention'
+  - 'fix(db): clean legacy unfinished snapshots'
 ---
 
 ### Fixed

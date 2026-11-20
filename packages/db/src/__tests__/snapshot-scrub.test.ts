@@ -108,6 +108,27 @@ describe('snapshots keep no recorded turn text', () => {
 });
 
 describe('nothing around a snapshot keeps the text either', () => {
+  it('removes legacy unfinished copies and their WAL while preserving the completed backup', () => {
+    const backups = join(dir, 'backups');
+    const legacy = join(backups, 'dork-20261101-daily.db');
+    snapshotSqlite(db.$client, legacy);
+    const original = readFileSync(legacy);
+    writeFileSync(`${legacy}.partial`, SECRET_TEXT);
+    writeFileSync(`${legacy}.partial-wal`, SECRET_TEXT);
+    const foreign = join(backups, 'personal.db.partial');
+    writeFileSync(foreign, 'kept');
+    const invalid = join(backups, 'dork-20261301-daily.db.partial');
+    writeFileSync(invalid, 'kept');
+
+    expect(snapshotBeforeMigrations(db, { dir: backups })).toBeNull();
+
+    expect(existsSync(`${legacy}.partial`)).toBe(false);
+    expect(existsSync(`${legacy}.partial-wal`)).toBe(false);
+    expect(readFileSync(legacy).equals(original)).toBe(true);
+    expect(readFileSync(foreign, 'utf8')).toBe('kept');
+    expect(readFileSync(invalid, 'utf8')).toBe('kept');
+  });
+
   it('leaves a legacy daily copy byte-for-byte untouched while scrubbing the new copy', async () => {
     const backups = join(dir, 'backups');
     snapshotSqlite(db.$client, join(backups, 'scratch.db'));

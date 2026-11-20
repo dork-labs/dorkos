@@ -417,11 +417,12 @@ describe('snapshotDaily', () => {
       }
     }
     source.close();
-    for (const file of [...old.keys()]) {
+    const oldPartials: string[] = [];
+    for (const file of old.keys()) {
       for (const suffix of ['.partial', '.partial-journal', '.partial-wal', '.partial-shm']) {
         const partial = `${file}${suffix}`;
         writeFileSync(partial, 'made-up legacy partial');
-        old.set(partial, { bytes: readFileSync(partial), mtimeMs: statSync(partial).mtimeMs });
+        oldPartials.push(partial);
       }
     }
     const db = createDb(':memory:');
@@ -439,6 +440,7 @@ describe('snapshotDaily', () => {
     try {
       const now = new Date('2026-11-20T12:00:00Z');
       expect(snapshotBeforeMigrations(db, { dir: backups, now })).toBeNull();
+      for (const partial of oldPartials) expect(existsSync(partial), partial).toBe(false);
       snapshotBeforeMigrations(pending, { dir: backups, now });
       await snapshotDaily(db, { dir: backups, now });
       assertOldUntouched();

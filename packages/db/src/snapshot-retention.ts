@@ -23,8 +23,8 @@ export const SNAPSHOT_RETENTION = {
 export const PRE_MIGRATION_MAX_AGE_DAYS = 7;
 
 /**
- * Only new dork-auto names opt in to retention. Never inspect or prune legacy
- * dork names, including incomplete copies; their cleanup belongs to the person.
+ * Only new dork-auto names opt in to retention. Never inspect or prune completed
+ * legacy dork copies; unfinished copies have separate privacy cleanup.
  * Extension retention is unchanged. Partials never match either writer.
  */
 const OWNED_NAME =
@@ -60,12 +60,13 @@ function snapshotTime(name: string): number | null {
 }
 
 /**
- * Whether a completed filename belongs to a writer with automatic cleanup.
+ * Recognize a partial's base filename, including legacy writers, for privacy cleanup.
+ * Never use this broader ownership check to prune completed legacy backups.
  *
  * @param name - Filename without any partial or journal suffix
  */
-export function isManagedSnapshotName(name: string): boolean {
-  return snapshotTime(name) !== null;
+export function isSnapshotPartialBase(name: string): boolean {
+  return snapshotTime(name.replace(/^dork-(?=\d{8}-)/, 'dork-auto-')) !== null;
 }
 
 /** Distinguish a confirmed incomplete copy from a copy that cannot currently be checked. */
