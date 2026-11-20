@@ -1,12 +1,12 @@
 import {
   expect,
-  test,
   type APIRequestContext,
   type APIResponse,
   type Locator,
   type Page,
   type TestInfo,
 } from '@playwright/test';
+import { test } from '../../fixtures/base';
 import { describeViolation, runAxe } from '../../axe.js';
 import { ConnectionsPage } from '../../pages/ConnectionsPage.js';
 

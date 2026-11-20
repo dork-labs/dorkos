@@ -1,4 +1,5 @@
-import { test as base } from '@playwright/test';
+// `./base` answers Google Fonts locally on every context (DOR-4871).
+import { test as base } from './base';
 import { ChatPage } from '../pages/ChatPage';
 import { DashboardSidebarPage } from '../pages/DashboardSidebarPage';
 import { SettingsPage } from '../pages/SettingsPage';
@@ -15,7 +16,6 @@ import { HarnessRepoApi } from './harness-repo';
 import { TeamRoomApi } from './team-room-api';
 import { TasksApi } from './tasks-api';
 import { soleAccess } from './sole-access';
-import { stubGoogleFonts } from '../google-fonts-stub';
 
 type DorkOSFixtures = {
   /**
@@ -44,14 +44,6 @@ type DorkOSFixtures = {
 };
 
 export const test = base.extend<DorkOSFixtures>({
-  // No test waits on Google Fonts (DOR-4871). Overriding the built-in `context`
-  // is what puts the stub under every page, popup and `page.goto` of every test
-  // that uses this `test`; `playwright.config.ts` also seeds the system font, so
-  // the client does not ask in the first place. See `google-fonts-stub.ts`.
-  context: async ({ context }, use) => {
-    await stubGoogleFonts(context);
-    await use(context);
-  },
   // Keyed on `baseURL` because the panel is shared per SERVER: two checkouts
   // running on their own ports have their own sidebars and must not queue behind
   // each other. A run with no baseURL configured has one notional server, so one

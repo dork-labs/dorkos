@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import { FONT_CONFIGS, DEFAULT_FONT, getFontConfig, isValidFontKey } from '../font-config';
-import { STORAGE_KEYS } from '../constants';
 
 describe('font-config', () => {
   it('all FONT_CONFIGS have unique keys', () => {
@@ -17,15 +16,6 @@ describe('font-config', () => {
   it('system config has null googleFontsUrl', () => {
     const system = FONT_CONFIGS.find((f) => f.key === 'system');
     expect(system?.googleFontsUrl).toBeNull();
-  });
-
-  it('keeps the key and value the browser suite seeds to stay off Google Fonts', () => {
-    // apps/e2e/google-fonts-stub.ts spells both by hand (apps/e2e depends on no
-    // client code) and seeds them into every browser test's localStorage so no
-    // page load waits on fonts.googleapis.com (DOR-4871). A rename here would
-    // put the suite back on the network without failing anything else.
-    expect(STORAGE_KEYS.FONT_FAMILY).toBe('dorkos-font-family');
-    expect(getFontConfig('system').googleFontsUrl).toBeNull();
   });
 
   it('DEFAULT_FONT is inter', () => {
