@@ -145,16 +145,26 @@ describe('watch-only browser viewer', () => {
       binding: { ...subscription.binding, tabId: 'other-tab' },
     });
     render(f.tree());
-    await screen.findByText('The browser view changed. Reconnect to watch.');
+    await screen.findByText('The live view stopped.');
     expect(f.transport.nextBrowserViewerFrame).not.toHaveBeenCalled();
     expect(drawImage).not.toHaveBeenCalled();
   });
 
-  it.each([390, 1280])('names the Mac sign-in step at a %s px viewport', async (width) => {
-    vi.stubGlobal('innerWidth', width);
+  it.each([
+    ['viewer_person_only', 'Sign in to DorkOS as its owner to watch.'],
+    ['viewer_denied', 'Sign in to DorkOS as its owner to watch.'],
+    ['viewer_local_only', 'Open DorkOS on your computer to watch.'],
+    ['viewer_unavailable', 'The live view stopped.'],
+  ])('explains %s without hiding the recovery action', async (code, message) => {
     const f = fixture();
-    render(f.tree({ signingIn: true }));
-    expect(screen.getByText('Finish signing in on your Mac')).toBeInTheDocument();
-    expect(f.transport.subscribeBrowserViewer).not.toHaveBeenCalled();
+    vi.mocked(f.transport.subscribeBrowserViewer).mockRejectedValueOnce(
+      Object.assign(new Error(code), { code })
+    );
+    const view = render(f.tree());
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    if (code === 'viewer_unavailable')
+      expect(screen.getByRole('button', { name: 'Reconnect' })).toBeInTheDocument();
+    else expect(screen.queryByRole('button', { name: 'Reconnect' })).not.toBeInTheDocument();
+    view.unmount();
   });
 });

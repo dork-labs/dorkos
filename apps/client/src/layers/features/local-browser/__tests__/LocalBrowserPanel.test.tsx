@@ -177,22 +177,39 @@ describe('owner watch stream panel wiring', () => {
     expect(transport.subscribeBrowserViewer).not.toHaveBeenCalled();
   });
 
-  it('steps aside for the plain sign-in window and names the Mac step', async () => {
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
-    transport.getLocalBrowserCapabilities.mockResolvedValue({ ...capabilities, watchStream: true });
-    transport.getLocalBrowserState.mockResolvedValue({
-      ...disconnected,
-      signIn: {
-        profileId: 'profile',
-        site: 'fixture.test',
-        status: 'open',
-        startedAt: '2026-11-19T12:00:00.000Z',
-      },
-    });
-    mount();
-    await screen.findByText('Finish signing in on your Mac');
-    expect(transport.subscribeBrowserViewer).not.toHaveBeenCalled();
-  });
+  it.each(['open', 'saving'] as const)(
+    'keeps Done signing in while sign-in is %s with streaming enabled',
+    async (status) => {
+      transport.getLocalBrowserCapabilities.mockResolvedValue({
+        ...capabilities,
+        watchStream: true,
+      });
+      transport.getLocalBrowserState.mockResolvedValue({
+        ...disconnected,
+        signIn: {
+          profileId: 'profile',
+          site: 'fixture.test',
+          status,
+          startedAt: '2026-11-19T12:00:00.000Z',
+        },
+      });
+      mount();
+      const done = await screen.findByRole('button', { name: 'Done signing in' });
+      if (status === 'saving') {
+        expect(done).toBeDisabled();
+        expect(screen.getByText('Saving your sign-in…')).toBeInTheDocument();
+      } else {
+        expect(done).toBeEnabled();
+        fireEvent.click(done);
+        await waitFor(() =>
+          expect(transport.finishLocalBrowserSignIn).toHaveBeenCalledExactlyOnceWith()
+        );
+        expect(transport.handBackLocalBrowser).not.toHaveBeenCalled();
+        expect(transport.resumeLocalBrowser).not.toHaveBeenCalled();
+      }
+      expect(transport.subscribeBrowserViewer).not.toHaveBeenCalled();
+    }
+  );
 });
 
 /** Type into the Agent browser's address field and press Enter, as a person would. */
@@ -491,16 +508,20 @@ describe('LocalBrowserPanel', () => {
     };
     // DOR-4731: the panel once said to press a Continue the card didn't show yet. It now
     // shows the chat's own card, so both say the same words and offer the same buttons.
-    it('shows the chat’s handoff card where to finish, with no Open browser', async () => {
-      transport.getLocalBrowserState.mockResolvedValue(signingIn);
-      mount();
-      expect(await screen.findByText('Waiting for you')).toBeInTheDocument();
-      expect(screen.getByTestId('handoff-card')).toBeInTheDocument();
-      expect(screen.queryByText(/Continue in the chat/)).toBeNull();
-      expect(screen.queryByText('Not open yet')).toBeNull();
-      expect(screen.queryByRole('button', { name: 'Open browser' })).toBeNull();
-      expect(screen.queryByRole('button', { name: 'Reconnect' })).toBeNull();
-    });
+    it.each([false, true])(
+      'shows the chat’s handoff card where to finish with streaming %s, with no Open browser',
+      async (watchStream) => {
+        transport.getLocalBrowserCapabilities.mockResolvedValue({ ...capabilities, watchStream });
+        transport.getLocalBrowserState.mockResolvedValue(signingIn);
+        mount();
+        expect(await screen.findByText('Waiting for you')).toBeInTheDocument();
+        expect(screen.getByTestId('handoff-card')).toBeInTheDocument();
+        expect(screen.queryByText(/Continue in the chat/)).toBeNull();
+        expect(screen.queryByText('Not open yet')).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Open browser' })).toBeNull();
+        expect(screen.queryByRole('button', { name: 'Reconnect' })).toBeNull();
+      }
+    );
     it('keeps Open browser once that handoff has ended', async () => {
       transport.getLocalBrowserState.mockResolvedValue({
         ...signingIn,

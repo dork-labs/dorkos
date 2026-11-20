@@ -24,7 +24,6 @@ import { LocalBrowserMenu } from './LocalBrowserMenu';
 import { PageAreaBlock } from './PageAreaBlock';
 import { SharedElsewhere } from './SharedElsewhere';
 import { EMPTY_PAGE, LocalBrowserView } from './LocalBrowserView';
-import { BrowserViewer } from './BrowserViewer';
 
 export interface LocalBrowserPanelProps {
   visible?: boolean;
@@ -307,18 +306,7 @@ export function LocalBrowserPanel({
       data-slot="local-browser-panel"
       className="@container/browser-panel flex h-full min-h-0 flex-col"
     >
-      {capabilities?.watchStream &&
-      sessionId &&
-      !connected &&
-      (state?.signIn?.status === 'open' || state?.signIn?.status === 'saving') ? (
-        <BrowserViewer
-          chatId={sessionId}
-          connectionId={null}
-          tabId={null}
-          visible={visible}
-          signingIn
-        />
-      ) : showsPage ? (
+      {showsPage ? (
         <>
           <div className="flex max-h-[50%] min-h-0 shrink-0 flex-col gap-3 overflow-y-auto p-3">
             {/* Below 480px of panel the state sits under the title, so neither wraps (DOR-4265). */}

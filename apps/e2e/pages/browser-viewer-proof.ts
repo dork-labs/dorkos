@@ -162,7 +162,7 @@ export async function proveOwnedBrowserViewer(page: Page, baseURL: string, dataD
   const ui = new LocalBrowserPage(page);
   await ui.open();
   await expect(
-    page.getByRole('status').filter({ hasText: 'Turn on sign-in to watch.' })
+    page.getByRole('status').filter({ hasText: 'Sign in to DorkOS as its owner to watch.' })
   ).toBeVisible();
   const owner = {
     email: `viewer-${randomUUID()}@example.test`,

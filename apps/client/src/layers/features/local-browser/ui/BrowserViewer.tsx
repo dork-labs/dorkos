@@ -10,10 +10,9 @@ export interface BrowserViewerProps {
   connectionId: string | null;
   tabId: string | null;
   visible: boolean;
-  signingIn?: boolean;
 }
 
-type Phase = 'watching' | 'unavailable' | 'sign-in' | 'local-only';
+type Phase = 'watching' | 'unavailable' | 'owner-only' | 'local-only';
 
 function afterPaint(signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
@@ -45,28 +44,14 @@ function reconnectDelay(signal: AbortSignal): Promise<void> {
 }
 
 /** A volatile canvas for the person's stream. No input, page text, storage or recording. */
-export function BrowserViewer({
-  chatId,
-  connectionId,
-  tabId,
-  visible,
-  signingIn = false,
-}: BrowserViewerProps) {
+export function BrowserViewer({ chatId, connectionId, tabId, visible }: BrowserViewerProps) {
   const transport = useTransport();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [attempt, retry] = useState(0);
   const [documentVisible, setDocumentVisible] = useState(
     () => document.visibilityState !== 'hidden'
   );
-  const key = JSON.stringify([
-    chatId,
-    connectionId,
-    tabId,
-    attempt,
-    visible,
-    documentVisible,
-    signingIn,
-  ]);
+  const key = JSON.stringify([chatId, connectionId, tabId, attempt, visible, documentVisible]);
   const [phase, setPhase] = useState<{ key: string; value: Phase } | null>(null);
   const currentPhase = phase?.key === key ? phase.value : null;
 
@@ -83,7 +68,7 @@ export function BrowserViewer({
       if (canvas) canvas.width = canvas.height = 0;
     };
     clear();
-    if (!visible || !documentVisible || signingIn || !connectionId || !tabId || !canvas) return;
+    if (!visible || !documentVisible || !connectionId || !tabId || !canvas) return;
     const controller = new AbortController();
     const { signal } = controller;
     let viewer: BrowserViewerSubscription | undefined;
@@ -156,7 +141,7 @@ export function BrowserViewer({
             key,
             value:
               code === 'viewer_person_only' || code === 'viewer_denied'
-                ? 'sign-in'
+                ? 'owner-only'
                 : code === 'viewer_local_only'
                   ? 'local-only'
                   : 'unavailable',
@@ -174,17 +159,16 @@ export function BrowserViewer({
       clear();
       release();
     };
-  }, [transport, chatId, connectionId, tabId, visible, documentVisible, signingIn, key]);
+  }, [transport, chatId, connectionId, tabId, visible, documentVisible, key]);
 
-  const watching = currentPhase === 'watching' && visible && documentVisible && !signingIn;
-  const message = signingIn
-    ? 'Finish signing in on your Mac'
-    : currentPhase === 'sign-in'
-      ? 'Turn on sign-in to watch.'
+  const watching = currentPhase === 'watching' && visible && documentVisible;
+  const message =
+    currentPhase === 'owner-only'
+      ? 'Sign in to DorkOS as its owner to watch.'
       : currentPhase === 'local-only'
-        ? 'Watch from DorkOS on your Mac.'
+        ? 'Open DorkOS on your computer to watch.'
         : currentPhase === 'unavailable'
-          ? 'The browser view changed. Reconnect to watch.'
+          ? 'The live view stopped.'
           : 'Connecting to the browser…';
   return (
     <div className="relative flex min-h-48 min-w-0 flex-1 flex-col" data-slot="browser-viewer">
@@ -204,7 +188,7 @@ export function BrowserViewer({
           <p role="status" className="text-muted-foreground text-center text-sm">
             {message}
           </p>
-          {currentPhase === 'unavailable' && !signingIn && (
+          {currentPhase === 'unavailable' && (
             <Button size="sm" variant="outline" onClick={() => retry((value) => value + 1)}>
               Reconnect
             </Button>
