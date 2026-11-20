@@ -27,8 +27,10 @@ export type ProofLevel = 'full' | 'preopen';
  * How many turbo runs each gate makes, every one with `--summarize`: `verify:checks`
  * has the typecheck-and-lint step and the test step, and preopen has only the first
  * (`verify:preopen:turbo`). A proof records the number its completion check judged,
- * and a check accepts only this one. scripts/__tests__/verify-proof.test.ts holds
- * these to package.json.
+ * and a check accepts only this one, so changing a value voids every proof recorded
+ * with the old one: change it only when the gate's turbo steps change, and expect
+ * every open branch to need `pnpm verify` again. scripts/__tests__/verify-proof.test.ts
+ * holds these to package.json.
  */
 export const TURBO_RUNS: Readonly<Record<ProofLevel, number>> = { full: 2, preopen: 1 };
 
@@ -179,6 +181,17 @@ function isPass(proof: unknown, sha: string, tree: string, level: ProofLevel): b
   );
 }
 
+/**
+ * Whether a parsed proof is for this commit but carries no `finished` marker: one a
+ * CLI from before DOR-4616 wrote, which a check refuses with its own line rather than
+ * the bare "no pass recorded", so the person knows what is wrong with the file they see.
+ */
+function isUnmarked(proof: unknown, sha: string, tree: string): boolean {
+  if (typeof proof !== 'object' || proof === null) return false;
+  const record = proof as Record<string, unknown>;
+  return record.sha === sha && record.tree === tree && !('finished' in record);
+}
+
 /** Read one proof file; anything missing or unreadable reads as no proof. */
 function readProof(file: string): unknown {
   try {
@@ -198,6 +211,7 @@ function readProof(file: string): unknown {
  */
 function check(cwd: string, ref: string, escape: boolean, level: ProofLevel): number {
   let shortSha = ref.slice(0, 12);
+  let unmarked = false;
   try {
     const { sha, tree } = commit(cwd, ref);
     shortSha = sha.slice(0, 12);
@@ -221,14 +235,23 @@ function check(cwd: string, ref: string, escape: boolean, level: ProofLevel): nu
       );
       return 0;
     }
-    if (isPass(readProof(proofFile(dir, sha, 'full')), sha, tree, 'full')) return 0;
-    if (
-      level === 'preopen' &&
-      isPass(readProof(proofFile(dir, sha, 'preopen')), sha, tree, 'preopen')
-    )
-      return 0;
+    const full = readProof(proofFile(dir, sha, 'full'));
+    if (isPass(full, sha, tree, 'full')) return 0;
+    const preopen = level === 'preopen' ? readProof(proofFile(dir, sha, 'preopen')) : undefined;
+    if (level === 'preopen' && isPass(preopen, sha, tree, 'preopen')) return 0;
+    unmarked = isUnmarked(full, sha, tree) || isUnmarked(preopen, sha, tree);
   } catch {
     // Missing, unreadable, malformed, or mismatched proof is the same actionable refusal.
+  }
+  if (unmarked) {
+    console.error(
+      level === 'full'
+        ? `the pnpm verify proof for ${shortSha} was recorded before DOR-4616 and cannot arm; ` +
+            'green CI at this head still arms, or run pnpm verify from a branch that has the fix'
+        : `the proof for ${shortSha} was recorded before DOR-4616 and does not count; ` +
+            'run pnpm verify:preopen from a branch that has the fix'
+    );
+    return 1;
   }
   console.error(
     level === 'full'

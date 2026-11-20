@@ -212,7 +212,10 @@ describe('verification proof', () => {
     const { [field]: _dropped, ...older } = JSON.parse(readFileSync(proof, 'utf8'));
     writeFileSync(proof, JSON.stringify(older));
     expect(check().status).toBe(1);
-    expect(check().stderr).toBe(refusal());
+    // A proof with no marker at all gets its own line; the lone-copy test pins its words.
+    expect(check().stderr).toMatch(
+      field === 'finished' ? /was recorded before DOR-4616 and cannot arm/ : /^no pnpm verify pass/
+    );
   });
 
   it.each([
@@ -650,8 +653,18 @@ describe('the preopen level (DOR-4728)', () => {
     withLoneCopy((cli) => {
       const refused = runCli(cli, 'check', sha);
       expect(refused.status).toBe(1);
-      expect(refused.stderr).toBe(refusal());
-      expect(runCli(cli, 'check', sha, '--level', 'preopen').status).toBe(1);
+      // Its own line: the file is there and matches, but cannot say its run finished.
+      expect(refused.stderr).toBe(
+        `the pnpm verify proof for ${sha.slice(0, 12)} was recorded before DOR-4616 and ` +
+          'cannot arm; green CI at this head still arms, or run pnpm verify from a branch ' +
+          'that has the fix\n'
+      );
+      const preopen = runCli(cli, 'check', sha, '--level', 'preopen');
+      expect(preopen.status).toBe(1);
+      expect(preopen.stderr).toBe(
+        `the proof for ${sha.slice(0, 12)} was recorded before DOR-4616 and does not count; ` +
+          'run pnpm verify:preopen from a branch that has the fix\n'
+      );
     });
   });
 
@@ -921,11 +934,22 @@ describe('a proof only for a run that finished (DOR-4616)', () => {
     return { child, exited };
   };
   /** Wait, bounded, for the fake pnpm to say it has started. */
-  const started = async () => {
-    for (let i = 0; i < 200 && !existsSync(path.join(repo, '.git/pnpm-started')); i++) {
+  /**
+   * Wait, bounded, for the fake pnpm to say it has started, and return its pid. The
+   * fake moves the file into place whole, and the pid is checked as well: an empty or
+   * partial read would be 0, and signalling pid 0 reaches this test runner's whole
+   * process group.
+   */
+  const started = async (): Promise<number> => {
+    const file = path.join(repo, '.git/pnpm-started');
+    const read = () => (existsSync(file) ? readFileSync(file, 'utf8').trim() : '');
+    for (let i = 0; i < 200 && !/^\d+$/.test(read()); i++) {
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
-    expect(existsSync(path.join(repo, '.git/pnpm-started'))).toBe(true);
+    expect(read()).toMatch(/^\d+$/);
+    const pid = Number(read());
+    expect(pid).toBeGreaterThan(1);
+    return pid;
   };
   /** The refusals the CLI recorded, one parsed line each. */
   const refusals = () =>
@@ -944,7 +968,7 @@ describe('a proof only for a run that finished (DOR-4616)', () => {
         // The sleep holds none of the CLI's output open, and goes when the fake does.
         `trap 'echo TERM >> .git/pnpm-signals; kill $sleeper; write_runs 2; exit 0' TERM`,
         `trap 'echo INT >> .git/pnpm-signals; kill $sleeper; write_runs 2; exit 0' INT`,
-        'echo $$ > .git/pnpm-started',
+        'echo $$ > .git/pnpm-started.tmp && mv .git/pnpm-started.tmp .git/pnpm-started',
         `sleep ${seconds} >/dev/null 2>&1 & sleeper=$!`,
         'wait $sleeper',
         'write_runs 2',
@@ -1086,9 +1110,8 @@ describe('a proof only for a run that finished (DOR-4616)', () => {
   it('records no proof for a verify that got INT, which it leaves to the terminal', async () => {
     turboLikePnpm(60);
     const run = startCli('run');
-    await started();
+    const pnpm = await started();
     // What a terminal's Ctrl-C does: INT reaches the CLI and pnpm both.
-    const pnpm = Number(readFileSync(path.join(repo, '.git/pnpm-started'), 'utf8'));
     run.child.kill('SIGINT');
     process.kill(pnpm, 'SIGINT');
     const result = await run.exited;
