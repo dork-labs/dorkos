@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { defineConfig, devices } from '@playwright/test';
 import { BOOT_CACHE_DISABLED_KEY } from './boot-cache-flag';
+import { E2E_FONT_FAMILY, FONT_FAMILY_KEY } from './google-fonts-stub';
 import { unitKey } from './reporters/balanced-shard';
 import { planSiteLeg, SITE_PROJECT, SITE_SHARD, SITE_SPEC_FILES } from './site-leg';
 import { bootServerOnThrowawayHome, makeThrowawayHome } from './throwaway-home';
@@ -569,11 +570,21 @@ export default defineConfig({
     // because that server serves the built shell directly.
     // `dashboard-sidebar/boot-stability.spec.ts` removes the key to opt back in —
     // warm boot is the thing it tests.
+    //
+    // **And every spec boots on the system font** (DOR-4871). The default font
+    // loads a Google Fonts stylesheet, `page.goto` waits for `load`, and `load`
+    // waits for that stylesheet — so a stalled Google was a page-load timeout on
+    // whatever spec happened to be running. Seeded here for the same reason as
+    // the flag above: it reaches the tests that bypass the shared fixture. See
+    // `google-fonts-stub.ts`.
     storageState: {
       cookies: [],
       origins: [VITE_PORT, MOCK_VITE_PORT, PROD_PORT].map((originPort) => ({
         origin: `http://localhost:${originPort}`,
-        localStorage: [{ name: BOOT_CACHE_DISABLED_KEY, value: '1' }],
+        localStorage: [
+          { name: BOOT_CACHE_DISABLED_KEY, value: '1' },
+          { name: FONT_FAMILY_KEY, value: E2E_FONT_FAMILY },
+        ],
       })),
     },
   },
