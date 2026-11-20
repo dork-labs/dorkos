@@ -10,6 +10,7 @@ import type {
   ResolveConnectorTurnInput,
   ResolveConnectorTurnResult,
   RevokeConnectorTurnReason,
+  RuntimeToolCaller,
 } from '../../connectors/runtime-principal-port.js';
 import type { ServerPrincipalProof } from '../../connectors/principal/server-principal.js';
 
@@ -93,6 +94,11 @@ export class AgentIdentitySnapshotPrincipalPort implements ConnectorRuntimePrinc
   /** Delegate bearer resolution unchanged to the authenticated principal port. */
   resolve(input: ResolveConnectorTurnInput): Promise<ResolveConnectorTurnResult> {
     return this.options.principals.resolve(input);
+  }
+
+  /** Preserve live caller ownership in the same authenticated backing service. */
+  resolveToolTurn(principal: ServerPrincipalProof): Promise<RuntimeToolCaller> {
+    return this.options.principals.resolveToolTurn(principal);
   }
 
   /** Delete capability identity before the backing revocation can wait or fail. */
