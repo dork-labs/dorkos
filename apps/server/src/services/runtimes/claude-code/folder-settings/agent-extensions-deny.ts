@@ -68,6 +68,70 @@ function canonicalExtensionsOf(home: string): string {
 }
 
 /**
+ * Whether `home`'s own `.dork/extensions` folder is one the deny rule can keep a held turn out
+ * of: every home's but one whose folder IS DorkOS's global extensions folder (a home of `~`),
+ * which {@link otherAgentsExtensionsDenyRules} never denies.
+ *
+ * @param home - The agent's home.
+ * @param dorkHome - DorkOS's data directory.
+ */
+export function ownExtensionsDeniable(home: string, dorkHome: string = resolveDorkHome()): boolean {
+  const global = path.join(path.resolve(dorkHome), 'extensions');
+  const realGlobal = path.join(
+    realpathOrUndefined(path.resolve(dorkHome)) ?? path.resolve(dorkHome),
+    'extensions'
+  );
+  return !extensionFolderNames(home).some((name) => name === global || name === realGlobal);
+}
+
+/**
+ * Whether `file` is inside `home`'s own `.dork/extensions` folder, by any spelling
+ * {@link extensionFolderNames} knows. The file need not exist yet: its closest existing
+ * parent is read through its real path.
+ *
+ * @param file - An absolute path a file tool was aimed at.
+ * @param home - The agent's home.
+ */
+export function isInOwnExtensions(file: string, home: string): boolean {
+  const target = path.resolve(file);
+  let probe = target;
+  let real: string | undefined;
+  while (real === undefined && probe !== path.dirname(probe)) {
+    real = realpathOrUndefined(probe);
+    if (real === undefined) probe = path.dirname(probe);
+  }
+  const spellings = [target];
+  if (real !== undefined) spellings.push(path.join(real, path.relative(probe, target)));
+  return extensionFolderNames(home).some((folder) =>
+    spellings.some((name) => name === folder || name.startsWith(folder + path.sep))
+  );
+}
+
+/**
+ * What an agent is told when its own mini apps folder is read-only this turn: the rule, and
+ * the route that works (DOR-4851). The refusal on its file tools and `create_extension`'s
+ * reply both say it, so the agent never guesses, and never hands the person a Terminal copy.
+ *
+ * @param folder - The folder that is read-only, when known.
+ */
+export function ownExtensionsReadOnlyMessage(folder?: string): string {
+  return (
+    `Your mini apps folder${folder ? ` (${folder})` : ''} is read-only in this turn. ` +
+    'This turn read words from someone other than your owner (a room with another person in ' +
+    'it, Telegram, Slack, a mini app’s post) or runs under a limit, and code in that folder ' +
+    'runs without a click. That rule is on purpose. ' +
+    'Build in your owner’s personal marketplace instead: ' +
+    'marketplace_create_package (type "plugin") once, then write the app into ' +
+    '<package>/.dork/extensions/<app id>/. For each new version raise "version" in the ' +
+    'package’s .claude-plugin/plugin.json (read first) and .dork/manifest.json, and in the ' +
+    'app’s extension.json. Then marketplace_install (first time) or marketplace_update with ' +
+    'names and apply: true. Each version is one install card your owner approves in DorkOS; ' +
+    'an app with server code also waits for them to allow it in Activity. ' +
+    'Never ask anyone to copy files in from Terminal.'
+  );
+}
+
+/**
  * The deny rules that keep this launch's file tools out of every other
  * registered agent's mini apps. Pure apart from reading real paths.
  *
@@ -126,7 +190,18 @@ export function ownExtensionsWritable(
   ownHome: string | undefined
 ): string | undefined {
   if (!ownHome || heldToACeiling(session)) return undefined;
-  return marksHold(marksOf(sessionId, ownHome)) ? undefined : ownHome;
+  return ownExtensionsHeldByMark(sessionId, ownHome) ? undefined : ownHome;
+}
+
+/**
+ * Whether a mark that holds keeps this agent out of its own mini apps this turn: the mark half
+ * of {@link ownExtensionsWritable}, for callers that know the ceiling some other way.
+ *
+ * @param sessionId - The calling session.
+ * @param ownHome - The agent's home.
+ */
+export function ownExtensionsHeldByMark(sessionId: string | undefined, ownHome: string): boolean {
+  return marksHold(marksOf(sessionId, ownHome));
 }
 
 /**

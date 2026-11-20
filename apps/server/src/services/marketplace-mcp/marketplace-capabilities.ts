@@ -38,6 +38,7 @@ import {
 } from '../core/capabilities/index.js';
 import type { CapabilityDeps, CapabilityHandlerContext } from '../core/capabilities/index.js';
 import { unwrapMcpEnvelope } from '../core/capabilities/mcp-envelope.js';
+import { turnReadOutsideWords } from '../core/turn-power/outsider-turn.js';
 import type { MarketplaceConfirmationContext } from './confirmation-provider.js';
 
 import type { MarketplaceMcpDeps } from './marketplace-mcp-tools.js';
@@ -99,10 +100,18 @@ function callerContext(
   const requestedBy = context.identity
     ? context.identity.displayName || context.identity.agentPath
     : undefined;
+  // A turn that read words from outside the team never spends a standing Allowed (an Always
+  // allow, or Allowed under Trusted): those were set for the agent's own work, not for words
+  // steering it from outside. Only a card answered for this exact call counts (DOR-4851).
+  const outsideWords =
+    context.identity !== undefined &&
+    turnReadOutsideWords(context.sessionId, context.identity.agentPath);
   const preApproved =
     Boolean(context.trusted) ||
-    personAlreadySaidYes(context.approval) ||
-    (runsWhenTrusted && allowedUnderTrusted(context.approval));
+    (outsideWords
+      ? context.approval?.via === 'approval'
+      : personAlreadySaidYes(context.approval) ||
+        (runsWhenTrusted && allowedUnderTrusted(context.approval)));
   return {
     ...(requestedBy ? { requestedBy } : {}),
     // Four reasons the handler must not ask: an approval the tier gate spent on

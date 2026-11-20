@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { createMockTransport } from '@dorkos/test-utils';
 const transportOwner = createMockTransport();
 import { CanvasChannelNotificationSchema } from '@dorkos/shared/canvas-channel-schemas';

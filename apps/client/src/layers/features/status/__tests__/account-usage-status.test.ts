@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The status bar's usage rules (spec `claude-account-ui` §6.8): an account's
  * reading as the usage item's `UsageStatus`, and which of that reading and the

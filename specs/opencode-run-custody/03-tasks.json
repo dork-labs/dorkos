@@ -1,0 +1,276 @@
+{
+  "spec": "specs/opencode-run-custody/02-specification.md",
+  "slug": "opencode-run-custody",
+  "generatedAt": "2026-11-19T04:20:22.202Z",
+  "mode": "full",
+  "lastDecomposeDate": null,
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "phaseName": "Inventory and shared contract",
+      "subject": "[opencode-run-custody] [P1] Census native starts, current clocks and eligible proof hosts",
+      "description": "Re-census the actual OpenCode launch sites and current base before implementation. Record source paths and selected/eligible targets for server live conformance, package-grants and project-plugin real-manager tests, pinned CLI credits/folder-secret/plugin controls, child-process eval and lower-level harness server, lower-level Docker and public eval CLI Docker refusal, and harness smoke opencode run. Inventory bounded version/auth/npm provisioning helpers and exclude SDK client-only, production singleton and computer guest systemd lifetime from custody changes. Record actual current Windows wrapper and executable selection, the installed Vitest fork/globalSetup behavior under root and direct server config, source and emitted eval/smoke module resolution, Docker authenticating selector transports and source-built helper proof hosts. Preserve existing Darwin-arm64/Linux-x64 pinned package eligibility, with separate eligible Windows x64/arm64 and Node 22 ia32 host/architecture rows. Keep dependency or host availability gaps visible. Do no native, paid or daemon work in the census.\n\nAcceptance: a source-pinned matrix names each actual launch and owner, its current flags + keys/choices, runtime eligibility, readiness/operation/cleanup clocks and disposition. Record the 15,000ms manager readiness and 3,000ms TERM grace, post-launch eval health default 60,000ms or caller override, eval 5,000ms reap, Docker per-probe and cleanup 10,000ms with 5s stop and no added create/start timeout, and smoke 45,000ms free/300,000ms armed. New native paths found join the plan before completion.",
+      "activeForm": "Censusing native starts, current clocks and eligible proof hosts",
+      "status": "completed",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "phaseName": "Inventory and shared contract",
+      "subject": "[opencode-run-custody] [P1] Define the inert custody and stdio protocol",
+      "description": "Create a private Node-only @dorkos/test-utils/run-custody subpath with executable-compatible .mjs client and components, adjacent declarations and module-relative absolute asset resolution. Keep test-utils barrel and production startup free of custody implementation dependencies. Define RunSpawnPort.start(request, signal): Promise<RunChild> around resolved executable, argv, cwd, explicit environment, stdio and existing binary observer. Expose actual native PID/executable identity, optional writable input and readable output/error, latched spawn/exit/close and integrity facts, and idempotent stopAndJoin(reason, deadline). Do not fabricate ChildProcess or allow arbitrary caller-controlled kill identity. Make main and scope separate authenticated lifelines, established before native create, with no inherited copies in any child/wrapper/anchor; target stdin remains only target input. Explicitly own any resources acquired, stop late authorization/publication and make import inert.\n\nImplement bounded binary lanes with 64 KiB frames and 256 KiB outstanding credit per stdin/stdout/stderr lane, independently monitored control/EOF, ordered bytes/EOF/error, input backpressure/end, early output, fast exit latch and honest transport loss. Keep spawn argv/env and stream content in authenticated memory; allow only bounded secret-safe metadata in receipts. Model never-acquired, spawn-failed, native-closed, cleaned-owned, unsupported and cleanup-uncertain distinctly. Latch primary failure independently of cleanup failures, including thrown undefined; independently attempt known cleanup. Use remaining original startup or operation deadline when one already exists. If none, independent owner loss or explicit close revokes acquisition. Keep separate later phase clocks. No deadline retry/ratchet or new pre-gate resources.\n\nAcceptance: hermetic transport/unit tests cover independent main/scope loss, duplicate/late messages, expiration, stale generation, max frame/credit, fast error/no PID, exit before close, early output, caller close with unread output, bounded failure/dual-error paths and secret canaries. Import starts zero child/listener/network. Backend artifacts and real lifetime proof are separate.",
+      "activeForm": "Defining the inert custody and stdio protocol",
+      "status": "completed",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.1"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "phaseName": "Platform backends and test setup",
+      "subject": "[opencode-run-custody] [P2] Implement and prove the POSIX guardian and group anchor",
+      "description": "In private test-utils POSIX backend files, implement one lazy scope guardian outside a dedicated group, with a separately spawned detached group anchor. Guardian receives exclusive run-main lifeline and distinct authenticated scope/control channel. Anchor owns a separate authenticated guardian pipe; EOF from a dead guardian initiates its cleanup. Spawn the target into the anchor's own group with no new detach, no lifeline inheritance and actual target PID/identity observation. Anchor catches its own TERM, signals only its current group from inside, and escalates at most once at the fixed deadline. Guardian never signals a remembered negative PGID. Keep guardian alive to separately record anchor closure, actual native close/stream/integrity where observable, current group absence via nonsignaling observation and bounded uncertain outcomes. An exited leader must not suppress remaining owned member cleanup. Unknown anchor identity, reused group, access denied or unavailable observation never authorizes stale retry. Escaped descendants lie outside the cohort.\n\nRespect 5,000ms host join limits, preserving manager 3,000ms TERM grace within that ceiling and immediate escalation for the existing eval kill path. Clip to any earlier enclosing deadline. Keep primary and cleanup failures and never delete uncertain artifacts. No process-name, worktree-path or bare-PID sweeps.\n\nAcceptance: independently observed owned offline parent, scope, leader and ordinary descendant, with exact positive live identities before stimulus and unrelated owned positive remaining live. Prove normal/failure/timeout/SIGINT/SIGTERM/SIGKILL, parent kill before authorization and after spawn before ready, main loss with silent/blocked scope, scope loss with live main, late resolution, actual wrapper vs native PID, leader-exits-first and resistant descendant escalation. Prove real stream draining/backpressure. Green, remove only run-main-loss backstop, require intended still-live native assertion to fail with live subject even though silenced worker remains, let outer owner reap only recorded resources, then restore fresh green on actual eligible POSIX hosts.",
+      "activeForm": "Implementing and prove the POSIX guardian and group anchor",
+      "status": "pending",
+      "size": "xl",
+      "priority": "high",
+      "dependencies": [
+        "1.2"
+      ],
+      "parallelWith": [
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.5"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "2.2",
+      "phase": 2,
+      "phaseName": "Platform backends and test setup",
+      "subject": "[opencode-run-custody] [P2] Build and prove the Windows Job guardian",
+      "description": "Keep native C/C++ and explicit MSVC setup under packages/test-utils/native/windows-run-custody and Windows-specific resolver/backend files. Build source-owned console PE with static CRT and required system libraries using VS 2022 and a proven supported SDK; expose package-local pnpm --filter @dorkos/test-utils build:run-custody:windows, never hook/postinstall/runtime download. Resolve explicit installed VS locator/VC environment and architecture-specific cl.exe output for x64, arm64, x86/ia32. Record protocol version, PE architecture, source/header and binary hashes, compiler and SDK in a per-architecture ignored artifact manifest. Verify provenance and executable hash at package-relative resolution after gates. Keep production desktop/CLI packages unchanged; verify the same artifact is usable by source Vitest, emitted/workspace eval and tsx smoke. Missing/stale artifacts are explicit infrastructure failures.\n\nUse one unnamed non-inheritable kill-on-last-handle-close Job held exclusively by the Win32 guardian. CreateProcessW uses STARTUPINFOEXW, EXTENDED_STARTUPINFO_PRESENT, explicit inheritable stdio allowlist, CREATE_SUSPENDED and creation-time PROC_THREAD_ATTRIBUTE_JOB_LIST. Preserve Windows 10/Server 2016 API floor, no suspended-create/later-assignment gap or unowned fallback, no breakaway. Authenticate named pipes with owner ACL/identity and fresh scope capability. Recheck both lifelines before ResumeThread. Retain actual process/thread handles separately from guardian or wrapper, use applicable normal stop then Job termination within current grace/join bounds, observe Job active count zero and exact individual handle waits. Completion-port messages only prompt observation. Nested-job denial fails closed, never bypass outer job. Keep exact environment and native identity.\n\nAcceptance: prove on genuine x64 and arm64 Windows and eligible Node 22 ia32, with SDK/tool availability, architecture and oldest claimed floor recorded. Cross-build is artifact evidence only. Use offline outer observer with live known targets and retained exact HANDLEs to test before-resume/main loss, guardian death, normal shutdown, worker loss, no inherited Job/lifeline, Job membership, exited leader/descendant, nested failure and leak/breakaway negative controls. Source and emitted entrypoint helper presence and artifact integrity must pass. No product Windows x64 alpha claim or new Windows skip.",
+      "activeForm": "Building and prove the Windows Job guardian",
+      "status": "pending",
+      "size": "xl",
+      "priority": "high",
+      "dependencies": [
+        "1.2"
+      ],
+      "parallelWith": [
+        "2.1",
+        "2.3",
+        "2.4",
+        "2.5"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "2.3",
+      "phase": 2,
+      "phaseName": "Platform backends and test setup",
+      "subject": "[opencode-run-custody] [P2] Register run-main ownership in the server Vitest project",
+      "description": "Add a server-project globalSetup under apps/server and retain root load-wait and existing server contract setup. Run in actual Vitest main for both root and direct server invocations. Provide only structured-cloneable versioned run ID, inbox path/generation, capability metadata. Setup creates owner-private metadata and an unrefed async poll, without helper, native process, listener, model or provider lookup. Worker requests only after existing gate. Request via exclusive create and atomic rename, max 4 KiB, unique request ID and one pending per scope. Validate capability/generation/deadline, use one sweep in flight and bounded fair processing per sweep. Default 25ms poll is implementation detail; no fixed configured-worker admission ceiling. Process next eligible requests until their original applicable deadline; never substitute a shorter handshake clock. Exact authenticated replies, claim once, expire entries cleanly, no late/watch-generation replay. Main starts guardian with exclusive main writer, scope connects on separate transport. Worker never inherits or can hold open main lifeline. Worker installs close/cancel before sending argv/env privately. Main teardown synchronously stops admission, closes lifelines, joins and removes inbox only when cleanup confirmed.\n\nAcceptance: hermetic broker tests for fair scheduling under configured workers, stale, replay, invalid or canceled metadata, no argv/env/secrets, teardown races and no helper/listener for gate-refused worker. Under both root and direct server configurations, use the actual Vitest main and configured workers with an owned offline protocol endpoint or guardian fixture. Observe main-lifeline close at that fixture after the actual main exits while a silent or JS-blocked worker stays alive. Separately observe worker-channel close with main still live. Prove descriptor noninheritance and exact generation reset. This task establishes registration and close delivery at the broker boundary. Actual platform-native target termination through the final server composition is required in tasks 3.1 and 4.1.",
+      "activeForm": "Registering run-main ownership in the server Vitest project",
+      "status": "pending",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.2"
+      ],
+      "parallelWith": [
+        "2.1",
+        "2.2",
+        "2.4",
+        "2.5"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "2.4",
+      "phase": 2,
+      "phaseName": "Platform backends and test setup",
+      "subject": "[opencode-run-custody] [P2] Adapt the OpenCode manager and pinned spawn seams to the narrow port",
+      "description": "Make the manager's internal lifecycle/stdio port accept a direct production child adapter by default and an explicit injected custody adapter for covered tests. Do not import private test-utils in production startup or alter guest scope, production lifetime, account/payer, plugin environment, grant or readiness semantics. Manager uses actual stdout readiness and actual native exit facts. Start its 15,000ms readiness budget before custody acquisition at the actual boot attempt, preserve earlier resolution boundaries and remaining time for readiness. Cancel of startup, shutdown, recycle/restart and late resolution may not resurrect ready state. Keep manager 3,000ms TERM grace inside the 5,000ms host-confirmation ceiling for custody. Fail/clean uncertainty preserves diagnostics and does not authorize a second process.\n\nAdapt server test helper pinned-opencode.ts and binary observer integration for true owned native spawn/close, without changing caller test files in this slice. Observe actual official executable identity and PRE/POST hashes at actual spawn and close, retaining direct wrapper/executable distinction; native guard failure remains failed and no fake child object or PID. Keep caller stdio and finally-close behavior and integrity observation separate from a clean cohort receipt. Serialize other edits to server-manager and pinned helper against this task.\n\nAcceptance: focused offline stub port tests for default path unchanged, injection gating, early stdout and fast exit/no PID, canceled boot/recycle, timeouts with no ratchet, no production observer or secret leaks, actual latch and settled close/integrity outcome. Native positive is a later real-caller proof.",
+      "activeForm": "Adapting the OpenCode manager and pinned spawn seams to the narrow port",
+      "status": "completed",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "1.2"
+      ],
+      "parallelWith": [
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.5"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "2.5",
+      "phase": 2,
+      "phaseName": "Platform backends and test setup",
+      "subject": "[opencode-run-custody] [P2] Build selected-daemon container custody and prove compatibility",
+      "description": "Own new Docker custody backend files under packages/evals/src/runner/isolation, separate from launcher/proxy integration. After existing gates, resolve one absolute existing Docker CLI and explicit effective selector using actual context/host precedence. Prove docker system dial-stdio as preferred bound Engine channel, with same authenticated endpoint and daemon identity for create/start and every later reopen that wait/log/inspect/exec/cleanup needs. Keep credentials and private TLS material in memory and out of argv/evidence. No ambient context fallback or automatically resending ambiguous mutations. Verify raw proxy behavior, API version handling, TLS, SSH forwarding, npipe and partial/hijacked streams on eligible supported clients. If any existing eligible transport is incompatible, provide an equally bounded reviewed adapter before acceptance, without declaring a new Docker version/tool floor.\n\nGuardian creates fresh exact unique name and run/scope labels using current no-network, mounts, capabilities and resource cap settings. Accept immutable full ID and created state before issuing start at most once while both owners live. For late or unknown create/start track exact ID or exact verified name+run/scope labels on authenticated same daemon. Confirm absence after removal or stopped/nonrestarting on retained failure. Owner loss during create/start requires reconciliation; kill of CLI or port closure alone proves nothing. No name-prefix sweep, unknown mutation replay, unrelated cleanup or proxy outage counting as clean.\n\nPreserve existing 10,000ms cleanup and 5s stop grace within it, separate from 10,000ms per availability daemon version/image-inspect/image-list probe. Docker create/start has no invented per-launch clock; only use an existing enclosing deadline or main/scope/explicit-close cancellation. Keep gated verified-image selection and skip without download on missing image. Lower-level direct route retains existing selected image pull-if-missing and registry auth capability only after determinate image-missing/no-create and with same daemon binding; no new downloads or pull on ambiguity. Keep credentials and projected child env out of CLI argv and evidence.\n\nAcceptance: hermetic protocol/backend failures for disconnect/auth/identity switch, exact name and token mismatch, double start, late create/start, verified image skip, determinate missing direct path/credential mapping, and stop/removal/retained failure. Then drive the backend directly against an owned offline daemon. Prove the authenticated selector and raw Engine exec/stream behavior on local and eligible SSH/TLS/npipe, with a positive exact running container before owner death and deadline-bounded exact cleanup. No unrelated resources or actual model. Exercise the production DockerLauncher and netns-proxy wiring in task 3.3 and repeat the combined route proof in task 4.1. No external credentials; any possible real pull needs its own proof scope and is not needed to establish hermetic policy.",
+      "activeForm": "Building selected-daemon container custody and prove compatibility",
+      "status": "pending",
+      "size": "xl",
+      "priority": "high",
+      "dependencies": [
+        "1.2"
+      ],
+      "parallelWith": [
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "phaseName": "Caller integration",
+      "subject": "[opencode-run-custody] [P3] Adopt custody in every gated server OpenCode test caller",
+      "description": "Wire explicit server Vitest run-main/scope-owned custody into live conformance and package-grants/project-plugin real manager, plus pinned CLI credits-mode, folder-secret-canary and plugin controls using the shared manager/helper adapters. Existing afterAll/finally now joins each real owned close. Native `serve` and `run` remain distinct real subjects, with actual PID/executable identity and applicable PRE/POST hash verification. Do not touch shared manager or pinned helper concurrently with their owner. Existing mock mode/native eligibility and paid/free flags + matching keys stay in front of all custody resource acquisition. Do not arm paid rows or seed fake provider keys. Record zero native starts for refusal/mock, not positive execution. Production lifetime/default still uses direct spawn and normal shutdown.\n\nAcceptance: tests exercise genuine gate refusal and ready/close ordering while no model request is possible. Use freshly prepared synthetic profiles and an owned pinned OpenCode `serve` no-model proof with actual ready/PID, proper integrity checks and exact empty cohort after run-main death. Verify preserved setup and post-close counts for supported pinned CLI controls against existing offline fixtures. On eligible Win32 paths prove actual installed recognized npm .cmd shim native resolution and explicit .exe selection with exact identity and no blanket skip. Keep unsupported/unverified matrix rows open.",
+      "activeForm": "Adopting custody in every gated server OpenCode test caller",
+      "status": "pending",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4"
+      ],
+      "parallelWith": [
+        "3.2",
+        "3.3",
+        "3.4"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "3.2",
+      "phase": 3,
+      "phaseName": "Caller integration",
+      "subject": "[opencode-run-custody] [P3] Adopt custody in child-process evals and the harness server",
+      "description": "In packages/evals child-process launcher and runEval/runSuite/interrupt composition, inject explicit run-main and per-eval lifelines and use the platform custody port for the owned server cohort including its inherited OpenCode children. Keep emitted eval module/asset selection working. Preserve actual server status and stderr tail, environment, SSE/health semantics, interrupt/disposal and user-selected isolation. Normal and signal cleanup share idempotent owned join. Do not return early merely because server leader exited. Preserve immediate escalation with <=5,000ms confirmation for the existing child kill path. Keep `harness-server.ts` post-launch health default 60,000ms or caller override as a separate phase. Do not take it away from readiness or add acquisition time where no prior time cap exists. Lower-level exported callers supply explicit scope or documented bounded single-owner mode without ambient authority. Keep paid flags and actual matching keys before process/listener/credential work. Serialize harness-server and eval common integration before Docker caller integration.\n\nAcceptance: direct and emitted workspace runs with owned local server stub and genuine ordinary descendant, no model. Exercise normal/failure/health timeout/SIGINT/SIGTERM, main and scope death including exited leader, stream/error provenance, startup late cleanup, same post-launch health budget, timer expiry without native-ready receipt, eligibility and zero-resource gate denial. Real no-model OpenCode serve custody should go through actual integrated host entry, with Windows proof for eligible host paths and no added Windows gates/skips.",
+      "activeForm": "Adopting custody in child-process evals and the harness server",
+      "status": "pending",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "2.1",
+        "2.2",
+        "2.4"
+      ],
+      "parallelWith": [
+        "3.1",
+        "3.4"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "3.3",
+      "phase": 3,
+      "phaseName": "Caller integration",
+      "subject": "[opencode-run-custody] [P3] Wire exact Docker custody into the eval launcher and proxy",
+      "description": "In DockerLauncher, resolve-launcher, netns-proxy and actual lower-level harness entry, replace fire-and-forget docker run with guardian-owned create, verified exact ID, authorized start, and same selected/authenticated daemon connection binding for wait/logs/netns exec and cleanup. Preserve no-network/cap-drop/mount/resource and sandbox path semantics, limit relay concurrency using current bound, preserve real exit/log-tail and independent proxy/daemon cleanup with combined diagnostics. No code path falls back to ambient Docker context. Refusal of paid Docker CLI occurs before all probes/acquisitions and remains distinct from supported lower-level Docker with no provider/model calls. Preserve gated version/inspect/list check budgets and verified local image path, and current direct-launch pull-if-missing only on determinate absence under existing authority/configured auth. Preserve ten-second cleanup/five-second stop and independent 60s default post-launch health clock. Serialize shared eval files after child process integration.\n\nAcceptance: actual lower-level Docker launcher startup with genuine running exact owned offline container and same daemon through namespace proxy, stdout/stderr and exit evidence, main death during running/create/start, exact stop/inspect/remove and stopped-retained artifact, independent proxy close even when stop fails. Exercise mocked external daemon responses for determinate missing direct image/auth, refused mismatches, ambiguous replies without auto retry, and genuine CLI paid Docker refusal with zero Docker acquisition. Prove supported local and eligible remote transports before declaring compatibility.",
+      "activeForm": "Wiring exact Docker custody into the eval launcher and proxy",
+      "status": "pending",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "2.5",
+        "3.2"
+      ],
+      "parallelWith": [
+        "3.1",
+        "3.4"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "3.4",
+      "phase": 3,
+      "phaseName": "Caller integration",
+      "subject": "[opencode-run-custody] [P3] Convert harness smoke probes to awaited owned launches",
+      "description": "In scripts/harness-smoke/run.ts and its existing caller tests, convert the internal synchronous probe to awaited async custody for OpenCode, keeping sequential calibration and probe order and shared result contract. Keep the same actual command/argv/cwd and exact curated env, shell false, immediately close stdin (the former empty input), output bytes/order/UTF-8 decode and 1 MiB per-stream bound. Maintain existing ProbeResult fields and ENOENT/no-PID versus ETIMEDOUT/ran classification. Preserve 45,000ms free and 300,000ms armed absolute operation budgets including any custody startup. Timeout stops useful work at the old deadline, then joins only within bounded owned cleanup, with no output truncation reported as success. Keep no-model free branch behavior and existing OpenCode absence of a free model probe. Other harness behavior remains equivalent. Main and scope lifelines independent of target stdin. Use private .mjs module-relative workspace path under tsx and existing shell/Windows invocation. Keep exact flag plus matching-key decision before helpers, binary/network probes or any target acquisition.\n\nAcceptance: offline stub fixtures through actual smoke probe seam for fast success, spawn failure, timeout, output cap and sequential streams, immediate input EOF and same ProbeResult/status/report, abrupt main/scope loss and genuine cleanup of native-shape opencode run invocation without a provider, preservation of scoped environment and gate refusal/unsupported free run with zero native subjects. Verify actual shell and tsx resolution and supported Windows helper path with no paid invocation.",
+      "activeForm": "Converting harness smoke probes to awaited owned launches",
+      "status": "pending",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "2.1",
+        "2.2"
+      ],
+      "parallelWith": [
+        "3.1",
+        "3.2",
+        "3.3"
+      ],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "4.1",
+      "phase": 4,
+      "phaseName": "Acceptance and documentation",
+      "subject": "[opencode-run-custody] [P4] Close the full caller and platform acceptance matrix",
+      "description": "Reconcile the source inventory and record every real covered OpenCode start and proof row against exact combined source, helpers, binaries, host and invocation. Require independent observers with nonzero positive actual owned native/container subjects before owner death, prove that the actual main exited, then confirm target and owned ordinary descendants or exact daemon resource are gone or explicitly retained stopped. Main versus worker loss, stalled-but-alive main, normal return, failure, timeout, both ordinary signals, SIGKILL, early acquisition/late replies and leader-exits-first stay distinct. Confirm the removal of only main-loss backstop fails the intended live-child assertion and restored fresh green works, with unrelated owned positive and exact cleanup. Count eligible, selected, executed, failed, unsupported and any scope exclusions, never use an unavailable daemon or absent platform as a pass. Prove standalone POSIX custody, Windows x64/arm64/eligible ia32 helper and real caller/wrapper matrix, and lower-level daemon local plus eligible SSH/TLS/npipe transport/proxy path. Retain any failure or unproved eligible row and keep acceptance open. Fake external edges only in fixture/contract tests, no provider/model call, credential spend, arbitrary kill, or live pull. Check actual exit/close/PID/hash receipts and original clocks and no secrets in logs. Keep prior approved product/guest lifetime intact.\n\nAcceptance: exact source/binary/transport binding, actual nonzero proof receipts, raw parent/native/backend exits and distinct cleanup uncertainty, original gates/stdio and no-model evidence for every supported required row. Run applicable normal targeted package type/lint/test/build and packaging layout checks with actual nonzero assertions and preserve required normal repo gates. Require exact review of full integrated diff before acceptance.",
+      "activeForm": "Closing the full caller and platform acceptance matrix",
+      "status": "pending",
+      "size": "large",
+      "priority": "high",
+      "dependencies": [
+        "3.1",
+        "3.3",
+        "3.4"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    },
+    {
+      "id": "4.2",
+      "phase": 4,
+      "phaseName": "Acceptance and documentation",
+      "subject": "[opencode-run-custody] [P4] Document setup, ownership and verification limits",
+      "description": "Update the applicable internal developer documentation for covered starts, custody acquisition and exact gate order, run-main/scope semantics, helper source and emitted workspace resolution, explicit MSVC build and eligible architecture prerequisites, current clocks and teardown, and selected authenticated Docker context with verified-image versus direct pull behavior. Document receipts, uncertain cleanup, safe exact recovery, any compatibility limits established by real proof, and that production/guest ownership is separate. Preserve current real-model opt-in instructions and historical incident attribution. Describe the exact tested support matrix and retain unverified legs as such without a product claim. No new paid steps, flags, runtime package changes or broad sweep.\n\nAcceptance: docs match actual caller names, default clocks, real setup locations, output/provenance and failure/report semantics including retained stopped containers. Full scoped quality, root review and actual acceptance evidence precede any implementation/ADR status changes.",
+      "activeForm": "Documenting setup, ownership and verification limits",
+      "status": "pending",
+      "size": "medium",
+      "priority": "high",
+      "dependencies": [
+        "4.1"
+      ],
+      "parallelWith": [],
+      "issue": null,
+      "parentIssue": null
+    }
+  ]
+}

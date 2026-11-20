@@ -273,24 +273,61 @@ describe('create_extension from an agent', () => {
     );
   });
 
-  it('records no author for a turn holding a Wi-Fi mark, even at Full', async () => {
+  // Its own folder is read-only to such a turn's file tools (`ownExtensionsWritable`), so a copy
+  // made there could never be changed; the reply names the rule and the route that works (DOR-4851).
+  it('creates nothing for a turn holding a mark, even at Full, and names the rule and the route', async () => {
     stored.marks = { outsider: true };
     const { createExtension, handler } = handlerFor({
       agentPath: HOME,
       sessionId: 's1',
       chosenFull: true,
     });
-    await handler({ name: 'notes' });
-    expect(createExtension).toHaveBeenCalledWith(
-      expect.objectContaining({ agentHome: HOME, recordAuthor: false, approveIfTrusted: false })
-    );
+    const reply = JSON.parse((await handler({ name: 'notes' })).content[0]!.text) as {
+      status: string;
+      reason: string;
+      message: string;
+    };
+    expect(createExtension).not.toHaveBeenCalled();
+    expect(reply).toMatchObject({ status: 'not_created', reason: 'own_folder_read_only' });
+    expect(reply.message).toContain('read-only in this turn');
+    expect(reply.message).toContain('someone other than your owner');
+    expect(reply.message).toContain('personal marketplace');
+    expect(reply.message).toContain('marketplace_create_package');
+    expect(reply.message).toContain('Terminal');
   });
 
-  it('records no author for a turn under a ceiling', async () => {
+  it('creates nothing for a turn under a ceiling', async () => {
     const { createExtension, handler } = handlerFor({ agentPath: HOME, ceilinged: true });
+    const reply = JSON.parse((await handler({ name: 'notes' })).content[0]!.text) as {
+      status: string;
+    };
+    expect(createExtension).not.toHaveBeenCalled();
+    expect(reply.status).toBe('not_created');
+  });
+
+  it('still creates for a held agent whose folder is the global one, which stays writable', async () => {
+    // A home of `~`: its `.dork/extensions` IS DorkOS's own, which no deny rule names.
+    vi.stubEnv('DORK_HOME', '/made-up/home/.dork');
+    try {
+      const { createExtension, handler } = handlerFor({
+        agentPath: '/made-up/home',
+        ceilinged: true,
+      });
+      await handler({ name: 'notes' });
+      expect(createExtension).toHaveBeenCalledWith(
+        expect.objectContaining({ agentHome: '/made-up/home', approveIfTrusted: false })
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it('still creates, waiting for a person, from the external server where no agent is named', async () => {
+    stored.marks = { outsider: true };
+    const { createExtension, handler } = handlerFor({});
     await handler({ name: 'notes' });
     expect(createExtension).toHaveBeenCalledWith(
-      expect.objectContaining({ recordAuthor: false, approveIfTrusted: false })
+      expect.objectContaining({ approveIfTrusted: false })
     );
   });
 });

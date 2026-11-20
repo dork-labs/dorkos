@@ -44,6 +44,8 @@ export interface OpenConnectorTurnRequest {
   signal: AbortSignal;
   /** Whether this turn is still the session's current one. */
   isCurrent: () => boolean;
+  /** Read live facts from this same owner when the adapter supplies them. */
+  readToolTurn?: ConnectorTurnOwnership['readToolTurn'];
   /** Called when the binding's lease is lost mid-turn. */
   onLost: (loss: ConnectorLeaseLoss) => void;
 }
@@ -123,11 +125,11 @@ export async function openConnectorTurn(
   tools: ConnectorRuntimeTools,
   request: OpenConnectorTurnRequest
 ): Promise<OpenedConnectorTurn | null> {
-  const { runtime, sessionId, agentPath, cwd, signal, isCurrent, onLost } = request;
+  const { runtime, sessionId, agentPath, cwd, signal, isCurrent, readToolTurn, onLost } = request;
   const binding = await openTurnOrSkip(
     tools.principals,
     { runtime, canonicalSessionId: sessionId, agentPath, canonicalCwd: cwd, signal },
-    { isCurrent }
+    { isCurrent, ...(readToolTurn ? { readToolTurn } : {}) }
   );
   if (!binding) return null;
   try {

@@ -39,6 +39,8 @@ on:
       - 'scripts/smoke-test.sh'
       - 'scripts/hub-smoke/**'
       - 'scripts/hub-entrypoint.sh'
+      - 'docker/seccomp/**'
+      - 'scripts/codex-docker-sandbox-check.sh'
       - 'pnpm-lock.yaml'
       - '.github/workflows/cli-smoke-test.yml'
   workflow_dispatch:
@@ -211,6 +213,55 @@ jobs:
 
       - name: Run integration tests
         run: docker run --rm dorkos-integration
+
+  # Codex in the product image, both ways (DOR-3800). GitHub's Ubuntu runner
+  # enforces Docker's docker-default AppArmor profile, so the job asserts the
+  # scoped outcome (--expect apparmor): with the opt-in profile in
+  # docker/seccomp/dorkos-codex.json, seccomp lets bwrap make its namespace and
+  # AppArmor refuses its first mount ("Failed to make / slave: Permission
+  # denied"), never the namespace refusal; with Docker's default profile it
+  # fails closed on the namespace refusal. Both runs keep the same user,
+  # capability sets, NoNewPrivs, AppArmor label and Seccomp: 2. Codex in Docker
+  # on AppArmor hosts is not supported yet (DOR-4836); the full pass (sandbox
+  # starts) is proven on hosts without AppArmor. The host is left exactly as
+  # GitHub ships it: never --privileged, --cap-add, seccomp=unconfined or a
+  # sysctl write here (scripts/__tests__/codex-seccomp-profile.test.ts
+  # refuses them), because a host that needs one is a host the profile does
+  # not support.
+  codex-docker-sandbox:
+    needs: build-tarball
+    runs-on: ubuntu-latest
+    # The image build matches integration-test's (~1-1.5 minutes); the checks
+    # add two short container runs.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            Dockerfile
+            .dockerignore
+            docker/seccomp
+            scripts/codex-docker-sandbox-check.sh
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: cli-tarball
+
+      - name: Build the runtime image
+        run: docker build --target runtime -t dorkos-runtime .
+
+      # Read-only: records the host's security settings beside the result, so a
+      # red run explains itself.
+      - name: Show the host's security settings
+        run: |
+          for knob in kernel.apparmor_restrict_unprivileged_userns kernel.unprivileged_userns_clone user.max_user_namespaces; do
+            echo "$knob = $(sysctl -n "$knob" 2>/dev/null || echo absent)"
+          done
+          echo "apparmor enabled = $(cat /sys/module/apparmor/parameters/enabled 2>/dev/null || echo absent)"
+          echo "docker security options = $(docker info --format '{{json .SecurityOptions}}')"
+
+      - name: Check Codex's sandbox with and without the profile
+        run: bash scripts/codex-docker-sandbox-check.sh --expect apparmor dorkos-runtime docker/seccomp/dorkos-codex.json
 
   # The hub image (DOR-2935): what DorkOS Cloud boots for a person's own
   # DorkOS in the cloud. Boots it against a stand-in for Cloud

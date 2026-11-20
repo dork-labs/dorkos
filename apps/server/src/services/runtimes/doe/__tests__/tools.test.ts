@@ -106,6 +106,9 @@ it('RT-MCP-01: executes registry projections through the real authenticated list
   );
   const principals = {
     resolve,
+    resolveToolTurn: vi.fn(async () => {
+      throw new Error('Live tools are not part of this fixture.');
+    }),
     openTurn: vi.fn(),
     renew: vi.fn(),
     revoke: vi.fn(),

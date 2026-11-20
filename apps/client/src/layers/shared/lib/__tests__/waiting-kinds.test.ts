@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The nouns the cockpit counts "what's waiting on you" in.
  *
