@@ -113,6 +113,9 @@ describe('BackupsTab', () => {
     renderTab();
     fireEvent.click(await screen.findByRole('button', { name: 'Move dork-20260901-daily.db' }));
     expect(await screen.findByText('Move backup to…')).toBeInTheDocument();
+    expect(
+      screen.getByText('Older copies can include past chats. A folder that syncs will upload them.')
+    ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Recent folders' })).toBeNull();
     const use = await screen.findByRole('button', { name: 'Use this folder' });
     await waitFor(() => expect(use).toBeEnabled());

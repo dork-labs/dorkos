@@ -124,6 +124,7 @@ export function BackupsTab() {
         onOpenChange={(open) => !open && setMoving(null)}
         onSelect={(destination) => moving && moveTo(moving, destination)}
         title="Move backup to…"
+        note="Older copies can include past chats. A folder that syncs will upload them."
         browseOnly
       />
     </div>

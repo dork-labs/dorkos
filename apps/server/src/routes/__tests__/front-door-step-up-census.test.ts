@@ -183,6 +183,8 @@ const OTHER_FRONT_DOOR_CALLERS: Record<string, string> = {
     'Shared runtime bars and the key-save hold (HOLD_HELPERS); runtimes.ts routes are checked.',
   'runtimes-doe-setup.ts': 'Runtime sign-in and model settings are N.',
   'cloud-owner-bar.ts': 'Shared account owner bar; writes are classified in its callers.',
+  'config-backups.ts':
+    "Removes or moves the person's own older database copies; grants nothing (N).",
   'approval-person-bars.ts':
     'Shared approval answer bars; no routes. Its caller approvals.ts is classified below.',
   'cloud-community-move-http.ts': 'Delegated cloud-communities POST /moves hold, checked below.',

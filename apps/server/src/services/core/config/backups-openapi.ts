@@ -101,8 +101,10 @@ export function registerConfigBackupsOpenApi(registry: OpenAPIRegistry): void {
     tags: ['Config'],
     summary: 'Move an older backup copy to another folder',
     description:
-      'Copies one older `dork-` copy into an existing folder inside the directory boundary, ' +
-      'never overwriting a file there. The copy must match in size and pass SQLite’s ' +
+      'Copies one older `dork-` copy into an existing folder inside the directory boundary or ' +
+      'on an external drive (`/Volumes/<drive>/…`), never the data folder. The destination is ' +
+      'resolved once to its real path, so a link is followed and every check reads the folder ' +
+      'written to. Nothing there is overwritten. The copy must match in size and pass SQLite’s ' +
       '`integrity_check`; only then is the original removed, and only if unchanged. A failed ' +
       'check deletes the new file and keeps the original. ' +
       PERSON_BAR,
@@ -126,9 +128,9 @@ export function registerConfigBackupsOpenApi(registry: OpenAPIRegistry): void {
         },
       },
       400: error(
-        'The destination does not exist (`destination_invalid`), is outside the directory ' +
-          'boundary (`destination_outside`), is a symbolic link (`destination_is_link`), is the ' +
-          'data folder or inside it (`destination_in_data_folder`), or is the backup folder ' +
+        'The destination does not exist (`destination_invalid`), is neither inside the directory ' +
+          'boundary nor on an external drive (`destination_outside`), is the data folder or ' +
+          'inside it (`destination_in_data_folder`), or is the backup folder ' +
           '(`destination_is_backups`)'
       ),
       401: error('Login is enabled and the caller is not signed in'),

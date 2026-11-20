@@ -46,6 +46,8 @@ export interface DirectoryPickerProps {
   resolvedAgents?: Record<string, AgentManifest | null>;
   /** The dialog's title, when it picks something other than a working folder. */
   title?: string;
+  /** One line under the title about where the pick should not go. */
+  note?: string;
   /**
    * Open on the folder browser, ignoring recent working folders. For a pick
    * where a project folder is not the usual answer (moving a backup, DOR-4253).
@@ -61,6 +63,7 @@ export function DirectoryPicker({
   initialPath,
   resolvedAgents,
   title = 'Select working folder',
+  note,
   browseOnly = false,
 }: DirectoryPickerProps) {
   const transport = useTransport();
@@ -186,6 +189,7 @@ export function DirectoryPicker({
         {/* Header */}
         <ResponsiveDialogHeader className="space-y-0 border-b px-4 py-3">
           <ResponsiveDialogTitle className="text-sm font-medium">{title}</ResponsiveDialogTitle>
+          {note && <p className="text-muted-foreground pt-1 text-xs">{note}</p>}
         </ResponsiveDialogHeader>
 
         {/* Navigation bar */}

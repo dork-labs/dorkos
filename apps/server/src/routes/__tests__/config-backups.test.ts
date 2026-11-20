@@ -23,6 +23,8 @@ let home: string;
 let backups: string;
 let inside: string;
 let outside: string;
+/** Stands in for `/Volumes`, where macOS mounts external drives. */
+let volumes: string;
 
 const OLDER = 'dork-20260901-daily.db';
 const OLDER_PRE = 'dork-20260815-101500-pre-0042_add_notes.db';
@@ -42,13 +44,17 @@ beforeEach(async () => {
   backups = path.join(home, 'backups');
   inside = path.join(root, 'boundary', 'saved');
   outside = path.join(root, 'past-the-boundary');
-  for (const dir of [backups, inside, outside]) fs.mkdirSync(dir, { recursive: true });
+  volumes = path.join(root, 'Volumes');
+  for (const dir of [backups, inside, outside, volumes]) fs.mkdirSync(dir, { recursive: true });
   vi.stubEnv('DORK_HOME', home);
   initConfigManager(home);
   configManager.set('auth', { enabled: false });
   await initBoundary(path.join(root, 'boundary'));
   server.mount(
-    honoGroupListener({ path: '/api/config/backups', routes: createConfigBackupsRoutes() })
+    honoGroupListener({
+      path: '/api/config/backups',
+      routes: createConfigBackupsRoutes({ volumesRoot: volumes }),
+    })
   );
   for (const name of [OLDER, OLDER_PRE, MANAGED]) sqliteCopy(path.join(backups, name));
 });
@@ -168,6 +174,7 @@ describe('a person at this computer', () => {
       .post(`/api/config/backups/${OLDER}/move`)
       .send({ destination: link });
     expect(res.status).toBe(400);
+    expect(res.body.code).toBe('destination_outside');
     expect(fs.readdirSync(outside)).toEqual([]);
     expect(fs.existsSync(path.join(backups, OLDER))).toBe(true);
   });
@@ -211,15 +218,62 @@ describe('a person at this computer', () => {
     expect(fs.existsSync(path.join(backups, OLDER))).toBe(true);
   });
 
-  it('refuses a destination that is a link, even to a folder inside the boundary', async () => {
+  it('follows a link to a folder inside the boundary, and writes to the real folder', async () => {
     const link = path.join(root, 'boundary', 'link-to-saved');
     fs.symlinkSync(inside, link);
     const res = await request(server.server)
       .post(`/api/config/backups/${OLDER}/move`)
       .send({ destination: link });
+    expect(res.status).toBe(200);
+    expect(res.body.destinationPath).toBe(path.join(inside, OLDER));
+    expect(fs.existsSync(path.join(inside, OLDER))).toBe(true);
+    expect(fs.existsSync(path.join(backups, OLDER))).toBe(false);
+  });
+
+  it('refuses a link that points into the data folder', async () => {
+    const inData = path.join(home, 'kept-aside');
+    fs.mkdirSync(inData);
+    const link = path.join(root, 'boundary', 'link-into-data');
+    fs.symlinkSync(inData, link);
+    const res = await request(server.server)
+      .post(`/api/config/backups/${OLDER}/move`)
+      .send({ destination: link });
     expect(res.status).toBe(400);
-    expect(res.body.code).toBe('destination_is_link');
-    expect(fs.readdirSync(inside)).toEqual([]);
+    expect(res.body.code).toBe('destination_in_data_folder');
+    expect(fs.readdirSync(inData)).toEqual([]);
+    expect(fs.existsSync(path.join(backups, OLDER))).toBe(true);
+  });
+
+  it('accepts a folder on an external drive, outside the boundary', async () => {
+    const drive = path.join(volumes, 'Backup Drive', 'dorkos');
+    fs.mkdirSync(drive, { recursive: true });
+    const res = await request(server.server)
+      .post(`/api/config/backups/${OLDER}/move`)
+      .send({ destination: drive });
+    expect(res.status).toBe(200);
+    expect(fs.existsSync(path.join(drive, OLDER))).toBe(true);
+    expect(fs.existsSync(path.join(backups, OLDER))).toBe(false);
+  });
+
+  it('refuses the volumes folder itself, the filesystem root and system folders', async () => {
+    for (const destination of [volumes, '/', '/etc']) {
+      const res = await request(server.server)
+        .post(`/api/config/backups/${OLDER}/move`)
+        .send({ destination });
+      expect(res.status, destination).toBe(400);
+      expect(res.body.code, destination).toBe('destination_outside');
+    }
+    expect(fs.existsSync(path.join(backups, OLDER))).toBe(true);
+  });
+
+  it('refuses a drive entry that is a link back to the system disk', async () => {
+    // macOS lists the start-up disk under /Volumes as a link to `/`.
+    fs.symlinkSync('/', path.join(volumes, 'Macintosh HD'));
+    const res = await request(server.server)
+      .post(`/api/config/backups/${OLDER}/move`)
+      .send({ destination: path.join(volumes, 'Macintosh HD') });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('destination_outside');
     expect(fs.existsSync(path.join(backups, OLDER))).toBe(true);
   });
 

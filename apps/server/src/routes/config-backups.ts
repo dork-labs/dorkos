@@ -8,7 +8,8 @@
  * connection) is refused before anything is read. A copy is named by its
  * file name only; `@dorkos/db`'s `backup-copies` decides which names a writer
  * produced and re-checks the file right before it acts. A Move's destination
- * must sit inside this computer's directory boundary.
+ * must sit inside this computer's directory boundary or on an external drive,
+ * and never in the data folder.
  *
  * Mounted at `/api/config/backups`, beside the config group.
  *
@@ -28,7 +29,7 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { requirePersonAtThisComputer } from '../lib/caller-authority.js';
-import { BoundaryError, expandTilde, validateBoundary } from '../lib/boundary.js';
+import { expandTilde, getBoundary, isContained } from '../lib/boundary.js';
 import { resolveDorkHome } from '../lib/dork-home.js';
 import { recordAudit } from '../services/audit/audit-trail.js';
 
@@ -51,11 +52,11 @@ function backupsDir(): string {
 
 /** Refusals the route decides before `@dorkos/db` is asked. */
 type RouteRefusal =
-  | 'person_only'
-  | 'not_at_this_computer'
-  | 'destination_outside'
-  | 'destination_in_data_folder'
-  | 'destination_is_link';
+  'person_only' | 'not_at_this_computer' | 'destination_outside' | 'destination_in_data_folder';
+
+/** Why a Move's destination was refused before the copy, as a code the table answers. */
+type DestinationRefusal =
+  'destination_invalid' | 'destination_outside' | 'destination_in_data_folder';
 
 /** What each refusal says, and the status it answers with. */
 const REFUSALS: Record<
@@ -64,9 +65,11 @@ const REFUSALS: Record<
 > = {
   person_only: { status: 403, error: 'Only you can do this, from DorkOS.' },
   not_at_this_computer: { status: 403, error: 'Do this on the computer DorkOS runs on.' },
-  destination_outside: { status: 400, error: 'That folder is outside what DorkOS can reach.' },
+  destination_outside: {
+    status: 400,
+    error: 'Pick a folder DorkOS can reach, or one on an external drive.',
+  },
   destination_in_data_folder: { status: 400, error: 'Pick a folder outside DorkOS’s data folder.' },
-  destination_is_link: { status: 400, error: 'Pick the folder itself, not a link to it.' },
   not_found: { status: 404, error: 'That backup is no longer there.' },
   managed: { status: 409, error: 'DorkOS removes this backup on its own.' },
   busy: { status: 409, error: 'This backup is in use, so it can’t be changed now.' },
@@ -86,29 +89,64 @@ const REFUSALS: Record<
   },
 };
 
-/** Whether the path itself is a symbolic link (a missing path is not). */
-function isLink(folder: string): boolean {
-  try {
-    return fs.lstatSync(folder).isSymbolicLink();
-  } catch {
-    return false;
-  }
+/** Whether `child` is strictly below `parent` (both already real paths). */
+function strictlyInside(child: string, parent: string): boolean {
+  const relative = path.relative(parent, child);
+  return (
+    relative !== '' &&
+    relative !== '..' &&
+    !relative.startsWith(`..${path.sep}`) &&
+    !path.isAbsolute(relative)
+  );
 }
 
 /**
- * Whether a resolved folder is the data folder or sits anywhere inside it, by
- * real path. A folder that can't be resolved counts as inside: refused.
+ * Where a Move may write, decided once on the destination's real path, so a
+ * link is followed exactly once and every check reads the folder that will be
+ * written to. Allowed: an existing folder inside the directory boundary, or on
+ * an external drive (`<volumesRoot>/<drive>/…`, which is what Security chose
+ * for backups). Never the data folder or anything in it, wherever the path
+ * that named it lives: that would only rename the copy to where retention
+ * can't see it.
+ *
+ * @returns The real folder, or why it is refused.
  */
-function insideDataFolder(folder: string): boolean {
+function resolveDestination(
+  asked: string,
+  volumesRoot: string
+): { folder: string } | { refused: DestinationRefusal } {
+  const decided = decideDestination(asked, volumesRoot);
+  // A real folder is always absolute; a refusal code never is.
+  return path.isAbsolute(decided)
+    ? { folder: decided }
+    : { refused: decided as DestinationRefusal };
+}
+
+/** {@link resolveDestination}'s decision: a real absolute folder, or a refusal code. */
+function decideDestination(asked: string, volumesRoot: string): string {
+  let real: string;
   try {
-    const home = fs.realpathSync.native(resolveDorkHome());
-    const relative = path.relative(home, fs.realpathSync.native(folder));
-    const outside =
-      relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative);
-    return !outside;
+    real = fs.realpathSync.native(asked);
+    if (!fs.statSync(real).isDirectory()) return 'destination_invalid';
   } catch {
-    return true;
+    return 'destination_invalid';
   }
+  let home: string;
+  try {
+    home = fs.realpathSync.native(resolveDorkHome());
+  } catch {
+    // No data folder to compare with: refuse rather than guess.
+    return 'destination_in_data_folder';
+  }
+  if (real === home || strictlyInside(real, home)) return 'destination_in_data_folder';
+  if (isContained(real, getBoundary())) return real;
+  let volumes: string | undefined;
+  try {
+    volumes = fs.realpathSync.native(volumesRoot);
+  } catch {
+    volumes = undefined;
+  }
+  return volumes !== undefined && strictlyInside(real, volumes) ? real : 'destination_outside';
 }
 
 /** Answer a refusal with its sentence and code. */
@@ -141,12 +179,20 @@ function audit(name: string, movedTo?: string): void {
   });
 }
 
+/** Options for {@link createConfigBackupsRoutes}. */
+export interface ConfigBackupsRoutesOptions {
+  /** Where external drives are mounted; `/Volumes` (macOS). A test points it at a temp folder. */
+  volumesRoot?: string;
+}
+
 /**
  * The Backups routes.
  *
+ * @param options - See {@link ConfigBackupsRoutesOptions}.
  * @returns The router, mounted at `/api/config/backups`.
  */
-export function createConfigBackupsRoutes(): Hono<ApiEnv> {
+export function createConfigBackupsRoutes(options: ConfigBackupsRoutesOptions = {}): Hono<ApiEnv> {
+  const volumesRoot = options.volumesRoot ?? '/Volumes';
   const router = new Hono<ApiEnv>();
 
   /** GET / — every backup copy, newest first, and their total size. */
@@ -177,23 +223,9 @@ export function createConfigBackupsRoutes(): Hono<ApiEnv> {
     if (!name.success) return refuse(c, 'not_found');
     const body = MoveBackupRequestSchema.safeParse(readJsonBody(c));
     if (!body.success) return refuse(c, 'destination_invalid');
-    const asked = expandTilde(body.data.destination);
-    // The folder the person named, not one a link at that name points to.
-    if (isLink(asked)) return refuse(c, 'destination_is_link');
-    let destination: string;
-    try {
-      destination = await validateBoundary(asked);
-    } catch (err) {
-      if (err instanceof BoundaryError)
-        return refuse(
-          c,
-          err.code === 'OUTSIDE_BOUNDARY' ? 'destination_outside' : 'destination_invalid'
-        );
-      throw err;
-    }
-    // Anywhere in the data folder is only a rename to where retention can't see it.
-    if (insideDataFolder(destination)) return refuse(c, 'destination_in_data_folder');
-    const result = await moveOlderBackupCopy(backupsDir(), name.data, destination);
+    const destination = resolveDestination(expandTilde(body.data.destination), volumesRoot);
+    if ('refused' in destination) return refuse(c, destination.refused);
+    const result = await moveOlderBackupCopy(backupsDir(), name.data, destination.folder);
     if (result.status !== 'moved') return refuse(c, result.status);
     audit(name.data, result.destinationPath);
     return c.json({ destinationPath: result.destinationPath });
