@@ -40,9 +40,11 @@ const DOCKER_APPARMOR_COPY = [
 ].join('\n');
 
 /** In the Docker image, seccomp refused the namespace: the profile is missing. */
-const DOCKER_NO_PROFILE_COPY = ['Codex needs DorkOS’s Docker profile.', DOCKER_GUIDE_LINE].join(
-  '\n'
-);
+const DOCKER_NO_PROFILE_COPY = [
+  'Codex needs DorkOS’s Docker profile.',
+  'Restart the container with it, or use Claude Code.',
+  DOCKER_GUIDE_LINE,
+].join('\n');
 
 /**
  * The chat copy for a sandbox Codex could not start. Docker wording only

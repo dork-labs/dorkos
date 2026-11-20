@@ -188,7 +188,11 @@ describe('a turn', () => {
       refusal: 'namespace',
       inDocker: true,
       detail: NAMESPACE_DETAIL,
-      message: ['Codex needs DorkOS’s Docker profile.', GUIDE_LINE].join('\n'),
+      message: [
+        'Codex needs DorkOS’s Docker profile.',
+        'Restart the container with it, or use Claude Code.',
+        GUIDE_LINE,
+      ].join('\n'),
     },
     {
       refusal: 'AppArmor mount',
