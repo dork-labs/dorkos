@@ -33,7 +33,10 @@
  * something out, and when even it has to stop (a very large payload), it says
  * how many values it could not fit rather than implying it is complete.
  *
- * @module services/connectors/execution/approval-service-action
+ * A send's recipients are neither: they leave the glance and are listed one
+ * per line above it (`recipients.ts`, DOR-4592).
+ *
+ * @module services/connectors/execution/approval-card/service-action
  */
 import {
   APPROVAL_SERVICE_ACTION_MAX_DETAILS,
@@ -49,14 +52,15 @@ import {
   type ApprovalServiceActionLine,
 } from '@dorkos/shared/approval-schemas';
 import { actionNameFromSlug, serviceNameFromToolkit } from '@dorkos/shared/connector-schemas';
-import { REDACTED_SUMMARY_VALUE } from '../../core/approvals/index.js';
-import { BUILT_IN_APPS } from '../resources/built-in-apps.js';
+import { REDACTED_SUMMARY_VALUE } from '../../../core/approvals/index.js';
+import { BUILT_IN_APPS } from '../../resources/built-in-apps.js';
+import { recipientLines } from './recipients.js';
 import {
   argumentNameWords,
   isIdArgumentName,
   isSecretArgumentName,
   redactConnectedAppArgument,
-} from './connected-app-secrets.js';
+} from '../connected-app-secrets.js';
 
 /** The stored facts one connected-app action is described from. */
 export interface ServiceActionFacts {
@@ -310,12 +314,16 @@ class EverythingList {
  */
 export function describeServiceAction(facts: ServiceActionFacts): ApprovalServiceAction {
   const order = argumentOrder(facts);
-  const glance: ApprovalServiceActionDetail[] = order.map((key) => ({
-    label: detailLabel(key),
-    value: isSecretArgumentName(key)
-      ? REDACTED_SUMMARY_VALUE
-      : glanceValue(facts.arguments[key], isIdArgumentName(key)),
-  }));
+  // Recipients get a line each above the glance, so none folds into "and N more" (DOR-4592).
+  const recipients = recipientLines(order, facts.arguments, detailLabel);
+  const glance: ApprovalServiceActionDetail[] = order
+    .filter((key) => !recipients.keys.has(key))
+    .map((key) => ({
+      label: detailLabel(key),
+      value: isSecretArgumentName(key)
+        ? REDACTED_SUMMARY_VALUE
+        : glanceValue(facts.arguments[key], isIdArgumentName(key)),
+    }));
   const everything = new EverythingList();
   for (const key of order) everything.add(key, detailLabel(key), facts.arguments[key], 0);
 
@@ -334,6 +342,9 @@ export function describeServiceAction(facts: ServiceActionFacts): ApprovalServic
     serviceName: name(serviceName(facts.toolkit)),
     accountLabel: name(accountLabel(facts)),
     actionName: name(actionNameFromSlug(facts.operationSlug, facts.toolkit)),
+    ...(recipients.lines.length > 0 ? { recipients: recipients.lines } : {}),
+    ...(recipients.cut > 0 ? { recipientsCut: recipients.cut } : {}),
+    ...(recipients.shortened > 0 ? { recipientsShortened: recipients.shortened } : {}),
     details: shown,
     ...(more > 0 ? { moreDetails: more } : {}),
     ...(glanceIsWhole ? {} : { everything: everything.lines }),

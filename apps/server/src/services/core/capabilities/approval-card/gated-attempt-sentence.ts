@@ -5,7 +5,11 @@
  *
  * @module services/core/capabilities/approval-card/gated-attempt-sentence
  */
-import type { ApprovalServiceAction, ApprovalSubject } from '@dorkos/shared/approval-schemas';
+import {
+  serviceActionArgumentText,
+  type ApprovalServiceAction,
+  type ApprovalSubject,
+} from '@dorkos/shared/approval-schemas';
 import type { AgentIdentity } from '../../agent-identity/agent-identity-service.js';
 import {
   extensionSourcePhrase,
@@ -91,9 +95,8 @@ export function describeGatedAttempt(
     ? `${JSON.stringify(renderRequesterLabel(identity.displayName || identity.agentPath))} `
     : 'An unidentified caller ';
   if (serviceAction) {
-    const lines = serviceAction.details
-      .map(({ label, value }) => `${label}: ${JSON.stringify(value)}`)
-      .join(', ');
+    // Recipients first (DOR-4592): this sentence is what the audit and notifications read.
+    const lines = serviceActionArgumentText(serviceAction);
     return redactSecretsInText(
       `${who}wants to run "${serviceAction.actionName}" in ${serviceAction.serviceName} on ` +
         `${JSON.stringify(serviceAction.accountLabel)}${lines ? ` with ${lines}` : ''}`
