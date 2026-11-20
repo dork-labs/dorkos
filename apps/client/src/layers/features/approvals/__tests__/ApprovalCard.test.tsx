@@ -667,7 +667,7 @@ describe('ApprovalCard', () => {
           capabilityTitle: 'Update configuration',
           tier: 'act',
           summary:
-            '"Warden" wants to run "Update configuration" with changes: "21 settings, 2 need you"',
+            '"Warden" wants to change 21 settings. 2 need you: tunnel.enabled, mesh.scanRoots',
           detail,
         })
       );
@@ -677,10 +677,51 @@ describe('ApprovalCard', () => {
       expect(block!.className).not.toMatch(/line-clamp|truncate/);
     });
 
+    // DOR-4775: on a phone a long setting name wraps between its parts, not mid-word.
+    it('lets a long setting name wrap after each dot, adding no characters', () => {
+      const detail =
+        'runtimes.claudeCode.projectAccounts["/tmp/made-up/client.app"].allow: adds "Work" (needs you)';
+      renderCard(
+        buildApproval({
+          capabilityId: 'operator.config_patch',
+          capabilityTitle: 'Update configuration',
+          tier: 'act',
+          summary:
+            '"Warden" wants to change 1 setting. 1 needs you: runtimes.claudeCode.projectAccounts…',
+          detail,
+        })
+      );
+      const block = document.querySelector('[data-slot="approval-detail"]')!;
+      expect(block.textContent).toBe(detail);
+      expect(block.querySelectorAll('wbr')).toHaveLength(detail.split('.').length - 1);
+    });
+
+    it('gives each setting its own hanging-indent line and keeps "(needs you)" whole', () => {
+      const detail = ['tunnel.enabled: no → yes (needs you)', 'ui.theme: "light" → "dark"'].join(
+        '\n'
+      );
+      renderCard(
+        buildApproval({
+          capabilityId: 'operator.config_patch',
+          capabilityTitle: 'Update configuration',
+          tier: 'act',
+          summary: '"Warden" wants to change 2 settings. 1 needs you: tunnel.enabled',
+          detail,
+        })
+      );
+      const block = document.querySelector('[data-slot="approval-detail"]')!;
+      expect(block.textContent).toBe(detail);
+      const lines = block.querySelectorAll(':scope > span');
+      expect(lines).toHaveLength(2);
+      for (const line of lines) expect(line.className).toMatch(/-indent-4/);
+      const mark = screen.getByText('(needs you)');
+      expect(mark.className).toMatch(/whitespace-nowrap/);
+    });
+
     // DOR-4778: the sentence names the riskiest setting first; no clamp may hide it.
     it('never clamps a settings change’s sentence, so its riskiest setting stays in view', () => {
       const summary =
-        '"A long agent name, padded out" wants to run "Update configuration" with changes: "tunnel.enabled, mesh.scanRoots, extensions.enabled and 6 more, 4 need you"';
+        '"A long agent name, padded out" wants to change 9 settings. 4 need you: projectAccounts.allow, tunnel.enabled, mesh.scanRoots and 1 more';
       renderCard(
         buildApproval({
           capabilityId: 'operator.config_patch',
