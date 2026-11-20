@@ -7823,6 +7823,23 @@
       "extractedFrom": null,
       "specSlug": "server-merge",
       "amends": ["261006-235238", "261015-042933"]
+    },
+    {
+      "id": "261119-040949",
+      "slug": "own-native-verification-through-run-lifelines",
+      "title": "Own native verification through run lifelines",
+      "status": "proposed",
+      "created": "2026-11-19",
+      "extractedFrom": "specs/opencode-run-custody/02-specification.md",
+      "specSlug": "opencode-run-custody",
+      "supersedes": null,
+      "amends": null,
+      "affects": [
+        "packages/test-utils/**",
+        "apps/server/src/services/runtimes/opencode/**",
+        "packages/evals/src/runner/isolation/**",
+        "scripts/harness-smoke/**"
+      ]
     }
   ]
 }

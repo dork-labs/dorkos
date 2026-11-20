@@ -2502,6 +2502,15 @@
       "created": "2026-11-19",
       "status": "draft",
       "linearIssue": "DOR-2963"
+    },
+    {
+      "id": "261117-015113",
+      "slug": "opencode-run-custody",
+      "title": "Stop an OpenCode test process when its run ends",
+      "created": "2026-11-16",
+      "status": "specified",
+      "project": "Codex, OpenCode and Doe work like Claude Code",
+      "linearIssue": "DOR-4500"
     }
   ]
 }
