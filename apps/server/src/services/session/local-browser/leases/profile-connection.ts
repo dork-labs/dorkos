@@ -44,13 +44,23 @@ export class BrowserProfileConnections {
   constructor(private readonly backend: LocalBrowserBackend) {}
 
   /** Acquisition for one chat; profile choice and grants remain in the service. */
-  forChat(blocked: (folder: string) => boolean = () => false): PageSessionBackend {
+  forChat(
+    blocked: (folder: string) => boolean = () => false,
+    restorePersonFocus: (page: Page) => void = () => undefined
+  ): PageSessionBackend {
     return {
       connect: (endpoint, headers) => this.backend.connect(endpoint, headers),
       launch: (folder, signal, preparation, name) =>
-        this.acquire(folder, signal, preparation, name, () => {
-          if (blocked(folder)) throw profileBusy();
-        }),
+        this.acquire(
+          folder,
+          signal,
+          preparation,
+          name,
+          () => {
+            if (blocked(folder)) throw profileBusy();
+          },
+          restorePersonFocus
+        ),
     };
   }
 
@@ -99,7 +109,8 @@ export class BrowserProfileConnections {
     signal: AbortSignal | undefined,
     preparation: BrowserPreparationListener | undefined,
     name: string | null | undefined,
-    admit: () => void
+    admit: () => void,
+    restorePersonFocus: (page: Page) => void
   ): Promise<PageConnection> {
     signal?.throwIfAborted();
     admit();
@@ -122,6 +133,10 @@ export class BrowserProfileConnections {
       void current.starting
         .then((context) => {
           current.context = context;
+          context.on('page', () => {
+            if (current.closing || this.profiles.get(folder) !== current) return;
+            for (const scope of current.pages) scope.pageOpened();
+          });
           context.on('close', () => {
             for (const scope of current.pages) scope.connectionClosed();
             // A protocol close is not proof of cookie flush. A requested close keeps its tombstone.
@@ -152,8 +167,11 @@ export class BrowserProfileConnections {
       signal?.throwIfAborted();
       admit();
       if (current.closing || this.profiles.get(folder) !== current) throw profileBusy();
-      const scope: ScopedPageConnection = new ScopedPageConnection(page, current.generation, () =>
-        this.release(folder, current, scope)
+      const scope: ScopedPageConnection = new ScopedPageConnection(
+        page,
+        current.generation,
+        () => this.release(folder, current, scope),
+        restorePersonFocus
       );
       current.pages.add(scope);
       return scope;
@@ -200,11 +218,15 @@ class ScopedPageConnection implements PageConnection {
   constructor(
     private readonly page: Page,
     readonly generation: string,
-    private readonly release: () => Promise<void>
+    private readonly release: () => Promise<void>,
+    private readonly restorePersonFocus: (page: Page) => void
   ) {
     page.on('close', () => this.connectionClosed());
   }
 
+  pageOpened(): void {
+    this.restorePersonFocus(this.page);
+  }
   pages(): Page[] {
     return this.page.isClosed() ? [] : [this.page];
   }

@@ -112,16 +112,19 @@ export class LocalBrowserService {
       session = new LocalBrowserPageSession(
         this.dataDirectory,
         this.embedded,
-        this.connections.forChat((folder) => {
-          const profile = path.basename(folder);
-          const id = profile === 'default' ? null : profile;
-          return (
-            session!.handover.signInHoldsProfile(id) ||
-            this.pageSessions().some(
-              (other) => other !== session && other.handover.holdsProfile(id)
-            )
-          );
-        }),
+        this.connections.forChat(
+          (folder) => {
+            const profile = path.basename(folder);
+            const id = profile === 'default' ? null : profile;
+            return (
+              session!.handover.signInHoldsProfile(id) ||
+              this.pageSessions().some(
+                (other) => other !== session && other.handover.holdsProfile(id)
+              )
+            );
+          },
+          (page) => session!.restorePersonFocus(page)
+        ),
         this.audit,
         this.hostFacts,
         this.cloudOrigins,

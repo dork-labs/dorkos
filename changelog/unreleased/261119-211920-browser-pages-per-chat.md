@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(browser): each chat gets its own Agent browser page (DOR-4273)'
+  - 'fix(browser): keep a person-held page in front (DOR-4825)'
 ---
 
 ### Added

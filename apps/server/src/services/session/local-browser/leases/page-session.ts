@@ -362,6 +362,7 @@ export class LocalBrowserPageSession {
     }),
     () => this.assertNotClosing()
   );
+  restorePersonFocus = (page: Page) => this.handles.restorePersonFocus(page);
   /** Capture identity once; a replacement under the same chat id cannot inherit this call. */
   captureAgentLease(sessionId = this.sessionId) {
     return this.handles.agent(sessionId);

@@ -24,6 +24,24 @@ export class BrowserPageHandles {
     private readonly assertAvailable: () => void
   ) {}
 
+  /** Only this connection’s exact held Page may be brought back to the person. */
+  restorePersonFocus(page: Page): void {
+    if (
+      this.identity().status !== 'connected' ||
+      !this.session.personHeld() ||
+      page.isClosed() ||
+      this.state.tabs.get(this.state.selectedTabId ?? '') !== page
+    )
+      return;
+    try {
+      this.assertAvailable();
+    } catch {
+      // A close in progress keeps its reservation without starting new protocol work.
+      return;
+    }
+    void this.runtime.work.track(page.bringToFront()).catch(() => undefined);
+  }
+
   recordOpen(agentId: string | null, profileId: string | null, page: Page): Promise<void> {
     const identity = this.identity();
     return this.journal().open(
