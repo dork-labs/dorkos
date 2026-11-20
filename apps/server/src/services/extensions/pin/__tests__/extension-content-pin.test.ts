@@ -69,6 +69,7 @@ import { isPendingApproval } from '../../extension-approval-queue.js';
 import { toPublic } from '../../extension-manager-types.js';
 import { initAuditTrail, resetAuditTrail, type AuditTrail } from '../../../audit/audit-trail.js';
 import { allowedPlacesOf, placeGraceOf, waitingPlacesOf } from '../../isolation/place-grace.js';
+import type { ExtensionsConfig } from '../../extension-enable-resolution.js';
 
 const ISOLATED: ExtensionManifest = {
   id: 'notes',
@@ -912,13 +913,16 @@ describe('an update that only adds places keeps its app running (DOR-4282, C2)',
     expect(hasRepeatedOrPrototypeKey('{"a":[{"b":1},{"b":2}],"c":"b"}')).toBe(false);
   });
 
-  /** Make the copy a dork-apps build, approve it, then rebuild it with a new place. */
-  async function rebuiltDorkApp() {
+  /**
+   * Make the copy a dork-apps build, approve it, then rebuild it: by default
+   * with a new place, or as `head` says.
+   */
+  async function rebuiltDorkApp(head = HEAD_BUILD) {
     for (const name of await fs.readdir(dir))
       await fs.rm(path.join(dir, name), { recursive: true });
     await writeDorkAppBuild(dir, BASE_BUILD);
     const { digest } = await approveNow();
-    await writeDorkAppBuild(dir, HEAD_BUILD);
+    await writeDorkAppBuild(dir, head);
     const manifest = JSON.parse(
       await fs.readFile(path.join(dir, 'extension.json'), 'utf8')
     ) as ExtensionManifest;
@@ -970,11 +974,21 @@ describe('an update that only adds places keeps its app running (DOR-4282, C2)',
     expect(await approvedVersionOf(dorkHome, record, moved)).toBe('1.1.0');
   });
 
+  /** A rebuild that only bumps the version and restamps: no new place. */
+  const VERSION_ONLY = { ...HEAD_BUILD, contributions: BASE_BUILD.contributions };
+
   // Purpose (R3): "Not now" is keyed by version. A rebuild that moves the pin
-  // to a new version carries the person's dismissal along in the same write,
-  // so the card they put off does not come back.
-  it('keeps a person’s "Not now" across a rebuild that moves the version', async () => {
-    const { record } = await rebuiltDorkApp();
+  // to a new version and adds no place carries the person's dismissal along
+  // in the same write, so the card they put off does not come back.
+  it('keeps a person’s "Not now" across a rebuild that only moves the version', async () => {
+    const audit = vi.fn();
+    initAuditTrail({
+      log: { record: audit } as unknown as AuditTrail['log'],
+      accounts: {
+        system: () => ({ accountId: 'acct-system' }),
+      } as unknown as AuditTrail['accounts'],
+    });
+    const { record } = await rebuiltDorkApp(VERSION_ONLY);
     const dismissedAt = '2026-11-19T00:00:00.000Z';
     const other = { path: '/elsewhere/notes', version: '1.0.0', dismissedAt };
     stored.extensions = {
@@ -994,15 +1008,44 @@ describe('an update that only adds places keeps its app running (DOR-4282, C2)',
       dismissedAt,
     });
     expect(extensions.dismissedApprovals.other).toEqual(other);
-    expect(waitingPlacesOf(record, after)).toEqual(['pages']);
     expect(isDismissedCopy(record, extensions)).toBe(true);
     expect(isPendingApproval(record, extensions)).toBe(false);
+    // The audit line says the "Not now" was kept.
+    expect(audit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'extension.pin_moved_places_only',
+        change: expect.arrayContaining([
+          { field: 'dismissedVersion', before: '1.0.0', after: '1.1.0' },
+        ]),
+      })
+    );
+  });
+
+  // Purpose (R3, review): a rebuild that adds a place brings a place the
+  // person never saw, so their "Not now" for the old version is not carried
+  // and the card asks about it.
+  it('asks again about a place a rebuild adds, even after a "Not now"', async () => {
+    const { record } = await rebuiltDorkApp();
+    const notNow = { path: dir, version: '1.0.0', dismissedAt: '2026-11-19T00:00:00.000Z' };
+    stored.extensions = { ...stored.extensions, dismissedApprovals: { notes: notNow } };
+
+    const after = (await repinPlacesOnlyUpdates(
+      dorkHome,
+      [record],
+      approvals()
+    )) as ExtensionApprovals & Pick<ExtensionsConfig, 'dismissedApprovals'>;
+
+    expect(after.approvedSources!.notes!.digest).toBe(record.currentDigest);
+    expect(after.dismissedApprovals!.notes).toEqual(notNow);
+    expect(waitingPlacesOf(record, after)).toEqual(['pages']);
+    expect(isDismissedCopy(record, after)).toBe(false);
+    expect(isPendingApproval(record, after)).toBe(true);
   });
 
   // Purpose (R3): only a dismissal of this very copy at the old version is
   // carried; one for another folder stays where it was.
   it('leaves a "Not now" for another folder of the same id alone', async () => {
-    const { record } = await rebuiltDorkApp();
+    const { record } = await rebuiltDorkApp(VERSION_ONLY);
     const elsewhere = { path: '/elsewhere/notes', version: '1.0.0', dismissedAt: 'then' };
     stored.extensions = { ...stored.extensions, dismissedApprovals: { notes: elsewhere } };
 

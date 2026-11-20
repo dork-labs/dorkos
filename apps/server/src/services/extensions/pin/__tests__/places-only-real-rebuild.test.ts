@@ -2,7 +2,8 @@
  * Real dork-apps rebuilds that only add places count as places-only
  * (DOR-4282, C2 widened). The pairs are real builds of private apps, so they
  * never live in this repo: point `DORKOS_REBUILT_APPS_DIR` at a folder holding
- * `<app>/{base,head}/` to run it. Unset, this skips; the made-up builds in
+ * `<app>/{base,head}/` and run this file with `pnpm vitest run <path>` (turbo,
+ * under `pnpm test`, drops the variable). Unset, this skips; the made-up builds in
  * `places-only-rebuild.test.ts` pin the same format in CI. Set to a folder
  * with no such pairs, it fails, so a wrong path never reads as a pass.
  *

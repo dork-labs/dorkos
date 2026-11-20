@@ -63,6 +63,7 @@ describe('a dork-apps rebuild that only adds places', () => {
   it('is places-only, naming both versions and both commits', async () => {
     expect(await compareWith(HEAD_BUILD)).toEqual({
       version: { from: '1.0.0', to: '1.1.0' },
+      added: 1,
       commit: { from: 'abc1234', to: 'def5678' },
     });
   });
@@ -73,6 +74,7 @@ describe('a dork-apps rebuild that only adds places', () => {
   it('is places-only when a rebuild adds no place', async () => {
     expect(await compareWith({ ...HEAD_BUILD, contributions: BASE_BUILD.contributions })).toEqual({
       version: { from: '1.0.0', to: '1.1.0' },
+      added: 0,
       commit: { from: 'abc1234', to: 'def5678' },
     });
   });
@@ -289,6 +291,7 @@ describe('an app the dork-apps tool did not build', () => {
     await fs.rm(path.join(head, 'BUILD.json'));
     expect(await snapshotsOnlyAddPlaces(base, head, 'extension.json')).toEqual({
       version: { from: '1.0.0', to: '1.0.0' },
+      added: 1,
     });
   });
 

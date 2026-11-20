@@ -35,9 +35,10 @@
  *   undeclared places (`isolation/place-grace.ts`) ends on any change to the
  *   files, and a moved pin would carry it across an update.
  *
- * A move keeps the person's "Not now" too: a dismissal of the old version of
- * the same copy is re-keyed to the new version in the same config write, so
- * a version bump never brings back a card the person put off.
+ * A move that adds no place keeps the person's "Not now" too: a dismissal of
+ * the old version of the same copy is re-keyed to the new version in the same
+ * config write, so a rebuild's version bump alone never brings back a card
+ * the person put off. A move that adds a place asks again about it.
  *
  * @module services/extensions/pin/places-only-update
  */
@@ -78,6 +79,8 @@ type CheckedCopy = Pick<ExtensionRecord, 'path' | 'sourcePlugin'>;
 export interface PlacesOnlyMove {
   /** The approved and new manifest versions. */
   version: { from: string; to: string };
+  /** How many places the new manifest adds; none only for a dork-apps rebuild. */
+  added: number;
   /** The approved and new build commits, when the app carries `BUILD.json`. */
   commit?: RebuildCommits;
 }
@@ -150,13 +153,14 @@ export async function snapshotsOnlyAddPlaces(
   // An app no build tool stamps: only added places may differ, so a changed
   // version counts as changed, and at least one place is added (C2 as first
   // ruled). A rebuild may add none: its banners and BUILD.json are checked.
-  if (!rebuilt) return version.from === version.to && move.added > 0 ? { version } : false;
+  const { added } = move;
+  if (!rebuilt) return version.from === version.to && added > 0 ? { version, added } : false;
   const commit = rebuildOnlyRestamps(
     { id: move.id, version: move.fromVersion, files: oldFiles },
     { id: move.id, version: move.toVersion, files: newFiles },
     appFiles
   );
-  return commit ? { version, commit } : false;
+  return commit ? { version, added, commit } : false;
 }
 
 /** How many settled answers {@link onlyPlacesAddedSince} keeps in memory. */
@@ -254,7 +258,9 @@ interface MovedPin {
 /**
  * The "Not now" map with each moved copy's dismissal of its old version
  * re-keyed to the new one, or null when none needs it. Only a dismissal of
- * this very copy (path and plugin) at the version the pin moved from.
+ * this very copy (path and plugin) at the version the pin moved from, and
+ * only when the move adds no place: a new place is one the person has not
+ * seen, so its card asks again.
  */
 function carriedDismissals(
   stored: ExtensionApprovals & Pick<ExtensionsConfig, 'dismissedApprovals'>,
@@ -263,7 +269,7 @@ function carriedDismissals(
   let carried: Dismissals | null = null;
   for (const { record, move } of moved) {
     const dismissed = stored.dismissedApprovals?.[record.id];
-    if (!dismissed || move.version.from === move.version.to) continue;
+    if (!dismissed || move.added > 0 || move.version.from === move.version.to) continue;
     const was = { ...record, manifest: { ...record.manifest, version: move.version.from } };
     if (!isDismissedCopy(was, stored)) continue;
     carried ??= { ...stored.dismissedApprovals };
@@ -359,6 +365,11 @@ export async function repinPlacesOnlyUpdates(
         { field: 'version', before: move.version.from, after: move.version.to },
         ...(move.commit
           ? [{ field: 'commit', before: move.commit.from, after: move.commit.to }]
+          : []),
+        // A "Not now" this write re-keyed, so the log says it was kept.
+        ...(dismissedApprovals &&
+        dismissedApprovals[record.id] !== before.dismissedApprovals?.[record.id]
+          ? [{ field: 'dismissedVersion', before: move.version.from, after: move.version.to }]
           : []),
       ],
       summary: PIN_MOVED_SUMMARY,
