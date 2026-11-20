@@ -193,7 +193,7 @@ export class ExtensionDiscovery {
       const proof = proveOrigin(rec, installs, onDisk, devRoots);
       if (proof.origin) {
         rec.trustedOrigin = proof.origin;
-        if (proof.pinnedDigest) rec.pinnedDigest = proof.pinnedDigest;
+        if (proof.pinnedDigest) rec.pinnedDigest = rec.originPinnedDigest = proof.pinnedDigest;
       }
       if (proof.problem) rec.originProblem = proof.problem;
       if (onDisk.folder.kind === 'digest') {

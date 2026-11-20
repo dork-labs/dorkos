@@ -10,6 +10,7 @@ import { checkDeclaredTools, type ExtensionToolCheck } from '@dorkos/extension-a
 import type { CreateContextDeps } from '../extension-server-api-factory.js';
 import type { ExtensionApprovals } from '../extension-load-policy.js';
 import { allowedPlacesOf } from '../isolation/place-grace.js';
+import { requireRunDir } from '../pin/run-dir.js';
 
 /** What {@link recordContextDeps} decides from a record. */
 export type RecordContextDeps = Pick<
@@ -30,6 +31,8 @@ export type RecordContextDeps = Pick<
  * @param dorkHome - DorkOS's data directory.
  * @param approvals - Reads the stored approvals as they are now
  *   (`config.extensions`).
+ * @throws {Error} When the copy is pinned to its files but has no verified
+ *   snapshot to run from (`pin/run-dir.ts`): it does not start.
  */
 export function recordContextDeps(
   id: string,
@@ -39,9 +42,10 @@ export function recordContextDeps(
 ): RecordContextDeps {
   return {
     extensionId: id,
-    // A copy that runs by origin runs from its verified snapshot, so what it
-    // reaches relative to itself at runtime is the snapshot's too.
-    extensionDir: record.runPath ?? record.path,
+    // A pinned copy runs from its verified snapshot, so what it reaches
+    // relative to itself at runtime is the snapshot's too; one with no
+    // snapshot never falls back to the folder it was found in.
+    extensionDir: requireRunDir(record),
     dorkHome,
     extensionName: record.manifest.name,
     toolChecks: checkDeclaredTools(record.manifest),

@@ -8,7 +8,10 @@ import { logger } from '../../../lib/logger.js';
 // lifecycle "wrote" to its temp file.
 const { lastWrittenCodeRef } = vi.hoisted(() => ({ lastWrittenCodeRef: { value: '' } }));
 
-vi.mock('../server-bundle/load-in-process.js', () => ({
+vi.mock('../server-bundle/load-in-process.js', async (importOriginal) => ({
+  // Writes through the `fs/promises` mock below.
+  writeServerBundle: (await importOriginal<typeof import('../server-bundle/load-in-process.js')>())
+    .writeServerBundle,
   loadInProcessBundle: () => {
     const mod = { exports: {} as Record<string, unknown> };
     new Function('module', 'exports', 'require', lastWrittenCodeRef.value)(
@@ -112,6 +115,7 @@ vi.mock('fs/promises', () => ({
 // Import after mocks are set up
 import { ExtensionManager } from '../extension-manager.js';
 import { mintMediaTicket, resolveMediaTicket } from '../http/media-tickets.js';
+import { runDirMissingMessage } from '../pin/run-dir.js';
 
 // --- Helpers ---
 
@@ -200,6 +204,7 @@ describe('ExtensionManager — server lifecycle', () => {
         'no-srv',
         'disabled-srv',
         'bad-srv',
+        'pinned-srv',
         'throw-srv',
         'obj-srv',
         'reinit-ext',
@@ -308,6 +313,33 @@ describe('ExtensionManager — server lifecycle', () => {
 
       expect(result.ok).toBe(false);
       expect(result.error).toBe('Syntax error in server.ts');
+    });
+
+    // Purpose: a pinned copy whose checked copy went away while it compiled
+    // (a rescan cleared `runPath`) never starts from the folder it was found
+    // in: nothing is written, loaded or given a ctx (pin/run-dir).
+    it('refuses to start a pinned copy with no snapshot, before anything runs', async () => {
+      const record = makeRecord('pinned-srv', {
+        status: 'compiled',
+        hasServerEntry: true,
+        serverEntryPath: '/fake/extensions/pinned-srv/server.ts',
+      });
+      mockDiscover.mockResolvedValue([record]);
+      mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
+      mockCompileServer.mockImplementation(async (rec: ExtensionRecord) => {
+        rec.pinnedDigest = FIXTURE_DIGEST;
+        rec.runPath = undefined;
+        return { code: makeCjsModule(), sourceHash: 'srvhash' };
+      });
+      await manager.initialize(null);
+      mockWriteFile.mockClear();
+      mockCreateDataProviderContext.mockClear();
+
+      const result = await manager.initializeServer('pinned-srv');
+
+      expect(result).toEqual({ ok: false, error: runDirMissingMessage(record.manifest.name) });
+      expect(mockWriteFile).not.toHaveBeenCalled();
+      expect(mockCreateDataProviderContext).not.toHaveBeenCalled();
     });
 
     it('returns ok:false when register function throws', async () => {

@@ -16,7 +16,6 @@
  *
  * @module services/extensions/extension-server-lifecycle
  */
-import fs from 'fs/promises';
 import path from 'path';
 import { Router } from 'express';
 import type { ExtensionRecord, ExtensionToolStatus } from '@dorkos/extension-api';
@@ -56,7 +55,8 @@ import {
 import { resolveChildEntry } from './isolation/child-entry.js';
 import * as extensionConnections from './connections/extension-connections-ctx.js';
 import { settleWithin } from './settle-within.js';
-import { loadInProcessBundle } from './server-bundle/load-in-process.js';
+import { loadInProcessBundle, writeServerBundle } from './server-bundle/load-in-process.js';
+import { runDirMissingMessage, runDirOf } from './pin/run-dir.js';
 import { createIsolatedHandler } from './isolation/isolated-router.js';
 import { RestartPolicy, type RestartPolicyOptions } from './isolation/restart-policy.js';
 import { env } from '../../env.js';
@@ -426,11 +426,10 @@ export class ExtensionServerLifecycle {
     // Shut down the stale instance before its replacement takes over
     await this.stop(id);
 
-    // Written to disk, so stack traces and source maps name a real file.
-    const tempDir = path.join(this.dorkHome, 'cache', 'extensions', 'server', '_run');
-    await fs.mkdir(tempDir, { recursive: true });
-    const tempFile = path.join(tempDir, `${id}.js`);
-    await fs.writeFile(tempFile, compiled.code, 'utf-8');
+    // A rescan while it compiled may have taken its checked copy away, and a
+    // pinned copy never starts from the folder it was found in (`pin/run-dir.ts`).
+    if (!runDirOf(record)) return { ok: false, error: runDirMissingMessage(record.manifest.name) };
+    const tempFile = await writeServerBundle(this.dorkHome, id, compiled.code);
 
     if (runsSeparately(record)) return this.startIsolated(id, record, tempFile, sourceKey);
     // Running inside DorkOS now: any connection it held is revoked (DOR-3547, N3).
@@ -439,6 +438,8 @@ export class ExtensionServerLifecycle {
     let registered: (() => void) | undefined;
     let closeTools: (() => void) | undefined;
     try {
+      // Refuses a pinned copy with no snapshot before its bundle is loaded.
+      const deps = recordContextDeps(id, record, this.dorkHome, storedApprovals);
       const registerFn = serverEntryRegister(loadInProcessBundle(tempFile));
       if (!registerFn) {
         return { ok: false, error: 'Server entry does not export a register function' };
@@ -447,7 +448,6 @@ export class ExtensionServerLifecycle {
       const router = Router();
       // Starting again lifts the stop on its messages (DOR-2683).
       getAgentSendService()?.extensionStarted(id);
-      const deps = recordContextDeps(id, record, this.dorkHome, storedApprovals);
       const { ctx, getScheduledCleanups, releaseListeners, dispose, tools } =
         createDataProviderContext(deps);
       // A register() that throws, or returns something unusable, must leave
@@ -668,9 +668,10 @@ export class ExtensionServerLifecycle {
       this.policySources.set(id, sourceKey);
     }
 
+    // Refuses a pinned copy with no snapshot before anything is lifted.
+    const deps = recordContextDeps(id, record, this.dorkHome, storedApprovals);
     // Starting again lifts the stop on its messages (DOR-2683).
     getAgentSendService()?.extensionStarted(id);
-    const deps = recordContextDeps(id, record, this.dorkHome, storedApprovals);
     const connections = extensionConnections.isolatedConnectionsFor(record);
     const built = createDataProviderContext({ ...deps, connections: connections.api });
     const release = (): void => {
@@ -686,7 +687,7 @@ export class ExtensionServerLifecycle {
         extensionId: id,
         displayName: name,
         bundlePath,
-        extensionDir: record.runPath ?? record.path,
+        extensionDir: deps.extensionDir,
         dorkHome: this.dorkHome,
         isolation,
         dorkosPort: this.options.dorkosPort ?? env.DORKOS_PORT,

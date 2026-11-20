@@ -7,6 +7,8 @@
  *
  * @module services/extensions/server-bundle/load-in-process
  */
+import fs from 'fs/promises';
+import path from 'path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import * as extensionApi from '@dorkos/extension-api';
@@ -22,6 +24,27 @@ const injectedRequire = createInjectedRequire(
   },
   fileURLToPath(import.meta.url)
 );
+
+/**
+ * Write a compiled server bundle to disk, where either way of starting it
+ * reads it from, so stack traces and source maps name a real file.
+ *
+ * @param dorkHome - DorkOS's data directory.
+ * @param id - The extension id.
+ * @param code - The compiled bundle.
+ * @returns The bundle's path.
+ */
+export async function writeServerBundle(
+  dorkHome: string,
+  id: string,
+  code: string
+): Promise<string> {
+  const dir = path.join(dorkHome, 'cache', 'extensions', 'server', '_run');
+  await fs.mkdir(dir, { recursive: true });
+  const file = path.join(dir, `${id}.js`);
+  await fs.writeFile(file, code, 'utf-8');
+  return file;
+}
 
 /**
  * Evaluate a compiled server bundle in this process.

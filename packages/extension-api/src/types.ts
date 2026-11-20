@@ -199,6 +199,12 @@ export interface ExtensionRecord {
    */
   pinnedDigest?: string;
   /**
+   * The plugin folder digest a proven install origin set as `pinnedDigest`
+   * at discovery (DOR-4282). Only while the two match may a pinned copy with
+   * no snapshot build from its own folder (`pin/run-dir.ts`).
+   */
+  originPinnedDigest?: string;
+  /**
    * The digest of the client bundle the last compile produced: the exact
    * bytes the app would load (DOR-3068). A copy that keeps path trust loads
    * its screen half only while this matches the approval's `clientDigest`.
