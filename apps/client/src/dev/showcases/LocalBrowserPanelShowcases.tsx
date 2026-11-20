@@ -8,6 +8,7 @@ import type {
 import type { SessionStatus } from '@dorkos/shared/session-stream';
 import { useSessionListStore } from '@/layers/entities/session';
 import { TransportProvider } from '@/layers/shared/model';
+import { BrowserHandoffCard } from '@/layers/features/browser-handoff';
 import { LocalBrowserPanel } from '@/layers/features/local-browser';
 import { createPlaygroundTransport } from '../playground-transport';
 import { PlaygroundSection } from '../PlaygroundSection';
@@ -122,6 +123,15 @@ const WAITING_HERE: LocalBrowserPersonState = {
   },
 };
 
+/**
+ * The person stopped Atlas's task, but its sign-in window is still open for them (DOR-4731).
+ * On a Mac its close is never seen, so the panel offers Done signing in.
+ */
+const STOPPED_SIGN_IN_OPEN: LocalBrowserPersonState = {
+  ...WAITING_HERE,
+  handoff: { ...WAITING_HERE.handoff!, outcome: 'stopped' },
+};
+
 /** The person closed the sign-in window and it saved; only Continue is left (DOR-4325). */
 const WINDOW_CLOSED_HERE: LocalBrowserPersonState = {
   ...WAITING_HERE,
@@ -224,7 +234,13 @@ function PanelDemo({
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
         <div className="bg-background h-[36rem] w-full max-w-sm rounded-lg border">
-          <LocalBrowserPanel visible={false} sessionId="chat-atlas" agentName="Atlas" />
+          <LocalBrowserPanel
+            visible={false}
+            sessionId="chat-atlas"
+            agentName="Atlas"
+            // The app passes the chat's own card, as the Browser panel does (DOR-4731).
+            handoffCard={<BrowserHandoffCard sessionId="chat-atlas" />}
+          />
         </div>
       </TransportProvider>
     </QueryClientProvider>
@@ -333,6 +349,10 @@ export function LocalBrowserPanelShowcases() {
       <ShowcaseLabel>This chat’s agent waits on you after the sign-in window closed</ShowcaseLabel>
       <ShowcaseDemo>
         <PanelDemo state={WINDOW_CLOSED_HERE} />
+      </ShowcaseDemo>
+      <ShowcaseLabel>Task stopped, sign-in window still open: Done signing in</ShowcaseLabel>
+      <ShowcaseDemo>
+        <PanelDemo state={STOPPED_SIGN_IN_OPEN} />
       </ShowcaseDemo>
       <ShowcaseLabel>This chat’s agent handed you its page in the Mac app</ShowcaseLabel>
       <ShowcaseDemo>

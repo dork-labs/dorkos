@@ -296,24 +296,29 @@ function checkOne(file: string, text: string, files: HandFiles, c: Catalogue): F
   return out;
 }
 
+/** A parsed ledger entry and the repo-relative path of the file it came from. */
+export type LedgerFileEntry = LedgerFrontmatter & { file: string };
+
 /**
- * Every ledger entry that parses, oldest first. Invalid entries are skipped:
- * `ledger-check` is what reports them, on every PR.
+ * Every ledger entry that parses, oldest first, each with its repo-relative
+ * file path. Invalid entries are skipped: `ledger-check` is what reports them,
+ * on every PR.
  *
  * @param root - Repo root.
  * @param files - The loaded hand files.
  */
-export function readLedger(root: string, files: HandFiles): LedgerFrontmatter[] {
+export function readLedger(root: string, files: HandFiles): LedgerFileEntry[] {
   const abs = path.join(root, files.config.ledger_dir);
   if (!existsSync(abs)) return [];
-  const out: LedgerFrontmatter[] = [];
+  const out: LedgerFileEntry[] = [];
   for (const name of readdirSync(abs).sort()) {
     if (!LEDGER_FILE_RE.test(name)) continue;
     const split = splitFrontmatter(readFileSync(path.join(abs, name), 'utf8'));
     if (!split) continue;
     try {
       const parsed = LedgerFrontmatterSchema.safeParse(parseYaml(split.yaml));
-      if (parsed.success) out.push(parsed.data);
+      if (parsed.success)
+        out.push({ ...parsed.data, file: path.posix.join(files.config.ledger_dir, name) });
     } catch {
       // unparseable YAML: ledger-check reports it
     }

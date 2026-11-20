@@ -84,6 +84,11 @@ describe('Accounts turn awareness', () => {
         'Only the person can enable it on that app’s Connections page; never ask them to flip it to bypass a prompt.'
       );
       expect(text).toContain('Sends and deletes still ask, and other approval rules still apply.');
+      expect(text).toContain('approval_required');
+      expect(text).toContain('top-level approvalToken');
+      expect(text).toContain('never inside arguments');
+      expect(text).toContain('including after the ten-minute wait ends');
+      expect(text).toContain('Never reuse a token after success');
     }
   );
 
