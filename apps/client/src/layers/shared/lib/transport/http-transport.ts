@@ -19,6 +19,7 @@ import { createSessionMethods } from './session-methods';
 import { createSessionStreamMethods } from './session-stream-methods';
 import { createSystemMethods } from './system-methods';
 import { createShellCheckMethods } from './shell-check-methods';
+import { createLoadGateMethods } from './load-gate-methods';
 import { createQueuedChatMethods } from './queued-chat-methods';
 import { createConnectorSpendingMethods } from './connector-spending-methods';
 import { createRemoteAccessMethods } from './remote-access-methods';
@@ -83,6 +84,7 @@ export interface HttpTransport
     ReturnType<typeof createSessionStreamMethods>,
     ReturnType<typeof createSystemMethods>,
     ReturnType<typeof createShellCheckMethods>,
+    ReturnType<typeof createLoadGateMethods>,
     ReturnType<typeof createQueuedChatMethods>,
     ReturnType<typeof createConnectorSpendingMethods>,
     ReturnType<typeof createRemoteAccessMethods>,
@@ -150,6 +152,7 @@ export class HttpTransport implements Transport {
       createSessionStreamMethods(baseUrl, this),
       createSystemMethods(baseUrl),
       createShellCheckMethods(baseUrl),
+      createLoadGateMethods(baseUrl),
       createQueuedChatMethods(baseUrl, () => this.clientId),
       createConnectorSpendingMethods(baseUrl),
       createRemoteAccessMethods(baseUrl),

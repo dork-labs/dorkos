@@ -259,6 +259,10 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
   ],
   'Already this computer only: the route refuses every other caller': [
     'POST /api/system/shell-check/continue',
+    // The load gate's waiting line: let one job through, or move it up (DOR-4209).
+    'POST /api/system/load-gate/jobs/:id/let-through',
+    'POST /api/system/load-gate/jobs/:id/urgent',
+    'POST /api/system/load-gate/jobs/:id/front',
     'POST /api/desktop/sign-in',
     'POST /api/person-session',
     'POST /api/onboarding/first-run',

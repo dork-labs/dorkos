@@ -254,6 +254,8 @@ const OTHER_FRONT_DOOR_CALLERS: Record<string, string> = {
   'agents.ts':
     'Creates an agent only from the template or package review the person was shown (DOR-2325), and PATCH /current refuses operator-only fields (instructions and model, no grant).',
   'system-shell-check.ts': 'Continues past a shell check in memory until the next restart (N).',
+  'system-load-gate.ts':
+    'Lets one waiting job run now or moves it up the line; grants nothing (N).',
 };
 
 /** What the route groups name their Hono app. */
