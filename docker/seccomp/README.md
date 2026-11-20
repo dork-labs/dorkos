@@ -4,6 +4,8 @@ Codex keeps each command it runs in a sandbox. Docker's default seccomp profile 
 
 Only use it if you run Codex. Every other way of running the image stays on Docker's default profile.
 
+Where it works: Docker Desktop on a Mac (checked 2026-11-20, Docker 29.9.2, linux/arm64). Docker Desktop on Windows and Linux hosts without AppArmor run the same way but haven't been checked. On Ubuntu and Debian, whose Docker uses the `docker-default` AppArmor profile, the sandbox still can't start: seccomp lets it make its namespace, then AppArmor refuses its first mount (`bwrap: Failed to make / slave: Permission denied`). Codex in Docker is not supported there yet (DOR-4836), and there is no supported workaround.
+
 ## What it changes
 
 `dorkos-codex.json` is Docker's default profile with one rule added at the end. That rule allows five system calls: `clone`, `mount`, `pivot_root`, `umount2` and `unshare`. Codex's sandbox uses them to give each command its own private view of the files and processes.
@@ -32,7 +34,7 @@ Prettier skips both JSON files (`.prettierignore`), so `diff upstream-default-9e
 ## What keeps it honest
 
 - `scripts/__tests__/codex-seccomp-profile.test.ts` checks the upstream copy's sha256 against the pinned commit, and fails if `dorkos-codex.json` differs from it in any way beyond that one rule with exactly those five system calls.
-- `scripts/codex-docker-sandbox-check.sh` runs the image both ways. With this profile, Codex's sandbox starts and still refuses a write outside the folder it was given, and the container keeps the same user, capability sets, `NoNewPrivs` and AppArmor label as with the default. With Docker's default, the sandbox refuses to start. The `codex-docker-sandbox` job in `.github/workflows/cli-smoke-test.yml` runs it on a fresh Ubuntu host against an image built from the pull request.
+- `scripts/codex-docker-sandbox-check.sh` runs the image both ways. `--expect full` is the outcome above on a host without AppArmor; `--expect apparmor` is the Ubuntu outcome, where the profile run must fail on the AppArmor mount refusal and never on the namespace refusal. In the full outcome, Codex's sandbox starts and still refuses a write outside the folder it was given. In both, the container keeps the same user, capability sets, `NoNewPrivs` and AppArmor label as with the default, and with Docker's default the sandbox refuses to start. The `codex-docker-sandbox` job in `.github/workflows/cli-smoke-test.yml` runs it with `--expect apparmor` on a fresh Ubuntu host against an image built from the pull request.
 - What the check does not cover: the per-turn `dorkos-files-*` profile DorkOS gives Codex (which is what keeps `~/.dork` closed when Codex works from your home folder). It checks Codex's own workspace limit only.
 
 ## Updating the base

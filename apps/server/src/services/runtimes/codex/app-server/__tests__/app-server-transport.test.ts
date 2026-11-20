@@ -167,6 +167,62 @@ describe('a turn', () => {
     }
   );
 
+  // DOR-3800: a sandbox that cannot start in Docker ends the turn with the plain
+  // refusal. Nothing retries it with the sandbox off, a bypass flag or a weaker
+  // mode: one spawn with the stock args, one request at the failing step, and
+  // every request carries the mode the person chose.
+  it.each(
+    (['default', 'acceptEdits', 'bypassPermissions'] as const).flatMap((permissionMode) =>
+      (['thread/start', 'turn/start'] as const).flatMap((phase) => [
+        {
+          permissionMode,
+          phase,
+          refusal: 'Docker default seccomp',
+          detail:
+            "bwrap: No permissions to create a new namespace, likely because the kernel does not allow non-privileged user namespaces. On e.g. debian this can be enabled with 'sysctl kernel.unprivileged_userns_clone=1'.",
+          message:
+            'This computer blocks Codex’s sandbox. Its owner can check Linux setup: https://developers.openai.com/codex/concepts/sandboxing/#prerequisites',
+        },
+        {
+          permissionMode,
+          phase,
+          refusal: 'AppArmor mount',
+          detail: 'bwrap: Failed to make / slave: Permission denied',
+          // Only this refusal names what works instead (DOR-3800).
+          message: [
+            'Codex can’t run in this Docker setup yet.',
+            'Use Claude Code, or run DorkOS outside Docker.',
+            'Running Codex in Docker: https://dorkos.ai/docs/self-hosting/docker#running-codex-in-docker',
+          ].join('\n'),
+        },
+      ])
+    )
+  )(
+    'ends the turn on a $refusal refusal at $phase ($permissionMode) without an unsandboxed retry',
+    async ({ permissionMode, phase, detail, message }) => {
+      const h = harness();
+      const home = h.host.home(PERSON_HOME);
+      if (phase === 'thread/start') home.threadStartError = detail;
+      else home.turnStartError = detail;
+      const events = await h.run(
+        h.request({ sessionId: `docker-refusal-${phase}`, settings: { permissionMode } })
+      );
+      expect(events.map((event) => event.type)).toEqual(['error', 'done']);
+      expect(events[0]).toMatchObject({ data: { code: 'codex_sandbox_unavailable', message } });
+      expect(h.host.spawns).toHaveLength(1);
+      expect(h.host.spawns[0]!.args).toEqual([...APP_SERVER_ARGS]);
+      const proc = home.processes[0]!;
+      expect(proc.requestsOf(phase)).toHaveLength(1);
+      const sent = [...proc.requestsOf('thread/start'), ...proc.requestsOf('turn/start')];
+      expect(sent).toHaveLength(phase === 'thread/start' ? 1 : 2);
+      for (const params of sent) {
+        expect(params).toMatchObject({ permissions: codexPermissionProfile({ permissionMode }) });
+        expect(params).not.toHaveProperty('sandbox');
+        expect(params).not.toHaveProperty('sandboxPolicy');
+      }
+    }
+  );
+
   it('routes the legacy exec setting through app-server with protected files at Full', async () => {
     // Rendering inspects disk state. These bases must exist independently of
     // the host's /data, /home and /project layout.

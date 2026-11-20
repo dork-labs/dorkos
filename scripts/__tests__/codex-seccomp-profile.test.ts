@@ -241,6 +241,9 @@ describe('the profile stays opt-in and the host stays at its defaults', () => {
           'seccomp=dorkos-codex.json',
           'seccomp=./dorkos-codex.json',
         ]);
+        // AppArmor hosts are named as not supported yet, with the error people see.
+        expect(codex[0]).toContain('bwrap: Failed to make / slave: Permission denied');
+        expect(codex[0]).toContain('DOR-4836');
         text = sections.filter((s) => !s.startsWith(CODEX_SECTION)).join('\n');
       }
       if (/security[-_]opt|seccomp=/.test(text)) hits.push(rel);
@@ -278,7 +281,7 @@ describe('the profile stays opt-in and the host stays at its defaults', () => {
           'echo "apparmor enabled = $(cat /sys/module/apparmor/parameters/enabled 2>/dev/null || echo absent)"',
           `echo "docker security options = $(docker info --format '{{json .SecurityOptions}}')"`,
         ].join('\n'),
-        'bash scripts/codex-docker-sandbox-check.sh dorkos-runtime docker/seccomp/dorkos-codex.json',
+        'bash scripts/codex-docker-sandbox-check.sh --expect apparmor dorkos-runtime docker/seccomp/dorkos-codex.json',
       ],
     });
     const code = codeLines(job);
@@ -300,5 +303,8 @@ describe('the profile stays opt-in and the host stays at its defaults', () => {
     // The script's two runs: the shipped profile, then Docker's default.
     expect(script).toContain('WITH=$(run_probe --security-opt "seccomp=$PROFILE")');
     expect(script).toContain('DEFAULT=$(run_probe)');
+    // Each outcome is pinned to exact bwrap text, so neither can pass by matching nothing.
+    expect(script).toContain('NAMESPACE_REFUSAL="bwrap: No permissions to create a new namespace"');
+    expect(script).toContain('APPARMOR_REFUSAL="bwrap: Failed to make / slave: Permission denied"');
   });
 });

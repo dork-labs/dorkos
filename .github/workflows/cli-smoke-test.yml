@@ -214,11 +214,16 @@ jobs:
       - name: Run integration tests
         run: docker run --rm dorkos-integration
 
-  # Codex in the product image, both ways (DOR-3800): with the opt-in profile
-  # in docker/seccomp/dorkos-codex.json its sandbox starts but still refuses a
-  # write outside its folder, with the same user, capability sets, NoNewPrivs and
-  # AppArmor label as the default run;
-  # with Docker's default profile it fails closed. The host is left exactly as
+  # Codex in the product image, both ways (DOR-3800). GitHub's Ubuntu runner
+  # enforces Docker's docker-default AppArmor profile, so the job asserts the
+  # scoped outcome (--expect apparmor): with the opt-in profile in
+  # docker/seccomp/dorkos-codex.json, seccomp lets bwrap make its namespace and
+  # AppArmor refuses its first mount ("Failed to make / slave: Permission
+  # denied"), never the namespace refusal; with Docker's default profile it
+  # fails closed on the namespace refusal. Both runs keep the same user,
+  # capability sets, NoNewPrivs, AppArmor label and Seccomp: 2. Codex in Docker
+  # on AppArmor hosts is not supported yet (DOR-4836); the full pass (sandbox
+  # starts) is proven on hosts without AppArmor. The host is left exactly as
   # GitHub ships it: never --privileged, --cap-add, seccomp=unconfined or a
   # sysctl write here (scripts/__tests__/codex-seccomp-profile.test.ts
   # refuses them), because a host that needs one is a host the profile does
@@ -256,7 +261,7 @@ jobs:
           echo "docker security options = $(docker info --format '{{json .SecurityOptions}}')"
 
       - name: Check Codex's sandbox with and without the profile
-        run: bash scripts/codex-docker-sandbox-check.sh dorkos-runtime docker/seccomp/dorkos-codex.json
+        run: bash scripts/codex-docker-sandbox-check.sh --expect apparmor dorkos-runtime docker/seccomp/dorkos-codex.json
 
   # The hub image (DOR-2935): what DorkOS Cloud boots for a person's own
   # DorkOS in the cloud. Boots it against a stand-in for Cloud
