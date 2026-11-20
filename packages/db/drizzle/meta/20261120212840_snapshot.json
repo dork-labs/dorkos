@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "c1f129f9-4bc3-4cba-9bce-37a6d4dbbd5b",
-  "prevId": "eb0dbad2-8ede-46c1-b1fe-01076c2e6a59",
+  "id": "f2808d7c-ae37-44f1-89a6-f51536a3a4d4",
+  "prevId": "61ae8524-10fe-4bb3-b9b8-15c3367fbf07",
   "tables": {
     "a2a_tasks": {
       "name": "a2a_tasks",
@@ -2901,6 +2901,13 @@
           "notNull": false,
           "autoincrement": false
         },
+        "model_launch_state": {
+          "name": "model_launch_state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "agent_path": {
           "name": "agent_path",
           "type": "text",
@@ -2999,7 +3006,12 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
-      "checkConstraints": {}
+      "checkConstraints": {
+        "session_metadata_model_launch_state": {
+          "name": "session_metadata_model_launch_state",
+          "value": "\"session_metadata\".\"model_launch_state\" IS NULL OR \"session_metadata\".\"model_launch_state\" IN ('pending-v1', 'attempted-v1', 'established-v1')"
+        }
+      }
     },
     "session_staged_context": {
       "name": "session_staged_context",
@@ -3912,6 +3924,96 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}
+    },
+    "session_birth_allocations": {
+      "name": "session_birth_allocations",
+      "columns": {
+        "session_id": {
+          "name": "session_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_kind": {
+          "name": "source_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "location_id": {
+          "name": "location_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "registered_agent_id": {
+          "name": "registered_agent_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "recorded_registered_path": {
+          "name": "recorded_registered_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "internal_source": {
+          "name": "internal_source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "session_birth_session_id": {
+          "name": "session_birth_session_id",
+          "value": "length(\"session_birth_allocations\".\"session_id\") > 0"
+        },
+        "session_birth_version": {
+          "name": "session_birth_version",
+          "value": "typeof(\"session_birth_allocations\".\"version\") = 'integer' AND \"session_birth_allocations\".\"version\" = 1"
+        },
+        "session_birth_created_at": {
+          "name": "session_birth_created_at",
+          "value": "length(\"session_birth_allocations\".\"created_at\") > 0"
+        },
+        "session_birth_source_shape": {
+          "name": "session_birth_source_shape",
+          "value": "coalesce(\n        (\"session_birth_allocations\".\"source_kind\" = 'person-location' AND\n          length(\"session_birth_allocations\".\"owner_id\") > 0 AND length(\"session_birth_allocations\".\"location_id\") > 0 AND\n          \"session_birth_allocations\".\"registered_agent_id\" IS NULL AND \"session_birth_allocations\".\"recorded_registered_path\" IS NULL AND\n          \"session_birth_allocations\".\"internal_source\" IS NULL) OR\n        (\"session_birth_allocations\".\"source_kind\" = 'person-agent' AND length(\"session_birth_allocations\".\"owner_id\") > 0 AND\n          length(\"session_birth_allocations\".\"registered_agent_id\") > 0 AND length(\"session_birth_allocations\".\"recorded_registered_path\") > 0 AND\n          \"session_birth_allocations\".\"location_id\" IS NULL AND \"session_birth_allocations\".\"internal_source\" IS NULL) OR\n        (\"session_birth_allocations\".\"source_kind\" = 'internal' AND \"session_birth_allocations\".\"owner_id\" IS NULL AND \"session_birth_allocations\".\"location_id\" IS NULL AND\n          \"session_birth_allocations\".\"registered_agent_id\" IS NULL AND \"session_birth_allocations\".\"recorded_registered_path\" IS NULL AND\n          CASE WHEN json_valid(\"session_birth_allocations\".\"internal_source\") THEN\n            json_type(\"session_birth_allocations\".\"internal_source\") = 'object' AND (\n              ((json_extract(internal_source, '$.kind') = 'chat-message' AND json_type(internal_source, '$.receiptId') = 'text' AND length(json_extract(internal_source, '$.receiptId')) > 0 AND json_type(internal_source, '$.queueMessageId') = 'text' AND length(json_extract(internal_source, '$.queueMessageId')) > 0 AND json_type(internal_source, '$.mintedToSessionId') = 'text' AND length(json_extract(internal_source, '$.mintedToSessionId')) > 0 AND json_type(internal_source, '$.fromSessionId') = 'text' AND length(json_extract(internal_source, '$.fromSessionId')) > 0 AND (json_type(internal_source, '$.targetAgentId') IS NULL OR (json_type(internal_source, '$.targetAgentId') = 'text' AND length(json_extract(internal_source, '$.targetAgentId')) > 0)) AND json_remove(internal_source, '$.kind', '$.receiptId', '$.queueMessageId', '$.mintedToSessionId', '$.fromSessionId', '$.targetAgentId') = '{}')\n                AND json_extract(\"session_birth_allocations\".\"internal_source\", '$.mintedToSessionId') = \"session_birth_allocations\".\"session_id\") OR\n              ((json_extract(internal_source, '$.kind') = 'room-seat' AND json_type(internal_source, '$.roomId') = 'text' AND length(json_extract(internal_source, '$.roomId')) > 0 AND json_type(internal_source, '$.authorId') = 'text' AND length(json_extract(internal_source, '$.authorId')) > 0 AND json_type(internal_source, '$.boundSessionId') = 'text' AND length(json_extract(internal_source, '$.boundSessionId')) > 0 AND json_type(internal_source, '$.seatCreatedAt') = 'text' AND length(json_extract(internal_source, '$.seatCreatedAt')) > 0 AND json_remove(internal_source, '$.kind', '$.roomId', '$.authorId', '$.boundSessionId', '$.seatCreatedAt') = '{}')\n                AND json_extract(\"session_birth_allocations\".\"internal_source\", '$.boundSessionId') = \"session_birth_allocations\".\"session_id\") OR\n              ((json_extract(internal_source, '$.kind') = 'task-run' AND json_type(internal_source, '$.runId') = 'text' AND length(json_extract(internal_source, '$.runId')) > 0 AND json_type(internal_source, '$.mintedSessionId') = 'text' AND length(json_extract(internal_source, '$.mintedSessionId')) > 0 AND json_remove(internal_source, '$.kind', '$.runId', '$.mintedSessionId') = '{}')\n                AND json_extract(\"session_birth_allocations\".\"internal_source\", '$.mintedSessionId') = \"session_birth_allocations\".\"session_id\") OR\n              ((json_extract(internal_source, '$.kind') = 'heartbeat' AND json_type(internal_source, '$.agentId') = 'text' AND length(json_extract(internal_source, '$.agentId')) > 0 AND json_type(internal_source, '$.chatDate') = 'text' AND length(json_extract(internal_source, '$.chatDate')) > 0 AND json_type(internal_source, '$.mintedSessionId') = 'text' AND length(json_extract(internal_source, '$.mintedSessionId')) > 0 AND json_remove(internal_source, '$.kind', '$.agentId', '$.chatDate', '$.mintedSessionId') = '{}')\n                AND json_extract(\"session_birth_allocations\".\"internal_source\", '$.mintedSessionId') = \"session_birth_allocations\".\"session_id\") OR\n              ((json_extract(internal_source, '$.kind') = 'connector-subscription' AND json_type(internal_source, '$.subscriptionId') = 'text' AND length(json_extract(internal_source, '$.subscriptionId')) > 0 AND json_type(internal_source, '$.mintedSessionId') = 'text' AND length(json_extract(internal_source, '$.mintedSessionId')) > 0 AND json_remove(internal_source, '$.kind', '$.subscriptionId', '$.mintedSessionId') = '{}')\n                AND json_extract(\"session_birth_allocations\".\"internal_source\", '$.mintedSessionId') = \"session_birth_allocations\".\"session_id\") OR\n              ((json_extract(internal_source, '$.kind') = 'required-recovery' AND json_type(internal_source, '$.requirementId') = 'text' AND length(json_extract(internal_source, '$.requirementId')) > 0 AND json_type(internal_source, '$.mintedSessionId') = 'text' AND length(json_extract(internal_source, '$.mintedSessionId')) > 0 AND json_remove(internal_source, '$.kind', '$.requirementId', '$.mintedSessionId') = '{}')\n                AND json_extract(\"session_birth_allocations\".\"internal_source\", '$.mintedSessionId') = \"session_birth_allocations\".\"session_id\") OR\n              ((json_extract(internal_source, '$.kind') = 'server-mint' AND json_type(internal_source, '$.owner') = 'text' AND length(json_extract(internal_source, '$.owner')) > 0 AND json_type(internal_source, '$.mintedSessionId') = 'text' AND length(json_extract(internal_source, '$.mintedSessionId')) > 0 AND json_remove(internal_source, '$.kind', '$.owner', '$.mintedSessionId') = '{}')\n                AND json_extract(\"session_birth_allocations\".\"internal_source\", '$.owner') IN (\n                  'relay-binding', 'extension-start', 'agent-send', 'chat-start',\n                  'todo-turn', 'carry-over', 'computer-local', 'room-turn'\n                ) AND json_extract(\"session_birth_allocations\".\"internal_source\", '$.mintedSessionId') = \"session_birth_allocations\".\"session_id\")\n            )\n          ELSE 0 END), 0)"
+        }
+      }
     },
     "session_native_bindings": {
       "name": "session_native_bindings",

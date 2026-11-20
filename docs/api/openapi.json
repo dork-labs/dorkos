@@ -43969,7 +43969,7 @@
         "description": "The passkeys and authenticator apps that prove a sign-in from another device. Never a secret or a key.",
         "responses": {
           "200": {
-            "description": "The sign-in checks",
+            "description": "The sign-in checks, each saying whether it works from another device",
             "content": {
               "application/json": {
                 "schema": {
@@ -44001,19 +44001,27 @@
                           },
                           "lastUsedAt": {
                             "type": "string"
+                          },
+                          "worksFromAway": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
                           "id",
                           "kind",
                           "label",
-                          "addedAt"
+                          "addedAt",
+                          "worksFromAway"
                         ]
                       }
+                    },
+                    "everHadAway": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
-                    "factors"
+                    "factors",
+                    "everHadAway"
                   ]
                 }
               }
