@@ -38,6 +38,7 @@
 import { CHAT_STOP_REASON_MAX } from './sending/chat-message-limits.js';
 export { CHAT_SUMMARY_MAX, CHAT_STOP_REASON_MAX } from './sending/chat-message-limits.js';
 import { sendChatMessage } from './sending/chat-send-message.js';
+import type { ChatUsagePause } from './sending/chat-usage-recovery.js';
 import type { RoomSeatMessagesPort } from '../../rooms/handoff/seat-message-types.js';
 import {
   CHAT_MESSAGE_ORIGIN,
@@ -148,6 +149,8 @@ export interface ChatMessageServiceDeps {
   sessionCwd: (sessionId: string) => Promise<string | undefined>;
   /** Whether a chat has a turn running. */
   isBusy: (sessionId: string) => Promise<boolean>;
+  /** A current usage pause, so the sender is told before acceptance. */
+  usagePauseOf?: (sessionId: string, cwd?: string) => Promise<ChatUsagePause | null>;
   /** The send itself. */
   dispatch?: (opts: DispatchSessionMessageOpts) => Promise<DispatchSessionMessageResult>;
   /**
