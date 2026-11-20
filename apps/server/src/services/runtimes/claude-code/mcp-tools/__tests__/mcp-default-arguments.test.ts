@@ -293,7 +293,7 @@ describe('a defaulted argument may be omitted (DOR-2053)', () => {
     const registry = createFullRegistry();
 
     // These capabilities declare `surfaces: {}` and are registered by
-    // `registerClaudeConnectorCapabilityTools` with `capability.input` itself, so
+    // `registerClaudeConnectorCapabilityTools` as full projected objects, so
     // the guard above cannot see them — and does not need to. A whole `ZodObject`
     // crosses to the Agent SDK intact and is parsed by its own `run`, which never
     // consults the optionality rung, which is why

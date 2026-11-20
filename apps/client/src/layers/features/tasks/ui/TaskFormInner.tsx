@@ -48,6 +48,7 @@ const PACKAGE_NOTICE: Record<PackageOwnedBy, readonly string[]> = {
   record: [
     'This schedule came with a package. Only the package can change what it does.',
     'You can still turn it on or off, or change when it runs.',
+    'To change its permission or anything else, make a copy.',
   ],
   legacy: [
     'This schedule came with a package from an older DorkOS.',

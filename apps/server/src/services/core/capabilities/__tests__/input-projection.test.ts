@@ -156,16 +156,21 @@ describe('full ordinary MCP input object', () => {
     expect(input.safeParse({ start: 6 }).success).toBe(false);
   });
 
-  it('advertises approval tokens for exactly the existing ordinary eligibility rules', () => {
+  it('advertises approval tokens for permission and live-preflight eligibility rules', () => {
     const { capability } = fixture();
+    const preflight = async () => {
+      throw new Error('Schema projection must not run preflight');
+    };
     const cases = [
       { tier: 'observe', area: null, expected: false },
       { tier: 'act', area: null, expected: false },
       { tier: 'act', area: 'tasks', expected: true },
       { tier: 'destructive', area: null, expected: true },
       { tier: 'observe', area: null, forwardsApproval: true, expected: true },
+      { tier: 'observe', area: null, preflight, expected: true },
+      { tier: 'act', area: null, preflight, expected: true },
     ] as const;
-    expect(cases).toHaveLength(5);
+    expect(cases).toHaveLength(7);
     for (const { expected, ...policy } of cases) {
       const projected = project({ ...capability, ...policy });
       expect('approvalToken' in projected.shape).toBe(expected);

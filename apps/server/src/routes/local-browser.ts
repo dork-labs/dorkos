@@ -1,5 +1,5 @@
 /** Human browser setup and controls. Agent actions travel through the capability gate. */
-import { Hono, type MiddlewareHandler } from 'hono';
+import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { z } from 'zod';
 import {
   LocalBrowserHandoffAnswerSchema,
@@ -60,44 +60,52 @@ export function createLocalBrowserRoutes(
       );
     return c.json({ error: 'Couldn’t use the browser. Try again.', code: 'browser_error' }, 500);
   });
+  const selector = (c: Context<ApiEnv>) =>
+    z.string().min(1).max(256).optional().parse(c.req.query('sessionId')) ?? null;
+  const selected = (c: Context<ApiEnv>) => service.personSession(selector(c)).handover;
+  router.get('/handoff/state', async (c) => c.json(await service.handover.state()));
   router.get('/capabilities', (c) => c.json(service.capabilities()));
-  router.get('/state', async (c) => c.json(await service.handover.state()));
+  router.get('/state', async (c) => c.json(await service.personState(selector(c))));
   // Opening and resuming end a handoff and lift a Stop task, so they take a person too.
   router.post('/open', personOnly, async (c) =>
     c.json(await service.handover.open(LocalBrowserOpenSchema.parse(readJsonBody(c))))
   );
   // These can move or close the page under an open card, so they take a person too.
   router.post('/tabs/:id/select', personOnly, async (c) =>
-    c.json(await service.handover.selectTab(c.req.param('id')))
+    c.json(await selected(c).selectTab(c.req.param('id')))
   );
   router.post('/navigate', personOnly, async (c) => {
     const { url, httpFallback } = z
       .object({ url: z.string().url(), httpFallback: z.boolean().optional() })
       .strict()
       .parse(readJsonBody(c));
-    return c.json(await service.handover.navigate(url, { httpFallback: httpFallback === true }));
+    return c.json(await selected(c).navigate(url, { httpFallback: httpFallback === true }));
   });
   // Taking the page shuts an agent out of it, so only a person can.
-  router.post('/take-over', personOnly, async (c) => c.json(await service.handover.takeOver()));
+  router.post('/take-over', personOnly, async (c) => c.json(await selected(c).takeOver()));
   // Back and Forward move the page too, and take it from a driving agent (DOR-4449).
   router.post('/history', personOnly, async (c) => {
     const { direction } = z
       .object({ direction: LocalBrowserHistoryDirectionSchema })
       .strict()
       .parse(readJsonBody(c));
-    return c.json(await service.handover.stepHistory(direction));
+    return c.json(await selected(c).stepHistory(direction));
   });
-  router.post('/pause', async (c) => c.json(await service.handover.pause()));
-  router.post('/resume', personOnly, async (c) => c.json(await service.handover.resume()));
+  router.post('/pause', async (c) => c.json(await selected(c).pause()));
+  router.post('/resume', personOnly, async (c) => c.json(await selected(c).resume()));
   // Signing in and answering a handoff take a person: no agent, API key or approval token.
-  router.post('/sign-in', personOnly, async (c) =>
-    c.json(await service.handover.signIn(LocalBrowserSignInRequestSchema.parse(readJsonBody(c))))
-  );
-  // Done signing in quits the sign-in window DorkOS opened (DOR-4731). It answers at once;
-  // the card follows the save on the state stream.
+  router.post('/sign-in', personOnly, async (c) => {
+    const input = LocalBrowserSignInRequestSchema.parse(readJsonBody(c));
+    return c.json(
+      await ('handoffId' in input ? service.handover.signIn(input) : selected(c).signIn(input))
+    );
+  });
+  // Done signing in answers at once; the state stream reports the saved result.
   router.post('/sign-in/done', personOnly, async (c) => {
     const { handoffId } = LocalBrowserSignInDoneSchema.parse(readJsonBody(c));
-    await service.handover.finishSignIn(handoffId);
+    await (handoffId
+      ? service.handover.finishSignIn(handoffId)
+      : selected(c).finishSignIn(undefined));
     return c.json({ accepted: true }, 202);
   });
   router.post('/handoff/hand-back', personOnly, async (c) => {
@@ -108,7 +116,7 @@ export function createLocalBrowserRoutes(
     const { handoffId } = LocalBrowserHandoffAnswerSchema.parse(readJsonBody(c));
     return c.json(await service.handover.stop(handoffId));
   });
-  router.post('/disconnect', personOnly, async (c) => c.json(await service.handover.disconnect()));
+  router.post('/disconnect', personOnly, async (c) => c.json(await selected(c).disconnect()));
   if (profiles) mountLocalBrowserProfileRoutes(router, profiles);
   mountLocalBrowserProfileRemoval(router, service, profiles);
   return router;

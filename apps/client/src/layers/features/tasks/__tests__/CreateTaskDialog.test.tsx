@@ -527,6 +527,9 @@ describe('CreateTaskDialog', () => {
           'This schedule came with a package. Only the package can change what it does.'
         )
       ).toBeTruthy();
+      expect(
+        screen.getByText('To change its permission or anything else, make a copy.')
+      ).toBeTruthy();
       expect(screen.getByRole('button', { name: 'Make a copy' })).toBeTruthy();
       expect(screen.getByDisplayValue('nightly-sweep')).toBeDisabled();
       expect(screen.getByDisplayValue('The package sweeps.')).toBeDisabled();

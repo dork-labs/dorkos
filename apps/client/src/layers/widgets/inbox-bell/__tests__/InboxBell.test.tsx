@@ -352,14 +352,14 @@ describe('InboxBell', () => {
       handoff,
     };
     const stopped = { ...state, handoff: { ...handoff, outcome: 'stopped' as const } };
-    const getLocalBrowserState = vi.fn().mockResolvedValue(state);
+    const getLocalBrowserHandoffState = vi.fn().mockResolvedValue(state);
     const stopLocalBrowserHandoff = vi.fn().mockImplementation(async () => {
-      getLocalBrowserState.mockResolvedValue(stopped);
+      getLocalBrowserHandoffState.mockResolvedValue(stopped);
       return stopped;
     });
     renderIndicator({
       listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [] }),
-      getLocalBrowserState,
+      getLocalBrowserHandoffState,
       stopLocalBrowserHandoff,
       interruptSession: vi.fn().mockResolvedValue({ receipt: 'none', cancelledQueued: [] }),
     });

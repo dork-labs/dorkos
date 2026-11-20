@@ -16,6 +16,6 @@ describe('continuing on another account', () => {
   });
 
   it('updates already-seeded agents with a newer pack stamp', () => {
-    expect(OPERATING_SKILLS_VERSION).toBeGreaterThanOrEqual(62);
+    expect(OPERATING_SKILLS_VERSION).toBeGreaterThanOrEqual(64);
   });
 });
