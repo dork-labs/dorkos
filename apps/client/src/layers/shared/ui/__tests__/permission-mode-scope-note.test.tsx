@@ -55,7 +55,8 @@ const CLIENT_SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.
 const MODE_PICKERS = [
   'layers/features/status/ui/PermissionModeItem.tsx',
   'layers/entities/binding/ui/BindingAdvancedSection.tsx',
-  'layers/features/tasks/ui/TaskFormInner.tsx',
+  // The schedule form's dial moved out of Advanced into its own field (DOR-3841).
+  'layers/features/tasks/ui/autonomy/TaskAutonomyField.tsx',
   'layers/features/settings/ui/runtimes/rows/TrustRow.tsx',
   'layers/features/settings/ui/runtimes/GlobalTrustRow.tsx',
   'layers/features/permissions/ui/PresetPicker.tsx',
