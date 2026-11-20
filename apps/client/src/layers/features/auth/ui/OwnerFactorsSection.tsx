@@ -166,7 +166,7 @@ function FactorRow({
             </AlertDialogTitle>
             {isLast && (
               <AlertDialogDescription>
-                Other devices will sign in with your password only.
+                Other devices can’t sign in until you add another here.
               </AlertDialogDescription>
             )}
           </AlertDialogHeader>

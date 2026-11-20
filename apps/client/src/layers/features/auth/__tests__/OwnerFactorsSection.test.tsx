@@ -81,7 +81,7 @@ describe('OwnerFactorsSection', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remove Passkey' }));
     expect(await screen.findByText('Remove this passkey?')).toBeInTheDocument();
     expect(
-      screen.getByText('Other devices will sign in with your password only.')
+      screen.getByText('Other devices can’t sign in until you add another here.')
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
     await waitFor(() => expect(transport.removeOwnerFactor).toHaveBeenCalledWith('k1', undefined));
