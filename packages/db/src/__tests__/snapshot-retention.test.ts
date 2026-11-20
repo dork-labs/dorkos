@@ -126,7 +126,7 @@ describe('bounded snapshot retention', () => {
     plant('dork-20261120-120000-pre-0001_made_up.db');
     const options = { log, now: new Date('2026-11-20T12:00:00Z'), maxAgeDays: 7 };
 
-    expect(pruneSnapshots(backups, PRE, 10, options)).toEqual([
+    expect(pruneSnapshots(backups, PRE, 3, options)).toEqual([
       oldest,
       'dork-20261113-115959-pre-0001_made_up.db',
     ]);
@@ -137,16 +137,16 @@ describe('bounded snapshot retention', () => {
     for (let second = 1; second <= 12; second++) {
       plant(`dork-20261120-1200${String(second).padStart(2, '0')}-pre-0001_made_up.db`);
     }
-    pruneSnapshots(backups, PRE, 10, options);
-    expect(fs.readdirSync(backups)).toHaveLength(10);
-    expect(fs.readdirSync(backups).sort()[0]).toBe('dork-20261120-120003-pre-0001_made_up.db');
+    pruneSnapshots(backups, PRE, 3, options);
+    expect(fs.readdirSync(backups)).toHaveLength(3);
+    expect(fs.readdirSync(backups).sort()[0]).toBe('dork-20261120-120010-pre-0001_made_up.db');
   });
 
   it('keeps the newest recovery copy even when every copy has aged out', () => {
     plant('dork-20261101-120000-pre-0001_made_up.db');
     const newest = plant('dork-20261102-120000-pre-0001_made_up.db');
 
-    pruneSnapshots(backups, PRE, 10, {
+    pruneSnapshots(backups, PRE, 3, {
       log,
       now: new Date('2026-11-20T12:00:00Z'),
       maxAgeDays: 7,
@@ -165,11 +165,13 @@ describe('bounded snapshot retention', () => {
       plant(`dork-20261120-1200${String(second).padStart(2, '0')}-pre-${tag}.db`);
     }
 
-    expect(pruneSnapshots(backups, PRE, 10, { log })).toEqual([
-      `dork-20261120-120001-pre-${tag}.db`,
-      `dork-20261120-120002-pre-${tag}.db`,
-    ]);
-    expect(fs.readdirSync(backups)).toHaveLength(10);
+    expect(pruneSnapshots(backups, PRE, 3, { log })).toEqual(
+      Array.from(
+        { length: 9 },
+        (_, index) => `dork-20261120-1200${String(index + 1).padStart(2, '0')}-pre-${tag}.db`
+      )
+    );
+    expect(fs.readdirSync(backups)).toHaveLength(3);
   });
 
   it('leaves a locked recovery copy alone when no journal has been written', () => {

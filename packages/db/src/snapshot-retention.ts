@@ -2,17 +2,24 @@ import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
 
+/** Three daily recovery points keep recent fallbacks without accumulating full copies. */
+const DAILY_SNAPSHOT_LIMIT = 3;
+/** Three upgrade recovery points bound disk use even during repeated upgrades. */
+const PRE_MIGRATION_SNAPSHOT_LIMIT = 3;
+/** Five store recovery points preserve each extension's separate migration history. */
+const EXTENSION_SNAPSHOT_LIMIT = 5;
+
 /** Snapshot counts stay bounded even when several upgrades happen in one day. */
 export const SNAPSHOT_RETENTION = {
-  /** Keep at most ten pre-migration copies within the last seven days. */
-  preMigration: 10,
+  /** Keep at most three pre-migration copies within the last seven days. */
+  preMigration: PRE_MIGRATION_SNAPSHOT_LIMIT,
   /** Keep the last three daily recovery points, including across offline days. */
-  daily: 3,
+  daily: DAILY_SNAPSHOT_LIMIT,
   /** One extension's recovery history is independent of dork.db. */
-  extension: 5,
+  extension: EXTENSION_SNAPSHOT_LIMIT,
 } as const;
 
-/** The age limit for pre-migration copies, in addition to their count limit. */
+/** A week covers recent upgrades without retaining full database copies indefinitely. */
 export const PRE_MIGRATION_MAX_AGE_DAYS = 7;
 
 /** Final names emitted by the database snapshot writers; partials never match. */

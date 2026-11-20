@@ -375,7 +375,7 @@ describe('snapshotBeforeMigrations', () => {
     expect(error.message).toMatch(/Free up disk space/);
   });
 
-  it('keeps only the pre-migration copies from the last seven days', () => {
+  it('keeps at most three pre-migration copies within the seven-day window', () => {
     const home = tempDir();
     const db = createDb(path.join(home, 'dork.db'));
     migrate(db, { migrationsFolder: migrationsFolderThrough(PARTIAL_MIGRATION_IDX) });
@@ -393,7 +393,7 @@ describe('snapshotBeforeMigrations', () => {
       );
     }
 
-    expect(readdirSync(backups).sort()).toEqual(written.slice(-8));
+    expect(readdirSync(backups).sort()).toEqual(written.slice(-3));
   });
 });
 
