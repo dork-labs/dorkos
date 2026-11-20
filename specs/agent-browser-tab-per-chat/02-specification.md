@@ -16,7 +16,7 @@ status: draft
 
 ## Overview
 
-Two chats can use the Agent browser at the same time. Each chat drives its own tab. Chats of the same agent use separate tabs in that agent’s profile. Sign-ins are shared within that profile. Different agents have separate Chrome profiles and windows (DOR-4741). This ticket ships the agent's own window first. Parallel pages in the embedded DorkOS-browser panel are the follow-up, DOR-4289.
+Two chats can use the Agent browser at the same time. Each chat drives its own tab. Chats with the same agent share that agent's Chrome profile and sign-ins; different agents keep separate profiles. This ticket ships the agent's own window first. DOR-2667 will stream those pages into the panel. The separate embedded-panel plan, DOR-4289, is canceled.
 
 ## Problem
 
@@ -24,11 +24,11 @@ Today one chat holds the whole Agent browser for the install. `LocalBrowserServi
 
 ## Decision
 
-Keep our Agent browser and borrow patterns from others (research report, path A). The research scored every option on the local-first rule: the browser runs wherever DorkOS runs, with no VM or container per browser. A tab per chat adds one tab when another chat uses the same profile. A different agent uses its own Chrome and profile (DOR-4741). A VM per agent costs about 8 GB. OpenClaw, BrowserOS and nanobrowser use the same tab-per-chat model.
+Keep our Agent browser and borrow patterns from others (research report, path A). The research scored every option on the local-first rule: the browser runs wherever DorkOS runs, with no VM or container per browser. The Nov 19 direction uses one real Chrome profile per agent (DOR-4741). Each extra chat with that agent adds a tab to its browser. Different agents keep separate browsers and sign-ins; no VM or container is required for each browser.
 
 ## Design
 
-1. **One context, many page leases.** The persistent browser context (the sign-ins) stays one per profile, not one per install. Each chat gets a lease: its own tab, revision, observation, node handle, action flight and paused flag. `requireSharedSession` becomes `leaseFor(sessionId)`.
+1. **One context per agent, many page leases.** The persistent Chrome context (the sign-ins) stays one per agent, following DOR-4741. Each chat gets a lease: its own tab, revision, observation, node handle, action flight and paused flag. `requireSharedSession` becomes `leaseFor(sessionId)`.
 2. **The owner is the server's chat id.** DorkOS stamps it on the server. It never comes from a tool argument.
 3. **Actions queue per page, not globally.** Two chats act at once on their own tabs. Each lease keeps today's stale-page and Cloud-origin refusal. A Cloud refusal pauses only that lease.
 4. **Opening.** If the window is open, Open browser in a chat adds a tab for that chat. If not, it launches the window with that chat's tab. Closing a chat's tab ends only its lease. Closing the window ends all of them.
@@ -36,7 +36,7 @@ Keep our Agent browser and borrow patterns from others (research report, path A)
 6. **Popups follow the opener’s custody.** An agent popup may join only its opener’s lease, after address and sign-in checks. A person-created page, a page without an opener, or a child created during person custody stays unowned. Hand back does not grant those children to an agent.
 7. **Unowned tabs belong to the person.** A tab the person opened is no chat's. The person can give a tab to a chat. Moving a tab to another chat needs the person's OK.
 8. **Reconnect to a live lease.** A runtime reconnect with the same server-stamped chat id may reuse its still-live lease. A server restart invalidates every in-memory grant. Never rebuild ownership from a URL, title, tab order or CDP target. The person opens a fresh page after restart.
-9. **Panel.** The panel shows the current chat's page and status. In own-window mode, the "held by another chat" state goes away. On main that state reads "Shared with another chat. Disconnect to use it here."; DOR-4265 (#3713) replaces it with "This browser is open in another chat" and a **Take it here** button. The embedded DorkOS browser stays one holder here; the desktop bridge hands out one guest page per connection (DOR-4289 lifts that).
+9. **Panel.** Until streaming ships, the panel is **Your browser** only; agent tabs live in their own real Chrome window (DOR-4741). For an agent page, the panel shows **This page is in its own window** and **Show window**. DOR-2667 will stream the current chat's Chrome page into the panel. Both views will use the same agent profile and sign-ins, with no cookie sync. DOR-4289 is canceled.
 
 ### Answering BrowserOS's two objections
 
@@ -86,7 +86,7 @@ These stay in DorkOS, outside the broker: chat, room and agent identity; permiss
 
 ## Acceptance
 
-- Two chats browse two different sites at once in the agent's own window, sharing sign-ins.
+- Two chats with the same agent browse different sites at once in that agent's Chrome window, sharing its sign-ins.
 - Each agent reads and acts only on its own tab. A request for another chat's tab gets `tab_locked`; a closed tab gets `tab_gone`.
 - Tests cover parallel actions, one lease's pause or Cloud refusal not touching the other, a closed tab ending only its lease, reconnecting to a live lease and refusing to rebuild grants after a server restart, and every Security Must, with two chats at once and one marked outsider.
 - **Resource bound:** six agent page leases per install, including pending acquisition, held pages and owned popups. Opening another page refuses without eviction. Plain sign-in requires exclusive use of its profile; sibling leases produce `profile_busy` without closing them.
@@ -96,8 +96,7 @@ These stay in DorkOS, outside the broker: chat, room and agent identity; permiss
 
 ## Out of scope, and where each one lives
 
-- Parallel pages in the embedded DorkOS-browser panel: DOR-4289, [`specs/agent-browser-panel-parallel-pages/`](../agent-browser-panel-parallel-pages/02-specification.md).
-- Streaming the page for remote and cloud viewing: DOR-2667, [`specs/agent-browser-page-stream/`](../agent-browser-page-stream/02-specification.md).
+- Streaming the real Chrome page into the panel and remote views: DOR-2667, [`specs/agent-browser-page-stream/`](../agent-browser-page-stream/02-specification.md). The [embedded-panel plan](../agent-browser-panel-parallel-pages/02-specification.md), DOR-4289, is superseded and canceled.
 - Deleting the managed engine: DOR-4284, [`specs/managed-browser-engine-removal/`](../managed-browser-engine-removal/02-specification.md).
 - Home-network routing for cloud browsers: DOR-4290, [`specs/cloud-browser-home-route/`](../cloud-browser-home-route/02-specification.md).
 - "Use my own Chrome": DOR-3214, [`specs/agent-browser-own-chrome/`](../agent-browser-own-chrome/01-ideation.md).

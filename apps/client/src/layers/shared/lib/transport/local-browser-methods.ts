@@ -69,6 +69,9 @@ export function createLocalBrowserMethods(baseUrl: string): LocalBrowserTranspor
       LocalBrowserPersonStateSchema.parse(await request(selected('/disconnect', sessionId), {})),
     signInLocalBrowser: async (input, sessionId) =>
       LocalBrowserPersonStateSchema.parse(await request(selected('/sign-in', sessionId), input)),
+    finishLocalBrowserSignIn: async (handoffId, sessionId) => {
+      await request(selected('/sign-in/done', sessionId), handoffId ? { handoffId } : {});
+    },
     handBackLocalBrowser: async (handoffId) =>
       LocalBrowserPersonStateSchema.parse(await request('/handoff/hand-back', { handoffId })),
     stopLocalBrowserHandoff: async (handoffId) =>

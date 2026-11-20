@@ -31,6 +31,7 @@ describe('export-openapi', () => {
       ['resume', 'post'],
       ['disconnect', 'post'],
       ['sign-in', 'post'],
+      ['sign-in/done', 'post'],
     ] as const) {
       const operation = paths[`/api/local-browser/${path}`]?.[method];
       expect(operation?.parameters, path).toEqual(

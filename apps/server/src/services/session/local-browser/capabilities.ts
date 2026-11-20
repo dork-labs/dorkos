@@ -37,7 +37,12 @@ function requireSession(service: LocalBrowserService, context: CapabilityHandler
     });
   try {
     service.handover.refuseStopped(context.sessionId);
-    return service.leaseFor(context.sessionId);
+    try {
+      return service.leaseFor(context.sessionId);
+    } catch (error) {
+      service.handover.refuseWhileSigningIn(context.sessionId);
+      throw error;
+    }
   } catch (error) {
     if (error instanceof LocalBrowserError) throw agentRefusal(error);
     throw error;
@@ -80,6 +85,7 @@ function scopedAnswer<T>(
 ): Promise<T> {
   const lease = requireSession(service, context);
   const allowed = async () => {
+    await answer(async () => service.handover.refuseWhileSigningIn(context.sessionId!));
     await answer(() => lease.requireProfileAccess(context.sessionId!));
     if (!handingOver) {
       await answer(() => lease.handover.requireAgentMayUse(context.sessionId!));

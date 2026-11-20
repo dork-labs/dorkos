@@ -5,6 +5,7 @@ import {
   LocalBrowserHandoffAnswerSchema,
   LocalBrowserHistoryDirectionSchema,
   LocalBrowserOpenSchema,
+  LocalBrowserSignInDoneSchema,
   LocalBrowserSignInRequestSchema,
 } from '@dorkos/shared/local-browser';
 import type { ApiEnv } from '../http/api-chain.js';
@@ -98,6 +99,14 @@ export function createLocalBrowserRoutes(
     return c.json(
       await ('handoffId' in input ? service.handover.signIn(input) : selected(c).signIn(input))
     );
+  });
+  // Done signing in answers at once; the state stream reports the saved result.
+  router.post('/sign-in/done', personOnly, async (c) => {
+    const { handoffId } = LocalBrowserSignInDoneSchema.parse(readJsonBody(c));
+    await (handoffId
+      ? service.handover.finishSignIn(handoffId)
+      : selected(c).finishSignIn(undefined));
+    return c.json({ accepted: true }, 202);
   });
   router.post('/handoff/hand-back', personOnly, async (c) => {
     const { handoffId } = LocalBrowserHandoffAnswerSchema.parse(readJsonBody(c));

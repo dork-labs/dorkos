@@ -49,6 +49,8 @@ export interface LocalBrowserTransport {
     input: LocalBrowserSignInRequest,
     sessionId?: string | null
   ): Promise<LocalBrowserPersonState>;
+  /** Finish the selected chat's sign-in, or the handoff named by its own identity. */
+  finishLocalBrowserSignIn(handoffId?: string, sessionId?: string | null): Promise<void>;
   /** Give the browser back to the agent that handed it over. */
   handBackLocalBrowser(handoffId: string): Promise<LocalBrowserPersonState>;
   /** End the agent's task. The browser stays open for the person. */

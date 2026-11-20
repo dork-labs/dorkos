@@ -2,25 +2,29 @@
 slug: agent-browser-page-stream
 id: 261113-215633
 created: 2026-11-13
-status: draft
+status: specified
 ---
 
 # Agent browser: watch and take over the live page from anywhere
 
-**Status:** Draft. Security reviews the design before build and the PR before arming.
+**Status:** Accepted direction (Nov 19); not implemented. Security reviews the design before build and the PR before arming.
 **Author:** DorkOS Code (agent)
 **Date:** 2026-11-13
-**Tracker:** DOR-2667 (Should, re-scoped Nov 13)
+**Tracker:** DOR-2667 (Must, re-scoped Nov 19; target Dec 11, 2026)
+**Decision:** [One real Chrome per agent, two views](../../decisions/261119-190201-one-real-chrome-per-agent-two-views.md)
 **Why this shape:** [Agent browser: keep building, adopt, or package?](../../research/20261113_agent-browser-build-vs-adopt.md), §4b, §5 and §7
 **Replaces:** the managed-engine plan in [`specs/shared-browser-control/`](../shared-browser-control/01-ideation.md) (retired)
 
 ## Overview
 
-A person can watch the Agent browser's live page, and take it over, from a place that has no panel: the web app, a phone, or a remote computer reached over the tunnel. The same stream is how a person sees a browser running on a cloud agent computer. The page stays where it runs. Only pictures go out, and only input comes back.
+Each agent will have one real Chrome browser, one profile and one set of sign-ins. A person will watch and control the same page in the DorkOS panel or Chrome's own window. The panel streams Chrome; it does not open a second browser engine. No cookies or other sign-in state are copied between the Electron partition and Chrome.
+
+Under the planned DOR-4741 bridge, agent tabs stay in their own Chrome window. The panel is **Your browser** only. For an agent page, it shows **This page is in its own window** and **Show window**. Streaming will also support viewing from the web app, a phone or a remote computer over the tunnel. Cloud browser viewing remains planned, not shipped.
 
 ## Why a stream
 
-- The embedded panel exists only in the desktop app.
+- The panel and Chrome's own window must show the same agent page and sign-ins.
+- Streaming real Chrome replaces the separate embedded engine for agent pages, including on desktop.
 - A cloud agent computer runs its browser on its own display, so a person always needs a stream there.
 - Of the forms that pass through DorkOS's HTTP routes and tunnel, a page-level screencast plus input is the smallest. It keeps the person's input on one page, never the whole desktop.
 - **No WebRTC.** WebRTC (Kernel, neko) needs a UDP or TCP mux port, and our tunnel carries HTTP only.
@@ -47,13 +51,21 @@ Properties we keep:
 
 ## Design
 
-1. **Source.** Chrome's `Page.startScreencast` on the chat's own page, from the live service (`apps/server/src/services/session/local-browser/`). It runs only while at least one viewer is watching.
+1. **Source.** Chrome's `Page.startScreencast` on the chat's own page in its agent's Chrome profile, from the live service (`apps/server/src/services/session/local-browser/`). The panel and own-window view use that same page. It runs only while at least one viewer is watching.
 2. **Fan-out.** One screencast per page. Each viewer has its own one-frame slot. A slow viewer never slows a fast one.
 3. **Transport.** Plain HTTP routes in the server's normal request chain: a frame request with a receipt, and an input post. They go through the same session gate and tunnel as every other route. No new port.
 4. **Who can watch.** Only people allowed to see that chat. Agents never get the stream; they keep the existing observe tools for their own page.
 5. **Taking over.** Input from a viewer is accepted only while the person holds the page (DOR-4273's takeover lease). Pressing Take over starts a handoff; the agent stops; **Hand back to {Agent}** returns it. (These are the planned names from the "who's driving" strip, DOR-4107, not buttons on main today. On main, the handoff card's buttons are **Continue** and **Stop task**.) While the person holds it, Security Must 2 applies: no agent reads or screenshots that page.
 6. **Sign-in.** While the person is typing in a password field, page reads and screenshots for agents are denied (the dsh pattern), and the audit line records only that a sign-in happened.
 7. **Audit.** One line per viewer session: person, chat, page id, origin, start, end, and whether they took over.
+
+## Done when (PM, Nov 19)
+
+- In the Mac app, the panel shows the agent's live Chrome page with no copy of cookies. Typing, scroll, IME, clipboard and file pickers work while the person holds the page (DOR-4273's takeover lease).
+- The same view works from a web/phone client over the tunnel, with measured latency and bandwidth recorded in the PR.
+- While the person holds the page, no agent reads or screenshots it (Security Must 2).
+- The bridge from DOR-4741 ("This page is in its own window" + Show window) is replaced by the stream.
+- Live release check passes ([Browser verification](../../contributing/browser-verification.md#live-agent-browser-release-check)).
 
 ## Acceptance
 
@@ -66,7 +78,9 @@ Properties we keep:
 - Take over and **Hand back to {Agent}** work from the web app at 390 px wide, by touch and by keyboard.
 - An agent cannot read or screenshot a page the person holds through the stream (Must 2), tested.
 - A viewer for chat A cannot get frames from chat B's page (Must 1), tested.
-- Runs in CI against made-up local pages. No real sites, and no Chrome launched on a developer Mac.
+- Switching views keeps the same agent profile, sign-ins and page. It never starts a second engine or copies sign-in state.
+- The [live release check](../../contributing/browser-verification.md#live-agent-browser-release-check) passes in every shipped view. Mocked sign-in windows do not satisfy it.
+- Automated tests run in CI against made-up local pages. They use no real sites and launch no Chrome on a developer Mac. The live release check is separate.
 
 ## Tunnel notes
 
@@ -82,4 +96,4 @@ Properties we keep:
 
 ## Order and date
 
-After DOR-4273 (it needs the per-chat lease) and in parallel with DOR-4289. Target: **Fri Dec 11, 2026** (port Dec 3 to 7, take-over and tests Dec 8 to 10, tunnel measurement Dec 11).
+After DOR-4741's one-profile bridge and DOR-4273's per-chat lease. This replaces DOR-4289, which is canceled. Target: **Fri Dec 11, 2026**.

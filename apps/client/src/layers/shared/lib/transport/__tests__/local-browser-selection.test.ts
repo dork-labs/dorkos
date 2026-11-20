@@ -34,10 +34,12 @@ describe('person browser transport selection', () => {
     await methods.getLocalBrowserState('chat-a');
     await methods.takeOverLocalBrowser('chat-b');
     await methods.pauseLocalBrowser('chat-a');
+    await methods.finishLocalBrowserSignIn(undefined, 'chat-a');
     expect(fetch.mock.calls.map(([url]) => url)).toEqual([
       '/api/local-browser/state?sessionId=chat-a',
       '/api/local-browser/take-over?sessionId=chat-b',
       '/api/local-browser/pause?sessionId=chat-a',
+      '/api/local-browser/sign-in/done?sessionId=chat-a',
     ]);
   });
 

@@ -2,6 +2,7 @@ import type { LocalBrowserOpen, LocalBrowserSignInRequest } from '@dorkos/shared
 import type { BrowserHandover } from '../handover.js';
 import type { LocalBrowserService } from '../service.js';
 import { LocalBrowserError } from '../errors.js';
+import { signingInRefusal } from '../handoff-guards/done-signing-in.js';
 import { emptyBrowserPersonState } from '../presentation.js';
 
 /** Install-wide handoff arbitration; each chat retains its own Stop and handoff records. */
@@ -34,6 +35,16 @@ export class BrowserHandoverPool {
   }
   refuseStopped(id: string) {
     this.service.findSession(id)?.handover.refuseStopped(id);
+  }
+  refuseWhileSigningIn(id: string | null) {
+    const target = this.service.findSession(id);
+    if (
+      target &&
+      this.service
+        .pageSessions()
+        .some((session) => session.handover.signInHoldsProfile(target.currentProfileId()))
+    )
+      throw signingInRefusal();
   }
   isOpenFor(id: string) {
     return this.service.findSession(id)?.handover.isOpenFor(id) ?? false;
@@ -84,6 +95,9 @@ export class BrowserHandoverPool {
   }
   signIn(input: Extract<LocalBrowserSignInRequest, { handoffId: string }>) {
     return this.forHandoff(input.handoffId).signIn(input);
+  }
+  finishSignIn(id: string) {
+    return this.forHandoff(id).finishSignIn(id);
   }
   handBack(id: string) {
     return this.forHandoff(id).handBack(id);

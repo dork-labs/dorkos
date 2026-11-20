@@ -1,3 +1,10 @@
+import type { LocalBrowserHandoff, LocalBrowserState } from '@dorkos/shared/local-browser';
+/**
+ * The addresses a handoff may put in front of a person: a sign-in page must be `https:`, or
+ * `http:` on this computer, and while a person has the browser a tab shows only its site.
+ *
+ * @module services/session/local-browser/handoff-guards/page-address
+ */
 import { LocalBrowserError } from '../errors.js';
 
 /**
@@ -39,4 +46,14 @@ export function siteOnly(value: string): string {
   } catch {
     return '';
   }
+}
+
+/** Every tab is cut to its site, without a title, while the person answers a handoff. */
+export function trimPage(
+  state: LocalBrowserState,
+  handoff: LocalBrowserHandoff | null
+): LocalBrowserState {
+  if (handoff?.outcome !== null) return state;
+  const tabs = state.tabs.map((tab) => ({ ...tab, url: siteOnly(tab.url), title: '' }));
+  return { ...state, tabs };
 }

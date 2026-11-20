@@ -80,6 +80,7 @@ export function useBrowserHandoff(sessionId?: string | null) {
       : null,
     canShowWindow: state?.mode === 'new-window' && state.status === 'connected' && !!selectedTabId,
     sharedProfile: handoff?.profileId === null,
+    needsQuit: state?.signIn?.needsQuit === true,
     busy,
     error,
     // The server wakes the agent once the handoff ends, whichever way the person hands
@@ -91,6 +92,11 @@ export function useBrowserHandoff(sessionId?: string | null) {
       // A refused in-app page goes on in its own window, where the sign-in lands (DOR-4097).
       if (handoff.refused && state?.mode === 'embedded') openWindow();
       else void run(() => transport.signInLocalBrowser({ handoffId: handoff.id }));
+    },
+    // On a Mac, closing the sign-in window leaves Chrome running, so DorkOS can't see it
+    // close. Done signing in quits it; a saved sign-in is then handed back (DOR-4731).
+    doneSigningIn: () => {
+      if (handoff) void run(() => transport.finishLocalBrowserSignIn(handoff.id));
     },
     openWindow,
     showWindow: () => {

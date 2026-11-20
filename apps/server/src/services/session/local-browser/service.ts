@@ -86,6 +86,7 @@ export class LocalBrowserService {
         'This chat’s browser is not open. Ask the person to open it.'
       );
     session.handover.refuseStopped(sessionId);
+    this.handover.refuseWhileSigningIn(sessionId);
     return session.captureAgentLease(sessionId);
   }
 
@@ -131,6 +132,7 @@ export class LocalBrowserService {
           leaseAudit: this.leaseAudit,
           closed: () => this.retired.delete(session!),
           assertAgentAction: () => {
+            this.handover.refuseWhileSigningIn(sessionId);
             if (this.profileSiblings(session!).some((other) => other.personHeld()))
               throw new LocalBrowserError(
                 'profile_held',

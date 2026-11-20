@@ -459,7 +459,8 @@ export class LocalBrowserPageSession {
   stepHistory = (direction: LocalBrowserHistoryDirection) =>
     this.personControl.stepHistory(direction);
   pause = () => this.personControl.pause();
-  handToPerson = () => this.personControl.handToPerson();
+  handToPerson = () =>
+    this.closing.active ? this.closeConnection(false) : this.personControl.handToPerson();
   resume = () => this.personControl.resume();
 
   async disconnect(): Promise<LocalBrowserState> {
