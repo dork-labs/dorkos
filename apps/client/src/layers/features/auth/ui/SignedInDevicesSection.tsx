@@ -185,7 +185,7 @@ function RunsAgentsSwitch({
   const warning = (
     <>
       <p className="text-muted-foreground text-xs">
-        Anyone on the same Wi-Fi could take over this session.
+        Anyone on the same Wi-Fi could take over this sign-in.
       </p>
       <p className="text-muted-foreground text-xs">It turns off after 12 hours idle.</p>
     </>

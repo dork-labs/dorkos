@@ -4,6 +4,7 @@ covers:
   - 'feat(auth): app screens for Wi-Fi sign-in codes, device approval and sign-in checks (DOR-4744, DOR-3647)'
   - 'fix(auth): review fixes and final copy for Wi-Fi sign-in and sign-in checks (DOR-4744, DOR-3647)'
   - 'fix(auth): the second step reads every sign-in body it lets through (DOR-3647)'
+  - "fix(auth): use the app's word for a sign-in on the Wi-Fi warning (DOR-4744)"
 ---
 
 ### Added

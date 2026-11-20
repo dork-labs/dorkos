@@ -129,7 +129,7 @@ describe('SignedInDevicesSection', () => {
     Object.defineProperty(navigator, 'credentials', { value: { get }, configurable: true });
 
     expect(
-      await screen.findByText('Anyone on the same Wi-Fi could take over this session.')
+      await screen.findByText('Anyone on the same Wi-Fi could take over this sign-in.')
     ).toBeInTheDocument();
     expect(screen.getByText('It turns off after 12 hours idle.')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('switch', { name: 'Run agents from Safari on iPhone' }));
