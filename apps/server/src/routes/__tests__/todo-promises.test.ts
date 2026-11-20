@@ -29,8 +29,13 @@ const fixtureServer = fixtureTarget.server;
 
 const AGENTS: Record<string, string> = { '/agents/ana': 'agent-ana', '/agents/bo': 'agent-bo' };
 
-/** A test-only header: mark the request as arriving over Wi-Fi, as the Wi-Fi listener does. */
+/**
+ * Test-only headers, read after the `/api` chain: mark the request as arriving over Wi-Fi (as
+ * the Wi-Fi listener does), or as forwarded from another device. Both reach the route past the
+ * gate, so the route's own check is what's tested.
+ */
 const VIA_WIFI = 'x-test-via-wifi';
+const FORWARDED_AFTER_GATE = 'x-test-forwarded-for';
 
 describe('to-do routes', () => {
   let service: TodoPromiseService;
@@ -78,6 +83,8 @@ describe('to-do routes', () => {
         // and an unknown one resolves to nothing (a token that did not verify).
         before: (c, next) => {
           if (c.req.header(VIA_WIFI)) markIngress(c.env.incoming, 'wifi');
+          const forwarded = c.req.header(FORWARDED_AFTER_GATE);
+          if (forwarded) c.env.incoming.headers['x-forwarded-for'] = forwarded;
           const home = c.req.header(AGENT_IDENTITY_HEADER);
           if (home && AGENTS[home]) {
             c.set('agentIdentity', { agentPath: home, displayName: home, createdAt: '' });
@@ -184,7 +191,63 @@ describe('to-do routes', () => {
       expect(power(given.id)).toEqual({ authority: 'person', marks: '{}' });
     });
 
-    it('refuses a request naming another host on the network before the promise service', async () => {
+    it('has the gate ask a forwarded request from another device for a credential first', async () => {
+      const given = service.create(
+        'agent-ana',
+        { what: 'Ship it' },
+        { kind: 'person', proven: true }
+      );
+      const add = await request(fixtureServer)
+        .post('/api/agents/agent-ana/todo-promises')
+        .set('x-forwarded-for', '203.0.113.7')
+        .send({ what: 'Delete the staging bucket' });
+      expect(add.status).toBe(401);
+      const drop = await request(fixtureServer)
+        .patch(`/api/todo-promises/${given.id}`)
+        .set('x-forwarded-for', '203.0.113.7')
+        .send({ state: 'dropped' });
+      expect(drop.status).toBe(401);
+      expect(service.list()).toHaveLength(1);
+      expect(service.get(given.id)!.state).toBe('open');
+    });
+
+    it('never counts a forwarded request that got past the gate as the person', async () => {
+      const given = service.create(
+        'agent-ana',
+        { what: 'Ship it' },
+        { kind: 'person', proven: true }
+      );
+      const add = await request(fixtureServer)
+        .post('/api/agents/agent-ana/todo-promises')
+        .set(FORWARDED_AFTER_GATE, '203.0.113.7')
+        .send({ what: 'Delete the staging bucket' });
+      expect(add.status).toBe(201);
+      expect(power(add.body.id)).toEqual({
+        authority: 'runtime-default',
+        marks: '{"outsider":true}',
+      });
+      const drop = await request(fixtureServer)
+        .patch(`/api/todo-promises/${given.id}`)
+        .set(FORWARDED_AFTER_GATE, '203.0.113.7')
+        .send({ state: 'dropped' });
+      expect(drop.status).toBe(400);
+      expect(drop.body.code).toBe('NOTHING_TO_CHANGE');
+      expect(service.get(given.id)!.state).toBe('open');
+    });
+
+    it('never counts a program sending a credential as the person, even at this computer', async () => {
+      const add = await request(fixtureServer)
+        .post('/api/agents/agent-ana/todo-promises')
+        .set('authorization', 'Bearer made-up-token')
+        .send({ what: 'Delete the staging bucket' });
+      expect(add.status).toBe(201);
+      expect(power(add.body.id)).toEqual({
+        authority: 'runtime-default',
+        marks: '{"outsider":true}',
+      });
+    });
+
+    it('lets the /api host guard refuse a request naming another host on the network', async () => {
       const add = await request(fixtureServer)
         .post('/api/agents/agent-ana/todo-promises')
         .set('host', '192.168.1.20:4243')

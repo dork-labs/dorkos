@@ -26,6 +26,7 @@ import {
   UpdateTodoPromiseRequestSchema,
 } from '@dorkos/shared/todo-promise-schemas';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
+import { presentsProgramCredential } from '../lib/caller-authority.js';
 import { errorBody, validationFailureBody } from '../lib/route-utils.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
@@ -130,12 +131,13 @@ function actorOf(
  * The person behind a request that already passed the agent and owner checks: proven by the
  * owner's session, or the only person there is (DOR-3832). That takes both an install with no
  * owner account and a request the gate's own classifier places at this computer
- * (`isAtThisComputer`: this machine, or a container's published port): no owner alone is not
- * enough, so a request from another device stays the stranger bound.
+ * (`isAtThisComputer`: this machine, or a container's published port) that carries no program
+ * credential: no owner alone is not enough, so a request from another device, or a program
+ * sending a key, stays the stranger bound.
  *
  * Not the same rule as `/api/todos`: there `ownerless` widens only what an unproven person may
  * change (`todo-policy`), and its writes keep the stranger bound. Whether to-dos should carry
- * `person` authority the way promises do is a follow-up, not this route.
+ * `person` authority the way promises do is a follow-up (DOR-4837), not this route.
  */
 function personOf(
   facts: RequestFacts,
@@ -143,8 +145,11 @@ function personOf(
 ): Extract<TodoPromiseActor, { kind: 'person' }> {
   const proven = deps.personProven(facts);
   if (proven) return { kind: 'person', proven };
-  // Where the request came from first: the owner lookup fails closed on its own.
-  return { kind: 'person', proven, ownerless: isAtThisComputer(facts) && !deps.ownerExists() };
+  // Where the request came from first: the owner lookup fails closed on its own. A key, token or
+  // bearer is a program, not the app, as in `requirePersonAtThisComputer`.
+  const ownerless =
+    isAtThisComputer(facts) && !presentsProgramCredential(facts) && !deps.ownerExists();
+  return { kind: 'person', proven, ownerless };
 }
 
 /**

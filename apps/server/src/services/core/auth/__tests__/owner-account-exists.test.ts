@@ -20,6 +20,8 @@ describe('ownerAccountExists', () => {
     tmpDir = undefined;
   });
 
+  // This case relies on running first in this file: auth state is module-wide, and the next case
+  // starts it. Vitest runs a file's cases in order, in their own module registry.
   it('reads as no owner before auth starts, which startup runs before any route (see its comment)', () => {
     expect(ownerAccountExists()).toBe(false);
   });
