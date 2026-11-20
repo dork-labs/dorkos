@@ -20,8 +20,7 @@ import {
   type ToolCallContext,
   type ToolCallEscalation,
 } from '../../core/capabilities/tool-call-escalation.js';
-import { marksOf } from '../../core/turn-power/turn-levels.js';
-import { marksHold } from '../../core/turn-power/turn-marks.js';
+import { turnReadOutsideWords } from '../../core/turn-power/outsider-turn.js';
 import { liveRunOriginSources, withRunOrigin } from './agent-mode-run-origin.js';
 import type { TaskStore } from '../task-store.js';
 import {
@@ -40,6 +39,8 @@ import {
 import { liveAgentModeSources } from './agent-mode-sources.js';
 import { identityResolutionOf } from './agent-mode-identity.js';
 import { agentModeChangeOf } from './agent-mode-change.js';
+import { readOutside, type CreditsEdit } from '../credits/credits-work.js';
+import { creditsEditEscalation } from '../credits/credits-edit-escalation.js';
 
 const STATE_RANK = { allowed: 0, ask: 1, blocked: 2 } as const;
 
@@ -66,9 +67,10 @@ export function gateCallerOf(context: ToolCallContext): AgentModeCaller {
     ...(identity ? { agentPath: identity.agentPath } : {}),
     ...(context.sessionId ? { sessionId: context.sessionId } : {}),
     // A caller off the chat that DorkOS cannot name is held as an outsider's, as
-    // the external server holds it everywhere else (DOR-3036).
+    // the external server holds it everywhere else (DOR-3036). The outside-words
+    // note counts as the mark does (DOR-4587): a hop from a chat that read them.
     marked:
-      marksHold(marksOf(context.sessionId, identity?.agentPath)) ||
+      turnReadOutsideWords(context.sessionId, identity?.agentPath) ||
       (context.origin !== 'session' && identity === undefined),
   };
 }
@@ -150,14 +152,20 @@ export function registerAgentModeEscalators(
   const removeUpdate = registerToolCallEscalator(
     'tasks_update',
     async ({ action, input, permission, context }) => {
-      const body = bodyOf(input);
-      if (!agentModeControlOn() || !reachesAgentMode(body)) return null;
       // The tool itself is off for this caller: its own refusal stands.
       if (permission?.state === 'blocked') return null;
+      const body = bodyOf(input);
       const id = (input as { id?: unknown } | undefined)?.id;
       const task = typeof id === 'string' ? deps.store.getTask(id) : null;
       if (!task) return null;
       const caller = withRunOrigin(gateCallerOf(context), liveRunOriginSources(deps.store));
+      // A raise on a task that spends DorkOS credits always waits for a person (DOR-4609).
+      const credits = (mode: ToolCallEscalation | null) =>
+        creditsEditEscalation(
+          { action, permission, body: body as CreditsEdit, task, marked: readOutside(caller) },
+          mode
+        );
+      if (!agentModeControlOn() || !reachesAgentMode(body)) return credits(null);
       const decision = await decideAgentModeCall(
         { door: 'update', body, task, edits: deps.store.approvals.agentEditsOf(task.id) },
         caller,
@@ -172,7 +180,7 @@ export function registerAgentModeEscalators(
               caller.agentPath
             )
           : undefined;
-      return escalationFor(decision, action, permission, change);
+      return credits(escalationFor(decision, action, permission, change));
     }
   );
   const removeCreate = registerToolCallEscalator(

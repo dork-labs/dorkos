@@ -6,6 +6,7 @@ import type {
 } from '../../connectors/runtime-principal-port.js';
 import type { ConnectorRuntimeTools } from '../connector-tools.js';
 import { logger } from '../../../lib/logger.js';
+import { aliasTurnLevel } from '../../core/turn-power/turn-levels.js';
 import {
   ConnectorTurnLeaseSupervisor,
   type ConnectorTurnLeaseSupervisorHandle,
@@ -17,6 +18,11 @@ export interface ClaudeConnectorTurnContextOptions {
   readonly tools: ConnectorRuntimeTools;
   /** Reads the SDK id after first-turn canonical rekey. */
   readonly canonicalSessionId: () => string;
+  /**
+   * The id this turn was sent with, under which its level and outside-words note are kept
+   * (`turn-levels.ts`). Carried to the SDK id as the binding opens (DOR-4587).
+   */
+  readonly sentSessionId?: string;
   /** Canonical registered agent path. */
   readonly agentPath: string;
   /** Working directory bound to the turn. */
@@ -99,10 +105,17 @@ export class ClaudeConnectorTurnContext {
 
   private async openAndResolve(): Promise<ServerPrincipalProof> {
     this.assertCurrent();
+    const canonicalSessionId = this.options.canonicalSessionId();
+    // The send gate reads this turn under the id the binding is fixed to (DOR-4587). The turn's
+    // level and its outside-words note are kept under the id it was sent with, and the other
+    // carries (the room runner's, the one-shot rekey) can run after this call or never reach
+    // this id. Carry them here, so the gate reads THIS turn and never an older one.
+    const sent = this.options.sentSessionId;
+    if (sent !== undefined && sent !== canonicalSessionId) aliasTurnLevel(sent, canonicalSessionId);
     const binding = await this.options.tools.principals.openTurn(
       {
         runtime: 'claude-code',
-        canonicalSessionId: this.options.canonicalSessionId(),
+        canonicalSessionId,
         agentPath: this.options.agentPath,
         canonicalCwd: this.options.cwd,
         signal: this.controller.signal,
@@ -146,4 +159,32 @@ export class ClaudeConnectorTurnContext {
     this.revocation ??= this.options.tools.principals.revoke(this.binding.bindingId, reason);
     await this.revocation;
   }
+}
+
+/**
+ * The connector context for one Claude turn, or none when the runtime has no connector tools or the
+ * turn acts as no registered agent. It reads the SDK id at the first connector call and carries the
+ * turn's record from the id the turn was sent with (DOR-4587).
+ *
+ * @param tools - The runtime's connector tools, when wired.
+ * @param agent - The registered agent the turn acts as, when there is one.
+ * @param turn - The session, the id the turn was sent with, and its working directory.
+ */
+export function claudeConnectorTurn(
+  tools: ConnectorRuntimeTools | undefined,
+  agent: { readonly agentPath: string } | undefined,
+  turn: {
+    readonly session: { readonly sdkSessionId?: string | null };
+    readonly sessionId: string;
+    readonly cwd: string;
+  }
+): ClaudeConnectorTurnContext | undefined {
+  if (!tools || !agent) return undefined;
+  return new ClaudeConnectorTurnContext({
+    tools,
+    canonicalSessionId: () => turn.session.sdkSessionId || turn.sessionId,
+    sentSessionId: turn.sessionId,
+    agentPath: agent.agentPath,
+    cwd: turn.cwd,
+  });
 }

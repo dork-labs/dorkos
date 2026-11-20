@@ -1,6 +1,10 @@
 /** Ordinary authenticated operator recovery: content/path/authority never come from this body. */
 import { Hono } from 'hono';
-import { DocChannelNotFoundError } from '../../services/canvas/doc-channel/authorization.js';
+import {
+  DocChannelNotFoundError,
+  disclosableRefusalReason,
+} from '../../services/canvas/doc-channel/authorization.js';
+import { logger } from '../../lib/logger.js';
 import { z } from 'zod';
 import {
   FileSaveRecoverBodySchema,
@@ -19,10 +23,18 @@ import {
 export function createFileSaveRecoveryRoutes(source: () => InstallationFileWrites | undefined) {
   const router = new Hono<ApiEnv>();
   const documentId = (value: unknown) => z.string().min(1).max(200).parse(value);
-  const failure = (error: unknown) => ({
-    error: 'The document save evidence is not available.',
-    code: error instanceof z.ZodError ? 'INVALID_FILE_SAVE_RECOVERY' : 'DOC_FILE_SAVE_UNAVAILABLE',
-  });
+  const failure = (error: unknown) => {
+    // Which check refused, in the log always and to the owner when safe (DOR-4442). A code, never a path.
+    if (error instanceof DocChannelNotFoundError)
+      logger.info('[file-saves] a document save check refused', { reason: error.reason ?? null });
+    const reason = disclosableRefusalReason(error);
+    return {
+      error: 'The document save evidence is not available.',
+      code:
+        error instanceof z.ZodError ? 'INVALID_FILE_SAVE_RECOVERY' : 'DOC_FILE_SAVE_UNAVAILABLE',
+      ...(reason ? { reason } : {}),
+    };
+  };
   router.get('/:id/file-saves', async (c) => {
     c.header('Cache-Control', 'no-store');
     try {

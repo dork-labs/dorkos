@@ -59,6 +59,15 @@ export const chatMessages = sqliteTable(
      * `"runtime-default"` when that was not known.
      */
     ceilingJson: text('ceiling_json').notNull(),
+    /** Server-only delivery owner; seat work never enters ordinary dispatch/recovery. */
+    deliveryRoute: text('delivery_route', { enum: ['chat', 'seat'] })
+      .notNull()
+      .default('chat'),
+    /** Immutable scope of a private seat delivery, independent of receipt rekeys. */
+    seatRoomId: text('seat_room_id'),
+    seatAuthorId: text('seat_author_id'),
+    seatJoinedAt: text('seat_joined_at'),
+    seatSessionId: text('seat_session_id'),
     /** The chat message this one answers, or NULL. */
     replyToId: text('reply_to_id'),
     /** When it was sent (ISO 8601). */
@@ -70,6 +79,11 @@ export const chatMessages = sqliteTable(
     index('chat_messages_to_idx').on(table.toSessionId, table.createdAt),
     index('chat_messages_from_idx').on(table.fromSessionId, table.createdAt),
     index('chat_messages_queue_idx').on(table.queueMessageId),
+    check('chat_messages_delivery_route', sql`${table.deliveryRoute} IN ('chat', 'seat')`),
+    check(
+      'chat_messages_seat_scope',
+      sql`${table.deliveryRoute} = 'chat' OR (${table.seatRoomId} IS NOT NULL AND ${table.seatAuthorId} IS NOT NULL AND ${table.seatJoinedAt} IS NOT NULL AND ${table.seatSessionId} IS NOT NULL)`
+    ),
     check('chat_messages_kind', sql`${table.kind} IN ('message', 'report', 'start', 'stop')`),
   ]
 );

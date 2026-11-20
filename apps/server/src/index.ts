@@ -14,7 +14,7 @@ import { lanAccess } from './services/core/lan-access/index.js';
 import { registerRemoteListener } from './middleware/remote-access-switch.js';
 import { exitOnPortConflict } from './services/core/lifecycle/port-conflict.js';
 import { createSignalShutdown } from './lib/shutdown-signal.js';
-import { getCloudLinkManager } from './services/core/auth/cloud-link.js';
+import { stopCloudLinkManager } from './services/core/auth/cloud-link.js';
 import { stopCreditsLifecycle } from './services/core/cloud/credits-inference.js';
 import { configManager } from './services/core/config-manager.js';
 import { setGitGuardRoots } from './services/core/agent-identity/index.js';
@@ -57,7 +57,7 @@ import { keepAwakeService } from './services/core/keep-awake/index.js';
 import { setAccountUsageStore } from './services/core/usage/current-usage-store.js';
 import { shutdownObservability } from './services/observability/index.js';
 import { sessionListBroadcaster } from './services/session/catalog/session-list-broadcaster.js';
-import { getAgentSendService } from './services/extensions/agent-send/agent-send.js';
+import { stopAgentMessageServices } from './startup/stop-agent-messages.js';
 import * as heartbeats from './services/heartbeats/index.js';
 import { aggregateSessionList } from './services/session/catalog/aggregate-session-list.js';
 import { env } from './env.js';
@@ -471,6 +471,8 @@ async function shutdownServices(reason: 'authority' | 'shutdown' = 'shutdown') {
   refs.doeRuntime = null;
   refs.stopSessionContinuation?.();
   refs.stopSessionContinuation = undefined;
+  refs.stopSigninCredentialWatch?.();
+  refs.stopSigninCredentialWatch = undefined;
   if (refs.accountUsageStore) {
     refs.accountUsageStore.stop();
     await refs.accountUsageStore.flush().catch((err: unknown) => {
@@ -509,7 +511,7 @@ async function shutdownServices(reason: 'authority' | 'shutdown' = 'shutdown') {
   }
   refs.stopConnectorFreshness?.();
   refs.stopConnectorFreshness = undefined;
-  getAgentSendService()?.stop();
+  stopAgentMessageServices();
   // Kill any live PTYs so shutdown never leaves an orphaned shell.
   refs.terminalManager?.destroyAll();
   // A hub's linked computers redial on their next viewer.
@@ -574,7 +576,7 @@ async function shutdownServices(reason: 'authority' | 'shutdown' = 'shutdown') {
   tlsServer = null;
   // After every runtime and the scheduler: nothing is left to hold awake.
   await keepAwakeService.stop();
-  getCloudLinkManager().stop();
+  stopCloudLinkManager();
   stopCreditsLifecycle();
   // Flush and tear down debug tracing last so late spans are written. No-op
   // when tracing is off.
@@ -628,6 +630,7 @@ start().catch(async (err) => {
       cleanupError
     );
   }
+  stopAgentMessageServices();
   // A later startup failure must not leave the owned offline listener running.
   await testComposioFixture?.close();
   testComposioFixture = undefined;

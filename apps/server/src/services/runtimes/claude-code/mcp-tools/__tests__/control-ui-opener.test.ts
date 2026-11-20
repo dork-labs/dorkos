@@ -137,15 +137,26 @@ describe.each(OPENS)('Claude `control_ui` %s', (_action, args) => {
   });
 });
 
-it('ignores an opener named in the arguments: the turn decides, not the call', async () => {
+it('rejects a caller-supplied opener before opening, then accepts the verified caller', async () => {
   const f = await connect('real');
-  const opened = await f.client.callTool({
+  const apply = vi.spyOn(f.canvas, 'apply');
+  const refused = await f.client.callTool({
     name: 'control_ui',
     arguments: { ...OPENS[0][1], openerAgentId: 'foreign-agent' },
   });
+  expect(refused).toHaveProperty('isError', true);
+  expect(JSON.stringify(refused.content)).toContain('openerAgentId');
+  expect(apply).not.toHaveBeenCalled();
+  expect(f.resolvePrincipal).not.toHaveBeenCalled();
+
+  const opened = await f.client.callTool({ name: 'control_ui', arguments: { ...OPENS[0][1] } });
   expect(opened).not.toHaveProperty('isError', true);
+  expect(apply).toHaveBeenCalledOnce();
   const documentId = String(docMcpPayload(opened).documentId);
   expect(f.http.channels.getChannel(documentId)?.openerAgentId).toBe('agent-1');
+  const configured = await f.client.callTool(configureCall(f, documentId));
+  expect(configured).not.toHaveProperty('isError', true);
+  expect(docMcpPayload(configured)).toEqual({ configured: true });
 });
 
 it('keeps the window verbs working when the principal cannot be resolved', async () => {

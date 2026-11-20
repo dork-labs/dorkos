@@ -1,5 +1,6 @@
 import type { PlaygroundSection } from '../playground-registry';
 import { FEATURE_BROWSER_SECTIONS } from './features-browser-sections';
+import { SPENDING_SECTIONS } from './spending-sections';
 
 /**
  * Sections for the Home, Inbox & Approvals page: the surfaces a person
@@ -58,6 +59,14 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     page: 'home-inbox',
     category: 'Approvals',
     keywords: ['approval', 'error', 'offline', 'retry', 'unavailable', 'failed read'],
+  },
+  // SendRecipientsShowcases
+  {
+    id: 'send-recipients',
+    title: 'Send recipients',
+    page: 'home-inbox',
+    category: 'Approvals',
+    keywords: ['approval', 'send', 'email', 'recipients', 'to', 'cc', 'bcc', 'decline only'],
   },
   // InboxShowcases
   {
@@ -270,6 +279,7 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     category: 'To-dos',
     keywords: ['to-do', 'todo', 'check', 'due', 'overdue', 'declined', 'limited', 'undo'],
   },
+  ...SPENDING_SECTIONS,
   // ConnectionsShowcases
   {
     id: 'approw',

@@ -19,6 +19,7 @@ import {
   BOOT_HOOK_TIMEOUT_MS,
   bootComposedServer,
   stepUpAt,
+  confirmSetupAt,
   type ComposedServer,
 } from './harness.js';
 
@@ -140,10 +141,14 @@ describe('contract: the person-only routes at this computer, with an owner', () 
     // The owner's one step-up at this computer.
     person = await stepUpAt(server.baseUrl, OWNER.password);
     // A key, as the CLI holds one: a program, never the person.
-    const minted = await fetch(new URL('/api/auth/api-key/create', server.baseUrl), {
+    const requested = await fetch(new URL('/api/auth/api-key/create', server.baseUrl), {
       method: 'POST',
       headers: { ...origin, ...person },
       body: JSON.stringify({ name: 'cli' }),
+    });
+    const minted = await confirmSetupAt(server.baseUrl, requested, OWNER.password, {
+      ...origin,
+      ...person,
     });
     expect(minted.status).toBe(200);
     apiKey = ((await minted.json()) as { key: string }).key;
@@ -339,16 +344,30 @@ describe('contract: the person-only routes at this computer, with an owner', () 
       expect(readFileSync(configFile()).equals(before)).toBe(true);
     });
 
-    it('lets the owner’s session make the same change', async () => {
+    it('confirms the owner’s session before making the same change', async () => {
+      const before = readFileSync(configFile());
+      const headers = { origin: server!.baseUrl, ...person };
       const res = await send(
         {
           method: 'PATCH',
           path: '/api/config',
           body: { ui: { theme: 'dark' }, tunnel: { authtoken: 'planted' } },
         },
-        { origin: server!.baseUrl, ...person }
+        headers
       );
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(428);
+      expect(readFileSync(configFile()).equals(before)).toBe(true);
+      const held = res.json as { heldActionId: string };
+      const confirmed = await send(
+        {
+          method: 'POST',
+          path: `/api/step-up/${held.heldActionId}/password`,
+          body: { password: OWNER.password },
+        },
+        headers
+      );
+      expect(confirmed.status).toBe(200);
+      expect(confirmed.json).toMatchObject({ ok: true, status: 200 });
       expect(JSON.parse(readFileSync(configFile(), 'utf8')).tunnel.authtoken).toBe('planted');
     });
   });

@@ -118,6 +118,8 @@ const REFUSED: readonly [WifiRefusedSurface, string, string][] = [
   ['sign-out-all', 'POST', '/api/auth/revoke-sessions'],
   ['sign-out-all', 'POST', '/api/auth/revoke-other-sessions'],
   ['spending', 'PUT', '/api/community-connections/c_123/teammate-spend'],
+  ['spending', 'PUT', '/api/connectors/spending/limit'],
+  ['spending', 'PUT', '/api/connectors/spending/prices/tavily'],
   ['work-queue', 'PATCH', '/api/agents/a_123/work-queue'],
   ['work-queue', 'POST', '/api/agents/a_123/work-queue/items'],
   ['work-queue', 'PUT', '/api/agents/a_123/work-queue/order'],

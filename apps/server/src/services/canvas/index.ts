@@ -52,7 +52,7 @@ export {
   readCanvasFileText,
   type CanvasFileText,
   type OutsideFolderRefusal,
-  type RoomCanvasFolders,
+  type CanvasFolders,
 } from './canvas-file-access.js';
 export {
   CANVAS_EDIT_HEARTBEAT_MS,

@@ -1,6 +1,8 @@
 /**
  * A run the computer slept through is not stopped as over its time limit, and
- * a fire in a dark wake waits for the computer to settle (DOR-3286).
+ * a fire in a dark wake waits for the computer to settle (DOR-3286). Nor is a
+ * run that waited in line for a free agent slot: its limit counts from when its
+ * turn starts (DOR-4576).
  *
  * The deadline cases run on real timers at a small scale, under a clock that
  * reports how long the computer slept: awake time is elapsed time minus sleep,
@@ -8,13 +10,21 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
+import { SLOT_WAIT_STATUS } from '@dorkos/shared/schemas';
+import { MAX_START_WAIT_MS } from '@dorkos/shared/run-time-limit';
+import { SESSIONS } from '../../../config/constants.js';
 import { createAwakeClock, type AwakeClock, type AwakeTimers } from '@dorkos/shared/awake-clock';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { initBoundary } from '../../../lib/boundary.js';
 import { TaskSchedulerService, singleRuntimeSource } from '../task-scheduler-service.js';
 import { TaskStore } from '../task-store.js';
 import { isTerminalRunStatus } from '../lifecycle/run-statuses.js';
-import { WAKE_SETTLE_MS, WakeSettle } from '../timing/wake-settle.js';
+import {
+  RUN_START_WAIT_MS,
+  WAKE_SETTLE_MS,
+  WakeSettle,
+  runDeadline,
+} from '../timing/wake-settle.js';
 
 vi.mock('../../relay/relay-state.js', () => ({
   isRelayEnabled: vi.fn(() => false),
@@ -196,5 +206,91 @@ describe('a scheduled fire right after a wake', () => {
     settle.stop();
     hand.advance(WAKE_SETTLE_MS * 2);
     expect(fire).not.toHaveBeenCalled();
+  });
+});
+
+const WAIT_WORDS = 'Waiting to start: every agent on this computer is busy.';
+const WAIT = {
+  type: 'system_status',
+  data: { message: WAIT_WORDS, status: SLOT_WAIT_STATUS },
+} as StreamEvent;
+
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** A turn that waits `waitMs` for a slot (saying so twice), then works `workMs`. */
+function agentQueuedFor(waitMs: number, workMs: number, onWaiting: () => void = () => {}) {
+  return {
+    ...agentWorkingFor(0),
+    sendMessage: async function* (): AsyncGenerator<StreamEvent> {
+      yield WAIT;
+      await pause(waitMs / 2);
+      onWaiting();
+      yield WAIT;
+      await pause(waitMs / 2);
+      yield { type: 'text_delta', data: { text: 'working' } } as StreamEvent;
+      await pause(workMs);
+      yield { type: 'done', data: { sessionId: 's' } } as StreamEvent;
+    },
+  };
+}
+
+describe('a run queued behind a full computer (direct path, DOR-4576)', () => {
+  it('still runs when it waited longer than its limit, and gets its full limit once started', async () => {
+    let summaryWhileWaiting: string | null | undefined;
+    // 1.8s in line under a 1.5s limit, then 300ms of work: inside the limit.
+    const agent = agentQueuedFor(1_800, 300, () => {
+      summaryWhileWaiting = store.getRun(run!.id)!.outputSummary;
+    });
+    const service = new TaskSchedulerService({
+      store,
+      runtimes: singleRuntimeSource(agent as never),
+      config: CONFIG,
+    });
+    const run = await service.triggerManualRun(newTask(1_500).id);
+
+    await vi.waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true), {
+      timeout: 5_000,
+    });
+    expect(store.getRun(run!.id)).toMatchObject({ status: 'completed', outputSummary: 'working' });
+    expect(store.getRun(run!.id)!.error ?? null).toBeNull();
+    // While it waited, the row said so rather than looking stuck.
+    expect(summaryWhileWaiting).toBe(WAIT_WORDS);
+    await service.stop();
+  });
+
+  it('still stops a run that runs past its limit once started', async () => {
+    const service = new TaskSchedulerService({
+      store,
+      runtimes: singleRuntimeSource(agentQueuedFor(400, 2_000) as never),
+      config: CONFIG,
+    });
+    const run = await service.triggerManualRun(newTask(300).id);
+
+    await vi.waitFor(() => expect(isTerminalRunStatus(store.getRun(run!.id)!.status)).toBe(true), {
+      timeout: 5_000,
+    });
+    expect(store.getRun(run!.id)).toMatchObject({
+      status: 'cancelled',
+      error: expect.stringContaining('time limit'),
+    });
+    await service.stop();
+  });
+
+  it('allows exactly the wait the runtime does before it refuses a turn', () => {
+    // The pause cap the relay path uses must match the runtime's own wait.
+    expect(RUN_START_WAIT_MS).toBe(SESSIONS.WARM_SLOT_WAIT_MS);
+    expect(RUN_START_WAIT_MS).toBe(MAX_START_WAIT_MS);
+  });
+
+  it('never waits past the hard cap: its limit plus the longest wait to start', () => {
+    const hand = handClock();
+    const stop = runDeadline(hand.clock, 5 * 60_000, new AbortController().signal);
+    // A runtime that says it is waiting and then never starts.
+    stop.observe(WAIT);
+    hand.advance(5 * 60_000 + RUN_START_WAIT_MS - 2_000);
+    expect(stop.signal.aborted).toBe(false);
+    hand.advance(4_000);
+    expect(stop.timedOut()).toBe(true);
+    stop.cancel();
   });
 });

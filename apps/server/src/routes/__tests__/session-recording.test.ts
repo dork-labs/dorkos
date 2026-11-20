@@ -403,6 +403,17 @@ it.each(['timeout', 'revocation', 'canonical-rekey'] as const)(
       boundary === 'timeout' ? 500 : 5000
     );
     let release: (() => void) | undefined;
+    let releaseCleanup: (() => void) | undefined;
+    const destination = path.join(cwd, '.dork', '.temp', 'recordings', `${recordingId}.gif`);
+    const unlink = fs.unlink.bind(fs);
+    if (boundary === 'revocation')
+      vi.spyOn(fs, 'unlink').mockImplementation(async (...args) => {
+        await unlink(...args);
+        if (String(args[0]) === destination)
+          await new Promise<void>((resolve) => {
+            releaseCleanup = resolve;
+          });
+      });
     const write = fs.writeFile.bind(fs);
     const rename = fs.rename.bind(fs);
     if (boundary === 'timeout')
@@ -439,6 +450,7 @@ it.each(['timeout', 'revocation', 'canonical-rekey'] as const)(
       expect((await upload).status).toBe(boundary === 'canonical-rekey' ? 204 : 409);
       if (boundary === 'canonical-rekey')
         expect(await waiter).toMatchObject({ ok: true, bytes: GIF.length });
+      if (boundary === 'revocation') await vi.waitFor(() => expect(releaseCleanup).toBeDefined());
       const directory = path.join(cwd, '.dork', '.temp', 'recordings');
       await vi.waitFor(async () => {
         const files = await fs.readdir(directory);
@@ -450,8 +462,18 @@ it.each(['timeout', 'revocation', 'canonical-rekey'] as const)(
       // Restoring the exact claim permits a fresh owner after the retired owner's cleanup.
       if (boundary !== 'canonical-rekey') devtoolsCaptureStore.ingest(sessionId, claim, 'host');
       if (boundary === 'revocation') {
-        const lease = devtoolsCaptureStore.claimRecordingUpload(requestId, binding);
-        expect(lease).toBeDefined();
+        expect(devtoolsCaptureStore.pendingRecording(requestId)).toMatchObject({
+          recordingId,
+          binding,
+        });
+        expect(devtoolsCaptureStore.admitsRecording(requestId, binding)).toBe(true);
+        expect(devtoolsCaptureStore.claimRecordingUpload(requestId, binding)).toBeUndefined();
+        releaseCleanup!();
+        let lease: ReturnType<typeof devtoolsCaptureStore.claimRecordingUpload>;
+        await vi.waitFor(() => {
+          lease = devtoolsCaptureStore.claimRecordingUpload(requestId, binding);
+          expect(lease).toBeDefined();
+        });
         devtoolsCaptureStore.resolveRecordingUpload(lease!, {
           ok: false,
           error: 'Host cleanup.',
@@ -462,6 +484,7 @@ it.each(['timeout', 'revocation', 'canonical-rekey'] as const)(
       }
     } finally {
       release?.();
+      releaseCleanup?.();
       await upload;
       vi.restoreAllMocks();
     }

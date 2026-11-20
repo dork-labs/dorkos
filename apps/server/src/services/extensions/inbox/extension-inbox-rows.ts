@@ -8,6 +8,7 @@
  * @module services/extensions/extension-inbox-rows
  */
 import path from 'path';
+import { extensionDecisionStepUp } from './extension-step-up-view.js';
 import type { ExtensionDecisionRow } from '@dorkos/db';
 import type {
   DecisionActions,
@@ -130,6 +131,7 @@ export function toDecisionDTO(
 ): ExtensionDecisionDTO {
   return {
     id: row.id,
+    requestCode: extensionDecisionStepUp(row).requestCode,
     extensionId: row.extensionId,
     extensionName: row.extensionName,
     key: row.key,

@@ -362,11 +362,12 @@ export function buildUiActionCatalog(options: UiCatalogOptions = {}): string {
 
 /**
  * What a local `src` may name, said the same way in the tool description and in
- * `<ui_tools>` (DOR-3519): a room copies what its canvas shows to every member, so
- * `control_ui` refuses a file outside the folder up front. A one-on-one window is not asked.
+ * `<ui_tools>` (DOR-3519): a canvas reads local files only from the agent's folder
+ * (and a room's canvas also from that room's files), so `control_ui` refuses
+ * anything else up front instead of drawing an empty card.
  */
 export const CANVAS_LOCAL_SRC_RULE =
-  "On a room's canvas, a local src must be inside your own folder or your own copy of the room's files. Anything else returns an error naming the path, so copy the file in first.";
+  "Canvas limit: the canvas shows a local src only from your own folder, or on a room's canvas your own copy of the room's files. Anything else returns an error naming the path. You can still read that file yourself and show what's in it, or copy it into your folder and open the copy.";
 
 /**
  * Tool description for control_ui (shared between the Claude in-process tool and

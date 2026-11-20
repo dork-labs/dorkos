@@ -137,7 +137,7 @@
  *
  * @module services/session/message-dispatcher
  */
-import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
+import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import type {
   DispositionDowngradeReason,
   MessageDeliveryOutcome,
@@ -145,11 +145,7 @@ import type {
 } from '@dorkos/shared/schemas';
 import { COMMAND_INTENT_QUEUE_WAIT_MS } from '@dorkos/shared/command-intents';
 import { getMessageQueueStore } from './message-queue-store.js';
-import {
-  onProjectorRekey,
-  onProjectorTurnBoundary,
-  rekeyProjector,
-} from './session-state-projector.js';
+import { onProjectorRekey, onProjectorTurnBoundary } from './session-state-projector.js';
 import {
   linkSessionId,
   primaryOf,
@@ -158,7 +154,7 @@ import {
 } from './resolution/session-key-registry.js';
 import { onSessionRemoved } from './catalog/session-list-broadcaster.js';
 import { holdStagedContext } from './staged-context-store.js';
-import type { TriggerTurnDeps, TriggerTurnResult } from './trigger-turn.js';
+import type { TriggerTurnResult } from './trigger-turn.js';
 import { triggerCommandIntent } from './trigger-command-intent.js';
 import { emitContextStaged, emitQueueUpdate, emitTurnInput } from './queue-stream-events.js';
 
@@ -170,7 +166,8 @@ import {
 import { SESSIONS } from '../../config/constants.js';
 import { isChatClientId } from './chat-messages/chat-client-id.js';
 import { logger } from '../../lib/logger.js';
-import { getPrivateSessionMessageAcceptanceService } from './private-messages/acceptance.js';
+import { carryBridgedSender } from '../core/turn-power/continuation-hold.js';
+import { turnDeps } from './message-dispatcher/turn-deps.js';
 import {
   dispatchMutex,
   inFlight,
@@ -197,7 +194,7 @@ import {
   heldMessageMayJoin,
 } from './message-dispatcher/held-to-default.js';
 import { parkDispatch, unwatchedSettle } from './message-dispatcher/park.js';
-import { adoptAcceptedPrivateMessages, adoptQueuedMessages } from './message-dispatcher/adopt.js';
+import { adoptMessagesForDispatch } from './message-dispatcher/adopt.js';
 import { hasHeldMessage, noteTurnBoundary, schedulePump } from './message-dispatcher/pump.js';
 import { clearCompactionTimers } from './message-dispatcher/agent-compaction.js';
 import { noteSessionOrphaned } from './message-dispatcher/queue-upkeep.js';
@@ -465,58 +462,6 @@ interface FoldStageOpts {
   reason: Extract<DispositionDowngradeReason, 'unsupported' | 'not-stageable'>;
 }
 
-/** Build the runtime-neutral port `triggerTurn` needs from a resolved runtime. */
-function turnDeps(runtime: AgentRuntime): TriggerTurnDeps {
-  const privateMessages = getPrivateSessionMessageAcceptanceService();
-  return {
-    type: runtime.type,
-    acquireLock: (sid, cid, lifecycle, token) => runtime.acquireLock(sid, cid, lifecycle, token),
-    releaseLock: (sid, cid, token) => runtime.releaseLock(sid, cid, token),
-    sendMessage: (sid, text, opts) => runtime.sendMessage(sid, text, opts),
-    // Omitted rather than stubbed when the runtime cannot strand a turn: the
-    // absence is what `triggerTurn` reads as "nothing to settle", and a stub
-    // answering `false` would only hide which runtimes have the exposure.
-    ...(runtime.settleOpenTurn !== undefined
-      ? { settleOpenTurn: (sid: string) => runtime.settleOpenTurn!(sid) }
-      : {}),
-    interruptQuery: (sid) => runtime.interruptQuery(sid),
-    // Omitted for the same reason as `settleOpenTurn`: a runtime with no
-    // helpers has no answer to give.
-    ...(runtime.isHelperWorking !== undefined
-      ? { isHelperWorking: (sid: string) => runtime.isHelperWorking!(sid) }
-      : {}),
-    ...(runtime.liveHelperIds !== undefined
-      ? { liveHelperIds: (sid: string) => runtime.liveHelperIds!(sid) }
-      : {}),
-    getInternalSessionId: (sid) => runtime.getInternalSessionId(sid),
-    rekeyProjector: (oldId, newId) => rekeyProjector(oldId, newId),
-    getCapabilities: () => runtime.getCapabilities(),
-    // Switch now is the marker that a runtime answers the hold handshake.
-    answersDispatchHold: runtime.switchWhenReady !== undefined,
-    ...(privateMessages
-      ? {
-          preparePrivateMessage: (receiptId: string) => privateMessages.prepare(receiptId),
-          claimPrivateMessage: (
-            receiptId: string,
-            prepared: Parameters<typeof privateMessages.claim>[1],
-            sessionId?: string
-          ) =>
-            privateMessages.claim(
-              receiptId,
-              prepared,
-              sessionId ? { sessionId, runtime: runtime.type } : undefined
-            ),
-          cancelPrivateMessage: (receiptId: string, reason: string) =>
-            privateMessages.cancel(receiptId, reason),
-          isPrivatePreclaimRefusal: (receiptId: string, error: unknown) =>
-            privateMessages.isPreclaimRefusal(receiptId, error),
-          markPrivateOutcomeUnknown: (receiptId: string, reason: string) =>
-            privateMessages.markOutcomeUnknown(receiptId, reason),
-        }
-      : {}),
-  };
-}
-
 /**
  * Accept a message and decide when it runs.
  *
@@ -590,19 +535,17 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
   // Anything a previous server process left queued is picked up first, so this
   // message joins a queue that is whole rather than jumping a person's own
   // older words that nothing else would ever run again.
-  adoptQueuedMessages({
+  const recoveryRefusal = adoptMessagesForDispatch({
     sessionId,
     projector,
     runtime,
+    clientId,
+    whenBusy,
+    turnStarter: opts.turnStarter,
+    disposition: requested,
     ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
   });
-  adoptAcceptedPrivateMessages({
-    sessionId,
-    projector,
-    runtime,
-    excludeDocumentMessages: true,
-    ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
-  });
+  if (recoveryRefusal) return recoveryRefusal;
 
   // A blanket-`'refuse'` caller that got past the gate with the slot still held
   // got past it for exactly one reason — the turn holding it has ENDED — so it is
@@ -1043,4 +986,6 @@ onProjectorTurnBoundary(noteTurnBoundary);
 // here for the same reason, and after the pump's listener, which only defers.
 onProjectorTurnBoundary(noteContextWarningBoundary);
 onProjectorRekey(linkSessionId);
+// A bridged chat's record of whose words it holds follows the link as it is learned (DOR-4593).
+onProjectorRekey(carryBridgedSender);
 onSessionRemoved(noteSessionOrphaned);

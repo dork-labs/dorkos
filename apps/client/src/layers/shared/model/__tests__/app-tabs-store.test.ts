@@ -613,3 +613,41 @@ describe('persistence of history', () => {
     });
   });
 });
+
+describe('renameSessionInTabs (DOR-4622)', () => {
+  it('points a background tab on the retired id at the new one, keeping its other params', () => {
+    // A first send in Tab 1 resolved after the person switched to Tab 2: the
+    // URL shows Tab 2, so Tab 1's own saved address is what gets renamed.
+    setTabs(['/session?session=client-uuid&draft=1&dir=%2Fproj', '/session?session=B'], 1);
+    useAppTabsStore.getState().renameSessionInTabs('client-uuid', 'canonical');
+    expect(strip()).toEqual([
+      '/session?session=canonical&draft=1&dir=%2Fproj',
+      '[/session?session=B]',
+    ]);
+    expectInvariant();
+  });
+
+  it('renames older history entries too, and keeps the cursor where it was', () => {
+    setHistory(['/session?session=client-uuid', '/', '/session?session=client-uuid&view=x'], 2);
+    useAppTabsStore.getState().renameSessionInTabs('client-uuid', 'canonical');
+    expect(trail()).toEqual([
+      '/session?session=canonical',
+      '/',
+      '[/session?session=canonical&view=x]',
+    ]);
+    expectInvariant();
+  });
+
+  it('leaves a tab on another chat alone, even one whose id starts the same', () => {
+    setTabs(['/session?session=client-uuid-2', '/session?dir=client-uuid']);
+    useAppTabsStore.getState().renameSessionInTabs('client-uuid', 'canonical');
+    expect(strip()).toEqual(['[/session?session=client-uuid-2]', '/session?dir=client-uuid']);
+  });
+
+  it('changes nothing, not even the list identity, when no tab names the chat', () => {
+    setTabs(['/session?session=A', '/']);
+    const tabs = useAppTabsStore.getState().tabs;
+    useAppTabsStore.getState().renameSessionInTabs('client-uuid', 'canonical');
+    expect(useAppTabsStore.getState().tabs).toBe(tabs);
+  });
+});

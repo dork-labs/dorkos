@@ -32,7 +32,7 @@ export interface IndexedMessage {
   sender?: string | null;
 }
 
-/** @deprecated Use `Db` from `@dorkos/db` instead. */
+/** @deprecated since 0.135, remove in 0.155. Use `Db` from `@dorkos/db` instead. */
 export interface SqliteIndexOptions {
   dbPath: string;
 }

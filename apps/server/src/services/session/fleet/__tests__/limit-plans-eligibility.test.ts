@@ -167,12 +167,12 @@ function adviseAutoToSpare() {
 }
 
 /** A Claude Code session started here, limited on `main`, planned. */
-async function limitedSession(id: string): Promise<void> {
+async function limitedSession(id: string, accountId = 'main'): Promise<void> {
   await runtimeRegistry.persistSessionRuntime(id, 'claude-code', { kind: 'interactive' } as never);
   store.upsert({
     sessionId: id,
     limit: {
-      accountId: 'main',
+      accountId,
       window: 'seven_day',
       resetsAt: RESETS,
       since: SINCE,
@@ -181,7 +181,7 @@ async function limitedSession(id: string): Promise<void> {
       state: 'limited',
     },
     scope: 'account',
-    accountPath: '/accounts/main',
+    accountPath: `/accounts/${accountId}`,
     cwd: CWD,
   });
   await planNewLimit(id, SINCE);
@@ -254,6 +254,14 @@ describe("the advisor's auto plan (planEpisode)", () => {
 });
 
 describe("core's automatic handoff (fireAutoHandoff)", () => {
+  it('does not inherit credits from the source of an unasked continuation', async () => {
+    adviseAutoToSpare();
+    await limitedSession('credits-source', 'dorkos-credits');
+    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.waitFor(() => expect(plan('credits-source')?.mode).toBe('continued'));
+    expect(dispatchSessionMessage).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(dispatchSessionMessage).mock.calls[0]![0].request.account).toBe('spare');
+  });
   it('drops to ask and starts nothing when the target stopped being allowed before it fired', async () => {
     // Purpose: the move re-checks at fire time; a rule changed during the countdown wins.
     const rank = adviseAutoToSpare();

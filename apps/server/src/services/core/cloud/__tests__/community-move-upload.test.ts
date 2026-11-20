@@ -114,6 +114,40 @@ describe('stageArchive', () => {
     expect(existsSync(staged.filePath)).toBe(false);
   });
 
+  // Purpose: discarding removes only the copy staging made, wherever a caller points it.
+  it.each([
+    [
+      'a folder outside staging',
+      () => path.join(mkdtempSync(path.join(tmpdir(), 'not-staging-')), 'export.zip'),
+    ],
+    ['the staging folder itself', () => path.join(moveStagingRoot(dorkHome), 'export.zip')],
+    [
+      'a folder inside staging that staging did not name',
+      () => {
+        const other = path.join(moveStagingRoot(dorkHome), 'keep-me');
+        mkdirSync(other, { recursive: true });
+        return path.join(other, 'export.zip');
+      },
+    ],
+    [
+      'a move folder outside staging, named through staging',
+      () => {
+        const outside = mkdtempSync(path.join(tmpdir(), 'move-'));
+        return path.join(
+          moveStagingRoot(dorkHome),
+          path.relative(moveStagingRoot(dorkHome), outside),
+          'export.zip'
+        );
+      },
+    ],
+  ])('leaves %s alone', async (_label, target) => {
+    const filePath = target();
+    writeFileSync(filePath, 'made-up');
+    await discardStagedArchive({ filePath, bytes: 7, sha256: 'a'.repeat(64) });
+    expect(existsSync(filePath)).toBe(true);
+    expect(existsSync(moveStagingRoot(dorkHome))).toBe(true);
+  });
+
   it('refuses an empty file and keeps no copy', async () => {
     const before = new Set(stagingDirs());
     await expect(stageArchive(Readable.from([]), 0, roomy)).rejects.toMatchObject({

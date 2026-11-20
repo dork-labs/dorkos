@@ -127,7 +127,7 @@ describe('createExternalMcpServer', () => {
     expect(server.version).toBe('1.0.0');
   });
 
-  it('registers all 61 tools', () => {
+  it('registers all 59 tools', () => {
     // Purpose: regression guard against accidental tool omissions or additions.
     // This count changes intentionally when new MCP tools are added: 40 legacy
     // hand-registered + 10 operator capabilities + `list_capabilities` from the
@@ -175,9 +175,11 @@ describe('createExternalMcpServer', () => {
     // wired server (these 57 + 10 marketplace), and that number is pinned by no
     // test, so update both together when this one moves. 56 -> 57 for
     // `memory_read` (ADR 261017-153539). 57 -> 58 for `agent_instructions`, the
-    // template every agent is told (spec `context-viewer` phase 3).
+    // template every agent is told (spec `context-viewer` phase 3). 58 -> 59
+    // for `update_agent_config`, one setup file under an agent's `.claude/`
+    // (DOR-4266).
     createExternalMcpServer(createMinimalDeps());
-    expect(registeredTools).toHaveLength(58);
+    expect(registeredTools).toHaveLength(59);
   });
 
   it('registers all expected tool names', () => {
@@ -306,7 +308,7 @@ describe('createExternalMcpServer', () => {
     const bindingTools = toolNames.filter((n) => n.startsWith('binding_'));
     const meshTools = toolNames.filter((n) => n.startsWith('mesh_'));
 
-    expect(coreTools).toHaveLength(35); // agent_instructions + memory_read + heartbeat_status + 2 document + 4 core + 2 account (accounts_usage, accounts_probe) + 1 session (session_start) + 1 agent (create_agent) + 6 extension + 11 operator (activity_list, config_get, check_update, agents_recent_activity, feedback_draft, update_agent, update_agent_boundaries, update_agent_execution, config_patch, sidebar_add_to_group, sidebar_remove_from_group) + list_capabilities + memory_write + request_permission + list_my_permissions + change_permission
+    expect(coreTools).toHaveLength(36); // agent_instructions + memory_read + heartbeat_status + 2 document + 4 core + 2 account (accounts_usage, accounts_probe) + 1 session (session_start) + 1 agent (create_agent) + 6 extension + 12 operator (activity_list, config_get, check_update, agents_recent_activity, feedback_draft, update_agent, update_agent_boundaries, update_agent_execution, update_agent_config, config_patch, sidebar_add_to_group, sidebar_remove_from_group) + list_capabilities + memory_write + request_permission + list_my_permissions + change_permission
     expect(taskTools).toHaveLength(5);
     expect(relayTools).toHaveLength(7); // 1 relay + 4 adapter + 2 trace
     expect(bindingTools).toHaveLength(3);

@@ -20,6 +20,7 @@ import { createSessionStreamMethods } from './session-stream-methods';
 import { createSystemMethods } from './system-methods';
 import { createShellCheckMethods } from './shell-check-methods';
 import { createQueuedChatMethods } from './queued-chat-methods';
+import { createConnectorSpendingMethods } from './connector-spending-methods';
 import { createRemoteAccessMethods } from './remote-access-methods';
 import { createMarketplaceMethods } from './marketplace-methods';
 import { createHarnessMethods } from './harness-methods';
@@ -82,6 +83,7 @@ export interface HttpTransport
     ReturnType<typeof createSystemMethods>,
     ReturnType<typeof createShellCheckMethods>,
     ReturnType<typeof createQueuedChatMethods>,
+    ReturnType<typeof createConnectorSpendingMethods>,
     ReturnType<typeof createRemoteAccessMethods>,
     ReturnType<typeof createMarketplaceMethods>,
     ReturnType<typeof createHarnessMethods>,
@@ -147,6 +149,7 @@ export class HttpTransport implements Transport {
       createSystemMethods(baseUrl),
       createShellCheckMethods(baseUrl),
       createQueuedChatMethods(baseUrl, () => this.clientId),
+      createConnectorSpendingMethods(baseUrl),
       createRemoteAccessMethods(baseUrl),
       createMarketplaceMethods(baseUrl),
       createHarnessMethods(baseUrl),

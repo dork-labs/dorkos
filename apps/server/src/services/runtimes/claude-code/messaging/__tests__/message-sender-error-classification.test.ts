@@ -1,3 +1,4 @@
+import { isolatedRequiredLaunchOwner } from './required-launch-fixture.js';
 import {
   noteCredentialsUnreadable,
   resetCredentialReadHealth,
@@ -18,6 +19,8 @@ import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
 import type { AgentSession } from '../../agent-types.js';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { query } from '@anthropic-ai/claude-agent-sdk';
+
+const requiredLaunches = isolatedRequiredLaunchOwner();
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
@@ -72,7 +75,12 @@ function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
 }
 
 function makeOpts(overrides: Partial<MessageSenderOpts> = {}): MessageSenderOpts {
-  return { cwd: '/mock/project', onSdkSessionRebind: async () => {}, ...overrides };
+  return {
+    cwd: '/mock/project',
+    requiredLaunches,
+    onSdkSessionRebind: async () => {},
+    ...overrides,
+  };
 }
 
 /** Drive one turn whose SDK stream throws `error`, collecting yielded events. */

@@ -7,10 +7,14 @@
  *
  * @module server/services/rooms/room-trigger/aside
  */
+import type { HandoffTrace } from '../handoff/failure-trace.js';
+import { prepareFailedHandoffSeat, endFailedHandoffAttempt } from './failed-seat-recovery.js';
 import { randomUUID } from 'node:crypto';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { logger } from '../../../lib/logger.js';
+import { marksOf } from '../../core/turn-power/turn-levels.js';
+import { marksHold } from '../../core/turn-power/turn-marks.js';
 import { runInDispatch } from '../../../lib/dispatch-context.js';
 import { recordDispatchStart } from '../../observability/dispatch-buffers.js';
 import { agentKey, type ClaimOutcome } from '../room-claims.js';
@@ -21,7 +25,10 @@ import { env } from '../../../env.js';
 import { roomLaunchStepFor } from '../repo/room-launch-step.js';
 import type { TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import { pendingSeatLaunch, settleSeatLaunch } from './reseat.js';
+import type { TurnFailure } from '../turn-guards/turn-waits.js';
 import type { RoomTriggerDispatcher } from '../room-trigger.js';
+import type { RoomTurnRequest } from '../room-turn-port.js';
+import { refusePausedRoomTurn, pausedRefusalOf } from '../turn-guards/paused-turn.js';
 
 /**
  * What a room hand-off's turn carries from the chat that wrote the draft (DOR-3397): the marks
@@ -48,6 +55,12 @@ export interface AsideCarry {
 
 /** One aside: the agent, the room, the entry it is about, and what it is asked. */
 export interface AsideInput {
+  /** Server-owned handoff admission, never a runtime/tool supplied recovery flag. */
+  handoffRecovery?: true;
+  /** Internal receipt/claim correlation created by RoomHandoffs, not tool input. */
+  handoffTrace?: HandoffTrace;
+  /** DOR3778 original admission deadline; scheduler author owns its checks/reservation. */
+  admissionDeadlineAt?: number;
   /** The room the turn runs in. */
   room: Room;
   /** The entry the turn is about; it frames the context and the working indicator. */
@@ -58,6 +71,12 @@ export interface AsideInput {
   prompt: string;
   /** Set on a room hand-off: what the drafting chat's turn carried. */
   carried?: AsideCarry;
+  /** Peer message text is untrusted independently of its permission level. */
+  untrustedText?: true;
+  /** Recheck the admitted immutable seat identity before claim and after placement. */
+  validateTarget?: () => boolean;
+  /** Join current room/sender restrictions immediately before the runtime sees this turn. */
+  prepareCarry?: () => AsideCarry;
   /** Told the turn's dispatch id once its claim is held, so its posts can be told apart. */
   onClaimed?: (dispatchId: string) => void;
 }
@@ -79,10 +98,14 @@ export interface AsideRun extends AsideInput {
  * `busy` and `refused` ran no turn at all; `refused` says which bound stopped it.
  */
 export interface AsideResult {
+  /** A reply produced under outsider provenance is never quoted into another room/chat. */
+  replyOutsider?: true;
   /** How it ended. */
   outcome: ClaimOutcome | 'busy' | 'refused';
   /** Which bound refused it, on `refused`. */
-  why?: 'gone' | 'budget' | 'session';
+  why?: 'gone' | 'budget' | 'session' | 'paused' | 'deadline';
+  /** Internal failure facts; raw detail is never shared copy. */
+  failure?: TurnFailure;
   /** What the turn wrote back to its own session, or `null`. */
   text: string | null;
 }
@@ -103,6 +126,9 @@ export async function askAside(
   input: AsideInput
 ): Promise<AsideResult> {
   const { room, entry, authorId } = input;
+  if (input.admissionDeadlineAt !== undefined && Date.now() >= input.admissionDeadlineAt)
+    return refusedAside('deadline');
+  if (input.validateTarget?.() === false) return refusedAside('gone');
   const record = self.deps.authors.getMany([authorId]).get(authorId);
   // Only an agent takes a turn, and only a live one: a directory that no
   // longer holds this agent has nothing to offer and no session to offer it
@@ -126,27 +152,9 @@ export async function askAside(
     });
     return { outcome: 'busy', text: null };
   }
-  // Charged through the same seam `claimCollected` uses, which is what keeps
-  // an offer from being the one path that spends without counting: with every
-  // cap off the budget allows it and charges nothing, and there is then no
-  // window to re-arm.
-  const afford = self.deps.budget.tryReserve(room.id);
-  if (!afford.allowed) {
-    logger.debug('[rooms] skipped a welcome-back offer: the room is out of automatic turns', {
-      roomId: room.id,
-      authorId,
-    });
-    return refusedAside('budget');
-  }
-  // **The re-arm, exactly as `claimCollected` does it, and it is not optional
-  // here.** Spending again means the hourly window moved, so the next
-  // exhaustion is news rather than a repeat. Without this line an offer
-  // silently consumes the freshly-rolled window and leaves the memory of the
-  // LAST refusal standing — so the next person to be refused is refused with
-  // no notice at all. An invisible refusal of a message somebody addressed is
-  // the shape `.claude/rules/room-conduct.md` forbids, and an offer nobody
-  // asked for must not be the thing that causes it.
-  if (afford.counted) self.notices.budgetRecovered(room.id);
+  // Preflight only: placement or a current-target refusal must not spend a turn.
+  const remaining = self.deps.budget.remaining(room.id);
+  if (remaining.room === 0 || remaining.global === 0) return refusedAside('budget');
 
   let sessionId: string;
   try {
@@ -208,8 +216,10 @@ export async function runAsideInDispatch(
   const { room, entry, authorId, key } = input;
   const displayName =
     self.deps.authors.getMany([authorId]).get(authorId)?.displayName ?? 'An agent';
-  let outcome: ClaimOutcome = 'quiet';
+  // Pre-run refusals did not complete a turn and must not announce quiet completion.
+  let outcome: ClaimOutcome = 'unavailable';
   let text: string | null = null;
+  let recovered = false;
   recordDispatchStart({
     dispatchId: input.dispatchId,
     origin: 'room',
@@ -220,6 +230,25 @@ export async function runAsideInDispatch(
     // An aside turn is a real turn, so it is placed the same way an ordinary
     // one is — see `runOneInDispatch`.
     const place = await self.placeTurn(room.id, input.agentPath, displayName);
+    if (input.validateTarget?.() === false) return refusedAside('gone');
+    // Only an authoritative native retirement may refresh this already-held seat.
+    // A replacement membership or dispatch never inherits the pending request.
+    const binding = self.deps.store.sessionLedger.bindingForSession(input.sessionId);
+    const claim = self.claimed.get(key);
+    if (
+      !binding ||
+      binding.roomId !== room.id ||
+      binding.authorId !== authorId ||
+      binding.sessionId !== self.deps.store.getRoomSession(room.id, authorId) ||
+      claim?.dispatchId !== input.dispatchId
+    )
+      return refusedAside('gone');
+    if (binding.sessionId !== input.sessionId) {
+      input.sessionId = binding.sessionId;
+      self.noteSessionBound(room.id, authorId, binding.sessionId);
+    }
+    recovered = await prepareFailedHandoffSeat(self, input);
+    const carried = input.prepareCarry?.() ?? input.carried;
     const { cwd } = place;
     const files = place.files ?? undefined;
     const turnContext = buildRoomContext(self.deps, {
@@ -251,7 +280,7 @@ export async function runAsideInDispatch(
       // at a line written about itself (DOR-1263).
       aside: true,
     });
-    const result = await self.deps.runner.run({
+    const request: RoomTurnRequest = {
       room,
       authorId,
       agentPath: input.agentPath,
@@ -265,14 +294,14 @@ export async function runAsideInDispatch(
       entry,
       // Never external for an offer: `entry` here is the greeter's own status post, written
       // by this machine. A hand-off carries the drafting chat's marks instead.
-      externalAuthor: input.carried?.externalAuthor ?? false,
-      ...(input.carried?.permissionCeiling !== undefined
-        ? { permissionCeiling: input.carried.permissionCeiling }
+      externalAuthor: carried?.externalAuthor ?? false,
+      ...(carried?.permissionCeiling !== undefined
+        ? { permissionCeiling: carried.permissionCeiling }
         : {}),
-      ...(input.carried?.teammate ? { teammate: true as const } : {}),
+      ...(carried?.teammate ? { teammate: true as const } : {}),
       // Or a non-owner's post its context showed: a thread opener or the channel glance, when the
       // greeter's post sits in a thread (DOR-4453 F1).
-      ...(input.carried?.outsider
+      ...(carried?.outsider
         ? { carriedOutsider: true as const }
         : strangerMarkForShown(
             env.DORKOS_MARK_STRANGER_TURNS,
@@ -281,7 +310,8 @@ export async function runAsideInDispatch(
             [],
             turnContext.context
           )),
-      ...(input.carried?.outsideWords ? { outsideWords: true as const } : {}),
+      ...(carried?.outsideWords ? { outsideWords: true as const } : {}),
+      ...(input.untrustedText ? { untrustedText: true as const } : {}),
       prompt: input.prompt,
       roomContext: turnContext.context,
       attachmentProjection: turnContext.projection,
@@ -291,7 +321,30 @@ export async function runAsideInDispatch(
       // any other turn.
       onActivity: (activity) => self.noteActivity(key, activity),
       onSessionBound: (id) => self.noteSessionBound(room.id, authorId, id),
-    });
+    };
+    // Read marks again after the runtime settles: tool-read provenance can arrive mid-turn.
+    const replyProvenance = (): Pick<AsideResult, 'replyOutsider'> =>
+      request.externalAuthor ||
+      request.carriedOutsider ||
+      request.outsideWords ||
+      marksHold(marksOf(input.sessionId, input.agentPath))
+        ? { replyOutsider: true }
+        : {};
+    if (input.validateTarget?.() === false) return refusedAside('gone');
+    if (self.wasHalted(input.dispatchId)) {
+      outcome = 'halted';
+      return { outcome, text: null };
+    }
+    if (input.admissionDeadlineAt !== undefined && Date.now() >= input.admissionDeadlineAt)
+      return refusedAside('deadline');
+    // Reuse the runner's authoritative guard and held audit, not a second pause policy.
+    refusePausedRoomTurn(request);
+    // One synchronous reservation per admitted runner attempt. Later runtime/dispatch
+    // refusals retain the existing attempt accounting; there is no refund policy here.
+    const afford = self.deps.budget.tryReserve(room.id);
+    if (!afford.allowed) return refusedAside('budget');
+    if (afford.counted) self.notices.budgetRecovered(room.id);
+    const result = await self.deps.runner.run(request);
     if (result.unanswered !== 'busy') settleSeatLaunch(self, room.id, authorId, input.sessionId);
     if (result.sessionId !== input.sessionId) {
       self.deps.store.rebindRoomSession(room.id, authorId, result.sessionId);
@@ -330,8 +383,13 @@ export async function runAsideInDispatch(
       return { outcome, text };
     }
     if (settled.unanswered) {
-      outcome = settled.unanswered;
-      return { outcome, text };
+      outcome = recovered && settled.unanswered === 'busy' ? 'failed' : settled.unanswered;
+      return {
+        outcome,
+        text,
+        ...replyProvenance(),
+        ...(settled.failure ? { failure: settled.failure } : {}),
+      };
     }
     // **The same three terminals `deliver` reads, minus the notice.** An offer
     // that posted or reacted has put something in front of the person and
@@ -343,15 +401,25 @@ export async function runAsideInDispatch(
     const spoke = self.takeSpokeViaTool(room.id, authorId);
     const reacted = self.takeReactedViaTool(room.id, authorId);
     outcome = spoke || reacted ? 'answered' : 'quiet';
-    return { outcome, text };
+    return {
+      outcome,
+      text,
+      ...replyProvenance(),
+    };
   } catch (err) {
+    if (pausedRefusalOf(err)) return refusedAside('paused');
     outcome = 'failed';
     logger.warn('[rooms] a welcome-back offer turn failed', {
       roomId: room.id,
       authorId,
+      typedCause: 'exception',
       error: err instanceof Error ? err.message : String(err),
     });
-    return { outcome, text };
+    return {
+      outcome,
+      text,
+      failure: { code: 'exception', detail: err instanceof Error ? err.message : String(err) },
+    };
   } finally {
     // Always, and last. An aside turn releases into the offer the agent
     // posted while it ran, or into the named exception every turn has — an
@@ -363,6 +431,8 @@ export async function runAsideInDispatch(
     // Guarded by dispatch like both triggered releases: an aside waits out its
     // own late answer, so a Stop and a fresh message can hand this key to a
     // real turn while it is still waiting.
+    if (recovered)
+      await endFailedHandoffAttempt(input.sessionId, outcome === 'answered' || outcome === 'quiet');
     self.releaseOwnClaim(key, input.dispatchId, outcome);
     // An aside waits out its own late answer inline, so this frame is always
     // the turn's last one and the halt mark always ends here.

@@ -60,21 +60,57 @@ export function answersStranger(
   });
 }
 
+/** A message a turn answers or was shown, with what says where its words came from. */
+export type ReadEntry = Pick<RoomEntry, 'authorId'> & {
+  id?: string;
+  body?: Pick<RoomEntry['body'], 'via'>;
+};
+
 /**
- * The room-turn option added by DOR-3858, or nothing while its boot flag is off.
+ * Whether any of these messages holds words from outside the team first-hand, by its own record,
+ * whoever its author is: a mini app's post (kept with the outsider mark), a comment a mini app
+ * forwarded (`via`), or a post held to the default for who was calling (a Wi-Fi sign-in).
+ *
+ * Another agent's post written from a chat that had read outside words is left out on purpose:
+ * it carries the outside-words note to the turn that answers it ({@link answersOutsideWords}),
+ * which the send and destructive gates read, but never the mark. A mark spread hop by hop through
+ * every post a turn is shown would hold an active room's ordinary work indefinitely.
+ *
+ * @param entries - The messages.
+ * @param roomId - The room, to read a post's kept marks.
+ */
+export function entriesHoldOutsideWords(entries: readonly ReadEntry[], roomId?: string): boolean {
+  return entries.some(
+    (entry) =>
+      entry.body?.via !== undefined ||
+      (entry.id !== undefined &&
+        (entryMarksOf(entry.id, roomId)?.outsider === true || entryHeldToDefault(entry.id, roomId)))
+  );
+}
+
+/**
+ * The outsider mark a room turn carries for what it answers or was shown (DOR-3858, DOR-4587). A
+ * non-owner person's post marks it while the boot flag is on. A post that holds outside words
+ * first-hand ({@link entriesHoldOutsideWords}) marks it whatever the flag, so a mini app's reply
+ * reaches no send, destructive action or raise unasked.
  *
  * @param enabled - Whether the boot flag is on.
  * @param authors - The registry holding the stored author records.
  * @param entries - Every message the turn answers or was shown (`context-entries.ts`).
  * @param owner - The room subsystem's authoritative owner predicate.
+ * @param roomId - The room, to read a post's kept marks.
  */
 export function strangerMarkForEntries(
   enabled: boolean,
   authors: AuthorRegistry,
-  entries: readonly Pick<RoomEntry, 'authorId'>[],
-  owner: (authorId: string) => boolean
+  entries: readonly ReadEntry[],
+  owner: (authorId: string) => boolean,
+  roomId?: string
 ): { carriedOutsider?: true } {
-  return enabled && answersStranger(authors, entries, owner) ? { carriedOutsider: true } : {};
+  return (enabled && answersStranger(authors, entries, owner)) ||
+    entriesHoldOutsideWords(entries, roomId)
+    ? { carriedOutsider: true }
+    : {};
 }
 
 /**
@@ -153,13 +189,11 @@ export function answersOutsideWords(
   entries: readonly AnsweredEntry[],
   roomId?: string
 ): boolean {
-  return entries.some(
-    (entry) =>
-      isEntryAuthorExternal(authors, entry.authorId) ||
-      entry.body?.via !== undefined ||
-      entryMarksOf(entry.id, roomId)?.outsider === true ||
-      entryHeldToDefault(entry.id, roomId) ||
-      roomPostCarriesOutsideWords(entry.id)
+  return (
+    entries.some(
+      (entry) =>
+        isEntryAuthorExternal(authors, entry.authorId) || roomPostCarriesOutsideWords(entry.id)
+    ) || entriesHoldOutsideWords(entries, roomId)
   );
 }
 

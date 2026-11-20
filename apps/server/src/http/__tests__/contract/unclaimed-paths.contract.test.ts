@@ -28,6 +28,7 @@ import {
   type ComposedServer,
   type ContractCase,
   stepUpAt,
+  confirmSetupAt,
 } from './harness.js';
 
 const SHELL = '<!doctype html><html><body><div id="root"></div></body></html>';
@@ -269,7 +270,7 @@ describe('contract: unclaimed paths with login on', () => {
     origin: boolean,
     person: Record<string, string> = {}
   ): Promise<void> {
-    const res = await fetch(`${server!.baseUrl}${url}`, {
+    const asked = await fetch(`${server!.baseUrl}${url}`, {
       method,
       headers: {
         'content-type': 'application/json',
@@ -278,6 +279,8 @@ describe('contract: unclaimed paths with login on', () => {
       },
       body: JSON.stringify(body),
     });
+    // A held write is the owner's to confirm, with their password, from the app.
+    const res = await confirmSetupAt(server!.baseUrl, asked, OWNER.password, person);
     if (!res.ok) throw new Error(`${method} ${url} answered ${res.status}: ${await res.text()}`);
   }
 

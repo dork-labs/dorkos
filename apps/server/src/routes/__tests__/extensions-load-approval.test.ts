@@ -7,7 +7,7 @@
  * here against an adversary, because a gate that covers two of three is a gate an
  * agent routes around:
  *
- * 1. `POST /api/extensions/:id/approve` — the cockpit's own button (this file).
+ * 1. `POST /api/extensions/:id/approve` — the app's own button (this file).
  * 2. `PATCH /api/config` — the general operator-only config write. Its bars are
  *    pinned in `config.test.ts`; what THIS file adds is that the new field is
  *    actually in the guarded set, which is a different claim from "the guard
@@ -26,7 +26,7 @@
  *
  * @module routes/__tests__/extensions-load-approval
  */
-import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 
 /** Mutable posture + stored config the mocked config manager reports. */
 const state = vi.hoisted(() => ({
@@ -114,9 +114,15 @@ vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
 }));
 
 import request from '@dorkos/test-utils/supertest';
+import {
+  approvalConfirmationRoutes,
+  finishApprovalForTest,
+} from './approval-confirmation-driver.js';
+import { setTestOwner } from './test-owner.js';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import type { ExtensionRecord, ExtensionRecordPublic } from '@dorkos/extension-api';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import { markIngress } from '../../services/core/remote/ingress-mark.js';
 import { createExtensionsRoutes } from '../extensions.js';
 import {
   ApprovalRefusedError,
@@ -190,7 +196,8 @@ describe('POST /api/extensions/:id/approve', () => {
     readBundle: ReturnType<typeof vi.fn>;
   };
   /** Stands in for `sessionGate`'s resolved user, when login is on. */
-  let signedInUser: { userId: string; credential: 'cookie' | 'api-key' } | undefined;
+  let signedInUser:
+    { userId: string; credential: 'cookie' | 'api-key'; sessionId?: string } | undefined;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -221,16 +228,23 @@ describe('POST /api/extensions/:id/approve', () => {
 
     fixtureTarget.mount(
       honoGroupListener(
-        {
-          path: '/api/extensions',
-          routes: createExtensionsRoutes({
-            manager: manager as unknown as Parameters<typeof createExtensionsRoutes>[0]['manager'],
-            dorkHome: DORK_HOME,
-            getCwd: () => null,
-          }),
-        },
+        [
+          {
+            path: '/api/extensions',
+            routes: createExtensionsRoutes({
+              manager: manager as unknown as Parameters<
+                typeof createExtensionsRoutes
+              >[0]['manager'],
+              dorkHome: DORK_HOME,
+              getCwd: () => null,
+            }),
+          },
+          { path: '/api/step-up', routes: approvalConfirmationRoutes('http://localhost:7777') },
+        ],
         {
           before: async (c, next) => {
+            const via = c.req.header('x-test-via');
+            if (via === 'own-tunnel' || via === 'managed') markIngress(c.env.incoming, via);
             if (signedInUser) c.set('user', signedInUser as never);
             await next();
           },
@@ -239,12 +253,54 @@ describe('POST /api/extensions/:id/approve', () => {
     );
   });
 
+  afterEach(() => setTestOwner(null));
+
+  it.each(['own-tunnel', 'managed'] as const)(
+    'holds an extension approval from %s before any code is allowed',
+    async (via) => {
+      setTestOwner('u1');
+      signedInUser = { userId: 'u1', credential: 'cookie', sessionId: 'phone' };
+      const held = await request(fixtureServer)
+        .post('/api/extensions/my-ext/approve')
+        .set('Origin', 'http://localhost:7777')
+        .set('x-test-via', via)
+        .send(SHOWN_FILES);
+      expect(held.status).toBe(428);
+      expect(manager.approveToRun).not.toHaveBeenCalled();
+      expect(state.extensions.approvedToRun).toEqual([]);
+      const confirmed = await finishApprovalForTest(fixtureServer, held, 'http://localhost:7777');
+      expect(confirmed.status).toBe(200);
+      expect(manager.approveToRun).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it('refuses a held approval if the mini app changes its powers', async () => {
+    setTestOwner('u1');
+    signedInUser = { userId: 'u1', credential: 'cookie', sessionId: 'desk' };
+    const held = await request(fixtureServer)
+      .post('/api/extensions/my-ext/approve')
+      .send(SHOWN_FILES);
+    expect(held.status).toBe(428);
+    manager.get.mockReturnValue({
+      ...stubRecord(),
+      manifest: { ...stubRecord().manifest, version: '2.0.0' },
+    });
+    const refused = await request(fixtureServer)
+      .post(`/api/step-up/${held.body.heldActionId}/password`)
+      .set('Origin', 'http://localhost:7777')
+      .send({ password: 'made-up approval password' });
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe('different-request');
+    expect(manager.approveToRun).not.toHaveBeenCalled();
+  });
+
   describe('an agent that names itself', () => {
     it('CANNOT approve its own extension, and nothing is written', async () => {
-      const res = await request(fixtureServer)
+      const asked_res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .set('x-dorkos-agent', 'agent-token-abc')
         .send(SHOWN_FILES);
+      const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
 
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('extension_not_approved_to_run');
@@ -271,10 +327,11 @@ describe('POST /api/extensions/:id/approve', () => {
       state.authEnabled = true;
       signedInUser = { userId: 'u1', credential: 'cookie' };
 
-      const res = await request(fixtureServer)
+      const asked_res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .set('x-dorkos-agent', 'agent-token-abc')
         .send(SHOWN_FILES);
+      const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
 
       // Even holding a real person's cookie, a caller that names itself an agent
       // is refused. The two bars are AND, not OR.
@@ -289,9 +346,10 @@ describe('POST /api/extensions/:id/approve', () => {
         new ApprovalRefusedError('stale', 'Its files changed since you saw it.')
       );
 
-      const res = await request(fixtureServer)
+      const asked_res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .send({ version: '1.0.0', expectedDigest: `sha256:${'a'.repeat(64)}` });
+      const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
 
       expect(manager.approveToRun).toHaveBeenCalledWith('my-ext', {
         expectedDigest: `sha256:${'a'.repeat(64)}`,
@@ -306,9 +364,10 @@ describe('POST /api/extensions/:id/approve', () => {
         new ApprovalRefusedError('unpinnable', UNPINNABLE_SENTENCE)
       );
 
-      const res = await request(fixtureServer)
+      const asked_res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .send(SHOWN_FILES);
+      const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
 
       expect(res.status).toBe(409);
       expect(res.body.code).toBe('extension_unpinnable');
@@ -320,14 +379,15 @@ describe('POST /api/extensions/:id/approve', () => {
 
   describe('a caller that strips its agent header', () => {
     it('IS ALLOWED while login is off — the documented residual, not an oversight', async () => {
-      const res = await request(fixtureServer)
+      const asked_res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .send(SHOWN_FILES);
+      const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
 
       expect(res.status).toBe(200);
       expect(state.extensions.approvedToRun).toEqual(['my-ext']);
       // This is the honest state of the default posture: with no accounts there is
-      // no cookie, so nothing distinguishes the cockpit from any other loopback
+      // no cookie, so nothing distinguishes the app from any other loopback
       // caller, and refusing would lock a person out of their own extensions.
       // Identical to `auth.enabled` on `PATCH /api/config` (DOR-505). Turning on
       // Require login closes it — see the next test.
@@ -337,9 +397,10 @@ describe('POST /api/extensions/:id/approve', () => {
       state.authEnabled = true;
       signedInUser = undefined;
 
-      const res = await request(fixtureServer)
+      const asked_res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .send(SHOWN_FILES);
+      const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
 
       // 403, not 401: `requireOperatorCookieUnderLogin` answers "only a person
       // signed in to DorkOS can change this" for every non-cookie caller, whether
@@ -354,9 +415,10 @@ describe('POST /api/extensions/:id/approve', () => {
       state.authEnabled = true;
       signedInUser = { userId: 'u1', credential: 'api-key' };
 
-      const res = await request(fixtureServer)
+      const asked_res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .send(SHOWN_FILES);
+      const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
 
       // An API key is something a program can hold. A session cookie is the one
       // signal a header-stripping caller cannot fake.
@@ -365,13 +427,15 @@ describe('POST /api/extensions/:id/approve', () => {
     });
   });
 
-  describe('a person in the cockpit', () => {
-    it('approves with one click while login is off', async () => {
+  describe('a person in the app', () => {
+    it('approves with one click while login is off and nobody has registered', async () => {
+      // No owner means no password to ask for, so the desk runs it at once (`runOrHold`).
       const res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .send(SHOWN_FILES);
 
       expect(res.status).toBe(200);
+      expect(res.body.heldActionId).toBeUndefined();
       expect(res.body.extension.approvedToRun).toBe(true);
       expect(manager.approveToRun).toHaveBeenCalledWith('my-ext', {
         expectedDigest: SHOWN_FILES.expectedDigest,
@@ -382,9 +446,10 @@ describe('POST /api/extensions/:id/approve', () => {
       state.authEnabled = true;
       signedInUser = { userId: 'u1', credential: 'cookie' };
 
-      const res = await request(fixtureServer)
+      const asked_res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .send(SHOWN_FILES);
+      const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
 
       expect(res.status).toBe(200);
       expect(state.extensions.approvedToRun).toEqual(['my-ext']);
@@ -510,10 +575,11 @@ describe('POST /api/extensions/:id/approve', () => {
 
   describe('a page on another site, posting through the person browser', () => {
     it('is refused, and nothing is written', async () => {
-      const res = await request(fixtureServer)
+      const asked_res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .set('origin', 'https://evil.example')
         .send(SHOWN_FILES);
+      const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
 
       expect(res.status).toBe(403);
       expect(manager.approveToRun).not.toHaveBeenCalled();
@@ -538,10 +604,11 @@ describe('POST /api/extensions/:id/approve', () => {
       state.authEnabled = true;
       signedInUser = { userId: 'u1', credential: 'cookie' };
 
-      const res = await request(fixtureServer)
+      const asked_res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .set('origin', 'https://evil.example')
         .send(SHOWN_FILES);
+      const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
 
       expect(res.status).toBe(403);
       expect(state.extensions.approvedToRun).toEqual([]);
@@ -555,11 +622,12 @@ describe('POST /api/extensions/:id/approve', () => {
       // An expected value derived from the request cannot judge the request. The
       // allowlist has to be the server's own, which is what `validateMcpOrigin`
       // does, and its docstring names this attack.
-      const res = await request(fixtureServer)
+      const asked_res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .set('host', 'evil.example')
         .set('origin', 'http://evil.example')
         .send(SHOWN_FILES);
+      const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
 
       expect(res.status).toBe(403);
       expect(state.extensions.approvedToRun).toEqual([]);
@@ -571,10 +639,11 @@ describe('POST /api/extensions/:id/approve', () => {
       // would not — that's this direction of "starts with" done wrong. The
       // mirror direction, `some(t => t.startsWith(origin))`, is covered by the
       // next test.
-      const res = await request(fixtureServer)
+      const asked_res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .set('origin', `http://localhost:${TRUSTED_PORT}.evil.example`)
         .send(SHOWN_FILES);
+      const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
 
       expect(res.status).toBe(403);
       expect(state.extensions.approvedToRun).toEqual([]);
@@ -590,10 +659,11 @@ describe('POST /api/extensions/:id/approve', () => {
       // attacker-controlled service actually listening on a matching prefix
       // port on this machine — but `startsWith` is the wrong operation in
       // either direction, and the suite should say so in both.
-      const res = await request(fixtureServer)
+      const asked_res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .set('origin', 'http://127.0.0.1:7')
         .send(SHOWN_FILES);
+      const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
 
       expect(res.status).toBe(403);
       expect(state.extensions.approvedToRun).toEqual([]);
@@ -603,10 +673,11 @@ describe('POST /api/extensions/:id/approve', () => {
       // A sandboxed iframe or a `data:` URL sends the literal string `null`. It is
       // an Origin header, so it is judged, and it is in no allowlist: CORS
       // refuses it before the route's own bar, which would refuse it too.
-      const res = await request(fixtureServer)
+      const asked_res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .set('origin', 'null')
         .send(SHOWN_FILES);
+      const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
 
       expect(res.status).toBe(403);
       expect(res.body.error).toBe(
@@ -616,26 +687,28 @@ describe('POST /api/extensions/:id/approve', () => {
       expect(state.extensions.approvedToRun).toEqual([]);
     });
 
-    it('lets the cockpit through on its own origin', async () => {
-      const res = await request(fixtureServer)
+    it('lets the app through on its own origin', async () => {
+      const asked_res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .set('origin', `http://127.0.0.1:${TRUSTED_PORT}`)
         .send(SHOWN_FILES);
+      const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
 
       expect(res.status).toBe(200);
       expect(state.extensions.approvedToRun).toEqual(['my-ext']);
     });
 
-    it('lets the cockpit through on its localhost form too', async () => {
+    it('lets the app through on its localhost form too', async () => {
       // getStaticLocalOrigins() trusts both the 127.0.0.1 and localhost forms
       // on DORKOS_PORT. `localhost` is what most operators actually see in
       // their address bar, so it earns its own assertion rather than riding
       // on the 127.0.0.1 case above — dropping it from the trusted set would
-      // otherwise leave this whole file green while breaking real cockpits.
-      const res = await request(fixtureServer)
+      // otherwise leave this whole file green while breaking real apps.
+      const asked_res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .set('origin', `http://localhost:${TRUSTED_PORT}`)
         .send(SHOWN_FILES);
+      const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
 
       expect(res.status).toBe(200);
       expect(state.extensions.approvedToRun).toEqual(['my-ext']);
@@ -647,10 +720,11 @@ describe('POST /api/extensions/:id/approve', () => {
       // port off the one DorkOS actually trusts. Accepting it would mean the
       // comparison ignores the port (or compares it loosely) rather than
       // matching the exact origin the server itself composed.
-      const res = await request(fixtureServer)
+      const asked_res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .set('origin', `http://127.0.0.1:${TRUSTED_PORT + 1}`)
         .send(SHOWN_FILES);
+      const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
 
       expect(res.status).toBe(403);
       expect(state.extensions.approvedToRun).toEqual([]);
@@ -662,10 +736,11 @@ describe('POST /api/extensions/:id/approve', () => {
       // their page on port 7777 would sail through. `evil.example:7777` is
       // exactly that — the right port, the wrong host — and it must be
       // refused for the port-adjacency test above to mean what it claims.
-      const res = await request(fixtureServer)
+      const asked_res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .set('origin', `http://evil.example:${TRUSTED_PORT}`)
         .send(SHOWN_FILES);
+      const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
 
       expect(res.status).toBe(403);
       expect(state.extensions.approvedToRun).toEqual([]);
@@ -675,9 +750,10 @@ describe('POST /api/extensions/:id/approve', () => {
       // curl, the CLI, and the desktop shell send no Origin. Refusing them would
       // block the person without stopping the attack, since the header is set by the
       // browser and cannot be forged by the page.
-      const res = await request(fixtureServer)
+      const asked_res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .send(SHOWN_FILES);
+      const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
 
       expect(res.status).toBe(200);
     });
@@ -706,9 +782,10 @@ describe('POST /api/extensions/:id/approve', () => {
     // Purpose: the same set (in any order) approves.
     it('approves when the echo matches what it declares now', async () => {
       manager.get.mockReturnValue(stubRecord({ manifest: MAIL_MANIFEST }));
-      const res = await request(fixtureServer)
+      const asked_res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .send({ ...SHOWN_FILES, permissions: SHOWN });
+      const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
       expect(res.status).toBe(200);
       expect(manager.approveToRun).toHaveBeenCalledWith('my-ext', {
         expectedDigest: SHOWN_FILES.expectedDigest,
@@ -729,9 +806,10 @@ describe('POST /api/extensions/:id/approve', () => {
           } as ExtensionRecord['manifest'],
         })
       );
-      const res = await request(fixtureServer)
+      const asked_res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .send({ ...SHOWN_FILES, permissions: SHOWN });
+      const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
       expect(res.status).toBe(409);
       expect(res.body.code).toBe('stale_approval');
       expect(manager.approveToRun).not.toHaveBeenCalled();
@@ -752,9 +830,10 @@ describe('POST /api/extensions/:id/approve', () => {
           } as ExtensionRecord['manifest'],
         })
       );
-      const res = await request(fixtureServer)
+      const asked_res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .send({ ...SHOWN_FILES, permissions: SHOWN });
+      const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
       expect(res.status).toBe(200);
       expect(manager.approveToRun).toHaveBeenCalledWith('my-ext', {
         expectedDigest: SHOWN_FILES.expectedDigest,
@@ -765,9 +844,10 @@ describe('POST /api/extensions/:id/approve', () => {
     // now runs inside DorkOS.
     it('refuses as stale when it moved back inside DorkOS', async () => {
       manager.get.mockReturnValue(stubRecord());
-      const res = await request(fixtureServer)
+      const asked_res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .send({ ...SHOWN_FILES, permissions: SHOWN });
+      const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
       expect(res.status).toBe(409);
       expect(manager.approveToRun).not.toHaveBeenCalled();
     });
@@ -776,22 +856,33 @@ describe('POST /api/extensions/:id/approve', () => {
   describe('the files the person was shown (DOR-3068)', () => {
     it('refuses a yes that names no files as out of date, and turns nothing on', async () => {
       manager.get.mockReturnValue(stubRecord({ currentDigest: `sha256:${'b'.repeat(64)}` }));
-      const res = await request(fixtureServer)
+      const asked_res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .send({ version: '1.0.0' });
+      const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
       expect(res.status).toBe(409);
       expect(res.body.code).toBe('stale_approval');
       expect(res.body.error).toBe(
         'This extension changed since you saw it. Nothing was turned on.'
       );
       expect(manager.approveToRun).not.toHaveBeenCalled();
-      const empty = await request(fixtureServer).post('/api/extensions/my-ext/approve').send({});
+      const asked_empty = await request(fixtureServer)
+        .post('/api/extensions/my-ext/approve')
+        .send({});
+      const empty = await finishApprovalForTest(
+        fixtureServer,
+        asked_empty,
+        'http://localhost:7777'
+      );
       expect(empty.status).toBe(409);
     });
 
     it('says in plain words why a copy DorkOS cannot check cannot be turned on', async () => {
       // No digest: its folder links outside itself (or cannot be read whole).
-      const res = await request(fixtureServer).post('/api/extensions/my-ext/approve').send({});
+      const asked_res = await request(fixtureServer)
+        .post('/api/extensions/my-ext/approve')
+        .send({});
+      const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
       expect(res.status).toBe(409);
       expect(res.body.code).toBe('extension_unpinnable');
       // The stub's folder is not on disk: DorkOS could not read it, which is
@@ -804,13 +895,23 @@ describe('POST /api/extensions/:id/approve', () => {
 
     it('approves a dev link by path alone, with no digest', async () => {
       manager.get.mockReturnValue(stubRecord({ devLink: { path: '/work/my-ext' } }));
-      const res = await request(fixtureServer).post('/api/extensions/my-ext/approve').send({});
+      const asked_res = await request(fixtureServer)
+        .post('/api/extensions/my-ext/approve')
+        .send({});
+      const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
       expect(res.status).toBe(200);
       expect(manager.approveToRun).toHaveBeenCalledWith('my-ext', { expectedDigest: undefined });
     });
 
     it('hands the digest to the manager, which compares it with the files now', async () => {
-      await request(fixtureServer).post('/api/extensions/my-ext/approve').send(SHOWN_FILES);
+      setTestOwner('u1');
+      signedInUser = { userId: 'u1', credential: 'cookie', sessionId: 'desk' };
+      const held = await request(fixtureServer)
+        .post('/api/extensions/my-ext/approve')
+        .send(SHOWN_FILES);
+      expect(held.status).toBe(428);
+      expect(manager.approveToRun).not.toHaveBeenCalled();
+      await finishApprovalForTest(fixtureServer, held, 'http://localhost:7777');
       expect(manager.approveToRun).toHaveBeenCalledWith('my-ext', {
         expectedDigest: SHOWN_FILES.expectedDigest,
       });
@@ -828,17 +929,19 @@ describe('POST /api/extensions/:id/approve', () => {
 
     it('404s an extension that does not exist', async () => {
       manager.get.mockReturnValue(undefined);
-      const res = await request(fixtureServer)
+      const asked_res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .send(SHOWN_FILES);
+      const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
       expect(res.status).toBe(404);
     });
 
     it('409s a core extension, which is exempt by origin and has nothing to approve', async () => {
       manager.get.mockReturnValue(stubRecord({ origin: 'core' }));
-      const res = await request(fixtureServer)
+      const asked_res = await request(fixtureServer)
         .post('/api/extensions/my-ext/approve')
         .send(SHOWN_FILES);
+      const res = await finishApprovalForTest(fixtureServer, asked_res, 'http://localhost:7777');
       expect(res.status).toBe(409);
       expect(manager.approveToRun).not.toHaveBeenCalled();
     });
@@ -848,7 +951,7 @@ describe('POST /api/extensions/:id/approve', () => {
 describe('GET /api/extensions/:id/bundle', () => {
   /**
    * The client bundle is the second way extension code runs, and serving it before
-   * the person decided handed an agent same-origin JavaScript on the cockpit page —
+   * the person decided handed an agent same-origin JavaScript on the app page —
    * which carries the person's session, and can therefore POST the approval for the
    * agent's OWN server code. The gate is inside `ExtensionManager.readBundle`
    * because this route is the only way a bundle reaches a browser; what this test

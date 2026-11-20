@@ -2451,14 +2451,21 @@ describe('Marketplace Routes', () => {
       });
       expect(await listSourceNames()).not.toContain('from-cli');
 
-      // The owner's browser session does it.
+      // A browser session clears this bar. Adding then needs the install
+      // owner's session, confirmed with their password (DOR-4355,
+      // marketplace-source-step-up.test.ts); nobody owns this install, so it is
+      // refused and nothing is added. Removing stays immediate.
       signedInUser = { userId: 'user_cli', credential: 'cookie' };
       const added = await request(fixtureServer)
         .post('/api/marketplace/sources')
         .send({ name: 'from-app', source: 'https://example.com/from-app' });
-      expect(added.status).toBe(201);
+      expect(added.status).toBe(403);
+      expect(added.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
+      expect(await listSourceNames()).not.toContain('from-app');
+      await sourceManager.add({ name: 'from-app', source: 'https://example.com/from-app' });
       const removed = await request(fixtureServer).delete('/api/marketplace/sources/from-app');
       expect(removed.status).toBe(204);
+      expect(await listSourceNames()).not.toContain('from-app');
     });
 
     it('leaves reading, refreshing, and listing open to an agent', async () => {
@@ -3595,8 +3602,16 @@ describe('Marketplace Routes', () => {
           []
       ).toEqual([]);
 
+      // A browser session clears this bar. Allowing it then needs the install
+      // owner's session, confirmed with their password (DOR-4355,
+      // marketplace-held-back-step-up.test.ts); nobody owns this install.
       signedInUser = { userId: 'user_owner', credential: 'cookie' };
-      expect((await decide()).status).toBe(204);
+      const bySession = await decide();
+      expect(bySession.status).toBe(403);
+      expect(bySession.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
+      expect(
+        (await request(fixtureServer).get('/api/marketplace/held-back')).body.packages
+      ).toEqual([expect.objectContaining({ name: 'held' })]);
     });
   });
 
@@ -3694,8 +3709,14 @@ describe('Marketplace Routes', () => {
       expect(byKey.body.error).toContain('Keep these as mine');
       expect(await unprovenOnDisk(root)).toBeDefined();
 
+      // A browser session clears this bar. Keeping them then needs the install
+      // owner's session, confirmed with their password (DOR-4355,
+      // marketplace-held-back-step-up.test.ts); nobody owns this install.
       signedInUser = { userId: 'user_owner', credential: 'cookie' };
-      expect((await keep({ keepKey })).status).toBe(200);
+      const bySession = await keep({ keepKey });
+      expect(bySession.status).toBe(403);
+      expect(bySession.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
+      expect(await unprovenOnDisk(root)).toBeDefined();
     });
 
     // Purpose: the yes covers exactly the bytes shown; a later edit is refused.

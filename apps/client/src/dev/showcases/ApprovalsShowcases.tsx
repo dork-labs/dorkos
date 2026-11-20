@@ -1,9 +1,12 @@
+import { RemoteApprovalSection } from './RemoteApprovalShowcase';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { ApprovalList, ApprovalsUnavailable } from '@/layers/features/approvals';
 import { AgentRequestApprovalShowcase } from './AgentRequestApprovalShowcase';
+import { AgentRaiseCardShowcase } from './AgentRaiseCardShowcase';
+import { ConfigPatchCardShowcase } from './ConfigPatchCardShowcase';
 import { INSTALL_SUMMARY, UPDATE_SUMMARY } from './marketplace-summary-samples';
 
 /**
@@ -42,6 +45,7 @@ function sample(overrides: Partial<PendingApproval> = {}): PendingApproval {
     hasAgentPath: true,
     area: null,
     alwaysOffered: false,
+    answerNeedsStepUp: false,
     requestedAt: new Date(LOADED_AT).toISOString(),
     expiresAt: expiresIn(105),
     ...overrides,
@@ -161,6 +165,8 @@ export function ApprovalCardShowcase() {
           </WidthColumn>
         </div>
       </ShowcaseDemo>
+
+      <RemoteApprovalSection />
 
       <ShowcaseLabel>The three answers, and the floor line</ShowcaseLabel>
       <ShowcaseDemo responsive>
@@ -307,6 +313,11 @@ export function ApprovalCardShowcase() {
         <AgentRequestApprovalShowcase />
       </ShowcaseDemo>
 
+      <ShowcaseLabel>An agent’s raise: what changes, and its name kept apart</ShowcaseLabel>
+      <ShowcaseDemo responsive>
+        <AgentRaiseCardShowcase />
+      </ShowcaseDemo>
+
       <ShowcaseLabel>Who asked, and how long is left</ShowcaseLabel>
       <ShowcaseDemo responsive>
         <ApprovalList
@@ -318,7 +329,6 @@ export function ApprovalCardShowcase() {
               // No agent path either, which is what keeps Always allow off this
               // card. The two travel together on a real anonymous request.
               hasAgentPath: false,
-              area: null,
               alwaysOffered: false,
               // The surface is known even when the caller is not, so the card
               // says the true thing rather than the vague one (DOR-1929).
@@ -411,28 +421,30 @@ export function ApprovalCardShowcase() {
                 ],
               },
             }),
-            // Kept to the card instead of the 60-second window only because
-            // Wi-Fi access is on (DOR-3242), and saying so.
-            sample({
-              approvalId: '01JZ0000000000000000000063',
-              capabilityId: 'connectors.execute_destructive',
-              capabilityTitle: 'Take a high-risk action in a connected app',
-              requestedBy: 'DorkBot',
-              area: null,
-              alwaysOffered: false,
-              summary: '"DorkBot" wants to run "Send email" in Gmail on "Work (work@acme.com)"',
-              serviceAction: {
-                serviceId: 'gmail',
-                serviceName: 'Gmail',
-                accountLabel: 'Work (work@acme.com)',
-                actionName: 'Send email',
-                details: [
-                  { label: 'To', value: 'board@acme.com' },
-                  { label: 'Subject', value: 'Q3 numbers' },
-                ],
-                keptCardBecause: 'wifi-open',
-              },
-            }),
+            // Kept to the card, saying why: Wi-Fi access is on (DOR-3242), or the agent just read
+            // words from outside the team (DOR-3969).
+            ...(['wifi-open', 'outside-words'] as const).map((reason, index) =>
+              sample({
+                approvalId: `01JZ000000000000000000006${3 + index}`,
+                capabilityId: 'connectors.execute_destructive',
+                capabilityTitle: 'Take a high-risk action in a connected app',
+                requestedBy: 'DorkBot',
+                area: null,
+                alwaysOffered: false,
+                summary: '"DorkBot" wants to run "Send email" in Gmail on "Work (work@acme.com)"',
+                serviceAction: {
+                  serviceId: 'gmail',
+                  serviceName: 'Gmail',
+                  accountLabel: 'Work (work@acme.com)',
+                  actionName: 'Send email',
+                  details: [
+                    { label: 'To', value: 'board@acme.com' },
+                    { label: 'Subject', value: 'Q3 numbers' },
+                  ],
+                  keptCardBecause: reason,
+                },
+              })
+            ),
             // Six lines is the most a card lists; long values are already
             // shortened by the server and wrap rather than widen the card.
             sample({
@@ -523,6 +535,7 @@ export function ApprovalCardShowcase() {
           ]}
         />
       </ShowcaseDemo>
+      <ConfigPatchCardShowcase />
     </PlaygroundSection>
   );
 }

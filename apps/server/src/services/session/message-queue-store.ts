@@ -41,6 +41,7 @@ import { ClientContextSchema } from '@dorkos/shared/additional-context';
 import type { MessageDisposition, QueuedMessage, QueuedWaitingOn } from '@dorkos/shared/schemas';
 import type { SessionMessageQueueRow } from '@dorkos/db';
 import { logger } from '../../lib/logger.js';
+import { isPersonWindowClientId } from './person-window-client-id.js';
 
 /**
  * The gap left between neighbouring queue positions. Wide enough that a person
@@ -117,7 +118,14 @@ export function toQueuedMessage(record: QueuedMessageRecord): QueuedMessage {
   const { id, content, disposition, enqueuedAt, enqueuedBy } = record;
   const waitingOn = heldFor.get(id);
   const base = { id, content, disposition, enqueuedAt, enqueuedBy };
-  return { ...base, ...(waitingOn ? { waitingOn } : {}), ...queuedChatView?.(base) };
+  return {
+    ...base,
+    ...(isPersonWindowClientId(enqueuedBy) && !record.heldToDefault
+      ? { canRestoreToComposer: true }
+      : {}),
+    ...(waitingOn ? { waitingOn } : {}),
+    ...queuedChatView?.(base),
+  };
 }
 
 /** What a row another chat sent shows a person instead of its stored text. */

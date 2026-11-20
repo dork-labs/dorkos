@@ -54,6 +54,8 @@ import {
   readChat,
   type ChatReadDeps,
 } from './chat-read.js';
+import { markCallerTurnOutsider } from '../../core/capabilities/mark-caller-turn.js';
+import { chatHoldsOutsideText } from '../../core/turn-power/chat-outside-words.js';
 
 declare module '../../core/capabilities/capability-definition.js' {
   interface CapabilityDeps {
@@ -129,7 +131,14 @@ export const chatDomain: CapabilityDomain = {
         'started if needed). The other side sees it came from you and this chat, never from the ' +
         'person. It waits until that chat’s current turn ends (delivery `queue`, the default); ' +
         '`steer` joins its running turn now, `interrupt` stops its turn and runs this next. ' +
-        'Waking an idle chat starts its turn at once. Give a short `summary` (a few words) for ' +
+        'Eligible room-seat chat ids receive private queued turns, never public posts. ' +
+        'Unsolicited messages require an unbridged room and leave one pending notice per sending agent. ' +
+        'Bridged seats accept answers only to active unanswered messages they sent you. ' +
+        'One answer may wait per ask; later writes are new messages. ' +
+        'Bridged direct chats and scheduled runs stay closed. ' +
+        'An idle chat starts at once unless its agent is paused. A paused agent’s message ' +
+        'is held, not lost, and runs once the agent is resumed. Do not resend it. ' +
+        'Give a short `summary` (a few words) for ' +
         'the card the person sees. Use `replyTo` with a message id to answer a message another ' +
         'chat sent you. Their reply comes back as a new message in this chat. A queued result ' +
         'says how many messages are `ahead` of yours. The result names ' +
@@ -322,10 +331,14 @@ export const chatDomain: CapabilityDomain = {
       invoke: async (deps, input, context) => {
         const caller = chatCallerOf(context);
         if (!caller) return NO_CHAT;
-        return answer(async () => ({
-          ok: true as const,
-          ...(await readChat(requireChatDeps(deps).read, caller, input)),
-        }));
+        return answer(async () => {
+          const read = await readChat(requireChatDeps(deps).read, caller, input);
+          // Another chat's words, when that chat ever held outside text (DOR-3969).
+          if (input.include !== 'status' && chatHoldsOutsideText(input.chat)) {
+            markCallerTurnOutsider(context);
+          }
+          return { ok: true as const, ...read };
+        });
       },
     }),
     defineCapability({

@@ -3,8 +3,9 @@ import { Button } from '@/layers/shared/ui';
 import { ForgetSignInsDialog } from './ForgetSignInsDialog';
 
 /**
- * The Agent browser's saved sign-ins, as one row with a confirmed Forget (DOR-4105),
- * while no page is open. With a page open, Forget lives in the browser's ⋯ menu.
+ * Forget saved sign-ins (DOR-4105) while no page is open: one quiet link at the
+ * foot of the page-area block, opening the same confirm as the ⋯ menu's item.
+ * With a page open, Forget lives in that menu instead.
  */
 export function SavedSignIns({
   enabled,
@@ -18,27 +19,19 @@ export function SavedSignIns({
   const opener = useRef<HTMLButtonElement | null>(null);
   if (!enabled) return null;
   return (
-    <section aria-label="Saved sign-ins" className="flex shrink-0 items-center gap-3">
-      <div className="min-w-0 flex-1">
-        <h4 className="text-sm font-medium">Saved sign-ins</h4>
-        <p className="text-muted-foreground text-xs">
-          Kept apart from your own browser. Every agent here shares them.
-        </p>
-        {disabled && (
-          <p className="text-muted-foreground text-xs">Wait for the browser action to finish.</p>
-        )}
-      </div>
+    <div className="pt-2">
       <Button
         ref={opener}
         size="sm"
-        variant="outline"
+        variant="link"
+        className="text-muted-foreground h-auto p-0 md:h-auto"
         disabled={disabled}
         onClick={() => {
           setNotice('');
           setAsking(true);
         }}
       >
-        Forget…
+        Forget saved sign-ins…
       </Button>
       <p role="status" className="sr-only">
         {notice}
@@ -49,6 +42,6 @@ export function SavedSignIns({
         returnFocus={opener}
         onForgotten={() => setNotice('Sign-ins forgotten.')}
       />
-    </section>
+    </div>
   );
 }

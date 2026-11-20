@@ -2,7 +2,7 @@ import { SkillFrontmatterSchema } from './schema.js';
 import type { SkillFrontmatter } from './schema.js';
 
 /**
- * @deprecated Commands merged into skills. Use `SkillFrontmatterSchema` from
+ * @deprecated since 0.135, remove in 0.155. Commands merged into skills. Use `SkillFrontmatterSchema` from
  * `@dorkos/skills/schema` — it is the same object: every field this schema
  * used to add on its own (`argument-hint`, `context`, `agent`, `model`,
  * `effort`) now lives on the base, because a command *is* a skill (ADR
@@ -19,7 +19,7 @@ import type { SkillFrontmatter } from './schema.js';
 export const CommandFrontmatterSchema = SkillFrontmatterSchema;
 
 /**
- * @deprecated Use `SkillFrontmatter` from `@dorkos/skills/schema`.
+ * @deprecated since 0.135, remove in 0.155. Use `SkillFrontmatter` from `@dorkos/skills/schema`.
  * See {@link CommandFrontmatterSchema}.
  */
 export type CommandFrontmatter = SkillFrontmatter;

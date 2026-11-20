@@ -15,7 +15,10 @@
  * {@link dorkosAutoAllows} lets run for this session RIGHT NOW: the running
  * turn's ceilings, `control_ui` per effect, and the identity the room verbs
  * need. Nothing else: never a built-in tool, so Bash, Edit, Write and WebFetch
- * stay refused.
+ * stay refused. Beside them, the named status reads
+ * ({@link NEVER_ASK_STATUS_READS_QUALIFIED}, DOR-3971), never in a turn that carries an
+ * outsider's words, and those alone also at Ask first and Accept edits (DOR-4601): a PreToolUse
+ * `allow` skips the card there, which a scheduled run has nobody to answer.
  *
  * **Stricter than the gate in one place.** A turn held for a stranger gets no
  * `chat_send` at all, not even a queued one. A turn that only carries an
@@ -25,7 +28,7 @@
  * one, gets no account tools. A marked turn lists none of its own connection
  * grants either (DOR-3205).
  *
- * **It only ever allows, and only at Never ask.** In every other mode, and on
+ * **It only ever allows, and only at Never ask** (the status reads aside). In every other mode, and on
  * any doubt (a throw, a slow lookup, an unknown name), it answers nothing, so
  * `dontAsk` refuses as before and every other mode reaches `canUseTool` as
  * before. A deny rule still beats its allow (QA, proven on the CLI).
@@ -38,6 +41,9 @@
 import type { HookCallback } from '@anthropic-ai/claude-agent-sdk';
 import type { PermissionModeId } from '@dorkos/shared/schemas';
 import { CHAT_SEND_TOOL } from '@dorkos/shared/chat-messages';
+import { chatReadOutsideWords } from '../../../core/turn-power/chat-outside-words.js';
+import { marksHold } from '../../../core/turn-power/turn-marks.js';
+import { marksOf } from '../../../core/turn-power/turn-levels.js';
 import { NEVER_ASK_MODE_ID } from '../runtime-constants.js';
 import { inSessionToolName } from '../mcp-tools/tool-exposure.js';
 import {
@@ -47,6 +53,11 @@ import {
   type CeilingedMode,
 } from '../turn-permission.js';
 import { DORKOS_AGENT_TOOLS, dorkosAutoAllows } from './auto-allow.js';
+import {
+  NEVER_ASK_STATUS_READS_QUALIFIED,
+  statusReadRunsUnasked,
+  yesOrDoubtful,
+} from './never-ask-status-reads.js';
 import { OWN_CONNECTION_READS_QUALIFIED } from './own-connection-reads.js';
 import type { ToolApprovalContext, ToolGateLogger } from '../messaging/interactive-handlers.js';
 
@@ -73,17 +84,28 @@ const ALLOW = {
   },
 };
 
-/** Whether the running turn is marked; a throw counts as marked. */
-function markedOrDoubtful(isMarked: () => boolean): boolean {
-  try {
-    return isMarked();
-  } catch {
-    return true;
-  }
+/**
+ * The two outside-words checks a launch hands {@link createNeverAskHook}, each read at call time
+ * so a first-turn rekey never strands it on the request id: the turn's marks, and the wider
+ * DOR-4029 test memory and `chat_send` use (`chatReadOutsideWords`, DOR-3971).
+ *
+ * @param session - The live session; its canonical id is read per call.
+ * @param sessionId - The id the turn was sent under, until the canonical one is known.
+ * @param agentPath - The turn's agent home, when it has one.
+ */
+export function turnOutsideChecks(
+  session: { sdkSessionId?: string },
+  sessionId: string,
+  agentPath: string | null | undefined
+): [isMarked: () => boolean, readOutsideWords: () => boolean] {
+  const id = () => session.sdkSessionId ?? sessionId;
+  const home = agentPath ?? undefined;
+  return [() => marksHold(marksOf(id(), home)), () => chatReadOutsideWords(id(), home)];
 }
 
 /**
- * Whether DorkOS lets this call run unasked at Never ask. Never throws.
+ * Whether DorkOS lets this call run unasked at Never ask, or, for the named status reads, at the
+ * levels in `STATUS_READ_MODES` (`statusReadRunsUnasked`). Never throws.
  *
  * @param session - The session's chosen mode and both ceilings.
  * @param toolName - The tool the model called.
@@ -93,6 +115,10 @@ function markedOrDoubtful(isMarked: () => boolean): boolean {
  * @param log - Where a failed lookup is reported.
  * @param isMarked - Whether the running turn read words DorkOS can't vouch for
  *   (its marks, `marksOf`), which a room turn can be without any ceiling.
+ * @param readOutsideWords - Whether the chat read words from outside the team by the wider
+ *   DOR-4029 test (`chatReadOutsideWords`): its marks, a room turn's note, or a launch from a chat
+ *   binding, an outside sender or a connector event. Read at call time; a throw counts as yes.
+ *   Absent, it counts as yes too, so a caller that forgets it gets no status read (Security S3).
  */
 export async function neverAskAllows(
   session: NeverAskSession,
@@ -101,22 +127,27 @@ export async function neverAskAllows(
   mcpServer: ToolApprovalContext['mcpServer'],
   resolveIdentity: () => Promise<unknown>,
   log: ToolGateLogger,
-  isMarked: () => boolean = () => false
+  isMarked: () => boolean = () => false,
+  readOutsideWords: () => boolean = () => true
 ): Promise<boolean> {
+  // The status reads also run at Ask first and Accept edits (DOR-4601), by their own rule.
+  if (NEVER_ASK_STATUS_READS_QUALIFIED.has(toolName)) {
+    return statusReadRunsUnasked(session, toolName, mcpServer, isMarked, readOutsideWords);
+  }
   if (gatePermissionMode(session) !== NEVER_ASK_MODE_ID) return false;
-  if (!DORKOS_AGENT_TOOLS.has(toolName)) return false;
   // Proven, not assumed: an absent source is NOT the host here.
   if (mcpServer?.source !== 'sdk') return false;
+  if (!DORKOS_AGENT_TOOLS.has(toolName)) return false;
   if (toolName === CHAT_SEND_QUALIFIED) {
     // A held turn (a Wi-Fi sign-in's) passes nothing on.
     if (heldForOutsider(session)) return false;
   } else if (NEVER_IN_A_HELD_OR_MARKED_TURN.has(toolName)) {
     if (ceilingOn(session) !== 'none') return false;
-    if (markedOrDoubtful(isMarked)) return false;
+    if (yesOrDoubtful(isMarked)) return false;
   } else if (OWN_CONNECTION_READS_QUALIFIED.has(toolName)) {
     // The agent's own grants (DOR-3205) run in a turn another of our agents holds, but not in
     // one that read an outsider's words: the gate refuses a carried mark, this the turn's own.
-    if (markedOrDoubtful(isMarked)) return false;
+    if (yesOrDoubtful(isMarked)) return false;
   }
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -146,12 +177,15 @@ export async function neverAskAllows(
  * @param resolveIdentity - The memoized session-identity resolver `canUseTool` uses.
  * @param log - Where a failed lookup is reported.
  * @param isMarked - Whether the running turn is marked, read at call time.
+ * @param readOutsideWords - Whether the chat read outside words by the DOR-4029 test, read at
+ *   call time; bounds the status reads. Absent, it counts as yes (fails closed, Security S3).
  */
 export function createNeverAskHook(
   session: NeverAskSession,
   resolveIdentity: () => Promise<unknown>,
   log: ToolGateLogger,
-  isMarked: () => boolean = () => false
+  isMarked: () => boolean = () => false,
+  readOutsideWords: () => boolean = () => true
 ): HookCallback {
   return async (hookInput) => {
     if (hookInput.hook_event_name !== 'PreToolUse') return {};
@@ -166,7 +200,8 @@ export function createNeverAskHook(
       hookInput.mcp_server,
       resolveIdentity,
       log,
-      isMarked
+      isMarked,
+      readOutsideWords
     );
     return allowed ? ALLOW : {};
   };

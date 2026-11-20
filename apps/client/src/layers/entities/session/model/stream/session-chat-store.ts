@@ -51,6 +51,8 @@ export interface SessionState {
 
   // --- Input & status ---
   input: string;
+  /** The queue row restored into this window's draft; survives composer remounts. */
+  pausedComposerMessageId?: string | null;
   status: ChatStatus;
   error: TransportErrorInfo | null;
 

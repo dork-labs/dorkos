@@ -17,6 +17,8 @@ import { WAITING_KINDS } from './waiting-kinds.js';
 
 /** The key a slot wait is filed under among a turn's waits; never an interaction id. */
 const SLOT_WAIT_KEY = 'dorkos:slot-wait';
+/** What an approval card's wait is filed under, ahead of its approval id: never an interaction id. */
+const CARD_WAIT_PREFIX = 'dorkos:card:';
 
 /** The grace timer for each wait a turn is in, keyed by what it waits on. */
 export type TurnWaits = Map<string, ReturnType<typeof setTimeout>>;
@@ -75,6 +77,19 @@ export function noteTurnWait(
   // (`interaction_cancelled` is normalized into this event), so the room says
   // nothing about a wait that is already over.
   if (event.type === 'interaction_resolved') end(event.id);
+  // A card a person answers outside the SDK's prompts, such as a marked turn's
+  // connector send (DOR-4610). It rides its own hold rather than a blocking
+  // interaction, but it holds the turn the same way, so the room owes the same
+  // line. Keyed by the approval, which also names its ending; the capability
+  // rides along for the log only, as a tool approval's tool name does.
+  if (event.type === 'capability_approval_required') {
+    arm(`${CARD_WAIT_PREFIX}${event.approval.approvalId}`, {
+      kind: 'approval',
+      toolName: event.approval.capabilityId,
+      ...(event.approval.roomId !== undefined ? { cardRoomId: event.approval.roomId } : {}),
+    });
+  }
+  if (event.type === 'capability_approval_resolved') end(`${CARD_WAIT_PREFIX}${event.approvalId}`);
 }
 
 /**
@@ -83,6 +98,8 @@ export function noteTurnWait(
  * failure (DOR-3012: most of the 2026-10-18 failures logged no reason at all).
  */
 export interface TurnFailure {
+  /** Structured runtime code for bounded server-side correlation, never raw copy. */
+  code?: string;
   /** The runtime's `TurnRefusal`, when it refused the turn before it started. */
   refusal?: string;
   /** What happened, for the log: the turn's own error, or how its read ended. */
@@ -102,7 +119,11 @@ export function noteTurnFailure(
 ): Partial<TurnFailure> {
   if (event.type !== 'error' || known.detail !== undefined) return known;
   const refused = event.code === TURN_NOT_STARTED_CODE && event.reason !== undefined;
-  return { detail: event.message, ...(refused ? { refusal: event.reason } : {}) };
+  return {
+    detail: event.message,
+    ...(event.code !== undefined ? { code: event.code } : {}),
+    ...(refused ? { refusal: event.reason } : {}),
+  };
 }
 
 /**

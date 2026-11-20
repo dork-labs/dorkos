@@ -40,8 +40,9 @@
  *
  * Every missing deadline answers "unknown" (`null`), never an expiry guess.
  * Missing deadlines alone do not demote a working sign-in: an env credential, an older
- * CLI that stores no renewal deadline, a locked Keychain, or a platform whose
- * store this does not know all land here, and none of them is evidence that
+ * CLI that stores no renewal deadline, a locked Keychain, a server on the test
+ * runtime (which never reads the Keychain), or a platform whose store this does
+ * not know all land here, and none of them is evidence that
  * anything is wrong. A timed-out store read separately records unreadable
  * credentials for readiness and the stall watchdog, with a retry cooldown.
  *
@@ -54,6 +55,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { isProbeTimeoutError, runBinaryProbe } from '../../shared/run-probe.js';
 import { logger } from '../../../../lib/logger.js';
+import { mayReadOsKeychain } from '../../../../lib/keychain/os-keychain-policy.js';
 import { claudeConfigDirEnv } from '../claude-config-dir.js';
 
 /** Hard bound on the credential-store read, matching the sibling CLI probes. */
@@ -169,9 +171,15 @@ export function toIsoDeadline(epochMs: number): string | undefined {
   return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
 }
 
-/** Read the raw credential store for `root` (macOS Keychain, or the file beside it). */
-async function readCredentialStore(root: string): Promise<string> {
+/**
+ * Read the raw credential store for `root` (macOS Keychain, or the file beside it).
+ *
+ * @returns The store's text, or `null` when this server may not read the
+ *   Keychain (the test runtime; see `lib/keychain/os-keychain-policy`).
+ */
+async function readCredentialStore(root: string): Promise<string | null> {
   if (process.platform === 'darwin') {
+    if (!mayReadOsKeychain()) return null;
     // Which Keychain BRANCH Claude Code takes is decided by whether it would see
     // `CLAUDE_CONFIG_DIR` set for this root, not by the root itself — so ask the
     // same function that builds the spawn env, rather than restating its rule.
@@ -205,7 +213,8 @@ export async function readClaudeSignInDeadlines(
   if (credentialReadCoolingDown(root)) return null;
   try {
     if (isNeverUseClaudeFolder(root)) return null;
-    return parseClaudeSignInDeadlines(await readCredentialStore(root));
+    const raw = await readCredentialStore(root);
+    return raw === null ? null : parseClaudeSignInDeadlines(raw);
   } catch (err) {
     if (isProbeTimeoutError(err)) noteCredentialsUnreadable(root);
     // Expected and uninteresting on any machine that signs in another way (an

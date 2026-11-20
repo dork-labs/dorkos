@@ -1,7 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import {
-  useCreateTask,
   useUpdateTask,
   useDeleteTask,
   useTasks,
@@ -67,7 +66,6 @@ export function CreateTaskDialog({
 }: Props) {
   const deleteTask = useDeleteTask();
   const updateTask = useUpdateTask();
-  const createTask = useCreateTask();
   // The list AND whether it is an answer yet, kept together all the way down.
   // Flattened to `agents` alone, an in-flight read and a failed one both look
   // exactly like "this machine has no agents" — and the edit form then tells
@@ -282,8 +280,6 @@ export function CreateTaskDialog({
     );
   }
 
-  const isPending = createTask.isPending || updateTask.isPending;
-
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent className="flex max-h-[85vh] max-w-lg flex-col gap-0 p-0">
@@ -352,7 +348,6 @@ export function CreateTaskDialog({
             onSubmitSuccess={handleSubmitSuccess}
             onCancel={() => onOpenChange(false)}
             onDeleteClick={() => setDeleteConfirmOpen(true)}
-            isPending={isPending}
             onMakeCopy={handleMakeCopy}
             defaultTimezone={viewerTimezone}
             leading={

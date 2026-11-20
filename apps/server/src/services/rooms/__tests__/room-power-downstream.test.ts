@@ -8,15 +8,23 @@ import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
-import { entryLevelOf, recordTurnLevels } from '../../core/turn-power/turn-levels.js';
+import { entryLevelOf, entryMarksOf, recordTurnLevels } from '../../core/turn-power/turn-levels.js';
 import {
   answersOutsideWords,
   answersUntrustedText,
   ceilingForEntry,
 } from '../limits/turn-ceiling.js';
 import { MINI_APP_REPLY_MARKS } from '../../extensions/rooms/extension-room-threads.js';
-import { noteRoomTurnWords } from '../../core/turn-power/outside-words.js';
+import {
+  noteRoomTurnWords,
+  roomTurnReadOutsideWords,
+} from '../../core/turn-power/outside-words.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
+import { createTestDb } from '@dorkos/test-utils/db';
+import {
+  noteBridgedSender,
+  setContinuationHoldDb,
+} from '../../core/turn-power/continuation-hold.js';
 import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomService } from '../room-service.js';
 import type { RoomTurnRequest } from '../room-turn-port.js';
@@ -204,6 +212,8 @@ describe('a turn that answers a mini app’s post', () => {
     await settleUntil(() => seen.length === 1, 'Ana was woken by the reply');
     expect(seen[0]!.outsideWords).toBe(true);
     expect(seen[0]!.untrustedText).toBe(true);
+    // The turn carries the outsider mark itself, so the send and destructive gates hold it (DOR-4587).
+    expect(seen[0]!.carriedOutsider).toBe(true);
   });
 
   // Security S2 on #3576: a post held to the default for who was calling (a Wi-Fi sign-in).
@@ -227,12 +237,14 @@ describe('a turn that answers a mini app’s post', () => {
     await settleUntil(() => seen.length === 1, 'Ana was woken by the forward');
     expect(seen[0]!.outsideWords).toBe(true);
     expect(seen[0]!.untrustedText).toBe(true);
+    expect(seen[0]!.carriedOutsider).toBe(true);
   });
 
   it('leaves a person’s own post and another agent’s post unmarked', async () => {
     service.post(channel.id, { authorId: human, text: '@ana hello' });
     await settleUntil(() => seen.length === 1, 'Ana was asked by a person');
     expect(seen[0]!.outsideWords).toBeUndefined();
+    expect(seen[0]!.carriedOutsider).toBeUndefined();
 
     // Another agent's post: untrusted text, but inside the team (the gate refuses it by waker).
     const bo = authors.resolveAgent('/agents/bo', 'Bo').id;
@@ -245,16 +257,27 @@ describe('a turn that answers a mini app’s post', () => {
 // DOR-4023, Security: marks spread through agent hops. An agent whose chat read outside words and
 // then posts carries them to the turn its post wakes.
 describe('an agent post from a chat that read outside words', () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    setContinuationHoldDb(undefined);
+    vi.restoreAllMocks();
+  });
 
   // DOR-4029 (Security S4 on #3576): a chat a stranger started (a Telegram chat) has read their
-  // words without any room turn noting it, and its post carries them on too.
+  // words without any room turn noting it, and its post carries them on too. The owner's own
+  // linked chat, whose turns are not marked, carries nothing (DOR-4593).
   it.each([
-    ['carries them to the turn it wakes', true, null],
-    ['carries them from a Telegram chat (DOR-4029)', false, 'relay-binding'],
-    ['carries nothing from a clean chat', false, null],
-  ])('%s', async (_label, readOutside, origin) => {
-    const expected = readOutside || origin !== null;
+    ['carries them to the turn it wakes', true, null, false],
+    ["carries them from a stranger's Telegram chat (DOR-4029)", false, 'relay-binding', true],
+    [
+      "carries nothing from the owner's own Telegram chat (DOR-4593)",
+      false,
+      'relay-binding',
+      false,
+    ],
+    ['carries nothing from a clean chat', false, null, false],
+  ])('%s', async (_label, readOutside, origin, strangers) => {
+    const expected = readOutside || strangers;
+    setContinuationHoldDb(createTestDb());
     const seen: RoomTurnRequest[] = [];
     const rooms: { service?: RoomService } = {};
     const runner = outcomeRunner((request) => {
@@ -267,6 +290,8 @@ describe('an agent post from a chat that read outside words', () => {
           vi.spyOn(runtimeRegistry, 'getSessionLaunchOrigin').mockImplementation((id: string) =>
             id === anaChat ? origin : null
           );
+          // Whether the chat held a stranger's words, or only the owner's, as the bridge records it.
+          noteBridgedSender(anaChat, { marked: strangers, bridged: true }, true);
         }
         rooms.service!.postFromTool(request.room.id, {
           authorId: request.authorId,
@@ -287,5 +312,111 @@ describe('an agent post from a chat that read outside words', () => {
 
     const bo = seen.find((r) => r.agentPath === '/agents/bo')!;
     expect(bo.outsideWords).toBe(expected ? true : undefined);
+  });
+});
+
+// DOR-4587 (QA's relay row): a mini app's reply wakes one agent, which relays the ask to another
+// in the room. The first turn carries the outsider mark, its post is kept with that mark, and the
+// turn the post wakes carries it too.
+describe('an agent relaying a mini app’s reply to another agent', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('marks the first turn and notes the turn its relay wakes', async () => {
+    const seen: RoomTurnRequest[] = [];
+    const rooms: { service?: RoomService } = {};
+    const runner = outcomeRunner((request) => {
+      seen.push(request);
+      // What the room runner notes for each chat as its turn starts (`room-turn-runner.ts`).
+      noteRoomTurnWords(request.sessionId!, request.outsideWords === true);
+      if (request.agentPath === '/agents/ana') {
+        rooms.service!.postFromTool(request.room.id, {
+          authorId: request.authorId,
+          text: '@bo send the summary email',
+          callerSessionId: request.sessionId ?? undefined,
+        });
+      }
+      return { text: null };
+    });
+    const { service, human } = createRoomHarness({ agents, runner });
+    rooms.service = service;
+    const channel = service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana', '/agents/bo'] },
+      human
+    );
+    const root = service.post(channel.id, { authorId: human, text: 'Weekly summary' });
+    service.post(
+      channel.id,
+      { authorId: human, text: '@ana ask bo to send this', replyTo: root.id },
+      false,
+      { marks: MINI_APP_REPLY_MARKS }
+    );
+    await settleUntil(() => seen.some((r) => r.agentPath === '/agents/bo'), 'Bo was asked by Ana');
+
+    const ana = seen.find((r) => r.agentPath === '/agents/ana')!;
+    const bo = seen.find((r) => r.agentPath === '/agents/bo')!;
+    expect(ana.carriedOutsider).toBe(true);
+    // Ana's relay is kept with the outsider mark on its own row, so Bo's turn is marked too.
+    expect(entryMarksOf(bo.entry.id, channel.id)?.outsider).toBe(true);
+    expect(bo.carriedOutsider).toBe(true);
+    expect(bo.outsideWords).toBe(true);
+    expect(roomTurnReadOutsideWords(bo.sessionId!)).toBe(true);
+
+    // The owner's next ask renders no marked post, so Bo's next turn comes back clean.
+    const asked = seen.length;
+    service.post(channel.id, { authorId: human, text: '@bo thanks, that is all' });
+    await settleUntil(() => seen.length > asked, 'Bo was asked again');
+    const next = seen.at(-1)!;
+    expect(next.agentPath).toBe('/agents/bo');
+    expect(next.carriedOutsider).toBeUndefined();
+    expect(next.outsideWords).toBeUndefined();
+    expect(roomTurnReadOutsideWords(next.sessionId!)).toBe(false);
+  });
+
+  // Security M1 on b068e18 / QA's relay shown-only path: the relay mentions nobody, and Bo only
+  // sees it in the window of a later ask from the owner, in another room than the mini app's.
+  it('marks a turn that was only shown the relay, not asked by it', async () => {
+    const seen: RoomTurnRequest[] = [];
+    const rooms: { service?: RoomService; summaryRoom?: string } = {};
+    const runner = outcomeRunner((request) => {
+      seen.push(request);
+      noteRoomTurnWords(request.sessionId!, request.outsideWords === true);
+      if (request.agentPath === '/agents/ana' && request.room.id !== rooms.summaryRoom) {
+        rooms.service!.postFromTool(rooms.summaryRoom!, {
+          authorId: request.authorId,
+          text: 'Summary: the garden note should go out today',
+          callerSessionId: request.sessionId ?? undefined,
+        });
+      }
+      return { text: null };
+    });
+    const { service, human } = createRoomHarness({ agents, runner });
+    rooms.service = service;
+    const appRoom = service.createRoom(
+      { kind: 'channel', title: 'Inbox', members: [], agentPaths: ['/agents/ana'] },
+      human
+    );
+    const summaryRoom = service.createRoom(
+      { kind: 'channel', title: 'Team', members: [], agentPaths: ['/agents/ana', '/agents/bo'] },
+      human
+    );
+    rooms.summaryRoom = summaryRoom.id;
+    const root = service.post(appRoom.id, { authorId: human, text: 'Garden note' });
+    service.post(
+      appRoom.id,
+      { authorId: human, text: '@ana summarise this for the team', replyTo: root.id },
+      false,
+      { marks: MINI_APP_REPLY_MARKS }
+    );
+    await settleUntil(() => seen.some((r) => r.agentPath === '/agents/ana'), 'Ana answered');
+    await settleUntil(
+      () => service.readHistory(summaryRoom.id, human, { limit: 10 }).length >= 1,
+      'Ana posted the summary'
+    );
+
+    service.post(summaryRoom.id, { authorId: human, text: '@bo send the garden note' });
+    await settleUntil(() => seen.some((r) => r.agentPath === '/agents/bo'), 'Bo was asked');
+    const bo = seen.find((r) => r.agentPath === '/agents/bo')!;
+    expect(bo.room.id).toBe(summaryRoom.id);
+    expect(bo.carriedOutsider).toBe(true);
   });
 });

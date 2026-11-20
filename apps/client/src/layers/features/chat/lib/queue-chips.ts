@@ -42,15 +42,20 @@ const TURN_IS_OPEN: ReadonlySet<SessionLifecycle> = new Set<SessionLifecycle>([
  * @param queue - The session's queue, head first, as the server holds it.
  * @param lifecycle - The session's server-held lifecycle, or `undefined` before
  *   the first hydration (which is not a turn, so the head is on its way).
+ * @param options - `agentPaused`: the session's agent is paused, so the server
+ *   holds the head instead of starting it (DOR-4348).
  */
 export function selectWaitingQueue(
   queue: QueuedMessage[],
-  lifecycle: SessionLifecycle | undefined
+  lifecycle: SessionLifecycle | undefined,
+  options: { agentPaused?: boolean } = {}
 ): QueuedMessage[] {
   if (queue.length === 0) return queue;
   // A head held for the agent's background work is genuinely waiting, turn or
   // no turn (DOR-2065): it is the one row that says why the line is not moving.
   if (queue[0]!.waitingOn !== undefined) return queue;
+  // A paused agent starts nothing, so its head is held, not on its way.
+  if (options.agentPaused) return queue;
   return lifecycle && TURN_IS_OPEN.has(lifecycle) ? queue : queue.slice(1);
 }
 

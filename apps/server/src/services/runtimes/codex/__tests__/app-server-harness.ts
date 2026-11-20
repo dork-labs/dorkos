@@ -19,6 +19,8 @@ export const CREDITS_ENV_HOME = '/fake/credits';
 
 /** Options for {@link makeAppServerHarness}. */
 export interface AppServerHarnessOptions {
+  /** Selected personal home; changing it models switching accounts. */
+  personHome?: () => string;
   /** A persisted setting, including the legacy exec value. */
   setting?: CodexTransportKind;
   /** Wire connector tools (and thread keys). */
@@ -33,6 +35,8 @@ export interface AppServerHarnessOptions {
   interactionExpireMs?: number;
   /** Background-work timings. */
   backgroundWork?: { coalesceMs?: number; ceilingMs?: number };
+  /** The realpath seam; defaults to prefixing `/real`. */
+  realpath?: (path: string) => string;
 }
 
 /**
@@ -59,10 +63,10 @@ export function makeAppServerHarness(options: AppServerHarnessOptions = {}) {
     connectorTools: () => tools,
     ...(options.relay ? { creditsRelay: () => options.relay } : {}),
     environment: {
-      person: () => ({ PATH: '/usr/bin', CODEX_HOME: PERSON_HOME }),
+      person: () => ({ PATH: '/usr/bin', CODEX_HOME: options.personHome?.() ?? PERSON_HOME }),
       credits: () => ({ PATH: '/usr/bin', CODEX_HOME: CREDITS_ENV_HOME }),
     },
-    realpath: (path) => `/real${path}`,
+    realpath: options.realpath ?? ((path) => `/real${path}`),
     stopAckMs: options.stopAckMs ?? 300,
     ...(options.compactionStartMs !== undefined
       ? { compactionStartMs: options.compactionStartMs }

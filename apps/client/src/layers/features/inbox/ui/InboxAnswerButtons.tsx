@@ -24,6 +24,8 @@ export interface InboxAnswerButtonsProps {
   onReject(): void;
   /** Whether either answer is in flight. */
   disabled: boolean;
+  /** Wi-Fi may lower access, but may not grant it. */
+  canApprove?: boolean;
   /** The no button, so a closed note field can hand focus back to it. */
   rejectRef?: Ref<HTMLButtonElement>;
   /** Whether the no has opened a note field. */
@@ -43,6 +45,7 @@ export function InboxAnswerButtons({
   onApprove,
   onReject,
   disabled,
+  canApprove = true,
   rejectRef,
   rejectExpanded,
 }: InboxAnswerButtonsProps) {
@@ -55,9 +58,17 @@ export function InboxAnswerButtons({
       className="mt-2 flex flex-wrap items-center gap-2 max-md:sticky max-md:bottom-0 max-md:bg-[var(--dui-scroll-cover,var(--color-popover))] max-md:py-2 max-sm:flex-col max-sm:items-stretch"
       data-slot="inbox-answer-buttons"
     >
-      <Button type="button" size="sm" onClick={onApprove} disabled={disabled} className={WRAPPING}>
-        {approveLabel}
-      </Button>
+      {canApprove && (
+        <Button
+          type="button"
+          size="sm"
+          onClick={onApprove}
+          disabled={disabled}
+          className={WRAPPING}
+        >
+          {approveLabel}
+        </Button>
+      )}
       <Button
         ref={rejectRef}
         type="button"

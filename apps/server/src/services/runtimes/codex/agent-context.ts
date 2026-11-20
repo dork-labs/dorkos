@@ -19,7 +19,7 @@ import { CODEX_DORKOS_TOOL_PREFIX } from '../shared/dorkos-tool-names.js';
 /**
  * Where a Codex agent drives a browser (DOR-4357). On macOS, Codex's own
  * sandbox refuses the Mach lookup Chromium needs, so a browser the agent
- * starts itself fails. The DorkOS browser tools are served by DorkOS, outside
+ * starts itself fails. The browser tools DorkOS serves run outside
  * that sandbox. Claude Code learns them from its `<ui_tools>` block; this is
  * Codex's only pointer to them. It names no way around the sandbox.
  *
@@ -27,8 +27,9 @@ import { CODEX_DORKOS_TOOL_PREFIX } from '../shared/dorkos-tool-names.js';
  */
 function buildBrowserToolsBlock(prefix: string): string {
   return `<browser_tools>
-In a Codex chat, use the DorkOS browser tools. Codex can’t start its own browser on macOS.
-A website a person shares with this chat: ${prefix}local_browser_observe, then ${prefix}local_browser_act.
+In a Codex chat, use the browser tools DorkOS gives you. Codex can’t start its own browser on macOS.
+The Agent browser, a website a person shares with this chat: ${prefix}local_browser_observe, then ${prefix}local_browser_act. It works only in a direct chat; in a room, ask the person to continue in a direct chat with you.
+Each chat owns its page. On not_opened or tab_gone, ask the person to open this chat’s browser. On profile_busy or profile_held, wait until the person finishes using that browser. Never close another chat’s page, resume yourself, or open a browser yourself.
 A preview DorkOS serves: ${prefix}browser_read_page, then ${prefix}browser_click and ${prefix}browser_type.
 </browser_tools>`;
 }

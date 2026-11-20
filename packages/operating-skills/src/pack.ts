@@ -422,8 +422,40 @@ export interface OperatingSkill {
  *   (DOR-4061), the first skill with files beside its SKILL.md, and names it in
  *   `answering-dorkos-questions`' sibling list. An agent seeded at 55 has no way to
  *   learn how to build an app for its person without an install.
+ * - 57: `managing-agents` teaches `update_agent_config`, the one way to change
+ *   another agent's `.claude/` files (DOR-4266). An agent seeded at 56 would hand
+ *   a hook or settings change to a person at a terminal instead.
+ * - 58: `scheduling-tasks` teaches the one-shot task (`runOnce`, no cron) and its
+ *   own exact commands (`allowList` at `dontAsk`, no card), and taking them back
+ *   with `allowList: []` after the run (DOR-4315). An agent seeded at 57 would
+ *   still believe the tool needs a cron and would ask the person for a card.
+ * - 59: `scheduling-tasks` teaches asking for more than an agent may set
+ *   (`requestedPermissionMode`, `requestedAllow`, up to 20 rules), which tasks can
+ *   wake, and the approval record on each task (DOR-4678). An agent seeded at 58
+ *   would not know the request fields exist or what `approvedBy` means.
+ * - 60: `scheduling-tasks` teaches moving an agent's own live Bypass task to Don't
+ *   ask with its own exact commands, in one call and with no card (DOR-4315 PR 2).
+ *   An agent seeded at 59 would leave a narrowable task at Bypass, or ask a person.
+ * - 61: `building-dorkos-apps` moves to App Builder Pack 1.1.4 (DOR-4061, DOR-4756;
+ *   it replaces 1.1.3, which never shipped). The agent checks a request's source
+ *   itself for files and commands, since DorkOS marks only outside messages, web
+ *   pages, searches, connected-app reads and other servers' tools; a change to an
+ *   app's server code at Full runs without a card only when made with Claude Code's
+ *   own file tools in an unmarked turn. It never links app source into DorkOS, never
+ *   writes an app's stored data or secrets on disk, keeps private strings out of app
+ *   code, gives the reach list while approval waits, and names the app on every ⌘K
+ *   label and dialog. An agent seeded at 60 would believe DorkOS refuses a marked turn's
+ *   build, and that every server-code change at Full runs at once.
+ * - 63: `using-the-agent-browser` teaches that each chat owns its own page (DOR-4273):
+ *   chats of one agent share sign-ins, an agent never closes another chat's page,
+ *   waits while a sign-in is busy or a person holds the browser, and never recovers
+ *   a page from its URL, title or tab order. An agent seeded at 61 would expect one
+ *   shared page per install.
+ * - 64: `continuing-on-another-account` teaches moving your own seat from another
+ *   chat at the usage threshold, once your answer in that room ends (DOR-3833).
+ *   An agent seeded at 63 would still believe only a person can move it.
  */
-export const OPERATING_SKILLS_VERSION = 56;
+export const OPERATING_SKILLS_VERSION = 64;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

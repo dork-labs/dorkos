@@ -1,3 +1,5 @@
+import { RequiredSessionIdentityError } from '../../../../lib/replay/required-session-identity-error.js';
+import { rebindOwnedSdkSession } from './identity/sdk-session-rebind.js';
 /**
  * In-memory session store — lifecycle, lookup, and interactive flow management.
  *
@@ -152,6 +154,8 @@ export const ACCOUNT_ROOT_PROBE_LIMIT = 3;
  */
 export class SessionStore {
   private sessions = new Map<string, AgentSession>();
+  /** A refused live producer cannot be reused through a later alias/send. */
+  private readonly identityRefusals = new WeakMap<AgentSession, RequiredSessionIdentityError>();
   /** Reverse index: SDK session ID → session map key, for O(1) lookup. */
   private sdkSessionIndex = new Map<string, string>();
   private readonly SESSION_TIMEOUT_MS = SESSIONS.TIMEOUT_MS;
@@ -211,8 +215,8 @@ export class SessionStore {
    * flight is being tracked by the id it started under. Eviction sweeps the
    * whole chain, so nothing outlives the session.
    *
-   * **WHEN this is called is load-bearing; the order of the two writes inside it
-   * is not.** The caller (`message-sender`) invokes this BEFORE yielding the
+   * **Before-yield ordering is load-bearing.** The caller (`message-sender`)
+   * invokes this BEFORE yielding the
    * event that lets `trigger-turn` announce the canonical id to the cockpit. A
    * client can only send a message under an id it has been told, so moving the
    * row first is what stops the session's own next POST from looking like a
@@ -221,60 +225,43 @@ export class SessionStore {
    * merging the operator's choice against a default nobody picked (DOR-838).
    * Do not move this call back after the yield.
    *
-   * The two writes below may run in either order — that was measured, not
-   * assumed: swapping them reddens nothing, because everything that could
-   * observe the gap between them is downstream of the announcement this call
-   * precedes. The row is written first only because the index write cannot fail.
-   *
-   * A failure to move the row can neither fail the turn nor hold back the index.
-   * This runs mid-stream: before DOR-493 the rebind was Map writes that could
-   * not throw, and a settings store that is briefly unavailable must not become
-   * a lost turn on a step that never used to have a failure mode. Publishing the
-   * alias anyway is deliberate — `sdkSessionId` has ALREADY changed by the time
-   * this is called, so the index is only catching up to a fact, and withholding
-   * it would leave approvals, interrupt, and the event stream unable to resolve
-   * the canonical id for the rest of the session. A store failure therefore
-   * lands exactly where the pre-DOR-493 code always did — row under the old id,
-   * turn unaffected — plus a warning.
+   * Positively ordinary settings loss retains the legacy warning/index policy:
+   * losing optional settings must not discard a streamed turn. Required identity
+   * is different. A mandatory refusal restores and quarantines the exact owned
+   * producer, preserves its typed error and withholds SDK-index publication.
+   * Successor and independent target objects are never restored or quarantined.
+   * Publication follows durable ownership and the post-await exact-owner check.
    *
    * @param previousSdkSessionId - The canonical id held until now
    * @param nextSdkSessionId - The canonical id the SDK just assigned
    * @param requestedSessionId - The id the turn was asked with, as a lookup hint
+   * @param producer - Exact server-owned SDK producer captured before mapper yield
    */
   async rebindSdkSession(
     previousSdkSessionId: string,
     nextSdkSessionId: string,
-    requestedSessionId: string
+    requestedSessionId: string,
+    producer?: AgentSession
   ): Promise<void> {
-    if (previousSdkSessionId === nextSdkSessionId) return;
     // Resolved before the await: the maps can be swept while it is pending, and
     // the key this rebind is about is the one that existed when it started. This
     // is also why the row moves first — not an ordering guarantee (see the doc
     // above), just the write that can throw going before the one that cannot.
     const sessionMapKey =
       this.resolveMapKey(requestedSessionId) ?? this.resolveMapKey(previousSdkSessionId);
-    try {
-      await this.settingsPort?.rekeySessionSettings(previousSdkSessionId, nextSdkSessionId);
-    } catch (err) {
-      logger.warn('[rebindSdkSession] settings re-key failed; row stays under the previous id', {
-        previousSdkSessionId,
-        nextSdkSessionId,
-        err: err instanceof Error ? err.message : String(err),
-      });
-    }
-    if (sessionMapKey) {
-      this.sdkSessionIndex.set(previousSdkSessionId, sessionMapKey);
-      this.sdkSessionIndex.set(nextSdkSessionId, sessionMapKey);
-    } else {
-      // The session was evicted mid-turn. Nothing to index — but the settings
-      // row still had to follow the id above, or the operator's mode reverts on
-      // the next cold resume.
-      logger.warn('[rebindSdkSession] no live session for rebind; indexed nothing', {
-        requestedSessionId,
-        previousSdkSessionId,
-        nextSdkSessionId,
-      });
-    }
+    await rebindOwnedSdkSession(this.settingsPort, previousSdkSessionId, nextSdkSessionId, {
+      key: sessionMapKey,
+      sessions: this.sessions,
+      indexes: this.sdkSessionIndex,
+      refusals: this.identityRefusals,
+      producer,
+    });
+  }
+
+  /** Pure server-side owner observation for the common required native gate. */
+  hasIndependentLiveSession(fromId: string, toId: string): boolean {
+    const target = this.findSession(toId);
+    return target !== undefined && target !== this.findSession(fromId);
   }
 
   /** The key a session is stored under, given any id it answers to. */
@@ -418,6 +405,8 @@ export class SessionStore {
     opts?: MessageOpts
   ): Promise<AgentSession> {
     const existing = this.findSession(sessionId);
+    const refused = existing && this.identityRefusals.get(existing);
+    if (refused) throw refused;
     // A pre-launch settings change creates a session before its directory is known.
     if (existing && !existing.cwd) existing.cwd = opts?.cwd ?? defaultCwd;
     if (!existing) {
@@ -1140,7 +1129,7 @@ export class SessionStore {
   /**
    * Backward-compatible alias for `getInternalSessionId`.
    *
-   * @deprecated Use `getInternalSessionId()` instead.
+   * @deprecated since 0.135, remove in 0.155. Use `getInternalSessionId()` instead.
    */
   getSdkSessionId(sessionId: string): string | undefined {
     return this.getInternalSessionId(sessionId);

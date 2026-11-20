@@ -22,6 +22,7 @@ import {
   type ClaimOutcome,
 } from '../room-claims.js';
 import type { RoomTriggerDispatcher } from '../room-trigger.js';
+import { isRoomStartAnchor } from './room-start-anchor.js';
 
 /**
  * Release the claim a turn is holding — **but only if it is still that turn's
@@ -126,9 +127,12 @@ export function releaseClaim(
   self.notices.turnEnded(claim.roomId, claim.authorId);
   // The turn that owned these messages is over, so their 👀 comes off: up to
   // the message it answered, never one that arrived later and still waits.
+  // A turn about a room's start answered nothing, so it clears nothing (DOR-4619).
   self.receipts.clearUpTo(
     key,
-    self.deps.store.getEntryById(claim.roomId, claim.entryId)?.seq ?? Number.POSITIVE_INFINITY
+    isRoomStartAnchor(claim.entryId)
+      ? 0
+      : (self.deps.store.getEntryById(claim.roomId, claim.entryId)?.seq ?? Number.POSITIVE_INFINITY)
   );
   const before = self.workingCount(claim.roomId);
   self.claimed.delete(key);

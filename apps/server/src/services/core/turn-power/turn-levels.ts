@@ -50,8 +50,11 @@ import {
   type TurnMarks,
 } from './turn-marks.js';
 import { primaryOf } from '../../session/resolution/session-key-registry.js';
-import { noteTurnHold } from './continuation-hold.js';
+import { noteBridgedSender, noteTurnHold } from './continuation-hold.js';
 import { aliasRoomTurnWords } from './outside-words.js';
+import { isOwnersCleanTurn, withHeldChatMark } from './held-chat-mark.js';
+import { aliasTurnStart, noteTurnStart } from './turn-start-marks.js';
+import { endReadMark, noteReadMark, sessionReadOutsideText } from './live-outsider-turns.js';
 
 /** The room turn's outside-words note travels with its level; a room runner sets both here. */
 export { noteRoomTurnWords } from './outside-words.js';
@@ -198,8 +201,16 @@ export function marksOf(
   agentPath: string | undefined
 ): TurnMarks {
   const level = sessionId ? turnLevels.get(sessionId) : undefined;
-  if (level !== undefined) return marksOfLevel(level);
-  return agentPath !== undefined ? agentMarksRunning(agentPath) : NO_MARKS;
+  const marks =
+    level !== undefined
+      ? marksOfLevel(level)
+      : agentPath !== undefined
+        ? agentMarksRunning(agentPath)
+        : NO_MARKS;
+  // A read that handed this turn, or the turn a continuation picked up, outside text (DOR-3969).
+  return sessionId && sessionReadOutsideText(primaryOf(sessionId))
+    ? { ...marks, outsider: true }
+    : marks;
 }
 
 /**
@@ -297,6 +308,36 @@ export function markRunningTurn(sessionId: string, read: TurnMarks): void {
   if (level !== undefined) remember(turnLevels, sessionId, withMarks(level, marks));
   const handOff = handOffLevels.get(sessionId);
   if (handOff !== undefined) remember(handOffLevels, sessionId, withMarks(handOff, marks));
+}
+
+/**
+ * Mark a conversation's running turn as one that read outside text mid-turn (DOR-3969): a read
+ * through a connected app, a web page, or another MCP server. Only ever adds, and every enforcement
+ * point sees it on its next call, because each reads the level through {@link marksOf}. It lasts
+ * until the conversation's next turn starts, which records a level of its own:
+ *
+ * - the outsider mark on the recorded level and its hand-off copy, under the id in hand and the
+ *   conversation's first id;
+ * - a read record keyed by the first id, which {@link marksOf} ORs in even when no level was
+ *   recorded under the id a caller names, plus an agent-wide entry for callers that know only the
+ *   agent (`live-outsider-turns`);
+ * - the chat's stored hold, so a turn that picks the chat up on its own after a restart is held.
+ *
+ * @param sessionId - The conversation, from the verified caller.
+ * @param agentPath - The calling agent's home, from its verified identity.
+ */
+export function markRunningTurnOutsider(sessionId: string, agentPath?: string): void {
+  const marks: TurnMarks = { outsider: true };
+  for (const id of new Set([sessionId, primaryOf(sessionId)])) {
+    const level = turnLevels.get(id);
+    if (level !== undefined) remember(turnLevels, id, withMarks(level, marks));
+    const handOff = handOffLevels.get(id);
+    if (handOff !== undefined) remember(handOffLevels, id, withMarks(handOff, marks));
+  }
+  noteReadMark(primaryOf(sessionId), agentPath);
+  // Not the bridged-sender latch: that says a stranger spoke on a Telegram or Slack bridge, and
+  // one inbox read in the owner's own linked chat must not make it a stranger's for good.
+  noteTurnHold(sessionId, true);
 }
 
 /**
@@ -401,12 +442,14 @@ export function entryHeldToDefault(entryId: string, roomId?: string): boolean {
 export function aliasTurnLevel(from: string, to: string): void {
   const level = turnLevels.get(from);
   if (level !== undefined && from !== to) remember(turnLevels, to, level);
+  aliasTurnStart(from, to);
   const handOff = handOffLevels.get(from);
   if (handOff !== undefined && from !== to) remember(handOffLevels, to, handOff);
   if (strangerHeld.has(from) && from !== to) strangerHeld.add(to);
   const serial = turnSerials.get(from);
   if (serial !== undefined && from !== to) turnSerials.set(to, serial);
-  aliasChosenTurn(from, to);
+  // Like the level: only a turn this process recorded under `from` replaces what `to` holds.
+  if (level !== undefined) aliasChosenTurn(from, to);
   // The room turn's outside words go with it, or every check reading the new id sees none (DOR-4023).
   aliasRoomTurnWords(from, to);
 }
@@ -468,6 +511,8 @@ function recordTurn(
 ): TurnPermissionLevel {
   const level = levelForTurn(runtime, stored, opts);
   remember(turnLevels, sessionId, level);
+  // A continuation picks up a held turn, so it is still that turn: started marked (DOR-4693).
+  noteTurnStart(sessionId, level.outsider === true || opts?.continuationHold === true);
   // What the chat is set to, with no ceiling, and whether anybody can be asked in it (DOR-3394):
   // a chat set to Full asks nobody, whatever the ceiling holds the turn's power to.
   noteChosenTurn(
@@ -586,13 +631,43 @@ export function recordTurnLevels(
       return undefined;
     }
   };
-  return applyTurnMarks(
-    recordLevels(runtime, storedModeOf),
-    (sessionId) => marksOfLevel(turnLevels.get(sessionId)),
-    (sessionId, opts) => {
-      recordTurn(runtime, sessionId, storedOf(sessionId), opts);
-    }
+  return markHeldChats(
+    applyTurnMarks(
+      recordLevels(runtime, storedModeOf),
+      (sessionId) => marksOfLevel(turnLevels.get(sessionId)),
+      (sessionId, opts) => {
+        recordTurn(runtime, sessionId, storedOf(sessionId), opts);
+      }
+    )
   );
+}
+
+/**
+ * Outermost at the seam, so the level record and the marks both see it: a turn in a chat that
+ * took in words DorkOS cannot vouch for carries the outsider mark until the owner's own clean
+ * turn (`held-chat-mark.ts`, DOR-4515).
+ */
+function markHeldChats(runtime: AgentRuntime): AgentRuntime {
+  return new Proxy(runtime, {
+    get(target, prop) {
+      if (
+        (prop === 'sendMessage' || prop === 'executeCommandIntent') &&
+        typeof target[prop] === 'function'
+      ) {
+        const start = (
+          target[prop] as (
+            id: string,
+            input: unknown,
+            opts?: MessageOpts
+          ) => AsyncGenerator<StreamEvent>
+        ).bind(target);
+        return (sessionId: string, input: unknown, opts?: MessageOpts) =>
+          start(sessionId, input, withHeldChatMark(sessionId, opts));
+      }
+      const value = Reflect.get(target, prop, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
 }
 
 /** The level record alone, which {@link recordTurnLevels} wraps in the marks. */
@@ -625,11 +700,23 @@ function recordLevels(
           } catch {
             stored = undefined;
           }
+          // A read's agent-wide mark from this chat's last turn ends only as the owner's own clean
+          // turn starts (DOR-3969, DOR-4515): any other turn re-reads the same words. A room turn
+          // works out its own marks from the posts it answers, so it still ends it.
+          const roomTurn = opts?.roomTurn !== undefined && opts.continuationHold !== true;
+          if (isOwnersCleanTurn(opts) || roomTurn) endReadMark(primaryOf(sessionId));
           const level = recordTurn(target, sessionId, stored, opts);
           // Kept on the chat's row, for the turns that later pick it up on their own. A
           // turn a continuation's hold clamped read no new words, so it leaves the answer
           // the last real turn gave (DOR-3203).
-          if (opts?.continuationHold !== true) noteTurnHold(sessionId, level.outsider === true);
+          // A bridged chat's record of whose words it holds rides the same turns (DOR-4593).
+          if (opts?.continuationHold !== true) {
+            noteTurnHold(sessionId, level.outsider === true);
+            noteBridgedSender(sessionId, {
+              marked: level.outsider === true,
+              bridged: opts?.turnStarter === 'telegram' || opts?.turnStarter === 'slack',
+            });
+          }
           // Under the id the turn was sent with AND the conversation's first
           // id, so a turn sent under a renamed id is the newest by either.
           const serial = ++nextTurnSerial;

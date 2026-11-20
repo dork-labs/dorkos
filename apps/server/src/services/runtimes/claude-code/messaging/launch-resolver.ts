@@ -60,15 +60,15 @@ import { decideCreditsLaunchModel } from '../../../core/cloud/credits-models.js'
 export { creditsRefusalEvent } from '../../../core/cloud/credits-protocols.js';
 import type { AgentSession } from '../agent-types.js';
 import { noteAccountLogin } from '../accounts/account-login-metadata.js';
-import {
-  claudeConfigDirEnv,
-  resolveClaudeRootSet,
-  resolveLaunchAccountRoot,
-} from '../claude-config-dir.js';
+import { claudeConfigDirEnv, resolveClaudeRootSet } from '../claude-config-dir.js';
 import { ensureCreditsClaudeRoot, isCreditsClaudeRoot } from '../credits-root.js';
 import { applyCreditsSettingsEnv, creditsSettingsEnv, forCredits } from './credits-launch.js';
 import { CLAUDE_CODE_CAPABILITIES, NEVER_ASK_MODE_ID } from '../runtime-constants.js';
-import { projectOfFolder } from '../../../core/usage/account-eligibility.js';
+import {
+  requiredClaudeRoot,
+  enforceRequiredClaudeConfiguration,
+  validatedRecoveryRoute,
+} from './launch/required-launch.js';
 import { noteSessionAccountLaunched } from '../accounts/account-usage-feed.js';
 import { envBillsPerToken } from './per-token-billing.js';
 import type { AgentIdentityPin } from '../sessions/launch-fingerprint.js';
@@ -99,7 +99,11 @@ import {
   resolveEffectivePermissionMode,
 } from './permission-mode-guard.js';
 import { resolveThinkingOptions } from './thinking-config.js';
-import { createEditBaselineCapture, detectSlashCommandName } from './message-sender-shared.js';
+import {
+  createEditBaselineCapture,
+  detectSlashCommandName,
+  editBaselineMatcher,
+} from './message-sender-shared.js';
 import type { MessageSenderOpts, ResolvedLaunch } from './message-sender-shared.js';
 import { neverAsks, turnPermissionMode } from '../turn-permission.js';
 import { auditToolHookMatchers } from '../audit-tool-hooks.js';
@@ -107,7 +111,8 @@ import { createHeldTurnHook } from '../tool-gate/held-turn-hook.js';
 import { protectedFileMatcher } from '../tool-gate/protected-file-hook.js';
 import { turnReadRoots } from '../tool-gate/held-turn-reads.js';
 import { shellGuardMatcher } from '../shell-guard/shell-guard-launch.js';
-import { createNeverAskHook } from '../tool-gate/never-ask-hook.js';
+import { createNeverAskHook, turnOutsideChecks } from '../tool-gate/never-ask-hook.js';
+import { NOTE_WRITES_AFTER, noteWritesBefore } from '../tool-gate/extension-write-note.js';
 import { marksHold } from '../../../core/turn-power/turn-marks.js';
 import { marksOf } from '../../../core/turn-power/turn-levels.js';
 import { applyFolderAllowsToLaunch } from '../folder-settings/launch-folder-allows.js';
@@ -118,8 +123,9 @@ import {
 import { applyRepoConfigStep, applyRepoMcpServers } from '../repo-settings/launch-repo-config.js';
 import { prepareOwnFolder } from '../folder-settings/own-folder-open.js';
 import { createStopHook } from '../tool-gate/stop-hook.js';
+import { loadGateHooks } from '../tool-gate/load-gate-hook.js';
 import { hasUnmovedClaudeMemory } from '../claude-memory-folder.js';
-import { enrichContent } from '../enrich-content.js';
+import { launchPrompt } from './launch/launch-content.js';
 
 // Split out to keep this file under the line limit (see message-sender-shared.ts).
 export {
@@ -282,16 +288,7 @@ export async function resolveLaunch(args: {
   // preserve prompt cache hits on the static prefix. The user's `content` is
   // NEVER mutated: the prepend produces a separate `enrichedContent` and the
   // tags are stripped on render (ADR-0273).
-  let enrichedContent: string;
-  if (isCommandDispatch) {
-    // DOR-107: a `/`-prefixed prompt must reach the CLI bare (leading whitespace
-    // also breaks command parsing). NO context prepend on command turns. Retained.
-    enrichedContent = content.trim();
-  } else {
-    // Context blocks defused always, the words when somebody other than the
-    // person here wrote them (DOR-2955, `enrich-content.ts`).
-    enrichedContent = enrichContent(content, messageOpts?.additionalContext, untrustedText);
-  }
+  const enrichedContent = launchPrompt(content, messageOpts, isCommandDispatch, untrustedText);
 
   // Mint this session's agent identity token (spec `agent-trust` §3.1). It
   // rides the process env — NOT the context-builder's prompt block — so it
@@ -330,21 +327,15 @@ export async function resolveLaunch(args: {
   // (spec `flow-multiproject` §8.4). A refusal throws the plain sentence, which
   // the turn reports as its error; an existing session keeps its account, since
   // the rule applies when an account is picked, not mid-conversation.
-  let accountRoot = session.accountRoot;
-  if (accountRoot === undefined) {
-    const launch = resolveLaunchAccountRoot({
-      hintId: messageOpts?.accountHint,
-      // The account this agent is pinned to, off the manifest already read
-      // above. It reaches the spawn env and stops there — nothing writes it to
-      // `session_metadata`, because disk stays the per-session truth.
-      // Not while a changed agent file waits for a person (DOR-3068).
-      agentAccountId: agentFileHeld ? undefined : manifest?.account,
-      agentId: manifest?.id,
-      project: await projectOfFolder(effectiveCwd),
-    });
-    if (!launch.ok) throw launch.error;
-    accountRoot = launch.root;
-  }
+  const { root: accountRoot, requirement } = await requiredClaudeRoot({
+    requiredLaunches: opts.requiredLaunches,
+    sessionId,
+    sessionRoot: session.accountRoot,
+    hintId: messageOpts?.accountHint,
+    agentAccountId: agentFileHeld ? undefined : manifest?.account,
+    agentId: manifest?.id,
+    cwd: effectiveCwd,
+  });
   // Refuses only for a person-set rule; a new or changed sign-in runs and is said once.
   if (!isCreditsClaudeRoot(accountRoot)) noteAccountLogin(accountRoot);
   const accountEnv = claudeConfigDirEnv(accountRoot);
@@ -778,6 +769,11 @@ export async function resolveLaunch(args: {
     chat: session,
     ownFolderOpen: ownFolder.open,
   });
+  const routeEnv = sdkOptions.env ?? {};
+  const route = { cwd: effectiveCwd, settings: sdkOptions.settings };
+  enforceRequiredClaudeConfiguration(requirement, accountRoot, onCredits, routeEnv, route);
+  session.validatedRecoveryRoute = validatedRecoveryRoute(accountRoot, onCredits, routeEnv, route);
+
   // Inject MCP tool servers -- create fresh instances per query to avoid
   // "Already connected to a transport" errors from reused Protocol objects.
   if (opts.mcpServerFactory) {
@@ -808,16 +804,26 @@ export async function resolveLaunch(args: {
   const resolveIdentity = createInSessionContextResolver(toolIdentity);
   const turnGrantPaths = (turnGrants ?? []).map((grant) => grant.path);
   const heldReadFolders = { cwd: effectiveCwd, roots: [effectiveCwd, ...turnGrantPaths] };
-  sdkOptions.canUseTool = createCanUseTool(session, logger, editBaselineCapture, resolveIdentity, {
+  // The status reads' outsider bound (DOR-3971, DOR-4601), shared by canUseTool and the hook.
+  const outsideChecks = turnOutsideChecks(session, sessionId, turnAgentPath);
+  const readRoots = turnReadRoots({
     cwd: effectiveCwd,
-    roots: turnReadRoots({
-      cwd: effectiveCwd,
-      agentHome: turnAgentPath,
-      grants: turnGrantPaths,
-      plugins: (opts.plugins ?? []).map((plugin) => plugin.path),
-      accountRoot,
-    }),
+    agentHome: turnAgentPath,
+    grants: turnGrantPaths,
+    plugins: (opts.plugins ?? []).map((plugin) => plugin.path),
+    accountRoot,
   });
+  // One launch's heavy-job hooks (DOR-4209), built here because a card gives its call's slot back.
+  const loadGate = loadGateHooks(session, { sessionId, agentName: agentDisplayName });
+  sdkOptions.canUseTool = createCanUseTool(
+    session,
+    logger,
+    editBaselineCapture,
+    resolveIdentity,
+    { cwd: effectiveCwd, roots: readRoots },
+    outsideChecks,
+    loadGate.releaseCall
+  );
   // Pre-edit baseline capture must ALSO ride the SDK PreToolUse hook (DOR-212):
   // `canUseTool` is skipped entirely under `bypassPermissions`, but PreToolUse
   // hooks fire in every mode, before the tool runs. The matcher confines the
@@ -838,8 +844,9 @@ export async function resolveLaunch(args: {
   const auditHooks = auditToolHookMatchers(auditTurn);
   sdkOptions.hooks = {
     PreToolUse: [
-      // Withheld browser tools, and a server the agent no longer gets (DOR-3872).
-      ...mcpToolHookMatchers(turnAgentPath),
+      // A read of outside text marks the turn first (DOR-3969); then withheld browser tools, and a
+      // server the agent no longer gets (DOR-3872).
+      ...mcpToolHookMatchers(turnAgentPath, () => session.sdkSessionId || sessionId),
       // DorkOS's own tools and protected files (DOR-4060): refused before any card.
       protectedFileMatcher({
         sessionId: () => session.sdkSessionId || sessionId,
@@ -864,26 +871,16 @@ export async function resolveLaunch(args: {
       // per-call decision. Answers nothing in any other mode.
       {
         matcher: `^${IN_SESSION_TOOL_PREFIX}`,
-        hooks: [
-          createNeverAskHook(session, resolveIdentity, logger, () =>
-            marksHold(marksOf(session.sdkSessionId ?? sessionId, turnAgentPath ?? undefined))
-          ),
-        ],
+        hooks: [createNeverAskHook(session, resolveIdentity, logger, ...outsideChecks)],
       },
-      {
-        matcher: 'Edit|Write|MultiEdit|NotebookEdit',
-        hooks: [
-          async (hookInput) => {
-            if (hookInput.hook_event_name === 'PreToolUse') {
-              await editBaselineCapture(
-                hookInput.tool_name,
-                (hookInput.tool_input ?? {}) as Record<string, unknown>
-              );
-            }
-            return { continue: true };
-          },
-        ],
-      },
+      // Who wrote a mini app's files, so path trust runs only its author's unheld edits (DOR-4528).
+      noteWritesBefore(session, { sessionId, cwd: effectiveCwd, agentHome: turnAgentPath }),
+      editBaselineMatcher(editBaselineCapture),
+      // A heavy shell job waits its turn while the computer is busy (DOR-4209). It answers
+      // nothing, so the hooks above still decide; the CLI may run them all side by side, so
+      // nothing depends on this being last. Its slots come back from the hooks below and, when
+      // the process dies, from `releaseHeavyJobsOf` on both dispatch paths.
+      loadGate.wait,
     ],
     // Tell auto mode's permission classifier which safety tier DorkOS's own
     // gate put this tool at, and that the call passed that gate
@@ -906,12 +903,16 @@ export async function resolveLaunch(args: {
         hooks: [createClassifierContextHook({ sessionId, enabled: CLASSIFIER_CONTEXT_ON })],
       },
       ...auditHooks.PostToolUse,
+      NOTE_WRITES_AFTER,
+      loadGate.afterCall,
     ],
     // A helper agent's tool calls never reach the stream the audit record
     // reads, so these record them (spec `audit-trail` PR3). Observe-only.
-    PostToolUseFailure: auditHooks.PostToolUseFailure,
-    // Pending session timers, and the agent's own folder at turn end (`stop-hook.ts`).
-    Stop: [{ hooks: [createStopHook(session, ownFolder.atTurnEnd)] }],
+    PostToolUseFailure: [...auditHooks.PostToolUseFailure, NOTE_WRITES_AFTER, loadGate.afterCall],
+    // Pending session timers, and the agent's own folder at turn end (`stop-hook.ts`); also any
+    // heavy-job slot a refused call never gave back (`load-gate-hook.ts`).
+    Stop: [{ hooks: [createStopHook(session, ownFolder.atTurnEnd)] }, loadGate.sweep],
+    ...loadGate.backstops,
   };
   sdkOptions.onElicitation = (request, { signal }) => {
     logger.debug('[sendMessage] elicitation request', {

@@ -15,6 +15,39 @@ describe('export-openapi', () => {
     expect(Object.keys(spec.paths ?? {}).length).toBeGreaterThan(0);
   });
 
+  it('documents selected browser controls separately from the owner’s current handoff', () => {
+    const paths = generateOpenAPISpec().paths ?? {};
+    const handoff = paths['/api/local-browser/handoff/state']?.get;
+    expect(handoff?.description).toContain('Only the owner on this computer');
+    expect(handoff?.parameters ?? []).toEqual([]);
+    expect(handoff?.responses).toHaveProperty('200');
+    for (const [path, method] of [
+      ['state', 'get'],
+      ['tabs/{id}/select', 'post'],
+      ['navigate', 'post'],
+      ['take-over', 'post'],
+      ['history', 'post'],
+      ['pause', 'post'],
+      ['resume', 'post'],
+      ['disconnect', 'post'],
+      ['sign-in', 'post'],
+      ['sign-in/done', 'post'],
+    ] as const) {
+      const operation = paths[`/api/local-browser/${path}`]?.[method];
+      expect(operation?.parameters, path).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            name: 'sessionId',
+            in: 'query',
+            required: false,
+            schema: expect.objectContaining({ type: 'string', minLength: 1, maxLength: 256 }),
+            description: expect.stringContaining('Omit it for Your browser'),
+          }),
+        ])
+      );
+    }
+  });
+
   it('documents document room notifications without recursive JSON expansion or scope cursor fields', () => {
     const spec = generateOpenAPISpec();
     const stream = JSON.stringify([
@@ -131,7 +164,8 @@ describe('export-openapi', () => {
 
     expect(Object.keys(updates ?? {}).sort()).toEqual(['get', 'post']);
     // The read takes no body, and the apply names the per-installation result,
-    // the card an agent waits on (202) and the refusal when what runs moved (409).
+    // the card an agent waits on (202), the refusal when what runs moved (409) and
+    // the owner's confirmation a person's apply waits for (428, DOR-4355).
     expect(updates?.get?.requestBody).toBeUndefined();
     expect(Object.keys(updates?.post?.responses ?? {}).sort()).toEqual([
       '200',
@@ -140,6 +174,7 @@ describe('export-openapi', () => {
       '403',
       '404',
       '409',
+      '428',
       '502',
     ]);
     const body = (

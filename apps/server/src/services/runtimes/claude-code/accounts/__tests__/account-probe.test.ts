@@ -3,11 +3,21 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { SDKControlGetUsageResponse } from '@anthropic-ai/claude-agent-sdk';
+import type { StreamEvent } from '@dorkos/shared/types';
+import { FakeAgentRuntime } from '@dorkos/test-utils';
 import { AccountUsageStore } from '../../../../core/usage/account-usage-store.js';
 import { readConfigFile } from '../../../../core/usage/account-usage-reconcile.js';
 import { defaultAccountFolder } from '../../../../core/usage/runtime-accounts.js';
 import { claudeConfigDirEnv } from '../../claude-config-dir.js';
 import { confirmsReset } from '../../../../session/fleet/resume-service.js';
+import {
+  isSigninFailing,
+  resetSigninEpisodes,
+  setRuntimeSigninSink,
+  watchRuntimeSignin,
+  type RuntimeSigninSink,
+} from '../../../../observability/index.js';
+import { accountSigninState } from '../../../../observability/account-signin-state.js';
 import {
   AccountUsageUnavailableError,
   PROBE_FLOOR_MS,
@@ -350,5 +360,149 @@ describe('probeForReset: the probe that confirms a reset', () => {
     expect(confirmsReset(weekly, episode)).toBe(true);
     // The same reading does not confirm an episode it has not moved past.
     expect(confirmsReset(weekly, { ...episode, resetsAt: SEVEN_DAY_RESETS_AT })).toBe(false);
+  });
+});
+
+/** A turn on `accountRoot` that dies on its sign-in, through the real watch. */
+async function failSigninOn(accountRoot: string): Promise<void> {
+  const runtime = new FakeAgentRuntime('claude-code');
+  runtime.withScenarios([
+    async function* (): AsyncGenerator<StreamEvent> {
+      yield {
+        type: 'error',
+        data: { message: 'Sign in again.', category: 'auth_error' },
+      } as StreamEvent;
+    },
+  ]);
+  runtime.getSessionAccount = () => accountRoot;
+  for await (const _ of watchRuntimeSignin(runtime).sendMessage('sess-1', 'hi', {}));
+}
+
+/**
+ * Let the wall clock move on by a few ms. A probe only proves a sign-in if it
+ * began after the failure was noticed, and the two can share one millisecond.
+ */
+function laterThanNow(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 5));
+}
+
+/**
+ * A probe that read the account's plan limits is proof its sign-in works, so it
+ * clears a signed-out state the way a working turn does (DOR-4425).
+ */
+describe('probeAccount: what a probe says about the sign-in', () => {
+  let sink: ReturnType<typeof vi.fn<RuntimeSigninSink>>;
+
+  beforeEach(() => {
+    resetSigninEpisodes();
+    // Installed, so a failure opens a real episode rather than only a state.
+    sink = vi.fn<RuntimeSigninSink>();
+    setRuntimeSigninSink(sink);
+  });
+
+  afterEach(() => {
+    setRuntimeSigninSink(null);
+    resetSigninEpisodes();
+  });
+
+  it('marks a signed-out account signed in when the probe recorded readings', async () => {
+    await failSigninOn(workPath);
+    expect(accountSigninState('claude-code', workPath)).toBe('signed-out');
+    expect(isSigninFailing('claude-code', workPath)).toBe(true);
+    await laterThanNow();
+
+    const { factory } = fakeQuery(async () => usageResponse());
+    expect((await probeAccount('work', deps(factory))).probe).toBe('ok');
+
+    expect(accountSigninState('claude-code', workPath)).toBe('signed-in');
+    expect(isSigninFailing('claude-code', workPath)).toBe(false);
+    // Cleared inside its re-check window: nobody was told, so nothing to take back.
+    expect(sink).not.toHaveBeenCalled();
+  });
+
+  it('leaves a failure standing when the probe began before it was noticed', async () => {
+    let answer: ((value: ReturnType<typeof usageResponse>) => void) | undefined;
+    const { factory } = fakeQuery(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+    );
+    const probing = probeAccount('work', deps(factory));
+    // Wait until the probe has really asked the binary for usage.
+    while (!answer) await new Promise((resolve) => setTimeout(resolve, 1));
+    await laterThanNow();
+    // The sign-in dies while the probe is already under way.
+    await failSigninOn(workPath);
+    answer(usageResponse());
+
+    expect((await probing).probe).toBe('ok');
+    expect(accountSigninState('claude-code', workPath)).toBe('signed-out');
+    expect(isSigninFailing('claude-code', workPath)).toBe(true);
+  });
+
+  it('leaves a failure standing when a later failure outran the probe', async () => {
+    await failSigninOn(workPath);
+    await laterThanNow();
+    let answer: ((value: ReturnType<typeof usageResponse>) => void) | undefined;
+    const { factory } = fakeQuery(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+    );
+    const probing = probeAccount('work', deps(factory));
+    while (!answer) await new Promise((resolve) => setTimeout(resolve, 1));
+    await laterThanNow();
+    // The probe began after the first failure, but the sign-in failed again after it began.
+    await failSigninOn(workPath);
+    answer(usageResponse());
+
+    expect((await probing).probe).toBe('ok');
+    expect(accountSigninState('claude-code', workPath)).toBe('signed-out');
+    expect(isSigninFailing('claude-code', workPath)).toBe(true);
+  });
+
+  it('leaves the account signed out when the probe found no readings', async () => {
+    await failSigninOn(workPath);
+    const { factory } = fakeQuery(async () =>
+      usageResponse({ rate_limits: { five_hour: { utilization: null, resets_at: null } } } as never)
+    );
+
+    expect(await probeAccount('work', deps(factory))).toMatchObject({
+      probe: 'failed',
+      reason: 'no-readings',
+    });
+    expect(accountSigninState('claude-code', workPath)).toBe('signed-out');
+    expect(isSigninFailing('claude-code', workPath)).toBe(true);
+  });
+
+  it('leaves the account signed out when the probe timed out', async () => {
+    await failSigninOn(workPath);
+    const { factory } = fakeQuery(() => new Promise(() => {}));
+
+    expect(await probeAccount('work', deps(factory, { timeoutMs: 20 }))).toMatchObject({
+      probe: 'failed',
+      reason: 'timeout',
+    });
+    expect(accountSigninState('claude-code', workPath)).toBe('signed-out');
+    expect(isSigninFailing('claude-code', workPath)).toBe(true);
+  });
+
+  it('finds the failure when the account is written with a trailing slash', async () => {
+    // The turn names the folder as `path.resolve` spells it; the probe uses
+    // the account's path as written in config. They are one account.
+    await writeConfig([{ id: 'work', path: `${workPath}/`, label: 'Work' }]);
+    store.stop();
+    await startStore();
+    await failSigninOn(path.resolve(workPath));
+    expect(isSigninFailing('claude-code', workPath)).toBe(true);
+    await laterThanNow();
+
+    const { factory } = fakeQuery(async () => usageResponse());
+    expect((await probeAccount('work', deps(factory))).probe).toBe('ok');
+
+    expect(isSigninFailing('claude-code', path.resolve(workPath))).toBe(false);
+    expect(accountSigninState('claude-code', path.resolve(workPath))).toBe('signed-in');
   });
 });

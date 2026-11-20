@@ -5,15 +5,16 @@
  */
 import { createServer, type Server } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, relative } from 'node:path';
+import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { EncryptedFileCredentialStore } from '../../../../core/credential-provider.js';
 import { RemoteConnectionNotFoundError, RemoteConnectionStore } from '../../connection-store.js';
 import { RemoteCommunityPairingService } from '../../pairing-service.js';
 import { parseCommunityOrigin } from '../../pinned-origin.js';
 import { RemoteAdministerCredentials } from '../administer-credentials.js';
+import { credentialReach, sourceFiles } from './administer-source-guard.js';
 import { ASKS_FOR_ADMINISTER, CONNECTION_SCOPES, pairingScopes } from '../pairing-scopes.js';
 
 const communityId = randomUUID();
@@ -265,24 +266,8 @@ describe('who may load it', () => {
     // through its module or its accessor (security rule 3). Add a file here only if every route
     // in it is guarded by `resolveCommunityOwner`.
     const root = join(import.meta.dirname, '../../../../..');
-    const reach = {
-      module: /administer-credentials(\.js)?['"]/u,
-      accessor: /\bgetRemoteAdministerCredentials\b/u,
-    };
-    const found: Record<keyof typeof reach, string[]> = { module: [], accessor: [] };
-    async function walk(dir: string) {
-      for (const entry of await readdir(dir, { withFileTypes: true })) {
-        const path = join(dir, entry.name);
-        if (entry.isDirectory()) {
-          if (entry.name !== '__tests__' && entry.name !== 'node_modules') await walk(path);
-        } else if (/\.tsx?$/u.test(entry.name)) {
-          const text = await readFile(path, 'utf8');
-          for (const key of ['module', 'accessor'] as const)
-            if (reach[key].test(text)) found[key].push(relative(root, path));
-        }
-      }
-    }
-    await walk(root);
+    const files = await sourceFiles(root);
+    const found = await credentialReach(root, files);
     expect(found.module.sort()).toEqual([
       'routes/community-administer.ts',
       'services/communities/remote/state.ts',

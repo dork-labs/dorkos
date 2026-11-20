@@ -20,6 +20,7 @@
  */
 import { constants as fsConstants, promises as fs } from 'node:fs';
 import path from 'node:path';
+import { isRoomCanvasMediaUrl } from '@dorkos/shared/canvas-media-url';
 import type { UiCanvasContent, UiCommand } from '@dorkos/shared/schemas';
 import { FILE_LIMITS } from '../../config/constants.js';
 import { resolveWithinCwd } from '../../lib/file-route-guards.js';
@@ -35,13 +36,15 @@ import { canvasSourcePath } from './document-key.js';
 
 /**
  * A media document's `src` when it names a local file, or `null` for a web
- * address, an inline `data:` value or a document with no `src` at all.
+ * address, an inline `data:` value, a file already copied into a room (served
+ * by its own membership-checked route) or a document with no `src` at all.
  *
  * @param content - The content about to be written.
  */
 function localMediaSource(content: UiCanvasContent): string | null {
   const src = 'src' in content && typeof content.src === 'string' ? content.src : null;
   if (src === null || src.length === 0 || /^(?:https?|data|blob):/i.test(src)) return null;
+  if (isRoomCanvasMediaUrl(src)) return null;
   return src.startsWith('file://') ? decodeURIComponent(new URL(src).pathname) : src;
 }
 
@@ -94,7 +97,7 @@ export function canvasContentRefusal(
   return base === undefined ? null : protectedSourceRefusal(source, base);
 }
 
-/** Why a room canvas will not show a local file: it is outside the agent's folder. */
+/** Why a canvas will not show a local file: it is outside the agent's folder. */
 export interface OutsideFolderRefusal {
   /** Always `OUTSIDE_FOLDER`. */
   code: 'OUTSIDE_FOLDER';
@@ -102,16 +105,17 @@ export interface OutsideFolderRefusal {
   message: string;
 }
 
-/** The folders a room canvas may show a local file from (DOR-3519). */
-export interface RoomCanvasFolders {
+/** The folders a canvas may show a local file from (DOR-3519). */
+export interface CanvasFolders {
   /** The chat's folder. A relative path resolves against it, as every canvas writer resolves it. */
   cwd: string | undefined;
   /**
-   * The destination room's own folders, as the server placed them: the agent's
-   * copy of THAT room's files and the room's shared `repo/`. Only an absolute
-   * path reaches them.
+   * For a room's canvas, the destination room's own folders, as the server
+   * placed them: the agent's copy of THAT room's files and the room's shared
+   * `repo/`. Only an absolute path reaches them. Omitted for a one-on-one chat,
+   * whose canvas reads only from `cwd`.
    */
-  roomFolders: readonly string[];
+  roomFolders?: readonly string[];
   /**
    * The rooms directory. Inside it only `roomFolders` count, even when `cwd`
    * contains it (a DorkOS dev checkout keeps its data under the repo), so
@@ -121,9 +125,9 @@ export interface RoomCanvasFolders {
 }
 
 /**
- * Where `source` really is, when it is inside `folder`: `null` when it is not,
- * `undefined` when the path could not be judged at all (a NUL byte, a folder
- * outside the boundary), which the opener answers in its own words.
+ * Where `source` really is, when it is inside `folder`: `null` when it is not (or
+ * when `folder` itself is outside the boundary), `undefined` when the path could
+ * not be judged at all (a NUL byte), which the opener answers in its own words.
  */
 async function resolvedWithin(folder: string, source: string): Promise<string | null | undefined> {
   try {
@@ -145,21 +149,22 @@ async function realFolder(folder: string): Promise<string | null> {
 }
 
 /**
- * Why a ROOM canvas will not show the local file a command names, or `null`
- * when it names none or may (DOR-3519).
+ * Why a canvas will not show the local file a command names, or `null` when it
+ * names none or may (DOR-3519).
  *
- * A room copies what its canvas shows to every other member, so a file outside
- * the agent's folder and that room's own folders (or a link inside one that
- * points out) is an error the agent reads, asked with the file routes' own
- * {@link resolveWithinCwd}. Only the room paths call this: the person's own
- * one-on-one window is not asked.
+ * A file outside the agent's folder (or a link inside it that points out) is an
+ * error the agent reads, asked with the file routes' own {@link resolveWithinCwd}.
+ * A one-on-one canvas reads a local file only through routes held to the chat's
+ * folder, so anything else would be "opened" and then draw an empty card. A room
+ * also copies what its canvas shows to every other member, and adds that room's
+ * own folders.
  *
  * @param command - The validated `control_ui` command.
- * @param folders - The chat's folder, the destination room's folders, and the rooms directory.
+ * @param folders - The chat's folder, and for a room its folders and the rooms directory.
  */
 export async function canvasOutsideFolderRefusal(
   command: UiCommand,
-  folders: RoomCanvasFolders
+  folders: CanvasFolders
 ): Promise<OutsideFolderRefusal | null> {
   const content = contentFor(command);
   const { cwd } = folders;
@@ -170,7 +175,8 @@ export async function canvasOutsideFolderRefusal(
 
   let resolved = await resolvedWithin(cwd, source);
   if (resolved === undefined) return null;
-  const roomFolders = (await Promise.all(folders.roomFolders.map(realFolder))).filter(
+  const forRoom = folders.roomFolders !== undefined;
+  const roomFolders = (await Promise.all((folders.roomFolders ?? []).map(realFolder))).filter(
     (folder): folder is string => folder !== null
   );
   if (resolved === null && path.isAbsolute(source)) {
@@ -191,9 +197,12 @@ export async function canvasOutsideFolderRefusal(
     isInside(rooms, where) &&
     !roomFolders.some((folder) => isInside(folder, where));
   if (where !== null && !anotherRoomsFile) return null;
+  const limit = forRoom
+    ? `your folder or this room's files, and ${source} isn't in either`
+    : `your folder, and ${source} is outside it`;
   return {
     code: 'OUTSIDE_FOLDER',
-    message: `${source} is outside your folder and this room's files, so the canvas can't show it. To show it, copy it into your folder first and open the copy.`,
+    message: `The canvas only shows files from ${limit}. You can still read the file yourself and show what's in it, or copy it into your folder and open the copy.`,
   };
 }
 

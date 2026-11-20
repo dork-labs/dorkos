@@ -1,5 +1,6 @@
 import type { WebContents } from 'electron';
 import type { chromeIdentity } from './browser-identity';
+import type { createAgentInputGate } from './page-keys';
 import type { ConnectOverCDPTransport } from 'playwright-core';
 
 interface Message {
@@ -9,9 +10,18 @@ interface Message {
   sessionId?: string;
 }
 
-/** Adapts one real guest debugger to Playwright, never the shell's target tree. */
+/**
+ * Adapts one real guest debugger to Playwright, never the shell's target tree.
+ *
+ * @param contents - The guest page the agent drives.
+ * @param inputGate - Required, so a transport can't be made without it: every agent
+ *   `Input.*` command runs through it, and the page's key forwarding stays quiet while
+ *   one does (DOR-4432).
+ * @param identity - The browser identity the page reports, when one is set.
+ */
 export function pageTransport(
   contents: WebContents,
+  inputGate: ReturnType<typeof createAgentInputGate>,
   identity?: ReturnType<typeof chromeIdentity>
 ): ConnectOverCDPTransport {
   const debuggerApi = contents.debugger;
@@ -107,11 +117,15 @@ export function pageTransport(
             ) {
               throw new Error('Page target is unavailable');
             }
-            result = await debuggerApi.sendCommand(
-              message.method,
-              message.params,
-              message.sessionId === rootSession ? undefined : message.sessionId
-            );
+            const sendCommand = () =>
+              debuggerApi.sendCommand(
+                message.method,
+                message.params,
+                message.sessionId === rootSession ? undefined : message.sessionId
+              );
+            result = message.method.startsWith('Input.')
+              ? await inputGate.run(sendCommand)
+              : await sendCommand();
           }
           transport.onmessage?.({ id: message.id, sessionId: message.sessionId, result });
         } catch (error) {

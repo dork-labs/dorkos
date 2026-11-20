@@ -51,6 +51,8 @@ export type NotificationTier = (typeof NOTIFICATION_TIERS)[number];
  * Dot-notation `subject.verb`, matching the activity log's event types.
  */
 export const NOTIFICATION_KINDS = [
+  /** Five wrong passwords dropped a remote request's confirmation. */
+  'step-up.remote-refused',
   /** An agent is stopped, waiting on a person to answer. Standing. */
   'ask.pending',
   /** An agent proposed a schedule that only a person can approve. Standing. */
@@ -129,6 +131,15 @@ export const NOTIFICATION_KINDS = [
    */
   'community.teammate-limits-reset',
   /**
+   * Agents used 80% of this month's spend limit on paid app actions (DOR-4204 PR 2). Once per
+   * month and limit.
+   */
+  'spending.near-limit',
+  /** Agents reached this month's spend limit; paid actions stop (DOR-4204 PR 2). */
+  'spending.limit-reached',
+  /** This month's spend meter couldn't be read; paid actions ask (DOR-4204 PR 2). */
+  'spending.meter-reset',
+  /**
    * An agent handed the Agent browser to a person and stopped (DOR-3218). One row per
    * handoff, with no buttons: it's the only word a phone gets, and the live card answers it.
    */
@@ -174,6 +185,12 @@ export const NOTIFICATION_KINDS = [
    * once per set of files.
    */
   'agent.secret_files',
+  /**
+   * An agent's folder allow list changed and is too long to show whole on its
+   * approval card, so it never applies and no card is raised (DOR-4455). Once
+   * per agent and list.
+   */
+  'agent.folder_rules_too_long',
   /**
    * A Claude account folder holds a sign-in DorkOS has not seen there before,
    * or a different one than it had (DOR-3245). Nothing pauses: DorkOS just

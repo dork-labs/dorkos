@@ -9,7 +9,12 @@
  *
  * @module services/runtimes/claude-code/messaging/message-sender-shared
  */
-import type { McpServerConfig, McpServerStatus, Options } from '@anthropic-ai/claude-agent-sdk';
+import type {
+  HookCallbackMatcher,
+  McpServerConfig,
+  McpServerStatus,
+  Options,
+} from '@anthropic-ai/claude-agent-sdk';
 import type {
   AgentRegistryPort,
   McpAppServerConnection,
@@ -119,6 +124,8 @@ export type McpServerFactory = (
 
 /** Options bundle for executeSdkQuery, grouping runtime dependencies. */
 export interface MessageSenderOpts {
+  /** Exact injected server owner; absence is unknown, never ordinary authority. */
+  requiredLaunches?: import('./launch/required-launch.js').RequiredLaunchOwner;
   cwd: string;
   sessionCwd?: string;
   claudeCliPath?: string;
@@ -172,11 +179,11 @@ export interface MessageSenderOpts {
    *
    * Awaited BEFORE the event that carries the new id out of the server, which is
    * the ordering the whole thing rests on: `trigger-turn` re-keys the projector
-   * on any event it sees, and that announcement is how the cockpit learns the id
+   * on any event it sees, and that announcement is how the app learns the id
    * it will POST its next message under. Handing that id out before the row has
    * moved is what made the session's own next message look like a brand-new one
-   * (DOR-493, DOR-838). A failure inside is warned and swallowed by the store,
-   * so this await cannot fail the turn.
+   * (DOR-493, DOR-838). Optional settings failures keep the legacy warning.
+   * A required identity failure withholds this announcement and fails the turn.
    */
   onSdkSessionRebind: (previousSdkSessionId: string, nextSdkSessionId: string) => Promise<void>;
   /**
@@ -280,6 +287,32 @@ export function createEditBaselineCapture(
     } catch (err) {
       logger.debug('[sendMessage] diff baseline capture failed', { session: sessionId, err });
     }
+  };
+}
+
+/**
+ * The `PreToolUse` registration that captures an edit's baseline before the tool runs, in every
+ * mode (DOR-212): `canUseTool` is skipped under `bypassPermissions`, hooks are not. It never
+ * blocks or changes the tool (`continue: true`).
+ *
+ * @param capture - The launch's {@link createEditBaselineCapture}.
+ */
+export function editBaselineMatcher(
+  capture: (toolName: string, input: Record<string, unknown>) => Promise<void>
+): HookCallbackMatcher {
+  return {
+    matcher: 'Edit|Write|MultiEdit|NotebookEdit',
+    hooks: [
+      async (hookInput) => {
+        if (hookInput.hook_event_name === 'PreToolUse') {
+          await capture(
+            hookInput.tool_name,
+            (hookInput.tool_input ?? {}) as Record<string, unknown>
+          );
+        }
+        return { continue: true };
+      },
+    ],
   };
 }
 

@@ -25,8 +25,13 @@ export interface ChatSessionOptions {
    * Called when a brand-new session's client UUID resolves to its SDK-canonical
    * id after the trigger POST (create-on-first-message). REPLACES the URL in
    * place (no history push) so the optimistic UUID is silently superseded.
+   *
+   * `fromSessionId` is the chat being renamed. The call arrives late — after a
+   * POST resolves or a rekey is announced — and by then the person may be on
+   * another tab or another chat, so the handler must rename only while that
+   * chat is still on screen (DOR-4622).
    */
-  onSessionIdChangeReplace?: (canonicalSessionId: string) => void;
+  onSessionIdChangeReplace?: (canonicalSessionId: string, fromSessionId: string) => void;
   /** Called when streaming completes after 3+ seconds (for notification sound) */
   onStreamingDone?: () => void;
   /**

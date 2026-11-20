@@ -1,3 +1,12 @@
+import {
+  initAgentIdentityService,
+  resetAgentIdentityService,
+} from '../../../../core/agent-identity/agent-identity-service.js';
+import {
+  createInSessionContextResolver,
+  resolveAgentHome,
+} from '../../../../core/agent-identity/index.js';
+import { createCanUseTool } from '../../messaging/interactive-handlers.js';
 /**
  * `session_start` (spec `claude-account-fleet` D5): an agent starts a session
  * of its own, optionally on a named account. The session always runs as the
@@ -36,6 +45,7 @@ import type { AccountAdvisor } from '@dorkos/extension-api/server';
 import { USER_CONFIG_DEFAULTS, type UserConfig } from '@dorkos/shared/config-schema';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import { CLAUDE_CODE_CAPABILITIES } from '../../runtime-constants.js';
+import { creditsClaudeRoot } from '../../credits-root.js';
 import { CODEX_CAPABILITIES } from '../../../codex/runtime-constants.js';
 import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
 import { recordTurnLevels } from '../../../../core/turn-power/turn-levels.js';
@@ -65,10 +75,12 @@ vi.mock('../../../../core/cloud/credits-model-gate.js', () => ({
 }));
 /** The stored settings rows `getSessionSettings` answers from, by session id. */
 const storedSettings = vi.hoisted(() => new Map<string, { permissionMode?: string }>());
+const nativeAccounts = vi.hoisted(() => new Map<string, string>());
 vi.mock('../../../../core/runtime-registry.js', () => ({
   runtimeRegistry: {
     computerRuntimeForAgentPath: () => undefined,
     getNativeSessionCwd: vi.fn(() => null),
+    getNativeSessionAccount: vi.fn((id: string) => nativeAccounts.get(id) ?? null),
     getSessionSettings: vi.fn(async (id: string) => storedSettings.get(id) ?? null),
     has: vi.fn((type: string) => runtimes.has(type)),
     get: vi.fn((type: string) => runtimes.get(type)),
@@ -112,7 +124,8 @@ vi.mock('../../../../session/projector-persistence.js', async (importOriginal) =
   ...(await importOriginal<object>()),
   persistenceModeFor: vi.fn(() => 'none'),
 }));
-vi.mock('../../../../observability/dispatch-buffers.js', () => ({
+vi.mock('../../../../observability/dispatch-buffers.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../observability/dispatch-buffers.js')>()),
   recordDispatchStart: vi.fn(),
   recordDispatchEnd: vi.fn(),
 }));
@@ -337,6 +350,7 @@ beforeEach(() => {
     permissionModes: CODEX_CAPABILITIES.permissionModes,
   });
   storedSettings.clear();
+  nativeAccounts.clear();
   runtimes.set('claude-code', claude);
   runtimes.set('codex', codex);
   installStore([account('work'), account('client')]);
@@ -625,6 +639,74 @@ describe('session_start', () => {
     });
   });
 
+  it.each(['home', 'managed-worktree'] as const)(
+    'keeps actual own session_start identity through the SDK post gate from %s',
+    async (place) => {
+      const worktree = '/work/checkouts/scout-recovery';
+      registerTestHomes([AGENT_HOME, OTHER_HOME], {
+        roomsDir: ROOMS_DIR,
+        managed: { [worktree]: AGENT_HOME },
+      });
+      const identities = initAgentIdentityService(createTestDb());
+      await identities.mint({ agentPath: AGENT_HOME, displayName: 'Scout' });
+      try {
+        const result = await createSessionStartHandler(makeDeps(), () => ({
+          agentPath: AGENT_HOME,
+          sessionId: 'parent-seat',
+        }))({
+          ...BASE,
+          cwd: place === 'home' ? AGENT_HOME : worktree,
+        });
+        expect(result.isError).toBeUndefined();
+        const child = vi.mocked(dispatchMessage).mock.calls.at(-1)![0];
+        expect(child.forAgent).toBe(AGENT_HOME);
+        const resolver = createInSessionContextResolver(resolveAgentHome(child.forAgent));
+        expect(await resolver()).toMatchObject({ identity: { agentPath: AGENT_HOME } });
+        const session = {
+          cwd: child.cwd,
+          permissionMode: 'default' as const,
+          unattended: true,
+          turnPermissionCeiling: 'runtime-default' as const,
+          pendingInteractions: new Map(),
+          eventQueue: [],
+        };
+        const gate = createCanUseTool(session, { debug() {}, info() {} }, undefined, resolver);
+        await expect(
+          gate(
+            'mcp__dorkos__post_to_room',
+            { roomId: 'parent-room', text: 'done' },
+            {
+              signal: new AbortController().signal,
+              toolUseID: 'own-child-post',
+              mcpServer: { name: 'dorkos', source: 'sdk' },
+            }
+          )
+        ).resolves.toMatchObject({ behavior: 'allow' });
+        expect(session.pendingInteractions.size).toBe(0);
+        expect(session.turnPermissionCeiling).toBe('runtime-default');
+        const anonymousGate = createCanUseTool(
+          session,
+          { debug() {}, info() {} },
+          undefined,
+          async () => undefined
+        );
+        await expect(
+          anonymousGate(
+            'mcp__dorkos__post_to_room',
+            { roomId: 'parent-room', text: 'done' },
+            {
+              signal: new AbortController().signal,
+              toolUseID: 'anonymous-post',
+              mcpServer: { name: 'dorkos', source: 'sdk' },
+            }
+          )
+        ).resolves.toMatchObject({ behavior: 'deny' });
+      } finally {
+        resetAgentIdentityService();
+      }
+    }
+  );
+
   it('starts in its own home, and accepts its own agentPath', async () => {
     const result = await asScout()({ ...BASE, cwd: AGENT_HOME, agentPath: AGENT_HOME });
     expect(result.isError).toBeUndefined();
@@ -900,6 +982,16 @@ describe('session_start records who started the new session (spec flow-multiproj
       reason: 'Split off the tests',
     });
     expect(store.get(sessionId.replace(/^canon-/, ''))).toBeNull();
+  });
+
+  it('does not carry a parent chat’s one-session credits choice into a spin-off', async () => {
+    nativeAccounts.set('credits-parent', creditsClaudeRoot());
+    const result = await fromChat('credits-parent')(BASE);
+    expect(result.isError).toBeUndefined();
+    const launched = vi.mocked(dispatchMessage).mock.calls.at(-1)![0];
+    expect(launched.sessionId).not.toBe('credits-parent');
+    expect(launched.accountHint).toBeUndefined();
+    expect(payloadOf(result).account).toBeNull();
   });
 
   describe('the scheduled thing behind the starting chat (DOR-3703, ME)', () => {
@@ -1420,6 +1512,11 @@ describe("session_start runs at the calling chat's level or lower (spec inherite
       permissionMode: 'plan',
     });
     expect(body).toMatchObject({ code: 'UNKNOWN_PERMISSION_MODE' });
+    // The agent reads which modes it can name instead (DOR-4447).
+    expect(body.error).toMatch(
+      /^The codex runtime has no permission mode called plan\. It supports: .+\.$/
+    );
+    expect(body.error).not.toMatch(/It supports: .*\bplan\b/);
   });
 
   it('holds a chat SET to Never ask whose turn runs at Plan to chats that cannot ask', async () => {
@@ -1943,10 +2040,11 @@ describe('a start from a chat that read outside words (DOR-4029)', () => {
     }) as Promise<{ saved: boolean; code?: string }>;
   }
 
-  const browserRefuses = (sessionId: string) =>
-    liveOutsideTurnCheck({ agentPathOf: async () => home, launchOriginOf: () => 'agent-launch' })(
-      sessionId
-    );
+  const browserRefuses = async (sessionId: string) =>
+    (await liveOutsideTurnCheck({
+      agentPathOf: async () => home,
+      launchOriginOf: () => 'agent-launch',
+    })(sessionId)) !== null;
 
   it('notes the new chat before its turn runs; memory and the browser refuse it', async () => {
     noteRoomTurnWords(starter, true);

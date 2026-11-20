@@ -55,6 +55,7 @@ import type {
   StartedByInsert,
 } from '../session/origin/session-started-by-store.js';
 import { checkStartWorkEligibility, type StartWorkEligibility } from './start-work-eligibility.js';
+import { extensionClientId } from './agent-send/extension-client-id.js';
 
 /** How long the hourly limit looks back. */
 const HOUR_MS = 60 * 60 * 1000;
@@ -238,7 +239,8 @@ export class StartWorkService {
           // the person's own words. It rides the context bag and is never drawn.
           seedContext: `This chat was started by the ${name} extension: ${request.reason}`,
         },
-        clientId: `extension:${extensionId}`,
+        // The extension's lock identity, which also marks the chat's first turn (DOR-4594).
+        clientId: extensionClientId(extensionId),
         // No agent is named: the chat runs in the project's root on the default
         // runtime, like a new chat a person opens there.
         meshCore: undefined,

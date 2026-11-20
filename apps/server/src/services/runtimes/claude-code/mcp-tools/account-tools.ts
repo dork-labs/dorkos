@@ -20,8 +20,7 @@ import {
 import { getAccountUsageStore } from '../../../core/usage/current-usage-store.js';
 import type { McpToolDeps } from './types.js';
 import { jsonContent, structuredJsonContent } from './types.js';
-import { marksHold } from '../../../core/turn-power/turn-marks.js';
-import { marksOf } from '../../../core/turn-power/turn-levels.js';
+import { turnReadOutsideWords } from '../../../core/turn-power/outsider-turn.js';
 import { markedTurnRunsAtFull } from '../../../core/turn-power/full-autonomy.js';
 import type { TaskProvenanceResolver } from './tasks/task-tools.js';
 
@@ -29,7 +28,8 @@ import type { TaskProvenanceResolver } from './tasks/task-tools.js';
  * Refused in a turn that read words DorkOS cannot vouch for (a Wi-Fi sign-in's
  * hold), ceiling or not (Security on #3201, DOR-3289): the
  * answer carries account ids, plan, credits and spend, and the turn could post
- * it where the stranger reads. Read from the turn's own marks (`marksOf`).
+ * it where the stranger reads. Read from the turn's own record: its mark or its outside-words
+ * note (`turnReadOutsideWords`).
  *
  * Not in a chat set to Full autonomy (DOR-3412): there the mark refuses nothing
  * and the read runs, with one Activity line saying a marked turn made it. Usage
@@ -53,8 +53,8 @@ function refusedForMark(
 ): boolean {
   if (!resolveProvenance) return false;
   const p = resolveProvenance();
-  const marks = marksOf(p.sessionId, p.agentPath);
-  if (!marksHold(marks)) return false;
+  // The outside-words note counts as the mark does (DOR-4587).
+  if (!turnReadOutsideWords(p.sessionId, p.agentPath)) return false;
   return !markedTurnRunsAtFull({
     ...action,
     ...(p.agentPath ? { agentPath: p.agentPath } : {}),

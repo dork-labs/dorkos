@@ -280,6 +280,14 @@ export const SETTINGS_SECTIONS: PlaygroundSection[] = [
       'approval code',
     ],
   },
+  // API keys — the Login & security list, with when each key was last used remotely (DOR-4206).
+  {
+    id: 'api-keys',
+    title: 'API Keys',
+    page: 'settings',
+    category: 'Control Center',
+    keywords: ['api key', 'keys', 'mcp', 'remote', 'last used', 'login', 'security'],
+  },
   // Keep awake — the top-bar cup and the Sleep card, on one status.
   {
     id: 'keep-awake',

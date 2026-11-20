@@ -68,7 +68,12 @@ import {
   installContinueService,
   installResumeService,
 } from '../../services/session/index.js';
-import { probeForReset } from '../../services/runtimes/claude-code/accounts/account-probe.js';
+import {
+  probeForReset,
+  recheckSigninByProbe,
+} from '../../services/runtimes/claude-code/accounts/account-probe.js';
+import { startSigninCredentialWatch } from '../../services/runtimes/claude-code/accounts/signin-credential-watch.js';
+import { setSigninRecheck } from '../../services/observability/index.js';
 import { watchAskResolution } from '../../services/notifications/emitters/ask-resolution.js';
 import { watchRuntimeSigninFailures } from '../../services/notifications/emitters/runtime-signin.js';
 import { watchAccountSigninReviews } from '../../services/notifications/emitters/account-signin-review.js';
@@ -76,6 +81,10 @@ import { watchCreditsRefusals } from '../../services/notifications/emitters/cred
 import { announceInstalledVersion } from '../../services/notifications/emitters/update-installed.js';
 import { warnAboutGitProtection } from '../../lib/git-safety.js';
 import { watchShiftReport } from '../../services/notifications/emitters/shift-report.js';
+import {
+  DeclaredReaders,
+  setDeclaredReaders,
+} from '../../services/core/turn-power/declared-readers.js';
 import type { OpenConfigAndDatabaseResult } from './config-and-database.js';
 import type { WireCoreStoresResult } from './core-stores.js';
 import type { ClaimDataDirectoryResult } from './data-directory.js';
@@ -173,6 +182,14 @@ export async function wireSessionServices(refs: ServerRefs, built: WireSessionSe
     file: path.join(dorkHome, 'permissions', 'person-set-agent-permissions.json'),
     logger,
   });
+  // The tasks and agents that said they read outside text, kept where no agent
+  // can write: a file edited back to false never clears one (DOR-3969).
+  setDeclaredReaders(
+    new DeclaredReaders({
+      file: path.join(dorkHome, 'permissions', 'declared-outside-readers.json'),
+      logger,
+    })
+  );
   const permissionObserver = new PermissionObserver({
     snapshotFile: path.join(dorkHome, 'permissions', 'observed-agent-permissions.json'),
     agentAt: (agentPath) => {
@@ -308,6 +325,20 @@ export async function wireSessionServices(refs: ServerRefs, built: WireSessionSe
   // A runtime whose sign-in stopped working, noticed at whichever turn trips
   // over it first — including the 3am ones nobody is watching (DOR-1654).
   watchRuntimeSigninFailures();
+  // One failed sign-in is re-checked before anybody is told (DOR-4424). Not
+  // under the test runtime, whose accounts are not real folders to probe.
+  if (!env.DORKOS_TEST_RUNTIME) {
+    setSigninRecheck((runtime, accountRoot) =>
+      runtime === 'claude-code'
+        ? recheckSigninByProbe(accountRoot)
+        : Promise.resolve('unknown' as const)
+    );
+  }
+  // A signed-out Claude account signed in again from the command line is
+  // probed and cleared (DOR-4425). Off under the test runtime, inside the call.
+  refs.stopSigninCredentialWatch = startSigninCredentialWatch({
+    testRuntime: Boolean(env.DORKOS_TEST_RUNTIME),
+  });
   // A new or changed Claude sign-in, said once as a notice; it never holds a turn (DOR-3245).
   watchAccountSigninReviews(activityService);
   // A turn DorkOS credits refused, told whoever started it, so a refused

@@ -77,6 +77,8 @@ const FILE_BACKED_COLUMN = {
   timezone: 'timezone',
   enabled: 'enabled',
   sticky: 'sticky',
+  // Not a column: the mapped task's flag from DorkOS's own record (DOR-3969).
+  readsOutsideText: 'readsOutsideText',
   permissionMode: 'permissionMode',
   prompt: 'prompt',
   // The execution trio (DOR-1615/DOR-1347). Comparable against the row directly:
@@ -98,6 +100,8 @@ export interface FileBackedRow {
   timezone?: string | null;
   enabled: boolean;
   sticky: boolean;
+  /** Whether the task said it reads outside text; absent means it did not (DOR-3969). */
+  readsOutsideText?: boolean;
   permissionMode: string;
   prompt: string;
   /** Which runtime the task's runs execute on; `null` = follow the agent. */
@@ -165,7 +169,9 @@ export function fileBackedChanges(
       if (!existing) return true;
       const current = existing[column as keyof FileBackedRow];
       // `null` in a request means "clear it"; the row spells an absent optional
-      // as `null` too, so the two compare directly.
+      // as `null` too, so the two compare directly. An absent `readsOutsideText`
+      // is `false`, so a person's `false` on an undeclared task opens no file.
+      if (field === 'readsOutsideText') return value !== (current ?? false);
       return value !== current;
     })
     .map(([field]) => field);
@@ -741,6 +747,7 @@ const SCHEDULE_FIELD: Record<string, keyof ScheduleBlock> = {
   timezone: 'timezone',
   enabled: 'enabled',
   sticky: 'sticky',
+  readsOutsideText: 'readsOutsideText',
   maxRuntime: 'max-runtime',
   permissionMode: 'permissions',
   // The execution trio (DOR-1615/DOR-1347). Inside the block, never at the top

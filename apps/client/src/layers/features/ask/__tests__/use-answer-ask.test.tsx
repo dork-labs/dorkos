@@ -17,6 +17,8 @@ import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { clearAskReceipts, useAskReceipt } from '@/layers/entities/attention';
 import { useAnswerAsk } from '../model/use-answer-ask';
+import { STEP_UP_REQUIRED_CODE } from '@dorkos/shared/step-up';
+import { configKeys } from '@/layers/entities/config';
 
 const NOW = Date.parse('2026-08-18T10:00:00.000Z');
 
@@ -38,9 +40,13 @@ const APPROVAL: PendingInteractionDTO = {
 let transport: ReturnType<typeof createMockTransport>;
 
 /** Mount the hook over a mock transport. */
-function mount() {
+function mount(route: 'local' | 'tunnel' = 'local', answerNeedsStepUp = route !== 'local') {
   transport = createMockTransport();
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  client.setQueryData(configKeys.current(), {
+    callerRoute: route,
+    approvalAnswerContext: { answerNeedsStepUp, onWifi: false },
+  });
   const wrapper = ({ children }: { children: ReactNode }) => (
     <TransportProvider transport={transport}>
       <QueryClientProvider client={client}>{children}</QueryClientProvider>
@@ -105,6 +111,56 @@ describe('useAnswerAsk', () => {
 
     expect(transport.batchApprove).toHaveBeenCalledWith('session-1', ['tc-1', 'tc-2']);
     expect(transport.approveTool).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['local', true],
+    ['tunnel', false],
+  ] as const)('uses the server answering context for a %s route', async (route, needsStepUp) => {
+    const { result } = mount(route, needsStepUp);
+    const burst = [ask(APPROVAL), ask({ ...APPROVAL, id: 'tc-2' })];
+
+    await act(async () => await result.current.answerAll(burst, 'allow'));
+
+    expect(transport.batchApprove).toHaveBeenCalledTimes(needsStepUp ? 0 : 1);
+    expect(transport.approveTool).toHaveBeenCalledTimes(needsStepUp ? 2 : 0);
+  });
+
+  it('confirms remote bursts separately and records only confirmed requests', async () => {
+    const { result } = mount('tunnel');
+    let finishFirst!: () => void;
+    vi.mocked(transport.approveTool)
+      .mockImplementationOnce(
+        () =>
+          new Promise<{ ok: boolean }>((resolve) => {
+            finishFirst = () => resolve({ ok: true });
+          })
+      )
+      .mockRejectedValueOnce(
+        Object.assign(new Error('Confirmation cancelled'), { code: STEP_UP_REQUIRED_CODE })
+      );
+    const burst = [
+      ask(APPROVAL),
+      ask({ ...APPROVAL, id: 'tc-2' }),
+      ask({ ...APPROVAL, id: 'tc-3' }),
+    ];
+    const { result: firstReceipt } = renderHook(() => useAskReceipt('tc-1'));
+    const { result: secondReceipt } = renderHook(() => useAskReceipt('tc-2'));
+    let answering!: Promise<void>;
+    act(() => {
+      answering = result.current.answerAll(burst, 'allow');
+    });
+    expect(firstReceipt.current).toBeUndefined();
+    expect(transport.approveTool).toHaveBeenCalledExactlyOnceWith('session-1', 'tc-1');
+    await act(async () => {
+      finishFirst();
+      await answering;
+    });
+    expect(firstReceipt.current).toMatchObject({ decision: 'allowed' });
+    expect(secondReceipt.current).toBeUndefined();
+    expect(transport.approveTool).toHaveBeenCalledTimes(2);
+    expect(transport.batchApprove).not.toHaveBeenCalled();
+    expect(result.current.error).toBeNull();
   });
 
   it('takes the receipt back when the server refuses, so the card is answerable again', async () => {

@@ -130,9 +130,10 @@
     },
     {
       "guide": "configuration.md",
-      "description": "Config file system, upgrade floor, settings reference, Codex transport compatibility, CLI commands, precedence",
+      "description": "Config file system, upgrade refusals, settings reference, Codex transport compatibility, CLI commands, precedence",
       "patterns": [
         "config-manager",
+        "config/upgrade-floor",
         "codex/transport",
         "config-migrations",
         "config-schema",
@@ -242,7 +243,7 @@
     },
     {
       "guide": "browser-verification.md",
-      "description": "Real-browser verification, browser stack names, isolated instances, live local page tools and artifact proof limits",
+      "description": "Real-browser verification, browser stack names, isolated instances, live local page tools, artifact proof limits and live Agent browser release checks",
       "patterns": [
         "apps/e2e/multi-window/",
         "browser-verification",
@@ -511,12 +512,13 @@
     },
     {
       "guide": "agent-operator-surface.md",
-      "description": "Agent-facing capability surface: operator + marketplace MCP tools (in-session vs external `/mcp`), CLI operator verbs, the read-only carve-out, tier enforcement + approvals, how to add a tool/verb, compiled upgrade facts",
+      "description": "Agent-facing capability surface: operator + marketplace MCP tools (in-session vs external `/mcp`), CLI operator verbs, the read-only carve-out, full MCP input objects and verification, tier enforcement + approvals, how to add a tool/verb, compiled upgrade facts",
       "patterns": [
         "services/session/new-since/",
         "services/runtimes/shared/awareness/",
         "services/core/operator/",
         "services/core/capabilities/",
+        "services/runtimes/claude-code/mcp-tools/",
         "services/core/approvals/",
         "services/core/agent-identity/",
         "services/core/mcp-tool-",

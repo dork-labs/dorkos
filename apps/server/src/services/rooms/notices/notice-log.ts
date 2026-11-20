@@ -492,12 +492,13 @@ export class RoomNoticeLog {
    * @param agent - The agent that is waiting.
    * @param waiting.kind - What sort of answer it is waiting for; picks the words.
    * @param waiting.toolName - The tool an approval is about, for the log only.
+   * @param waiting.cardRoomId - The room the approval card is shown in, if any.
    */
   reportWaiting(
     room: Room,
     entry: RoomEntry,
     agent: NoticeSubject,
-    waiting: { kind: WaitingKind | 'slot'; toolName?: string }
+    waiting: { kind: WaitingKind | 'slot'; toolName?: string; cardRoomId?: string }
   ): void {
     // A slot wait keeps its own memory: it is not a person-wait, and a turn
     // that waited for a slot and then stopped on an approval must still say so
@@ -526,7 +527,9 @@ export class RoomNoticeLog {
     const body =
       waiting.kind === 'slot'
         ? buildSlotWaitNotice(agent.displayName, agent.authorId)
-        : buildWaitingNotice(agent.displayName, agent.authorId, waiting.kind);
+        : buildWaitingNotice(agent.displayName, agent.authorId, waiting.kind, {
+            cardHere: waiting.cardRoomId === room.id,
+          });
     if (this.writeNotice(room, entry, agent.authorId, body)) remember(this.noticedWaiting, key);
   }
 

@@ -1,3 +1,5 @@
+import { RuntimeRegistry } from '../../../core/runtime-registry.js';
+import { createTestDb } from '@dorkos/test-utils/db';
 /**
  * The seam DOR-1316 was actually reported at: the COLD RELAUNCH.
  *
@@ -15,7 +17,7 @@
  * Code session hydrates can be an id only some OTHER runtime declares — and the
  * SDK must never be launched with it.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from 'vitest';
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
@@ -85,8 +87,7 @@ vi.mock('fs', async (importOriginal) => {
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { PermissionUpdate } from '@anthropic-ai/claude-agent-sdk';
-import type { SessionSettings, StreamEvent } from '@dorkos/shared/types';
-import type { SessionSettingsPort } from '@dorkos/shared/agent-runtime';
+import type { StreamEvent } from '@dorkos/shared/types';
 import { ClaudeCodeRuntime } from '../claude-code-runtime.js';
 import { UNKNOWN_MODE_STATUS } from '../messaging/permission-mode-guard.js';
 import { logger } from '../../../../lib/logger.js';
@@ -114,22 +115,15 @@ function withQueryMethods<T extends object>(obj: T): T {
   });
 }
 
-/** An in-memory stand-in for the durable settings store (ADR-0260). */
-function memorySettingsPort(): SessionSettingsPort {
-  const rows = new Map<string, SessionSettings>();
-  return {
-    getSessionSettings: async (id) => rows.get(id) ?? null,
-    saveSessionSettings: async (id, settings) => {
-      rows.set(id, { ...rows.get(id), ...settings });
-    },
-    rekeySessionSettings: async (from, to) => {
-      const row = rows.get(from);
-      if (row) {
-        rows.delete(from);
-        rows.set(to, row);
-      }
-    },
-  };
+/** Genuine isolated owner retained across runtime recreation. */
+function fixtureSettingsOwner(): RuntimeRegistry {
+  const owner = new RuntimeRegistry();
+  const db = createTestDb();
+  owner.setDb(db);
+  onTestFinished(() => {
+    db.$client.close();
+  });
+  return owner;
 }
 
 /**
@@ -195,10 +189,14 @@ async function startTurn(runtime: ClaudeCodeRuntime) {
 }
 
 beforeEach(() => {
+  vi.stubEnv('CLAUDE_CONFIG_DIR', '/mock/claude-code-test-account');
+  for (const key of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN'])
+    vi.stubEnv(key, '');
   vi.useFakeTimers();
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   vi.useRealTimers();
   // CLEARED, never reset: the module mocks at the top of this file are
   // established once at import, and resetting them would strip the stubs every
@@ -210,7 +208,7 @@ describe('"Always Allow" survives the relaunch (DOR-1316)', () => {
   it('launches the next process in the mode the click granted, not back at default', async () => {
     // One store outlives both runtimes — the durable row is the only thing a
     // restart carries across, which is exactly what this is about.
-    const settings = memorySettingsPort();
+    const settings = fixtureSettingsOwner();
 
     const first = new ClaudeCodeRuntime('/tmp/dorkos-test', '/tmp/test-cwd');
     first.setSessionSettings(settings);
@@ -255,7 +253,7 @@ describe('a mode the SDK never heard of never reaches it (DOR-885)', () => {
     // so this row is a shape the store genuinely produces, not an invented one.
     // Launching with it would 400 the whole turn; `default` asks about
     // everything, which is the only safe reading of a mode nothing can weigh.
-    const settings = memorySettingsPort();
+    const settings = fixtureSettingsOwner();
     await settings.saveSessionSettings(SESSION_ID, { permissionMode: 'always-allow' });
 
     const runtime = new ClaudeCodeRuntime('/tmp/dorkos-test', '/tmp/test-cwd');
@@ -284,7 +282,7 @@ describe('a mode the SDK never heard of never reaches it (DOR-885)', () => {
     // launch. Pinned at the same seam rather than on the pure function, because
     // a `!==` that slipped to a truthiness check would still pass a unit test of
     // `narrowToClaudeCodeMode` while toasting every session in the app.
-    const settings = memorySettingsPort();
+    const settings = fixtureSettingsOwner();
     await settings.saveSessionSettings(SESSION_ID, { permissionMode: 'acceptEdits' });
 
     const runtime = new ClaudeCodeRuntime('/tmp/dorkos-test', '/tmp/test-cwd');

@@ -5,6 +5,7 @@
  *
  * @module services/session/message-dispatcher/adopt
  */
+import crypto from 'node:crypto';
 import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { getMessageQueueStore } from '../message-queue-store.js';
@@ -23,7 +24,8 @@ import { isChatClientId } from '../chat-messages/chat-client-id.js';
 import { launching, pending } from './state.js';
 import { parkDispatch, unwatchedSettle } from './park.js';
 import { schedulePump } from './pump.js';
-import type { DispatchPlan } from './types.js';
+import { awaitsPersonSend } from './pause-hold.js';
+import type { DispatchMessageOpts, DispatchPlan, MessageDispatchResult } from './types.js';
 
 /** Inputs for {@link adoptQueuedMessages}. */
 export interface AdoptQueuedMessagesOpts {
@@ -54,6 +56,41 @@ export interface AdoptQueuedMessagesOpts {
    * when they next send.
    */
   onlyFromChats?: boolean;
+}
+
+/**
+ * Recover older rows before a new dispatch joins the queue. Another chat may
+ * recover peer messages, but cannot press Send for a person's held words.
+ *
+ * @param opts - The new dispatch's sender and the queue recovery context
+ */
+export function adoptMessagesForDispatch(
+  opts: AdoptQueuedMessagesOpts &
+    Pick<DispatchMessageOpts, 'clientId' | 'whenBusy' | 'disposition' | 'turnStarter'>
+): MessageDispatchResult | undefined {
+  adoptQueuedMessages({ ...opts, onlyFromChats: isChatClientId(opts.clientId) });
+  adoptAcceptedPrivateMessages({ ...opts, excludeDocumentMessages: true });
+  // A timer that refuses to wait must not jump an older peer's accepted message.
+  // Adoption armed it above; let the pump deliver it before a later timer tick.
+  if (
+    opts.turnStarter === 'agent' &&
+    opts.whenBusy &&
+    opts.whenBusy !== 'queue' &&
+    getMessageQueueStore()
+      ?.list(queueKeyOf(opts.sessionId))
+      .some((row) => isChatClientId(row.enqueuedBy))
+  ) {
+    return {
+      accepted: false,
+      queued: false,
+      outcome: {
+        messageId: crypto.randomUUID(),
+        requested: opts.disposition ?? 'queue',
+        applied: 'queue',
+      },
+      queuePosition: 0,
+    };
+  }
 }
 
 /**
@@ -94,6 +131,10 @@ export function adoptQueuedMessages(opts: AdoptQueuedMessagesOpts): number {
   let swept = 0;
   for (const row of rows) {
     if (pending.has(row.id) || launching.has(row.id)) continue;
+    // A person's row a pause held waits in their composer for their Send, so
+    // no other dispatch may press it for them after a resume. Any other person
+    // row (queued behind a busy turn, then a restart) is adopted and runs.
+    if (awaitsPersonSend(row.id)) continue;
     if (opts.onlyFromChats && !isChatClientId(row.enqueuedBy)) continue;
     // Protected rows have their own adoption path because their visible queue
     // text is only a placeholder. Generic recovery must never send it or bypass
@@ -239,8 +280,11 @@ export function adoptAcceptedPrivateMessages(opts: AdoptQueuedMessagesOpts): num
         privateReceiptId: receipt.id,
         // An outside service's event (a signed webhook, reachable over a
         // tunnel) starts this turn, so it carries the outsider mark, never a
-        // person's (DOR-3650, Security's condition 4). The mark lowers nothing.
-        ...(receipt.sourceKind === 'connector_event'
+        // person's (DOR-3650, Security's condition 4). So does a page's event
+        // on a canvas document: the page's text is someone else's words, as a
+        // mini app's message is (DOR-4603). The mark lowers nothing.
+        ...(receipt.sourceKind === 'connector_event' ||
+        receipt.sourceKind === 'document_event_batch'
           ? { carriedMarks: { outsider: true as const } }
           : {}),
         ...(opts.privateDispatchSignal

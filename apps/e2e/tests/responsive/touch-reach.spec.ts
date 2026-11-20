@@ -1,4 +1,4 @@
-import type { Locator } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { test, expect } from '../../fixtures';
 import { openInCanvasBrowser, startDevServer } from '../../pages/canvas-dev-server';
 import { borderHeight, touchHeight } from '../../pages/touch-reach';
@@ -255,5 +255,372 @@ test.describe('Touch reach — the surfaces batch 07 fixed @smoke', () => {
         minReach: CHEVRON_MIN_REACH_PX,
       });
     }
+  });
+});
+
+/**
+ * The browser row at 390px (DOR-4436, spec §12), measured in the Dev Playground's
+ * phone cases, which draw the real `BrowserChrome`, status pill and ⋯ menu.
+ *
+ * The unit suites can only read class lists, and the defect this guards was
+ * invisible to them: the icon-only pill's `::after` reached about 6px past its
+ * chip and, with the pill and ⋯ touching, swallowed taps on ⋯'s left edge. So
+ * this asks the browser what a tap at each inner edge would land on.
+ */
+test.describe('Touch reach — the browser row on a phone (DOR-4436) @smoke', () => {
+  test.use({ viewport: PHONE });
+
+  /** What a tap at (x, y) lands on: the pill, the ⋯ menu, or something else. */
+  async function tapLandsOn(page: Page, x: number, y: number): Promise<string> {
+    return page.evaluate(
+      ([px, py]) => {
+        const hit = document.elementFromPoint(px, py);
+        if (hit?.closest('[data-slot="browser-status-pill"]')) return 'pill';
+        if (hit?.closest('button[aria-label="Browser menu"]')) return 'menu';
+        return hit ? `other: ${hit.tagName.toLowerCase()}` : 'nothing';
+      },
+      [x, y] as const
+    );
+  }
+
+  test('the pill and ⋯ each own their 44px, and the address reads at 16px', async ({ page }) => {
+    await page.goto('/dev/home-inbox');
+    const demo = page.getByTestId('browser-chrome-phone-driving');
+    await expect(demo, 'the Playground must draw the 390px browser row').toBeVisible({
+      timeout: 15_000,
+    });
+    await demo.scrollIntoViewIfNeeded();
+
+    const slot = demo.locator('[data-slot="browser-status-pill-slot"]');
+    const menu = demo.getByRole('button', { name: 'Browser menu', exact: true });
+    const slotBox = (await slot.boundingBox())!;
+    const menuBox = (await menu.boundingBox())!;
+    const y = menuBox.y + menuBox.height / 2;
+
+    expect(slotBox.width, 'the pill must hold at least 44px of the row').toBeGreaterThanOrEqual(
+      43.5
+    );
+    expect(menuBox.width, 'the ⋯ menu must be 44px wide').toBeGreaterThanOrEqual(43.5);
+    // Side by side: ⋯ starts where the pill's slot ends.
+    expect(Math.abs(menuBox.x - (slotBox.x + slotBox.width))).toBeLessThan(1);
+
+    expect(await tapLandsOn(page, menuBox.x + 1, y), 'a tap on ⋯’s left edge').toBe('menu');
+    expect(
+      await tapLandsOn(page, slotBox.x + slotBox.width - 1, y),
+      'a tap on the pill slot’s right edge'
+    ).toBe('pill');
+    expect(await tapLandsOn(page, slotBox.x + 1, y), 'a tap on the pill slot’s left edge').toBe(
+      'pill'
+    );
+
+    // 16px at rest, the same as the text box, so iOS never zooms and a tap never resizes it.
+    await expect(demo.getByRole('button', { name: /^Address:/ })).toHaveCSS('font-size', '16px');
+  });
+
+  test('a 258px row never overlaps: Your turn goes icon-only and the field keeps its room', async ({
+    page,
+  }) => {
+    await page.goto('/dev/home-inbox');
+    const demo = page.getByTestId('browser-chrome-phone-narrow-your-turn');
+    await expect(demo, 'the Playground must draw the 258px browser row').toBeVisible({
+      timeout: 15_000,
+    });
+    await demo.scrollIntoViewIfNeeded();
+
+    const row = (await demo.locator('[data-slot="browser-chrome-row"]').boundingBox())!;
+    const field = (await demo.locator('[data-slot="browser-chrome-field"]').boundingBox())!;
+    const slot = (await demo.locator('[data-slot="browser-status-pill-slot"]').boundingBox())!;
+    const menu = (await demo
+      .getByRole('button', { name: 'Browser menu', exact: true })
+      .boundingBox())!;
+
+    // Left to right, each part ends before the next begins, and ⋯ stays inside the row.
+    expect(field.x + field.width, 'the field must end before the pill').toBeLessThanOrEqual(
+      slot.x + 0.5
+    );
+    expect(slot.x + slot.width, 'the pill must end before ⋯').toBeLessThanOrEqual(menu.x + 0.5);
+    expect(menu.x + menu.width, '⋯ must stay inside the row').toBeLessThanOrEqual(
+      row.x + row.width + 0.5
+    );
+    expect(field.width, 'the field keeps Reload plus some host').toBeGreaterThanOrEqual(87.5);
+    expect(slot.width, 'the pill still holds 44px').toBeGreaterThanOrEqual(43.5);
+    expect(menu.width, '⋯ still holds 44px').toBeGreaterThanOrEqual(43.5);
+
+    // Icon-only, but its words stay: in the button for assistive tech, and as a hint.
+    const pill = demo.locator('[data-slot="browser-status-pill"]');
+    await expect(pill).toHaveAttribute('title', 'Your turn');
+    await expect(pill.locator('[data-slot="browser-status-pill-label"]')).toHaveText('Your turn');
+    await expect(pill.locator('[data-slot="browser-status-pill-label"]')).toHaveCSS(
+      'position',
+      'absolute'
+    );
+  });
+
+  test('a 258px row keeps Not secure and the host clear of Reload', async ({ page }) => {
+    await page.goto('/dev/home-inbox');
+    const demo = page.getByTestId('browser-chrome-phone-narrow-not-secure');
+    await expect(demo, 'the Playground must draw the 258px Not secure row').toBeVisible({
+      timeout: 15_000,
+    });
+    await demo.scrollIntoViewIfNeeded();
+
+    const text = (await demo.locator('[data-slot="browser-address-text"]').boundingBox())!;
+    const reload = (await demo.getByRole('button', { name: 'Reload', exact: true }).boundingBox())!;
+    // The text box, badge and host inside it, ends before Reload begins.
+    expect(text.x + text.width, 'the address text must end before Reload').toBeLessThanOrEqual(
+      reload.x + 0.5
+    );
+    // And each part inside it, the badge and the host, ends before Reload too: the
+    // host truncates and the badge shrinks, rather than relying on the clip.
+    const spills = await demo
+      .locator('[data-slot="browser-address-text"] > *')
+      .evaluateAll(
+        (children, left) => children.some((el) => el.getBoundingClientRect().right > left + 0.5),
+        reload.x
+      );
+    expect(spills, 'no part of the address may reach under Reload').toBe(false);
+    // Not secure is the open lock here, its words kept for assistive tech.
+    await expect(demo.getByText('Not secure')).toHaveCSS('font-size', '0px');
+  });
+
+  // DOR-4655 (Security Must): a long, trusted-looking start never hides the real site.
+  test('a spoof host shows its real site whole at 390', async ({ page }) => {
+    // 540 keeps the phone layout while the 390 demo gets its full width (see below).
+    await page.setViewportSize({ width: 540, height: PHONE.height });
+    await page.goto('/dev/home-inbox');
+
+    /** Where the host's box and its kept end sit, as drawn. */
+    const measure = async (testId: string) => {
+      const demo = page.getByTestId(testId);
+      await expect(demo).toBeVisible({ timeout: 15_000 });
+      await demo.scrollIntoViewIfNeeded();
+      const box = (await demo.locator('[data-slot="browser-address-host"]').boundingBox())!;
+      const kept = (await demo.locator('[data-slot="browser-address-host-kept"]').boundingBox())!;
+      const reload = (await demo
+        .getByRole('button', { name: 'Reload', exact: true })
+        .boundingBox())!;
+      return { demo, box, kept, reload };
+    };
+
+    // 390: the whole kept part, attacker's label included, is in view.
+    const wide = await measure('browser-chrome-phone-spoof');
+    await expect(wide.demo.locator('[data-slot="browser-address-host-kept"]')).toHaveText(
+      'com.attacker.example'
+    );
+    expect(
+      wide.kept.x,
+      '"com.attacker.example" must start inside the field'
+    ).toBeGreaterThanOrEqual(wide.box.x - 0.5);
+    expect(wide.kept.x + wide.kept.width, 'and end inside it').toBeLessThanOrEqual(
+      wide.box.x + wide.box.width + 0.5
+    );
+    expect(wide.box.x + wide.box.width).toBeLessThanOrEqual(wide.reload.x + 0.5);
+    // The full host is the field's name.
+    await expect(wide.demo.getByRole('button', { name: /^Address:/ })).toHaveAccessibleName(
+      'Address: accounts.google.com.attacker.example/login'
+    );
+
+    // 390 with the Your turn pill: login-google.vercel.app whole, never cut inside a label.
+    const login = await measure('browser-chrome-phone-login-google');
+    await expect(login.demo.locator('[data-slot="browser-address-host-kept"]')).toHaveText(
+      'login-google.vercel.app'
+    );
+    expect(login.kept.x).toBeGreaterThanOrEqual(login.box.x - 0.5);
+    expect(login.box.x + login.box.width).toBeLessThanOrEqual(login.reload.x + 0.5);
+  });
+
+  // DOR-4655: at 258px there is room for little, and still the site is never clipped:
+  // the start goes, then the path, the Not secure words and the padding, then the
+  // host takes its one smaller size, and last it wraps, the row growing with it.
+  test('at 258px each spoof host keeps its site whole, smaller or wrapped, never clipped', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 540, height: PHONE.height });
+    await page.goto('/dev/home-inbox');
+    // The Playground's NARROW_HOSTS, in order, and the part of each that stays whole.
+    const kept = [
+      'notgoogle.com',
+      'evil-google.com',
+      'com.attacker.example',
+      'login-google.vercel.app',
+      'a-very-long-attacker-registrable-name.example',
+    ];
+    for (const [index, site] of kept.entries()) {
+      const demo = page.getByTestId(`browser-chrome-phone-narrow-host-${index}`);
+      await expect(demo, `the Playground must draw the 258px row for ${site}`).toBeVisible({
+        timeout: 15_000,
+      });
+      await demo.scrollIntoViewIfNeeded();
+      await expect(demo.locator('[data-slot="browser-address-host-kept"]')).toHaveText(site);
+      const drawn = await demo.evaluate((root) => {
+        const rect = (selector: string) => root.querySelector(selector)!.getBoundingClientRect();
+        const text = rect('[data-slot="browser-address-text"]');
+        const row = rect('[data-slot="browser-chrome-row"]');
+        const field = rect('button[aria-label^="Address:"]');
+        const back = rect('button[aria-label="Back"]');
+        const reload = rect('button[aria-label="Reload"]');
+        // Every line the kept part is drawn on, as the browser clips it.
+        const lines = [
+          ...root.querySelector('[data-slot="browser-address-host-kept"]')!.getClientRects(),
+        ];
+        return {
+          whole: lines.every(
+            (line) =>
+              line.left >= text.left - 0.5 &&
+              line.right <= text.right + 0.5 &&
+              line.top >= text.top - 0.5 &&
+              line.bottom <= text.bottom + 0.5
+          ),
+          clearOfReload: text.right <= reload.left + 0.5,
+          fieldInRow: field.top >= row.top - 0.5 && field.bottom <= row.bottom + 0.5,
+          backCentred: Math.abs(back.top + back.height / 2 - (row.top + row.height / 2)) < 1,
+        };
+      });
+      expect(drawn.whole, `${site} must be wholly inside the visible address`).toBe(true);
+      expect(drawn.clearOfReload, `${site}: the address must end before Reload`).toBe(true);
+      expect(drawn.fieldInRow, `${site}: the row must grow with the field, not clip it`).toBe(true);
+      expect(drawn.backCentred, `${site}: the controls stay centred in the row`).toBe(true);
+
+      // Rounds 5–6 (QA): where the drawn host moves to a new line, it breaks after a
+      // dot or a hyphen. It may break inside a piece (a label with its dot or hyphen)
+      // only when that piece alone is wider than the text column, so a piece that fits
+      // a line is never split.
+      const badBreaks = await demo.evaluate((root) => {
+        const host = root.querySelector('[data-slot="browser-address-host"]') as HTMLElement;
+        const column = root
+          .querySelector('[data-slot="browser-address-text"]')!
+          .getBoundingClientRect().width;
+        const context = document.createElement('canvas').getContext('2d')!;
+        const style = getComputedStyle(host);
+        context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+        const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
+        const range = document.createRange();
+        let text = '';
+        const tops: number[] = [];
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+          const value = node.textContent ?? '';
+          for (let i = 0; i < value.length; i += 1) {
+            range.setStart(node, i);
+            range.setEnd(node, i + 1);
+            tops.push(range.getBoundingClientRect().top);
+            text += value[i];
+          }
+        }
+        const bad: string[] = [];
+        for (let i = 1; i < text.length; i += 1) {
+          if (tops[i] <= tops[i - 1] + 1) continue;
+          if (text[i - 1] === '.' || text[i - 1] === '-') continue;
+          // The piece the break fell inside: from after the last dot or hyphen
+          // before it, through the next one (or the end).
+          const start = Math.max(text.lastIndexOf('.', i - 1), text.lastIndexOf('-', i - 1)) + 1;
+          const rest = text.slice(i).search(/[.-]/);
+          const end = rest === -1 ? text.length : i + rest + 1;
+          const piece = text.slice(start, end);
+          if (context.measureText(piece).width <= column)
+            bad.push(`${piece} (at "${text[i - 1]}|${text[i]}")`);
+        }
+        return bad;
+      });
+      expect(badBreaks, `${site}: a piece that fits a line must never be split`).toEqual([]);
+    }
+  });
+
+  // Security, round 5: when the row scrolls, the address and its whole kept part are in
+  // view at the first scroll position, and stay pinned in view however far it scrolls.
+  test('at 240px of chrome the site stays wholly in view, scrolled or not', async ({ page }) => {
+    await page.setViewportSize({ width: 540, height: PHONE.height });
+    await page.goto('/dev/home-inbox');
+    const demo = page.getByTestId('browser-chrome-240-spoof');
+    await expect(demo).toBeVisible({ timeout: 15_000 });
+    await demo.scrollIntoViewIfNeeded();
+    const row = demo.locator('[data-slot="browser-chrome-row"]');
+    await expect(row).toHaveCSS('overflow-x', 'auto');
+    await expect(demo.locator('[data-slot="browser-address-host-kept"]')).toHaveText(
+      'com.attacker.example'
+    );
+
+    /** Whether every line of the kept part sits inside both the address and the row. */
+    const keptInView = () =>
+      demo.evaluate((root) => {
+        const rect = (selector: string) => root.querySelector(selector)!.getBoundingClientRect();
+        const text = rect('[data-slot="browser-address-text"]');
+        const row = rect('[data-slot="browser-chrome-row"]');
+        const lines = [
+          ...root.querySelector('[data-slot="browser-address-host-kept"]')!.getClientRects(),
+        ];
+        return lines.every(
+          (line) =>
+            line.left >= Math.max(text.left, row.left) - 0.5 &&
+            line.right <= Math.min(text.right, row.right) + 0.5 &&
+            line.top >= text.top - 0.5 &&
+            line.bottom <= text.bottom + 0.5
+        );
+      });
+
+    expect(await row.evaluate((el) => el.scrollLeft)).toBe(0);
+    expect(await keptInView(), 'at scrollLeft 0, com.attacker.example is wholly in view').toBe(
+      true
+    );
+    const field = demo.locator('[data-slot="browser-chrome-field"]');
+    const back = demo.getByRole('button', { name: 'Back', exact: true });
+    const fieldAt = (await field.boundingBox())!.x;
+    const backAt = (await back.boundingBox())!.x;
+    // However far the row is scrolled, the address and Back are pinned: they don't move.
+    await row.evaluate((el) => el.scrollTo({ left: el.scrollWidth }));
+    expect(await row.evaluate((el) => el.scrollLeft), 'the row did scroll').toBeGreaterThan(0);
+    expect(
+      Math.abs((await field.boundingBox())!.x - fieldAt),
+      'the address must not move'
+    ).toBeLessThan(0.5);
+    expect(Math.abs((await back.boundingBox())!.x - backAt), 'Back must not move').toBeLessThan(
+      0.5
+    );
+    expect(await keptInView(), 'scrolled to the end, it is still wholly in view').toBe(true);
+  });
+
+  // Round 5: a 320 viewport squeezes the Playground row to about 186px, under the
+  // 252px its controls need. Real phones don't go that narrow; the row must still
+  // never cut a control, so it scrolls sideways instead.
+  test('a row narrower than its controls scrolls rather than cut one off', async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: PHONE.height });
+    await page.goto('/dev/home-inbox');
+    const demo = page.getByTestId('browser-chrome-phone-narrow-host-0');
+    await expect(demo).toBeVisible({ timeout: 15_000 });
+    await demo.scrollIntoViewIfNeeded();
+    const row = demo.locator('[data-slot="browser-chrome-row"]');
+    const width = (await row.boundingBox())!.width;
+    test.skip(width >= 252, `this viewport gives the row ${width}px, so nothing needs to scroll`);
+    await expect(row).toHaveCSS('overflow-x', 'auto');
+    const reaches = await row.evaluate((el) => el.scrollWidth > el.clientWidth);
+    expect(reaches, 'the row scrolls to reach its last control').toBe(true);
+    // Scrolled to its end, ⋯ is wholly in view.
+    await row.evaluate((el) => el.scrollTo({ left: el.scrollWidth }));
+    const box = (await row.boundingBox())!;
+    const menu = (await demo
+      .getByRole('button', { name: 'Browser menu', exact: true })
+      .boundingBox())!;
+    expect(menu.x + menu.width).toBeLessThanOrEqual(box.x + box.width + 0.5);
+  });
+
+  test('Your turn shows its full words on a phone', async ({ page }) => {
+    // Still the phone layout (under 768), but wide enough that the Playground's page
+    // padding leaves the demo its full 390px; at a 390 viewport it is squeezed to ~258,
+    // where Your turn is icon-only on purpose (the test above).
+    await page.setViewportSize({ width: 540, height: PHONE.height });
+    await page.goto('/dev/home-inbox');
+    const demo = page.getByTestId('browser-chrome-phone-your-turn');
+    await expect(demo).toBeVisible({ timeout: 15_000 });
+    await demo.scrollIntoViewIfNeeded();
+    const rowWidth = (await demo.locator('[data-slot="browser-chrome-row"]').boundingBox())!.width;
+    // 390 less the demo frame's 1px border each side.
+    expect(rowWidth, 'the 390px case must get its 390px here').toBeGreaterThanOrEqual(387);
+    const pill = demo.locator('[data-slot="browser-status-pill"]');
+    await expect(pill).toHaveText('Your turn');
+    // Nothing cut off: the words fit inside the chip.
+    const clipped = await pill.evaluate((el) => {
+      const words = el.querySelector('[data-slot="browser-status-pill-label"]') as HTMLElement;
+      return words.scrollWidth > words.clientWidth;
+    });
+    expect(clipped, '"Your turn" must never be cut short').toBe(false);
   });
 });

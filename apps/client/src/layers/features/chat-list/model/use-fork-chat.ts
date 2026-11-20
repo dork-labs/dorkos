@@ -7,7 +7,7 @@ import { useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useTransport } from '@/layers/shared/model';
-import { sessionKeys } from '@/layers/entities/session';
+import { beginSessionNavigation, sessionKeys, useLiveLocation } from '@/layers/entities/session';
 
 /**
  * A callback that copies a chat's whole transcript into a new chat and opens it.
@@ -25,12 +25,16 @@ export function useForkChat(
 ): (sessionId: string) => Promise<void> {
   const transport = useTransport();
   const queryClient = useQueryClient();
+  const readLocation = useLiveLocation();
   return useCallback(
     async (sessionId: string) => {
+      // Copying a long transcript takes a while. A person who opened another
+      // chat meanwhile stays there; the copy waits in the list (DOR-4622).
+      const isStillWanted = beginSessionNavigation(readLocation);
       try {
         const forked = await transport.forkSession(sessionId, undefined, agentPath ?? undefined);
         await queryClient.invalidateQueries({ queryKey: sessionKeys.listRoot });
-        onOpen(forked.id);
+        if (isStillWanted()) onOpen(forked.id);
       } catch (error) {
         // A headline a person can read, with the server's own words under it.
         toast.error('Couldn’t fork this chat.', {
@@ -38,6 +42,6 @@ export function useForkChat(
         });
       }
     },
-    [agentPath, onOpen, queryClient, transport]
+    [agentPath, onOpen, queryClient, readLocation, transport]
   );
 }

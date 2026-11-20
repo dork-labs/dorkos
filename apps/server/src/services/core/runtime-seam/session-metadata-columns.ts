@@ -6,12 +6,13 @@
  * @module services/core/runtime-seam/session-metadata-columns
  */
 import type { SessionSettings } from '@dorkos/shared/types';
-import { inArray, sessionMetadata, sql, type SQL } from '@dorkos/db';
+import { and, eq, inArray, isNull, sessionMetadata, sql, type Db, type SQL } from '@dorkos/db';
 import { EffortLevelSchema } from '@dorkos/shared/schemas';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import { strictestTrustModeId } from '@dorkos/shared/permission-semantics';
 import { logger } from '../../../lib/logger.js';
 import type { TurnOrigin } from '../../session/origin/turn-origin.js';
+import { mergedHolds } from '../turn-power/continuation-hold.js';
 
 /** Reduce `SessionSettings` to only the explicitly-provided keys for an UPSERT patch. */
 export function pickSettings(
@@ -174,4 +175,74 @@ export function keptPermissionMode(declared: readonly PermissionModeDescriptor[]
   const ids = declared.map((descriptor) => descriptor.id);
   const stored = sessionMetadata.permissionMode;
   return sql`case when ${inArray(stored, ids)} then ${stored} when ${stored} is not null then ${strictest} end`;
+}
+
+type SessionRow = typeof sessionMetadata.$inferSelect;
+
+/**
+ * What a canonical rename keeps when both ids have a row: the destination's settings and binding
+ * win, the source's fill the gaps, and the holds join, held if either was and a stranger's if
+ * either was or is not known (DOR-4593), so a rename never loosens a chat.
+ *
+ * @param destination - The row under the id the session is renamed to.
+ * @param source - The row under the id it is renamed from.
+ */
+export function mergedSessionRow(
+  destination: SessionRow,
+  source: SessionRow
+): Partial<typeof sessionMetadata.$inferInsert> {
+  return {
+    runtime: destination.runtime ?? source.runtime,
+    permissionMode: destination.permissionMode ?? source.permissionMode,
+    model: destination.model ?? source.model,
+    effort: destination.effort ?? source.effort,
+    fastMode: destination.fastMode ?? source.fastMode,
+    agentPath: destination.agentPath ?? source.agentPath,
+    launchOrigin: destination.launchOrigin ?? source.launchOrigin,
+    launchedBy: destination.launchedBy ?? source.launchedBy,
+    lastAutoResumeFor: destination.lastAutoResumeFor ?? source.lastAutoResumeFor,
+    ...mergedHolds(destination, source),
+  };
+}
+
+function readSettingsRow(db: Db, sessionId: string) {
+  return db
+    .select({
+      runtime: sessionMetadata.runtime,
+      permissionMode: sessionMetadata.permissionMode,
+      model: sessionMetadata.model,
+      effort: sessionMetadata.effort,
+      fastMode: sessionMetadata.fastMode,
+    })
+    .from(sessionMetadata)
+    .where(eq(sessionMetadata.sessionId, sessionId))
+    .get();
+}
+
+/** Read persisted settings, projecting SQL NULL settings as absent fields. */
+export function readSessionSettings(db: Db, sessionId: string): SessionSettings | null {
+  const row = readSettingsRow(db, sessionId);
+  return row ? rowToSettings(row) : null;
+}
+
+/** Capture the existing owner and raw model together for an atomic, model-only replacement. */
+export function captureCodexModel(db: Db, sessionId: string) {
+  const key = eq(sessionMetadata.sessionId, sessionId);
+  const row = readSettingsRow(db, sessionId);
+  if (!row || (row.runtime !== null && row.runtime !== 'codex')) return;
+  const owner =
+    row.runtime === null
+      ? isNull(sessionMetadata.runtime)
+      : eq(sessionMetadata.runtime, row.runtime);
+  const model =
+    row.model === null ? isNull(sessionMetadata.model) : eq(sessionMetadata.model, row.model);
+  return {
+    model: row.model,
+    replaceIfCurrent: (replacement: string) =>
+      db
+        .update(sessionMetadata)
+        .set({ model: replacement })
+        .where(and(key, owner, model))
+        .run().changes === 1,
+  };
 }

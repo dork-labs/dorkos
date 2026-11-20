@@ -104,6 +104,10 @@ import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import type { AgentIdentity } from '../../services/core/agent-identity/agent-identity-service.js';
 import { TaskRegistrar } from '../../services/tasks/task-registrar.js';
 import { TaskStore } from '../../services/tasks/task-store.js';
+import {
+  DeclaredReaders,
+  setDeclaredReaders,
+} from '../../services/core/turn-power/declared-readers.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
 
 taskRuntimeCapabilitiesFixture();
@@ -392,6 +396,48 @@ describe('operator-only task fields on the REST routes', () => {
     });
   });
 
+  // DOR-3969: anyone may say a task reads outside text; only a person takes it back.
+  describe('a task that reads outside text', () => {
+    beforeEach(() => {
+      setDeclaredReaders(
+        new DeclaredReaders({
+          file: path.join(mkdtempSync(path.join(os.tmpdir(), 'declared-')), 'record.json'),
+          logger: { warn: vi.fn() },
+        })
+      );
+    });
+    afterEach(() => setDeclaredReaders(null));
+
+    it('an agent may turn it on, and is refused turning it off', async () => {
+      const on = await request(fixtureServer)
+        .patch(`/api/tasks/${existing.id}`)
+        .set('x-dorkos-agent', 'agent-token-abc')
+        .send({ readsOutsideText: true });
+      expect(on.status).toBe(200);
+      expect(store.getTask(existing.id)!.readsOutsideText).toBe(true);
+
+      const off = await request(fixtureServer)
+        .patch(`/api/tasks/${existing.id}`)
+        .set('x-dorkos-agent', 'agent-token-abc')
+        .send({ readsOutsideText: false });
+      expect(off.status).toBe(403);
+      expect(off.body.fields).toEqual(['readsOutsideText']);
+      expect(store.getTask(existing.id)!.readsOutsideText).toBe(true);
+    });
+
+    it('a person turns it off', async () => {
+      await request(fixtureServer)
+        .patch(`/api/tasks/${existing.id}`)
+        .set('x-dorkos-agent', 'agent-token-abc')
+        .send({ readsOutsideText: true });
+      const off = await request(fixtureServer)
+        .patch(`/api/tasks/${existing.id}`)
+        .send({ readsOutsideText: false });
+      expect(off.status).toBe(200);
+      expect(store.getTask(existing.id)!.readsOutsideText).toBeUndefined();
+    });
+  });
+
   describe('the cockpit', () => {
     it('creates a task without giving any reason at all (DOR-1394)', async () => {
       // The asymmetry is the point. A reason is what an agent owes the person it
@@ -521,14 +567,27 @@ describe('operator-only task fields on the REST routes', () => {
       expect(store.getTask(existing.id)!.permissionMode).toBe('acceptEdits');
     });
 
-    it('allows a signed-in person', async () => {
+    it('allows a signed-in person to lower the mode', async () => {
+      signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
+      const res = await request(fixtureServer)
+        .patch(`/api/tasks/${existing.id}`)
+        .send({ permissionMode: 'default' });
+
+      expect(res.status).toBe(200);
+      expect(store.getTask(existing.id)!.permissionMode).toBe('default');
+    });
+
+    // The owner's confirmed raise is proved with a real sign-in in tasks-arm-step-up.test.ts.
+    it('refuses a raise from a signed-in person who is not the owner (DOR-4355)', async () => {
       signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
       const res = await request(fixtureServer)
         .patch(`/api/tasks/${existing.id}`)
         .send({ permissionMode: 'bypassPermissions' });
 
-      expect(res.status).toBe(200);
-      expect(store.getTask(existing.id)!.permissionMode).toBe('bypassPermissions');
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('NEEDS_PERSON_AT_THIS_COMPUTER');
+      expect(res.body.heldActionId).toBeUndefined();
+      expect(store.getTask(existing.id)!.permissionMode).toBe('acceptEdits');
     });
 
     it('still refuses a signed-in caller that names itself an agent', async () => {

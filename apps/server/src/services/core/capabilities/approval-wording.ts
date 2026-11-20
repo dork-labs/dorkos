@@ -6,12 +6,14 @@
  * @module services/core/capabilities/approval-wording
  */
 import { INCOMPLETE_APPROVAL_MESSAGE } from '../approvals/approval-completeness.js';
+import { spendAskMessage } from '../../connectors/spending/spend-copy.js';
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import type {
   ApprovalRequiredPayload,
   ApprovalRequiredReason,
   ApprovalRetryChannel,
 } from './tier-enforcement.js';
+import type { SpendAsk } from './spend-permission.js';
 
 /** The MCP tool argument a retry passes its approval token in. */
 export const APPROVAL_TOKEN_ARGUMENT = 'approvalToken';
@@ -45,6 +47,14 @@ const SAY_SO_FIRST =
 const OPEN_THE_PANEL =
   "If the approval is about a scheduled task, control_ui({ action: 'open_panel', panel: 'tasks' }) " +
   'opens the Schedules panel for them.';
+
+/**
+ * What a revoked agent is told when it reaches past reading on an action no
+ * permission area governs. It lives with the other words the gate says, and
+ * out of `tier-enforcement.ts`, which may not grow past its line baseline.
+ */
+export const REVOKED_ACCESS_MESSAGE =
+  "This agent's access was turned off, so it cannot do this. Ask the person.";
 
 /**
  * Retry instructions for the surface the call arrived on.
@@ -111,6 +121,12 @@ export function needsApprovalClause(tier: CapabilityTier, capabilityId: string):
  * @param tier - The action's tier.
  * @param capabilityId - The action's capability id.
  * @param blocked - Whether the agent asked past a Blocked permission.
+ * @param spendAsk - Why a paid run asks, when it costs money (DOR-4447). The
+ *   fresh ask then names spending too. When spending is the only reason, it
+ *   also says what the person can change; otherwise it keeps the other reason
+ *   (high risk, cannot be undone, set to ask) and leaves the fix out, since a
+ *   limit would not stop that card. Only the agent reads this; the card a
+ *   person sees is built from the approval request, not from this sentence.
  * @returns The sentence.
  */
 export function approvalMessage(
@@ -118,12 +134,17 @@ export function approvalMessage(
   title: string,
   tier: CapabilityTier,
   capabilityId: string,
-  blocked = false
+  blocked = false,
+  spendAsk?: SpendAsk
 ): string {
   switch (reason) {
     case 'no_approval':
       if (blocked) {
         return `"${title}" is blocked for this agent, so DorkOS has asked the person whether to allow it this time.`;
+      }
+      if (spendAsk) {
+        const also = spendAsk.only ? undefined : needsApprovalClause(tier, capabilityId);
+        return spendAskMessage(title, spendAsk.reason, also);
       }
       return tier === 'destructive'
         ? `"${title}" ${needsApprovalClause(tier, capabilityId)}, so a person has to approve it first. DorkOS has asked them.`

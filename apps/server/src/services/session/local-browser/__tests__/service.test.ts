@@ -10,9 +10,13 @@ import {
   CLOSE_RESPONSE_TIMEOUT_MS,
 } from '../lifecycle.js';
 import { AUDIT_WRITE_RESPONSE_TIMEOUT_MS, LOAD_START_MS } from '../page-action.js';
-import { LocalBrowserService } from '../service.js';
-import { assertLocalBrowserUrl } from '../errors.js';
+import { LocalBrowserPageSession } from '../leases/page-session.js';
+import { BrowserProfileConnections } from '../leases/profile-connection.js';
+import { BrowserHandover } from '../handover.js';
+import { SignInWindow } from '../sign-in-window.js';
+import { assertLocalBrowserUrl, httpFallbackAllowed, navigationRefusal } from '../errors.js';
 import { CLOUD_ORIGIN_REFUSAL } from '@dorkos/shared/cloud-origin';
+import { localBrowserRefusalNext } from '@dorkos/shared/local-browser-refusal';
 import { MAX_BROWSER_SNAPSHOT_BYTES, MAX_BROWSER_SCREENSHOT_EDGE } from '../observation-limits.js';
 import type { LocalBrowserBackend } from '../playwright-backend.js';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -167,22 +171,33 @@ function fixture() {
     },
   };
 }
+const sessions: LocalBrowserPageSession[] = [];
+function trackedPageSession(...args: ConstructorParameters<typeof LocalBrowserPageSession>) {
+  const session = new LocalBrowserPageSession(...args);
+  sessions.push(session);
+  return session;
+}
 const directories: string[] = [];
 afterEach(async () => {
   vi.useRealTimers();
+  await Promise.all(
+    sessions.splice(0).map((session) => session.disconnect().catch(() => undefined))
+  );
   await Promise.all(directories.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
-async function create(appOrigins?: () => readonly string[]) {
+async function create(appOrigins?: () => readonly string[], pooled = false) {
   const dir = await mkdtemp(path.join(tmpdir(), 'local-browser-unit-'));
   directories.push(dir);
   const f = fixture();
+  if (pooled) f.page.close = vi.fn(async () => undefined);
+  const backend = pooled ? new BrowserProfileConnections(f.backend).forChat() : f.backend;
   return {
     ...f,
     dir,
-    service: new LocalBrowserService(
+    service: trackedPageSession(
       dir,
       undefined,
-      f.backend,
+      backend,
       undefined,
       () => ({
         platform: 'darwin',
@@ -286,7 +301,7 @@ it('refuses removing a named profile while its window owns it', async () => {
   await expect(f.service.profileRemoval.delete(id, profiles)).resolves.toBeUndefined();
   expect(profiles.get(id)).toBeUndefined();
 });
-async function selectOwned(service: LocalBrowserService) {
+async function selectOwned(service: LocalBrowserPageSession) {
   const state = await service.open({ mode: 'new-window' });
   await service.selectTab(state.tabs[0].id);
 }
@@ -305,7 +320,7 @@ describe('local browser ownership and observations', () => {
 
   it('refuses a headed window on Linux without a graphical display before launch', async () => {
     const f = await create();
-    const service = new LocalBrowserService(f.dir, undefined, f.backend, undefined, () => ({
+    const service = trackedPageSession(f.dir, undefined, f.backend, undefined, () => ({
       platform: 'linux',
     }));
     expect(service.capabilities()).toMatchObject({
@@ -323,7 +338,7 @@ describe('local browser ownership and observations', () => {
     'opens an owned window for a declared Linux graphical session %o',
     async (display) => {
       const f = await create();
-      const service = new LocalBrowserService(f.dir, undefined, f.backend, undefined, () => ({
+      const service = trackedPageSession(f.dir, undefined, f.backend, undefined, () => ({
         platform: 'linux',
         ...display,
       }));
@@ -556,7 +571,7 @@ describe('local browser ownership and observations', () => {
     expect(records[0].operationId).toBe(records[1].operationId);
     expect(records[0].tabId).toEqual(expect.any(String));
     expect(records.every((record) => !('title' in record))).toBe(true);
-    const noAudit = new LocalBrowserService(
+    const noAudit = trackedPageSession(
       dir,
       undefined,
       backend,
@@ -698,55 +713,36 @@ describe('local browser ownership and observations', () => {
     ).rejects.toMatchObject({ code: 'stale_page' });
     expect(click).toHaveBeenCalledTimes(1);
   });
-  it('shares only with the chosen chat and exposes only its selected tab to tools', async () => {
+  it('captures one selected page and fences its handle after disconnect', async () => {
     const { service } = await create();
     const state = await service.open({ mode: 'new-window', sessionId: 'chat-one' });
-    expect(() => service.requireSharedSession('chat-two')).toThrow();
-    expect(() => service.requireSharedSession('chat-one')).not.toThrow();
-    expect((await service.agentState()).selectedTabId).toBe(state.tabs[0].id);
-    await service.selectTab(state.tabs[0].id);
-    expect((await service.agentState()).tabs).toHaveLength(1);
+    const lease = service.captureAgentLease();
+    expect((await lease.agentState()).selectedTabId).toBe(state.tabs[0].id);
+    expect((await lease.agentState()).tabs).toHaveLength(1);
     await service.disconnect();
-    expect(() => service.requireSharedSession('chat-one')).toThrow();
+    expect(() => lease.assertCurrent()).toThrow();
   });
-  it('moving the browser to another chat takes it from the first chat’s agent (DOR-4265)', async () => {
-    const { service } = await create();
-    service.useProfileAccess(
-      async () => undefined,
-      () => true,
-      async (id) => (id === 'chat-one' ? 'Quarterly invoices' : 'Trip plans')
-    );
+
+  // DOR-4693: an own-window Chrome left open would hold the profile out of sight, so the plain
+  // sign-in window could never start. Switching to embedded closes it first.
+  it('closes the own window when the person switches to embedded', async () => {
+    const f = await create();
+    const embedded = {
+      open: vi.fn(async () => ({
+        endpoint: 'ws://127.0.0.1:41111/page/fixture',
+        headers: { Authorization: 'Bearer fixture' },
+        close: vi.fn(async () => undefined),
+      })),
+    };
+    // The host is stood in, as for every own-window test: CI's Linux runners have no display.
+    const service = trackedPageSession(f.dir, embedded, f.backend, undefined, () => ({
+      platform: 'darwin',
+    }));
     await service.open({ mode: 'new-window', sessionId: 'chat-one' });
-    expect(() => service.requireSharedSession('chat-two')).toThrow(
-      expect.objectContaining({
-        code: 'shared_elsewhere',
-        fields: { chatId: 'chat-one', chatTitle: 'Quarterly invoices' },
-      })
-    );
-    // Use it here is the same person-clicked open, from the second chat.
-    await service.open({ mode: 'new-window', sessionId: 'chat-two' });
-    expect(() => service.requireSharedSession('chat-two')).not.toThrow();
-    expect(() => service.requireSharedSession('chat-one')).toThrow(
-      expect.objectContaining({
-        code: 'shared_elsewhere',
-        message:
-          'The person moved the Agent browser to another chat, named in chatTitle. Ask them to move it back if you still need it.',
-        fields: { chatId: 'chat-two', chatTitle: 'Trip plans' },
-      })
-    );
-    await service.disconnect();
-    expect(() => service.requireSharedSession('chat-two')).toThrow(
-      expect.objectContaining({ code: 'not_opened' })
-    );
-    // Opened again after a Disconnect, nothing was moved away from chat-two.
-    await service.open({ mode: 'new-window', sessionId: 'chat-one' });
-    expect(() => service.requireSharedSession('chat-two')).toThrow(
-      expect.objectContaining({
-        message:
-          'The Agent browser is in use in another chat, named in chatTitle. Ask the person to move it here.',
-        fields: { chatId: 'chat-one', chatTitle: 'Quarterly invoices' },
-      })
-    );
+    expect(f.context.close).not.toHaveBeenCalled();
+    await service.open({ mode: 'embedded', sessionId: 'chat-one' });
+    expect(f.context.close).toHaveBeenCalledOnce();
+    expect((await service.state()).mode).toBe('embedded');
   });
 
   it('closes the embedded bridge transport and guest without closing an owned context', async () => {
@@ -759,7 +755,7 @@ describe('local browser ownership and observations', () => {
         close,
       })),
     };
-    const service = new LocalBrowserService(f.dir, embedded, f.backend);
+    const service = trackedPageSession(f.dir, embedded, f.backend);
     await service.open({ mode: 'embedded' });
     expect(f.backend.connect).toHaveBeenCalledWith('ws://127.0.0.1:41111/page/fixture', {
       Authorization: 'Bearer fixture',
@@ -824,7 +820,7 @@ describe('local browser ownership and observations', () => {
     expect((await service.state()).status).toBe('disconnected');
   });
   it('reuses DorkOS saved logins and closes only its owned window', async () => {
-    const { service, backend, context, dir } = await create();
+    const { service, backend, context, dir } = await create(undefined, true);
     await service.open({ mode: 'new-window' });
     await service.disconnect();
     await service.open({ mode: 'new-window' });
@@ -833,14 +829,16 @@ describe('local browser ownership and observations', () => {
       path.join(dir, 'browser-profiles', 'default'),
       expect.any(AbortSignal),
       expect.any(Function),
-      null
+      null,
+      expect.any(Function)
     );
     expect(backend.launch).toHaveBeenNthCalledWith(
       2,
       path.join(dir, 'browser-profiles', 'default'),
       expect.any(AbortSignal),
       expect.any(Function),
-      null
+      null,
+      expect.any(Function)
     );
     expect(context.close).toHaveBeenCalledOnce();
   });
@@ -879,13 +877,74 @@ async function lifecycleFixture() {
   return {
     ...fixture,
     audit,
-    service: new LocalBrowserService(fixture.dir, undefined, fixture.backend, audit, () => ({
+    service: trackedPageSession(fixture.dir, undefined, fixture.backend, audit, () => ({
       platform: 'darwin',
     })),
   };
 }
 
+async function handoffCloseFixture() {
+  const f = await lifecycleFixture();
+  const signIns = new SignInWindow({
+    executable: async () => '/made-up/Chromium',
+    installedChrome: () => undefined,
+    held: () => false,
+    lockOwner: () => 12345,
+    prepare: async () => undefined,
+    spawner: () => ({
+      pid: 12345,
+      exited: new Promise(() => {}),
+      quit: () => undefined,
+      forceQuit: () => undefined,
+    }),
+  });
+  const handover = new BrowserHandover(f.service, signIns, () => f.dir);
+  handover.useOutsideTurnCheck(async () => null);
+  await f.service.open({ mode: 'new-window', sessionId: 'chat-one', url: 'https://example.test/' });
+  const close = deferred<void>();
+  vi.mocked(f.context.close).mockReturnValueOnce(close.promise);
+  return { ...f, handover, signIns, close };
+}
+
 describe('bounded browser lifecycle ownership', () => {
+  // Regression pins: joining a close and its 2 s response budget predate DOR-4731's fix.
+  it('waits for the pending close before the next handoff starts its sign-in', async () => {
+    const { service, context, handover, signIns, close } = await handoffCloseFixture();
+    vi.useFakeTimers();
+    const disconnecting = service.disconnect();
+    const asking = handover.ask('chat-one', 'password');
+    await vi.advanceTimersByTimeAsync(CLOSE_RESPONSE_TIMEOUT_MS - 1);
+    expect(signIns.current).toBeNull();
+    expect(context.close).toHaveBeenCalledOnce();
+
+    close.resolve();
+    await disconnecting;
+    const { handoffId } = await asking;
+    expect((await handover.state()).handoff?.id).toBe(handoffId);
+    expect(signIns.current?.status).toBe('open');
+    expect(context.close).toHaveBeenCalledOnce();
+  });
+
+  it('refuses the next handoff at the unchanged close deadline and retains the profile', async () => {
+    const { service, context, handover, signIns, close } = await handoffCloseFixture();
+    vi.useFakeTimers();
+    const disconnecting = expect(service.disconnect()).rejects.toMatchObject({ code: 'busy' });
+    const asking = expect(handover.ask('chat-one', 'password')).rejects.toMatchObject({
+      code: 'busy',
+    });
+    await vi.advanceTimersByTimeAsync(CLOSE_RESPONSE_TIMEOUT_MS);
+    await Promise.all([disconnecting, asking]);
+    expect(signIns.current).toBeNull();
+    expect(context.close).toHaveBeenCalledOnce();
+    await expect(service.profileRemoval.forget(null)).rejects.toMatchObject({
+      code: 'profile_busy',
+    });
+
+    close.resolve();
+    await service.disconnect();
+    await expect(service.profileRemoval.forget(null)).resolves.toBeUndefined();
+  });
+
   it('returns pause immediately and retains pre-dispatch ownership after its response expires', async () => {
     const { service, observedNodeSets, click } = await lifecycleFixture();
     await service.open({ mode: 'new-window' });
@@ -929,7 +988,9 @@ describe('bounded browser lifecycle ownership', () => {
       name: 'Save',
       revision: observed.revision,
     });
-    const refused = expect(acting).rejects.toMatchObject({ code: 'paused' });
+    // The late continuation finds the browser disconnected, and says so: never a pause a
+    // person could lift (DOR-4678).
+    const refused = expect(acting).rejects.toMatchObject({ code: 'closed' });
     await vi.advanceTimersByTimeAsync(0);
     expect(observedNodeSets[0].evaluate).toHaveBeenCalledOnce();
     expect((await service.disconnect()).status).toBe('disconnected');
@@ -1135,7 +1196,7 @@ describe('bounded browser lifecycle ownership', () => {
     const close = vi.fn(async () => {
       throw new Error('private bridge unavailable');
     });
-    const service = new LocalBrowserService(
+    const service = trackedPageSession(
       fixture.dir,
       {
         open: async () => ({ endpoint: 'http://owned.test', headers: {}, close }),
@@ -1227,7 +1288,7 @@ describe('named profiles (DOR-3218)', () => {
   const profileId = '00000000-0000-4000-8000-000000000001';
 
   it('opens a named profile in its own folder', async () => {
-    const f = await create();
+    const f = await create(undefined, true);
     f.service.useProfileAccess(
       async () => undefined,
       () => true
@@ -1237,7 +1298,8 @@ describe('named profiles (DOR-3218)', () => {
       path.join(f.dir, 'browser-profiles', profileId),
       expect.anything(),
       expect.anything(),
-      null
+      null,
+      expect.any(Function)
     );
     await f.service.disconnect();
   });
@@ -1337,6 +1399,31 @@ describe('DorkOS app origins (DOR-3218)', () => {
     expect(page.evaluateHandle).not.toHaveBeenCalled();
     expect(page.screenshot).not.toHaveBeenCalled();
     expect(cookies).not.toHaveBeenCalled();
+    await service.disconnect();
+  });
+
+  it('tells the agent a page it may not read paused it, once the page is safe again (DOR-4678)', async () => {
+    const { service, page, navigate } = await create(origins);
+    await selectOwned(service);
+    const observed = await service.observe();
+    vi.mocked(page.goto).mockImplementationOnce(async () => {
+      navigate('http://localhost:4242/connections');
+      return null;
+    });
+    await expect(
+      service.action({
+        kind: 'navigate',
+        url: 'http://fixture.test/r',
+        revision: observed.revision,
+      })
+    ).rejects.toMatchObject(refused);
+    navigate('http://fixture.test/safe');
+    const error = (await service
+      .action({ kind: 'navigate', url: 'http://fixture.test/x', revision: observed.revision })
+      .catch((caught: unknown) => caught)) as { code: string; message: string };
+    expect(error.code).toBe('paused');
+    expect(error.message).toContain('only a person can resume it');
+    expect(error.message).toContain('or a page you may not read');
     await service.disconnect();
   });
 
@@ -1488,7 +1575,7 @@ describe('DorkOS app origins (DOR-3218)', () => {
   it('rechecks origins after the audit wait, before any page effect', async () => {
     const f = await create();
     const live: string[] = [];
-    const service = new LocalBrowserService(
+    const service = trackedPageSession(
       f.dir,
       undefined,
       f.backend,
@@ -1640,11 +1727,13 @@ describe('the Cloud origin (DOR-3196)', () => {
     await expect(service.navigate('https://made-up.example/')).rejects.toMatchObject({
       code: 'navigation_unreachable',
     });
+    // DOR-4450: a site that never answered in time didn't respond; it is not unreachable.
     vi.mocked(page.goto).mockRejectedValueOnce(
       Object.assign(new Error('page.goto: Timeout 15000ms exceeded.'), { name: 'TimeoutError' })
     );
     await expect(service.navigate('https://made-up.example/')).rejects.toMatchObject({
-      code: 'navigation_unreachable',
+      code: 'navigation_timed_out',
+      message: 'That site didn’t respond. Try again in a moment.',
     });
     vi.mocked(page.goto).mockRejectedValueOnce(
       new Error('page.goto: net::ERR_SSL_PROTOCOL_ERROR at https://made-up.example:5000/')
@@ -1659,6 +1748,265 @@ describe('the Cloud origin (DOR-3196)', () => {
       code: 'navigation_uncertain',
     });
     await service.disconnect();
+  });
+
+  // DOR-4450, Security's ruling (Nov 16): which failures may try http:// once, and
+  // that every page opened that way says so to the person and to the agent.
+  describe('the http:// fallback for a bare host the person typed', () => {
+    const failing = (message: string, name?: string) =>
+      Object.assign(new Error(`page.goto: ${message}`), name ? { name } : {});
+    const gotoUrls = (page: Page) => vi.mocked(page.goto).mock.calls.map(([url]) => url);
+    const selectedTab = (state: { tabs: { id: string }[]; selectedTabId: string | null }) =>
+      state.tabs.find((tab) => tab.id === state.selectedTabId) as
+        { openedOverHttp?: boolean } | undefined;
+
+    // Security's proof for #3859: Playwright's message carries the typed address, so
+    // only Chromium's own first error code may decide, never text the person typed.
+    describe('reads only the browser’s own error code, never the typed address', () => {
+      const typed = 'https://bank.example/?q=net::ERR_CONNECTION_REFUSED';
+
+      it('a certificate error never falls back, whatever the typed URL holds', () => {
+        const cert = new Error(`page.goto: net::ERR_CERT_AUTHORITY_INVALID at ${typed}`);
+        expect(httpFallbackAllowed(cert, typed)).toBe(false);
+        expect(navigationRefusal(cert).code).toBe('navigation_uncertain');
+      });
+
+      it('a timeout never falls back, whatever the typed URL holds', () => {
+        const timeout = Object.assign(
+          new Error(
+            `page.goto: Timeout 15000ms exceeded.\nCall log:\n  - navigating to "${typed}", waiting until "commit"\n`
+          ),
+          { name: 'TimeoutError' }
+        );
+        expect(httpFallbackAllowed(timeout, typed)).toBe(false);
+        expect(navigationRefusal(timeout).code).toBe('navigation_timed_out');
+      });
+
+      it('an SSL protocol error on 443 never falls back, whatever the typed URL holds', () => {
+        const url = 'https://bank.example/?q=net::ERR_ADDRESS_UNREACHABLE';
+        const ssl = new Error(`page.goto: net::ERR_SSL_PROTOCOL_ERROR at ${url}`);
+        expect(httpFallbackAllowed(ssl, url)).toBe(false);
+      });
+
+      it('a failure with no code of its own never borrows one from the typed URL', () => {
+        const crashed = new Error(
+          `page.goto: Navigation failed because page crashed!\nCall log:\n  - navigating to "${typed}"\n`
+        );
+        expect(httpFallbackAllowed(crashed, typed)).toBe(false);
+        expect(navigationRefusal(crashed).code).toBe('navigation_uncertain');
+      });
+
+      it('a real refusal still falls back when the typed URL holds another code', () => {
+        const url = 'https://shop.example/?q=net::ERR_CERT_AUTHORITY_INVALID';
+        const refused = new Error(`page.goto: net::ERR_CONNECTION_REFUSED at ${url}`);
+        expect(httpFallbackAllowed(refused, url)).toBe(true);
+      });
+    });
+
+    it.each([
+      ['a Playwright timeout', failing('Timeout 15000ms exceeded.', 'TimeoutError')],
+      ['ERR_CONNECTION_TIMED_OUT', failing('net::ERR_CONNECTION_TIMED_OUT at https://x/')],
+      ['ERR_TIMED_OUT', failing('net::ERR_TIMED_OUT at https://x/')],
+    ])('never falls back after %s', async (_name, error) => {
+      const { service, page } = await create();
+      await selectOwned(service);
+      vi.mocked(page.goto).mockClear();
+      vi.mocked(page.goto).mockRejectedValueOnce(error);
+      await expect(
+        service.navigate('https://slow.example/', { httpFallback: true })
+      ).rejects.toMatchObject({ code: 'navigation_timed_out' });
+      expect(gotoUrls(page)).toEqual(['https://slow.example/']);
+      await service.disconnect();
+    });
+
+    it.each(['https://nas.example/', 'https://nas.example:443/'])(
+      'never falls back after an SSL protocol error on %s',
+      async (url) => {
+        const { service, page } = await create();
+        await selectOwned(service);
+        vi.mocked(page.goto).mockClear();
+        vi.mocked(page.goto).mockRejectedValueOnce(
+          failing('net::ERR_SSL_PROTOCOL_ERROR at https://nas.example/')
+        );
+        await expect(service.navigate(url, { httpFallback: true })).rejects.toMatchObject({
+          code: expect.stringMatching(/^navigation_/),
+        });
+        expect(gotoUrls(page)).toHaveLength(1);
+        await service.disconnect();
+      }
+    );
+
+    it('falls back after an SSL protocol error on a port other than 443, and says so', async () => {
+      const { service, page } = await create();
+      await selectOwned(service);
+      vi.mocked(page.goto).mockClear();
+      vi.mocked(page.goto).mockRejectedValueOnce(
+        failing('net::ERR_SSL_PROTOCOL_ERROR at https://nas.example:5000/')
+      );
+      const state = await service.navigate('https://nas.example:5000/', { httpFallback: true });
+      expect(gotoUrls(page)).toEqual(['https://nas.example:5000/', 'http://nas.example:5000/']);
+      expect(selectedTab(state)?.openedOverHttp).toBe(true);
+      expect(selectedTab(await service.agentState())?.openedOverHttp).toBe(true);
+      await service.disconnect();
+    });
+
+    it.each(['ERR_CONNECTION_REFUSED', 'ERR_ADDRESS_UNREACHABLE'])(
+      'falls back once after %s, and the person and the agent both hear it opened over http',
+      async (reason) => {
+        const { service, page } = await create();
+        await selectOwned(service);
+        vi.mocked(page.goto).mockClear();
+        vi.mocked(page.goto).mockRejectedValueOnce(
+          failing(`net::${reason} at https://shop.example/`)
+        );
+        const state = await service.navigate('https://shop.example/', { httpFallback: true });
+        expect(gotoUrls(page)).toEqual(['https://shop.example/', 'http://shop.example/']);
+        expect(selectedTab(state)?.openedOverHttp).toBe(true);
+        expect(selectedTab(await service.agentState())?.openedOverHttp).toBe(true);
+        expect((await service.observe()).openedOverHttp).toBe(true);
+        await service.disconnect();
+      }
+    );
+
+    it('tries http:// only once, and a page opened over https never says it', async () => {
+      const { service, page } = await create();
+      await selectOwned(service);
+      vi.mocked(page.goto).mockClear();
+      vi.mocked(page.goto)
+        .mockRejectedValueOnce(failing('net::ERR_CONNECTION_REFUSED at https://shop.example/'))
+        .mockRejectedValueOnce(failing('net::ERR_CONNECTION_REFUSED at http://shop.example/'));
+      await expect(
+        service.navigate('https://shop.example/', { httpFallback: true })
+      ).rejects.toMatchObject({ code: 'navigation_unreachable' });
+      expect(gotoUrls(page)).toHaveLength(2);
+      const state = await service.navigate('https://shop.example/', { httpFallback: true });
+      expect(selectedTab(state)?.openedOverHttp).toBeFalsy();
+      expect((await service.observe()).openedOverHttp).toBeFalsy();
+      await service.disconnect();
+    });
+
+    it('follows the site the fallback opened, not the tab', async () => {
+      const f = await create();
+      await selectOwned(f.service);
+      vi.mocked(f.page.goto).mockRejectedValueOnce(
+        failing('net::ERR_CONNECTION_REFUSED at https://shop.example/')
+      );
+      await f.service.navigate('https://shop.example/', { httpFallback: true });
+      f.navigate('http://shop.example/cart');
+      expect(selectedTab(await f.service.agentState())?.openedOverHttp).toBe(true);
+      // Over https it is secure, and back on the fallback's site over http it says so again.
+      f.navigate('https://shop.example/cart');
+      expect(selectedTab(await f.service.agentState())?.openedOverHttp).toBeFalsy();
+      f.navigate('http://shop.example/');
+      expect(selectedTab(await f.service.agentState())?.openedOverHttp).toBe(true);
+      // Another http site nobody typed never carries it.
+      f.navigate('http://other.example/login');
+      expect(selectedTab(await f.service.agentState())?.openedOverHttp).toBeFalsy();
+      expect((await f.service.observe()).openedOverHttp).toBeFalsy();
+      const typed = await f.service.navigate('http://other.example/');
+      expect(selectedTab(typed)?.openedOverHttp).toBeFalsy();
+      await f.service.disconnect();
+    });
+
+    it('an agent moving a marked tab to another http site drops the mark', async () => {
+      const f = await create();
+      await selectOwned(f.service);
+      vi.mocked(f.page.goto).mockRejectedValueOnce(
+        failing('net::ERR_CONNECTION_REFUSED at https://shop.example/')
+      );
+      await f.service.navigate('https://shop.example/', { httpFallback: true });
+      const observed = await f.service.observe();
+      expect(observed.openedOverHttp).toBe(true);
+      const moved = await f.service.action({
+        kind: 'navigate',
+        url: 'http://other.example/login',
+        revision: observed.revision,
+      });
+      expect(selectedTab(moved)?.openedOverHttp).toBeFalsy();
+      expect((await f.service.observe()).openedOverHttp).toBeFalsy();
+      await f.service.disconnect();
+    });
+
+    it('never falls back onto this DorkOS app’s own address', async () => {
+      const { service, page } = await create(() => ['http://dorkos.example:4242']);
+      await selectOwned(service);
+      vi.mocked(page.goto).mockClear();
+      vi.mocked(page.goto).mockRejectedValueOnce(
+        failing('net::ERR_SSL_PROTOCOL_ERROR at https://dorkos.example:4242/')
+      );
+      await expect(
+        service.navigate('https://dorkos.example:4242/', { httpFallback: true })
+      ).rejects.toMatchObject({ code: 'navigation_unreachable' });
+      expect(gotoUrls(page)).toEqual(['https://dorkos.example:4242/']);
+      await service.disconnect();
+    });
+
+    it('never falls back after a certificate error', async () => {
+      const { service, page } = await create();
+      await selectOwned(service);
+      vi.mocked(page.goto).mockClear();
+      vi.mocked(page.goto).mockRejectedValueOnce(
+        failing('net::ERR_CERT_AUTHORITY_INVALID at https://shop.example/')
+      );
+      await expect(
+        service.navigate('https://shop.example/', { httpFallback: true })
+      ).rejects.toMatchObject({ code: 'navigation_uncertain' });
+      expect(gotoUrls(page)).toHaveLength(1);
+      await service.disconnect();
+    });
+
+    it('never falls back without the flag: a reload or an address typed with https://', async () => {
+      const { service, page } = await create();
+      await selectOwned(service);
+      vi.mocked(page.goto).mockClear();
+      vi.mocked(page.goto).mockRejectedValueOnce(
+        failing('net::ERR_CONNECTION_REFUSED at https://shop.example/')
+      );
+      await expect(service.navigate('https://shop.example/')).rejects.toMatchObject({
+        code: 'navigation_unreachable',
+      });
+      expect(gotoUrls(page)).toHaveLength(1);
+      await service.disconnect();
+    });
+
+    it('never falls back from http:// itself, flag or not', async () => {
+      const { service, page } = await create();
+      await selectOwned(service);
+      vi.mocked(page.goto).mockClear();
+      vi.mocked(page.goto).mockRejectedValueOnce(
+        failing('net::ERR_CONNECTION_REFUSED at http://shop.example/')
+      );
+      await expect(
+        service.navigate('http://shop.example/', { httpFallback: true })
+      ).rejects.toMatchObject({ code: 'navigation_unreachable' });
+      expect(gotoUrls(page)).toHaveLength(1);
+      await service.disconnect();
+    });
+
+    it('never falls back for an address an agent opens', async () => {
+      const { service, page } = await create();
+      vi.mocked(page.goto).mockRejectedValueOnce(
+        failing('net::ERR_CONNECTION_REFUSED at https://shop.example/')
+      );
+      await expect(
+        service.open({ mode: 'new-window', url: 'https://shop.example/' })
+      ).rejects.toBeDefined();
+      expect(gotoUrls(page)).toEqual(['https://shop.example/']);
+
+      const opened = await create();
+      await selectOwned(opened.service);
+      const observed = await opened.service.observe();
+      vi.mocked(opened.page.goto).mockClear();
+      vi.mocked(opened.page.goto).mockRejectedValueOnce(
+        failing('net::ERR_CONNECTION_REFUSED at https://shop.example/')
+      );
+      await opened.service
+        .action({ kind: 'navigate', url: 'https://shop.example/', revision: observed.revision })
+        .catch(() => undefined);
+      expect(gotoUrls(opened.page).filter((url) => url.startsWith('http://'))).toEqual([]);
+      expect(selectedTab(await opened.service.agentState())?.openedOverHttp).toBeFalsy();
+      await opened.service.disconnect();
+    });
   });
 
   it('still lets the person open the Cloud origin themselves', async () => {
@@ -2027,13 +2375,23 @@ it('detaches the embedded guest during a handoff and makes a fresh connection on
     }),
     reattach: vi.fn(async () => undefined),
   };
-  const service = new LocalBrowserService(dir, { open: async () => bridge }, f.backend);
+  const service = trackedPageSession(dir, { open: async () => bridge }, f.backend);
   await service.open({ mode: 'embedded', sessionId: 'chat-1' });
-  service.handover.useOutsideTurnCheck(async () => false);
+  service.handover.useOutsideTurnCheck(async () => null);
   const { handoffId } = await service.handover.ask('chat-1', 'wall');
   expect(bridge.detach).toHaveBeenCalledOnce();
   expect(bridge.close).not.toHaveBeenCalled();
   expect(await service.state()).toMatchObject({ status: 'connected', paused: true });
+  // The agent's reads during the handoff get the agent's words; the person's keep theirs (DOR-4678).
+  for (const read of [() => service.observe(), () => service.screenshot()]) {
+    const error = (await read().catch((caught: unknown) => caught)) as { message: string };
+    expect(error).toMatchObject({ code: 'paused' });
+    expect(error.message).toContain('only a person can resume it');
+  }
+  await expect(service.navigate('https://a.example/')).rejects.toMatchObject({
+    code: 'paused',
+    message: 'Your agent is paused. Resume it to continue.',
+  });
   f.page.title = vi.fn(async () => 'A private title');
   await service.state();
   expect(f.page.title).not.toHaveBeenCalled();
@@ -2055,9 +2413,9 @@ it('leaves the embedded guest detached after Stop', async () => {
     detach: vi.fn(async () => undefined),
     reattach: vi.fn(async () => undefined),
   };
-  const service = new LocalBrowserService(dir, { open: async () => bridge }, f.backend);
+  const service = trackedPageSession(dir, { open: async () => bridge }, f.backend);
   await service.open({ mode: 'embedded', sessionId: 'chat-1' });
-  service.handover.useOutsideTurnCheck(async () => false);
+  service.handover.useOutsideTurnCheck(async () => null);
   const { handoffId } = await service.handover.ask('chat-1', 'password');
   await service.handover.stop(handoffId);
   expect(bridge.detach).toHaveBeenCalledOnce();
@@ -2080,9 +2438,9 @@ it('retries a failed native detach before publishing a handoff', async () => {
       .mockRejectedValueOnce(new Error('host did not acknowledge')),
     reattach: vi.fn(async () => undefined),
   };
-  const service = new LocalBrowserService(dir, { open: async () => bridge }, f.backend);
+  const service = trackedPageSession(dir, { open: async () => bridge }, f.backend);
   await service.open({ mode: 'embedded', sessionId: 'chat-1' });
-  service.handover.useOutsideTurnCheck(async () => false);
+  service.handover.useOutsideTurnCheck(async () => null);
   await expect(service.handover.ask('chat-1', 'wall')).rejects.toThrow('host did not acknowledge');
   expect((await service.handover.state()).handoff).toBeNull();
   await service.handover.ask('chat-1', 'wall');
@@ -2149,10 +2507,27 @@ describe('Back and Forward (DOR-4449)', () => {
     const state = await f.service.stepHistory('back');
     expect(state.paused).toBe(true);
     expect(f.page.url()).toBe('https://a.example/');
-    // The agent's next action is refused rather than racing the person.
-    await expect(
-      f.service.action({ kind: 'navigate', revision: state.revision, url: 'https://c.example/' })
-    ).rejects.toMatchObject({ code: 'paused' });
+    // The agent's next action is refused rather than racing the person, and the refusal says a
+    // person's Back or Forward pauses it and that only a person can resume it (DOR-4678).
+    const refusal = f.service
+      .action({ kind: 'navigate', revision: state.revision, url: 'https://c.example/' })
+      .catch((error: unknown) => error);
+    await expect(refusal).resolves.toMatchObject({ code: 'paused' });
+    const message = ((await refusal) as Error).message;
+    expect(message).toContain('only a person can resume it');
+    expect(message).toContain('their Back or Forward while you drive');
+  });
+
+  it('tells an agent a disconnected browser closed, never that a person can resume it (DOR-4678)', async () => {
+    const f = await create();
+    await f.service.open({ mode: 'new-window', sessionId: 'chat-one' });
+    const { revision } = await f.service.observe();
+    await f.service.disconnect();
+    const error = (await f.service
+      .action({ kind: 'navigate', url: 'https://c.example/', revision })
+      .catch((caught: unknown) => caught)) as { code: string; message: string };
+    expect(error.code).toBe('closed');
+    expect(error.message).not.toContain('resume');
   });
 
   it('leaves a browser no agent shares unpaused', async () => {
@@ -2186,7 +2561,7 @@ describe('Back and Forward (DOR-4449)', () => {
       goToHistory: vi.fn(async () => 'refused' as const),
     };
     f.navigate('https://b.example/');
-    const service = new LocalBrowserService(dir, { open: async () => bridge }, f.backend);
+    const service = trackedPageSession(dir, { open: async () => bridge }, f.backend);
     await service.open({ mode: 'embedded' });
     expect((await service.state()).tabs[0]).toMatchObject({ canGoBack: true, canGoForward: false });
     await expect(service.stepHistory('back')).rejects.toMatchObject({ code: 'history_refused' });
@@ -2203,7 +2578,7 @@ describe('Back and Forward (DOR-4449)', () => {
       headers: {},
       close: vi.fn(async () => undefined),
     };
-    const service = new LocalBrowserService(dir, { open: async () => bridge }, f.backend);
+    const service = trackedPageSession(dir, { open: async () => bridge }, f.backend);
     await service.open({ mode: 'embedded' });
     expect((await service.state()).tabs[0]).toMatchObject({
       canGoBack: false,
@@ -2211,4 +2586,113 @@ describe('Back and Forward (DOR-4449)', () => {
     });
     await service.disconnect();
   });
+});
+
+// DOR-4097, DOR-4650: a site refusing the Agent browser reads as a refusal, so the
+// agent stops and hands it to the person instead of reading or fighting the page.
+describe('a page that refuses the Agent browser', () => {
+  it('tells the agent a Google sign-in refusal is a stop, from the page text', async () => {
+    const { service, navigate, change } = await create();
+    await selectOwned(service);
+    navigate('https://accounts.google.com/v3/signin/identifier?made=up');
+    change(
+      '- heading "Couldn’t sign you in" [level=1]\n- text: This browser or app may not be secure.'
+    );
+    const observed = await service.observe();
+    expect(observed.refusal).toEqual({
+      kind: 'sign-in',
+      host: 'accounts.google.com',
+      next: localBrowserRefusalNext('sign-in'),
+    });
+    await service.disconnect();
+  });
+
+  // DOR-4662: the reading uses the page's title, so a vendor's block title counts.
+  it('reads a bot check from its title, naming the host from the address', async () => {
+    const { service, navigate, change, page } = await create();
+    await selectOwned(service);
+    navigate('https://shop.example/cart');
+    vi.spyOn(page, 'title').mockResolvedValue('Just a moment...');
+    change('- heading "Verify you are human" [level=1]\n- text: Sign in at attacker.example');
+    expect((await service.observe()).refusal).toEqual({
+      kind: 'blocked',
+      host: 'shop.example',
+      next: localBrowserRefusalNext('blocked'),
+    });
+    await service.disconnect();
+  });
+
+  it('says nothing for bot-check words on an ordinary page', async () => {
+    const { service, navigate, change, page } = await create();
+    await selectOwned(service);
+    navigate('https://support.apple.example/en-us/HT201559');
+    vi.spyOn(page, 'title').mockResolvedValue('Force restart iPhone - Support');
+    change('- heading "Force restart" [level=1]\n- text: Press and hold the side button.');
+    expect((await service.observe()).refusal).toBeUndefined();
+    await service.disconnect();
+  });
+
+  it('still reads the page when its title never answers', async () => {
+    const { service, navigate, change, page } = await create();
+    await selectOwned(service);
+    navigate('https://accounts.google.com/v3/signin/rejected?made=up');
+    vi.spyOn(page, 'title').mockImplementation(() => new Promise<string>(() => {}));
+    change('- text: Something went wrong');
+    expect((await service.observe()).refusal?.kind).toBe('sign-in');
+    await service.disconnect();
+  });
+
+  it('says nothing on an ordinary page', async () => {
+    const { service } = await create();
+    await selectOwned(service);
+    expect((await service.observe()).refusal).toBeUndefined();
+    await service.disconnect();
+  });
+});
+
+// DOR-4097: the in-app handoff card learns of a refusal from DorkOS's own reading.
+it('marks an in-app handoff refused only after DorkOS read the refusal itself', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'embedded-refused-'));
+  directories.push(dir);
+  const f = fixture();
+  const bridge = {
+    endpoint: 'ws://127.0.0.1:9876/page/guest',
+    headers: {},
+    close: vi.fn(async () => undefined),
+    detach: vi.fn(async () => {
+      f.browserEvents.emit('disconnected');
+    }),
+    reattach: vi.fn(async () => undefined),
+  };
+  const service = trackedPageSession(dir, { open: async () => bridge }, f.backend);
+  await service.open({ mode: 'embedded', sessionId: 'chat-1' });
+  service.handover.useOutsideTurnCheck(async () => null);
+  f.navigate('https://accounts.google.com/v3/signin/rejected?made=up');
+  f.change('- heading "Couldn’t sign you in" [level=1]');
+  await service.observe();
+  await service.handover.ask('chat-1', 'password');
+  expect((await service.handover.state()).handoff).toMatchObject({
+    site: 'accounts.google.com',
+    refused: true,
+  });
+});
+
+it('leaves an in-app handoff unmarked when no reading saw a refusal', async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'embedded-unrefused-'));
+  directories.push(dir);
+  const f = fixture();
+  const bridge = {
+    endpoint: 'ws://127.0.0.1:9876/page/guest',
+    headers: {},
+    close: vi.fn(async () => undefined),
+    detach: vi.fn(async () => undefined),
+    reattach: vi.fn(async () => undefined),
+  };
+  const service = trackedPageSession(dir, { open: async () => bridge }, f.backend);
+  await service.open({ mode: 'embedded', sessionId: 'chat-1' });
+  service.handover.useOutsideTurnCheck(async () => null);
+  // The agent never read the page, whatever it might say about it.
+  f.navigate('https://accounts.google.com/v3/signin/rejected?made=up');
+  await service.handover.ask('chat-1', 'password');
+  expect((await service.handover.state()).handoff?.refused).toBeUndefined();
 });

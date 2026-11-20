@@ -46,7 +46,13 @@ export type {
   WorktreeRefreshOutcome,
 } from './worktree-refresh-context.js';
 export { MainMovedSchema, WorktreeRefreshOutcomeSchema } from './worktree-refresh-context.js';
-export type { ContextWarningData, TurnCutoffData, NewSinceData } from './owed-notes-context.js';
+export type {
+  ChatStopCutoff,
+  ContextWarningData,
+  StalledTurnCutoff,
+  TurnCutoffData,
+  NewSinceData,
+} from './owed-notes-context.js';
 
 /** Kinds of additional context DorkOS can attach to a turn. */
 export type ContextKind =

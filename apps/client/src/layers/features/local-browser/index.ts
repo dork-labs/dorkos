@@ -1,10 +1,13 @@
 export { LocalBrowserPanel } from './ui/LocalBrowserPanel';
 export { LocalBrowserContent } from './ui/LocalBrowserContent';
+export type { LocalBrowserContentProps } from './ui/LocalBrowserContent';
 export { NativeBrowserStill } from './ui/NativeBrowserStill';
 export type { LocalBrowserPanelProps } from './ui/LocalBrowserPanel';
 export { PageErrorBlock } from './ui/PageErrorBlock';
 export { BrowserLoadingBar } from './ui/BrowserLoadingBar';
 export { pageErrorBlock } from './lib/page-error';
+export { RefusalNotice } from './ui/RefusalNotice';
+export { refusalNotice } from './lib/refusal-notice';
 export { BrowserStatusPill } from './ui/BrowserStatusPill';
 export type { BrowserStatusPillProps } from './ui/BrowserStatusPill';
 export type { BrowserPillState } from './model/browser-pill-state';

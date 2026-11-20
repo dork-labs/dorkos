@@ -33,6 +33,7 @@ import {
 import { parseOriginMarks } from './approvals/marked-schedules.js';
 import { withAgentModeRecord } from './agent-mode/agent-mode-record-field.js';
 import { fileCapNextOf } from './agent-mode/file-cap/file-cap-rule.js';
+import { taskReadsOutsideText } from '../core/turn-power/declared-readers.js';
 
 /** The parts of the approved work, in the order the card lists them. */
 const WORK_FIELDS = [
@@ -156,6 +157,8 @@ export function mapTaskRow(row: typeof pulseSchedules.$inferSelect): Task {
     agentId: row.agentId ?? null,
     enabled: row.enabled,
     sticky: row.sticky,
+    // From DorkOS's own record, never a column: only a person clears it (DOR-3969).
+    ...(taskReadsOutsideText(row.id) ? { readsOutsideText: true } : {}),
     maxRuntime: row.maxRuntime,
     permissionMode: row.permissionMode,
     requestedPermissionMode:
@@ -172,6 +175,8 @@ export function mapTaskRow(row: typeof pulseSchedules.$inferSelect): Task {
     // travelling as an `EffortLevel` into an adapter that cannot map it.
     effort: readEffort(row.effort),
     account: row.account ?? null,
+    runOnce: row.runOnce,
+    ranOnceAt: row.ranOnceAt ?? null,
     status: row.status as Task['status'],
     approvedAt: row.approvedAt,
     approvedBy: readApprover(row.approvedBy),

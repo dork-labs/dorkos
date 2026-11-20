@@ -20,12 +20,18 @@ export interface AgentPausedNoticeProps {
   agentId: string;
   /** Its name, for the heading; "This agent" when it is not known. */
   agentName?: string;
+  /**
+   * The person's own queued message is held by the pause (DOR-4348): say it
+   * waits in the composer, and name the agent on the button. Resume does not
+   * send it; the person's next Send does.
+   */
+  held?: boolean;
   /** Called once this notice's Resume lifted the pause. */
   onResumed?: () => void;
 }
 
 /** The paused-agent notice with its Resume button. */
-export function AgentPausedNotice({ agentId, agentName, onResumed }: AgentPausedNoticeProps) {
+export function AgentPausedNotice({ agentId, agentName, held, onResumed }: AgentPausedNoticeProps) {
   const resume = useResumeAgent();
   const { data, dataUpdatedAt, refetch } = useAgentPauses();
   const [shownAt] = useState(() => Date.now());
@@ -50,12 +56,16 @@ export function AgentPausedNotice({ agentId, agentName, onResumed }: AgentPaused
     >
       <Pause className="text-muted-foreground size-4 shrink-0" aria-hidden />
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium">{name} is paused</p>
-        <p className="text-muted-foreground text-xs">Resume it, then send your message again.</p>
+        <p className="text-sm font-medium">{held ? `${name} is paused.` : `${name} is paused`}</p>
+        <p className="text-muted-foreground text-xs">
+          {held
+            ? 'Your message waits here until you resume it and press Send.'
+            : 'Resume it, then send your message again.'}
+        </p>
       </div>
       <Button
         size="sm"
-        variant="outline"
+        variant={held ? 'default' : 'outline'}
         disabled={resume.isPending}
         onClick={() =>
           resume.mutate(agentId, {
@@ -66,7 +76,7 @@ export function AgentPausedNotice({ agentId, agentName, onResumed }: AgentPaused
           })
         }
       >
-        Resume
+        {held && agentName ? `Resume ${agentName}` : 'Resume'}
       </Button>
     </div>
   );

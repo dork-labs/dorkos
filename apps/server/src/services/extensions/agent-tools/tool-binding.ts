@@ -41,6 +41,7 @@ import { resolveAgentIdForPath } from '../../mesh/agent-path-lookup.js';
 import { logger } from '../../../lib/logger.js';
 import type { AcceptedExtensionTool, ExtensionToolCheck } from '@dorkos/extension-api/tool-check';
 import { toolHandleProblem } from './tool-handle-rules.js';
+import { outsidePersonRequest } from '../person-record/person-record.js';
 
 /**
  * The largest result, serialized, an agent is handed. A tool result lands in
@@ -387,7 +388,10 @@ export class RunningExtensionTools {
         // Started from a resolved promise, so a handler that throws
         // synchronously is caught the same way as one that rejects.
         Promise.resolve()
-          .then(() => (controller.signal.aborted ? undefined : handler(input, call)))
+          // An agent's call, so never a person's record, whatever request is open (DOR-4301).
+          .then(() =>
+            controller.signal.aborted ? undefined : outsidePersonRequest(() => handler(input, call))
+          )
           .then(
             (value) => ({ kind: 'value' as const, value }),
             (error: unknown) => ({ kind: 'error' as const, error })

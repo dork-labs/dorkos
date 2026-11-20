@@ -150,6 +150,7 @@ export function baseSpec(): FixtureSpec {
         heavy_lock_wait_seconds: 45,
         heavy_job_wait_seconds: 1800,
         heavy_max_load: 24,
+        heavy_test_max_load: 16,
         heavy_load_wait_seconds: 600,
         heavy_load_poll_seconds: 30,
       },

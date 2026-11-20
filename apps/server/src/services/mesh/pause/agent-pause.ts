@@ -55,6 +55,7 @@ import { homeOf, resolveAgentHome, turnAgentOf } from '../../core/agent-identity
 import { auditTrail, recordAudit } from '../../audit/audit-trail.js';
 import { UNIDENTIFIED_ACCOUNT_ID } from '../../audit/account-ids.js';
 import { logger } from '../../../lib/logger.js';
+import { recordPausedQueueActivity } from './paused-queue-activity.js';
 
 /** An agent as a pause names it. */
 export interface PausedAgentRef {
@@ -461,6 +462,14 @@ export class AgentPauseService {
     agent: PausedAgentRef,
     held: { via: HeldVia; sessionId?: string; runtime?: string; taskRunId?: string }
   ): void {
+    if (held.via === 'message') {
+      try {
+        recordPausedQueueActivity(this.deps.db, agent);
+      } catch (err) {
+        // Activity is best effort; a feed write must never refuse a kept message.
+        logger.warn('[agent-pause] could not record the held queue in Activity', { err });
+      }
+    }
     const trail = auditTrail();
     if (!trail) return;
     trail.log.record({

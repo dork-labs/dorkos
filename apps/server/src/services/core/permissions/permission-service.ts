@@ -65,6 +65,8 @@ import {
   EXTENSION_REMOVAL_WRITER,
   extensionRemovedNote,
   PermissionError,
+  presetMoveChangesConfig,
+  refuseStalePresetMove,
   compact,
   isState,
   keptOnPresetMove,
@@ -275,7 +277,8 @@ export class PermissionService {
   private async clearAgentKeys(
     agents: PermissionAgentRef[],
     keys: { areas: string[]; actions: string[] } | 'all',
-    actions: Map<string, PermissionActionInfo>
+    actions: Map<string, PermissionActionInfo>,
+    keep: readonly PermissionState[] = []
   ): Promise<{ changes: PermissionChange[]; write: () => Promise<void> }> {
     const changes: PermissionChange[] = [];
     const writes: Array<() => Promise<void>> = [];
@@ -309,7 +312,7 @@ export class PermissionService {
       }
       for (const k of Object.keys(patch.actions ?? {})) {
         const before = ownState(actionMap, k);
-        if (before === null) continue;
+        if (before === null || keep.includes(before)) continue;
         delete actionMap[k];
         moved = true;
         const area = actions.get(k)?.area;
@@ -498,6 +501,11 @@ export class PermissionService {
       preset: PermissionPreset;
       applyToAgents?: string[];
       surface: PermissionSurface;
+      /**
+       * The preset and changes the caller judged this move against. When they differ
+       * now, the move is refused: what it keeps depends on them (DOR-4355).
+       */
+      expect?: { preset: PermissionPreset | null; defaults: unknown };
     },
     writer: PermissionWriter
   ): Promise<PermissionChange[]> {
@@ -506,6 +514,7 @@ export class PermissionService {
       const selected = this.agentsById(input.applyToAgents ?? []);
       const presetStop = PERMISSION_PRESET_TABLES[input.preset].filesStop;
       const config = this.deps.config.get();
+      refuseStalePresetMove(input.expect, config);
       const stops = this.deps.config.trustStops();
       const changes: PermissionChange[] = [];
       // Moving into Careful keeps what a person Blocked; every other change goes.
@@ -552,11 +561,7 @@ export class PermissionService {
         defaults: config.defaults,
         trustStop: stops.global,
       };
-      const moved =
-        config.preset !== input.preset ||
-        Object.keys(config.defaults.areas).length > Object.keys(kept.areas).length ||
-        Object.keys(config.defaults.actions).length > Object.keys(kept.actions).length;
-      if (moved) {
+      if (presetMoveChangesConfig(config, input.preset, kept)) {
         this.deps.config.set({ ...config, preset: input.preset, defaults: kept });
       }
       if (stops.global !== presetStop) {
@@ -689,13 +694,20 @@ export class PermissionService {
    * never touches `ext_mail_app.*`. Reads each agent's settings best-effort:
    * one unreadable file is skipped, not fatal.
    *
+   * An extension whose folder only went away (DOR-4305) may come back and be
+   * approved again, so that path passes `keep: ['blocked', 'ask']`: only an
+   * Allowed is cleared, and its tools never come back looser than a person
+   * left them.
+   *
    * @param extensionId - The extension being removed.
    * @param extensionName - Its display name, for the history line.
+   * @param opts - `keep`: the states a person chose that stay in place.
    * @returns Every change the write made.
    */
   async forgetExtensionActions(
     extensionId: string,
-    extensionName: string
+    extensionName: string,
+    { keep = [] }: { keep?: readonly PermissionState[] } = {}
   ): Promise<PermissionChange[]> {
     const prefix = `${extensionDomainName(extensionId)}.`;
     const owned = (id: string): boolean => id.startsWith(prefix);
@@ -704,7 +716,7 @@ export class PermissionService {
       const defaults = { ...(config.defaults.actions ?? {}) };
       const changes: PermissionChange[] = [];
       for (const [id, state] of Object.entries(defaults)) {
-        if (!owned(id)) continue;
+        if (!owned(id) || keep.includes(state)) continue;
         delete defaults[id];
         changes.push({
           target: { kind: 'default' },
@@ -716,12 +728,8 @@ export class PermissionService {
       const keys = new Set<string>();
       const agents: PermissionAgentRef[] = [];
       for (const agent of this.deps.agents.list()) {
-        let stored: AgentPermissions | undefined;
-        try {
-          stored = await this.deps.agents.readPermissions(agent.projectPath);
-        } catch {
-          continue;
-        }
+        // Best-effort: an unreadable file is skipped, not fatal.
+        const stored = await this.deps.agents.readPermissions(agent.projectPath).catch(() => null);
         const mine = Object.keys(stored?.actions ?? {}).filter(owned);
         if (mine.length === 0) continue;
         agents.push(agent);
@@ -735,7 +743,8 @@ export class PermissionService {
           { id, title: id, tier: 'act', area: 'extensions' } satisfies PermissionActionInfo,
         ])
       );
-      const cleared = await this.clearAgentKeys(agents, { areas: [], actions: [...keys] }, actions);
+      const scope = { areas: [], actions: [...keys] };
+      const cleared = await this.clearAgentKeys(agents, scope, actions, keep);
       if (changes.length === 0 && cleared.changes.length === 0) return [];
       if (changes.length > 0) {
         this.deps.config.set({ ...config, defaults: { ...config.defaults, actions: defaults } });

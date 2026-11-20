@@ -229,9 +229,10 @@ describe('a variant the schema accepts and no table teaches cannot ship', () => 
 
 describe('a local src outside the folder (DOR-3519)', () => {
   // Design pass v1 row 6: the agent is told before it calls, on every runtime,
-  // that a local file on a room's canvas has to be in its own folder and what comes back if not.
+  // that a local file on any canvas has to be in its own folder and what comes back if not.
+  // A canvas limit, not a rule about the file: the agent may still read it (Security + PM).
   const LINE =
-    "On a room's canvas, a local src must be inside your own folder or your own copy of the room's files. Anything else returns an error naming the path, so copy the file in first.";
+    "Canvas limit: the canvas shows a local src only from your own folder, or on a room's canvas your own copy of the room's files. Anything else returns an error naming the path. You can still read that file yourself and show what's in it, or copy it into your folder and open the copy.";
 
   it.each([
     ['the control_ui description (every runtime)', CONTROL_UI_DESCRIPTION],

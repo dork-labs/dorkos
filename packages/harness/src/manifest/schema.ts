@@ -97,13 +97,13 @@ export const HarnessManifestSchema = z
     harnesses: HarnessIdSchema.array().default(['claude-code']),
     claudeOnlySkills: ClaudeOnlySkillSchema.array().default([]),
     hookPolicies: HookPolicySchema.array().default([]),
-    /** @deprecated Accepted and ignored — see {@link RETIRED_MANIFEST_KEYS}. */
+    /** @deprecated since 0.135, remove in 0.155. Accepted and ignored — see {@link RETIRED_MANIFEST_KEYS}. */
     skillWrappers: z.unknown().optional(),
-    /** @deprecated Accepted and ignored — see {@link RETIRED_MANIFEST_KEYS}. */
+    /** @deprecated since 0.135, remove in 0.155. Accepted and ignored — see {@link RETIRED_MANIFEST_KEYS}. */
     commandMappings: z.unknown().optional(),
-    /** @deprecated Accepted and ignored — see {@link RETIRED_MANIFEST_KEYS}. */
+    /** @deprecated since 0.135, remove in 0.155. Accepted and ignored — see {@link RETIRED_MANIFEST_KEYS}. */
     instructionProjections: z.unknown().optional(),
-    /** @deprecated Accepted and ignored — see {@link RETIRED_MANIFEST_KEYS}. */
+    /** @deprecated since 0.135, remove in 0.155. Accepted and ignored — see {@link RETIRED_MANIFEST_KEYS}. */
     skillBundles: z.unknown().optional(),
   })
   .strict();

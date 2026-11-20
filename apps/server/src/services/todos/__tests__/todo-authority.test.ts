@@ -195,6 +195,55 @@ describe('to-do authority', () => {
       expect(service.update(agentA, own.id, { state: 'dropped' }).state).toBe('dropped');
     });
 
+    it('lets the person drop a to-do they gave with no note, proven or with no owner account (DOR-3832)', () => {
+      for (const person of [
+        { kind: 'person', proven: true },
+        { kind: 'person', proven: false, ownerless: true },
+      ] as const) {
+        const given = service.create('agent-a', { what: 'Ship it' }, person);
+        expect(service.update(person, given.id, { state: 'dropped' }).state).toBe('dropped');
+        // Their own drop keeps the to-do theirs.
+        expect(stored(given.id)).toMatchObject({ authority: 'person', authorityMarks: '{}' });
+      }
+    });
+
+    it('still needs a note from a person who cannot vouch for it once an owner account exists', () => {
+      const given = service.create(
+        'agent-a',
+        { what: 'Ship it' },
+        { kind: 'person', proven: true }
+      );
+      const unproven = { kind: 'person', proven: false, ownerless: false } as const;
+      expect(() => service.update(unproven, given.id, { state: 'dropped' })).toThrow(/note/);
+      expect(service.get(given.id)!.state).toBe('open');
+      expect(
+        service.update(unproven, given.id, { state: 'dropped', note: 'Not needed' }).state
+      ).toBe('dropped');
+    });
+
+    it('writes a person’s to-do as person on an install with no owner account (DOR-3832)', () => {
+      const made = service.create(
+        'agent-a',
+        { what: 'Ship it' },
+        { kind: 'person', proven: false, ownerless: true }
+      );
+      expect(stored(made.id)).toMatchObject({
+        assignedByKind: 'person',
+        authority: 'person',
+        authorityMarks: '{}',
+      });
+      // Once an owner account exists, the same unproven request is the stranger bound.
+      const withOwner = service.create(
+        'agent-a',
+        { what: 'Ship it' },
+        { kind: 'person', proven: false, ownerless: false }
+      );
+      expect(stored(withOwner.id)).toMatchObject({
+        authority: 'runtime-default',
+        authorityMarks: '{"outsider":true}',
+      });
+    });
+
     it('marks an own promise from a turn of unknown level as outsider, and a known clean one not', () => {
       const unknown = service.create('agent-a', { what: 'After a restart' });
       expect(stored(unknown.id)).toMatchObject({

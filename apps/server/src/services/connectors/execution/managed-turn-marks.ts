@@ -1,8 +1,8 @@
 /**
  * The marks a managed execution carries to the owner's approval card (#3196
  * review, S2). The broker derives them from the calling turn, never from
- * anything the agent sends: `outsider` when a Wi-Fi sign-in's hold bound the
- * turn, and `teammate` when a teammate in a shared space started the chain.
+ * anything the agent sends: `outsider` when the turn read words from outside the
+ * team (its mark or its outside-words note, `turnReadOutsideWords`, DOR-4587), and `teammate` when a teammate in a shared space started the chain.
  * `tool_read` is reserved in the contract for the tool-read mark, which DorkOS
  * does not record yet.
  *
@@ -10,6 +10,7 @@
  */
 import type { ManagedConnectorTurnMark } from '@dorkos/shared/connector-managed-schemas';
 import { marksOf } from '../../core/turn-power/turn-levels.js';
+import { turnReadOutsideWords } from '../../core/turn-power/outsider-turn.js';
 import type { TurnMarks } from '../../core/turn-power/turn-marks.js';
 
 /**
@@ -32,5 +33,8 @@ export function managedTurnMarks(marks: TurnMarks): ManagedConnectorTurnMark[] {
  * @param sessionId - The calling session, when the surface verified one.
  */
 export function liveTurnMarks(sessionId: string | undefined): ManagedConnectorTurnMark[] {
-  return managedTurnMarks(marksOf(sessionId, undefined));
+  const marks = marksOf(sessionId, undefined);
+  return managedTurnMarks(
+    turnReadOutsideWords(sessionId, undefined) ? { ...marks, outsider: true } : marks
+  );
 }

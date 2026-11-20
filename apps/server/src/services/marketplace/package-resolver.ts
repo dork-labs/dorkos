@@ -77,7 +77,7 @@ export interface ResolvedPackageSource {
    * Legacy git URL field — kept for backward compatibility with consumers
    * that have not yet migrated to the discriminated-union `pluginSource`.
    *
-   * @deprecated Use `pluginSource` instead. This will be removed once all
+   * @deprecated since 0.135, remove in 0.155. Use `pluginSource` instead. This will be removed once all
    *   call sites in `marketplace-installer.ts` and `package-fetcher.ts`
    *   have been migrated to the new dispatch-based fetcher API.
    */

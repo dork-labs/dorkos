@@ -144,11 +144,14 @@ export function canonicalJson(value: unknown): string {
   return JSON.stringify(sortKeys(value));
 }
 
-/** A copy of `value` with object keys sorted. */
+/**
+ * A copy of `value` with object keys sorted. Each copy is a null-prototype
+ * object, so every own key, whatever its name, is written as an ordinary key.
+ */
 function sortKeys(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sortKeys);
   if (value === null || typeof value !== 'object') return value;
-  const out: Record<string, unknown> = {};
+  const out = Object.create(null) as Record<string, unknown>;
   for (const key of Object.keys(value).sort()) {
     out[key] = sortKeys((value as Record<string, unknown>)[key]);
   }

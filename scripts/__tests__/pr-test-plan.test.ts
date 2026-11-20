@@ -378,7 +378,7 @@ describe.skipIf(!existsSync(turbo))('the workflow step that plans a pull request
     expect(planStep(repo, 'pull_request')).toEqual({ scope: 'full' });
   });
 
-  it.each(['merge_group', 'schedule', 'workflow_dispatch'])(
+  it.each(['merge_group', 'schedule', 'workflow_dispatch', 'release_pull_request'])(
     '%s never plans: the queue and the canary run every suite',
     (event) => {
       const { repo } = monorepo({ planner: true });

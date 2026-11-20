@@ -43,6 +43,7 @@ import { z } from 'zod';
 import type { RemoteAccessReport } from '@dorkos/shared/types';
 
 import type { ApiEnv } from '../http/api-chain.js';
+import { runFrontDoorWrite } from './front-door-step-up.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import {
@@ -167,7 +168,17 @@ export function createRemoteAccessRoutes(
   router.post('/enrolment', async (c) => {
     const refusal = refusePersonBars(c) ?? refuseWithoutLogin(c);
     if (refusal) return refusal;
-    return answer(c, await deps.coordinator.startEnrolment());
+    return runFrontDoorWrite(c, {
+      kind: 'remote-access.enrolment',
+      target: 'remote-access',
+      input: {},
+      reason: 'Set up Remote Access for DorkOS.',
+      subject: 'remote access',
+      run: async () => {
+        const unavailable = refuseWithoutLogin(c);
+        return unavailable ?? answer(c, await deps.coordinator.startEnrolment());
+      },
+    });
   });
 
   /** POST /api/remote-access/mode — a person chooses off, their own tunnel, or managed. */
@@ -181,9 +192,22 @@ export function createRemoteAccessRoutes(
     const { mode } = parsed.data;
     const loginRefusal = mode === 'managed' ? refuseWithoutLogin(c) : undefined;
     if (loginRefusal) return loginRefusal;
-    const result = await deps.coordinator.selectMode(mode);
-    if (result.ok && mode === 'off') await deps.stopOwnTunnel();
-    return answer(c, result);
+    if (mode === 'off') {
+      const result = await deps.coordinator.selectMode(mode);
+      if (result.ok) await deps.stopOwnTunnel();
+      return answer(c, result);
+    }
+    return runFrontDoorWrite(c, {
+      kind: 'remote-access.mode',
+      target: 'remote-access',
+      input: parsed.data,
+      reason: 'Turn on Remote Access for DorkOS.',
+      subject: 'remote access',
+      run: async () => {
+        const unavailable = mode === 'managed' ? refuseWithoutLogin(c) : undefined;
+        return unavailable ?? answer(c, await deps.coordinator.selectMode(mode));
+      },
+    });
   });
 
   /** POST /api/remote-access/close — close managed access now. Unguarded: it only narrows. */

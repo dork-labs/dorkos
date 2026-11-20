@@ -8,6 +8,8 @@
  * session for this computer, and from then on the same bars let them through
  * without asking again. Reads and chat never ask.
  */
+import { createStepUpRoutes } from '../../../../routes/step-up.js';
+import { confirmAuthFixture } from './confirm-write.js';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -67,6 +69,7 @@ function buildApp(): RequestListener {
     admission: new MainRequestAdmission(),
     beforeBodyParsing: (early) => mountBetterAuth(early, { auth: getAuth()!, maxAttempts: 1000 }),
   });
+  app.route('/api/step-up', createStepUpRoutes());
   app.route('/api/person-session', createPersonSessionRoutes());
   Object.entries(BARS).forEach(([name, passes], index) => {
     app.post(`/api/test/bar/${index}`, (c) =>
@@ -258,7 +261,14 @@ describe('the person bar at this computer, with an owner and no password asked',
         .post('/api/auth/api-key/create')
         .set(appHeaders({ cookie, [PERSON_PROOF_HEADER]: proof }))
         .send({ name: 'k' });
-      expect(keyFromApp.status).toBe(200);
+      expect(keyFromApp.status).toBe(428);
+      const committed = await confirmAuthFixture(
+        Promise.resolve(keyFromApp),
+        target.server,
+        appHeaders({ cookie, [PERSON_PROOF_HEADER]: proof }),
+        PASSWORD
+      );
+      expect(committed.status).toBe(200);
 
       // Bound to this computer, and lasting: a remembered cookie.
       const rows = db.select().from(session).where(eq(session.userId, ownerId)).all();

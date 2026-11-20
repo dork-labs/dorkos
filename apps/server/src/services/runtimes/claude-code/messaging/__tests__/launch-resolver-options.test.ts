@@ -1,3 +1,4 @@
+import { CREDITS_BLANKED_SETTINGS_NAMES } from '../credits-launch.js';
 /**
  * The launch options DorkOS hands every Claude Code turn.
  *
@@ -7,6 +8,11 @@
  * real model would have stopped sending. Each case here pins one such setting
  * against the reason it exists.
  */
+import { resolveClaudeCredentialEnv } from '../../../../core/credential-env.js';
+import { resolveLaunchAccountRoot } from '../../claude-config-dir.js';
+import { createTestDb } from '@dorkos/test-utils/db';
+import { runtimeRegistry } from '../../../../core/runtime-registry.js';
+import { eq, roomSeatLaunchRequirements, sessionMetadata } from '@dorkos/db';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -14,7 +20,12 @@ import path from 'node:path';
 import { setAgentHomeRegistry } from '../../../../core/agent-identity/index.js';
 import { projectSlug } from '../../sessions/project-slug.js';
 import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
-import type { AgentSession } from '../../agent-types.js';
+import { SessionStore } from '../../sessions/session-store.js';
+import { TranscriptReader } from '../../sessions/transcript-reader.js';
+import { mapSdkMessage } from '../../sdk/sdk-event-mapper.js';
+import { RequiredSessionIdentityError } from '../../../../../lib/replay/required-session-identity-error.js';
+import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { AgentSession, ToolState } from '../../agent-types.js';
 import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
 import type { MessageOpts, TurnPermissionCeiling } from '@dorkos/shared/agent-runtime';
 import { READ_ONLY_LEVEL } from '@dorkos/shared/permission-semantics';
@@ -23,6 +34,8 @@ import { resolveDorkHome } from '../../../../../lib/dork-home.js';
 import { CLASSIFIER_CONTEXT_MATCHER } from '../classifier-context.js';
 import { buildSystemPromptAppend, renderContextEntry } from '../context-builder.js';
 import { resolveLaunch } from '../launch-resolver.js';
+import { NOTE_WRITES_AFTER } from '../../tool-gate/extension-write-note.js';
+import { LOAD_GATE_MATCHER } from '../../tool-gate/load-gate-hook.js';
 import {
   agentHomesSelfGrantRules,
   HOME_PERSON_ONLY_FULL_RULES,
@@ -31,7 +44,19 @@ import {
   personOnlyFileRules,
 } from '../directory-grants.js';
 import { assignTurnBounds } from '../../turn-bounds.js';
+import {
+  recordTurnLevels,
+  marksOf,
+  aliasTurnLevel,
+} from '../../../../core/turn-power/turn-levels.js';
+import { CLAUDE_CODE_CAPABILITIES } from '../../runtime-constants.js';
+import {
+  getOrCreateProjector,
+  disposeProjector,
+} from '../../../../session/session-state-projector.js';
+import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import { roomTurnMarksOf } from '../../../../rooms/limits/teammate-turn.js';
+import { noteRoomTurnWords } from '../../../../core/turn-power/outside-words.js';
 import {
   captureLaunchFingerprint,
   compareLaunchFingerprints,
@@ -103,7 +128,12 @@ function makeSession(): AgentSession {
 
 /** Sender options with the one required field. */
 function makeOpts(overrides: Partial<MessageSenderOpts> = {}): MessageSenderOpts {
-  return { cwd: '/mock/project', onSdkSessionRebind: async () => {}, ...overrides };
+  return {
+    cwd: '/mock/project',
+    requiredLaunches: runtimeRegistry.requiredLaunches.bind(runtimeRegistry),
+    onSdkSessionRebind: async () => {},
+    ...overrides,
+  };
 }
 
 /** Drive one turn and hand back the options the SDK was launched with. */
@@ -125,7 +155,390 @@ async function captureSdkOptions(
 describe('the launch options every Claude Code turn is given', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    runtimeRegistry.setDb(createTestDb());
   });
+
+  it.each([
+    'intact',
+    'changed-bill',
+    'changed-inference',
+    'missing-marker',
+    'corrupt-marker',
+    'owned-old-alias',
+  ] as const)(
+    'cold reopen after refused native adoption keeps required authority: %s',
+    async (variant) => {
+      const sessionId = `4328-cold-${variant}`;
+      const temp = mkdtempSync(path.join(os.tmpdir(), '4328-cold-required-'));
+      const accountRoot = path.join(temp, 'account');
+      const cwd = path.join(temp, 'project');
+      mkdirSync(accountRoot);
+      mkdirSync(cwd);
+      mkdirSync(path.join(temp, 'dork'));
+      vi.stubEnv('DORK_HOME', path.join(temp, 'dork'));
+      vi.stubEnv('CLAUDE_CONFIG_DIR', accountRoot);
+      for (const key of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN'])
+        vi.stubEnv(key, '');
+      vi.mocked(configManager.get).mockImplementation(((key: string) =>
+        key === 'runtimes'
+          ? {
+              claudeCode: {
+                defaultAccount: 'cold-account',
+                accounts: [{ id: 'cold-account', path: accountRoot }],
+              },
+            }
+          : undefined) as typeof configManager.get);
+      const db = createTestDb();
+      runtimeRegistry.setDb(db);
+      db.insert(roomSeatLaunchRequirements)
+        .values({
+          id: 'cold-required',
+          destinationSessionId: sessionId,
+          sourceSessionId: 'prior',
+          sourceDispatchId: 'prior-dispatch',
+          startSeq: 1,
+          endSeq: 8,
+          state: 'settled',
+          createdAt: 'now',
+          payload: JSON.stringify({
+            version: 1,
+            roomId: 'r',
+            authorId: 'a',
+            runtime: 'claude-code',
+            root: accountRoot,
+            accountId: 'cold-account',
+            inference: 'own-account',
+            billing: 'subscription',
+          }),
+        })
+        .run();
+      db.insert(sessionMetadata)
+        .values({
+          sessionId: sessionId,
+          agentPath: cwd,
+          runtime: 'claude-code',
+          permissionMode: 'plan',
+          model: 'claude-sonnet-4-5',
+          effort: 'high',
+          fastMode: false,
+          requiredLaunchId: 'cold-required',
+          createdAt: 'now',
+        })
+        .run();
+      if (variant !== 'owned-old-alias')
+        db.insert(sessionMetadata)
+          .values({
+            sessionId: 'independent',
+            agentPath: path.join(temp, 'other'),
+            runtime: 'claude-code',
+            createdAt: 'earlier',
+          })
+          .run();
+      const sessions = new SessionStore();
+      sessions.configureSettings(runtimeRegistry, 'default');
+      sessions.ensureSession(sessionId, { cwd, permissionMode: 'plan', hasStarted: true });
+      const original = sessions.findSession(sessionId)!;
+      original.accountRoot = accountRoot;
+      const tools = {
+        toolNameById: new Map(),
+        resolvedResultIds: new Set(),
+        toolInputReceived: new Set(),
+      } as unknown as ToolState;
+      try {
+        if (variant === 'owned-old-alias') {
+          const recorded = recordTurnLevels(
+            {
+              type: 'claude-code',
+              getCapabilities: () => CLAUDE_CODE_CAPABILITIES,
+              async *sendMessage() {},
+            } as unknown as AgentRuntime,
+            () => 'plan'
+          );
+          for await (const _ of recorded.sendMessage(sessionId, 'Prior turn', {
+            carriedMarks: { outsider: true },
+            permissionCeiling: { asks: 'always', reach: 'read' },
+          })) {
+          }
+          expect(marksOf(sessionId, undefined)).toMatchObject({ outsider: true });
+          getOrCreateProjector(sessionId, cwd);
+        }
+        for await (const _ of mapSdkMessage(
+          {
+            type: 'system',
+            subtype: 'init',
+            session_id: 'independent',
+            apiKeySource: 'oauth',
+          } as unknown as SDKMessage,
+          original,
+          sessionId,
+          tools
+        )) {
+        }
+        if (variant === 'owned-old-alias') {
+          await sessions.rebindSdkSession(sessionId, 'independent', sessionId, original);
+          // Isolate cold settings after the genuine SDK/Registry alias commit.
+          // The existing canonical carry contribution preserves its live mark.
+          aliasTurnLevel(sessionId, 'independent');
+          expect(marksOf('independent', undefined)).toMatchObject({ outsider: true });
+        } else
+          await expect(
+            sessions.rebindSdkSession(sessionId, 'independent', sessionId, original)
+          ).rejects.toBeInstanceOf(RequiredSessionIdentityError);
+        original.lastActivity = 0;
+        sessions.checkSessionHealth({ cleanup: vi.fn() } as unknown as Parameters<
+          SessionStore['checkSessionHealth']
+        >[0]);
+        expect(sessions.findSession(sessionId)).toBeUndefined();
+        const nativeFolder = path.join(accountRoot, 'projects', projectSlug(cwd));
+        mkdirSync(nativeFolder, { recursive: true });
+        writeFileSync(
+          path.join(nativeFolder, `${sessionId}.jsonl`),
+          JSON.stringify({
+            type: 'user',
+            uuid: 'old-user',
+            sessionId: sessionId,
+            cwd,
+            message: { role: 'user', content: 'Prior intact history' },
+          }) + '\n'
+        );
+        if (variant === 'missing-marker')
+          db.update(sessionMetadata)
+            .set({ requiredLaunchId: null })
+            .where(eq(sessionMetadata.sessionId, sessionId))
+            .run();
+        if (variant === 'corrupt-marker')
+          db.update(sessionMetadata)
+            .set({ requiredLaunchId: 'missing-record' })
+            .where(eq(sessionMetadata.sessionId, sessionId))
+            .run();
+        if (variant === 'changed-bill')
+          vi.mocked(resolveClaudeCredentialEnv).mockResolvedValueOnce({
+            ANTHROPIC_API_KEY: 'edge-fixture-only',
+          });
+        if (variant === 'changed-inference')
+          writeFileSync(
+            path.join(accountRoot, 'settings.json'),
+            JSON.stringify({ env: { ANTHROPIC_BASE_URL: 'https://unsupported.example.invalid' } })
+          );
+        vi.mocked(query).mockClear();
+        vi.mocked(query).mockReturnValue({
+          [Symbol.asyncIterator]: async function* () {},
+        } as unknown as ReturnType<typeof query>);
+        const observed = [];
+        try {
+          const cold = await sessions.ensureForMessage(sessionId, new TranscriptReader(), cwd);
+          expect(cold).not.toBe(original);
+          for await (const event of executeSdkQuery(
+            sessionId,
+            'Different new work',
+            cold,
+            makeOpts({ cwd }),
+            { cwd }
+          ))
+            observed.push(event);
+        } catch (error) {
+          if (variant === 'intact' || (error instanceof Error && error.name === 'AssertionError'))
+            throw error;
+          observed.push({ type: 'error', data: { message: String(error) } });
+        }
+        if (variant === 'owned-old-alias') {
+          if (vi.mocked(query).mock.calls.length) {
+            expect(marksOf(sessionId, undefined)).toMatchObject({ outsider: true });
+            expect(query).toHaveBeenCalledOnce();
+            const options = vi.mocked(query).mock.calls[0][0].options!;
+            expect(options.permissionMode).toBe('plan');
+            expect(options.model).toBe('claude-sonnet-4-5');
+            expect(options.effort).toBe('high');
+            expect(options.settings).toMatchObject({ fastMode: false });
+            expect(options.resume).toBe('independent');
+            expect(options.env?.CLAUDE_CONFIG_DIR).toBe(accountRoot);
+          } else {
+            expect(query).not.toHaveBeenCalled();
+            const reasons = observed
+              .flatMap((event) =>
+                event.type === 'error' &&
+                'message' in event.data &&
+                typeof event.data.message === 'string'
+                  ? [event.data.message]
+                  : []
+              )
+              .join(' ');
+            expect(reasons).toMatch(/required|recovery|canonical|identity|alias/i);
+          }
+        } else if (variant === 'intact') {
+          expect(query).toHaveBeenCalledOnce();
+          expect(vi.mocked(query).mock.calls[0][0].options?.env?.CLAUDE_CONFIG_DIR).toBe(
+            accountRoot
+          );
+          expect(runtimeRegistry.requiredLaunches().forSession(sessionId)).toMatchObject({
+            root: accountRoot,
+            inference: 'own-account',
+            billing: 'subscription',
+          });
+        } else {
+          const expected =
+            variant === 'changed-bill'
+              ? 'billing choice cannot be preserved'
+              : variant === 'changed-inference'
+                ? 'inference source is unknown'
+                : variant === 'missing-marker'
+                  ? 'reference is missing'
+                  : 'requirement is missing';
+          expect(
+            observed
+              .flatMap((event) =>
+                event.type === 'error' &&
+                'message' in event.data &&
+                typeof event.data.message === 'string'
+                  ? [event.data.message]
+                  : []
+              )
+              .join(' ')
+          ).toContain(expected);
+          expect(observed.some((event) => event.type === 'error')).toBe(true);
+          expect(query).not.toHaveBeenCalled();
+        }
+      } finally {
+        disposeProjector(sessionId);
+        disposeProjector('independent');
+        vi.unstubAllEnvs();
+        vi.mocked(configManager.get).mockReset();
+        rmSync(temp, { recursive: true, force: true });
+      }
+    }
+  );
+
+  it('refuses a changed subscription bill through the actual final launch resolver after settlement', async () => {
+    const db = createTestDb();
+    runtimeRegistry.setDb(db);
+    const account = resolveLaunchAccountRoot({ hintId: 'default', project: null });
+    if (!account.ok) throw account.error;
+    vi.mocked(resolveClaudeCredentialEnv).mockResolvedValueOnce({
+      ANTHROPIC_API_KEY: 'edge-test-only',
+    });
+    db.insert(roomSeatLaunchRequirements)
+      .values({
+        id: 'required',
+        destinationSessionId: 's1',
+        sourceSessionId: 'old',
+        sourceDispatchId: 'prior-dispatch',
+        startSeq: 1,
+        endSeq: 8,
+        state: 'settled',
+        createdAt: 'now',
+        payload: JSON.stringify({
+          version: 1,
+          roomId: 'r',
+          authorId: 'a',
+          runtime: 'claude-code',
+          root: account.root,
+          accountId: 'default',
+          inference: 'own-account',
+          billing: 'subscription',
+        }),
+      })
+      .run();
+    db.insert(sessionMetadata)
+      .values({ sessionId: 's1', requiredLaunchId: 'required', createdAt: 'now' })
+      .run();
+    await expect(
+      resolveLaunch({
+        sessionId: 's1',
+        content: 'new work',
+        session: makeSession(),
+        opts: makeOpts(),
+        effectiveCwd: '/mock/project',
+      })
+    ).rejects.toThrow('billing choice cannot be preserved');
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it.each(
+    CREDITS_BLANKED_SETTINGS_NAMES.filter((name) => name !== 'ANTHROPIC_API_KEY').flatMap((name) =>
+      (['inherited', 'user', 'folder'] as const).map((layer) => ({ name, layer }))
+    )
+  )(
+    'refuses unsupported recovery routing $name from $layer before SDK entry',
+    async ({ name, layer }) => {
+      const temp = mkdtempSync(path.join(os.tmpdir(), '4328-final-route-'));
+      const accountRoot = path.join(temp, 'account');
+      const cwd = path.join(temp, 'project');
+      mkdirSync(accountRoot, { recursive: true });
+      mkdirSync(path.join(cwd, '.claude'), { recursive: true });
+      const db = createTestDb();
+      runtimeRegistry.setDb(db);
+      db.insert(roomSeatLaunchRequirements)
+        .values({
+          id: 'route-required',
+          destinationSessionId: 's1',
+          sourceSessionId: 'old',
+          sourceDispatchId: 'prior-dispatch',
+          startSeq: 1,
+          endSeq: 8,
+          state: 'settled',
+          createdAt: 'now',
+          payload: JSON.stringify({
+            version: 1,
+            roomId: 'r',
+            authorId: 'a',
+            runtime: 'claude-code',
+            root: accountRoot,
+            accountId: 'route-account',
+            inference: 'own-account',
+            billing: 'subscription',
+          }),
+        })
+        .run();
+      db.insert(sessionMetadata)
+        .values({ sessionId: 's1', requiredLaunchId: 'route-required', createdAt: 'now' })
+        .run();
+      vi.mocked(configManager.get).mockImplementation(((key: string) =>
+        key === 'runtimes'
+          ? {
+              claudeCode: {
+                defaultAccount: 'route-account',
+                accounts: [{ id: 'route-account', path: accountRoot }],
+              },
+              environment: { inherit: { claudeCode: [name], codex: [], opencode: [] } },
+            }
+          : undefined) as typeof configManager.get);
+      try {
+        vi.stubEnv('ANTHROPIC_API_KEY', '');
+        vi.stubEnv('ANTHROPIC_AUTH_TOKEN', '');
+        const value = name.endsWith('BASE_URL')
+          ? 'https://unsupported.example.invalid'
+          : /(?:USE_|SKIP_|MANAGED_BY_HOST)/.test(name)
+            ? '1'
+            : 'fixture-host-auth';
+        if (layer === 'inherited') vi.stubEnv(name, value);
+        else
+          writeFileSync(
+            layer === 'user'
+              ? path.join(accountRoot, 'settings.json')
+              : path.join(cwd, '.claude', 'settings.json'),
+            JSON.stringify({ env: { [name]: value } })
+          );
+        const attempt = async () => {
+          for await (const _event of executeSdkQuery(
+            's1',
+            'new work',
+            makeSession(),
+            makeOpts({ cwd }),
+            { cwd }
+          )) {
+            // Fully drain: the required refusal must precede any SDK entry.
+          }
+        };
+        await expect(attempt()).rejects.toThrow('Recovery inference source is unsupported.');
+        expect(query).not.toHaveBeenCalled();
+      } finally {
+        vi.unstubAllEnvs();
+        vi.mocked(configManager.get).mockReset();
+        db.$client.close();
+        rmSync(temp, { recursive: true, force: true });
+      }
+    }
+  );
 
   it('skips the card for a read in the working folder, a grant or a loaded plugin, and nowhere else (DOR-3300)', async () => {
     const captured: { options?: Options } = {};
@@ -197,7 +610,49 @@ describe('the launch options every Claude Code turn is given', () => {
     const options = await captureSdkOptions();
     const unmatched = (options.hooks?.PostToolUse ?? []).filter((m) => m.matcher === undefined);
     expect(unmatched).toHaveLength(1);
-    expect(options.hooks?.PostToolUseFailure).toEqual([{ hooks: [unmatched[0]!.hooks[0]] }]);
+    expect(options.hooks?.PostToolUseFailure).toEqual([
+      { hooks: [unmatched[0]!.hooks[0]] },
+      NOTE_WRITES_AFTER,
+      // A failed shell call gives its heavy-job slot back (DOR-4209).
+      expect.objectContaining({ matcher: LOAD_GATE_MATCHER }),
+    ]);
+  });
+
+  it('registers the load gate on the shell, past its hard cap, and every way a slot comes back (DOR-4209)', async () => {
+    // Unregistered, every agent's builds and test suites start at once on a busy computer again,
+    // and nothing anywhere fails.
+    const options = await captureSdkOptions();
+    const pre = options.hooks?.PreToolUse ?? [];
+    // Once, on the shell alone. Where it sits decides nothing: it answers nothing.
+    const gated = pre.filter((m) => m.matcher === LOAD_GATE_MATCHER);
+    expect(gated).toHaveLength(1);
+    const wait = gated[0]!;
+    // The CLI's own limit on the hook sits past the shipped four-hour cap.
+    expect(wait.timeout).toBeGreaterThan(240 * 60);
+    const after = (options.hooks?.PostToolUse ?? []).filter((m) => m.matcher === LOAD_GATE_MATCHER);
+    expect(after).toHaveLength(1);
+    expect(options.hooks?.PostToolUseFailure).toContain(after[0]);
+    const sweep = (options.hooks?.Stop ?? [])[1];
+    expect(sweep?.matcher).toBeUndefined();
+    for (const event of [
+      'PostToolBatch',
+      'PermissionDenied',
+      'SubagentStop',
+      'SessionEnd',
+    ] as const) {
+      expect(options.hooks?.[event], event).toEqual([sweep]);
+    }
+  });
+
+  it('registers the hooks that note who wrote a mini app’s files, before and after', async () => {
+    // DOR-4528. Unregistered, every edit to an agent's own mini app is tied to no one and waits.
+    const options = await captureSdkOptions();
+    // On every tool, beside the held turn's ask, so a held turn that only starts later work still
+    // sets the launch's hold.
+    const everyTool = (options.hooks?.PreToolUse ?? []).filter((m) => m.matcher === undefined);
+    expect(everyTool).toHaveLength(2);
+    expect(options.hooks?.PostToolUse).toContain(NOTE_WRITES_AFTER);
+    expect(options.hooks?.PostToolUseFailure).toContain(NOTE_WRITES_AFTER);
   });
 
   it('registers the held turn’s ask on every tool, read from the session as each call is made', async () => {
@@ -205,8 +660,9 @@ describe('the launch options every Claude Code turn is given', () => {
     const session = makeSession();
     const options = await captureSdkOptions(undefined, session);
     const unmatched = (options.hooks?.PreToolUse ?? []).filter((m) => m.matcher === undefined);
-    // The only hook on every tool: there is no teammate fence (DOR-3440).
-    expect(unmatched).toHaveLength(1);
+    // The held turn's ask comes first; the other hook on every tool only notes who wrote a mini
+    // app's files (DOR-4528). There is no teammate fence (DOR-3440).
+    expect(unmatched).toHaveLength(2);
     const hook = unmatched[0]!.hooks[0]!;
     const call = {
       hook_event_name: 'PreToolUse' as const,
@@ -224,6 +680,37 @@ describe('the launch options every Claude Code turn is given', () => {
     expect(await hook(call, 'tool-1', signal)).toMatchObject({
       hookSpecificOutput: { permissionDecision: 'ask' },
     });
+  });
+
+  it('hands the Never ask hook the chat’s own outside-words check (DOR-4600, Security S3)', async () => {
+    // Red when: the launch passes the hook only the turn's marks. Then a status read runs for no
+    // chat, or for one that read outside words.
+    const session = { ...makeSession(), permissionMode: 'dontAsk' as const };
+    const options = await captureSdkOptions(undefined, session);
+    const neverAsk = (options.hooks?.PreToolUse ?? []).find((m) => m.matcher === '^mcp__dorkos__');
+    const hook = neverAsk!.hooks[0]!;
+    const statusRead = {
+      hook_event_name: 'PreToolUse' as const,
+      session_id: 'sdk-1',
+      transcript_path: '/tmp/t.jsonl',
+      cwd: '/mock/project',
+      tool_name: 'mcp__dorkos__running_chats',
+      tool_input: {},
+      tool_use_id: 'tool-1',
+      mcp_server: { name: 'dorkos', source: 'sdk' },
+    };
+    const signal = { signal: new AbortController().signal };
+
+    expect(await hook(statusRead, 'tool-1', signal)).toMatchObject({
+      hookSpecificOutput: { permissionDecision: 'allow' },
+    });
+    // A room turn that answered someone from outside (DOR-4029): the chat read outside words.
+    noteRoomTurnWords('sdk-1', true);
+    try {
+      expect(await hook(statusRead, 'tool-1', signal)).toEqual({});
+    } finally {
+      noteRoomTurnWords('sdk-1', false);
+    }
   });
 
   it('launches a teammate’s turn as any other: notes, profile, grants and process (DOR-3440)', async () => {
@@ -406,7 +893,9 @@ describe('the launch options every Claude Code turn is given', () => {
 
     // The audit record's helper-tool hook rides PostToolUse too (spec
     // `audit-trail` PR3); the classifier hook is the one with a matcher.
-    const matchers = (options.hooks?.PostToolUse ?? []).filter((m) => m.matcher !== undefined);
+    const matchers = (options.hooks?.PostToolUse ?? []).filter(
+      (m) => m.matcher !== undefined && m !== NOTE_WRITES_AFTER && m.matcher !== LOAD_GATE_MATCHER
+    );
     expect(matchers).toHaveLength(1);
     expect(
       matchers[0]?.matcher,
@@ -441,7 +930,8 @@ describe('the launch options every Claude Code turn is given', () => {
     const options = await captureSdkOptions(undefined, session);
 
     const stop = options.hooks?.Stop ?? [];
-    expect(stop).toHaveLength(1);
+    // The timers' hook first; the load gate's turn-end sweep after it (DOR-4209).
+    expect(stop).toHaveLength(2);
     const hook = stop[0]!.hooks[0]!;
     const fire = (crons: unknown) =>
       hook(

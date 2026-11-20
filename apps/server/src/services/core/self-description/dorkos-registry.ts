@@ -51,6 +51,7 @@ import { instructionsDomain } from '../../runtimes/context-preview/instructions-
 import { permissionsDomain } from '../permissions/permission-capabilities.js';
 import { auditDomain } from '../../audit/audit-capabilities.js';
 import { agentPauseDomain } from '../../mesh/pause/pause-capabilities.js';
+import { approvalsDomain } from '../approvals/approval-withdraw-capability.js';
 import { createLocalBrowserDomain } from '../../session/local-browser/capabilities.js';
 
 /**
@@ -87,6 +88,7 @@ export function composeDorkOsCapabilityRegistry(
   if (deps.workClaimDeps) domains.push(workClaimDomain);
   if (deps.auditDeps) domains.push(auditDomain);
   if (deps.agentPauseDeps) domains.push(agentPauseDomain);
+  if (deps.approvalWithdrawDeps) domains.push(approvalsDomain);
   if (deps.localBrowserDeps) domains.push(createLocalBrowserDomain(deps.localBrowserDeps));
   // Unconditional, unlike every domain above it: memory has no service handle to
   // switch off. Every install has a filesystem, the builtin provider needs
@@ -166,6 +168,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     workClaimDomain,
     auditDomain,
     agentPauseDomain,
+    approvalsDomain,
     createLocalBrowserDomain({} as NonNullable<CapabilityDeps['localBrowserDeps']>),
     memoryDomain,
     uiDomain,
@@ -190,6 +193,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     workClaimDeps: {} as CapabilityDeps['workClaimDeps'],
     auditDeps: {} as CapabilityDeps['auditDeps'],
     agentPauseDeps: {} as CapabilityDeps['agentPauseDeps'],
+    approvalWithdrawDeps: {} as CapabilityDeps['approvalWithdrawDeps'],
   };
   return composeRegistry(domains, deps);
 }

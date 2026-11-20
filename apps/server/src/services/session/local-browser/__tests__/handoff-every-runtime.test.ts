@@ -10,7 +10,7 @@ import type { LocalBrowserState } from '@dorkos/shared/local-browser';
 import { noopLogger } from '@dorkos/shared/logger';
 import { composeRegistry } from '../../../core/capabilities/index.js';
 import { createServerPrincipal } from '../../../connectors/principal/server-principal.js';
-import { capabilityMcpTools } from '../../../runtimes/claude-code/mcp-tools/capability-mcp-tools.js';
+import { createCapabilityMcpClient } from '../../../runtimes/claude-code/mcp-tools/__tests__/capability-mcp-client.js';
 import { createAgentRuntimeMcpServer } from '../../../runtimes/connector-mcp/agent-runtime-server.js';
 import { createLocalBrowserDomain } from '../capabilities.js';
 import { BrowserHandover } from '../handover.js';
@@ -45,7 +45,7 @@ async function handedOver() {
   const service = {
     requireProfileAccess: vi.fn(async () => undefined),
     requireNotFullScreen: vi.fn(async () => undefined),
-    requireSharedSession: vi.fn(() => undefined),
+    assertLeaseIdentity: vi.fn(() => undefined),
     agentState: vi.fn(async () => state),
     observe: vi.fn(async () => ({ revision: 3, snapshot: '- heading "Private"', tabId: 'x' })),
     screenshot: vi.fn(async () => ({ data: 'cGl4', mimeType: 'image/png', revision: 3 })),
@@ -68,10 +68,18 @@ async function handedOver() {
   };
   const signIns = { current: null, active: false, holds: () => false } as unknown as SignInWindow;
   service.handover = new BrowserHandover(browser, signIns, () => '/tmp/unused');
-  service.handover.useOutsideTurnCheck(async () => false);
+  service.handover.useOutsideTurnCheck(async () => null);
   await service.handover.ask(CHAT, 'wall', { name: 'Atlas', folder: '/agents/atlas' });
+  const scoped = {
+    ...service,
+    leaseFor: () => ({
+      ...service,
+      assertCurrent: () => undefined,
+      runOperation: <T>(_effect: boolean, operation: () => Promise<T>) => operation(),
+    }),
+  };
   const registry = composeRegistry(
-    [createLocalBrowserDomain(service as unknown as LocalBrowserService)],
+    [createLocalBrowserDomain(scoped as unknown as LocalBrowserService)],
     { logger: noopLogger }
   );
   return { service, registry };
@@ -94,7 +102,9 @@ function resultText(result: unknown): string {
 describe('a browser handed to a person refuses its agent on every runtime', () => {
   it('Claude Code: every in-session browser tool is refused', async () => {
     const { service, registry } = await handedOver();
-    const tools = capabilityMcpTools(registry, 'in-session', async () => ({ sessionId: CHAT }));
+    const { tools } = await createCapabilityMcpClient(registry, 'in-session', async () => ({
+      sessionId: CHAT,
+    }));
     for (const [name, input] of Object.entries(TOOL_INPUTS)) {
       const tool = tools.find((item) => (item as { name?: string }).name === name);
       expect(tool, name).toBeDefined();

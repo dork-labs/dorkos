@@ -30,7 +30,7 @@ import {
   type CapabilityDomain,
   type CapabilityInvocationContext,
 } from '../index.js';
-import { capabilityInputShape, invokeCapabilityAsMcpResult } from '../mcp-projection.js';
+import { capabilityMcpInputObject, invokeCapabilityAsMcpResult } from '../mcp-projection.js';
 import { ApprovalService } from '../../approvals/index.js';
 import { eventFanOut } from '../../event-fan-out.js';
 import type { AgentIdentity } from '../../agent-identity/index.js';
@@ -103,10 +103,10 @@ describe('invokeCapabilityAsMcpResult — tier enforcement', () => {
 
   describe('advertised input shape', () => {
     it('adds approvalToken to a destructive tool only', () => {
-      const destroy = capabilityInputShape(registry.get('gated.destroy')!);
-      const tidy = capabilityInputShape(registry.get('gated.tidy')!);
-      expect(Object.keys(destroy).sort()).toEqual(['approvalToken', 'name']);
-      expect(Object.keys(tidy)).toEqual(['name']);
+      const destroy = capabilityMcpInputObject(registry.get('gated.destroy')!);
+      const tidy = capabilityMcpInputObject(registry.get('gated.tidy')!);
+      expect(Object.keys(destroy.shape).sort()).toEqual(['approvalToken', 'name']);
+      expect(Object.keys(tidy.shape)).toEqual(['name']);
     });
 
     it('leaves the capability input schema untouched', () => {

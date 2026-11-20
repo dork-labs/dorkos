@@ -57,6 +57,18 @@ export class BindingConflictError extends Error {
   }
 }
 
+/**
+ * Thrown by {@link BindingStore.update} when the binding changed since a
+ * caller judged its change against it (Security S5 on DOR-4355 M3): a change
+ * read as narrowing could otherwise put back what a person just took away.
+ */
+export class BindingChangedError extends Error {
+  constructor() {
+    super('The chat connection changed. Try again.');
+    this.name = 'BindingChangedError';
+  }
+}
+
 /** Chokidar stability threshold before triggering hot-reload (ms). */
 const STABILITY_THRESHOLD_MS = 150;
 /** Chokidar poll interval for write-finish detection (ms). */
@@ -226,14 +238,24 @@ export class BindingStore {
    *
    * @param id - The binding UUID to update
    * @param updates - Fields to update; every {@link UpdateBindingRequest} field is accepted
+   * @param expect - When given, what must still be true of the stored binding for
+   *   the update to land; checked with nothing awaited before the write.
    * @returns The updated binding, or undefined if not found
+   * @throws {@link BindingChangedError} when `expect` no longer holds.
    * @throws When the merged result fails `AdapterBindingSchema` — in practice
    *   {@link BRIDGE_REQUIRES_CHAT_ID_MESSAGE}, the only refinement the schema carries.
    * @throws {@link BindingConflictError} on a `(adapterId, chatId)` collision.
    */
-  async update(id: string, updates: BindingUpdate): Promise<AdapterBinding | undefined> {
+  async update(
+    id: string,
+    updates: BindingUpdate,
+    expect?: (current: AdapterBinding) => boolean
+  ): Promise<AdapterBinding | undefined> {
     const existing = this.bindings.get(id);
     if (!existing) return undefined;
+    // Judged against the binding as it is now, with nothing awaited before the
+    // write: a change judged on an older read lands only if it still holds.
+    if (expect && !expect(existing)) throw new BindingChangedError();
     if (updates.chatId !== undefined && updates.chatId !== existing.chatId) {
       this.assertChatAvailable(existing.adapterId, updates.chatId, id);
     }

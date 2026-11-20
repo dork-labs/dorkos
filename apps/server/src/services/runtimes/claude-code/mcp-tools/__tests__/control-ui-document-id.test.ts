@@ -28,7 +28,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { noopLogger } from '@dorkos/shared/logger';
-import { capabilityMcpTools } from '../capability-mcp-tools.js';
+import { registerClaudeCapabilityTools } from '../capability-mcp-tools.js';
 import { composeRegistry } from '../../../../core/capabilities/index.js';
 import { uiTurnFacts } from '../../../../session/index.js';
 import { uiDomain } from '../../../../session/browser-seat/ui-capabilities.js';
@@ -75,8 +75,10 @@ describe('control_ui through the real MCP layer', () => {
     const server = createSdkMcpServer({
       name: 'dorkos',
       version: '1.0.0',
-      tools: capabilityMcpTools(registry, 'in-session', async () => ({ sessionId: SESSION })),
     });
+    registerClaudeCapabilityTools(server.instance, registry, 'in-session', async () => ({
+      sessionId: SESSION,
+    }));
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     client = new Client({ name: 'canvas-probe', version: '0.0.0' });
     await Promise.all([server.instance.connect(serverTransport), client.connect(clientTransport)]);

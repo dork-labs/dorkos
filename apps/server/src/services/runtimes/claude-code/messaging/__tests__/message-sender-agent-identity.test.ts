@@ -1,3 +1,4 @@
+import { isolatedRequiredLaunchOwner } from './required-launch-fixture.js';
 /**
  * Who the Claude adapter mints a session's identity token FOR (spec
  * `agent-trust` §3.1, DOR-1264).
@@ -31,6 +32,8 @@ import {
   clearTestHomes,
   registerEveryFolderAsHome,
 } from '../../../../core/agent-identity/__tests__/agent-home-fixture.js';
+
+const requiredLaunches = isolatedRequiredLaunchOwner();
 
 // Every scratch folder counts as a registered home here, so this suite's
 // mocked mesh decides who is an agent, as it did before homes (DOR-2355).
@@ -110,7 +113,12 @@ async function launchWith(meshCore: AgentRegistryPort | null): Promise<Options> 
     captured = args.options;
     return { [Symbol.asyncIterator]: async function* () {} } as unknown as ReturnType<typeof query>;
   });
-  const opts: MessageSenderOpts = { cwd: AGENT_CWD, meshCore, onSdkSessionRebind: async () => {} };
+  const opts: MessageSenderOpts = {
+    cwd: AGENT_CWD,
+    meshCore,
+    requiredLaunches,
+    onSdkSessionRebind: async () => {},
+  };
   for await (const _event of executeSdkQuery('s1', 'hello', makeSession(), opts)) {
     // The launch options are what these tests read.
   }

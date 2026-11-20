@@ -28,9 +28,13 @@ import { defineConfig } from 'vitest/config';
 
 /** Suites with at least one test that reads files outside `scripts/`'s harness scope. */
 export const REPO_WIDE_SUITES = [
+  // Reads docs/guides/agent-browser.mdx, packages/browser's pin and playwright-core's browsers.json.
+  '__tests__/agent-browser-doc-versions.test.ts',
   '__tests__/agents-service-census.test.ts',
   '__tests__/binary-lane-job.test.ts',
   '__tests__/binary-test-glob.test.ts',
+  '__tests__/browser-proof-page.test.ts',
+  '__tests__/browser-turbo-build-cache.test.ts',
   '__tests__/check-boundary.test.ts',
   '__tests__/check-design-tokens.test.ts',
   '__tests__/check-own-mocks.test.ts',
@@ -48,13 +52,19 @@ export const REPO_WIDE_SUITES = [
   '__tests__/decision-narrow-only.test.ts',
   '__tests__/dependabot-lockfile-repair-paths.test.ts',
   '__tests__/dependabot-lockstep-families.test.ts',
+  '__tests__/deprecated-removal.test.ts',
   '__tests__/extension-child-build-entry.test.ts',
   '__tests__/gray-matter-import-boundary.test.ts',
+  // Reads ci/config.yaml, the root package.json and vitest.config.ts.
+  '__tests__/load-wait.test.ts',
   '__tests__/loopback-dial-boundary.test.ts',
   '__tests__/mcp-exclude-copy.test.ts',
   '__tests__/merge-group-runner-label.test.ts',
   '__tests__/one-shot-routes.test.ts',
   '__tests__/playwright-apt-debs.test.ts',
+  // Reads test.yml, browser-test.yml, docs-openapi-check.yml,
+  // release-branch-contents.yml and changelog-fragment-check.yml (DOR-4639).
+  '__tests__/release-branch-ci.test.ts',
   // The guard over these two lists. It reads only scripts/, but a new suite
   // can land from any PR, so it must run in the queue too (DOR-4224).
   '__tests__/repo-wide-suites.test.ts',

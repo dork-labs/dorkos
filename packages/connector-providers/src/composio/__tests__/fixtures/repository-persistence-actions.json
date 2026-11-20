@@ -94,5 +94,15 @@
       "slug": "GITEA_MERGE_PULL_REQUEST",
       "tags": ["openWorldHint", "updateHint", "repositories", "pull-requests"]
     }
+  ],
+  "bitbucket": [
+    {
+      "slug": "BITBUCKET_CREATE_BRANCH",
+      "tags": ["important", "openWorldHint", "createHint"]
+    },
+    {
+      "slug": "BITBUCKET_MERGE_PULL_REQUEST",
+      "tags": ["important", "openWorldHint", "updateHint", "pull_requests"]
+    }
   ]
 }

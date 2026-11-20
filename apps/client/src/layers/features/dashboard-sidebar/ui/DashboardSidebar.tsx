@@ -57,7 +57,7 @@ export function DashboardSidebar() {
       <SidebarContent className="sidebar-scroll-edges px-2 py-3">
         <SidebarChrome activeTarget={state.activeTarget}>
           <SidebarDnd displayNames={state.displayNames} rooms={state.rooms}>
-            <SidebarSections model={model} />
+            <SidebarSections model={model} prefsKey={state.prefs} />
           </SidebarDnd>
         </SidebarChrome>
       </SidebarContent>

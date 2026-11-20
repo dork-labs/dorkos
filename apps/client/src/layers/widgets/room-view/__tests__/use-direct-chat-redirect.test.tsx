@@ -4,7 +4,7 @@
  * opens as that agent's Direct chat, and every other room stays a room.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import { useDirectChatRedirect } from '../model/use-direct-chat-redirect';
 
@@ -40,13 +40,16 @@ afterEach(() => {
 describe('useDirectChatRedirect', () => {
   it('opens a one-agent DM as that agent’s Direct chat, replacing the address', async () => {
     state.rooms = [dm('dm-ana', ['human', 'agent'])];
-    open.mockResolvedValue(true);
+    open.mockResolvedValue('opened');
 
     const { result } = renderHook(() => useDirectChatRedirect('dm-ana'));
 
     expect(result.current).toBe('redirecting');
     await waitFor(() =>
-      expect(open).toHaveBeenCalledWith({ roomId: 'dm-ana' }, { replace: true, quiet: true })
+      expect(open).toHaveBeenCalledWith(
+        { roomId: 'dm-ana' },
+        { replace: true, quiet: true, redirect: true }
+      )
     );
     expect(open).toHaveBeenCalledTimes(1);
   });
@@ -66,11 +69,31 @@ describe('useDirectChatRedirect', () => {
 
   it('draws the room after all when the Direct chat cannot be opened', async () => {
     state.rooms = [dm('dm-ana', ['human', 'agent'])];
-    open.mockResolvedValue(false);
+    open.mockResolvedValue('failed');
 
     const { result } = renderHook(() => useDirectChatRedirect('dm-ana'));
 
     await waitFor(() => expect(result.current).toBe('show'));
     expect(open).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not draw the room when the person left before the open answered, and asks again on return (DOR-4622)', async () => {
+    // Overtaken is the person moving on, not the Direct chat failing: marking
+    // the room failed would draw the plain room view on the next visit.
+    state.rooms = [dm('dm-ana', ['human', 'agent']), dm('dm-group', ['human', 'agent', 'agent'])];
+    open.mockResolvedValueOnce('overtaken').mockResolvedValueOnce('opened');
+
+    const { result, rerender } = renderHook(({ id }) => useDirectChatRedirect(id), {
+      initialProps: { id: 'dm-ana' },
+    });
+    await waitFor(() => expect(open).toHaveBeenCalledTimes(1));
+    // Let the overtaken answer land before the person moves.
+    await act(async () => {});
+
+    rerender({ id: 'dm-group' });
+    rerender({ id: 'dm-ana' });
+
+    expect(result.current).toBe('redirecting');
+    await waitFor(() => expect(open).toHaveBeenCalledTimes(2));
   });
 });

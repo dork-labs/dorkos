@@ -10,6 +10,12 @@
  * arch whatever its lockfile, because turbo's own task hashes decide what is
  * replayed. It also pins what made that fallback safe: only `main` saves, and
  * only after the build-only trim.
+ *
+ * Turbo hashes `turbo test`'s `--` arguments, `--shard=N/6` included, into
+ * every build in the run. So every test job builds first, with no `--`
+ * arguments, through scripts/build-test-deps.sh, and runs its suites with
+ * `--only` (DOR-4625, ledger 261118-140000): the builds hash the same in every
+ * shard, the pull request leg and test-binary, and one entry serves them all.
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -55,15 +61,18 @@ function restoreKeys(step: string): string[] {
 
 const RESTORE = 'Restore the builds the last main canary made';
 
-describe.each(['test-shard', 'test-binary'])('%s restores the build cache', (id) => {
+describe.each([
+  ['test-shard', KEY, PREFIX],
+  ['test-binary', KEY, PREFIX],
+])('%s restores the build cache', (id, key, prefix) => {
   const step = stepText(jobText(id), RESTORE);
 
   it('asks for the exact entry first', () => {
-    expect(step).toContain(`key: ${KEY}\n`);
+    expect(step).toContain(`key: ${key}\n`);
   });
 
   it('prefers the same lockfile, then takes the newest entry for this OS and arch', () => {
-    expect(restoreKeys(step)).toEqual([`${PREFIX}${LOCK}-`, PREFIX]);
+    expect(restoreKeys(step)).toEqual([`${prefix}${LOCK}-`, prefix]);
   });
 
   it('only restores, never saves', () => {
@@ -81,13 +90,16 @@ describe('only the main canary saves, and only build entries', () => {
       .split(/\n(?= {6}- )/)
       .filter((step) => step.includes('uses: actions/cache/save@'));
     expect(saves.filter((step) => step.includes(`key: ${KEY}\n`))).toHaveLength(1);
+    expect(saves.filter((step) => step.includes('turbo-test-builds-'))).toHaveLength(1);
+    // test-shard's restore and save, and test-binary's restore.
     expect(workflow.split(`key: ${KEY}\n`).length - 1).toBe(3);
   });
 
-  it('trims to build entries on refs/heads/main before the save', () => {
+  it("trims to the build step's entries on refs/heads/main, shard 1, before the save", () => {
     const trim = stepText(shard, "Keep only this run's build entries in the turbo cache");
-    expect(trim).toContain("if: ${{ github.ref == 'refs/heads/main' }}");
-    expect(trim).toContain('bash scripts/keep-build-cache-only.sh');
+    expect(trim).toContain("if: ${{ github.ref == 'refs/heads/main' && matrix.shard == 1 }}");
+    expect(trim).toContain('BUILD_SUMMARY: ${{ steps.deps.outputs.summary }}');
+    expect(trim).toContain('bash scripts/keep-build-cache-only.sh "$BUILD_SUMMARY"');
 
     const save = stepText(shard, 'Save the builds for the queue and pull requests');
     expect(save).toContain("if: ${{ steps.trim.outputs.save == 'true' }}");
@@ -99,5 +111,46 @@ describe('only the main canary saves, and only build entries', () => {
     const save = stepText(shard, 'Save the builds for the queue and pull requests');
     const saved = /key: (.+)\n/.exec(save)?.[1] ?? '';
     expect(saved.startsWith(PREFIX)).toBe(true);
+  });
+});
+
+describe('every test job builds with no test arguments, then runs --only', () => {
+  const BUILD = 'bash scripts/build-test-deps.sh';
+  const ONLY = /pnpm exec turbo test [^\n]*--only [^\n]*-- --run/;
+
+  it.each([
+    [
+      'test-shard',
+      'Build what the suites import, once, with no test arguments',
+      "Run every package's test suite (shard ${{ matrix.shard }}/6)",
+    ],
+    [
+      'test-binary',
+      'Build what the binary suites import, once, with no test arguments',
+      'Run the binary CLI suites',
+    ],
+  ])('%s: "%s" runs unconditionally before a --only suite line', (id, buildName, runName) => {
+    const job = jobText(id);
+    const build = stepText(job, buildName);
+    const run = stepText(job, runName);
+    expect(build).toContain(BUILD);
+    expect(build).not.toMatch(/^ {8}if:/m);
+    expect(job.indexOf(build)).toBeLessThan(job.indexOf(run));
+    expect(run).toMatch(ONLY);
+  });
+
+  it('the pull request leg builds inside its own suite step, then runs --only', () => {
+    const run = stepText(
+      jobText('test-shard'),
+      "Run the affected packages' test suites (shard ${{ matrix.shard }}/${{ strategy.job-total }})"
+    );
+    expect(run).toContain(`${BUILD} "\${filters[@]}"`);
+    expect(run.indexOf(BUILD)).toBeLessThan(run.search(ONLY));
+  });
+
+  it('the trim reads the build step summary, because the sweep under --only has no build task', () => {
+    expect(
+      stepText(jobText('test-shard'), 'Build what the suites import, once, with no test arguments')
+    ).toMatch(/^ {8}id: deps$/m);
   });
 });

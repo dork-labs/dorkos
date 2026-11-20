@@ -72,21 +72,47 @@ import cloudRouter from '../cloud.js';
 // After the route: the chain imports the auth module, which must load after
 // the mocks above have replaced who owns this install.
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import type { Test } from '@dorkos/test-utils/supertest';
+import {
+  confirmFixtureRequest,
+  FIXTURE_BROWSER_HEADER,
+  stepUpFixtureRoutes,
+} from './step-up-fixture.js';
 
 /** Who `sessionGate` resolved, as a test sets it; nobody by default (login off). */
 let signedInUser: { userId: string; credential: 'cookie' | 'api-key' } | undefined;
 
+/** The owner's made-up password, which the step-up fixture's check accepts. */
+const OWNER_PASSWORD = 'made-up-owner-password';
+
 const server = listeningServer(
   honoGroupListener(
-    { path: '/api/cloud', routes: cloudRouter },
+    [
+      { path: '/api/cloud', routes: cloudRouter },
+      stepUpFixtureRoutes({
+        ownerId: () => 'user_cockpit',
+        checkPassword: async (password) => (password === OWNER_PASSWORD ? 'ok' : 'wrong'),
+      }),
+    ],
     {
       before: async (c, next) => {
-        if (signedInUser) c.set('user', signedInUser);
+        // A confirmable request comes from the owner's own browser at this computer.
+        const browser = c.req.header(FIXTURE_BROWSER_HEADER);
+        const user =
+          signedInUser ??
+          (browser ? { userId: 'user_cockpit', credential: 'cookie' as const } : undefined);
+        if (user) c.set('user', browser ? { ...user, sessionId: browser } : user);
         await next();
       },
     }
   )
 );
+
+/**
+ * The owner at the desk confirming a held account write with their password,
+ * through the real step-up route. A write that is not held answers as it always did.
+ */
+const asPerson = (ask: Test) => confirmFixtureRequest(ask, server, OWNER_PASSWORD);
 
 /** One request the fake account received. */
 interface Seen {
@@ -152,7 +178,8 @@ describe('billing-page routes', () => {
       ['topup', '/v1/topup'],
     ])('hands back only the address the service gave for %s', async (page, v1Path) => {
       const seen = fakeAccount({ [v1Path]: { status: 200, body: hostedPageFixture } });
-      const res = await request(server).post(`/api/cloud/billing/${page}`).expect(200);
+      const res = await asPerson(request(server).post(`/api/cloud/billing/${page}`));
+      expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true, url: hostedPageFixture.url });
       expect(res.headers['cache-control']).toBe('no-store');
       expect(seen).toHaveLength(1);
@@ -168,10 +195,10 @@ describe('billing-page routes', () => {
     it('sends the chosen offer to checkout unchanged', async () => {
       const seen = fakeAccount({ '/v1/checkout': { status: 200, body: hostedPageFixture } });
       const skuId = offersFixture.offers[1].skuId;
-      const res = await request(server)
-        .post('/api/cloud/billing/checkout')
-        .send({ skuId })
-        .expect(200);
+      const res = await asPerson(
+        request(server).post('/api/cloud/billing/checkout').send({ skuId })
+      );
+      expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true, url: hostedPageFixture.url });
       expect(seen[0]).toMatchObject({ path: '/v1/checkout', body: { skuId } });
     });
@@ -201,13 +228,15 @@ describe('billing-page routes', () => {
 
     it('passes a refusal through in the service`s own words', async () => {
       fakeAccount({ '/v1/portal': { status: 403, body: refusalFixture } });
-      const res = await request(server).post('/api/cloud/billing/portal').expect(200);
+      const res = await asPerson(request(server).post('/api/cloud/billing/portal'));
+      expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: false, problem: refusalFixture });
     });
 
     it('says the account could not be reached when the service is unwell, echoing nothing', async () => {
       fakeAccount({ '/v1/topup': { status: 502, body: { internal: 'stack trace' } } });
-      const res = await request(server).post('/api/cloud/billing/topup').expect(200);
+      const res = await asPerson(request(server).post('/api/cloud/billing/topup'));
+      expect(res.status).toBe(200);
       expect(res.body).toEqual({
         ok: false,
         message: 'Couldn’t reach your DorkOS account. Try again shortly.',
@@ -224,7 +253,8 @@ describe('billing-page routes', () => {
       ],
     ])('never hands the browser %s as a payment page', async (_label, url) => {
       fakeAccount({ '/v1/portal': { status: 200, body: { url } } });
-      const res = await request(server).post('/api/cloud/billing/portal').expect(200);
+      const res = await asPerson(request(server).post('/api/cloud/billing/portal'));
+      expect(res.status).toBe(200);
       expect(res.body.ok).toBe(false);
       expect(JSON.stringify(res.body)).not.toContain(url);
     });
@@ -233,7 +263,8 @@ describe('billing-page routes', () => {
       cloud.baseUrl = 'http://localhost:7000';
       const url = 'http://localhost:7000/hosted/portal';
       fakeAccount({ '/v1/portal': { status: 200, body: { url } } });
-      const res = await request(server).post('/api/cloud/billing/portal').expect(200);
+      const res = await asPerson(request(server).post('/api/cloud/billing/portal'));
+      expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true, url });
     });
 
@@ -241,7 +272,8 @@ describe('billing-page routes', () => {
       fakeAccount({
         '/v1/portal': { status: 200, body: { url: 'HTTPS://Pay.Example.Invalid/a b' } },
       });
-      const res = await request(server).post('/api/cloud/billing/portal').expect(200);
+      const res = await asPerson(request(server).post('/api/cloud/billing/portal'));
+      expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: true, url: 'https://pay.example.invalid/a%20b' });
     });
 
@@ -270,10 +302,10 @@ describe('billing-page routes', () => {
         'reads as one plain sentence, never the service`s own prose, for %s',
         async (_shape, body) => {
           fakeAccount({ [v1Path]: { status: 404, body } });
-          const res = await request(server)
-            .post(`/api/cloud/billing/${page}`)
-            .send({ skuId: 'sku_opaque_0001' })
-            .expect(200);
+          const res = await asPerson(
+            request(server).post(`/api/cloud/billing/${page}`).send({ skuId: 'sku_opaque_0001' })
+          );
+          expect(res.status).toBe(200);
           expect(res.body).toEqual({ ok: false, message: sentence });
         }
       );
@@ -283,7 +315,8 @@ describe('billing-page routes', () => {
   describe('POST /api/cloud/account/export', () => {
     it('asks again with the ready email only when the first answer has no link', async () => {
       const seen = fakeAccount({ '/v1/account/export': { status: 200, body: exportFixture } });
-      const res = await request(server).post('/api/cloud/account/export').expect(200);
+      const res = await asPerson(request(server).post('/api/cloud/account/export'));
+      expect(res.status).toBe(200);
       expect(res.body).toEqual({
         ok: true,
         export: {
@@ -309,7 +342,8 @@ describe('billing-page routes', () => {
         downloadUrl: 'https://files.example.invalid/exp_0001',
       };
       const seen = fakeAccount({ '/v1/account/export': { status: 200, body: ready } });
-      const res = await request(server).post('/api/cloud/account/export').expect(200);
+      const res = await asPerson(request(server).post('/api/cloud/account/export'));
+      expect(res.status).toBe(200);
       expect(res.body.export).toEqual({
         requestedAt: ready.requestedAt,
         readyAt: ready.readyAt,
@@ -331,7 +365,8 @@ describe('billing-page routes', () => {
           { status: 200, body: ready },
         ],
       });
-      const res = await request(server).post('/api/cloud/account/export').expect(200);
+      const res = await asPerson(request(server).post('/api/cloud/account/export'));
+      expect(res.status).toBe(200);
       expect(res.body.export).toMatchObject({
         downloadUrl: ready.downloadUrl,
         emailRequested: true,
@@ -345,7 +380,8 @@ describe('billing-page routes', () => {
         downloadUrl: 'http://files.example.invalid/x',
       };
       const seen = fakeAccount({ '/v1/account/export': { status: 200, body: ready } });
-      const res = await request(server).post('/api/cloud/account/export').expect(200);
+      const res = await asPerson(request(server).post('/api/cloud/account/export'));
+      expect(res.status).toBe(200);
       expect(res.body.export).toMatchObject({
         readyAt: null,
         downloadUrl: null,
@@ -360,7 +396,8 @@ describe('billing-page routes', () => {
       ['a bare 404', 'Not Found'],
     ])('says exporting is not available on the account for %s', async (_shape, body) => {
       fakeAccount({ '/v1/account/export': { status: 404, body } });
-      const res = await request(server).post('/api/cloud/account/export').expect(200);
+      const res = await asPerson(request(server).post('/api/cloud/account/export'));
+      expect(res.status).toBe(200);
       expect(res.body).toEqual({
         ok: false,
         message: 'Exporting your data isn’t available on your account yet.',
@@ -369,7 +406,8 @@ describe('billing-page routes', () => {
 
     it('passes any other refusal through in the service`s own words', async () => {
       fakeAccount({ '/v1/account/export': { status: 403, body: refusalFixture } });
-      const res = await request(server).post('/api/cloud/account/export').expect(200);
+      const res = await asPerson(request(server).post('/api/cloud/account/export'));
+      expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: false, problem: refusalFixture });
     });
 
@@ -388,7 +426,8 @@ describe('billing-page routes', () => {
   describe('POST /api/cloud/account/deletion', () => {
     it('asks for the deletion and says where the confirmation link went', async () => {
       const seen = fakeAccount({ '/v1/account/deletion': { status: 200, body: deletionFixture } });
-      const res = await request(server).post('/api/cloud/account/deletion').expect(200);
+      const res = await asPerson(request(server).post('/api/cloud/account/deletion'));
+      expect(res.status).toBe(200);
       expect(res.body).toEqual({
         ok: true,
         deletion: {
@@ -411,7 +450,8 @@ describe('billing-page routes', () => {
       fakeAccount({
         '/v1/account/deletion': { status: 200, body: { ...deletionFixture, confirmBy: null } },
       });
-      const res = await request(server).post('/api/cloud/account/deletion').expect(200);
+      const res = await asPerson(request(server).post('/api/cloud/account/deletion'));
+      expect(res.status).toBe(200);
       expect(res.body.deletion.confirmBy).toBeNull();
     });
 
@@ -422,7 +462,8 @@ describe('billing-page routes', () => {
           body: { ...deletionFixture, confirmationUrl: 'https://account.example.invalid/x' },
         },
       });
-      const res = await request(server).post('/api/cloud/account/deletion').expect(200);
+      const res = await asPerson(request(server).post('/api/cloud/account/deletion'));
+      expect(res.status).toBe(200);
       expect(Object.keys(res.body.deletion).sort()).toEqual([
         'confirmBy',
         'confirmationSentTo',
@@ -435,7 +476,8 @@ describe('billing-page routes', () => {
       ['a bare 404', 'Not Found'],
     ])('says deleting is not available on the account for %s', async (_shape, body) => {
       fakeAccount({ '/v1/account/deletion': { status: 404, body } });
-      const res = await request(server).post('/api/cloud/account/deletion').expect(200);
+      const res = await asPerson(request(server).post('/api/cloud/account/deletion'));
+      expect(res.status).toBe(200);
       expect(res.body).toEqual({
         ok: false,
         message: 'Deleting your account from the app isn’t available on your account yet.',
@@ -444,7 +486,8 @@ describe('billing-page routes', () => {
 
     it('passes a refusal through in the service`s own words, link included', async () => {
       fakeAccount({ '/v1/account/deletion': { status: 409, body: deletionConflictFixture } });
-      const res = await request(server).post('/api/cloud/account/deletion').expect(200);
+      const res = await asPerson(request(server).post('/api/cloud/account/deletion'));
+      expect(res.status).toBe(200);
       expect(res.body).toEqual({ ok: false, problem: deletionConflictFixture });
     });
 
@@ -455,7 +498,8 @@ describe('billing-page routes', () => {
       'says a link may already be on its way after %s, never that nothing was sent',
       async (_shape, answer) => {
         fakeAccount({ '/v1/account/deletion': answer() });
-        const res = await request(server).post('/api/cloud/account/deletion').expect(200);
+        const res = await asPerson(request(server).post('/api/cloud/account/deletion'));
+        expect(res.status).toBe(200);
         expect(res.body).toEqual({
           ok: false,
           message:
@@ -511,7 +555,9 @@ describe('billing-page routes', () => {
         const seen = fakeAccount({
           '/v1/account/deletion': { status: 200, body: deletionFixture },
         });
-        await request(server).post('/api/cloud/account/deletion').expect(200);
+        expect((await asPerson(request(server).post('/api/cloud/account/deletion'))).status).toBe(
+          200
+        );
         expect(seen).toHaveLength(1);
       });
     });

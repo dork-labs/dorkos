@@ -7,11 +7,16 @@
  * `contribute` accepts and every agent tool list can render, and a schema that
  * would turn into an open-ended map is refused before any extension code runs.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { z } from 'zod';
 import { ExtensionManifestSchema, type ExtensionManifest } from '../manifest-schema.js';
 
-import { checkDeclaredTools, checkToolInputSchema, plainReason } from '../tool-check.js';
+import {
+  checkContributionShape,
+  checkDeclaredTools,
+  checkToolInputSchema,
+  plainReason,
+} from '../tool-check.js';
 
 /** A closed object schema around the given properties. */
 function closed(properties: Record<string, unknown>, extra: Record<string, unknown> = {}) {
@@ -210,4 +215,58 @@ describe('checkDeclaredTools', () => {
     const [check] = checkDeclaredTools(manifest);
     expect(check).toMatchObject({ ok: true, timeoutSeconds: 300 });
   });
+});
+
+describe('full-object contribution listability', () => {
+  const refusedSchemas = [
+    [
+      'record',
+      z.object({ value: z.record(z.string(), z.string()) }).strict(),
+      /propertyNames|record/,
+    ],
+    ['lazy', z.object({ value: z.lazy(() => z.string()) }).strict(), /lazy/],
+    ['date', z.object({ value: z.date() }).strict(), /JSON Schema/],
+    ['open', z.object({ value: z.string() }).loose(), /additionalProperties/],
+  ] as const;
+
+  it('checks a nonempty set of unsupported declarations', () => {
+    expect(refusedSchemas).toHaveLength(4);
+  });
+
+  it.each(refusedSchemas)(
+    'refuses %s before reading its handler, beside a valid same-name tool',
+    (_kind, input, reason) => {
+      const readHandler = vi.fn(() => ({ ok: true as const, value: 'handler' }));
+      const contribution = (schema: z.ZodObject) => ({
+        owner: 'mail-app',
+        displayName: 'Mail',
+        tools: [
+          {
+            name: 'read_value',
+            title: 'Read value',
+            description: 'Reads one value.',
+            tier: 'observe',
+            input: schema,
+          },
+        ],
+      });
+      expect(checkContributionShape(contribution(input), readHandler)).toMatchObject({
+        ok: false,
+        reason: expect.stringMatching(reason),
+      });
+      expect(readHandler).not.toHaveBeenCalled();
+      const validInput = z.object({ value: z.string().default('inbox') }).strict();
+      const accepted = checkContributionShape(contribution(validInput), readHandler);
+      expect(accepted.ok).toBe(true);
+      expect(readHandler).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ name: 'read_value', input: validInput }),
+        'read_value'
+      );
+      if (!accepted.ok) throw new Error(accepted.reason);
+      expect(accepted.value.tools).toHaveLength(1);
+      expect(accepted.value.tools[0]!.input).toBe(validInput);
+      expect(accepted.value.tools[0]!.input.parse({})).toEqual({ value: 'inbox' });
+      expect(accepted.value.tools[0]!.input.parse({ value: 'sent' })).toEqual({ value: 'sent' });
+    }
+  );
 });

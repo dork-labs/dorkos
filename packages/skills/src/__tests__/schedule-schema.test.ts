@@ -339,6 +339,21 @@ describe('scheduleToFrontmatter', () => {
     ).toEqual({ cron: '0 9 * * *' });
   });
 
+  it('writes readsOutsideText: true, omits false, and reads YAML words (DOR-3969)', () => {
+    const declared = ScheduleBlockSchema.parse({ cron: '0 9 * * *', readsOutsideText: 'yes' });
+    expect(declared.readsOutsideText).toBe(true);
+    expect(scheduleToFrontmatter(declared)).toEqual({ cron: '0 9 * * *', readsOutsideText: true });
+    expect(
+      scheduleToFrontmatter(
+        ScheduleBlockSchema.parse({ cron: '0 9 * * *', readsOutsideText: false })
+      )
+    ).toEqual({ cron: '0 9 * * *' });
+    expect(
+      ScheduleBlockSchema.parse({ readsOutsideText: 'maybe' }).readsOutsideText
+    ).toBeUndefined();
+    expect(ScheduleBlockSchema.parse({}).readsOutsideText).toBeUndefined();
+  });
+
   // Three fields, one rule: an absent one stays absent (it means "the agent's
   // answer"), and a set one is written back verbatim. A field the writer drops
   // is an override the person set in the app and lost on the next file sync.

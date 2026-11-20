@@ -71,6 +71,11 @@ export {
   useRevokeMiniAppAccess,
   miniAppAccessPageUrl,
 } from './model/use-mini-app-access';
+export {
+  useConnectorSpending,
+  useSetSpendingLimit,
+  useSetSpendingPrice,
+} from './model/use-connector-spending';
 
 // --- Shared DTO types, re-exported for feature layers ---
 export type {
@@ -108,6 +113,8 @@ export { cloudFailure, type CloudFailureCopy } from './lib/cloud-failure';
 export { connectReturnTo } from './lib/connect-return-to';
 export { AgentConnectionAccessList, SessionConnectionAccessList } from './ui/ConnectionAccessLists';
 export { ServiceMark } from './ui/ServiceMark';
+export { PaidActionMarker } from './ui/PaidActionMarker';
+export type { PaidActionMarkerProps } from './ui/PaidActionMarker';
 export { serviceLogo, type ServiceLogo } from './lib/service-logo';
 export { EveryAgentAccessNotice } from './ui/EveryAgentAccessNotice';
 export type { EveryAgentAccessNoticeProps } from './ui/EveryAgentAccessNotice';

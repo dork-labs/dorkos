@@ -40,6 +40,7 @@ import {
 import { emitQueueUpdate } from '../queue-stream-events.js';
 import { queueKeyOf } from '../resolution/session-key-registry.js';
 import { logger } from '../../../lib/logger.js';
+import { isPersonWindowClientId } from '../person-window-client-id.js';
 import { emitLifecycle, pending } from './state.js';
 import type { DispatchPlan } from './types.js';
 
@@ -48,6 +49,30 @@ const RECORDED_HOLDS_MAX = 1_000;
 
 /** Holds already written to the audit log, by row id and the pause that held it. */
 const recordedHolds = new Set<string>();
+
+/** How many person-window rows a pause held this process remembers. */
+const HELD_FOR_PERSON_MAX = 1_000;
+
+/**
+ * Person-window rows a pause held in this process (DOR-4348). After a resume,
+ * the person's window puts such a row back in their composer, so it waits for
+ * their Send: no heartbeat, to-do, task or extension dispatch may adopt it.
+ * Every other person row is adopted as usual, so words queued behind a busy
+ * turn still run after a restart. The person's Send removes the row, and ids
+ * are never reused, so an id left here is inert. Memory only on purpose: a
+ * restart has no window holding the words, so the row runs like any other
+ * leftover (and a pause still in force holds it again at launch).
+ */
+const heldForPerson = new Set<string>();
+
+/**
+ * Whether a queue row is a person's words a pause held, waiting for their Send.
+ *
+ * @param rowId - The queue row.
+ */
+export function awaitsPersonSend(rowId: string): boolean {
+  return heldForPerson.has(rowId);
+}
 
 /**
  * A fresh runtime message id for each row a pause cut after its turn started
@@ -85,6 +110,7 @@ export function forgetRuntimeMessageId(rowId: string): void {
 export function forgetRecordedHolds(): void {
   recordedHolds.clear();
   rerunIds.clear();
+  heldForPerson.clear();
 }
 
 /**
@@ -159,6 +185,14 @@ export function holdForPause(plan: DispatchPlan, agent: PausedAgentRef): void {
   const row = store?.get(plan.messageId);
   if (row && !row.heldToDefault && carriesPlanOnlyLimits(plan)) {
     store?.updateContent(plan.messageId, row.content, { holdToDefault: true });
+  }
+  if (row && isPersonWindowClientId(row.enqueuedBy) && !heldForPerson.has(row.id)) {
+    // Drop the oldest first; a Set iterates in insertion order.
+    const oldest = heldForPerson.values().next().value;
+    if (heldForPerson.size >= HELD_FOR_PERSON_MAX && oldest !== undefined) {
+      heldForPerson.delete(oldest);
+    }
+    heldForPerson.add(row.id);
   }
   pending.delete(plan.messageId);
   if (setQueuedWaitingOn(plan.messageId, undefined)) emitQueueUpdate(plan.sessionKey);

@@ -240,6 +240,8 @@ export type ExtensionAgentSkillSummary = z.infer<typeof ExtensionAgentSkillSumma
 /** One extension waiting for a person to allow it to run. */
 export const PendingExtensionApprovalSchema = z
   .object({
+    /** Server-derived display code matching this copy’s confirmation sheet. */
+    requestCode: z.string().optional(),
     /** Extension id. */
     id: z.string().min(1),
     /** Manifest name, e.g. "Flow". */

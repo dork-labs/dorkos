@@ -8,6 +8,7 @@ import type {
 import type { SessionStatus } from '@dorkos/shared/session-stream';
 import { useSessionListStore } from '@/layers/entities/session';
 import { TransportProvider } from '@/layers/shared/model';
+import { BrowserHandoffCard } from '@/layers/features/browser-handoff';
 import { LocalBrowserPanel } from '@/layers/features/local-browser';
 import { createPlaygroundTransport } from '../playground-transport';
 import { PlaygroundSection } from '../PlaygroundSection';
@@ -52,7 +53,10 @@ const IN_USE_WORKING: LocalBrowserPersonState = {
 const CONNECTED_HERE: LocalBrowserPersonState = {
   ...IN_USE_ELSEWHERE,
   sessionId: 'chat-atlas',
-  tabs: [{ id: 'demo-tab', title: 'Pricing', url: 'https://www.example.com/pricing?plan=team' }],
+  tabs: [
+    { id: 'demo-tab', title: 'Pricing', url: 'https://www.example.com/pricing?plan=team' },
+    { id: 'demo-popup', title: 'Sign in to Example', url: 'https://accounts.example.com/signin' },
+  ],
 };
 
 /**
@@ -117,6 +121,15 @@ const WAITING_HERE: LocalBrowserPersonState = {
     status: 'open',
     startedAt: '2026-11-13T12:00:01.000Z',
   },
+};
+
+/**
+ * The person stopped Atlas's task, but its sign-in window is still open for them (DOR-4731).
+ * On a Mac its close is never seen, so the panel offers Done signing in.
+ */
+const STOPPED_SIGN_IN_OPEN: LocalBrowserPersonState = {
+  ...WAITING_HERE,
+  handoff: { ...WAITING_HERE.handoff!, outcome: 'stopped' },
 };
 
 /** The person closed the sign-in window and it saved; only Continue is left (DOR-4325). */
@@ -186,7 +199,8 @@ function PanelDemo({
   open,
   afterOpen,
 }: {
-  state: LocalBrowserPersonState;
+  /** What the browser reports, or `null` for a browser DorkOS can't reach. */
+  state: LocalBrowserPersonState | null;
   open?: () => Promise<never>;
   /** What the browser reports once Open browser was pressed: a handoff that began meanwhile. */
   afterOpen?: LocalBrowserPersonState;
@@ -194,7 +208,10 @@ function PanelDemo({
   const [transport] = useState<Transport>(() => {
     let current = state;
     return browserTransport(
-      () => current,
+      () => {
+        if (!current) throw new Error('The browser didn’t answer.');
+        return current;
+      },
       undefined,
       open &&
         (() => {
@@ -204,12 +221,12 @@ function PanelDemo({
     );
   });
   useEffect(() => {
-    if (state.sessionId !== IN_USE_WORKING.sessionId) return;
+    if (state?.sessionId !== IN_USE_WORKING.sessionId) return;
     // A live status is how the app knows a chat's agent is working right now.
     useSessionListStore.setState((store) => ({
       statuses: { ...store.statuses, [IN_USE_WORKING.sessionId!]: {} as SessionStatus },
     }));
-  }, [state.sessionId]);
+  }, [state?.sessionId]);
   const [queryClient] = useState(
     () => new QueryClient({ defaultOptions: { queries: { retry: false } } })
   );
@@ -217,7 +234,13 @@ function PanelDemo({
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
         <div className="bg-background h-[36rem] w-full max-w-sm rounded-lg border">
-          <LocalBrowserPanel visible={false} sessionId="chat-atlas" agentName="Atlas" />
+          <LocalBrowserPanel
+            visible={false}
+            sessionId="chat-atlas"
+            agentName="Atlas"
+            // The app passes the chat's own card, as the Browser panel does (DOR-4731).
+            handoffCard={<BrowserHandoffCard sessionId="chat-atlas" />}
+          />
         </div>
       </TransportProvider>
     </QueryClientProvider>
@@ -291,6 +314,10 @@ export function LocalBrowserPanelShowcases() {
       <ShowcaseDemo>
         <PanelDemo state={NOT_OPEN} />
       </ShowcaseDemo>
+      <ShowcaseLabel>DorkOS can’t reach the browser: Reconnect</ShowcaseLabel>
+      <ShowcaseDemo>
+        <PanelDemo state={null} />
+      </ShowcaseDemo>
       <ShowcaseLabel>Shared with this chat’s agent: the browser chrome over the page</ShowcaseLabel>
       <ShowcaseDemo>
         <PanelDemo state={CONNECTED_HERE} />
@@ -322,6 +349,10 @@ export function LocalBrowserPanelShowcases() {
       <ShowcaseLabel>This chat’s agent waits on you after the sign-in window closed</ShowcaseLabel>
       <ShowcaseDemo>
         <PanelDemo state={WINDOW_CLOSED_HERE} />
+      </ShowcaseDemo>
+      <ShowcaseLabel>Task stopped, sign-in window still open: Done signing in</ShowcaseLabel>
+      <ShowcaseDemo>
+        <PanelDemo state={STOPPED_SIGN_IN_OPEN} />
       </ShowcaseDemo>
       <ShowcaseLabel>This chat’s agent handed you its page in the Mac app</ShowcaseLabel>
       <ShowcaseDemo>

@@ -1,3 +1,5 @@
+import { RuntimeRegistry } from '../../../../core/runtime-registry.js';
+import { createTestDb } from '@dorkos/test-utils/db';
 /**
  * A turn that outlived its window must not poison the turn that replaces it
  * (DOR-1295).
@@ -124,6 +126,7 @@ const mockedQuery = vi.mocked(query);
 
 let cli: FakeCli;
 let runtime: ClaudeCodeRuntime;
+let settingsDb: ReturnType<typeof createTestDb> | undefined;
 let flushed: SessionEvent[][];
 let recordingStore: SessionEventStore;
 
@@ -162,10 +165,16 @@ beforeEach(() => {
   mockedQuery.mockImplementation(cli.query as unknown as typeof query);
   vi.mocked(validateBoundaryOrDorkHome).mockResolvedValue(CWD);
   runtime = new ClaudeCodeRuntime('/tmp/dorkos-pump', CWD);
+  const settingsOwner = new RuntimeRegistry();
+  settingsDb = createTestDb();
+  settingsOwner.setDb(settingsDb);
+  runtime.setSessionSettings(settingsOwner);
 });
 
 afterEach(() => {
   for (const process of cli.processes) process.endStream();
+  settingsDb?.$client.close();
+  settingsDb = undefined;
 });
 
 /**

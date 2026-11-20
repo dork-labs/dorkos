@@ -30,6 +30,9 @@
 #   * IT NEVER WEDGES — a SIGKILLed holder (the whole tree, or only the
 #     wrapper) frees its slot at once; a live holder is waited for and then
 #     given up on; a nested call runs straight through; CI never waits.
+#   * A SIGNAL NEVER BECOMES A PASS (DOR-4616) — a run stopped by INT, QUIT,
+#     TERM or HUP exits 128+n even when its command caught the signal and
+#     exited 0, as turbo does.
 #   * IT DEGRADES RATHER THAN REFUSES — no perl, an unwritable lock directory
 #     and `DORKOS_HEAVY_LOCK=0` all still run the command.
 #   * IT USES ONLY A DIRECTORY THAT IS OURS (DOR-3509) — a symlinked or
@@ -53,7 +56,7 @@ CHECK="${CHECK:-$repo_root/scripts/heavy-run-lock.sh}"
 # CI sets these, and the wrapper rightly runs uncapped under them. Every case
 # below except the CI one is about the capped path.
 unset CI DORKOS_HEAVY_SLOT_HELD DORKOS_HEAVY_LOCK DORKOS_HEAVY_WAIT_SECONDS DORKOS_HEAVY_SLOTS \
-  DORKOS_HEAVY_MAX_LOAD DORKOS_HEAVY_LOAD_WAIT_SECONDS DORKOS_HEAVY_LOAD_POLL_SECONDS \
+  DORKOS_HEAVY_MAX_LOAD DORKOS_HEAVY_TEST_MAX_LOAD DORKOS_IGNORE_LOAD DORKOS_HEAVY_LOAD_WAIT_SECONDS DORKOS_HEAVY_LOAD_POLL_SECONDS \
   CI_STEWARD_TIMINGS_FILE CI_STEWARD_RUN_ID
 # This machine's real load must never decide a case: a busy host would make
 # every --job case below wait out the load bound. The load cases set their own.
@@ -301,6 +304,77 @@ sleep 0.5
 if slot_locked "$locks" 1; then not_ok 'a TERMed run left its slot locked'; else ok 'a TERMed run releases its slot'; fi
 
 echo ""
+echo "== a signal never becomes a pass (DOR-4616) =="
+
+# turbo catches a signal, shuts its tasks down and exits 0. bash, waiting on a
+# foreground command that caught SIGINT and exited 0, carries on as though
+# nothing happened, so a Ctrl-C'd `pnpm verify` step used to exit 0 here. The
+# command below does what turbo does. It is started through perl because a
+# background job of this non-interactive shell ignores INT and QUIT, which a
+# wrapper run from a terminal does not.
+start_catcher() {
+  local locks=$1 secs=$2 lock=$3 pidf
+  pidf=$(mktemp "$work/catcher.XXXXXX")
+  DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_LOCK="$lock" PIDF="$pidf" \
+    perl -e '$SIG{INT} = $SIG{QUIT} = "DEFAULT"; exec @ARGV or die "exec: $!\n"' \
+    bash "$CHECK" bash -c "trap 'exit 0' INT QUIT TERM; echo \$\$ >\"\$PIDF\"; sleep $secs & wait \$!" \
+    >/dev/null 2>&1 &
+  wrapper=$!
+  own_pids+=("$wrapper")
+  for _ in $(seq 1 50); do
+    [ -s "$pidf" ] && break
+    sleep 0.1
+  done
+  catcher=$(cat "$pidf")
+  for p in $(tree_pids "$catcher"); do own_pids+=("$p"); done
+}
+
+for lock in 1 0; do
+  label='capped'
+  [ "$lock" = 0 ] && label='with the cap off'
+  locks=$(new_locks)
+  start_catcher "$locks" 30 "$lock"
+  # What a terminal's Ctrl-C does: the signal reaches the wrapper and its command.
+  kill -INT "$wrapper" "$catcher"
+  wait "$wrapper" 2>/dev/null
+  check_eq "a Ctrl-C'd run whose command exits 0 exits 130 ($label)" 130 "$?"
+  if [ "$lock" = 1 ]; then
+    sleep 0.5
+    if slot_locked "$locks" 1; then not_ok "a Ctrl-C'd run left its slot locked"; else ok "a Ctrl-C'd run releases its slot"; fi
+  fi
+done
+
+locks=$(new_locks)
+start_catcher "$locks" 30 1
+kill -QUIT "$wrapper" "$catcher"
+wait "$wrapper" 2>/dev/null
+check_eq 'a QUIT run whose command exits 0 exits 131' 131 "$?"
+
+# INT to the wrapper alone: the command never hears of it and finishes, but the
+# run was asked to stop, so it does not report a pass.
+locks=$(new_locks)
+start_catcher "$locks" 1 1
+kill -INT "$wrapper"
+wait "$wrapper" 2>/dev/null
+check_eq 'an INT to the wrapper alone still exits 130' 130 "$?"
+
+# TERM and HUP need no trap: the wrapper dies of the signal, which is never 0.
+for sig in TERM HUP; do
+  locks=$(new_locks)
+  start_catcher "$locks" 30 1
+  kill "-$sig" "$wrapper" "$catcher"
+  wait "$wrapper" 2>/dev/null
+  status=$?
+  [ "$sig" = TERM ] && want=143 || want=129
+  check_eq "a $sig run whose command exits 0 exits $want" "$want" "$status"
+done
+locks=$(new_locks)
+start_catcher "$locks" 30 1
+kill -TERM "$wrapper"
+wait "$wrapper" 2>/dev/null
+check_eq 'a TERM to the wrapper alone exits 143' 143 "$?"
+
+echo ""
 echo "== it must never deadlock on itself or block CI =="
 
 # A nested call — `pnpm verify` running lint, a build inside a test script —
@@ -311,7 +385,13 @@ started=$(date +%s)
 out=$(DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_WAIT_SECONDS=20 \
   bash "$CHECK" bash "$CHECK" bash -c 'echo nested-ran' 2>&1)
 check_eq 'a nested call runs straight through' 'nested-ran' "$out"
-check_le 'a nested call does not wait on its parent' 2 "$(($(date +%s) - started))"
+# The property is "it never queued", and the exact output above already proves
+# it: a call that waited prints the queueing line. check_lacks only gives that a
+# clearer failure message. The clock is a backstop against a silent wait, so its
+# bound sits well under the 20s wait rather than at the cost of starting bash and
+# perl twice, which a loaded machine stretches past 2s (DOR-2021).
+check_lacks 'a nested call never queues behind its parent' 'queueing' "$out"
+check_le 'a nested call does not wait on its parent' 10 "$(($(date +%s) - started))"
 
 locks=$(new_locks)
 start_holder "$locks" 30
@@ -319,7 +399,9 @@ started=$(date +%s)
 out=$(CI=true DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_WAIT_SECONDS=20 \
   bash "$CHECK" bash -c 'echo ci-ran' 2>&1)
 check_eq 'under CI the command runs with no lock message' 'ci-ran' "$out"
-check_le 'under CI nothing waits' 2 "$(($(date +%s) - started))"
+# Same backstop as the nested case: the exact output above already proves no
+# lock message, so the clock only has to stay well under the 20s wait.
+check_le 'under CI nothing waits' 10 "$(($(date +%s) - started))"
 signal_tree KILL "$holder"
 wait "$holder" 2>/dev/null
 
@@ -587,6 +669,58 @@ check_eq '--hold over the max load still takes the slot' '0:' "$?:$out"
 check_le '--hold does not wait on the load' 2 "$(($(date +%s) - started))"
 kill -KILL "$owner" 2>/dev/null
 wait "$owner" 2>/dev/null
+
+echo ""
+echo "== a test run (--tests) waits under the lower bar of 16 (DOR-4646) =="
+
+test_env() { load_env DORKOS_HEAVY_TEST_MAX_LOAD=16 "$@"; }
+
+# 20 is under a job's 24 and over a test run's 16: the one reading that tells
+# the two bars apart.
+locks=$(new_locks)
+echo 20.00 >"$loadf"
+started=$(date +%s)
+out=$(test_env DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_LOAD_WAIT_SECONDS=20 \
+  bash "$CHECK" --job bash -c 'echo job-at-20' 2>&1)
+check_eq 'a plain job at load 20 runs at once' 'job-at-20' "$out"
+check_le 'a plain job at load 20 does not wait' 2 "$(($(date +%s) - started))"
+
+locks=$(new_locks)
+: >"$notes"
+echo 20.00 >"$loadf"
+(sleep 2 && echo 16.00 >"$loadf") &
+own_pids+=("$!")
+started=$(date +%s)
+out=$(test_env DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_LOAD_WAIT_SECONDS=20 DORKOS_HEAVY_LOAD_POLL_SECONDS=0.3 \
+  bash "$CHECK" --tests bash -c 'echo tests-ran-at-16' 2>&1)
+status=$?
+elapsed=$(($(date +%s) - started))
+check_eq 'a test run that waited out the load exits 0' 0 "$status"
+check_contains 'a test run at load 20 says it is waiting for load' 'waiting for load' "$out"
+check_contains 'and the load it waits on' '20.00' "$out"
+check_contains 'a test run runs once the load is 16 (at the bar, not over it)' 'tests-ran-at-16' "$out"
+if [ "$elapsed" -ge 2 ]; then ok "the test run waited for the load to drop (${elapsed}s)"; else not_ok "the test run ran over 16 (${elapsed}s)"; fi
+check_contains 'the test run wait is recorded as load_wait' '"o":"load_wait"' "$(cat "$notes")"
+
+locks=$(new_locks)
+echo 40.00 >"$loadf"
+started=$(date +%s)
+out=$(test_env CI=true DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_LOAD_WAIT_SECONDS=20 \
+  bash "$CHECK" --tests bash -c 'echo ci-tests' 2>&1)
+check_eq 'under CI a test run never waits' 'ci-tests' "$out"
+check_le 'under CI a test run starts at once' 2 "$(($(date +%s) - started))"
+
+# DORKOS_IGNORE_LOAD=1: a person's way past the load alone, said and recorded.
+locks=$(new_locks)
+: >"$notes"
+echo 40.00 >"$loadf"
+started=$(date +%s)
+out=$(test_env DORKOS_IGNORE_LOAD=1 DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_LOAD_WAIT_SECONDS=20 \
+  bash "$CHECK" --tests bash -c 'echo ignored-the-load' 2>&1)
+check_contains 'DORKOS_IGNORE_LOAD=1 runs a test run over the bar' 'ignored-the-load' "$out"
+check_contains 'DORKOS_IGNORE_LOAD=1 says so' 'DORKOS_IGNORE_LOAD=1' "$out"
+check_le 'DORKOS_IGNORE_LOAD=1 does not wait' 2 "$(($(date +%s) - started))"
+check_contains 'DORKOS_IGNORE_LOAD=1 is recorded as load_ignored' '"o":"load_ignored"' "$(cat "$notes")"
 
 echo ""
 printf '%s passed, %s failed\n' "$pass" "$fail"

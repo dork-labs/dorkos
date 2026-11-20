@@ -26,6 +26,7 @@ import { ConnectorUsageStore, type ConnectorUsageOutcome } from './usage-store.j
 import type { ManagedConnectorExecutionContextBindingPort } from './managed-execution-context.js';
 import type { ManagedConnectorTurnMark } from '@dorkos/shared/connector-managed-schemas';
 import { liveTurnMarks } from './managed-turn-marks.js';
+import { releaseSpend, reserveSpend } from '../spending/spend-gate.js';
 
 /** One fully parsed invocation reaching the execution broker after tier enforcement. */
 export interface ConnectorBrokerExecutionInput {
@@ -124,6 +125,7 @@ export class ConnectorExecutionBroker {
     let attemptCount = 0;
     const expectedDigest = input.authorityBinding.approvalScope.digest;
     let lastResult: ConnectorProviderExecuteResult | undefined;
+    let reservation: string | undefined;
 
     while (attemptCount < 2) {
       if (!(await this.principalRevalidation.revalidate(input.principal))) {
@@ -157,6 +159,12 @@ export class ConnectorExecutionBroker {
         });
       }
       this.assertApprovalBinding(input.capabilityId, input.approval, expectedDigest);
+      // A paid run's price is reserved against the monthly limit here, in one
+      // synchronous step with nothing between the check and the count
+      // (DOR-4204 PR 2, Security Must 3). A retry runs on the same reservation.
+      if (attemptCount === 0) {
+        reservation = reserveSpend(authorized, logicalOperationId, input.approval, this.now());
+      }
       attemptCount += 1;
       const attemptId = ulid();
       const startedAt = this.now().toISOString();
@@ -189,6 +197,10 @@ export class ConnectorExecutionBroker {
         input.signal
       );
       lastResult = result;
+      // Nothing reached the provider: the reserved price goes back.
+      if (attemptCount === 1 && 'code' in result && result.code === 'CANCELLED_BEFORE_DISPATCH') {
+        releaseSpend(reservation);
+      }
       this.recordSignInEnded(input.target.connectionId, result);
       const recordedAt = this.now().toISOString();
       this.usage.appendTerminal({

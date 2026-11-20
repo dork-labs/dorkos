@@ -41,6 +41,12 @@ vi.mock('../../services/audit/audit-trail.js', async (importOriginal) => ({
   recordAudit: vi.fn(),
 }));
 
+import {
+  stepUpFixtureRoutes,
+  confirmFixtureRequest,
+  FIXTURE_BROWSER_HEADER,
+  FIXTURE_SESSION,
+} from './step-up-fixture.js';
 import request from '@dorkos/test-utils/supertest';
 import type { SessionRelayPresence } from '@dorkos/shared/session-relay-link';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
@@ -105,7 +111,11 @@ const PRESENCE: SessionRelayPresence = {
   ],
 };
 
-const OWNER_COOKIE: RequestUser = { userId: 'user_owner', credential: 'cookie' };
+const OWNER_COOKIE: RequestUser = {
+  userId: 'user_owner',
+  credential: 'cookie',
+  sessionId: FIXTURE_SESSION,
+};
 const OWNER_KEY: RequestUser = { userId: 'user_owner', credential: 'api-key' };
 
 function makeDeps(overrides: Partial<SessionRelayRouteDeps> = {}) {
@@ -148,13 +158,22 @@ function makeDeps(overrides: Partial<SessionRelayRouteDeps> = {}) {
 }
 
 /** The routes behind the chain, with the identity and listener the gate would have seen. */
-function app(options: { user?: RequestUser; ingress?: IngressKind } = {}) {
+function app(options: { user?: RequestUser; ingress?: IngressKind; bare?: boolean } = {}) {
   return target.mount(
     honoGroupListener(
-      { path: '/api/session-relay', routes: createSessionRelayRoutes(deps) },
+      [
+        { path: '/api/session-relay', routes: createSessionRelayRoutes(deps) },
+        stepUpFixtureRoutes({
+          ownerId: () => state.ownerId,
+          checkPassword: (password) => deps.checkPassword(password),
+        }),
+      ],
       {
         before: async (c, next) => {
           if (options.user) c.set('user', options.user);
+          else if (c.req.header(FIXTURE_BROWSER_HEADER))
+            c.set('user', { ...OWNER_COOKIE, sessionId: c.req.header(FIXTURE_BROWSER_HEADER)! });
+          else if (!options.bare) c.set('user', OWNER_COOKIE);
           if (options.ingress) markIngress(c.env.incoming, options.ingress);
           await next();
         },
@@ -162,6 +181,9 @@ function app(options: { user?: RequestUser; ingress?: IngressKind } = {}) {
     )
   );
 }
+
+const complete = (ask: Parameters<typeof confirmFixtureRequest>[0], password = PASSWORD) =>
+  confirmFixtureRequest(ask, target.server, password);
 
 const LINK_CODE = '7K3M-Q9TD-X2HV-8RNB@me.dorkos.test';
 const CODE = { linkCode: LINK_CODE, password: PASSWORD };
@@ -340,14 +362,16 @@ describe.each(WRITES)('%s, the owner at this computer only', (_label, send) => {
     state.login = true;
     expect((await send(request(app({ user: OWNER_KEY })))).status).toBe(403);
     state.login = false;
-    expect((await send(request(app())).set('Authorization', 'Bearer dork_key')).status).toBe(403);
+    expect(
+      (await send(request(app({ bare: true }))).set('Authorization', 'Bearer dork_key')).status
+    ).toBe(403);
     unchanged();
   });
 });
 
 describe('POST /api/session-relay/link', () => {
   it('links for the owner at this computer, and records it without the code', async () => {
-    const res = await request(app()).post('/api/session-relay/link').send(CODE);
+    const res = await complete(request(app()).post('/api/session-relay/link').send(CODE));
     expect(res.status).toBe(200);
     expect(res.body.linked).toBe(true);
     expect(deps.link).toHaveBeenCalledWith({ linkCode: LINK_CODE, computerName: 'Studio Mac' });
@@ -362,7 +386,9 @@ describe('POST /api/session-relay/link', () => {
 
   it('refuses with no owner account, before reaching the hub', async () => {
     state.ownerId = null;
-    const res = await request(app()).post('/api/session-relay/link').send(CODE);
+    const res = await request(app({ bare: true }))
+      .post('/api/session-relay/link')
+      .send(CODE);
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('AUTH_REQUIRED_FOR_EXPOSURE');
     expect(deps.link).not.toHaveBeenCalled();
@@ -374,7 +400,7 @@ describe('POST /api/session-relay/link', () => {
     ['already-linked', 409],
   ] as const)('answers a %s refusal with its own sentence', async (reason, status) => {
     deps.link.mockResolvedValueOnce({ ok: false, reason });
-    const res = await request(app()).post('/api/session-relay/link').send(CODE);
+    const res = await complete(request(app()).post('/api/session-relay/link').send(CODE));
     expect(res.status).toBe(status);
     expect(res.body.code).toBe(reason);
     expect(typeof res.body.error).toBe('string');
@@ -394,9 +420,9 @@ describe('the owner’s switches on a linked computer', () => {
   });
 
   it('stores Full control, which only this computer can set', async () => {
-    const res = await request(app())
-      .patch('/api/session-relay/level')
-      .send({ level: 'full', password: PASSWORD });
+    const res = await complete(
+      request(app()).patch('/api/session-relay/level').send({ level: 'full', password: PASSWORD })
+    );
     expect(res.status).toBe(200);
     expect(res.body.level).toBe('full');
     expect(readRelayPin(home)?.level).toBe('full');
@@ -407,9 +433,9 @@ describe('the owner’s switches on a linked computer', () => {
     expect(paused.body).toMatchObject({ paused: true, connected: false });
     expect(deps.closeRelay).toHaveBeenCalledTimes(1);
     expect(readRelayPin(home)?.paused).toBe(true);
-    const resumed = await request(app())
-      .post('/api/session-relay/resume')
-      .send({ password: PASSWORD });
+    const resumed = await complete(
+      request(app()).post('/api/session-relay/resume').send({ password: PASSWORD })
+    );
     expect(resumed.body.paused).toBe(false);
     expect(readRelayPin(home)?.paused).toBe(false);
   });
@@ -448,7 +474,7 @@ describe('the owner’s password, for every change that opens access wider', () 
     [
       'POST /link',
       (password?: string) =>
-        request(app())
+        request(app({ bare: true }))
           .post('/api/session-relay/link')
           .send(
             password === undefined ? { linkCode: LINK_CODE } : { linkCode: LINK_CODE, password }
@@ -457,33 +483,36 @@ describe('the owner’s password, for every change that opens access wider', () 
     [
       'PATCH /level to full',
       (password?: string) =>
-        request(app())
+        request(app({ bare: true }))
           .patch('/api/session-relay/level')
           .send(password === undefined ? { level: 'full' } : { level: 'full', password }),
     ],
     [
       'POST /resume',
       (password?: string) =>
-        request(app())
+        request(app({ bare: true }))
           .post('/api/session-relay/resume')
           .send(password === undefined ? {} : { password }),
     ],
-  ])('%s from a bare loopback caller needs the right password', async (label, send) => {
+  ])('%s needs a bound browser and a separate password confirmation', async (label, send) => {
     if (label === 'POST /link') clearRelayPin(home);
     else await updateRelayPin({ paused: true }, home);
     const before = readRelayPin(home);
 
     const missing = await send();
     expect(missing.status).toBe(403);
-    expect(missing.body.code).toBe('SESSION_RELAY_PASSWORD');
-    expect(missing.body.reason).toBe('required');
+    expect(missing.body.code).toBe('SESSION_RELAY_NEEDS_THIS_COMPUTER');
     const wrong = await send('guess');
     expect(wrong.status).toBe(403);
-    expect(wrong.body.reason).toBe('wrong');
+    expect(wrong.body.code).toBe('SESSION_RELAY_NEEDS_THIS_COMPUTER');
     expect(readRelayPin(home)).toEqual(before);
     expect(deps.link).not.toHaveBeenCalled();
 
-    expect((await send(PASSWORD)).status).toBe(200);
+    const wrongConfirmation = await complete(send(PASSWORD), 'guess');
+    expect(wrongConfirmation.status).toBe(403);
+    expect(wrongConfirmation.body.code).toBe('wrong-password');
+    expect(readRelayPin(home)).toEqual(before);
+    expect((await complete(send(PASSWORD))).status).toBe(200);
   });
 
   it('asks for it even with the owner’s browser session', async () => {
@@ -491,17 +520,17 @@ describe('the owner’s password, for every change that opens access wider', () 
     const res = await request(app({ user: OWNER_COOKIE }))
       .post('/api/session-relay/link')
       .send({ linkCode: LINK_CODE });
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe('SESSION_RELAY_PASSWORD');
+    expect(res.status).toBe(428);
+    expect(res.body.code).toBe('step_up_required');
   });
 
   it('answers the throttle and a missing owner password with their own sentences', async () => {
     clearRelayPin(home);
     deps.checkPassword.mockResolvedValueOnce('too-many-attempts');
-    const throttled = await request(app()).post('/api/session-relay/link').send(CODE);
+    const throttled = await complete(request(app()).post('/api/session-relay/link').send(CODE));
     expect(throttled.status).toBe(429);
     deps.checkPassword.mockResolvedValueOnce('no-password');
-    const none = await request(app()).post('/api/session-relay/link').send(CODE);
+    const none = await complete(request(app()).post('/api/session-relay/link').send(CODE));
     expect(none.status).toBe(409);
     expect(none.body.error).toBe('Set a password for this computer’s owner first.');
     expect(deps.link).not.toHaveBeenCalled();
@@ -524,7 +553,7 @@ describe('changes to the pin run one at a time', () => {
     await writeRelayPin({ ...PIN, paused: true }, home);
     const [unlinked, resumed] = await Promise.all([
       request(app()).delete('/api/session-relay/link'),
-      request(app()).post('/api/session-relay/resume').send({ password: PASSWORD }),
+      complete(request(app()).post('/api/session-relay/resume').send({})),
     ]);
     expect(unlinked.status).toBe(200);
     expect([200, 409]).toContain(resumed.status);
@@ -541,8 +570,8 @@ describe('changes to the pin run one at a time', () => {
       }),
     });
     const results = await Promise.all([
-      request(app()).post('/api/session-relay/link').send(CODE),
-      request(app()).post('/api/session-relay/link').send(CODE),
+      complete(request(app()).post('/api/session-relay/link').send(CODE)),
+      complete(request(app()).post('/api/session-relay/link').send(CODE)),
     ]);
     expect(results.map((res) => res.status).sort()).toEqual([200, 409]);
   });

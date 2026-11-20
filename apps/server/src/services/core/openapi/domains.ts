@@ -4,6 +4,7 @@ import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { registerFileWriteOpenApi } from '../../canvas/doc-channel/writes/file-writes-openapi.js';
 import { registerDocRouteControlsOpenApi } from '../../canvas/doc-channel/route-controls/openapi.js';
 import { registerConnectorEventOpenApi } from '../../connectors/events/openapi.js';
+import { registerConnectorSpendingOpenApi } from '../../connectors/spending/openapi.js';
 import { registerSessionContinueOpenApi } from '../../session/fleet/continue-openapi.js';
 import { registerSessionLocationsOpenApi } from '../../session/resolution/session-locations-openapi.js';
 import { registerProjectsOpenApi } from '../../projects/projects-openapi.js';
@@ -31,6 +32,7 @@ import { registerDevicesOpenApi } from '../auth/sessions/devices-openapi.js';
 /** Register independent domain paths in their existing order. */
 export function registerDomainOpenApi(registry: OpenAPIRegistry): void {
   registerConnectorEventOpenApi(registry);
+  registerConnectorSpendingOpenApi(registry);
   registerSessionContinueOpenApi(registry);
   registerSessionLocationsOpenApi(registry);
   registerProjectsOpenApi(registry);

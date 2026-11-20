@@ -77,7 +77,7 @@ export type OperatorToolResult = {
 };
 
 /** Build a single-block JSON tool result, flagging `isError` on failure paths. */
-function jsonResult(data: unknown, isError = false): OperatorToolResult {
+export function jsonResult(data: unknown, isError = false): OperatorToolResult {
   return {
     content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
     ...(isError && { isError: true }),
@@ -94,7 +94,10 @@ function jsonResult(data: unknown, isError = false): OperatorToolResult {
  * @param args - The `agent_id` or `cwd` selector.
  * @returns The resolved agent project directory (not yet boundary-validated).
  */
-function resolveAgentPath(deps: McpToolDeps, args: { agent_id?: string; cwd?: string }): string {
+export function resolveAgentPath(
+  deps: McpToolDeps,
+  args: { agent_id?: string; cwd?: string }
+): string {
   if (!args.agent_id && !args.cwd) {
     throw new Error('Either agent_id or cwd must be provided to identify the agent.');
   }
@@ -121,7 +124,7 @@ function resolveAgentPath(deps: McpToolDeps, args: { agent_id?: string; cwd?: st
  * @param fallback - The message for an error neither typed class covers.
  * @returns The `isError` tool result.
  */
-function agentUpdateFailure(err: unknown, fallback: string): OperatorToolResult {
+export function agentUpdateFailure(err: unknown, fallback: string): OperatorToolResult {
   if (err instanceof BoundaryError) {
     return jsonResult({ error: err.message, code: err.code }, true);
   }
@@ -316,9 +319,9 @@ export function createUpdateAgentBoundariesHandler(deps: McpToolDeps) {
       // this repo's Zod 4: `.refine()` on a `ZodObject` returns a `ZodObject`,
       // keeps `.shape`, and still converts through `z.toJSONSchema` — the Zod 3
       // `ZodEffects` problem is gone). What it would cost is the answer's shape.
-      // The MCP surface rebuilds its arguments from `.shape` alone
-      // (`capabilityInputShape`), so a refine rides only the registry's own
-      // parse, and a failed parse propagates as a raw `ZodError` rather than the
+      // Both MCP surfaces preserve the full advertised object, so a refine
+      // would reject in SDK validation too. A failed registry parse propagates
+      // as a raw `ZodError` rather than the
       // `{ error, code }` envelope every other refusal on this surface returns —
       // `mcp-projection` re-wraps `CapabilityToolError` and nothing else.
       //

@@ -5,6 +5,7 @@
  * @module entities/extension/model/use-extension-approval-actions
  */
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { STEP_UP_REQUIRED_CODE } from '@dorkos/shared/step-up';
 import { toast } from 'sonner';
 import {
   STALE_APPROVAL_CODE,
@@ -116,8 +117,8 @@ export interface ExtensionApprovalActions {
 /**
  * Turn an extension on, or say "Not now", from the inbox.
  *
- * Both remove the row at once and put it back, with a toast in plain words, if
- * the server refuses. Both refresh everything under `['extensions']` when they
+ * Approval keeps its row while the password confirmation waits. Dismissal
+ * removes it at once and restores it if refused. Both refresh `['extensions']` when they
  * settle, so Settings → Extensions agrees without a reload.
  *
  * The server's person bar is the guarantee that only a person can do either;
@@ -126,7 +127,7 @@ export interface ExtensionApprovalActions {
 export function useExtensionApprovalActions(): ExtensionApprovalActions {
   const queryClient = useQueryClient();
 
-  const approve = useMutation<void, Error, ApproveExtensionInput, () => void>({
+  const approve = useMutation<void, Error, ApproveExtensionInput>({
     mutationFn: async ({ id, path, version, plugin, permissions, expectedDigest }) => {
       const res = await fetch(`${resolveApiBaseUrl()}/extensions/${id}/approve`, {
         method: 'POST',
@@ -149,9 +150,8 @@ export function useExtensionApprovalActions(): ExtensionApprovalActions {
         useTrustOfferStore.getState().offer(id, body.trustOffer.source);
       }
     },
-    onMutate: ({ id }) => removeOptimistically(queryClient, id),
-    onError: (err, { id, name, permissions }, restore) => {
-      restore?.();
+    onError: (err, { id, name, permissions }) => {
+      if (err instanceof AnswerRefused && err.code === STEP_UP_REQUIRED_CODE) return;
       // It changed while the card was on screen: nothing was turned on, and
       // the refresh below redraws the row with what it asks for now, leading
       // with what the card the person saw did not list.

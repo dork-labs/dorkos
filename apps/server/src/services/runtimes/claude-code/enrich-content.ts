@@ -33,3 +33,26 @@ export function enrichContent(
   const words = untrusted ? defuseUntrustedPrompt(content) : content;
   return blocks.length > 0 ? `${blocks.join('\n\n')}\n\n${words}` : words;
 }
+
+/**
+ * Prepend a delivered message's context bag to its pristine content, the SAME
+ * way a normal turn does it (`launch-resolver.ts`). Shared by the warm-process
+ * steer and stage (`sessions/persistent-dispatch.ts`): both carry the person's
+ * words pristine and any context out of band, so both enrich the same way.
+ *
+ * The person's `content` is never mutated: the render produces a separate
+ * enriched string, the context blocks carry their own tags, and the adapter
+ * strips those on render so injected context never shows as user-authored text
+ * (ADR-0273). No context is the identity case — the pristine content, unchanged.
+ *
+ * @param content - The user's text, pristine
+ * @param additionalContext - The neutral context bag, or undefined
+ */
+export function enrichDeliveredContent(
+  content: string,
+  additionalContext?: AdditionalContext
+): string {
+  // Context defused as a turn's is; the words as written, since this path does
+  // not know who wrote them and a person's steer must keep its `@` (DOR-2955).
+  return enrichContent(content, additionalContext, false);
+}

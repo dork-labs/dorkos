@@ -59,8 +59,14 @@ export async function* mapSystemEvent(
     // The binary says which credential pays: it overrides the launch's guess
     // from the environment (spec `claude-account-fleet` §6 U).
     const apiKeySource = (message as Record<string, unknown>).apiKeySource;
+    session.sdkReportedBilling = undefined;
     if (typeof apiKeySource === 'string') {
       session.launchedPerToken = keySourceBillsPerToken(apiKeySource);
+      session.sdkReportedBilling =
+        session.launchedAccountRoot === undefined ||
+        !['none', 'oauth', 'ANTHROPIC_API_KEY', 'user', 'project', 'org'].includes(apiKeySource)
+          ? undefined
+          : { root: session.launchedAccountRoot, perToken: session.launchedPerToken };
     }
     const initModel = (message as Record<string, unknown>).model as string | undefined;
     if (initModel) {

@@ -23,7 +23,7 @@
  * @module services/runtimes/claude-code/sessions/slot-wait/open-turn-window
  */
 import type { StreamEvent } from '@dorkos/shared/types';
-import { SLOT_WAIT_STATUS } from '@dorkos/shared/schemas';
+import { SLOT_WAIT_STATUS, SLOT_WAIT_TEXT } from '@dorkos/shared/schemas';
 import { turnNotStarted } from '../../../../session/launch/turn-not-started.js';
 import { logger } from '../../../../../lib/logger.js';
 import { SessionCrashLoopError } from '../session-crash-recovery.js';
@@ -31,7 +31,7 @@ import { IllegalPumpTransitionError, PumpRefusedError } from '../session-pump-co
 import type { TurnWindow } from '../session-turn-windows.js';
 
 /** What a person reads while their turn waits for a slot. */
-export const SLOT_WAIT_MESSAGE = 'Waiting to start: every agent on this computer is busy.';
+export const SLOT_WAIT_MESSAGE = SLOT_WAIT_TEXT;
 
 /** The `system_status` a turn yields while it waits for a slot. */
 export function slotWaitEvent(): StreamEvent {

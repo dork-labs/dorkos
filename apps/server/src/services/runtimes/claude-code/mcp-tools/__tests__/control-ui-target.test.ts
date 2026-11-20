@@ -39,7 +39,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { noopLogger } from '@dorkos/shared/logger';
-import { capabilityMcpTools } from '../capability-mcp-tools.js';
+import { registerClaudeCapabilityTools } from '../capability-mcp-tools.js';
 import { composeRegistry } from '../../../../core/capabilities/index.js';
 import { uiDomain } from '../../../../session/browser-seat/ui-capabilities.js';
 import { uiTurnFacts, type UiRoomTurn } from '../../../../session/browser-seat/ui-turn-facts.js';
@@ -113,11 +113,11 @@ describe('control_ui target through the real MCP layer', () => {
     const server = createSdkMcpServer({
       name: 'dorkos',
       version: '1.0.0',
-      tools: capabilityMcpTools(registry, 'in-session', async () => ({
-        sessionId: SESSION_ID,
-        cwd: ANA,
-      })),
     });
+    registerClaudeCapabilityTools(server.instance, registry, 'in-session', async () => ({
+      sessionId: SESSION_ID,
+      cwd: ANA,
+    }));
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     client = new Client({ name: 'target-probe', version: '0.0.0' });
     await Promise.all([server.instance.connect(serverTransport), client.connect(clientTransport)]);
@@ -355,8 +355,12 @@ describe('control_ui target through the real MCP layer', () => {
     const sessionless = createSdkMcpServer({
       name: 'dorkos',
       version: '1.0.0',
-      tools: capabilityMcpTools(composeRegistry([uiDomain], { logger: noopLogger }), 'in-session'),
     });
+    registerClaudeCapabilityTools(
+      sessionless.instance,
+      composeRegistry([uiDomain], { logger: noopLogger }),
+      'in-session'
+    );
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     const blindClient = new Client({ name: 'target-probe-sessionless', version: '0.0.0' });
     await Promise.all([

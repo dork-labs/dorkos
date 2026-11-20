@@ -14,6 +14,10 @@
  * refused, and the spin-off would conclude the parent is unreachable. A room's
  * seat still takes reports, as turns of its own (DOR-3488).
  *
+ * The wait it suggests is one plain command per call, never a shell loop:
+ * Claude Code can't check a loop before it runs, so it asks a person
+ * (DOR-3109).
+ *
  * @param opts - The parent, whether reports go back on their own, whether the
  *   parent takes chat messages at all, and whether it is a room's seat.
  */
@@ -39,7 +43,7 @@ export function spinOffBriefing(opts: {
         : `Send milestones before then with chat_send to ${opts.parentChatId}; nobody has to ` +
             'ask. Do not send your final result that way too: it already goes back on its own.',
       'If you are waiting on CI, a timer or a helper, keep your turn alive (for example ' +
-        '`gh pr checks --watch` or a short sleep loop). A turn that ends only to wait may report ' +
+        '`gh pr checks --watch`, or one `sleep 240` per call). A turn that ends only to wait may report ' +
         'before the work is done.'
     );
   } else if (opts.parentTakesMessages) {

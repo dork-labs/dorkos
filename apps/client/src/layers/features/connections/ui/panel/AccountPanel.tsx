@@ -36,6 +36,7 @@ import { LoadFailedState } from '../LoadFailedState';
 import { AccountPanelMore } from './AccountPanelMore';
 import { MiniAppReaders } from './MiniAppReaders';
 import { PanelFix, PanelSection } from './panel-parts';
+import { PricePerRun } from '../spending/PricePerRun';
 
 /** How many recent actions show before "See all". */
 const RECENT_LIMIT = 3;
@@ -157,6 +158,8 @@ function AccountPanelBody({
           }}
         />
       )}
+
+      {!gone && <PricePerRun toolkit={connection.toolkit} appName={appName} />}
 
       <MiniAppReaders connectionId={connectionId} />
 

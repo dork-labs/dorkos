@@ -23,6 +23,8 @@ import { NOT_FROM_WIFI, WIFI_REFUSED_ROUTES } from '../sessions/wifi-level.js';
 import { decideMcpAuth } from '../../../../middleware/mcp-auth.js';
 import { createApiApp } from '../../../../http/api-chain.js';
 import { mountBetterAuth } from '../../../../http/better-auth.js';
+import { createStepUpRoutes } from '../../../../routes/step-up.js';
+import { confirmAuthFixture } from './confirm-write.js';
 import { frontDoorListener } from '../../../../http/front-door.js';
 import { MainRequestAdmission } from '../../lifecycle/main-request-admission.js';
 import { configManager, initConfigManager } from '../../config-manager.js';
@@ -77,6 +79,7 @@ function buildApp(): RequestListener {
     admission: new MainRequestAdmission(),
     beforeBodyParsing: (early) => mountBetterAuth(early, { auth: getAuth()!, maxAttempts: 1000 }),
   });
+  app.route('/api/step-up', createStepUpRoutes());
   for (const [, method, at] of [...REFUSED, ...ALLOWED]) {
     app.on(method.toUpperCase(), at, (c) => c.json({ reached: true }));
   }
@@ -236,10 +239,15 @@ describe('the Wi-Fi level, end to end', () => {
   });
 
   it('never takes a Wi-Fi cookie as the identity at /mcp or A2A, only a valid key', async () => {
-    const made = await request(target.server)
-      .post('/api/auth/api-key/create')
-      .set(headersVia('direct', local))
-      .send({ name: 'tools' });
+    const made = await confirmAuthFixture(
+      request(target.server)
+        .post('/api/auth/api-key/create')
+        .set(headersVia('direct', local))
+        .send({ name: 'tools' }),
+      target.server,
+      headersVia('direct', local),
+      PASSWORD
+    );
     expect(made.status).toBe(200);
     const facts = (authorization: string) => ({
       method: 'POST',

@@ -1,0 +1,45 @@
+# Private seat-message tasks
+
+Seven sequential tasks; one writer. Root owns tracker, Code owns external reviews and arming. Root authorized implementation after prerequisites were reviewed and opened.
+
+### Task 1.1: [agent-teams-seat-asides] [Proof] Capture seat-aside security regressions
+
+Before production code, add discriminating tests for M2-M9 using real chat/room stores and fake runner. Valid seat answer and unsolicited send should be red because current code refuses; use unsafe mutants for retained invariants. Cover explicit mismatched replyTo NOT_ALLOWED, moved-room/leave-rejoin refusal with no fallback, carry snapshot plus launch union, level-vs-mark distinction, defused /cmd/@path and untrustedText, body-free notice atomicity, canInitiate=false relay rejection, cap/batch/budget/recovery boundaries. Save red commands/output per Must under own .dork/flow, with no missing-import failures. Pin origin snapshot from Part A unchanged. No broad tests or paid/live surfaces. Include pending expiry behind a deferred active aside; second row fails at its own one-hour deadline while the first remains working, with no later launch/resurrection. M5 requires a live positive control through the same bridge/gate seam.
+
+Dependencies: none
+
+### Task 2.1: [agent-teams-seat-asides] [Persistence] Add internal route-scoped seat receipt metadata
+
+Extend chat_messages with internal delivery_route chat(default)/seat and pinned seat_room_id/seat_author_id/seat_joined_at using the generated 20261116110632_seat_chat_delivery_route.sql migration (current journal index 202 after Code integration), its generated snapshot/journal, and its matching down migration. Old rows remain chat; malformed seat scope fails rather than falls back. NewChatMessage fields stay optional for ordinary callers. Add route-scoped pending/failure helpers and ensure cap-hold/plain dispatcher recovery ignores seat rows, whose queueMessageId is non-null. On restart fail queued/working seat rows honestly with receipts; never auto replay. Tests cover migration legacy default, corrupt scope and route isolation.
+
+Dependencies: 1.1
+
+### Task 2.2: [agent-teams-seat-asides] [Admission] Classify verified seat replies and unsolicited targets
+
+Add narrow seat port and chat-seat-target helper. Preserve agent-id DM and ordinary sendable predicate/origin list. Explicit seat-chat target resolves live authoritative room/member/registered agent and captures roomId,authorId,joinedAt,targetSessionId; reject self/canonical self. Explicit replyTo must be FROM same seat TO caller including verified aliases; forged identity NOT_ALLOWED with no unsolicited fallback. Without explicit reply use newest valid unanswered else unsolicited. Revalidate pinned scope every launch and after relevant await; cross-room/leave-rejoin/replacement fails, same-room native rekey okay. Seat chat_stop remains denied. No bridge switch or schedule/beat-origin change. Require original session ledger binding identity so leave/rejoin at identical fake joinedAt refuses; authoritative retirement chains preserve same-room canonical rekey. Persist immutable seat_session_id separately from receipt destination. Reuse existing ordinary origin eligibility plus room; permit relay-binding/null only with current server-owned exact bridge/ledger tuple, captured and revalidated through placement/native rekeys. All known unattended/external-event origins remain closed despite hybrid ledger rows. Real metadata/adopter tests preserve legacy and Direct-room compatibility; no guessed facts or new schema. Active answers require message/start and working/delivered/steered. Atomically reserve one pending receipt per ask; authentic stale/reserved ids become unsolicited, forged ids refuse. Bridged seats accept answers only, including inactive bridge policy and a bridge attached while waiting; the active bridge tuple grants legacy-origin reach only for genuine answers.
+
+Dependencies: 2.1
+
+### Task 3.1: [agent-teams-seat-asides] [Inbox] Implement bounded queue and truthful receipt settlement
+
+Create RoomSeatMessages collaborator with FIFO pending queues keyed by pinned seat scope, one active batch; named defaults25 pending/seat,1000 global including active accounting,1h wait deadline and existing30s release recheck conventions. Overflow refuses UNAVAILABLE without dropping old rows. Take longest FIFO prefix whose final fenced/defused/metadata/separators length<=5*CHAT_MESSAGE_MAX; single source message must fit or reject before acceptance. Budget.remaining zero early refuses reasonbudget without row/trace; askAside reserves once per accepted runner attempt after placement/current-target/disposal/known-pause guards; known pre-run refusals consume zero, later runtime/protected-dispatch refusal may consume the attempt. No refund or deeper launch hook. Changed budget settles failed. Return queued promptly; working only on claim, truthful delivered/failed terminals. Stop/restart expire rows honestly and clear timers. Any steer/interrupt request downgrades to queue with note; never call plain dispatch,steerInto,interruptTurn or queue-head controls for seat targets. Each inbox owns an independently scheduled earliest-pending-deadline timer so queued rows expire even while an active aside remains unresolved; cancel it on stop/final cleanup. Only never-launched rows expire; active status remains truthful. Terminal updates use compare-and-set so restart/stop wins over late completion. Mark the linked active ask replied only with a winning delivered receipt CAS in one transaction; failures/recovery and thrown ask updates cannot fake an answer. Preserve original ask-sender activity across native aliases. Pre-run refusals release with a non-receipt outcome, not quiet completion.
+
+Dependencies: 2.2
+
+### Task 3.2: [agent-teams-seat-asides] [Carry] Launch defused asides with all sender and room restrictions
+
+Capture immutable carry from verified caller/marksAtTurnEnd/persisted ceilingJson at admission. At batch launch union every row snapshot with current carryFrom and withRoomMarks current target window, preserving all explicit bounds/teammate chains and OR flags. OutsideWords never invents runtime-default cap. Add AsideInput.untrustedText and runner propagation true on new route; render each body through defuseUntrustedPrompt before fencing so leading/cmd and @file are neutralized; sanitize marker-bearing labels with shared helpers. Keep aside:true/no inherited root, placement/session claim/budget and stale-post invariant. Test actual runner fields, queued sender becoming clean, mixed contributors and Full receiver mark-vs-level semantics. Existing auto-report same-agent path unchanged.
+
+Dependencies: 3.1
+
+### Task 3.3: [agent-teams-seat-asides] [Trace] Commit unsolicited trace atomically and wire lifecycle ports
+
+An unsolicited row and its first local notice per verified actor/current seat generation commit atomically; further pending writes from that actor coalesce, while other actors with identical names get separate notices. Classify from the actual reserved row and refuse every bridged unsolicited duplicate even if notice coalescing applies; capacity reserved before commit and released on rollback. Constant bounded sanitized server names only: A messaged B's chat in this room. No sender body,summary,title,reply text,path or private metadata. Replies no trace; forged explicit reply never accepted. Publish only after commit to existing room audience; notice wakes nobody and is not bridge-forwarded. Wire rooms factory/current/wiring and settlement callbacks without service cycles or oversized file growth. Real relay integration proves explicit aside post_to_room is initiate and canInitiate=false blocks; chat_send body never reaches room directly. Ensure storage failure leaves neither row nor notice and honest receipt status.
+
+Dependencies: 3.2
+
+### Task 4.1: [agent-teams-seat-asides] [Verification] Verify exact-range B+C behavior and prepare held PR handoff
+
+Run targeted M2-M9 proof tests green and save output paired with baseline/mutant red evidence. Check uptime; hold heavy commands if load>16. Run package-scoped typecheck/lint plus root-coordinated required affected checks without broad test suites. Confirm unchanged origin allowlist/unattended redirects/chat_stop/autoreport/freshness and complete queue/recovery/bridge tests. Update spec/implementation proof and factual spin-off docs/tool description only, add reviewed-copy changelog. Commit branch and send exact base/head to parent for independent spec then quality/security review. No PR before source authorization/order gates/reviews; PR hold+review:deep, Code owns reviewer labels/arming/releases/Done.
+
+Dependencies: 3.3

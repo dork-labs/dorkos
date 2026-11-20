@@ -250,6 +250,74 @@ describe('pausing an agent holds its queued messages (DOR-4327)', () => {
     expect(ran()).toEqual([]);
   });
 
+  it.each(['heartbeat', 'todos', 'task:demo', 'extension:flow'])(
+    'keeps a person’s held row queued when %s dispatches after resume',
+    async (clientId) => {
+      inner.withScenarios([quick, quick]);
+      const runtime = runtimeRegistry.get(inner.type);
+      const projector = getOrCreateProjector(sessionId, BETA.home);
+      await pauses.pause(BETA.id, PERSON);
+      await dispatchMessage({
+        sessionId,
+        clientId: 'web-person-window',
+        content: 'My held words',
+        projector,
+        runtime,
+        cwd: BETA.home,
+      });
+      await settle();
+      const [held] = listQueuedMessages(sessionId);
+      expect(held?.content).toBe('My held words');
+      expect(ran()).toEqual([]);
+
+      pauses.onResumed(() => void rearm());
+      pauses.resume(BETA.id, PERSON);
+      await settle();
+      expect(isQueuedMessageArmed(held!.id)).toBe(false);
+      await dispatchMessage({
+        sessionId,
+        clientId,
+        content: 'A background check',
+        projector,
+        runtime,
+        cwd: BETA.home,
+        unattended: true,
+      });
+      await vi.waitFor(() => expect(ran()).toContain('A background check'));
+      await settle();
+      expect(ran()).not.toContain('My held words');
+      expect(listQueuedMessages(sessionId).map((row) => row.id)).toEqual([held!.id]);
+      expect(isQueuedMessageArmed(held!.id)).toBe(false);
+    }
+  );
+
+  it('runs a person’s row a previous process left queued, with no pause holding it', async () => {
+    inner.withScenarios([quick, quick]);
+    // Queued behind a busy turn, then the server restarted: the row is on
+    // disk and nothing in this process carries it. No pause ever held it.
+    const leftover = queue.enqueue({
+      sessionId,
+      content: 'My words from before the restart',
+      clientId: 'web-person-window',
+      disposition: 'queue',
+      context: null,
+    });
+    await dispatchMessage({
+      sessionId,
+      clientId: 'heartbeat',
+      content: 'A background check',
+      projector: getOrCreateProjector(sessionId, BETA.home),
+      runtime: runtimeRegistry.get(inner.type),
+      cwd: BETA.home,
+      unattended: true,
+    });
+    await vi.waitFor(() => expect(ran()).toHaveLength(2), { timeout: 2000 });
+    await vi.waitFor(() => expect(listQueuedMessages(sessionId)).toEqual([]), { timeout: 2000 });
+
+    expect([...ran()].sort()).toEqual(['A background check', 'My words from before the restart']);
+    expect(isQueuedMessageArmed(leftover.id)).toBe(false);
+  });
+
   it('holds it when the pause lands while its launch is under way', async () => {
     await pauses.pause(BETA.id, PERSON);
     // The launch's own check runs a beat before the pause is in force; the
@@ -327,6 +395,25 @@ describe('pausing an agent holds its queued messages (DOR-4327)', () => {
       'person: one more thing',
     ]);
 
+    // A new message from another chat cannot press Send for the person.
+    await dispatchMessage({
+      sessionId,
+      clientId: chatClientId('chat-gamma'),
+      content: 'from C: check the totals',
+      projector,
+      runtime,
+      cwd: BETA.home,
+    });
+    await settle();
+    expect(ran()).toEqual([
+      'start the census',
+      'from A: add the totals',
+      'from C: check the totals',
+    ]);
+    expect(listQueuedMessages(sessionId).map((row) => row.content)).toEqual([
+      'person: one more thing',
+    ]);
+
     // Pressing send runs it, then what they just sent.
     await dispatchMessage({
       sessionId,
@@ -337,8 +424,8 @@ describe('pausing an agent holds its queued messages (DOR-4327)', () => {
       cwd: BETA.home,
     });
     await vi.waitFor(() => expect(listQueuedMessages(sessionId)).toEqual([]), { timeout: 2000 });
-    await vi.waitFor(() => expect(ran()).toHaveLength(4), { timeout: 2000 });
-    expect(ran().slice(2).sort()).toEqual(['person: and this', 'person: one more thing']);
+    await vi.waitFor(() => expect(ran()).toHaveLength(5), { timeout: 2000 });
+    expect(ran().slice(3).sort()).toEqual(['person: and this', 'person: one more thing']);
   });
 });
 

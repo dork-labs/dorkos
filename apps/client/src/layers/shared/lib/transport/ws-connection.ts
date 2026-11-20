@@ -111,10 +111,15 @@ export interface StreamConnectionOptions {
   disconnectedThreshold?: number;
   /** Time connected before the failure count resets. Default: 10000. */
   stabilityWindowMs?: number;
+  /**
+   * The chat this session stream is for. A frame whose id names a different chat
+   * is dropped and reported with both ids (DOR-4552). Unset: frames go unchecked.
+   */
+  resourceId?: string;
 }
 
 /** Resolved options with all defaults applied. */
-type ResolvedOptions = Required<StreamConnectionOptions>;
+type ResolvedOptions = Required<Omit<StreamConnectionOptions, 'resourceId'>>;
 
 /**
  * Turn a durable stream's HTTP URL into the WebSocket URL for the same
@@ -185,6 +190,7 @@ function dispatchFrame(
 export class WSConnection {
   private readonly url: string;
   private readonly options: ResolvedOptions;
+  private readonly resourceId: string | undefined;
   private socket: WebSocket | null = null;
   private lastEventId: string | null = null;
   private state: ConnectionState = 'connecting';
@@ -214,6 +220,7 @@ export class WSConnection {
 
   constructor(url: string, options: StreamConnectionOptions) {
     this.url = url;
+    this.resourceId = options.resourceId;
     this.options = {
       eventHandlers: options.eventHandlers,
       onStateChange: options.onStateChange ?? ((): void => {}),
@@ -309,6 +316,18 @@ export class WSConnection {
       const frame = decodeStreamFrame(event.data);
       if (!frame) {
         console.warn('[WSConnection] dropping unparseable frame', { url: this.url });
+        return;
+      }
+      // Every frame id starts with the id this stream was opened for. One that
+      // names another chat would put that chat's work in this view. This rules
+      // out a mix-up between sockets only: another chat's work served behind
+      // this chat's id is the server's check (`live-projector.ts`). Not
+      // reproduced as of DOR-4552, so reported here, never kept as the cursor.
+      if (this.resourceId && frame.id && !frame.id.startsWith(`${this.resourceId}-`)) {
+        console.warn("[WSConnection] dropping a frame for another chat's stream", {
+          resourceId: this.resourceId,
+          frameId: frame.id,
+        });
         return;
       }
       // The frame id is retained even for an event nothing listens to: it is the

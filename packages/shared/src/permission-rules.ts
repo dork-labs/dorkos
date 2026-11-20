@@ -139,6 +139,19 @@ function coversHome(specifier: string, home: string): boolean {
   return folder === '/' || root === folder || root.startsWith(`${folder}/`);
 }
 
+/**
+ * Whether a program, by its file name, runs whatever code it is handed (a
+ * shell, a language runtime, `env`, `sudo`, `xargs`). An exact command line
+ * that starts one runs a script nobody pinned (DOR-4315). A version suffix
+ * counts as the same program (`python3.12`, `bash5`).
+ *
+ * @param program - The program's path or file name.
+ */
+export function isInterpreter(program: string): boolean {
+  const name = (program.split(/[\\/]/).pop() ?? '').toLowerCase();
+  return INTERPRETERS.has(name) || INTERPRETERS.has(name.replace(/[\d.]+$/, ''));
+}
+
 /** Options for {@link isSpecificPermissionRule}. */
 export interface PermissionRuleCheckOptions {
   /** The person's home folder, so a rule reaching it or a parent is refused. */

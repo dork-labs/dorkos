@@ -189,7 +189,7 @@ export interface AdapterManagerDeps {
    */
   agentRuntimes?: Map<string, AgentRuntimeLike>;
   /**
-   * @deprecated Provide `agentRuntimes` (a map) instead. When supplied, this
+   * @deprecated since 0.135, remove in 0.155. Provide `agentRuntimes` (a map) instead. When supplied, this
    * single runtime is registered under its own `type` (falling back to
    * `'claude-code'` for doubles that declare none) so existing callers
    * continue to work while they migrate.
@@ -1305,6 +1305,8 @@ export class AdapterManager {
 
     const ownership = reserveWebhookOwnership(prospective, this.configs, this.registry);
     try {
+      // No await before the in-memory write: the card re-check relies on it
+      // (`relay-adapter-setting-routes.ts`, DOR-4355 M4).
       existing.config = prospective.config;
 
       // Promote label from config to top-level if present (client embeds it in config)

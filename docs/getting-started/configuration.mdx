@@ -26,7 +26,9 @@ DORKOS_PORT=5000 dorkos
 
 ## Upgrading older settings
 
-If your settings were last used before version 0.115, upgrade to 0.115 first. Then upgrade to the current version. DorkOS stops before changing older settings and shows these steps. A settings file you wrote by hand starts normally.
+If your settings were last used before version 0.115, upgrade to 0.115 first. Then upgrade to the current version. DorkOS stops before changing older settings and shows these steps.
+
+A settings file you wrote by hand starts normally unless it includes retired settings. If it does, DorkOS names the settings to remove. Remove only those, then restart DorkOS. If DorkOS cannot read the saved version, it stops and leaves the file unchanged. Fix the `version` value in the file, or restore a saved copy, then restart DorkOS.
 
 ## Required
 
@@ -739,6 +741,41 @@ With `autonomy`, every new chat starts with the approval prompts turned off, so 
         'How many chats your agents start on their own may run at once, on every runtime. Past it, an agent’s new chat is turned down until one finishes. Only you can change it.',
       type: 'number (1–64)',
       default: '8',
+    },
+    'runtimes.loadGate.enabled': {
+      description:
+        'Whether your agents’ big jobs, like builds, test runs and installs, wait their turn while your computer is busy. A waiting chat shows its place in line. This covers agents that run on Claude Code; Codex and OpenCode agents do not wait yet. A big job an agent sends to the background waits for its turn to start, but does not keep its turn while it runs. Only you can change any `loadGate` setting.',
+      type: 'boolean',
+      default: 'true',
+    },
+    'runtimes.loadGate.maxLoad': {
+      description:
+        'How busy your computer may get, as its five-minute load average, before a big job waits.',
+      type: 'number (1–1024)',
+      default: '16',
+    },
+    'runtimes.loadGate.slots': {
+      description: 'How many big jobs may run at once on this computer, across all your agents.',
+      type: 'number (1–16)',
+      default: '1',
+    },
+    'runtimes.loadGate.maxWaitMinutes': {
+      description:
+        'Minutes a job may wait before you are told it is still waiting. It keeps waiting after that.',
+      type: 'number (1 or more)',
+      default: '60',
+    },
+    'runtimes.loadGate.hardCapMinutes': {
+      description:
+        'Minutes after which a waiting job runs anyway. A number below `maxWaitMinutes` counts as `maxWaitMinutes`.',
+      type: 'number (1 or more)',
+      default: '240',
+    },
+    'runtimes.loadGate.heavyCommands': {
+      description:
+        'Commands to add to, or take off, the list of big jobs, as `{ "add": [], "remove": [] }`. Write each one as the command and its first words, like `storybook build`.',
+      type: '{ add: string[], remove: string[] }',
+      default: '{ add: [], remove: [] }',
     },
     'runtimes.claudeCode.defaultAccount': {
       description:

@@ -47,7 +47,7 @@
  * triggers the job that runs this file.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 const repoRoot = path.resolve(import.meta.dirname, '..', '..');
@@ -58,6 +58,7 @@ const TEST_WORKFLOW_REL = '.github/workflows/test.yml';
 const BROWSER_WORKFLOW_REL = '.github/workflows/browser-test.yml';
 const APP_FRAME_WORKFLOW_REL = '.github/workflows/app-frame-browser.yml';
 const HARNESS_WINDOWS_WORKFLOW_REL = '.github/workflows/harness-windows.yml';
+const WORKFLOWS_DIR_REL = '.github/workflows';
 
 const workflow = readFileSync(path.join(repoRoot, WORKFLOW_REL), 'utf8');
 
@@ -262,81 +263,38 @@ describe('credential-free-build workflow', () => {
     ).toBe("${{ github.event_name == 'pull_request' }}");
   });
 
-  // The cache is the only reason this job finishes at all — before it, every
-  // run logged `Cached: 0 cached` and was torn down mid-build. Two ways to
-  // break it leave a green workflow: drop the save (nothing is ever written,
-  // every run is cold, and the only symptom is slowness) or loosen the
-  // restore-keys past the lockfile hash (entries from before a dependency bump
-  // start being downloaded into a tree whose dependencies have moved).
-  it('caches turbo locally, keyed so a lockfile change cannot restore a stale entry', () => {
-    const KEY = "turbo-credential-free-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}";
-    for (const action of ['actions/cache/restore@v6', 'actions/cache/save@v6']) {
+  // This job keeps NO cross-run turbo cache (ledger 261117-141554). It used
+  // to save `.turbo/cache` on `pull_request` only, under the PR's merge ref:
+  // a scope only that PR's later pushes can read, since the workflow has no
+  // run on `main` to save one every ref could restore. At about 14:20Z on
+  // 2026-11-17, 13 of those entries across 10 PRs held 4.3 GB of the 10 GB
+  // budget and helped evict main's `turbo-test-builds-*` entry, which every
+  // queue shard reads. Putting the save back leaves a green workflow and an
+  // evicted build cache, so it is pinned here, whatever the key or the path's
+  // spelling: any turbo-path save must be main-only.
+  it('saves no turbo cache of its own except on refs/heads/main', () => {
+    // Comments name the removed key on purpose; only code lines count.
+    const code = workflow
+      .split('\n')
+      .filter((line) => !/^\s*#/.test(line))
+      .join('\n');
+    // A save is `actions/cache/save`, or the combined `actions/cache`, which
+    // saves in its post step. A turbo one is any step naming `.turbo` (in a
+    // path of any spelling, one line or a `|` block) or a `turbo` key.
+    const turboSaves = code
+      .split(/\n(?= {6}- )/)
+      .filter((step) => /uses: actions\/cache(?:\/save)?@/.test(step))
+      .filter((step) => /\.turbo\b/.test(step) || /^\s+key:\s*['"]?turbo/m.test(step));
+    for (const step of turboSaves) {
+      // The step's own `if:`, folded continuation lines included.
+      const condition = step.match(/^ {8}if:(.*(?:\n {10,}.*)*)/m)?.[1] ?? '';
       expect(
-        workflow.includes(`uses: ${action}`),
-        `${WORKFLOW_REL} no longer uses \`${action}\`. Without BOTH halves the local turbo ` +
-          `cache is never restored or never written, and this job goes back to rebuilding the ` +
-          `whole affected set on every run — the reason it had never once finished.`
+        condition.includes("github.ref == 'refs/heads/main'") && !condition.includes('||'),
+        `${WORKFLOW_REL} saves a turbo cache in a step that is not limited to ` +
+          `\`refs/heads/main\` (its \`if:\` is ${JSON.stringify(condition.trim())}). Saved on ` +
+          `any other ref, it lands where no other ref can read it.\n${step}`
       ).toBe(true);
     }
-    const keys = [...workflow.matchAll(/^\s+key:\s*(.+)$/gm)]
-      .map((m) => (m[1] as string).trim())
-      .filter((k) => k.startsWith('turbo-'));
-    expect(
-      keys,
-      `the cache keys in ${WORKFLOW_REL} are ${JSON.stringify(keys)}. Restore and save must use ` +
-        `the SAME key, and it must carry the runner OS, the lockfile hash and \`github.sha\` — ` +
-        `the SHA is what keeps the primary key from ever hitting, so the save always writes.`
-    ).toEqual([`${KEY}-\${{ github.sha }}`, `${KEY}-\${{ github.sha }}`]);
-    // `\1[ \t]+` rather than `\s+`: the fallback lines are indented deeper
-    // than `restore-keys:` itself, and a bare `\s+` would swallow the blank
-    // line and the comment block that follow the step.
-    const restoreKeys =
-      workflow.match(/^([ \t]+)restore-keys:[ \t]*\|\n((?:\1[ \t]+\S.*\n)+)/m)?.[2] ?? '';
-    expect(
-      restoreKeys
-        .split('\n')
-        .map((l) => l.trim())
-        .filter(Boolean),
-      `the \`restore-keys\` in ${WORKFLOW_REL} are ${JSON.stringify(restoreKeys)}. Exactly one ` +
-        `fallback, and it must stop at the lockfile hash: a looser prefix restores entries ` +
-        `built against different dependencies.`
-    ).toEqual([`${KEY}-`]);
-    // The save's `if:` has to survive a cancel and has to stay off the queue
-    // leg. A bare `actions/cache/save` skips on cancellation, and every
-    // failing run of this job so far ended in one, so a save without
-    // `always()` would leave the cache permanently empty while the workflow
-    // stayed green. A save that DOES run on `merge_group` writes ~180 MB into
-    // the `gh-readonly-queue/...` scope the queue deletes on merge — an entry
-    // nothing can ever restore, evicting entries other workflows do read.
-    //
-    // A step-bounded block rather than `\s+`: `\s` matches newlines and every line
-    // in the steps region is indented, so a lazy `(?:\s+.*\n)*?` has no
-    // barrier — it starts at the FIRST step header in the job and swallows
-    // everything down to the save, which made an earlier version of this
-    // assertion pass with `if: always()` sitting on an unrelated step. The
-    // block stops at the next step: `\1` is the step's own indent, and every
-    // line inside it is indented deeper (`\1[ \t]+\S`), which the next
-    // step's `- ` is not. The `\S` also gives each line exactly one way to
-    // match; the earlier `[ \t]+(?!- )[^\n]*` could split a line's indent
-    // between its two halves, and the backtracking took 5 s once the file
-    // gained a second save step (DOR-4537).
-    const saveStep =
-      workflow.match(
-        /^([ \t]+)- name:[^\n]*\n(?:\1[ \t]+\S[^\n]*\n)*?\1[ \t]+uses: actions\/cache\/save@v6\n/m
-      )?.[0] ?? '';
-    expect(
-      saveStep,
-      `${WORKFLOW_REL} has no single step that both names itself and uses actions/cache/save@v6 ` +
-        `— this guard cannot check the save's conditions.`
-    ).not.toBe('');
-    expect(
-      saveStep.match(/^[ \t]+if: (.+)$/m)?.[1]?.trim(),
-      `the cache-save step in ${WORKFLOW_REL} does not carry the expected \`if:\`. It must be ` +
-        `\`always()\` (every failing run of this job so far ended in a cancel, and a save that ` +
-        `skips on cancel never writes anything) AND restricted to \`pull_request\` (a merge-group ` +
-        `save writes into a scope the queue deletes on merge, so it is unreadable waste against ` +
-        `the repo's 10GB cache budget).`
-    ).toBe("always() && github.event_name == 'pull_request'");
   });
 
   // setup-node's `cache: pnpm` shares one store per lockfile across every Linux
@@ -348,7 +306,9 @@ describe('credential-free-build workflow', () => {
   // test-binary (DOR-4190).
   // browser-test.yml installs in four jobs: browser-smoke, browser-shard,
   // first-run and copy-spec-drift. app-frame-browser.yml and the Windows
-  // harness-windows.yml install in one each.
+  // harness-windows.yml install in one each, and so does every job that used
+  // setup-node's `cache: pnpm` on a pull request or merge group until ledger
+  // 261117-141554 (evals.yml has two).
   //
   // The image is read in a step, never as `${{ env.ImageOS }}`: the `env`
   // context only holds variables a workflow sets, not the runner's own, so that
@@ -359,28 +319,39 @@ describe('credential-free-build workflow', () => {
   // (DOR-4537, ledger 261116-114104): a plain `actions/cache` saved a 735 MB
   // copy under every queue ref and PR merge ref, scopes nothing else can read,
   // and that pushed the repo past its 10 GB cache budget. So the key appears
-  // twice per install, once in the restore and once in the save.
+  // once in each install's restore and once in each save. A workflow that
+  // never runs on `main` by itself (site-build, docs-openapi-check,
+  // desktop-renderer) restores only: a save there could never run. A save in
+  // a job whose install is itself conditional carries that condition first,
+  // joined by `&&`, so it can only narrow the main-only rule.
   it('keys the pnpm store on the runner image, in every workflow that installs', () => {
     const STORE_KEY =
       "key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}";
     const READ_IMAGE =
       'echo "image=${ImageOS:?ImageOS is not set on this runner}" >> "$GITHUB_OUTPUT"';
+    // An optional `<condition> && ` prefix with no `||` in it, then the
+    // main-only rule as the last two terms.
     const SAVE_IF =
-      "if: ${{ github.ref == 'refs/heads/main' && steps.pnpm-store-restore.outputs.cache-hit != 'true' }}";
-    const testWorkflow = readFileSync(path.join(repoRoot, TEST_WORKFLOW_REL), 'utf8');
-    const browserWorkflow = readFileSync(path.join(repoRoot, BROWSER_WORKFLOW_REL), 'utf8');
-    const appFrameWorkflow = readFileSync(path.join(repoRoot, APP_FRAME_WORKFLOW_REL), 'utf8');
-    const harnessWindowsWorkflow = readFileSync(
-      path.join(repoRoot, HARNESS_WINDOWS_WORKFLOW_REL),
-      'utf8'
-    );
-    for (const [rel, text, installs] of [
-      [WORKFLOW_REL, workflow, 1],
-      [TEST_WORKFLOW_REL, testWorkflow, 3],
-      [BROWSER_WORKFLOW_REL, browserWorkflow, 4],
-      [APP_FRAME_WORKFLOW_REL, appFrameWorkflow, 1],
-      [HARNESS_WINDOWS_WORKFLOW_REL, harnessWindowsWorkflow, 1],
+      /^ {8}if: \$\{\{ (?:[^|\n]+ && )?github\.ref == 'refs\/heads\/main' && steps\.pnpm-store-restore\.outputs\.cache-hit != 'true' \}\}$/m;
+    // [workflow, installs (each with one restore), main-only saves]
+    for (const [rel, installs, saveCount] of [
+      [WORKFLOW_REL, 1, 1],
+      [TEST_WORKFLOW_REL, 3, 3],
+      [BROWSER_WORKFLOW_REL, 4, 4],
+      [APP_FRAME_WORKFLOW_REL, 1, 1],
+      [HARNESS_WINDOWS_WORKFLOW_REL, 1, 1],
+      ['.github/workflows/cli-smoke-test.yml', 1, 1],
+      ['.github/workflows/db-check.yml', 1, 1],
+      ['.github/workflows/desktop-renderer.yml', 1, 0],
+      ['.github/workflows/desktop-smoke.yml', 1, 1],
+      ['.github/workflows/docs-openapi-check.yml', 1, 0],
+      ['.github/workflows/evals.yml', 2, 2],
+      ['.github/workflows/lint.yml', 1, 1],
+      ['.github/workflows/scripts-test.yml', 1, 1],
+      ['.github/workflows/site-build.yml', 1, 0],
+      ['.github/workflows/typecheck.yml', 1, 1],
     ] as const) {
+      const text = readFileSync(path.join(repoRoot, rel), 'utf8');
       expect(
         /^\s+cache:\s*pnpm\s*$/m.test(text),
         `${rel} uses setup-node's \`cache: pnpm\` again. That store is shared across ` +
@@ -399,8 +370,8 @@ describe('credential-free-build workflow', () => {
       expect(
         text.split(STORE_KEY).length - 1,
         `${rel} should key its pnpm store on the image its \`pnpm-store\` step read, in ` +
-          `the restore and the save of each of its ${installs} job(s) that install the workspace.`
-      ).toBe(installs * 2);
+          `its ${installs} restore(s) and ${saveCount} save(s).`
+      ).toBe(installs + saveCount);
       // Every step carrying the store key is a restore or a main-only save;
       // a plain `actions/cache` would save under queue and PR refs again.
       const storeSteps = code.split(/\n(?= {6}- )/).filter((step) => step.includes(STORE_KEY));
@@ -408,15 +379,16 @@ describe('credential-free-build workflow', () => {
       const saves = storeSteps.filter((s) => /uses: actions\/cache\/save@/.test(s));
       expect(
         [restores.length, saves.length, storeSteps.length],
-        `${rel} should restore its pnpm store with actions/cache/restore and save it with ` +
-          `actions/cache/save, once each per install, and nothing else may carry the key.`
-      ).toEqual([installs, installs, installs * 2]);
+        `${rel} should restore its pnpm store with actions/cache/restore once per install ` +
+          `(${installs}) and save it with actions/cache/save ${saveCount} time(s), and nothing ` +
+          `else may carry the key.`
+      ).toEqual([installs, saveCount, installs + saveCount]);
       for (const step of saves) {
         expect(
           step,
           `a pnpm store save in ${rel} must run only on refs/heads/main: a queue ref's or a ` +
             `PR merge ref's cache scope is unreadable by any other ref (DOR-4537).`
-        ).toContain(SAVE_IF);
+        ).toMatch(SAVE_IF);
       }
       expect(
         text.split(READ_IMAGE).length - 1,
@@ -424,5 +396,32 @@ describe('credential-free-build workflow', () => {
           `and fail when it is unset rather than key on an empty string.`
       ).toBe(installs);
     }
+  });
+
+  // setup-node's `cache: pnpm` saves the store in a post step on ANY ref whose
+  // restore missed, PR merge refs included, and only that PR can read it back
+  // (ledger 261117-141554). So no workflow a pull request or the merge queue
+  // runs may use it, including one added later; a schedule- or dispatch-only
+  // workflow runs on `main` and may.
+  it('uses no setup-node `cache: pnpm` in a workflow pull requests or the queue run', () => {
+    const offenders = readdirSync(path.join(repoRoot, WORKFLOWS_DIR_REL))
+      .filter((name) => /\.ya?ml$/.test(name))
+      .filter((name) => {
+        const text = readFileSync(path.join(repoRoot, WORKFLOWS_DIR_REL, name), 'utf8');
+        const code = text
+          .split('\n')
+          .filter((line) => !/^\s*#/.test(line))
+          .join('\n');
+        const on = code.match(/^on:(.*\n(?:[ \t]+.*\n|\n)*)/m)?.[1] ?? '';
+        const prOrQueue = /\b(?:pull_request|merge_group)\b/.test(on);
+        return prOrQueue && /^\s+cache:\s*pnpm\s*$/m.test(code);
+      });
+    expect(
+      offenders,
+      `these workflows run on pull_request or merge_group and use setup-node's ` +
+        `\`cache: pnpm\`, which saves a store under PR refs nothing else can read: ` +
+        `${offenders.join(', ')}. Restore with actions/cache/restore and save only on ` +
+        `refs/heads/main, as test.yml's test-shard does (DOR-4537).`
+    ).toEqual([]);
   });
 });

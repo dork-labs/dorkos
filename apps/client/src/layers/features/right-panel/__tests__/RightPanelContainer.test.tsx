@@ -26,6 +26,10 @@ vi.mock('@/layers/entities/local-browser', () => ({
   useLocalBrowserState: () => ({ data: undefined }),
 }));
 
+// How many times the stubbed sheet would have closed on Escape. Hoisted because the
+// vi.mock factory below closes over it.
+const sheetEscape = vi.hoisted(() => ({ dismissed: 0 }));
+
 // Spy on the imperative expand so tests can assert the open-floor argument
 // (DOR-388). Hoisted because the vi.mock factory below closes over it.
 const { mockPanelExpand } = vi.hoisted(() => ({ mockPanelExpand: vi.fn() }));
@@ -104,11 +108,18 @@ vi.mock('@/layers/shared/ui', async (importOriginal) => {
     open ? <div data-testid="sheet">{children}</div> : null;
   // Opens the way Radix does: offers `onOpenAutoFocus` a cancellable event,
   // and focuses the first tab unless the handler prevented it.
+  // Hears Escape the way Radix does: a capture listener on the document, ahead of
+  // anything in the sheet, that dismisses unless `onEscapeKeyDown` prevents it.
   const SheetContentStub = ({
     children,
     className,
     onOpenAutoFocus,
-  }: React.PropsWithChildren<{ className?: string; onOpenAutoFocus?: (e: Event) => void }>) => {
+    onEscapeKeyDown,
+  }: React.PropsWithChildren<{
+    className?: string;
+    onOpenAutoFocus?: (e: Event) => void;
+    onEscapeKeyDown?: (e: KeyboardEvent) => void;
+  }>) => {
     const ref = useRef<HTMLDivElement>(null);
     useEffect(() => {
       const event = new Event('focusScope.autoFocusOnMount', { cancelable: true });
@@ -117,6 +128,15 @@ vi.mock('@/layers/shared/ui', async (importOriginal) => {
       if (!event.defaultPrevented) ref.current?.querySelector<HTMLElement>('[role="tab"]')?.focus();
       // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on open, as Radix does
     }, []);
+    useEffect(() => {
+      const onKeyDown = (event: KeyboardEvent) => {
+        if (event.key !== 'Escape') return;
+        onEscapeKeyDown?.(event);
+        if (!event.defaultPrevented) sheetEscape.dismissed += 1;
+      };
+      document.addEventListener('keydown', onKeyDown, { capture: true });
+      return () => document.removeEventListener('keydown', onKeyDown, { capture: true });
+    }, [onEscapeKeyDown]);
     return (
       <div ref={ref} tabIndex={-1} data-testid="sheet-content" className={className}>
         {children}
@@ -790,6 +810,40 @@ describe('RightPanelContainer', () => {
     render(<RightPanelContainer pathname={mockPathname} />);
 
     expect(screen.getByTestId('tab-content-a')).toBeInTheDocument();
+  });
+
+  it('the sheet stays open for an Escape a tab keeps for itself, and closes for any other', () => {
+    mockIsMobile = true;
+    mockIsBelowDesktop = true;
+    mockRightPanelOpen = true;
+    mockActiveRightPanelTab = 'a';
+    // A tab part that uses Escape itself, the way the Agent browser reverts its
+    // address or stops a load (DOR-4432), beside one that does not.
+    mockContributions = [
+      makeContribution('a', {
+        component: () => (
+          <div>
+            <div data-keeps-escape>
+              <button type="button">Inside the browser</button>
+            </div>
+            <button type="button">Elsewhere in the tab</button>
+          </div>
+        ),
+      }),
+    ];
+    sheetEscape.dismissed = 0;
+
+    render(<RightPanelContainer pathname={mockPathname} />);
+
+    const inside = screen.getByRole('button', { name: 'Inside the browser' });
+    inside.focus();
+    fireEvent.keyDown(inside, { key: 'Escape' });
+    expect(sheetEscape.dismissed).toBe(0);
+    expect(inside).toHaveFocus();
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Elsewhere in the tab' }), {
+      key: 'Escape',
+    });
+    expect(sheetEscape.dismissed).toBe(1);
   });
 
   it('mobile returns null when rightPanelOpen is false', () => {

@@ -1010,7 +1010,7 @@ For rows that have a label but no description (e.g., simple toggles), use `<Fiel
 
 ### Hover
 
-Subtle. 150ms transition. One step of the row ladder: `bg-row-hover` (4% foreground in light, 5% in dark, 3% inside anything that floats), the same mechanism that groups a zone, one step stronger. See [The row ladder](#the-row-ladder-sharedrowts). Only a row that does something gets a hover: a tint promises a click.
+Subtle. 150ms transition. One step of the row ladder: `bg-row-hover` (4% foreground in light, 5% in dark, 3% inside anything that floats), the same mechanism that groups a zone, one step stronger. See [The row ladder](#the-row-ladder-shareduirowts). Only a row that does something gets a hover: a tint promises a click.
 
 Hover and grouping share one tool on purpose: if a zone is separated by tint rather than a rule, a hover tint is already the vocabulary the surface speaks. Reach for a border only after whitespace and tint have both failed. Inside the sidebar specifically, hover uses the `--sidebar-accent` ramp (`bg-sidebar-accent/70` — see [Separation by tint, not by borders](#separation-by-tint-not-by-borders)), not `--muted`: `--muted` is banned there because it inverts direction between light and dark themes.
 

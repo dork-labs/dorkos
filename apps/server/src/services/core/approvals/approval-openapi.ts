@@ -2,6 +2,7 @@
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
 import { z } from 'zod';
 import { ErrorResponseSchema } from '@dorkos/shared/schemas';
+import { StepUpRequiredBodySchema } from '@dorkos/shared/step-up';
 import {
   PendingApprovalsResponseSchema,
   ApprovalFullDetailResponseSchema,
@@ -68,7 +69,8 @@ export function registerApprovalsOpenApi(registry: OpenAPIRegistry): void {
       '`ALWAYS_NOT_OFFERED`) when DorkOS does not know which agent asked, the action has no ' +
       'permission area, or the area is one that is never Allowed (Safety limits, Permissions, Reach ' +
       '& secrets). The pending card says so in advance as `alwaysOffered`. A refusal comes before ' +
-      'anything is granted.',
+      'anything is granted. Away from this computer, a yes needs fresh confirmation for this request. ' +
+      'Denying does not ask for confirmation.',
     request: {
       params: z.object({ id: z.string() }),
       body: { content: { 'application/json': { schema: GrantApprovalBodySchema } } },
@@ -98,6 +100,10 @@ export function registerApprovalsOpenApi(registry: OpenAPIRegistry): void {
           "Already decided; or `answer: 'always'` on an approval that does not offer it " +
           '(`ALWAYS_NOT_OFFERED`). Nothing is granted in that case',
         content: { 'application/json': { schema: ErrorResponseSchema } },
+      },
+      428: {
+        description: 'Confirm this approval with the held step-up action; nothing granted yet',
+        content: { 'application/json': { schema: StepUpRequiredBodySchema } },
       },
       410: {
         description: 'Expired before it was decided',

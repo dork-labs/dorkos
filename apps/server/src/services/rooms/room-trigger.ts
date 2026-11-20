@@ -124,6 +124,7 @@
  *
  * @module server/services/rooms/room-trigger
  */
+import { waitForRoomRelease } from './room-trigger/release-wait.js';
 import { outsideAuditScope } from '../audit/audit-context.js';
 import { ROOM_LIVE_BEAT_MS } from '@dorkos/shared/room-schemas';
 import type {
@@ -933,20 +934,12 @@ export class RoomTriggerDispatcher {
    * @param timeoutMs - The longest to wait.
    * @param matches - Which released claims end the wait; every one when omitted.
    */
-  nextRelease(timeoutMs: number, matches?: (claim: ActiveClaim) => boolean): Promise<void> {
-    return new Promise((resolve) => {
-      const done = (): void => {
-        clearTimeout(timer);
-        this.releaseWaiters.delete(wake);
-        resolve();
-      };
-      const wake = (claim: ActiveClaim): void => {
-        if (matches === undefined || matches(claim)) done();
-      };
-      const timer = setTimeout(done, timeoutMs);
-      timer.unref?.();
-      this.releaseWaiters.add(wake);
-    });
+  nextRelease(
+    timeoutMs: number,
+    matches?: (claim: ActiveClaim) => boolean,
+    signal?: AbortSignal
+  ): Promise<void> {
+    return waitForRoomRelease(this.releaseWaiters, timeoutMs, matches, signal);
   }
 
   awaitLate(late: Promise<LateRoomReply>, key: string): Promise<RoomTurnReply> {

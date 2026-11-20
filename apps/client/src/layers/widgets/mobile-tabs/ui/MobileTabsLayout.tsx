@@ -104,7 +104,7 @@ function MobileTabPanel({
 }
 
 /**
- * The phone cockpit.
+ * The phone layout.
  *
  * @param props - The contributed sidebar body for this route, if any.
  */
@@ -213,7 +213,7 @@ export function MobileTabsLayout({ takeover }: MobileTabsLayoutProps) {
       >
         <MobileTabPanel id="home" active={active === 'home'}>
           {/* New stays in the header — no FAB (§9). The header block is the
-              whole of it: whose cockpit this is, one New button, one search
+              whole of it: whose space this is, one New button, one search
               pill (BC-43 → BC-46). */}
           {/* `px-2`: the panel pays 8, as the desktop panel does, so the
               header's controls, the section labels and the row glyphs all land
@@ -223,10 +223,10 @@ export function MobileTabsLayout({ takeover }: MobileTabsLayoutProps) {
             <SidebarHeaderBlock />
             {nowAttention.slot}
             {/* A contributed body takes over the list and nothing else here. */}
-            {takeover ?? <SidebarSections model={model} />}
-            {/* The one card the cockpit offers — getting started, an update,
+            {takeover ?? <SidebarSections model={model} prefsKey={state.prefs} />}
+            {/* The one card the panel offers — getting started, an update,
                 the profile prompt, a promo (spec D4). Home is where it belongs:
-                it is this cockpit's first screen. */}
+                it is the first screen. */}
             <SidebarBottomSlot />
           </PageContainer>
         </MobileTabPanel>

@@ -9,6 +9,7 @@ import {
   LocalBrowserPersonStateSchema,
   LocalBrowserProfileBindSchema,
   LocalBrowserProfileSchema,
+  LocalBrowserSignInDoneSchema,
   LocalBrowserSignInRequestSchema,
   LocalBrowserStateSchema,
 } from '@dorkos/shared/local-browser';
@@ -16,6 +17,14 @@ import { StepUpRequiredBodySchema } from '@dorkos/shared/step-up';
 
 const errorSchema = z.object({ error: z.string(), code: z.string() });
 const authority = 'Only the owner on this computer can call this route. ';
+const selectedPageQuery = z.object({
+  sessionId: z
+    .string()
+    .min(1)
+    .max(256)
+    .optional()
+    .describe('Select this chat’s browser page. Omit it for Your browser.'),
+});
 
 /** Describe the shared browser refusal payload. */
 function refusal(description: string) {
@@ -51,6 +60,17 @@ function registerHandoverOpenApi(registry: OpenAPIRegistry): void {
     },
   };
   registry.registerPath({
+    method: 'get',
+    path: '/api/local-browser/handoff/state',
+    tags: ['Local browser'],
+    summary: 'Read the current browser handoff',
+    description:
+      authority +
+      'Reads this computer’s current handoff independently of the selected chat page. ' +
+      'This owner view does not grant an agent access to another chat’s page.',
+    responses: personStateResponses,
+  });
+  registry.registerPath({
     method: 'post',
     path: '/api/local-browser/sign-in',
     tags: ['Local browser'],
@@ -61,14 +81,47 @@ function registerHandoverOpenApi(registry: OpenAPIRegistry): void {
       'Opens installed Chrome, or managed Chromium, without a debugging channel on the chosen profile. ' +
       'An embedded handoff keeps its native view detached; a separate window uses the handoff’s saved page. ' +
       'Otherwise takes a page the person typed. ' +
+      'A handoffId selects its own chat and ignores the sessionId query. ' +
       'Accepts https, or http on this computer only. Password saving is off in that window.',
     request: {
+      query: selectedPageQuery,
       body: {
         required: true,
         content: { 'application/json': { schema: LocalBrowserSignInRequestSchema } },
       },
     },
     responses: { ...personStateResponses, 400: refusal('The request is invalid') },
+  });
+  registry.registerPath({
+    method: 'post',
+    path: '/api/local-browser/sign-in/done',
+    tags: ['Local browser'],
+    summary: 'Finish the open sign-in window',
+    description:
+      authority +
+      inPerson +
+      'Quits the sign-in window DorkOS opened, so its sign-in saves. Names the handoff it ' +
+      'answers, or none for a window no handoff waits on. Answers at once; the state says when ' +
+      'it saved or failed, and a saved one is handed back to the handoff named. ' +
+      'A handoffId selects its own chat and ignores the sessionId query. ' +
+      'Without one, the query selects the chat’s sign-in window, or Your browser when omitted.',
+    request: {
+      query: selectedPageQuery,
+      body: {
+        required: true,
+        content: { 'application/json': { schema: LocalBrowserSignInDoneSchema } },
+      },
+    },
+    responses: {
+      202: {
+        description: 'The window was asked to quit',
+        content: { 'application/json': { schema: z.object({ accepted: z.literal(true) }) } },
+      },
+      400: refusal('The request is invalid'),
+      403: refusal('The caller is not the owner on this computer'),
+      409: refusal('No sign-in window of this handoff can be finished'),
+      500: refusal('The browser operation failed'),
+    },
   });
   registry.registerPath({
     method: 'post',
@@ -154,7 +207,9 @@ export function registerLocalBrowserOpenApi(registry: OpenAPIRegistry): void {
     summary: 'Read the browser connection',
     description:
       authority +
-      'Includes preparation, selected tab, sharing chat, Pause state, any handoff and the latest sign-in.',
+      'Reads the selected chat’s browser page, or Your browser when sessionId is omitted. ' +
+      'Includes preparation, selected tab, sharing chat, Pause state, its handoff and latest sign-in.',
+    request: { query: selectedPageQuery },
     responses: personStateResponses,
   });
   registry.registerPath({
@@ -181,7 +236,7 @@ export function registerLocalBrowserOpenApi(registry: OpenAPIRegistry): void {
       inPerson +
       'Invalidates earlier observations before sharing the selected tab. ' +
       'During a handoff, only the tab already selected can be chosen.',
-    request: { params: z.object({ id: z.string() }) },
+    request: { params: z.object({ id: z.string() }), query: selectedPageQuery },
     responses: stateResponses,
   });
   registry.registerPath({
@@ -193,14 +248,34 @@ export function registerLocalBrowserOpenApi(registry: OpenAPIRegistry): void {
       authority +
       inPerson +
       'Accepts HTTP or HTTPS addresses and invalidates earlier observations. Refused during a handoff. ' +
-      'Takes the page from a chat sharing it first, as take-over does.',
+      'Takes the page from a chat sharing it first, as take-over does. ' +
+      'A bare host may ask for one HTTP fallback when the HTTPS page cannot connect; a timeout never falls back.',
     request: {
+      query: selectedPageQuery,
       body: {
         required: true,
-        content: { 'application/json': { schema: z.object({ url: z.string().url() }).strict() } },
+        content: {
+          'application/json': {
+            schema: z
+              .object({
+                url: z.string().url(),
+                httpFallback: z
+                  .boolean()
+                  .optional()
+                  .describe('Ask for one HTTP fallback for a bare host.'),
+              })
+              .strict(),
+          },
+        },
       },
     },
-    responses: { ...personStateResponses, 400: refusal('The web address is invalid') },
+    responses: {
+      ...personStateResponses,
+      400: refusal('The web address or HTTP fallback choice is invalid'),
+      409: refusal(
+        'The browser cannot complete the navigation (`navigation_timed_out`, `navigation_unreachable`, or `navigation_uncertain`)'
+      ),
+    },
   });
   registry.registerPath({
     method: 'post',
@@ -213,6 +288,7 @@ export function registerLocalBrowserOpenApi(registry: OpenAPIRegistry): void {
       'Pauses the chat sharing the page and refuses its every browser call, reads included, ' +
       'until a person resumes, opens or disconnects the browser. Does nothing when no chat shares it ' +
       'or during a handoff.',
+    request: { query: selectedPageQuery },
     responses: personStateResponses,
   });
   registry.registerPath({
@@ -229,6 +305,7 @@ export function registerLocalBrowserOpenApi(registry: OpenAPIRegistry): void {
       'first, as take-over does, so that agent stays shut out even when the step is refused. ' +
       'Refused during a handoff.',
     request: {
+      query: selectedPageQuery,
       body: {
         required: true,
         content: {
@@ -249,6 +326,7 @@ export function registerLocalBrowserOpenApi(registry: OpenAPIRegistry): void {
       authority +
       'Immediately refuses new and queued agent actions. An action already sent may still finish. ' +
       'Human browser controls remain available.',
+    request: { query: selectedPageQuery },
     responses: stateResponses,
   });
   registry.registerPath({
@@ -260,6 +338,7 @@ export function registerLocalBrowserOpenApi(registry: OpenAPIRegistry): void {
       authority +
       'The agent must read a fresh observation before its next action. During a handoff this hands the browser back, ' +
       'and after a take-over it gives the page back to the agent.',
+    request: { query: selectedPageQuery },
     responses: personStateResponses,
   });
   const profileResponse = {
@@ -343,6 +422,7 @@ export function registerLocalBrowserOpenApi(registry: OpenAPIRegistry): void {
       inPerson +
       'Stops sharing immediately. Closes DorkOS-owned pages and windows, keeping their saved sign-ins. ' +
       'A pending close blocks new opens. During a handoff it ends the agent’s task, as Stop task does.',
+    request: { query: selectedPageQuery },
     responses: personStateResponses,
   });
   registerHandoverOpenApi(registry);

@@ -5,6 +5,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { EXTENSION_MCP_TOOL_NAME_MAX } from '@dorkos/shared/capabilities';
+import { checkDeclaredTools } from '../tool-check.js';
 import { ExtensionManifestSchema } from '../manifest-schema.js';
 
 /** A tool declaration that passes, for cases to bend one field of. */
@@ -152,5 +153,34 @@ describe('ExtensionManifestSchema tools and skills', () => {
     expect(messages(manifest({ skills: ['triage', 'triage'] })).join('\n')).toMatch(
       /listed more than once/
     );
+  });
+});
+
+it('keeps omitted defaults on accepted declared tools and refuses an unsupported same-name declaration', () => {
+  const candidate = (value: Record<string, unknown>) =>
+    ExtensionManifestSchema.parse(
+      manifest({
+        tools: [
+          sendTool({
+            tier: 'observe',
+            inputSchema: { type: 'object', properties: { value }, additionalProperties: false },
+            approvalDisplayFields: undefined,
+          }),
+        ],
+      })
+    );
+  const checks = checkDeclaredTools(candidate({ type: 'string', default: 'inbox' }));
+  expect(checks).toHaveLength(1);
+  expect(checks[0]).toMatchObject({ name: 'send_message', ok: true });
+  const accepted = checks[0]!;
+  if (!accepted.ok) throw new Error(accepted.reason);
+  expect(accepted.input.parse({})).toEqual({ value: 'inbox' });
+  expect(accepted.input.parse({ value: 'sent' })).toEqual({ value: 'sent' });
+  const refused = checkDeclaredTools(candidate({ type: 'string', oneOf: [] }));
+  expect(refused).toHaveLength(1);
+  expect(refused[0]).toMatchObject({
+    name: 'send_message',
+    ok: false,
+    reason: expect.stringMatching(/oneOf/),
   });
 });

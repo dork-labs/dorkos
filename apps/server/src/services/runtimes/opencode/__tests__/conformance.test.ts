@@ -1,3 +1,4 @@
+import { openCodeApprovalTurn } from './approval-conformance.js';
 import {
   DOC_VISIBLE_TRIGGER,
   docBoundaryEntry,
@@ -718,6 +719,17 @@ runtimeConformance(
           },
         }
       : {
+          approvalTurn: (runtime, id, content, probes) => {
+            if (!lastClient) throw new Error('OpenCode approval client missing');
+            return openCodeApprovalTurn(
+              lastClient as unknown as OpencodeClient,
+              runtime,
+              id,
+              content,
+              PROJECT_DIR,
+              probes
+            );
+          },
           // ADR 261001-000811. Credits are chosen the way a person chooses them
           // for OpenCode: its recorded default. What the backend was handed is
           // the sidecar environment it was booted with and every prompt it was

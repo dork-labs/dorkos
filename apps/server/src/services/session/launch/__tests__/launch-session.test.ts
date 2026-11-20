@@ -109,6 +109,24 @@ describe('dispatchSessionMessage', () => {
     }
   );
 
+  // The dispatcher marks a mini app's words by who queued the row (DOR-4594), so the first turn of
+  // a chat a mini app starts is marked only if its lock identity reaches the dispatcher (DOR-4603).
+  // A pin of that hand-over: the marking itself is proven in `message-dispatcher-chat-messages.test.ts`.
+  it('hands a chat a mini app starts to the dispatcher under the app’s identity, not a person’s', async () => {
+    registerTestHomes([]);
+    await dispatchSessionMessage({
+      sessionId: SESSION,
+      request: { content: 'hi', cwd: '/work/project' },
+      clientId: 'extension:made-up-board',
+      meshCore: undefined,
+      roomSessionPlace: undefined,
+      origin: { kind: 'extension-start' },
+    });
+    expect(dispatchMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ clientId: 'extension:made-up-board', turnStarter: 'agent' })
+    );
+  });
+
   it.each([undefined, '/agents/known'])(
     'resolves a registered Codex home without a warning (explicit agent: %s)',
     async (agentPath) => {
@@ -583,6 +601,63 @@ describe('a message for a paused agent (spec audit-trail PR5)', () => {
   afterEach(async () => {
     const { resetAgentPause } = await import('../../../mesh/pause/agent-pause.js');
     resetAgentPause();
+  });
+
+  it('accepts another chat’s message into the pause hold instead of refusing it', async () => {
+    const { initAgentPause } = await import('../../../mesh/pause/agent-pause.js');
+    initAgentPause({
+      pausedAgentOfTurn: () => ({ id: 'agent-1', name: 'Scout' }),
+      recordHeld: vi.fn(),
+    } as never);
+    vi.mocked(dispatchMessage).mockClear();
+    const result = await dispatchSessionMessage({
+      sessionId: SESSION,
+      request: { content: 'Keep this message' },
+      clientId: 'chat:sender',
+      meshCore: mesh,
+      roomSessionPlace: undefined,
+      origin: { kind: 'chat-message' },
+    });
+    expect(result).not.toHaveProperty('refused');
+    expect(dispatchMessage).toHaveBeenCalledOnce();
+  });
+
+  it('refuses an interactive caller with a chat-shaped client id while paused', async () => {
+    const { initAgentPause } = await import('../../../mesh/pause/agent-pause.js');
+    initAgentPause({
+      pausedAgentOfTurn: () => ({ id: 'agent-1', name: 'Scout' }),
+      recordHeld: vi.fn(),
+    } as never);
+    vi.mocked(dispatchMessage).mockClear();
+    const result = await dispatchSessionMessage({
+      sessionId: SESSION,
+      request: { content: 'Caller-chosen chat client id' },
+      clientId: 'chat:caller-chosen',
+      meshCore: mesh,
+      roomSessionPlace: undefined,
+      origin: { kind: 'interactive' },
+    });
+    expect(result).toMatchObject({ refused: 'AGENT_PAUSED' });
+    expect(dispatchMessage).not.toHaveBeenCalled();
+  });
+
+  it('keeps a to-do refused even when it uses the chat-message origin', async () => {
+    const { initAgentPause } = await import('../../../mesh/pause/agent-pause.js');
+    initAgentPause({
+      pausedAgentOfTurn: () => ({ id: 'agent-1', name: 'Scout' }),
+      recordHeld: vi.fn(),
+    } as never);
+    vi.mocked(dispatchMessage).mockClear();
+    const result = await dispatchSessionMessage({
+      sessionId: SESSION,
+      request: { content: 'A queued to-do' },
+      clientId: 'todos',
+      meshCore: mesh,
+      roomSessionPlace: undefined,
+      origin: { kind: 'chat-message' },
+    });
+    expect(result).toMatchObject({ refused: 'AGENT_PAUSED' });
+    expect(dispatchMessage).not.toHaveBeenCalled();
   });
 
   it('is refused with AGENT_PAUSED before anything is bound or queued, and recorded', async () => {

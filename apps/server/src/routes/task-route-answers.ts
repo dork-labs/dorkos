@@ -1,6 +1,7 @@
 /**
  * Small scheduled-task route answers: the activity feed’s permission label,
- * the caller editing a schedule, and whether a request names credits.
+ * the caller editing a schedule, whether a request names credits, and the row
+ * a PATCH writes.
  *
  * @module routes/task-route-answers
  */
@@ -9,6 +10,10 @@ import type { MeshCore } from '@dorkos/mesh';
 import type { Task, UpdateTaskRequest } from '@dorkos/shared/types';
 import type { PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
 import type { RequestFacts } from '../http/request-facts.js';
+import type { PermissionMode } from '@dorkos/shared/schemas';
+import type { TaskStore } from '../services/tasks/task-store.js';
+import type { UpdateTaskOptions } from '../services/tasks/store/task-store-types.js';
+import { settleDeclaredTask } from '../services/core/turn-power/declared-readers.js';
 import type { ScheduleEditor } from '../services/tasks/approvals/schedule-owner.js';
 import { capabilitiesForTaskRuntime } from '../services/tasks/scheduled-run-power.js';
 import { taskRunRuntime } from '../services/tasks/execution/run-runtime.js';
@@ -180,4 +185,42 @@ export function operatorOnlyTaskRefusal(body: unknown, trusted: boolean) {
     fields: operatorOnly,
     message: describeOperatorOnlyTaskRefusal(operatorOnly),
   };
+}
+
+/** What {@link writeTaskRow} needs beside the fields: the file step's outcome and the caller. */
+export interface TaskRowWrite extends UpdateTaskOptions {
+  /** Whether the file step wrote the clamped mode, so the row takes it too. */
+  clampApplied?: boolean;
+  /** The mode an agent's edit of approved work was clamped to, if any. */
+  clampTo?: PermissionMode;
+  /** Whether the caller cleared `clearsTheAgentBar`. */
+  trusted: boolean;
+}
+
+/**
+ * Write a PATCH's row once its file landed, then settle DorkOS's record of a task that reads
+ * outside text (DOR-3969): anyone turns it on, only a person off. An agent's `false` was refused
+ * whole before this, so only a person reaches the clear.
+ *
+ * @param store - The task store.
+ * @param id - The task.
+ * @param data - The parsed fields the caller sent.
+ * @param write - The file step's outcome and the caller.
+ * @returns The task as it now reads, or `null` when it is gone.
+ */
+export function writeTaskRow(
+  store: TaskStore,
+  id: string,
+  data: UpdateTaskRequest,
+  write: TaskRowWrite
+): Task | null {
+  const row =
+    write.clampApplied && write.clampTo ? { ...data, permissionMode: write.clampTo } : data;
+  const written = store.updateTask(id, row, {
+    timingLandsOn: write.timingLandsOn,
+    approval: write.approval,
+  });
+  if (!written) return null;
+  settleDeclaredTask(written, data.readsOutsideText, write.trusted);
+  return store.getTask(id) ?? written;
 }

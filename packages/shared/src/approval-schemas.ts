@@ -40,10 +40,22 @@ export const APPROVAL_CONSEQUENCE_MAX_LENGTH = 40;
  * that is `NOPE_MAX_CHARS` (2,000), and the headroom is deliberate: a detail
  * that arrived truncated would recreate the very defect the field exists to fix,
  * so the cap has to sit clear of the largest declared payload rather than at it.
- * `ApprovalService.request` truncates to this, and a capability whose detail
- * field could exceed it must lower its own bound first.
+ * Card builders that write their own detail (Marketplace, dev links, doc
+ * routes) aim at this. A capability's `approvalDetailField` may run to
+ * {@link APPROVAL_DETAIL_STORED_MAX_LENGTH} instead.
  */
 export const APPROVAL_DETAIL_MAX_LENGTH = 4000;
+
+/**
+ * Longest detail an approval stores and a card parses (DOR-4266).
+ *
+ * Past {@link APPROVAL_DETAIL_MAX_LENGTH} because an agent's setup file is the
+ * decision itself and a real hook runs past 4,000 characters: cutting it would
+ * recreate the defect the field exists to fix. `ApprovalService.request`
+ * truncates to this, so a capability whose detail field could exceed it must
+ * lower its own bound first, with room for redaction markers.
+ */
+export const APPROVAL_DETAIL_STORED_MAX_LENGTH = 16_000;
 
 /**
  * Longest a resolved subject label may be.
@@ -135,6 +147,59 @@ export const APPROVAL_SERVICE_FULL_MAX_CHARACTERS = 20_000;
 /** Deepest a nested argument is indented in the "Show everything" list. */
 export const APPROVAL_SERVICE_FULL_MAX_DEPTH = 8;
 
+/** Longest one recipient may be on the card: more than any real address or number. */
+export const APPROVAL_SERVICE_RECIPIENT_MAX_LENGTH = 320;
+
+/** Most recipients the card lists before it counts the rest. */
+export const APPROVAL_SERVICE_MAX_RECIPIENTS = 2_000;
+
+/**
+ * One recipient of a send, on its own line (DOR-4592): who the argument is
+ * ("To", "Cc") and the address as it would be sent, with every invisible or
+ * line-breaking character shown as a visible `<U+…>` marker.
+ */
+export const ApprovalServiceRecipientSchema = z
+  .object({
+    /** The argument's name in words, e.g. "To" or "Bcc". */
+    label: z.string().min(1).max(APPROVAL_SERVICE_DETAIL_LABEL_MAX_LENGTH),
+    /** The address, swept for secrets, its hidden characters made visible. */
+    address: z.string().min(1).max(APPROVAL_SERVICE_RECIPIENT_MAX_LENGTH),
+  })
+  .strict()
+  .openapi('ApprovalServiceRecipient');
+
+/** One recipient of a send. */
+export type ApprovalServiceRecipient = z.infer<typeof ApprovalServiceRecipientSchema>;
+
+/** Control (C0, C1) and format characters, plus the line and paragraph separators. */
+const HIDDEN_RECIPIENT_CHARACTERS = /[\p{Cc}\p{Cf}\u{2028}\u{2029}]/gu;
+
+/**
+ * A recipient made inert for the card (DOR-4592): every hidden character shown
+ * as a visible `<U+…>` marker, then cut with "…" to fit
+ * {@link APPROVAL_SERVICE_RECIPIENT_MAX_LENGTH} in UTF-16 units, the way the
+ * schema counts, never through the middle of a character. Run by the producer
+ * and again where the card is stored, so no producer's word is taken for it.
+ *
+ * @param text - The address, already swept for secrets.
+ * @returns The text to show, and whether the cap had to shorten it.
+ */
+export function inertRecipientText(text: string): { text: string; shortened: boolean } {
+  const shown = text.replace(
+    HIDDEN_RECIPIENT_CHARACTERS,
+    (ch) => `<U+${ch.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}>`
+  );
+  if (shown.length <= APPROVAL_SERVICE_RECIPIENT_MAX_LENGTH) {
+    return { text: shown, shortened: false };
+  }
+  let kept = '';
+  for (const point of shown) {
+    if (kept.length + point.length > APPROVAL_SERVICE_RECIPIENT_MAX_LENGTH - 1) break;
+    kept += point;
+  }
+  return { text: `${kept}…`, shortened: true };
+}
+
 /**
  * One line of the complete argument list: a label, a value, and how far it is
  * indented under the line above. A list's items and an object's fields each
@@ -175,6 +240,30 @@ export const ApprovalServiceActionDetailSchema = z
 export type ApprovalServiceActionDetail = z.infer<typeof ApprovalServiceActionDetailSchema>;
 
 /**
+ * The money a paid-run card shows (DOR-4204 PR 2, spec §4.2). Amounts are
+ * micro-unit integer strings of {@link currency}, never floats; "left" is the
+ * server's, so the client does no arithmetic on money.
+ */
+export const ApprovalSpendSchema = z
+  .object({
+    /** One run's price, or null when unknown. */
+    priceMicro: z.string().regex(/^\d+$/).nullable(),
+    /** Where the price came from: a person's estimate or the provider's report. */
+    priceSource: z.enum(['person', 'reported']).nullable(),
+    /** The monthly limit, or null for "Ask every time". */
+    limitMicro: z.string().regex(/^\d+$/).nullable(),
+    /** What is left this month, or null with no limit. */
+    leftMicro: z.string().regex(/^\d+$/).nullable(),
+    /** ISO 4217 code; `USD` only in 1.0. */
+    currency: z.string().length(3),
+  })
+  .strict()
+  .openapi('ApprovalSpend');
+
+/** What a paid-run card shows about money. */
+export type ApprovalSpend = z.infer<typeof ApprovalSpendSchema>;
+
+/**
  * What a connected-app action would do, in words a person can decide on
  * (DOR-2504): which app, which account, which action, and its arguments.
  *
@@ -204,6 +293,23 @@ export const ApprovalServiceActionSchema = z
     accountLabel: z.string().min(1).max(APPROVAL_SERVICE_NAME_MAX_LENGTH),
     /** The action in plain words, e.g. "Delete message". */
     actionName: z.string().min(1).max(APPROVAL_SERVICE_NAME_MAX_LENGTH),
+    /**
+     * Everyone a send goes to, one line each, in the order the call names them
+     * (DOR-4592). Shown above {@link details} and never shortened, so an extra
+     * address can't hide behind "and N more". Absent when nothing is a recipient.
+     */
+    recipients: z
+      .array(ApprovalServiceRecipientSchema)
+      .max(APPROVAL_SERVICE_MAX_RECIPIENTS)
+      .optional(),
+    /**
+     * How many recipients past {@link APPROVAL_SERVICE_MAX_RECIPIENTS} the card
+     * could not list. With this or {@link recipientsShortened}, the card can only
+     * be declined: a person can't allow a send to someone they can't see.
+     */
+    recipientsCut: z.number().int().min(1).optional(),
+    /** How many listed recipients were too long to show whole. */
+    recipientsShortened: z.number().int().min(1).optional(),
     /** The arguments, most important first: the action's own fields, then any others. */
     details: z.array(ApprovalServiceActionDetailSchema).max(APPROVAL_SERVICE_ACTION_MAX_DETAILS),
     /** How many more arguments there are than the card lists. */
@@ -227,15 +333,41 @@ export const ApprovalServiceActionSchema = z
      * Why this asks when it would otherwise have waited out the 60-second
      * cancel window, so the extra card does not read as a bug. `wifi-open`:
      * Wi-Fi access is on over plain `http`, where a copied sign-in could be
-     * anyone (DOR-3242). Absent when the card is the ordinary one.
+     * anyone (DOR-3242). `outside-words`: this turn read words from outside the team (a connected
+     * app's mail, a web page), so it asks before acting where it would otherwise have run
+     * (DOR-3969). Absent when the card is the ordinary one.
      */
-    keptCardBecause: z.enum(['wifi-open']).optional(),
+    keptCardBecause: z.enum(['wifi-open', 'spend', 'outside-words']).optional(),
+    /**
+     * Set when the action spends money and this card is the person's yes to
+     * one paid run (DOR-4204 PR 2, `spend`): its price and what is left this
+     * month. Only Allow once answers it, from the person in DorkOS.
+     */
+    spend: ApprovalSpendSchema.optional(),
   })
   .strict()
   .openapi('ApprovalServiceAction');
 
 /** What a connected-app action would do, in words a person can decide on. */
 export type ApprovalServiceAction = z.infer<typeof ApprovalServiceActionSchema>;
+
+/**
+ * A connected-app action's arguments as one line for the summary sentence the
+ * audit, notifications and a card without its action read: every recipient
+ * first (DOR-4592), then the glance, each value JSON-quoted.
+ *
+ * @param action - The described action, or the two fields of it this reads.
+ */
+export function serviceActionArgumentText(
+  action: Pick<ApprovalServiceAction, 'recipients' | 'details'>
+): string {
+  return [
+    ...(action.recipients ?? []).map(({ label, address }) => ({ label, value: address })),
+    ...action.details,
+  ]
+    .map(({ label, value }) => `${label}: ${JSON.stringify(value)}`)
+    .join(', ');
+}
 
 /**
  * The heading a card, row or note gives an approval: the connected-app action
@@ -396,6 +528,15 @@ export type ApprovalFullDetailResponse = z.infer<typeof ApprovalFullDetailRespon
  */
 export const PendingApprovalSchema = z
   .object({
+    /** Server-derived display code; absent only on older servers. Never accepted as proof. */
+    requestCode: z
+      .string()
+      .regex(/^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$/)
+      .optional(),
+    /** Per response: false only for the desk. Absent on session-neutral events. */
+    answerNeedsStepUp: z.boolean().optional(),
+    /** The server's label for the answering browser's stored device and route. */
+    answeringFrom: z.string().optional(),
     /** ULID identifying the approval. Carries no secret. */
     approvalId: z.string(),
     /** Capability the request would invoke, e.g. `marketplace.uninstall`. */
@@ -491,18 +632,24 @@ export const PendingApprovalSchema = z
     /**
      * The one argument a person has to read IN FULL before answering, verbatim.
      *
-     * Present only for a capability that declares `approvalDetailField` — one
-     * today, the boundaries write, whose whole point is the text. Everything
+     * Present only for a capability that declares `approvalDetailField` — the
+     * boundaries write and the setup-file write, whose whole point is the text. Everything
      * else says what it needs to say in {@link summary}, and a card with no
      * detail renders exactly as it always has.
      *
      * Rendered as-is rather than as part of a sentence, so it carries no claim
      * about itself: it is the argument, shown, and the summary above says what
      * would be done with it. Like the summary it is swept for token-shaped runs
-     * and capped ({@link APPROVAL_DETAIL_MAX_LENGTH}) where it is stored, never
-     * at render time.
+     * and capped ({@link APPROVAL_DETAIL_STORED_MAX_LENGTH}) where it is stored,
+     * never at render time.
      */
-    detail: z.string().max(APPROVAL_DETAIL_MAX_LENGTH).optional(),
+    detail: z.string().max(APPROVAL_DETAIL_STORED_MAX_LENGTH).optional(),
+    /**
+     * One plain line under {@link detail}, outside its box: on an agent's raise
+     * card (DOR-4355 M4), the connection's name, which an agent can set, quoted
+     * and cut short. The box holds only what changes.
+     */
+    detailNote: z.string().max(200).optional(),
     /**
      * A Marketplace install or update whose full list is too long for
      * {@link detail} (DOR-3070): the card renders this instead of the detail,
@@ -677,3 +824,8 @@ export const DeclinedHookApprovalsResponseSchema = z.object({
   approvals: z.array(DeclinedHookApprovalSchema),
 });
 export type DeclinedHookApprovalsResponse = z.infer<typeof DeclinedHookApprovalsResponseSchema>;
+
+/** The same requester label on cards, chats and confirmation sheets. */
+export function approvalRequesterLabel(requestedBy: string): string {
+  return requestedBy.split('/').filter(Boolean).pop() ?? requestedBy;
+}

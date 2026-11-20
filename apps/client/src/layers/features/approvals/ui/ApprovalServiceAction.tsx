@@ -1,7 +1,8 @@
 import type { ApprovalServiceAction as ApprovalServiceActionValue } from '@dorkos/shared/approval-schemas';
-import { useId, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { ServiceMark } from '@/layers/entities/connectors';
 import { cn } from '@/layers/shared/lib';
+import { useScrollOverflow } from '@/layers/shared/model';
 
 export interface ApprovalServiceActionProps {
   /** The connected-app action, as the server described it. */
@@ -22,10 +23,104 @@ const DEPTH_INDENT = ['pl-0', 'pl-3', 'pl-6', 'pl-9', 'pl-12', 'pl-15', 'pl-18',
 export const WIFI_KEPT_CARD_LINE =
   'Asks instead of waiting 60 seconds, because Wi-Fi access is on.';
 
+/** Why a card asks when the turn read words from outside the team (DOR-3969). */
+export const OUTSIDE_WORDS_KEPT_CARD_LINE =
+  'Asks first, because the agent just read words from outside your team.';
+
 /** "1 value is", "3 values are". */
 function cutLine(count: number): string {
   const values = count === 1 ? '1 value is' : `${count} values are`;
   return `${values} too long to show. If you’re unsure what this sends, don’t allow it.`;
+}
+
+/**
+ * Why a send that hides a recipient can only be declined (DOR-4592): the
+ * server refuses a yes to it, so the line says so instead of asking for care.
+ */
+function recipientsHiddenLine(cut: number | undefined, shortened: number | undefined): string {
+  if (cut !== undefined) {
+    const more = cut === 1 ? '1 more recipient isn’t' : `${cut} more recipients aren’t`;
+    return `${more} shown, so this can’t be allowed. Ask for a smaller send.`;
+  }
+  return shortened === 1
+    ? 'One address is too long to show, so this can’t be allowed.'
+    : `${shortened} addresses are too long to show, so this can’t be allowed.`;
+}
+
+/** The scroll-edge shadow a capped list draws over an edge with rows behind it. */
+const RECIPIENTS_EDGE = {
+  top: 'top-px rounded-t-md bg-[radial-gradient(farthest-side_at_50%_0,hsl(var(--scroll-edge)),transparent)]',
+  bottom:
+    'bottom-px rounded-b-md bg-[radial-gradient(farthest-side_at_50%_100%,hsl(var(--scroll-edge)),transparent)]',
+} as const;
+
+/** Decorative and click-through, so it never covers a row's text from the pointer. */
+function RecipientsEdge({ edge }: { edge: keyof typeof RECIPIENTS_EDGE }) {
+  return (
+    <div
+      aria-hidden="true"
+      data-slot={`approval-recipients-edge-${edge}`}
+      className={cn('pointer-events-none absolute inset-x-px h-2', RECIPIENTS_EDGE[edge])}
+    />
+  );
+}
+
+/**
+ * Everyone a send goes to, one line each, above the rest (DOR-4592). Never
+ * shortened or folded: it scrolls inside the card instead. Each address is
+ * plain text the server already made inert, never a link.
+ *
+ * On a narrow card the label sits on its own line, so the address gets the
+ * whole width and reads in one piece; `overflow-wrap: anywhere` breaks it only
+ * when it is longer than the box. The scroll-edge shadow says rows continue
+ * past the cap: the card's surface is translucent, so a CSS cover can't hide
+ * it at rest, and the shadow is drawn only while a row is really behind an edge.
+ */
+function ApprovalRecipients({
+  recipients,
+  cut,
+  shortened,
+}: {
+  recipients: NonNullable<ApprovalServiceActionValue['recipients']>;
+  cut: number | undefined;
+  shortened: number | undefined;
+}) {
+  const listRef = useRef<HTMLDListElement>(null);
+  const edges = useScrollOverflow(listRef);
+  return (
+    <>
+      <div className="relative mt-1.5">
+        <dl
+          ref={listRef}
+          onScroll={edges.onScroll}
+          data-slot="approval-service-recipients"
+          className="border-border/60 bg-muted/40 flex max-h-[40dvh] flex-col gap-1.5 overflow-auto rounded-md border p-2 text-xs md:max-h-56 @sm/approval:grid @sm/approval:grid-cols-[max-content_minmax(0,1fr)] @sm/approval:gap-x-3 @sm/approval:gap-y-0.5"
+        >
+          {recipients.map((recipient, index) => (
+            <div key={`${index}-${recipient.label}`} className="min-w-0 @sm/approval:contents">
+              <dt className="text-muted-foreground text-2xs break-words @sm/approval:max-w-40 @sm/approval:text-xs">
+                {recipient.label}
+              </dt>
+              {/* Isolated left-to-right, so right-to-left letters can't move its "@" or dots. */}
+              <dd
+                dir="ltr"
+                className="text-foreground min-w-0 [overflow-wrap:anywhere] [unicode-bidi:isolate]"
+              >
+                {recipient.address}
+              </dd>
+            </div>
+          ))}
+        </dl>
+        {edges.start && <RecipientsEdge edge="top" />}
+        {edges.end && <RecipientsEdge edge="bottom" />}
+      </div>
+      {(cut !== undefined || shortened !== undefined) && (
+        <p data-slot="approval-recipients-cut" className="text-muted-foreground mt-0.5 text-xs">
+          {recipientsHiddenLine(cut, shortened)}
+        </p>
+      )}
+    </>
+  );
 }
 
 /**
@@ -73,6 +168,13 @@ export function ApprovalServiceAction({
         </span>
         <span className="text-muted-foreground min-w-0 break-all">{action.accountLabel}</span>
       </div>
+      {action.recipients && (
+        <ApprovalRecipients
+          recipients={action.recipients}
+          cut={action.recipientsCut}
+          shortened={action.recipientsShortened}
+        />
+      )}
       {expanded && everything ? (
         <dl
           id={listId}
@@ -144,6 +246,11 @@ export function ApprovalServiceAction({
       {action.keptCardBecause === 'wifi-open' && (
         <p data-slot="approval-kept-card" className="text-muted-foreground mt-0.5 text-xs">
           {WIFI_KEPT_CARD_LINE}
+        </p>
+      )}
+      {action.keptCardBecause === 'outside-words' && (
+        <p data-slot="approval-kept-card" className="text-muted-foreground mt-0.5 text-xs">
+          {OUTSIDE_WORDS_KEPT_CARD_LINE}
         </p>
       )}
     </div>

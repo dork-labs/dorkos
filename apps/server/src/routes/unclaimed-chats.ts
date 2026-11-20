@@ -26,7 +26,7 @@
  *
  * @module routes/unclaimed-chats
  */
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { SessionStrategySchema, ChannelTypeSchema } from '@dorkos/shared/relay-schemas';
 import { PermissionModeSchema } from '@dorkos/shared/schemas';
@@ -35,6 +35,7 @@ import type { UnclaimedChatStore } from '../services/relay/unclaimed-chat-store.
 import type { BridgeLifecycle } from '../services/relay/chat-bridge/index.js';
 import { RoomError } from '../services/rooms/room-errors.js';
 import { bridgeChatTypeForBinding } from './relay-adapters.js';
+import { holdBindingRaise, modeStartsLooser } from './relay-binding-step-up.js';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { readQuery } from '../http/request-query.js';
@@ -107,8 +108,8 @@ export function createUnclaimedChatsRoutes(deps: UnclaimedChatsRouterDeps): Hono
     return c.json({ chats: store.list(status) });
   });
 
-  router.post('/:id/claim', async (c) => {
-    const chat = store.getById(c.req.param('id'));
+  const claimChat = async (c: Context<ApiEnv>): Promise<Response> => {
+    const chat = store.getById(c.req.param('id') ?? '');
     if (!chat) {
       return c.json({ error: 'Unclaimed chat not found' }, 404);
     }
@@ -240,6 +241,20 @@ export function createUnclaimedChatsRoutes(deps: UnclaimedChatsRouterDeps): Hono
     // the response carries the room the person is about to land in.
     const bridged = bindingStore.getById(binding.id) ?? binding;
     return c.json({ binding: bridged }, 201);
+  };
+  // A claim that starts the route looser than the default waits for the owner (DOR-4355).
+  router.post('/:id/claim', (c) => {
+    const claim = ClaimRequestSchema.safeParse(readJsonBody(c, { emptyAs: {} }));
+    return holdBindingRaise(
+      c,
+      modeStartsLooser(claim.data?.permissionMode),
+      {
+        target: c.req.param('id'),
+        input: readJsonBody(c, { emptyAs: {} }),
+        reason: 'Let this chat’s new agent work with more permission.',
+      },
+      () => claimChat(c)
+    );
   });
 
   router.post('/:id/ignore', (c) => {

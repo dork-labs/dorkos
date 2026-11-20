@@ -99,8 +99,9 @@ describe('duration partition', () => {
   it.each(['vitest.config.ts', 'vite.config.ts'])(
     'loads %s through the real CLI and partitions all fixture files once',
     (configName) => {
-      // Under the repo only for vitest module resolution; all content is invented.
-      const dir = mkdtempSync(resolve(root, 'scripts/.duration-fixture-'));
+      // Outside the repo: a folder under scripts/ races the repo-wide scans in
+      // scripts-test (ENOENT mid-walk). All content is invented.
+      const dir = mkdtempSync(resolve(tmpdir(), 'dorkos-duration-fixture-'));
       temp.push(dir);
       writeFileSync(
         resolve(dir, configName),

@@ -180,10 +180,15 @@ jobs:
 
       - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v7.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-          cache: pnpm
+
+      # NO dependency cache, restored or saved (DOR-4635, DOR-4695). This job runs
+      # on a tag push and holds release credentials, so it installs cold from the
+      # registry, checked against pnpm-lock.yaml's integrity hashes. (Saving into
+      # a tag's scope was also waste: a tag's cache is readable only by that tag.)
+      # Cost: one cold install per job per release.
 
       - run: pnpm install --frozen-lockfile
 
@@ -660,10 +665,12 @@ jobs:
 
       - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v7.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-          cache: pnpm
+
+      # NO dependency cache, restored or saved (DOR-4635, DOR-4695; see the first
+      # install in this file).
 
       - run: pnpm install --frozen-lockfile
 

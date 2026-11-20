@@ -17,7 +17,10 @@
  * that is actually enforced — never a read-back through the same resolver the
  * production read path uses.
  */
-import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import type { PermissionMode } from '@dorkos/shared/types';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { sessionMetadata, type Db } from '@dorkos/db';
@@ -103,10 +106,21 @@ describe('claude-code session-settings re-key on canonical-id rebind (DOR-493)',
   let registry: RuntimeRegistry;
   let db: Db;
   let mockedQuery: Mock;
+  let accountRoot: string;
+
+  afterEach(async () => {
+    await runtime?.endSessionsWhere(() => true);
+    vi.unstubAllEnvs();
+    await rm(accountRoot, { recursive: true, force: true });
+  });
 
   beforeEach(async () => {
     // No server defaults unless a test asks for them.
     serverConfig.runtimes = {};
+    accountRoot = await mkdtemp(path.join(os.tmpdir(), '4328-settings-account-'));
+    vi.stubEnv('CLAUDE_CONFIG_DIR', accountRoot);
+    for (const key of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN'])
+      vi.stubEnv(key, '');
     // Reset the module graph so each test gets a fresh runtime AND a fresh
     // `query` spy (the top-level vi.mock factory re-runs on re-import).
     vi.resetModules();
@@ -368,7 +382,7 @@ describe('claude-code session-settings re-key on canonical-id rebind (DOR-493)',
       events.push(event.type);
     }
 
-    expect(boom).toHaveBeenCalledWith(REQUEST_ID, CANONICAL_ID);
+    expect(boom).toHaveBeenCalledWith(REQUEST_ID, CANONICAL_ID, expect.any(Function));
     // The turn ran to its terminal event and reported no failure to the client.
     expect(events).toContain('done');
     expect(events).not.toContain('error');

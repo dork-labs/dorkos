@@ -721,7 +721,7 @@ export class StreamManager {
     };
     const connection = this.createConnection(
       sessionStreamUrl(this.source.baseUrl, sessionId, cwd),
-      { eventHandlers, onStateChange }
+      { eventHandlers, onStateChange, resourceId: sessionId }
     );
     const retire = () => {
       retired = true;

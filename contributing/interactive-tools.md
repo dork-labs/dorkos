@@ -898,7 +898,7 @@ This two-way channel -- `uiState` in (client tells agent what is visible) and `u
 
 ## Capability Approval Holds
 
-A third, separate system covers DorkOS's own destructive MCP tools -- the ones the [action approvals](../docs/guides/action-approvals.mdx) guide describes for end users, such as `tasks_delete`, `mesh_unregister`, `marketplace.uninstall`, `marketplace.link`, `operator.update_agent_boundaries`, and `operator.update_agent_execution`, gated by `services/core/capabilities/tier-enforcement.ts`. It shares nothing with the SDK's `canUseTool` pattern above: there is no `pendingInteractions` entry and no deferred promise on the session.
+A third, separate system covers DorkOS's own destructive MCP tools -- the ones the [action approvals](../docs/guides/action-approvals.mdx) guide describes for end users, such as `tasks_delete`, `mesh_unregister`, `marketplace.uninstall`, `marketplace.link`, `operator.update_agent_boundaries`, `operator.update_agent_execution`, and `operator.update_agent_config`, gated by `services/core/capabilities/tier-enforcement.ts`. It shares nothing with the SDK's `canUseTool` pattern above: there is no `pendingInteractions` entry and no deferred promise on the session.
 
 Before DOR-939, a held capability call returned `approval_required` immediately and ended the turn -- the operator approved on the dashboard, then had to tell the agent to retry. Now the call can HOLD instead (`capability-approval-hold.ts`, spec `approvals-resume-inline`): it pushes the same `PendingApproval` the dashboard renders as a `capability_approval_required` event onto the session, waits up to ten minutes for the operator's decision, and on a grant resumes the held call and returns the real result in the SAME turn -- no retry needed.
 

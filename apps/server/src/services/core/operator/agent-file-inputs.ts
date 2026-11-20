@@ -17,6 +17,15 @@ import { marksOf } from '../turn-power/turn-levels.js';
 import { marksHold } from '../turn-power/turn-marks.js';
 import { choseFullAutonomy } from '../turn-power/full-autonomy.js';
 
+/** Agent selector shared by capabilities that address one agent by id or directory. */
+export const agentSelectorSchema = {
+  agent_id: z.string().optional().describe('Agent ULID to target (mutually exclusive with cwd)'),
+  cwd: z
+    .string()
+    .optional()
+    .describe('Agent project directory to target (mutually exclusive with agent_id)'),
+};
+
 /** `update_agent_boundaries`' fields, spread into its input schema. */
 export const AGENT_BOUNDARY_INPUTS = {
   nopeContent: z
@@ -42,6 +51,9 @@ export const AGENT_BOUNDARY_INPUTS = {
 
 /** `update_agent`'s convention-file fields, spread into its input schema. */
 export const AGENT_FILE_INPUTS = {
+  // Retain this person-set field through registry parsing so the existing guard
+  // refuses the whole call instead of silently stripping it (DOR-3470).
+  memoryContent: z.unknown().optional().describe('Refused here. MEMORY.md is set by the person.'),
   // Says what DorkOS does with it, because the honest answer is not "we
   // store this". The personality block at the top of SOUL.md is rendered
   // from `traits` and fenced by markers the turn regenerates in place; a
@@ -74,6 +86,29 @@ export const AGENT_FILE_INPUTS = {
         'sweep) then a markdown checklist. Replaces the whole file; applies at the next beat.'
     ),
 };
+
+/**
+ * Refuse person-set memory on update_agent for every tool caller, including
+ * identityless external MCP calls. HTTP person editors keep the shared guard.
+ * All other fields follow the existing instruction policy.
+ */
+export function refuseAgentToolFiles(
+  input: unknown,
+  context: { sessionId?: string; identity?: { agentPath: string } }
+): undefined {
+  if (
+    typeof input === 'object' &&
+    input !== null &&
+    (input as Record<string, unknown>).memoryContent !== undefined
+  ) {
+    throw new CapabilityToolError({
+      error: 'memoryContent cannot be changed with this tool.',
+      code: 'OPERATOR_ONLY',
+      fields: ['memoryContent'],
+    });
+  }
+  return refuseOutsiderAgentFiles(input, context);
+}
 
 /** What a turn that read outsider words reads when it tries to rewrite these files. */
 export const AGENT_FILES_OUTSIDER_REFUSAL =

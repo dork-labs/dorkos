@@ -25,63 +25,43 @@
  * two escapes and this module uses both, deliberately unevenly:
  *
  * - **`alwaysLoad`** puts a tool in the prompt from turn 1. Granted to the
- *   {@link ALWAYS_LOADED_TOOLS} twelve on every session. A room turn is the case that
+ *   {@link ALWAYS_LOADED_TOOLS} set on every session. A room turn is the case that
  *   cannot afford a lookup: the agent is answering a person in a shared room, and a
  *   search step before it can react is a turn spent on plumbing. `list_capabilities`
- *   joins them as the discovery entry point — the one name that leads to the other
- *   eighty. Sessions that ARE a registered mesh agent additionally get the
- *   {@link AGENT_TO_AGENT_TOOLS} four, for the same reason applied to a different
- *   turn; see {@link alwaysLoadedToolsFor}.
+ *   joins them as the discovery entry point. Sessions that ARE a registered mesh
+ *   agent additionally get {@link AGENT_TO_AGENT_TOOLS} for direct agent-to-agent
+ *   exchanges; see {@link alwaysLoadedToolsFor}.
  * - **`searchHint`** is a short phrase the tool can be FOUND by, so the deferred
  *   remainder is discoverable by intent rather than by guessing a name. Every tool
  *   gets one, derived mechanically from what it already says about itself.
  *
  * **Always-loading the whole server would be the wrong trade**, which is why these
- * are sets and not a flag: eighty-odd tool schemas would ride every turn's prompt,
- * on every session, to save a lookup that only a few turns genuinely cannot afford.
+ * are sets and not a flag: the whole tool surface would ride every turn's prompt
+ * to save a lookup that only a few turns cannot afford.
  *
- * ## Schemas: no `z.record()` in an in-session tool's input
+ * ## Input schema conversion
  *
- * An in-session tool's input schema must not contain `z.record(...)` at ANY depth,
- * `z.json()` included — it builds its object branch from a record. This is a hard
- * constraint rather than a style note, and one tool breaking it takes down all
- * ninety.
+ * Ordinary capabilities register full strict objects through
+ * `registerClaudeCapabilityTools`; the SDK `tool()` factory generates their
+ * loading metadata without registering its raw descriptor. Hand tools keep
+ * the factory's raw definitions and their independent once-only parse guard.
+ * SDK 0.3.304 already accepts raw defaulted fields; the full-object migration
+ * preserves object strictness and refinements rather than fixing that old bug.
  *
- * `claude-agent-sdk` 0.3.257+ converts tool schemas to JSON Schema through the
- * installed zod's own per-schema processor, but builds the conversion context
- * itself, and that context carries no `deferred` array. zod 4.5.3+ is the first
- * version whose record processor pushes onto `ctx.deferred` (its only user, for
- * rewriting key names), so a record throws `Cannot read properties of undefined`
- * INSIDE the `tools/list` handler. `tools/list` answers for the whole server, so
- * the model is handed zero DorkOS tools — no error card, no log line, nothing to
- * debug from. Bisected on the 0.3.224 → 0.3.268 bump: SDK 0.3.252 + zod 4.5.4 is
- * fine and 0.3.257 is not; SDK 0.3.268 + zod 4.5.2 is fine and 4.5.3 is not. Both
- * halves are the vendors' to fix; until one of them does, this constraint stands.
+ * Older SDK/Zod combinations failed whole-server listing on records. That
+ * history explains existing `catchall` maps in core schemas; it is not a
+ * current-pin guarantee that records break listing. Do not widen extension
+ * support from an SDK rendering observation: `extension-api/tool-check.ts`
+ * still enforces its closed subset before contribution, refusing record,
+ * lazy/open and unrepresentable declarations. Direct full registration can
+ * make one unconvertible input fail the entire list.
  *
- * `z.object({}).catchall(valueType)` is the drop-in: it accepts the same values,
- * and its JSON Schema (`additionalProperties`) says the same thing without the
- * `propertyNames` clause a record adds. Four schemas were converted for this reason,
- * each carrying a pointer back here — `CONTROL_UI_INPUT.content`,
- * `operator.config_patch`'s `patch`, `McpServerTransportSchema`'s `env`/`headers`,
- * and `ConnectorJsonValueSchema` (which `z.json()` no longer builds).
- * `__tests__/tool-exposure.test.ts` lists tools off the live server on all three
- * session shapes, so a record added to any of them reds there immediately rather
- * than shipping — but read that as broad coverage, not as a proof over the whole
- * surface. Its plain and agent shapes build from
- * `composeCapabilityRegistryForDocs()`, which does now compose every domain (it
- * omitted `connectorExecutionDomain` until that was fixed, and
- * `self-description/__tests__/dorkos-registry.test.ts` pins it). Listing is
- * surface-gated regardless: the connector execute capabilities declare
- * `surfaces: {}`, so no registry composition puts them on these two shapes, and
- * they are reached only by the third — the connector-turn shape, which registers
- * those ids directly. A capability that declares no MCP surface anywhere would
- * still carry a record unseen.
- *
- * The aliases for `@dorkos/shared/{mesh,connector}-schemas` in
- * `apps/server/vitest.config.ts` are the other half of that guard: four of these
- * schemas live in `@dorkos/shared`, and against a stale `dist/` the test reads the
- * old ones and passes. Measured — a record put back on
- * `McpServerTransportSchema.env` reds 0 of 17 without those aliases and 7 with.
+ * `__tests__/tool-exposure.test.ts` drives actual plain, agent and principal
+ * listings. `mcp-default-arguments.test.ts` composes current-schema and
+ * extension listability contracts through real SDK/registry execution. Keep
+ * shared-schema aliases current, and rebuild own shared artifacts when a
+ * targeted test would otherwise read stale `dist` output. The living contract
+ * and measured migration scope are in `contributing/agent-operator-surface.md`.
  *
  * The qualification and provenance helpers are Claude-specific; loading and
  * search policy is shared. Codex and OpenCode reach the same tools through

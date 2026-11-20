@@ -15,7 +15,7 @@ import { CommunityAnswerInSchema } from '@dorkos/shared/community-connections';
 import type { CredentialStore } from '../../../core/credential-provider.js';
 import { RemoteConnectionNotFoundError, RemoteConnectionStore } from '../connection-store.js';
 import { AnswerInBudget, RemoteAnswerIn } from '../wake/answer-in.js';
-import { AnswerInStore } from '../wake/answer-in-store.js';
+import { AnswerInChangedError, AnswerInStore } from '../wake/answer-in-store.js';
 import { RemoteWakePolicy } from '../wake/wake-policy.js';
 
 function memoryCredentials(): CredentialStore {
@@ -94,6 +94,17 @@ describe('the stored list', () => {
     await store.set(REF, OWNER, ['welcome', 'help']);
     const reopened = new AnswerInStore(directory, connections);
     expect(await reopened.get(REF, OWNER)).toEqual(['welcome', 'help']);
+  });
+
+  // Security S5 on DOR-4355 M3: the route's "adds nothing" is checked inside the write.
+  it('refuses a save whose expectation no longer holds, and writes nothing', async () => {
+    await store.set(REF, OWNER, ['help']);
+    await expect(
+      store.set(REF, OWNER, ['welcome'], (current) => current.includes('welcome'))
+    ).rejects.toBeInstanceOf(AnswerInChangedError);
+    expect(await store.get(REF, OWNER)).toEqual(['help']);
+    await store.set(REF, OWNER, [], (current) => current.includes('help'));
+    expect(await store.get(REF, OWNER)).toEqual([]);
   });
 
   it('belongs to its owner: another owner can neither read nor change it', async () => {

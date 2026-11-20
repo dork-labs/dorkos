@@ -132,7 +132,10 @@ path: { id: sessionID, permissionID }, body: { response: "once" | "always" | "re
   models cannot diverge.
   1.18.15 also serves `POST /permission/{requestID}/reply` with `{reply, message}` (verified working,
   same effect) plus a v2 family under `/api/…`. The SDK client exposes none of those, and the route we
-  use still works, so there is nothing to migrate to yet.
+  use still works, so approvals stay on it. The one exception is a package shell guard's refusal
+  (DOR-4447): it rides `/permission/{requestID}/reply` with the guard's reason as `message`, so the
+  model reads why, and falls back to the plain reject if the sidecar refuses that route
+  (`rejectPermissionWithReason` in `messaging/approvals.ts`).
 - **Denial semantics (live):** rejecting does NOT fail the turn. The tool part goes to
   `status: "error"` with `"The user rejected permission to use this specific tool call."`, the model
   carries on, and the session reaches `session.idle` normally. No `session.error` is published.

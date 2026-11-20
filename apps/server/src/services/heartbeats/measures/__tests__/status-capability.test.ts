@@ -10,7 +10,7 @@ import type { CapabilityDeps, CapabilityHandlerContext } from '../../../core/cap
 import type { AgentIdentity } from '../../../core/agent-identity/agent-identity-service.js';
 import { heartbeatDomain } from '../../heartbeat-capabilities.js';
 import { computeMeasures } from '../measures.js';
-import { setHeartbeatStatusReader } from '../status-capability.js';
+import { BEAT_SUMMARY_LEFT_OUT, setHeartbeatStatusReader } from '../status-capability.js';
 
 const deps = { logger: noopLogger } as unknown as CapabilityDeps;
 
@@ -125,6 +125,25 @@ describe('heartbeat_status', () => {
       summary: 'Beat 0.',
       raises: 0,
     });
+  });
+
+  it('leaves every beat summary out in a Never ask turn, and keeps them otherwise (DOR-3971)', async () => {
+    install();
+    const unattended = await call(
+      { agentId: 'agent-otto' },
+      { identity: juno, narrowedReads: true }
+    );
+    expect(JSON.stringify(unattended)).not.toMatch(/Beat \d+\./);
+    expect((unattended.lastBeats as object[])[0]).toEqual({
+      startedAt: '2026-10-12T14:00:00Z',
+      kind: 'pulse',
+      wake: 'timer',
+      outcome: 'worked',
+      summary: BEAT_SUMMARY_LEFT_OUT,
+      raises: 0,
+    });
+    const attended = await call({ agentId: 'agent-otto' }, { identity: juno });
+    expect((attended.lastBeats as { summary: string }[])[0]!.summary).toBe('Beat 0.');
   });
 
   it('reads the calling agent by default, over 7 days, and lists up to 50 beats', async () => {

@@ -1,9 +1,11 @@
+import { ApprovalStepUpNote } from './ApprovalStepUpNote';
 import { HookApprovalCard } from './HookApprovalCard';
+import { useId, type ReactNode } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { Lock } from 'lucide-react';
 import { approvalHeading, type PendingApproval } from '@dorkos/shared/approval-schemas';
 import { getPermissionArea, isFloorArea } from '@dorkos/shared/permissions';
-import { Badge, Button } from '@/layers/shared/ui';
+import { Badge, Button, RequestCode } from '@/layers/shared/ui';
 import { useNow } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
 import {
@@ -12,7 +14,8 @@ import {
   formatTimeLeft,
   WIFI_ALWAYS_ALLOW_LINE,
 } from '@/layers/features/ask';
-import { useOnWifi } from '@/layers/entities/config';
+import { useConfig, useOnWifi } from '@/layers/entities/config';
+import { PaidActionMarker } from '@/layers/entities/connectors';
 import { agentLabelFrom } from '../lib/agent-label';
 import { useGrantApproval, useDenyApproval } from '../model/use-approval-decision';
 import { useDismissSuggestion, useSuggestionDismissed } from '../model/use-dismiss-suggestion';
@@ -24,6 +27,7 @@ import {
 } from '../model/settling-approvals';
 import { ApprovalMarketplaceSummary } from './ApprovalMarketplaceSummary';
 import { ApprovalServiceAction } from './ApprovalServiceAction';
+import { ApprovalSpendLine, SPEND_LIMIT_CODE, spendReceipt } from './ApprovalSpend';
 import { ApprovalSubject } from './ApprovalSubject';
 import { RequestingAgent } from './RequestingAgent';
 
@@ -88,6 +92,7 @@ function receiptFor(
   title: string
 ): string {
   if (decision === 'granted-always') return `Always allowed for ${agentLabel}: ${title}`;
+  if (decision === 'spend-refused') return 'Not allowed';
   return decision === 'granted' ? 'Allowed once' : 'Not allowed';
 }
 
@@ -95,7 +100,7 @@ export interface ApprovalCardProps {
   /** The approval waiting on a decision. */
   approval: PendingApproval;
   /**
-   * Called the moment this card is answered, before the answer has landed.
+   * Called when the receipt is shown: immediately at the desk, after confirmation remotely.
    *
    * The buttons are gone by the next render, so whoever owns the surrounding
    * list uses this to put focus somewhere real — otherwise a keyboard user is
@@ -104,6 +109,8 @@ export interface ApprovalCardProps {
   onDecided?: (approvalId: string) => void;
   /** Focus the first hook title when a list opens. */
   focusOnOpen?: boolean;
+  /** The card is drawn in a chat row. */
+  inChat?: boolean;
 }
 
 /**
@@ -130,16 +137,17 @@ export interface ApprovalCardProps {
  * (below) from pushing the answers down a narrow panel, since in the
  * stacked layout they already sit under the text.
  *
- * ## The answer lands before the server says so
+ * ## A remote answer waits for confirmation
  *
- * Clicking an answer swaps the buttons for a checkmark straight away, holds it
+ * At the desk, an answer swaps the buttons for a checkmark straight away, holds it
  * long enough to read, and only then lets the card melt out of the list. The
  * card is what confirms the decision, where the decision was made — nothing
  * navigates and no toast is needed to say a normal thing went normally.
  *
  * The swap is optimistic, so it is also reversible: a refusal the server would
  * not accept puts the buttons back rather than leaving a checkmark over a
- * request that is still sitting there answerable.
+ * request that is still sitting there answerable. Remote yeses wait for the
+ * server before showing a receipt: a cancelled confirmation allows nothing.
  *
  * ## Always allow is offered, or explained, never silently missing
  *
@@ -179,20 +187,59 @@ export interface ApprovalCardProps {
  * surfaces that have no card.
  */
 export function ApprovalCard(props: ApprovalCardProps) {
-  return props.approval.capabilityId === 'harness.project_hooks' ? (
-    <HookApprovalCard {...props} />
+  const context = useConfig().data?.approvalAnswerContext;
+  // Stream and transcript cards are neutral. Server config classifies this
+  // browser without another list read replacing the arriving request.
+  const approval =
+    props.approval.answerNeedsStepUp === undefined && context
+      ? {
+          ...props.approval,
+          answerNeedsStepUp: context.answerNeedsStepUp,
+          answeringFrom: context.answeringFrom,
+        }
+      : props.approval;
+  return approval.capabilityId === 'harness.project_hooks' ? (
+    <HookApprovalCard {...props} approval={approval} />
   ) : (
-    <CapabilityApprovalCard {...props} />
+    <CapabilityApprovalCard {...props} approval={approval} />
   );
 }
 
-function CapabilityApprovalCard({ approval, onDecided }: ApprovalCardProps) {
+/** The permission-change capability; allowing one lasts, so the desk confirms it too. */
+const CHANGE_PERMISSION_CAPABILITY = 'permissions.change';
+
+/** The settings-change capability; its sentence leads with the riskiest setting. */
+const CONFIG_PATCH_CAPABILITY_ID = 'operator.config_patch';
+
+/**
+ * Whether the card must wait for the server before drawing its receipt.
+ *
+ * `answerNeedsStepUp` describes the card, not each answer: at this computer it
+ * is false for an ordinary card, yet once an owner exists the server still holds
+ * Always allow, and any allow on a permission change, for a password. A receipt
+ * drawn at the click would sit behind that sheet and claim a change that may
+ * never happen. Waiting costs the owner-less desk one round trip: its 200 comes
+ * straight back and the receipt is drawn then.
+ */
+function waitsForServer(approval: PendingApproval, kind: ApprovalDecision): boolean {
+  if (kind === 'denied') return false;
+  return (
+    approval.answerNeedsStepUp !== false ||
+    kind === 'granted-always' ||
+    approval.capabilityId === CHANGE_PERMISSION_CAPABILITY
+  );
+}
+
+function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardProps) {
   const now = useNow(30_000);
   const grant = useGrantApproval();
   const deny = useDenyApproval();
   const dismissSuggestion = useDismissSuggestion();
   const suggestionDismissed = useSuggestionDismissed(approval.approvalId);
   const deciding = grant.isPending || deny.isPending;
+  // A desk answer the server may hold for a password: the sheet asks the person
+  // to check this card's code, so the card shows it while that answer is out.
+  const awaitingSheet = grant.isPending && grant.variables?.receipt !== undefined;
   const reducedMotion = useReducedMotion();
   // **The answer is read, never stored.** There is no local decision state here
   // on purpose: an answer belongs to the request, not to one mounted card, and
@@ -208,30 +255,33 @@ function CapabilityApprovalCard({ approval, onDecided }: ApprovalCardProps) {
    * says what went wrong, and the buttons have to be answerable again for that
    * sentence to be actionable.
    */
-  const answer = (kind: ApprovalDecision, send: (onError: () => void) => void) => {
-    onDecided?.(approval.approvalId);
-    // Recorded BEFORE the mutation settles, which is what makes the receipt
-    // optimistic AND what wins the race: the refetch drops this request from
-    // the pending list and unmounts the list around its own receipt, so waiting
-    // for the mutation would be waiting for the very thing that ends the card
-    // (see `settling-approvals`).
-    holdDecidedApproval(approval, kind);
-    send(() => {
-      // The answer did not land. Taking it back here is what puts the buttons
-      // back — on this card and on every other copy of it.
-      releaseDecidedApproval(approval.approvalId);
+  const answer = (kind: ApprovalDecision, send: (callbacks: { onError: () => void }) => void) => {
+    const deferred = waitsForServer(approval, kind);
+    const openedFrom =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (!deferred) {
+      onDecided?.(approval.approvalId);
+      holdDecidedApproval(approval, kind);
+    }
+    send({
+      onError: () => {
+        releaseDecidedApproval(approval.approvalId);
+        if (deferred) requestAnimationFrame(() => openedFrom?.isConnected && openedFrom.focus());
+      },
     });
   };
 
   const agentLabel = approval.requestedBy ? agentLabelFrom(approval.requestedBy) : 'this agent';
-  const heading = approval.cannotAllow
-    ? `${approval.packageLabel ?? 'This package'} wants to run commands`
-    : (approval.serviceAction?.actionName ?? approval.capabilityTitle);
-  // A heading that is the action, or the question a consequence badge answers,
-  // wraps instead of truncating (see the heading row below).
-  const wrapsHeading = Boolean(
-    approval.cannotAllow || approval.serviceAction || approval.consequence
-  );
+  // A paid run (DOR-4204 spec §4): money on the card, Allow once only.
+  const spend = approval.serviceAction?.spend;
+  const spendLineId = useId();
+  // A send that hides a recipient is decline-only too (DOR-4592); it keeps its action's name.
+  const heading =
+    approval.cannotAllow && !approval.serviceAction
+      ? `${approval.packageLabel ?? 'This package'} wants to run commands`
+      : spend
+        ? 'Run a paid action'
+        : (approval.serviceAction?.actionName ?? approval.capabilityTitle);
   const areaLabel = approval.area ? (getPermissionArea(approval.area)?.label ?? null) : null;
   // A floor area never offers Always allow, and says why; every other reason it
   // is absent needs no sentence (see the component docblock).
@@ -239,7 +289,7 @@ function CapabilityApprovalCard({ approval, onDecided }: ApprovalCardProps) {
   // From Wi-Fi an answer is Allow once or Deny (DOR-2969): Always allow is
   // neither offered nor suggested, and one line says where it lives.
   const onWifi = useOnWifi();
-  const offersAlways = approval.alwaysOffered && !onWifi && !approval.cannotAllow;
+  const offersAlways = approval.alwaysOffered && !onWifi && !approval.cannotAllow && !spend;
   const suggest =
     offersAlways && approval.suggestAlways === true && !suggestionDismissed && !decision;
 
@@ -279,18 +329,13 @@ function CapabilityApprovalCard({ approval, onDecided }: ApprovalCardProps) {
         )}
       >
         <div className="min-w-0 flex-1">
-          {/* A connected-app action's heading IS the action ("Delete message"),
-              and a card that names its consequence asks a whole question
-              ("Allow a changed skill in "wt"?"). Either way, on a narrow card the
-              heading wraps and the badge moves under it, rather than cutting the
-              question short. */}
-          <div
-            className={cn('flex min-w-0 items-center gap-2', wrapsHeading && 'flex-wrap gap-y-0.5')}
-          >
+          {/* The heading names what a yes grants, so it is never cut short: on a
+              narrow card it wraps and the badge moves under it (design review on
+              DOR-4355 M4, after "Let someo…" at 390). */}
+          <div className="flex min-w-0 flex-wrap items-center gap-2 gap-y-0.5">
             <span
               className={cn(
-                'text-foreground text-sm font-medium',
-                wrapsHeading ? 'min-w-0 break-words' : 'truncate',
+                'text-foreground min-w-0 text-sm font-medium break-words',
                 approval.cannotAllow && 'break-all'
               )}
             >
@@ -300,7 +345,9 @@ function CapabilityApprovalCard({ approval, onDecided }: ApprovalCardProps) {
                 sentence naming the app (`ApprovalServiceAction`), so the badge
                 would only repeat it. Approving another agent's read request gives Read and
                 nothing more, so "Changes things" would only alarm (DOR-3959). */}
+            {spend && <PaidActionMarker className="shrink-0" />}
             {!approval.cannotAllow &&
+              !spend &&
               !(approval.serviceAction && approval.tier === 'destructive') &&
               approval.subject?.kind !== 'agent_request' && (
                 <Badge
@@ -315,6 +362,14 @@ function CapabilityApprovalCard({ approval, onDecided }: ApprovalCardProps) {
                 </Badge>
               )}
           </div>
+          {/* A send that hides a recipient can only be declined, and still shows
+              who it was going to and why it can't be allowed (DOR-4592). */}
+          {approval.cannotAllow && approval.serviceAction && (
+            <ApprovalServiceAction
+              action={approval.serviceAction}
+              destructive={approval.tier === 'destructive'}
+            />
+          )}
           {!approval.cannotAllow && (
             <>
               {/* An extension's tool says which extension it is from (DOR-2685),
@@ -350,12 +405,18 @@ function CapabilityApprovalCard({ approval, onDecided }: ApprovalCardProps) {
                 </p>
               )}
               {approval.subject && <ApprovalSubject subject={approval.subject} />}
+              {spend && approval.serviceAction && (
+                <p className="text-foreground mt-0.5 text-xs break-words">
+                  {approval.serviceAction.actionName}
+                </p>
+              )}
               {approval.serviceAction && (
                 <ApprovalServiceAction
                   action={approval.serviceAction}
                   destructive={approval.tier === 'destructive'}
                 />
               )}
+              {spend && <ApprovalSpendLine spend={spend} id={spendLineId} />}
               {/* Never clamped for an action that cannot be undone: truncating the
             consequence is how a padded argument used to push the real one out of
             view. The server caps each value and the whole sentence, so showing it
@@ -369,15 +430,28 @@ function CapabilityApprovalCard({ approval, onDecided }: ApprovalCardProps) {
             card says nothing rather than repeating itself. Without a subject this
             is the whole summary, unchanged. A connected-app action draws none of
             it: its own block above already says everything the sentence would. */}
-              {!approval.serviceAction &&
-                (approval.subject ? approval.otherArguments : approval.summary) !== undefined && (
+              {(!approval.serviceAction || approval.answerNeedsStepUp) &&
+                (approval.answerNeedsStepUp
+                  ? approval.summary
+                  : approval.subject
+                    ? approval.otherArguments
+                    : approval.summary) !== undefined && (
                   <p
                     className={cn(
                       'text-muted-foreground mt-0.5 text-xs break-words',
-                      approval.tier !== 'destructive' && 'line-clamp-2'
+                      approval.tier !== 'destructive' &&
+                        !approval.answerNeedsStepUp &&
+                        // A settings change names its riskiest setting in the
+                        // sentence; a clamp would cut it at phone widths (DOR-4778).
+                        approval.capabilityId !== CONFIG_PATCH_CAPABILITY_ID &&
+                        'line-clamp-2'
                     )}
                   >
-                    {approval.subject ? approval.otherArguments : approval.summary}
+                    {approval.answerNeedsStepUp
+                      ? approval.summary
+                      : approval.subject
+                        ? approval.otherArguments
+                        : approval.summary}
                   </p>
                 )}
               {/* The one argument that IS the decision, shown whole (DOR-1698).
@@ -405,13 +479,24 @@ function CapabilityApprovalCard({ approval, onDecided }: ApprovalCardProps) {
                     data-slot="approval-detail"
                     className="border-border/60 bg-muted/40 text-muted-foreground mt-1.5 max-h-[50dvh] overflow-auto rounded-md border p-2 font-mono text-xs break-words whitespace-pre-wrap md:max-h-56"
                   >
-                    {approval.detail}
+                    {approval.capabilityId === CONFIG_PATCH_CAPABILITY_ID ? (
+                      <SettingsLines detail={approval.detail} />
+                    ) : (
+                      breakAtDots(approval.detail)
+                    )}
                   </pre>
                 )
               )}
+              {/* Outside the box, which holds only what changes: a name an agent
+              can set, quoted and cut short by the server (DOR-4355 M4). */}
+              {approval.detailNote !== undefined && (
+                <p className="text-muted-foreground mt-1 text-xs break-words">
+                  {approval.detailNote}
+                </p>
+              )}
             </>
           )}
-          <div className="mt-1.5 flex min-w-0 items-center gap-2">
+          <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-2">
             <RequestingAgent
               requestedBy={approval.requestedBy}
               hasAgentPath={approval.hasAgentPath}
@@ -420,6 +505,12 @@ function CapabilityApprovalCard({ approval, onDecided }: ApprovalCardProps) {
             <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
               {approvalTimeLeft(approval.expiresAt, now)}
             </span>
+            {inChat && !decision && (
+              <span className="text-muted-foreground text-xs">Waiting for your yes</span>
+            )}
+            {(approval.answerNeedsStepUp || awaitingSheet) && approval.requestCode && (
+              <RequestCode code={approval.requestCode} />
+            )}
           </div>
         </div>
 
@@ -430,14 +521,17 @@ function CapabilityApprovalCard({ approval, onDecided }: ApprovalCardProps) {
           {decision ? (
             <AskCard.Receipt
               data-slot="approval-resolved"
-              tone={decision === 'denied' ? 'denied' : 'allowed'}
+              tone={decision === 'denied' || decision === 'spend-refused' ? 'denied' : 'allowed'}
               className="shrink-0"
             >
-              {receiptFor(decision, agentLabel, approvalHeading(approval))}
+              {spend && decision !== 'granted-always'
+                ? spendReceipt(decision, spend)
+                : receiptFor(decision, agentLabel, approvalHeading(approval))}
             </AskCard.Receipt>
           ) : (
             <>
-              {approval.cannotAllow && (
+              {/* A send says which recipient it can't show, beside its list (DOR-4592). */}
+              {approval.cannotAllow && !approval.serviceAction && (
                 <p className="text-muted-foreground max-w-xs text-xs">
                   {"This request can't be shown in full, so it can't be allowed yet."}
                 </p>
@@ -459,21 +553,38 @@ function CapabilityApprovalCard({ approval, onDecided }: ApprovalCardProps) {
                   </button>
                 </p>
               )}
+              <ApprovalStepUpNote approval={approval} />
               <AskCard.Actions className="w-full flex-col items-stretch gap-2 md:w-auto md:flex-row md:items-center">
-                {!approval.cannotAllow && (
+                {/* Wi-Fi may only deny: the detail above stays, so the person sees what they refuse. */}
+                {!approval.cannotAllow && !onWifi && (
                   <Button
                     size="sm"
-                    variant={onWifi ? 'outline' : 'default'}
                     data-slot="approval-allow"
                     className={ANSWER_BUTTON}
                     disabled={deciding}
+                    aria-busy={deciding || undefined}
+                    aria-describedby={spend ? spendLineId : undefined}
                     onClick={() =>
-                      answer('granted', (onError) =>
-                        grant.mutate({ approvalId: approval.approvalId }, { onError })
+                      answer('granted', (callbacks) =>
+                        grant.mutate(
+                          {
+                            approvalId: approval.approvalId,
+                            ...(waitsForServer(approval, 'granted')
+                              ? { receipt: approval, onDecided }
+                              : {}),
+                          },
+                          {
+                            onError: (error) =>
+                              // The limit stopped it at the tap: the card is answered, nothing spent.
+                              (error as { code?: unknown } | null)?.code === SPEND_LIMIT_CODE
+                                ? holdDecidedApproval(approval, 'spend-refused')
+                                : callbacks.onError(),
+                          }
+                        )
                       )
                     }
                   >
-                    {onWifi ? 'Allow once' : 'Allow'}
+                    {spend ? 'Allow once' : 'Allow'}
                   </Button>
                 )}
                 {offersAlways && (
@@ -487,11 +598,18 @@ function CapabilityApprovalCard({ approval, onDecided }: ApprovalCardProps) {
                       suggest && 'border-primary/60 bg-primary/5 text-foreground'
                     )}
                     disabled={deciding}
+                    aria-busy={deciding || undefined}
                     onClick={() =>
-                      answer('granted-always', (onError) =>
+                      answer('granted-always', (callbacks) =>
                         grant.mutate(
-                          { approvalId: approval.approvalId, answer: 'always' },
-                          { onError }
+                          {
+                            approvalId: approval.approvalId,
+                            answer: 'always',
+                            ...(waitsForServer(approval, 'granted-always')
+                              ? { receipt: approval, onDecided }
+                              : {}),
+                          },
+                          callbacks
                         )
                       )
                     }
@@ -505,20 +623,25 @@ function CapabilityApprovalCard({ approval, onDecided }: ApprovalCardProps) {
                   data-slot="approval-deny"
                   className={ANSWER_BUTTON}
                   disabled={deciding}
+                  aria-busy={deciding || undefined}
                   onClick={() =>
-                    answer('denied', (onError) =>
-                      deny.mutate({ approvalId: approval.approvalId }, { onError })
+                    answer('denied', (callbacks) =>
+                      deny.mutate({ approvalId: approval.approvalId }, callbacks)
                     )
                   }
                 >
-                  {approval.cannotAllow ? 'Decline' : onWifi ? 'Deny' : 'Don’t allow'}
+                  {approval.cannotAllow && !approval.serviceAction
+                    ? 'Decline'
+                    : onWifi
+                      ? 'Deny'
+                      : 'Don’t allow'}
                 </Button>
               </AskCard.Actions>
             </>
           )}
           {/* Why Always allow is missing, said once, and only where a setting
               could never change it. */}
-          {onWifi && !decision && (
+          {onWifi && approval.answerNeedsStepUp !== true && !decision && (
             <p
               data-slot="approval-wifi-line"
               className="text-muted-foreground text-2xs flex items-center gap-1"
@@ -538,4 +661,42 @@ function CapabilityApprovalCard({ approval, onDecided }: ApprovalCardProps) {
       </div>
     </motion.div>
   );
+}
+
+/**
+ * A detail with a chance to wrap after every dot, so a long setting name on a
+ * phone breaks between its parts (`runtimes.claudeCode.` then `projectAccounts`)
+ * rather than mid-word (DOR-4775). Adds no characters, so a copy is the text.
+ */
+function breakAtDots(text: string): ReactNode {
+  return text.split(/(?<=\.)/).flatMap((part, i) => (i === 0 ? [part] : [<wbr key={i} />, part]));
+}
+
+/** What the server ends a line a person must decide with (`config-patch-card.ts`). */
+const NEEDS_YOU_MARK = ' (needs you)';
+
+/**
+ * A settings card's detail, one setting per block with a hanging indent, so a
+ * long one that wraps on a phone sits under its own name and the next one
+ * plainly starts fresh. The "(needs you)" mark never splits across lines.
+ * Each block keeps its newline, so a copy is still the text (DOR-4775).
+ */
+function SettingsLines({ detail }: { detail: string }) {
+  const lines = detail.split('\n');
+  return lines.map((line, i) => {
+    const marked = line.endsWith(NEEDS_YOU_MARK);
+    const text = marked ? line.slice(0, -NEEDS_YOU_MARK.length) : line;
+    return (
+      <span key={i} className="block pl-4 -indent-4">
+        {breakAtDots(text)}
+        {marked && (
+          <>
+            {' '}
+            <span className="whitespace-nowrap">{NEEDS_YOU_MARK.trim()}</span>
+          </>
+        )}
+        {i < lines.length - 1 && '\n'}
+      </span>
+    );
+  });
 }

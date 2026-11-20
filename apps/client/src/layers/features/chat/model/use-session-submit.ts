@@ -225,6 +225,20 @@ export function useSessionSubmit({
     onSessionIdChangeReplaceRef.current = onSessionIdChangeReplace;
   });
 
+  // The chat this panel shows NOW. A send's late steps read it after the POST
+  // resolves: by then a tab switch may have put another chat here (DOR-4622).
+  const shownSessionIdRef = useRef(sessionId);
+  useEffect(() => {
+    shownSessionIdRef.current = sessionId;
+  });
+  // Left the page entirely: no chat is on screen here any more.
+  useEffect(
+    () => () => {
+      shownSessionIdRef.current = null;
+    },
+    []
+  );
+
   // ---------------------------------------------------------------------------
   // Submission
   // ---------------------------------------------------------------------------
@@ -531,7 +545,12 @@ export function useSessionSubmit({
           // (DOR-2016 review, finding 2). The server has already moved the whole
           // scope across, so the write is still the right one to send.
           useAppStore.getState().carryCanvasWritesAcross(targetSessionId, canonicalId);
-          streamManager.attachSession(canonicalId, cwd);
+          // Only while this chat is still on screen: the foreground stream is
+          // one slot, and taking it after a tab switch would cut the chat now
+          // shown off its live updates. Coming back re-attaches it.
+          if (shownSessionIdRef.current === targetSessionId) {
+            streamManager.attachSession(canonicalId, cwd);
+          }
           // The interaction the send above recorded is bucketed under the
           // throwaway id too, and Today walks the session LIST — so left behind
           // it names a session no list will ever contain, and the conversation
@@ -557,7 +576,10 @@ export function useSessionSubmit({
           );
         }
         // Commit the draft URL even when the runtime retained the optimistic ID.
-        onSessionIdChangeReplaceRef.current?.(canonicalId);
+        // Named by the chat it renames: this runs once the POST resolves, and by
+        // then the person may have switched tab or opened another chat, whose
+        // address must not be rewritten into this one (DOR-4622).
+        onSessionIdChangeReplaceRef.current?.(canonicalId, targetSessionId);
 
         // Watchdog: a 202 whose turn never materializes (server dropped it)
         // must not wedge the composer in queue mode — release the latch if no

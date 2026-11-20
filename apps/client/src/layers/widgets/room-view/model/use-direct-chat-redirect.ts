@@ -39,8 +39,12 @@ export function useDirectChatRedirect(roomId: string | undefined): TeamRoomRedir
   useEffect(() => {
     if (!isDirect || roomId === undefined || failed || startedFor.current === roomId) return;
     startedFor.current = roomId;
-    void open({ roomId }, { replace: true, quiet: true }).then((ok) => {
-      if (!ok) setFailedFor(roomId);
+    // A redirect, not a click: it never cancels one the person makes while it
+    // waits. Overtaken is not failure — the person left before the answer —
+    // so the room is not marked, and the next visit asks again (DOR-4622).
+    void open({ roomId }, { replace: true, quiet: true, redirect: true }).then((outcome) => {
+      if (outcome === 'failed') setFailedFor(roomId);
+      if (outcome === 'overtaken' && startedFor.current === roomId) startedFor.current = undefined;
     });
   }, [isDirect, roomId, failed, open]);
 

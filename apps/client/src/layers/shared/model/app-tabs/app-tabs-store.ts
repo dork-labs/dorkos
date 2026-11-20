@@ -516,6 +516,39 @@ export function moveTabIn(layout: AppTabsLayout, from: number, to: number): AppT
   return { ...layout, tabs };
 }
 
+/**
+ * `href` with its `session` param swapped from `from` to `to`, or `href` itself
+ * when it names another chat. A token swap rather than a parse and re-serialize:
+ * re-encoding every other param could change the href's spelling, and a tab
+ * whose href no longer matches the router's would push a stray history entry
+ * the next time it is selected.
+ */
+function withSessionRenamed(href: string, from: string, to: string): string {
+  const query = href.indexOf('?');
+  if (query === -1) return href;
+  const hashAt = href.indexOf('#', query);
+  const end = hashAt === -1 ? href.length : hashAt;
+  const pairs = href.slice(query + 1, end).split('&');
+  const key = `session=${encodeURIComponent(from)}`;
+  if (!pairs.includes(key)) return href;
+  const renamed = pairs.map((pair) => (pair === key ? `session=${encodeURIComponent(to)}` : pair));
+  return `${href.slice(0, query + 1)}${renamed.join('&')}${href.slice(end)}`;
+}
+
+/** {@link AppTabsState.renameSessionInTabs}, as a pure function. */
+function renameSessionInTabsIn(layout: AppTabsLayout, from: string, to: string): AppTabsLayout {
+  if (from === to) return layout;
+  let changed = false;
+  const tabs = layout.tabs.map((tab) => {
+    const history = tab.history.map((href) => withSessionRenamed(href, from, to));
+    if (history.every((href, index) => href === tab.history[index])) return tab;
+    changed = true;
+    // `href` is always the entry at the cursor, so it is renamed with it.
+    return collapseDuplicates({ ...tab, href: history[tab.cursor], history });
+  });
+  return changed ? { ...layout, tabs } : layout;
+}
+
 /** Tab list state and the transitions that can change it. */
 interface AppTabsState extends PersistedTabs {
   /**
@@ -626,6 +659,19 @@ interface AppTabsState extends PersistedTabs {
    * @param ids - Ids of the tabs to drop.
    */
   dropTabs: (ids: ReadonlySet<string>) => void;
+  /**
+   * Point every tab that holds chat `from` — its current page or an older one
+   * in its history — at `to` instead. For a chat whose id changed while its tab
+   * was in the background (a first send's draft id becoming the server's id):
+   * the rename could not land on the URL, which shows another tab, so the tab
+   * itself is told, and it still opens the right chat after a restart
+   * (DOR-4622). Other params are kept as written. Changes nothing when no tab
+   * names `from`.
+   *
+   * @param from - The chat id being retired.
+   * @param to - The id that replaces it.
+   */
+  renameSessionInTabs: (from: string, to: string) => void;
 }
 
 /**
@@ -688,6 +734,8 @@ export const useAppTabsStore = create<AppTabsState>((set) => ({
   reopenTab: (tab, index) => set((state) => reopenTabIn(state, tab, index)),
 
   dropTabs: (ids) => set((state) => dropTabsIn(state, ids)),
+
+  renameSessionInTabs: (from, to) => set((state) => renameSessionInTabsIn(state, from, to)),
 }));
 
 // Write-through persistence. Subscribing here (rather than inside each action)

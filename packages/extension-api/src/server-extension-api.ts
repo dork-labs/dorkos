@@ -41,6 +41,8 @@ export {
   ExtensionConnectionError,
 } from './extension-connections.js';
 import type { ExtensionConnectionsApi } from './extension-connections.js';
+export type { PersonRecordApi, PersonRecordReceipt } from './person-record.js';
+import type { PersonRecordApi } from './person-record.js';
 
 /**
  * One account's usage as an extension sees it: identity, resolved color, the
@@ -149,7 +151,8 @@ export interface SessionInfo {
   /**
    * The tracker item it serves, when one is known.
    *
-   * @deprecated The newest `this-chat` item of `trackerItems`; removed per spec `flow-multiproject` §6.8's condition.
+   * @deprecated since 0.135, remove in 0.200; remove earlier once spec `flow-multiproject` §6.8's condition holds.
+   * The newest `this-chat` item of `trackerItems`.
    */
   trackerItem?: { id: string };
   /** Every tracker item it works on, newest first; `own-chat` items run in chats it started. */
@@ -175,7 +178,8 @@ export interface LimitedSessionInfo {
   /**
    * The tracker item it serves, when one is known.
    *
-   * @deprecated The newest `this-chat` item of `trackerItems`; removed per spec `flow-multiproject` §6.8's condition.
+   * @deprecated since 0.135, remove in 0.200; remove earlier once spec `flow-multiproject` §6.8's condition holds.
+   * The newest `this-chat` item of `trackerItems`.
    */
   trackerItem?: { id: string };
   /** Every tracker item it works on, newest first; `own-chat` items run in chats it started. */
@@ -361,6 +365,12 @@ export interface DataProviderContext {
    * Probe with `ctx.connections !== undefined`.
    */
   readonly connections?: ExtensionConnectionsApi;
+  /**
+   * DorkOS's own record of what this extension did for a signed-in person, to
+   * check a "a person did this" claim against instead of the data file
+   * (DOR-4301). Probe with `ctx.personRecord !== undefined`.
+   */
+  readonly personRecord?: PersonRecordApi;
 }
 
 /** `ctx.sessions`: starting work in a new chat without a person (spec §7.7). */

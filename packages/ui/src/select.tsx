@@ -55,7 +55,7 @@ export interface SelectTriggerProps extends React.ComponentProps<typeof SelectPr
    */
   density?: 'default' | 'compact';
   /**
-   * @deprecated Use `density="compact"`. `false` holds 36px on a phone, under the
+   * @deprecated since 0.135, remove in 0.155. Use `density="compact"`. `false` holds 36px on a phone, under the
    * touch floor; it goes once its last callers have moved.
    */
   responsive?: boolean;

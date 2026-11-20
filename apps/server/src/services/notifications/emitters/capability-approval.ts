@@ -88,6 +88,8 @@ export function capabilityApprovalPayload(
     // Read off the card's own expiry, so the boot pass that rebuilds every
     // pending approval's payload finds it too (DOR-3427).
     ...(isPassiveApproval(approval) ? { passive: true } : {}),
+    // A paid run's card is answered only in DorkOS (DOR-4204 spec 1.1).
+    ...(approval.serviceAction?.keptCardBecause === 'spend' ? { spend: true } : {}),
   };
 }
 

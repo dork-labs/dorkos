@@ -39,6 +39,7 @@ import type { AgentSession } from '../agent-types.js';
 import { fireLaunchProbes } from '../messaging/launch-probes.js';
 import { noteLaunchedAppend } from '../messaging/turn-context/turn-context-record.js';
 import { launchQuery } from '../sdk/launch-query.js';
+import { startHeavyJobsProcess } from '../tool-gate/load-gate-hook.js';
 import type { MessageSenderOpts, ResolvedLaunch } from '../messaging/message-sender-shared.js';
 import { captureLaunchFingerprint } from './launch-fingerprint.js';
 import type { DispatchDecision, LaunchFingerprint } from './launch-fingerprint.js';
@@ -57,6 +58,10 @@ import type {
 } from './session-pump-contract.js';
 import { createTrackedSpawn } from './tracked-spawn.js';
 import { sharedWarmProcessLedger } from './warm-process-ledger.js';
+import { validatedRecoveryRoute } from '../messaging/launch/required-launch.js';
+import { isCreditsClaudeRoot } from '../credits-root.js';
+
+type RecoveryRoute = ReturnType<typeof validatedRecoveryRoute>;
 
 /** What one dispatch resolved: the turn's message, and the launch behind it. */
 export interface PumpLaunchPlan {
@@ -98,7 +103,7 @@ export function pumpLaunchPlanOf(resolved: ResolvedLaunch, effectiveCwd: string)
 /** What a launcher tells its pump's owner. */
 export interface PumpLaunchCallbacks {
   /** A process started, and what it was launched with. */
-  onLaunched: (live: Query, fingerprint: LaunchFingerprint) => void;
+  onLaunched: (live: Query, fingerprint: LaunchFingerprint, route?: RecoveryRoute) => void;
   /** That process did not answer for its external MCP servers in time. */
   onServersNotHeld: (live: Query) => void;
 }
@@ -107,6 +112,8 @@ export interface PumpLaunchCallbacks {
 interface LiveProcessSlot {
   live: Query | undefined;
   fingerprint: LaunchFingerprint | undefined;
+  recoveryRoute?: RecoveryRoute;
+  recoveryBilling?: { sessionId: string; root: string; perToken: boolean };
 }
 
 /**
@@ -117,9 +124,11 @@ interface LiveProcessSlot {
  */
 export function pumpLaunchCallbacks(slot: LiveProcessSlot): PumpLaunchCallbacks {
   return {
-    onLaunched: (live, fingerprint) => {
+    onLaunched: (live, fingerprint, route) => {
       slot.live = live;
       slot.fingerprint = fingerprint;
+      slot.recoveryRoute = route;
+      slot.recoveryBilling = undefined;
     },
     onServersNotHeld: (live) => {
       if (slot.live !== live || slot.fingerprint === undefined) return;
@@ -155,16 +164,29 @@ export function createPumpLauncher(
 ): PumpLauncher {
   return ({ sessionId, prompt }): PumpQuery => {
     const plan = currentPlan();
+    const root = plan.fingerprint.account.root;
+    const route = validatedRecoveryRoute(
+      root,
+      isCreditsClaudeRoot(root),
+      plan.sdkOptions.env ?? {},
+      { cwd: plan.effectiveCwd, settings: plan.sdkOptions.settings }
+    );
     // The one option this path adds to the resolved plan, and the reason it is
     // added HERE rather than in the shared resolver: only a persistent process
     // can be orphaned by a server that dies without running its shutdown, so
     // only a persistent process is written into the ledger the next boot sweeps
-    // (DOR-1310). The resume-per-message path keeps the SDK's own spawn.
+    // (DOR-1310). The resume-per-message path keeps the SDK's own spawn. The
+    // same seam sees this process start and end, however it ends, and gives
+    // back the heavy-job slots it held, and only its own: a recovery boot reuses
+    // this plan, and the old process's exit can land after the new one started
+    // (DOR-4209). A dead process runs no hook, so nothing else would.
     const live = launchQuery({
       prompt,
       options: {
         ...plan.sdkOptions,
-        spawnClaudeCodeProcess: createTrackedSpawn(sharedWarmProcessLedger()),
+        spawnClaudeCodeProcess: createTrackedSpawn(sharedWarmProcessLedger(), () =>
+          startHeavyJobsProcess(plan.sdkOptions)
+        ),
       },
       session,
       // What this subprocess supports, asked once per PROCESS, once its servers
@@ -182,7 +204,7 @@ export function createPumpLauncher(
     // process destroys a healthy subprocess and marks the session crashed. A
     // process is not a turn, so the field is armed and disarmed by the pump's
     // own `running` edge instead (`persistent-dispatch.ts`).
-    callbacks.onLaunched(live, plan.fingerprint);
+    callbacks.onLaunched(live, plan.fingerprint, route);
     // The append this process now holds, for every turn's context record.
     noteLaunchedAppend(session, plan.sdkOptions);
     logger.debug('[pump-launch] booted a persistent process', {

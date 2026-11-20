@@ -364,6 +364,36 @@ describe('NeedsYou', () => {
     expect(assign).toHaveBeenCalledWith(
       '/api/connectors/mini-app-access/page?extension=flow-owner&service=gmail'
     );
+    expect(within(row).queryByText('Spends money')).not.toBeInTheDocument();
     vi.unstubAllGlobals();
   });
+
+  it.each(['apify', 'Perplexity AI'])(
+    'a mini app asking to read a paid app (%s) says it spends money',
+    async (service) => {
+      const transport = createMockTransport({
+        getConnectorAgentRequests: vi.fn().mockResolvedValue([]),
+        getConnectorManagementReviews: vi.fn().mockResolvedValue([]),
+        getMiniAppAccess: vi.fn().mockResolvedValue({
+          waiting: [
+            {
+              extensionId: 'price-watch',
+              extensionName: 'Price Watch',
+              service,
+              operations: ['ANY_READ'],
+              reason: 'new',
+            },
+          ],
+          allowed: [],
+        }),
+      });
+      renderStrip(transport);
+
+      const row = await screen.findByRole('button', { name: /Price Watch wants to read/ });
+      expect(within(row).getByText('Spends money')).toBeInTheDocument();
+      expect(
+        within(row).getByText('It could only read. Its reads spend money.')
+      ).toBeInTheDocument();
+    }
+  );
 });

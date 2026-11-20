@@ -1,3 +1,4 @@
+import { isolatedRequiredLaunchOwner } from './required-launch-fixture.js';
 /**
  * Auto-mode guard at the SDK-options seam.
  *
@@ -14,6 +15,8 @@ import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
 import type { AgentSession } from '../../agent-types.js';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { query, type Options, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+
+const requiredLaunches = isolatedRequiredLaunchOwner();
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
@@ -95,6 +98,7 @@ async function runTurn(
   const events: StreamEvent[] = [];
   const messageOpts: MessageSenderOpts = {
     cwd: '/mock/project',
+    requiredLaunches,
     onSdkSessionRebind: async () => {},
     ...opts,
   };

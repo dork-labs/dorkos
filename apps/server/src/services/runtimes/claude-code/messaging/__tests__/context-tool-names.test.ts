@@ -527,7 +527,11 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     // deferred, no prompt block names them.
     // 149 -> 152 for `work_claim`, `work_claim_check` and `work_claim_release` (DOR-4019):
     // no prompt block names them, so they stay deferred.
-    expect(advertised.size).toBe(152);
+    // 152 -> 153 for `update_agent_config` (DOR-4266): no prompt block names it,
+    // so it stays deferred.
+    // 153 -> 154 for `withdraw_approval_request` (DOR-4586): no prompt block names it,
+    // so it stays deferred.
+    expect(advertised.size).toBe(154);
     for (const name of [
       'configure_doc_channel',
       'approve_doc_route',
@@ -636,7 +640,8 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
     //
     // 74 -> 79 for the doc channel (DOR-3159): `<room_tools>` names each of the five
     // doc-channel tools once, prefixed. All five stay deferred: one ToolSearch hop.
-    expect(prefixed.length).toBe(79);
+    // 79 -> 80: room hand-off status is named before sending the draft again (DOR-4328).
+    expect(prefixed.length).toBe(80);
   });
 
   it('names only advertised tools in the agent-session variant of the prompt too', async () => {
@@ -1061,7 +1066,7 @@ describe('the claude-code prompt names tools the way the runtime exposes them', 
       'working-with-spin-off-chats',
     ]);
 
-    // `building-dorkos-apps` is App Builder Pack 1.1.2 vendored byte for byte
+    // `building-dorkos-apps` is App Builder Pack 1.1.4 vendored byte for byte
     // (DOR-4061): Security reviewed that exact text, so DorkOS may not add the
     // note to it. The note belongs in the next pack version, upstream. Only the
     // note is waived; the prefix rule below still holds for it.

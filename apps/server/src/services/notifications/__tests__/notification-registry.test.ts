@@ -18,6 +18,12 @@ import { parseExtensionApprovalSubjectId } from '@dorkos/shared/extension-approv
  * file at compile time rather than silently going untested.
  */
 const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
+  'step-up.remote-refused': {
+    heldActionId: 'held-1',
+    deviceId: 'phone-1',
+    deviceLabel: 'Safari on iPhone',
+    requestCode: 'K7MR-4XQ9-HT3W',
+  },
   'ask.pending': {
     sessionId: 'sess-1',
     interactionId: 'int-1',
@@ -182,6 +188,19 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     month: '2026-10',
   },
   'community.teammate-limits-reset': {},
+  'spending.near-limit': {
+    month: '2026-11',
+    limitMicro: '40000000',
+    leftMicro: '7900000',
+    resetsAt: '2026-12-01T00:00:00.000Z',
+  },
+  'spending.limit-reached': {
+    month: '2026-11',
+    limitMicro: '40000000',
+    leftMicro: '0',
+    resetsAt: '2026-12-01T00:00:00.000Z',
+  },
+  'spending.meter-reset': { month: '2026-11' },
   'heartbeat.credits-offer': {},
   'connector.destructive_pending': {
     holdId: 'hold-1',
@@ -218,6 +237,7 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     total: 1,
     fingerprint: 'fp-1',
   },
+  'agent.folder_rules_too_long': { agentId: 'agent-1', agentName: 'Scout', hash: 'h-1' },
   'browser.handoff': {
     handoffId: 'h-1',
     sessionId: 'sess-1',
@@ -238,6 +258,7 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
 
 /** The tier every kind is declared at, from the spec's own table. */
 const EXPECTED_TIERS: Record<NotificationKind, string> = {
+  'step-up.remote-refused': 'notable',
   'ask.pending': 'blocking',
   'schedule.parked': 'blocking',
   // Live already and nothing waits on the person: told, with Pause, never paged
@@ -274,6 +295,10 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
   // Teammates' posts wake nobody until next month or a higher limit; nothing is broken (DOR-2956).
   'community.teammate-limit': 'notable',
   'community.teammate-limits-reset': 'notable',
+  // Money: the person should see it, but nothing is broken (DOR-4204 PR 2).
+  'spending.near-limit': 'notable',
+  'spending.limit-reached': 'notable',
+  'spending.meter-reset': 'notable',
   // An offer, raised once per computer: never an alarm (spec heartbeats §6.3).
   'heartbeat.credits-offer': 'quiet',
   // Everyone sees it before it runs, but nothing waits on a person: never
@@ -290,6 +315,7 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
   'mcp-server.reserved_name': 'notable',
   'web.new_device': 'notable',
   'agent.secret_files': 'notable',
+  'agent.folder_rules_too_long': 'notable',
   // A notice with a way to act, never a hold: nothing waits on it (DOR-3245).
   'account.signin_review': 'notable',
   'browser.handoff': 'notable',
@@ -372,6 +398,7 @@ describe('notification registry', () => {
       'account.limited',
       'account.reset',
       'account.signin_review',
+      'agent.folder_rules_too_long',
       'agent.note',
       'agent.secret_files',
       'agent.unreachable',
@@ -402,6 +429,10 @@ describe('notification registry', () => {
       'session.error',
       'shell.check_down',
       'signin.required',
+      'spending.limit-reached',
+      'spending.meter-reset',
+      'spending.near-limit',
+      'step-up.remote-refused',
       'todo.changed',
       'turn.completed',
       'update.installed',
@@ -457,11 +488,18 @@ describe('notification registry', () => {
     );
   });
 
-  it('keeps every kind but the agent note and the run report inside the app', () => {
+  it('only sends agent notes, run reports and remote confirmation warnings outside the app', () => {
     const leaves = NOTIFICATION_KINDS.filter(
       (k) => resolvePerKind(notificationEntry(k).relay, PAYLOADS[k]) !== 'never'
     );
-    expect([...leaves].sort()).toEqual(['agent.note', 'run.completed']);
+    // `spending.limit-reached`: agents stopped spending, and a person away from the desk should
+    // know (DOR-4204 PR 2, spec Q3). It names amounts only, never an app or its arguments.
+    expect([...leaves].sort()).toEqual([
+      'agent.note',
+      'run.completed',
+      'spending.limit-reached',
+      'step-up.remote-refused',
+    ]);
   });
 
   it('builds a stable dedupe key that does not change between calls', () => {

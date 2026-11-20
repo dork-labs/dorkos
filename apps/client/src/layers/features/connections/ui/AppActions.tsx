@@ -5,7 +5,11 @@ import type {
   ConnectorAppActions,
 } from '@dorkos/shared/connector-resource-schemas';
 import type { ConnectorReconciliationCandidate } from '@dorkos/shared/connector-schemas';
-import { cloudFailure, useConnectorAppActions } from '@/layers/entities/connectors';
+import {
+  cloudFailure,
+  PaidActionMarker,
+  useConnectorAppActions,
+} from '@/layers/entities/connectors';
 import { cn } from '@/layers/shared/lib';
 import {
   Button,
@@ -26,6 +30,7 @@ import {
   plainActionName,
   type ActionKind,
 } from '../lib/app-actions';
+import { isPaidAction } from '../lib/paid-actions';
 import { LEVEL_LABELS } from './access/access-labels';
 import { RelinkButton } from './LoadFailedState';
 
@@ -233,6 +238,7 @@ function Bucket({
   if (actions.length === 0) return null;
   const shown = actions.slice(0, BUCKET_LIMIT);
   const more = actions.length - shown.length;
+  const paid = actions.some((action) => isPaidAction(toolkit, action.operationSlug));
   return (
     <div className="space-y-1.5" data-testid={`app-actions-${kind}`}>
       <p className="text-sm font-medium">{KIND_LABELS[kind]}</p>
@@ -241,15 +247,17 @@ function Bucket({
           <li
             key={`${action.operationSlug}-${action.capabilityClassification}`}
             className={cn(
-              'rounded-full px-2.5 py-0.5 text-xs',
+              'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs',
               kind === 'look' ? 'bg-muted text-foreground' : STATUS_TONE_SURFACE.warning
             )}
           >
             {plainActionName(action, toolkit)}
+            {isPaidAction(toolkit, action.operationSlug) && <PaidActionMarker variant="icon" />}
           </li>
         ))}
         {more > 0 && <li className="text-muted-foreground px-1 py-0.5 text-xs">+{more} more</li>}
       </ul>
+      {paid && <PaidActionMarker variant="line" label="Actions marked with coins spend money." />}
     </div>
   );
 }
@@ -288,13 +296,18 @@ function AllActions({
               >
                 {/* Long names wrap rather than hide their end. */}
                 <span className="min-w-0 break-words">{plainActionName(action, toolkit)}</span>
-                <span
-                  className={cn(
-                    'mt-0.5 shrink-0 rounded-full px-2 py-0 text-xs',
-                    kind === 'look' ? 'bg-muted text-muted-foreground' : STATUS_TONE_SURFACE.warning
-                  )}
-                >
-                  {KIND_LABELS[kind]}
+                <span className="mt-0.5 flex shrink-0 flex-wrap justify-end gap-1">
+                  <span
+                    className={cn(
+                      'rounded-full px-2 py-0 text-xs',
+                      kind === 'look'
+                        ? 'bg-muted text-muted-foreground'
+                        : STATUS_TONE_SURFACE.warning
+                    )}
+                  >
+                    {KIND_LABELS[kind]}
+                  </span>
+                  {isPaidAction(toolkit, action.operationSlug) && <PaidActionMarker />}
                 </span>
               </li>
             );

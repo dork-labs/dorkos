@@ -148,9 +148,13 @@ test.describe('Opening another app’s page needs a click in the app', () => {
     // Approve Hop from the inbox: the one yes this app needs.
     await page.goto('/');
     await page.getByTestId('inbox-bell').click();
-    await expect(page.getByText('Hop wants to run on this computer.')).toBeVisible();
-    await page.getByRole('button', { name: 'Allow', exact: true }).click();
-    await expect(page.getByText('Hop wants to run on this computer.')).toHaveCount(0);
+    // Hop's own row: another spec on this server can leave its own Allow waiting.
+    const hopRow = page
+      .locator('[data-slot="inbox-decision-row"]')
+      .filter({ hasText: 'Hop wants to run on this computer.' });
+    await expect(hopRow).toBeVisible();
+    await hopRow.getByRole('button', { name: 'Allow', exact: true }).click();
+    await expect(hopRow).toHaveCount(0);
 
     // A fresh load: nothing done before carries any activation here.
     const lines = await openHop(page);

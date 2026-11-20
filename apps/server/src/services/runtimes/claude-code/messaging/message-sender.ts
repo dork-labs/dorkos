@@ -22,6 +22,7 @@ import {
 import { fireLaunchProbes } from './launch-probes.js';
 import { recordClaudeTurnContext, systemAppendOf } from './turn-context/turn-context-record.js';
 import { launchQuery } from '../sdk/launch-query.js';
+import { releaseHeavyJobsOf } from '../tool-gate/load-gate-hook.js';
 import type { AgentSession } from '../agent-types.js';
 import { createToolState, stopWasAimedAt } from '../agent-types.js';
 import {
@@ -57,6 +58,9 @@ import { TURN_REOPENING_STREAM_EVENT_TYPES } from '../../../session/session-even
 import { describeAuthError, detectAuthError } from '@dorkos/shared/runtime-error-classification';
 import { CLAUDE_CODE_RUNTIME_TYPE } from '../sdk/sdk-error-mapping.js';
 import { isTurnActivity } from '../sessions/records/turn-activity.js';
+// Distinct from `isResumeFailure`: recovery drops the anchor and resumes
+// plainly, keeping history, rather than restarting as a brand-new session.
+import { isAnchorNotFound } from './launch/resume-anchor.js';
 
 // The vocabulary and the two small helpers both dispatch paths use. Re-exported
 // rather than moved-and-rewired: every import site in the tree names this
@@ -93,18 +97,6 @@ function isResumeFailure(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
   const msg = err.message.toLowerCase();
   return RESUME_FAILURE_PATTERNS.some((p) => msg.includes(p));
-}
-
-/**
- * Detect the CLI's hard failure when a `resumeSessionAt` anchor uuid is not in
- * the (possibly compacted or externally rewritten) transcript — it throws
- * `No message found with message.uuid of: <uuid>`. Distinct from
- * {@link isResumeFailure}: recovery drops the anchor and resumes plainly,
- * preserving history, rather than restarting as a brand-new session.
- */
-function isAnchorNotFound(err: unknown): boolean {
-  if (!(err instanceof Error)) return false;
-  return /no message found with message\.uuid/i.test(err.message);
 }
 
 /**
@@ -667,6 +659,13 @@ export async function* executeSdkQuery(
     // otherwise a rejected SDK promise would leave a live timer behind.
     deferredClose.release();
     endStdin();
+    // This path's process ends with its turn, however the turn ends, and a dead
+    // process runs no hook: the heavy-job slots it held come back here (DOR-4209).
+    // This can run a little before the CLI process is really gone (the stall
+    // guard abandoning the turn, a close still landing); a job still running then
+    // loses its slot early, which only lets the next one start sooner: it fails
+    // open, never holding the line for a process that is gone.
+    releaseHeavyJobsOf(sdkOptions);
     // Preserve the query reference for post-stream control methods (e.g.
     // reloadPlugins) — but only when this frame still OWNS the active query
     // (DOR-1088). Unconditional, this cleared whatever query happened to be

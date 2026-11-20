@@ -72,6 +72,10 @@ import { ScheduleIdentityRegistry } from '../../services/tasks/schedule-identity
 import { skillsRoot } from '../../services/tasks/__tests__/task-root-fixtures.js';
 import { TaskStore, type UpdateTaskOptions } from '../../services/tasks/task-store.js';
 import type { TaskSchedulerService } from '../../services/tasks/task-scheduler-service.js';
+import {
+  DeclaredReaders,
+  setDeclaredReaders,
+} from '../../services/core/turn-power/declared-readers.js';
 
 taskRuntimeCapabilitiesFixture();
 
@@ -156,6 +160,34 @@ describe('PATCH /api/tasks/:id and the file on disk', () => {
   afterEach(async () => {
     store.close();
     await fs.rm(dorkHome, { recursive: true, force: true });
+  });
+
+  // DOR-3969: a person's `false` comes out of the file and DorkOS's own record.
+  describe('a task that reads outside text', () => {
+    let recordFile: string;
+    beforeEach(() => {
+      recordFile = path.join(dorkHome, 'permissions', 'declared-outside-readers.json');
+      setDeclaredReaders(new DeclaredReaders({ file: recordFile, logger: { warn: vi.fn() } }));
+    });
+    afterEach(() => setDeclaredReaders(null));
+
+    it('is written to the file, and a person turning it off clears the file and the record', async () => {
+      const id = await createTask({ readsOutsideText: true });
+      const declared = rawSchedule(await fs.readFile(skillPath('nightly-sweep'), 'utf-8'));
+      expect(declared.readsOutsideText).toBe(true);
+      expect(store.getTask(id)?.readsOutsideText).toBe(true);
+
+      const res = await request(fixtureServer)
+        .patch(`/api/tasks/${id}`)
+        .send({ readsOutsideText: false });
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      // Off is the file's default, so the key is gone rather than written as `false`.
+      const cleared = rawSchedule(await fs.readFile(skillPath('nightly-sweep'), 'utf-8'));
+      expect(cleared).not.toHaveProperty('readsOutsideText');
+      expect(store.getTask(id)?.readsOutsideText).toBeUndefined();
+      const restarted = new DeclaredReaders({ file: recordFile, logger: { warn: vi.fn() } });
+      expect(restarted.has('task', id)).toBe(false);
+    });
   });
 
   describe('the file a create writes', () => {

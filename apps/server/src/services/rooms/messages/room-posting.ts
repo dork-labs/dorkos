@@ -21,6 +21,7 @@ import { RoomError } from '../room-errors.js';
 import type { PostTrigger, PostedEntry } from '../service/room-service-deps.js';
 import type { RoomStore } from '../room-store.js';
 import type { RoomTriggerDispatcher } from '../room-trigger.js';
+import { isRoomStartAnchor } from '../room-trigger/room-start-anchor.js';
 import type { RoomVisibility } from '../service/room-visibility.js';
 
 /** Everything one post carries. */
@@ -309,7 +310,8 @@ export class RoomPosting {
         // it is answering nothing and belongs to no session here.
         ...(turn !== undefined
           ? {
-              answersEntryId: turn.entryId,
+              // A turn about a room's start answers no entry, so it names none (DOR-4619).
+              ...(isRoomStartAnchor(turn.entryId) ? {} : { answersEntryId: turn.entryId }),
               ...(turn.sessionId !== undefined ? { sessionId: turn.sessionId } : {}),
             }
           : {}),

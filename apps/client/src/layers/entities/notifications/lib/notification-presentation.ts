@@ -34,6 +34,7 @@ import {
   WifiOff,
   type LucideIcon,
   Hand,
+  Coins,
 } from 'lucide-react';
 import type { NotificationDTO, NotificationKind } from '@dorkos/shared/notification-schemas';
 import { toSession } from '@/layers/shared/lib';
@@ -77,6 +78,7 @@ export interface NotificationLink {
  * than one it appears to mint.
  */
 export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
+  'step-up.remote-refused': ShieldAlert,
   'ask.pending': ShieldQuestion,
   'schedule.parked': Clock,
   // The same mark: it is the same thing, a schedule, live this time.
@@ -109,6 +111,10 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   'community.owner-replacement': TriangleAlert,
   'community.teammate-limit': CircleAlert,
   'community.teammate-limits-reset': CircleAlert,
+  // The monthly spend limit on paid app actions (DOR-4204 PR 2).
+  'spending.near-limit': Coins,
+  'spending.limit-reached': Coins,
+  'spending.meter-reset': CircleAlert,
   'heartbeat.credits-offer': Sparkles,
   // An agent handed a person the Agent browser (DOR-3218).
   'browser.handoff': Hand,
@@ -126,6 +132,8 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   'web.new_device': MonitorSmartphone,
   // Files in an agent's folder whose names say they are secrets (DOR-3292).
   'agent.secret_files': ShieldAlert,
+  // An agent's folder allow list too long for its approval card (DOR-4455).
+  'agent.folder_rules_too_long': ShieldAlert,
   'shell.check_down': ShieldAlert,
   'report.undelivered': MailX,
   // An agent moved or dropped a promise it made to the person (DOR-3034).
@@ -317,6 +325,8 @@ const BURST_VERB: Record<GroupableNotificationKind, (count: number) => string> =
 export function notificationLink(notification: NotificationDTO): NotificationLink | null {
   const { subject, kind, sessionId } = notification;
 
+  if (kind === 'step-up.remote-refused')
+    return { ...appRoutes.home(), search: { settings: 'security' } };
   if (kind === 'agent.unreachable') {
     return { ...appRoutes.home(), search: { detail: 'offline-agent', itemId: subject.id } };
   }
@@ -344,6 +354,18 @@ export function notificationLink(notification: NotificationDTO): NotificationLin
   if (kind === 'web.new_device') {
     // Where the owner pauses chat from the web if it wasn't them.
     return { ...appRoutes.home(), search: { settings: ACCOUNT_SETTINGS_TAB } };
+  }
+  if (
+    kind === 'spending.near-limit' ||
+    kind === 'spending.limit-reached' ||
+    kind === 'spending.meter-reset'
+  ) {
+    // Connections at Spending, where the monthly limit is set (DOR-4204 PR 2).
+    // At the limit, the cursor waits in the field: raising it is the way on.
+    return {
+      ...appRoutes.connections(),
+      search: { section: kind === 'spending.limit-reached' ? 'spending-limit' : 'spending' },
+    };
   }
   if (kind === 'heartbeat.credits-offer') {
     // The offer's card is on every agent's Heartbeat page; the team is where
@@ -376,9 +398,11 @@ export function notificationLink(notification: NotificationDTO): NotificationLin
     // Who can use which app, where the change shows and can be put back.
     return { ...appRoutes.connections(), search: {} };
   }
-  if (kind === 'agent.secret_files') {
+  if (kind === 'agent.secret_files' || kind === 'agent.folder_rules_too_long') {
     // The agent's own Permissions page, where its rules and the line about
-    // files in its folder sit, rather than the whole Team (DOR-3292).
+    // files in its folder sit, rather than the whole Team (DOR-3292). The
+    // same page for folder rules too long to approve (DOR-4455): the agent's
+    // own permissions, while the body names the files that hold the rules.
     return { ...appRoutes.team(), search: { profile: subject.id, profilePage: 'permissions' } };
   }
   if (kind === 'mcp-server.tool_added' || kind === 'mcp-server.reserved_name') {

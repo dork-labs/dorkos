@@ -49,7 +49,7 @@ status: ideation
 - `apps/server/src/routes/agents.ts`: Agent CRUD routes — POST creates manifests, PATCH updates them. Needs extension for convention file content writes.
 - `decisions/0043-file-canonical-source-of-truth-for-mesh-registry.md`: ADR-0043 — file-first write-through pattern. `.dork/agent.json` on disk is canonical; SQLite is derived cache.
 - `decisions/0085-agent-runtime-interface-as-universal-abstraction.md`: AgentRuntime as the universal injection point for all backends.
-- `specs/agent-tool-context-injection/`: Context injection patterns — static XML blocks in `context-builder.ts`. Same pattern for trait/SOUL.md injection.
+- [`agent-tool-context-injection`](https://github.com/dork-labs/dorkos/tree/2b98f06e42fab0c9f36c789387138bfc1b211116/specs/agent-tool-context-injection): Context injection patterns — static XML blocks in `context-builder.ts`. Same pattern for trait/SOUL.md injection.
 - `contributing/architecture.md`: Hexagonal architecture with Transport interface decoupling client from backend.
 
 ---

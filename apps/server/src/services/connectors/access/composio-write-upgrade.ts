@@ -20,6 +20,7 @@ import {
   inArray,
   ne,
   notifications,
+  sql,
   type Db,
 } from '@dorkos/db';
 import { serviceNameFromToolkit } from '@dorkos/shared/connector-schemas';
@@ -28,6 +29,41 @@ import { COMPOSIO_WRITE_NOTICE_ENTRIES } from '../../notifications/emitters/comp
 // Version 1 is the legacy connector foundation upgrade. Date keys keep later
 // application steps distinct from the Drizzle schema migration sequence.
 const VERSION = 20261115;
+
+/**
+ * The reason the upgrade stamps on each hosted command it sets aside (DOR-4510).
+ * A relink resend sends what the agent holds now in its place, never its saved
+ * selection, whatever the timestamps say, so the writes the upgrade took away
+ * can't come back on a clock step. The relink resend in
+ * `resources/managed-authority-sync-service.ts` reads it through
+ * {@link setAsideByWriteUpgrade}: if this one-time upgrade is ever retired,
+ * move both there first.
+ */
+export const WRITE_UPGRADE_SET_ASIDE =
+  'Read and write went back to Read for this app, so this older change was set aside.';
+
+/**
+ * Whether the write upgrade set a hosted command aside (DOR-4735), as a column
+ * to select beside the outbox row.
+ *
+ * Installs that ran the upgrade before {@link WRITE_UPGRADE_SET_ASIDE} existed
+ * (0.136.0) left those commands without it, and kept whatever reason a
+ * pending command already carried (a hosted wait, a failed try), so the reason
+ * can't tell them apart. The upgrade sets them aside and records its marker in
+ * one transaction with one timestamp, so a superseded command resolved at the
+ * marker's completion time is one of them, whatever its reason says. A false
+ * match only sends what the agent holds now, the narrower side.
+ */
+export const setAsideByWriteUpgrade = sql<boolean>`coalesce(
+  ${connectorManagedAuthorityOutbox.safeReason} = ${WRITE_UPGRADE_SET_ASIDE}
+  or (
+    ${connectorManagedAuthorityOutbox.state} = 'superseded'
+    and ${connectorManagedAuthorityOutbox.resolvedAt} = (
+      select ${connectorApplicationMigrations.completedAt}
+      from ${connectorApplicationMigrations}
+      where ${connectorApplicationMigrations.version} = ${VERSION}
+    )
+  ), 0)`.mapWith(Boolean);
 
 /**
  * Lower previously inert Composio write levels exactly once, before any catalog follower starts.
@@ -99,6 +135,7 @@ export function upgradeComposioWriteLevels(db: Db, now = new Date().toISOString(
       tx.update(connectorManagedAuthorityOutbox)
         .set({
           state: 'superseded',
+          safeReason: WRITE_UPGRADE_SET_ASIDE,
           resolvedAt: now,
           updatedAt: now,
           nextAttemptAt: null,

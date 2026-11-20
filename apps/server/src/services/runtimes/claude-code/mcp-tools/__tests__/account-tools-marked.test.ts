@@ -8,6 +8,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { marksForTurn } from '../../../../core/turn-power/turn-marks.js';
+import { noteRoomTurnWords } from '../../../../core/turn-power/outside-words.js';
 import {
   noteChosenTurn,
   resetChosenTurns,
@@ -99,6 +100,15 @@ describe('the account tools in a marked turn', () => {
     const { usage } = handlersFor('own-turn');
     expect((await usage({}, {})).isError).toBeFalsy();
     expect(emit).not.toHaveBeenCalled();
+  });
+
+  // DOR-4587: a hop from a chat that read outside words carries the note, not the mark.
+  it('refuses both on a turn noted as having read outside words', async () => {
+    noteRoomTurnWords('hop-turn', true);
+    const { usage, probe } = handlersFor('hop-turn');
+    expect((await usage({}, {})).content[0]!.text).toContain('MARKED_TURN');
+    expect((await probe({ account: 'acct' }, {})).isError).toBe(true);
+    noteRoomTurnWords('hop-turn', false);
   });
 
   it('answers on an unmarked turn', async () => {

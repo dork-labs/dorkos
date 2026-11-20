@@ -26,22 +26,36 @@ import {
   RESET_TIMING_DESCRIPTION,
   ACCEPT_FILE_HASH_DESCRIPTION,
   PARKED_SCHEDULE_SURFACE_HINT,
-  TARGET_DESCRIPTION,
   REFUSED_AGENT_ID_DESCRIPTION,
   REFUSED_UPDATE_TARGET_DESCRIPTION,
   STICKY_DESCRIPTION,
+  READS_OUTSIDE_TEXT_DESCRIPTION,
   RUNTIME_DESCRIPTION,
   MODEL_DESCRIPTION,
   EFFORT_DESCRIPTION,
   ACCOUNT_DESCRIPTION,
-  REASON_DESCRIPTION,
   REFUSED_PERMISSION_MODE_DESCRIPTION,
   REFUSED_STATUS_DESCRIPTION,
   STATUS_DESCRIPTION,
   TASKS_CREATE_DESCRIPTION,
+  TASKS_LIST_DESCRIPTION,
   TASKS_UPDATE_DESCRIPTION,
 } from './task-tool-copy.js';
-import { CREATE_TASK_INPUT, UPDATE_TASK_INPUT } from './task-tool-inputs.js';
+import {
+  CREATE_TASK_INPUT,
+  type CreateScheduleArgs,
+  UPDATE_TASK_INPUT,
+} from './task-tool-inputs.js';
+import {
+  finishOneShotCreate,
+  LIST_ALONE_REFUSAL,
+  listNotRecorded,
+  ONE_SHOT_CRON_REFUSAL,
+  oneShotCreateRefusal,
+  oneShotListNote,
+  settleAllowListCall,
+} from './task-tool-allow-list.js';
+import { updateTaskAllowList } from './task-tool-narrow-bypass.js';
 import {
   clampSchedulePermissionMode,
   taskWorkOf,
@@ -65,6 +79,7 @@ import {
 } from './task-tool-parts.js';
 import { grantCoversOthersTask } from '../../../../tasks/agent-mode/agent-mode-door.js';
 import { agentEditMayStayLive } from '../../../../tasks/agent-mode/agent-mode-record.js';
+import { askedForRules, RULES_NOTE } from '../../../../tasks/agent-mode/agent-mode-asked-for.js';
 import {
   afterToolAgentEdit,
   armToolApproval,
@@ -84,6 +99,7 @@ import { auditScheduleUpdate, scheduleEdit } from '../../../../tasks/approvals/s
 import { applyTaskFileUpdate } from '../../../../tasks/lifecycle/update-task-file.js';
 import { taskCreateLifecycleDeps } from './task-create-deps.js';
 import { changesApprovedWork } from '../../../../tasks/task-file-update.js';
+import { agentCreditsRaiseRefusal } from '../../../../tasks/credits/credits-work.js';
 import { refuseStickyAccountChange } from '../../../../tasks/session/sticky-session.js';
 import { AGENT_TIMING_CHANGE_REASON } from '../../../../tasks/timing/effective-timing.js';
 import { describeScheduleProblem } from '../../../../tasks/cron-validation.js';
@@ -94,13 +110,14 @@ import { conflictingTimingRequest } from '../../../../tasks/timing/effective-tim
 import { updateRunRefusal } from './task-tool-run-refusals.js';
 import { attestNewTask, attestToolWrite, fileStateBefore } from './task-tool-file-cap.js';
 import { marksOf } from '../../../../core/turn-power/turn-levels.js';
-import { marksHold } from '../../../../core/turn-power/turn-marks.js';
+import { settleDeclaredTask } from '../../../../core/turn-power/declared-readers.js';
 import {
   callingTurnIsFull,
   capPatch,
   decideCrossAgent,
   forWhomOf,
   isMarkedRefusal,
+  markedEditParks,
   recordOtherEdit,
 } from './task-tool-cross-agent.js';
 
@@ -141,41 +158,7 @@ export function createCreateScheduleHandler(
   callerMarks?: CallerMarksResolver,
   callerAgent?: CallerAgentResolver
 ) {
-  return async (args: {
-    name: string;
-    prompt: string;
-    cron: string;
-    reason: string;
-    /** Left out means `global`, which files it under the caller (DOR-4067). */
-    target?: string;
-    description?: string;
-    timezone?: string;
-    maxRuntime?: string;
-    /** Whether every run resumes one session; see {@link STICKY_DESCRIPTION}. */
-    sticky?: boolean;
-    /** Which runtime the runs execute on; see {@link RUNTIME_DESCRIPTION}. */
-    runtime?: string;
-    /** Which model the runs execute on; see {@link MODEL_DESCRIPTION}. */
-    model?: string;
-    /** How hard the model thinks; see {@link EFFORT_DESCRIPTION}. */
-    effort?: EffortLevel;
-    /** Which Claude account the runs start on; see {@link ACCOUNT_DESCRIPTION}. */
-    account?: string;
-    /** Mode requested for person approval; never applied by this tool. */
-    requestedPermissionMode?: PermissionMode;
-    /** Task-run rules requested for person approval; never applied by this tool. */
-    requestedAllow?: string[];
-    /** Refused: only a person applies task-run rules. */
-    approvedAllow?: string[];
-    /** Refused: only a person confirms a looser grant. */
-    acceptLooserThanRequested?: true;
-    /** Refused, or decided as `tasks.set_mode` (DOR-3703); see {@link REFUSED_PERMISSION_MODE_DESCRIPTION}. */
-    permissionMode?: string;
-    /** Refused: a new task never approves itself; see {@link REFUSED_STATUS_DESCRIPTION}. */
-    status?: string;
-    /** Advertised so it can be REFUSED; see {@link REFUSED_AGENT_ID_DESCRIPTION}. */
-    agentId?: string;
-  }) => {
+  return async (args: CreateScheduleArgs) => {
     // Defaulted here, not in the schema: a `.default()` never reaches the Agent SDK's raw
     // field map, so an agent that left `target` out would fail outright (DOR-2053).
     const target = args.target ?? 'global';
@@ -190,6 +173,8 @@ export function createCreateScheduleHandler(
     // `agentId` is not a create field — `target` is — and a silent strip is what
     // sent an agent looking for another way to own its own task.
     if (args.agentId !== undefined) return jsonContent(AGENT_ID_ON_CREATE_REFUSAL, true);
+    const oneShotRefusal = oneShotCreateRefusal(args);
+    if (oneShotRefusal) return jsonContent(oneShotRefusal, true);
     // For another agent only from a Full, unmarked turn (DOR-3938). Below Full, today's refusal.
     const forOther = decideCrossAgent(deps, target, resolveProvenance, callerAgent);
     if (isMarkedRefusal(forOther)) return jsonContent(forOther.refusal, true);
@@ -205,6 +190,13 @@ export function createCreateScheduleHandler(
       caller,
     });
     if (mode.refusal) return jsonContent(mode.refusal, true);
+    // A one-shot task's own exact commands, decided before anything is written (DOR-4315).
+    const list = await settleAllowListCall(deps, { door: 'create', body, target, caller });
+    if (list.kind === 'refused') return jsonContent(list.body, true);
+    // A card showed the mode alone, so the commands may not ride its yes.
+    if (list.kind === 'write' && mode.grant?.via === 'card') {
+      return jsonContent(LIST_ALONE_REFUSAL, true);
+    }
     if (!auditToolModeChange(deps, mode, null, body))
       return jsonContent(NOT_RECORDED_REFUSAL, true);
 
@@ -222,12 +214,13 @@ export function createCreateScheduleHandler(
         // where the create is about to be refused for a better reason.
         description: args.description ?? (slugify(args.name) || args.name),
         prompt: args.prompt,
-        cron: args.cron,
+        ...(args.cron !== undefined && { cron: args.cron }),
         ...(args.timezone !== undefined && { timezone: args.timezone }),
         ...(args.maxRuntime !== undefined && { maxRuntime: args.maxRuntime }),
         target,
         reason: args.reason,
         ...(args.sticky !== undefined && { sticky: args.sticky }),
+        ...(args.readsOutsideText === true && { readsOutsideText: true }),
         ...(args.runtime !== undefined && { runtime: args.runtime }),
         ...(args.model !== undefined && { model: args.model }),
         ...(args.effort !== undefined && { effort: args.effort }),
@@ -236,6 +229,8 @@ export function createCreateScheduleHandler(
           requestedPermissionMode: args.requestedPermissionMode,
         }),
         ...(args.requestedAllow !== undefined && { requestedAllow: args.requestedAllow }),
+        // Recorded as the request too, so a parked one-shot shows its commands on its card.
+        ...(list.kind === 'write' && { requestedAllow: list.write.after }),
         ...(mode.grant?.decision.setsMode && { permissionMode: mode.grant.decision.mode }),
       },
       // An MCP tool call IS the agent surface — there is no header to omit and
@@ -284,7 +279,11 @@ export function createCreateScheduleHandler(
     // notification used, so the two cannot disagree about who asked. The sessionless
     // external `/mcp` server carries no session, so the name falls back to "An
     // agent" there and no `actorId` is attached.
-    const task = outcome.task;
+    // The one-shot flag and its commands, once the row exists; it runs from here (DOR-4315).
+    const finished = finishOneShotCreate(deps, outcome.task, list, caller, args.runOnce === true);
+    if (!finished) return jsonContent(listNotRecorded(outcome.task.id), true);
+    const task = finished.task;
+    const listNote = list.kind === 'write' ? ` ${oneShotListNote(task, finished.listApplied)}` : '';
     const armed = outcome.armedPayload;
     // "Made by X for Y": the quiet line a person reads when one agent schedules for another.
     const forWhom = forWhomOf(deps, forOther, task);
@@ -309,16 +308,28 @@ export function createCreateScheduleHandler(
       metadata: { status: task.status },
     });
 
-    if (armed) return jsonContent({ schedule: task, note: armedScheduleNote(armed.execution) });
+    // Rules asked for are never applied here; say so instead of dropping them (DOR-4335).
+    const rulesReply = askedForRules(args as Record<string, unknown>)
+      ? { rulesNote: RULES_NOTE }
+      : {};
+    if (armed) {
+      return jsonContent({
+        schedule: task,
+        note: armedScheduleNote(armed.execution) + listNote,
+        ...rulesReply,
+      });
+    }
 
     return jsonContent({
       schedule: task,
+      ...rulesReply,
       // The panel hint rides along only where the tool that would open it
       // exists. `resolveProvenance` is absent on the external `/mcp` server, so
       // that surface gets the "tell them" half and nothing it cannot do.
-      note: provenance.sessionId
-        ? `${PARKED_SCHEDULE_NOTE} ${PARKED_SCHEDULE_SURFACE_HINT}`
-        : PARKED_SCHEDULE_NOTE,
+      note:
+        (provenance.sessionId
+          ? `${PARKED_SCHEDULE_NOTE} ${PARKED_SCHEDULE_SURFACE_HINT}`
+          : PARKED_SCHEDULE_NOTE) + listNote,
     });
   };
 }
@@ -351,6 +362,8 @@ export function createUpdateScheduleHandler(
     maxRuntime?: string;
     /** Whether every run resumes one session; see {@link STICKY_DESCRIPTION}. */
     sticky?: boolean;
+    /** Whether the task reads outside text; see {@link READS_OUTSIDE_TEXT_DESCRIPTION}. */
+    readsOutsideText?: boolean;
     /** Which runtime the runs execute on, or `null` to clear the override. */
     runtime?: string | null;
     /** Which model the runs execute on, or `null` to clear the override. */
@@ -365,6 +378,8 @@ export function createUpdateScheduleHandler(
     requestedAllow?: string[];
     /** Refused: only a person applies task-run rules. */
     approvedAllow?: string[];
+    /** A shorter allow list, in a call of its own (DOR-4315); see `task-tool-allow-list.ts`. */
+    allowList?: string[];
     /** Refused: only a person confirms a looser grant. */
     acceptLooserThanRequested?: true;
     /** Put a package's schedule back on its own timing; see {@link RESET_TIMING_DESCRIPTION}. */
@@ -384,6 +399,14 @@ export function createUpdateScheduleHandler(
     if (err) return err;
     const refusal = refuseOperatorOnlyTaskFields(args);
     if (refusal) return refusal;
+    // An allow list narrows in a call of its own, with no card (DOR-4315), or rides
+    // its own live Bypass task's move to Don't ask (PR 2).
+    if (args.allowList !== undefined) {
+      return updateTaskAllowList(deps, args, {
+        caller: agentModeCallerOf(resolveProvenance, callerMarks, callerAgent, deps.taskStore),
+        ...callerAgentPathOf(resolveProvenance?.() ?? {}, callerAgent),
+      });
+    }
 
     // `id` is a tool ARGUMENT, not a field of the task, so it is stripped before
     // the body is judged. Everything else the SDK let through is measured against
@@ -436,11 +459,17 @@ export function createUpdateScheduleHandler(
     ) {
       return jsonContent(CREDITS_SCHEDULE_AGENT_REFUSAL, true);
     }
+    // Making a live credits task spend more waits for a person's yes on the card;
+    // a marked turn gets none (DOR-4609).
+    const creditsRaise = agentCreditsRaiseRefusal(args, existing, caller);
+    if (creditsRaise) return jsonContent(creditsRaise, true);
 
     // A new timing and the package's own timing are two different answers to
     // one question; the call has to pick (DOR-2302).
     const timingConflict = conflictingTimingRequest(args);
     if (timingConflict) return jsonContent({ error: timingConflict }, true);
+    // A one-shot task stays one-shot: a cron would turn its one run into every run (DOR-4315).
+    if (existing.runOnce && args.cron) return jsonContent(ONE_SHOT_CRON_REFUSAL, true);
 
     // The same refusal, in the same words, as `PATCH /api/tasks/:id` (DOR-2384).
     const accountLocked = refuseStickyAccountChange(deps.taskStore!, existing, args);
@@ -483,6 +512,8 @@ export function createUpdateScheduleHandler(
       ...(args.timezone !== undefined && { timezone: args.timezone }),
       ...(args.maxRuntime !== undefined && { maxRuntime: args.maxRuntime }),
       ...(args.sticky !== undefined && { sticky: args.sticky }),
+      // Only `true` gets here: the policy refused anything else above (DOR-3969).
+      ...(args.readsOutsideText === true && { readsOutsideText: true }),
       ...(args.runtime !== undefined && { runtime: args.runtime }),
       ...(args.model !== undefined && { model: args.model }),
       ...(args.effort !== undefined && { effort: args.effort }),
@@ -574,6 +605,8 @@ export function createUpdateScheduleHandler(
       timingLandsOn: fileOutcome.timingLandsOn,
     });
     if (!updated) return jsonContent({ error: `Schedule ${args.id} not found` }, true);
+    // An agent may only turn it on; turning it off is a person's (DOR-3969).
+    settleDeclaredTask(updated, patch.readsOutsideText, false);
     // An approval is armed here, all at once or not at all (DOR-3703).
     const armed = await armToolApproval(deps, mode, existing, caller);
     if (armed === null) return jsonContent(NOT_ARMED_REFUSAL, true);
@@ -606,11 +639,7 @@ export function createUpdateScheduleHandler(
     // An edit from a marked turn parks it for a person, whatever it changed, and keeps the marks
     // for its card (DOR-3036).
     const marks = callerMarks?.() ?? marksOf(caller.sessionId, caller.agentPath);
-    if (
-      mode.grant?.via !== 'card' &&
-      marksHold(marks) &&
-      deps.taskStore!.approvals.markOrigin(updated.id, marks)
-    ) {
+    if (markedEditParks(deps, updated.id, marks, mode.grant?.via === 'card')) {
       if (existing.status !== 'pending_approval') settled = 'parked';
     }
     // Who changed it; and an approval never covers a later version (DOR-3703).
@@ -658,10 +687,15 @@ export function createUpdateScheduleHandler(
     // Say what the edit cost, so an agent does not report a live schedule that
     // has just stopped. Only a schedule that was running can be stopped; one
     // already parked, or paused, has nothing to disclose.
+    // Rules asked for are never applied here; say so instead of dropping them (DOR-4335).
+    const rulesReply = askedForRules(fields as Record<string, unknown>)
+      ? { rulesNote: RULES_NOTE }
+      : {};
     if (settled === 'parked') {
       return jsonContent({
         schedule: updated,
         ...fileReply,
+        ...rulesReply,
         needsReapproval: true,
         // The note follows the sentence the park wrote: timing alone, or the
         // work itself (its prompt or how it runs).
@@ -672,7 +706,7 @@ export function createUpdateScheduleHandler(
             : REAPPROVAL_NOTE),
       });
     }
-    return jsonContent({ schedule: updated, ...fileReply });
+    return jsonContent({ schedule: updated, ...fileReply, ...rulesReply });
   };
 }
 
@@ -697,7 +731,7 @@ export function getTasksTools(
   return [
     tool(
       'tasks_list',
-      'List every scheduled task on this DorkOS. Returns each one with its status and settings.',
+      TASKS_LIST_DESCRIPTION,
       { enabled_only: z.boolean().optional().describe('Only return enabled schedules') },
       createListSchedulesHandler(deps)
     ),
@@ -726,7 +760,10 @@ export function getTasksTools(
         schedule_id: z.string().describe('Schedule ID to get runs for'),
         limit: z.number().optional().describe('Max runs to return (default 20)'),
       },
-      createGetRunHistoryHandler(deps)
+      // Another agent's runs only from a Full, unmarked turn, as its edits (DOR-4600).
+      createGetRunHistoryHandler(deps, resolveProvenance, () =>
+        callingTurnIsFull(resolveProvenance, callerAgent)
+      )
     ),
   ];
 }

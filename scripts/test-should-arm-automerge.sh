@@ -102,6 +102,19 @@ check "hold label (mixed case)"   "SKIP held-by-label"        '.labels = [{"name
 check "hold among others"         "SKIP held-by-label"        '.labels = [{"name": "bug"}, {"name": "blocked"}]'
 check "unrelated label is fine"   "ARM"                       '.labels = [{"name": "review:light"}]'
 
+# Unreadable labels are not "no labels" (DOR-3871). A partial or garbled answer
+# from GitHub used to read as unheld, so a PR on `hold` could be armed. Each case
+# below also carries a hold-free PR that is otherwise fully green.
+check "labels absent"             "SKIP labels-unreadable"    'del(.labels)'
+check "labels null"               "SKIP labels-unreadable"    '.labels = null'
+check "labels an object"          "SKIP labels-unreadable"    '.labels = {"name": "hold"}'
+check "labels a string"           "SKIP labels-unreadable"    '.labels = "hold"'
+check "labels a number"           "SKIP labels-unreadable"    '.labels = 0'
+check "label with no name"        "SKIP labels-unreadable"    '.labels = [{"color": "red"}]'
+check "label with null name"      "SKIP labels-unreadable"    '.labels = [{"name": null}]'
+check "label not string or object" "SKIP labels-unreadable"   '.labels = [{"name": "bug"}, 7]'
+check "unreadable labels, red too" "SKIP labels-unreadable"   '.labels = null | .checks[0].bucket = "fail"'
+
 # Only main has the merge queue (DOR-3679). A stacked layer targets another
 # PR's branch, where arming merges it there on the spot, past its own review:
 # #3150 merged into #3148's branch that way. Retargeted to main, the same PR arms.
@@ -155,6 +168,27 @@ check "unresolved threads"        "SKIP unresolved-threads"   '.unresolvedThread
 check "exactly one open thread"   "SKIP unresolved-threads"   '.unresolvedThreads = 1'
 check "no review decision yet"    "ARM"                       '.reviewDecision = ""'
 
+# The other fields the gate reads, by the same rule: absent, null or the wrong
+# shape is unknown, and unknown is a skip (DOR-3871).
+check "draft flag absent"         "SKIP draft-unknown"        'del(.isDraft)'
+check "draft flag null"           "SKIP draft-unknown"        '.isDraft = null'
+check "draft flag a string"       "SKIP draft-unknown"        '.isDraft = "false"'
+check "auto-merge field absent"   "SKIP auto-merge-unknown"   'del(.autoMergeRequest)'
+check "mergeability null"         "SKIP mergeability-unknown" '.mergeStateStatus = null'
+check "mergeability a number"     "SKIP mergeability-unknown" '.mergeStateStatus = 3'
+check "review decision absent"    "SKIP review-decision-unknown" 'del(.reviewDecision)'
+check "review decision an object" "SKIP review-decision-unknown" '.reviewDecision = {"state": "CHANGES_REQUESTED"}'
+check "review decision null arms" "ARM"                       '.reviewDecision = null'
+check "thread count negative"     "SKIP review-threads-unknown" '.unresolvedThreads = -1'
+check "checks absent"             "SKIP checks-unreadable"    'del(.checks)'
+check "checks null"               "SKIP checks-unreadable"    '.checks = null'
+check "checks an object"          "SKIP checks-unreadable"    '.checks = {"a": {"name": "security-gate", "bucket": "pass"}}'
+check "a check row not an object" "SKIP checks-unreadable"    '.checks += ["typecheck"]'
+check "a check with no bucket"    "SKIP checks-state-unknown" '.checks[0] |= del(.bucket)'
+check "a check with null bucket"  "SKIP checks-state-unknown" '.checks[0].bucket = null'
+check "a check bucket unknown"    "SKIP checks-state-unknown" '.checks[0].bucket = "neutral"'
+check "a check bucket a number"   "SKIP checks-state-unknown" '.checks[0].bucket = 1'
+
 # Check buckets. Anything unsettled or unhappy refuses.
 check "a failing check"           "SKIP failing-checks"       '.checks[0].bucket = "fail"'
 check "a cancelled check"         "SKIP cancelled-checks"     '.checks[0].bucket = "cancel"'
@@ -189,6 +223,9 @@ check "queue history null"           "SKIP queue-history-unknown" '.queueRemoval
 check "head push time unknown"       "SKIP queue-history-unknown" ".queueRemovals = [$E1] | .headSince = null"
 check "unknown push, no ejections"   "ARM"                        '.headSince = null'
 check "junk removal entries ignored" "ARM"                        ".queueRemovals = [\"x\", 3, null, $E1]"
+check "ejection time unreadable"     "SKIP queue-history-unknown" ".queueRemovals = [$E1] | .queueRemovals[0].at = null"
+check "failed checks not a list"     "SKIP queue-history-unknown" ".queueRemovals = [$E1] | .queueRemovals[0].failedChecks = \"browser-test\""
+check "no time, no failure is fine"  "ARM"                        '.queueRemovals = [{"at": null, "failedChecks": []}]'
 check "hold outranks repeat"         "SKIP held-by-label"         ".queueRemovals = [$E1, $E2] | .labels = [\"hold\"]"
 check "red PR check outranks repeat" "SKIP failing-checks"        ".queueRemovals = [$E1, $E2] | .checks[0].bucket = \"fail\""
 

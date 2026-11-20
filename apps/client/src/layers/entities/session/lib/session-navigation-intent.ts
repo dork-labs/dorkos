@@ -14,8 +14,12 @@
  * 2. **We started a second lookup of our own.** Two agent clicks both begin at
  *    the same location, so the location cannot order them: whichever REQUEST
  *    answered first would win, which is not the agent the person asked for last.
- *    A counter orders those, and it is honest here because the only claimants
- *    are the three resolve-then-navigate paths in this entity.
+ *    A counter orders those. Any open a person starts with a click may claim it
+ *    ({@link beginSessionNavigation}): the latest click is the one they meant,
+ *    whichever entity it lives in. Something the app starts on its own — a page
+ *    that redirects as it mounts — must never claim it, or it would cancel a
+ *    click the person made meanwhile; it uses {@link watchSessionNavigation},
+ *    which yields to any click begun after it and cancels none (DOR-4622).
  *
  * Both conditions must hold, and each covers what the other cannot.
  *
@@ -112,4 +116,25 @@ export function beginSessionNavigation(readLocation: () => AppLocation): () => b
   const startedAt = sessionDestination(readLocation());
   const mine = ++latestLookup;
   return () => mine === latestLookup && sessionDestination(readLocation()) === startedAt;
+}
+
+/**
+ * Begin a navigation the app starts on its own — a redirect a page runs as it
+ * mounts — rather than one a person asked for.
+ *
+ * The same location check as {@link beginSessionNavigation}, with the counter
+ * read but never bumped: a person's click begun after this yields nothing to
+ * it, and this yields to that click. Claiming the counter here would turn a
+ * click made while the page was still redirecting into a silent dead click
+ * (DOR-4622).
+ *
+ * @param readLocation - Reads the router's current location, read again on each
+ *   check.
+ * @returns A predicate answering whether this navigation is still wanted:
+ *   `false` once the window moved or a click began after it.
+ */
+export function watchSessionNavigation(readLocation: () => AppLocation): () => boolean {
+  const startedAt = sessionDestination(readLocation());
+  const seen = latestLookup;
+  return () => seen === latestLookup && sessionDestination(readLocation()) === startedAt;
 }

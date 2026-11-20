@@ -38,7 +38,7 @@ export interface ApprovalPasskeys {
   /** The last change's failure, in a sentence; `null` when none. */
   error: string | null;
   /** Open the approve page to make a passkey called `label`. Call it in the click. */
-  add: (label: string, password: string) => void;
+  add: (label: string) => void;
   /** Remove a passkey, with the owner's password. */
   remove: (credentialId: string, password: string) => void;
   /** Remove a damaged passkeys file, with the owner's password. */
@@ -114,7 +114,7 @@ export function useApprovalPasskeys(enabled: boolean): ApprovalPasskeys {
     // Done waiting once the list shows a passkey it did not have.
     waiting: waitingFrom !== null && keys.length <= waitingFrom,
     error,
-    add: (label, password) => {
+    add: (label) => {
       // Opened now, in the click: a window opened after the request is blocked.
       const pending = openExternalWindowLater();
       if (!pending) {
@@ -123,7 +123,7 @@ export function useApprovalPasskeys(enabled: boolean): ApprovalPasskeys {
       }
       start.mutate(
         {
-          send: () => transport.startSessionRelayPasskey({ label, password }),
+          send: () => transport.startSessionRelayPasskey({ label }),
           pending,
         },
         forgetStart

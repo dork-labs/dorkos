@@ -2,13 +2,23 @@
  * Observe every runtime turn for sign-in failures and recovery.
  * Episodes belong to individual accounts. Only proof from that same account
  * clears one; each episode keeps its own timestamp for notification dedupe.
+ *
+ * A single failure is held for {@link SIGNIN_RECHECK_WINDOW_MS} before anybody
+ * is told (DOR-4424): one re-check runs, and a repair inside the window drops
+ * the notice unsaid. A second failure on the same account says it at once.
  * @module services/observability/runtime-signin-watch
  */
 import type { AgentRuntime, MessageOpts } from '@dorkos/shared/agent-runtime';
 import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { logger } from '../../lib/logger.js';
-import { recordAccountSignin, resetAccountSignins } from './account-signin-state.js';
+import { canonicalAccountPath } from '../core/usage/runtime-accounts.js';
+import {
+  accountSignedOutAt,
+  accountSigninState,
+  recordAccountSignin,
+  resetAccountSignins,
+} from './account-signin-state.js';
 
 /** One edge of one runtime's sign-in condition. */
 export interface RuntimeSigninEvent {
@@ -87,14 +97,92 @@ function noteCreditsRefused(runtime: string, sessionId: string, message: string)
   }
 }
 
-/** Each account holds its own episode timestamp, under its runtime. */
+/**
+ * How long one sign-in failure waits before anybody is told. A blip that a
+ * re-check, a later turn or a sign-in repairs inside it raises nothing.
+ */
+export const SIGNIN_RECHECK_WINDOW_MS = 30_000;
+
+/** What one re-check learned, for the log only: `ok` means its probe read the plan. */
+export type SigninRecheckResult = 'ok' | 'failed' | 'unknown';
+
+/**
+ * Re-checks one account after its first failure, never inside the turn. What
+ * it resolves to clears nothing: a re-check clears only by proving the account
+ * through {@link noteSigninProven} with its own start time, so a shared probe
+ * that began before the failure cannot clear it.
+ */
+export type SigninRecheck = (
+  runtime: string,
+  accountRoot: string | undefined
+) => Promise<SigninRecheckResult>;
+
+/** What proved a sign-in works again, for the one log line a clear writes. */
+export type SigninClearCause = 'turn' | 'probe' | 'login' | 'accept';
+
+/** The re-check until boot wires one: it learns nothing. */
+const noRecheck: SigninRecheck = async () => 'unknown';
+
+let recheck: SigninRecheck = noRecheck;
+let recheckWindowMs = SIGNIN_RECHECK_WINDOW_MS;
+
+/**
+ * Install (or tear down) the re-check a single failure runs, and its window.
+ *
+ * @param next - The re-check, or `null` for none.
+ * @param windowMs - How long a single failure is held. Tests may shorten it.
+ */
+export function setSigninRecheck(
+  next: SigninRecheck | null,
+  windowMs: number = SIGNIN_RECHECK_WINDOW_MS
+): void {
+  recheck = next ?? noRecheck;
+  recheckWindowMs = windowMs;
+}
+
+/** One account's live episode. */
+interface SigninEpisodeEntry {
+  /** When its first failure was noticed, in ms. The episode's identity. */
+  since: number;
+  /** The account as the failing turn named it: what the sink is told. */
+  account: string | undefined;
+  /** Whether the sink was told. False while the re-check window is open. */
+  announced: boolean;
+  /** The window's timer, while it is open. */
+  timer?: ReturnType<typeof setTimeout>;
+}
+
+/** Each account holds its own episode, under its runtime. */
 interface SigninEpisode {
-  /** Failure time per account; null is an unattributed credential. */
-  accounts: Map<string | null, number>;
+  /** Episodes by canonical account path; null is an unattributed credential. */
+  accounts: Map<string | null, SigninEpisodeEntry>;
 }
 
 /** Live episodes, removed only by proof about that same account. */
 const failingSince = new Map<string, SigninEpisode>();
+
+/**
+ * The key one account's episode is filed under. Canonical, so `/a/.claude`,
+ * `/a/.claude/` and a symlink to it are one account wherever the news comes from.
+ */
+function episodeKey(account: string | undefined): string | null {
+  return account === undefined ? null : canonicalAccountPath(account, undefined);
+}
+
+/** The live episode for one account, if any. */
+function liveEntry(runtimeType: string, key: string | null): SigninEpisodeEntry | undefined {
+  return failingSince.get(runtimeType)?.accounts.get(key);
+}
+
+/** Drop one account's episode and its timer. */
+function forget(runtimeType: string, key: string | null): void {
+  const episode = failingSince.get(runtimeType);
+  const entry = episode?.accounts.get(key);
+  if (!episode || !entry) return;
+  if (entry.timer) clearTimeout(entry.timer);
+  episode.accounts.delete(key);
+  if (episode.accounts.size === 0) failingSince.delete(runtimeType);
+}
 
 /**
  * Install what to do when a runtime's sign-in changes state. Called once by the
@@ -106,58 +194,123 @@ export function setRuntimeSigninSink(next: RuntimeSigninSink | null): void {
   sink = next;
 }
 
-/** Record and announce each account's first failure once. */
+/**
+ * Record each failure at once; hold the first one's notice for the re-check
+ * window, and say it now when a second failure arrives inside it.
+ */
 function noteSigninFailure(runtimeType: string, account: string | undefined): void {
   recordAccountSignin(runtimeType, account, 'signed-out');
   if (!sink) return;
-  const key = account ?? null;
-  const episode = failingSince.get(runtimeType) ?? { accounts: new Map() };
-  if (episode.accounts.has(key)) return;
-  const since = Date.now();
-  episode.accounts.set(key, since);
-  failingSince.set(runtimeType, episode);
-  if (
-    !report({
-      runtime: runtimeType,
-      ...(account ? { accountRoot: account } : {}),
-      edge: 'failing',
-      since: new Date(since).toISOString(),
-    })
-  ) {
-    episode.accounts.delete(key);
-    if (episode.accounts.size === 0) failingSince.delete(runtimeType);
+  const key = episodeKey(account);
+  const held = liveEntry(runtimeType, key);
+  if (held) {
+    // Twice inside the window is no blip.
+    if (!held.announced) announce(runtimeType, key, held);
+    return;
   }
+  const entry: SigninEpisodeEntry = { since: Date.now(), account, announced: false };
+  const episode = failingSince.get(runtimeType) ?? { accounts: new Map() };
+  episode.accounts.set(key, entry);
+  failingSince.set(runtimeType, episode);
+  entry.timer = setTimeout(() => announce(runtimeType, key, entry), recheckWindowMs);
+  // A held notice must never keep the process alive.
+  entry.timer.unref?.();
+  startRecheck(runtimeType, account);
 }
 
-/** A completed provider turn proves only the account it launched with. */
-function noteSigninRecovery(
-  runtimeType: string,
-  account: string | undefined,
-  turnStartedAt: number
-): void {
-  const noticedAt = failingSince.get(runtimeType)?.accounts.get(account ?? null);
-  if (noticedAt !== undefined && noticedAt >= turnStartedAt) return;
-  noteSigninRepaired(runtimeType, account);
+/** Tell the sink about a held failure, unless it was repaired or reset since. */
+function announce(runtimeType: string, key: string | null, entry: SigninEpisodeEntry): void {
+  if (entry.timer) clearTimeout(entry.timer);
+  entry.timer = undefined;
+  if (entry.announced || liveEntry(runtimeType, key) !== entry) return;
+  entry.announced = true;
+  const told =
+    sink !== null &&
+    report({
+      runtime: runtimeType,
+      ...(entry.account ? { accountRoot: entry.account } : {}),
+      edge: 'failing',
+      since: new Date(entry.since).toISOString(),
+    });
+  // Nobody was told, so nothing may stand: the next failure must be heard.
+  if (!told) forget(runtimeType, key);
 }
 
 /**
- * A completed vendor login proves only the account the command was pinned to.
- * @param runtimeType - The runtime signed in.
- * @param account - Its exact account root, or absent for runtimes without accounts.
+ * Run the one re-check a held failure gets. Its answer clears nothing here (see
+ * {@link SigninRecheck}); its errors never reach the turn.
  */
-export function noteSigninRepaired(runtimeType: string, account: string | undefined): void {
+function startRecheck(runtimeType: string, account: string | undefined): void {
+  const failed = (err: unknown): void =>
+    logger.debug('[Runtimes] A sign-in re-check could not run', { err, runtime: runtimeType });
+  let pending: Promise<SigninRecheckResult>;
+  try {
+    pending = Promise.resolve(recheck(runtimeType, account));
+  } catch (err) {
+    failed(err);
+    return;
+  }
+  pending
+    .then((result) =>
+      logger.debug('[Runtimes] A sign-in re-check finished', { runtime: runtimeType, result })
+    )
+    .catch(failed);
+}
+
+/**
+ * Proof that started at a known time: a turn that reached the provider, or a
+ * probe that read the plan. It proves only the account it ran on, and only if
+ * it began after the failure was noticed — a probe or turn already under way
+ * when the sign-in died says nothing about the sign-in as it is now.
+ *
+ * @param runtimeType - The runtime that ran.
+ * @param account - Its account root in any spelling, or absent for runtimes without accounts.
+ * @param startedAt - When the turn or probe began, in ms.
+ * @param cause - What proved it, written to the log when this clears a signed-out state.
+ */
+export function noteSigninProven(
+  runtimeType: string,
+  account: string | undefined,
+  startedAt: number,
+  cause: SigninClearCause
+): void {
+  // The LATEST failure, not the episode's first: a probe that began between
+  // two failures was already outrun by the second. The signed-out mark is
+  // stamped on every failure; the episode's `since` stands in only without it.
+  const noticedAt =
+    accountSignedOutAt(runtimeType, account) ?? liveEntry(runtimeType, episodeKey(account))?.since;
+  if (noticedAt !== undefined && noticedAt >= startedAt) return;
+  noteSigninRepaired(runtimeType, account, cause);
+}
+
+/**
+ * Proof that one account's sign-in works: a turn, a probe, a login or an
+ * accepted sign-in. It clears only that account. A failure still inside its
+ * re-check window is dropped unsaid, so no recovery is announced either.
+ *
+ * @param runtimeType - The runtime signed in.
+ * @param account - Its account root in any spelling, or absent for runtimes without accounts.
+ * @param cause - What proved it, written to the log when this clears a signed-out state.
+ */
+export function noteSigninRepaired(
+  runtimeType: string,
+  account: string | undefined,
+  cause: SigninClearCause
+): void {
+  const wasSignedOut = accountSigninState(runtimeType, account) === 'signed-out';
   recordAccountSignin(runtimeType, account, 'signed-in');
-  const episode = failingSince.get(runtimeType);
-  const key = account ?? null;
-  const since = episode?.accounts.get(key);
-  if (since === undefined || !episode) return;
-  episode.accounts.delete(key);
-  if (episode.accounts.size === 0) failingSince.delete(runtimeType);
+  const key = episodeKey(account);
+  const entry = liveEntry(runtimeType, key);
+  if (entry) forget(runtimeType, key);
+  if (!wasSignedOut && !entry) return;
+  logger.info('[Runtimes] Sign-in cleared', { runtime: runtimeType, account, cause });
+  if (!entry?.announced) return;
   report({
     runtime: runtimeType,
-    ...(account ? { accountRoot: account } : {}),
+    // The failing edge's spelling, so both edges name one subject.
+    ...(entry.account ? { accountRoot: entry.account } : {}),
     edge: 'recovered',
-    since: new Date(since).toISOString(),
+    since: new Date(entry.since).toISOString(),
   });
 }
 
@@ -310,7 +463,7 @@ async function* watchTurn(
     throw err;
   }
   if (!sawAuthError && reachedProvider) {
-    noteSigninRecovery(runtime.type, accountOf(runtime, sessionId), startedAt);
+    noteSigninProven(runtime.type, accountOf(runtime, sessionId), startedAt, 'turn');
   }
 }
 
@@ -351,23 +504,30 @@ export function watchRuntimeSignin(runtime: AgentRuntime): AgentRuntime {
 }
 
 /**
- * Whether an account (or any account of a runtime) still has a live episode.
- * Used during boot to avoid retiring a condition this process already observed.
+ * Whether an account (or any account of a runtime) still has a live episode,
+ * including one still held in its re-check window. Used during boot to avoid
+ * retiring a condition this process already observed.
  * @param runtimeType - The runtime to ask about.
- * @param accountRoot - Ask about this account only when present.
+ * @param accountRoot - Ask about this account only when present, in any spelling.
  */
 export function isSigninFailing(runtimeType: string, accountRoot?: string): boolean {
   return accountRoot === undefined
     ? failingSince.has(runtimeType)
-    : failingSince.get(runtimeType)?.accounts.has(accountRoot) === true;
+    : liveEntry(runtimeType, episodeKey(accountRoot)) !== undefined;
 }
 
 /**
- * Forget every sign-in episode this process is holding open.
+ * Forget every sign-in episode this process is holding open, and every held
+ * notice with it.
  *
  * @internal Exported for testing only.
  */
 export function resetSigninEpisodes(): void {
+  for (const episode of failingSince.values()) {
+    for (const entry of episode.accounts.values()) {
+      if (entry.timer) clearTimeout(entry.timer);
+    }
+  }
   failingSince.clear();
   resetAccountSignins();
 }

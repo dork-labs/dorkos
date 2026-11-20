@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fixture suite for scripts/no-code-scope.sh, the decision that lets a pull
-# request changing only changelog, docs or version lines skip test.yml's six
-# test shards.
+# request changing only changelog, docs, research, the root README or version
+# lines skip test.yml's six test shards.
 #
 # Both directions fail quietly:
 #
@@ -64,6 +64,7 @@ JSON
   echo '# Changelog' >"$repo/CHANGELOG.md"
   echo '0.1.0' >"$repo/VERSION"
   echo '# Docs' >"$repo/docs/index.mdx"
+  echo '# Fixture' >"$repo/README.md"
   {
     git -C "$repo" init -q
     git -C "$repo" add -A
@@ -107,6 +108,12 @@ commit "$r"
 expect false 'CHANGELOG.md, VERSION, docs and blog' "$r"
 
 r=$(fresh_repo)
+mkdir -p "$r/research"
+echo '# A research report' >"$r/research/20261116_x.md"
+commit "$r"
+expect false 'a research report only' "$r"
+
+r=$(fresh_repo)
 bump "$r/package.json"
 commit "$r"
 expect false 'a root package.json version bump' "$r"
@@ -135,6 +142,17 @@ r=$(fresh_repo)
 git -C "$r" mv docs/index.mdx docs/moved.mdx
 commit "$r"
 expect false 'a file moved within docs' "$r"
+
+r=$(fresh_repo)
+echo 'more' >>"$r/README.md"
+commit "$r"
+expect false 'the root README.md only' "$r"
+
+r=$(fresh_repo)
+echo 'more' >>"$r/README.md"
+echo '- a fix' >"$r/changelog/unreleased/261117-000000-fix.md"
+commit "$r"
+expect false 'the root README.md with a changelog fragment' "$r"
 
 # --- something testable changed: true -----------------------------------------
 r=$(fresh_repo)
@@ -234,6 +252,25 @@ mkdir -p "$r/apps/client/docs"
 echo 'x' >"$r/apps/client/docs/a.md"
 commit "$r"
 expect true 'a docs folder that is not the root docs/' "$r"
+
+# Only the ROOT README.md is prose; a package's README can be packed, read or
+# asserted on by that package's own tests.
+r=$(fresh_repo)
+echo '# Shared' >"$r/packages/shared/README.md"
+commit "$r"
+expect true 'a package README.md' "$r"
+
+r=$(fresh_repo)
+echo 'x' >"$r/README.md.orig"
+echo 'x' >"$r/README.mdx"
+commit "$r"
+expect true 'near-miss names for the root README.md' "$r"
+
+r=$(fresh_repo)
+mkdir -p "$r/.agents/skills/research"
+echo 'x' >"$r/.agents/skills/research/SKILL.md"
+commit "$r"
+expect true 'a research folder that is not the root research/' "$r"
 
 r=$(fresh_repo)
 commit "$r"

@@ -268,16 +268,19 @@ describe('a self-edit keeps the personality block SOUL.md carries', () => {
 });
 
 describe('billing stays operator-only (spec billing-account-ladder invariant 4)', () => {
-  it('refuses an `account` on the agent-reachable self-edit path', async () => {
-    // This service backs the `update_agent` MCP tool. An agent that could set
-    // `account` on a manifest could repoint whose subscription its work bills
-    // to — the credential axis `config-write-policy.ts` already holds
-    // `defaultAccount` on. Refused, not stripped: an agent told nothing would
-    // report the change as done.
-    await expect(
-      updateAgentManifest({ agentPath, body: { account: 'acme-corp' } })
-    ).rejects.toMatchObject({ code: 'OPERATOR_ONLY' });
-  });
+  it.each(['acme-corp', 'dorkos-credits'])(
+    'refuses account %s on the agent-reachable self-edit path',
+    async (account) => {
+      // This service backs the `update_agent` MCP tool. An agent that could set
+      // `account` on a manifest could repoint whose subscription its work bills
+      // to — the credential axis `config-write-policy.ts` already holds
+      // `defaultAccount` on. Refused, not stripped: an agent told nothing would
+      // report the change as done.
+      await expect(updateAgentManifest({ agentPath, body: { account } })).rejects.toMatchObject({
+        code: 'OPERATOR_ONLY',
+      });
+    }
+  );
 
   it('writes nothing at all when it refuses', async () => {
     await expect(

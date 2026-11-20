@@ -19,6 +19,8 @@ interface QueueAgentRowProps {
   onSwitchNow?: (() => void) | undefined;
   /** Called as Send now or Don't deliver starts, so the queue can keep focus if the row leaves. */
   onLeaving?: ((id: string) => void) | undefined;
+  /** Why this message waits while its agent is paused. */
+  pausedLine?: string | undefined;
 }
 
 /**
@@ -40,6 +42,7 @@ export function QueueAgentRow({
   actions,
   onSwitchNow,
   onLeaving,
+  pausedLine,
 }: QueueAgentRowProps) {
   const [confirming, setConfirming] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -109,6 +112,7 @@ export function QueueAgentRow({
         {item.waiting !== undefined && (
           <p className="text-muted-foreground line-clamp-1 text-xs">{item.waiting.line}</p>
         )}
+        {pausedLine !== undefined && <p className="text-muted-foreground text-xs">{pausedLine}</p>}
       </div>
       {confirming ? (
         <div className="ml-auto flex basis-full flex-wrap items-center justify-end gap-1 text-xs sm:basis-auto">

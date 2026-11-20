@@ -188,6 +188,9 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'PUT /api/connectors/connections/:connectionId/events/source',
       'PUT /api/connectors/providers/:provider/credential',
       'PUT /api/connectors/sessions/:sessionId/connections/:connectionId',
+      // The monthly spend limit and app prices are the person's, set at the hub (DOR-4204).
+      'PUT /api/connectors/spending/limit',
+      'PUT /api/connectors/spending/prices/:toolkit',
       'PUT /api/community-connections/:ref/teammate-spend',
     ],
   ],
@@ -219,6 +222,7 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'POST /api/local-browser/profiles/:id/agents',
       'DELETE /api/local-browser/profiles/:id/agents/:agentId',
       'POST /api/local-browser/sign-in',
+      'POST /api/local-browser/sign-in/done',
       'POST /api/local-browser/handoff/hand-back',
       'POST /api/local-browser/handoff/stop',
       'POST /api/notifications/read-all',
@@ -255,6 +259,9 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'POST /api/extensions/:id/enable',
       'POST /api/extensions/:id/forget',
       'POST /api/extensions/:id/init-server',
+      // A frame's video link and the route it plays on (DOR-4321).
+      'POST /api/extensions/:id/media-tickets',
+      'ALL /api/extensions/media/:ticket',
       'POST /api/extensions/:id/move-out',
       'POST /api/extensions/:id/remove',
       'POST /api/extensions/:id/revoke',

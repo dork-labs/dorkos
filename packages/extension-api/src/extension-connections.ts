@@ -29,6 +29,11 @@ export const EXTENSION_CONNECTION_ERROR_CODES = [
   'EXTENSION_CONNECTION_INVALID_INPUT',
   /** The answer was bigger than DorkOS hands to an extension (8 MB). Nothing is truncated. */
   'EXTENSION_CONNECTION_RESULT_TOO_LARGE',
+  /**
+   * The read spends money and no monthly limit covers it: no limit is set, the
+   * app has no price, or the limit is reached. Nothing ran and nothing was spent.
+   */
+  'EXTENSION_CONNECTION_SPEND_REFUSED',
 ] as const;
 
 /** One reason `ctx.connections.read` refuses. */

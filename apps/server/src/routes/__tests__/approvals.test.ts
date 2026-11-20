@@ -1,5 +1,5 @@
 /**
- * Tests for the approvals routes (spec `agent-trust` §3.3) — the cockpit lists
+ * Tests for the approvals routes (spec `agent-trust` §3.3) — the app lists
  * what is waiting and records the operator's decision.
  *
  * The `who may decide` block is the important one. Review reproduced a complete
@@ -25,6 +25,8 @@ import { APPROVAL_TOKEN_HEADER } from '../../services/core/capabilities/index.js
 import { AGENT_IDENTITY_HEADER } from '../../middleware/agent-identity.js';
 import { eventFanOut } from '../../services/core/event-fan-out.js';
 import type { ActivityService } from '../../services/activity/activity-service.js';
+import { registerSessionApprovalStepUpCases } from './session-approval-step-up.cases.js';
+import { registerApprovalStepUpCases } from './approvals-step-up.cases.js';
 import { createApprovalsRoutes } from '../approvals.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { createPermissionWorld } from '../../services/core/permissions/__tests__/permission-fixtures.js';
@@ -549,8 +551,7 @@ describe('approvals routes', () => {
           {
             eventType: 'permission.answered',
             actorLabel: 'Someone on this computer',
-            summary:
-              'Someone on this computer allowed dorkbot to run "Uninstall a marketplace package" once',
+            summary: `Someone on this computer allowed dorkbot to run "Uninstall a marketplace package" once · Request ${ticket.requestCode}`,
             metadata: {
               action: 'marketplace.uninstall',
               area: null,
@@ -558,6 +559,7 @@ describe('approvals routes', () => {
               approvalId: ticket.approvalId,
               blockedRequest: false,
               posture: 'local-trust',
+              requestCode: ticket.requestCode,
             },
           },
         ]);
@@ -571,7 +573,7 @@ describe('approvals routes', () => {
         expect(emitted.map((e) => e.eventType)).toEqual(['permission.answered']);
         expect(emitted[0]!.metadata).toMatchObject({ answer: 'deny' });
         expect(emitted[0]!.summary).toBe(
-          'Someone on this computer said no to dorkbot running "Uninstall a marketplace package"'
+          `Someone on this computer said no to dorkbot running "Uninstall a marketplace package" · Request ${ticket.requestCode}`
         );
       });
 
@@ -642,7 +644,7 @@ describe('approvals routes', () => {
         answer: 'always',
       });
       expect(emitted[0]!.summary).toBe(
-        'Someone on this computer allowed DorkBot to run "Open a room" from now on'
+        `Someone on this computer allowed DorkBot to run "Open a room" from now on · Request ${ticket.requestCode}`
       );
       // The setting's own audit line, through the one permission write owner.
       const changed = world.events.filter((e) => e.eventType === 'permission.changed');
@@ -895,3 +897,7 @@ describe('approvals routes', () => {
     expect(res.body.approvals).toEqual([]);
   });
 });
+
+registerApprovalStepUpCases();
+
+registerSessionApprovalStepUpCases();

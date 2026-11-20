@@ -17,6 +17,7 @@
  */
 import type { CapabilityPreflightResult } from '../../core/capabilities/index.js';
 import type { AuthorizedConnectorExecution } from './authorization-service.js';
+import { spendPreflightFor } from '../spending/spend-gate.js';
 
 /** Writes that change only the person's own account: drafts, labels, restoring trash, their calendars. */
 const STAYS_IN_ACCOUNT: ReadonlySet<string> = new Set([
@@ -105,11 +106,15 @@ export function writeReachesOutside(operationSlug: string, args: Record<string, 
 export function preflightResultOf(
   authorized: Pick<
     AuthorizedConnectorExecution,
-    'authorityBinding' | 'serviceAction' | 'operation' | 'arguments'
-  >
+    'authorityBinding' | 'serviceAction' | 'operation' | 'arguments' | 'actorKind' | 'agentId'
+  > &
+    Partial<Pick<AuthorizedConnectorExecution, 'sessionId'>>
 ): CapabilityPreflightResult {
   const { capabilityClassification, operationSlug } = authorized.operation;
+  // A paid run's answer from the monthly limit (DOR-4204 PR 2): run, ask, or refuse.
+  const spend = spendPreflightFor(authorized);
   return {
+    ...(spend ? { spend } : {}),
     authorityBinding: authorized.authorityBinding,
     approvalServiceAction: authorized.serviceAction,
     outward:

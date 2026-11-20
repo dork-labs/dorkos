@@ -289,9 +289,9 @@ export const RelaySendMessageRequestSchema = z
 
 export type RelaySendMessageRequest = z.infer<typeof RelaySendMessageRequestSchema>;
 
-/** @deprecated Use `RelaySendMessageRequestSchema` — renamed to avoid collision with schemas.ts */
+/** @deprecated since 0.135, remove in 0.155. Use `RelaySendMessageRequestSchema` — renamed to avoid collision with schemas.ts */
 export const SendMessageRequestSchema = RelaySendMessageRequestSchema;
-/** @deprecated Use `RelaySendMessageRequest` — renamed to avoid collision with schemas.ts */
+/** @deprecated since 0.135, remove in 0.155. Use `RelaySendMessageRequest` — renamed to avoid collision with schemas.ts */
 export type SendMessageRequest = RelaySendMessageRequest;
 
 export const MessageListQuerySchema = z
@@ -532,6 +532,16 @@ export const TaskDispatchPayloadSchema = z
      * the sentence without a number, as every envelope before this field did.
      */
     timeLimit: z.string().min(1).max(40).optional(),
+    /**
+     * The run's time limit in milliseconds, counted from when its turn starts
+     * rather than from the dispatch: a turn can wait in line for a free agent
+     * slot first, and that wait must not spend the limit (DOR-4576). The
+     * envelope's TTL stays the outer bound, so this can never lengthen a run
+     * past it. Absent counts the TTL alone, as every envelope before this
+     * field did, and so does a value that is not a positive whole number: a bad
+     * value falls back to today's behaviour, never to no limit.
+     */
+    timeLimitMs: z.number().int().positive().optional().catch(undefined),
     /**
      * The home of the task's agent, when it has one (spec `agent-home-desk`
      * §3.2 row 12). The receiver hands it to the runtime as

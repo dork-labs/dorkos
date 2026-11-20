@@ -81,12 +81,15 @@ name: test
 # fan-in's union check requires every `*.binary.test.ts` in the tree by name,
 # so a binary suite cannot stop running without `test` going red.
 #
-# NO separate build step: `test` declares `dependsOn: ["^build"]` in turbo.json,
-# so `turbo test` builds every dependency package first. Turbo computes that
-# from the task graph. Each shard used to pay that whole build cold; since
-# DOR-4190 the shards restore the builds the last main canary made, and turbo
-# replays the ones whose task hash still matches (see "Restore the builds the
-# last main canary made").
+# ONE BUILD STEP, THEN `--only` (DOR-4625). `test` declares `dependsOn:
+# ["^build"]` in turbo.json, and turbo hashes `turbo test`'s `--` arguments into
+# every task of the run, those builds included, so a build made inside a test
+# run is cached for that argument list alone. Every test job therefore builds
+# first with scripts/build-test-deps.sh (the build set read from turbo's own
+# dry run, built with no `--` arguments) and runs its suites with `--only`.
+# The builds then hash the same in every shard, the pull request leg and
+# test-binary, and replay the entry the last main canary saved (see "Restore
+# the builds the last main canary made").
 #
 # `-- --run` is REQUIRED, not decoration. Five packages' `test` scripts are a
 # bare `vitest` (@dorkos/db, harness, marketplace, operating-skills, skills),
@@ -288,6 +291,32 @@ name: test
 # also re-warms the `refs/heads/main` Actions caches (pnpm store, Playwright
 # browsers), which have had no writer since the push-to-main legs were retired
 # on 2026-09-19 and which every PR branch restores from.
+# PULL REQUESTS INTO A RELEASE BRANCH RUN THE FULL SWEEP (DOR-4639).
+#
+# Releases ship from `release/v<X.Y.Z>` branches cut from a QA-pinned main
+# commit (decision DOR-4636), and changes reach one only by pull request. Such
+# a pull request is the last gate before npm and the desktop app, and there is
+# no merge queue behind it to run the full suite, so it runs what the queue
+# runs: every suite on six shards, the binary and community jobs, the retry
+# budget, the quarantine lane and the union proof. Nothing is scoped: no shard
+# plan, no no-code skip, no two-shard matrix.
+#
+# How: wherever this file said "full on every event but a pull request", it now
+# says "full on every event but a pull request whose base is not a release
+# branch". In `if:` that is
+#
+#   github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/')
+#
+# and the scoped PR leg's own step reads the negation. Step bodies branch on
+# `$EVENT`, so every non-canary `EVENT:` maps such a pull request to the
+# pseudo-event `release_pull_request`, which every body treats as not a pull
+# request, i.e. full. The canary guards keep the plain event name (they are
+# byte-identical by test and a release PR is not a canary event either way).
+#
+# FAILS CLOSED ON THE SIDE OF MORE TESTING: the prefix is `release/`, wider
+# than the `release/v*` the branches use, so any base under release/ gets the
+# full sweep. `runs-on` is NOT widened: only `merge_group` may use the opt-in
+# queue runner, so a release PR stays on GitHub's hosted runner like any PR.
 on:
   pull_request:
   merge_group:
@@ -335,7 +364,7 @@ jobs:
   # division of labour the shards already run on. Not a required context
   # itself, so this job-level `if:` skips nothing the ruleset reads.
   community-pg:
-    if: ${{ github.event_name != 'pull_request' }}
+    if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
     # Queue runs only may use the opt-in `RUNNER_LABEL`; every other event, and
     # every run while it is unset, stays on GitHub's hosted runner. Never drop
     # the event check: a `pull_request` run executes a fork's code, and it must
@@ -559,7 +588,7 @@ jobs:
       - name: Decide whether this change can reach the packaged proof
         id: scope
         env:
-          EVENT: ${{ github.event_name }}
+          EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
         run: |
           set -euo pipefail
           if [ "$EVENT" != 'pull_request' ]; then
@@ -713,7 +742,7 @@ jobs:
       - name: Decide whether this change can affect a test
         id: noscope
         env:
-          EVENT: ${{ github.event_name }}
+          EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
         run: |
           set -uo pipefail
           if [ "$EVENT" != 'pull_request' ]; then
@@ -752,7 +781,7 @@ jobs:
       - name: Plan this pull request's suites
         id: plan
         env:
-          EVENT: ${{ github.event_name }}
+          EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
         run: |
           set -uo pipefail
           scope=full
@@ -780,7 +809,7 @@ jobs:
       - name: Pick the shard count
         id: count
         env:
-          EVENT: ${{ github.event_name }}
+          EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
           SCOPE: ${{ steps.plan.outputs.scope }}
           DIRS: ${{ steps.plan.outputs.dirs }}
         run: |
@@ -1050,6 +1079,18 @@ jobs:
       # build's own scope is deleted with its ref, so a save there would be
       # waste. Builds that changed since the last canary still miss and
       # rebuild, so a busy day sees partial hits.
+      #
+      # ONE ENTRY FOR EVERY TEST JOB (DOR-4625, ledger 261118-140000). Turbo
+      # passes the `--` arguments of `turbo test` to EVERY task in the run, the
+      # builds included, and hashes them in (turbo 2.10.13, `--dry=json`:
+      # `@dorkos/shared#build` is 021e0f55… from `turbo run build`, f45d40ab…
+      # under `turbo test -- --run --shard=1/6`, 1493bf38… under 2/6). Keyed
+      # per shard (ledger 261117-142230), a queue shard could replay only its
+      # own shard's builds, and only 6 of 49 hit. Now every test job builds
+      # first through scripts/build-test-deps.sh, a `turbo run build` with no
+      # `--` arguments, and the suites run with `--only`, so the same builds
+      # hash the same in every shard, the pull request leg and test-binary.
+      # One entry serves them all; shard 1 of the canary saves it.
       - name: Restore the builds the last main canary made
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -1095,7 +1136,7 @@ jobs:
       # writes an empty list and says so, and an empty list means every test
       # blocks as it always did.
       - name: Read the quarantine lane
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
         run: |
           node packages/ci-steward/src/cli.ts quarantine-list \
             --runner vitest \
@@ -1114,12 +1155,29 @@ jobs:
           echo "VITEST_SHARD_EPOCH=$epoch" >> "$GITHUB_ENV"
           node scripts/sharding/mode.mjs "$epoch" >> "$GITHUB_ENV"
 
+      # The builds every suite imports, as their own turbo run with no `--`
+      # arguments (DOR-4625; scripts/build-test-deps.sh says why), so they
+      # replay from the restored cache and the sweep below runs `--only`.
+      # Gated in the script, not with a step `if:`, so a skipped build can
+      # never look like a passed one: the pull request leg builds its own set
+      # further down.
+      - name: Build what the suites import, once, with no test arguments
+        id: deps
+        env:
+          EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
+        run: |
+          if [ "$EVENT" = 'pull_request' ]; then
+            echo 'the pull request leg builds its own set, inside its suite step below.'
+            exit 0
+          fi
+          bash scripts/build-test-deps.sh
+
       - name: Run every package's test suite (shard ${{ matrix.shard }}/6)
         id: sweep
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
         run: |
           set +e
-          pnpm exec turbo test --summarize --continue --concurrency=1 -- --run --shard=${{ matrix.shard }}/6 --config=../../scripts/sharding/config.ts --retry=1 --passWithNoTests --exclude='**/*.binary.test.ts' --reporter=default --reporter=json --outputFile.json=vitest-shard-report.json --reporter=../../scripts/vitest-flake-reporter.ts
+          pnpm exec turbo test --summarize --continue --concurrency=1 --only -- --run --shard=${{ matrix.shard }}/6 --config=../../scripts/sharding/config.ts --retry=1 --passWithNoTests --exclude='**/*.binary.test.ts' --reporter=default --reporter=json --outputFile.json=vitest-shard-report.json --reporter=../../scripts/vitest-flake-reporter.ts
           code=$?
           echo "exit-code=$code" >> "$GITHUB_OUTPUT"
           if [ "$code" -ne 0 ]; then
@@ -1139,7 +1197,7 @@ jobs:
       # check also requires every such file by name (DOR-4190, ledger
       # 261115-203006). Quarantine itself excludes no file.
       - name: Refuse any failure the quarantine lane does not cover
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
         run: |
           args=()
           while IFS= read -r report; do args+=(--reports "$report"); done < <(
@@ -1175,7 +1233,7 @@ jobs:
       - name: Decide whether this change can affect a test
         id: noscope
         env:
-          EVENT: ${{ github.event_name }}
+          EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
           TESTS: ${{ needs.test-shard-count.outputs.tests }}
         run: |
           set -uo pipefail
@@ -1225,7 +1283,7 @@ jobs:
       # set; the old per-shard `--affected` needed a pinned base SHA for the
       # same reason.
       - name: Run the affected packages' test suites (shard ${{ matrix.shard }}/${{ strategy.job-total }})
-        if: ${{ github.event_name == 'pull_request' && steps.noscope.outputs.run == 'true' }}
+        if: ${{ github.event_name == 'pull_request' && !startsWith(github.base_ref, 'release/') && steps.noscope.outputs.run == 'true' }}
         env:
           SCOPE: ${{ needs.test-shard-count.outputs.scope }}
           PACKAGES: ${{ needs.test-shard-count.outputs.packages }}
@@ -1237,7 +1295,11 @@ jobs:
           else
             echo "test plan: every package's suite"
           fi
-          pnpm exec turbo test --continue --concurrency=1 "${filters[@]}" -- --run --shard=${{ matrix.shard }}/${{ strategy.job-total }} --config=../../scripts/sharding/config.ts --passWithNoTests --exclude='**/*.binary.test.ts'
+          # The builds first, as their own run with no test arguments, so they
+          # hash the same as the canary's and replay; then the suites alone
+          # (`--only`). scripts/build-test-deps.sh says why (DOR-4625).
+          bash scripts/build-test-deps.sh "${filters[@]}"
+          pnpm exec turbo test --continue --concurrency=1 --only "${filters[@]}" -- --run --shard=${{ matrix.shard }}/${{ strategy.job-total }} --config=../../scripts/sharding/config.ts --passWithNoTests --exclude='**/*.binary.test.ts'
 
       # THE POINT OF THIS STEP: turbo caches `test`, and a full cache hit prints
       # "Tasks: 31 successful, 31 total" — one per package declaring a `test`
@@ -1266,7 +1328,7 @@ jobs:
       # is exactly the weakening its header refuses. The PR leg gets no
       # execution proof because it never had one.
       - name: Prove the suite actually executed
-        if: ${{ success() && github.event_name != 'pull_request' }}
+        if: ${{ success() && (github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/')) }}
         run: bash scripts/assert-tests-executed.sh
 
       # The price of the retry on the suite line above: every test it absorbed
@@ -1301,7 +1363,7 @@ jobs:
       # reporter loaded, so this step would fail on a missing report — which is
       # correct behaviour for the queue and meaningless noise for a PR.
       - name: Name the tests that only passed on a retry
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
         run: |
           # pipefail, because every read below is the LAST stage of a pipe and
           # bash otherwise reports the exit status of that last stage only. A
@@ -1350,7 +1412,7 @@ jobs:
       # The lane this shard read, handed to the fan-in, which has no install and
       # cannot read the data branch itself.
       - name: Hand this shard's quarantine lane to the fan-in
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
         uses: actions/upload-artifact@v7
         with:
           name: quarantine-lane-shard-${{ matrix.shard }}-vitest
@@ -1362,7 +1424,7 @@ jobs:
           retention-days: 7
 
       - name: Record the test files this shard collected
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
         run: |
           reports=$(find apps packages -mindepth 2 -maxdepth 2 -name vitest-shard-report.json)
           [ -n "$reports" ] || { echo 'no vitest-shard-report.json found in any package — the json reporter passthrough is broken' >&2; exit 1; }
@@ -1370,7 +1432,7 @@ jobs:
           wc -l shard-files-${{ matrix.shard }}.txt
 
       - uses: actions/upload-artifact@v7
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
         with:
           name: shard-files-${{ matrix.shard }}
           path: shard-files-${{ matrix.shard }}.txt
@@ -1388,7 +1450,7 @@ jobs:
       # `!cancelled()` so a red shard uploads too: flaky-test-runs sampled from
       # green shards only would never see a test that failed twice.
       - name: Upload this shard's vitest reports for CI Steward
-        if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+        if: ${{ !cancelled() && (github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/')) }}
         continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
@@ -1416,14 +1478,17 @@ jobs:
       # step exits 0 either way, because a cache that was not saved is a
       # warning, not a failed canary.
       #
-      # Every shard tries the save, so one green shard is enough. The key ends
-      # in this commit's SHA, so the first shard to save wins and the other
-      # five log "another job may be creating this cache" and skip.
+      # Shard 1 alone saves, because every shard builds the same set with the
+      # same hashes (see "Restore the builds the last main canary made"), and
+      # the trim reads the build step's own run summary, not the sweep's,
+      # which under `--only` holds no build task (DOR-4625).
       - name: Keep only this run's build entries in the turbo cache
         id: trim
-        if: ${{ github.ref == 'refs/heads/main' }}
+        if: ${{ github.ref == 'refs/heads/main' && matrix.shard == 1 }}
+        env:
+          BUILD_SUMMARY: ${{ steps.deps.outputs.summary }}
         run: |
-          if bash scripts/keep-build-cache-only.sh; then
+          if bash scripts/keep-build-cache-only.sh "$BUILD_SUMMARY"; then
             echo 'save=true' >> "$GITHUB_OUTPUT"
           else
             echo '::warning title=Build cache not saved::the turbo cache could not be trimmed to build entries, so this run saves none; the next run rebuilds.'
@@ -1546,7 +1611,11 @@ jobs:
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-store.outputs.image }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml') }}
-      # The same build entries the shards restore; see test-shard. Restore only.
+      # The build entries the shards restore; see test-shard. Restore only. The
+      # shards save one entry per shard, so this falls through to the last
+      # restore key, the newest of any shard's. Its `--` arguments (the file
+      # list, its own retry) differ from the sweep's, and turbo hashes them
+      # into every build, so it does not hit them today.
       - name: Restore the builds the last main canary made
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -1562,7 +1631,7 @@ jobs:
       - name: Decide which binary suites run
         id: plan
         env:
-          EVENT: ${{ github.event_name }}
+          EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
           SCOPE: ${{ needs.test-shard-count.outputs.scope }}
           PACKAGES: ${{ needs.test-shard-count.outputs.packages }}
           TESTS: ${{ needs.test-shard-count.outputs.tests }}
@@ -1600,7 +1669,7 @@ jobs:
 
       # The lane, as each shard reads it; see test-shard. Full-sweep events only.
       - name: Read the quarantine lane
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
         run: |
           node packages/ci-steward/src/cli.ts quarantine-list \
             --runner vitest \
@@ -1616,10 +1685,25 @@ jobs:
       # queue line; zero retries and a direct failure on a pull request, as the
       # shards' PR line. The reporters ride both, so the proof step below can
       # read what ran on either event.
+      # Same as test-shard's "Build what the suites import" (DOR-4625): the
+      # builds these packages import, with no test arguments, so they replay
+      # the canary's entry, and the line below runs `--only`.
+      - name: Build what the binary suites import, once, with no test arguments
+        env:
+          RUN: ${{ steps.plan.outputs.run }}
+        run: |
+          if [ "$RUN" != true ]; then
+            echo 'nothing to build here (see the step above).'
+            exit 0
+          fi
+          filters=()
+          while IFS= read -r name; do filters+=("--filter=$name"); done < "$RUNNER_TEMP/binary-packages.txt"
+          bash scripts/build-test-deps.sh "${filters[@]}"
+
       - name: Run the binary CLI suites
         id: sweep
         env:
-          EVENT: ${{ github.event_name }}
+          EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
           RUN: ${{ steps.plan.outputs.run }}
         run: |
           # +e: the default shell is `bash -e`, and the suites' exit code must be
@@ -1638,7 +1722,7 @@ jobs:
           # relative to the package, so a repo-relative filter matches nothing
           # from inside apps/server; an absolute one matches exactly that file.
           mapfile -t files < <(sed "s|^|$PWD/|" "$RUNNER_TEMP/binary-files.txt")
-          pnpm exec turbo test --continue --concurrency=1 "${filters[@]}" -- --run "${files[@]}" --retry=$retry --reporter=default --reporter=json --outputFile.json=vitest-shard-report.json --reporter=../../scripts/vitest-flake-reporter.ts
+          pnpm exec turbo test --continue --concurrency=1 --only "${filters[@]}" -- --run "${files[@]}" --retry=$retry --reporter=default --reporter=json --outputFile.json=vitest-shard-report.json --reporter=../../scripts/vitest-flake-reporter.ts
           code=$?
           echo "exit-code=$code" >> "$GITHUB_OUTPUT"
           if [ "$EVENT" = 'pull_request' ]; then
@@ -1650,7 +1734,7 @@ jobs:
           exit 0
 
       - name: Refuse any failure the quarantine lane does not cover
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
         run: |
           args=()
           while IFS= read -r report; do args+=(--reports "$report"); done < <(
@@ -1988,7 +2072,7 @@ jobs:
       # queue build or canary run that skipped it fails here.
       - name: Require real community Postgres tests green
         env:
-          EVENT: ${{ github.event_name }}
+          EVENT: ${{ github.event_name == 'pull_request' && startsWith(github.base_ref, 'release/') && 'release_pull_request' || github.event_name }}
         run: |
           result="${{ needs.community-pg.result }}"
           echo "community Postgres result: $result"
@@ -2002,11 +2086,11 @@ jobs:
       # that needs history or tags. (The DOR-884/DOR-339 tag reasoning lives on
       # the shard job's checkout, which is where the suites run.)
       - uses: actions/checkout@v7
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
 
       # ---- merge_group leg: the union check ----
       - uses: actions/download-artifact@v8
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
         with:
           pattern: shard-files-*
           merge-multiple: true
@@ -2034,14 +2118,14 @@ jobs:
       # exactly backwards. Each copy carries its own `i/N`, so a missing,
       # duplicated or stale one is refused by name.
       - name: Collect every shard's quarantine lane
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
         uses: actions/download-artifact@v8
         with:
           pattern: quarantine-lane-shard-*-vitest
           path: lane
 
       - name: Agree on the lane this build ran under
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
         run: |
           shopt -s nullglob
           lanes=(lane/*/quarantine.txt)
@@ -2087,7 +2171,7 @@ jobs:
       # them cannot see one go missing; test-binary and codex-sandbox upload
       # what they collected as shard-files-binary and shard-files-codex.
       - name: Prove the shards' union covers every package
-        if: ${{ github.event_name != 'pull_request' }}
+        if: ${{ github.event_name != 'pull_request' || startsWith(github.base_ref, 'release/') }}
         run: |
           git ls-files -- 'apps/*.binary.test.ts' 'packages/*.binary.test.ts' > "$RUNNER_TEMP/binary-test-files.txt"
           bash scripts/assert-shard-union.sh \

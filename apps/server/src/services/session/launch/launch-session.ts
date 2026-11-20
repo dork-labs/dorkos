@@ -48,6 +48,7 @@ import type { TurnOrigin } from '../origin/turn-origin.js';
 import type { AccountNotAllowedError } from '../../core/usage/account-eligibility.js';
 import type { LaunchAccountResolution } from '../../runtimes/claude-code/claude-config-dir.js';
 import { agentPause } from '../../mesh/pause/agent-pause.js';
+import { isChatClientId } from '../chat-messages/chat-client-id.js';
 import {
   launchedByOf,
   launchPlaceRefusal,
@@ -596,7 +597,9 @@ async function launchSessionMessage(
   });
   // A person typing, here or from the web through the session relay.
   const personTyped = origin.kind === 'interactive' || origin.kind === 'session-relay';
-  if (paused) {
+  // Chat messages have a durable queue row: let the dispatcher keep it under
+  // the pause. Every other launch retains the refusal before any work starts.
+  if (paused && !(origin.kind === 'chat-message' && isChatClientId(clientId))) {
     agentPause()?.recordHeld(paused, {
       via: personTyped ? 'message' : 'turn',
       sessionId,

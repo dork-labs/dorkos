@@ -333,7 +333,7 @@ describe('buildAgentBlock conventions', () => {
     expect(result).not.toContain('Console (chat)');
     expect(result).toContain('What you can do here is listed area by area in the next block.');
     expect(result).toContain('<dorkos_areas>');
-    expect(result).toContain('- Agent browser: drive a real website');
+    expect(result).toContain('- Agent browser: drive shared pages (Browser, + menu)');
     expect(result).toContain('https://dorkos.ai/llms.txt');
     expect(result).toContain('https://dorkos.ai/docs');
   });
@@ -876,6 +876,24 @@ describe('<working_rules>', () => {
       "Commands you add to your folder's allow list don't apply until a person approves them, and then only\n" +
       "from your next turn. Don't add one to get past a refusal; tell the person what you need. If you do add\n" +
       "one, tell them it's waiting on their approval, never that it's done.";
+    expect(text.split(rule)).toHaveLength(2);
+    const rules = rulesIn(text);
+    expect(rules).toContain(rule);
+    expect(rules.indexOf(rule)).toBeLessThan(rules.indexOf('A no, a "stop"'));
+  });
+
+  // Red when: the shell-shape line (DOR-3109) is dropped, reworded, copied a
+  // second time, or moved where a toggle could gate it. Claude Code can't check
+  // a `cd x && …` chain or an inline `$VAR` before it runs, so it asks a person;
+  // this line is what keeps those cards away from the owner.
+  it('carries the shell-shape line exactly once, inside the block', async () => {
+    vi.mocked(readManifest).mockResolvedValue(
+      createTestManifest({ conventions: { soul: false, nope: false, dorkosKnowledge: false } })
+    );
+
+    const text = (await buildAgentContextAppend(testHome('/test'), '/test')).text;
+    const rule =
+      'Shell: one command per call. Pass a path instead of cd-ing first; no && chains, no inline $VARS.';
     expect(text.split(rule)).toHaveLength(2);
     const rules = rulesIn(text);
     expect(rules).toContain(rule);

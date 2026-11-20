@@ -92,7 +92,7 @@ export interface FetchPackageOptions {
    * Legacy git URL — only consulted by the deprecated `fetchFromGit`
    * code path. Prefer `source: { source: 'url', url }` instead.
    *
-   * @deprecated Use `source` instead.
+   * @deprecated since 0.135, remove in 0.155. Use `source` instead.
    */
   gitUrl?: string;
   /** Legacy `fetchFromGit` only: the ref to fetch (default `HEAD`, the remote's default branch). */

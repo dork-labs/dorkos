@@ -7,7 +7,10 @@ import type { IngressKind } from '../../services/core/remote/ingress-mark.js';
 import type { ApiEnv } from '../../http/api-chain.js';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
+import { loadCeilingMs } from '@dorkos/shared/test-budget';
 import { preloadConfigRouteModules } from './fixtures/config-cold-imports.js';
+import { confirmFixtureRequest, FIXTURE_BROWSER_HEADER } from './step-up-fixture.js';
+import type { Test } from '@dorkos/test-utils/supertest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -55,6 +58,22 @@ vi.mock('../../lib/boundary.js', () => ({
   // below measure the dork-home mapping, not a stub.
   expandTilde: (p: string) => (p.startsWith('~/') ? `/Users/test-user/${p.slice(2)}` : p),
 }));
+
+/**
+ * The budget for a hook or case that imports a FRESH module graph (the config
+ * router and everything under it, after `vi.resetModules()`). About a second
+ * on an idle machine; a loaded one (several agents' suites at once) took it past
+ * vitest's 10-second hook default with nothing wrong. Sized from the worst load
+ * stretch (40 s today); the 60 s cap does nothing now and only guards a future
+ * rise of `LOAD_SCALE_MAX`.
+ *
+ * Why a budget and not one import for the file: the fresh graph is what this
+ * file tests. `routes/config.ts` reads the `DORKOS_*_ENABLED` locks at module
+ * load, the restart cases re-import to restart, and the case bodies import the
+ * config manager themselves, which only matches the router's while both come
+ * from the same graph.
+ */
+const FRESH_GRAPH_TIMEOUT_MS = Math.min(60_000, loadCeilingMs(10_000));
 
 function createTempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-config-route-test-'));
@@ -167,6 +186,32 @@ afterAll(() => {
   if (AMBIENT_TODOS_ENABLED !== undefined) process.env.DORKOS_TODOS_ENABLED = AMBIENT_TODOS_ENABLED;
 });
 
+/** The owner's made-up password, which the step-up fixture's check accepts. */
+const OWNER_PASSWORD = 'made-up-owner-password';
+
+/**
+ * The real step-up routes, imported after the test's `vi.resetModules()` so they
+ * read the same held-action store as the freshly imported config router.
+ */
+async function stepUpGroup() {
+  const { stepUpFixtureRoutes } = await import('./step-up-fixture.js');
+  return stepUpFixtureRoutes({
+    ownerId: () => (owner.account as { id?: string } | null)?.id ?? null,
+    checkPassword: async (password) => (password === OWNER_PASSWORD ? 'ok' : 'wrong'),
+  });
+}
+
+/** A signed-in person, in the browser a confirmable request names. */
+function asBrowser(user: NonNullable<typeof signedInUser>, browser: string | undefined) {
+  return browser ? { ...user, sessionId: browser } : user;
+}
+
+/**
+ * The person at the desk confirming a held save with their password, through
+ * the real step-up route. A save that is not held answers as it always did.
+ */
+const asPerson = (ask: Test) => confirmFixtureRequest(ask, server, OWNER_PASSWORD);
+
 /**
  * The config routes behind the `/api` chain, with the request-shaping step every
  * config-route app needs: the user the session gate would have resolved, and
@@ -180,20 +225,18 @@ async function configApp(configRouter: Hono<ApiEnv>) {
   signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
   agentHeader = undefined;
   arrivedVia = undefined;
-  return honoGroupListener(
-    { path: '/api/config', routes: configRouter },
-    {
-      before: async (c, next) => {
-        if (signedInUser) c.set('user', signedInUser);
-        if (agentHeader) c.env.incoming.headers['x-dorkos-agent'] = agentHeader;
-        if (arrivedVia) {
-          const { markIngress } = await import('../../services/core/remote/ingress-mark.js');
-          markIngress(c.env.incoming, arrivedVia);
-        }
-        await next();
-      },
-    }
-  );
+  return honoGroupListener([{ path: '/api/config', routes: configRouter }, await stepUpGroup()], {
+    before: async (c, next) => {
+      if (signedInUser)
+        c.set('user', asBrowser(signedInUser, c.req.header(FIXTURE_BROWSER_HEADER)));
+      if (agentHeader) c.env.incoming.headers['x-dorkos-agent'] = agentHeader;
+      if (arrivedVia) {
+        const { markIngress } = await import('../../services/core/remote/ingress-mark.js');
+        markIngress(c.env.incoming, arrivedVia);
+      }
+      await next();
+    },
+  });
 }
 
 describe('PATCH /api/config', () => {
@@ -209,7 +252,7 @@ describe('PATCH /api/config', () => {
 
     const configRouter = (await import('../config.js')).default;
     target.mount(await configApp(configRouter));
-  });
+  }, FRESH_GRAPH_TIMEOUT_MS);
 
   afterEach(() => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -241,10 +284,12 @@ describe('PATCH /api/config', () => {
   });
 
   it('includes warning for sensitive key', async () => {
-    const response = await request(server)
-      .patch('/api/config')
-      .send({ tunnel: { authtoken: 'my-secret-token' } })
-      .expect(200);
+    const response = await asPerson(
+      request(server)
+        .patch('/api/config')
+        .send({ tunnel: { authtoken: 'my-secret-token' } })
+    );
+    expect(response.status).toBe(200);
 
     expect(response.body.success).toBe(true);
     expect(response.body.warnings).toBeDefined();
@@ -252,10 +297,12 @@ describe('PATCH /api/config', () => {
   });
 
   it('includes warning for the sensitive cloud.instanceToken key', async () => {
-    const response = await request(server)
-      .patch('/api/config')
-      .send({ cloud: { instanceToken: 'dork_inst_secret' } })
-      .expect(200);
+    const response = await asPerson(
+      request(server)
+        .patch('/api/config')
+        .send({ cloud: { instanceToken: 'dork_inst_secret' } })
+    );
+    expect(response.status).toBe(200);
 
     expect(response.body.success).toBe(true);
     expect(response.body.warnings).toBeDefined();
@@ -299,18 +346,22 @@ describe('PATCH /api/config', () => {
     // if it ever starts refusing, a person can no longer turn login on at all.
     const { configManager } = await import('../../services/core/config-manager.js');
 
-    const enabled = await request(server)
-      .patch('/api/config')
-      .send({ auth: { enabled: true } })
-      .expect(200);
+    const enabled = await asPerson(
+      request(server)
+        .patch('/api/config')
+        .send({ auth: { enabled: true } })
+    );
+    expect(enabled.status).toBe(200);
     expect(enabled.body.success).toBe(true);
     expect(enabled.body.config.auth.enabled).toBe(true);
     expect(configManager.getDot('auth.enabled')).toBe(true);
 
-    const disabled = await request(server)
-      .patch('/api/config')
-      .send({ auth: { enabled: false } })
-      .expect(200);
+    const disabled = await asPerson(
+      request(server)
+        .patch('/api/config')
+        .send({ auth: { enabled: false } })
+    );
+    expect(disabled.status).toBe(200);
     expect(disabled.body.success).toBe(true);
     expect(configManager.getDot('auth.enabled')).toBe(false);
   });
@@ -360,16 +411,26 @@ describe('PATCH /api/config', () => {
     it('lets a person set it and clear it', async () => {
       const { configManager } = await import('../../services/core/config-manager.js');
 
-      await request(server)
-        .patch('/api/config')
-        .send({ network: { extraCaCertsPath: bundle } })
-        .expect(200);
+      expect(
+        (
+          await asPerson(
+            request(server)
+              .patch('/api/config')
+              .send({ network: { extraCaCertsPath: bundle } })
+          )
+        ).status
+      ).toBe(200);
       expect(configManager.getDot('network.extraCaCertsPath')).toBe(bundle);
 
-      await request(server)
-        .patch('/api/config')
-        .send({ network: { extraCaCertsPath: null } })
-        .expect(200);
+      expect(
+        (
+          await asPerson(
+            request(server)
+              .patch('/api/config')
+              .send({ network: { extraCaCertsPath: null } })
+          )
+        ).status
+      ).toBe(200);
       expect(configManager.getDot('network.extraCaCertsPath')).toBeNull();
     });
   });
@@ -476,7 +537,7 @@ describe('PATCH /api/config', () => {
       for (const leaf of carried) configManager.setDot(leaf.path, leaf.protective);
 
       for (const leaf of carried) {
-        const response = await request(server).patch('/api/config').send(leaf.patch);
+        const response = await asPerson(request(server).patch('/api/config').send(leaf.patch));
 
         expect(response.status, leaf.path).toBe(200);
         expect(response.body.success, leaf.path).toBe(true);
@@ -640,35 +701,39 @@ describe('PATCH /api/config', () => {
       signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
       agentHeader = undefined;
 
-      const accounts = await request(server)
-        .patch('/api/config')
-        .send({
-          runtimes: {
-            claudeCode: {
-              accounts: [{ id: 'me', path: '/Users/me/.claude', label: 'Me', color: null }],
+      const accounts = await asPerson(
+        request(server)
+          .patch('/api/config')
+          .send({
+            runtimes: {
+              claudeCode: {
+                accounts: [{ id: 'me', path: '/Users/me/.claude', label: 'Me', color: null }],
+              },
             },
-          },
-        })
-        .expect(200);
+          })
+      );
+      expect(accounts.status).toBe(200);
       expect(accounts.body.config.runtimes.claudeCode.accounts).toEqual([
         { id: 'me', path: '/Users/me/.claude', label: 'Me', color: null },
       ]);
 
-      const servers = await request(server)
-        .patch('/api/config')
-        .send({
-          connectors: {
-            rawMcpServers: [
-              {
-                slug: 'notes',
-                displayName: 'Notes',
-                url: 'https://notes.test/mcp',
-                transport: 'http',
-              },
-            ],
-          },
-        })
-        .expect(200);
+      const servers = await asPerson(
+        request(server)
+          .patch('/api/config')
+          .send({
+            connectors: {
+              rawMcpServers: [
+                {
+                  slug: 'notes',
+                  displayName: 'Notes',
+                  url: 'https://notes.test/mcp',
+                  transport: 'http',
+                },
+              ],
+            },
+          })
+      );
+      expect(servers.status).toBe(200);
       expect(servers.body.config.connectors.rawMcpServers[0].slug).toBe('notes');
     });
 
@@ -678,21 +743,30 @@ describe('PATCH /api/config', () => {
       signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
       agentHeader = undefined;
 
-      await request(server)
-        .patch('/api/config')
-        .send({
-          runtimes: {
-            claudeCode: {
-              accounts: [{ id: 'acct-2', path: '/Users/me/.claude', label: null, color: null }],
-            },
-          },
-        })
-        .expect(200);
+      expect(
+        (
+          await asPerson(
+            request(server)
+              .patch('/api/config')
+              .send({
+                runtimes: {
+                  claudeCode: {
+                    accounts: [
+                      { id: 'acct-2', path: '/Users/me/.claude', label: null, color: null },
+                    ],
+                  },
+                },
+              })
+          )
+        ).status
+      ).toBe(200);
 
-      const emptied = await request(server)
-        .patch('/api/config')
-        .send({ runtimes: { claudeCode: { accounts: [], accountsSeen: ['acct-2'] } } })
-        .expect(200);
+      const emptied = await asPerson(
+        request(server)
+          .patch('/api/config')
+          .send({ runtimes: { claudeCode: { accounts: [], accountsSeen: ['acct-2'] } } })
+      );
+      expect(emptied.status).toBe(200);
       expect(emptied.body.config.runtimes.claudeCode.accounts).toEqual([]);
     });
 
@@ -726,10 +800,12 @@ describe('PATCH /api/config', () => {
       // The person keeps the account out, which is the state the upgrade leaves.
       signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
       agentHeader = undefined;
-      await request(server)
-        .patch('/api/config')
-        .send({ runtimes: { claudeCode: { accounts: [{ ...row, noAutoMove: true }] } } })
-        .expect(200);
+      const kept = await asPerson(
+        request(server)
+          .patch('/api/config')
+          .send({ runtimes: { claudeCode: { accounts: [{ ...row, noAutoMove: true }] } } })
+      );
+      expect(kept.status).toBe(200);
       expect(await storedFlag()).toBe(true);
     });
 
@@ -746,10 +822,15 @@ describe('PATCH /api/config', () => {
     });
 
     it('lets the person clear it through the same door', async () => {
-      await request(server)
-        .patch('/api/config')
-        .send({ runtimes: { claudeCode: { accounts: [{ ...row, noAutoMove: false }] } } })
-        .expect(200);
+      expect(
+        (
+          await asPerson(
+            request(server)
+              .patch('/api/config')
+              .send({ runtimes: { claudeCode: { accounts: [{ ...row, noAutoMove: false }] } } })
+          )
+        ).status
+      ).toBe(200);
       expect(await storedFlag()).toBe(false);
     });
   });
@@ -770,10 +851,10 @@ describe('PATCH /api/config', () => {
         ['projectAccounts', { projectAccounts: { '/work/a': { allow: ['work', ''] } } }],
       ];
       for (const [leaf, claudeCode] of bad) {
-        const refused = await request(server)
-          .patch('/api/config')
-          .send({ runtimes: { claudeCode } })
-          .expect(400);
+        const refused = await asPerson(
+          request(server).patch('/api/config').send({ runtimes: { claudeCode } })
+        );
+        expect(refused.status).toBe(400);
         expect(JSON.stringify(refused.body)).toContain(`runtimes.claudeCode.${leaf}`);
       }
       expect(JSON.stringify(configManager.get('runtimes'))).toBe(before);
@@ -782,12 +863,17 @@ describe('PATCH /api/config', () => {
     it('stores a well-formed rule (control)', async () => {
       signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
       agentHeader = undefined;
-      await request(server)
-        .patch('/api/config')
-        .send({
-          runtimes: { claudeCode: { projectAccounts: { '/work/a': { allow: ['work'] } } } },
-        })
-        .expect(200);
+      expect(
+        (
+          await asPerson(
+            request(server)
+              .patch('/api/config')
+              .send({
+                runtimes: { claudeCode: { projectAccounts: { '/work/a': { allow: ['work'] } } } },
+              })
+          )
+        ).status
+      ).toBe(200);
       const { configManager } = await import('../../services/core/config-manager.js');
       expect(configManager.get('runtimes').claudeCode.projectAccounts).toMatchObject({
         '/work/a': { allow: ['work'] },
@@ -843,22 +929,32 @@ describe('PATCH /api/config', () => {
     it('survives a Settings save of the accounts, which never names it', async () => {
       signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
       agentHeader = undefined;
-      await request(server)
-        .patch('/api/config')
-        .send({ runtimes: { claudeCode: { defaultAccountColor: '#0d9488' } } })
-        .expect(200);
+      expect(
+        (
+          await asPerson(
+            request(server)
+              .patch('/api/config')
+              .send({ runtimes: { claudeCode: { defaultAccountColor: '#0d9488' } } })
+          )
+        ).status
+      ).toBe(200);
       // Exactly what `ClaudeAccountsSection.tsx` `write()` sends.
-      await request(server)
-        .patch('/api/config')
-        .send({
-          runtimes: {
-            claudeCode: {
-              accounts: [{ id: 'me', path: '/Users/me/.claude2', label: 'Me', color: null }],
-              accountsSeen: [],
-            },
-          },
-        })
-        .expect(200);
+      expect(
+        (
+          await asPerson(
+            request(server)
+              .patch('/api/config')
+              .send({
+                runtimes: {
+                  claudeCode: {
+                    accounts: [{ id: 'me', path: '/Users/me/.claude2', label: 'Me', color: null }],
+                    accountsSeen: [],
+                  },
+                },
+              })
+          )
+        ).status
+      ).toBe(200);
       expect(await stored()).toBe('#0d9488');
     });
 
@@ -884,22 +980,26 @@ describe('PATCH /api/config', () => {
       expect(res.body.todos).toEqual({ enabled: false });
     });
 
-    it('reports to-dos as on when DORKOS_TODOS_ENABLED is set at boot', async () => {
-      process.env.DORKOS_TODOS_ENABLED = 'true';
-      try {
-        vi.resetModules();
-        const { initConfigManager } = await import('../../services/core/config-manager.js');
-        initConfigManager(tmpDir);
-        const configRouter = (await import('../config.js')).default;
-        target.mount(await configApp(configRouter));
-        const res = await request(server).get('/api/config').expect(200);
-        expect(res.body.todos).toEqual({ enabled: true });
-      } finally {
-        delete process.env.DORKOS_TODOS_ENABLED;
-        // Drop the graph that captured the environment override before another fixture imports it.
-        vi.resetModules();
-      }
-    });
+    it(
+      'reports to-dos as on when DORKOS_TODOS_ENABLED is set at boot',
+      async () => {
+        process.env.DORKOS_TODOS_ENABLED = 'true';
+        try {
+          vi.resetModules();
+          const { initConfigManager } = await import('../../services/core/config-manager.js');
+          initConfigManager(tmpDir);
+          const configRouter = (await import('../config.js')).default;
+          target.mount(await configApp(configRouter));
+          const res = await request(server).get('/api/config').expect(200);
+          expect(res.body.todos).toEqual({ enabled: true });
+        } finally {
+          delete process.env.DORKOS_TODOS_ENABLED;
+          // Drop the graph that captured the environment override before another fixture imports it.
+          vi.resetModules();
+        }
+      },
+      FRESH_GRAPH_TIMEOUT_MS
+    );
   });
 
   describe('a default account written with ~ (runtimes.claudeCode.defaultAccount)', () => {
@@ -914,23 +1014,38 @@ describe('PATCH /api/config', () => {
     });
 
     it('stores ~/.claude2 as the absolute folder, never the literal ~', async () => {
-      await request(server)
-        .patch('/api/config')
-        .send({ runtimes: { claudeCode: { defaultAccount: '~/.claude2' } } })
-        .expect(200);
+      expect(
+        (
+          await asPerson(
+            request(server)
+              .patch('/api/config')
+              .send({ runtimes: { claudeCode: { defaultAccount: '~/.claude2' } } })
+          )
+        ).status
+      ).toBe(200);
       expect(await stored()).toBe(path.join(os.homedir(), '.claude2'));
     });
 
     it('stores an absolute folder unchanged, and null as null', async () => {
-      await request(server)
-        .patch('/api/config')
-        .send({ runtimes: { claudeCode: { defaultAccount: '/Users/me/.claude2' } } })
-        .expect(200);
+      expect(
+        (
+          await asPerson(
+            request(server)
+              .patch('/api/config')
+              .send({ runtimes: { claudeCode: { defaultAccount: '/Users/me/.claude2' } } })
+          )
+        ).status
+      ).toBe(200);
       expect(await stored()).toBe('/Users/me/.claude2');
-      await request(server)
-        .patch('/api/config')
-        .send({ runtimes: { claudeCode: { defaultAccount: null } } })
-        .expect(200);
+      expect(
+        (
+          await asPerson(
+            request(server)
+              .patch('/api/config')
+              .send({ runtimes: { claudeCode: { defaultAccount: null } } })
+          )
+        ).status
+      ).toBe(200);
       expect(await stored()).toBeNull();
     });
   });
@@ -1020,10 +1135,15 @@ describe('PATCH /api/config', () => {
       agentHeader = undefined;
       signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
 
-      await request(server)
-        .patch('/api/config')
-        .send({ cloud: { credits: { agents: ['agent-1'] } } })
-        .expect(200);
+      expect(
+        (
+          await asPerson(
+            request(server)
+              .patch('/api/config')
+              .send({ cloud: { credits: { agents: ['agent-1'] } } })
+          )
+        ).status
+      ).toBe(200);
       const { configManager } = await import('../../services/core/config-manager.js');
       expect(configManager.getDot('cloud.credits.agents')).toEqual(['agent-1']);
     });
@@ -1064,10 +1184,12 @@ describe('PATCH /api/config', () => {
       await enableLogin();
       signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
 
-      const ok = await request(server)
-        .patch('/api/config')
-        .send({ tunnel: { authtoken: 'chosen-by-a-person' } })
-        .expect(200);
+      const ok = await asPerson(
+        request(server)
+          .patch('/api/config')
+          .send({ tunnel: { authtoken: 'chosen-by-a-person' } })
+      );
+      expect(ok.status).toBe(200);
       expect(ok.body.success).toBe(true);
       // The write LANDED, read off the store rather than out of the answer: the
       // answer is the curated snapshot and never carries the token (DOR-1740).
@@ -1161,15 +1283,17 @@ describe('PATCH /api/config', () => {
   it('lets a person change the other operator-only settings too', async () => {
     // The rest of the write allowlist, proven not to have leaked onto the human
     // path: exposure, the MCP endpoint's key, telemetry consent, and the boundary.
-    const response = await request(server)
-      .patch('/api/config')
-      .send({
-        tunnel: { enabled: true },
-        mcp: { apiKey: 'chosen-by-a-person' },
-        telemetry: { usage: false },
-        server: { boundary: '/Users/test-user' },
-      })
-      .expect(200);
+    const response = await asPerson(
+      request(server)
+        .patch('/api/config')
+        .send({
+          tunnel: { enabled: true },
+          mcp: { apiKey: 'chosen-by-a-person' },
+          telemetry: { usage: false },
+          server: { boundary: '/Users/test-user' },
+        })
+    );
+    expect(response.status).toBe(200);
 
     expect(response.body.success).toBe(true);
     expect(response.body.config.tunnel.enabled).toBe(true);
@@ -1204,15 +1328,17 @@ describe('PATCH /api/config', () => {
   });
 
   it('warns for multiple sensitive keys', async () => {
-    const response = await request(server)
-      .patch('/api/config')
-      .send({
-        tunnel: {
-          authtoken: 'token',
-          auth: 'user:pass',
-        },
-      })
-      .expect(200);
+    const response = await asPerson(
+      request(server)
+        .patch('/api/config')
+        .send({
+          tunnel: {
+            authtoken: 'token',
+            auth: 'user:pass',
+          },
+        })
+    );
+    expect(response.status).toBe(200);
 
     expect(response.body.warnings).toBeDefined();
     expect(response.body.warnings.length).toBe(2);
@@ -1252,10 +1378,12 @@ describe('PATCH /api/config', () => {
     }
 
     it('withholds the token a patch just saved, and says only that one is set', async () => {
-      const response = await request(server)
-        .patch('/api/config')
-        .send({ tunnel: { authtoken: 'ngrok-secret-value' } })
-        .expect(200);
+      const response = await asPerson(
+        request(server)
+          .patch('/api/config')
+          .send({ tunnel: { authtoken: 'ngrok-secret-value' } })
+      );
+      expect(response.status).toBe(200);
 
       expect(response.body.success).toBe(true);
       expect(JSON.stringify(response.body)).not.toContain('ngrok-secret-value');
@@ -1404,12 +1532,26 @@ describe('GET /api/config', () => {
     const configRouter = (await import('../config.js')).default;
     await registerDeclaringRuntimes();
     target.mount(await configApp(configRouter));
-  });
+  }, FRESH_GRAPH_TIMEOUT_MS);
 
   afterEach(() => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
     vi.resetModules();
   });
+
+  it.each([
+    ['the desk', undefined, false, false],
+    ['the own tunnel', 'own-tunnel', true, false],
+    ['managed access', 'managed', true, false],
+    ['Wi-Fi', 'wifi', true, true],
+  ] as const)(
+    'describes approval confirmation from %s with server-owned facts',
+    async (_name, via, needsStepUp, onWifi) => {
+      arrivedVia = via;
+      const res = await request(server).get('/api/config').expect(200);
+      expect(res.body.approvalAnswerContext).toEqual({ answerNeedsStepUp: needsStepUp, onWifi });
+    }
+  );
 
   it('names the owner’s email so turning login on can ask them to sign in (DOR-2964)', async () => {
     const none = await request(server).get('/api/config').expect(200);
@@ -1890,68 +2032,80 @@ describe('GET /api/config', () => {
       vi.resetModules();
     });
 
-    it('flags each subsystem whose environment variable is set, whatever its value', async () => {
-      // `false` on purpose: presence is the question, because that is what
-      // `index.ts` branches on.
-      process.env.DORKOS_TASKS_ENABLED = 'false';
-      process.env.DORKOS_RELAY_ENABLED = 'true';
-      vi.resetModules();
+    it(
+      'flags each subsystem whose environment variable is set, whatever its value',
+      async () => {
+        // `false` on purpose: presence is the question, because that is what
+        // `index.ts` branches on.
+        process.env.DORKOS_TASKS_ENABLED = 'false';
+        process.env.DORKOS_RELAY_ENABLED = 'true';
+        vi.resetModules();
 
-      const { initConfigManager } = await import('../../services/core/config-manager.js');
-      initConfigManager(tmpDir);
-      const configRouter = (await import('../config.js')).default;
-      await registerDeclaringRuntimes();
-      target.mount(await configApp(configRouter));
+        const { initConfigManager } = await import('../../services/core/config-manager.js');
+        initConfigManager(tmpDir);
+        const configRouter = (await import('../config.js')).default;
+        await registerDeclaringRuntimes();
+        target.mount(await configApp(configRouter));
 
-      const res = await request(server).get('/api/config').expect(200);
+        const res = await request(server).get('/api/config').expect(200);
 
-      expect(res.body.tasks.lockedByEnv).toBe(true);
-      expect(res.body.relay.lockedByEnv).toBe(true);
-    });
+        expect(res.body.tasks.lockedByEnv).toBe(true);
+        expect(res.body.relay.lockedByEnv).toBe(true);
+      },
+      FRESH_GRAPH_TIMEOUT_MS
+    );
 
-    it('keeps explicit false locks separate from running and configured state', async () => {
-      process.env.DORKOS_TASKS_ENABLED = 'false';
-      process.env.DORKOS_RELAY_ENABLED = 'false';
-      vi.resetModules();
+    it(
+      'keeps explicit false locks separate from running and configured state',
+      async () => {
+        process.env.DORKOS_TASKS_ENABLED = 'false';
+        process.env.DORKOS_RELAY_ENABLED = 'false';
+        vi.resetModules();
 
-      const { initConfigManager } = await import('../../services/core/config-manager.js');
-      initConfigManager(tmpDir);
-      const configRouter = (await import('../config.js')).default;
-      await registerDeclaringRuntimes();
-      target.mount(await configApp(configRouter));
+        const { initConfigManager } = await import('../../services/core/config-manager.js');
+        initConfigManager(tmpDir);
+        const configRouter = (await import('../config.js')).default;
+        await registerDeclaringRuntimes();
+        target.mount(await configApp(configRouter));
 
-      const res = await request(server).get('/api/config').expect(200);
+        const res = await request(server).get('/api/config').expect(200);
 
-      expect(res.body.tasks).toMatchObject({
-        enabled: false,
-        enabledInConfig: true,
-        lockedByEnv: true,
-      });
-      expect(res.body.relay).toMatchObject({
-        enabled: false,
-        enabledInConfig: true,
-        lockedByEnv: true,
-      });
-    });
+        expect(res.body.tasks).toMatchObject({
+          enabled: false,
+          enabledInConfig: true,
+          lockedByEnv: true,
+        });
+        expect(res.body.relay).toMatchObject({
+          enabled: false,
+          enabledInConfig: true,
+          lockedByEnv: true,
+        });
+      },
+      FRESH_GRAPH_TIMEOUT_MS
+    );
 
-    it('flags only the one whose variable is set, leaving the other switchable', async () => {
-      // The two are read independently, and a lock reported on both would take
-      // away a switch the person can still use.
-      process.env.DORKOS_RELAY_ENABLED = 'true';
-      delete process.env.DORKOS_TASKS_ENABLED;
-      vi.resetModules();
+    it(
+      'flags only the one whose variable is set, leaving the other switchable',
+      async () => {
+        // The two are read independently, and a lock reported on both would take
+        // away a switch the person can still use.
+        process.env.DORKOS_RELAY_ENABLED = 'true';
+        delete process.env.DORKOS_TASKS_ENABLED;
+        vi.resetModules();
 
-      const { initConfigManager } = await import('../../services/core/config-manager.js');
-      initConfigManager(tmpDir);
-      const configRouter = (await import('../config.js')).default;
-      await registerDeclaringRuntimes();
-      target.mount(await configApp(configRouter));
+        const { initConfigManager } = await import('../../services/core/config-manager.js');
+        initConfigManager(tmpDir);
+        const configRouter = (await import('../config.js')).default;
+        await registerDeclaringRuntimes();
+        target.mount(await configApp(configRouter));
 
-      const res = await request(server).get('/api/config').expect(200);
+        const res = await request(server).get('/api/config').expect(200);
 
-      expect(res.body.relay.lockedByEnv).toBe(true);
-      expect(res.body.tasks.lockedByEnv).toBe(false);
-    });
+        expect(res.body.relay.lockedByEnv).toBe(true);
+        expect(res.body.tasks.lockedByEnv).toBe(false);
+      },
+      FRESH_GRAPH_TIMEOUT_MS
+    );
   });
 
   // The block that exists because curation is not free (DOR-1304). A flag
@@ -2383,7 +2537,7 @@ describe('PUT /api/config/agents/defaultAgent', () => {
 
     const configRouter = (await import('../config.js')).default;
     target.mount(await configApp(configRouter));
-  });
+  }, FRESH_GRAPH_TIMEOUT_MS);
 
   afterEach(() => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -2454,7 +2608,7 @@ describe('PATCH /api/config, the front-door settings (DOR-2969)', () => {
     initConfigManager(tmpDir);
     const configRouter = (await import('../config.js')).default;
     target.mount(await configApp(configRouter));
-  });
+  }, FRESH_GRAPH_TIMEOUT_MS);
 
   afterEach(() => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -2462,10 +2616,12 @@ describe('PATCH /api/config, the front-door settings (DOR-2969)', () => {
   });
 
   it('lets the owner at this computer change one', async () => {
-    const res = await request(server)
-      .patch('/api/config')
-      .send({ tunnel: { domain: 'me.ngrok.app' } })
-      .expect(200);
+    const res = await asPerson(
+      request(server)
+        .patch('/api/config')
+        .send({ tunnel: { domain: 'me.ngrok.app' } })
+    );
+    expect(res.status).toBe(200);
     expect(res.body.config.tunnel.domain).toBe('me.ngrok.app');
   });
 
@@ -2485,10 +2641,12 @@ describe('PATCH /api/config, the front-door settings (DOR-2969)', () => {
     ['managed remote access', 'managed'],
   ] as const)("lets the owner's own sign-in over %s change one", async (_l, via) => {
     arrivedVia = via;
-    const res = await request(server)
-      .patch('/api/config')
-      .send({ tunnel: { domain: 'me.ngrok.app' } })
-      .expect(200);
+    const res = await asPerson(
+      request(server)
+        .patch('/api/config')
+        .send({ tunnel: { domain: 'me.ngrok.app' } })
+    );
+    expect(res.status).toBe(200);
     expect(res.body.config.tunnel.domain).toBe('me.ngrok.app');
   });
 
@@ -2521,7 +2679,7 @@ describe('PATCH /api/config, a Files & commands stop from Wi-Fi (DOR-3037)', () 
     initConfigManager(tmpDir);
     const configRouter = (await import('../config.js')).default;
     target.mount(await configApp(configRouter));
-  });
+  }, FRESH_GRAPH_TIMEOUT_MS);
 
   afterEach(() => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -2615,10 +2773,17 @@ describe('the Remote Access switch (DOR-3650)', () => {
       [
         { path: '/api/config', routes: configRouter },
         { path: '/api/probe', routes: probe },
+        await stepUpGroup(),
       ],
       {
         before: async (c, next) => {
-          c.set('user', { userId: 'user_cockpit', credential: 'cookie' });
+          c.set(
+            'user',
+            asBrowser(
+              { userId: 'user_cockpit', credential: 'cookie' },
+              c.req.header(FIXTURE_BROWSER_HEADER)
+            )
+          );
           await next();
         },
       }
@@ -2643,7 +2808,7 @@ describe('the Remote Access switch (DOR-3650)', () => {
     dorkHome = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-remote-off-'));
     process.env.DORK_HOME = dorkHome;
     await mount();
-  });
+  }, FRESH_GRAPH_TIMEOUT_MS);
 
   afterEach(async () => {
     unwatch();
@@ -2692,22 +2857,28 @@ describe('the Remote Access switch (DOR-3650)', () => {
       expect(res.body.remoteAccess).toEqual({ enabled: false });
     });
 
-    it('stays off after a restart', async () => {
-      await turnOff();
-      vi.resetModules();
-      await mount();
-      const onDisk = JSON.parse(fs.readFileSync(path.join(dorkHome, 'config.json'), 'utf-8'));
-      expect(onDisk.remoteAccess).toEqual({ enabled: false });
-      await request(server).get('/api/probe').set(VIA, 'wifi').expect(403);
-      await request(server).get('/api/probe').expect(200);
-    });
+    it(
+      'stays off after a restart',
+      async () => {
+        await turnOff();
+        vi.resetModules();
+        await mount();
+        const onDisk = JSON.parse(fs.readFileSync(path.join(dorkHome, 'config.json'), 'utf-8'));
+        expect(onDisk.remoteAccess).toEqual({ enabled: false });
+        await request(server).get('/api/probe').set(VIA, 'wifi').expect(403);
+        await request(server).get('/api/probe').expect(200);
+      },
+      FRESH_GRAPH_TIMEOUT_MS
+    );
 
     it('turns back on for the person at this computer', async () => {
       await turnOff();
-      await request(server)
-        .patch('/api/config')
-        .send({ remoteAccess: { enabled: true } })
-        .expect(200);
+      const on = await asPerson(
+        request(server)
+          .patch('/api/config')
+          .send({ remoteAccess: { enabled: true } })
+      );
+      expect(on.status).toBe(200);
       await request(server).get('/api/probe').set(VIA, 'own-tunnel').expect(200);
     });
 

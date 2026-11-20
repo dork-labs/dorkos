@@ -1,3 +1,5 @@
+import { RuntimeRegistry } from '../../../core/runtime-registry.js';
+import { createTestDb } from '@dorkos/test-utils/db';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Mock the SDK before importing agent-manager
@@ -92,8 +94,12 @@ function withQueryMethods<T extends object>(obj: T): T {
 
 describe('ClaudeCodeRuntime interactive tools', () => {
   let manager: ClaudeCodeRuntime;
+  let settingsDb: ReturnType<typeof createTestDb> | undefined;
 
   beforeEach(async () => {
+    vi.stubEnv('CLAUDE_CONFIG_DIR', '/mock/claude-code-test-account');
+    for (const key of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN'])
+      vi.stubEnv(key, '');
     vi.useFakeTimers();
     // Re-arm after the previous case's `vi.resetAllMocks()`, which drops queued
     // implementations along with call history. Before the append became a typed
@@ -106,14 +112,21 @@ describe('ClaudeCodeRuntime interactive tools', () => {
       stable: '<env>\nWorking directory: /mock\n</env>',
     });
     manager = new ClaudeCodeRuntime('/tmp/dorkos-test', '/tmp/test-cwd');
+    const settingsOwner = new RuntimeRegistry();
+    settingsDb = createTestDb();
+    settingsOwner.setDb(settingsDb);
+    manager.setSessionSettings(settingsOwner);
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     vi.useRealTimers();
     // Vitest 4: restoreAllMocks only touches vi.spyOn spies, so reset
     // vi.mock/vi.fn mocks (call history + queued implementations) explicitly.
     vi.resetAllMocks();
     vi.restoreAllMocks();
+    settingsDb?.$client.close();
+    settingsDb = undefined;
   });
 
   // ---- ensureSession / hasSession ----

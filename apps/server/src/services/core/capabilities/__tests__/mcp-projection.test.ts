@@ -10,12 +10,14 @@
  *
  * @vitest-environment node
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { z } from 'zod';
 import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 
 import { operatorDomain } from '../../operator/operator-capabilities.js';
 import { marketplaceDomain } from '../../../marketplace-mcp/marketplace-capabilities.js';
 import {
+  capabilityMcpInputObject,
   capabilitiesForMcpServer,
   deriveMcpAnnotations,
   readOnlyCarveOutToolNames,
@@ -54,6 +56,7 @@ const EXPECTED_TOOL_NAMES = [
   'update_agent',
   'update_agent_boundaries',
   'update_agent_execution',
+  'update_agent_config',
   'config_patch',
   'sidebar_add_to_group',
   'sidebar_remove_from_group',
@@ -184,6 +187,14 @@ const EXPECTED_ANNOTATIONS: Record<string, ToolAnnotations> = {
     idempotentHint: true,
     openWorldHint: false,
   },
+  // Tier `destructive`: the file is replaced whole (DOR-4266); writing the same
+  // content twice lands the same file.
+  update_agent_config: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    idempotentHint: true,
+    openWorldHint: false,
+  },
   // mutateCreateOpenWorld
   marketplace_install: {
     readOnlyHint: false,
@@ -272,4 +283,59 @@ describe('operator + marketplace MCP projection', () => {
     const derived = [...readOnlyCarveOutToolNames(registry.capabilities)].sort();
     expect(derived).toEqual(EXPECTED_CARVE_OUT);
   });
+});
+
+describe('extension full-object projection boundary', () => {
+  const unsupported = [
+    ['record', z.object({ value: z.record(z.string(), z.string()) }).strict()],
+    ['lazy', z.object({ value: z.lazy(() => z.string()) }).strict()],
+    ['date', z.object({ value: z.date() }).strict()],
+    ['open', z.object({ value: z.string() }).loose()],
+  ] as const;
+
+  it('exercises four nonempty refusal subjects', () => {
+    expect(unsupported).toHaveLength(4);
+  });
+
+  it.each(unsupported)(
+    'does not register or execute %s, then accepts the same tool with defaults',
+    async (_kind, input) => {
+      // Purpose: refusal occurs before a capability enters the real registry;
+      // a valid same-name contribution proves registration and execution work.
+      const handler = vi.fn(async (args: unknown) => args);
+      const subjectRegistry = composeRegistry([], { logger: noopLogger });
+      const contribution = (schema: z.ZodObject) => ({
+        owner: 'mail-app',
+        displayName: 'Mail',
+        tools: [
+          {
+            name: 'read_value',
+            title: 'Read value',
+            description: 'Reads one value.',
+            tier: 'observe' as const,
+            input: schema,
+            invoke: handler,
+          },
+        ],
+      });
+      expect(subjectRegistry.contribute(contribution(input)).ok).toBe(false);
+      expect(subjectRegistry.get('ext_mail_app.read_value')).toBeUndefined();
+      expect(capabilitiesForMcpServer(subjectRegistry, 'in-session')).toEqual([]);
+      await expect(subjectRegistry.invoke('ext_mail_app.read_value', {})).rejects.toThrow();
+      expect(handler).not.toHaveBeenCalled();
+      const valid = z.object({ value: z.string().default('inbox') }).strict();
+      expect(subjectRegistry.contribute(contribution(valid)).ok).toBe(true);
+      const registered = capabilitiesForMcpServer(subjectRegistry, 'in-session');
+      expect(registered.map((cap) => cap.id)).toEqual(['ext_mail_app.read_value']);
+      const projected = capabilityMcpInputObject(registered[0]!);
+      expect(z.toJSONSchema(projected)).toMatchObject({
+        additionalProperties: false,
+        properties: { value: { default: 'inbox' } },
+      });
+      await expect(
+        subjectRegistry.invoke('ext_mail_app.read_value', projected.parse({}))
+      ).resolves.toEqual({ value: 'inbox' });
+      expect(handler).toHaveBeenCalledExactlyOnceWith({ value: 'inbox' }, expect.anything());
+    }
+  );
 });

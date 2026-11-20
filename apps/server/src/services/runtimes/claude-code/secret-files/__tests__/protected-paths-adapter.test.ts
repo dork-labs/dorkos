@@ -127,6 +127,7 @@ describe('Claude Code protected-path adapter', () => {
       'browser/profile',
     ]);
     expect([...PERSON_ONLY_DATA_FILES]).toEqual([
+      'extension-data/path-trust-seen.json*',
       'config.json*',
       'config-*.json.bak',
       'marketplaces.json*',

@@ -30,23 +30,18 @@ describe('Saved sign-ins (DOR-4105)', () => {
     expect(screen.queryByRole('button')).toBeNull();
   });
 
-  it('is one row that says where sign-ins live, and never says profile', () => {
+  it('is one quiet link, and never says profile (DOR-4433)', () => {
     const { container } = mount();
-    const row = screen.getByRole('region', { name: 'Saved sign-ins' });
-    expect(
-      within(row).getByText('Kept apart from your own browser. Every agent here shares them.')
-    ).toBeInTheDocument();
-    expect(
-      within(row)
-        .getAllByRole('button')
-        .map((button) => button.textContent)
-    ).toEqual(['Forget…']);
+    expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
+      'Forget saved sign-ins…',
+    ]);
+    expect(screen.getByRole('button')).toHaveAttribute('data-variant', 'link');
     expect(container.textContent?.toLowerCase()).not.toContain('profile');
   });
 
   it('asks first, and Cancel forgets nothing and returns focus', async () => {
     mount();
-    const trigger = screen.getByRole('button', { name: 'Forget…' });
+    const trigger = screen.getByRole('button', { name: 'Forget saved sign-ins…' });
     trigger.focus();
     fireEvent.click(trigger);
     const dialog = await screen.findByRole('alertdialog', {
@@ -68,7 +63,7 @@ describe('Saved sign-ins (DOR-4105)', () => {
   it('forgets the shared sign-ins once confirmed and refreshes the browser state', async () => {
     const { client } = mount();
     const invalidate = vi.spyOn(client, 'invalidateQueries');
-    fireEvent.click(screen.getByRole('button', { name: 'Forget…' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Forget saved sign-ins…' }));
     fireEvent.click(
       within(await screen.findByRole('alertdialog')).getByRole('button', {
         name: 'Forget sign-ins',
@@ -84,7 +79,7 @@ describe('Saved sign-ins (DOR-4105)', () => {
       Object.assign(new Error('private path'), { code: 'profile_busy' })
     );
     mount();
-    fireEvent.click(screen.getByRole('button', { name: 'Forget…' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Forget saved sign-ins…' }));
     const dialog = await screen.findByRole('alertdialog');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Forget sign-ins' }));
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
@@ -102,7 +97,7 @@ describe('Saved sign-ins (DOR-4105)', () => {
       Object.assign(new Error('private path'), { code: 'profiles_folder_changed' })
     );
     mount();
-    const trigger = screen.getByRole('button', { name: 'Forget…' });
+    const trigger = screen.getByRole('button', { name: 'Forget saved sign-ins…' });
     fireEvent.click(trigger);
     const dialog = await screen.findByRole('alertdialog');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Forget sign-ins' }));
@@ -130,12 +125,12 @@ describe('Saved sign-ins (DOR-4105)', () => {
       Object.assign(new Error('private path'), { code: 'profiles_folder_changed' })
     );
     mount();
-    fireEvent.click(screen.getByRole('button', { name: 'Forget…' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Forget saved sign-ins…' }));
     let dialog = await screen.findByRole('alertdialog');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Forget sign-ins' }));
     fireEvent.click(await within(dialog).findByRole('button', { name: 'Close' }));
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    fireEvent.click(screen.getByRole('button', { name: 'Forget…' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Forget saved sign-ins…' }));
     dialog = await screen.findByRole('alertdialog');
     expect(within(dialog).getByRole('button', { name: 'Forget sign-ins' })).toBeEnabled();
   });

@@ -27,9 +27,12 @@ import { EFFORT_LEVELS } from '@dorkos/shared/constants';
 import {
   AGENT_BOUNDARY_INPUTS,
   AGENT_FILE_INPUTS,
-  refuseOutsiderAgentFiles,
+  agentSelectorSchema,
+  refuseAgentToolFiles,
 } from './agent-file-inputs.js';
-import { isSecretInputKey } from '@dorkos/shared/capabilities';
+import { defineUpdateAgentConfig } from './agent-config.js';
+import { CONFIG_PATCH_TOO_LARGE_MESSAGE } from './config-patch-card.js';
+import { CONFIG_PATCH_CARD, configPatchFitsStoredCard } from './config-patch-card-view.js';
 
 import { defineCapability, type CapabilityDomain } from '../capabilities/index.js';
 import type { CapabilityDeps } from '../capabilities/index.js';
@@ -56,36 +59,6 @@ import {
   type FeedbackDraftArgs,
 } from './operator-tool-handlers.js';
 import { CONFIG_PATCH_PERSON_SETTINGS } from './operator-only-tightening.js';
-
-/**
- * The settings a config patch changes, as one line for its approval card:
- * `ui.theme: dark, tunnel.enabled: yes`. The card quotes and escapes the whole
- * line as one value, so nothing in it can pass for a second field. A leaf whose name says secret is
- * listed by name only, and a list or an empty object by name only, so the card
- * never carries a credential or a wall of structure.
- *
- * @param patch - The patch the call carries.
- */
-export function describePatchForCard(patch: unknown): string {
-  const parts: string[] = [];
-  const walk = (value: unknown, prefix: string): void => {
-    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-      const entries = Object.entries(value as Record<string, unknown>);
-      if (entries.length === 0 && prefix) parts.push(prefix);
-      for (const [key, child] of entries) walk(child, prefix ? `${prefix}.${key}` : key);
-      return;
-    }
-    const leaf = prefix.split('.').pop() ?? prefix;
-    if (isSecretInputKey(leaf) || Array.isArray(value)) {
-      parts.push(prefix);
-      return;
-    }
-    const shown = typeof value === 'boolean' ? (value ? 'yes' : 'no') : String(value);
-    parts.push(`${prefix}: ${shown}`);
-  };
-  walk(patch, '');
-  return parts.length > 0 ? parts.join(', ') : 'nothing';
-}
 
 /**
  * Caps on the two free-form fields `feedback_draft` accepts.
@@ -209,15 +182,6 @@ function sidebarItemsSchema(what: string) {
         'anything is written, and a name DorkOS does not know refuses the whole call.'
     );
 }
-
-/** Agent selector shared by capabilities that address one agent by id or directory. */
-const agentSelectorSchema = {
-  agent_id: z.string().optional().describe('Agent ULID to target (mutually exclusive with cwd)'),
-  cwd: z
-    .string()
-    .optional()
-    .describe('Agent project directory to target (mutually exclusive with agent_id)'),
-};
 
 /**
  * The self-service & observability domain: read-only observability capabilities
@@ -565,7 +529,7 @@ export const operatorDomain: CapabilityDomain = {
         },
       },
       invoke: async (deps, input, context) =>
-        refuseOutsiderAgentFiles(input, context) ??
+        refuseAgentToolFiles(input, context) ??
         unwrapMcpEnvelope(
           await createUpdateAgentHandler(requireOperatorDeps(deps))(input as UpdateAgentArgs)
         ),
@@ -678,6 +642,7 @@ export const operatorDomain: CapabilityDomain = {
           )
         ),
     }),
+    defineUpdateAgentConfig(requireOperatorDeps),
     defineCapability({
       id: 'operator.config_patch',
       title: 'Update configuration',
@@ -700,26 +665,31 @@ export const operatorDomain: CapabilityDomain = {
       // At Full, the ones it raises are refused by name; one that only turns them down runs
       // (DOR-3426, `operator-only-tightening.ts`).
       ...CONFIG_PATCH_PERSON_SETTINGS,
-      // The card lists the settings the patch changes, never the patch object
-      // (which renders as "details") and never the value of a secret-named one.
-      approvalDisplayFields: ['changes'],
-      approvalView: (input) => ({
-        changes: describePatchForCard((input as { patch?: unknown }).patch),
-      }),
+      // The sentence counts the settings and names the riskiest a person must
+      // decide; the detail lists every one old → new, riskiest first, so a long
+      // harmless key cannot push a risky one out of view (DOR-4775). Never the
+      // value of a secret-named one.
+      ...CONFIG_PATCH_CARD,
       input: z.object({
         // Not `z.record()`: a record anywhere in an in-session tool's schema
         // crashes the whole `tools/list` answer on claude-agent-sdk 0.3.257+ with
         // zod 4.5.3+, and the model is handed no DorkOS tools at all. `catchall`
         // accepts the same values. Full story in
         // `runtimes/claude-code/mcp-tools/tool-exposure.ts`.
-        patch: z.object({}).catchall(z.unknown()).describe(
-          // Keep this example a field that actually exists. It has drifted twice
-          // already: `ui.sidebar` never had a `collapsed` key, `ui.statusBar` is
-          // a `pins` list rather than per-item booleans (DOR-452), and the
-          // per-section collapse flags this used to name were retired by the
-          // sidebar redesign. `ui.theme` is the least likely to move.
-          'Partial config to deep-merge, e.g. { "ui": { "theme": "dark" } }'
-        ),
+        // Refused before any card when the card could not list every setting
+        // (DOR-4775): the parse runs ahead of the gate.
+        patch: z
+          .object({})
+          .catchall(z.unknown())
+          .refine(configPatchFitsStoredCard, { message: CONFIG_PATCH_TOO_LARGE_MESSAGE })
+          .describe(
+            // Keep this example a field that actually exists. It has drifted twice
+            // already: `ui.sidebar` never had a `collapsed` key, `ui.statusBar` is
+            // a `pins` list rather than per-item booleans (DOR-452), and the
+            // per-section collapse flags this used to name were retired by the
+            // sidebar redesign. `ui.theme` is the least likely to move.
+            'Partial config to deep-merge, e.g. { "ui": { "theme": "dark" } }'
+          ),
       }),
       output: z.unknown(),
       surfaces: {

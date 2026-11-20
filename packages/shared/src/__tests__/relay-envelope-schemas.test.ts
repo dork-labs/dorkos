@@ -69,6 +69,17 @@ describe('RelayFlowEventSchema', () => {
 });
 
 describe('TaskDispatchPayloadSchema', () => {
+  it('keeps a good time limit, and drops a bad one rather than refusing the run (DOR-4576)', () => {
+    const good = TaskDispatchPayloadSchema.parse({ ...validDispatch, timeLimitMs: 300_000 });
+    expect(good.timeLimitMs).toBe(300_000);
+    for (const bad of [-1, 0, 1.5, 'five minutes', null]) {
+      const parsed = TaskDispatchPayloadSchema.safeParse({ ...validDispatch, timeLimitMs: bad });
+      expect(parsed.success).toBe(true);
+      // Undefined counts the envelope TTL alone, which is today's behaviour.
+      expect(parsed.data!.timeLimitMs).toBeUndefined();
+    }
+  });
+
   const validDispatch = {
     type: 'task_dispatch' as const,
     taskId: 'task-1',

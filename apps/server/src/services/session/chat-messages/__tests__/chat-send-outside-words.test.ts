@@ -15,6 +15,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { createTestDb } from '@dorkos/test-utils/db';
+import { sessionMetadata } from '@dorkos/db';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import { noopLogger } from '@dorkos/shared/logger';
 import type { StreamEvent } from '@dorkos/shared/types';
@@ -44,6 +45,10 @@ import { ChatMessageStore } from '../chat-message-store.js';
 import { ChatMessageService, type ChatMessageServiceDeps } from '../chat-message-service.js';
 import { rowsCarryWords } from '../chat-message-ceiling.js';
 import { passedOnLevelOf } from '../../../core/turn-power/turn-levels.js';
+import {
+  noteBridgedSender,
+  setContinuationHoldDb,
+} from '../../../core/turn-power/continuation-hold.js';
 import {
   noteRoomTurnWords,
   roomTurnReadOutsideWords,
@@ -229,14 +234,29 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
+/** A Telegram chat that held a stranger's words, or only the owner's own (DOR-4593). */
+function telegramChat(strangers: boolean) {
+  origins.set(ana, 'relay-binding');
+  setContinuationHoldDb(createTestDb());
+  noteBridgedSender(ana, { marked: strangers, bridged: true }, true);
+}
+
 describe('a chat_send from a chat that read outside words', () => {
+  afterEach(() => setContinuationHoldDb(undefined));
+
   it.each([
     ['a room turn that answered a stranger', () => noteRoomTurnWords(ana, true)],
-    ['a Telegram chat', () => origins.set(ana, 'relay-binding')],
+    ["a stranger's Telegram chat", () => telegramChat(true)],
   ])('from %s: the turn it wakes is noted before it runs', async (_label, mark) => {
     mark();
     await anaSendsBo();
     expect(notedAtSend).toEqual([true]);
+  });
+
+  it("from the owner's own Telegram chat: the turn it wakes is not noted (DOR-4593)", async () => {
+    telegramChat(false);
+    await anaSendsBo();
+    expect(notedAtSend).toEqual([false]);
   });
 
   it('wakes a turn that cannot rewrite or remove a note (memory)', async () => {
@@ -327,7 +347,16 @@ describe('a chat_send to a chat renamed on an earlier turn, by its born id', () 
 });
 
 describe('a chat_send from a clean chat (control)', () => {
+  afterEach(() => setContinuationHoldDb(undefined));
+
   it('wakes a turn that can still change memory and hand over the browser', async () => {
+    // Clean means known and clean: a sender nothing knows holds (DOR-4698), so Ana's chat has a
+    // stored record, as a live chat does, with nothing in it.
+    const db = createTestDb();
+    setContinuationHoldDb(db);
+    db.insert(sessionMetadata)
+      .values({ sessionId: ana, runtime: 'claude-code', createdAt: '2026-11-18' })
+      .run();
     await anaSendsBo();
     expect(notedAtSend).toEqual([false]);
     expect((await boWrites({ action: 'remove', old_text: 'deploys need' })).saved).toBe(true);

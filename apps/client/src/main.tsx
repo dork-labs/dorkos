@@ -17,6 +17,7 @@ import {
   installClientErrorHandlers,
   installBreadcrumbHandlers,
   installPersonAwareFetch,
+  openActionStepUpFromLink,
   installReducedMotion,
   isDesktopShell,
   registerCommunityAuthorityCleanup,
@@ -67,6 +68,9 @@ registerCommunityAuthorityCleanup(() => eraseCommunityOwnerState(queryClient));
 // Before any call goes out: this window's own API calls carry the owner's
 // person proof, and ask for the password once when a change needs it (DOR-3330).
 installPersonAwareFetch();
+// A page outside the app (the mini app access page) links here to confirm one
+// held action: `/?confirm=<id>` opens its sheet, once (DOR-4355).
+openActionStepUpFromLink();
 
 // Dev playground — lazy-loaded, tree-shaken from production builds
 const DevPlayground = import.meta.env.DEV ? React.lazy(() => import('./dev/DevPlayground')) : null;

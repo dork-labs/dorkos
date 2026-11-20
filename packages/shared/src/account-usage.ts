@@ -754,7 +754,8 @@ export const SPEND_LIMIT_WINDOW = 'spend';
  * Build the wire shape for one account from its ledger, read at `now`.
  *
  * Stale windows are left out. `limit` is the first readable window (in display
- * order) whose status is `rejected`, else {@link SPEND_LIMIT_WINDOW} when
+ * order) whose status is `rejected` or whose `usedPct` reached 100, else
+ * {@link SPEND_LIMIT_WINDOW} when
  * `spend.limitUsd` is set and `spend.costUsd` reached it (a spend reading never
  * goes stale). `state` is `limited` with a `limit`; `unknown` with no current
  * window and no spend, except on OpenCode, where that is a local model and
@@ -791,10 +792,10 @@ export function toAccountUsage(
 
   const runtime = identity.runtime ?? ledger?.runtime ?? 'claude-code';
   const spend = ledger?.spend ?? null;
-  const rejected = windows.find((w) => w.status === 'rejected');
+  const full = windows.find((w) => w.status === 'rejected' || (w.usedPct ?? 0) >= 100);
   const spendReached = spend !== null && spend.limitUsd !== null && spend.costUsd >= spend.limitUsd;
-  const limit = rejected
-    ? { window: rejected.key, resetsAt: rejected.resetsAt }
+  const limit = full
+    ? { window: full.key, resetsAt: full.resetsAt }
     : spendReached
       ? { window: SPEND_LIMIT_WINDOW, resetsAt: null }
       : null;

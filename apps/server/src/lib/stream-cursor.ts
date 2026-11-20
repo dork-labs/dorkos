@@ -139,6 +139,9 @@ export function cursorMatchesGeneration(cursor: ResumeCursor, generation: string
  * One writer for both streams, so the shape a reader echoes back is the shape
  * {@link parseResumeCursor} reads.
  *
+ * Pass the id the window subscribed with, never a canonical id it aliases: the
+ * app drops a session frame whose id starts with any other (DOR-4552).
+ *
  * @param resourceId - The session or room the frame belongs to.
  * @param generation - The generation of the seq space that stamped it.
  * @param seq - The event's sequence number within that space.

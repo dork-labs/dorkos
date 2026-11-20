@@ -13,6 +13,7 @@ import {
   APPROVAL_REQUEST_REASON_MAX_LENGTH,
   APPROVAL_SUMMARY_MAX_LENGTH,
   ApprovalServiceActionSchema,
+  inertRecipientText,
   MarketplaceApprovalSummarySchema,
   type ApprovalServiceAction,
   type MarketplaceApprovalSummary,
@@ -47,11 +48,16 @@ export function storableSummary(summary: string): string {
  * and a dropped card is worse than a shortened one for exactly the reason this
  * field exists.
  *
+ * The bound is the card builders' own unless a caller passes the stored
+ * ceiling: only a capability's `approvalDetailField` may use it (DOR-4266).
+ * Package cards and the "is this whole?" checks keep the smaller one.
+ *
  * @param detail - The verbatim argument the capability declared.
+ * @param max - The bound to cap at.
  * @returns The swept, capped value to store.
  */
-export function storableDetail(detail: string): string {
-  return clampForStorage(redactSecretsInText(detail), APPROVAL_DETAIL_MAX_LENGTH);
+export function storableDetail(detail: string, max = APPROVAL_DETAIL_MAX_LENGTH): string {
+  return clampForStorage(redactSecretsInText(detail), max);
 }
 
 /**
@@ -90,11 +96,23 @@ export function clampForStorage(value: string, max: number): string {
  * @returns The JSON to store, or null.
  */
 export function storableServiceAction(action: ApprovalServiceAction): string | null {
+  // Made inert again here, whatever the producer did (DOR-4592). A recipient this
+  // pass shortens counts as well, so the stored card stays decline-only for it.
+  const recipients = action.recipients?.map((recipient) => ({
+    label: redactSecretsInText(recipient.label),
+    ...inertRecipientText(redactSecretsInText(recipient.address)),
+  }));
+  const shortened =
+    (action.recipientsShortened ?? 0) + (recipients ?? []).filter((r) => r.shortened).length;
   const swept = {
     ...action,
     serviceName: redactSecretsInText(action.serviceName),
     accountLabel: redactSecretsInText(action.accountLabel),
     actionName: redactSecretsInText(action.actionName),
+    ...(recipients
+      ? { recipients: recipients.map(({ label, text }) => ({ label, address: text })) }
+      : {}),
+    ...(shortened > 0 ? { recipientsShortened: shortened } : {}),
     details: action.details.map((detail) => ({
       label: redactSecretsInText(detail.label),
       value: redactSecretsInText(detail.value),

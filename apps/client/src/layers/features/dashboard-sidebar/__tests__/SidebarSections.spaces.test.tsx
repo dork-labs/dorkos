@@ -96,7 +96,7 @@ afterEach(() => {
 describe('SidebarSections on a space’s address', () => {
   it('keeps this machine’s panel while spaces are off', () => {
     commitCommunityRouteEpoch(JSON.stringify(['community', 'acme', null, null]));
-    const { container } = render(<SidebarSections model={MODEL} />);
+    const { container } = render(<SidebarSections model={MODEL} prefsKey={busyFixture.prefs} />);
 
     expect(screen.getByTestId('section-channels')).toBeInTheDocument();
     expect(container.querySelector('[data-community-context]')).toBeNull();
@@ -106,7 +106,7 @@ describe('SidebarSections on a space’s address', () => {
   it('draws the space’s channels once spaces are on (the control)', () => {
     spaces.on = true;
     commitCommunityRouteEpoch(JSON.stringify(['community', 'acme', null, null]));
-    const { container } = render(<SidebarSections model={MODEL} />);
+    const { container } = render(<SidebarSections model={MODEL} prefsKey={busyFixture.prefs} />);
 
     expect(container.querySelector('[data-community-context="acme"]')).not.toBeNull();
     expect(screen.getByTestId('space-channels')).toBeInTheDocument();
@@ -119,7 +119,9 @@ describe('Apps inside a space', () => {
     // A space's channels replace this machine's conversations, not its apps.
     spaces.on = true;
     commitCommunityRouteEpoch(JSON.stringify(['community', 'acme', null, null]));
-    const { container } = render(<SidebarSections model={WITH_PINS} />);
+    const { container } = render(
+      <SidebarSections model={WITH_PINS} prefsKey={busyFixture.prefs} />
+    );
 
     const space = container.querySelector('[data-community-context="acme"]');
     expect(space).not.toBeNull();
@@ -139,7 +141,7 @@ describe('Apps inside a space', () => {
   it('folds nothing on Alt-click, since nothing it draws folds', () => {
     spaces.on = true;
     commitCommunityRouteEpoch(JSON.stringify(['community', 'acme', null, null]));
-    render(<SidebarSections model={WITH_PINS} />);
+    render(<SidebarSections model={WITH_PINS} prefsKey={busyFixture.prefs} />);
 
     fireEvent.click(screen.getByTestId('section-top'));
     expect(prefsWrites.setSectionCollapsed).not.toHaveBeenCalled();

@@ -169,9 +169,12 @@ vi.mock('../../../core/auth/index.js', () => ({
   readOwnerAccount: () => ({ id: 'owner-a' }),
   getAuth: () => undefined,
 }));
-vi.mock('../../../../lib/caller-authority.js', () => ({
+vi.mock('../../../../lib/caller-authority.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../lib/caller-authority.js')>()),
   isLocalCaller: () => true,
   requireOperatorCookieUnderLogin: () => undefined,
+  // Connecting is held for the owner (DOR-4355); confirmed below through the real step-up route.
+  refuseFrontDoorChange: () => undefined,
 }));
 // The spaces settings the production state reads (spec `official-community-space` D4): spaces
 // on, and no official space, as a person who turned spaces on and named none would have them.
@@ -184,6 +187,14 @@ vi.mock('../../../core/config-manager.js', () => ({
 import { createCommunityConnectionsRoutes } from '../../../../routes/community-connections.js';
 import { createRemoteCommunitiesRoutes } from '../../../../routes/remote-communities.js';
 import { honoGroupListener } from '../../../../http/__tests__/hono-group-listener.js';
+import {
+  confirmFixtureRequest,
+  FIXTURE_BROWSER_HEADER,
+  stepUpFixtureRoutes,
+} from '../../../../routes/__tests__/step-up-fixture.js';
+
+/** The owner's made-up password, which the step-up fixture's check accepts. */
+const OWNER_PASSWORD = 'made-up-owner-password';
 import {
   getRemotePairingService,
   setRemoteCommunityDb,
@@ -313,13 +324,26 @@ beforeAll(async () => {
   const navigation = {
     get: async () => ({ ownerKey: 'owner-a', order: [], destinations: [] }),
   };
-  const routes = honoGroupListener([
+  const routes = honoGroupListener(
+    [
+      {
+        path: '/api/community-connections',
+        routes: createCommunityConnectionsRoutes(getRemotePairingService(), navigation as never),
+      },
+      { path: '/api/communities', routes: createRemoteCommunitiesRoutes() },
+      stepUpFixtureRoutes({
+        ownerId: () => 'owner-a',
+        checkPassword: async (password) => (password === OWNER_PASSWORD ? 'ok' : 'wrong'),
+      }),
+    ],
     {
-      path: '/api/community-connections',
-      routes: createCommunityConnectionsRoutes(getRemotePairingService(), navigation as never),
-    },
-    { path: '/api/communities', routes: createRemoteCommunitiesRoutes() },
-  ]);
+      before: async (c, next) => {
+        const browser = c.req.header(FIXTURE_BROWSER_HEADER);
+        if (browser) c.set('user', { userId: 'owner-a', credential: 'cookie', sessionId: browser });
+        await next();
+      },
+    }
+  );
   // Supertest dials 127.0.0.1, so bind exactly that.
   app = createServer(routes).listen(0, '127.0.0.1');
   await once(app, 'listening');
@@ -380,9 +404,13 @@ describe('Community membership in this DorkOS with Cloud unreachable', () => {
   });
 
   it('connects, reads and disconnects an installation without one outbound connection', async () => {
-    const started = await request(app)
-      .post('/api/community-connections')
-      .send({ url: `${origin}/c/${communityId}`, installName: 'Studio desktop' });
+    const started = await confirmFixtureRequest(
+      request(app)
+        .post('/api/community-connections')
+        .send({ url: `${origin}/c/${communityId}`, installName: 'Studio desktop' }),
+      app,
+      OWNER_PASSWORD
+    );
     expect(started.status).toBe(201);
     expect(new URL(started.body.approvalUrl).origin).toBe(origin);
     const ref = started.body.connection.ref as string;

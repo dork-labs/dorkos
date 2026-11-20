@@ -310,6 +310,16 @@ export class FakeCodexHome {
   readonly threads = new Map<string, FakeThreadRecord>();
   /** `config.toml`'s `[projects]` table: path → trust_level. */
   readonly projects: Record<string, { trust_level: string }> = {};
+  /** Effective model settings returned by config/read, without credentials. */
+  config: { model?: string | null; model_provider?: string | null } = {};
+  /** Catalog response for a requested cursor; tests can model pagination or rejection. */
+  modelList: (cursor: unknown) => unknown = () => ({ data: [], nextCursor: null });
+  /** A config/read rejection, when the test needs an unavailable config. */
+  configReadError = false;
+  /** Refuse a turn/start before it opens, as an unavailable model can. */
+  turnStartError: string | undefined;
+  /** Refuse a thread load before a turn can start. */
+  threadStartError: string | undefined;
   /** Turn scripts, consumed in order; the default runs when empty. */
   readonly scripts: FakeTurnScript[] = [];
   /** Compaction scripts, consumed in order; {@link compactionTurn} runs when empty. */
@@ -516,6 +526,7 @@ export class FakeAppServer extends EventEmitter {
     if (!this.initialized) return this.fail(id, 'Not initialized');
     switch (method) {
       case 'thread/start':
+        if (this.home.threadStartError) return this.fail(id, this.home.threadStartError);
         if (this.threadStartGate) {
           void this.threadStartGate.then(() => this.threadStart(id, params));
           return;
@@ -524,6 +535,7 @@ export class FakeAppServer extends EventEmitter {
       case 'thread/resume':
         return this.threadResume(id, params);
       case 'turn/start':
+        if (this.home.turnStartError) return this.fail(id, this.home.turnStartError);
         if (this.exitOnTurnStart) return this.exit(1);
         if (this.turnStartGate) {
           void this.turnStartGate.then(() => this.turnStart(id, params));
@@ -537,8 +549,9 @@ export class FakeAppServer extends EventEmitter {
       case 'turn/steer':
         return this.turnSteer(id, params);
       case 'config/read':
+        if (this.home.configReadError) return this.fail(id, 'config unavailable');
         return this.reply(id, {
-          config: { projects: this.home.projects },
+          config: { ...this.home.config, projects: this.home.projects },
           origins: {},
           layers: null,
         });
@@ -594,7 +607,11 @@ export class FakeAppServer extends EventEmitter {
         this.unsubscribed.add(params.threadId as string);
         return this.reply(id, { status: 'unsubscribed' });
       case 'model/list':
-        return this.reply(id, { data: [], nextCursor: null });
+        try {
+          return this.reply(id, this.home.modelList(params.cursor));
+        } catch {
+          return this.fail(id, 'catalog unavailable');
+        }
       default:
         return this.fail(id, `Invalid request: unknown variant \`${method}\``);
     }

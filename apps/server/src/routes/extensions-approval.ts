@@ -28,6 +28,11 @@
  *
  * @module routes/extensions-approval
  */
+import type { ExtensionRecord } from '@dorkos/extension-api';
+import { hashApprovalInput } from '../services/core/approvals/approval-input-hash.js';
+import { requestCodeForHash } from '../services/core/auth/step-up/request-code.js';
+import { holdExtensionPowerChange } from './extension-decision-step-up.js';
+import type { RequestFacts } from '../http/request-facts.js';
 import type { Hono } from 'hono';
 import {
   ApproveExtensionRequestSchema,
@@ -112,7 +117,21 @@ export function registerExtensionApprovalRoutes(
       const forPerson =
         notificationEntitlement(readCallerPrincipal(honoRequestFacts(c))) !== 'none';
       return c.json({
-        approvals: await listPendingExtensionApprovals(extensionManager, { forPerson }),
+        approvals: (await listPendingExtensionApprovals(extensionManager, { forPerson })).map(
+          (approval) => ({
+            ...approval,
+            ...(forPerson
+              ? {
+                  requestCode: requestCodeForHash(
+                    hashApprovalInput({
+                      effect: 'extension-approve',
+                      snapshot: extensionApprovalSnapshot(extensionManager.get(approval.id)),
+                    })
+                  ),
+                }
+              : {}),
+          })
+        ),
       });
     } catch (err) {
       logger.error('[Extensions] Failed to list extensions waiting for approval', err);
@@ -187,48 +206,71 @@ export function registerExtensionApprovalRoutes(
         );
       }
 
-      let extension;
-      try {
-        extension = await extensionManager.approveToRun(id, { expectedDigest });
-      } catch (err) {
-        if (!(err instanceof ApprovalRefusedError)) throw err;
-        return c.json(
-          // The reason alone for one that cannot be checked: its own short
-          // block, which the app shows under a title that says nothing ran.
-          err.reason === 'stale'
-            ? { error: `${err.message} Nothing was turned on.`, code: STALE_APPROVAL_CODE }
-            : { error: err.message, code: UNPINNABLE_APPROVAL_CODE },
-          409
-        );
-      }
-      if (!extension) return c.json({ error: `Extension '${id}' not found` }, 404);
+      const run = async (facts: RequestFacts): Promise<Response> => {
+        const current = extensionManager.get(id);
+        if (
+          !current ||
+          current.path !== record.path ||
+          current.manifest.version !== record.manifest.version
+        )
+          return c.json(
+            { error: 'This mini app changed. Nothing was turned on.', code: STALE_APPROVAL_CODE },
+            409
+          );
+        let extension;
+        try {
+          extension = await extensionManager.approveToRun(id, { expectedDigest });
+        } catch (err) {
+          if (!(err instanceof ApprovalRefusedError)) throw err;
+          return c.json(
+            // The reason alone for one that cannot be checked: its own short
+            // block, which the app shows under a title that says nothing ran.
+            err.reason === 'stale'
+              ? { error: `${err.message} Nothing was turned on.`, code: STALE_APPROVAL_CODE }
+              : { error: err.message, code: UNPINNABLE_APPROVAL_CODE },
+            409
+          );
+        }
+        if (!extension) return c.json({ error: `Extension '${id}' not found` }, 404);
 
-      await activity?.emit({
-        // Always the person — the bar above refuses any caller naming itself an
-        // agent — and read from the caller anyway, so every Activity entry on
-        // this router derives who acted rather than asserting it (DOR-1801).
-        ...readActivityActor(honoRequestFacts(c)),
-        category: 'config',
-        eventType: 'config.extension_updated',
-        resourceType: 'extension',
-        resourceId: id,
-        resourceLabel: extension.manifest.name,
-        summary: `Allowed ${extension.manifest.name} to run code inside DorkOS`,
+        await activity?.emit({
+          // Always the person — the bar above refuses any caller naming itself an
+          // agent — and read from the caller anyway, so every Activity entry on
+          // this router derives who acted rather than asserting it (DOR-1801).
+          ...readActivityActor(facts),
+          category: 'config',
+          eventType: 'config.extension_updated',
+          resourceType: 'extension',
+          resourceId: id,
+          resourceLabel: extension.manifest.name,
+          summary: `Allowed ${extension.manifest.name} to run code inside DorkOS`,
+        });
+
+        // The server half is live now, so tell every connected client to pick up the
+        // extension's contributions instead of waiting for a page reload.
+        broadcastExtensionReloaded([id]);
+
+        // The one-time "Next time, trust everything from <source>?" (spec
+        // `flow-multiproject` §9.3, V9): only when this copy provably came from a
+        // source the person does not trust yet. Returned to the app that
+        // answered and never stored, so it shows once, on that device.
+        const trustSource = extensionManager.trustOfferFor(id);
+        return c.json({
+          extension,
+          ...(trustSource ? { trustOffer: { source: trustSource } } : {}),
+        });
+      };
+      const held = holdExtensionPowerChange(c, {
+        id,
+        effect: 'extension-approve',
+        copy: APPROVAL_BAR,
+        reason: `Allow ${record.manifest.name} to run.`,
+        read: () => {
+          return extensionApprovalSnapshot(extensionManager.get(id));
+        },
+        run,
       });
-
-      // The server half is live now, so tell every connected client to pick up the
-      // extension's contributions instead of waiting for a page reload.
-      broadcastExtensionReloaded([id]);
-
-      // The one-time "Next time, trust everything from <source>?" (spec
-      // `flow-multiproject` §9.3, V9): only when this copy provably came from a
-      // source the person does not trust yet. Returned to the app that
-      // answered and never stored, so it shows once, on that device.
-      const trustSource = extensionManager.trustOfferFor(id);
-      return c.json({
-        extension,
-        ...(trustSource ? { trustOffer: { source: trustSource } } : {}),
-      });
+      return held ?? (await run(honoRequestFacts(c)));
     } catch (err) {
       logger.error(`[Extensions] Failed to approve ${id}`, err);
       return c.json({ error: 'Failed to approve extension' }, 500);
@@ -329,4 +371,18 @@ export function registerExtensionApprovalRoutes(
   registerExtensionRemovalRoutes(router, extensionManager, safeExtId, activity);
   // "Allow all" for a plugin's extensions, behind this same bar (DOR-3583).
   registerExtensionApprovalSetRoutes(router, extensionManager, APPROVAL_BAR, activity);
+}
+
+/** The copy and every declared power covered by a mini-app approval. */
+function extensionApprovalSnapshot(record: ExtensionRecord | undefined) {
+  return record
+    ? {
+        id: record.id,
+        path: record.path,
+        manifest: record.manifest,
+        digest: record.currentDigest ?? null,
+        devLink: record.devLink ?? false,
+        sourcePlugin: record.sourcePlugin ?? null,
+      }
+    : null;
 }

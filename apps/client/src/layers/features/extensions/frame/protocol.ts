@@ -63,10 +63,18 @@ export interface FrameInit {
   theme: FrameTheme;
 }
 
-/** The host root's classes and inline style: light or dark, plus the person's font choice. */
+/**
+ * The host root's classes and inline style: light or dark, plus the person's
+ * font choice; and the text size of the frame's place and the host's size
+ * scales (DOR-4330). Built and applied in `theme.ts`.
+ */
 export interface FrameTheme {
   className: string;
   style: string;
+  /** The computed text size of the frame's place; the frame applies a px size only. */
+  fontSize: string;
+  /** The host's `--_st`, `--_si` and `--_sb` scales; the frame applies plain numbers only. */
+  scales: Record<string, string>;
 }
 
 /** A web address that is plain `http:` or `https:`, nothing a browser runs or reads locally. */

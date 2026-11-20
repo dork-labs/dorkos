@@ -549,6 +549,11 @@ describe('catalog blindness: the emitted declarations', () => {
     // bargain MECHANISM_ENUMS strikes: the exception is cheap, and a person
     // writes it down.
     const allowed: Array<[RegExp, string]> = [
+      // First, before the status-code entry splits a version like 0.135 apart.
+      [
+        /@deprecated since \d+\.\d+(?:\.\d+)?, remove in \d+\.\d+(?:\.\d+)?/g,
+        'the DorkOS releases a deprecation tag names, which the deprecated-removal lint requires (DOR-4188)',
+      ],
       [/^\s*\*\s*\d+\.\s/, 'an ordered-list marker in a doc comment'],
       [/\/v\d+/g, 'the wire version in a route path'],
       [/\d+\^\d+/g, 'an exponent, e.g. the precision limit of a float'],
@@ -583,7 +588,12 @@ describe('catalog blindness: the emitted declarations', () => {
     expect(offenders).toEqual([]);
     // Negative control: a versioned-looking name that is not a statement schema
     // still carries a number the guard must see.
-    for (const line of [' * Upgrade to ProV20 today.', ' * Billed as TierV100PerMonth.']) {
+    // A deprecation tag exempts its two versions, never another number on its line.
+    for (const line of [
+      ' * Upgrade to ProV20 today.',
+      ' * Billed as TierV100PerMonth.',
+      ' * @deprecated since 0.135, remove in 0.200; refunds close after 30 days.',
+    ]) {
       expect(/\d/.test(stripAllowed(line)), line).toBe(true);
     }
     // The allowlist is the precision, so it has to stay a list somebody reads.

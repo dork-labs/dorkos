@@ -67,10 +67,12 @@ export type ConfigLoadFailureKind = 'corrupt' | 'io' | 'migration' | 'unknown';
  * the file's own `__internal__.migrations.version` into `semver` (`conf@15`,
  * `_shouldPerformMigration`). One flipped byte in that string — still valid
  * JSON, still schema-valid, and outside the Ajv schema entirely — throws
- * `TypeError: Invalid Version` from inside the constructor. That is as
- * file-caused as a syntax error, and treating it as unreadable would brick boot
- * permanently while telling the person to try again. So the residual class is
- * condemned once the staircase has proved it deterministic.
+ * `TypeError: Invalid Version` from inside the constructor. Current releases
+ * above 0.115 refuse unreadable stamps before Conf opens (`upgrade-floor.ts`,
+ * DOR-4341), leaving the file untouched. Raw dev trees (0.0.0) and the 0.115
+ * intermediate release skip that guard, so the error can still reach this
+ * fallback. There the residual class is condemned once the staircase has
+ * proved it deterministic.
  *
  * That is the general rule rather than a list of conf's internals: the caller
  * retries, and time does the classifying. It costs a broken file one 750ms
@@ -87,10 +89,11 @@ export type ConfigLoadFailureKind = 'corrupt' | 'io' | 'migration' | 'unknown';
  * `conf` marks that case for us. `_migrate` wraps everything thrown inside its
  * per-migration `try` with {@link CONF_MIGRATION_WRAPPER}, and the semver check
  * above sits OUTSIDE that `try` (`conf@15`, `_migrate`: the version filter runs
- * before the loop), so a corrupt migration version still arrives bare and still
- * lands in `unknown`. The errno check runs first, so a laundered `EMFILE` from
- * inside a migration body is still `io`. What is left under the wrapper is
- * DorkOS's own code throwing, which condemns nothing.
+ * before the loop), so an unreadable migration version still arrives bare and
+ * lands in `unknown` when the upgrade guard is skipped. The errno check runs
+ * first, so a laundered `EMFILE` from inside a migration body is still `io`.
+ * What is left under the wrapper is DorkOS's own code throwing, which condemns
+ * nothing.
  *
  * ## The three `corrupt` shapes
  *

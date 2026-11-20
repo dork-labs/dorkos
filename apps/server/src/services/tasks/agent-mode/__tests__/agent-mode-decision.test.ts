@@ -16,6 +16,7 @@ import {
 } from '@dorkos/shared/permissions';
 import { levelOfMode } from '@dorkos/shared/permission-semantics';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
+import { CODEX_CAPABILITIES } from '../../../runtimes/codex/runtime-constants.js';
 import {
   decideAgentModeCall,
   type AgentModeCall,
@@ -324,11 +325,39 @@ describe('marks (ruling 4)', () => {
     reset();
     allowBoth();
     const marked = { ...IN_SESSION, marked: true };
-    expect(await decide(setMode('acceptEdits', 'acceptEdits'), marked)).toMatchObject({
+    const refused = await decide(setMode('acceptEdits', 'acceptEdits'), marked);
+    expect(refused).toMatchObject({
       kind: 'refuse',
       body: { code: 'above_ceiling', highestAllowed: 'default' },
     });
+    // The refusal names the mark as a cap, so the agent doesn't blame its own level (DOR-4678).
+    expect(refused.kind === 'refuse' && refused.body.message).toContain(
+      "or above the most this turn may set, because this turn read words DorkOS can't vouch for"
+    );
     expect(stateOf(await decide(setMode('acceptEdits', 'acceptEdits')))).toBe('allowed');
+  });
+
+  it('names no mode it lacks on a runtime with no dontAsk, and the highest it has (DOR-4678)', async () => {
+    reset();
+    allowBoth();
+    const marked = { ...IN_SESSION, marked: true };
+    const codex = { ...sources(), declaredModes: () => CODEX_CAPABILITIES.permissionModes };
+    const refused = await decideAgentModeCall(setMode('acceptEdits', 'default'), marked, codex);
+    expect(refused).toMatchObject({
+      kind: 'refuse',
+      body: { code: 'above_ceiling', highestAllowed: 'default' },
+    });
+    const message = refused.kind === 'refuse' ? refused.body.message : '';
+    expect(message).not.toContain('dontAsk');
+    expect(message).toContain('because this turn read words');
+    expect(message).toContain('The highest you can set here is default.');
+  });
+
+  it('names no mark when an unmarked turn is above its own level (DOR-4678)', async () => {
+    reset();
+    levels[A] = 'default';
+    const refused = await decide(setMode('acceptEdits', 'acceptEdits'));
+    expect(refused.kind === 'refuse' && refused.body.message).not.toContain('vouch');
   });
 });
 

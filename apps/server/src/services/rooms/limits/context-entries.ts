@@ -7,7 +7,7 @@
 import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { RoomEntry } from '@dorkos/shared/room-schemas';
 import type { AuthorRegistry } from '../author-registry.js';
-import { strangerMarkForEntries } from './turn-ceiling.js';
+import { strangerMarkForEntries, type ReadEntry } from './turn-ceiling.js';
 
 /**
  * The id of every room message a built context shows the agent besides the one it answers: the
@@ -44,9 +44,10 @@ export interface ShownMarkDeps {
 }
 
 /**
- * DOR-3858's stranger mark over every message a room turn answers AND every message its context
- * showed, so a non-owner's unaddressed post in the window marks the turn as surely as one that
- * named the agent. Nothing is read while the boot flag is off.
+ * The outsider mark over every message a room turn answers AND every message its context showed,
+ * so a non-owner's unaddressed post in the window marks the turn as surely as one that named the
+ * agent (DOR-3858, behind its boot flag), and so does a mini app's post or forward, whatever the
+ * flag (DOR-4587, `strangerMarkForEntries`).
  *
  * @param enabled - Whether `DORKOS_MARK_STRANGER_TURNS` is on.
  * @param deps - See {@link ShownMarkDeps}.
@@ -58,10 +59,15 @@ export function strangerMarkForShown(
   enabled: boolean,
   deps: ShownMarkDeps,
   roomId: string,
-  answered: readonly Pick<RoomEntry, 'authorId'>[],
+  answered: readonly ReadEntry[],
   context: RoomContextData
 ): { carriedOutsider?: true } {
-  if (!enabled) return {};
   const shown = deps.store.listEntriesByIds(roomId, contextEntryIds(context));
-  return strangerMarkForEntries(true, deps.authors, [...answered, ...shown], deps.isOwnerAuthor);
+  return strangerMarkForEntries(
+    enabled,
+    deps.authors,
+    [...answered, ...shown],
+    deps.isOwnerAuthor,
+    roomId
+  );
 }

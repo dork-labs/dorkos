@@ -28,7 +28,12 @@ import { useTransport } from '@/layers/shared/model';
 // included. An edge from this foundational slice to `session`, on purpose: the
 // fallback IS a session question (the agent's latest chat), and answering it
 // here would be a second copy of the sidebar's rule.
-import { agentChatTarget } from '@/layers/entities/session';
+import {
+  agentChatTarget,
+  beginSessionNavigation,
+  useLiveLocation,
+  watchSessionNavigation,
+} from '@/layers/entities/session';
 import { useRooms } from '../use-rooms';
 
 /** What an agent's Direct chat is always called. It is never renamed. */
@@ -101,7 +106,20 @@ export interface OpenDirectChatOptions {
    * is not its owner: a redirect that falls back to drawing the room.
    */
   quiet?: boolean;
+  /**
+   * The app opens this on its own (a page redirecting as it mounts), not on a
+   * person's click. It then goes quiet if the window moves or a click begins,
+   * and never cancels a click already on its way (DOR-4622).
+   */
+  redirect?: boolean;
 }
+
+/**
+ * How an open of a Direct chat ended. `overtaken` is not a failure: the person
+ * moved on before the answer came, so nothing opened and nothing was said
+ * (DOR-4622).
+ */
+export type DirectChatOpenOutcome = 'opened' | 'failed' | 'overtaken';
 
 /**
  * Open an agent's Direct chat: by its directory, or by the direct message it is.
@@ -110,25 +128,35 @@ export interface OpenDirectChatOptions {
  * ⌘K, the New menu), and for anyone but the owner, whom the server refuses,
  * it opens the agent's latest chat with them instead (`agentChatTarget`).
  *
- * @returns A function that opens it, resolving `false` when it could not.
+ * @returns A function that opens it, resolving how that went.
  */
 export function useOpenDirectChat(): (
   req: OpenDirectChatRequest,
   opts?: OpenDirectChatOptions
-) => Promise<boolean> {
+) => Promise<DirectChatOpenOutcome> {
   const transport = useTransport();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const readLocation = useLiveLocation();
   return useCallback(
     async (req, opts = {}) => {
+      // Taken at the call. The answer takes a server round trip, and a person
+      // who opened another chat meanwhile must not be pulled back — least of
+      // all by a `replace` redirect, which would overwrite that chat's address
+      // (DOR-4622). A redirect watches without claiming, so it never cancels
+      // a click the person makes while it waits.
+      const isStillWanted = (opts.redirect ? watchSessionNavigation : beginSessionNavigation)(
+        readLocation
+      );
       try {
         if ('agentPath' in req && !opts.quiet) {
           const found = await agentChatTarget({ queryClient, transport }, req.agentPath, {
             ...(opts.runtime && { runtime: opts.runtime }),
           });
           if (!found) throw new Error('No chat with this agent could be found.');
+          if (!isStillWanted()) return 'overtaken';
           await navigate({ ...found, ...(opts.replace && { replace: true }) });
-          return true;
+          return 'opened';
         }
         const chat = await transport.openDirectChat(req);
         const target = await newSessionTarget(transport, {
@@ -136,18 +164,21 @@ export function useOpenDirectChat(): (
           dir: chat.agentPath,
           ...(opts.runtime && { runtime: opts.runtime }),
         });
+        if (!isStillWanted()) return 'overtaken';
         await navigate({ ...target, ...(opts.replace && { replace: true }) });
-        return true;
+        return 'opened';
       } catch (err) {
+        // An abandoned open does not explain itself.
+        if (!isStillWanted()) return 'overtaken';
         const status = (err as { status?: number }).status;
-        if (opts.quiet && (status === 403 || status === 409)) return false;
+        if (opts.quiet && (status === 403 || status === 409)) return 'failed';
         toast.error('Couldn’t open that chat', {
           description: err instanceof Error ? err.message : undefined,
         });
-        return false;
+        return 'failed';
       }
     },
-    [transport, queryClient, navigate]
+    [transport, queryClient, navigate, readLocation]
   );
 }
 

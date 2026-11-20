@@ -1,3 +1,6 @@
+import { RuntimeRegistry } from '../../../core/runtime-registry.js';
+import { createTestDb } from '@dorkos/test-utils/db';
+import { claudeApprovalTurn } from './approval-conformance.js';
 import {
   DOC_VISIBLE_TRIGGER,
   docBoundaryEntry,
@@ -515,10 +518,13 @@ async function seedAuthFailureHistory(
 
 /** Warm processes this file booted, closed after each case so none leaks. */
 let warmCli: FakeCli | undefined;
+const ownerDatabases = new Set<ReturnType<typeof createTestDb>>();
 
 afterEach(() => {
   for (const process of warmCli?.processes ?? []) process.endStream();
   warmCli = undefined;
+  for (const db of ownerDatabases) db.$client.close();
+  ownerDatabases.clear();
   persistent.on = false;
 });
 
@@ -561,10 +567,38 @@ describe('what claude-code says it does with media', () => {
   });
 });
 
+/** App-backed conformance launches use a genuine private owner, as startup does. */
+function composedRuntime(
+  ...args: ConstructorParameters<typeof ClaudeCodeRuntime>
+): ClaudeCodeRuntime {
+  const runtime = new ClaudeCodeRuntime(...args);
+  const owner = new RuntimeRegistry();
+  const db = createTestDb();
+  owner.setDb(db);
+  ownerDatabases.add(db);
+  runtime.setSessionSettings(owner);
+  const configureSettings = runtime.setSessionSettings.bind(runtime);
+  // The shared alias test installs a recording port; retain this fixture's actual
+  // SQLite launch owner and native guard while forwarding its settings observations.
+  runtime.setSessionSettings = (port) => {
+    const composedPort = {
+      getSessionSettings: port.getSessionSettings.bind(port),
+      saveSessionSettings: port.saveSessionSettings.bind(port),
+      rekeySessionSettings: async (from: string, to: string, sdkOwner?: () => boolean) => {
+        await owner.rekeySessionSettings(from, to, sdkOwner);
+        await port.rekeySessionSettings(from, to);
+      },
+      requiredLaunches: () => owner.requiredLaunches(),
+    };
+    configureSettings(composedPort);
+  };
+  return runtime;
+}
+
 // The guards Claude Code declares, each proved by the code a real launch runs (DOR-3596).
 runtimeGuardConformance(
   () =>
-    new ClaudeCodeRuntime(
+    composedRuntime(
       '/tmp/dorkos-conformance',
       '/projects/conformance',
       new LocalSessionAttachmentStore(ATTACHMENT_HOME)
@@ -574,7 +608,7 @@ runtimeGuardConformance(
 
 runtimeConformance(
   () =>
-    new ClaudeCodeRuntime(
+    composedRuntime(
       '/tmp/dorkos-conformance',
       '/projects/conformance',
       new LocalSessionAttachmentStore(ATTACHMENT_HOME)
@@ -583,6 +617,8 @@ runtimeConformance(
     name: 'ClaudeCodeRuntime (mocked SDK) — AgentRuntime conformance',
     // The mocked SDK writes no JSONL transcript, so native history is [] here;
     // real-binary history round-trips are covered by integration smokes.
+    approvalTurn: (runtime, id, content, probes) =>
+      claudeApprovalTurn(mockedQuery, runtime, id, content, probes),
     expectHistory: false,
     // No `sessionListSilentReason`: the seeded transcript above is on disk
     // before any test runs, so the fleet-wide watcher MUST report it and
@@ -608,7 +644,7 @@ runtimeConformance(
     // real binding is what proves the binding is really there.
     roomCanvasTurn: () =>
       driveRoomCanvasTurn(
-        new ClaudeCodeRuntime(
+        composedRuntime(
           '/tmp/dorkos-conformance',
           '/projects/conformance',
           new LocalSessionAttachmentStore(ATTACHMENT_HOME)
@@ -653,7 +689,7 @@ runtimeConformance(
             )
           ) as unknown as ReturnType<typeof query>
       );
-      const runtime = new ClaudeCodeRuntime(
+      const runtime = composedRuntime(
         '/tmp/dorkos-conformance',
         '/projects/conformance',
         new LocalSessionAttachmentStore(ATTACHMENT_HOME)
@@ -681,7 +717,8 @@ runtimeConformance(
     // the only way a turn can leave a session warm.
     warmSession: async (runtime: AgentRuntime, sessionId: string) => {
       persistent.on = true;
-      warmCli = new FakeCli();
+      warmCli ??= new FakeCli();
+      warmCli.nextSdkSessionId = `${sessionId}-native`;
       mockedQuery.mockImplementation(warmCli.query as unknown as typeof query);
       for await (const _event of runtime.sendMessage(sessionId, 'conformance ping', {
         cwd: '/projects/conformance',
@@ -914,7 +951,7 @@ runtimeConformance(
             typeof query
           >
       );
-      return new ClaudeCodeRuntime('/tmp/dorkos-conformance', '/projects/conformance');
+      return composedRuntime('/tmp/dorkos-conformance', '/projects/conformance');
     },
     // One-shot CREDENTIAL failure (DOR-1656). The vendor sentence below is a
     // literal from the Claude Code CLI binary, and it reaches DorkOS on the
@@ -928,7 +965,7 @@ runtimeConformance(
           () =>
             wrapSdkQuery(sdkError(CLAUDE_VENDOR_AUTH_TEXT)) as unknown as ReturnType<typeof query>
         );
-        return new ClaudeCodeRuntime('/tmp/dorkos-conformance', '/projects/conformance');
+        return composedRuntime('/tmp/dorkos-conformance', '/projects/conformance');
       },
       // DOR-1678, the reload half. See `seedAuthFailureHistory` for why the
       // transcript is written rather than produced: the mocked SDK writes no
@@ -944,7 +981,7 @@ runtimeConformance(
       mockedQuery.mockImplementationOnce(
         () => wrapSdkQuery(sdkCompaction()) as unknown as ReturnType<typeof query>
       );
-      return new ClaudeCodeRuntime('/tmp/dorkos-conformance', '/projects/conformance');
+      return composedRuntime('/tmp/dorkos-conformance', '/projects/conformance');
     },
     // DOR-2732: a reply that says how full the conversation is — the request's
     // usage on the assistant message, the model's window on the result.
@@ -959,7 +996,7 @@ runtimeConformance(
             })
           ) as unknown as ReturnType<typeof query>
       );
-      const runtime = new ClaudeCodeRuntime('/tmp/dorkos-conformance', '/projects/conformance');
+      const runtime = composedRuntime('/tmp/dorkos-conformance', '/projects/conformance');
       const sessionId = randomUUID();
       runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: '/projects/conformance' });
       const events: StreamEvent[] = [];
@@ -974,7 +1011,7 @@ runtimeConformance(
     // is answered by the SDK's own compaction stream, one query after the
     // conversation's turn.
     compactIntentTurn: async (observe) => {
-      const runtime = new ClaudeCodeRuntime('/tmp/dorkos-conformance', '/projects/conformance');
+      const runtime = composedRuntime('/tmp/dorkos-conformance', '/projects/conformance');
       const sessionId = randomUUID();
       runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: '/projects/conformance' });
       for await (const _event of runtime.sendMessage(sessionId, 'conformance ping', {
@@ -1017,7 +1054,7 @@ runtimeConformance(
  */
 describe('ClaudeCodeRuntime — the account two sessions share', () => {
   it('answers one canonical string however the ladder spelled the root', async () => {
-    const runtime = new ClaudeCodeRuntime('/tmp/dorkos-conformance', '/projects/conformance');
+    const runtime = composedRuntime('/tmp/dorkos-conformance', '/projects/conformance');
     const canonical = account.root;
 
     const first = randomUUID();
@@ -1065,7 +1102,7 @@ describe('a credits turn whose token is refused partway through', () => {
       () => wrapSdkQuery(sdkError(CLAUDE_VENDOR_AUTH_TEXT)) as unknown as ReturnType<typeof query>
     );
     try {
-      const runtime = new ClaudeCodeRuntime('/tmp/dorkos-conformance', '/projects/conformance');
+      const runtime = composedRuntime('/tmp/dorkos-conformance', '/projects/conformance');
       const sessionId = randomUUID();
       runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: '/projects/conformance' });
       const events = [];
@@ -1097,7 +1134,7 @@ it('doc SDK boundary: Claude query receives the fenced original document context
   onTestFinished(() => {
     render.mockImplementation(original);
   });
-  const runtime = new ClaudeCodeRuntime('/tmp/dorkos-conformance', '/projects/conformance');
+  const runtime = composedRuntime('/tmp/dorkos-conformance', '/projects/conformance');
   const sessionId = 'doc-sdk-boundary';
   runtime.ensureSession(sessionId, { cwd: '/projects/conformance', permissionMode: 'default' });
   const nonces: string[] = [];

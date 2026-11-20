@@ -237,6 +237,14 @@ describe('UserConfigSchema', () => {
         default: 'claude-code',
         defaultTrustStop: 'autonomy',
         maxAgentChats: 8,
+        loadGate: {
+          enabled: true,
+          maxLoad: 16,
+          slots: 1,
+          maxWaitMinutes: 60,
+          hardCapMinutes: 240,
+          heavyCommands: { add: [], remove: [] },
+        },
         doe: { enabled: true, inference: null, defaultModel: null, defaultTrustStop: null },
         environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
         claudeCode: {
@@ -675,6 +683,14 @@ describe('USER_CONFIG_DEFAULTS', () => {
         default: 'claude-code',
         defaultTrustStop: 'autonomy',
         maxAgentChats: 8,
+        loadGate: {
+          enabled: true,
+          maxLoad: 16,
+          slots: 1,
+          maxWaitMinutes: 60,
+          hardCapMinutes: 240,
+          heavyCommands: { add: [], remove: [] },
+        },
         doe: { enabled: true, inference: null, defaultModel: null, defaultTrustStop: null },
         environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
         claudeCode: {
@@ -1168,6 +1184,14 @@ describe('UserConfigSchema runtimes', () => {
       default: 'claude-code',
       defaultTrustStop: 'autonomy',
       maxAgentChats: 8,
+      loadGate: {
+        enabled: true,
+        maxLoad: 16,
+        slots: 1,
+        maxWaitMinutes: 60,
+        hardCapMinutes: 240,
+        heavyCommands: { add: [], remove: [] },
+      },
       doe: { enabled: true, inference: null, defaultModel: null, defaultTrustStop: null },
       environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
       claudeCode: {
@@ -1211,6 +1235,14 @@ describe('UserConfigSchema runtimes', () => {
       default: 'claude-code',
       defaultTrustStop: 'autonomy',
       maxAgentChats: 8,
+      loadGate: {
+        enabled: true,
+        maxLoad: 16,
+        slots: 1,
+        maxWaitMinutes: 60,
+        hardCapMinutes: 240,
+        heavyCommands: { add: [], remove: [] },
+      },
       doe: { enabled: true, inference: null, defaultModel: null, defaultTrustStop: null },
       environment: { inherit: { claudeCode: [], codex: [], opencode: [], doe: [] } },
       claudeCode: {

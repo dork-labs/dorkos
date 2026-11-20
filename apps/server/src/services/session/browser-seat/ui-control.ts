@@ -262,21 +262,23 @@ export async function controlUi(
   const target = 'target' in command ? command.target : undefined;
   const targetsAnotherRoom = target !== undefined && target.roomId !== roomTurn?.roomId;
 
-  // **A room canvas shows only files from the agent's folder, or from that
-  // room's own folders** (DOR-3519). A room copies what it shows to every other
-  // member, so a path outside them is an error naming it, before any document or
-  // event exists. The person's own one-on-one window is not asked this: it
-  // opens what it always did.
+  // **A canvas shows only files from the agent's folder** (DOR-3519), so a path
+  // outside it is an error naming it, before any document or event exists. A
+  // one-on-one canvas reads local files only through routes held to the chat's
+  // folder, so an outside file would draw an empty card. A room's canvas also
+  // takes that room's own folders, and copies what it shows to every member.
   const destination =
     targetsAnotherRoom && CANVAS_VERBS.has(command.action) ? target.roomId : roomTurn?.roomId;
-  const outsideFolder =
+  const outsideFolder = await canvasOutsideFolderRefusal(
+    command,
     destination !== undefined
-      ? await canvasOutsideFolderRefusal(command, {
+      ? {
           cwd: roomTurn?.cwd ?? caller.cwd,
           roomFolders: roomCanvasFolders(destination, roomTurn),
           roomsDir: path.join(resolveDorkHome(), 'rooms'),
-        })
-      : null;
+        }
+      : { cwd: caller.cwd }
+  );
   if (outsideFolder !== null) {
     throw new CapabilityToolError({
       success: false,

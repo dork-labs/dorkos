@@ -1,7 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-/** Whether login is on, read by the key-change owner bar (DOR-2678). */
-const posture = vi.hoisted(() => ({ loginOn: false }));
+/**
+ * Whether login is on, read by the key-change owner bar (DOR-2678), and the
+ * account that owns this install: none on a fresh install, so a key saves at
+ * once; the login-on cases name one, and then a new key waits for the owner to
+ * confirm it's them (DOR-4355).
+ */
+const posture = vi.hoisted(() => ({
+  loginOn: false,
+  owner: null as { id: string; name: string } | null,
+}));
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: {
     get: (key: string) => (key === 'auth' ? { enabled: posture.loginOn } : undefined),
@@ -17,7 +25,7 @@ vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
 }));
 vi.mock('../../services/core/auth/index.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../services/core/auth/index.js')>()),
-  readOwnerAccount: () => ({ id: 'user_owner', name: 'Owner' }),
+  readOwnerAccount: () => posture.owner,
 }));
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
@@ -36,11 +44,19 @@ import type { ComposioHttpClient } from '../../services/connectors/providers/com
 import type { NangoHttpClient } from '../../services/connectors/providers/nango-client.js';
 import { createConnectorProvidersRoutes } from '../connector-providers.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import {
+  confirmFixtureRequest,
+  FIXTURE_BROWSER_HEADER,
+  stepUpFixtureRoutes,
+} from './step-up-fixture.js';
 
 const fixtureTarget = swappableServer();
 const fixtureServer = fixtureTarget.server;
 
 const SECRET = 'ck-super-secret-composio-key';
+/** The install owner's made-up account and password, for the login-on cases. */
+const OWNER_ACCOUNT = { id: 'user_owner', name: 'Owner' };
+const OWNER_PASSWORD = 'made-up-owner-password';
 
 /**
  * Hermetic vendor clients for the bootstrapper's connection check — without
@@ -99,6 +115,7 @@ describe('connector-providers router', () => {
 
   beforeEach(() => {
     posture.loginOn = false;
+    posture.owner = null;
     db = createDb(':memory:');
     runMigrations(db);
     registry = new ConnectorRegistry({ db });
@@ -121,13 +138,27 @@ describe('connector-providers router', () => {
       ...(opts?.testConnector && { testConnector: { create: async () => null } }),
     });
     return honoGroupListener(
-      {
-        path: '/api/connectors/providers',
-        routes: createConnectorProvidersRoutes({ bootstrapper, credentialStore: store }),
-      },
+      [
+        {
+          path: '/api/connectors/providers',
+          routes: createConnectorProvidersRoutes({ bootstrapper, credentialStore: store }),
+        },
+        stepUpFixtureRoutes({
+          ownerId: () => OWNER_ACCOUNT.id,
+          checkPassword: async (password) => (password === OWNER_PASSWORD ? 'ok' : 'wrong'),
+        }),
+      ],
       {
         before: async (c, next) => {
-          if (opts?.signedInAs) c.set('user', { userId: opts.signedInAs, credential: 'cookie' });
+          // A confirmable request names the browser session it came from.
+          const browser = c.req.header(FIXTURE_BROWSER_HEADER);
+          if (opts?.signedInAs) {
+            c.set('user', {
+              userId: opts.signedInAs,
+              credential: 'cookie',
+              ...(browser ? { sessionId: browser } : {}),
+            });
+          }
           await next();
         },
       }
@@ -177,6 +208,7 @@ describe('connector-providers router', () => {
 
     it('with login on, refuses a signed-in account that does not own this DorkOS', async () => {
       posture.loginOn = true;
+      posture.owner = OWNER_ACCOUNT;
       const app = fixtureTarget.mount(buildApp({ signedInAs: 'user_member' }));
       const res = await request(app)
         .put('/api/connectors/providers/composio/credential')
@@ -190,13 +222,23 @@ describe('connector-providers router', () => {
       expect(registry.resolveProvider('composio')).toBeUndefined();
     });
 
-    it('with login on, lets the owner signed in to the app save one', async () => {
+    it('with login on, lets the owner signed in to the app save one once they confirm', async () => {
       posture.loginOn = true;
+      posture.owner = OWNER_ACCOUNT;
       const app = fixtureTarget.mount(buildApp({ signedInAs: 'user_owner' }));
-      await request(app)
+      const held = await request(app)
         .put('/api/connectors/providers/composio/credential')
-        .send({ secret: SECRET })
-        .expect(200);
+        .send({ secret: SECRET });
+      // Without a browser session to confirm from, nothing is held or saved.
+      expect(held.status).toBe(403);
+      expect(registry.resolveProvider('composio')).toBeUndefined();
+      const saved = await confirmFixtureRequest(
+        request(app).put('/api/connectors/providers/composio/credential').send({ secret: SECRET }),
+        fixtureServer,
+        OWNER_PASSWORD
+      );
+      expect(saved.status).toBe(200);
+      expect(JSON.stringify(saved.body)).not.toContain(SECRET);
       expect(registry.resolveProvider('composio')).toBeDefined();
     });
   });
