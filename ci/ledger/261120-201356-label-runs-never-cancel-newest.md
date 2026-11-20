@@ -37,5 +37,16 @@ there a newer run really does supersede the older answer. `merge_group` is uncha
 Cost: label edits that used to cancel each other now each run once (about a minute
 each, measured p95 0.70 min).
 
+What this does not close: events that still share the group can still burst. `gh pr
+create --label skip-changelog` sends `opened` and `labeled(skip-changelog)` together, and
+a push followed by a skip-changelog edit does the same. They stay shared on purpose:
+moving them out would let an older run with a stale label list be the newest. For those,
+the backstop is the local arm script, which re-runs an empty newest run of a workflow that
+owes a required check before it queues a PR. So the target of 0 counts PRs that stayed
+blocked, not empty runs.
+
+The metric is read by hand (arm refusals and room reports), not by the collector, so this
+entry's verdict is written by a person after 14 days.
+
 Revert if a required context from this workflow is again left expected at a PR's head
 after a label edit, or if label-edit runs measurably add to the Actions queue.
