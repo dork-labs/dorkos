@@ -167,7 +167,7 @@ export interface SignedInDevicesTransport {
    */
   declineWifiSignIn(id: string): Promise<void>;
   /** The owner's sign-in checks. Read in person; changed at this computer only. */
-  listOwnerFactors(): Promise<{ factors: OwnerFactor[] }>;
+  listOwnerFactors(): Promise<OwnerFactorList>;
   /**
    * Start adding a passkey on this computer, after "Confirm it's you". With a
    * passkey here already, it asks for a fresh passkey check first, as below.
@@ -219,10 +219,25 @@ export const OwnerFactorSchema = z.object({
   host: z.string().optional(),
   addedAt: z.string(),
   lastUsedAt: z.string().optional(),
+  /**
+   * Whether it proves a sign-in from another device. A passkey made for this
+   * computer works only here. Set by the server's own sign-in rule.
+   */
+  worksFromAway: z.boolean(),
 });
 
 /** See {@link OwnerFactorSchema}. */
 export type OwnerFactor = z.infer<typeof OwnerFactorSchema>;
+
+/** The owner's sign-in checks, and whether one that works from away ever existed. */
+export interface OwnerFactorList {
+  readonly factors: OwnerFactor[];
+  /**
+   * Whether a check that works from other devices was ever set up, removed
+   * ones included: from then on, a password alone never signs in from away.
+   */
+  readonly everHadAway: boolean;
+}
 
 /** A new authenticator app waiting for its first code. */
 export interface PendingAuthenticator {

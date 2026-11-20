@@ -19,6 +19,8 @@ export const ownerFactorsKey = ['auth', 'owner-factors'] as const;
 /** What the section reads and does. */
 export interface OwnerFactors {
   readonly factors: readonly OwnerFactor[];
+  /** Whether a check that works from away was ever set up, as the server counts it. */
+  readonly everHadAway: boolean;
   readonly isLoading: boolean;
   /** Whether this caller may not see them (not the owner in person): show nothing. */
   readonly unavailable: boolean;
@@ -77,6 +79,7 @@ export function useOwnerFactors(enabled: boolean): OwnerFactors {
 
   return {
     factors: list.data?.factors ?? [],
+    everHadAway: list.data?.everHadAway ?? false,
     isLoading: list.isLoading,
     unavailable: list.isError,
     pending,

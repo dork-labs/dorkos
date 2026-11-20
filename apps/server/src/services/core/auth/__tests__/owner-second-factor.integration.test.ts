@@ -45,7 +45,11 @@ import {
   discardOwnerFactor,
   removeOwnerFactor,
 } from '../factors/owner-factors.js';
-import { resetPasskeyChallengesForTests } from '../factors/owner-passkeys.js';
+import {
+  everHadRemoteFactor,
+  resetPasskeyChallengesForTests,
+  worksFromOtherDevices,
+} from '../factors/owner-passkeys.js';
 import { newTotpSecret, totpCodeAt, totpStepOf } from '../factors/totp.js';
 import { env } from '../../../../env.js';
 
@@ -156,6 +160,70 @@ describe('before any second factor works remotely', () => {
     expect((await signIn('own-tunnel')).status).toBe(200);
   });
 
+  it('a passkey for this computer, old or new, at any of its names, never counts as working from away', async () => {
+    const owner = readOwnerAccount()!.id;
+    const desk = cookiesOf(await signIn('direct'));
+    const tunnel = cookiesOf(await signIn('own-tunnel'));
+    const made: string[] = [];
+    // One saved months ago, before this rule, and one for each of this computer's names.
+    for (const [rpId, at] of [
+      ['localhost', Date.parse('2026-08-01T00:00:00Z')],
+      ['127.0.0.1', Date.now()],
+      ['::1', Date.now()],
+    ] as const) {
+      const key = new SoftAuthenticator({ rpId, origin: ORIGIN, userHandle: 'b2xk' });
+      made.push(
+        addPasskey(
+          {
+            userId: owner,
+            label: 'Here',
+            credentialId: key.credentialId,
+            publicKey: key.cosePublicKeyBase64url(),
+            alg: key.coseAlg,
+            signCount: 0,
+            rpId,
+          },
+          at
+        )
+      );
+    }
+    try {
+      for (const id of made) {
+        const row = db.select().from(ownerFactors).where(eq(ownerFactors.id, id)).get()!;
+        expect(worksFromOtherDevices(row)).toBe(false);
+      }
+      expect(everHadRemoteFactor(owner)).toBe(false);
+      // The list says the same as the rule, so the app groups it "On this computer".
+      const listed = await request(target.server)
+        .get('/api/owner-factors')
+        .set('Host', LOCAL)
+        .set('Cookie', desk);
+      expect(listed.status).toBe(200);
+      expect(listed.body.everHadAway).toBe(false);
+      for (const id of made) {
+        expect(
+          (listed.body.factors as { id: string; worksFromAway: boolean }[]).find((f) => f.id === id)
+        ).toMatchObject({ worksFromAway: false });
+      }
+      // Away, the password alone still signs in: no second step, so nothing is offered.
+      const away = await signIn('own-tunnel');
+      expect(away.status).toBe(200);
+      expect(away.body.code).toBeUndefined();
+      // And nothing was signed out.
+      expect(
+        (
+          await request(target.server)
+            .get('/api/owner-factors')
+            .set('Host', LOCAL)
+            .set(INGRESS_HEADER, 'own-tunnel')
+            .set('Cookie', tunnel)
+        ).status
+      ).toBe(200);
+    } finally {
+      for (const id of made) db.delete(ownerFactors).where(eq(ownerFactors.id, id)).run();
+    }
+  });
+
   it('an authenticator app still waiting for its first code asks nothing either', async () => {
     await addPendingTotp(readOwnerAccount()!.id, 'Not yet', newTotpSecret());
     expect((await signIn('own-tunnel')).status).toBe(200);
@@ -257,7 +325,8 @@ describe('sign-in checks change only at this computer', () => {
     expect(res.body.secret).toBeUndefined();
   });
 
-  it('adding a passkey here writes one Activity line and one notice', async () => {
+  it('adding a passkey here writes one Activity line and one notice, and signs nothing out', async () => {
+    const tunnel = cookiesOf(await signIn('own-tunnel'));
     const before = db
       .select()
       .from(auditEvents)
@@ -301,6 +370,14 @@ describe('sign-in checks change only at this computer', () => {
     expect(rows.length).toBe(before + 1);
     expect(rows.at(-1)!.summary).toBe('A passkey was added on this computer');
     expect(notices).toEqual(['signin.check_added']);
+    // It works only here, so the sign-in from away it doesn't cover goes on.
+    const away = await request(target.server)
+      .get('/api/owner-factors')
+      .set('Host', LOCAL)
+      .set(INGRESS_HEADER, 'own-tunnel')
+      .set('Cookie', tunnel);
+    expect(away.status).toBe(200);
+    expect(away.body.everHadAway).toBe(false);
   });
 
   it('removing one takes a passkey check, then the password, and raises a notice', async () => {

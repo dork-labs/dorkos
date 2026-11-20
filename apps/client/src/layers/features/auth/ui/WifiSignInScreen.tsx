@@ -56,13 +56,13 @@ export function WifiSignInScreen() {
                 Open DorkOS on the computer it runs on and approve{' '}
                 <span className="font-medium">{signIn.deviceName ?? 'this device'}</span>.
               </p>
-              <p className="text-sm">Then type the code it shows.</p>
               {signIn.matchCode && (
-                <>
-                  <p className="text-muted-foreground text-xs">The request there shows:</p>
+                <div className="space-y-0.5">
+                  <p className="text-muted-foreground text-xs">Match code</p>
                   <CodeGroups code={signIn.matchCode} />
-                </>
+                </div>
               )}
+              <p className="text-sm">Then type the code it gives you.</p>
             </div>
             <Field className="gap-1.5">
               <FieldLabel htmlFor={codeId}>Code</FieldLabel>

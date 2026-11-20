@@ -103,6 +103,22 @@ export function thisComputerPasskeyOrigins(): string[] {
 }
 
 /**
+ * Every name this computer goes by, for telling a passkey made here from one
+ * made for another address. A fixed set, not just the origins served right
+ * now: a passkey made at `localhost`, at another port or in development is
+ * still this computer's, and never counts as one that works from away.
+ */
+function thisComputerHosts(): ReadonlySet<string> {
+  return new Set([
+    'localhost',
+    '127.0.0.1',
+    '::1',
+    '[::1]',
+    ...thisComputerPasskeyOrigins().map((origin) => new URL(origin).hostname),
+  ]);
+}
+
+/**
  * The addresses of this computer a person has a passkey for, whatever address
  * the asking page is on: a check is never skipped because the page was opened
  * at another of this computer's addresses.
@@ -110,7 +126,7 @@ export function thisComputerPasskeyOrigins(): string[] {
  * @param userId - Whose.
  */
 export function thisComputerPasskeyHosts(userId: string): string[] {
-  const here = new Set(thisComputerPasskeyOrigins().map((origin) => new URL(origin).hostname));
+  const here = thisComputerHosts();
   const hosts = confirmedFactors(userId, 'passkey')
     .map((row) => row.rpId)
     .filter((rpId): rpId is string => rpId !== null && here.has(rpId));
@@ -126,8 +142,9 @@ export function thisComputerPasskeyHosts(userId: string): string[] {
  */
 export function worksFromOtherDevices(row: OwnerFactorRow): boolean {
   if (row.kind === 'totp') return true;
-  const here = new Set(thisComputerPasskeyOrigins().map((origin) => new URL(origin).hostname));
-  return row.rpId !== null && !here.has(row.rpId);
+  // Judged by the address the passkey was made for, which every row stores,
+  // so one saved before this rule is judged the same way.
+  return row.rpId !== null && !thisComputerHosts().has(row.rpId.toLowerCase());
 }
 
 /**

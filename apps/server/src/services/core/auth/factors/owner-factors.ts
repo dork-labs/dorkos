@@ -28,6 +28,8 @@ export interface OwnerFactorView {
   readonly host?: string;
   readonly addedAt: string;
   readonly lastUsedAt?: string;
+  /** Whether it proves a sign-in from another device: the same rule the sign-in step uses. */
+  readonly worksFromAway: boolean;
 }
 
 const SEAL_LABEL = 'dorkos-owner-factor-seal:v1';
@@ -120,21 +122,16 @@ export function everConfirmedFactors(userId: string, kind?: 'totp' | 'passkey'):
 }
 
 /**
- * Whether a person has set up any second factor, so a password alone no
- * longer signs them in from another device.
- *
- * @param userId - Whose.
- */
-export function hasSecondFactor(userId: string): boolean {
-  return confirmedFactors(userId).length > 0;
-}
-
-/**
  * The factors as the app lists them.
  *
  * @param userId - Whose.
+ * @param worksFromAway - The sign-in step's own rule for which factors prove a
+ *   sign-in from another device, so the list and the rule never disagree.
  */
-export function listOwnerFactors(userId: string): OwnerFactorView[] {
+export function listOwnerFactors(
+  userId: string,
+  worksFromAway: (row: OwnerFactorRow) => boolean
+): OwnerFactorView[] {
   return confirmedFactors(userId).map((row) => ({
     id: row.id,
     kind: row.kind,
@@ -142,6 +139,7 @@ export function listOwnerFactors(userId: string): OwnerFactorView[] {
     ...(row.rpId ? { host: row.rpId } : {}),
     addedAt: row.createdAt.toISOString(),
     ...(row.lastUsedAt ? { lastUsedAt: row.lastUsedAt.toISOString() } : {}),
+    worksFromAway: worksFromAway(row),
   }));
 }
 

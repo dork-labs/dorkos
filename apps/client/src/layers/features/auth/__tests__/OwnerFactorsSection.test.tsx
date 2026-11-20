@@ -65,8 +65,10 @@ describe('OwnerFactorsSection', () => {
           label: 'Laptop',
           host: 'studio.example',
           addedAt: '2026-11-20T00:00:00Z',
+          worksFromAway: true,
         },
       ],
+      everHadAway: true,
     });
     cleanup();
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -85,6 +87,62 @@ describe('OwnerFactorsSection', () => {
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
     await waitFor(() => expect(transport.removeOwnerFactor).toHaveBeenCalledWith('k1', undefined));
+  });
+
+  it('a passkey that works only here sits under "On this computer", never as an away check', async () => {
+    const transport = setup();
+    vi.mocked(transport.listOwnerFactors).mockResolvedValue({
+      factors: [
+        {
+          id: 'k-here',
+          kind: 'passkey',
+          label: 'Desk',
+          host: 'localhost',
+          addedAt: '2026-11-20T00:00:00Z',
+          worksFromAway: false,
+        },
+      ],
+      everHadAway: false,
+    });
+    cleanup();
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <OwnerFactorsSection />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+    const group = (await screen.findByText('On this computer')).parentElement!;
+    expect(group).toHaveTextContent(/Passkey · localhost · added/);
+    // Never having had an away check, the away group adds no empty line.
+    expect(
+      screen.queryByText('Other devices can’t sign in until you add one.')
+    ).not.toBeInTheDocument();
+    // Removing it says nothing about other devices: they never relied on it.
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Passkey' }));
+    expect(await screen.findByText('Remove this passkey?')).toBeInTheDocument();
+    expect(
+      screen.queryByText('Other devices can’t sign in until you add another here.')
+    ).not.toBeInTheDocument();
+  });
+
+  it('once an away check existed and none is left, the away group says other devices wait', async () => {
+    const transport = setup();
+    vi.mocked(transport.listOwnerFactors).mockResolvedValue({ factors: [], everHadAway: true });
+    cleanup();
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <OwnerFactorsSection />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+    expect(
+      await screen.findByText('Other devices can’t sign in until you add one.')
+    ).toBeInTheDocument();
+    expect(screen.queryByText('On this computer')).not.toBeInTheDocument();
   });
 
   it('shows nothing to a caller the server will not show them to', async () => {

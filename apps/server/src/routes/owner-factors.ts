@@ -47,7 +47,7 @@ import {
   everHadRemoteFactor,
   finishAddingPasskey,
   startAddingPasskey,
-  thisComputerPasskeyOrigins,
+  worksFromOtherDevices,
 } from '../services/core/auth/factors/owner-passkeys.js';
 import { signOutSessionsAway } from '../services/core/auth/sessions/signed-in-devices.js';
 import { newTotpSecret, totpUri, verifyTotp } from '../services/core/auth/factors/totp.js';
@@ -171,7 +171,10 @@ export function createOwnerFactorRoutes(): Hono<ApiEnv> {
   router.get('/', (c) => {
     const owner = ownerOf(c, false);
     if (owner instanceof Response) return owner;
-    return c.json({ factors: listOwnerFactors(owner.userId) });
+    return c.json({
+      factors: listOwnerFactors(owner.userId, worksFromOtherDevices),
+      everHadAway: everHadRemoteFactor(owner.userId),
+    });
   });
 
   router.post('/passkeys/options', async (c) => {
@@ -230,9 +233,9 @@ export function createOwnerFactorRoutes(): Hono<ApiEnv> {
     if (typeof added === 'string') {
       return c.json(errorBody('That passkey wasn’t added. Try again.', 'PASSKEY_REFUSED'), 400);
     }
-    const here = thisComputerPasskeyOrigins().some(
-      (origin) => new URL(origin).hostname === added.host
-    );
+    // The sign-in step's own rule: a passkey made for this computer works only here.
+    const saved = findOwnerFactor(owner.userId, added.factorId);
+    const here = !saved || !worksFromOtherDevices(saved);
     if (!here && !(await endedOrTakenBack(owner, first, added.factorId, since)))
       return notSignedOut(c);
     recordSignInTrustChange(owner.userId, here ? 'passkey-added-here' : 'passkey-added');

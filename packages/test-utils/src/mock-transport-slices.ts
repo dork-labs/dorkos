@@ -124,7 +124,7 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
     approveWifiSignIn: vi.fn().mockResolvedValue({ kind: 'needs-passkey' }),
     declineWifiSignIn: vi.fn().mockResolvedValue(undefined),
     // No sign-in checks yet; adding one succeeds.
-    listOwnerFactors: vi.fn().mockResolvedValue({ factors: [] }),
+    listOwnerFactors: vi.fn().mockResolvedValue({ factors: [], everHadAway: false }),
     startAddingPasskey: vi.fn().mockResolvedValue({ kind: 'options', options: {} }),
     finishAddingPasskey: vi.fn().mockResolvedValue({ id: 'f1', host: 'localhost' }),
     startAddingAuthenticator: vi.fn().mockResolvedValue({

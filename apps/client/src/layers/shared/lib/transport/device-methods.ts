@@ -10,7 +10,7 @@ import {
   PASSKEY_CHECK_CODE,
   PASSKEY_NEEDED_CODE,
   type AuthenticatorStartStep,
-  type OwnerFactor,
+  type OwnerFactorList,
   type PasskeyCheckedStep,
   type PasskeyStartStep,
   type PendingAuthenticator,
@@ -99,7 +99,7 @@ export function createDeviceMethods(baseUrl: string) {
         }
       );
     },
-    listOwnerFactors(): Promise<{ factors: OwnerFactor[] }> {
+    listOwnerFactors(): Promise<OwnerFactorList> {
       return fetchJSON(baseUrl, '/owner-factors');
     },
     async startAddingPasskey(label: string, passkey?: unknown): Promise<PasskeyStartStep> {

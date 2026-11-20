@@ -44,8 +44,6 @@ function RequestCard({ request, trust }: { request: WifiSignInRequest; trust: De
             {formatRelativeTime(request.requestedAt)}
           </p>
         </div>
-        {/* Once approved, the only code left is the one to type. */}
-        {!shown && <CodeGroups code={request.matchCode} className="text-base" />}
       </div>
       {shown ? (
         <div className="space-y-1 text-center">
@@ -55,8 +53,14 @@ function RequestCard({ request, trust }: { request: WifiSignInRequest; trust: De
         </div>
       ) : (
         <>
+          {/* Labelled and on its own row, so it never reads as the code to type.
+              Once approved it is gone, and only the code to type is left. */}
+          <div className="space-y-0.5">
+            <p className="text-muted-foreground text-xs">Match code</p>
+            <CodeGroups code={request.matchCode} className="text-base" />
+          </div>
           <p className="text-muted-foreground text-xs">
-            Approve only if you started this on that device and its code matches.
+            Approve only if {request.deviceName} shows the same match code.
           </p>
           {inMacApp && (
             <p className="text-muted-foreground text-xs">

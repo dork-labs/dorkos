@@ -40,6 +40,7 @@ const FactorSchema = z.object({
   host: z.string().optional(),
   addedAt: z.string(),
   lastUsedAt: z.string().optional(),
+  worksFromAway: z.boolean(),
 });
 
 const LabelBody = {
@@ -61,7 +62,10 @@ export function registerOwnerFactorsOpenApi(registry: OpenAPIRegistry): void {
       'The passkeys and authenticator apps that prove a sign-in from another device. ' +
       'Never a secret or a key.',
     responses: {
-      200: json(z.object({ factors: z.array(FactorSchema) }), 'The sign-in checks'),
+      200: json(
+        z.object({ factors: z.array(FactorSchema), everHadAway: z.boolean() }),
+        'The sign-in checks, each saying whether it works from another device'
+      ),
       403: OWNER_ONLY,
     },
   });

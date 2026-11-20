@@ -31,17 +31,22 @@ export function LoginScreen({ onSignedIn }: LoginScreenProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
+  // What the server said works from here, kept past a wrong code's answer.
+  const [methods, setMethods] = useState<readonly string[] | null>(null);
   const { run, isPending, error } = useSignIn();
   const passkey = usePasskeySignIn();
   const needsSecondStep =
     error?.code === SECOND_FACTOR_REQUIRED || error?.code === SECOND_FACTOR_REFUSED;
-  // The code is the one main way; a passkey is offered beside it, quietly.
-  const offerPasskey = needsSecondStep && passkeysAvailable();
+  // Only what the server says works from this device is offered: a passkey
+  // made for the computer DorkOS runs on never is.
+  const offerCode = needsSecondStep && (methods === null || methods.includes('authenticator'));
+  const offerPasskey = needsSecondStep && passkeysAvailable() && !!methods?.includes('passkey');
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (isPending) return;
     const result = needsSecondStep ? await run(email, password, code) : await run(email, password);
+    if (!result.ok && result.error?.methods) setMethods(result.error.methods);
     if (result.ok) onSignedIn?.();
     else setCode('');
   }
@@ -103,7 +108,7 @@ export function LoginScreen({ onSignedIn }: LoginScreenProps) {
               required
             />
           </Field>
-          {needsSecondStep && (
+          {offerCode && (
             <Field className="gap-1.5">
               <FieldLabel htmlFor={codeId}>Enter the code from your authenticator app.</FieldLabel>
               <Input
@@ -129,20 +134,30 @@ export function LoginScreen({ onSignedIn }: LoginScreenProps) {
             </Notice>
           )}
 
-          <Button type="submit" className="w-full" disabled={isPending}>
+          <Button
+            type="submit"
+            className="w-full"
+            hidden={needsSecondStep && !offerCode}
+            disabled={isPending}
+          >
             {isPending ? 'Signing in…' : 'Sign in'}
           </Button>
         </form>
 
         {offerPasskey && (
           <div className="mt-2 space-y-2">
+            {/* One main action: the passkey is quiet beside a code, and main alone. */}
             <Button
-              variant="link"
+              variant={offerCode ? 'link' : 'default'}
               className="w-full"
               onClick={() => void handlePasskey()}
               disabled={passkey.isPending}
             >
-              {passkey.isPending ? 'Checking…' : 'Use a passkey instead'}
+              {passkey.isPending
+                ? 'Checking…'
+                : offerCode
+                  ? 'Use a passkey instead'
+                  : 'Use a passkey'}
             </Button>
             {passkeyError && (
               <p className="text-destructive text-xs" role="alert">

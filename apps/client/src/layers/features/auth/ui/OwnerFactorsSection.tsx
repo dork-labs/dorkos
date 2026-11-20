@@ -31,6 +31,10 @@ export function OwnerFactorsSection() {
   const factors = useOwnerFactors(true);
   const canMakePasskey = passkeysAvailable();
   if (factors.unavailable) return null;
+  // Grouped by the server's own rule: a passkey made for this computer never
+  // reads as covering a sign-in from away.
+  const away = factors.factors.filter((factor) => factor.worksFromAway);
+  const here = factors.factors.filter((factor) => !factor.worksFromAway);
 
   return (
     <div className="space-y-4">
@@ -48,15 +52,20 @@ export function OwnerFactorsSection() {
         {factors.isLoading ? (
           <Skeleton className="h-12 w-full" />
         ) : (
-          factors.factors.map((factor) => (
+          away.map((factor) => (
             <FactorRow
               key={factor.id}
               factor={factor}
               busy={factors.busy}
-              isLast={factors.factors.length === 1}
+              isLast={away.length === 1}
               onRemove={() => void factors.remove(factor.id)}
             />
           ))
+        )}
+        {!factors.isLoading && away.length === 0 && factors.everHadAway && (
+          <p className="text-muted-foreground text-xs">
+            Other devices can’t sign in until you add one.
+          </p>
         )}
       </div>
 
@@ -94,6 +103,21 @@ export function OwnerFactorsSection() {
         </div>
       )}
 
+      {here.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-sm font-medium">On this computer</p>
+          {here.map((factor) => (
+            <FactorRow
+              key={factor.id}
+              factor={factor}
+              busy={factors.busy}
+              isLast={false}
+              onRemove={() => void factors.remove(factor.id)}
+            />
+          ))}
+        </div>
+      )}
+
       <p className="text-muted-foreground text-xs">
         Lost it? Sign in on the computer DorkOS runs on and remove it.
       </p>
@@ -115,7 +139,7 @@ function FactorRow({
 }: {
   factor: OwnerFactor;
   busy: boolean;
-  /** Whether removing it leaves a password alone for other devices. */
+  /** Whether removing it leaves no check that works from other devices. */
   isLast: boolean;
   onRemove: () => void;
 }) {

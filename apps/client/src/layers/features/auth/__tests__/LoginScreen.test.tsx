@@ -42,19 +42,60 @@ describe('LoginScreen', () => {
     );
   });
 
-  it('with passkeys on this browser, the code stays the main way and a passkey is offered beside it', () => {
+  /** Reach the second step with the server listing `methods`, on a browser with passkeys. */
+  async function secondStepWith(methods: string[]) {
     vi.stubGlobal('isSecureContext', true);
     vi.stubGlobal('PublicKeyCredential', function PublicKeyCredential() {});
     Object.defineProperty(navigator, 'credentials', {
       value: { get: vi.fn() },
       configurable: true,
     });
+    const required = {
+      message: 'needs more',
+      status: 401,
+      code: 'SECOND_FACTOR_REQUIRED',
+      methods,
+    };
+    signIn.run.mockResolvedValue({ ok: false, error: required });
+    // The password first, as a person signs in; the server answers with the second step.
+    const view = render(<LoginScreen />);
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'kai@example.com' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'secret' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    await waitFor(() => expect(signIn.run).toHaveBeenCalled());
+    signIn.error = required;
+    view.rerender(<LoginScreen />);
+  }
+
+  it('offers a passkey quietly beside the code only when the server says one works from here', async () => {
     try {
-      signIn.error = { message: 'needs more', status: 401, code: 'SECOND_FACTOR_REQUIRED' };
-      render(<LoginScreen />);
+      await secondStepWith(['authenticator', 'passkey']);
       expect(screen.getByLabelText('Enter the code from your authenticator app.')).toBeVisible();
-      expect(screen.getByRole('button', { name: 'Sign in' })).toBeVisible();
-      expect(screen.getByRole('button', { name: 'Use a passkey instead' })).toBeInTheDocument();
+      expect(
+        await screen.findByRole('button', { name: 'Use a passkey instead' })
+      ).toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('never offers a passkey the server does not list, such as one made only for this computer', async () => {
+    try {
+      await secondStepWith(['authenticator']);
+      expect(screen.getByLabelText('Enter the code from your authenticator app.')).toBeVisible();
+      expect(screen.queryByRole('button', { name: /passkey/i })).not.toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('with only a passkey that works from here, the passkey is the one main action', async () => {
+    try {
+      await secondStepWith(['passkey']);
+      expect(await screen.findByRole('button', { name: 'Use a passkey' })).toBeInTheDocument();
+      expect(
+        screen.queryByLabelText('Enter the code from your authenticator app.')
+      ).not.toBeInTheDocument();
     } finally {
       vi.unstubAllGlobals();
     }
