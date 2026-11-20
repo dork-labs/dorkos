@@ -47,7 +47,7 @@ export function AgentInstructionsTab() {
         selection={selection}
         onSelectionChange={setSelection}
         result={template}
-        intro="What every agent is told, in model order. Chips fill in per agent."
+        intro="What every agent knows, in model order. Chips fill in per agent."
         actions={
           <Button variant="outline" size="sm" onClick={() => setPreviewOpen(true)}>
             <Eye aria-hidden />
@@ -114,7 +114,7 @@ function PreviewAsDialog({
               selection={selection}
               onSelectionChange={setSelection}
               result={preview}
-              intro={`What ${name?.displayName || name?.name || 'this agent'} is told on its next turn.`}
+              intro={`What ${name?.displayName || name?.name || 'this agent'} knows on its next turn.`}
             />
           ) : (
             <p className="text-muted-foreground text-sm">No agents yet.</p>

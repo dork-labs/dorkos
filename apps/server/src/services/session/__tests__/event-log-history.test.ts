@@ -233,6 +233,39 @@ describe('reconstructHistoryFromEvents', () => {
     ]);
   });
 
+  it.each([
+    'codex_git_metadata_unavailable',
+    'codex_git_metadata_unavailable_extra',
+    'unknown_error',
+    'rate_limit',
+    'credits_unavailable',
+    'opencode_project_plugins',
+    'unreadable_entry',
+    undefined,
+  ])('preserves only the Git-folder refusal code in completed error parts (%s)', (code) => {
+    const messages = reconstructHistoryFromEvents(
+      events(
+        { seq: 1, type: 'turn_start', userMessage: 'hello' },
+        {
+          seq: 2,
+          type: 'error',
+          message: 'Original message',
+          details: 'Original details',
+          ...(code !== undefined ? { code } : {}),
+        },
+        { seq: 3, type: 'turn_end', terminalReason: 'error' }
+      )
+    );
+    expect(messages[1]?.parts).toEqual([
+      {
+        type: 'error',
+        message: 'Original message',
+        ...(code === 'codex_git_metadata_unavailable' ? { code } : {}),
+        details: code !== undefined ? `[${code}] Original details` : 'Original details',
+      },
+    ]);
+  });
+
   it('drops a legacy persisted Codex diagnostic from completed history', () => {
     const messages = reconstructHistoryFromEvents(
       events(

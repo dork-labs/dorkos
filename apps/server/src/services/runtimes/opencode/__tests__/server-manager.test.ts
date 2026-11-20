@@ -8,6 +8,16 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'node:events';
+import { existsSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
+import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+  createByteLane,
+  RunStartError,
+  type RunChild,
+  type RunSpawnPort,
+} from '@dorkos/test-utils/run-custody';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createOpencodeClient, type OpencodeClient } from '@opencode-ai/sdk';
 import type { UserConfig } from '@dorkos/shared/config-schema';
@@ -129,6 +139,45 @@ async function bootReady(
   return { client: await pending, child };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
+
+function custodyChild() {
+  const stdout = createByteLane();
+  const stderr = createByteLane();
+  const identity = { pid: 731, executable: BINARY };
+  const exit = deferred<Awaited<RunChild['exit']>>();
+  const close = deferred<Awaited<RunChild['close']>>();
+  const joined = deferred<Awaited<ReturnType<RunChild['stopAndJoin']>>>();
+  const stopAndJoin = vi.fn((_: string, _deadline: number) => joined.promise);
+  const child: RunChild = {
+    ...identity,
+    stdout: stdout.reader,
+    stderr: stderr.reader,
+    spawn: Promise.resolve({ kind: 'spawned', ...identity }),
+    exit: exit.promise,
+    close: close.promise,
+    stopAndJoin,
+  };
+  const stop = () => {
+    stdout.writer.end();
+    stderr.writer.end();
+    joined.resolve({ kind: 'cleaned-owned' });
+  };
+  return { child, stdout, stderr, exit, close, joined, stop, stopAndJoin };
+}
+
+function custodyPlugin(start: ReturnType<typeof vi.fn<RunSpawnPort['start']>>): string {
+  const env = start.mock.calls[0]![0].env;
+  const config = JSON.parse(env.OPENCODE_CONFIG_CONTENT!) as { plugin: [string] };
+  return fileURLToPath(config.plugin[0]);
+}
+
 describe('OpenCodeServerManager', () => {
   beforeEach(() => {
     vi.stubEnv('MCP_API_KEY', 'synthetic-server-token');
@@ -161,6 +210,167 @@ describe('OpenCodeServerManager', () => {
       vi.unstubAllEnvs();
     }
     vi.useRealTimers();
+  });
+
+  describe('explicit custody composition', () => {
+    it('shares acquisition, waits for the complete stdout line and does not invoke default spawn', async () => {
+      const f = custodyChild();
+      const start = vi.fn<RunSpawnPort['start']>().mockResolvedValue(f.child);
+      const manager = new OpenCodeServerManager({ custody: { start } });
+      const first = manager.getClient('/ignored');
+      const second = manager.getClient('/also-ignored');
+      await flushBoot();
+      expect(start).toHaveBeenCalledTimes(1);
+      expect(start.mock.calls[0]![0]).toMatchObject({
+        executable: BINARY,
+        argv: ['serve', '--hostname=127.0.0.1', '--port=0'],
+        cwd: process.cwd(),
+        stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' },
+      });
+      expect(start.mock.calls[0]![0].env).not.toHaveProperty('MCP_API_KEY');
+      const encode = (text: string) => new TextEncoder().encode(text);
+      await f.stderr.writer.write(encode('opencode server listening on http://127.0.0.1:9999\n'));
+      await f.stdout.writer.write(encode('opencode server listening on http://127.0.0.1:40'));
+      await flushBoot();
+      expect(manager.peekClient()).toBeNull();
+      await f.stdout.writer.write(encode('96\n'));
+      expect(await first).toBe(await second);
+      expect(createOpencodeClient).toHaveBeenCalledWith(
+        expect.objectContaining({
+          baseUrl: 'http://127.0.0.1:4096',
+        })
+      );
+      expect(spawn).not.toHaveBeenCalled();
+      const plugin = custodyPlugin(start);
+      expect(existsSync(plugin)).toBe(true);
+      f.stop();
+      await manager.shutdown();
+      expect(f.stopAndJoin).toHaveBeenCalledTimes(1);
+      expect(existsSync(plugin)).toBe(false);
+    });
+
+    it('uses one startup deadline, then joins a late acquisition without publishing it', async () => {
+      const f = custodyChild();
+      const late = deferred<RunChild>();
+      const start = vi.fn<RunSpawnPort['start']>(() => late.promise);
+      const manager = new OpenCodeServerManager({ custody: { start } });
+      const before = Date.now();
+      const boot = expect(manager.getClient('/repo')).rejects.toThrow(/15000ms/);
+      await flushBoot();
+      expect(start.mock.calls[0]![0].deadline).toBe(before + 15_000);
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(start.mock.calls[0]![1].aborted).toBe(true);
+      late.resolve(f.child);
+      f.stop();
+      await boot;
+      expect(f.stopAndJoin).toHaveBeenCalledExactlyOnceWith('startup-timeout', before + 20_000);
+      expect(manager.peekClient()).toBeNull();
+      expect(createOpencodeClient).not.toHaveBeenCalled();
+      await manager.shutdown();
+    });
+
+    it('recycles during planning without a stale acquisition, then boots the replacement', async () => {
+      const pendingBinary = deferred<string>();
+      vi.mocked(resolveOpenCodeBinaryPath).mockReturnValueOnce(pendingBinary.promise);
+      const f = custodyChild();
+      const start = vi.fn<RunSpawnPort['start']>().mockResolvedValue(f.child);
+      const manager = new OpenCodeServerManager({ custody: { start } });
+      const stale = expect(manager.getClient('/repo')).rejects.toThrow(/cancelled/);
+      await manager.recycle();
+      const boot = manager.getClient('/repo');
+      await flushBoot();
+      pendingBinary.resolve(BINARY);
+      await stale;
+      expect(start).toHaveBeenCalledTimes(1);
+      await f.stdout.writer.write(
+        new TextEncoder().encode('opencode server listening on http://127.0.0.1:4096\n')
+      );
+      await boot;
+      f.stop();
+      await manager.shutdown();
+    });
+
+    it('does not leak backend startup failures or retry unconfirmed cleanup', async () => {
+      const error = new RunStartError({
+        kind: 'spawn-failed',
+        error: new Error('synthetic-private-provider-output'),
+        cleanup: { kind: 'cleanup-uncertain', reason: 'fixture' },
+      });
+      const start = vi.fn<RunSpawnPort['start']>().mockRejectedValue(error);
+      const manager = new OpenCodeServerManager({ custody: { start } });
+      await expect(manager.getClient('/repo')).rejects.toThrow(
+        /^OpenCode sidecar custody could not acquire a process$/
+      );
+      await expect(manager.getClient('/repo')).rejects.toThrow(/cleanup could not be confirmed/);
+      expect(start).toHaveBeenCalledTimes(1);
+      expect(createOpencodeClient).not.toHaveBeenCalled();
+      const plugin = custodyPlugin(start);
+      try {
+        await expect(manager.recycle()).rejects.toThrow(
+          /^OpenCode sidecar cleanup could not be confirmed$/
+        );
+        await expect(manager.shutdown()).rejects.toThrow(
+          /^OpenCode sidecar cleanup could not be confirmed$/
+        );
+        await expect(manager.shutdown()).rejects.toThrow(
+          /^OpenCode sidecar cleanup could not be confirmed$/
+        );
+        expect(existsSync(plugin)).toBe(true);
+      } finally {
+        // The fake child owns no OS process. The test owns the retained fixture.
+        await rm(dirname(plugin), { recursive: true, force: true });
+      }
+    });
+
+    it('does not publish buffered readiness if native exit is already latched', async () => {
+      const f = custodyChild();
+      await f.stdout.writer.write(
+        new TextEncoder().encode('opencode server listening on http://127.0.0.1:4096\n')
+      );
+      f.exit.resolve({ kind: 'exited', code: 1, signal: null });
+      const manager = new OpenCodeServerManager({ custody: { start: async () => f.child } });
+      f.stop();
+      await expect(manager.getClient('/repo')).rejects.toThrow(/before readiness|exited/);
+      expect(createOpencodeClient).not.toHaveBeenCalled();
+      expect(f.stopAndJoin).toHaveBeenCalledTimes(1);
+      await manager.shutdown();
+    });
+
+    it('blocks replacements after custody terminal loss without confirmed cleanup', async () => {
+      const f = custodyChild();
+      const start = vi.fn<RunSpawnPort['start']>().mockResolvedValue(f.child);
+      const manager = new OpenCodeServerManager({ custody: { start } });
+      await f.stdout.writer.write(
+        new TextEncoder().encode('opencode server listening on http://127.0.0.1:4096\n')
+      );
+      await manager.getClient('/repo');
+      f.close.resolve({ kind: 'transport-lost' });
+      f.stdout.writer.end();
+      f.stderr.writer.end();
+      f.joined.resolve({ kind: 'cleanup-uncertain', reason: 'fixture' });
+      await flushBoot();
+      expect(manager.peekClient()).toBeNull();
+      await expect(manager.getClient('/repo')).rejects.toThrow(/cleanup could not be confirmed/);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(start).toHaveBeenCalledTimes(1);
+      expect(f.stopAndJoin).toHaveBeenCalledTimes(1);
+      const plugin = custodyPlugin(start);
+      try {
+        await expect(manager.recycle()).rejects.toThrow(
+          /^OpenCode sidecar cleanup could not be confirmed$/
+        );
+        await expect(manager.shutdown()).rejects.toThrow(
+          /^OpenCode sidecar cleanup could not be confirmed$/
+        );
+        await expect(manager.shutdown()).rejects.toThrow(
+          /^OpenCode sidecar cleanup could not be confirmed$/
+        );
+        expect(existsSync(plugin)).toBe(true);
+      } finally {
+        // The fake child owns no OS process. The test owns the retained fixture.
+        await rm(dirname(plugin), { recursive: true, force: true });
+      }
+    });
   });
 
   describe('lazy spawn + peekClient', () => {

@@ -10,6 +10,11 @@ import type { McpToolDeps } from './types.js';
 import { jsonContent } from './types.js';
 import { resolveProposerName } from '../../../tasks/task-provenance.js';
 import { turnReadOutsideWords } from '../../../core/turn-power/outsider-turn.js';
+import {
+  ownExtensionsDeniable,
+  ownExtensionsHeldByMark,
+  ownExtensionsReadOnlyMessage,
+} from '../folder-settings/agent-extensions-deny.js';
 
 /**
  * Which session is creating an extension, read at CALL time (the SDK rekeys a
@@ -42,9 +47,11 @@ export type ExtensionCreatorResolver = () => {
  * An agent's extension is created in its own folder, at
  * `.dork/extensions/<name>` (DOR-3068), and the approval records that folder
  * as its author, so edits to its server half keep running without a click.
- * Not for a turn that read a stranger's words or runs under a ceiling: that
- * create keeps today's approval rules and records no author, so every edit
- * waits for a person.
+ * Not for a turn that read a stranger's words: that create keeps today's
+ * approval rules and records no author, so every edit waits for a person. A
+ * turn whose own folder is read-only (a mark that holds, or a ceiling) creates
+ * nothing, and is told the rule and the personal-marketplace route instead
+ * (DOR-4851).
  *
  * @param deps - Shared MCP tool dependencies
  * @param resolveCreator - Who is creating it; absent on the external `/mcp` server.
@@ -73,6 +80,20 @@ export function createCreateExtensionHandler(
       // path trust only while it runs separately inside it (DOR-3068).
       const creator = resolveCreator?.();
       const agentPath = creator?.agentPath;
+      // A turn whose file tools may not write the agent's own folder (DOR-4851) gets the rule and
+      // the route that works instead: a copy made there now could never be changed this turn,
+      // and its id would stand in the way of the same app published to the personal marketplace.
+      if (
+        agentPath &&
+        ownExtensionsDeniable(agentPath) &&
+        (creator?.ceilinged === true || ownExtensionsHeldByMark(creator?.sessionId, agentPath))
+      ) {
+        return jsonContent({
+          status: 'not_created',
+          reason: 'own_folder_read_only',
+          message: ownExtensionsReadOnlyMessage(),
+        });
+      }
       // New code follows the agent's level (DOR-3440): at Full it approves itself with one
       // Activity line. Below Full, under a ceiling or holding a Wi-Fi mark (a raise, which a mark
       // still holds back), it waits for a person and is pinned to its files, so an edit waits again.

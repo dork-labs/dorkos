@@ -127,6 +127,9 @@ gates:
   - id: wf.cli-smoke-test.integration-test
     source: .github/workflows/cli-smoke-test.yml
     purpose: Runs the Docker integration image end to end against the packed CLI.
+  - id: wf.cli-smoke-test.codex-docker-sandbox
+    source: .github/workflows/cli-smoke-test.yml
+    purpose: Builds the product image and proves, on Ubuntu's AppArmor, that with the opt-in seccomp profile Codex's sandbox gets past seccomp and is refused by AppArmor's mount rule, and that it fails closed on Docker's default, with the same user, capability sets, NoNewPrivs and AppArmor label in both.
   - id: wf.cli-smoke-test.hub-smoke-test
     source: .github/workflows/cli-smoke-test.yml
     purpose: Boots the hub image against a stand-in for DorkOS Cloud and proves it refuses while pooled, takes an assignment, and admits only front-door traffic.

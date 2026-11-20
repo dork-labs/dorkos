@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { RoomKind, RoomRosterEntry } from '@dorkos/shared/room-schemas';

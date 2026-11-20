@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /** "Mini apps that can read this" on an account's panel (DOR-3547). Made-up data. */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';

@@ -51,7 +51,7 @@ import {
   type ReconcileHost,
 } from './account-usage-reconcile.js';
 import { LedgerFolderWatcher } from './ledger-folder-watcher.js';
-import { memoryUsage, usageOfAccount, usageOfRecord } from './account-usage-view.js';
+import { memoryUsage, signatureOf, usageOfAccount, usageOfRecord } from './account-usage-view.js';
 import {
   flushRetryDelayMs,
   type AccountKey,
@@ -63,15 +63,6 @@ import {
 } from './account-usage-types.js';
 
 const HOUR_MS = 60 * 60 * 1000;
-
-/** What an account shows, minus the parts that change on every reading. */
-function signatureOf(usage: AccountUsage): string {
-  return JSON.stringify({
-    ...usage,
-    updatedAt: null,
-    windows: usage.windows.map((w) => ({ ...w, observedAt: null })),
-  });
-}
 
 function unref(timer: NodeJS.Timeout): NodeJS.Timeout {
   timer.unref?.();

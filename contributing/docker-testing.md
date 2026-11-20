@@ -12,7 +12,9 @@ DorkOS validates the published CLI (`npm install -g dorkos`) inside clean Linux 
 | Integration test script (runs inside the container)                               | `scripts/smoke-test.sh`                 |
 | Build-context allowlist (what Docker can see)                                     | `.dockerignore`                         |
 | `docker:*` / `smoke:*` scripts                                                    | `package.json` (root)                   |
-| CI workflow (3 jobs, path-filtered)                                               | `.github/workflows/cli-smoke-test.yml`  |
+| CI workflow (tarball + five jobs, path-filtered)                                  | `.github/workflows/cli-smoke-test.yml`  |
+| Opt-in seccomp profile for Codex, its pinned upstream base, and its README        | `docker/seccomp/`                       |
+| Codex sandbox check (runs the product image with and without that profile)        | `scripts/codex-docker-sandbox-check.sh` |
 | Per-instance MCP bearer token (for poking a running container)                    | `services/core/auth/mcp-local-token.ts` |
 | User-facing production deployment guide (published image, compose, `latest` tags) | `docs/self-hosting/docker.mdx`          |
 
@@ -107,15 +109,17 @@ The `smoke` and `integration` stages both write a fake `claude` binary to `/usr/
 - **Client**: `GET /` returns HTML and mentions `dorkos` (the SPA is served, not a 404/blank page)
 - **Terminal (node-pty)**: resolves the default working directory via `GET /api/directory/default`, then `POST /api/terminal` to spawn a PTY and `DELETE /api/terminal/:id` to tear it down — this specifically exercises node-pty's native addon and its `spawn-helper` binary, since a broken Linux compile or a non-executable helper only shows up here (see Troubleshooting)
 
-### How CI runs the same three legs
+### How CI runs these legs
 
-`.github/workflows/cli-smoke-test.yml` builds one tarball (`build-tarball` job) and fans it out to three jobs:
+`.github/workflows/cli-smoke-test.yml` builds one tarball (`build-tarball` job) and fans it out to five jobs:
 
 1. **`smoke-test-bare`** — installs the tarball with plain `npm install -g` on bare Ubuntu runners (Node 22 and 24 matrix), no Docker. Checks `--version`, `--help`, `--post-install-check`, `init`.
 2. **`smoke-test-docker`** — `docker build --target smoke` + `docker run`, the containerized version of the same install check.
 3. **`integration-test`** — `docker build --target integration` + `docker run`, running the full `scripts/smoke-test.sh` suite above.
+4. **`hub-smoke-test`** — `docker build --target hub-smoke`, booted against a stand-in for DorkOS Cloud (`scripts/hub-smoke/run.mjs`).
+5. **`codex-docker-sandbox`** — `docker build --target runtime`, then `scripts/codex-docker-sandbox-check.sh --expect apparmor` runs the image twice (DOR-3800). GitHub's Ubuntu runner enforces Docker's `docker-default` AppArmor profile, so CI asserts the scoped outcome: with the profile the sandbox fails on `bwrap: Failed to make / slave: Permission denied`, never on the namespace refusal, and Codex in Docker on AppArmor hosts is not supported yet (DOR-4836). The full outcome below is `--expect full`, on a host without AppArmor such as Docker Desktop. With `docker/seccomp/dorkos-codex.json`, Codex's sandbox must start, still refuse a write outside its folder (`~/.dork`, from `~/work`), and keep uid 1000 and the same `CapInh`/`CapPrm`/`CapEff`/`CapBnd`/`CapAmb`, `NoNewPrivs` and AppArmor label, with `Seccomp: 2` in both runs. It checks Codex's own workspace limit, not the per-turn `dorkos-files-*` profile the server renders; with Docker's default profile it must fail closed. The runner host stays at GitHub's defaults: a host that needs `--privileged`, `--cap-add`, `seccomp=unconfined` or a sysctl change is a host the profile does not support. `scripts/__tests__/codex-seccomp-profile.test.ts` holds the profile to Docker's default plus one rule and refuses any of those in the job. Run it locally against any image: `bash scripts/codex-docker-sandbox-check.sh <image> docker/seccomp/dorkos-codex.json`.
 
-The workflow triggers on push to main unconditionally, but on pull requests it's path-filtered to `packages/cli/**`, `packages/shared/**`, `apps/server/**`, `apps/client/**`, `Dockerfile`, `.dockerignore`, `scripts/smoke-test.sh`, `pnpm-lock.yaml`, and the workflow file itself — the tarball bundles the built server and client (via esbuild), so changes to any of those gate the PR.
+The workflow triggers on push to main unconditionally, but on pull requests it's path-filtered to `packages/cli/**`, `packages/shared/**`, `apps/server/**`, `apps/client/**`, `Dockerfile`, `.dockerignore`, `scripts/smoke-test.sh`, `docker/seccomp/**`, `scripts/codex-docker-sandbox-check.sh`, `pnpm-lock.yaml`, and the workflow file itself — the tarball bundles the built server and client (via esbuild), so changes to any of those gate the PR.
 
 ## Run Your Branch in a Throwaway Container
 

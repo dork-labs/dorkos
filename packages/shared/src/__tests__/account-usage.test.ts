@@ -889,6 +889,65 @@ describe('toAccountUsage', () => {
     expect(out.state).toBe('unknown');
   });
 
+  // DOR-4620. Red when: a plan window with no readable share is left unnamed, so it reads as fine.
+  describe('names plan windows whose share cannot be read, with since when', () => {
+    it('a reading with no share: unknown from its own time', () => {
+      const out = usage({
+        five_hour: entry({ usedPct: 20 }),
+        seven_day: entry({ usedPct: null, status: 'allowed', observedAt: at(-2 * HOUR) }),
+      });
+      expect(out.state).toBe('ok');
+      expect(out.unknown).toEqual([{ key: 'seven_day', label: 'Weekly', since: at(-2 * HOUR) }]);
+    });
+
+    it('a kept share gone stale: unknown from when it went stale, dropped windows too', () => {
+      const out = usage({
+        // Share read 6 h ago, status 1 h ago: the share is past its 5 h length.
+        five_hour: entry({
+          observedAt: at(-6 * HOUR),
+          statusObservedAt: at(-HOUR),
+          status: 'allowed',
+        }),
+        // Nothing for 8 days: out of `windows`, still named here.
+        seven_day: entry({ observedAt: at(-8 * DAY) }),
+      });
+      expect(out.windows.map((w) => [w.key, w.usedPct])).toEqual([['five_hour', null]]);
+      expect(out.unknown).toEqual([
+        { key: 'five_hour', label: '5-hour window', since: at(-HOUR) },
+        { key: 'seven_day', label: 'Weekly', since: at(-DAY) },
+      ]);
+    });
+
+    // The ticket's own case. Red when: each share-less reading moves `since` to "just now".
+    it('share-less readings with a reset time: unknown since the window began, however many', () => {
+      const reading = (observedAt: string) =>
+        usage({
+          seven_day: entry({ usedPct: null, status: 'allowed', resetsAt: at(3 * DAY), observedAt }),
+        }).unknown;
+      const first = reading(at(-6 * HOUR));
+      expect(first).toEqual([{ key: 'seven_day', label: 'Weekly', since: at(-4 * DAY) }]);
+      expect(reading(at(-MIN))).toEqual(first);
+    });
+
+    it('a rejection that dropped out of `windows`: unknown from when it went stale', () => {
+      const out = usage({
+        five_hour: entry({ usedPct: 10 }),
+        seven_day: entry({ usedPct: null, status: 'rejected', observedAt: at(-8 * DAY) }),
+      });
+      expect(out.unknown).toEqual([{ key: 'seven_day', label: 'Weekly', since: at(-DAY) }]);
+    });
+
+    it('a fresh share, a reset window, a rejected one or a non-plan key is not unknown', () => {
+      const out = usage({
+        five_hour: entry({ usedPct: 30 }),
+        seven_day: entry({ usedPct: 100, resetsAt: at(-1) }),
+        seven_day_opus: entry({ usedPct: null, status: 'rejected', resetsAt: at(DAY) }),
+        'credits:openai': entry({ usedPct: null, status: 'allowed' }),
+      });
+      expect(out).not.toHaveProperty('unknown');
+    });
+  });
+
   it('is ok below 90 and warning at 90', () => {
     expect(usage({ seven_day: entry({ usedPct: 89.9 }) }).state).toBe('ok');
     expect(usage({ seven_day: entry({ usedPct: 90 }) }).state).toBe('warning');

@@ -1,7 +1,7 @@
 /**
  * What a database snapshot must not keep (DOR-4001).
  *
- * Snapshots are kept by count, not age (`SNAPSHOT_RETENTION` in `backup.ts`), so
+ * Daily snapshots are kept by count (`SNAPSHOT_RETENTION`), so
  * on a computer that has been off for weeks they can outlive the 30 days the
  * turn-context record promises its text. So the text is emptied out of every
  * snapshot the moment it is written: the rows that point at it keep their

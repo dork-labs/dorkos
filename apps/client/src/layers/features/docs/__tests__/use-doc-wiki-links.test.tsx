@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * `useDocWikiLinks` (DOR-2982): the editor's `wikiLinks` for one file-backed
  * doc. Nothing while Docs is off or the doc has no file; sync resolution and

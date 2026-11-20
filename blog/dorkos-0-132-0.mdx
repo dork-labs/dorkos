@@ -83,6 +83,8 @@ This upgrade only goes one way. DorkOS saves a backup first, in `~/.dork/backups
 - To return to 0.131.0 after upgrading from it, use `dork-<date>-<time>-pre-20261104060919_package_approval_request.db`.
 - To return to 0.130.0, use `dork-<date>-<time>-pre-20261102213849_dor3088_todos.db`, saved before leaving 0.130.0.
 
+Newer backups start with `dork-auto-` instead of `dork-`. [Both filename forms restore the same way](/docs/self-hosting/docker#database-snapshots).
+
 Quit DorkOS. Delete `dork.db-wal` and `dork.db-shm` from `~/.dork/`. Copy the matching backup over `~/.dork/dork.db`, then install that earlier version. You lose anything written since the backup. Going back without restoring can break agent promises and package approvals.
 
 Going back can undo things you changed since the upgrade. If you removed access or revoked a connection, do it again.

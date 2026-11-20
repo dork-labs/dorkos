@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The contracts that must hold for EVERY fixture — purity, provenance, section
  * shape, and the promises that are stated as "never".

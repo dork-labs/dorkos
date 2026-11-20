@@ -11,6 +11,24 @@
       "linearIssue": "DOR-4757"
     },
     {
+      "id": "261119-041904",
+      "slug": "stored-model-launch-reconciliation",
+      "title": "Check a saved model at its first executable launch",
+      "created": "2026-11-19",
+      "status": "specified",
+      "project": "Codex, OpenCode and Doe work like Claude Code",
+      "linearIssue": "DOR-1692"
+    },
+    {
+      "id": "261116-062114",
+      "slug": "shared-native-runtime-tools",
+      "title": "Give every runtime the shared DorkOS tool outcomes",
+      "created": "2026-11-16",
+      "status": "specified",
+      "project": "Codex, OpenCode and Doe work like Claude Code",
+      "linearIssue": "DOR-4481"
+    },
+    {
       "id": "261116-033650",
       "slug": "capability-mcp-full-schemas",
       "title": "Register capability MCP tools with full input schemas",
@@ -2502,6 +2520,15 @@
       "created": "2026-11-19",
       "status": "draft",
       "linearIssue": "DOR-2963"
+    },
+    {
+      "id": "261117-015113",
+      "slug": "opencode-run-custody",
+      "title": "Stop an OpenCode test process when its run ends",
+      "created": "2026-11-16",
+      "status": "specified",
+      "project": "Codex, OpenCode and Doe work like Claude Code",
+      "linearIssue": "DOR-4500"
     }
   ]
 }

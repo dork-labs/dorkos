@@ -335,6 +335,7 @@ describe('Database Migrations', () => {
       // already been read (migration 0037).
       'search_sources',
       'session',
+      'session_birth_allocations',
       'session_connection_overrides',
       // Per-session connector-attachment overrides — a tombstone table (state
       // 'attached'|'detached'), never a plain delete (connection-scoping spec

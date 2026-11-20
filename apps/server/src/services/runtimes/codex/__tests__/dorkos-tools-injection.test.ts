@@ -224,6 +224,9 @@ describe('the dorkos tool server on a Codex turn', () => {
         };
       }),
       renew: vi.fn(),
+      resolveToolTurn: vi.fn(async () => {
+        throw new Error('Live tools are not part of this fixture.');
+      }),
       resolve: vi.fn(),
       revoke: vi.fn().mockResolvedValue(undefined),
     };

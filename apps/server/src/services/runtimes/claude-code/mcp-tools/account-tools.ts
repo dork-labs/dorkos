@@ -17,6 +17,7 @@ import {
   probeAccount,
   UnknownAccountError,
 } from '../accounts/account-probe.js';
+import type { AccountUsage } from '@dorkos/shared/account-usage';
 import { getAccountUsageStore } from '../../../core/usage/current-usage-store.js';
 import type { McpToolDeps } from './types.js';
 import { jsonContent, structuredJsonContent } from './types.js';
@@ -62,10 +63,48 @@ function refusedForMark(
   });
 }
 
+/** One account `accounts_usage` puts first, because it needs a look. */
+export interface UsageAttention {
+  /** The registry id, or `null` for an unregistered folder. */
+  accountId: string | null;
+  label: string | null;
+  runtime: AccountUsage['runtime'];
+  /**
+   * `limited`: out of usage. `usage-unknown`: a plan window it had a reading for
+   * can't be read now, as urgent as out. `never-read`: nothing was ever read
+   * (an API-key account, or one not used yet), so there is nothing to alert on.
+   */
+  reason: 'limited' | 'usage-unknown' | 'never-read';
+  /** For `usage-unknown`: the earliest moment a plan window went unknown. `null` otherwise. */
+  since: string | null;
+}
+
+/**
+ * The accounts that need a look, out ones first (DOR-4620). A plan window that
+ * went unreadable is listed as loudly as an out account, so nobody reads it as
+ * 0%. An account never read at all comes last, under its own reason, so a check
+ * that alerts on unknown usage doesn't fire on it every beat.
+ *
+ * @param accounts - Every account's usage.
+ */
+export function usageAttention(accounts: readonly AccountUsage[]): UsageAttention[] {
+  const order = { limited: 0, 'usage-unknown': 1, 'never-read': 2 } as const;
+  const rows: UsageAttention[] = [];
+  for (const a of accounts) {
+    const who = { accountId: a.accountId, label: a.label, runtime: a.runtime };
+    const since = a.unknown?.map((w) => w.since).sort()[0];
+    if (a.state === 'limited') rows.push({ ...who, reason: 'limited', since: null });
+    else if (since) rows.push({ ...who, reason: 'usage-unknown', since });
+    else if (a.state === 'unknown') rows.push({ ...who, reason: 'never-read', since: null });
+  }
+  return rows.sort((x, y) => order[x.reason] - order[y.reason]);
+}
+
 /**
  * Handler for `accounts_usage`: every account of every runtime, from the usage
- * store's memory. A window with no current reading is left out, and an account
- * with nothing to go on reads `unknown`, never zero.
+ * store's memory, with the ones that need a look first in `attention`. A window
+ * with no current reading is left out of `windows` and named in `unknown`, and
+ * an account with nothing to go on reads `unknown`, never zero.
  *
  * @param marked - Whether the calling turn is refused for its mark (marked, below Full).
  */
@@ -73,7 +112,8 @@ export async function handleAccountsUsage(marked = false) {
   if (marked) return jsonContent(MARKED_TURN_REFUSAL, true);
   const store = getAccountUsageStore();
   if (!store) return jsonContent({ error: 'Account usage is not available yet.' }, true);
-  return structuredJsonContent({ accounts: store.list() });
+  const accounts = store.list();
+  return structuredJsonContent({ attention: usageAttention(accounts), accounts });
 }
 
 /**
@@ -112,7 +152,11 @@ export function getAccountTools(_deps: McpToolDeps, resolveProvenance?: TaskProv
         "(registered ones, plus this computer's own sign-in as `default` when it is not " +
         'registered), each with its usage windows (used percent, reset time, status), a state ' +
         '(ok, warning, limited, unknown) and the window that limited it, if any. From memory, ' +
-        'so it is cheap. Unknown is never reported as 0%.',
+        'so it is cheap. Unknown is never reported as 0%. `attention` lists first the accounts ' +
+        'that need a look: `limited` (out of usage), then `usage-unknown` (usage that could be ' +
+        'read before and cannot now, with `since` saying when), then `never-read` (nothing ever ' +
+        'read, such as an API-key account). Treat `usage-unknown` as urgently as a full account: ' +
+        'it may be full.',
       {},
       () =>
         handleAccountsUsage(

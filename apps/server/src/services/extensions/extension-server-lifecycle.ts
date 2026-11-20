@@ -58,6 +58,7 @@ import { settleWithin } from './settle-within.js';
 import { loadInProcessBundle } from './server-bundle/load-in-process.js';
 import { createIsolatedHandler } from './isolation/isolated-router.js';
 import { RestartPolicy, type RestartPolicyOptions } from './isolation/restart-policy.js';
+import { tellExtensionStopped } from './isolation/notices/tell-extension-stopped.js';
 import { env } from '../../env.js';
 
 /**
@@ -835,12 +836,11 @@ export class ExtensionServerLifecycle {
       `[Extensions] ${id} stopped on its own (${exit.reason}, code ${exit.code}, signal ${exit.signal})`
     );
 
-    let policy = this.restartPolicies.get(id);
-    if (!policy) {
-      policy = new RestartPolicy(this.options.restartPolicy);
-      this.restartPolicies.set(id, policy);
-    }
+    const policy = this.restartPolicies.get(id) ?? new RestartPolicy(this.options.restartPolicy);
+    this.restartPolicies.set(id, policy);
     const decision = policy.onUnexpectedExit();
+    // The person hears of every stop, by name: "restarted" or "is off" (DOR-4785).
+    void tellExtensionStopped(id, name, exit.reason, decision, this.options.restartPolicy);
     if ('giveUp' in decision) {
       const message = extensionServerErrorCopy(exit.reason, name)!;
       this.supervised.set(id, { serverError: { code: exit.reason, message } });
