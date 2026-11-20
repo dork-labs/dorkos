@@ -148,7 +148,10 @@ function FactorRow({
   const Icon = passkey ? KeyRound : Smartphone;
   const name = passkey ? 'Passkey' : 'Authenticator app';
   const added = `added ${new Date(factor.addedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
-  const meta = [name, passkey ? factor.host : null, added].filter(Boolean).join(' · ');
+  // A passkey for this computer sits under "On this computer", which already says where it works.
+  const meta = [name, passkey && factor.worksFromAway ? factor.host : null, added]
+    .filter(Boolean)
+    .join(' · ');
   return (
     <div className="flex items-center justify-between gap-2 rounded-md border px-3 py-2">
       <div className="flex min-w-0 items-center gap-2">

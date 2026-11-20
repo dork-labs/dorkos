@@ -82,18 +82,14 @@ function RequestCard({ request, trust }: { request: WifiSignInRequest; trust: De
               <Button size="sm" onClick={() => openExternalLink(requestsPageUrl())}>
                 Open in browser
               </Button>
-            ) : (
-              <Button
-                size="sm"
-                onClick={() => void trust.approve(request.id)}
-                disabled={busy || noPasskey}
-              >
-                {busy ? 'Checking…' : 'Approve'}
-              </Button>
-            )}
-            {noPasskey && (
-              <Button size="sm" variant="outline" onClick={showSignInChecks}>
+            ) : noPasskey ? (
+              // The next step is adding one; Approve comes back once it exists.
+              <Button size="sm" onClick={showSignInChecks}>
                 Add a passkey
+              </Button>
+            ) : (
+              <Button size="sm" onClick={() => void trust.approve(request.id)} disabled={busy}>
+                {busy ? 'Checking…' : 'Approve'}
               </Button>
             )}
             <Button

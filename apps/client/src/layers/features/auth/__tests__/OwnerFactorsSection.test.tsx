@@ -114,7 +114,9 @@ describe('OwnerFactorsSection', () => {
       </QueryClientProvider>
     );
     const group = (await screen.findByText('On this computer')).parentElement!;
-    expect(group).toHaveTextContent(/Passkey · localhost · added/);
+    // The heading already says where it works, so the row doesn't repeat it.
+    expect(group).toHaveTextContent(/Passkey · added/);
+    expect(group).not.toHaveTextContent('localhost');
     // Never having had an away check, the away group adds no empty line.
     expect(
       screen.queryByText('Other devices can’t sign in until you add one.')

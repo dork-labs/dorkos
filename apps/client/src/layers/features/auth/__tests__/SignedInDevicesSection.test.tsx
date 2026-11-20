@@ -276,9 +276,45 @@ describe('SignedInDevicesSection', () => {
         'Add a passkey on this computer first (Safari or Chrome), then approve here.'
       )
     ).toBeInTheDocument();
-    // In the card: Approve waits, and the way to add one is right there.
-    expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
+    // The next step is adding one: no Approve until a passkey is here.
+    expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Add a passkey' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Decline' })).toBeInTheDocument();
+  });
+
+  it('once a passkey for this computer is listed, Approve is back', async () => {
+    const { transport } = setup(listWith(true));
+    vi.mocked(transport.listWifiSignInRequests).mockResolvedValue({
+      requests: [
+        {
+          id: 'req-1',
+          deviceName: 'Firefox on Linux',
+          address: '192.168.1.40',
+          requestedAt: NOW,
+          expiresAt: NOW,
+          matchCode: 'K7QX',
+          approved: false,
+        },
+      ],
+    });
+    vi.mocked(transport.listOwnerFactors).mockResolvedValue({
+      factors: [
+        {
+          id: 'k-here',
+          kind: 'passkey',
+          label: 'Desk',
+          host: 'localhost',
+          addedAt: NOW,
+          worksFromAway: false,
+        },
+      ],
+      everHadAway: false,
+    });
+    vi.mocked(transport.approveWifiSignIn).mockResolvedValue({ kind: 'needs-passkey' });
+    await userEvent.click(await screen.findByRole('button', { name: 'Approve' }));
+    await waitFor(() => expect(transport.approveWifiSignIn).toHaveBeenCalled());
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Add a passkey' })).not.toBeInTheDocument();
   });
 });
 

@@ -19,6 +19,7 @@ covers:
   - "fix(auth): a passkey for this computer is listed as this computer's, never as covering other devices (DOR-3647)"
   - 'fix(auth): only loopback names mean this computer, and the sign-in step answers alike before the password (DOR-3647, DOR-4744)'
   - "fix(auth): a sign-in request's buttons wrap on a phone (DOR-4744)"
+  - 'fix(auth): with no passkey here, a sign-in request offers adding one first (DOR-4744)'
 ---
 
 ### Added

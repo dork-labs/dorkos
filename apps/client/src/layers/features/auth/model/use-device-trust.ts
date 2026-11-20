@@ -15,6 +15,7 @@ import type { WifiSignInRequest } from '@dorkos/shared/signed-in-devices';
 import { signedInDevicesKey } from '@/layers/shared/lib';
 import { useTransport } from '@/layers/shared/model';
 import { withPasskeyCheck } from '../lib/passkey-ceremony';
+import { ownerFactorsKey } from './use-owner-factors';
 
 /** TanStack Query key for the waiting Wi-Fi sign-ins. */
 export const wifiSignInRequestsKey = ['devices', 'wifi-sign-in-requests'] as const;
@@ -36,7 +37,10 @@ export interface DeviceTrust {
   readonly codes: Readonly<Record<string, ShownCode>>;
   /** The id of the request or device being changed, or `null`. */
   readonly pendingId: string | null;
-  /** Set when an action needs a passkey on this computer and there is none. */
+  /**
+   * Set when an action needed a passkey on this computer and there was none.
+   * Clears by itself once one is added here.
+   */
   readonly needsPasskey: boolean;
   /** The last failure, in a sentence; `null` when none. */
   readonly error: string | null;
@@ -85,6 +89,16 @@ export function useDeviceTrust(enabled: boolean): DeviceTrust {
     retry: false,
     refetchInterval: enabled ? POLL_MS : false,
   });
+  // The same list the sign-in checks section reads: once a passkey for this
+  // computer is there, approving can go ahead again.
+  const factors = useQuery({
+    queryKey: ownerFactorsKey,
+    queryFn: () => transport.listOwnerFactors(),
+    enabled,
+    retry: false,
+  });
+  const passkeyHere =
+    factors.data?.factors.some((f) => f.kind === 'passkey' && !f.worksFromAway) ?? false;
 
   const act = async (id: string, run: () => Promise<void>) => {
     setPendingId(id);
@@ -106,7 +120,7 @@ export function useDeviceTrust(enabled: boolean): DeviceTrust {
     requests: list.data?.requests ?? [],
     codes,
     pendingId,
-    needsPasskey,
+    needsPasskey: needsPasskey && !passkeyHere,
     error,
     lastId,
     approve: (id) =>
