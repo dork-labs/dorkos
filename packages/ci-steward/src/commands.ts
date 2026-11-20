@@ -54,13 +54,14 @@ import { aggregateDays, defaultCloneName, rotateTimings } from './local.ts';
 import { hookRuns, parseTimings } from './timings.ts';
 import { dirReader, gitReader, renderStatus } from './status.ts';
 import {
-  fetchMergeTimes,
   loadVerdicts,
   runReport,
   runVerdicts,
+  verdictInputs,
   writeLatest,
   type StewardContext,
 } from './steward.ts';
+import type { LedgerEntry } from './verdicts.ts';
 import { addDays, count, dayOf, dayRange, daysBetween, isoWeek } from './time.ts';
 import { loadWorkflows, type WorkflowModel } from './workflows.ts';
 
@@ -194,6 +195,20 @@ export function cmdCollect(
 }
 
 /**
+ * The effective ledger (an entry with no `prs:` anchored on the PR that added
+ * its file; the files untouched) and its merge times.
+ *
+ * @param env - The environment.
+ * @param dataDir - A working tree of the data branch.
+ * @param gh - The client (optional; built from env otherwise).
+ */
+function ledgerForVerdicts(env: Env, dataDir: string, gh?: Gh) {
+  const { github_repo: repo, default_branch: base } = env.files.config;
+  const authored = readLedger(env.root, env.files);
+  return verdictInputs(gh ? () => gh : env.gh, repo, dataDir, authored, { now: env.now, base });
+}
+
+/**
  * `verdicts`: compute every ledger entry's verdict into the data directory.
  *
  * @param env - The environment.
@@ -201,9 +216,7 @@ export function cmdCollect(
  * @param gh - The client for merge times (optional; built from env otherwise).
  */
 export function cmdVerdicts(env: Env, dataDir: string, gh?: Gh): number {
-  const ledger = readLedger(env.root, env.files);
-  const client = gh ?? env.gh(new Set(ledger.flatMap((e) => e.prs)).size + 5);
-  const merged = fetchMergeTimes(client, env.files.config.github_repo, ledger);
+  const { ledger, merged } = ledgerForVerdicts(env, dataDir, gh);
   const vs = runVerdicts(ctx(env, dataDir), ledger, merged);
   for (const v of vs) env.io.out(`${v.id}: ${v.verdict}. ${v.reason}\n`);
   return 0;
@@ -420,19 +433,17 @@ function step(env: Env, name: string, run: () => void): void {
 export function cmdDaily(env: Env, dataDir: string): number {
   const health = cmdCollect(env, dataDir);
   const ledger = readLedger(env.root, env.files);
+  let effective: LedgerEntry[];
   let merged: Map<number, string>;
   try {
-    // Its own small budget: one request per PR the ledger names, so a day the
-    // collector spent its whole budget on still gets its verdicts.
-    const prs = new Set(ledger.flatMap((e) => e.prs)).size;
-    merged = fetchMergeTimes(env.gh(prs + 5), env.files.config.github_repo, ledger);
+    ({ ledger: effective, merged } = ledgerForVerdicts(env, dataDir));
   } catch (e) {
     env.io.err(
       `verdicts skipped: could not read merge times (${e instanceof Error ? e.message : String(e)})\n`
     );
     return 1;
   }
-  const verdicts = runVerdicts(ctx(env, dataDir), ledger, merged);
+  const verdicts = runVerdicts(ctx(env, dataDir), effective, merged);
   env.io.out(`verdicts: ${verdicts.map((v) => `${v.id} ${v.verdict}`).join(', ') || 'none'}\n`);
   // Triage, the page and the weekly summary each stand on their own. A crash
   // in one must not read as a collector-health failure (the exit code means
