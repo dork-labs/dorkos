@@ -128,6 +128,39 @@ describe('BackupsTab', () => {
     );
   });
 
+  it('moves to a typed folder path, like an external drive', async () => {
+    renderTab();
+    fireEvent.click(await screen.findByRole('button', { name: 'Move dork-20260901-daily.db' }));
+    const field = await screen.findByLabelText('Or type a folder path');
+    expect(field).toHaveAttribute('placeholder', '/Volumes/…');
+    fireEvent.change(field, { target: { value: '  /Volumes/Backup Drive/dorkos  ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Move here' }));
+    await waitFor(() =>
+      expect(transport.moveBackup).toHaveBeenCalledWith(
+        'dork-20260901-daily.db',
+        '/Volumes/Backup Drive/dorkos'
+      )
+    );
+    await waitFor(() => expect(screen.queryByLabelText('Or type a folder path')).toBeNull());
+  });
+
+  it('shows the server’s refusal for a typed path in place, and keeps the dialog open', async () => {
+    transport.moveBackup = vi
+      .fn()
+      .mockRejectedValue(new Error('Pick a folder DorkOS can reach, or one on an external drive.'));
+    renderTab();
+    fireEvent.click(await screen.findByRole('button', { name: 'Move dork-20260901-daily.db' }));
+    fireEvent.change(await screen.findByLabelText('Or type a folder path'), {
+      target: { value: '/etc' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Move here' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Pick a folder DorkOS can reach, or one on an external drive.'
+    );
+    expect(screen.getByLabelText('Or type a folder path')).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText('Move backup to…')).toBeInTheDocument();
+  });
+
   it('says which row is moving while a Move runs', async () => {
     let finish: (value: { destinationPath: string }) => void = () => {};
     transport.moveBackup = vi.fn(

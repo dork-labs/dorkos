@@ -5,6 +5,7 @@ import { Button, DirectoryPicker, FieldCard, FieldCardContent } from '@/layers/s
 import { formatBytes, useBackups, useMoveBackup, useRemoveBackup } from '../../model/use-backups';
 import { BackupRow } from './BackupRow';
 import { RemoveBackupDialog } from './RemoveBackupDialog';
+import { TypedPathMove } from './TypedPathMove';
 
 /** The thrown error's own sentence (the server's), else a plain fallback. */
 function sentenceOf(err: unknown): string {
@@ -25,6 +26,7 @@ export function BackupsTab() {
   const move = useMoveBackup();
   const [removing, setRemoving] = useState<BackupCopyInfo | null>(null);
   const [moving, setMoving] = useState<BackupCopyInfo | null>(null);
+  const [typedError, setTypedError] = useState<string | null>(null);
   const working = remove.isPending || move.isPending;
   // Which copy the running action is on, so only its row says so.
   const acting = remove.isPending
@@ -51,6 +53,26 @@ export function BackupsTab() {
         onError: (err) => toast.error(sentenceOf(err)),
       }
     );
+  }
+
+  /** A typed folder keeps the dialog open, so a refusal can be read and fixed in place. */
+  function moveToTyped(copy: BackupCopyInfo, destination: string) {
+    setTypedError(null);
+    move.mutate(
+      { name: copy.name, destination },
+      {
+        onSuccess: ({ destinationPath }) => {
+          setMoving(null);
+          toast.success('Backup moved.', { description: destinationPath });
+        },
+        onError: (err) => setTypedError(sentenceOf(err)),
+      }
+    );
+  }
+
+  function openMove(copy: BackupCopyInfo) {
+    setTypedError(null);
+    setMoving(copy);
   }
 
   if (backups.isPending) {
@@ -101,7 +123,7 @@ export function BackupsTab() {
                   copy={copy}
                   working={working}
                   {...(acting?.name === copy.name ? { acting: acting.label } : {})}
-                  onMove={setMoving}
+                  onMove={openMove}
                   onRemove={setRemoving}
                 />
               ))}
@@ -126,6 +148,13 @@ export function BackupsTab() {
         title="Move backup to…"
         note="Older copies can include past chats. A folder that syncs will upload them."
         browseOnly
+        extra={
+          <TypedPathMove
+            onSubmit={(destination) => moving && moveToTyped(moving, destination)}
+            error={typedError}
+            pending={move.isPending}
+          />
+        }
       />
     </div>
   );

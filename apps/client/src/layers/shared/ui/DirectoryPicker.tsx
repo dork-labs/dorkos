@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTransport, useAppStore, type RecentCwd } from '@/layers/shared/model';
 import { getAgentDisplayName } from '@dorkos/shared/validation';
@@ -48,6 +48,8 @@ export interface DirectoryPickerProps {
   title?: string;
   /** One line under the title about where the pick should not go. */
   note?: string;
+  /** Extra controls above the footer, such as a typed path for a folder the browser can't reach. */
+  extra?: ReactNode;
   /**
    * Open on the folder browser, ignoring recent working folders. For a pick
    * where a project folder is not the usual answer (moving a backup, DOR-4253).
@@ -64,6 +66,7 @@ export function DirectoryPicker({
   resolvedAgents,
   title = 'Select working folder',
   note,
+  extra,
   browseOnly = false,
 }: DirectoryPickerProps) {
   const transport = useTransport();
@@ -391,6 +394,9 @@ export function DirectoryPicker({
             </div>
           )}
         </div>
+
+        {/* A caller's own way to name a folder, above the footer. */}
+        {extra && <div className="border-t px-4 py-3">{extra}</div>}
 
         {/* Footer */}
         <div className="bg-muted/20 flex items-center justify-end gap-2 border-t px-4 py-3">
