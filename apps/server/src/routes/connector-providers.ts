@@ -11,8 +11,9 @@
  *   (idempotent), reload, return the fresh status.
  *
  * Saving or removing a key is the owner's alone: never an agent, and with
- * login on never another signed-in account (DOR-2678). Reading the statuses
- * stays open; they carry no secret.
+ * login on never another signed-in account (DOR-2678). Once an owner exists,
+ * saving one also waits for them to confirm it's them; removing one stays
+ * immediate (DOR-4355). Reading the statuses stays open; they carry no secret.
  *
  * SECURITY: mirrors `storeRuntimeCredential` (`services/runtimes/connect/
  * credentials.ts`, DOR-280): the secret goes straight into the encrypted
@@ -34,6 +35,7 @@ import { refuseUnlessAccountOwner } from '../lib/caller-authority.js';
 import type { ConnectorProviderBootstrapper } from '../services/connectors/bootstrap.js';
 import type { CredentialStore } from '../services/core/credential-provider.js';
 import { migrationHealthGate } from './connector-owner-boundary.js';
+import { runFrontDoorWrite } from './front-door-step-up.js';
 
 /** Constructor dependencies for {@link createConnectorProvidersRoutes}. */
 export interface ConnectorProvidersRouterDeps {
@@ -103,19 +105,31 @@ export function createConnectorProvidersRoutes(deps: ConnectorProvidersRouterDep
     // missing `secret` as a validation error, not a crash.
     const parsed = CredentialBodySchema.safeParse(readJsonBody(c, { emptyAs: {} }));
     if (!parsed.success) return c.json(validationFailureBody(parsed.error), 400);
+    const { secret } = parsed.data;
 
-    await credentialStore.put(credentialName, parsed.data.secret);
-    try {
-      return c.json(await bootstrapper.reload(provider));
-    } catch {
-      // A non-refusal factory error (a genuine bug). Generic on purpose: this
-      // path must never echo anything derived from the stored secret.
-      logger.error(`[Connectors] Provider reload failed after credential save`, { provider });
-      return c.json(
-        { error: 'The key was saved, but DorkOS couldn’t start using it. Try again.' },
-        500
-      );
-    }
+    // A new key waits for the owner to confirm it's them (DOR-4355). The held
+    // statement names the provider only: the key itself never goes into it.
+    return runFrontDoorWrite(c, {
+      kind: 'connection.credential',
+      target: provider,
+      input: { op: 'save-key', provider },
+      reason: `Save a new ${provider} key for reaching your apps.`,
+      subject: 'the keys DorkOS uses to reach apps',
+      run: async () => {
+        await credentialStore.put(credentialName, secret);
+        try {
+          return c.json(await bootstrapper.reload(provider));
+        } catch {
+          // A non-refusal factory error (a genuine bug). Generic on purpose: this
+          // path must never echo anything derived from the stored secret.
+          logger.error(`[Connectors] Provider reload failed after credential save`, { provider });
+          return c.json(
+            { error: 'The key was saved, but DorkOS couldn’t start using it. Try again.' },
+            500
+          );
+        }
+      },
+    });
   });
 
   router.delete('/:provider/credential', async (c) => {

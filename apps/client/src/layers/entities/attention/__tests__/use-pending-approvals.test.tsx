@@ -9,7 +9,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useEffect, type ReactNode } from 'react';
 import { render, renderHook, cleanup, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { PendingApproval } from '@dorkos/shared/approval-schemas';
+import type { PendingApproval, PendingApprovalsResponse } from '@dorkos/shared/approval-schemas';
 import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 
 vi.mock('@/layers/shared/model', async (importOriginal) => {
@@ -55,20 +55,25 @@ describe('usePendingApprovals', () => {
   });
 
   /** Render the hook over a transport whose first read returns `initial`. */
-  function renderHookWithApprovals(initial: PendingApproval[]) {
-    const listPendingApprovals = vi.fn().mockResolvedValue({ approvals: initial });
+  function renderHookWithApprovals(
+    initial: PendingApproval[],
+    read: () => Promise<PendingApprovalsResponse> = async () => ({ approvals: initial })
+  ) {
+    const listPendingApprovals = vi.fn(read);
     const transport = createMockTransport({ listPendingApprovals });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
     function Wrapper({ children }: { children: ReactNode }) {
       return (
-        <QueryClientProvider
-          client={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })}
-        >
+        <QueryClientProvider client={queryClient}>
           <TransportProvider transport={transport}>{children}</TransportProvider>
         </QueryClientProvider>
       );
     }
     return {
       listPendingApprovals,
+      queryClient,
       ...renderHook(() => usePendingApprovals(), { wrapper: Wrapper }),
     };
   }
@@ -117,14 +122,54 @@ describe('usePendingApprovals', () => {
     expect(listPendingApprovals).toHaveBeenCalledTimes(1);
   });
 
-  it('adds a card when approval_pending arrives', async () => {
-    const { result } = renderHookWithApprovals([]);
+  it('adds a neutral card immediately without requiring a request code or answer context', async () => {
+    const { result, listPendingApprovals, queryClient } = renderHookWithApprovals([]);
     await waitFor(() => expect(result.current.isLoading).toBe(false));
+    const incoming = buildApproval({
+      answerNeedsStepUp: false,
+      answeringFrom: 'Another browser',
+    });
 
-    act(() => handlers.get('approval_pending')?.(buildApproval()));
+    act(() => handlers.get('approval_pending')?.(incoming));
 
+    // Cache writes are synchronous; React Query batches observer notifications.
+    expect(
+      queryClient.getQueryData<PendingApprovalsResponse>(['approvals', 'pending'])?.approvals
+    ).toHaveLength(1);
     await waitFor(() => expect(result.current.approvals).toHaveLength(1));
+    expect(result.current.approvals[0].requestCode).toBeUndefined();
+    expect(result.current.approvals[0].answerNeedsStepUp).toBeUndefined();
+    expect(result.current.approvals[0].answeringFrom).toBeUndefined();
+    expect(listPendingApprovals).toHaveBeenCalledTimes(1);
     expect(result.current.approvals[0].summary).toBe('Uninstall "sentry-monitor"');
+  });
+
+  it('keeps both an arriving card and older requests when the bootstrap read finishes', async () => {
+    const incoming = buildApproval();
+    const older = buildApproval({ approvalId: '01JZ0000000000000000000002' });
+    let finishRead!: (value: PendingApprovalsResponse) => void;
+    const { result, listPendingApprovals, queryClient } = renderHookWithApprovals(
+      [],
+      () =>
+        new Promise<PendingApprovalsResponse>((resolve) => {
+          finishRead = resolve;
+        })
+    );
+    await waitFor(() => expect(listPendingApprovals).toHaveBeenCalledTimes(1));
+
+    act(() => handlers.get('approval_pending')?.(incoming));
+    expect(
+      queryClient.getQueryData<PendingApprovalsResponse>(['approvals', 'pending'])?.approvals
+    ).toHaveLength(1);
+    await waitFor(() => expect(result.current.approvals).toHaveLength(1));
+
+    await act(async () => finishRead({ approvals: [older] }));
+    await waitFor(() =>
+      expect(result.current.approvals.map((a) => a.approvalId)).toEqual([
+        older.approvalId,
+        incoming.approvalId,
+      ])
+    );
   });
 
   it('never shows the same approval twice when an event races the fetch', async () => {
@@ -135,6 +180,26 @@ describe('usePendingApprovals', () => {
     act(() => handlers.get('approval_pending')?.(approval));
 
     expect(result.current.approvals).toHaveLength(1);
+  });
+
+  it('lets a browser-context refresh finish when the same request is broadcast again', async () => {
+    const approval = buildApproval();
+    const { result, listPendingApprovals } = renderHookWithApprovals([approval]);
+    await waitFor(() => expect(result.current.approvals).toHaveLength(1));
+    let finishRead!: () => void;
+    listPendingApprovals.mockImplementationOnce(
+      () =>
+        new Promise<PendingApprovalsResponse>((resolve) => {
+          finishRead = () => resolve({ approvals: [{ ...approval, answerNeedsStepUp: true }] });
+        })
+    );
+
+    act(() => result.current.retry());
+    await waitFor(() => expect(listPendingApprovals).toHaveBeenCalledTimes(2));
+    await act(async () => handlers.get('approval_pending')?.(approval));
+    await act(async () => finishRead());
+
+    await waitFor(() => expect(result.current.approvals[0].answerNeedsStepUp).toBe(true));
   });
 
   it('ignores an approval_pending payload that does not parse', async () => {

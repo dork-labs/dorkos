@@ -20,6 +20,7 @@
  *
  * @module services/core/capabilities/marked-turn-holds
  */
+import type { ApprovalServiceAction } from '@dorkos/shared/approval-schemas';
 import type { PermissionAreaId } from '@dorkos/shared/permissions';
 import {
   isServerPrincipal,
@@ -80,4 +81,19 @@ export function principalTurnOf(principal: ServerPrincipalProof | undefined): {
   }
   const { canonicalSessionId, agentPath } = principal.claims;
   return { principalTurn: { sessionId: canonicalSessionId, agentPath } };
+}
+
+/**
+ * A connected-app card the turn's outside words raised, saying so (DOR-3969): the card gets the
+ * `outside-words` reason, unless it already names one (a paid run's or Wi-Fi's), which it keeps.
+ *
+ * @param serviceAction - The card's connected-app action, if any.
+ * @param forOutsideWords - Whether the permission gate asked because of the turn's outside words.
+ */
+export function withOutsideWordsReason(
+  serviceAction: ApprovalServiceAction | undefined,
+  forOutsideWords: boolean | undefined
+): ApprovalServiceAction | undefined {
+  if (!serviceAction || !forOutsideWords || serviceAction.keptCardBecause) return serviceAction;
+  return { ...serviceAction, keptCardBecause: 'outside-words' };
 }

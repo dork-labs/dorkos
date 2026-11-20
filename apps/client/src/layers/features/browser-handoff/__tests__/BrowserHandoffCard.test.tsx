@@ -7,13 +7,16 @@ import type {
   LocalBrowserPersonState,
   LocalBrowserSignIn,
 } from '@dorkos/shared/local-browser';
+import { localBrowserStateKey } from '@/layers/entities/local-browser';
 import { BrowserHandoffCard, BrowserHandoffInboxItem } from '../index';
 
 const transport = vi.hoisted(() => ({
   getLocalBrowserState: vi.fn(),
+  getLocalBrowserHandoffState: vi.fn(),
   handBackLocalBrowser: vi.fn(),
   stopLocalBrowserHandoff: vi.fn(),
   signInLocalBrowser: vi.fn(),
+  finishLocalBrowserSignIn: vi.fn(),
   openLocalBrowser: vi.fn(),
   selectLocalBrowserTab: vi.fn(),
   postMessage: vi.fn(),
@@ -200,7 +203,7 @@ describe('BrowserHandoffCard', () => {
       // The next state read says it ended, however that happened.
       act(() => {
         view.client.setQueryData(
-          ['local-browser', 'state'],
+          localBrowserStateKey('chat-one'),
           person({ handoff: { ...handoff, outcome } })
         );
       });
@@ -277,7 +280,9 @@ describe('BrowserHandoffCard', () => {
     transport.selectLocalBrowserTab.mockResolvedValue(person({ handoff: undefined }));
     mount();
     fireEvent.click(await button('Show window'));
-    await waitFor(() => expect(transport.selectLocalBrowserTab).toHaveBeenCalledWith('t1'));
+    await waitFor(() =>
+      expect(transport.selectLocalBrowserTab).toHaveBeenCalledWith('t1', 'chat-one')
+    );
     expect(await button('Continue')).toBeTruthy();
   });
 
@@ -399,14 +404,20 @@ describe('BrowserHandoffCard', () => {
       await waitFor(() =>
         expect(transport.signInLocalBrowser).toHaveBeenCalledWith({ handoffId: 'h1' })
       );
-      expect(await screen.findByText(/Sign-in window open/)).toBeTruthy();
+      expect(
+        await screen.findByText(
+          'Sign in to northwind.example in the sign-in window, then press Done signing in.'
+        )
+      ).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Done signing in' })).toBeTruthy();
       expect(screen.queryByRole('button', { name: 'Show window' })).toBeNull();
     });
 
-    it('holds Continue while that sign-in saves, then offers it', async () => {
+    it('holds Done signing in while that sign-in saves, then offers Continue', async () => {
       transport.getLocalBrowserState.mockResolvedValue(person({ signIn: signIn('saving') }));
       const saving = mount();
-      expect((await button('Continue')).getAttribute('aria-disabled')).toBe('true');
+      expect((await button('Done signing in')).getAttribute('aria-disabled')).toBe('true');
+      expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull();
       saving.unmount();
       transport.getLocalBrowserState.mockResolvedValue(person({ signIn: signIn('saved') }));
       mount();
@@ -439,22 +450,75 @@ describe('BrowserHandoffCard', () => {
       await waitFor(() =>
         expect(transport.signInLocalBrowser).toHaveBeenCalledWith({ handoffId: 'h1' })
       );
-      expect(await screen.findByText(/Sign-in window open/)).toBeTruthy();
+      expect(await screen.findByText(/then press Done signing in\./)).toBeTruthy();
       // That window has no channel to DorkOS, so nothing here could raise it.
       expect(screen.queryByRole('button', { name: 'Show window' })).toBeNull();
       expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull();
     });
 
-    it('holds Continue inert while saving', async () => {
+    it('holds Done signing in inert while saving', async () => {
       transport.getLocalBrowserState.mockResolvedValue(
         person({ handoff: password, signIn: signIn('saving') })
       );
       mount();
-      const held = await button('Continue');
+      const held = await button('Done signing in');
       expect(screen.getByRole('status').textContent).toBe('Saving your sign-in…');
       expect(held.getAttribute('aria-disabled')).toBe('true');
+      expect(held).toBeDisabled();
       fireEvent.click(held);
+      expect(transport.finishLocalBrowserSignIn).not.toHaveBeenCalled();
       expect(transport.handBackLocalBrowser).not.toHaveBeenCalled();
+    });
+
+    // DOR-4731: on a Mac, closing the window leaves Chrome running, so the close is never
+    // seen. Done signing in is on the card from the moment the window opens.
+    it('offers Done signing in while the window is open, and it finishes the sign-in', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(
+        person({ handoff: password, signIn: signIn('open'), status: 'disconnected' })
+      );
+      transport.finishLocalBrowserSignIn.mockResolvedValue(undefined);
+      mount();
+      const done = await button('Done signing in');
+      expect(screen.getByRole('status').textContent).toBe(
+        'Sign in to northwind.example in the sign-in window, then press Done signing in.'
+      );
+      expect(screen.getByRole('button', { name: 'Stop task' })).toBeTruthy();
+      fireEvent.click(done);
+      await waitFor(() => expect(transport.finishLocalBrowserSignIn).toHaveBeenCalledWith('h1'));
+      expect(transport.handBackLocalBrowser).not.toHaveBeenCalled();
+    });
+
+    // DOR-4731: on a Mac a window that ignores the quit is never forced closed (that loses
+    // the sign-in), so the card asks the person to quit it, and keeps Done signing in.
+    it('asks for ⌘Q when the window didn’t quit', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(
+        person({
+          handoff: password,
+          signIn: { ...signIn('open'), needsQuit: true },
+          status: 'disconnected',
+        })
+      );
+      mount();
+      expect(await button('Done signing in')).toBeTruthy();
+      expect(screen.getByRole('status').textContent).toBe(
+        'Click the sign-in window, then press ⌘Q to finish signing in.'
+      );
+      expect(screen.getByRole('button', { name: 'Stop task' })).toBeTruthy();
+    });
+
+    it('says why when Done signing in is refused', async () => {
+      transport.getLocalBrowserState.mockResolvedValue(
+        person({ handoff: password, signIn: signIn('open'), status: 'disconnected' })
+      );
+      transport.finishLocalBrowserSignIn.mockRejectedValue(
+        Object.assign(new Error('x'), {
+          code: 'handoff_ended',
+          message: 'This handoff already ended.',
+        })
+      );
+      mount();
+      fireEvent.click(await button('Done signing in'));
+      expect((await screen.findByRole('alert')).textContent).toBe('This handoff already ended.');
     });
 
     it('offers Continue once saved', async () => {
@@ -466,13 +530,17 @@ describe('BrowserHandoffCard', () => {
       expect(screen.getByRole('status').textContent).toBe('Signed in to northwind.example.');
     });
 
-    it('offers Sign in again when saving failed', async () => {
+    it('offers Sign in again when saving failed, saying it once', async () => {
       transport.getLocalBrowserState.mockResolvedValue(
         person({ handoff: password, signIn: signIn('failed') })
       );
       mount();
-      expect(await button('Open sign-in window')).toBeTruthy();
-      expect(screen.getByRole('status').textContent).toMatch(/Couldn’t save/);
+      fireEvent.click(await button('Sign in again'));
+      await waitFor(() =>
+        expect(transport.signInLocalBrowser).toHaveBeenCalledWith({ handoffId: 'h1' })
+      );
+      expect(screen.getByRole('status').textContent).toBe('Couldn’t save your sign-in.');
+      expect(screen.queryByText(/Try again/)).toBeNull();
       expect(screen.getByRole('button', { name: 'Stop task' })).toBeTruthy();
     });
 
@@ -502,6 +570,27 @@ describe('BrowserHandoffCard', () => {
       ).toBeVisible();
       expect(screen.queryByRole('button', { name: 'Open sign-in window' })).toBeNull();
       expect(screen.getByRole('button', { name: 'Continue' })).toBeVisible();
+    });
+
+    // DOR-4097: a site that refused the in-app browser can't be finished there, so the
+    // card offers the plain window, and the site goes on in its own window after.
+    it('offers the sign-in window on an in-app page the site refused', async () => {
+      const refused = { ...handoff, reason: 'password' as const, refused: true };
+      transport.getLocalBrowserState.mockResolvedValue(
+        person({ mode: 'embedded', handoff: refused })
+      );
+      transport.openLocalBrowser.mockResolvedValue(person({ mode: 'embedded', handoff: refused }));
+      mount();
+      fireEvent.click(await button('Open sign-in window'));
+      await waitFor(() =>
+        expect(transport.openLocalBrowser).toHaveBeenCalledExactlyOnceWith({
+          mode: 'new-window',
+          sessionId: refused.sessionId,
+          profileId: refused.profileId,
+        })
+      );
+      expect(transport.signInLocalBrowser).not.toHaveBeenCalled();
+      expect(screen.queryByText('Finish in Atlas’s window, then press Continue.')).toBeNull();
     });
 
     it('says nothing about moving in a new window', async () => {
@@ -544,7 +633,7 @@ describe('BrowserHandoffCard', () => {
     }
 
     it('shows whichever handoff is open, and answers it with the chat closed', async () => {
-      transport.getLocalBrowserState.mockResolvedValue(person());
+      transport.getLocalBrowserHandoffState.mockResolvedValue(person());
       transport.handBackLocalBrowser.mockResolvedValue(
         person({ handoff: { ...handoff, outcome: 'handed-back' } })
       );
@@ -557,7 +646,7 @@ describe('BrowserHandoffCard', () => {
     });
 
     it('carries Stop task, and leaves the stopped receipt', async () => {
-      transport.getLocalBrowserState.mockResolvedValue(person());
+      transport.getLocalBrowserHandoffState.mockResolvedValue(person());
       transport.stopLocalBrowserHandoff.mockResolvedValue(
         person({ handoff: { ...handoff, outcome: 'stopped' } })
       );
@@ -571,9 +660,9 @@ describe('BrowserHandoffCard', () => {
     });
 
     it('draws nothing when no handoff is open', async () => {
-      transport.getLocalBrowserState.mockResolvedValue(person({ handoff: null }));
+      transport.getLocalBrowserHandoffState.mockResolvedValue(person({ handoff: null }));
       const { container } = mountItem();
-      await waitFor(() => expect(transport.getLocalBrowserState).toHaveBeenCalled());
+      await waitFor(() => expect(transport.getLocalBrowserHandoffState).toHaveBeenCalled());
       expect(container.querySelector('[data-slot="browser-handoff-card"]')).toBeNull();
     });
   });

@@ -607,21 +607,20 @@ export function createAgentsRoutes(deps: AgentsRouterDeps = {}): Hono<ApiEnv> {
   router.patch('/current', refuseAgentExecutionWrites, refuseAgentSelfFilesFromWifi, async (c) => {
     try {
       const rawPath = rawPathOf(c);
-      if (!rawPath) {
-        return c.json({ error: 'path query parameter required' }, 400);
-      }
+      if (!rawPath) return c.json({ error: 'path query parameter required' }, 400);
       // Written to the home the path resolves to — the same one GET answered
       // from — so an editor opened on a worktree or checkout changes the agent,
       // never the branch's committed copy (spec `agent-home-desk` §3.2 row 9).
       const agentPath = homeOf(resolveAgentHome(await validateBoundaryOrDorkHome(rawPath)));
-      if (!agentPath) {
-        return c.json({ error: 'No agent registered at this path' }, 404);
-      }
+      if (!agentPath) return c.json({ error: 'No agent registered at this path' }, 404);
 
       // Manifest guards + write live in the shared agent-updater service so the
       // `update_agent` MCP tool enforces the exact same rules (ADR-0043 sync
-      // included) without re-implementing them.
-      const updated = await updateAgentManifest({ agentPath, body: readJsonBody(c), meshCore });
+      // included) without re-implementing them. Only a person turns off reading
+      // outside text (DOR-3969).
+      const body = readJsonBody(c);
+      const byPerson = clearsTheAgentBar(honoRequestFacts(c));
+      const updated = await updateAgentManifest({ agentPath, body, meshCore, byPerson });
       return c.json(updated);
     } catch (err) {
       if (err instanceof BoundaryError) {

@@ -1,3 +1,5 @@
+import { RuntimeRegistry } from '../../../core/runtime-registry.js';
+import { createTestDb } from '@dorkos/test-utils/db';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
@@ -153,6 +155,8 @@ vi.mock('../messaging/plugin-activation.js', () => ({
 
 describe('ClaudeCodeRuntime', () => {
   let agentManager: ClaudeCodeRuntime;
+  let settingsOwner: RuntimeRegistry;
+  let settingsDb: ReturnType<typeof createTestDb> | undefined;
 
   // The module graph is loaded ONCE for the file and each test gets a new
   // runtime (DOR-4190). It used to `vi.resetModules()` and re-import the runtime
@@ -161,6 +165,9 @@ describe('ClaudeCodeRuntime', () => {
   // read per spawn, not at load (the afterEach proves it on every call), and
   // what a test mutates on a module-level mock is put back here.
   beforeEach(() => {
+    vi.stubEnv('CLAUDE_CONFIG_DIR', '/mock/claude-code-test-account');
+    for (const key of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'CLAUDE_CODE_OAUTH_TOKEN'])
+      vi.stubEnv(key, '');
     vi.stubEnv('MCP_API_KEY', 'synthetic-server-token');
     vi.stubEnv('NANGO_ENCRYPTION_KEY', 'synthetic-nango-key');
     vi.stubEnv('DO_NOT_TRACK', '1');
@@ -170,6 +177,10 @@ describe('ClaudeCodeRuntime', () => {
     vi.mocked(query).mockReset();
     vi.mocked(readManifest).mockReset().mockResolvedValue(null);
     agentManager = new ClaudeCodeRuntime('/tmp/dorkos-test');
+    settingsOwner = new RuntimeRegistry();
+    settingsDb = createTestDb();
+    settingsOwner.setDb(settingsDb);
+    agentManager.setSessionSettings(settingsOwner);
     // Every scratch folder counts as a registered home here, so this suite's
     // mocked mesh decides who is an agent, as it did before homes (DOR-2355).
     registerEveryFolderAsHome();
@@ -186,6 +197,8 @@ describe('ClaudeCodeRuntime', () => {
       }
     } finally {
       vi.unstubAllEnvs();
+      settingsDb?.$client.close();
+      settingsDb = undefined;
     }
   });
 
@@ -232,6 +245,7 @@ describe('ClaudeCodeRuntime', () => {
       _binary.atBoot = undefined;
       _binary.beforePath = null;
       const runtime = new ClaudeCodeRuntime('/tmp/dorkos-test');
+      runtime.setSessionSettings(settingsOwner);
 
       const before = await turnOptions(runtime, 'no-binary');
       expect(before.pathToClaudeCodeExecutable).toBeUndefined();
@@ -250,6 +264,7 @@ describe('ClaudeCodeRuntime', () => {
       // a binary is in hand — a resolved binary does not move under a live server.
       _binary.beforePath = '/somewhere/else/claude';
       const runtime = new ClaudeCodeRuntime('/tmp/dorkos-test');
+      runtime.setSessionSettings(settingsOwner);
 
       const options = await turnOptions(runtime, 'bundled');
 

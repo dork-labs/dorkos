@@ -22,6 +22,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createChatNoticeSender, type PublishResult, type PublishOptions } from '@dorkos/relay';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import type { AdapterBinding } from '@dorkos/shared/relay-schemas';
+import { composeRegistry } from '../../../core/capabilities/index.js';
+import { roomsDomain } from '../../../rooms/room-capabilities.js';
 import { createInitiateConsentGate } from '../../initiate-consent.js';
 import {
   agentLookupFor,
@@ -236,6 +238,48 @@ describe('chat bridge — full inbound → room → turn → outbound (chats-as-
       .listEntries(room.id, { limit: 100 })
       .find((e) => e.body.text === 'the answer')!;
     expect(harness.bridges.findRefByEntry(answer.id)?.platformMessageId).toBe('tg-out');
+  });
+
+  it('post_to_room cannot send an agent post outside when the bridge cannot initiate', async () => {
+    const room = harness.service.createBridgedRoom(bridgeRequest());
+    binding = makeBinding({ canInitiate: false });
+    const author = harness.authors.resolveAgent(AGENT_PATH, 'Ana');
+    const sessionId = 'bridge-seat-post-fixture';
+    harness.store.bindRoomSession(room.id, author.id, sessionId, new Date().toISOString());
+    const registry = composeRegistry([roomsDomain], {
+      logger: { debug() {}, info() {}, warn() {}, error() {} },
+      roomDeps: { rooms: harness.service },
+    });
+    const result = (await registry.invoke(
+      'rooms.post',
+      { roomId: room.id, text: 'Keep this local', confirm: true },
+      {
+        identity: {
+          agentPath: AGENT_PATH,
+          displayName: 'Ana',
+          createdAt: new Date().toISOString(),
+        },
+        sessionId,
+        retryChannel: 'mcp-argument',
+      }
+    )) as { posted: boolean; entryId: string };
+    expect(result.posted).toBe(true);
+    await settleUntil(
+      () =>
+        harness.store
+          .listEntries(room.id, { limit: 100 })
+          .some((entry) => entry.body.notice === 'bridge_blocked'),
+      'tool post is blocked by the real consent gate'
+    );
+    expect(harness.store.getEntryById(room.id, result.entryId)?.body.text).toBe('Keep this local');
+    expect(harness.bridges.findRefByEntry(result.entryId)?.platformMessageId ?? null).toBeNull();
+    const sends = await Promise.all(
+      publish.mock.results.map((call) => call.value as Promise<PublishResult>)
+    );
+    expect(sends.length).toBeGreaterThan(0);
+    expect(sends.every((send) => send.deliveredTo === 0 && send.adapterResult === undefined)).toBe(
+      true
+    );
   });
 
   it('a cockpit post with canInitiate off is blocked and stays in the room', async () => {

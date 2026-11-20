@@ -1,3 +1,11 @@
+import { ErrorCategorySchema, ErrorEventSchema } from './error-event-schemas.js';
+export {
+  ErrorCategorySchema,
+  ErrorEventSchema,
+  type ErrorCategory,
+  type ErrorEvent,
+} from './error-event-schemas.js';
+import { ApprovalAnswerContextSchema } from './step-up.js';
 import {
   TimingFields,
   ModelRequestEventSchema,
@@ -1947,6 +1955,10 @@ export const ApprovalEventSchema = z
     toolCallId: z.string(),
     toolName: z.string(),
     input: z.string(),
+    requestCode: z
+      .string()
+      .optional()
+      .describe('Server-derived display code for the exact request'),
     timeoutMs: z.number().describe('Server-side approval timeout in milliseconds'),
     startedAt: z.number().describe('Server timestamp when the approval timer started'),
     // SDK-provided rich context for the approval UI
@@ -2026,6 +2038,10 @@ export const PendingInteractionDTOSchema = z
       parked: z.boolean().optional(),
       toolName: z.string(),
       input: z.string(),
+      requestCode: z
+        .string()
+        .optional()
+        .describe('Server-derived display code for the exact request'),
       title: z.string().optional(),
       displayName: z.string().optional(),
       description: z.string().optional(),
@@ -2078,37 +2094,6 @@ export const PendingInteractionDTOSchema = z
   .openapi('PendingInteractionDTO');
 
 export type PendingInteractionDTO = z.infer<typeof PendingInteractionDTOSchema>;
-
-export const ErrorCategorySchema = z
-  .enum([
-    'max_turns',
-    'execution_error',
-    'budget_exceeded',
-    'output_format_error',
-    'auth_error',
-    'model_unavailable',
-    'runtime_update_required',
-  ])
-  .openapi('ErrorCategory');
-
-export type ErrorCategory = z.infer<typeof ErrorCategorySchema>;
-
-export const ErrorEventSchema = z
-  .object({
-    message: z.string(),
-    code: z.string().optional(),
-    category: ErrorCategorySchema.optional(),
-    details: z.string().optional(),
-    /**
-     * Why, for a code that has more than one cause: a `credits_unavailable`
-     * refusal says which (`folder-sign-in`, `off`, …), so the chat offers only
-     * the ways on that fit it.
-     */
-    reason: z.string().optional(),
-  })
-  .openapi('ErrorEvent');
-
-export type ErrorEvent = z.infer<typeof ErrorEventSchema>;
 
 export const ApiRetryEventSchema = z
   .object({
@@ -2586,6 +2571,13 @@ export type SystemStatusEvent = z.infer<typeof SystemStatusEventSchema>;
 export const SLOT_WAIT_STATUS = 'waiting_for_slot';
 
 /**
+ * The words that status carries, fixed by the server. A scheduled run pauses
+ * its time limit only for this exact status and text, and its run row shows
+ * this text while it waits, never words read off the stream (DOR-4576).
+ */
+export const SLOT_WAIT_TEXT = 'Waiting to start: every agent on this computer is busy.';
+
+/**
  * The named long-running operations a runtime can report progress for. An
  * extensible union: today only `compaction` (context-window summarization), but
  * a runtime that exposes indexing, cloning, or model-download progress adds its
@@ -2876,7 +2868,8 @@ export type PermissionDeniedEvent = z.infer<typeof PermissionDeniedEventSchema>;
 
 /**
  * Emitted when a turn ran on another model than the one its session names,
- * because who pays for it does not serve that model (DOR-2636): a session on
+ * because the account cannot use it (DOR-3168), or who pays does not serve it
+ * (DOR-2636): a session on
  * DorkOS credits naming a model credits do not cover runs on the service's
  * suggestion instead. Never a silent switch, so it is recorded durably and
  * rendered as a lasting notice in the conversation, on every surface that ran
@@ -2892,8 +2885,8 @@ export const ModelSubstitutedEventSchema = z
     to: z.string(),
     /** That model's display name, as the service names it. */
     toName: z.string(),
-    /** Why: the credits list does not cover the named model. */
-    reason: z.enum(['credits-not-covered']),
+    /** Why: credits do not cover the model, or the signed-in account cannot use it. */
+    reason: z.enum(['credits-not-covered', 'account-not-available']),
   })
   .openapi('ModelSubstitutedEvent');
 
@@ -3390,6 +3383,10 @@ export const ToolCallPartSchema = z
       .string()
       .optional()
       .describe('Why this permission request was triggered'),
+    approvalRequestCode: z
+      .string()
+      .optional()
+      .describe('Server-derived display code for the pending request'),
     approvalHasSuggestions: z.boolean().optional().describe('Whether "Always Allow" is available'),
     /**
      * How far this card's "Always Allow" reaches, carried through so the button
@@ -4910,6 +4907,7 @@ export const ServerConfigSchema = z
       description:
         'Whether THIS request reached DorkOS at the machine it runs on or over an encrypted connection (the own tunnel or managed remote access; DorkOS`s own https listener counts only on a test home for now. Decided by the listener, never a header). Where it is true, the owner may change the front-door settings and the session relay, as at the desk. False over plain-`http` Wi-Fi and a bare network bind. Absent from an older server',
     }),
+    approvalAnswerContext: ApprovalAnswerContextSchema.optional(),
     callerRoute: z
       .enum(['local', 'wifi', 'tunnel', 'managed', 'network', 'hub'])
       .nullable()
@@ -6089,6 +6087,14 @@ export const TaskSchema = z
      * same growing transcript.
      */
     sticky: z.boolean().default(false),
+    /**
+     * True when this task reads mail, web pages or another app's text (DOR-3969). Every turn of
+     * its runs is then treated as one that read outside words: what it posts is kept marked, and
+     * a send in it asks first. Present only when true. Anyone may set it; only a person sets it
+     * back to false, and DorkOS keeps its own record of it, so editing the file back cannot clear
+     * it.
+     */
+    readsOutsideText: z.boolean().optional(),
     maxRuntime: z.number().int().nullable(),
     permissionMode: PermissionModeSchema,
     /** The mode the proposer asked a person to approve; never an applied grant. */
@@ -6134,6 +6140,13 @@ export const TaskSchema = z
      * its conversation began on.
      */
     account: z.string().nullable().default(null),
+    /**
+     * A one-shot task: no cron, it runs once as soon as it is armed (DOR-4315).
+     * Absent reads as `false`. Only the task tools set it.
+     */
+    runOnce: z.boolean().optional(),
+    /** When a one-shot task's one run started, or `null` until it has. */
+    ranOnceAt: z.string().nullable().optional(),
     status: TaskStatusSchema,
     /** Who approved the current task content, when, and through which surface or policy. */
     ...TaskApprovalReceiptSchema.shape,
@@ -6471,6 +6484,11 @@ export const CreateTaskRequestSchema = z
      */
     sticky: z.boolean().optional(),
     /**
+     * Set true when this task reads mail, web pages or another app's text (DOR-3969). See
+     * {@link TaskSchema.readsOutsideText}. An agent may send only `true`.
+     */
+    readsOutsideText: z.boolean().optional(),
+    /**
      * Which agent runtime this task's runs execute on (DOR-1615).
      *
      * Omitted or `null` means "the agent's runtime" — the default every task
@@ -6665,6 +6683,12 @@ export const UpdateTaskRequestSchema = z
      */
     sticky: z.boolean().optional(),
     /**
+     * Set true when this task reads mail, web pages or another app's text, or (a person only)
+     * set it back to false (DOR-3969). See {@link TaskSchema.readsOutsideText}. An agent sending
+     * `false` is refused.
+     */
+    readsOutsideText: z.boolean().optional(),
+    /**
      * Change which runtime this task's runs execute on, or send `null` to clear
      * the override and go back to following the agent (DOR-1615). See
      * {@link CreateTaskRequestSchema.runtime}.
@@ -6725,6 +6749,25 @@ export const UpdateTaskRequestSchema = z
   .openapi('UpdateTaskRequest');
 
 export type UpdateTaskRequest = z.infer<typeof UpdateTaskRequestSchema>;
+
+/**
+ * What "Try it once now" may send to `POST /api/tasks/:id/trigger` (DOR-4336): the mode the
+ * person picked on the approval card. The run uses it or the trial's cap, whichever is stricter;
+ * a pick never loosens a run. With none, the cap alone decides.
+ */
+export const TriggerTaskRequestSchema = z
+  .object({
+    permissionMode: z
+      .string()
+      .min(1)
+      .optional()
+      .describe('The mode picked on the approval card; the stricter of it and the cap runs.'),
+  })
+  .strict()
+  .openapi('TriggerTaskRequest');
+
+/** The body of a manual trigger. */
+export type TriggerTaskRequest = z.infer<typeof TriggerTaskRequestSchema>;
 
 export const ListTaskRunsQuerySchema = z
   .object({

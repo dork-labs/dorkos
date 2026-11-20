@@ -33,6 +33,7 @@ import type {
 } from '@dorkos/shared/agent-runtime';
 import { sessionPath } from '@dorkos/shared/session-link';
 import type { ActivityService } from '../../activity/activity-service.js';
+import { MARKED_TURN_REASON } from './marked-turn-copy.js';
 
 /** How many conversations each set remembers, oldest dropped first. */
 const MEMORY = 10_000;
@@ -107,15 +108,17 @@ export function noteChosenTurn(
 }
 
 /**
- * Carry both answers to the id a runtime renamed a conversation to mid-turn.
+ * Carry both answers to the id a runtime renamed a conversation to mid-turn. The turn under `from`
+ * is the latest, so its answers replace whatever `to` held from an older turn, a "no" included
+ * (DOR-4606): an older Full under `to` never outlives a newer turn below it.
  *
  * @param from - The id the turn was sent under.
  * @param to - The id the runtime renamed it to.
  */
 export function aliasChosenTurn(from: string, to: string): void {
   if (from === to) return;
-  if (fullChats.has(from)) keep(fullChats, to, true);
-  if (unattendedChats.has(from)) keep(unattendedChats, to, true);
+  keep(fullChats, to, fullChats.has(from));
+  keep(unattendedChats, to, unattendedChats.has(from));
 }
 
 /**
@@ -139,11 +142,24 @@ export function turnHasNobodyToAsk(sessionId: string | null | undefined): boolea
 
 /**
  * What a call that would raise a card is told when nobody can answer it: it fails at once, and
- * says how to get it done.
+ * says how to get it done. When the turn's mark is why it asks (DOR-3969's `forOutsideWords`, set
+ * only when the turn read words DorkOS can't vouch for), it says so, so the agent does not take
+ * the refusal for its own level or a permission a person set (DOR-4678).
  *
  * @param title - The action's title.
+ * @param permission - The permission the call resolved to, if any.
  */
-export function nobodyToAskMessage(title: string): string {
+export function nobodyToAskMessage(
+  title: string,
+  permission?: { readonly forOutsideWords?: true } | null
+): string {
+  // A mark asks whatever a person set (`alwaysAsks`, `markedTurnCardArea`), so no standing
+  // permission lets it through: only a watched run can.
+  if (permission?.forOutsideWords)
+    return (
+      `"${title}" needs a person's OK because ${MARKED_TURN_REASON}, and nobody is watching ` +
+      'this run, so it was refused without asking. Leave it for a run a person is watching.'
+    );
   return (
     `"${title}" needs a person's OK, and nobody is watching this run, so it was refused ` +
     'without asking. Leave it for a run a person is watching, or ask them to allow it.'

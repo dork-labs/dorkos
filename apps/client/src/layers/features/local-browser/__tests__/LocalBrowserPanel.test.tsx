@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { LocalBrowserCapabilities, LocalBrowserState } from '@dorkos/shared/local-browser';
+import { localBrowserStateKey } from '@/layers/entities/local-browser';
 import { LocalBrowserPanel } from '../ui/LocalBrowserPanel';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/layers/shared/ui';
 import { useSessionListStore } from '@/layers/entities/session';
@@ -21,6 +22,8 @@ const transport = vi.hoisted(() => ({
   navigateLocalBrowser: vi.fn(),
   takeOverLocalBrowser: vi.fn(),
   handBackLocalBrowser: vi.fn(),
+  signInLocalBrowser: vi.fn(),
+  finishLocalBrowserSignIn: vi.fn(),
   stepLocalBrowserHistory: vi.fn(),
   interruptSession: vi.fn(),
   getSession: vi.fn(),
@@ -77,11 +80,18 @@ function holdOpening() {
   transport.openLocalBrowser.mockReturnValue(promise);
   return { resolve, reject };
 }
+/** Stands in for the chat's handoff card, which the app passes in (DOR-4731). */
+const handoffCard = <div data-testid="handoff-card">card</div>;
 function mount(visible = true, sessionId: string | null = 'chat-one') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   const view = render(
     <QueryClientProvider client={client}>
-      <LocalBrowserPanel visible={visible} sessionId={sessionId} agentName="Kai" />
+      <LocalBrowserPanel
+        visible={visible}
+        sessionId={sessionId}
+        agentName="Kai"
+        handoffCard={handoffCard}
+      />
     </QueryClientProvider>
   );
   return { ...view, client };
@@ -400,19 +410,14 @@ describe('LocalBrowserPanel', () => {
         startedAt: '2026-11-03T00:00:01.000Z',
       },
     };
-    it('says it is waiting for you and where to finish, with no Open browser', async () => {
+    // DOR-4731: the panel once said to press a Continue the card didn't show yet. It now
+    // shows the chat's own card, so both say the same words and offer the same buttons.
+    it('shows the chat’s handoff card where to finish, with no Open browser', async () => {
       transport.getLocalBrowserState.mockResolvedValue(signingIn);
       mount();
       expect(await screen.findByText('Waiting for you')).toBeInTheDocument();
-      expect(
-        screen.getByText('Kai needs you to sign in to northwind.example.')
-      ).toBeInTheDocument();
-      const next = screen.getByText(
-        (_, element) =>
-          element?.tagName === 'P' &&
-          element.textContent === 'Finish in the sign-in window, then press Continue in the chat.'
-      );
-      expect(within(next).getByText('Continue in the chat').tagName).toBe('STRONG');
+      expect(screen.getByTestId('handoff-card')).toBeInTheDocument();
+      expect(screen.queryByText(/Continue in the chat/)).toBeNull();
       expect(screen.queryByText('Not open yet')).toBeNull();
       expect(screen.queryByRole('button', { name: 'Open browser' })).toBeNull();
       expect(screen.queryByRole('button', { name: 'Reconnect' })).toBeNull();
@@ -444,21 +449,67 @@ describe('LocalBrowserPanel', () => {
       // The state already says it, so "Finish…" isn't said twice.
       expect(screen.queryByRole('alert')).toBeNull();
     });
-    it('says the sign-in window closed once it has, and still waits for you', async () => {
+    // DOR-4731: Stop leaves the sign-in window for the person (2FA, a payment). On a Mac its
+    // close is never seen, so the panel offers Done signing in, which never resumes the agent.
+    it('after Stop, offers Done signing in, which saves without resuming the agent', async () => {
+      transport.getLocalBrowserState.mockResolvedValue({
+        ...signingIn,
+        handoff: { ...here, outcome: 'stopped' },
+      });
+      transport.finishLocalBrowserSignIn.mockResolvedValue(undefined);
+      mount();
+      const done = await screen.findByRole('button', { name: 'Done signing in' });
+      expect(
+        screen.getByText(
+          'Sign in to northwind.example in the sign-in window, then press Done signing in.'
+        )
+      ).toBeInTheDocument();
+      expect(screen.queryByTestId('handoff-card')).toBeNull();
+      fireEvent.click(done);
+      await waitFor(() =>
+        expect(transport.finishLocalBrowserSignIn).toHaveBeenCalledExactlyOnceWith(
+          undefined,
+          'chat-one'
+        )
+      );
+      expect(transport.handBackLocalBrowser).not.toHaveBeenCalled();
+      expect(transport.resumeLocalBrowser).not.toHaveBeenCalled();
+    });
+    it('asks for ⌘Q in the panel when the window didn’t quit', async () => {
+      transport.getLocalBrowserState.mockResolvedValue({
+        ...signingIn,
+        handoff: { ...here, outcome: 'stopped' },
+        signIn: { ...signingIn.signIn, needsQuit: true },
+      });
+      mount();
+      expect(
+        await screen.findByText('Click the sign-in window, then press ⌘Q to finish signing in.')
+      ).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Done signing in' })).toBeInTheDocument();
+    });
+    it('holds Done signing in still while that window saves', async () => {
+      transport.getLocalBrowserState.mockResolvedValue({
+        ...signingIn,
+        handoff: null,
+        signIn: { ...signingIn.signIn, status: 'saving' },
+      });
+      mount();
+      const held = await screen.findByRole('button', { name: 'Done signing in' });
+      expect(held).toHaveAttribute('aria-disabled', 'true');
+      expect(held).toBeDisabled();
+      expect(screen.getByText('Saving your sign-in…')).toBeInTheDocument();
+      fireEvent.click(held);
+      expect(transport.finishLocalBrowserSignIn).not.toHaveBeenCalled();
+    });
+    it('keeps showing the card once the sign-in saved, and still waits for you', async () => {
       transport.getLocalBrowserState.mockResolvedValue({
         ...signingIn,
         signIn: { ...signingIn.signIn, status: 'saved' },
       });
       mount();
       expect(await screen.findByText('Waiting for you')).toBeInTheDocument();
-      const next = screen.getByText(
-        (_, element) =>
-          element?.tagName === 'P' &&
-          element.textContent ===
-            'The sign-in window closed. Press Continue in the chat to hand it back.'
-      );
-      expect(within(next).getByText('Continue in the chat').tagName).toBe('STRONG');
-      expect(screen.queryByText(/Finish in the sign-in window/)).toBeNull();
+      expect(screen.getByTestId('handoff-card')).toBeInTheDocument();
+      expect(screen.queryByText(/Continue in the chat/)).toBeNull();
     });
   });
   describe('while this chat’s agent waits on a person in the Mac app (DOR-3111)', () => {
@@ -485,7 +536,10 @@ describe('LocalBrowserPanel', () => {
       mount();
       const pill = await findPill();
       expect(pill).toHaveTextContent('Your turn');
-      expect(pill).toHaveAccessibleName('Atlas needs you to finish a step on northwind.example.');
+      // Its words show, so its name says them first (WCAG 2.5.3, DOR-4436).
+      expect(pill).toHaveAccessibleName(
+        'Your turn: Atlas needs you to finish a step on northwind.example.'
+      );
       // The stacked strip is gone: the pill is the one place that says it.
       expect(document.querySelector('[data-slot="your-turn-strip"]')).toBeNull();
       expect(
@@ -563,7 +617,7 @@ describe('LocalBrowserPanel', () => {
       await waitFor(() =>
         expect(transport.interruptSession).toHaveBeenCalledExactlyOnceWith('chat-one')
       );
-      expect(view.client.getQueryData(['local-browser', 'state'])).toMatchObject({
+      expect(view.client.getQueryData(localBrowserStateKey('chat-one'))).toMatchObject({
         handoff: { outcome: 'window-closed' },
       });
     });
@@ -581,7 +635,7 @@ describe('LocalBrowserPanel', () => {
       const view = mount();
       await chooseFromMenu('Close browser');
       await waitFor(() =>
-        expect(view.client.getQueryData(['local-browser', 'state'])).toMatchObject({
+        expect(view.client.getQueryData(localBrowserStateKey('chat-one'))).toMatchObject({
           handoff: answered,
         })
       );
@@ -708,7 +762,7 @@ describe('LocalBrowserPanel', () => {
       preparation: { stage: 'downloading', component: 'chromium', percent: 37 },
     };
     act(() =>
-      view.client.setQueryData(['local-browser', 'state'], preparing, {
+      view.client.setQueryData(localBrowserStateKey('chat-one'), preparing, {
         updatedAt: Date.now() + 1000,
       })
     );
@@ -719,7 +773,7 @@ describe('LocalBrowserPanel', () => {
     );
     act(() =>
       view.client.setQueryData(
-        ['local-browser', 'state'],
+        localBrowserStateKey('chat-one'),
         {
           ...preparing,
           preparation: { stage: 'downloading', component: 'headless-shell', percent: null },
@@ -731,7 +785,7 @@ describe('LocalBrowserPanel', () => {
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
     act(() =>
       view.client.setQueryData(
-        ['local-browser', 'state'],
+        localBrowserStateKey('chat-one'),
         { ...preparing, preparation: { stage: 'downloading', component: 'ffmpeg', percent: 5 } },
         { updatedAt: Date.now() + 1000 }
       )
@@ -746,7 +800,7 @@ describe('LocalBrowserPanel', () => {
     await waitFor(() => expect(open).toBeEnabled());
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
     act(() =>
-      view.client.setQueryData(['local-browser', 'state'], preparing, {
+      view.client.setQueryData(localBrowserStateKey('chat-one'), preparing, {
         updatedAt: Date.now() + 1000,
       })
     );
@@ -769,14 +823,14 @@ describe('LocalBrowserPanel', () => {
     fireEvent.click(open);
     await screen.findByText('Preparing browser');
     act(() =>
-      view.client.setQueryData(['local-browser', 'state'], previous, {
+      view.client.setQueryData(localBrowserStateKey('chat-one'), previous, {
         updatedAt: Date.now() + 1000,
       })
     );
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
     act(() =>
       view.client.setQueryData(
-        ['local-browser', 'state'],
+        localBrowserStateKey('chat-one'),
         { ...previous, connectionId: 'foreign', sessionId: 'another-chat' },
         { updatedAt: Date.now() + 1000 }
       )
@@ -979,7 +1033,7 @@ describe('LocalBrowserPanel', () => {
       });
       await waitFor(() => expect(open).toBeEnabled());
       expect(screen.queryByText('Cancelling…')).not.toBeInTheDocument();
-      expect(view.client.getQueryData(['local-browser', 'state'])).toEqual(disconnected);
+      expect(view.client.getQueryData(localBrowserStateKey('chat-one'))).toEqual(disconnected);
       expect(screen.getByText('Not open yet')).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'Pause agent' })).not.toBeInTheDocument();
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
@@ -1014,11 +1068,11 @@ describe('LocalBrowserPanel', () => {
     fireEvent.click(open);
     expect(screen.getByText('Preparing browser')).toBeInTheDocument();
     expect(open).toBeDisabled();
-    expect(view.client.getQueryData(['local-browser', 'state'])).toEqual(disconnected);
+    expect(view.client.getQueryData(localBrowserStateKey('chat-one'))).toEqual(disconnected);
     await waitFor(() => expect(transport.openLocalBrowser).toHaveBeenCalledTimes(2));
     await act(async () => second({ ...connected, connectionId: 'new-opening' }));
     expect(await findPill()).toHaveAccessibleName('Kai is using this page.');
-    expect(view.client.getQueryData(['local-browser', 'state'])).toMatchObject({
+    expect(view.client.getQueryData(localBrowserStateKey('chat-one'))).toMatchObject({
       connectionId: 'new-opening',
     });
   });
@@ -1047,7 +1101,9 @@ describe('LocalBrowserPanel', () => {
     const next = { ...connected, selectedTabId: 'two' };
     transport.selectLocalBrowserTab.mockResolvedValue(next);
     await choosePage('Second page');
-    await waitFor(() => expect(transport.selectLocalBrowserTab).toHaveBeenCalledWith('two'));
+    await waitFor(() =>
+      expect(transport.selectLocalBrowserTab).toHaveBeenCalledWith('two', 'chat-one')
+    );
   });
   it('keeps the selected tab when another tab stops responding', async () => {
     transport.getLocalBrowserState.mockResolvedValue(connected);
@@ -1081,7 +1137,9 @@ describe('LocalBrowserPanel', () => {
     transport.navigateLocalBrowser.mockResolvedValue({ ...connected, paused: true });
     await typeAddress('https://new.example.com');
     await waitFor(() =>
-      expect(transport.navigateLocalBrowser).toHaveBeenCalledWith('https://new.example.com')
+      expect(transport.navigateLocalBrowser).toHaveBeenCalledWith('https://new.example.com', {
+        sessionId: 'chat-one',
+      })
     );
   });
   it('keeps Esc for itself, so a sheet around it never closes on it (DOR-4432)', async () => {
@@ -1227,10 +1285,10 @@ describe('LocalBrowserPanel', () => {
       });
       mount();
       fireEvent.click(await screen.findByRole('button', { name: 'Back' }));
-      expect(transport.stepLocalBrowserHistory).toHaveBeenCalledExactlyOnceWith('back');
+      expect(transport.stepLocalBrowserHistory).toHaveBeenCalledExactlyOnceWith('back', 'chat-one');
       await waitFor(() => expect(screen.getByRole('button', { name: 'Forward' })).toBeEnabled());
       fireEvent.click(screen.getByRole('button', { name: 'Forward' }));
-      expect(transport.stepLocalBrowserHistory).toHaveBeenLastCalledWith('forward');
+      expect(transport.stepLocalBrowserHistory).toHaveBeenLastCalledWith('forward', 'chat-one');
       expect(transport.navigateLocalBrowser).not.toHaveBeenCalled();
     });
     it('can’t be pressed twice while a step is running', async () => {
@@ -1327,11 +1385,14 @@ describe('LocalBrowserPanel', () => {
       await waitFor(() =>
         expect(transport.navigateLocalBrowser).toHaveBeenCalledWith('https://example.com/docs', {
           httpFallback: true,
+          sessionId: 'chat-one',
         })
       );
       await submit('192.168.1.1');
       await waitFor(() =>
-        expect(transport.navigateLocalBrowser).toHaveBeenLastCalledWith('http://192.168.1.1')
+        expect(transport.navigateLocalBrowser).toHaveBeenLastCalledWith('http://192.168.1.1', {
+          sessionId: 'chat-one',
+        })
       );
     });
 
@@ -1344,6 +1405,7 @@ describe('LocalBrowserPanel', () => {
       await waitFor(() => expect(transport.navigateLocalBrowser).toHaveBeenCalledTimes(1));
       expect(transport.navigateLocalBrowser).toHaveBeenCalledWith('https://shop.example', {
         httpFallback: true,
+        sessionId: 'chat-one',
       });
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     });
@@ -1357,7 +1419,9 @@ describe('LocalBrowserPanel', () => {
         'Couldn’t reach that site. Check the address and try again.'
       );
       expect(transport.navigateLocalBrowser).toHaveBeenCalledTimes(1);
-      expect(transport.navigateLocalBrowser).toHaveBeenCalledWith('https://example.com');
+      expect(transport.navigateLocalBrowser).toHaveBeenCalledWith('https://example.com', {
+        sessionId: 'chat-one',
+      });
     });
 
     it('never retries a failed bare host itself, whatever the failure', async () => {
@@ -1435,7 +1499,8 @@ describe('LocalBrowserPanel', () => {
       await submit('best tacos');
       await waitFor(() =>
         expect(transport.navigateLocalBrowser).toHaveBeenCalledWith(
-          'https://duckduckgo.com/?q=best+tacos'
+          'https://duckduckgo.com/?q=best+tacos',
+          { sessionId: 'chat-one' }
         )
       );
     });
@@ -1511,7 +1576,10 @@ describe('LocalBrowserPanel', () => {
     dialog.unmount();
     await waitFor(() => expect(setBounds.mock.calls.at(-1)?.[0].visible).toBe(true));
     act(() =>
-      view.client.setQueryData(['local-browser', 'state'], { ...native, sessionId: 'another-chat' })
+      view.client.setQueryData(localBrowserStateKey('chat-one'), {
+        ...native,
+        sessionId: 'another-chat',
+      })
     );
     expect(await screen.findByRole('button', { name: 'Take it here' })).toBeInTheDocument();
     await waitFor(() => expect(setBounds.mock.calls.at(-1)?.[0].visible).toBe(false));
@@ -1576,6 +1644,7 @@ describe('LocalBrowserPanel', () => {
         'Second page',
         'Copy address',
         'Open in your browser',
+        'Sign in to example.com in its own window',
         'Forget saved sign-ins…',
         'Close browser',
       ]);
@@ -1600,7 +1669,10 @@ describe('LocalBrowserPanel', () => {
       mount();
       await waitFor(() => expect(screen.getByRole('button', { name: 'Forward' })).toBeEnabled());
       await chooseFromMenu('Forward');
-      expect(transport.stepLocalBrowserHistory).toHaveBeenCalledExactlyOnceWith('forward');
+      expect(transport.stepLocalBrowserHistory).toHaveBeenCalledExactlyOnceWith(
+        'forward',
+        'chat-one'
+      );
       expect(transport.navigateLocalBrowser).not.toHaveBeenCalled();
     });
     it('shows Forward disabled when the page has nowhere to go forward', async () => {
@@ -1640,6 +1712,26 @@ describe('LocalBrowserPanel', () => {
       expect(opened).toHaveBeenCalledOnce();
       expect(opened.mock.calls[0]?.[0]).toBe('https://example.com/');
     });
+    // DOR-4097: the plain sign-in window for the site on screen, from the menu, in either mode.
+    it.each(['new-window', 'embedded'] as const)(
+      'opens the plain sign-in window on the page’s own site, in %s mode',
+      async (mode) => {
+        transport.getLocalBrowserState.mockResolvedValue({
+          ...connected,
+          mode,
+          tabs: [{ id: 'one', title: 'Sign in', url: 'https://shop.example/login?next=%2Fcart' }],
+        });
+        transport.signInLocalBrowser.mockResolvedValue({ ...connected, mode });
+        mount();
+        await chooseFromMenu('Sign in to shop.example in its own window');
+        expect(transport.signInLocalBrowser).toHaveBeenCalledExactlyOnceWith(
+          {
+            url: 'https://shop.example',
+          },
+          'chat-one'
+        );
+      }
+    );
     it('Forget saved sign-ins… opens today’s dialog and hands focus back to the menu', async () => {
       transport.getLocalBrowserState.mockResolvedValue(connected);
       mount();
@@ -1752,7 +1844,7 @@ describe('LocalBrowserPanel', () => {
       expect(setBounds.mock.calls.every(([bounds]) => !bounds.visible)).toBe(true);
       // Once a page loads, the native page shows and the line goes.
       act(() =>
-        view.client.setQueryData(['local-browser', 'state'], {
+        view.client.setQueryData(localBrowserStateKey('chat-one'), {
           ...empty,
           tabs: [{ id: 'one', title: 'Fares', url: 'https://northwind.example/fares' }],
         })

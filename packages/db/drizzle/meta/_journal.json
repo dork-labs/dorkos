@@ -1429,6 +1429,34 @@
       "when": 1794906876250,
       "tag": "20261117091436_dor4593_bridged_sender",
       "breakpoints": true
+    },
+    {
+      "idx": 204,
+      "version": "6",
+      "when": 1794951501012,
+      "tag": "20261117213820_seat_chat_delivery_route",
+      "breakpoints": true
+    },
+    {
+      "idx": 205,
+      "version": "6",
+      "when": 1794972021235,
+      "tag": "20261118032021_dor4315_one_shot_task",
+      "breakpoints": true
+    },
+    {
+      "idx": 206,
+      "version": "6",
+      "when": 1794992022419,
+      "tag": "20261118085342_room_seat_launch_requirements",
+      "breakpoints": true
+    },
+    {
+      "idx": 207,
+      "version": "6",
+      "when": 1795015251675,
+      "tag": "20261118152051_dor4301_extension_person_records",
+      "breakpoints": true
     }
   ]
 }

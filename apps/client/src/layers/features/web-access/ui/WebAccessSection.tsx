@@ -18,7 +18,6 @@ import {
   CollapsibleTrigger,
   Input,
   Label,
-  PasswordInput,
   RadioGroup,
   RadioGroupItem,
 } from '@/layers/shared/ui';
@@ -27,7 +26,6 @@ import { useWebAccess, type WebAccess } from '../model/use-web-access';
 import { useSeenDevices } from '../model/use-remote-presence';
 import { SeenDevices } from './SeenDevices';
 import { ApprovalPasskeys } from './ApprovalPasskeys';
-import { PasswordPrompt, type Prompt } from './PasswordPrompt';
 
 /** The host a hub origin names, for showing it. */
 function hostOf(origin: string | null): string {
@@ -43,19 +41,15 @@ function hostOf(origin: string | null): string {
 function LinkForm({ access, status }: { access: WebAccess; status: SessionRelayStatus }) {
   const codeId = useId();
   const nameId = useId();
-  const passwordId = useId();
   const [linkCode, setLinkCode] = useState('');
   const [name, setName] = useState(status.suggestedName);
-  const [password, setPassword] = useState('');
   const disabled = !access.canChange || access.busy;
   return (
     <form
       className="space-y-3"
       onSubmit={(event) => {
         event.preventDefault();
-        access.link({ linkCode: linkCode.trim(), computerName: name.trim(), password });
-        // Sent once, never kept.
-        setPassword('');
+        access.link({ linkCode: linkCode.trim(), computerName: name.trim() });
       }}
     >
       <p className="text-sm">
@@ -94,21 +88,7 @@ function LinkForm({ access, status }: { access: WebAccess; status: SessionRelayS
           disabled={disabled}
         />
       </div>
-      <div className="space-y-1.5">
-        <Label htmlFor={passwordId}>Your password for this computer</Label>
-        <PasswordInput
-          id={passwordId}
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          autoComplete="current-password"
-          disabled={disabled}
-        />
-      </div>
-      <Button
-        type="submit"
-        size="sm"
-        disabled={disabled || !linkCode.trim() || !name.trim() || !password}
-      >
+      <Button type="submit" size="sm" disabled={disabled || !linkCode.trim() || !name.trim()}>
         Link
       </Button>
     </form>
@@ -157,26 +137,15 @@ function stateLine(status: SessionRelayStatus): string {
 /** Linked: the hub, the level, Pause or Resume, and Unlink. */
 function LinkedControls({ access, status }: { access: WebAccess; status: SessionRelayStatus }) {
   const disabled = !access.canChange || access.busy;
-  const [prompt, setPrompt] = useState<Prompt>(null);
   return (
     <div className="space-y-3">
-      <PasswordPrompt prompt={prompt} onClose={() => setPrompt(null)} />
       <div>
         <p className="truncate text-sm">{hostOf(status.hubOrigin)}</p>
         <p className="text-muted-foreground text-xs">{stateLine(status)}</p>
       </div>
       <RadioGroup
         value={status.level}
-        onValueChange={(value) =>
-          // Raising what the web may do asks for the password; lowering does not.
-          value === 'full'
-            ? setPrompt({
-                title: 'Allow Full control from the web?',
-                confirm: 'Allow',
-                run: (password) => access.setLevel('full', password),
-              })
-            : access.setLevel(value as SessionRelayLevel)
-        }
+        onValueChange={(value) => access.setLevel(value as SessionRelayLevel)}
         aria-label="What the web can do here"
         disabled={disabled}
       >
@@ -200,15 +169,7 @@ function LinkedControls({ access, status }: { access: WebAccess; status: Session
           variant="outline"
           size="sm"
           disabled={disabled}
-          onClick={() =>
-            status.paused
-              ? setPrompt({
-                  title: 'Resume chat from the web?',
-                  confirm: 'Resume',
-                  run: access.resume,
-                })
-              : access.pause()
-          }
+          onClick={() => (status.paused ? access.resume() : access.pause())}
         >
           {status.paused ? 'Resume' : 'Pause'}
         </Button>

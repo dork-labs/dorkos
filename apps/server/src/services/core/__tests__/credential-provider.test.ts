@@ -8,7 +8,7 @@
  * a resolution failure message, and never as plaintext in the encrypted store
  * file on disk.
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -22,6 +22,20 @@ import {
   type KeychainAccessor,
 } from '../credential-provider.js';
 import { initConfigManager, configManager } from '../config-manager.js';
+import { env } from '../../../env.js';
+
+// No test here may reach the real macOS Keychain: every `security` spawn lands
+// on this stand-in, which fails like a missing entry, and is asserted unused.
+const execFileMock = vi.hoisted(() =>
+  vi.fn((...args: unknown[]) => {
+    const callback = args[args.length - 1] as (err: Error) => void;
+    callback(new Error('the real Keychain is never read in tests'));
+  })
+);
+vi.mock('node:child_process', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:child_process')>()),
+  execFile: execFileMock,
+}));
 
 const SECRET = 'sk-super-secret-value-9f3a';
 
@@ -258,9 +272,31 @@ describe('DefaultCredentialProvider', () => {
 });
 
 describe('MacOsKeychainAccessor', () => {
+  const realTestRuntime = env.DORKOS_TEST_RUNTIME;
+
+  beforeEach(() => {
+    env.DORKOS_TEST_RUNTIME = false;
+    // The guard also reads the live variable, which a developer's shell may export.
+    vi.stubEnv('DORKOS_TEST_RUNTIME', '');
+    execFileMock.mockClear();
+  });
+
+  afterEach(() => {
+    env.DORKOS_TEST_RUNTIME = realTestRuntime;
+    vi.unstubAllEnvs();
+  });
+
   it('reports availability strictly from the platform (no real keychain access)', () => {
     const accessor = new MacOsKeychainAccessor();
     expect(accessor.isAvailable()).toBe(process.platform === 'darwin');
+  });
+
+  it('is never available while the test runtime is on, so it never spawns `security`', async () => {
+    env.DORKOS_TEST_RUNTIME = true;
+    const accessor = new MacOsKeychainAccessor();
+    expect(accessor.isAvailable()).toBe(false);
+    await expect(accessor.get('anything')).resolves.toBeNull();
+    expect(execFileMock).not.toHaveBeenCalled();
   });
 
   it('returns null without spawning when the platform has no keychain backend', async () => {

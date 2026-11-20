@@ -1,3 +1,4 @@
+import { isolatedRequiredLaunchOwner } from './required-launch-fixture.js';
 /**
  * `session.activeQuery` ownership across overlapping turns (DOR-1088).
  *
@@ -18,6 +19,8 @@ import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
 import type { AgentSession } from '../../agent-types.js';
 import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { fetchContextBreakdown } from '../../sdk/context-usage.js';
+
+const requiredLaunches = isolatedRequiredLaunchOwner();
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
@@ -73,7 +76,7 @@ function makeSession(): AgentSession {
 }
 
 function makeOpts(): MessageSenderOpts {
-  return { cwd: '/mock/project', onSdkSessionRebind: async () => {} };
+  return { cwd: '/mock/project', requiredLaunches, onSdkSessionRebind: async () => {} };
 }
 
 /** The turn-completion `result` SDK message. */

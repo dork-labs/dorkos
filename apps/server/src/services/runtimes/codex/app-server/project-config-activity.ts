@@ -99,6 +99,26 @@ export function noteProjectConfigTrusted(realCwd: string): void {
   });
 }
 
+/**
+ * The `.codex/config.toml` files Codex would read for a folder, by real path,
+ * outermost first: one per folder from the project's top down that has one.
+ * Existence only; nothing is read (DOR-4447). A symlink counts by what it
+ * points to, as Codex opens it: a link to a file is a file.
+ *
+ * @param realCwd - The folder, by real path.
+ */
+export function projectConfigFiles(realCwd: string): string[] {
+  return projectChain(realCwd)
+    .map((dir) => path.join(dir, PROJECT_CONFIG))
+    .filter((file) => {
+      try {
+        return fs.statSync(file).isFile();
+      } catch {
+        return false;
+      }
+    });
+}
+
 /** The folders from the project's top down to `dir`, outermost first; `dir` alone outside a repo. */
 function projectChain(dir: string): string[] {
   const chain: string[] = [];
@@ -109,10 +129,13 @@ function projectChain(dir: string): string[] {
   }
 }
 
-/** A short digest of a regular file, or `null` when there is none. */
+/**
+ * A short digest of a regular file, or `null` when there is none. A symlink
+ * is followed, as Codex follows it, so a linked file gets its line too.
+ */
 function digestOf(file: string): string | null {
   try {
-    const stat = fs.lstatSync(file);
+    const stat = fs.statSync(file);
     if (!stat.isFile()) return null;
     if (stat.size > MAX_HASHED_BYTES) return `size:${stat.size}`;
     return createHash('sha256').update(fs.readFileSync(file)).digest('hex');

@@ -185,26 +185,57 @@ function renderContextBody(
  * @param agentContext - The neutral DorkOS context this turn owes, as
  *   `context-gate.ts` selected it, or `''`/omitted when the working directory
  *   hosts no agent manifest
+ * @param notice - A notice for the model from the thread's load, placed as a
+ *   {@link noticeBlock} just ahead of the person's words
  */
 export function buildCodexPrompt(
   content: string,
   opts?: MessageOpts,
-  agentContext?: string
+  agentContext?: string,
+  notice?: string
 ): string {
   const blocks: string[] = [GEN_UI_CONTEXT];
   if (agentContext) blocks.push(agentContext);
   if (opts?.systemPromptAppend) blocks.push(opts.systemPromptAppend);
   for (const entry of opts?.additionalContext ?? []) blocks.push(renderContextEntry(entry));
+  if (notice) blocks.push(noticeBlock(notice));
   blocks.push(content);
   return blocks.join('\n\n');
 }
 
 /**
- * Build a turn's prompt with {@link buildCodexPrompt} and record it, byte for
- * byte, as what the thread is being handed (the turn-context record). The
- * prompt is Codex's only input channel, so it is the whole record: one part,
- * and a flag saying whether it carried the stable half the gate sends once per
- * thread.
+ * A notice for the model, tag-shaped like every other block DorkOS puts ahead
+ * of the person's words, so search and the Codex title, which strip leading
+ * tag blocks, keep only what the person wrote (DOR-4447).
+ *
+ * @param notice - The notice's text
+ */
+export function noticeBlock(notice: string): string {
+  return `<dorkos_notice>\n${notice}\n</dorkos_notice>`;
+}
+
+/** A turn's prompt before its thread loads, and how to send it once it has. */
+export interface CodexTurnPrompt {
+  /** The prompt with no load notice. */
+  readonly prompt: string;
+  /**
+   * The prompt as sent, with the load's notice (`LoadedThread.modelNote`) as a
+   * block just ahead of the person's words, recorded byte for byte as what the
+   * thread was handed. Call it once, when the turn is sent.
+   */
+  readonly sendPrompt: (notice: string | undefined) => string;
+}
+
+/**
+ * Build a turn's prompt with {@link buildCodexPrompt}, and record it, byte for
+ * byte, as what the thread is handed (the turn-context record) when it is
+ * sent. The prompt is Codex's only input channel, so it is the whole record:
+ * one part, and a flag saying whether it carried the stable half the gate
+ * sends once per thread.
+ *
+ * Recorded at send, not here: whether a notice rides along is only known once
+ * the thread loads, after this runs (DOR-4447), and the record must hold what
+ * was sent.
  *
  * @param content - The user's message, passed through pristine
  * @param opts - Per-turn options carrying systemPromptAppend/additionalContext
@@ -212,7 +243,6 @@ export function buildCodexPrompt(
  * @param sessionId - The session taking the turn
  * @param settings - The turn's resolved settings, for its permission mode
  * @param selection - The gate's selection, for whether the stable half rode along
- * @returns The prompt to hand the thread
  */
 export function codexTurnPrompt(
   content: string,
@@ -221,18 +251,41 @@ export function codexTurnPrompt(
   sessionId: string,
   settings: Pick<SessionSettings, 'permissionMode'>,
   selection: Pick<CodexContextSelection, 'carriesStable'>
+): CodexTurnPrompt {
+  return {
+    prompt: buildCodexPrompt(content, opts, agentContext),
+    sendPrompt: (notice) => {
+      const sent = buildCodexPrompt(content, opts, agentContext, notice);
+      recordTurnContext({
+        sessionId,
+        ...(opts?.messageId !== undefined ? { messageId: opts.messageId } : {}),
+        runtime: 'codex',
+        place: turnPlaceOf(opts),
+        ...(settings.permissionMode !== undefined
+          ? { permissionMode: settings.permissionMode }
+          : {}),
+        systemSentThisTurn: selection.carriesStable,
+        parts: [{ slot: 'prompt', text: sent }],
+      });
+      return sent;
+    },
+  };
+}
+
+/**
+ * The text a turn sends: through the runtime's {@link CodexTurnPrompt}, which
+ * places the load's notice and records what went out; for a request built
+ * without one (tests), the prompt with the notice block ahead of it.
+ *
+ * @param request - The turn's prompt and, from the runtime, how to send it
+ * @param notice - The load's notice for the model, if any
+ */
+export function promptToSend(
+  request: { prompt: string; sendPrompt?: CodexTurnPrompt['sendPrompt'] },
+  notice: string | undefined
 ): string {
-  const prompt = buildCodexPrompt(content, opts, agentContext);
-  recordTurnContext({
-    sessionId,
-    ...(opts?.messageId !== undefined ? { messageId: opts.messageId } : {}),
-    runtime: 'codex',
-    place: turnPlaceOf(opts),
-    ...(settings.permissionMode !== undefined ? { permissionMode: settings.permissionMode } : {}),
-    systemSentThisTurn: selection.carriesStable,
-    parts: [{ slot: 'prompt', text: prompt }],
-  });
-  return prompt;
+  if (request.sendPrompt) return request.sendPrompt(notice);
+  return notice ? `${noticeBlock(notice)}\n\n${request.prompt}` : request.prompt;
 }
 
 /**

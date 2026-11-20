@@ -14,6 +14,19 @@ import { resolveNamedAgentIdentity } from '../../../mesh/normalize-agent-identit
 import { currentCreatorAccountId } from '../../../heartbeats/reports-to.js';
 import type { McpToolDeps } from './types.js';
 import { jsonContent, structuredJsonContent } from './types.js';
+import { installedFromOutside } from '../../../marketplace/installed-metadata.js';
+
+/**
+ * An agent with `fromPackage` set when it was installed from a third-party marketplace package, so
+ * its manifest is text someone outside the team wrote (DOR-3969).
+ */
+async function withPackageOrigin<T extends { id: string }>(
+  mesh: NonNullable<McpToolDeps['meshCore']>,
+  agent: T
+): Promise<T & { fromPackage?: true }> {
+  const home = mesh.getProjectPath(agent.id);
+  return home && (await installedFromOutside(home)) ? { ...agent, fromPackage: true } : agent;
+}
 
 /** Guard that returns an error response when Mesh is disabled. */
 function requireMesh(deps: McpToolDeps) {
@@ -256,7 +269,8 @@ export function createMeshListHandler(deps: McpToolDeps) {
         const relaySubject = mesh.getSubject(agent.id);
         return { ...agent, ...(relaySubject ? { relaySubject } : {}) };
       });
-    return structuredJsonContent({ agents, count: agents.length });
+    const listed = await Promise.all(agents.map((agent) => withPackageOrigin(mesh, agent)));
+    return structuredJsonContent({ agents: listed, count: listed.length });
   };
 }
 
@@ -328,7 +342,10 @@ export function createMeshInspectHandler(deps: McpToolDeps) {
         isError: true,
       };
     }
-    return structuredJsonContent(result);
+    return structuredJsonContent({
+      ...result,
+      agent: await withPackageOrigin(deps.meshCore!, result.agent),
+    });
   };
 }
 

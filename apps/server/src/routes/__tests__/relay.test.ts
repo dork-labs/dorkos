@@ -14,6 +14,8 @@ import {
 } from '@dorkos/shared/relay-schemas';
 import { SERVER_MANAGED_PREFIXES } from '@dorkos/relay';
 import { withStrangerMarkFlag } from '../../services/rooms/__tests__/stranger-mark-flag.js';
+import { countWhileRunning } from '../../services/core/turn-power/live-outsider-turns.js';
+import type { StreamEvent } from '@dorkos/shared/types';
 
 // Legacy mocked-Core route fixtures explicitly use the login-off policy.
 // Actual credential and ownership behavior is covered by the integration suites.
@@ -971,6 +973,10 @@ describe('Adapter routes', () => {
 
   describe('POST /api/relay/adapters/:id/enable', () => {
     it('enables adapter and returns ok', async () => {
+      vi.mocked(adapterManager.getAdapter).mockReturnValueOnce({
+        config: { id: 'tg-main', type: 'telegram', enabled: false, config: {} },
+        status: { state: 'disabled' },
+      } as unknown as ReturnType<AdapterManager['getAdapter']>);
       const res = await request(server).post('/api/relay/adapters/tg-main/enable');
 
       expect(res.status).toBe(200);
@@ -985,6 +991,49 @@ describe('Adapter routes', () => {
 
       expect(res.status).toBe(400);
       expect(res.body.error).toContain('Adapter not found');
+    });
+
+    // Security S7 on DOR-4355 M3: an agent never turns a chat connection back on
+    // over HTTP, and a marked turn is no exception. The owner's hold is in
+    // `relay-adapter-enable-step-up.test.ts`.
+    it('refuses a marked agent turn turning a connection back on', async () => {
+      const agentPath = '/made-up/agents/porter';
+      vi.mocked(adapterManager.getAdapter).mockReturnValue({
+        config: { id: 'tg-off', type: 'telegram', enabled: false, config: {} },
+        status: { state: 'disabled' },
+      } as unknown as ReturnType<AdapterManager['getAdapter']>);
+      target.mount(
+        relayRoutesListener(
+          { relayCore, adapterManager: adapterManager as unknown as AdapterManager },
+          {
+            before: async (c, next) => {
+              c.set('agentIdentity', {
+                agentPath,
+                displayName: 'Porter',
+                createdAt: '2026-11-01T00:00:00.000Z',
+              });
+              await next();
+            },
+          }
+        )
+      );
+      const turn = countWhileRunning(
+        { cwd: agentPath },
+        { outsider: true },
+        (async function* () {
+          yield { type: 'done', data: {} } as StreamEvent;
+        })()
+      );
+      await turn.next();
+      try {
+        const res = await request(server)
+          .post('/api/relay/adapters/tg-off/enable')
+          .set('X-DorkOS-Agent', 'agent-1');
+        expect(res.status).toBe(403);
+        expect(vi.mocked(adapterManager.enable)).not.toHaveBeenCalled();
+      } finally {
+        await turn.return(undefined);
+      }
     });
   });
 
@@ -1477,7 +1526,12 @@ describe('Adapter routes', () => {
         });
         expect(res.status).toBe(200);
         expect(res.body.binding.sessionStrategy).toBe('stateless');
-        expect(mockStore.update).toHaveBeenCalledWith('b-1', { sessionStrategy: 'stateless' });
+        // A free change carries its "still narrows" check into the write (Security S5).
+        expect(mockStore.update).toHaveBeenCalledWith(
+          'b-1',
+          { sessionStrategy: 'stateless' },
+          expect.any(Function)
+        );
       });
 
       it('returns 200 with updated binding for label change', async () => {
@@ -1530,7 +1584,12 @@ describe('Adapter routes', () => {
         });
         expect(res.status).toBe(200);
         // null should be converted to undefined for clearing
-        expect(mockStore.update).toHaveBeenCalledWith('b-1', { chatId: undefined });
+        // The stored route has no filter to widen, so this is free and carries its check (Security S5).
+        expect(mockStore.update).toHaveBeenCalledWith(
+          'b-1',
+          { chatId: undefined },
+          expect.any(Function)
+        );
       });
     });
 

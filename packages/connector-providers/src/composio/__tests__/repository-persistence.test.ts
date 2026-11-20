@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { classifyComposioAction } from '../action-classes.js';
 
-// Real catalog tags: GitHub's dated fixture plus read-only GitLab/Gitea/MCP lists.
+// Real catalog tags: GitHub's dated fixture plus read-only GitLab/Gitea/MCP lists, and
+// Bitbucket's two (live catalog, 2026-11-17).
 const catalog = JSON.parse(
   readFileSync(new URL('./fixtures/repository-persistence-actions.json', import.meta.url), 'utf8')
 ) as Record<string, { slug: string; tags: string[] }[]>;
@@ -13,6 +14,8 @@ const actions = Object.entries(catalog).flatMap(([toolkit, rows]) =>
 describe('Security repository persistence choices', () => {
   it('pins the verified persistence action names exactly', () => {
     expect(actions.map((row) => row.slug).sort()).toEqual([
+      'BITBUCKET_CREATE_BRANCH',
+      'BITBUCKET_MERGE_PULL_REQUEST',
       'GITEA_CREATE_BRANCH',
       'GITEA_MERGE_PULL_REQUEST',
       'GITHUB_CREATE_A_REFERENCE',

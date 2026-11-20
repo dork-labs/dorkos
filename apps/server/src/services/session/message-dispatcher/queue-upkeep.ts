@@ -145,7 +145,9 @@ export function sweepOrphanedMessageQueues(opts?: {
  * those to notice, while a person's own leftover rows are in their composer.
  *
  * One at a time, so a boot with many such chats does not resolve every runtime
- * at once, and one chat that cannot be resumed never stops the rest.
+ * at once, and one chat that cannot be resumed never stops the rest. The log
+ * line names each chat it resumed by the first 8 characters of its id, so a
+ * person reading the log can tell which ones ran (DOR-4329).
  *
  * @param opts.resume - Re-arms one chat's queue (resolves its runtime and adopts its rows)
  * @returns How many chats were resumed
@@ -155,7 +157,7 @@ export async function rearmChatQueues(opts: {
 }): Promise<number> {
   const store = getMessageQueueStore();
   if (!store) return 0;
-  let resumed = 0;
+  const resumedChats: string[] = [];
   for (const sessionId of store.listSessionIds()) {
     const stranded = store
       .list(sessionId)
@@ -165,7 +167,7 @@ export async function rearmChatQueues(opts: {
     if (!stranded) continue;
     try {
       await opts.resume(sessionId);
-      resumed += 1;
+      resumedChats.push(sessionId.slice(0, 8));
     } catch (err) {
       logger.warn('[MessageDispatcher] could not resume a chat’s queued messages', {
         sessionId,
@@ -173,12 +175,13 @@ export async function rearmChatQueues(opts: {
       });
     }
   }
-  if (resumed > 0) {
+  if (resumedChats.length > 0) {
     logger.info('[MessageDispatcher] resumed chats whose queued messages nothing was running', {
-      sessions: resumed,
+      sessions: resumedChats.length,
+      chats: resumedChats,
     });
   }
-  return resumed;
+  return resumedChats.length;
 }
 
 /**

@@ -1,3 +1,4 @@
+import { isolatedRequiredLaunchOwner } from './required-launch-fixture.js';
 /**
  * The turn's own launch holds to the account rules (spec `flow-multiproject`
  * §8.4): a session with no account yet, whose ladder refuses in its folder's
@@ -60,6 +61,8 @@ import {
   registerEveryFolderAsHome,
 } from '../../../../core/agent-identity/__tests__/agent-home-fixture.js';
 
+const requiredLaunches = isolatedRequiredLaunchOwner();
+
 const WORK_ROOT = '/staged/claude-work';
 const PERSONAL_ROOT = '/staged/claude-personal';
 
@@ -78,7 +81,11 @@ function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
 let captured: Options | undefined;
 
 async function runTurn(session: AgentSession, accountHint?: string): Promise<void> {
-  const opts: MessageSenderOpts = { cwd: '/mock/project', onSdkSessionRebind: async () => {} };
+  const opts: MessageSenderOpts = {
+    cwd: '/mock/project',
+    requiredLaunches,
+    onSdkSessionRebind: async () => {},
+  };
   for await (const _event of executeSdkQuery(
     's1',
     'hello',

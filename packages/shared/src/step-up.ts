@@ -48,6 +48,88 @@ export const STEP_UP_MAX_PASSWORD_TRIES = 5;
  * the server knows.
  */
 export const STEP_UP_ACTION_KINDS = [
+  /** Make a lasting API key. */
+  'api-key.create',
+  /** Change a lasting API key. */
+  'api-key.update',
+  /** Start managed Remote Access. */
+  'remote-access.enrolment',
+  /** Enable or change Remote Access. */
+  'remote-access.mode',
+  /** Open the own tunnel. */
+  'tunnel.start',
+  /** Open Wi-Fi access. */
+  'lan-access.enable',
+  /** Reveal the local MCP credential. */
+  'mcp-token.reveal',
+  /** Replace the local MCP credential. */
+  'mcp-token.rotate',
+  /** Change lasting access or spending settings. */
+  'config.front-door',
+  /** Raise what agents may do (DOR-4355). */
+  'permissions.raise',
+  /** Raise or remove a space's monthly limit for teammates' turns (DOR-4355). */
+  'community.teammate-spend',
+  /** Link chat from the web. */
+  'session-relay.link',
+  /** Raise web chat access. */
+  'session-relay.level',
+  /** Resume web chat access. */
+  'session-relay.resume',
+  /** Begin adding an approval passkey. */
+  'relay-passkey.enrol',
+  /** Trust an installed extension source. */
+  'extensions.trust-source',
+  /** Turn on an extension (DOR-4355). */
+  'extensions.enable',
+  /** Give an agent a standing page-event route (DOR-4355). */
+  'canvas.route-approve',
+  /** Widen what agents may do with a connected app (DOR-4355). */
+  'connection.grant',
+  /** Save a key or secret a connected app uses (DOR-4355). */
+  'connection.credential',
+  /** Install, update or link code that runs in DorkOS (DOR-4355). */
+  'marketplace.install',
+  /** Add a place packages are installed from (DOR-4355). */
+  'marketplace.source',
+  /** Apply a Shape, which turns on its extensions and schedules (DOR-4355). */
+  'shapes.apply',
+  /** Run a workspace’s setup or removal commands (DOR-4355). */
+  'workspace.setup',
+  /** Let a schedule run with more permission (DOR-4355). */
+  'tasks.arm',
+  /** Widen which Claude accounts may run where (DOR-4355). */
+  'accounts.eligibility',
+  /** Connect a space account (DOR-4355). */
+  'community.connect',
+  /** Widen who in a space can wake your agents (DOR-4355). */
+  'community.wake',
+  /** Give an extension a secret (DOR-4355). */
+  'extensions.secret',
+  /** Raise what a chat connection may do, or point it elsewhere (DOR-4355). */
+  'relay.binding',
+  /** Let someone approve or message your agents on a chat app (DOR-4355). */
+  'relay.allowlist',
+  /** Link this computer to an account. */
+  'cloud.link',
+  /** Open an account billing action. */
+  'cloud.billing',
+  /** Request account deletion. */
+  'cloud.delete',
+  /** Export account data. */
+  'cloud.export',
+  /** Assign an account seat. */
+  'cloud.seats',
+  /** Enable credits for a runtime. */
+  'cloud.credits',
+  /** Change account-hosted spaces. */
+  'cloud.space',
+  /** Sign out another device. */
+  'devices.sign-out-one',
+  /** Sign out every other device. */
+  'devices.sign-out-others',
+  /** Sign out every device through the auth API. */
+  'devices.sign-out-all',
   /** Allow an MCP server for every agent (DOR-3213). */
   'mcp-server.allow-global',
   /** Turn on the person's own browser for agents (DOR-3214). */
@@ -65,6 +147,13 @@ export const STEP_UP_ACTION_KINDS = [
    * person gives it (DOR-3234): each approves or resolves that setting.
    */
   'connection.use-setting',
+  /** Answer one remote approval, bound to the whole request. */
+  'approval.grant',
+  'approval.grant-always',
+  /** Approve a mini app, or widen what it may reach (rooms, agents, an "Allow all" set). */
+  'extension.grant',
+  /** Change a mini app's project settings. */
+  'extension.settings-change',
   /** Set a monthly spend limit, or raise it (DOR-4204 PR 2). */
   'spending.raise',
   /** Set a price per run for an app, or lower it (DOR-4204 PR 2). */
@@ -108,6 +197,14 @@ export const LocalStepUpStatementV1Schema = z
 /** What a held action is bound to. */
 export type LocalStepUpStatementV1 = z.infer<typeof LocalStepUpStatementV1Schema>;
 
+/**
+ * A held action's request code: a read-aloud fingerprint of its binding hash,
+ * three groups of four (`requestCodeForHash` on the server). Display only.
+ */
+export const StepUpRequestCodeSchema = z
+  .string()
+  .regex(/^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$/);
+
 /** What a guarded action answers while it waits for a step-up. */
 export const StepUpRequiredBodySchema = z.object({
   error: z.string(),
@@ -115,6 +212,11 @@ export const StepUpRequiredBodySchema = z.object({
   /** The held action to read and confirm. */
   heldActionId: z.string().min(1),
   expiresAt: z.string().datetime(),
+  /**
+   * The same 12 characters the sheet shows, so a page outside the app can say
+   * which held action to confirm. This server always sends one.
+   */
+  requestCode: StepUpRequestCodeSchema.optional(),
 });
 
 /** What a guarded action answers while it waits for a step-up. */
@@ -155,7 +257,11 @@ export type StepUpExtensionRisk = z.infer<typeof StepUpExtensionRiskSchema>;
 /** A held action, as the sheet shows it. Every sentence is the server's. */
 export const HeldStepUpViewSchema = z.object({
   heldActionId: z.string().min(1),
+  /** Display only; the server always checks the full binding hash. Optional for older servers. */
+  requestCode: StepUpRequestCodeSchema.optional(),
   kind: StepUpActionKindSchema,
+  /** This sheet is being answered away from the desk, from the server's request facts. */
+  answeringRemotely: z.boolean().optional(),
   /** What will actually run, e.g. "Add github (`@modelcontextprotocol/server-github`) for all your agents." */
   reason: z.string().min(1),
   /** Quiet extra lines, e.g. "Not pinned to a version. What runs can change later." */
@@ -234,7 +340,19 @@ export const STEP_UP_REFUSAL_CODES = [
   'not-a-person',
   /** Another browser held this action. */
   'not-your-action',
+  /** The stored request changed after this confirmation was held. */
+  'different-request',
 ] as const;
 
 /** Why a step-up was refused. */
 export type StepUpRefusalCode = (typeof STEP_UP_REFUSAL_CODES)[number];
+
+/** Per-response facts used to explain a remote approval before a person taps Allow. */
+export const ApprovalAnswerContextSchema = z.object({
+  answerNeedsStepUp: z.boolean(),
+  answeringFrom: z.string().optional(),
+  onWifi: z.boolean(),
+});
+
+/** Server-owned origin and confirmation requirement for this browser session. */
+export type ApprovalAnswerContext = z.infer<typeof ApprovalAnswerContextSchema>;

@@ -43,6 +43,9 @@
  *
  * @module routes/session-relay-passkeys
  */
+import { runFrontDoorWrite } from './front-door-step-up.js';
+import { readOwnerAccount } from '../services/core/auth/index.js';
+
 import { Hono, type Context } from 'hono';
 import {
   SessionRelayPasskeyFinishBodySchema,
@@ -247,30 +250,52 @@ export function createSessionRelayPasskeyRoutes(
     if (personRefusal) return personRefusal;
     const parsed = SessionRelayPasskeyStartBodySchema.safeParse(readJsonBody(c));
     if (!parsed.success) return refuse(c, 400, 'Name the passkey, up to 64 characters.');
-    const passwordRefusal = await bars.refusePassword(c, parsed.data.password);
-    if (passwordRefusal) return passwordRefusal;
+    if (readOwnerAccount() === null)
+      return refuse(c, 409, 'Set a DorkOS password before adding a passkey.');
     const pin = bars.readPin();
     if (!pin) return refuse(c, 409, 'Link this computer to your hub first.');
     if (deps.keysUnreadable()) return refuse(c, 409, UNREADABLE_KEYS_REFUSAL);
-    const started = await deps.enrolment.start({
-      computerId: pin.computerId,
-      computerName: pin.computerName,
-      accountId: pin.accountId,
-      label: parsed.data.label,
-      ...(parsed.data.origin !== undefined ? { origin: parsed.data.origin } : {}),
-      ...(parsed.data.rpId !== undefined ? { rpId: parsed.data.rpId } : {}),
-      pinned: deps.readKeys(),
-      hubOrigin: pin.hubOrigin,
-      issuer: pin.issuer,
-      // The address and port this request reached: the server's own, on loopback.
-      localAddress: c.env.incoming.socket.localAddress,
-      port: c.env.incoming.socket.localPort,
+    const localAddress = c.env.incoming.socket.localAddress;
+    const localPort = c.env.incoming.socket.localPort;
+    return runFrontDoorWrite(c, {
+      kind: 'relay-passkey.enrol',
+      target: 'approval-passkey',
+      input: parsed.data,
+      reason: 'Add a passkey for approvals from the web.',
+      subject: 'approval passkeys',
+      run: async () => {
+        const current = bars.readPin();
+        if (
+          !current ||
+          current.computerId !== pin.computerId ||
+          current.accountId !== pin.accountId ||
+          current.hubOrigin !== pin.hubOrigin ||
+          current.pinnedAt !== pin.pinnedAt ||
+          current.relaySecret !== pin.relaySecret
+        ) {
+          return refuse(c, 409, 'The link changed. Try again.');
+        }
+        const started = await deps.enrolment.start({
+          computerId: pin.computerId,
+          computerName: pin.computerName,
+          accountId: pin.accountId,
+          label: parsed.data.label,
+          ...(parsed.data.origin !== undefined ? { origin: parsed.data.origin } : {}),
+          ...(parsed.data.rpId !== undefined ? { rpId: parsed.data.rpId } : {}),
+          pinned: deps.readKeys(),
+          hubOrigin: pin.hubOrigin,
+          issuer: pin.issuer,
+          // The address and port this request reached: the server's own, on loopback.
+          localAddress,
+          port: localPort,
+        });
+        if (typeof started === 'string') {
+          const { status, error } = START_REFUSALS[started];
+          return refuse(c, status, error);
+        }
+        return c.json(started);
+      },
     });
-    if (typeof started === 'string') {
-      const { status, error } = START_REFUSALS[started];
-      return refuse(c, status, error);
-    }
-    return c.json(started);
   });
 
   router.post('/finish', async (c) => {

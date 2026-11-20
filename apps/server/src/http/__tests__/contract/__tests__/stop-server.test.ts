@@ -1,9 +1,9 @@
-import { spawn } from 'node:child_process';
+import { spawn, ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { stopServerAndRemove, whenExited } from '../stop-server.js';
 
 /** A child that writes into `dir` until it is told to stop, then for a little longer. */
@@ -22,6 +22,30 @@ function ready(child: ReturnType<typeof spawn>): Promise<void> {
 }
 
 describe('stopServerAndRemove', () => {
+  it('retains the owned data folder when signals do not confirm exit', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'stop-server-unconfirmed-'));
+    await writeFile(path.join(dir, 'retained'), 'owned evidence');
+    // Synthetic ChildProcess boundary only: no process is spawned or signalled.
+    const child = new ChildProcess();
+    const kill = vi.spyOn(child, 'kill').mockReturnValue(true);
+    const exited = whenExited(child);
+    vi.useFakeTimers();
+    try {
+      const stopped = stopServerAndRemove(child, exited, dir);
+      const refused = expect(stopped).rejects.toThrow('did not confirm exit');
+      void refused.catch(() => {});
+      await vi.advanceTimersByTimeAsync(10_000 + 5_000);
+      await refused;
+      expect(kill).toHaveBeenNthCalledWith(1, 'SIGTERM');
+      expect(kill).toHaveBeenNthCalledWith(2, 'SIGKILL');
+      expect(existsSync(path.join(dir, 'retained'))).toBe(true);
+    } finally {
+      vi.useRealTimers();
+      kill.mockRestore();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('removes the folder only after a child still writing on SIGTERM has exited', async () => {
     const dir = await mkdtemp(path.join(tmpdir(), 'stop-server-'));
     const { child, exited } = writer(

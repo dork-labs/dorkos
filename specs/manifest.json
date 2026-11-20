@@ -2,12 +2,39 @@
   "version": 1,
   "specs": [
     {
+      "id": "261119-052319",
+      "slug": "canvas-recovery-timeout",
+      "title": "Bound the canvas recovery test timeout",
+      "created": "2026-11-19",
+      "status": "implemented",
+      "project": "Codex, OpenCode and Doe work like Claude Code",
+      "linearIssue": "DOR-4757"
+    },
+    {
       "id": "261116-033650",
       "slug": "capability-mcp-full-schemas",
       "title": "Register capability MCP tools with full input schemas",
       "created": "2026-11-16",
       "status": "implemented",
       "project": "Codex, OpenCode and Doe work like Claude Code"
+    },
+    {
+      "id": "261115-200450",
+      "slug": "room-handoff-failed-seat-recovery",
+      "title": "Own spin-off room posts and bounded failed-seat recovery",
+      "created": "2026-11-15",
+      "status": "specified",
+      "project": "Agent teams that ship",
+      "linearIssue": "DOR-4328"
+    },
+    {
+      "id": "261115-194346",
+      "slug": "agent-teams-seat-asides",
+      "title": "Private messages into room seats",
+      "created": "2026-11-15",
+      "status": "specified",
+      "project": "P-DOR-119",
+      "linearIssue": "DOR-4472"
     },
     {
       "id": "261113-214252",
@@ -23,7 +50,7 @@
       "slug": "agent-browser-panel-parallel-pages",
       "title": "Agent browser: a page per chat in the DorkOS-browser panel",
       "created": "2026-11-13",
-      "status": "draft",
+      "status": "superseded",
       "project": "After launch: agent browser profiles and global MCP polish",
       "linearIssue": "DOR-4289"
     },
@@ -32,7 +59,7 @@
       "slug": "agent-browser-page-stream",
       "title": "Agent browser: watch and take over the live page from anywhere",
       "created": "2026-11-13",
-      "status": "draft",
+      "status": "specified",
       "project": "After launch: agent browser profiles and global MCP polish",
       "linearIssue": "DOR-2667"
     },
@@ -2459,6 +2486,22 @@
       "created": "2026-11-08",
       "status": "draft",
       "linearIssue": "DOR-3961"
+    },
+    {
+      "id": "261119-020000",
+      "slug": "accounts-l1a-end-to-end",
+      "title": "L1a end to end: cloud agents, your Mac from anywhere, and team spaces",
+      "created": "2026-11-19",
+      "status": "draft",
+      "linearIssue": "DOR-2962"
+    },
+    {
+      "id": "261119-021000",
+      "slug": "accounts-l1b-launch",
+      "title": "L1b hardening and the rest of launch",
+      "created": "2026-11-19",
+      "status": "draft",
+      "linearIssue": "DOR-2963"
     }
   ]
 }

@@ -1,3 +1,4 @@
+import { isolatedRequiredLaunchOwner } from './required-launch-fixture.js';
 /**
  * DOR-107 — slash-command dispatch.
  *
@@ -16,6 +17,8 @@ import type { AgentSession } from '../../agent-types.js';
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { AdditionalContext } from '@dorkos/shared/additional-context';
 import { query } from '@anthropic-ai/claude-agent-sdk';
+
+const requiredLaunches = isolatedRequiredLaunchOwner();
 
 const { mockRenderContextEntry } = vi.hoisted(() => ({
   // Stand in for the real formatter: render each entry as `<kind>mock</kind>`
@@ -78,6 +81,7 @@ function makeSession(): AgentSession {
 function makeOpts(overrides: Partial<MessageSenderOpts> = {}): MessageSenderOpts {
   return {
     cwd: '/mock/project',
+    requiredLaunches,
     onSdkSessionRebind: async () => {},
     ...overrides,
   };

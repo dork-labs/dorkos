@@ -449,15 +449,16 @@ export class OpenCodeRuntime implements AgentRuntime {
           : opts;
         // The model's window, so a small one gets a trimmed system prompt (DOR-2839).
         const at = await sessionDirectoryOf(this.directoryByOcId, client, ocSessionId);
-        // A project's opencode.json must not switch DorkOS's asks off (DOR-4394).
-        await keepDorkosAsks(client, ocSessionId, at);
+        // A project's opencode.json must not switch DorkOS's asks off (DOR-4394),
+        // and the model is told whenever its session refuses helpers (DOR-4447).
+        const asked = await keepDorkosAsks(client, ocSessionId, at, turnOpts);
         const window = await this.contextWindows.lookup(
           client,
           at,
           model?.providerID,
           model?.modelID
         );
-        const body = openCodeTurnBody(content, turnOpts, agentContext, window, model, at);
+        const body = openCodeTurnBody(content, asked, agentContext, window, model, at);
         // The exact body the sidecar is handed, for the turn's context record.
         recordOpenCodeTurn(sessionId, body, turnOpts, settings);
         const prompted = await client.session.promptAsync({ path: { id: ocSessionId }, body });

@@ -235,8 +235,19 @@ jobs:
 
           # The payload, from the three answers on disk. Refusals are one
           # `SKIP <reason>` line in payload.json (see the builder's header).
+          #
+          # The builder asks GitHub again about a pull request whose
+          # mergeability is still UNKNOWN: 3 tries, 3 s apart, so up to 9 s
+          # each. That is capped like the read retries: once 3 PRs in a row
+          # are still UNKNOWN after asking, GitHub is not computing them, so
+          # the rest are not asked (each stays `SKIP mergeability-unknown`)
+          # until one comes back resolved. Without the cap, 100 open PRs
+          # would be 15 minutes against a 10-minute `timeout-minutes`.
+          unknown_streak=0
           build_payload() {
-            ./scripts/should-arm-automerge-input.sh \
+            local retries=3
+            [[ "$unknown_streak" -lt 3 ]] || retries=0
+            MERGE_STATE_RETRIES=$retries ./scripts/should-arm-automerge-input.sh \
               "$work/meta.json" "$work/checks.json" "$work/gql.json" \
               > "$work/payload.json" 2>/dev/null
           }
@@ -549,6 +560,11 @@ jobs:
               unreadable=$(( unreadable + 1 )); skipped=$(( skipped + 1 )); continue
             fi
             dead_streak=0
+            if jq -e '.mergeStateStatus == "UNKNOWN"' "$work/payload.json" >/dev/null 2>&1; then
+              unknown_streak=$(( unknown_streak + 1 ))
+            else
+              unknown_streak=0
+            fi
 
             # The gate exits 2 on an unreadable payload by design; under
             # `bash -e` that must stay this PR's SKIP, not end the tick.

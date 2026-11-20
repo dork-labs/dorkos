@@ -87,6 +87,16 @@ describe('InboxRow meta line', () => {
     expect(screen.getByText('Move them yourself.')).toHaveClass('line-clamp-2', 'sm:truncate');
   });
 
+  it('gives a too-long folder rules notice’s body two lines on a phone too (DOR-4455)', () => {
+    render(
+      <InboxRow
+        notification={build({ kind: 'agent.folder_rules_too_long', body: 'Shorten the list.' })}
+        onOpen={() => {}}
+      />
+    );
+    expect(screen.getByText('Shorten the list.')).toHaveClass('line-clamp-2', 'sm:truncate');
+  });
+
   it('draws no meta line when the notice has none', () => {
     render(<InboxRow notification={build()} onOpen={() => {}} />);
     expect(document.querySelector('.font-mono')).not.toBeInTheDocument();

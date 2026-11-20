@@ -45,7 +45,9 @@ const CREDENTIAL_GATED_ALLOWED: Record<string, string> = {
 
 /** Each route the step-up protects, and the session-aware bar it must run. */
 const ROUTE_BARS: Record<string, readonly string[]> = {
-  'routes/approvals.ts': ['requireOperatorCookieUnderLogin', 'readCallerAuthority'],
+  // The two bars moved out of routes/approvals.ts, which runs both (DOR-4355).
+  'routes/approvals.ts': ['decisionAuthority', 'requirePersonToDecide'],
+  'routes/approval-person-bars.ts': ['requireOperatorCookieUnderLogin', 'readCallerAuthority'],
   'routes/session-answers.ts': ['requireOperatorCookieUnderLogin', 'readCallerAuthority'],
   'routes/permissions.ts': ['requireOperatorCookieUnderLogin', 'readCallerAuthority'],
   'middleware/agent-execution-gate.ts': ['clearsTheAgentBar'],
@@ -72,7 +74,8 @@ const ROUTE_BARS: Record<string, readonly string[]> = {
   'routes/session-launcher.ts': ['isPersonTurn'],
   'http/hono-api.ts': ['askForPersonBeforeTaskWrite'],
   'routes/marketplace/context.ts': ['trustedCaller', 'personSessionRequired'],
-  'routes/mesh.ts': ['clearsTheAgentBar'],
+  // `PATCH /api/mesh/agents/:id` moved out of routes/mesh.ts with its bar (DOR-4355).
+  'routes/mesh-agent-patch-http.ts': ['clearsTheAgentBar'],
   // A server for every agent runs in every session (DOR-3213, Security's M1).
   'routes/mcp-servers.ts': ['refuseFrontDoorChange', 'clearsTheAgentBar'],
   'startup/steps/core-routes.ts': ['loginEnabled: personSessionRequired'],

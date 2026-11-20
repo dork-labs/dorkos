@@ -11,7 +11,8 @@ import { listeningServer } from '@dorkos/test-utils/listening-server';
 const role = vi.hoisted(() => ({ value: 'hub' as 'computer' | 'hub' }));
 vi.mock('../../lib/server-role.js', () => ({ currentServerRole: () => role.value }));
 // The front door is not what this file is about: it admits everything here.
-vi.mock('../../services/core/hub/hub-serving.js', () => ({
+vi.mock('../../services/core/hub/hub-serving.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/hub/hub-serving.js')>()),
   admitHubRequest: () => null,
   trackHubConnection: () => {},
 }));
@@ -29,6 +30,7 @@ const manager = vi.hoisted(() => ({
 }));
 vi.mock('../../services/core/auth/cloud-link.js', () => ({
   getCloudLinkManager: () => manager,
+  getCloudLinkGeneration: () => 0,
 }));
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: () => undefined, onChange: () => () => {} },
@@ -40,13 +42,32 @@ vi.mock('../../services/core/auth/index.js', async (importOriginal) => ({
 
 import cloudRouter from '../cloud.js';
 import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
+import {
+  confirmFixtureRequest,
+  FIXTURE_BROWSER_HEADER,
+  stepUpFixtureRoutes,
+} from './step-up-fixture.js';
+
+/** The owner's made-up password, which the step-up fixture's check accepts. */
+const OWNER_PASSWORD = 'made-up-owner-password';
 
 const server = listeningServer(
   honoGroupListener(
-    { path: '/api/cloud', routes: cloudRouter },
+    [
+      { path: '/api/cloud', routes: cloudRouter },
+      stepUpFixtureRoutes({
+        ownerId: () => 'user_owner',
+        checkPassword: async (password) => (password === OWNER_PASSWORD ? 'ok' : 'wrong'),
+      }),
+    ],
     {
       before: async (c, next) => {
-        c.set('user', { userId: 'user_owner', credential: 'cookie' });
+        const browser = c.req.header(FIXTURE_BROWSER_HEADER);
+        c.set('user', {
+          userId: 'user_owner',
+          credential: 'cookie',
+          ...(browser ? { sessionId: browser } : {}),
+        });
         await next();
       },
     }
@@ -86,7 +107,12 @@ describe('linking on a hub', () => {
     'still reaches the link manager for %s on a person`s own computer',
     async (path, effect) => {
       role.value = 'computer';
-      await request(server).post(path).set('Host', 'localhost:4242');
+      // Linking is held for the owner to confirm; the confirmed write reaches it.
+      await confirmFixtureRequest(
+        request(server).post(path).set('Host', 'localhost:4242'),
+        server,
+        OWNER_PASSWORD
+      );
       expect(effect).toHaveBeenCalledTimes(1);
     }
   );

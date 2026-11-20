@@ -849,7 +849,7 @@ export class SessionPump {
           // leaves the `for await` and is reported as the process dying — a
           // malformed frame must not be able to fake a crash.
           this.quiet.observe(message);
-          this.opts.onMessage?.(message);
+          this.opts.onMessage?.(message, live);
         } catch (err) {
           logger.warn('[SessionPump] a message observer threw; the process is unaffected', {
             sessionId: this.sessionId,

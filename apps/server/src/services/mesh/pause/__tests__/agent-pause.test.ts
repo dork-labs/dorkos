@@ -97,6 +97,8 @@ function fakeRuntime(stop: 'acked' | 'failed' = 'acked') {
         };
       }
     ),
+    /** Whether a turn has spoken and is now waiting to be interrupted. */
+    isParked: () => release !== undefined,
     /** Open a turn the agent started on its own, as a warm process does. */
     emitRuntimeTurn(sessionId: string, events: AsyncIterable<StreamEvent>) {
       runtimeTurnListener?.(sessionId, events);
@@ -166,8 +168,9 @@ describe('AgentPauseService (spec audit-trail PR5)', () => {
         // drain
       }
     })();
-    // Let the turn start and park.
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    // Let the turn start and park. The seam reads the agent's file first (DOR-3969), so one
+    // tick is not enough: wait for the runtime itself to be mid-turn.
+    await vi.waitFor(() => expect(runtime.isParked()).toBe(true));
     const result = await service.pause(SCOUT.id, PERSON);
     expect(runtime.interruptQuery).toHaveBeenCalledWith('s1');
     expect(result.stoppedTurns).toBe(1);
@@ -241,7 +244,8 @@ describe('AgentPauseService (spec audit-trail PR5)', () => {
     });
     const turn = wrapped.sendMessage('s-launch', 'go', { cwd: SCOUT.home });
     const first = turn.next();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    // Wait until the runtime itself was asked, so the pause catches it mid-launch.
+    await vi.waitFor(() => expect(runtime.sendMessage).toHaveBeenCalled());
 
     const result = await service.pause(SCOUT.id, PERSON);
     expect(result.stoppedTurns).toBe(0);
@@ -284,7 +288,7 @@ describe('AgentPauseService (spec audit-trail PR5)', () => {
         // drain
       }
     })();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await vi.waitFor(() => expect(runtime.isParked()).toBe(true));
     await service.pause(SCOUT.id, PERSON);
     expect(runtime.interruptQuery).not.toHaveBeenCalled();
     await runtime.interruptQuery();

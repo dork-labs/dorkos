@@ -15,6 +15,7 @@ import path from 'node:path';
 import fs from 'node:fs/promises';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
+import { loadCeilingMs, loadScaledMs } from '@dorkos/shared/test-budget';
 import type { Task, UpdateTaskRequest } from '@dorkos/shared/schemas';
 import { TaskStore } from '../task-store.js';
 import { TaskReconciler } from '../task-reconciler.js';
@@ -145,7 +146,9 @@ async function patch(existing: Task, data: UpdateTaskRequest) {
 describe('a project-only schedule in a global package', () => {
   it(
     'preserves project clocks on unchanged watcher rescans and removes a retired copy',
-    { timeout: 10_000 },
+    // Four cues, each waiting out TASK_DIRECTORY_CATCH_UP_MS by design: the
+    // worst the scaled waits below can grow to, capped.
+    { timeout: Math.min(loadCeilingMs(10_000), 60_000) },
     async () => {
       const file = await put(
         globalSkillsRoot(dorkHome),
@@ -156,8 +159,9 @@ describe('a project-only schedule in a global package', () => {
       const clock = new TaskRegistrar({ store, scheduler });
       const watcher = new TaskFileWatcher(store, clock, new ScheduleIdentityRegistry());
       const reads = vi.spyOn(store.fileSync, 'upsertFromFile');
+      // Sampled as each wait starts: the load average lags by a minute.
       const until = async (check: () => boolean) => {
-        const deadline = Date.now() + 2500;
+        const deadline = Date.now() + loadScaledMs(2500);
         while (!check()) {
           if (Date.now() > deadline) throw new Error('The project schedule did not sync.');
           await new Promise((resolve) => setTimeout(resolve, 20));

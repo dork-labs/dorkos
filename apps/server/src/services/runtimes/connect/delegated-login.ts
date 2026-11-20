@@ -26,6 +26,7 @@ import path from 'node:path';
 import type { DelegatedLoginResult } from '@dorkos/shared/runtime-connect';
 import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import { logger } from '../../../lib/logger.js';
+import { mayReadOsKeychain } from '../../../lib/keychain/os-keychain-policy.js';
 import { noteSigninRepaired } from '../../observability/index.js';
 import { resolveCodexBinaryPath } from '../codex/check-dependencies.js';
 import { resolveClaudeCliPath } from '../claude-code/sdk/sdk-utils.js';
@@ -34,6 +35,14 @@ import { isCreditsClaudeRoot } from '../claude-code/credits-root.js';
 import { readAccountLoginMetadata } from '../claude-code/accounts/account-login-metadata.js';
 import { accountSigninPolicy, isNeverUseClaudeFolder } from '../../health/account-signin-policy.js';
 import { signinAccounts } from './signin-accounts.js';
+import {
+  StderrSample,
+  classifyLoginFailure,
+  loginFailureMessage,
+  type LoginFailure,
+  type LoginFailureInput,
+  type LoginFailureReason,
+} from './login-failure.js';
 
 /** Injectable spawn seam (defaults to `node:child_process` spawn); tests pass a fake. */
 export type SpawnFn = typeof nodeSpawn;
@@ -130,6 +139,10 @@ export async function resolveLoginCommand(
       return binary ? { binary, args: ['login'], env: runtimeEnvironment('codex', 'login') } : null;
     }
     case 'claude-code': {
+      // `claude auth login` saves the sign-in to the login Keychain on macOS,
+      // which a test server never touches (DOR-4423). Only a test server gets
+      // here, so the caller's generic "not available" wording is good enough.
+      if (process.platform === 'darwin' && !mayReadOsKeychain()) return null;
       const binary = resolveClaudeCliPath();
       if (!binary) return null;
       const root = opts.accountRoot ?? resolveActiveClaudeRoot();
@@ -180,7 +193,7 @@ export function runDelegatedLogin(
 
   return new Promise<DelegatedLoginResult>((resolve) => {
     let settled = false;
-    let stderr = '';
+    const stderr = new StderrSample();
     const child = spawn(cmd.binary, cmd.args, {
       stdio: ['ignore', 'ignore', 'pipe'],
       env: cmd.env ?? runtimeEnvironment('codex', 'login'),
@@ -192,6 +205,12 @@ export function runDelegatedLogin(
       clearTimeout(timer);
       resolve(result);
     };
+    const fail = (input: LoginFailureInput): void => {
+      if (settled) return;
+      const failure = noteLoginFailure('[Connect] delegated login did not complete', input);
+      const minutes = Math.max(1, Math.ceil(timeoutMs / 60_000));
+      finish({ ok: false, error: loginFailureMessage(failure.reason, minutes) });
+    };
 
     const timer = setTimeout(() => {
       // Never completed — kill the lingering login and degrade honestly.
@@ -200,19 +219,17 @@ export function runDelegatedLogin(
       } catch {
         /* already gone */
       }
-      finish({ ok: false, error: 'Sign-in timed out. Please try again.' });
+      fail({ kind: 'timeout' });
     }, timeoutMs);
     timer.unref?.();
 
-    child.stderr?.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString();
+    child.stderr?.on('data', (chunk: Buffer) => stderr.push(chunk));
+    child.once('error', (err: NodeJS.ErrnoException) => {
+      fail({ kind: 'spawn', code: err.code });
     });
-    child.once('error', (err: Error) => {
-      finish({ ok: false, error: honestLoginError(err.message) });
-    });
-    child.once('exit', (code: number | null) => {
+    child.once('exit', (code: number | null, signal: NodeJS.Signals | null) => {
       if (code === 0) return finish({ ok: true });
-      finish({ ok: false, error: honestLoginError(stderr.trim() || `exited with code ${code}`) });
+      fail({ kind: 'exit', code, signal, stderr });
     });
   });
 }
@@ -236,7 +253,7 @@ export function pipeSecretToChild(
 
   return new Promise<DelegatedLoginResult>((resolve) => {
     let settled = false;
-    let stderr = '';
+    const stderr = new StderrSample();
     const child = spawn(cmd.binary, cmd.args, {
       stdio: ['pipe', 'ignore', 'pipe'],
       env: cmd.env ?? runtimeEnvironment('codex', 'login'),
@@ -248,6 +265,11 @@ export function pipeSecretToChild(
       clearTimeout(timer);
       resolve(result);
     };
+    const fail = (input: LoginFailureInput): void => {
+      if (settled) return;
+      const failure = noteLoginFailure('[Connect] API key save did not complete', input);
+      finish({ ok: false, error: apiKeyFailureMessage(failure.reason) });
+    };
 
     const timer = setTimeout(() => {
       try {
@@ -255,26 +277,24 @@ export function pipeSecretToChild(
       } catch {
         /* already gone */
       }
-      finish({ ok: false, error: 'Saving the API key timed out. Please try again.' });
+      fail({ kind: 'timeout', step: 'saving_key' });
     }, timeoutMs);
     timer.unref?.();
 
-    child.stderr?.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString();
+    child.stderr?.on('data', (chunk: Buffer) => stderr.push(chunk));
+    child.once('error', (err: NodeJS.ErrnoException) => {
+      fail({ kind: 'spawn', code: err.code });
     });
-    child.once('error', (err: Error) => {
-      finish({ ok: false, error: honestLoginError(err.message) });
-    });
-    child.once('exit', (code: number | null) => {
+    child.once('exit', (code: number | null, signal: NodeJS.Signals | null) => {
       if (code === 0) return finish({ ok: true });
-      finish({ ok: false, error: honestLoginError(stderr.trim() || `exited with code ${code}`) });
+      fail({ kind: 'exit', code, signal, stderr });
     });
 
     // Secret transits stdin ONLY — never argv, never a log line.
     try {
       child.stdin?.end(secret);
-    } catch {
-      finish({ ok: false, error: 'Could not save the API key. Please try again.' });
+    } catch (err) {
+      fail({ kind: 'spawn', code: (err as NodeJS.ErrnoException | undefined)?.code });
     }
   });
 }
@@ -352,7 +372,7 @@ export async function delegateRuntimeLogin(
         ? confirmInFlow(signedInAccount(type, deps.accountRoot))
         : undefined;
     if (confirmed && !confirmed.ok) return confirmed;
-    if (result.ok) noteSigninRepaired(type, signedInAccount(type, deps.accountRoot));
+    if (result.ok) noteSigninRepaired(type, signedInAccount(type, deps.accountRoot), 'login');
     return confirmed ?? result;
   })();
 
@@ -417,13 +437,36 @@ function confirmInFlow(root: string | undefined): DelegatedLoginResult | undefin
 }
 
 /**
- * Condense a login/apply failure into an honest, single-line message. Vendor
- * login output carries no secret, but we still normalize to one short line and
- * never surface a raw multi-line stack to the Connect UI.
+ * The line a person sees when saving an API key did not work. A refused key
+ * is the usual cause, so "check it" is the default next step; a timeout or an
+ * unreachable service says so instead, because re-checking a good key fixes
+ * neither.
+ *
+ * @param reason - What went wrong.
  */
-function honestLoginError(_detail: string): string {
-  // CLI stderr may contain an address, token or browser URL. It never leaves
-  // this boundary, including in logs; the page supplies the account's name.
-  logger.warn('[Connect] delegated login did not complete');
-  return 'Couldn’t sign in. Try again.';
+function apiKeyFailureMessage(reason: LoginFailureReason): string {
+  switch (reason) {
+    case 'timeout':
+      return 'Saving the API key timed out. Try again.';
+    case 'network':
+      return loginFailureMessage('network');
+    case 'spawn_failed':
+      return 'Couldn’t save the API key. Reinstall DorkOS, then try again.';
+    default:
+      return 'Couldn’t save the API key. Check it, then try again.';
+  }
+}
+
+/**
+ * Log why a login or key save did not complete, and return the redacted record.
+ * CLI stderr may contain an address, token or browser URL, so only
+ * {@link classifyLoginFailure}'s fixed fields reach the log (DOR-4426).
+ *
+ * @param message - The log line.
+ * @param input - What the child process did.
+ */
+function noteLoginFailure(message: string, input: LoginFailureInput): LoginFailure {
+  const failure = classifyLoginFailure(input);
+  logger.warn(message, { ...failure });
+  return failure;
 }

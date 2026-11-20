@@ -41,7 +41,7 @@ import { Hono } from 'hono';
 import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { StepUpRequiredBodySchema } from '@dorkos/shared/step-up';
-import { WEBHOOK_MANIFEST } from '@dorkos/relay';
+import { SLACK_MANIFEST, WEBHOOK_MANIFEST, toIdList } from '@dorkos/relay';
 import type { StreamEvent } from '@dorkos/shared/types';
 
 import type { ApiEnv } from '../../http/api-chain.js';
@@ -56,6 +56,12 @@ import type { AdapterManager } from '../../services/relay/adapter-manager.js';
 import { env } from '../../env.js';
 import { personSettingsIn, registerSettingRoutes } from '../relay-adapter-setting-routes.js';
 import { createStepUpRoutes, type StepUpRouteDeps } from '../step-up.js';
+import { createTestDb } from '@dorkos/test-utils/db';
+import { ApprovalService } from '../../services/core/approvals/index.js';
+import {
+  initAgentRaiseCards,
+  resetAgentRaiseCardsForTests,
+} from '../../services/core/approvals/agent-raise/agent-raise-cards.js';
 
 const target = swappableServer();
 const OWN_ORIGIN = 'http://localhost:4242';
@@ -160,6 +166,7 @@ function confirmWith(id: string, password: string) {
 
 beforeEach(() => {
   resetHeldStepUpsForTests();
+  initAgentRaiseCards(new ApprovalService(createTestDb()));
   manager = {
     testConnection: vi.fn(async () => ({ ok: true })),
     addAdapter: vi.fn(async () => undefined),
@@ -182,6 +189,7 @@ beforeEach(() => {
   };
 });
 afterEach(() => {
+  resetAgentRaiseCardsForTests();
   state.ownerId = 'user_owner';
   state.notTheOwner = false;
   resetLiveOutsiderTurns();
@@ -401,12 +409,16 @@ describe('a marked agent turn typing secrets into a connection (DOR-3858, DOR-44
     expect(manager.updateConfig).toHaveBeenCalledOnce();
   });
 
-  it('allows the person writer to use a new address', async () => {
-    const res = await withStrangerMarkFlag(true, () =>
+  // A typed secret the connection keeps waits for the owner to confirm it's them (DOR-4355).
+  it('lets the person writer use a new address once they confirm the typed secrets', async () => {
+    const held = await withStrangerMarkFlag(true, () =>
       request(app()).patch('/api/relay/adapters/wh/config').send({ config: TYPED_SECRETS })
     );
+    expect(held.status).toBe(428);
+    expect(manager.updateConfig).not.toHaveBeenCalled();
 
-    expect(res.status).toBe(200);
+    const res = await confirmWith(held.body.heldActionId, PASSWORD);
+    expect(res.body).toMatchObject({ ok: true, status: 200 });
     expect(manager.updateConfig).toHaveBeenCalledOnce();
   });
 
@@ -618,5 +630,187 @@ describe('personSettingsIn', () => {
         e: 'secret:not-a-person-kind',
       })
     ).toEqual(['ONE', 'TWO']);
+  });
+});
+
+// DOR-4595: an id on a chat connection's approver or DM list counts as the owner there.
+describe('adding someone to a chat connection’s approver or DM list', () => {
+  /** A Slack connection that already lets one made-up teammate approve. */
+  function slackConnection() {
+    manager.resolveAdapterName.mockReturnValue('Northwind Slack');
+    manager.getManifest.mockReturnValue(SLACK_MANIFEST);
+    manager.getAdapter.mockReturnValue({
+      config: {
+        id: 'sl',
+        type: 'slack',
+        enabled: true,
+        builtin: false,
+        config: { approverAllowlist: 'U0OWNER01', dmAllowlist: [] },
+      },
+      status: { state: 'connected' },
+    });
+  }
+  const save = (
+    r: ReturnType<typeof request>,
+    config: Record<string, unknown>,
+    headers: Record<string, string> = {}
+  ) =>
+    r
+      .patch('/api/relay/adapters/sl/config')
+      .set('Origin', OWN_ORIGIN)
+      .set(headers)
+      .send({ config });
+
+  it.each([
+    ['approver', { approverAllowlist: 'U0OWNER01\nU0STRANGR', dmAllowlist: [] }],
+    ['DM', { approverAllowlist: 'U0OWNER01', dmAllowlist: ['U0STRANGR'] }],
+  ])('holds the owner’s %s addition, naming the id and the connection', async (list, config) => {
+    slackConnection();
+    const held = await save(request(app()), config);
+    expect(held.status).toBe(428);
+    expect(manager.updateConfig).not.toHaveBeenCalled();
+    const view = await request(app())
+      .get(`/api/step-up/${held.body.heldActionId}`)
+      .set('Origin', OWN_ORIGIN);
+    expect(view.body.reason).toContain('U0STRANGR');
+    expect(view.body.reason).toContain('Northwind Slack');
+
+    const confirmed = await confirmWith(held.body.heldActionId, PASSWORD);
+    expect(confirmed.body).toMatchObject({ ok: true, status: 200 });
+    expect(manager.updateConfig).toHaveBeenCalledOnce();
+    // The person's own addition is what lands: the new id is in the saved list.
+    const saved = manager.updateConfig.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(toIdList(saved[list === 'approver' ? 'approverAllowlist' : 'dmAllowlist'])).toContain(
+      'U0STRANGR'
+    );
+  });
+
+  // DOR-4355 M4: an unmarked agent's addition goes on a card for the person instead
+  // (`agent-raise-cards.test.ts`); a marked turn still gets no card.
+  it.each([
+    ['a marked agent turn', true, 403, 'agent_raise_marked'],
+    ['an unmarked agent', false, 428, 'agent_raise_card'],
+  ])('answers %s adding an approver, and applies nothing', async (_label, marked, status, code) => {
+    slackConnection();
+    const send = () =>
+      save(
+        request(app(null)),
+        { approverAllowlist: 'U0OWNER01\nU0STRANGR', dmAllowlist: [] },
+        { [AGENT[0]]: AGENT[1] }
+      );
+    const res = await withStrangerMarkFlag(true, () => (marked ? duringMarkedTurn(send) : send()));
+    expect(res.status).toBe(status);
+    expect(res.body.code).toBe(code);
+    expect(res.body.heldActionId).toBeUndefined();
+    expect(manager.updateConfig).not.toHaveBeenCalled();
+  });
+
+  it('refuses an unidentified caller adding a DM id, and applies nothing', async () => {
+    slackConnection();
+    const res = await withStrangerMarkFlag(true, () =>
+      save(
+        request(app(null)),
+        { approverAllowlist: 'U0OWNER01', dmAllowlist: ['U0STRANGR'] },
+        { 'X-DorkOS-Agent': 'made-up-unknown-token' }
+      )
+    );
+    expect(res.status).toBe(403);
+    expect(manager.updateConfig).not.toHaveBeenCalled();
+  });
+
+  it('removes someone at once', async () => {
+    slackConnection();
+    const res = await save(request(app()), { approverAllowlist: '', dmAllowlist: [] });
+    expect(res.status).toBe(200);
+    expect(res.body.heldActionId).toBeUndefined();
+    expect(manager.updateConfig).toHaveBeenCalledOnce();
+  });
+});
+
+// Security M2 on DOR-4355 M3: "DM Access: Open (anyone)" is every id on the DM list at once.
+describe('opening a chat connection to every DM sender', () => {
+  function slackConnection(stored: Record<string, unknown> = { dmPolicy: 'allowlist' }) {
+    manager.resolveAdapterName.mockReturnValue('Northwind Slack');
+    manager.getManifest.mockReturnValue(SLACK_MANIFEST);
+    manager.getAdapter.mockReturnValue({
+      config: {
+        id: 'sl',
+        type: 'slack',
+        enabled: true,
+        builtin: false,
+        config: { ...stored, approverAllowlist: 'U0OWNER01', dmAllowlist: [] },
+      },
+      status: { state: 'connected' },
+    });
+  }
+  const openDms = (r: ReturnType<typeof request>, headers: Record<string, string> = {}) =>
+    r
+      .patch('/api/relay/adapters/sl/config')
+      .set('Origin', OWN_ORIGIN)
+      .set(headers)
+      .send({ config: { dmPolicy: 'open' } });
+
+  it.each([
+    ['a marked agent turn', true, 403, 'agent_raise_marked'],
+    ['an unmarked agent', false, 428, 'agent_raise_card'],
+  ])(
+    'answers %s switching DMs to open, and applies nothing',
+    async (_label, marked, status, code) => {
+      slackConnection();
+      const send = () => openDms(request(app(null)), { [AGENT[0]]: AGENT[1] });
+      const res = await withStrangerMarkFlag(true, () =>
+        marked ? duringMarkedTurn(send) : send()
+      );
+      expect(res.status).toBe(status);
+      expect(res.body.code).toBe(code);
+      expect(res.body.heldActionId).toBeUndefined();
+      expect(manager.updateConfig).not.toHaveBeenCalled();
+    }
+  );
+
+  it('reads it as opening from a connection whose stored policy is the default', async () => {
+    slackConnection({});
+    const res = await withStrangerMarkFlag(true, () =>
+      openDms(request(app(null)), { [AGENT[0]]: AGENT[1] })
+    );
+    expect(res.body.code).toBe('agent_raise_card');
+    expect(manager.updateConfig).not.toHaveBeenCalled();
+  });
+
+  it('refuses an agent adding a new connection that starts open', async () => {
+    manager.getManifest.mockReturnValue(SLACK_MANIFEST);
+    const res = await withStrangerMarkFlag(true, () =>
+      request(app(null))
+        .post('/api/relay/adapters')
+        .set('Origin', OWN_ORIGIN)
+        .set(AGENT[0], AGENT[1])
+        .send({ type: 'slack', id: 'sl2', config: { dmPolicy: 'open' } })
+    );
+    expect(res.status).toBe(403);
+    expect(manager.addAdapter).not.toHaveBeenCalled();
+  });
+
+  it('holds the owner’s switch, saying anyone can message the agents there', async () => {
+    slackConnection();
+    const held = await openDms(request(app()));
+    expect(held.status).toBe(428);
+    expect(manager.updateConfig).not.toHaveBeenCalled();
+    const view = await request(app())
+      .get(`/api/step-up/${held.body.heldActionId}`)
+      .set('Origin', OWN_ORIGIN);
+    expect(view.body.reason).toBe('Let anyone message your agents on “Northwind Slack”.');
+    const confirmed = await confirmWith(held.body.heldActionId, PASSWORD);
+    expect(confirmed.body).toMatchObject({ ok: true, status: 200 });
+    expect(manager.updateConfig).toHaveBeenCalledWith('sl', { dmPolicy: 'open' }, 'person');
+  });
+
+  it('closes DMs back to the list at once', async () => {
+    slackConnection({ dmPolicy: 'open' });
+    const res = await request(app())
+      .patch('/api/relay/adapters/sl/config')
+      .set('Origin', OWN_ORIGIN)
+      .send({ config: { dmPolicy: 'allowlist' } });
+    expect(res.status).toBe(200);
+    expect(manager.updateConfig).toHaveBeenCalledOnce();
   });
 });

@@ -5,6 +5,8 @@
  * routes (F4 part 2, DOR-2969), through real Better Auth, the real chain, the
  * real upgrade router and real sockets.
  */
+import { createStepUpRoutes } from '../../../../routes/step-up.js';
+import { confirmAuthFixture } from './confirm-write.js';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -85,6 +87,7 @@ function buildApp(): RequestListener {
     admission: new MainRequestAdmission(),
     beforeBodyParsing: (early) => mountBetterAuth(early, { auth: getAuth()!, maxAttempts: 1000 }),
   });
+  app.route('/api/step-up', createStepUpRoutes());
   app.get('/api/test/stream', (c) =>
     streamToNodeResponse(c, (res, { signal }) => {
       res.writeHead(200, { 'Content-Type': 'text/event-stream' });
@@ -370,7 +373,16 @@ describe('signing out ends what that sign-in had open', () => {
 
     // Another, from this computer: one audit row, naming a device sign-out.
     audited.length = 0;
-    expect((await devices('delete', `/sessions/${tabletId}`, 'direct', here)).status).toBe(204);
+    expect(
+      (
+        await confirmAuthFixture(
+          devices('delete', `/sessions/${tabletId}`, 'direct', here),
+          target.server,
+          { Host: LOCAL, Origin: ORIGIN, Cookie: here },
+          PASSWORD
+        )
+      ).status
+    ).toBe(204);
     // (The chain's own `http.delete` request row is every write's, not a sign-out's.)
     const signOutRows = audited.filter((row) => row.action.startsWith('auth.'));
     expect(signOutRows.map((row) => row.action)).toEqual(['auth.device_signed_out']);
@@ -384,7 +396,12 @@ describe('signing out ends what that sign-in had open', () => {
     const away = await signInVia('wifi');
     const hereStream = await openStream('direct', here);
     const awayStream = await openStream('wifi', away);
-    const res = await devices('post', '/sign-out-all', 'direct', here);
+    const res = await confirmAuthFixture(
+      devices('post', '/sign-out-all', 'direct', here),
+      target.server,
+      { Host: LOCAL, Origin: ORIGIN, Cookie: here },
+      PASSWORD
+    );
     expect(res.status).toBe(200);
     expect(res.body.signedOut).toBeGreaterThan(0);
     await settle();
@@ -398,7 +415,16 @@ describe('signing out ends what that sign-in had open', () => {
     const here = await signInVia('direct');
     const away = await signInVia('wifi');
     const awayStream = await openStream('wifi', away);
-    expect((await authCall('revoke-other-sessions', 'direct', here)).status).toBe(200);
+    expect(
+      (
+        await confirmAuthFixture(
+          authCall('revoke-other-sessions', 'direct', here),
+          target.server,
+          { Host: LOCAL, Origin: ORIGIN, Cookie: here },
+          PASSWORD
+        )
+      ).status
+    ).toBe(200);
     await settle();
     expect(awayStream.closed()).toBe(true);
   });

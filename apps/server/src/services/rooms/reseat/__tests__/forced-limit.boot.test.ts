@@ -8,15 +8,32 @@
  * @vitest-environment node
  */
 import { randomUUID } from 'node:crypto';
+import { loadCeilingMs, loadScaledMs } from '@dorkos/shared/test-budget';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   BOOT_HOOK_TIMEOUT_MS,
   bootComposedServer,
+  CLOSE_HOOK_TIMEOUT_MS,
   type ComposedServer,
 } from '../../../../http/__tests__/contract/harness.js';
 import { FORCED_LIMIT_PARTIAL_ANSWER } from '../forced-limit-turn.js';
 
 let server: ComposedServer | undefined;
+
+/**
+ * Each case's own timeout. A case is a few requests and then a wait on a real
+ * turn, which a loaded machine stretches well past vitest's 5-second default;
+ * sized from the worst load stretch of that wait (120 s today, equal to the
+ * cap, which only guards a future rise of `LOAD_SCALE_MAX`).
+ */
+const CASE_TIMEOUT_MS = Math.min(120_000, loadCeilingMs(30_000));
+
+/**
+ * The most {@link waitFor} ever waits: short of {@link CASE_TIMEOUT_MS}, so a
+ * turn that never lands fails with the room's entries rather than a bare
+ * timeout.
+ */
+const WAIT_CEILING_MS = CASE_TIMEOUT_MS - 15_000;
 
 async function api(method: string, url: string, body?: unknown): Promise<Record<string, unknown>> {
   const res = await fetch(new URL(url, server!.baseUrl), {
@@ -55,7 +72,8 @@ async function entries(roomId: string): Promise<Entry[]> {
 
 /** Wait until the room holds an entry that matches. */
 async function waitFor(roomId: string, match: (entry: Entry) => boolean): Promise<Entry[]> {
-  const deadline = Date.now() + 30_000;
+  // Taken when the wait starts, so it reads the load of the run that needs it.
+  const deadline = Date.now() + Math.min(WAIT_CEILING_MS, loadScaledMs(30_000));
   for (;;) {
     const all = await entries(roomId);
     if (all.some(match)) return all;
@@ -74,51 +92,65 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await server?.close();
-});
+}, CLOSE_HOOK_TIMEOUT_MS);
 
 describe('the forced-limit seam on a booted test server', () => {
-  it('moves the seat when the forced account runs out at turn start', async () => {
-    const roomId = await dmWithNewAgent();
-    await api('PUT', '/api/test/account-world', {
-      accounts: [
-        { id: 'claude4', label: 'Claude4' },
-        { id: 'claude3', label: 'Claude3' },
-      ],
-      startAccount: 'claude4',
-      force: { accountId: 'claude4', at: 'turn-start' },
-    });
+  it(
+    'moves the seat when the forced account runs out at turn start',
+    async () => {
+      const roomId = await dmWithNewAgent();
+      await api('PUT', '/api/test/account-world', {
+        accounts: [
+          { id: 'claude4', label: 'Claude4' },
+          { id: 'claude3', label: 'Claude3' },
+        ],
+        startAccount: 'claude4',
+        force: { accountId: 'claude4', at: 'turn-start' },
+      });
 
-    await api('POST', `/api/rooms/${roomId}/entries`, { text: 'What is next?' });
+      await api('POST', `/api/rooms/${roomId}/entries`, { text: 'What is next?' });
 
-    const all = await waitFor(roomId, reseated);
-    expect(all.filter(reseated).map((e) => e.body.text)).toEqual([
-      expect.stringMatching(/ ran out of usage on Claude4, so it's continuing on Claude3\.$/),
-    ]);
-  });
+      const all = await waitFor(roomId, reseated);
+      expect(all.filter(reseated).map((e) => e.body.text)).toEqual([
+        expect.stringMatching(/ ran out of usage on Claude4, so it's continuing on Claude3\.$/),
+      ]);
+    },
+    CASE_TIMEOUT_MS
+  );
 
-  it('moves the seat after a post and a tool call, without a second move', async () => {
-    const roomId = await dmWithNewAgent();
-    await api('PUT', '/api/test/account-world', {
-      accounts: [
-        { id: 'claude4', label: 'Claude4' },
-        { id: 'claude3', label: 'Claude3' },
-      ],
-      startAccount: 'claude4',
-      force: { accountId: 'claude4', at: 'after-post' },
-    });
+  it(
+    'moves the seat after a post and a tool call, without a second move',
+    async () => {
+      const roomId = await dmWithNewAgent();
+      await api('PUT', '/api/test/account-world', {
+        accounts: [
+          { id: 'claude4', label: 'Claude4' },
+          { id: 'claude3', label: 'Claude3' },
+        ],
+        startAccount: 'claude4',
+        force: { accountId: 'claude4', at: 'after-post' },
+      });
 
-    await api('POST', `/api/rooms/${roomId}/entries`, { text: 'Please check the deploy.' });
+      await api('POST', `/api/rooms/${roomId}/entries`, { text: 'Please check the deploy.' });
 
-    const all = await waitFor(roomId, reseated);
-    expect(all.some((e) => e.body.text === FORCED_LIMIT_PARTIAL_ANSWER)).toBe(true);
-    expect(all.filter(reseated)).toHaveLength(1);
-  });
+      const all = await waitFor(roomId, reseated);
+      expect(all.some((e) => e.body.text === FORCED_LIMIT_PARTIAL_ANSWER)).toBe(true);
+      expect(all.filter(reseated)).toHaveLength(1);
+    },
+    CASE_TIMEOUT_MS
+  );
 
-  it('clears the world on reset', async () => {
-    await api('POST', '/api/test/reset');
-    const roomId = await dmWithNewAgent();
-    await api('POST', `/api/rooms/${roomId}/entries`, { text: 'Hello?' });
-    await new Promise((resolve) => setTimeout(resolve, 2_000));
-    expect((await entries(roomId)).filter(reseated)).toEqual([]);
-  });
+  it(
+    'clears the world on reset',
+    async () => {
+      await api('POST', '/api/test/reset');
+      const roomId = await dmWithNewAgent();
+      await api('POST', `/api/rooms/${roomId}/entries`, { text: 'Hello?' });
+      // A window for a negative assertion: a move that never happens has no event
+      // to wait on. Widened by the load when it starts, so a late move is still seen.
+      await new Promise((resolve) => setTimeout(resolve, loadScaledMs(2_000)));
+      expect((await entries(roomId)).filter(reseated)).toEqual([]);
+    },
+    CASE_TIMEOUT_MS
+  );
 });

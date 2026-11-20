@@ -27,6 +27,7 @@ import { passedOnLevelOf } from '../../core/turn-power/turn-levels.js';
 import { MessageQueueStore, setMessageQueueStore } from '../message-queue-store.js';
 import { SESSIONS } from '../../../config/constants.js';
 import { disposeProjector, getOrCreateProjector } from '../session-state-projector.js';
+import { logger } from '../../../lib/logger.js';
 
 let session: string;
 let runtime: FakeAgentRuntime;
@@ -144,6 +145,46 @@ async function settle(): Promise<void> {
 }
 
 describe('a restart leaves another chat’s message queued for an idle chat', () => {
+  it('delivers an older peer message before the done chat’s own timer turn', async () => {
+    const { sent } = leftoverChatRow('the answer its next check needs');
+    const timer = () =>
+      dispatchMessage({
+        sessionId: session,
+        projector: getOrCreateProjector(session),
+        runtime,
+        clientId: 'own-timer',
+        content: 'check the work again',
+        turnStarter: 'agent',
+        whenBusy: 'refuse-foreign',
+      });
+
+    await timer();
+    await vi.waitFor(() => expect(chats.get(sent.id)?.status).toBe('delivered'));
+    expect(runtime.sendMessage.mock.calls[0]![1]).toBe('the answer its next check needs');
+    expect(queue.list(session)).toEqual([]);
+
+    await timer();
+    await vi.waitFor(() => expect(runtime.sendMessage).toHaveBeenCalledTimes(2));
+    expect(runtime.sendMessage.mock.calls[1]![1]).toBe('check the work again');
+  });
+
+  it('lets a person act immediately while an older peer message waits', async () => {
+    leftoverChatRow('peer message');
+    const result = await dispatchMessage({
+      sessionId: session,
+      projector: getOrCreateProjector(session),
+      runtime,
+      clientId: 'widget-action',
+      content: 'person action',
+      turnStarter: 'person',
+      whenBusy: 'refuse',
+    });
+    expect(result.accepted).toBe(true);
+    await vi.waitFor(() => expect(runtime.sendMessage).toHaveBeenCalled());
+    expect(runtime.sendMessage.mock.calls[0]![1]).toBe('person action');
+    await vi.waitFor(() => expect(queue.list(session)).toEqual([]));
+  });
+
   it('starts it from the queue sweep, without waiting for a newer message', async () => {
     // Sent from a turn a teammate's room message started: the one power a chat
     // message carries, which must survive the restart with it.
@@ -211,14 +252,24 @@ describe('a restart leaves another chat’s message queued for an idle chat', ()
       disposition: 'queue',
       context: null,
     });
-    await expect(
-      rearmChatQueues({
-        resume: (id) => {
-          if (id === broken) throw new Error('no runtime');
-          resume(id);
-        },
-      })
-    ).resolves.toBe(1);
+    const info = vi.spyOn(logger, 'info');
+    try {
+      await expect(
+        rearmChatQueues({
+          resume: (id) => {
+            if (id === broken) throw new Error('no runtime');
+            resume(id);
+          },
+        })
+      ).resolves.toBe(1);
+      // The log names only the chat that resumed (DOR-4329).
+      expect(info).toHaveBeenCalledWith(expect.stringContaining('resumed chats'), {
+        sessions: 1,
+        chats: [session.slice(0, 8)],
+      });
+    } finally {
+      info.mockRestore();
+    }
     await vi.waitFor(() => expect(listQueuedMessages(session)).toEqual([]), { timeout: 2000 });
   });
 });
@@ -273,5 +324,22 @@ describe('a send to a chat that only looks busy', () => {
       },
       { timeout: 2000 }
     );
+  });
+});
+
+describe('the line a sweep logs (DOR-4329)', () => {
+  it('names each chat it resumed, by short id', async () => {
+    leftoverChatRow('named in the log');
+    const info = vi.spyOn(logger, 'info');
+    try {
+      await rearmChatQueues({ resume });
+      expect(info).toHaveBeenCalledWith(
+        '[MessageDispatcher] resumed chats whose queued messages nothing was running',
+        { sessions: 1, chats: [session.slice(0, 8)] }
+      );
+    } finally {
+      info.mockRestore();
+    }
+    await vi.waitFor(() => expect(listQueuedMessages(session)).toEqual([]), { timeout: 2000 });
   });
 });

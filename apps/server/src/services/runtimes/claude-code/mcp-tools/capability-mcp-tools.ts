@@ -13,7 +13,6 @@
  */
 import { tool } from '@anthropic-ai/claude-agent-sdk';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
 import { searchHintFrom, toolExposure } from './tool-exposure.js';
 import type { ToolSurfaceEntry } from './tool-surface.js';
 import type { McpServerId } from '@dorkos/shared/capabilities';
@@ -24,7 +23,6 @@ import type {
 } from '../../../core/capabilities/index.js';
 import {
   capabilitiesForMcpServer,
-  approvalTokenArgument,
   capabilityMcpInputObject,
   deriveMcpAnnotations,
   invokeCapabilityAsMcpResult,
@@ -147,16 +145,6 @@ export function registerClaudeCapabilityTools(
   return registered;
 }
 
-function strictConnectorInputSchema(registry: CapabilityRegistry, capabilityId: string) {
-  const capability = registry.get(capabilityId);
-  if (!capability || !(capability.input instanceof z.ZodObject)) {
-    throw new Error(`Connector runtime capability '${capabilityId}' has no object input schema.`);
-  }
-  return capability.tier === 'destructive'
-    ? capability.input.extend(approvalTokenArgument())
-    : capability.input;
-}
-
 /**
  * Register the principal-bound connector tools on Claude's in-process MCP server.
  *
@@ -190,7 +178,7 @@ export function registerClaudeConnectorCapabilityTools(
       throw new Error(`Connector runtime capability '${capabilityId}' is not registered.`);
     }
     const searchHint = searchHintFrom(capability.title ?? capability.description);
-    const inputSchema = strictConnectorInputSchema(registry, capabilityId);
+    const inputSchema = capabilityMcpInputObject(capability);
     registered.push({ name: capability.id, description: capability.description, inputSchema });
     server.registerTool(
       capability.id,

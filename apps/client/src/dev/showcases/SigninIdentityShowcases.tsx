@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { Transport } from '@dorkos/shared/transport';
 import type { ClaudeSigninPolicyView } from '@dorkos/shared/runtime-connect';
-import { AccountSigninIdentity } from '@/layers/entities/runtime';
+import { AccountSigninIdentity, SigninFailure } from '@/layers/entities/runtime';
 import { SigninPolicySection } from '@/layers/features/settings';
 import { TransportProvider, useTransport } from '@/layers/shared/model';
 import { MockedQueryProvider } from './settings-showcase-helpers';
@@ -81,6 +81,28 @@ export function SigninIdentityShowcases() {
           </div>
         </FakeOwnerTransport>
       </MockedQueryProvider>
+      <div data-testid="signin-failure-shots" className="mt-5 space-y-3">
+        {FAILURE_REASONS.map((reason) => (
+          <div key={reason ?? 'none'} className="rounded-lg border p-4">
+            <SigninFailure name="Claude5" reason={reason} />
+          </div>
+        ))}
+      </div>
     </PlaygroundSection>
   );
 }
+
+/**
+ * What a failed sign-in can say under an account (DOR-4426). Copies of the
+ * server's lines in `services/runtimes/connect/login-failure.ts`, plus `null`
+ * for a request that never got an answer.
+ */
+const FAILURE_REASONS: (string | null)[] = [
+  'Sign-in timed out. Finish it in the browser within 3 minutes, then try again.',
+  'The sign-in couldn’t start. Reinstall DorkOS, then try again.',
+  'The sign-in service couldn’t be reached. Check your connection, then try again.',
+  'The sign-in couldn’t be saved on this computer. Try signing in from a terminal.',
+  'This account was refused. Sign in with a different account.',
+  'The sign-in stopped before it finished. Try again, or sign in from a terminal.',
+  null,
+];

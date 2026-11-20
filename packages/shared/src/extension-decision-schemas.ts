@@ -153,6 +153,10 @@ export type DecisionWatch = z.infer<typeof DecisionWatchSchema>;
 /** One open decision, as the inbox and the extension's own pages see it. */
 export const ExtensionDecisionDTOSchema = z
   .object({
+    /** Display-only code matching the confirmation sheet. */
+    requestCode: z.string().optional(),
+    /** Whether a yes from this browser opens the "Confirm it’s you" sheet; set by the server. */
+    answerNeedsStepUp: z.boolean().optional(),
     /** Core's id for the row. */
     id: z.string().min(1),
     /** The extension that raised it. */
@@ -204,8 +208,14 @@ export type ExtensionDecisionDTO = z.infer<typeof ExtensionDecisionDTOSchema>;
 /** A one-time follow-up offer still waiting for the person who answered. */
 export const PendingDecisionOfferSchema = z
   .object({
+    /** Display-only code matching the confirmation sheet. */
+    requestCode: z.string().optional(),
+    /** Whether a yes from this browser opens the "Confirm it’s you" sheet; set by the server. */
+    answerNeedsStepUp: z.boolean().optional(),
     /** The decision it follows (also the history row's subject id). */
     decisionId: z.string().min(1),
+    /** The decision's revision when the offer was listed; a confirmation binds to it. */
+    revision: z.number().int().min(0).optional(),
     /** "Shipped. Next time, ship on its own when the reviewer agent approves?" */
     text: z.string().min(1).max(DECISION_LIMITS.offerText),
     /** When it stops being answerable. */
@@ -270,7 +280,14 @@ export const DecisionActionResponseSchema = z
     /** An in-app path the client should open, already checked. */
     navigate: z.string().nullable(),
     /** The one-time "next time, on its own?" offer. Only ever for a person's answer in core's UI. */
-    offer: z.object({ text: z.string() }).nullable(),
+    offer: z
+      .object({
+        text: z.string(),
+        requestCode: z.string().optional(),
+        /** Whether a yes from this browser opens the "Confirm it’s you" sheet; set by the server. */
+        answerNeedsStepUp: z.boolean().optional(),
+      })
+      .nullable(),
     /** A chat the extension started about it. */
     watch: DecisionWatchSchema.nullable(),
   })

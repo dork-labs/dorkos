@@ -59,12 +59,16 @@ afterEach(() => {
   clearTestHomes();
 });
 
-function fakeTransport(requests: Array<Parameters<CodexTransport['runTurn']>[0]>): CodexTransport {
+/** What a fake transport sent: the request, and the prompt text it handed the thread. */
+type Sent = { request: Parameters<CodexTransport['runTurn']>[0]; text: string };
+
+function fakeTransport(requests: Sent[], notice?: string): CodexTransport {
   return {
     kind: 'app-server',
     capabilities: {},
     async *runTurn(request) {
-      requests.push(request);
+      // Sent the way the app-server transport sends it, with any load notice.
+      requests.push({ request, text: request.sendPrompt!(notice) });
       request.onThreadBound('thread-made-up', undefined);
       yield { type: 'text_delta', data: { text: 'ok' } };
       yield {
@@ -80,7 +84,7 @@ function fakeTransport(requests: Array<Parameters<CodexTransport['runTurn']>[0]>
 
 describe('Codex turn-context record', () => {
   it('records the exact prompt the transport received, and which turn carried the stable half', async () => {
-    const requests: Array<Parameters<CodexTransport['runTurn']>[0]> = [];
+    const requests: Sent[] = [];
     const runtime = new CodexRuntime({
       threadMap: new CodexThreadMap(createTestDb()),
       resolveBinary: async () => '/opt/codex',
@@ -110,7 +114,9 @@ describe('Codex turn-context record', () => {
       expect(record.parts[0]!.slot).toBe('prompt');
       expect(record.parts[0]!.redacted).toBe(false);
       // Byte-equal to what the transport was handed.
-      expect(record.parts[0]!.body).toBe(requests[i]!.prompt);
+      expect(record.parts[0]!.body).toBe(requests[i]!.text);
+      // No notice: what was sent is the prompt as built.
+      expect(requests[i]!.text).toBe(requests[i]!.request.prompt);
     }
     expect(records[0]).toMatchObject({
       runtime: 'codex',
@@ -132,5 +138,25 @@ describe('Codex turn-context record', () => {
       records[0]!.parts[0]!.body
     );
     expect(records[0]!.parts[0]!.body).not.toContain(again.memory);
+  });
+
+  it('records the load notice it was sent, as a block just ahead of the person’s words (DOR-4447)', async () => {
+    const requests: Sent[] = [];
+    const runtime = new CodexRuntime({
+      threadMap: new CodexThreadMap(createTestDb()),
+      resolveBinary: async () => '/opt/codex',
+      transport: fakeTransport(requests, 'Made-up notice.'),
+    });
+    runtime.ensureSession('s1', { permissionMode: 'acceptEdits', cwd: '/project' });
+    for await (const _ of runtime.sendMessage('s1', 'first', { cwd: '/project' })) {
+      // drain
+    }
+    const records = store.listTurnContextsForSession('s1');
+    expect(records).toHaveLength(1);
+    expect(records[0]!.parts[0]!.body).toBe(requests[0]!.text);
+    expect(
+      requests[0]!.text.endsWith('<dorkos_notice>\nMade-up notice.\n</dorkos_notice>\n\nfirst')
+    ).toBe(true);
+    expect(requests[0]!.request.prompt).not.toContain('Made-up notice.');
   });
 });

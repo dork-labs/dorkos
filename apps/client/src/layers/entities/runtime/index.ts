@@ -85,3 +85,4 @@ export { useSigninPolicy } from './model/use-signin-policy';
 export { OwnerSigninAction } from './ui/OwnerSigninAction';
 export { AccountSigninIdentity } from './ui/AccountSigninIdentity';
 export { AccountSignin } from './ui/AccountSignin';
+export { SigninFailure } from './ui/SigninFailure';

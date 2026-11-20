@@ -105,6 +105,14 @@ import { setOnAgentCreated } from '../../services/core/agent-created-hook.js';
 import { validateBoundary, validateBoundaryOrDorkHome, BoundaryError } from '../../lib/boundary.js';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { seedAgentFace } from '@dorkos/shared/agent-face';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  DeclaredReaders,
+  declaredReaders,
+  setDeclaredReaders,
+} from '../../services/core/turn-power/declared-readers.js';
 import {
   clearTestHomes,
   registerEveryFolderAsHome,
@@ -608,6 +616,52 @@ describe('Agents Routes', () => {
         expect(mockWriteManifest).not.toHaveBeenCalled();
       }
     );
+
+    // DOR-3969: anyone may say an agent reads outside text; only a person takes it back.
+    describe('reading outside text', () => {
+      let recordDir: string;
+      beforeEach(() => {
+        recordDir = mkdtempSync(join(tmpdir(), 'declared-'));
+        setDeclaredReaders(
+          new DeclaredReaders({ file: join(recordDir, 'record.json'), logger: { warn: vi.fn() } })
+        );
+        declaredReaders()!.declare('agent', mockManifest.id);
+        mockReadManifest.mockResolvedValue({ ...mockManifest, readsOutsideText: true });
+      });
+      afterEach(() => {
+        setDeclaredReaders(null);
+        rmSync(recordDir, { recursive: true, force: true });
+      });
+
+      it('refuses an agent turning it off, and writes nothing', async () => {
+        const res = await request(testServer)
+          .patch('/api/agents/current')
+          .query({ path: '/home/user/project' })
+          .set('x-dorkos-agent', 'agent-token-abc')
+          .send({ readsOutsideText: false });
+
+        expect(res.status).toBe(403);
+        expect(res.body.error).toBe(
+          'DorkOS changed nothing. Only a person can turn this off: readsOutsideText.'
+        );
+        expect(mockWriteManifest).not.toHaveBeenCalled();
+        expect(declaredReaders()!.has('agent', mockManifest.id)).toBe(true);
+      });
+
+      it('lets a person turn it off, in the file and the record', async () => {
+        const res = await request(testServer)
+          .patch('/api/agents/current')
+          .query({ path: '/home/user/project' })
+          .send({ readsOutsideText: false });
+
+        expect(res.status).toBe(200);
+        expect(mockWriteManifest).toHaveBeenCalledWith(
+          '/home/user/project',
+          expect.objectContaining({ readsOutsideText: false })
+        );
+        expect(declaredReaders()!.has('agent', mockManifest.id)).toBe(false);
+      });
+    });
 
     it('still lets an agent change fields that are not execution defaults', async () => {
       mockReadManifest.mockResolvedValue(mockManifest);

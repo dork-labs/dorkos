@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
 import { CREDITS_ACCOUNT_ID } from '@dorkos/shared/account-usage';
 import type { RankedAccount } from '../../core/usage/account-ranking.js';
-import { accountFull, pickQueueAccount } from '../work-queue-limits.js';
+import { accountFull, pickQueueAccount, queueAccountHold } from '../work-queue-limits.js';
 import { chatStateFromStatus, startResultFrom } from '../work-queue-wiring.js';
 
 vi.mock('../../../lib/logger.js', () => ({
@@ -62,6 +62,24 @@ describe('which account a queue picks', () => {
         'claude-code'
       )
     ).toBeNull();
+  });
+
+  // DOR-4439. Red when: the queue reads `eligible` alone, or says "near its limit" for a sign-in.
+  it('skips a signed-out account, and says the wait is a sign-in, not usage', () => {
+    const signedOut = row('out', { signedOut: true, usage: usage(5) });
+    expect(
+      pickQueueAccount([signedOut, row('next', { usage: usage(40) })], 'claude-code')?.id
+    ).toBe('next');
+    expect(pickQueueAccount([signedOut], 'claude-code')).toBeNull();
+    expect(queueAccountHold([signedOut], 'claude-code')).toBe('signed-out');
+    // Full, kept out, or barred: the wait is about usage, as before.
+    expect(queueAccountHold([row('full', { usage: usage(90) })], 'claude-code')).toBe('accounts');
+    expect(
+      queueAccountHold([row('kept', { signedOut: true, noAutoMove: true })], 'claude-code')
+    ).toBe('accounts');
+    expect(
+      queueAccountHold([row('out-full', { signedOut: true, usage: usage(85) })], 'claude-code')
+    ).toBe('accounts');
   });
 
   it('still tries an account nobody has measured', () => {

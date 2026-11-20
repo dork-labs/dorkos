@@ -20,11 +20,34 @@ import type { Context } from 'hono';
 import { STEP_UP_REQUIRED_CODE, type StepUpRequiredBody } from '@dorkos/shared/step-up';
 
 import type { ApiEnv } from '../http/api-chain.js';
-import { honoRequestFacts } from '../http/request-facts.js';
+import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
-import { holdStepUp, type StepUpActionInput } from '../services/core/auth/step-up/step-up-holds.js';
+import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
+import {
+  holdStepUp,
+  HeldStepUpCapacityError,
+  type StepUpActionInput,
+} from '../services/core/auth/step-up/step-up-holds.js';
+import { requestCodeForHash } from '../services/core/auth/step-up/request-code.js';
 import { ApprovalInputNotBindableError } from '../services/core/approvals/approval-input-hash.js';
 import { errorBody } from '../lib/route-utils.js';
+
+/**
+ * Whether the person at this computer goes on with no "Confirm it's you"
+ * sheet: only while no owner exists, so there is no password to ask for (the
+ * `runOrHold` rule in `routes/mcp-servers.ts`).
+ *
+ * A loaded mini app an agent can edit is NOT a reason to skip the sheet. Its
+ * code could script anything the page holds (the cookie, the person proof), so
+ * the hold stands and the sheet asks the person to fix those mini apps first.
+ *
+ * Never true away from this computer: there the hold stands.
+ *
+ * @param facts - The request's facts.
+ */
+export function deskGoesOnWithoutSheet(facts: RequestFacts): boolean {
+  return isAtThisComputer(facts) && readOwnerAccount() === null;
+}
 
 /**
  * Hold a route's action until the person confirms it's them, and answer with
@@ -45,6 +68,8 @@ export function holdForStepUp(c: Context<ApiEnv>, action: StepUpActionInput): Re
   try {
     statement = holdStepUp(action, sessionId);
   } catch (error) {
+    if (error instanceof HeldStepUpCapacityError)
+      return c.json(errorBody(error.message, 'too-many-actions'), 429);
     if (error instanceof ApprovalInputNotBindableError) {
       return c.json(errorBody('That can’t be confirmed as asked.', 'NOT_BINDABLE'), 400);
     }
@@ -56,6 +81,8 @@ export function holdForStepUp(c: Context<ApiEnv>, action: StepUpActionInput): Re
     heldActionId: statement.heldActionId,
     expiresAt: statement.expiresAt,
   };
+  // The same fingerprint the sheet shows (`routes/step-up.ts`), for a page outside the app.
+  body.requestCode = requestCodeForHash(statement.inputSha256);
   c.header('Cache-Control', 'no-store');
   return c.json(body, 428);
 }

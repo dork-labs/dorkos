@@ -1,3 +1,4 @@
+import { isolatedRequiredLaunchOwner } from './required-launch-fixture.js';
 /**
  * One id per conversation (DOR-2712).
  *
@@ -14,6 +15,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
 import type { AgentSession } from '../../agent-types.js';
 import { query, type Options, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+
+const requiredLaunches = isolatedRequiredLaunchOwner();
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
@@ -74,7 +77,7 @@ function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
 }
 
 function makeOpts(): MessageSenderOpts {
-  return { cwd: '/mock/project', onSdkSessionRebind: async () => {} };
+  return { cwd: '/mock/project', requiredLaunches, onSdkSessionRebind: async () => {} };
 }
 
 function resultMsg(): SDKMessage {

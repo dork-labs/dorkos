@@ -3,7 +3,7 @@
  *
  * @module server/routes/workspaces
  */
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { EnsureWorkspaceRequestSchema, derivePorts } from '@dorkos/shared/workspace';
 import {
@@ -25,6 +25,7 @@ import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readQuery } from '../http/request-query.js';
+import { runFrontDoorWrite } from './front-door-step-up.js';
 
 const router = new Hono<ApiEnv>();
 
@@ -131,7 +132,8 @@ router.post('/ports', async (c) => {
  * Provision-or-reuse a workspace. A new one is shown before anything runs
  * there (DOR-2335): a person sees what it brings (409 `workspace_needs_review`)
  * and sends back `approvedReviewHash`; an agent gets an approval card (202
- * `requires_confirmation`) and retries with `confirmationToken`.
+ * `requires_confirmation`) and retries with `confirmationToken`. The person's
+ * request with the hash waits for the owner's password (428, DOR-4355).
  */
 router.post('/', async (c) => {
   const parsed = EnsureWorkspaceRequestSchema.safeParse(readJsonBody(c));
@@ -142,51 +144,70 @@ router.post('/', async (c) => {
   if (!decision.success) {
     return c.json({ error: 'Validation failed', details: z.flattenError(decision.error) }, 400);
   }
-  try {
-    const identity = c.get('agentIdentity');
-    const gate = workspaceGateFor({
-      trusted: trustedCaller(readCallerAuthority(honoRequestFacts(c))) !== undefined,
-      name: `${parsed.data.projectKey}/${parsed.data.key}`,
-      carriesToken: true,
-      ...(identity && { requestedBy: identity.displayName || identity.agentPath }),
-      ...(decision.data.approvedReviewHash && {
-        approvedReviewHash: decision.data.approvedReviewHash,
-      }),
-      ...(decision.data.confirmationToken && {
-        confirmationToken: decision.data.confirmationToken,
-      }),
-    });
-    const workspace = await getWorkspaceManager().ensure(parsed.data, gate);
-    return c.json(workspace, 201);
-  } catch (err) {
-    if (err instanceof UnsafeWorkspaceSourceError) {
-      return c.json({ error: err.message, code: 'UNSAFE_WORKSPACE_SOURCE' }, 400);
+  const person = trustedCaller(readCallerAuthority(honoRequestFacts(c))) !== undefined;
+  const name = `${parsed.data.projectKey}/${parsed.data.key}`;
+  const ensure = async (): Promise<Response> => {
+    try {
+      const identity = c.get('agentIdentity');
+      const gate = workspaceGateFor({
+        trusted: person,
+        name,
+        carriesToken: true,
+        ...(identity && { requestedBy: identity.displayName || identity.agentPath }),
+        ...(decision.data.approvedReviewHash && {
+          approvedReviewHash: decision.data.approvedReviewHash,
+        }),
+        ...(decision.data.confirmationToken && {
+          confirmationToken: decision.data.confirmationToken,
+        }),
+      });
+      const workspace = await getWorkspaceManager().ensure(parsed.data, gate);
+      return c.json(workspace, 201);
+    } catch (err) {
+      return ensureFailed(c, err);
     }
-    if (err instanceof WorkspaceNeedsReviewError) {
-      return c.json(
-        { error: err.message, code: err.code, workspace: shownOf(err.inspection) },
-        409
-      );
-    }
-    if (err instanceof WorkspaceApprovalPendingError) {
-      return c.json(
-        {
-          status: err.status,
-          confirmationToken: err.token,
-          message: err.message,
-          workspace: shownOf(err.inspection),
-          ...(err.reason ? { reason: err.reason } : {}),
-        },
-        202
-      );
-    }
-    if (err instanceof WorkspaceDeclinedError) {
-      return c.json({ status: 'declined', error: err.message }, 403);
-    }
-    logger.error('[workspaces] POST / failed', { err });
-    return c.json({ error: 'Internal server error' }, 500);
-  }
+  };
+  // Without a review hash a person is shown what it brings first, and an agent
+  // waits on its card: nothing runs there yet.
+  if (!person || !decision.data.approvedReviewHash) return ensure();
+  // The person's yes to the review runs the workspace's setup commands, so the
+  // owner confirms it's them first (DOR-4355).
+  return runFrontDoorWrite(c, {
+    kind: 'workspace.setup',
+    target: name,
+    input: { ...parsed.data, approvedReviewHash: decision.data.approvedReviewHash },
+    reason: `Set up the workspace ${name} and run its setup commands.`,
+    subject: 'which setup commands run here',
+    run: ensure,
+  });
 });
+
+/** Answer a provision that did not make a workspace, with what the caller needs to go on. */
+function ensureFailed(c: Context<ApiEnv>, err: unknown): Response {
+  if (err instanceof UnsafeWorkspaceSourceError) {
+    return c.json({ error: err.message, code: 'UNSAFE_WORKSPACE_SOURCE' }, 400);
+  }
+  if (err instanceof WorkspaceNeedsReviewError) {
+    return c.json({ error: err.message, code: err.code, workspace: shownOf(err.inspection) }, 409);
+  }
+  if (err instanceof WorkspaceApprovalPendingError) {
+    return c.json(
+      {
+        status: err.status,
+        confirmationToken: err.token,
+        message: err.message,
+        workspace: shownOf(err.inspection),
+        ...(err.reason ? { reason: err.reason } : {}),
+      },
+      202
+    );
+  }
+  if (err instanceof WorkspaceDeclinedError) {
+    return c.json({ status: 'declined', error: err.message }, 403);
+  }
+  logger.error('[workspaces] POST / failed', { err });
+  return c.json({ error: 'Internal server error' }, 500);
+}
 
 /** Get one workspace by id. */
 router.get('/:id', async (c) => {
@@ -223,49 +244,72 @@ router.post('/:id/pin', async (c) => {
  * commands (409 `remove_hooks_need_review`) and allows exactly those with
  * `?approvedRemoveHooks=<reviewHash>`, or removes it without them with
  * `?skipRemoveHooks=true`. Any other caller removes it without running them.
- * Whenever they are left out, the response lists them in `skippedHooks`.
+ * Whenever they are left out, the response lists them in `skippedHooks`. Only
+ * the request that allows them waits for the owner's password (428, DOR-4355).
  */
 router.delete('/:id', async (c) => {
   const parsed = RemoveQuerySchema.safeParse(readQuery(c));
   if (!parsed.success) {
     return c.json({ error: 'Invalid query', details: z.flattenError(parsed.error) }, 400);
   }
+  const id = c.req.param('id');
+  const person = trustedCaller(readCallerAuthority(honoRequestFacts(c))) !== undefined;
+  const approvedRemoveHooks = person ? parsed.data.approvedRemoveHooks : undefined;
+  const remove = async (): Promise<Response> => {
+    try {
+      const result = await getWorkspaceManager().remove(id, {
+        force: parsed.data.force ?? false,
+        unreviewedHooks: person && !parsed.data.skipRemoveHooks ? 'ask' : 'skip',
+        ...(approvedRemoveHooks && { approvedRemoveHooks }),
+      });
+      if (result.blocked === 'hooks') {
+        return c.json(
+          {
+            code: 'remove_hooks_need_review',
+            error:
+              'This workspace was made before DorkOS recorded its removal commands, and its source ' +
+              'now declares some. Look at them, then remove it again with approvedRemoveHooks set to ' +
+              'the review hash to run exactly these, or with skipRemoveHooks=true to remove it without ' +
+              'running them.',
+            ...result.hooks,
+          },
+          409
+        );
+      }
+      // 404 only when the workspace genuinely doesn't exist. A dirty refusal is a
+      // valid outcome carried in the RemoveResult body (`removed:false, blocked:'dirty'`),
+      // so the client can escalate to a force-confirm rather than seeing a generic error.
+      if (!result.removed && !result.blocked) return c.json({ error: 'Not found' }, 404);
+      return c.json(result);
+    } catch (err) {
+      if (err instanceof BoundaryError) {
+        return c.json({ error: err.message, code: err.code }, 403);
+      }
+      logger.error('[workspaces] DELETE /:id failed', { err });
+      return c.json({ error: 'Internal server error' }, 500);
+    }
+  };
+  // Removing without the commands it was not made with stays immediate.
+  if (!approvedRemoveHooks) return remove();
+  let workspace: { projectKey: string; key: string } | null;
   try {
-    const person = trustedCaller(readCallerAuthority(honoRequestFacts(c))) !== undefined;
-    const result = await getWorkspaceManager().remove(c.req.param('id'), {
-      force: parsed.data.force ?? false,
-      unreviewedHooks: person && !parsed.data.skipRemoveHooks ? 'ask' : 'skip',
-      ...(person &&
-        parsed.data.approvedRemoveHooks && {
-          approvedRemoveHooks: parsed.data.approvedRemoveHooks,
-        }),
-    });
-    if (result.blocked === 'hooks') {
-      return c.json(
-        {
-          code: 'remove_hooks_need_review',
-          error:
-            'This workspace was made before DorkOS recorded its removal commands, and its source ' +
-            'now declares some. Look at them, then remove it again with approvedRemoveHooks set to ' +
-            'the review hash to run exactly these, or with skipRemoveHooks=true to remove it without ' +
-            'running them.',
-          ...result.hooks,
-        },
-        409
-      );
-    }
-    // 404 only when the workspace genuinely doesn't exist. A dirty refusal is a
-    // valid outcome carried in the RemoveResult body (`removed:false, blocked:'dirty'`),
-    // so the client can escalate to a force-confirm rather than seeing a generic error.
-    if (!result.removed && !result.blocked) return c.json({ error: 'Not found' }, 404);
-    return c.json(result);
+    workspace = await getWorkspaceManager().get(id);
   } catch (err) {
-    if (err instanceof BoundaryError) {
-      return c.json({ error: err.message, code: err.code }, 403);
-    }
     logger.error('[workspaces] DELETE /:id failed', { err });
     return c.json({ error: 'Internal server error' }, 500);
   }
+  if (!workspace) return c.json({ error: 'Not found' }, 404);
+  const name = `${workspace.projectKey}/${workspace.key}`;
+  // A person's yes to the removal commands runs them, so the owner confirms
+  // it's them first (DOR-4355).
+  return runFrontDoorWrite(c, {
+    kind: 'workspace.setup',
+    target: name,
+    input: { id, force: parsed.data.force ?? false, approvedRemoveHooks },
+    reason: `Remove the workspace ${name} and run its removal commands.`,
+    subject: 'which setup commands run here',
+    run: remove,
+  });
 });
 
 export default router;

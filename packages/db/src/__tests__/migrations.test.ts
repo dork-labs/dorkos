@@ -242,6 +242,7 @@ describe('Database Migrations', () => {
       // Decisions an extension raised in the inbox (spec flow-multiproject
       // §7.2, migration 0131).
       'extension_decisions',
+      'extension_person_records',
       'handle_tombstones',
       // Heartbeats: each agent's beat facts, one row per beat, and what beats
       // raised until it reaches its reader (spec heartbeats §11), and what
@@ -321,6 +322,7 @@ describe('Database Migrations', () => {
       // rebuildable from it (migration 0081, DOR-1591).
       'room_repos',
       // The seat a session held before the seat moved, so a report can follow it (DOR-3720).
+      'room_seat_launch_requirements',
       'room_seat_moves',
       // The two coordination counters a restart used to erase: which session ids
       // a runtime has renamed away from, and the hour of automatic turns already

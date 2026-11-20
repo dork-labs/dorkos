@@ -263,9 +263,11 @@ export const ApprovalServiceActionSchema = z
      * Why this asks when it would otherwise have waited out the 60-second
      * cancel window, so the extra card does not read as a bug. `wifi-open`:
      * Wi-Fi access is on over plain `http`, where a copied sign-in could be
-     * anyone (DOR-3242). Absent when the card is the ordinary one.
+     * anyone (DOR-3242). `outside-words`: this turn read words from outside the team (a connected
+     * app's mail, a web page), so it asks before acting where it would otherwise have run
+     * (DOR-3969). Absent when the card is the ordinary one.
      */
-    keptCardBecause: z.enum(['wifi-open', 'spend']).optional(),
+    keptCardBecause: z.enum(['wifi-open', 'spend', 'outside-words']).optional(),
     /**
      * Set when the action spends money and this card is the person's yes to
      * one paid run (DOR-4204 PR 2, `spend`): its price and what is left this
@@ -438,6 +440,15 @@ export type ApprovalFullDetailResponse = z.infer<typeof ApprovalFullDetailRespon
  */
 export const PendingApprovalSchema = z
   .object({
+    /** Server-derived display code; absent only on older servers. Never accepted as proof. */
+    requestCode: z
+      .string()
+      .regex(/^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$/)
+      .optional(),
+    /** Per response: false only for the desk. Absent on session-neutral events. */
+    answerNeedsStepUp: z.boolean().optional(),
+    /** The server's label for the answering browser's stored device and route. */
+    answeringFrom: z.string().optional(),
     /** ULID identifying the approval. Carries no secret. */
     approvalId: z.string(),
     /** Capability the request would invoke, e.g. `marketplace.uninstall`. */
@@ -545,6 +556,12 @@ export const PendingApprovalSchema = z
      * never at render time.
      */
     detail: z.string().max(APPROVAL_DETAIL_STORED_MAX_LENGTH).optional(),
+    /**
+     * One plain line under {@link detail}, outside its box: on an agent's raise
+     * card (DOR-4355 M4), the connection's name, which an agent can set, quoted
+     * and cut short. The box holds only what changes.
+     */
+    detailNote: z.string().max(200).optional(),
     /**
      * A Marketplace install or update whose full list is too long for
      * {@link detail} (DOR-3070): the card renders this instead of the detail,
@@ -719,3 +736,8 @@ export const DeclinedHookApprovalsResponseSchema = z.object({
   approvals: z.array(DeclinedHookApprovalSchema),
 });
 export type DeclinedHookApprovalsResponse = z.infer<typeof DeclinedHookApprovalsResponseSchema>;
+
+/** The same requester label on cards, chats and confirmation sheets. */
+export function approvalRequesterLabel(requestedBy: string): string {
+  return requestedBy.split('/').filter(Boolean).pop() ?? requestedBy;
+}

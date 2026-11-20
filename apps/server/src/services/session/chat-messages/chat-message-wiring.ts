@@ -52,7 +52,11 @@ import { logError, logger } from '../../../lib/logger.js';
 import type { ChatCaller } from './chat-message-service.js';
 import { ChatMessageService } from './chat-message-service.js';
 import { rowsCarryHold, rowsCarryWords } from './chat-message-ceiling.js';
-import { getRoomSeatReports, setChatMessageService } from './chat-message-current.js';
+import {
+  wireRoomSeatMessageLifetime,
+  getRoomSeatReports,
+  setChatMessageService,
+} from './chat-message-current.js';
 import { setChatMessageStore, type ChatMessageStore } from './chat-message-store.js';
 import { stampHistory } from './chat-message-stamps.js';
 import { ChatReportBack, type RoomSeatReport } from './chat-report-back.js';
@@ -64,6 +68,7 @@ import { getSpinOffStartup } from './startup/spin-off-startup.js';
 import { wireSpinOffStartup } from './startup/wire-spin-off-startup.js';
 import { readOperatorDisplayName } from '../../core/config/operator-display-name.js';
 import { setQueuedChatActionsDeps } from './queued/queued-chat-actions.js';
+import { chatUsagePauseOf } from './sending/chat-usage-pause.js';
 
 /** How far down a chat's chain of spin-offs a reader may follow. */
 const DESCENDANT_DEPTH = 8;
@@ -264,14 +269,18 @@ export function wireChatMessaging(deps: WireChatMessagingDeps): {
   read: ChatReadDeps;
 } {
   setChatMessageStore(deps.store);
+  const seatMessages = wireRoomSeatMessageLifetime(deps.store, emitChatActivity);
   const service = new ChatMessageService({
     store: deps.store,
+    seatMessages: seatMessages.get,
+    stopSeatMessages: seatMessages.stop,
     meshCore: deps.meshCore,
     roomSessionPlace: deps.roomSessionPlace,
     describeSession: describeSessionFor(deps.roomSessionPlace),
     chatTitle: chatTitleOf,
     sessionCwd: liveSessionCwd,
     isBusy: isSessionBusy,
+    usagePauseOf: chatUsagePauseOf,
     interruptTurn: interruptChatTurn,
     // A steer that lands carries its sender into the running turn (DOR-3703, M7).
     steerInto: async (sessionId, content, messageId) => {

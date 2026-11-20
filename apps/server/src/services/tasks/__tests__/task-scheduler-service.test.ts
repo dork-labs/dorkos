@@ -1,4 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from 'vitest';
+import { RequiredSessionIdentityError } from '../../../lib/replay/required-session-identity-error.js';
+import { onRequiredSessionRekey } from '../../session/turn-identity/durable-rekey.js';
+import {
+  getOrCreateProjector,
+  peekProjector,
+  disposeProjector,
+} from '../../session/session-state-projector.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
 import {
@@ -16,6 +23,7 @@ import {
   type SchedulerRuntimes,
   type RelayRuntimePredicate,
 } from '../task-scheduler-service.js';
+import { RUN_START_WAIT_MS } from '../timing/wake-settle.js';
 import { assessTaskDispatch, RELAY_DISPATCH_OK } from '../../relay/task-dispatch/readiness.js';
 import { AdapterRegistry } from '@dorkos/relay';
 import type { AdapterStatus, RelayAdapter, RelayPublisher } from '@dorkos/relay';
@@ -294,6 +302,88 @@ describe('TaskSchedulerService', () => {
     // absolute stand-ins. A boundary of `/` states what these tests assume:
     // every path here is in bounds, so a case fails for its own reason.
     await initBoundary('/');
+  });
+
+  describe('required identity refusal during finalization (DOR-4328)', () => {
+    it.each(['final-only', 'body-and-final'] as const)(
+      'releases original resources and writes one truthful terminal for %s refusal',
+      async (variant) => {
+        const refusal = new RequiredSessionIdentityError(
+          new Error('required launch alias refused')
+        );
+        const bodyError = new Error('primary task body failed');
+        const target = `4328-independent-${variant}`;
+        const targetProjector = getOrCreateProjector(target, '/independent');
+        const targetGeneration = targetProjector.streamGeneration;
+        let renamed = false;
+        let original: string | undefined;
+        vi.mocked(mockAgent.getInternalSessionId).mockImplementation((id) =>
+          renamed && id === original ? target : undefined
+        );
+        vi.mocked(mockAgent.sendMessage).mockImplementation(async function* (id) {
+          original = id;
+          // No yielded event: canonical identity is first observed by finish().
+          renamed = true;
+          if (variant === 'body-and-final') throw bodyError;
+        });
+        const unregister = onRequiredSessionRekey((from, to) => {
+          if (from === original && to === target) throw refusal;
+        });
+        const writes = vi.spyOn(store, 'updateRun');
+        const task = store.createTask(taskInput({ name: `Required ${variant}`, maxRuntime: null }));
+        const service = new TaskSchedulerService(store, mockAgent, DEFAULT_CONFIG);
+        onTestFinished(async () => {
+          unregister();
+          renamed = false;
+          // A red regression may expose the exact non-expiring accounting leak.
+          // Do not spend the scheduler's 30-second shutdown grace hiding it.
+          if (service.getActiveRunCount() === 0) await service.stop();
+          else store.close();
+          disposeProjector(target);
+          if (original) disposeProjector(original);
+        });
+        const run = await service.triggerManualRun(task.id);
+        expect(run).not.toBeNull();
+        await vi.waitFor(() => {
+          expect(store.getRun(run!.id)!.finishedAt).not.toBeNull();
+          expect(service.getActiveRunCount()).toBe(0);
+        });
+        const row = store.getRun(run!.id)!;
+        expect(row).toMatchObject({
+          status: 'failed',
+          sessionId: original,
+          error: variant === 'body-and-final' ? bodyError.message : refusal.message,
+        });
+        const terminals = writes.mock.calls.filter(
+          ([id, fields]) => id === run!.id && fields.status && isTerminalRunStatus(fields.status)
+        );
+        expect(terminals).toHaveLength(1);
+        expect(terminals[0][1].status).toBe('failed');
+        expect(mockAgent.releaseLock).toHaveBeenCalledWith(
+          original,
+          expect.any(String),
+          expect.any(Symbol)
+        );
+        expect(mockAgent.releaseLock).not.toHaveBeenCalledWith(
+          target,
+          expect.anything(),
+          expect.anything()
+        );
+        expect(peekProjector(target)).toBe(targetProjector);
+        expect(targetProjector.streamGeneration).toBe(targetGeneration);
+        // Releasing only accounting is insufficient: original claim cleanup must
+        // also finish, and a cap-one scheduler must admit subsequent work.
+        renamed = false;
+        vi.mocked(mockAgent.sendMessage).mockImplementation(async function* () {});
+        const next = await service.triggerManualRun(task.id);
+        expect(next).not.toBeNull();
+        await vi.waitFor(() => {
+          expect(store.getRun(next!.id)!.finishedAt).not.toBeNull();
+          expect(service.getActiveRunCount()).toBe(0);
+        });
+        expect(store.getRun(next!.id)!.status).toBe('completed');
+      }
+    );
   });
 
   describe('start()', () => {
@@ -2867,10 +2957,12 @@ describe('TaskSchedulerService', () => {
       await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
       await waitFor(() => expect(mockRelay.publish).toHaveBeenCalledOnce());
 
-      const [, , options] = mockRelay.publish.mock.calls[0];
-      // TTL should be roughly now + 600_000 (10 minutes)
-      expect(options.budget.ttl).toBeGreaterThanOrEqual(now + 600_000 - 1000);
-      expect(options.budget.ttl).toBeLessThanOrEqual(now + 600_000 + 5000);
+      const [, payload, options] = mockRelay.publish.mock.calls[0];
+      // TTL: the 10-minute limit plus the longest wait to start (DOR-4576). The
+      // limit itself travels on the payload, counted from when the turn starts.
+      expect(options.budget.ttl).toBeGreaterThanOrEqual(now + 600_000 + RUN_START_WAIT_MS - 1000);
+      expect(options.budget.ttl).toBeLessThanOrEqual(now + 600_000 + RUN_START_WAIT_MS + 5000);
+      expect(payload).toMatchObject({ timeLimitMs: 600_000 });
 
       await service.stop();
     });
@@ -2895,10 +2987,11 @@ describe('TaskSchedulerService', () => {
       await (service as unknown as Dispatchable).dispatch(task, new Date(1_700_000_000_000));
       await waitFor(() => expect(mockRelay.publish).toHaveBeenCalledOnce());
 
-      const [, , options] = mockRelay.publish.mock.calls[0];
-      // Default TTL: 3_600_000 (1 hour)
-      expect(options.budget.ttl).toBeGreaterThanOrEqual(now + 3_600_000 - 1000);
-      expect(options.budget.ttl).toBeLessThanOrEqual(now + 3_600_000 + 5000);
+      const [, payload, options] = mockRelay.publish.mock.calls[0];
+      // Default TTL: 3_600_000 (1 hour), plus the longest wait to start (DOR-4576).
+      expect(options.budget.ttl).toBeGreaterThanOrEqual(now + 3_600_000 + RUN_START_WAIT_MS - 1000);
+      expect(options.budget.ttl).toBeLessThanOrEqual(now + 3_600_000 + RUN_START_WAIT_MS + 5000);
+      expect(payload).toMatchObject({ timeLimitMs: 3_600_000 });
 
       await service.stop();
     });

@@ -53,6 +53,8 @@ vi.mock('../../services/projects/project-registry.js', () => {
   };
 });
 
+import { extensionDecisions } from '@dorkos/db';
+import { eq } from 'drizzle-orm';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -61,6 +63,10 @@ import request from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { Hono, type MiddlewareHandler } from 'hono';
 import { getRequestListener } from '@hono/node-server';
+import { markIngress } from '../../services/core/remote/ingress-mark.js';
+import { resetHeldStepUpsForTests } from '../../services/core/auth/step-up/step-up-holds.js';
+import { createStepUpRoutes } from '../step-up.js';
+import { setTestOwner } from './test-owner.js';
 import { createExtensionDecisionsRoutes } from '../extension-decisions.js';
 import type { ApiEnv } from '../../http/api-chain.js';
 import { parseRequestBody } from '../../http/request-body.js';
@@ -93,12 +99,17 @@ afterAll(() => vi.unstubAllEnvs());
 let fx: InboxFixture;
 let dorkHome: string;
 let emitted: Array<{ summary: string }>;
-let signedInUser: { userId: string; credential: 'cookie' } | undefined;
+let signedInUser:
+  | { userId: string; credential: 'cookie'; sessionId?: string; route?: 'tunnel' | 'wifi' }
+  | undefined;
+let remoteIngress: false | 'own-tunnel' | 'wifi' = false;
 let extRouter: Router;
 
 beforeEach(() => {
   state.authEnabled = false;
   signedInUser = undefined;
+  remoteIngress = false;
+  resetHeldStepUpsForTests();
   emitted = [];
   dorkHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ext-decisions-routes-'));
   fx = createInboxFixture({ dorkHome });
@@ -121,6 +132,7 @@ beforeEach(() => {
   };
   // What the session gate would put on `c.var` for a signed-in person.
   const signedIn: MiddlewareHandler<ApiEnv> = async (c, next) => {
+    if (remoteIngress) markIngress(c.env.incoming, remoteIngress);
     if (signedInUser) c.set('user', signedInUser);
     await next();
   };
@@ -130,6 +142,16 @@ beforeEach(() => {
     honoGroupListener(
       [
         { path: '/api/extension-decisions', routes: decisions },
+        {
+          path: '/api/step-up',
+          routes: createStepUpRoutes({
+            ownerId: () => 'u1',
+            checkPassword: async (value) => (value === 'made-up password' ? 'ok' : 'wrong'),
+            minPasswordLength: async () => 8,
+            setOwnerPassword: async () => undefined,
+            trustedOrigins: () => [TRUSTED_ORIGIN],
+          }),
+        },
         {
           path: '/api/extensions',
           routes: createExtensionsRoutes({
@@ -270,7 +292,7 @@ describe('POST /api/extension-decisions/:id/action', () => {
 });
 
 describe('POST /api/extension-decisions/:id/offer', () => {
-  it('applies the offer once, records it in Activity, then answers offer_gone', async () => {
+  it('applies the offer at once at this computer while nobody has registered, then answers offer_gone', async () => {
     fx.inbox.setHandler('flow', (event) =>
       event.action === 'offer'
         ? { resolve: 'approved', message: 'Done.' }
@@ -456,5 +478,254 @@ describe('ctx.requirePerson through /api/ext/:id/*', () => {
   it('leaves a route without it open (the seam is opt-in)', async () => {
     const res = await request(server).get('/api/ext/flow/open').set('x-dorkos-agent', 'a');
     expect(res.status).toBe(200);
+  });
+});
+
+describe('remote extension confirmation', () => {
+  function remote() {
+    remoteIngress = 'own-tunnel';
+    signedInUser = { userId: 'u1', credential: 'cookie', sessionId: 'phone', route: 'tunnel' };
+  }
+  const yes = (id: string) =>
+    request(server)
+      .post(`/api/extension-decisions/${id}/action`)
+      .set('Origin', TRUSTED_ORIGIN)
+      .send({ action: 'approve' });
+  const confirm = (id: string) =>
+    request(server)
+      .post(`/api/step-up/${id}/password`)
+      .set('Origin', TRUSTED_ORIGIN)
+      .send({ password: 'made-up password' });
+
+  it('holds a remote yes before the extension handler hears it', async () => {
+    const handler = vi.fn(() => ({ resolve: 'approved' as const }));
+    fx.inbox.setHandler('flow', handler);
+    const id = await raised();
+    remote();
+    const held = await yes(id);
+    expect(held.status).toBe(428);
+    expect(handler).not.toHaveBeenCalled();
+    const code = fx.inbox.listOpen()[0].requestCode;
+    const sheet = await request(server).get(`/api/step-up/${held.body.heldActionId}`);
+    expect(sheet.body.requestCode).toBe(code);
+    expect((await confirm(held.body.heldActionId)).body).toMatchObject({ ok: true, status: 200 });
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('holds the extension-page alias too, preserving its scope', async () => {
+    const handler = vi.fn(() => ({ resolve: 'approved' as const }));
+    fx.inbox.setHandler('flow', handler);
+    const id = await raised();
+    remote();
+    const wrong = await request(server)
+      .post(`/api/extensions/other/decisions/${id}/action`)
+      .set('Origin', TRUSTED_ORIGIN)
+      .send({ action: 'approve' });
+    expect(wrong.status).toBe(404);
+    const held = await request(server)
+      .post(`/api/extensions/flow/decisions/${id}/action`)
+      .set('Origin', TRUSTED_ORIGIN)
+      .send({ action: 'approve' });
+    expect(held.status).toBe(428);
+    expect(handler).not.toHaveBeenCalled();
+    expect((await confirm(held.body.heldActionId)).body).toMatchObject({ ok: true, status: 200 });
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    {
+      actions: {
+        kind: 'word',
+        label: 'Choose access',
+        input: { placeholder: 'Access', maxLength: 100 },
+      },
+      answer: { action: 'word', text: 'Always allow' },
+    },
+    {
+      actions: {
+        kind: 'choice',
+        choices: [
+          { id: 'always', label: 'Always allow' },
+          { id: 'deny', label: 'Deny' },
+        ],
+      },
+      answer: { action: 'choice', choiceId: 'always' },
+    },
+    {
+      actions: {
+        kind: 'choice',
+        choices: [
+          { id: 'a', label: 'A' },
+          { id: 'b', label: 'B' },
+        ],
+        allowReply: true,
+      },
+      answer: { action: 'choice', text: 'Give lasting access' },
+    },
+  ])(
+    'holds an opaque extension answer before its handler: $answer',
+    async ({ actions, answer }) => {
+      const handler = vi.fn(() => ({ resolve: 'approved' as const }));
+      fx.inbox.setHandler('flow', handler);
+      const id = await raised('flow', { actions });
+      remote();
+      const held = await request(server)
+        .post(`/api/extension-decisions/${id}/action`)
+        .set('Origin', TRUSTED_ORIGIN)
+        .send(answer);
+      expect(held.status).toBe(428);
+      expect(handler).not.toHaveBeenCalled();
+      expect((await confirm(held.body.heldActionId)).body).toMatchObject({ ok: true, status: 200 });
+      expect(handler).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it('refuses Wi-Fi yes with guidance and no held action, but accepts no', async () => {
+    const handler = vi.fn(() => ({ resolve: 'rejected' as const }));
+    fx.inbox.setHandler('flow', handler);
+    const id = await raised();
+    remoteIngress = 'wifi';
+    signedInUser = { userId: 'u1', credential: 'cookie', sessionId: 'phone', route: 'wifi' };
+    const refused = await yes(id);
+    expect(refused.status).toBe(403);
+    expect(refused.body).toMatchObject({
+      code: 'NOT_FROM_WIFI',
+      error: 'Answer at your computer or over Remote Access.',
+    });
+    expect(refused.body.heldActionId).toBeUndefined();
+    expect(handler).not.toHaveBeenCalled();
+    expect(
+      (
+        await request(server)
+          .post(`/api/extension-decisions/${id}/action`)
+          .set('Origin', TRUSTED_ORIGIN)
+          .send({ action: 'reject' })
+      ).status
+    ).toBe(200);
+  });
+
+  it('holds remote project settings writes before saving anything', async () => {
+    remote();
+    const held = await request(server)
+      .put('/api/extensions/flow/project-settings')
+      .set('Origin', TRUSTED_ORIGIN)
+      .send({ project: '/repos/dorkos', value: { autonomy: 'always' } });
+    expect(held.status).toBe(428);
+    const before = await request(server).get(
+      '/api/extensions/flow/project-settings?project=/repos/dorkos'
+    );
+    expect(before.body.value).toBeNull();
+    expect((await confirm(held.body.heldActionId)).body).toMatchObject({ ok: true, status: 204 });
+    const after = await request(server).get(
+      '/api/extensions/flow/project-settings?project=/repos/dorkos'
+    );
+    expect(after.body.value).toEqual({ autonomy: 'always' });
+  });
+
+  it('uses the same settings code at PUT and offer, while binding the full offer identity', async () => {
+    const value = { autonomy: 'always' };
+    const handler = vi.fn(() => ({
+      resolve: 'approved' as const,
+      offer: {
+        text: 'Next time, on its own?',
+        offerId: 'next',
+        settingsPatch: { project: '/repos/dorkos', patch: value },
+      },
+    }));
+    fx.inbox.setHandler('flow', handler);
+    const id = await raised();
+    const answered = await yes(id);
+    remote();
+    const offered = await request(server)
+      .post(`/api/extension-decisions/${id}/offer`)
+      .set('Origin', TRUSTED_ORIGIN)
+      .send({ accept: true });
+    const put = await request(server)
+      .put('/api/extensions/flow/project-settings')
+      .set('Origin', TRUSTED_ORIGIN)
+      .send({ project: '/repos/dorkos', value });
+    const offerView = await request(server).get(`/api/step-up/${offered.body.heldActionId}`);
+    const putView = await request(server).get(`/api/step-up/${put.body.heldActionId}`);
+    expect(offered.status).toBe(428);
+    expect(put.status).toBe(428);
+    expect(offerView.body.requestCode).toBe(answered.body.offer.requestCode);
+    expect(putView.body.requestCode).toBe(offerView.body.requestCode);
+    // The same settings patch cannot authorize a different offer revision.
+    fx.db
+      .update(extensionDecisions)
+      .set({ revision: 99 })
+      .where(eq(extensionDecisions.id, id))
+      .run();
+    expect((await confirm(offered.body.heldActionId)).body.code).toBe('different-request');
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses a confirmation after the full decision text changes', async () => {
+    const handler = vi.fn(() => ({ resolve: 'approved' as const }));
+    fx.inbox.setHandler('flow', handler);
+    const id = await raised();
+    remote();
+    const held = await yes(id);
+    expect(held.status).toBe(428);
+    await raised('flow', { why: 'Different work will happen.' });
+    expect((await confirm(held.body.heldActionId)).body.code).toBe('different-request');
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('holds an offer accept at this computer once an owner exists, like Always allow', async () => {
+    const handler = vi.fn(() => ({
+      resolve: 'approved' as const,
+      offer: { text: 'Next time, on its own?', offerId: 'next' },
+    }));
+    fx.inbox.setHandler('flow', handler);
+    const id = await raised();
+    setTestOwner('u1');
+    signedInUser = { userId: 'u1', credential: 'cookie', sessionId: 'desk' };
+    try {
+      const answered = await yes(id);
+      expect(answered.status).toBe(200);
+      // The card must know the sheet is coming, or it drops the offer before the answer.
+      expect(answered.body.offer.answerNeedsStepUp).toBe(true);
+      const held = await request(server)
+        .post(`/api/extension-decisions/${id}/offer`)
+        .set('Origin', TRUSTED_ORIGIN)
+        .send({ accept: true });
+      expect(held.status).toBe(428);
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect((await confirm(held.body.heldActionId)).body).toMatchObject({ ok: true, status: 200 });
+      expect(handler).toHaveBeenCalledTimes(2);
+    } finally {
+      setTestOwner(null);
+    }
+  });
+
+  it('holds a one-time offer accept, while a remote no stays immediate', async () => {
+    const handler = vi.fn(() => ({
+      resolve: 'approved' as const,
+      offer: { text: 'Next time, on its own?', offerId: 'next' },
+    }));
+    fx.inbox.setHandler('flow', handler);
+    const id = await raised();
+    const answered = await yes(id);
+    expect(answered.status).toBe(200);
+    remote();
+    const held = await request(server)
+      .post(`/api/extension-decisions/${id}/offer`)
+      .set('Origin', TRUSTED_ORIGIN)
+      .send({ accept: true });
+    expect(held.status).toBe(428);
+    expect(handler).toHaveBeenCalledTimes(1);
+    const sheet = await request(server).get(`/api/step-up/${held.body.heldActionId}`);
+    expect(sheet.body.requestCode).toBe(answered.body.offer.requestCode);
+    expect((await confirm(held.body.heldActionId)).body).toMatchObject({ ok: true, status: 200 });
+    expect(handler).toHaveBeenCalledTimes(2);
+    const secondId = await raised('flow', { key: 'other' });
+    expect(
+      (
+        await request(server)
+          .post(`/api/extension-decisions/${secondId}/action`)
+          .send({ action: 'reject' })
+      ).status
+    ).toBe(200);
   });
 });

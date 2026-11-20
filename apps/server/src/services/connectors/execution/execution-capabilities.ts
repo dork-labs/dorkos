@@ -26,12 +26,14 @@ import type { ConnectorExecutionBroker } from './execution-broker.js';
 import type { DestructiveHoldService } from './destructive-hold.js';
 import { cancelWindowFor } from './destructive-hold-window.js';
 import { outsideWordsNote } from '../../core/turn-power/marked-turn-copy.js';
+import { markCallerTurnOutsider } from '../../core/capabilities/mark-caller-turn.js';
 import type { HeldActionOutcome } from '../../notifications/connector-hold-notifications.js';
 import {
   CONNECTOR_REQUEST_LIVE_HOLD_MS,
   type ConnectorRuntimeExecutionCapabilityId,
 } from '../runtime-capability-scope.js';
 import { SERVICE_CATALOG_TOOL_NAME } from '../connector-capabilities.js';
+import { outsideLevelsListNote } from '../access/level-gap-lines.js';
 import {
   ConnectorAgentRequestError,
   type ConnectorAgentRequestService,
@@ -62,6 +64,12 @@ export interface ConnectorExecutionCapabilityDeps {
    * approval card. Absent, every destructive call keeps the card.
    */
   readonly holds?: DestructiveHoldService;
+  /**
+   * The note on one agent's list of actions for one account (DOR-4678): what
+   * no level includes, named for this app, and any lowering by the one-time
+   * write upgrade. Absent, lists carry the note that names no level.
+   */
+  readonly operationsNote?: (agentId: string, connectionId: string, toolkit: string) => string;
 }
 
 function requireRequestService(deps: ConnectorExecutionCapabilityDeps) {
@@ -247,6 +255,9 @@ function executionCapability(
       } finally {
         // A held action's waiting row is replaced by how it came out.
         if (held) executionDeps.holds?.recordOutcome(held, outcome);
+        // A read hands the turn someone else's text, whatever came back (DOR-3969). Every read,
+        // not a list of apps: nearly every read carries text someone else wrote.
+        if (classification === 'read') markCallerTurnOutsider(context);
       }
     },
   });
@@ -283,7 +294,9 @@ const listGrantedOperations = defineCapability({
   id: 'connectors.list_granted_operations',
   title: 'List granted operations',
   description:
-    'List exact immutable operation revisions and input schemas granted for one listed connected account.',
+    'List exact immutable operation revisions and input schemas granted for one listed connected account. ' +
+    'Actions no access level includes, such as trashing or deleting, need the person to give ' +
+    'them to you as exact actions. The note says how to ask.',
   tier: 'observe',
   area: null,
   areaNote: 'connected accounts have their own grant model',
@@ -295,9 +308,16 @@ const listGrantedOperations = defineCapability({
     const principal = requireRuntimePrincipal(context);
     connectorDeps.authorization.assertAvailable();
     try {
-      return withOperationSpending(
+      const listed = withOperationSpending(
         await connectorDeps.access.listRuntimeOperations(principal, input.connectionId)
       );
+      // An empty list is refused above, so the first action names the app.
+      const toolkit = listed.operations[0]?.toolkit;
+      if (!toolkit) return listed;
+      const note =
+        connectorDeps.operationsNote?.(principal.claims.agentId, input.connectionId, toolkit) ??
+        outsideLevelsListNote(toolkit, false);
+      return { ...listed, note };
     } catch (error) {
       return accessError(error);
     }

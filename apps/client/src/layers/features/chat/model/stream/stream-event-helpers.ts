@@ -42,6 +42,7 @@ export function deriveFromParts(parts: MessagePart[]): {
         approvalDescription: part.approvalDescription,
         approvalBlockedPath: part.approvalBlockedPath,
         approvalDecisionReason: part.approvalDecisionReason,
+        approvalRequestCode: part.approvalRequestCode,
         approvalHasSuggestions: part.approvalHasSuggestions,
         approvalAlwaysAllowScope: part.approvalAlwaysAllowScope,
         approvalAlwaysAllowBreadth: part.approvalAlwaysAllowBreadth,

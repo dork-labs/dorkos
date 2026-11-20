@@ -37,10 +37,15 @@ jobs:
 
       - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v7.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-          cache: pnpm
+
+      # NO dependency cache, restored or saved (DOR-4635, DOR-4695). This job runs
+      # on a tag push and holds release credentials, so it installs cold from the
+      # registry, checked against pnpm-lock.yaml's integrity hashes. (Saving into
+      # a tag's scope was also waste: a tag's cache is readable only by that tag.)
+      # Cost: one cold install per job per release.
 
       - name: Install manifest generator dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
@@ -91,8 +96,11 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
-          cache-from: type=gha,scope=community-release
-          cache-to: type=gha,mode=max,scope=community-release
+          # No layer cache (DOR-4635). This workflow runs only on tag pushes, and a
+          # tag ref's Actions cache can be restored only by that same tag, so the
+          # next release never reads it. mode=max multi-arch layers wrote ~3.9 GB
+          # per release (with publish-docker.yml) and pushed the repo past its
+          # 10 GB cache budget, evicting main's CI caches.
 
       - name: Attest the immutable image digest
         uses: actions/attest-build-provenance@v4

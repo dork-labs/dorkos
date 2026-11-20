@@ -42,7 +42,7 @@ import { guardedMountTargetRecorder } from '../policy/writable-missing-targets.j
 import { codexPermissionProfile, codexProtectedConfig } from '../policy/protected-profile.js';
 import { loadWithProtectedProfile } from './profile-load.js';
 import { withThreadLoadBinding } from './thread-load-binding.js';
-import { loadTrust, sandboxFor } from './thread-trust.js';
+import { trustForLoad } from './thread-trust.js';
 export { trustLevelFor } from './thread-trust.js';
 import { credentialsOf } from './thread-credentials.js';
 import { approvalPolicyFor } from './turn-parts.js';
@@ -103,6 +103,8 @@ export interface LoadedThread {
   readonly notice: StreamEvent | undefined;
   /** A thread this load retired (reloaded as this one); stop routing it. */
   readonly retired?: string;
+  /** A line for the model on a fresh load's first turn (`skippedProjectConfigNote`). */
+  readonly modelNote?: string | undefined;
 }
 
 /** Why a compaction found nothing to summarize. */
@@ -254,10 +256,10 @@ export class CodexThreadLoader {
     const threadId = input.boundThreadId;
     if (threadId === undefined) return 'empty';
     try {
-      const overrides = await this.overrides(input, undefined);
+      const { params } = await this.overrides(input, undefined);
       await loadWithProtectedProfile(input.process.client, 'thread/resume', {
         threadId,
-        ...overrides,
+        ...params,
       });
     } catch (err) {
       if (isCodexRpcError(err, 'no-rollout', 'thread-not-found', 'archived')) return 'gone';
@@ -340,14 +342,13 @@ export class CodexThreadLoader {
     };
     const key = this.mintKey(input, 'fork');
     let forked: string;
+    let modelNote: string | undefined;
     try {
-      const overrides = await this.overrides(input, key?.key);
+      const { params, modelNote: note } = await this.overrides(input, key?.key);
+      modelNote = note;
       forked = (
         await withThreadLoadBinding(input, key?.keyId, this.options.threadKeys(), () =>
-          loadWithProtectedProfile(input.process.client, 'thread/fork', {
-            threadId,
-            ...overrides,
-          })
+          loadWithProtectedProfile(input.process.client, 'thread/fork', { threadId, ...params })
         )
       ).thread.id;
     } catch (err) {
@@ -379,6 +380,7 @@ export class CodexThreadLoader {
       replaces,
       notice: undefined,
       retired: threadId,
+      modelNote,
     };
   }
 
@@ -417,13 +419,12 @@ export class CodexThreadLoader {
       // Anything else: the resume below has the final word.
     }
     const key = this.mintKey(input, 'resume');
+    let modelNote: string | undefined;
     try {
-      const overrides = await this.overrides(input, key?.key);
+      const { params, modelNote: note } = await this.overrides(input, key?.key);
+      modelNote = note;
       await withThreadLoadBinding(input, key?.keyId, this.options.threadKeys(), () =>
-        loadWithProtectedProfile(input.process.client, 'thread/resume', {
-          threadId,
-          ...overrides,
-        })
+        loadWithProtectedProfile(input.process.client, 'thread/resume', { threadId, ...params })
       );
     } catch (err) {
       if (key) this.options.threadKeys()?.revoke(key.keyId, 'superseded');
@@ -447,6 +448,7 @@ export class CodexThreadLoader {
       needsBinding: false,
       replaces: undefined,
       notice: undefined,
+      modelNote,
     };
   }
 
@@ -459,11 +461,13 @@ export class CodexThreadLoader {
   ): Promise<LoadedThread> {
     const key = this.mintKey(input, 'start');
     let threadId: string;
+    let modelNote: string | undefined;
     try {
-      const overrides = await this.overrides(input, key?.key);
+      const { params, modelNote: note } = await this.overrides(input, key?.key);
+      modelNote = note;
       threadId = (
         await withThreadLoadBinding(input, key?.keyId, this.options.threadKeys(), () =>
-          loadWithProtectedProfile(input.process.client, 'thread/start', overrides)
+          loadWithProtectedProfile(input.process.client, 'thread/start', params)
         )
       ).thread.id;
     } catch (err) {
@@ -478,7 +482,14 @@ export class CodexThreadLoader {
       unbound: true,
       replaces,
     });
-    return { threadId, keyId: key?.keyId, needsBinding: true, replaces, notice: undefined };
+    return {
+      threadId,
+      keyId: key?.keyId,
+      needsBinding: true,
+      replaces,
+      notice: undefined,
+      modelNote,
+    };
   }
 
   /**
@@ -599,25 +610,25 @@ export class CodexThreadLoader {
     });
   }
 
-  /** The load params, with real secrets, for the wire. */
+  /** The load params, with real secrets, for the wire, and the load's line for the model. */
   private async overrides(
     input: ThreadLoadInput,
     threadKey: string | undefined
-  ): Promise<ThreadLoadOverrides> {
-    const sandbox = sandboxFor(input.settings);
-    const recorded = input.home === 'person' ? await this.recordedTrust(input) : undefined;
+  ): Promise<{ params: ThreadLoadOverrides; modelNote: string | undefined }> {
+    const realCwd = this.realpath(input.cwd);
+    const { trust, modelNote } = await trustForLoad(input, realCwd);
     // The identity token is minted here, when a thread actually loads, not on
     // every turn: a loaded thread keeps the one it loaded with (spec §9).
     const agentTokenEnv =
       Object.keys(input.tools.agentTokenEnv).length === 0 && input.tools.mintAgentToken
         ? await input.tools.mintAgentToken()
         : input.tools.agentTokenEnv;
-    return buildLoadOverrides(
+    const params = buildLoadOverrides(
       { ...input, tools: { ...input.tools, agentTokenEnv } },
       {
         threadKey,
-        trust: loadTrust(input.home, sandbox, recorded, this.realpath(input.cwd)),
-        realCwd: this.realpath(input.cwd),
+        trust,
+        realCwd,
         onMissingTargets:
           input.tools.filePolicy && this.options.recordMissingTargets
             ? (targets) =>
@@ -625,18 +636,7 @@ export class CodexThreadLoader {
             : undefined,
       }
     );
-  }
-
-  private async recordedTrust(input: ThreadLoadInput): Promise<string | undefined> {
-    try {
-      const result = await input.process.client.request('config/read', { cwd: input.cwd });
-      return result.config.projects?.[this.realpath(input.cwd)]?.trust_level;
-    } catch (err) {
-      logger.debug('[CodexAppServer] config/read failed; applying the default trust rule', {
-        err: String(err),
-      });
-      return undefined;
-    }
+    return { params, modelNote };
   }
 
   /**

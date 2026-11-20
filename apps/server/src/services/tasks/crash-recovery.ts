@@ -28,10 +28,11 @@
  *    creates scheduled runs (`dispatch()` returns early for a follower), and
  *    leadership is exclusive — so a scheduled run still marked running was
  *    started by a leader that no longer exists.
- * 3. **The run has outlived its task's own `maxRuntime`, by the lock's stale
- *    margin.** Whatever process owns such a run would have aborted it at the
- *    deadline (`AbortSignal.timeout` in `executeRunDirect`, the dispatch budget
- *    on the relay path). Past it, no live process can still be running it.
+ * 3. **The run has outlived its task's own `maxRuntime`, plus the longest wait
+ *    to start (`RUN_START_WAIT_MS`, DOR-4576), by the lock's stale margin.**
+ *    Whatever process owns such a run would have aborted it at the deadline
+ *    (`runDeadline`'s hard cap in `executeRunDirect`, the dispatch budget on the
+ *    relay path). Past it, no live process can still be running it.
  *
  * Everything else is left exactly as it is: a manual run with no deadline,
  * started by a process that may well still be alive and working on it. That is
@@ -62,6 +63,7 @@
  */
 import type { TaskStore } from './task-store.js';
 import { SCHEDULER_LOCK_STALE_TTL_MS, type LeaderLock } from './scheduler-lock.js';
+import { RUN_START_WAIT_MS } from './timing/wake-settle.js';
 
 /** What one sweep did, for the caller to log. */
 export interface InterruptedRunSweep {
@@ -125,7 +127,9 @@ export function sweepInterruptedRuns(
     if (!run.startedAt) continue;
     const startedAt = Date.parse(run.startedAt);
     if (Number.isNaN(startedAt)) continue;
-    if (now - startedAt > maxRuntime + SCHEDULER_LOCK_STALE_TTL_MS) doomed.push(run.id);
+    // Its limit counts only once its turn starts, after up to that long in line (DOR-4576).
+    const deadline = maxRuntime + RUN_START_WAIT_MS + SCHEDULER_LOCK_STALE_TTL_MS;
+    if (now - startedAt > deadline) doomed.push(run.id);
   }
 
   return {

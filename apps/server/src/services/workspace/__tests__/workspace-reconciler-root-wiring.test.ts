@@ -1,4 +1,6 @@
 import { MainRequestAdmission } from '../../core/lifecycle/main-request-admission.js';
+import { WorkspaceReconcilerLifecycle } from '../workspace-reconciler-lifecycle.js';
+import { WorkspaceReconciler } from '../workspace-reconciler.js';
 /** Structural root wiring and an isolated startup-catch callback; no server boot/exit proof. */
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
@@ -181,7 +183,14 @@ describe('workspace reconciler root wiring (AST, not a full server boot)', () =>
     ).toBe(true);
     expect(descendants(caught!.block).some(ts.isThrowStatement)).toBe(false);
     // The existing unrelated fixture cleanup remains outside the contained failure.
-    const fixtureClose = callback.body.statements[2];
+    const messagingStop = callback.body.statements[2];
+    expect(
+      ts.isExpressionStatement(messagingStop) &&
+        ts.isCallExpression(messagingStop.expression) &&
+        ts.isIdentifier(messagingStop.expression.expression) &&
+        messagingStop.expression.expression.text === 'stopAgentMessageServices'
+    ).toBe(true);
+    const fixtureClose = callback.body.statements[3];
     expect(
       ts.isExpressionStatement(fixtureClose) && ts.isAwaitExpression(fixtureClose.expression)
     ).toBe(true);
@@ -202,8 +211,6 @@ describe('workspace reconciler root wiring (AST, not a full server boot)', () =>
     'preserves the original startup error across workspace disposal %s',
     async (mode) => {
       // Execute only the actual catch callback with explicit bindings, never root imports/startup.
-      const { WorkspaceReconcilerLifecycle } = await import('../workspace-reconciler-lifecycle.js');
-      const { WorkspaceReconciler } = await import('../workspace-reconciler.js');
       const owner = new WorkspaceReconcilerLifecycle();
       const reconciler = new WorkspaceReconciler(
         {} as ConstructorParameters<typeof WorkspaceReconciler>[0]
@@ -211,7 +218,7 @@ describe('workspace reconciler root wiring (AST, not a full server boot)', () =>
       vi.spyOn(reconciler, 'start').mockImplementation(() => {});
       owner.start(reconciler);
       const cleanupError = new Error('workspace cleanup');
-      vi.spyOn(reconciler, 'dispose').mockImplementation(() => {
+      const dispose = vi.spyOn(reconciler, 'dispose').mockImplementation(() => {
         if (mode === 'throw') throw cleanupError;
         return Promise.reject(cleanupError);
       });
@@ -219,6 +226,7 @@ describe('workspace reconciler root wiring (AST, not a full server boot)', () =>
       const logged = { error: vi.fn() };
       const logError = vi.fn((error: unknown) => error);
       const exit = vi.fn();
+      const stopAgentMessageServices = vi.fn();
       const fixtureClose = vi.fn().mockResolvedValue(undefined);
       const browserClose = vi.fn().mockResolvedValue(undefined);
       const stopDocDelivery = vi.fn().mockResolvedValue(undefined);
@@ -230,6 +238,7 @@ describe('workspace reconciler root wiring (AST, not a full server boot)', () =>
       const run = runInNewContext(javascript, {
         [ownerName()]: owner,
         mainRequestAdmission: new MainRequestAdmission(),
+        stopAgentMessageServices,
         logger: logged,
         logError,
         process: { exit },
@@ -246,7 +255,14 @@ describe('workspace reconciler root wiring (AST, not a full server boot)', () =>
           '[workspace] Reconciliation disposal failed during startup cleanup:',
           cleanupError
         );
+        expect(stopAgentMessageServices).toHaveBeenCalledExactlyOnceWith();
+        expect(stopAgentMessageServices.mock.invocationCallOrder[0]).toBeGreaterThan(
+          dispose.mock.invocationCallOrder[0]
+        );
         expect(fixtureClose).toHaveBeenCalledTimes(1);
+        expect(fixtureClose.mock.invocationCallOrder[0]).toBeGreaterThan(
+          stopAgentMessageServices.mock.invocationCallOrder[0]
+        );
         expect(browserClose).toHaveBeenCalledTimes(1);
         expect(browserClose.mock.invocationCallOrder[0]).toBeGreaterThan(
           fixtureClose.mock.invocationCallOrder[0]

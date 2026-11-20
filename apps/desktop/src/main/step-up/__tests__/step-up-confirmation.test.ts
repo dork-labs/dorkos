@@ -34,6 +34,7 @@ function server(answers: Record<string, [number, unknown]>) {
 
 const VIEW = {
   reason: 'Confirm it’s you to add github for all your agents.',
+  requestCode: 'K7MR-4XQ9-HT3W',
   notes: ['Not pinned.'],
 };
 

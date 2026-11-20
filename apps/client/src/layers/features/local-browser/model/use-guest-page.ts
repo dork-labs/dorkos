@@ -6,11 +6,13 @@ export interface GuestPage {
   loading: boolean;
   /** Its last main-frame load failed, until a page commits. */
   failure: DesktopBrowserPageState['failure'];
+  /** The page is a site refusing this browser (DOR-4097), as the shell read it. */
+  refusal: NonNullable<DesktopBrowserPageState['refusal']> | null;
   /** Ask the shell to Stop, Reload, Go back, or Try again (the address it recorded). */
   run: (action: 'stop' | 'retry' | 'back' | 'reload') => void;
 }
 
-const IDLE = { loading: false, failure: null } as const;
+const IDLE = { loading: false, failure: null, refusal: null } as const;
 
 /**
  * Follow the embedded page's loads and failures (DOR-4430, DOR-4431). Outside the desktop
@@ -23,6 +25,7 @@ export function useGuestPage(connectionId: string | null): GuestPage {
     connectionId: string | null;
     loading: boolean;
     failure: DesktopBrowserPageState['failure'];
+    refusal: NonNullable<DesktopBrowserPageState['refusal']> | null;
   }>({ connectionId: null, ...IDLE });
   useEffect(() => {
     const bridge = window.electronAPI?.localBrowser;
@@ -30,7 +33,12 @@ export function useGuestPage(connectionId: string | null): GuestPage {
     let live = true;
     const take = (next: DesktopBrowserPageState | null) => {
       if (live && next?.connectionId === connectionId)
-        setState({ connectionId, loading: next.loading, failure: next.failure });
+        setState({
+          connectionId,
+          loading: next.loading,
+          failure: next.failure,
+          refusal: next.refusal ?? null,
+        });
     };
     const stop = bridge.onPageChange(take);
     // A page that started loading before this panel mounted still shows.
@@ -53,5 +61,5 @@ export function useGuestPage(connectionId: string | null): GuestPage {
   );
   // A state another page reported never belongs to this one.
   const current = state.connectionId === connectionId ? state : IDLE;
-  return { loading: current.loading, failure: current.failure, run };
+  return { loading: current.loading, failure: current.failure, refusal: current.refusal, run };
 }

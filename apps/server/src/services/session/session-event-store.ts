@@ -48,6 +48,7 @@ import {
   type SessionEventRow,
 } from '@dorkos/db';
 import {
+  SessionEventSchema,
   isBlockingInteractionEvent,
   type BlockingInteractionEventType,
   type InteractionResolvedEvent,
@@ -251,6 +252,37 @@ export class SessionEventStore {
    *
    * @param sessionId - DorkOS session identifier
    */
+  /**
+   * Latest complete recorded turn, strictly decoded for guarded recovery.
+   * Unlike readAll, a malformed row is uncertainty, never a row to skip.
+   * Numeric gaps are normal in Claude record mode. A later open turn refuses.
+   */
+  readLatestTurnStrict(sessionId: string): SessionEvent[] | null {
+    const rows = this.db
+      .select()
+      .from(sessionEvents)
+      .where(eq(sessionEvents.sessionId, sessionId))
+      .orderBy(desc(sessionEvents.seq))
+      .all();
+    const reversed: SessionEvent[] = [];
+    for (const row of rows) {
+      let payload: unknown;
+      try {
+        payload = JSON.parse(row.payload);
+      } catch {
+        return null;
+      }
+      const parsed = SessionEventSchema.safeParse(payload);
+      if (!parsed.success || parsed.data.seq !== row.seq) return null;
+      const event = parsed.data;
+      if (reversed.length === 0 && event.type !== 'turn_end') return null;
+      if (event.type === 'turn_end' && reversed.length > 0) return null;
+      reversed.push(event);
+      if (event.type === 'turn_start') return reversed.reverse();
+    }
+    return null;
+  }
+
   readAll(sessionId: string): SessionEvent[] {
     return this.readAllTimed(sessionId).map((row) => row.event);
   }

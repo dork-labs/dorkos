@@ -1,5 +1,6 @@
 import { Button } from '@/layers/shared/ui';
 import { useDelegateRuntimeLogin } from '../model/use-credential-connect';
+import { SigninFailure } from './SigninFailure';
 
 /** Sign in to an explicitly named Claude account; never uses the default target. */
 export function AccountSignin({
@@ -39,9 +40,7 @@ export function AccountSignin({
         {login.isPending ? 'Signing in…' : showAccountName ? `Sign in to ${name}` : 'Sign in'}
       </Button>
       {login.isError && observed !== 'signed-in' && (
-        <p role="alert" className="text-destructive text-xs">
-          Couldn’t sign in to {name}. Try again.
-        </p>
+        <SigninFailure name={name} reason={login.failureReason} />
       )}
     </div>
   );

@@ -222,6 +222,7 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'POST /api/local-browser/profiles/:id/agents',
       'DELETE /api/local-browser/profiles/:id/agents/:agentId',
       'POST /api/local-browser/sign-in',
+      'POST /api/local-browser/sign-in/done',
       'POST /api/local-browser/handoff/hand-back',
       'POST /api/local-browser/handoff/stop',
       'POST /api/notifications/read-all',
@@ -258,6 +259,9 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'POST /api/extensions/:id/enable',
       'POST /api/extensions/:id/forget',
       'POST /api/extensions/:id/init-server',
+      // A frame's video link and the route it plays on (DOR-4321).
+      'POST /api/extensions/:id/media-tickets',
+      'ALL /api/extensions/media/:ticket',
       'POST /api/extensions/:id/move-out',
       'POST /api/extensions/:id/remove',
       'POST /api/extensions/:id/revoke',

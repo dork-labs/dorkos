@@ -34,8 +34,31 @@ export async function* mapSdkMessage(
   toolState: ToolState,
   wasStopped?: () => boolean
 ): AsyncGenerator<StreamEvent> {
+  // Retain raw structured errors even when an unknown SDK code has no UI mapper.
+  // A hidden/unknown cause must not be erased by a later server-error wrapper.
+  if (message.type === 'assistant') {
+    const raw = message as unknown as Record<string, unknown>;
+    if (raw.error !== undefined) {
+      const evidence = (session.serverErrorEvidence ??= { notices: [], vetoed: false });
+      if (raw.error !== 'server_error') evidence.vetoed = true;
+      else {
+        const body = raw.message as { content?: unknown } | undefined;
+        const blocks = body?.content;
+        const first = Array.isArray(blocks) ? blocks[0] : undefined;
+        if (first?.type === 'text' && typeof first.text === 'string' && first.text.trim()) {
+          evidence.notices.push(first.text.trim());
+        }
+      }
+    }
+  }
   yield* claudeRequestEvents(message, toolState);
   for await (const event of mapMessage(message, session, sessionId, toolState, wasStopped)) {
+    if (event.type === 'error' && message.type !== 'result') {
+      const error = event.data as { code?: string; category?: string };
+      if (error.code !== 'server_error' || error.category !== 'execution_error') {
+        (session.serverErrorEvidence ??= { notices: [], vetoed: false }).vetoed = true;
+      }
+    }
     yield* timeRuntimeEvents(toolState, [event], { observeStart: message.type === 'stream_event' });
   }
 }

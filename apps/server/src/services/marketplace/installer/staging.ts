@@ -209,9 +209,20 @@ export class PackageStager {
  * Convert an {@link InstallRequest} into the single-string input shape
  * accepted by {@link PackageResolver.resolve}. Precedence:
  *
- * 1. `req.source` (explicit git URL or local path) → `${name}@${source}`.
+ * 1. `req.source` (explicit source URL) → `${name}@${source}`.
  * 2. `req.marketplace` (configured marketplace name) → `${name}@${marketplace}`.
- * 3. Bare `req.name` → resolver searches every enabled marketplace.
+ * 3. `req.name` unchanged → local path, shorthand, or bare-name lookup.
+ *
+ * For a local folder, put the path in `req.name` and omit `source` and
+ * `marketplace`.
+ *
+ * Project-local request (the normal preview and approval steps still apply):
+ * ```ts
+ * const request: InstallRequest = {
+ *   name: '/path/to/package',
+ *   projectPath: agentHome,
+ * };
+ * ```
  *
  * @internal
  */

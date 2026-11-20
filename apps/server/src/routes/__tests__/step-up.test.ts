@@ -48,7 +48,10 @@ import { honoGroupListener } from '../../http/__tests__/hono-group-listener.js';
 import { recordAudit } from '../../services/audit/audit-trail.js';
 import type { RequestUser } from '../../services/core/auth/session-gate.js';
 import { markIngress, type IngressKind } from '../../services/core/remote/ingress-mark.js';
-import { resetHeldStepUpsForTests } from '../../services/core/auth/step-up/step-up-holds.js';
+import {
+  holdStepUp,
+  resetHeldStepUpsForTests,
+} from '../../services/core/auth/step-up/step-up-holds.js';
 import { holdForStepUp } from '../step-up-guard.js';
 import { createStepUpRoutes, type StepUpRouteDeps } from '../step-up.js';
 import { StepUpRiskLedger } from '../../services/extensions/step-up/step-up-risk-ledger.js';
@@ -158,6 +161,56 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   state.ownerId = 'user_owner';
+});
+
+describe('stored request bindings', () => {
+  it('refuses a changed request before replacing a short password', async () => {
+    let hash = 'a'.repeat(64);
+    const held = holdStepUp(
+      {
+        kind: 'approval.grant',
+        target: 'made-up-request',
+        input: { note: 'notes' },
+        reason: 'Allow the note.',
+        binding: { hash, currentHash: () => hash },
+        commit: () => commit('notes'),
+      },
+      SESSION_A.sessionId!
+    );
+    hash = 'b'.repeat(64);
+    const res = await request(app({ user: SESSION_A }))
+      .post(`/api/step-up/${held.heldActionId}/change-password`)
+      .set('Origin', OWN_ORIGIN)
+      .send({ currentPassword: SHORT_PASSWORD, newPassword: PASSWORD });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('different-request');
+    expect(deps.setOwnerPassword).not.toHaveBeenCalled();
+    expect(commit).not.toHaveBeenCalled();
+  });
+
+  it('refuses a changed request before its commit runs', async () => {
+    let hash = 'a'.repeat(64);
+    const run = vi.fn(async () => ({ status: 200, body: { ok: true } }));
+    const held = holdStepUp(
+      {
+        kind: 'approval.grant',
+        target: 'made-up-request',
+        input: { note: 'notes' },
+        reason: 'Allow the note.',
+        binding: { hash, currentHash: () => hash },
+        commit: run,
+      },
+      SESSION_A.sessionId!
+    );
+    hash = 'b'.repeat(64);
+    const res = await request(app({ user: SESSION_A }))
+      .post(`/api/step-up/${held.heldActionId}/password`)
+      .set('Origin', OWN_ORIGIN)
+      .send({ password: PASSWORD });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('different-request');
+    expect(run).not.toHaveBeenCalled();
+  });
 });
 
 describe('a guarded action', () => {

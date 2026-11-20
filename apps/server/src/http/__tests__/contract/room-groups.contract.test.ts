@@ -47,6 +47,7 @@ import {
   contractSuite,
   type ComposedServer,
   stepUpAt,
+  confirmSetupAnswer,
 } from './harness.js';
 
 const JSON_TYPE = { 'content-type': /^application\/json\b/ };
@@ -178,9 +179,12 @@ async function setup(
   method: string,
   url: string,
   body?: unknown,
-  headers: Record<string, string> = {}
+  headers: Record<string, string> = {},
+  confirmationPassword?: string
 ): Promise<Answer> {
-  const answer = await call(server, method, url, body, headers);
+  let answer = await call(server, method, url, body, headers);
+  if (confirmationPassword)
+    answer = await confirmSetupAnswer(server!.baseUrl, answer, confirmationPassword, headers);
   if (answer.status >= 300) {
     throw new Error(`${method} ${url} answered ${answer.status}: ${answer.text.slice(0, 300)}`);
   }
@@ -1680,7 +1684,8 @@ describe('contract: the room routes with login on', () => {
       'PATCH',
       '/api/config',
       { auth: { enabled: true } },
-      await stepUpAt(server!.baseUrl, 'a-long-password-1')
+      await stepUpAt(server!.baseUrl, 'a-long-password-1'),
+      'a-long-password-1'
     );
   }, BOOT_HOOK_TIMEOUT_MS);
   afterAll(async () => {

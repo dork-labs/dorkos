@@ -117,6 +117,30 @@ export function holdsDorkosAsks(
 }
 
 /**
+ * Whether a session's rules refuse `task` for every target: its last rule
+ * that covers `task` on every pattern is a deny.
+ *
+ * @param rules - A session's rules, oldest first.
+ */
+export function refusesTask(rules: readonly OpenCodeRule[]): boolean {
+  const last = lastIndexWhere(rules, (r) => matchesKey(r.permission, 'task') && r.pattern === '*');
+  return rules[last]?.action === 'deny';
+}
+
+/**
+ * The line the model reads on every turn its session refuses `task`
+ * (DOR-4447), so a refused helper is not a mystery. The sidecar loads no
+ * project config (`NO_PROJECT_CODE`), so the agent at fault is one set up on
+ * this computer (the person's own or OpenCode's built-in), and the deny stays
+ * on the session once added, so the reason is in the past tense: it stays true
+ * after the person fixes that agent. The line blames no project and never names
+ * the agent: an agent's display name is free text anyone can set.
+ */
+export const HELPERS_REFUSED_NOTE =
+  'Helpers (the task tool) are off in this chat. They were turned off because an OpenCode ' +
+  "agent set up on this computer would have skipped DorkOS's approval asks. Do the work yourself.";
+
+/**
  * The rules a session needs added before a turn: DorkOS's asks when it does
  * not hold them yet (a new or older session), and a `task` deny for every
  * target when any agent's own rules would skip them. Empty when nothing is missing.
@@ -141,11 +165,7 @@ export function sessionRulesToAdd(
   const unsafe = agents.some(
     (agent) => !holdsDorkosAsks(agent.permission, dataDir, [OPENCODE_SCRATCH])
   );
-  const last = lastIndexWhere(
-    current,
-    (r) => matchesKey(r.permission, 'task') && r.pattern === '*'
-  );
-  if (unsafe && current[last]?.action !== 'deny') {
+  if (unsafe && !refusesTask(current)) {
     added.push({ permission: 'task', pattern: '*', action: 'deny' });
   }
   return added;

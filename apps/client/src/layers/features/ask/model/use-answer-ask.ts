@@ -9,6 +9,8 @@
  *
  * @module features/ask/model/use-answer-ask
  */
+import { STEP_UP_REQUIRED_CODE } from '@dorkos/shared/step-up';
+import { useConfig } from '@/layers/entities/config';
 import { useCallback, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { InteractionPendingEvent } from '@dorkos/shared/interaction-events';
@@ -28,7 +30,7 @@ type AskAnswer = 'allow' | 'deny';
 export interface AnswerAskState {
   /** Answer one prompt. */
   answer: (ask: InteractionPendingEvent, decision: AskAnswer) => Promise<void>;
-  /** Answer every prompt in a burst at once — one call, one round trip. */
+  /** Answer a burst; remote allows confirm each request separately. */
   answerAll: (asks: readonly InteractionPendingEvent[], decision: AskAnswer) => Promise<void>;
   /** True while a request is in flight. */
   isAnswering: boolean;
@@ -39,7 +41,9 @@ export interface AnswerAskState {
 /**
  * Answer an Ask.
  *
- * **Optimistic, and therefore reversible.** The receipt is written and the entry
+ * Desk answers and lowering answers are optimistic and reversible. Remote
+ * tool yeses wait for the server's per-request confirmation before any receipt.
+ * For an optimistic answer, the receipt is written and the entry
  * leaves the list immediately, so every copy of the card on every surface stops
  * being a button. If the server refuses — the 403 from the answer guard is the
  * one that matters — the entry is put back by the next read and the refusal is
@@ -53,6 +57,7 @@ export interface AnswerAskState {
 export function useAnswerAsk(): AnswerAskState {
   const transport = useTransport();
   const queryClient = useQueryClient();
+  const remotely = useConfig().data?.approvalAnswerContext?.answerNeedsStepUp ?? true;
   const [isAnswering, setIsAnswering] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,27 +69,41 @@ export function useAnswerAsk(): AnswerAskState {
     ) => {
       setIsAnswering(true);
       setError(null);
-      const resolvedAt = new Date().toISOString();
-      for (const ask of answered) {
-        recordAskReceipt(ask.interaction.id, {
-          outcome: 'answered',
-          resolvedAt,
-          byThisWindow: true,
-          decision: decision === 'allow' ? 'allowed' : 'denied',
-        });
-        // Keep it drawn while it says so. Without this the refetch below takes
-        // the card away in the same frame the answer lands, which is the
-        // disappearance the design rules out.
-        settleAsk(ask);
-      }
+      const deferred =
+        decision === 'allow' &&
+        remotely &&
+        answered.some((ask) => ask.interaction.type === 'approval');
+      const openedFrom =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      const record = () => {
+        const resolvedAt = new Date().toISOString();
+        for (const ask of answered) {
+          recordAskReceipt(ask.interaction.id, {
+            outcome: 'answered',
+            resolvedAt,
+            byThisWindow: true,
+            decision: decision === 'allow' ? 'allowed' : 'denied',
+          });
+          // Keep it drawn while it says so. Without this the refetch below takes
+          // the card away in the same frame the answer lands, which is the
+          // disappearance the design rules out.
+          settleAsk(ask);
+        }
+      };
+      if (!deferred) record();
       try {
         await run();
+        if (deferred) record();
+        return true;
       } catch (err) {
         // Put the card back. The receipt was written before the server agreed,
         // and a refusal means it never did — leaving it would show "You allowed
         // this" over a request still sitting there answerable.
-        for (const ask of answered) forgetAskReceipt(ask.interaction.id);
-        setError(describeDecisionRefusal(err, false).message);
+        if (!deferred) for (const ask of answered) forgetAskReceipt(ask.interaction.id);
+        if ((err as { code?: string }).code !== STEP_UP_REQUIRED_CODE)
+          setError(describeDecisionRefusal(err, false).message);
+        if (deferred) requestAnimationFrame(() => openedFrom?.isConnected && openedFrom.focus());
+        return false;
       } finally {
         setIsAnswering(false);
         // The stream's own `interaction_resolved` is what normally retires the
@@ -94,7 +113,7 @@ export function useAnswerAsk(): AnswerAskState {
         void queryClient.invalidateQueries({ queryKey: PENDING_INTERACTIONS_QUERY_KEY });
       }
     },
-    [queryClient]
+    [queryClient, remotely]
   );
 
   const answer = useCallback(
@@ -132,6 +151,17 @@ export function useAnswerAsk(): AnswerAskState {
     async (asks: readonly InteractionPendingEvent[], decision: AskAnswer) => {
       const first = asks[0];
       if (first === undefined) return;
+      if (decision === 'allow' && remotely) {
+        for (const ask of asks) {
+          const ok = await send(
+            [ask],
+            () => transport.approveTool(ask.sessionId, ask.interaction.id),
+            decision
+          );
+          if (!ok) break;
+        }
+        return;
+      }
       const ids = asks.map((ask) => ask.interaction.id);
       await send(
         asks,
@@ -142,7 +172,7 @@ export function useAnswerAsk(): AnswerAskState {
         decision
       );
     },
-    [send, transport]
+    [send, transport, remotely]
   );
 
   return { answer, answerAll, isAnswering, error };

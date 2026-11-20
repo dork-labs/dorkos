@@ -16,7 +16,7 @@
  * @module services/rooms/reseat/reseat-accounts
  */
 import { CREDITS_ACCOUNT_ID, type AccountUsage } from '@dorkos/shared/account-usage';
-import type { RankedAccount } from '../../core/usage/account-ranking.js';
+import { mayAutoPick, type RankedAccount } from '../../core/usage/account-ranking.js';
 import { mayAutoPickClaudeRoot } from '../../runtimes/claude-code/accounts/account-login-metadata.js';
 
 /** The share of the 5-hour or weekly window at which an account counts as nearly out. */
@@ -121,9 +121,9 @@ function usableAgainAt(usage: AccountUsage): string | null {
 }
 
 /**
- * Pick the account a seat moves to. An account kept out of automatic moves is
- * never picked, however much room it has, unless `opts.keptOut` says a person
- * named it.
+ * Pick the account a seat moves to. An account kept out of automatic moves, or
+ * last seen signed out (DOR-4439), is never picked, however much room it has,
+ * unless `opts.keptOut` says a person named it.
  *
  * @param ranking - Core's ranking for the folder's project, best first.
  * @param seat.runtime - The seat's runtime; a move never crosses runtimes.
@@ -139,7 +139,12 @@ export function pickReseatAccount(
   opts: { keptOut?: boolean; signinHealthy?: (root: string) => boolean } = {}
 ): ReseatPick {
   const candidates = reseatCandidates(ranking, seat.runtime, opts);
-  const account = candidates.find((row) => row.id !== seat.currentAccountId && canTakeWork(row));
+  const account = candidates.find(
+    (row) =>
+      row.id !== seat.currentAccountId &&
+      canTakeWork(row) &&
+      (opts.keptOut === true || mayAutoPick(row))
+  );
   if (account) return { kind: 'move', account };
   const resets = candidates
     .map((row) => usableAgainAt(row.usage))

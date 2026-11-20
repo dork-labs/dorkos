@@ -1,3 +1,4 @@
+import { isolatedRequiredLaunchOwner } from './required-launch-fixture.js';
 /**
  * The launch-account ladder as a LAUNCH sees it (spec `billing-account-ladder`,
  * ADR 260821-205323).
@@ -23,6 +24,8 @@ import {
   clearTestHomes,
   registerEveryFolderAsHome,
 } from '../../../../core/agent-identity/__tests__/agent-home-fixture.js';
+
+const requiredLaunches = isolatedRequiredLaunchOwner();
 
 // Every scratch folder counts as a registered home here, so this suite's
 // mocked mesh decides who is an agent, as it did before homes (DOR-2355).
@@ -120,7 +123,11 @@ async function runTurn(session: AgentSession, accountHint?: string): Promise<Opt
     captured = args.options;
     return { [Symbol.asyncIterator]: async function* () {} } as unknown as ReturnType<typeof query>;
   });
-  const opts: MessageSenderOpts = { cwd: '/mock/project', onSdkSessionRebind: async () => {} };
+  const opts: MessageSenderOpts = {
+    cwd: '/mock/project',
+    requiredLaunches,
+    onSdkSessionRebind: async () => {},
+  };
   for await (const _event of executeSdkQuery(
     's1',
     'hello',
@@ -168,7 +175,11 @@ describe('the launch ladder at the spawn seam (spec billing-account-ladder)', ()
         typeof query
       >;
     });
-    const opts: MessageSenderOpts = { cwd: '/mock/project', onSdkSessionRebind: async () => {} };
+    const opts: MessageSenderOpts = {
+      cwd: '/mock/project',
+      requiredLaunches,
+      onSdkSessionRebind: async () => {},
+    };
     for await (const _event of executeSdkQuery(
       's1',
       'run the nightly job',

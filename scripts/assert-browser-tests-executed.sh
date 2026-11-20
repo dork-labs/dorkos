@@ -322,9 +322,12 @@ if [ -n "$quarantined_file" ]; then
   quarantined=$(grep -v '^[[:space:]]*$' "$quarantined_file" || true)
 fi
 
+# Membership is read from a here-string, never `printf ... | grep -q`: grep -q
+# leaves at the first match, the writer still sending a long list dies of
+# SIGPIPE, and under pipefail a match reads as a miss (DOR-2021).
 is_quarantined() {
   [ -n "$quarantined" ] || return 1
-  printf '%s\n' "$quarantined" | grep -Fxq -- "$1"
+  grep -Fxq -- "$1" <<<"$quarantined"
 }
 
 # One path per shard, or none for the single default report. See SHARDING above.
@@ -695,7 +698,8 @@ if [ -n "$quarantined" ]; then
   absent=''
   while IFS= read -r q; do
     [ -n "$q" ] || continue
-    printf '%s\n' "$all_ids" | grep -Fxq -- "$q" || absent="$absent  $q"$'\n'
+    # A here-string, not a pipe: see is_quarantined for the SIGPIPE it avoids.
+    grep -Fxq -- "$q" <<<"$all_ids" || absent="$absent  $q"$'\n'
   done <<<"$quarantined"
   if [ -n "$absent" ]; then
     fail "these tests are QUARANTINED but did not RUN in this suite:

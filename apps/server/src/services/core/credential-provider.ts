@@ -24,6 +24,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { ExtensionSecretStore } from '@dorkos/shared/extension-secrets';
 import { parseCredentialReference } from '@dorkos/shared/config-schema';
+import { mayReadOsKeychain } from '../../lib/keychain/os-keychain-policy.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -141,14 +142,15 @@ export class EncryptedFileCredentialStore implements CredentialStore {
 
 /**
  * macOS keychain accessor via the `security` CLI. Available only on darwin
- * (where `security` ships); every other platform reports unavailable so a
+ * (where `security` ships) and never on the test runtime (see
+ * `lib/keychain/os-keychain-policy`); everywhere else it reports unavailable so a
  * `keychain:` reference fails honestly rather than pretending. A lookup is
  * time-bounded so a stalled keychain can never hang a runtime spawn, and any
  * error (including "item not found", exit 44) maps to `null`.
  */
 export class MacOsKeychainAccessor implements KeychainAccessor {
   isAvailable(): boolean {
-    return process.platform === 'darwin';
+    return mayReadOsKeychain();
   }
 
   async get(id: string): Promise<string | null> {

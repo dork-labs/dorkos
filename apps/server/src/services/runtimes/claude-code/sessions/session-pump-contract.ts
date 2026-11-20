@@ -329,7 +329,7 @@ export interface SessionPumpOptions {
    * cuts turn windows out of. A throw from here is logged and swallowed: a
    * consumer bug must not take the process down with it.
    */
-  onMessage?: (message: SDKMessage) => void;
+  onMessage?: (message: SDKMessage, query: PumpQuery) => void;
   /**
    * The process ended without the pump asking it to — task 3.6's failover seam.
    * It is that task, not this one, that closes the open turn and preserves the

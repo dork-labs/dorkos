@@ -13,6 +13,251 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Only /system:release compiles fragments into a version section below.
 -->
 
+## [0.139.0] - 2026-11-20
+
+> DorkOS 0.139.0 lets you finish signing in through the Agent browser with a Done signing in button. Codex chats switch to a model that works instead of stopping, and quitting while DorkOS starts no longer crashes it.
+
+### Note for people upgrading
+
+- If you reach DorkOS from your other devices, use a long password you don't use anywhere else, and turn on Wi-Fi access only on networks you trust, like your home network.
+- **Codex chats on your own sign-in now check their model against the models your OpenAI account lists.** A model that isn't listed, even one set in Codex's own settings, is swapped for your account's default, and that chat keeps it. (DOR-3168)
+- In a room bridged to Telegram or Slack, your own phone's posts still count as someone else's for now. (DOR-4453)
+- On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
+- On a Mac, Codex chats can't delete or move folders (rm -r, rmdir, mv). We're fixing it (DOR-4358).
+- Known issue: offline, OpenCode's first turn in a new folder can take about a minute. Online, the first turn waits about 10 seconds once. A fix is coming in a later release (DOR-4422).
+- Known issue: Codex won't start in a folder whose Git path has `* ? [ ] { }` in its name, like `site [old]`, or in a worktree whose Git folder is gone, at any level. Use another folder for now. We're fixing it (DOR-4542).
+
+### Security
+
+- An approval stays tied to exactly the action you saw. If DorkOS can't describe an action that exactly, it turns it down instead of asking you. (DOR-3137)
+- Shell commands on the DorkOS runtime now say they come from an agent, as they already did on Claude Code, Codex and OpenCode. Tools that check, like the /flow plugin, can tell an agent ran them. (DOR-3717)
+
+### Fixed
+
+- Sign-in no longer reports success to your agent without opening a window. If the sign-in window doesn't open, asking again opens it or says why not. (DOR-4731)
+- When your agent hands you the Agent browser to sign in, the card now has a **Done signing in** button from the moment the sign-in window opens. Press it to close the window, save your sign-in and hand the browser back. On a Mac, closing that window left Chrome running, so your agent waited forever. There, Done signing in quits it the way ⌘Q does. If it doesn't quit, the card asks you to click it and press ⌘Q, and your sign-in still saves. If the sign-in can't be saved, the card says so and offers **Sign in again**. **Stop task** leaves the window open for you, and the browser panel offers **Done signing in** for any sign-in window still open. (DOR-4731)
+- When the model a Codex chat on your own sign-in asks for isn't available, the chat no longer stops. It switches to your account's default model, keeps using it, and tells you which one. This doesn't apply on DorkOS credits or a custom model server. (DOR-3168)
+- After you change the DorkOS runtime's default model, picking an older chat's own model in its model menu works again instead of being refused, including after you restart DorkOS. (DOR-4488)
+- Quitting or updating DorkOS while it's still starting no longer crashes it. It closes cleanly. (DOR-4689)
+
+### Going back
+
+0.139.0 adds no database changes. It adds one group of settings, `runtimes.loadGate`, for a feature that isn't turned on yet. 0.138.0 ignores it and leaves it in your settings file. To go back, install 0.138.0. It starts normally.
+
+- If you go back to 0.138.0, a Codex chat that switched models shows "This part of the chat couldn't be shown." where the note naming the new model was. The rest of the chat shows normally. It's cosmetic.
+- Codex chats that already switched keep the model they switched to. Others whose model isn't available stop again instead of using your account's default.
+- The sign-in card loses its Done signing in button, and on a Mac, closing the sign-in window can leave your agent waiting again.
+- Picking an older chat's own model on the DorkOS runtime can be refused again after you change its default model.
+
+## [0.138.0] - 2026-11-19
+
+> DorkOS 0.138.0 lists every setting, riskiest first, when an agent asks to change several at once. A chat that took in outside words now stays held until you write in it, apps can play long videos, and an agent can take back a request it no longer needs.
+
+### Note for people upgrading
+
+- **After a chat takes in words DorkOS can't vouch for, like a stranger's message, an email the agent read or a web page, that chat stays held until you type your own next message in it in the DorkOS app.** Until then, its scheduled runs and heartbeats can't send through a connected app, and other agents' messages there ask you first. This includes chats that were held when you update. Waiting or a restart doesn't clear it, and for now neither does a message you send from Telegram or Slack. (DOR-4515)
+- **When a page on a canvas sends events to an agent, that turn now counts as outside words,** so it asks you before it sends anything or does something it can't undo in an outside account, and the chat stays held until you write in it. (DOR-4603)
+- **An agent that reads another agent's scheduled runs now needs its chat at Full autonomy.** Below Full it's told the runs aren't its to read. (DOR-4600)
+- **A settings card that includes a setting only you may change no longer offers Always allow,** so those cards ask each time. (DOR-4778)
+- **Mode-change cards for a scheduled task raised before this update need asking again.** The agent is told to send its request again. (DOR-4335)
+- In a room bridged to Telegram or Slack, your own phone's posts still count as someone else's for now. (DOR-4453)
+- On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
+- On a Mac, Codex chats can't delete or move folders (rm -r, rmdir, mv). We're fixing it (DOR-4358).
+- Known issue: offline, OpenCode's first turn in a new folder can take about a minute. Online, the first turn waits about 10 seconds once. A fix is coming in a later release (DOR-4422).
+- Known issue: Codex won't start in a folder whose Git path has `* ? [ ] { }` in its name, like `site [old]`, or in a worktree whose Git folder is gone, at any level. Use another folder for now. We're fixing it (DOR-4542).
+
+### Security
+
+- When an agent asks to change several DorkOS settings at once, the approval card lists every one by name, riskiest first, and never shortens a setting only you may change. A change too large to show whole is turned down, and a card with any setting only you may change doesn't offer Always allow. (DOR-4778)
+- A chat that took in words DorkOS can't vouch for now stays held until you type your own next message in it in the DorkOS app. Until then, another agent's message there asks you first before it sends anything through a connected app or does something in an outside account it can't undo, and it can't raise its own power or reveal a secret DorkOS holds. A scheduled run or heartbeat there can't do any of those things. Waiting never clears the hold. This is for chats, not rooms. (DOR-4515)
+- When a page on a canvas sends events to an agent, the turn they start now counts the page's text as words from outside your team, like a mini app's message. (DOR-4603)
+- In an agent's chat, the run-history tool now answers only for that agent's own schedules and for schedules that belong to no agent. Another agent's runs need a chat at Full autonomy whose turn read no outside words, the same rule as changing that agent's schedule. The app and its people see every schedule's runs, as before. (DOR-4600)
+- A video link plays one video from one app and nothing else. It never acts as you. It stops working after 10 minutes unused, after 2 hours at most, and as soon as the app is turned off, reloaded or updated. DorkOS's logs hide the link's secret part. (DOR-4321)
+
+### Added
+
+- Apps with their own server part can now play long MP4 or WebM videos. A video starts quickly, you can skip ahead, and there is no size limit. Apps that show pictures work as before. App makers use the new `api.mediaUrl`. (DOR-4321)
+- An agent can now take back a request it asked you to approve, once it no longer needs it. The card goes away everywhere you see it, and the audit log shows that the agent took it back. An agent can take back only its own requests, and only while you haven't answered them. (DOR-4586)
+
+### Fixed
+
+- When an agent asks to change how a scheduled task runs, the approval card now also shows any mode and rules it asked for that this approval won't apply. A yes counts only for that exact request; the rules still wait for your own Approve. The agent is told so. The card names modes the way the mode picker does, like "Never ask". (DOR-4335)
+- On a schedule's approval card, "Try it once now" now runs at the mode you picked when it's stricter. The card names a different mode only when the test run can't use yours. (DOR-4336)
+- A schedule's next run time is now worded the same way on the Schedules list as in Needs you: "9:00 AM" for today, "tomorrow at 9:00 AM", "Sat at 9:00 AM" this week, and the date after that. (DOR-4483)
+- When DorkOS picks a Claude account by itself, it no longer picks one it last saw signed out. That covers moving an agent or a room seat off a full account, starting a new chat, and the work queue. You can still choose a signed-out account yourself, and DorkOS tells you it is signed out. A work queue that waits for that reason now says so. (DOR-4439)
+- When DorkOS moves a chat to a new id behind the scenes, the chat now keeps what its latest turn was set to, so an older Full setting never outlives a newer, lower one. (DOR-4606)
+- When a file on a chat's canvas can't be edited, the canvas now tells you, as the owner, why. For example, its folder was moved, or the file is outside the chat's agent folder. (DOR-4442)
+- The app-building skill every agent has is updated. It tells agents which reads make an app wait for your yes, and when a change to an app's server code waits too. Agents are told to show you everything an app can reach while it waits, put the app's name on its commands and dialogs, and keep an app's stored data, secrets and private details out of shared places and out of its code. (DOR-4756)
+
+### Going back
+
+0.138.0 adds no database or settings changes. To go back, install 0.137.0. It starts normally.
+
+- A chat that took in outside words no longer holds its later scheduled runs, heartbeats or other agents' messages, and the next of those clears the hold.
+- An agent's chat can read every schedule's past runs again, and canvas page events no longer count as outside words.
+- "Try it once now" on a schedule's card runs at the task's saved mode again, even if you picked a stricter one.
+- Settings approval cards go back to their shorter form.
+- Mode-change cards for a scheduled task raised on 0.138.0 need asking again.
+- DorkOS may again pick an account it last saw signed out.
+- Apps can't use the new video links, so long videos in them don't play.
+- Agents keep the updated app-building skill. Requests an agent took back stay closed.
+
+## [0.137.0] - 2026-11-19
+
+> DorkOS 0.137.0 asks for your DorkOS password, if you've set one, before many more changes that give agents or people lasting access. A send through a connected app also needs your OK when that turn already read mail, a web page or another app's tool. About 190 more apps count as spending money, and many fixes land across the Agent browser, rooms, schedules and mini apps.
+
+### Note for people upgrading
+
+- **If you've set a DorkOS password, many more changes that give lasting access now ask for it,** at your desk or over Remote Access. If you never set one, these changes at this computer go through as before, and away from it they can't go through until you set one. If your password is short, DorkOS asks you to choose a longer one first. Lowering a setting or a grant stays instant. The full list is under Security. (DOR-4355)
+- **From a phone or tablet on your Wi-Fi, you can now only deny approval cards.** To allow one, answer at your computer or over Remote Access. (DOR-4355)
+- **Over Remote Access, allowing an approval card for a DorkOS action asks for your password each time.** Tool prompts there are allowed one at a time, and a one-time Allow on one is still one tap. (DOR-4355)
+- **Adding people who may approve or message your agents on a chat connection, opening one to anyone, or turning one back on is now yours to do.** An agent asks you on a card. (DOR-4355)
+- **Sends now wait after outside reading.** When a turn has read through a connected app, a web page or another app's tool, a send through a connected app in that same turn needs your OK, at every level. A schedule that reads mail and then replies can't send that reply on its own any more: on its timer the send is refused, and started with Run now it asks you. Files an agent reads and commands it runs (such as curl or git) don't count yet. (DOR-3969)
+- **About 190 more connected apps now count as spending money,** and more risky actions need to be picked for an agent one by one. A Read or Read and write grant you gave before no longer covers those actions, and neither does sharing the app with every agent. To let an agent use one, pick that action for that agent on the Connections page. (DOR-4597, DOR-4505, DOR-4624)
+- **A mini app's paid reads now use your monthly spending limit.** With no limit set, or no price set for that app, a mini app can't run them. (DOR-4575)
+- **Mini apps edited by agents on Codex, OpenCode or the DorkOS runtime now wait for your OK** before their new server code starts. (DOR-4528)
+- In a room bridged to Telegram or Slack, your own phone's posts still count as someone else's for now. (DOR-4453)
+- On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
+- On a Mac, Codex chats can't delete or move folders (rm -r, rmdir, mv). We're fixing it (DOR-4358).
+- Known issue: offline, OpenCode's first turn in a new folder can take about a minute. Online, the first turn waits about 10 seconds once. A fix is coming in a later release (DOR-4422).
+- Known issue: Codex won't start in a folder whose Git path has `* ? [ ] { }` in its name, like `site [old]`, or in a worktree whose Git folder is gone, at any level. Use another folder for now. We're fixing it (DOR-4542).
+
+### Security
+
+- **Confirm it's you before more lasting access changes.** Once you've set a DorkOS password, DorkOS asks for it before many more changes that give agents or people lasting access, at your desk or over Remote Access. Lowering a setting or a grant stays instant. It covers: (DOR-4355)
+  - API keys, Remote Access and Wi-Fi settings, signing out another device, and raising what agents may do or spend.
+  - Credits for agents, checks and scheduled tasks; space moves; showing or replacing the local MCP token.
+  - Raising or removing a space's limit on teammates' turns, and turning on an extension.
+  - Installing, updating or linking code; adding a package source; applying a Shape; running a workspace's setup commands.
+  - Widening what agents may do with a connected app, saving an app's key, connecting or resuming an account, undoing a narrowing, and keeping a connected app's access as it stands after a review.
+  - Letting a chat connection do more, reach more chats, point at another agent, let anyone message your agents, or turn back on; and adding someone who may approve or message your agents there. Only you can add those people.
+  - A schedule that runs with more permission, connecting a space account, letting a space wake your agents more widely, giving an extension a secret, and giving a page a standing event route.
+  - Saving a key for a runtime, or the address it sends your agents' prompts to, and signing OpenCode in to OpenRouter.
+- Approvals that grant lasting access, like Always allow, ask for your password and show a request code to check. A yes from your phone over Remote Access asks you to confirm too. Creating and renaming API keys over Remote Access works after you confirm. (DOR-4355)
+- Letting a mini app read a connected account now ends on its own page with a request code and an **Open DorkOS** button, so you can confirm it's you there and check the code matches. (DOR-4355)
+- When an agent asks to let someone approve or message your agents on a chat connection, or to let a chat route do more, you get a card. It names the connection by its type and id, and shows exactly what changes. You confirm it's you, and DorkOS makes that one change. The card lasts ten minutes, and it counts once. A card from an agent that read words from outside your team never appears. (DOR-4355)
+- When an agent changes a scheduled task that runs on DorkOS credits so it costs more (its prompt, its schedule, a longer time limit, or what it runs on), you get a card first, and nothing changes until you say yes. Lowering the limit, switching it off or moving it off credits still happens at once. (DOR-4609)
+- After an agent reads through a connected app, a web page, a tool from another server, or a room or chat that holds outside words, a send through a connected app in that same turn asks you first, and the card usually says the agent just read words from outside your team. In a run nobody is watching, that send is refused. Files an agent reads and commands it runs (such as curl or git) don't count yet. (DOR-3969)
+- A task or agent can be set as one that reads outside text, like mail or web pages. Its posts are then treated as outside words, and an agent can't switch that off. (DOR-3969)
+- On Claude Code, a task's list of commands that run without asking (a one-shot task's, or the list a task takes when an agent moves it off Bypass) holds only exact one-line commands, with no wildcards or shell tricks, and no wider than what the agent may already do. DorkOS records each program and checks it before every run, including runs started by hand. If a program changed, or the agent no longer runs commands without asking, the run stops and nothing runs. Adding commands later still takes a person's yes. (DOR-4315)
+
+### Added
+
+- An agent on Claude Code at Full can set up a task that runs once, for a job like a backfill, from its own chat. It can give that one scheduled run up to 20 exact commands to run without asking, with no approval card, as long as that turn hasn't read words from outside your team. A run started with Run now goes without them. The agent is told to take the commands back afterwards, which also needs no card. Every change is recorded. (DOR-4315)
+- Mini apps can now ask DorkOS to record something you did while signed in, and check it later. DorkOS keeps that record itself, outside the mini app's data, so a mini app can tell a comment you wrote from one an agent wrote. (DOR-4301)
+
+### Changed
+
+- Agents on Claude Code can make their own tasks safer: an agent at Full can move its own task that is on and runs every command without asking to Never ask, with the exact commands it needs, in one call and with no card, from its own chat, as long as that turn hasn't read words from outside your team. DorkOS checks each of those programs before every run. (DOR-4315)
+- Agents are now told to run one command per call, with no `&&` chains and no inline `$VARS`, so Claude Code can check routine commands itself. (DOR-3109)
+- When an agent edits a mini app it built, the new server code starts by itself only when DorkOS saw that agent's own Claude Code chat make the change with its file tools, at Full. Any other change waits for you to approve it. (DOR-4528)
+- When you allow a different copy of a mini app, or new files for it, it starts with no rooms and no agents to forward to. Pick them again in Settings → Extensions. Allowing the same files again keeps your picks. (DOR-4573)
+- When an app update asks for something new, its Inbox card now says so in the title: the app "was updated and wants more", and its screens stay paused until you look. An update that only changed files keeps the old title. (DOR-4531)
+- A mini app's reads from an app that charges per use now count against your monthly spending limit, the same limit agents use, and its request and its page say "Spends money". An app counts as one that charges per use whatever capitals, spaces or separators its name uses, like "Perplexity AI" or "perplexity_ai". (DOR-4575)
+- On a phone, the browser's top row is easier to use: Reload sits inside the right end of the address, the status button and the ⋯ menu sit side by side and each has its own space to tap, and the address keeps the same text size when you tap it. (DOR-4436)
+
+### Fixed
+
+- Paid actions in about 190 more connected apps now use your monthly limit and show the price card. They include Gemini, Mistral AI, GroqCloud, Cohere, Bright Data and HeyGen, plus apps for AI models, speech, text messages, scraping, search results, people data and email checks. Strale, Digital Humani, Memelord's renders and starting a song in Words Into Music count too. (DOR-4597, DOR-4624)
+- More risky app actions now need to be picked for an agent one by one, and Read and write no longer covers them: (DOR-4505, DOR-4506, DOR-4507, DOR-4508, DOR-4509, DOR-4332, DOR-4624)
+  - every change in PayPal Zettle, Moneybird, Creem, Longbridge, Skyfire, Strale, Ramp, Metronome, Polar, Gift Up and PostGrid, and in new money apps DorkOS recognizes by name, including new versions of ones it already knows;
+  - running payroll or paying back expenses in any app, and a few single actions such as issuing a card, billing a customer, adding Elastic Email credits, changing a Gusto pay schedule, a Memelord Genjutsu job, or awarding Piggy credits;
+  - actions that create or change OAuth apps;
+  - creating a branch and merging a pull request in Bitbucket, and new merge, branch, tag or release actions in GitHub, GitLab, Gitea and Bitbucket; a GitLab commit that starts from another commit or project; and changing where GitLab reads a project's CI setup from;
+  - an X upload that lets other accounts use your media, or an ad-only post that won't show on your timeline.
+
+  Opening or editing a merge request, inline review comments, and ordinary X uploads and posts stay in Read and write.
+
+- After you link your DorkOS account again, apps the recent Read and write update set back to Read stay on Read until you choose Read and write. (DOR-4510, DOR-4735)
+- When a site blocks the Agent browser, your agent can now hand the site to you. A turn started by someone outside your team still can't hand the browser over; the agent is told to let you know instead. When the handoff is refused, your agent hears why. (DOR-4693)
+- When you sign in from a blocked page with **Open sign-in window**, the agent's own window comes back at the page it was on once you finish. It never closes a window you're still using; it asks you to finish or close the sign-in window first. (DOR-4693)
+- Ordinary pages no longer count as a site refusing the Agent browser. Only a real block page counts, such as Google's "Couldn't sign you in", a bot check or an access block. When a site does refuse, your agent now hands it to you right away. (DOR-4662)
+- When a site's address is too long for the browser's address bar, the site's own name now always shows in full. The start of the address is shortened first, and on a narrow phone the name gets a little smaller or moves onto a second line, but it is never cut off. (DOR-4655)
+- An agent on Claude Code or Codex in a room is now told the Agent browser works only in a direct chat with you, and to say so and ask you to continue there instead of waiting. (DOR-4733)
+- Your agents no longer pass the "read words from outside your team" hold to each other when none of them read such words. Before, the hold could spread from agent to agent and refuse things it shouldn't, such as handing you the Agent browser, changing settings, or editing memory. A message from another agent no longer keeps your direct chat held after you reply. A chat that really did read outside words, a Telegram or Slack chat with a stranger in it, or a chat DorkOS can't place still counts as held. (DOR-4698)
+- When more Claude Code chats are busy than DorkOS keeps running at once, work an agent started no longer takes the process of a chat that finished its turn less than two minutes ago, so busy chats stop restarting every turn and dropping their tools. That work waits for a free spot instead, and its chat says it is waiting to start. A message you send never waits for this. (DOR-4498)
+- A room seat on Claude Code now recovers after a Claude server error, until DorkOS restarts. The new chat keeps the original account, model, folder access and permission limits. When a room chat stops, DorkOS says why and what to do next. (DOR-4328)
+- When an agent in a room waits for you to approve an action such as a send through a connected app, the room now says so after a minute: who is waiting, where to answer, and that new messages for that agent wait with it. (DOR-4610)
+- When one chat interrupts or stops another, the stopped chat now says which chat did it, and its agent is told no person stopped it. (DOR-4668)
+- A chat that fails with "No message found with message.uuid" now works again on your next message, so if you see it, send your message again. (DOR-4590)
+- Claude Code chats and schedules set to Ask first or Accept edits can now check which chats are running, read a schedule's past runs, see when each agent last worked, and read an agent's heartbeat without stopping for an approval. At those levels these reads leave out chat titles and run or beat summaries. A turn that read something from outside your team still has to ask first. (DOR-4601)
+- A scheduled run that waits for a free agent no longer runs out of time before it starts. Its time limit now counts from when it starts, and while it waits, its run history says it is waiting to start. (DOR-4576)
+- The card that asks you to approve a schedule now names the agent once, by its real name, and says the run permissions once. (DOR-4337, DOR-4572)
+- Approval cards no longer cut their title short on a narrow screen. It wraps instead. (DOR-4355)
+- When an agent's folder rules are too long to show in full on an approval card, your Inbox now says so and names the agent. The rules still never apply until you can read every one. (DOR-4455)
+- The "signed out" notice on a Claude account now clears itself when a usage check finds the account working again, or when you sign in again from the command line. One failed sign-in no longer raises an alert right away: DorkOS waits 30 seconds first, and checks the account once more in that time. (DOR-4425, DOR-4424)
+- When signing in to Claude Code or Codex from DorkOS doesn't work, it now says why and what to try next. (DOR-4426)
+- If you turned on Ask for a password on this computer, the Mac app's tray and notifications were silent. Fixed. (DOR-4691)
+- A mini app's status-bar item now draws at the same text size as the rest of the status bar, on a computer and on a phone. (DOR-4330)
+- Approval cards for DorkOS actions, and your answers to them, now stay in a chat's history after a reload or restart. (DOR-4657)
+- A DorkOS server started in test mode no longer reads your Mac's Keychain. (DOR-4423)
+- Agents are told more about why something was refused or changed: a paid action that waits names the cost reason; blank chat titles in a running-chats list say why; an action that needs a one-by-one pick, or writes the update lowered to Read, say so and point to Connections; a refusal caused by a turn's mark says so; schedule rules and their 20-rule cap, which schedules can't run and who approved each; apps waiting for you; a Back or Forward press pausing the Agent browser; a refused browser profile; OpenCode helpers that are off; Codex project settings that didn't load; an OpenCode package check's reason; and the modes a runtime has. (DOR-4447, DOR-4678)
+
+### Going back
+
+0.137.0 adds three database changes: a one-shot task's own commands, the launch rules a room seat's chat needs, and DorkOS's own record of what a person did in a mini app. To go back, install 0.136.0. It ignores them and starts normally. Settings need no change.
+
+- Before you go back, take the commands off any one-shot task, or delete it. 0.136.0 sees it as a task with no schedule and never runs it on its own, but a run you start by hand there takes its commands along unchecked. If you come back to 0.137.0, a one-shot task that never ran on 0.137.0 runs once.
+- A task an agent moved to Never ask keeps its schedule and its commands. 0.136.0 doesn't check each program, or the agent's own level, before it runs.
+- Reading mail, a web page or another app no longer marks the turn, so a send after it doesn't ask first. A task or agent you set as one that reads outside text loses that setting until you come back.
+- The apps and actions this release added to the spending and one-by-one lists go back to how 0.136.0 treats them: Read and write covers them again, and their paid actions skip your monthly limit. Picks you made stay. A mini app's paid reads stop counting against your monthly limit.
+- Don't link your DorkOS account again while on 0.136.0. There, it can give agents back changes the Read and write update set back to Read.
+- Changes this release added to "Confirm it's you" go through without your password again. Cards waiting on those changes end.
+- A mini app edit waiting for your OK stays waiting. But if its agent is at Full, the next change to that mini app's files starts it with no card, whoever made it.
+- Mini apps can't check DorkOS's record of what you did. The record is kept and works again when you come back.
+- A room chat DorkOS restarted after a Claude server error is no longer held to its first account and how it's paid for. Let room posts finish before you go back.
+- Two new Inbox notices, about folder rules too long to show and a Remote Access confirmation refused after five wrong passwords, don't show. They may still count on the unread badge until you mark all as read.
+
+## [0.136.0] - 2026-11-18
+
+> DorkOS 0.136.0 helps with sites that refuse the Agent browser, such as a Google sign-in. Your agent is told to stop and hand the site to you, and you can sign in in a separate window. Agents can also message another agent's chat in a room privately.
+
+### Note for people upgrading
+
+- **Telegram or Slack chats you linked before this update keep asking before an agent passes your words on.** Start a new linked chat to stop the extra asks. (DOR-4593)
+- **When an extension's folder has been deleted, DorkOS forgets its approval** the next time it starts or reloads extensions, and notes it in the audit log. Install it again and DorkOS asks again. Tools you set to Blocked or Ask stay that way. (DOR-4305)
+- **Most DorkOS tools now refuse a setting they don't have, instead of ignoring it.** An agent or an outside MCP app that sends a misspelled or unknown setting to one of them now gets an error. (DOR-2067)
+- **If you connect mail:** an agent with Read and write on a mail app can send mail without asking you. A message from someone else on Telegram, Slack, in a room or from a mini app makes that turn ask you first or refuse the send, but mail and web pages the agent reads don't count yet. Give a mail app Read unless you need your agents to send. A check before mail to someone new comes in a later release. (DOR-4446)
+- In a room bridged to Telegram or Slack, your own phone's posts still count as someone else's for now. (DOR-4453)
+- Known issue: the Agent browser can take an ordinary page for a site's block page when the page's text says "press and hold" or "verify you are human", or its title is "Access denied". Your agent then stops and hands the page to you. Hand it back to carry on. We're fixing it (DOR-4662).
+- On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
+- On a Mac, Codex chats can't delete or move folders (rm -r, rmdir, mv). We're fixing it (DOR-4358).
+- Known issue: offline, OpenCode's first turn in a new folder can take about a minute. Online, the first turn waits about 10 seconds once. A fix is coming in a later release (DOR-4422).
+- Known issue: Codex won't start in a folder whose Git path has `* ? [ ] { }` in its name, like `site [old]`, or in a worktree whose Git folder is gone, at any level. Use another folder for now. We're fixing it (DOR-4542).
+
+### Security
+
+- When you message an agent from your own linked Telegram or Slack chat, and it passes your ask to another agent, that agent no longer asks you before sending through a connected app. This works in linked chats you start after this update. A group chat, or someone not on the connection's Approvers list, still makes it ask, and so does any chat they ever wrote in. (DOR-4593)
+- The tool for updating an agent's details now refuses any change to memory you set, and applies nothing else in that request. (DOR-3470)
+
+### Added
+
+- **Agents can message another agent's chat in a room privately.** A short notice in the room shows who messaged whom, without the message. Replies stay private. In a room linked to Telegram or Slack, an agent can answer a private message but can't start one. (DOR-4472)
+- **The Agent browser's ⋯ menu can open a site in a separate sign-in window,** for example **Sign in to google.com in its own window**. It opens a plain browser window where you sign in yourself. (DOR-4097)
+
+### Changed
+
+- When a site refuses the Agent browser, such as Google's "Couldn't sign you in" page or a bot check from Cloudflare, Akamai and similar, your agent is told the site refused it, and to stop and hand the site to you instead of trying to get past it. When it hands the site to you, DorkOS offers **Open sign-in window**. (DOR-4097)
+- In the Mac app, when a site won't let you sign in inside the app, a short note under the address says so, with **Open sign-in window**. After you sign in, **Open in its own window** carries on there. A sign-in there works when the Agent browser opens in its own window, not in the in-app view. For a bot check, the note offers **Open in its own window**. (DOR-4097)
+
+### Fixed
+
+- In the Mac app's Agent browser, every part of a site, background workers included, now sees a plain Chrome browser. This helps sites that refused to sign you in. (DOR-4650)
+- Ask an agent whether it has browser profiles, and it now says the Agent browser has one default profile. Other browser tools you gave it, such as your own Chrome tools, are no longer called profiles. (DOR-4633)
+- When an agent posted into a channel nobody had written in yet, from its direct chat or a task, the post never showed up, and the agent was told there was "nothing to answer". Now the post goes up, as it does in any other channel. The same fix lets a spin-off chat report back to an agent in an empty channel. (DOR-4619)
+- **Switching chats right after you send no longer swaps them.** If you sent a message and quickly switched to another tab, that tab could turn into the chat you had just sent to. The same thing could pull you back after you clicked a different chat in the sidebar. Now the chat you switch to stays put. A new chat, a fork or an agent's chat that is still opening also stays out of your way if you have already moved on. (DOR-4622)
+- A channel you move to another section of the sidebar now stays there, on desktop and phone.
+
+### Going back
+
+0.136.0 adds two database changes: a record of whose words each linked Telegram or Slack chat holds, and a route for private messages to room seats. To go back, install 0.135.13. It ignores them and starts normally. Settings need no change.
+
+- Let private messages to room seats finish before you go back. One still waiting stays "queued" on its sender's card in 0.135.13.
+- Agents can no longer message another agent's chat in a room privately. Room notices about earlier private messages stay in the room.
+- When an agent passes on your words from your own linked Telegram or Slack chat, the agent it hands them to asks you first again.
+- Approvals DorkOS dropped for extensions that were gone stay dropped. Installing one again asks you again.
+- If you come back to 0.136.0 later, start new linked Telegram or Slack chats rather than reusing ones you began on 0.135.13.
+
 ## [0.135.13] - 2026-11-17
 
 > DorkOS 0.135.13 adds a monthly spend limit for apps that charge per use, and makes a mini app's messages limit what an agent can do, like anyone else's. The Agent browser gets one ⋯ menu, a label that says who has the page, and the usual browser keys.
@@ -353,148 +598,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 0.135.8 doesn't change the database or your settings. To go back, install 0.135.7. On 0.135.7, removing an MCP server reaches open chats only after a restart again, **Always allow** stops asking which you mean, and MCP server sheets no longer show tools or agents. Your Inbox may count an unread notice about a new MCP tool that it doesn't show; **Mark all read** clears it. Rules changed with **Just** or removed with **Make it ask** stay as they are, and a `dorkos` command the Mac app installed stays in your Terminal.
 
-## [0.135.7] - 2026-11-12
+Older releases (v0.1.0 – v0.135.7) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.135.7.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.135.7.md).
 
-> DorkOS 0.135.7 makes Unblock agent work over Remote Access again, makes the agent's own Chrome window easy to spot, and makes handing the browser to you simpler.
-
-### Note for people upgrading
-
-- On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
-- Removing a global MCP server stops new chats from using it. Chats that are already running keep it until they end or you restart them. If you remove a server because you no longer trust it, restart DorkOS so no chat can still reach it. The Connections guide says so (DOR-3872).
-- Agents below Full can no longer change saved browser sign-ins with their file tools, or from a shell on Claude Code, including `dorkos browser login` and `dorkos browser forget`. To let an agent save a sign-in, set it to Full. This works on Claude Code and Doe only; on Codex and OpenCode, no agent can. (DOR-4136)
-- If you added a Playwright browser to an agent with options that save browser state, write files or run a file at start, DorkOS now leaves it out of that agent's chats. Remove those options to use it again. (DOR-4136)
-- In **New browser window** mode, DorkOS now uses your installed Google Chrome when it finds it. When an agent hands you the browser there, its window closes and the page opens for you in a plain browser window (your installed Chrome, if DorkOS found it). Anything typed into a form on that page doesn't carry over. An agent can only hand you a site whose address starts with `https` (or `localhost`). (DOR-4178)
-- For scripts: `DELETE /api/mesh/denied/{encodedPath}` is now `DELETE /api/mesh/denied?path=<folder>`. The marketplace source routes also take the name as `?name=`: `DELETE /api/marketplace/sources?name=` and `POST /api/marketplace/sources/refresh?name=`. The old source routes still work. A browser tab left open from before the upgrade needs a reload before **Unblock agent** works. (DOR-4212)
-
-### Security
-
-- Agents below Full can't change the browser sign-ins DorkOS keeps: the sign-ins saved by `dorkos browser login`, the Agent browser's profiles and saved sign-ins, and the desktop app's data folder. Their file tools refuse on every runtime, and so does a shell command on Claude Code. An agent you set to Full can now save a sign-in on Claude Code and Doe, the way you can. That includes the Agent browser's profiles, which 0.135.6 kept from every agent. (DOR-4136)
-- DorkOS now leaves a Playwright browser out of an agent's chats when its options save browser state, write files or run a file at start. This holds at every level, Full included. Options that bring their own config were already left out; now every spelling of them is. (DOR-4136)
-- Signing in on a browser profile that no longer exists is refused, instead of quietly making it again. (DOR-4180)
-
-### Added
-
-- **Pictures in a room's Files list now open as pictures.** Before, they said only text files could be shown. SVG files still open as text. (DOR-4179)
-
-### Fixed
-
-- **Unblock agent works over Remote Access again.** In 0.135.6 it failed from another device, over both DorkOS's remote access and your own ngrok tunnel. That known issue is fixed. (DOR-4212)
-- Over Remote Access, a picture you attached in a chat now shows when DorkOS runs on Windows, and you can refresh or remove a marketplace source saved by an older DorkOS whose name holds a `/`. (DOR-4212)
-- **When a site needs you, the handoff is simpler.** In **New browser window** mode, the page opens for you in a plain window: sign in or finish the check, close the window, then press **Continue**. In the Mac app's panel, you finish right in the panel, then press **Continue**. The agent can't use the browser until you hand it back. A long site name now wraps in the card's title, so no button runs off the edge on a phone. (DOR-3112, DOR-4178)
-- After you hand the Agent browser back, DorkOS wakes the agent itself, whether you pressed **Continue** or resumed the browser yourself. Before, it woke only if the card's own message got through. The card, in the chat and in the Inbox, then becomes one quiet line saying how it ended, for example "Atlas is carrying on.", "Stopped. Atlas won’t carry on with this." or "The window closed. Atlas stopped here." (DOR-3112)
-- While you finish one agent's handoff, no other agent can use the Agent browser. (DOR-4178)
-- **The agent's Chrome window is easy to tell apart.** When DorkOS uses your installed Chrome, each agent window gets an orange colour and the agent's name. In the Mac app's panel, websites now see an ordinary Chrome-style browser at its real engine version, without the app's name in it. (DOR-4178)
-- Putting a room file back on the canvas shows its tab again, even after you closed that tab. In a file preview, the line under the name now shows its folder ("Top folder" at the top), not the full path. (DOR-4179)
-- After you close the Agent browser's window, **Forget…** works on its saved sign-ins right away. It no longer asks you to close a browser that's already closed. (DOR-4181)
-- The Agent browser can read a page built in an unusual way, with two main page sections. Before, the read failed, and the agent was stuck on that tab. (DOR-4192)
-- An agent can always open another page, even after it couldn't read the one it's on. It still can't while you have the browser or it's paused, or go anywhere it's not allowed to go. (DOR-4192)
-- When an agent asks to read and change things in an app, it no longer hears "You can now read" as if that were everything. Its answer now says it can't change anything there, and why. Maybe you picked Read. Maybe the app has nothing to change. Or maybe the app's change actions are allowed one at a time, as with Linear today. (DOR-4193)
-- When an agent that has only Read asks again to change things, you now see a card. Before, for an app like Linear, it could be told it already had access without you seeing anything. (DOR-4193)
-- When an agent asks to change things in an app that can only give Read, the access card now says so before you answer. If the app has actions that change things, it tells you to choose exact actions on the Connections page. (DOR-4193)
-
-### Going back
-
-0.135.7 doesn't change the database or your settings. To go back, install 0.135.6. On 0.135.6, **Unblock agent** over Remote Access fails again, and scripts must use the old route that puts the folder in the address. Browser profiles that 0.135.7 opened in your installed Chrome may keep an agent's orange colour and name, even in the sign-in window.
-
-## [0.135.6] - 2026-11-11
-
-> DorkOS 0.135.6 makes a file you closed open again when you click it, refuses tricky addresses over Remote Access, and smooths several rough edges in the Agent browser.
-
-### Note for people upgrading
-
-- On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
-- Removing a global MCP server stops new chats from using it. Chats that are already running keep it until they end or you restart them. If you remove a server because you no longer trust it, restart DorkOS so no chat can still reach it. The Connections guide says so (DOR-3872).
-- Over Remote Access, **Unblock agent** on an agent's profile doesn't work for now. Unblock it on the computer running DorkOS.
-- Over your own ngrok tunnel, the agent-to-agent address (`/a2a`) and its agent cards now answer "Not found" from another device, the same as over DorkOS's remote access. On this computer nothing changes.
-- The Agent browser no longer has named profiles. Profiles made before stay on disk until you choose **Forget…**, which now clears them along with the shared sign-ins. Scripts that call `POST /api/local-browser/profiles` now get a 403 `profiles_closed` error. (DOR-4105)
-
-### Security
-
-- **Addresses with tricks like `..` in them are now refused from another device,** over both your own ngrok tunnel and DorkOS's remote access. The agent-to-agent pages were never open to another device without a key, so this is defence in depth, not an open door.
-
-### Fixed
-
-- **Clicking a file in the Files tab opens it again after you closed its tab.** Before, the click seemed to do nothing. (DOR-4179)
-- A room's Files list no longer asks for folders from the agent you browsed before. (DOR-4179)
-- In **New browser window** mode, the window your agent drives now shows which agent is using it, for example "Atlas is using this window". When a site asks for a check only a person can do, the card in the chat also says "Your turn: Atlas can’t see or use this window." While you have the browser, your agent can't read the page, take a picture of it, or act on it, whichever AI app it runs on. (DOR-3111)
-- While you have the Agent browser after your agent hands it to you, its panel lists each tab by its site only, such as `https://accounts.example.com`, without the rest of the address or the page title. A sign-in page's address or title can carry a one-time code, and both stay out of view until the handoff ends. (DOR-4163)
-- The Agent browser panel now shows one **Saved sign-ins** row: "Kept apart from your own browser. Every agent here shares them." **Forget…** asks before it signs every agent out of every site, including sign-ins kept for any older named profile. It replaces the old list of profiles. (DOR-4105)
-- If the folder holding the Agent browser's saved sign-ins was changed outside DorkOS, **Forget…** now answers "Sign-ins weren’t forgotten" and "Their folder was changed outside DorkOS, so DorkOS left it alone." with a single **Close** button. It used to tell you to close the browser's windows and try again, which could never work. What was found is also recorded in the audit log. (DOR-4172)
-- When the Agent browser isn't open, its panel now says "Not open yet" instead of "Disconnected", which made it look broken. It says "Disconnected" when a browser it was showing as open disconnects. (DOR-4104)
-- An agent browser set up with a custom browser path or a shared profile no longer looks like it should work. Its card in the agent's MCP servers list now says **Not used** and reads "DorkOS uses its own browser for agents. Custom browser paths aren't allowed." (DOR-3207)
-
-### Going back
-
-0.135.6 doesn't change the database or your settings. To go back, install 0.135.5. On 0.135.5, any older named browser profiles show in the Agent browser panel again, signed out if you used **Forget…**.
-
-## [0.135.5] - 2026-11-11
-
-> DorkOS 0.135.5 is a security release. The agent browser no longer offers a tool that runs code outside the page, and agents now ask before they add work to a queue. This release changes the database, so read Going back before downgrading.
-
-### Note for people upgrading
-
-- This release changes the database. Read Going back below before downgrading.
-- On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
-- **An agent now asks you before it adds work to any queue, its own included, even at Full autonomy.** These cards have no Always allow. When nobody is there to answer, the agent is refused instead.
-- Work an agent queued before this update that hasn't started yet will run read-only. If it needs to change files, remove it and add it again yourself from the agent's Work queue page. You'll need to type its first message again.
-- Removing a global MCP server stops new chats from using it. Chats that are already running keep it until they end or you restart them. If you remove a server because you no longer trust it, restart DorkOS so no chat can still reach it. The Connections guide now says so (DOR-3872).
-
-### Security
-
-- The agent browser no longer offers a tool that runs code outside the page (DOR-4156).
-- Agents' file tools can't read the desktop app's own data folder, where it keeps your DorkOS sign-in and its built-in browser's sign-ins, on every runtime. On Codex the shell is covered too, and on Claude Code below Full autonomy a shell command that names it asks you first. Other shells aren't checked for it yet (DOR-3613).
-- When Page previews opens DorkOS's own address, it now loads in a locked-down frame, so the page can't act as the app. Most DorkOS pages also tell older browsers they can't be shown inside another page (DOR-3370).
-- DorkOS's database now refuses a mini app approval that would let it change anything in a connected app. It also refuses approval records with hidden characters in their name or folder, or with blank checksums (DOR-3547).
-
-### Added
-
-- **Agents can ask to change work queues and to queue work for another agent.** Anything that adds work asks you first: adding or re-queueing work, turning on "Start the next item on its own", and raising Chats at once or Starts per day. Reading another agent's queue asks too. Work one agent passes to another runs at the lower of their two levels, even when it's queued again. Agents can turn a queue off, lower its limits, remove waiting work and reorder it without asking. An agent can't raise Starts per day past the number you last set. A scheduled, heartbeat or agent-started chat, or one that read outside messages, can't change another agent's queue.
-- **A mini app can read an app you connected, once you allow it.** This works only for a mini app that runs in its own sandbox and lists the apps it reads. It can only read, and it never sees your password or sign-in. DorkOS keeps a record of each read. When a mini app asks, a "wants to read" row shows under Needs you on the Connections page. It opens a DorkOS page outside the app, where you choose Allow or Not now. You can't allow it from a device signed in over Wi-Fi. To take access back, open the account and click Revoke under "Mini apps that can read this". Apps you connected through your DorkOS account can't be read by mini apps yet. (DOR-3547)
-- For MCP clients: new tools `work_queue_read_agent`, `work_queue_configure`, `work_queue_reorder` and `work_queue_requeue`. `work_queue_add` and `work_queue_remove` can now name another agent.
-
-### Fixed
-
-- When your agent clicks a link or presses Enter in the browser and the page it opens won't load, the agent is now told the page didn't load, and usually which site, instead of being told it worked. Opening an address that won't load says so too (DOR-3897).
-
-### Going back
-
-0.135.5 adds a table and a column for work queues, and rebuilds the table of mini app approvals with stricter checks. 0.135.4 starts on it as it is: in a test it started, its pages loaded, schedules ran and no rows were lost. To go back, install 0.135.4.
-
-DorkOS still saves a backup before it changes the database, in `~/.dork/backups/`. If you came from 0.135.4, it's named `dork-<date>-<time>-pre-20261110044508_work_queue_permissions.db` (the time is UTC). To restore it, quit DorkOS, delete `dork.db-wal` and `dork.db-shm` from `~/.dork/`, copy the backup over `~/.dork/dork.db`, then install 0.135.4. You lose anything written since the upgrade, so if you removed access, revoked a connection or revoked a mini app's access since then, do it again.
-
-## [0.135.4] - 2026-11-10
-
-> DorkOS 0.135.4 keeps DorkOS's own private files out of the canvas, room attachments and new chats an agent starts, and keeps scheduled runs out of your home folder.
-
-### Note for people upgrading
-
-- On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
-- A schedule with no agent that would have run in your home folder now runs in a new, private folder of its own each time. Give a schedule an agent if it needs a project's files. (DOR-4060)
-
-### Security
-
-- **The canvas, room attachments and new chats can't reach DorkOS's own private files.** These include its sign-in key, its settings and its saved secrets. The canvas, room attachments and new chats an agent starts now refuse them at every level, with nothing to approve. (DOR-4060)
-- **A scheduled run never runs in your home folder or DorkOS's data folder.** An agent's run that would have landed there runs in that agent's own folder instead. A run with no agent gets a new, private folder of its own. (DOR-4060)
-
-### Fixed
-
-- **An agent that forks a chat without naming a folder now works in its own folder.** A launch refused for its folder says to name one. (DOR-4060)
-- **An approval card for reading a canvas document names the file it reads.** (DOR-4060)
-
-### Going back
-
-0.135.4 doesn't change the database. To go back, install 0.135.3.
-
-Older releases (v0.1.0 – v0.135.3) are archived in [changelog/archive/CHANGELOG-v0.1.0-to-v0.135.3.md](changelog/archive/CHANGELOG-v0.1.0-to-v0.135.3.md).
-
-[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.135.13...HEAD
+[Unreleased]: https://github.com/dork-labs/dorkos/compare/v0.139.0...HEAD
+[0.139.0]: https://github.com/dork-labs/dorkos/compare/v0.138.0...v0.139.0
+[0.138.0]: https://github.com/dork-labs/dorkos/compare/v0.137.0...v0.138.0
+[0.137.0]: https://github.com/dork-labs/dorkos/compare/v0.136.0...v0.137.0
+[0.136.0]: https://github.com/dork-labs/dorkos/compare/v0.135.13...v0.136.0
 [0.135.13]: https://github.com/dork-labs/dorkos/compare/v0.135.12...v0.135.13
 [0.135.12]: https://github.com/dork-labs/dorkos/compare/v0.135.11...v0.135.12
 [0.135.11]: https://github.com/dork-labs/dorkos/compare/v0.135.10...v0.135.11
 [0.135.10]: https://github.com/dork-labs/dorkos/compare/v0.135.9...v0.135.10
 [0.135.9]: https://github.com/dork-labs/dorkos/compare/v0.135.8...v0.135.9
 [0.135.8]: https://github.com/dork-labs/dorkos/compare/v0.135.7...v0.135.8
-[0.135.7]: https://github.com/dork-labs/dorkos/compare/v0.135.6...v0.135.7
-[0.135.6]: https://github.com/dork-labs/dorkos/compare/v0.135.5...v0.135.6
-[0.135.5]: https://github.com/dork-labs/dorkos/compare/v0.135.4...v0.135.5
-[0.135.4]: https://github.com/dork-labs/dorkos/compare/v0.135.3...v0.135.4

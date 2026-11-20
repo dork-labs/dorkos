@@ -29,6 +29,7 @@
  *
  * @module routes/extensions-rooms
  */
+import { holdExtensionPowerChange } from './extension-decision-step-up.js';
 import { declaresBridgeCapability } from '@dorkos/shared/extension-approval-schemas';
 import type { Context, Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
@@ -356,8 +357,31 @@ export function registerExtensionRoomRoutes(
       return c.json({ error: 'Pick only rooms you are in.', code: 'invalid_input' }, 400);
     }
     // Recorded in the audit trail as a settings change by `setAllowedRooms`.
-    const roomIds = setAllowedRooms(id, body.data.roomIds);
-    return c.json({ roomIds });
+    const run = () => {
+      for (const roomId of body.data.roomIds) {
+        try {
+          service.requireMembership(roomId, viewer.id);
+        } catch {
+          return c.json({ error: 'Pick only rooms you are in.', code: 'invalid_input' }, 400);
+        }
+      }
+      const roomIds = setAllowedRooms(id, body.data.roomIds);
+      return c.json({ roomIds });
+    };
+    const widening = body.data.roomIds.some((roomId) => !allowedRoomIds(id).includes(roomId));
+    const held = holdExtensionPowerChange(c, {
+      id,
+      effect: widening ? 'extension-room-access' : 'lower',
+      copy: ROOM_ACCESS_BAR,
+      reason: `Change which rooms ${record.manifest.name} may use.`,
+      read: () => ({
+        rooms: allowedRoomIds(id),
+        requested: body.data.roomIds,
+        manifest: extensionManager.get(id)?.manifest ?? null,
+      }),
+      run,
+    });
+    return held ?? run();
   });
 }
 

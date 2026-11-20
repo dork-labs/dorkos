@@ -66,13 +66,14 @@ So you can hold a perfectly isolated tree and still share one `origin/main` with
 **The rule: pin the base once, then never name the moving ref again.**
 
 ```bash
-BASE=$(git rev-parse origin/main)          # once, at the start of the comparison
-git diff --name-only "$BASE"...HEAD
-git log --oneline "$(git merge-base "$BASE" HEAD)"..HEAD
+git rev-parse origin/main                  # once, at the start; keep the SHA it prints
+git diff --name-only 2a8fb9c9b...HEAD      # then paste that SHA into every step
+git merge-base 2a8fb9c9b HEAD
 ```
 
-- Use `$BASE` for every step of a multi-step comparison — **never write `origin/main` twice** in one line of reasoning.
-- Prefer `git merge-base "$BASE" HEAD` over re-reading the branch name. A merge base recomputed against a ref that moved is a _different_ merge base, silently.
+- Use the pinned SHA for every step of a multi-step comparison — **never write `origin/main` twice** in one line of reasoning.
+- Paste the SHA itself, one command per call. A `$BASE` variable or a `$(…)` is a shape Claude Code can't check before it runs, so it asks a person (DOR-3109).
+- Prefer `git merge-base <sha> HEAD` over re-reading the branch name. A merge base recomputed against a ref that moved is a _different_ merge base, silently.
 - **Treat a surprising file list as evidence the ref moved, not as data.** A diff naming files nobody on your branch went near is a symptom, not a discovery — re-derive it against a pinned SHA before you reason one step further.
 - **Hand people SHAs, not ref names.** "`main` touched 8 files" is unfalsifiable an hour later; "`2a8fb9c9b` touched 8 files" is checkable forever. `git show --name-only --format='' 2a8fb9c9b` returns the same eight paths on every machine, at every hour, regardless of who fetched — which is the whole property a moving ref lacks.
 
@@ -185,7 +186,7 @@ Better still: start the work in a worktree from the outset (the steps above, min
 - ❌ Auto-removing a worktree with **uncommitted, untracked, or unpushed** work — refuse and confirm first. This is where Claude Code and Cursor both shipped data-loss bugs.
 - ❌ Forcing the `/flow` intent stages (`/flow:ideate`, `/flow:specify`, `/flow:decompose`) into worktrees — they only write `specs/` markdown; stay in `main`.
 - ❌ Reading `.env` directly to learn a worktree's ports (the file-guard hook denies it) — use `/worktree:list`.
-- ❌ Naming `origin/main` twice in one investigation. Pin it once (`BASE=$(git rev-parse origin/main)`) and compare against `$BASE` — another session's `git fetch` moves the shared ref between your commands, and every command still exits `0`.
+- ❌ Naming `origin/main` twice in one investigation. Pin it once (`git rev-parse origin/main`, then paste that SHA) and compare against the SHA — another session's `git fetch` moves the shared ref between your commands, and every command still exits `0`.
 - ❌ Believing a file list that surprised you. In a shared checkout that is first evidence the ref moved, not a finding to reason from.
 
 ## References

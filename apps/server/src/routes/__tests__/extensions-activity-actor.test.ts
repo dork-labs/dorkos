@@ -206,41 +206,38 @@ describe('who the Activity feed says changed an extension', () => {
       // too so a split or truncated copy cannot hide inside JSON escaping.
       const REAL_SHAPED = 'a3f9c1e2b70d48a6915ce4d2f8b03c7e';
 
-      await request(fixtureServer)
+      const res = await request(fixtureServer)
         .put('/api/extensions/test-ext/secrets/api_key')
         .set('x-dorkos-agent', REAL_SHAPED)
         .send({ value: 'sk-test' });
 
-      const serialized = JSON.stringify(emitted);
-      expect(serialized).not.toContain(REAL_SHAPED);
-      expect(serialized).not.toContain(REAL_SHAPED.slice(0, 16));
-      expect(serialized).not.toContain(REAL_SHAPED.slice(-16));
-      // It still lands as an unidentified caller, so the absence above is the
-      // route declining to name the token — not the route emitting nothing.
-      expect(emitted).toHaveLength(1);
-      expect(emitted[0]).toMatchObject({
-        actorType: 'system',
-        actorLabel: 'Unidentified caller',
-      });
+      // Neither the feed nor the refusal names the token, whole or in halves.
+      for (const serialized of [JSON.stringify(emitted), res.text]) {
+        expect(serialized).not.toContain(REAL_SHAPED);
+        expect(serialized).not.toContain(REAL_SHAPED.slice(0, 16));
+        expect(serialized).not.toContain(REAL_SHAPED.slice(-16));
+      }
+      // A caller naming an agent DorkOS cannot verify is no person, so the
+      // owner's confirmation is not its to skip or take (DOR-4355).
+      expect(res.status).toBe(403);
+      expect(emitted).toEqual([]);
     });
 
-    it('records a token that resolves to nothing as an unidentified caller', async () => {
-      // The header is there, so a machine is calling — DorkOS just cannot say
-      // which one. Answering `You` here would be the same lie in a rarer case,
-      // and the raw token is a credential, never a label.
+    it('refuses a token that resolves to nothing, and saves nothing (DOR-4355)', async () => {
+      // The header is there, so a machine is calling, but not one DorkOS can
+      // name: it is not the agent the route lets through, and it is no person
+      // who could confirm the save. The raw token is a credential, never a label.
       const res = await request(fixtureServer)
         .put('/api/extensions/test-ext/secrets/api_key')
         .set('x-dorkos-agent', 'tok_nobody_knows')
         .send({ value: 'sk-test' });
 
-      expect(res.status).toBe(200);
-      expect(emitted).toHaveLength(1);
-      expect(emitted[0]).toMatchObject({
-        actorType: 'system',
-        actorLabel: 'Unidentified caller',
-      });
-      expect(emitted[0].actorId).toBeUndefined();
-      expect(JSON.stringify(emitted)).not.toContain('tok_nobody_knows');
+      expect(res.status).toBe(403);
+      // Refused by the unidentified-agent rule first (Security S3 on DOR-4355 M3).
+      expect(res.body.code).toBe('marked_turn_typed_secret');
+      expect(secretStores.get('test-ext')?.has('api_key') ?? false).toBe(false);
+      expect(emitted).toEqual([]);
+      expect(res.text).not.toContain('tok_nobody_knows');
     });
   });
 

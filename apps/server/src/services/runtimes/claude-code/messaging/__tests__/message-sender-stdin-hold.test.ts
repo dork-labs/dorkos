@@ -1,3 +1,4 @@
+import { isolatedRequiredLaunchOwner } from './required-launch-fixture.js';
 /**
  * The CLI's stdin stays open while the turn is still alive (DOR-1238).
  *
@@ -23,6 +24,8 @@ import { logger } from '../../../../../lib/logger.js';
 import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { readDeliverySegmentFrames } from './fixtures/background-tasks.js';
+
+const requiredLaunches = isolatedRequiredLaunchOwner();
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
@@ -80,7 +83,7 @@ function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
 }
 
 function makeOpts(): MessageSenderOpts {
-  return { cwd: '/mock/project', onSdkSessionRebind: async () => {} };
+  return { cwd: '/mock/project', requiredLaunches, onSdkSessionRebind: async () => {} };
 }
 
 /** The SDK's level signal: the FULL set of live background tasks after a change. */

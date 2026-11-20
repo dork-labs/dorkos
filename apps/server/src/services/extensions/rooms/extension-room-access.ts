@@ -8,8 +8,8 @@
  * app's own page code runs in the person's window and so passes that bar, as
  * does a server half running inside DorkOS: the choice bounds a well-behaved
  * mini app and is not a sandbox. Dropped when the mini app's run approval is
- * withdrawn ({@link withoutExtension}), so another copy under the same id
- * starts with none.
+ * withdrawn ({@link withoutExtension}) or given to another copy under the same
+ * id (DOR-4573), so that copy starts with none.
  *
  * Read per call rather than cached, so taking a room away takes effect on the
  * next request and ends a live thread stream at its next event.

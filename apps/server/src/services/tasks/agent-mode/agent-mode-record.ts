@@ -196,6 +196,8 @@ export async function recordAgentModeOutcome(ctx: {
   meshCore: RecordMesh;
   activity?: Pick<ActivityService, 'emit'>;
   agentPath?: string;
+  /** The task's allow list was set by its agent in this call, never by a person (DOR-4315). */
+  allowListSetBy?: 'agent';
 }): Promise<void> {
   try {
     const { grant, before, after } = ctx;
@@ -225,6 +227,7 @@ export async function recordAgentModeOutcome(ctx: {
         proposedAllow: after.requestedAllow,
         approvedPermissionMode: after.permissionMode,
         approvedAllow: after.approvedAllow,
+        ...(ctx.allowListSetBy ? { allowListSetBy: ctx.allowListSetBy } : {}),
         permissionMode: after.permissionMode,
         previousPermissionMode: before?.permissionMode ?? null,
         decidedBy: grant.via,

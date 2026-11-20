@@ -138,6 +138,11 @@ export interface LocalBrowserObservation {
   tabId: string;
   /** The selected page was opened by the one HTTP fallback and is still on HTTP. */
   openedOverHttp?: boolean;
+  /**
+   * The site refused the Agent browser itself (DOR-4097): a sign-in it won't take
+   * here, or a bot check. `host` is from the page's address; `next` says to stop.
+   */
+  refusal?: { kind: 'sign-in' | 'blocked'; host: string; next: string };
 }
 export interface LocalBrowserCapabilities {
   platform: string;
@@ -181,6 +186,11 @@ export const LocalBrowserSignInSchema = z.object({
   site: z.string(),
   status: z.enum(['open', 'saving', 'saved', 'failed']),
   startedAt: z.string(),
+  /**
+   * The window was asked to quit and hasn't: the person quits it with ⌘Q, and its exit still
+   * saves the sign-in (DOR-4731, macOS only). Absent otherwise.
+   */
+  needsQuit: z.literal(true).optional(),
 });
 export type LocalBrowserSignIn = z.infer<typeof LocalBrowserSignInSchema>;
 
@@ -213,6 +223,11 @@ export const LocalBrowserHandoffSchema = z.object({
   site: z.string(),
   askedAt: z.string(),
   /**
+   * True when DorkOS's own last reading of this same site was a page refusing the
+   * Agent browser (DOR-4097), so the card offers the sign-in window. Never the agent's word.
+   */
+  refused: z.boolean().optional(),
+  /**
    * How it ended, or null while it is open. `window-closed` is a person's Disconnect
    * during the handoff: it ends the task as `stopped` does, and the card says why.
    */
@@ -232,6 +247,14 @@ export const LocalBrowserSignInRequestSchema = z.union([
   z.object({ handoffId: z.string().min(1) }).strict(),
 ]);
 export type LocalBrowserSignInRequest = z.infer<typeof LocalBrowserSignInRequestSchema>;
+
+/**
+ * A person's Done signing in (DOR-4731): the handoff whose sign-in window it ends, or none
+ * for a window no handoff waits on, such as one a stopped task left open.
+ */
+export const LocalBrowserSignInDoneSchema = z
+  .object({ handoffId: z.string().min(1).optional() })
+  .strict();
 
 /** Which handoff a person's Hand back or Stop task answers. */
 export const LocalBrowserHandoffAnswerSchema = z.object({ handoffId: z.string().min(1) }).strict();
@@ -269,6 +292,16 @@ export const LocalBrowserObservationSchema = z.object({
     .optional()
     .describe(
       'True while this page is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details.'
+    ),
+  refusal: z
+    .object({
+      kind: z.enum(['sign-in', 'blocked']),
+      host: z.string(),
+      next: z.string(),
+    })
+    .optional()
+    .describe(
+      'Present when the site refused the Agent browser itself. Follow next: stop and hand the site to the person.'
     ),
 });
 

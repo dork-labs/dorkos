@@ -106,7 +106,7 @@ describe('Approvals from the web', () => {
     expect(within(list).getByText('…cred-1')).toBeInTheDocument();
   });
 
-  it('adds one: asks a name and the password, then opens the approve page', async () => {
+  it('names a passkey and uses the shared confirmation flow before enrolment', async () => {
     const startSessionRelayPasskey = vi.fn().mockResolvedValue({
       statement: 'c3RhdGVtZW50',
       challenge: 'Y2hhbGxlbmdl',
@@ -120,12 +120,13 @@ describe('Approvals from the web', () => {
     const go = within(dialog).getByRole('button', { name: 'Continue' });
     expect(go).toBeDisabled();
     await userEvent.type(within(dialog).getByLabelText('Name'), 'MacBook passkey');
-    await userEvent.type(within(dialog).getByLabelText('Your password for this computer'), 'pw');
+    expect(
+      within(dialog).queryByLabelText('Your password for this computer')
+    ).not.toBeInTheDocument();
     await userEvent.click(go);
     expect(pending.open).toHaveBeenCalledTimes(1);
     expect(startSessionRelayPasskey).toHaveBeenCalledWith({
       label: 'MacBook passkey',
-      password: 'pw',
     });
     await waitFor(() =>
       expect(pending.go).toHaveBeenCalledWith('https://approve.dorkos.ai/enrol#c3RhdGVtZW50')
@@ -155,7 +156,6 @@ describe('Approvals from the web', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Add a passkey' }));
     const dialog = await screen.findByRole('alertdialog');
     await userEvent.type(within(dialog).getByLabelText('Name'), 'Phone');
-    await userEvent.type(within(dialog).getByLabelText('Your password for this computer'), 'no');
     await userEvent.click(within(dialog).getByRole('button', { name: 'Continue' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'That password didn’t match. Try again.'

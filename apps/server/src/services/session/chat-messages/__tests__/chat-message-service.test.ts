@@ -54,6 +54,18 @@ import {
   resetChatStartedTurns,
 } from '../chat-started-turns.js';
 import { linkSessionId, resetSessionKeys } from '../../resolution/session-key-registry.js';
+import {
+  resetTurnCutoffs,
+  restoreTurnCutoff,
+  takeTurnCutoff,
+} from '../../turn-cutoff/turn-cutoff.js';
+
+/** The note a chat's next turn is owed, read without taking it. */
+function peekOwed(sessionId: string) {
+  const owed = takeTurnCutoff(sessionId);
+  if (owed !== null) restoreTurnCutoff(sessionId, owed);
+  return owed;
+}
 
 const ANA = { sessionId: 'chat-a', agentPath: '/agents/ana' };
 const PERSON = 'window-a';
@@ -226,6 +238,7 @@ beforeEach(() => {
   nonceCounter = 0xa0;
   openedCounter = 0;
   vi.mocked(recordAudit).mockClear();
+  resetTurnCutoffs();
   chat(ANA.sessionId, { agentPath: ANA.agentPath });
   service = build();
 });
@@ -767,6 +780,62 @@ describe('send — interrupt', () => {
     const receipt = await service.send(ANA, { to: 'chat-b', message: 'x', delivery: 'interrupt' });
     expect(receipt.note).toMatch(/Nothing was running/);
   });
+
+  // DOR-4668: the runtime writes this stop as "[Request interrupted by user]",
+  // so the chat says who stopped it, and the agent's next turn is told.
+  it('shows the stop as made by the sending chat, and tells the next turn no person stopped it', async () => {
+    chat('chat-b');
+    busy.add('chat-b');
+    let owedWhenStopped: unknown;
+    interruptTurn.mockImplementation(async (id) => {
+      // Owed before the turn ends: the message it releases may start at once.
+      owedWhenStopped = peekOwed(id);
+      return true;
+    });
+
+    await service.send(ANA, { to: 'chat-b', message: 'HOLD the release', delivery: 'interrupt' });
+
+    expect(owedWhenStopped).toEqual({ stoppedBy: 'chat', via: 'interrupt' });
+    expect(takeTurnCutoff('chat-b')).toEqual({ stoppedBy: 'chat', via: 'interrupt' });
+    const stops = store.listStopsOf('chat-b');
+    expect(stops).toHaveLength(1);
+    expect(stops[0]).toMatchObject({ kind: 'stop', fromSessionId: 'chat-a', status: 'delivered' });
+    const activity = await service.activityOf('chat-b');
+    expect(activity.stops).toEqual([
+      {
+        id: stops[0]!.id,
+        by: { chatId: 'chat-a', chatTitle: 'Planning', agentId: 'agent-ana', agentName: 'Ana' },
+        at: stops[0]!.createdAt,
+      },
+    ]);
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'chat.stopped',
+        outcome: 'ok',
+        summary: 'Stopped by Ana · Planning, to send it a message',
+      })
+    );
+  });
+
+  it('owes nothing and shows no stop when nothing was running', async () => {
+    chat('chat-b');
+    busy.add('chat-b');
+    interruptTurn.mockResolvedValue(false);
+    await service.send(ANA, { to: 'chat-b', message: 'x', delivery: 'interrupt' });
+    expect(takeTurnCutoff('chat-b')).toBeNull();
+    expect(store.listStopsOf('chat-b')).toEqual([]);
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  it('keeps a note already owed when the interrupt stops nothing', async () => {
+    chat('chat-b');
+    busy.add('chat-b');
+    const stall = { windowMs: 600_000, neverStarted: false };
+    restoreTurnCutoff('chat-b', stall);
+    interruptTurn.mockResolvedValue(false);
+    await service.send(ANA, { to: 'chat-b', message: 'x', delivery: 'interrupt' });
+    expect(takeTurnCutoff('chat-b')).toEqual(stall);
+  });
 });
 
 describe('send — replies', () => {
@@ -1259,6 +1328,22 @@ describe('stopChat', () => {
     expect(store.listStopsOf('chat-b')[0]!.status).toBe('failed');
     expect((await service.activityOf('chat-b')).stops).toEqual([]);
     expect(recordAudit).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'failed' }));
+    expect(takeTurnCutoff('chat-b')).toBeNull();
+  });
+
+  it('tells the stopped chat’s next turn that another chat stopped it, not a person (DOR-4668)', async () => {
+    await service.stopChat(ANA, { chat: 'chat-b' });
+    expect(takeTurnCutoff('chat-b')).toEqual({ stoppedBy: 'chat', via: 'stop' });
+  });
+
+  it('records a stop named by another id under the id the chat is known by now', async () => {
+    chat('old-id-of-b');
+    aliases.set('old-id-of-b', 'chat-b');
+    const result = await service.stopChat(ANA, { chat: 'old-id-of-b' });
+    expect(result.chatId).toBe('chat-b');
+    expect(store.listStopsOf('chat-b')).toHaveLength(1);
+    expect(store.listStopsOf('old-id-of-b')).toEqual([]);
+    expect(emitActivity).toHaveBeenCalledWith('chat-b');
   });
 });
 

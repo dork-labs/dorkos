@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import chokidar from 'chokidar';
+import type { FSWatcher } from 'chokidar';
 import { once } from 'node:events';
+import { loadCeilingMs, loadScaledMs } from '@dorkos/shared/test-budget';
+import { watchWithPolling, type PollingWatch } from '../../../__tests__/watch-with-polling.js';
 import { TASK_DIRECTORY_CATCH_UP_MS } from '../watch/task-watch-catch-up.js';
 import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -36,16 +38,51 @@ vi.mock('../../../lib/logger.js', () => ({
  * REAL chokidar + real filesystem, because the claim under test is precisely
  * "what does the watcher do when it sees this file". A test that seeded rows
  * with `store.createTask` would assert nothing about the watcher.
+ *
+ * Every watch here POLLS (`watchWithPolling`): macOS drops native events
+ * outright under load, and these cases failed on healthy code at a load of
+ * 7-8 because of it (DOR-2021). The production options, handlers and catch-up
+ * scan are all still the real ones; only how chokidar notices a change differs.
  */
+
+/** How often the polling watch re-stats. */
+const POLL_MS = 50;
+
+/**
+ * Each case's own timeout: the worst its scaled waits can grow to, capped so a
+ * wait that cannot finish reports its own message rather than a bare timeout.
+ */
+const CASE_TIMEOUT_MS = Math.min(loadCeilingMs(15_000), 60_000);
+
+/**
+ * Drop everything a real watcher reports at or under `dir`, so the platform's
+ * delivery of that one folder is lost while the folder itself is real on disk.
+ * A `raw` or `all` event names its path second; every other event first.
+ */
+function loseDeliveryUnder(actual: FSWatcher, dir: string): void {
+  const emit = actual.emit;
+  const under = (value: unknown) =>
+    typeof value === 'string' && (value === dir || value.startsWith(dir + path.sep));
+  Reflect.defineProperty(actual, 'emit', {
+    configurable: true,
+    value(event: string | symbol, ...values: unknown[]) {
+      const subject = event === 'raw' || event === 'all' ? values[1] : values[0];
+      return under(subject) ? false : Reflect.apply(emit, actual, [event, ...values]);
+    },
+  });
+}
 
 /** Frontmatter + body for a minimal, schema-valid task SKILL.md. */
 function skillFile(name: string): string {
   return `---\nname: ${name}\ndescription: A task named ${name}\nschedule:\n  cron: '0 9 * * *'\n---\nDo the thing.`;
 }
 
-/** Poll `check` until it is true or the deadline passes. */
-async function waitUntil(check: () => boolean, label: string, timeoutMs = 5000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
+/**
+ * Poll `check` until it is true or the deadline passes. The budget is widened by
+ * the machine's load as the wait STARTS, never at module load.
+ */
+async function waitUntil(check: () => boolean, label: string, baseMs = 5000): Promise<void> {
+  const deadline = Date.now() + loadScaledMs(baseMs);
   while (Date.now() < deadline) {
     if (check()) return;
     await new Promise((r) => setTimeout(r, 25));
@@ -62,7 +99,7 @@ async function holdsFor(check: () => boolean, label: string, windowMs = 300): Pr
   }
 }
 
-describe('TaskFileWatcher (real chokidar)', () => {
+describe('TaskFileWatcher (real chokidar)', { timeout: CASE_TIMEOUT_MS }, () => {
   /**
    * The watcher's own failure lines, so a test can tell "the watch is broken"
    * from "this machine has run out of watch descriptors".
@@ -76,8 +113,13 @@ describe('TaskFileWatcher (real chokidar)', () => {
   let store: TaskStore;
   let watcher: TaskFileWatcher;
   let scheduler: FakeScheduler;
+  let polling: PollingWatch<FSWatcher>;
+  /** What a case does to each real watcher before it can report anything. */
+  let onOpen: ((watcher: FSWatcher) => void) | undefined;
 
   beforeEach(async () => {
+    onOpen = undefined;
+    polling = watchWithPolling(POLL_MS, (opened) => onOpen?.(opened));
     // Resolved up front: a row discovered in a skills root is keyed on the
     // file's REAL path, and every macOS temp directory sits under a symlinked
     // `/var` — so a test that built its paths from the unresolved root would
@@ -97,9 +139,9 @@ describe('TaskFileWatcher (real chokidar)', () => {
   });
 
   afterEach(async () => {
-    // A failed native wait must not leave a constructor spy in the next test.
-    vi.restoreAllMocks();
     await watcher.stopAll();
+    polling.restore();
+    vi.restoreAllMocks();
     await rm(dorkHome, { recursive: true, force: true });
   });
 
@@ -163,72 +205,59 @@ describe('TaskFileWatcher (real chokidar)', () => {
 
   it('discovers a task whose native delivery is lost beside a real directory cue', async () => {
     const normalDir = path.join(skillsDir, 'real-task');
-    const originalWatch = chokidar.watch.bind(chokidar);
-    let native: ReturnType<typeof chokidar.watch> | undefined;
-    let restoreEmit = () => {};
-    const watch = vi.spyOn(chokidar, 'watch').mockImplementation((...args) => {
-      const actual = originalWatch(...args);
-      native = actual;
-      const emit = actual.emit;
-      const normal = (value: unknown) =>
-        typeof value === 'string' &&
-        (value === normalDir || value.startsWith(normalDir + path.sep));
-      // Lose only this actual child's delivery, not its filesystem or the sibling cue.
-      Reflect.defineProperty(actual, 'emit', {
-        configurable: true,
-        value(event: string | symbol, ...values: unknown[]) {
-          const details = values[2];
-          const watchedPath =
-            details && typeof details === 'object'
-              ? Reflect.get(details, 'watchedPath')
-              : undefined;
-          const lost =
-            event === 'raw'
-              ? normal(values[1]) ||
-                normal(watchedPath) ||
-                (watchedPath === skillsDir && values[1] === 'real-task')
-              : normal(event === 'all' ? values[1] : values[0]);
-          return lost ? false : Reflect.apply(emit, actual, [event, ...values]);
-        },
-      });
-      restoreEmit = () => Reflect.defineProperty(actual, 'emit', { value: emit });
-      return actual;
-    });
-    try {
-      watcher.watch(skillsRoot(skillsDir, 'global'));
-      await watcher.ready();
-      if (!native) throw new Error('The real watcher did not open.');
-      const siblingDir = path.join(
-        skillsDir,
-        `real-task.dorkos-bak-${Date.now()}-9f1c2d3e-0000-4000-8000-000000000000`
-      );
-      const delivered = once(native, 'addDir');
-      await mkdir(siblingDir);
-      expect((await delivered)[0]).toBe(siblingDir);
-      const sibling = path.join(siblingDir, 'SKILL.md');
-      await writeFile(sibling, skillFile('real-task'));
-      await mkdir(normalDir);
-      const file = path.join(normalDir, 'SKILL.md');
-      await writeFile(file, skillFile('real-task'));
-      await waitUntil(
-        () => store.fileSync.getByFilePath(file) !== null,
-        'the lost live task',
-        3500
-      );
-      await holdsFor(() => store.fileSync.getByFilePath(sibling) === null, 'the rejected sibling');
-      expect(store.getTasks().map((task) => task.filePath)).toEqual([file]);
-      const recovered = store.fileSync.getByFilePath(file)!;
-      expect(recovered).toMatchObject({ cron: '0 9 * * *', status: 'pending_approval' });
-      expect(scheduler.hasJob(recovered.id)).toBe(false);
-      expect(watcher.rootsWithoutLiveWatch(), errorLogs().join('\n')).toEqual([]);
-    } finally {
-      try {
-        await watcher.stopAll();
-      } finally {
-        restoreEmit();
-        watch.mockRestore();
-      }
-    }
+    const cues: string[] = [];
+    // Lose only this actual child's delivery, not its filesystem or the sibling cue.
+    onOpen = (actual) => {
+      loseDeliveryUnder(actual, normalDir);
+      actual.on('addDir', (dir: string) => cues.push(dir));
+    };
+    watcher.watch(skillsRoot(skillsDir, 'global'));
+    await watcher.ready();
+    expect(polling.opened).toHaveLength(1);
+    // The lost task is on disk BEFORE the cue, on purpose, so the one scan the
+    // cue asks for is certain to find it, however long this runner stalls in
+    // between. A change landing AFTER a cue's scan has begun (the dirty
+    // follow-up scan) is pinned by `task-watch-catch-up.test.ts`, not here.
+    await mkdir(normalDir);
+    const file = path.join(normalDir, 'SKILL.md');
+    await writeFile(file, skillFile('real-task'));
+    const siblingDir = path.join(
+      skillsDir,
+      `real-task.dorkos-bak-${Date.now()}-9f1c2d3e-0000-4000-8000-000000000000`
+    );
+    await mkdir(siblingDir);
+    const sibling = path.join(siblingDir, 'SKILL.md');
+    await writeFile(sibling, skillFile('real-task'));
+    await waitUntil(() => cues.includes(siblingDir), 'the sibling directory cue');
+    await waitUntil(() => store.fileSync.getByFilePath(file) !== null, 'the lost live task', 3500);
+    await holdsFor(() => store.fileSync.getByFilePath(sibling) === null, 'the rejected sibling');
+    expect(cues).not.toContain(normalDir);
+    expect(store.getTasks().map((task) => task.filePath)).toEqual([file]);
+    const recovered = store.fileSync.getByFilePath(file)!;
+    expect(recovered).toMatchObject({ cron: '0 9 * * *', status: 'pending_approval' });
+    expect(scheduler.hasJob(recovered.id)).toBe(false);
+    expect(watcher.rootsWithoutLiveWatch(), errorLogs().join('\n')).toEqual([]);
+  });
+
+  it('rescans on a native notification that names only the root', async () => {
+    // FSEvents can report a creation burst as one `raw` event on the watched
+    // root, with no `addDir` for the child. A polling watch never emits that
+    // shape (its `raw` carries stats, not `watchedPath`), so it is delivered
+    // here by hand, in exactly the shape chokidar's native handler emits it.
+    const normalDir = path.join(skillsDir, 'real-task');
+    onOpen = (actual) => loseDeliveryUnder(actual, normalDir);
+    watcher.watch(skillsRoot(skillsDir, 'global'));
+    await watcher.ready();
+    const [native] = polling.opened;
+    if (!native) throw new Error('The real watcher did not open.');
+    await mkdir(normalDir);
+    const file = path.join(normalDir, 'SKILL.md');
+    await writeFile(file, skillFile('real-task'));
+    // Without the cue nothing finds it: the delivery really is lost.
+    await holdsFor(() => store.fileSync.getByFilePath(file) === null, 'the lost task', 1500);
+    native.emit('raw', 'rename', 'real-task', { watchedPath: skillsDir });
+    await waitUntil(() => store.fileSync.getByFilePath(file) !== null, 'the root cue rescan', 3500);
+    expect(store.getTasks().map((task) => task.filePath)).toEqual([file]);
   });
 
   it('keeps an unchanged live job through directory rescans and repairs a missing job', async () => {
@@ -247,7 +276,8 @@ describe('TaskFileWatcher (real chokidar)', () => {
     const cue = async (suffix: string) => {
       reads.mockClear();
       await mkdir(path.join(skillsDir, `clock.dorkos-bak-${suffix}`));
-      await waitUntil(() => reads.mock.calls.length > 0, 'a directory-cue rescan', 2000);
+      // The cue's scan waits TASK_DIRECTORY_CATCH_UP_MS by design, then reads.
+      await waitUntil(() => reads.mock.calls.length > 0, 'a directory-cue rescan', 3000);
     };
 
     // The first read after approval clears the old discovery explanation.
@@ -269,7 +299,7 @@ describe('TaskFileWatcher (real chokidar)', () => {
     await waitUntil(
       () => store.getTask(task.id)?.cron === '0 10 * * *' && !scheduler.hasJob(task.id),
       'the changed task to await approval',
-      1000
+      2000
     );
     store.updateTask(task.id, { status: 'active' });
     new TaskRegistrar({ store, scheduler }).syncTask(task.id);
@@ -278,15 +308,15 @@ describe('TaskFileWatcher (real chokidar)', () => {
   });
 
   it('cancels a removed root’s queued scan and permits a fresh watch of that path', async () => {
-    const opened = vi.spyOn(chokidar, 'watch');
+    const opened = polling.opened;
     const root = skillsRoot(skillsDir, 'global');
     try {
       watcher.watch(root);
       await watcher.ready();
-      const first = opened.mock.results[0];
-      if (first?.type !== 'return') throw new Error('The real watcher did not open.');
+      const first = opened[0];
+      if (!first) throw new Error('The real watcher did not open.');
       vi.useFakeTimers();
-      const delivered = once(first.value, 'addDir');
+      const delivered = once(first, 'addDir');
       const child = path.join(skillsDir, 'later');
       await mkdir(child);
       await delivered;
@@ -297,19 +327,18 @@ describe('TaskFileWatcher (real chokidar)', () => {
       expect(store.fileSync.getByFilePath(file)).toBeNull();
 
       watcher.watch(root);
-      const second = opened.mock.results[1];
-      if (second?.type !== 'return') throw new Error('The replacement watcher did not open.');
-      await once(second.value, 'ready');
+      const second = opened[1];
+      if (!second) throw new Error('The replacement watcher did not open.');
+      await once(second, 'ready');
       await vi.advanceTimersByTimeAsync(100);
       await watcher.ready();
       expect(store.getTasks().map((task) => task.filePath)).toEqual([file]);
       await watcher.stopAll();
       watcher.watch(root);
-      expect(opened).toHaveBeenCalledTimes(2);
+      expect(opened).toHaveLength(2);
     } finally {
       await watcher.stopAll();
       vi.useRealTimers();
-      opened.mockRestore();
     }
   });
 
@@ -346,7 +375,7 @@ describe('TaskFileWatcher (real chokidar)', () => {
     } finally {
       await armed.stopAll();
     }
-    // Reported for the record the ticket asks for; the 2s bound is the wait above.
+    // Reported for the record the ticket asks for; the bound is the wait above (2s on an idle machine).
     console.log(`[DOR-1908] absent root -> schedule discovered in ${Date.now() - started}ms`);
     expect(armed.rootsWithoutLiveWatch()).toEqual([]);
   });
@@ -354,8 +383,9 @@ describe('TaskFileWatcher (real chokidar)', () => {
   // The live path, asserted separately from the promise. Everything else in
   // this suite holds whether or not chokidar delivers, which is deliberate —
   // but a suite that only ever proved the catch-up scan would be green on a
-  // build whose event wiring did nothing at all.
-  it('is the WATCH that delivers an edit once the root is settled', async (ctx) => {
+  // build whose event wiring did nothing at all. The watch polls, so it cannot
+  // drop the edit or run out of descriptors: nothing but the wiring can red it.
+  it('is the WATCH that delivers an edit once the root is settled', async () => {
     const live = new TaskFileWatcher(
       store,
       new TaskRegistrar({ store, scheduler }),
@@ -366,13 +396,12 @@ describe('TaskFileWatcher (real chokidar)', () => {
     const file = path.join(skillsDir, 'edited', 'SKILL.md');
     await writeFile(file, skillFile('edited'), 'utf-8');
     live.watch(skillsRoot(skillsDir, 'global'));
-    await live.ready();
-    expect(store.fileSync.getByFilePath(file)).not.toBeNull();
-
-    // An edit AFTER the catch-up scan has run: only a live event can carry it.
-    await writeFile(file, skillFile('edited').replace("'0 9 * * *'", "'0 10 * * *'"), 'utf-8');
-    let delivered = false;
     try {
+      await live.ready();
+      expect(store.fileSync.getByFilePath(file)).not.toBeNull();
+
+      // An edit AFTER the catch-up scan has run: only a live event can carry it.
+      await writeFile(file, skillFile('edited').replace("'0 9 * * *'", "'0 10 * * *'"), 'utf-8');
       await waitUntil(
         () => {
           const row = store.fileSync.getByFilePath(file);
@@ -381,26 +410,9 @@ describe('TaskFileWatcher (real chokidar)', () => {
         'the watch to deliver the edit',
         4000
       );
-      delivered = true;
-    } catch {
-      // fall through to the skip decision below
+    } finally {
+      await live.stopAll();
     }
-    const codes = errorLogs()
-      .filter((line) => line.includes('[watcher-error] TaskFileWatcher'))
-      .join(' ');
-    await live.stopAll();
-
-    if (delivered) return;
-    // The one failure that means the watch has stopped listening for good. On a
-    // machine already running several agents and two dev servers this is the
-    // ORDINARY state, not an exotic one — 80 of 80 trial watches hit it while
-    // DOR-1908 was being built. It is the condition the reconciler now covers,
-    // and its own cases assert that. Anything else here is a real red.
-    expect(
-      codes,
-      'the watch delivered nothing and reported no descriptor failure — that is a fault in the wiring, not machine load'
-    ).toMatch(/EMFILE|ENOSPC/);
-    ctx.skip('watch descriptors exhausted (EMFILE/ENOSPC); the reconciler is what covers this');
   });
 
   it("writes a kept OFF switch into a file that has just stopped being a package's (DOR-2272)", async () => {
@@ -457,9 +469,7 @@ describe('TaskFileWatcher (real chokidar)', () => {
     expect(store.fileSync.getByFilePath(shipped)!.enabled).toBe(false);
     await vi.waitFor(
       async () => expect(await readFile(shipped, 'utf-8')).toContain('enabled: false'),
-      {
-        timeout: 5000,
-      }
+      { timeout: loadScaledMs(5000) }
     );
     expect(store.fileSync.getByFilePath(shipped)!.enabled).toBe(false);
   });

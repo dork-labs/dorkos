@@ -334,7 +334,9 @@ export function recordedRunCreator(
 }
 
 /** What the run helpers read a task's cross-agent writer from: the task store. */
-type WriterSource = { approvals: { crossAgentWriterOf(id: string): CrossAgentWriter | undefined } };
+export type WriterSource = {
+  approvals: { crossAgentWriterOf(id: string): CrossAgentWriter | undefined };
+};
 
 /**
  * Whether a run of this task must start with marks another agent's write carried. Such a run

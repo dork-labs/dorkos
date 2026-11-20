@@ -37,9 +37,9 @@ describe('key list remote-use projection at the HTTP boundary', () => {
     }
     const list = await get('/api/auth/api-key/list');
     expect(list.status).toBe(200);
-    // No remote use recorded for this key, so the projection says so.
+    // No remote use and no remote creation recorded for this key, so the projection says so.
     expect(await list.json()).toEqual({
-      apiKeys: [{ id: 'key-test', name: 'Test', lastUsedRemotelyAt: null }],
+      apiKeys: [{ id: 'key-test', name: 'Test', lastUsedRemotelyAt: null, createdFrom: null }],
       total: 1,
     });
     expect(handler).toHaveBeenCalledTimes(1);

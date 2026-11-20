@@ -46,7 +46,13 @@ import {
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts, type RequestFacts } from '../http/request-facts.js';
+import { raiseRemoteStepUpFailure } from '../services/notifications/emitters/remote-step-up.js';
 import { logger } from '../lib/logger.js';
+import {
+  clearRemotePasswordFailures,
+  noteRemotePasswordFailure,
+} from '../services/core/auth/step-up/remote-password-failures.js';
+import { requestCodeForHash } from '../services/core/auth/step-up/request-code.js';
 import { errorBody } from '../lib/route-utils.js';
 import { resolveTrustedOrigins } from '../lib/trusted-origins.js';
 import { presentsAgentIdentity } from '../middleware/agent-identity.js';
@@ -57,6 +63,7 @@ import {
   stepUpRiskLedger,
   type StepUpRiskLedger,
 } from '../services/extensions/step-up/step-up-risk-ledger.js';
+import { remoteAnswerDevice } from '../services/core/auth/sessions/remote-answer-device.js';
 import { signInStartedAt } from '../services/core/auth/sessions/signed-in-devices.js';
 import { APPROVAL_TOKEN_HEADER } from '../services/core/capabilities/index.js';
 import { getAuth, readOwnerAccount } from '../services/core/auth/index.js';
@@ -99,6 +106,8 @@ export interface StepUpRouteDeps {
   riskLedger?: Pick<StepUpRiskLedger, 'note' | 'mayHoldRiskyCode'>;
   /** When a browser session started, in ms, or null when unknown. */
   sessionStartedAt?: (userId: string, sessionId: string) => Promise<number | null>;
+  /** Raise one notice when a remote hold takes its last wrong password. */
+  remoteFailure?: (entry: HeldStepUp, facts: RequestFacts) => Promise<void>;
 }
 
 /** The live owner's password, replaced through Better Auth's own hasher. */
@@ -110,6 +119,7 @@ async function setLiveOwnerPassword(ownerId: string, password: string): Promise<
 }
 
 const liveDeps: StepUpRouteDeps = {
+  remoteFailure: raiseRemoteStepUpFailure,
   ownerId: () => readOwnerAccount()?.id ?? null,
   checkPassword: (password) => checkOwnerPassword(password),
   minPasswordLength: ownerPasswordMinLength,
@@ -158,6 +168,10 @@ const REFUSALS: Record<StepUpRefusalCode, { status: 400 | 403 | 404 | 409 | 429;
     },
     'not-a-person': { status: 403, error: 'Only you can confirm this, in the DorkOS app.' },
     'not-your-action': { status: 403, error: 'Confirm this in the window that asked.' },
+    'different-request': {
+      status: 409,
+      error: 'That confirmation was for a different request. Confirm this one.',
+    },
   };
 
 /**
@@ -178,19 +192,31 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
   }
 
   /** Record one confirm, never with the password. */
-  function audit(entry: HeldStepUp, outcome: 'ok' | 'refused' | 'failed', reason: string): void {
+  async function audit(
+    c: Context<ApiEnv>,
+    entry: HeldStepUp,
+    outcome: 'ok' | 'refused' | 'failed',
+    reason: string
+  ): Promise<void> {
+    const from = (await remoteAnswerDevice(honoRequestFacts(c)))?.label;
+    const confirmed = outcome === 'ok' || reason.startsWith('not-applied-');
+    const summary =
+      reason === 'different-request'
+        ? 'A confirmation for another request was refused. Nothing changed.'
+        : reason === 'too-many-tries'
+          ? `Confirm it’s you failed 5 times${from ? ` from ${from}` : ''}. Nothing was allowed.`
+          : outcome === 'ok'
+            ? `Confirmed it was them: ${entry.reason}`
+            : confirmed
+              ? `It was them, but nothing changed (${reason}): ${entry.reason}`
+              : `A step-up was refused (${reason}): ${entry.reason}`;
     recordAudit({
       action: 'step-up.confirm',
       operation: 'modify',
       outcome,
       ...(outcome === 'ok' ? {} : { error: reason }),
       target: { type: 'step-up', id: entry.statement.kind },
-      summary:
-        outcome === 'ok'
-          ? `Confirmed it was them: ${entry.reason}`
-          : reason.startsWith('not-applied-')
-            ? `It was them, but nothing changed (${reason}): ${entry.reason}`
-            : `A step-up was refused (${reason}): ${entry.reason}`,
+      summary: `${summary}${from && reason !== 'too-many-tries' ? ` · from ${from}` : ''}${confirmed ? ' · confirmed with password' : ''} · Request ${requestCodeForHash(entry.statement.inputSha256)}`,
       source: { surface: 'app' },
     });
   }
@@ -202,7 +228,7 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
       operation: 'modify',
       outcome: 'ok',
       target: { type: 'owner-password', id: 'owner' },
-      summary: `The owner chose a longer password before confirming: ${entry.reason}`,
+      summary: `The owner chose a longer password before confirming: ${entry.reason} · Request ${requestCodeForHash(entry.statement.inputSha256)}`,
       source: { surface: 'app' },
     });
   }
@@ -292,19 +318,31 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     password: string | undefined
   ): Promise<Response | undefined> {
     const check = await deps.checkPassword(password);
-    if (check === 'ok') return undefined;
+    const facts = honoRequestFacts(c);
+    if (check === 'ok') {
+      if (entry.sessionId && !isAtThisComputer(facts)) clearRemotePasswordFailures(entry.sessionId);
+      return undefined;
+    }
     if (check === 'too-many-attempts') {
       const retryAfterSeconds = Math.ceil(ownerPasswordRetryAfterMs() / 1000);
       c.header('Retry-After', String(retryAfterSeconds));
-      audit(entry, 'refused', check);
+      await audit(c, entry, 'refused', check);
       return refuse(c, 'too-many-attempts', { retryAfterSeconds });
     }
     if (check === 'no-owner' || check === 'no-password') return refuse(c, 'no-password');
     if (check === 'required') {
       return c.json(errorBody('Enter your password.', 'wrong-password'), 400);
     }
+    // Count before re-reading the hold: cancelling it during a password check
+    // cannot hide an actual wrong attempt or reset this device's notice count.
+    if (entry.sessionId && !isAtThisComputer(facts) && noteRemotePasswordFailure(entry.sessionId)) {
+      void deps.remoteFailure?.(entry, facts).catch(() => {
+        logger.error('[StepUp] The remote confirmation notice could not be recorded');
+      });
+    }
+    if (peekHeldStepUp(entry.statement.heldActionId) !== entry) return refuse(c, 'expired');
     const triesLeft = spendStepUpTry(entry.statement.heldActionId);
-    audit(entry, 'refused', triesLeft === 0 ? 'too-many-tries' : 'wrong-password');
+    await audit(c, entry, 'refused', triesLeft === 0 ? 'too-many-tries' : 'wrong-password');
     if (triesLeft === 0) return refuse(c, 'too-many-tries');
     return refuse(c, 'wrong-password', { triesLeft });
   }
@@ -315,11 +353,19 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     const taken = takeHeldStepUp(entry.statement.heldActionId);
     if (!taken) return refuse(c, 'expired');
     try {
+      if (taken.binding && taken.binding.currentHash() !== taken.statement.inputSha256) {
+        await audit(c, taken, 'refused', 'different-request');
+        return refuse(c, 'different-request');
+      }
       const { status, body } = await taken.commit(honoRequestFacts(c));
+      if (status === 409 && (body as { code?: string } | null)?.code === 'different-request') {
+        await audit(c, taken, 'refused', 'different-request');
+        return refuse(c, 'different-request');
+      }
       // The password matched, but a commit that answers 4xx or 5xx wrote nothing,
       // so the row says so rather than "Confirmed" (DOR-3836).
-      if (status >= 400) audit(taken, 'refused', `not-applied-${status}`);
-      else audit(taken, 'ok', 'confirmed');
+      if (status >= 400) await audit(c, taken, 'refused', `not-applied-${status}`);
+      else await audit(c, taken, 'ok', 'confirmed');
       const answer: StepUpConfirmedBody = { ok: true, status, result: body };
       return c.json(answer);
     } catch (error) {
@@ -327,7 +373,7 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
         kind: taken.statement.kind,
         error: (error as Error).name,
       });
-      audit(taken, 'failed', 'commit-failed');
+      await audit(c, taken, 'failed', 'commit-failed');
       return c.json(errorBody('That didn’t work. Try again.', 'STEP_UP_COMMIT_FAILED'), 500);
     }
   }
@@ -345,7 +391,9 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     const unavailable = await passwordUnavailable(c);
     const view: HeldStepUpView = {
       heldActionId: entry.statement.heldActionId,
+      requestCode: requestCodeForHash(entry.statement.inputSha256),
       kind: entry.statement.kind,
+      answeringRemotely: !isAtThisComputer(honoRequestFacts(c)),
       reason: entry.reason,
       notes: [...entry.notes],
       ...(entry.warnings.length > 0 ? { warnings: [...entry.warnings] } : {}),
@@ -373,7 +421,7 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     // keep the action held and offer change-and-confirm instead.
     const minLength = await deps.minPasswordLength();
     if ((password ?? '').length < minLength) {
-      audit(entry, 'refused', 'password-too-short');
+      await audit(c, entry, 'refused', 'password-too-short');
       return refuse(c, 'password-too-short', { minLength });
     }
     return commit(c, entry);
@@ -399,6 +447,12 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
     }
     const ownerId = deps.ownerId();
     if (!ownerId) return refuse(c, 'no-password');
+    if (peekHeldStepUp(entry.statement.heldActionId) !== entry) return refuse(c, 'expired');
+    if (entry.binding && entry.binding.currentHash() !== entry.statement.inputSha256) {
+      cancelHeldStepUp(entry.statement.heldActionId);
+      await audit(c, entry, 'refused', 'different-request');
+      return refuse(c, 'different-request');
+    }
     await deps.setOwnerPassword(ownerId, newPassword);
     logger.info('[StepUp] The owner chose a longer password before confirming');
     auditPasswordChanged(entry);

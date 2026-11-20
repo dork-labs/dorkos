@@ -286,13 +286,7 @@ export function AssistantMessageContent({
       );
     }
     if (part.type === 'model_substituted') {
-      return (
-        <ModelSubstitutedRow
-          key={`model-substituted-${i}`}
-          fromName={part.fromName}
-          toName={part.toName}
-        />
-      );
+      return <ModelSubstitutedRow key={`model-substituted-${i}`} {...part} />;
     }
     if (part.type === 'project_addons_off') {
       return (
@@ -337,6 +331,7 @@ export function AssistantMessageContent({
       }
       return (
         <ApprovalCard
+          inChat
           key={`capability-approval-${part.approval.approvalId}`}
           approval={part.approval}
         />
@@ -393,6 +388,7 @@ export function AssistantMessageContent({
           approvalHasSuggestions={toolPart.approvalHasSuggestions}
           approvalAlwaysAllowScope={toolPart.approvalAlwaysAllowScope}
           approvalAlwaysAllowBreadth={toolPart.approvalAlwaysAllowBreadth}
+          approvalRequestCode={toolPart.approvalRequestCode}
           isActive={isActive}
           onDecided={onToolDecided ? () => onToolDecided(toolPart.toolCallId) : undefined}
           allowsDenyReason={allowsDenyReason}

@@ -59,6 +59,8 @@ export interface AuthResult<T> {
 
 /** A per-user API key as listed by the `apiKey` plugin (never includes the secret). */
 export interface ApiKeyRecord {
+  /** The device and encrypted route where this key was made, when recorded. */
+  createdFrom?: string | null;
   id: string;
   name: string | null;
   /** First few characters of the key, for recognition (the full key is never re-shown). */
@@ -127,12 +129,19 @@ export interface AuthClient {
 
 /** Parse a Better Auth error body + headers into a normalized {@link AuthError}. */
 async function toAuthError(res: Response): Promise<AuthError> {
-  const body = (await res.json().catch(() => ({}))) as { message?: string; code?: string };
+  const body = (await res.json().catch(() => ({}))) as {
+    message?: string;
+    error?: unknown;
+    code?: string;
+  };
   const retryHeader = res.headers.get('X-Retry-After') ?? res.headers.get('Retry-After');
   const retryAfter = retryHeader ? Number(retryHeader) : undefined;
   return {
     message:
-      body.message || res.statusText || `The server didn’t accept that (${res.status}). Try again.`,
+      body.message ||
+      (typeof body.error === 'string' ? body.error : '') ||
+      res.statusText ||
+      `The server didn’t accept that (${res.status}). Try again.`,
     status: res.status,
     code: body.code,
     retryAfter: Number.isFinite(retryAfter) ? retryAfter : undefined,

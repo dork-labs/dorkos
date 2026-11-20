@@ -20,6 +20,7 @@ import { parseDuration } from '@dorkos/skills/duration';
 import { RUN_LINE } from '@dorkos/shared/schedule-notice-copy';
 import { logger } from '../../lib/logger.js';
 import { TaskApprovals } from './approvals/task-approvals.js';
+import { TaskRunControls } from './store/task-run-controls.js';
 import { RunSessionStore, type RunSessionBinding } from './session/run-session-store.js';
 import { TaskFileSync } from './sync/task-file-sync.js';
 import { scheduleContentKey } from './schedule-permission-clamp.js';
@@ -92,11 +93,14 @@ export class TaskStore {
    * file move or a key-format upgrade. See `approvals/task-approvals.ts`.
    */
   readonly approvals: TaskApprovals;
+  /** An agent-set allow list, its pins and the one-shot claim (DOR-4315). */
+  readonly runControls: TaskRunControls;
 
   constructor(db: Db) {
     this.db = db;
     this.runSessions = new RunSessionStore(db);
     this.approvals = new TaskApprovals(db);
+    this.runControls = new TaskRunControls(db);
     this.fileSync = new TaskFileSync(db, (id) => this.getTask(id), this);
   }
 

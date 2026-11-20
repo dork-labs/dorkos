@@ -25,10 +25,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-          cache: pnpm
+          package-manager-cache: false
+
+      # NO dependency cache, restored or saved (DOR-4772, as DOR-4695 did for the
+      # other release jobs). `pnpm publish:cli` dispatches this run to build what
+      # ships in `dorkos`, so it installs cold from the registry, checked against
+      # pnpm-lock.yaml's integrity hashes. No `cache:` input means no restore and
+      # no post-step save; `package-manager-cache: false` keeps setup-node's
+      # automatic caching off even if package.json's packageManager changes.
+      # Cost: one cold install per job per release.
+
       - run: pnpm install --frozen-lockfile
       - name: Build actual Mac CLI and native assets
         run: pnpm --filter dorkos build
@@ -59,10 +68,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-          cache: pnpm
+          package-manager-cache: false
+
+      # NO dependency cache, restored or saved (DOR-4772; see build-darwin).
+
       - run: pnpm install --frozen-lockfile
       - uses: actions/download-artifact@v8
         with:

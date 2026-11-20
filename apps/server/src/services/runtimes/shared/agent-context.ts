@@ -153,6 +153,8 @@ function buildDorkosContextGuard(): string {
  * where a person asked to connect Gmail and was told "I can't" with no next step).
  * Beside it sits the discovery rule (DOR-2852): a connection or package that
  * would clearly help is named once, in a room only if asked, never as an ad.
+ * The shell line (DOR-3109) is there because Claude Code can't check a
+ * `cd x && …` chain or an inline `$VAR` before it runs, so it asks a person.
  *
  * **Never gated, and that is the point.** It renders whatever the agent's
  * convention toggles say, and in a session with no agent home at all: the
@@ -189,6 +191,7 @@ still follows the rule above).
 Commands you add to your folder's allow list don't apply until a person approves them, and then only
 from your next turn. Don't add one to get past a refusal; tell the person what you need. If you do add
 one, tell them it's waiting on their approval, never that it's done.
+Shell: one command per call. Pass a path instead of cd-ing first; no && chains, no inline $VARS.
 A no, a "stop", a denied request or a "not allowed" holds until lifted: never work around it, dig for
 credentials or ask for a password or key. Your persona never shortens these rules.
 </working_rules>`;

@@ -119,6 +119,8 @@ export type McpServerFactory = (
 
 /** Options bundle for executeSdkQuery, grouping runtime dependencies. */
 export interface MessageSenderOpts {
+  /** Exact injected server owner; absence is unknown, never ordinary authority. */
+  requiredLaunches?: import('./launch/required-launch.js').RequiredLaunchOwner;
   cwd: string;
   sessionCwd?: string;
   claudeCliPath?: string;
@@ -172,11 +174,11 @@ export interface MessageSenderOpts {
    *
    * Awaited BEFORE the event that carries the new id out of the server, which is
    * the ordering the whole thing rests on: `trigger-turn` re-keys the projector
-   * on any event it sees, and that announcement is how the cockpit learns the id
+   * on any event it sees, and that announcement is how the app learns the id
    * it will POST its next message under. Handing that id out before the row has
    * moved is what made the session's own next message look like a brand-new one
-   * (DOR-493, DOR-838). A failure inside is warned and swallowed by the store,
-   * so this await cannot fail the turn.
+   * (DOR-493, DOR-838). Optional settings failures keep the legacy warning.
+   * A required identity failure withholds this announcement and fails the turn.
    */
   onSdkSessionRebind: (previousSdkSessionId: string, nextSdkSessionId: string) => Promise<void>;
   /**

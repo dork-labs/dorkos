@@ -30,6 +30,13 @@ import {
   RunningExtensionTools,
 } from '../tool-binding.js';
 import type { ExtensionToolHandler } from '@dorkos/extension-api/server';
+import { createTestDb } from '@dorkos/test-utils/db';
+import {
+  PersonRecordStore,
+  createPersonRecordApi,
+  runInPersonRequest,
+  setPersonRecordStore,
+} from '../../person-record/person-record.js';
 
 /** A manifest with two observe tools and one refused tool. */
 function manifest(timeoutSeconds = 1) {
@@ -152,6 +159,31 @@ describe('createToolBinding', () => {
 });
 
 describe('RunningExtensionTools', () => {
+  // DOR-4301 (Security's Should 1): an agent's tool call is the agent's doing,
+  // so its handler records nothing as a person, even while that person's
+  // request to the same extension is still open.
+  it('runs a handler outside any person request', async () => {
+    setPersonRecordStore(new PersonRecordStore(createTestDb()));
+    try {
+      const personRecord = createPersonRecordApi('mail-app');
+      const registry = newRegistry();
+      start(registry, {
+        read: () =>
+          personRecord.record('an agent’s words').then(
+            () => 'recorded',
+            () => 'refused'
+          ),
+      });
+      const result = await runInPersonRequest('mail-app', () =>
+        registry.invoke('ext_mail_app.read', { q: 'x' }, {})
+      );
+      expect(result).toBe('refused');
+      expect(await personRecord.verify('an agent’s words')).toBeNull();
+    } finally {
+      setPersonRecordStore(null);
+    }
+  });
+
   it('runs a handler with the parsed input and only signal and agentId', async () => {
     // Purpose: the handler learns which agent called and nothing else — no
     // session id, cwd or proof object — and its result reaches the caller.

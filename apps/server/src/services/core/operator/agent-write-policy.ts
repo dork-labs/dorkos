@@ -200,6 +200,10 @@ export const AGENT_WRITE_POLICY = {
   // arranging its team is the feature (canon §9.3); the safeguards are the
   // audit row anyone can read and the loop refusal, not a caller check.
   reportsTo: 'agent-writable',
+  // Turning it ON only: the agent reads mail, web pages or another app's text, so
+  // every turn it runs is marked (DOR-3969). A `false` or `null` is refused by value in
+  // `updateAgentManifest` (`READS_OUTSIDE_TEXT_PERSON_ONLY`): only a person turns it off.
+  readsOutsideText: 'agent-writable',
 
   // The three convention FILES, which ride the same PATCH body. SOUL.md and
   // MEMORY.md are the agent's own prose about itself and its own saved notes.

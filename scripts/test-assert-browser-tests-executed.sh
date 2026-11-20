@@ -579,6 +579,35 @@ printf 'alpha.spec.ts \xe2\x80\xba alpha runs\n' >"$tmp/qTopError/quarantine.txt
 check 'a global error the lane cannot name still reds the build' "$tmp/qTopError" 1 \
   'belong to no test' --quarantined "$tmp/qTopError/quarantine.txt"
 
+# A big run whose quarantined test is the FIRST id. The membership checks used
+# to pipe the whole id list into `grep -q`, which exits at the first match; the
+# writer still had most of the list to send, died of SIGPIPE, and under pipefail
+# a test that ran read as absent (DOR-2021: 1 in 62 local runs under load). With
+# ~200KB of ids and the match on line one, the writer is certain to still be
+# blocked on a full pipe when grep leaves, so the old form reds every time.
+make_workspace "$tmp/qBigList"
+python3 - "$tmp/qBigList/apps/e2e/test-results/results.json" "$tmp/qBigList/quarantine.txt" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1]))
+d['stats']['unexpected'] = 1
+d['stats']['expected'] -= 1
+spec = d['suites'][0]['specs'][0]
+spec['tests'][0]['status'] = 'unexpected'
+pad = 'p' * 120
+extra = [{'title': f'zz padding {i:04d} {pad}', 'file': 'alpha.spec.ts',
+          'tests': [{'status': 'expected'}]} for i in range(1500)]
+d['suites'][0]['specs'].extend(extra)
+d['stats']['expected'] += len(extra)
+json.dump(d, open(sys.argv[1], 'w'))
+with open(sys.argv[2], 'w') as q:
+    q.write('alpha.spec.ts › alpha runs\n')
+    for e in extra:
+        q.write(f"alpha.spec.ts › {e['title']}\n")
+PY
+check 'a quarantined test first in a big run is found, not read as absent' \
+  "$tmp/qBigList" 0 'quarantine lane absorbed 1 failure' \
+  --quarantined "$tmp/qBigList/quarantine.txt"
+
 # No report at all — the suite never started, or --reporter replaced the json one.
 make_workspace "$tmp/noreport"
 rm "$tmp/noreport/apps/e2e/test-results/results.json"

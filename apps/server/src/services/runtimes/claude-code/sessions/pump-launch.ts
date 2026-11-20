@@ -57,6 +57,10 @@ import type {
 } from './session-pump-contract.js';
 import { createTrackedSpawn } from './tracked-spawn.js';
 import { sharedWarmProcessLedger } from './warm-process-ledger.js';
+import { validatedRecoveryRoute } from '../messaging/launch/required-launch.js';
+import { isCreditsClaudeRoot } from '../credits-root.js';
+
+type RecoveryRoute = ReturnType<typeof validatedRecoveryRoute>;
 
 /** What one dispatch resolved: the turn's message, and the launch behind it. */
 export interface PumpLaunchPlan {
@@ -98,7 +102,7 @@ export function pumpLaunchPlanOf(resolved: ResolvedLaunch, effectiveCwd: string)
 /** What a launcher tells its pump's owner. */
 export interface PumpLaunchCallbacks {
   /** A process started, and what it was launched with. */
-  onLaunched: (live: Query, fingerprint: LaunchFingerprint) => void;
+  onLaunched: (live: Query, fingerprint: LaunchFingerprint, route?: RecoveryRoute) => void;
   /** That process did not answer for its external MCP servers in time. */
   onServersNotHeld: (live: Query) => void;
 }
@@ -107,6 +111,8 @@ export interface PumpLaunchCallbacks {
 interface LiveProcessSlot {
   live: Query | undefined;
   fingerprint: LaunchFingerprint | undefined;
+  recoveryRoute?: RecoveryRoute;
+  recoveryBilling?: { sessionId: string; root: string; perToken: boolean };
 }
 
 /**
@@ -117,9 +123,11 @@ interface LiveProcessSlot {
  */
 export function pumpLaunchCallbacks(slot: LiveProcessSlot): PumpLaunchCallbacks {
   return {
-    onLaunched: (live, fingerprint) => {
+    onLaunched: (live, fingerprint, route) => {
       slot.live = live;
       slot.fingerprint = fingerprint;
+      slot.recoveryRoute = route;
+      slot.recoveryBilling = undefined;
     },
     onServersNotHeld: (live) => {
       if (slot.live !== live || slot.fingerprint === undefined) return;
@@ -155,6 +163,13 @@ export function createPumpLauncher(
 ): PumpLauncher {
   return ({ sessionId, prompt }): PumpQuery => {
     const plan = currentPlan();
+    const root = plan.fingerprint.account.root;
+    const route = validatedRecoveryRoute(
+      root,
+      isCreditsClaudeRoot(root),
+      plan.sdkOptions.env ?? {},
+      { cwd: plan.effectiveCwd, settings: plan.sdkOptions.settings }
+    );
     // The one option this path adds to the resolved plan, and the reason it is
     // added HERE rather than in the shared resolver: only a persistent process
     // can be orphaned by a server that dies without running its shutdown, so
@@ -182,7 +197,7 @@ export function createPumpLauncher(
     // process destroys a healthy subprocess and marks the session crashed. A
     // process is not a turn, so the field is armed and disarmed by the pump's
     // own `running` edge instead (`persistent-dispatch.ts`).
-    callbacks.onLaunched(live, plan.fingerprint);
+    callbacks.onLaunched(live, plan.fingerprint, route);
     // The append this process now holds, for every turn's context record.
     noteLaunchedAppend(session, plan.sdkOptions);
     logger.debug('[pump-launch] booted a persistent process', {

@@ -212,7 +212,7 @@ describe('reading a hand-off by its id', () => {
 
     expect(await statusOf(id)).toMatchObject({
       status: 'declined',
-      reason: 'it stayed busy for an hour.',
+      reason: 'it waited too long to start. Send the post again.',
     });
   }, 10_000);
 

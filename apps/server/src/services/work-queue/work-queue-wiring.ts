@@ -44,7 +44,7 @@ import {
   peekProjector,
 } from '../session/session-state-projector.js';
 import { SCHEDULER_HEARTBEAT_MS, SchedulerLock } from '../tasks/scheduler-lock.js';
-import { machineHold, pickQueueAccount } from './work-queue-limits.js';
+import { machineHold, pickQueueAccount, queueAccountHold } from './work-queue-limits.js';
 import {
   WorkQueueRunner,
   type ChatState,
@@ -173,7 +173,7 @@ export function wireWorkQueue(deps: WorkQueueWiringDeps): WorkQueueWiring {
       // No ledger at all: nothing to judge by, so the usual choice decides.
       if (ranking.length > 0) {
         const account = pickQueueAccount(ranking, runtimeType);
-        if (!account) return { kind: 'held', hold: 'accounts' };
+        if (!account) return { kind: 'held', hold: queueAccountHold(ranking, runtimeType) };
         accountId = account.id;
       }
     }

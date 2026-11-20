@@ -57,6 +57,9 @@ describe('scheduled task approval receipts', () => {
     initConfigManager(dorkHome);
     configManager.set('permissions', { ...configManager.get('permissions'), preset: 'careful' });
     configManager.set('profile', { ...configManager.get('profile'), displayName: 'Dorian' });
+    // The Ask stop, so a proposal parks at Default and approving it raises nothing.
+    // A held approval's receipt, confirmed by the real owner, is in tasks-arm-step-up.test.ts.
+    configManager.set('runtimes', { ...configManager.get('runtimes'), defaultTrustStop: 'ask' });
     emitted = [];
     const scheduler = {
       registerTask: vi.fn(),

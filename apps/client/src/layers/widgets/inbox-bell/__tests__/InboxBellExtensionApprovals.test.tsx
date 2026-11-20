@@ -68,6 +68,7 @@ let waiting: PendingExtensionApproval[];
 let approveStatus: number;
 let posts: Array<{ url: string; body: unknown }>;
 let staleReplacement: PendingExtensionApproval | null;
+let approvalGate: Promise<void> | null = null;
 
 /** A fake of the four extension routes the bell reaches. */
 async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
@@ -96,6 +97,7 @@ async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
         );
       }
       if (approveStatus !== 200) return json({ error: 'Nope' }, approveStatus);
+      if (approvalGate) await approvalGate;
       waiting = [];
       return json({ extension: { id: 'flow' } });
     }
@@ -155,6 +157,7 @@ describe('InboxBell — an extension waiting to be turned on', () => {
   });
 
   beforeEach(() => {
+    approvalGate = null;
     waiting = [FLOW];
     approveStatus = 200;
     posts = [];
@@ -258,6 +261,10 @@ describe('InboxBell — an extension waiting to be turned on', () => {
   // the sentence, what changed and when, and its own two answers (Nov 8).
   const PAUSED_TITLE =
     'Flow’s files changed since you allowed it. Its screens are paused until you look.';
+  // The Designer's words for a changed copy that also wants a new power
+  // (DOR-4531): the title says so before the body lists each one.
+  const WANTS_MORE_TITLE =
+    'Flow was updated and wants more. Its screens are paused until you look.';
 
   it('says an update’s files changed, with both versions and when, and asks to allow it', async () => {
     waiting = [
@@ -323,16 +330,17 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     const user = userEvent.setup();
     await user.click(await screen.findByTestId('inbox-bell'));
 
-    const row = (await screen.findByText(PAUSED_TITLE)).closest(
+    const row = (await screen.findByText(WANTS_MORE_TITLE)).closest(
       '[data-slot="inbox-decision-row"]'
     ) as HTMLElement;
     expect(
       within(row).getByTestId('extension-permissions-flow').querySelector('li')
     ).toHaveTextContent('Now also wants to connect to: api.example.com');
+    expect(screen.queryByText(PAUSED_TITLE)).not.toBeInTheDocument();
   });
 
   // Purpose: an update that adds a power names each one as new on the row,
-  // beside "files changed" (DOR-4504).
+  // under a title that says it wants more (DOR-4504, DOR-4531).
   it.each([
     {
       power: 'a host',
@@ -362,7 +370,7 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     const user = userEvent.setup();
     await user.click(await screen.findByTestId('inbox-bell'));
 
-    const row = (await screen.findByText(PAUSED_TITLE)).closest(
+    const row = (await screen.findByText(WANTS_MORE_TITLE)).closest(
       '[data-slot="inbox-decision-row"]'
     ) as HTMLElement;
     const fresh = within(row)
@@ -391,7 +399,7 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     const user = userEvent.setup();
     await user.click(await screen.findByTestId('inbox-bell'));
 
-    const row = (await screen.findByText(PAUSED_TITLE)).closest(
+    const row = (await screen.findByText(WANTS_MORE_TITLE)).closest(
       '[data-slot="inbox-decision-row"]'
     ) as HTMLElement;
     const app = row.querySelector('li[data-app="planner"]') as HTMLElement;
@@ -411,6 +419,8 @@ describe('InboxBell — an extension waiting to be turned on', () => {
       '[data-slot="inbox-decision-row"]'
     ) as HTMLElement;
     expect(row.querySelector('li[data-tone="new"]')).toBeNull();
+    // Files only, so the title keeps today's words (DOR-4531).
+    expect(screen.queryByText(WANTS_MORE_TITLE)).not.toBeInTheDocument();
   });
 
   it('opens ⓘ in place with the consent sentence and the way to Settings', async () => {
@@ -482,6 +492,25 @@ describe('InboxBell — an extension waiting to be turned on', () => {
 
       expect(within(row).queryByText(/give agents|Gives agents/)).not.toBeInTheDocument();
     });
+  });
+
+  it('keeps the coded approval row while confirmation waits', async () => {
+    waiting = [{ ...FLOW, requestCode: 'K7MR-4XQ9-HT3W' }];
+    let confirm!: () => void;
+    approvalGate = new Promise<void>((resolve) => {
+      confirm = resolve;
+    });
+    renderBell();
+    const { user, row } = await openRow();
+    expect(within(row).getByText('K7MR-4XQ9-HT3W')).toBeInTheDocument();
+    await user.click(within(row).getByRole('button', { name: 'Allow' }));
+    await waitFor(() => expect(posts).toHaveLength(1));
+    expect(screen.getByText('Flow wants to run on this computer.')).toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: 'Allow' })).toBeDisabled();
+    confirm();
+    await waitFor(() =>
+      expect(screen.queryByText('Flow wants to run on this computer.')).not.toBeInTheDocument()
+    );
   });
 
   it('turns it on from 👍, and the row leaves', async () => {

@@ -122,6 +122,28 @@ describe('a room says when a turn has stopped', () => {
       expect(service.listRooms(human, {})[0].working).toBe(1);
     });
 
+    // DOR-4610: a capability card shows in the room it belongs to, so the line
+    // points at it there, and keeps the usual words for a card shown elsewhere.
+    it('points at the card when the card is shown in this room', async () => {
+      await triggerAna();
+      runner.waitOnPerson(ana, {
+        kind: 'approval',
+        toolName: 'connectors.execute_write',
+        cardRoomId: room.id,
+      });
+
+      expect(notices()[0].body.text).toBe(
+        'Ana is waiting for your approval. Answer the card here or in Needs you. New messages for Ana wait with it.'
+      );
+    });
+
+    it('keeps the usual line for a card shown in another room', async () => {
+      await triggerAna();
+      runner.waitOnPerson(ana, { kind: 'approval', cardRoomId: 'room-elsewhere' });
+
+      expect(notices()[0].body.text).toContain("Open Ana's chat or Needs you to answer.");
+    });
+
     it('says it once for one turn, however many times that turn stops', async () => {
       // A turn that asks for three approvals in a row is one wait from the
       // reader's side; three lines about it would be the over-participation

@@ -71,6 +71,7 @@ import { marksHold, NO_MARKS, type TurnMarks } from '../../core/turn-power/turn-
 import { auditCrossAgentTask, capModeAtAgentLevel } from '../approvals/cross-agent.js';
 import { scheduledTaskCreateApproval } from '../approvals/task-approval-receipt.js';
 import { taskPermissionRulesRefusal } from '../task-permission-rules.js';
+import { declareTask } from '../../core/turn-power/declared-readers.js';
 
 /**
  * An ungranted agent create may preserve only these known modes. In particular,
@@ -541,6 +542,9 @@ export async function createScheduledTask(
       // Only a sticky schedule says so in the file — the block defaults to off,
       // and `scheduleToFrontmatter` drops a `false` back out anyway (DOR-1571).
       sticky: data.sticky === true ? true : undefined,
+      // Only a task that reads outside text says so (DOR-3969); the sync below
+      // writes it into DorkOS's own record too.
+      readsOutsideText: data.readsOutsideText === true ? true : undefined,
       maxRuntime: data.maxRuntime || undefined,
       // Only an OVERRIDE says so in the file. Absent is "whatever this task's
       // agent runs on", which is what a schedule that names nothing means, so
@@ -626,6 +630,8 @@ export async function createScheduledTask(
   if (unclamped && effectivePermissionMode === 'bypassPermissions') {
     schedule = deps.store.updateTask(schedule.id, { permissionMode: 'bypassPermissions' })!;
   }
+  // The row fallback reads no file, so it says so in DorkOS's own record here (DOR-3969).
+  if (data.readsOutsideText === true) declareTask(schedule);
 
   // Both row paths hardcode `status: 'active'`, so parking is a patch after the
   // fact. It has to happen BEFORE the register below, or the task fires while it

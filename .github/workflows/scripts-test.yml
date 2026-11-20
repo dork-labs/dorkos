@@ -360,6 +360,12 @@ jobs:
       - name: Build-only turbo cache trim fixtures
         run: bash scripts/test-keep-build-cache-only.sh
 
+      # build-test-deps.sh builds what test.yml's suites import in a turbo run
+      # with no test arguments, so one cached build serves every test job
+      # (DOR-4625). Its build set and its summary hand-off are pinned here.
+      - name: Test-dependency build fixtures
+        run: bash scripts/test-build-test-deps.sh
+
       # assert-shard-union.sh is the other half of the same gate: it restores
       # the zero-collected-files net that --passWithNoTests removes from the
       # sharded merge-queue sweep. A union check that stops discriminating
@@ -404,6 +410,13 @@ jobs:
       # broken head let back in, and a good one taken out.
       - name: Queue repeat-guard fixtures
         run: bash scripts/test-queue-repeat-guard.sh
+
+      # arm-door.yml's decision (DOR-4648): an entry whose head lacks Security's
+      # label at or after it, or a verify proof, is taken out of the queue. Both
+      # mistakes are pinned: an ungated head let in, and a gated, docs-only,
+      # stamped or unreadable one taken out.
+      - name: Arm-door fixtures
+        run: bash scripts/test-arm-door.sh
 
       # The other decision merge-tail makes on the same tick: whether to
       # re-request a review that failed. Its stakes run the opposite way to the
@@ -515,6 +528,14 @@ jobs:
       # almost all of it deliberate waiting on bounds.
       - name: Heavy-run lock fixtures
         run: bash scripts/test-heavy-run-lock.sh
+
+      # Under pipefail, `… | grep -q` is a coin toss: grep exits at its first
+      # match, the writer dies of SIGPIPE, and the pipeline reads as a miss on
+      # input that matched (76 in 5,000 on a loaded runner, dorkos-cloud #463).
+      # Under `if !` that miss fails OPEN. This lint keeps the shape out of
+      # scripts, hooks and workflows. A grep over files, a few milliseconds.
+      - name: No pipe into grep -q
+        run: bash scripts/test-no-early-exit-grep.sh
 
       # sweep-ephemeral-docker.sh reclaims the containers, volumes and networks a
       # SIGKILLed run leaves behind, and it is the one gate script whose failure
@@ -660,6 +681,14 @@ jobs:
       # should make to the merge queue, as ejections. Hermetic, no pnpm.
       - name: No-code scope fixtures
         run: bash scripts/test-no-code-scope.sh
+
+      # release-branch-contents.sh is the rule for what a pull request into a
+      # release/v<X.Y.Z> branch may carry (DOR-4639): only cherry-picks of main
+      # with a matching patch-id and the release commit. A rule that quietly
+      # loosens lets a commit main never saw ship to npm. Hermetic (throwaway
+      # repos with a local origin), git and jq, no pnpm.
+      - name: Release-branch contents fixtures
+        run: bash scripts/test-release-branch-contents.sh
 
   # The TypeScript under scripts/ belongs to no pnpm workspace, so `pnpm verify`'s
   # affected-only turbo run resolves a scripts-only change to 0 affected packages

@@ -209,8 +209,11 @@ verdict=$(jq -r --argjson hold "$HOLD_LABELS" --argjson repeat "$REPEAT_EJECTION
 
   # GitHub computes mergeability lazily and reports UNKNOWN until it finishes.
   # UNKNOWN is not "probably clean": a PR that turns out to be DIRTY runs no CI,
-  # so arming on UNKNOWN can arm exactly the case the branch above refuses. The
-  # next scheduled run sees a resolved value, so waiting costs nothing.
+  # so arming on UNKNOWN can arm exactly the case the branch above refuses.
+  # Waiting is not free: every merge to main resets the field to UNKNOWN on
+  # every open PR, so the next tick usually sees UNKNOWN again. The payload
+  # builder (scripts/should-arm-automerge-input.sh) asks GitHub again a few
+  # times before this; what reaches here still UNKNOWN stays a skip.
   elif .mergeStateStatus == "UNKNOWN"               then "SKIP mergeability-unknown"
   elif .mergeStateStatus == ""                      then "SKIP mergeability-unknown"
 

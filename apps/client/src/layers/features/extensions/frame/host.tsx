@@ -14,7 +14,7 @@ import {
   bridgeWriteAllowed,
   declaresBridgeCapability,
 } from '@dorkos/shared/extension-approval-schemas';
-import { readAppMedia } from './app-media';
+import { mintAppMediaUrl, readAppMedia } from './app-media';
 import { createAppCaller } from './app-call';
 import { extensionRequestPath, readAppResponse } from './app-request';
 import { offerAppDownload } from './download';
@@ -266,6 +266,14 @@ export function isolatedExtensionModule(
                 headers: { 'X-DorkOS-Extension': api.id },
               });
               return readAppMedia(response);
+            }
+            // A long video streams by ticket; the frame's <video> loads it itself (DOR-4321).
+            if (method === 'mediaUrl') {
+              if (!manifest.capabilities?.http)
+                throw new Error('This app has not declared server requests.');
+              const [path] = args(text).parse(input);
+              extensionRequestPath(api.id, path);
+              return mintAppMediaUrl(api.id, path);
             }
             if (method === 'navigate') {
               const [path] = args(text).parse(input);

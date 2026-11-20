@@ -99,6 +99,8 @@ export interface CallPermission extends ResolvedPermission {
    * card may be shown (DOR-3417): Blocked, not approvable, and refused with this plain reason.
    */
   keeperRefusal?: string;
+  /** Set when the call asks because its turn read words from outside the team (DOR-3969). */
+  forOutsideWords?: true;
 }
 
 /**
@@ -493,7 +495,13 @@ export async function resolveCallPermission(request: {
     const outwardAtFull = marked && full && request.outward !== false;
     const cardArea = strangerTurn || outwardAtFull ? markedTurnCardArea(action.id) : undefined;
     if (cardArea !== undefined) {
-      return { area: cardArea, state: 'ask', source: 'always-asks', layer: 'floor' };
+      return {
+        area: cardArea,
+        state: 'ask',
+        source: 'always-asks',
+        layer: 'floor',
+        forOutsideWords: true,
+      };
     }
     // No area: the tier decides, and an `act` call runs unasked (`execute_write`).
     if (action.tier === 'act') noteIfUnasked(null);
@@ -596,7 +604,10 @@ export async function resolveCallPermission(request: {
       ...(identity?.inactive ? { inactive: true } : {}),
     })
   );
-  const resolved = reached.reduce(stricter, own!);
+  const resolved: CallPermission = reached.reduce(stricter, own!);
+  if (resolved.state === 'ask' && strangerTurn && HELD_IN_A_MARKED_TURN.has(action.id)) {
+    resolved.forOutsideWords = true;
+  }
   if (resolved.state === 'ask' && action.permissionDirectionForInput?.(request.input) === 'narrow')
     resolved.state = 'allowed';
   noteIfUnasked(resolved.state);
@@ -653,19 +664,23 @@ export function blockedPermissionMessage(permission: CallPermission): string {
  *
  * A destructive action always can. An `act` action can when it has an area,
  * because the person may set that area to Ask. An `observe` action never asks
- * on its own. The request tool (`forwardsApproval`) always can: it raises the
- * card of whatever action it asks for, and a retry presents that card's token.
+ * on its own, but a live preflight can require approval for spending even on a
+ * read, or for outside words on an area-less write. The request tool
+ * (`forwardsApproval`) always can: it raises the card of whatever action it asks
+ * for, and a retry presents that card's token.
  *
- * @param action - The action's tier and area.
+ * @param action - The action's tier, area and live approval hooks.
  */
 export function canRaiseApproval(action: {
   tier: GatedAction['tier'];
   area?: PermissionAreaId | null;
   forwardsApproval?: boolean;
+  preflight?: (...args: never[]) => unknown;
 }): boolean {
   // The request tool raises the card of the action it asks for, so it carries
   // the token that answers it.
   if (action.forwardsApproval === true) return true;
+  if (action.preflight) return true;
   if (action.tier === 'destructive') return true;
   return action.tier === 'act' && action.area !== undefined && action.area !== null;
 }

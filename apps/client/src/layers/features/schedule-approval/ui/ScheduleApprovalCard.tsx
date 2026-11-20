@@ -182,7 +182,7 @@ function ScheduleApprovalContent({
     isShownInline: (error) => 'code' in error && error.code === 'schedule_review_changed',
   });
   const deleteTask = useDeleteTask();
-  const testRun = useScheduleTestRun(task.id);
+  const testRunState = useScheduleTestRun(task.id);
   const [decision, setDecision] = useState<Decision | null>(null);
   const [pickedMode, setPickedMode] = useState<string | null>(initialPickedMode ?? null);
   const [confirmLooser, setConfirmLooser] = useState(false);
@@ -221,6 +221,17 @@ function ScheduleApprovalContent({
   // agent" attributed our prose to an agent that never said it (DOR-1485
   // review, residual 2).
   const dorkosWrote = foundInFile || task.reasonSource === 'dorkos';
+  // The header names the proposer when an agent's own case is shown (an agent
+  // path stamped, and words not DorkOS's), so the byline does not say the name
+  // again (DOR-4572). The Agent line is left off only when the runs provably
+  // act as that same agent: its folder is the proposer's stamped path. Never by
+  // display name, which any agent can set to match another's, and shown
+  // whenever either path is missing.
+  const headerNamesProposer = !dorkosWrote && task.proposedByAgentPath !== null;
+  const runsInFolder = task.runPlace?.kind === 'agent' ? task.runPlace.path : null;
+  const runsAsProposer =
+    headerNamesProposer && runsInFolder !== null && runsInFolder === task.proposedByAgentPath;
+  const agentLine = runsAs && !runsAsProposer;
   const firstRuns = formatFirstRuns(task.nextRuns, now);
   const power = useScheduleApprovalPower(task);
   const requested = task.requestedPermissionMode
@@ -241,6 +252,12 @@ function ScheduleApprovalContent({
   // Structured proposal fields are requests, never grants. The person still approves below.
   const selectedMode = pickedMode ?? (startsAtBaseline ? baseline : task.permissionMode);
   const selected = power.modes.find((mode) => mode.id === selectedMode);
+  // The Run permissions picker is on the card. When it offers the selected mode
+  // it names it, so no other line beside it says it again (DOR-4572); a saved
+  // mode it cannot offer, or a list still loading, keeps the line. The phone's
+  // pinned row stays either way: the picker scrolls away under it.
+  const pickerShown = answered === null && !misplacedMode;
+  const pickerNamesMode = pickerShown && selected !== undefined;
   const looserMode = Boolean(selected && isLooserScheduleMode(selected.id, baseline));
   // A trial of a pending schedule runs at the baseline when the saved mode is
   // looser, as the trigger route does (`routes/task-trial-mode.ts`); one whose
@@ -253,6 +270,16 @@ function ScheduleApprovalContent({
     trialMode,
     power.modes.find((mode) => mode.id === trialMode)?.label ?? permissionModeLabel(trialMode)
   );
+  // A test run takes the pick only when it is stricter than the trial's cap, as the trigger route
+  // does (DOR-4336), so the card names another mode only when the cap overrides the pick.
+  // Both orders asked: a mode the ranking doesn't know reads as loosest in one slot only.
+  const pickIsStricter =
+    isLooserScheduleMode(trialMode, selectedMode) && !isLooserScheduleMode(selectedMode, trialMode);
+  const trialOverridesPick = selectedMode !== trialMode && !pickIsStricter;
+  const testRun = {
+    ...testRunState,
+    start: () => testRunState.start(pickIsStricter ? selectedMode : undefined),
+  };
   const confirmReason = scheduleConfirmReason(task, looserMode);
   const needsLooserConfirmation = confirmReason !== null;
   const currentLabel = schedulePermissionLabel(
@@ -419,14 +446,14 @@ function ScheduleApprovalContent({
         className
       )}
     >
-      {pinActions && !reviewHeader && (
+      {pinActions && !reviewHeader && !pickerNamesMode && (
         <p
           className={cn(
             'shrink-0 px-1 text-xs',
             isBypassPermissionMode(selectedMode) && 'text-status-warning-fg'
           )}
         >
-          {misplacedMode ? <ScheduleFileProblem /> : <>Runs as: {currentLabel}</>}
+          {misplacedMode ? <ScheduleFileProblem /> : <>Run permissions: {currentLabel}</>}
         </p>
       )}
       <div
@@ -445,7 +472,7 @@ function ScheduleApprovalContent({
               isBypassPermissionMode(selectedMode) && 'text-status-warning-fg'
             )}
           >
-            {misplacedMode ? <ScheduleFileProblem /> : <>Runs as: {currentLabel}</>}
+            {misplacedMode ? <ScheduleFileProblem /> : <>Run permissions: {currentLabel}</>}
           </p>
         )}
         <div className="flex min-w-0 items-center gap-2">
@@ -476,13 +503,14 @@ function ScheduleApprovalContent({
               // This branch is only reached once DorkOS itself and a file on disk
               // are ruled out, so an agent asked even when no path was stamped.
               attributedToAgent
+              name={task.proposedByName ?? undefined}
               className="shrink-0"
             />
           )}
         </div>
 
         <AskCard.Headline className="min-w-0 break-words">{name}</AskCard.Headline>
-        {runsAs && <p className="text-muted-foreground text-xs">Agent: {runsAs}</p>}
+        {agentLine && <p className="text-muted-foreground text-xs">Agent: {runsAs}</p>}
 
         <AskCard.Detail className="text-xs">
           <p className="min-w-0 break-words">
@@ -490,7 +518,9 @@ function ScheduleApprovalContent({
               ? 'Found in a file on this computer'
               : dorkosWrote
                 ? 'Waiting for you'
-                : `Proposed by ${proposer}`}
+                : headerNamesProposer
+                  ? 'Proposed'
+                  : `Proposed by ${proposer}`}
             {!dorkosWrote && task.proposedBySessionId && sessionTitle && (
               <>
                 {' · from '}
@@ -578,9 +608,10 @@ function ScheduleApprovalContent({
           flowing={pinActions}
           selectedMode={selectedMode}
           currentLabel={currentLabel}
+          pickerShown={pickerNamesMode}
         />
 
-        {answered === null && !misplacedMode && (
+        {pickerShown && (
           <SchedulePermissionChoice
             task={task}
             modes={power.modes}
@@ -604,9 +635,9 @@ function ScheduleApprovalContent({
           />
         )}
 
-        {/* A test run takes no pick: it uses the saved mode, or the baseline when
-            the saved one is looser. Said only when that differs from the pick. */}
-        {answered === null && (trialBlocked || selectedMode !== trialMode) && (
+        {/* A test run uses the pick, held to the saved mode, or the baseline when the
+            saved one is looser. Said only when that cap overrides the pick. */}
+        {answered === null && (trialBlocked || trialOverridesPick) && (
           <p data-slot="schedule-try-mode" className="text-muted-foreground text-xs">
             {trialBlocked
               ? 'Try it once now waits until you approve it.'
@@ -624,7 +655,7 @@ function ScheduleApprovalContent({
               aria-label={`Run ${name} once`}
               className="min-h-11 px-2.5 text-xs sm:min-h-0"
               disabled={testRun.phase === 'running' || refreshing || trialBlocked}
-              onClick={testRun.start}
+              onClick={() => testRun.start()}
             >
               Try it once now
             </Button>

@@ -28,9 +28,10 @@ import { overlayTurnCutoffs } from './turn-cutoff-overlay.js';
  *    ran and never the one it replaced.
  * 5. Summaries the agent asked for itself (DOR-2732): the transcript records
  *    that the conversation was summarized, never who asked.
- * 6. Turns DorkOS cut off (DOR-3307): the CLI wrote that interrupt as a
- *    person's. Last, so it can take back the "declined" step 1 and the parser
- *    inferred from the CLI's refusal text.
+ * 6. Turns DorkOS cut off (DOR-3307), and turns another chat stopped
+ *    (DOR-4668): the CLI wrote that interrupt as a person's. Last, so it can
+ *    take back the "declined" step 1 and the parser inferred from the CLI's
+ *    refusal text.
  *
  * @param sessionId - The DorkOS session id.
  * @param messages - History as the transcript parser assembled it.

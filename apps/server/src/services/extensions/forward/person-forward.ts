@@ -324,6 +324,20 @@ export class PersonForwards {
     };
   }
 
+  /** The full held comment, only for its own mini app, person and browser window. */
+  pendingGrant(
+    extensionId: string,
+    viewer: AuthorRecord,
+    pendingId: string,
+    clientId: string
+  ): ForwardRequest | undefined {
+    this.prune();
+    const held = this.held.get(pendingId);
+    return this.isHeldFor(held, extensionId, viewer, clientId)
+      ? structuredClone(held.request)
+      : undefined;
+  }
+
   /**
    * The person allowed the agent on the core prompt: add it to the mini app's
    * list and send the comment DorkOS kept. Single use.

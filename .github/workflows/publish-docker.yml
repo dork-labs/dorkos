@@ -88,7 +88,12 @@ jobs:
             INSTALL_MODE=npm
             DORKOS_VERSION=${{ steps.version.outputs.version }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # No cache-to on a tag push (DOR-4635). A tag ref's Actions cache can be
+          # restored only by that same tag, so the next release never reads it;
+          # mode=max multi-arch layers wrote ~3.9 GB per release and pushed the
+          # repo past its 10 GB cache budget, evicting main's CI caches. A
+          # workflow_dispatch from main still writes, and tags can read that.
+          cache-to: ${{ startsWith(github.ref, 'refs/tags/') && '' || 'type=gha,mode=max' }}
 
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v4
@@ -172,7 +177,12 @@ jobs:
             INSTALL_MODE=npm
             DORKOS_VERSION=${{ steps.version.outputs.version }}
           cache-from: type=gha,scope=hub
-          cache-to: type=gha,mode=max,scope=hub
+          # No cache-to on a tag push (DOR-4635). A tag ref's Actions cache can be
+          # restored only by that same tag, so the next release never reads it;
+          # mode=max multi-arch layers wrote ~3.9 GB per release and pushed the
+          # repo past its 10 GB cache budget, evicting main's CI caches. A
+          # workflow_dispatch from main still writes, and tags can read that.
+          cache-to: ${{ startsWith(github.ref, 'refs/tags/') && '' || 'type=gha,mode=max,scope=hub' }}
 
       - name: Attest the image digest
         uses: actions/attest-build-provenance@v4

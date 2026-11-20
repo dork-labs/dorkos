@@ -4,6 +4,7 @@ import { useSigninPolicy } from '../model/use-signin-policy';
 import { accountRowState, type AccountRowState } from '../lib/account-row-state';
 import { AccountSignin } from './AccountSignin';
 import { OwnerSigninAction } from './OwnerSigninAction';
+import { SigninFailure } from './SigninFailure';
 import { Button } from '@/layers/shared/ui';
 
 /** Keeps a 44px hit area under a coarse pointer; the button's look is unchanged. */
@@ -142,11 +143,7 @@ function SignInAgain({
       >
         {login.isPending ? 'Signing in…' : 'Sign in again'}
       </Button>
-      {login.isError && (
-        <p role="alert" className="text-destructive text-xs">
-          Couldn’t sign in to {name}. Try again.
-        </p>
-      )}
+      {login.isError && <SigninFailure name={name} reason={login.failureReason} />}
     </div>
   );
 }

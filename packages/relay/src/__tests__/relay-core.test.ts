@@ -3,6 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as fsSync from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { loadCeilingMs } from '@dorkos/shared/test-budget';
 import { RelayCore } from '../relay-core.js';
 import { MaildirStore } from '../maildir-store.js';
 import type { RelayEnvelope, Signal } from '@dorkos/shared/relay-schemas';
@@ -48,6 +49,18 @@ function createRelay(
 function _wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+/**
+ * Every case and hook here drives a real RelayCore: chokidar watchers, SQLite
+ * and Maildir I/O. Bodies take 1-3s at load 14 and `close()` 0.2-2s at load 17
+ * (measured slow, not stuck: every close finishes), so vitest's 5s/10s defaults
+ * red a loaded full verify on healthy code (DOR-2021). Sized from the load
+ * clamp's worst case: 20s per test, 40s per hook. The 60s cap only bites if
+ * LOAD_SCALE_MAX rises; it keeps a close that truly hangs saying so in a minute.
+ */
+const CASE_TIMEOUT_MS = loadCeilingMs(5_000);
+const CLOSE_HOOK_TIMEOUT_MS = Math.min(60_000, loadCeilingMs(10_000));
+vi.setConfig({ testTimeout: CASE_TIMEOUT_MS, hookTimeout: CLOSE_HOOK_TIMEOUT_MS });
 
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'relay-core-test-'));

@@ -41,6 +41,7 @@ import type { Context } from 'hono';
 import type { ApiEnv } from '../../../http/api-chain.js';
 import { honoRequestFacts } from '../../../http/request-facts.js';
 import { personVerdict } from '../inbox/extension-inbox-context.js';
+import { runInPersonRequest } from '../person-record/person-record.js';
 import { PERSON_VERDICT_HEADER } from '../isolation/ipc-protocol.js';
 import { outboundWebHeaders } from './reply-headers.js';
 import { rejectOversizedBody } from './oversized-body-response.js';
@@ -183,10 +184,14 @@ export async function extensionRequest(
  * @param name - The extension's name: what the person bar's refusals say,
  *   and the error when it answers wrongly.
  * @param fetch - The handler `register()` returned.
+ * @param extensionId - The extension's id. When given, a request whose caller
+ *   is a person runs as that person's request until the handler answers, so
+ *   `ctx.personRecord.record` works inside it (DOR-4301).
  */
 export function createFetchHandler(
   name: string,
-  fetch: ExtensionFetchHandler
+  fetch: ExtensionFetchHandler,
+  extensionId?: string
 ): ExtensionHttpHandler {
   return async ({ c, mount, subPath }) => {
     const request = await extensionRequest(c, subPath);
@@ -194,7 +199,16 @@ export function createFetchHandler(
     const caller: ExtensionCaller = Object.freeze({
       person: Object.freeze(personVerdict(honoRequestFacts(c), name)),
     });
-    const answer: unknown = await fetch(request, caller);
+    const answer: unknown =
+      extensionId !== undefined && caller.person.ok
+        ? await runInPersonRequest(extensionId, async (end) => {
+            try {
+              return await fetch(request, caller);
+            } finally {
+              end();
+            }
+          })
+        : await fetch(request, caller);
     if (!(answer instanceof Response)) {
       throw new Error(`${name} answered with something that is not a Response.`);
     }

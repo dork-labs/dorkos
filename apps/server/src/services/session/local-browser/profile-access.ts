@@ -17,82 +17,30 @@ export interface LocalBrowserProfileAccessDeps {
 
 /** Answers once per tool call. A refusal throws, so nothing is allowed by accident. */
 export type LocalBrowserProfileAccess = (profileId: string, sessionId: string) => Promise<void>;
-
-/** The most of the holding chat's title a refusal elsewhere quotes. */
-export const MAX_HOLDER_TITLE = 60;
-
-/**
- * The holding chat's title as another chat's agent hears it: control and direction
- * characters stripped, cut to {@link MAX_HOLDER_TITLE}. Never its id or its content.
- *
- * @param title - The chat's raw title, if known.
- */
-export function holderTitle(title: string | null | undefined): string | null {
-  const whole = title
-    ?.replace(/[\p{Cc}\p{Cf}]/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (!whole) return null;
-  const characters = Array.from(whole);
-  return characters.length > MAX_HOLDER_TITLE
-    ? `${characters.slice(0, MAX_HOLDER_TITLE).join('')}…`
-    : whole;
-}
+/** Capture synchronous proof from the host's current launch facts, never from client state. */
+export type LocalBrowserProfileProof = (
+  profileId: string,
+  sessionId: string,
+  agentId?: string
+) => () => void;
 
 /** Admission facts for the selected profile; no profile data is read here. */
 export class BrowserProfileAccessGate {
   exists?: (id: string) => boolean;
   private access?: LocalBrowserProfileAccess;
-  // None until startup wires chat titles; a refusal elsewhere then says "another chat".
-  private titleOf: (sessionId: string) => Promise<string | null> = async () => null;
-  private holder: { sessionId: string; title: string | null } | null = null;
-  // The chat a person last moved the browser away from, told so rather than just refused.
-  private movedFrom: string | null = null;
-
+  private proof?: LocalBrowserProfileProof;
   use(
     access: LocalBrowserProfileAccess,
     exists: (id: string) => boolean,
-    titleOf?: (sessionId: string) => Promise<string | null>
+    proof?: LocalBrowserProfileProof
   ): void {
     this.access = access;
     this.exists = exists;
-    if (titleOf) this.titleOf = titleOf;
+    this.proof = proof;
   }
 
-  /**
-   * Remember the opening chat's title, so a refusal elsewhere can name it without a
-   * wait, and which chat it moved from, so that chat's agent hears it was moved.
-   *
-   * @param sessionId - The chat it opens for, or null for the person alone.
-   * @param previous - The chat that held it, still open, until this open.
-   */
-  async rememberHolder(sessionId: string | null, previous: string | null): Promise<void> {
-    this.movedFrom = sessionId && previous && previous !== sessionId ? previous : null;
-    if (!sessionId) return void (this.holder = null);
-    const title = holderTitle(await this.titleOf(sessionId).catch(() => null));
-    this.holder = { sessionId, title };
-  }
-
-  /**
-   * Not opened and opened for another chat are different asks of the person (DOR-4265),
-   * so the agent hears which one, with the other chat in its own fields.
-   */
-  requireShared(selected: string | null, sessionId: string): void {
-    if (selected === sessionId) return;
-    if (selected === null)
-      throw new LocalBrowserError(
-        'not_opened',
-        'The Agent browser isn’t open yet. Ask the person to open it. In a room, they open it from a direct chat with you.'
-      );
-    // The title is text a person or agent wrote, so it rides in its own field.
-    const chatTitle = this.holder?.sessionId === selected ? this.holder.title : null;
-    throw new LocalBrowserError(
-      'shared_elsewhere',
-      this.movedFrom === sessionId
-        ? 'The person moved the Agent browser to another chat, named in chatTitle. Ask them to move it back if you still need it.'
-        : 'The Agent browser is in use in another chat, named in chatTitle. Ask the person to move it here.',
-      { chatId: selected, chatTitle }
-    );
+  capture(profileId: string, sessionId: string, agentId?: string): (() => void) | undefined {
+    return this.proof?.(profileId, sessionId, agentId);
   }
 
   async require(profileId: string | null, sessionId: string): Promise<void> {
@@ -102,6 +50,15 @@ export class BrowserProfileAccessGate {
     await this.access(profileId, sessionId);
   }
 }
+
+/**
+ * What an agent reads when its chat's runtime is not one DorkOS can confirm keeps its file tools
+ * off the saved sign-ins (DOR-3596's `protectedPaths` guard, DOR-4678): true both for a runtime
+ * that declares no such guard and for a chat whose runtime is only inferred, never launched.
+ */
+export const PROFILE_RUNTIME_MESSAGE =
+  'Named browser profiles need a runtime DorkOS confirms keeps file tools out of saved ' +
+  'sign-ins. It can’t confirm this chat’s runtime does.';
 
 /**
  * Build the check run before and after every agent tool call on a named profile.
@@ -116,18 +73,73 @@ export function createLocalBrowserProfileAccess(
     // A profile holds live sign-ins, so its runtime must keep file tools off the profiles folder
     // and put a shell read of it to a person below Full. Read from what the runtime declares,
     // which fails closed (DOR-3596).
-    if (!runtime.bound || !declaresGuard({ guards: deps.guardsOf(runtime.type) }, 'protectedPaths'))
-      throw new LocalBrowserError(
-        'profile_runtime',
-        'Named browser profiles aren’t available on this agent’s runtime yet.'
-      );
+    assertProfileRuntime(deps.guardsOf, runtime);
     const agentPath = await deps.getSessionAgentPath(sessionId);
-    const agentId = agentPath ? deps.agentIdAtPath(agentPath) : undefined;
-    const folder = agentPath ? deps.realFolder(agentPath) : undefined;
-    if (!agentId || !folder || !deps.profiles.isBound(profileId, agentId, folder))
+    requireProfileBinding(deps, profileId, agentPath);
+  };
+}
+
+/** Shared by asynchronous tool guards and the synchronous pre-dispatch proof. */
+export function assertProfileRuntime(
+  guardsOf: LocalBrowserProfileAccessDeps['guardsOf'],
+  runtime: { type: string; bound: boolean }
+): void {
+  if (!runtime.bound || !declaresGuard({ guards: guardsOf(runtime.type) }, 'protectedPaths'))
+    throw new LocalBrowserError('profile_runtime', PROFILE_RUNTIME_MESSAGE);
+}
+
+type BindingDeps = Pick<LocalBrowserProfileAccessDeps, 'profiles' | 'agentIdAtPath' | 'realFolder'>;
+/** Always reads the current signature and real folder; no cached grant is sufficient. */
+export function requireProfileBinding(
+  deps: BindingDeps,
+  profileId: string,
+  agentPath: string | null
+) {
+  const agentId = agentPath ? deps.agentIdAtPath(agentPath) : undefined;
+  const folder = agentPath ? deps.realFolder(agentPath) : undefined;
+  if (!agentId || !folder || !deps.profiles.isBound(profileId, agentId, folder))
+    throw new LocalBrowserError(
+      'profile_not_allowed',
+      'This agent can’t use this browser profile. A person can add it.'
+    );
+  return { agentId, folder };
+}
+
+/** An existing server binding, read synchronously without runtime discovery or inference. */
+export function createLocalBrowserProfileProof(
+  deps: BindingDeps & {
+    sessionFacts(id: string): { runtime: string | null; agentPath: string | null } | undefined;
+    guardsOf: LocalBrowserProfileAccessDeps['guardsOf'];
+  }
+): LocalBrowserProfileProof {
+  return (profileId, sessionId, expectedAgent) => {
+    const facts = deps.sessionFacts(sessionId);
+    if (!facts || !expectedAgent)
       throw new LocalBrowserError(
         'profile_not_allowed',
-        'This agent can’t use this browser profile. A person can add it.'
+        'This browser is unavailable. Open it again.'
       );
+    const birth = Object.freeze({ ...facts });
+    const binding = requireProfileBinding(deps, profileId, birth.agentPath);
+    const proof = () => {
+      const current = deps.sessionFacts(sessionId);
+      if (!current || current.runtime !== birth.runtime || current.agentPath !== birth.agentPath)
+        throw new LocalBrowserError(
+          'profile_not_allowed',
+          'This browser is unavailable. Open it again.'
+        );
+      assertProfileRuntime(deps.guardsOf, {
+        type: current.runtime ?? '',
+        bound: !!current.runtime,
+      });
+      const live = requireProfileBinding(deps, profileId, current.agentPath);
+      if (live.agentId !== expectedAgent || live.folder !== binding.folder)
+        throw new LocalBrowserError(
+          'profile_not_allowed',
+          'This browser is unavailable. Open it again.'
+        );
+    };
+    proof();
+    return proof;
   };
 }

@@ -4,6 +4,7 @@
  *
  * @module features/inbox/ui/ExtensionDecisionHistoryRow
  */
+import { useConfig } from '@/layers/entities/config';
 import { useEffect } from 'react';
 import { MessageCircleQuestion } from 'lucide-react';
 import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
@@ -49,7 +50,8 @@ export function ExtensionDecisionHistoryRow({
   inBell = false,
 }: ExtensionDecisionHistoryRowProps) {
   const offers = useDecisionOffers();
-  const { answerOffer } = useExtensionDecisionActions();
+  const answerContext = useConfig().data?.approvalAnswerContext;
+  const { answerOffer, pendingFor } = useExtensionDecisionActions();
   const navigate = useSafeNavigate();
   const trail = decisionHistoryTrail(notification, new Date());
   const offer = offers.find((o) => o.decisionId === notification.subject.id) ?? null;
@@ -81,6 +83,9 @@ export function ExtensionDecisionHistoryRow({
         offer
           ? {
               text: offer.text,
+              answerContext,
+              requestCode: offer.answerNeedsStepUp ? offer.requestCode : undefined,
+              pending: pendingFor(offer.decisionId) !== null,
               onAccept: () => answerOffer(offer.decisionId, true),
               onDismiss: () => answerOffer(offer.decisionId, false),
             }

@@ -550,6 +550,16 @@ export const AgentManifestSchema = z
         'Account id this agent reports to: a mesh agent id, or a person’s account id. Absent or null = whoever created it, then the owner.',
       example: '01HZY8Q0V6S3W1A2B3C4D5E6F7',
     }),
+    // Set true when this agent reads mail, web pages or another app's text (DOR-3969). Every
+    // turn it runs is then treated as one that read outside words. Anyone may set it; only a
+    // person sets it back to false. DorkOS keeps its own record beside this file
+    // (`turn-power/declared-readers.ts`), so editing the file back to false cannot clear it.
+    readsOutsideText: z.boolean().optional().catch(undefined).openapi({
+      type: 'boolean',
+      description:
+        'Set true when this agent reads mail, web pages or another app’s text. Every turn it runs is then treated as having read outside words. Only a person can set it back to false.',
+      example: true,
+    }),
     // The ACCOUNT that created this agent, written once at creation and never
     // changed after (spec `heartbeats` §4.1). Not to be confused with
     // `registeredBy`, which names the SURFACE that registered it
@@ -992,6 +1002,7 @@ export const UpdateAgentRequestSchema = AgentManifestSchema.pick({
   effort: true,
   account: true,
   reportsTo: true,
+  readsOutsideText: true,
   // `createdBy` is deliberately NOT picked: it is written once, at creation,
   // by the server (spec `heartbeats` §4.1). A PATCH naming it is stripped.
   // `permissions` is deliberately NOT picked: the generic agent PATCH can never
@@ -1017,6 +1028,9 @@ export const UpdateAgentRequestSchema = AgentManifestSchema.pick({
     // caller sending a bad value is told so. `null` clears it, back to the
     // default chain. Cycles are refused server-side (`REPORTS_TO_CYCLE`).
     reportsTo: z.string().min(1).nullable().optional(),
+    // Strict here too: an agent may send only `true`, and `false` is a person's
+    // (`agent-updater.ts` and the mesh route decide who is asking).
+    readsOutsideText: z.boolean().optional(),
   })
   .openapi('UpdateAgentRequest');
 

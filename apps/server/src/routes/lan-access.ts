@@ -19,6 +19,7 @@ import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { z } from 'zod';
 import type { ApiEnv } from '../http/api-chain.js';
+import { runFrontDoorWrite } from './front-door-step-up.js';
 import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import {
@@ -123,6 +124,20 @@ export function createLanAccessRoutes(
     if (enabled) {
       const refusal = refuseOpening(c, deps);
       if (refusal) return refusal;
+      return runFrontDoorWrite(c, {
+        kind: 'lan-access.enable',
+        target: 'wifi-access',
+        input: parsed.data,
+        reason: 'Turn on Wi-Fi access to DorkOS.',
+        subject: 'Wi-Fi access',
+        run: async () => {
+          // Environment support and exposure prerequisites can change while held.
+          const unavailable = refuseOpening(c, deps);
+          if (unavailable) return unavailable;
+          deps.writeSetting(true);
+          return c.json(await deps.lanAccess.reconcile());
+        },
+      });
     }
     deps.writeSetting(enabled);
     return c.json(await deps.lanAccess.reconcile());

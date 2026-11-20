@@ -70,6 +70,11 @@ export interface BridgedTurn {
  * writes nothing. Never throws: a failed write leaves the chat not known, which reads as a
  * stranger's.
  *
+ * Only a bridged chat has a bridge to record (DOR-4698): a bridged turn, or a chat whose stored
+ * launch origin is a binding's. A marked turn anywhere else still records its hold
+ * ({@link noteTurnHold}) and what it read, but not this; stamping it on every marked chat let the
+ * outsider hold that ran through agent chats outlive the fix that stopped it.
+ *
  * @param sessionId - The id the turn was sent under.
  * @param turn - Whether the turn was marked, and whether a bridged message started it.
  * @param markStrangerTurns - DOR-3858's boot flag; this boot's value by default.
@@ -82,6 +87,7 @@ export function noteBridgedSender(
   const stranger = turn.marked || (turn.bridged && !markStrangerTurns);
   if (!stranger && !turn.bridged) return;
   if (!db) return;
+  if (!turn.bridged && !chatLaunchedByBinding(sessionId)) return;
   // Under every id the chat answers to: a rename moves the row to the newest id while this
   // process files the chat under its first, and a turn may be sent under either.
   for (const key of chatKeys(sessionId)) {
@@ -126,6 +132,65 @@ function chatKeys(sessionId: string): string[] {
   return [...new Set([sessionId, primaryOf(sessionId), queueKeyOf(sessionId)])];
 }
 
+/** The launch origin a chat started by a Telegram or Slack binding is stored with. */
+const BINDING_LAUNCH_ORIGIN = 'relay-binding';
+
+/**
+ * Whether a chat's stored launch origin is a binding's, under any id it answers to (DOR-4698): the
+ * server's own record, which no agent sets. `true` when the record cannot be read, the stricter
+ * answer for both readers; `false` with no database or no row.
+ *
+ * @param sessionId - The chat.
+ */
+export function chatLaunchedByBinding(sessionId: string): boolean {
+  const handle = db;
+  if (!handle) return false;
+  try {
+    return chatKeys(sessionId).some(
+      (key) =>
+        handle
+          .select({ origin: sessionMetadata.launchOrigin })
+          .from(sessionMetadata)
+          .where(eq(sessionMetadata.sessionId, key))
+          .get()?.origin === BINDING_LAUNCH_ORIGIN
+    );
+  } catch (err) {
+    logger.warn('[continuation-hold] could not read how a chat was started', {
+      sessionId,
+      err: err instanceof Error ? err.message : String(err),
+    });
+    return true;
+  }
+}
+
+/**
+ * Whether the store holds any record of a chat, under any id it answers to (DOR-4698). A chat with
+ * none is unknown, and a sender nobody knows is not clean. `false` with no database, and when the
+ * record cannot be read.
+ *
+ * @param sessionId - The chat.
+ */
+export function chatRecordKnown(sessionId: string): boolean {
+  const handle = db;
+  if (!handle) return false;
+  try {
+    return chatKeys(sessionId).some(
+      (key) =>
+        handle
+          .select({ id: sessionMetadata.sessionId })
+          .from(sessionMetadata)
+          .where(eq(sessionMetadata.sessionId, key))
+          .get() !== undefined
+    );
+  } catch (err) {
+    logger.warn('[continuation-hold] could not read whether a chat is known', {
+      sessionId,
+      err: err instanceof Error ? err.message : String(err),
+    });
+    return false;
+  }
+}
+
 /**
  * Whether a bridged chat holds only words from a sender its binding vouched for (DOR-4593): only
  * when its row under every id it answers to here says so.
@@ -153,6 +218,36 @@ export function bridgedSenderVouched(sessionId: string): boolean {
       err: err instanceof Error ? err.message : String(err),
     });
     return false;
+  }
+}
+
+/**
+ * Whether a stranger's words ever reached a chat (DOR-3969): its record says a stranger's, which a
+ * turn that started marked writes and nothing clears. `true` when the record cannot be read;
+ * `false` with no database.
+ *
+ * @param sessionId - The chat.
+ */
+export function chatHeldStrangerWords(sessionId: string): boolean {
+  const keys = chatKeys(sessionId);
+  const handle = db;
+  if (keys.some((key) => strangers.has(key))) return true;
+  if (!handle) return false;
+  try {
+    return keys.some(
+      (key) =>
+        handle
+          .select({ sender: sessionMetadata.bridgedSender })
+          .from(sessionMetadata)
+          .where(eq(sessionMetadata.sessionId, key))
+          .get()?.sender === 'stranger'
+    );
+  } catch (err) {
+    logger.warn('[continuation-hold] could not read whose words a chat holds', {
+      sessionId,
+      err: err instanceof Error ? err.message : String(err),
+    });
+    return true;
   }
 }
 
@@ -240,15 +335,19 @@ export function noteTurnHold(sessionId: string, held: boolean): void {
   if (!db) return;
   if (written.get(key) === held) return;
   try {
-    db.insert(sessionMetadata)
-      .values({
-        sessionId: key,
-        runtime: null,
-        createdAt: new Date().toISOString(),
-        lastTurnHeld: held,
-      })
-      .onConflictDoUpdate({ target: sessionMetadata.sessionId, set: { lastTurnHeld: held } })
-      .run();
+    // Under every id the chat answers to (DOR-4515): after a rename its row moves to the newer id,
+    // and after a restart nothing links the two, so a hold kept only under the first id is lost.
+    for (const id of chatKeys(sessionId)) {
+      db.insert(sessionMetadata)
+        .values({
+          sessionId: id,
+          runtime: null,
+          createdAt: new Date().toISOString(),
+          lastTurnHeld: held,
+        })
+        .onConflictDoUpdate({ target: sessionMetadata.sessionId, set: { lastTurnHeld: held } })
+        .run();
+    }
     written.delete(key);
     written.set(key, held);
     if (written.size > WRITTEN_MAX) written.delete(written.keys().next().value as string);

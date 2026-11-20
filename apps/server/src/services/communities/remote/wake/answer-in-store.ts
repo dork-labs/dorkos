@@ -30,6 +30,18 @@ export interface ConnectionAnswerIn {
   channels: readonly string[];
 }
 
+/**
+ * Thrown when the stored channels changed since a caller judged its change
+ * against them (Security S5 on DOR-4355 M3): a save read as adding nothing must
+ * not put back a channel the person just took away.
+ */
+export class AnswerInChangedError extends Error {
+  constructor() {
+    super('Where your agents answer changed. Try again.');
+    this.name = 'AnswerInChangedError';
+  }
+}
+
 /** The `answer-in.json` side record, owner-scoped through the connection store. */
 export class AnswerInStore {
   private readonly file: string;
@@ -81,11 +93,19 @@ export class AnswerInStore {
    * @param ref - The local connection ref.
    * @param ownerKey - The local owner the connection belongs to.
    * @param channels - Channel names, already normalised by `CommunityAnswerInSchema`.
+   * @param expect - When given, what must still be true of the stored channels, checked
+   *   inside the write's lock; throws {@link AnswerInChangedError} when it isn't.
    */
-  async set(ref: CommunityRef, ownerKey: string, channels: readonly string[]): Promise<void> {
+  async set(
+    ref: CommunityRef,
+    ownerKey: string,
+    channels: readonly string[],
+    expect?: (current: readonly string[]) => boolean
+  ): Promise<void> {
     await this.exclusive(async () => {
       await this.connections.get(ref, ownerKey);
       const entries = await this.read();
+      if (expect && !expect(entries[key(ref, ownerKey)] ?? [])) throw new AnswerInChangedError();
       if (channels.length) entries[key(ref, ownerKey)] = [...channels];
       else delete entries[key(ref, ownerKey)];
       await this.write(entries);

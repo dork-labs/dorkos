@@ -337,6 +337,13 @@ export async function applyLiveChanges(
   // go missing.
   const failures = unapplied.filter((u) => u.ack !== 'held');
   if (failures.some((u) => u.pin === 'mcpServers')) options?.onMcpServersNotTaken?.();
+  // A live swap restarts every stdio server the process runs, so it is counted
+  // at `info`: a swap on every turn would otherwise be invisible (DOR-4498).
+  if (applied.includes('mcpServers')) {
+    logger.info('[launch-fingerprint] swapped the MCP servers of a warm process', {
+      sessionId: options?.sessionId,
+    });
+  }
   if (failures.length > 0) {
     logger.warn('[launch-fingerprint] a warm process did not take every new setting', {
       applied,

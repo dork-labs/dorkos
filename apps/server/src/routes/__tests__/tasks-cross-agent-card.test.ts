@@ -127,7 +127,7 @@ describe('agent A setting the mode of agent B’s task', () => {
     expect(shown.detail).toContain('Asked by: a');
     expect(shown.detail).toContain('Runs as: agent-b');
     expect(shown.detail).toContain('Task: b-sweep');
-    expect(shown.detail).toContain('Mode: plan (was acceptEdits)');
+    expect(shown.detail).toContain('Mode: Plan (was Accept edits)');
     expect(shown.detail).toContain('Full prompt: bound to this approval');
 
     for (const token of ['token-of-agent-a', 'token-of-agent-b', 'token-of-a-spin-off']) {

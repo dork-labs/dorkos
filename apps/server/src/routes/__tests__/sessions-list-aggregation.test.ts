@@ -17,6 +17,9 @@ import { MainRequestAdmission } from '../../services/core/lifecycle/main-request
  * and stream through the same aggregation + durable-events paths.
  */
 import type { AddressInfo } from 'node:net';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { FakeAgentRuntime, collectDurableEventsAt } from '@dorkos/test-utils';
 import type { Session } from '@dorkos/shared/types';
@@ -137,6 +140,8 @@ function makeSession(overrides: Partial<Session> & Pick<Session, 'id' | 'updated
 const CODEX_SESSION = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const UNKNOWN_HINT_SESSION = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 const OPENCODE_SESSION = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+/** A made-up native Codex session that must never surface (DOR-4577 guard). */
+const DECOY_CODEX_SESSION = '0190f00d-dec0-7000-8000-0000000decaf';
 
 // ---------------------------------------------------------------------------
 // Inline OpenCode sidecar fixtures (task 3.7). Kept inline and untyped on
@@ -341,7 +346,18 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
   let opencodeSidecar: ReturnType<typeof makeOpenCodeSidecar>;
   let opencode: OpenCodeRuntime;
 
+  /** Throwaway folder holding every runtime home this file lets the code read. */
+  let tempRoot: string;
+
   beforeEach(() => {
+    // The real CodexRuntime lists Codex's NATIVE rollouts too, from
+    // `$CODEX_HOME`, else `~/.codex` (codex-home.ts). Unpinned, every list here
+    // gained this machine's own Codex sessions, which sort first and broke
+    // most assertions on any computer that has run Codex (DOR-4577). Pin it,
+    // and OpenCode's data folder beside it, to an empty folder of our own.
+    tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-sessions-list-'));
+    vi.stubEnv('CODEX_HOME', path.join(tempRoot, 'codex-home'));
+    vi.stubEnv('XDG_DATA_HOME', path.join(tempRoot, 'xdg-data'));
     db = createTestDb();
     runtimeA = new FakeAgentRuntime('fake-a');
     runtimeB = new FakeAgentRuntime('fake-b');
@@ -366,6 +382,37 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
     disposeProjector(CODEX_SESSION);
     disposeProjector(UNKNOWN_HINT_SESSION);
     disposeProjector(OPENCODE_SESSION);
+    vi.unstubAllEnvs();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  it('never lists a Codex session from the real home folder (DOR-4577)', async () => {
+    // A decoy Codex home where the code would look if it fell back to `~`:
+    // one rollout in the default project folder, exactly as the CLI writes it.
+    const decoyHome = path.join(tempRoot, 'decoy-home');
+    const dayDir = path.join(decoyHome, '.codex', 'sessions', '2026', '01', '01');
+    fs.mkdirSync(dayDir, { recursive: true });
+    const meta = {
+      timestamp: '2026-01-01T00:00:00.000Z',
+      type: 'session_meta',
+      payload: { id: DECOY_CODEX_SESSION, cwd: DEFAULT_CWD },
+    };
+    fs.writeFileSync(
+      path.join(dayDir, `rollout-2026-01-01T00-00-00-${DECOY_CODEX_SESSION}.jsonl`),
+      `${JSON.stringify(meta)}\n`
+    );
+    vi.stubEnv('HOME', decoyHome);
+    vi.stubEnv('USERPROFILE', decoyHome);
+    runtimeA.listSessions.mockResolvedValue([]);
+    runtimeB.listSessions.mockResolvedValue([]);
+
+    const all = await request(testServer).get('/api/sessions');
+    const codexOnly = await request(testServer).get('/api/sessions').query({ runtime: 'codex' });
+
+    expect(all.status).toBe(200);
+    expect(codexOnly.status).toBe(200);
+    expect(all.body.sessions).toEqual([]);
+    expect(codexOnly.body.sessions).toEqual([]);
   });
 
   it('merges sessions from both runtimes, sorted by updatedAt desc, each tagged with its runtime', async () => {

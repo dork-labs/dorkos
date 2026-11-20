@@ -30,6 +30,9 @@
 #   * IT NEVER WEDGES — a SIGKILLed holder (the whole tree, or only the
 #     wrapper) frees its slot at once; a live holder is waited for and then
 #     given up on; a nested call runs straight through; CI never waits.
+#   * A SIGNAL NEVER BECOMES A PASS (DOR-4616) — a run stopped by INT, QUIT,
+#     TERM or HUP exits 128+n even when its command caught the signal and
+#     exited 0, as turbo does.
 #   * IT DEGRADES RATHER THAN REFUSES — no perl, an unwritable lock directory
 #     and `DORKOS_HEAVY_LOCK=0` all still run the command.
 #   * IT USES ONLY A DIRECTORY THAT IS OURS (DOR-3509) — a symlinked or
@@ -301,6 +304,77 @@ sleep 0.5
 if slot_locked "$locks" 1; then not_ok 'a TERMed run left its slot locked'; else ok 'a TERMed run releases its slot'; fi
 
 echo ""
+echo "== a signal never becomes a pass (DOR-4616) =="
+
+# turbo catches a signal, shuts its tasks down and exits 0. bash, waiting on a
+# foreground command that caught SIGINT and exited 0, carries on as though
+# nothing happened, so a Ctrl-C'd `pnpm verify` step used to exit 0 here. The
+# command below does what turbo does. It is started through perl because a
+# background job of this non-interactive shell ignores INT and QUIT, which a
+# wrapper run from a terminal does not.
+start_catcher() {
+  local locks=$1 secs=$2 lock=$3 pidf
+  pidf=$(mktemp "$work/catcher.XXXXXX")
+  DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_LOCK="$lock" PIDF="$pidf" \
+    perl -e '$SIG{INT} = $SIG{QUIT} = "DEFAULT"; exec @ARGV or die "exec: $!\n"' \
+    bash "$CHECK" bash -c "trap 'exit 0' INT QUIT TERM; echo \$\$ >\"\$PIDF\"; sleep $secs & wait \$!" \
+    >/dev/null 2>&1 &
+  wrapper=$!
+  own_pids+=("$wrapper")
+  for _ in $(seq 1 50); do
+    [ -s "$pidf" ] && break
+    sleep 0.1
+  done
+  catcher=$(cat "$pidf")
+  for p in $(tree_pids "$catcher"); do own_pids+=("$p"); done
+}
+
+for lock in 1 0; do
+  label='capped'
+  [ "$lock" = 0 ] && label='with the cap off'
+  locks=$(new_locks)
+  start_catcher "$locks" 30 "$lock"
+  # What a terminal's Ctrl-C does: the signal reaches the wrapper and its command.
+  kill -INT "$wrapper" "$catcher"
+  wait "$wrapper" 2>/dev/null
+  check_eq "a Ctrl-C'd run whose command exits 0 exits 130 ($label)" 130 "$?"
+  if [ "$lock" = 1 ]; then
+    sleep 0.5
+    if slot_locked "$locks" 1; then not_ok "a Ctrl-C'd run left its slot locked"; else ok "a Ctrl-C'd run releases its slot"; fi
+  fi
+done
+
+locks=$(new_locks)
+start_catcher "$locks" 30 1
+kill -QUIT "$wrapper" "$catcher"
+wait "$wrapper" 2>/dev/null
+check_eq 'a QUIT run whose command exits 0 exits 131' 131 "$?"
+
+# INT to the wrapper alone: the command never hears of it and finishes, but the
+# run was asked to stop, so it does not report a pass.
+locks=$(new_locks)
+start_catcher "$locks" 1 1
+kill -INT "$wrapper"
+wait "$wrapper" 2>/dev/null
+check_eq 'an INT to the wrapper alone still exits 130' 130 "$?"
+
+# TERM and HUP need no trap: the wrapper dies of the signal, which is never 0.
+for sig in TERM HUP; do
+  locks=$(new_locks)
+  start_catcher "$locks" 30 1
+  kill "-$sig" "$wrapper" "$catcher"
+  wait "$wrapper" 2>/dev/null
+  status=$?
+  [ "$sig" = TERM ] && want=143 || want=129
+  check_eq "a $sig run whose command exits 0 exits $want" "$want" "$status"
+done
+locks=$(new_locks)
+start_catcher "$locks" 30 1
+kill -TERM "$wrapper"
+wait "$wrapper" 2>/dev/null
+check_eq 'a TERM to the wrapper alone exits 143' 143 "$?"
+
+echo ""
 echo "== it must never deadlock on itself or block CI =="
 
 # A nested call — `pnpm verify` running lint, a build inside a test script —
@@ -311,7 +385,13 @@ started=$(date +%s)
 out=$(DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_WAIT_SECONDS=20 \
   bash "$CHECK" bash "$CHECK" bash -c 'echo nested-ran' 2>&1)
 check_eq 'a nested call runs straight through' 'nested-ran' "$out"
-check_le 'a nested call does not wait on its parent' 2 "$(($(date +%s) - started))"
+# The property is "it never queued", and the exact output above already proves
+# it: a call that waited prints the queueing line. check_lacks only gives that a
+# clearer failure message. The clock is a backstop against a silent wait, so its
+# bound sits well under the 20s wait rather than at the cost of starting bash and
+# perl twice, which a loaded machine stretches past 2s (DOR-2021).
+check_lacks 'a nested call never queues behind its parent' 'queueing' "$out"
+check_le 'a nested call does not wait on its parent' 10 "$(($(date +%s) - started))"
 
 locks=$(new_locks)
 start_holder "$locks" 30
@@ -319,7 +399,9 @@ started=$(date +%s)
 out=$(CI=true DORKOS_HEAVY_LOCK_DIR="$locks" DORKOS_HEAVY_SLOTS=1 DORKOS_HEAVY_WAIT_SECONDS=20 \
   bash "$CHECK" bash -c 'echo ci-ran' 2>&1)
 check_eq 'under CI the command runs with no lock message' 'ci-ran' "$out"
-check_le 'under CI nothing waits' 2 "$(($(date +%s) - started))"
+# Same backstop as the nested case: the exact output above already proves no
+# lock message, so the clock only has to stay well under the 20s wait.
+check_le 'under CI nothing waits' 10 "$(($(date +%s) - started))"
 signal_tree KILL "$holder"
 wait "$holder" 2>/dev/null
 

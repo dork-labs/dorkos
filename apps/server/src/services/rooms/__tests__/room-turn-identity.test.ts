@@ -73,6 +73,7 @@ import {
   setAgentHomeRegistry,
 } from '../../core/agent-identity/index.js';
 import { resolveLaunch } from '../../runtimes/claude-code/messaging/launch-resolver.js';
+import { RuntimeRegistry } from '../../core/runtime-registry.js';
 import type { McpServerLaunch } from '../../runtimes/claude-code/messaging/message-sender-shared.js';
 import type { AgentSession } from '../../runtimes/claude-code/agent-types.js';
 import { createDorkOsToolServer } from '../../runtimes/claude-code/mcp-tools/index.js';
@@ -91,7 +92,7 @@ const BEN = '/agents/ben';
 const ROOMS_DIR = '/dork/rooms';
 /** Ana's copy of a room's files — never where a room turn stands. */
 const ANA_WORKTREE = `${ROOMS_DIR}/01ROOMWITHFILES/worktrees/ana-1a2b3c4d`;
-/** A cockpit session in a plain directory: the control for the refusals. */
+/** A plain chat in a directory: the control for the refusals. */
 const PLAIN_DIR = '/projects/scratch';
 
 /** Which recorded owners the registry still knows; a test may unregister one. */
@@ -129,6 +130,7 @@ function toolDeps(): McpToolDeps {
 describe('a room turn, standing at home', () => {
   let harness: RoomHarness;
   let registry: CapabilityRegistry;
+  let launchOwner: RuntimeRegistry;
   let roomId: string;
 
   beforeEach(() => {
@@ -137,6 +139,8 @@ describe('a room turn, standing at home', () => {
     registered.add(ANA).add(BEN);
     resetAgentIdentityService();
     harness = createRoomHarness({ agents, runner: scriptedRunner(() => null) });
+    launchOwner = new RuntimeRegistry();
+    launchOwner.setDb(harness.db);
     initAgentIdentityService(harness.db);
     registry = composeRegistry([roomsDomain], {
       logger: { debug() {}, info() {}, warn() {}, error() {} },
@@ -193,6 +197,7 @@ describe('a room turn, standing at home', () => {
       session,
       opts: {
         cwd: '/tmp/dor-2091-default',
+        requiredLaunches: launchOwner.requiredLaunches.bind(launchOwner),
         meshCore: mesh,
         onSdkSessionRebind: async () => {},
         mcpServerFactory: (_session, _id, seen) => {
