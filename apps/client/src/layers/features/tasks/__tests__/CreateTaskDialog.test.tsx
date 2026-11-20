@@ -1562,6 +1562,44 @@ describe('CreateTaskDialog', () => {
       expect(transport.createTask).not.toHaveBeenCalled();
     });
 
+    it('never holds Create shut when the runtime list cannot be read', async () => {
+      const transport = createMockTransport({
+        getCapabilities: vi.fn().mockRejectedValue(new Error('unreachable')),
+      });
+      const Wrapper = createWrapper(transport);
+
+      render(
+        <Wrapper>
+          <CreateTaskDialog open={true} onOpenChange={vi.fn()} />
+        </Wrapper>
+      );
+      fireEvent.click(screen.getByText('Start from scratch'));
+      fillRequired();
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Create task' })).toBeEnabled()
+      );
+    });
+
+    it('never holds Create shut when the selected agent’s file cannot be read', async () => {
+      const transport = createMockTransport({
+        listMeshAgentPaths: vi.fn().mockResolvedValue({ agents: MOCK_AGENTS }),
+        resolveAgents: vi.fn().mockRejectedValue(new Error('unreadable')),
+      });
+      const Wrapper = createWrapper(transport);
+
+      render(
+        <Wrapper>
+          <CreateTaskDialog open={true} onOpenChange={vi.fn()} initialAgentId="agent-1" />
+        </Wrapper>
+      );
+      fireEvent.click(screen.getByText('Start from scratch'));
+      fillRequired();
+      await waitFor(() => expect(transport.resolveAgents).toHaveBeenCalled());
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'Create task' })).toBeEnabled()
+      );
+    });
+
     it('does not ask again when a Full schedule is saved still at Full', async () => {
       const schedule = createMockSchedule({
         id: 'sched-full',
