@@ -1,4 +1,4 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { type ChildProcess, execFileSync, spawn } from 'node:child_process';
 import {
   appendFileSync,
   mkdirSync,
@@ -8,11 +8,12 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
+import { constants as osConstants } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 // Types only: `check` must run from a lone copy of this file, which is how the arm
-// script runs it (it copies main's cli.ts by itself), so the preopen planner is
-// loaded only when a preopen run asks for it.
+// script runs it (it copies main's cli.ts by itself), so the preopen planner and the
+// turbo summary check are loaded only when a run asks for them.
 import type { PreopenStep } from './preopen.ts';
 
 /**
@@ -64,30 +65,49 @@ export function readBinaryTestGlobs(root: string): string[] {
     .filter((line) => line !== '' && !line.startsWith('#'));
 }
 
+/** How {@link runVerification} judges a run beyond its exit code. */
+export interface VerificationOptions {
+  /**
+   * Which gate this is (default `full`). Each level writes, and clears on a rerun, only
+   * its own file, so a preopen run can never remove or replace a full proof.
+   */
+  level?: ProofLevel;
+  /**
+   * Asked only once the gates exit 0: why the run still did not finish (a signal
+   * stopped it, or a turbo step left tasks unfinished), or `undefined` when it did.
+   * An exit code of 0 alone is not proof (DOR-4616).
+   */
+  unfinished?: () => string | undefined;
+}
+
 /**
  * Run the existing gates once; only the unchanged, clean commit earns a proof.
  *
  * @param cwd - The checkout to verify.
  * @param verify - Runs the gates with the given test-file excludes and returns their exit code.
  * @param excluded - Test-file globs the gates skip; recorded in the proof so it states its coverage.
- * @param level - Which gate this is. Each level writes, and clears on a rerun, only its
- *   own file, so a preopen run can never remove or replace a full proof.
- * @returns The gates' exit code.
+ * @param options - Which gate this is, and how to tell that it finished.
+ * @returns The gates' exit code, or 1 when they exited 0 without finishing.
  */
-export function runVerification(
+export async function runVerification(
   cwd: string,
-  verify: (excluded: readonly string[]) => number,
+  verify: (excluded: readonly string[]) => number | Promise<number>,
   excluded: readonly string[] = [],
-  level: ProofLevel = 'full'
-): number {
+  { level = 'full', unfinished = () => undefined }: VerificationOptions = {}
+): Promise<number> {
   const before = commit(cwd, 'HEAD');
   const dir = proofDir(cwd);
   const destination = proofFile(dir, before.sha, level);
   const startedClean = clean(cwd);
   // A failed or interrupted rerun must not leave an earlier green behind.
   rmSync(destination, { force: true });
-  const status = verify(excluded);
+  const status = await verify(excluded);
   if (status !== 0) return status;
+  const why = unfinished();
+  if (why !== undefined) {
+    console.error(`${gateName(level)} exited 0 but did not finish (${why}); no proof recorded`);
+    return 1;
+  }
   const after = commit(cwd, 'HEAD');
   if (!startedClean || !clean(cwd) || after.sha !== before.sha || after.tree !== before.tree) {
     console.warn(
@@ -230,16 +250,97 @@ function isMain(): boolean {
   }
 }
 
+/** What {@link stoppableRunner} returns: how to run pnpm, and what stopped the run. */
+interface StoppableRunner {
+  /** Run pnpm with these arguments; resolves to its exit code, or 128+n once a signal arrived. */
+  pnpm(pnpmArgs: readonly string[]): Promise<number>;
+  /** The first stopping signal that reached this process, if one did. */
+  stoppedBy(): NodeJS.Signals | undefined;
+}
+
+/** The exit code a shell reports for a process a signal ended: 128 plus its number. */
+const signalStatus = (signal: NodeJS.Signals): number => 128 + osConstants.signals[signal];
+
+/**
+ * Run the gate's commands so a signal can never end in a proof (DOR-4616). TERM, HUP
+ * and INT are caught for the whole run, the first one is remembered, and the running
+ * command then reports 128+n whatever it exits with (turbo answers a signal by
+ * shutting down and exiting 0), and no other starts. TERM and HUP are passed on to it;
+ * INT is not, because a terminal sends it to the whole process group, so the command
+ * already has it, and a second one turns turbo's graceful stop into a forced kill.
+ */
+function stoppableRunner(): StoppableRunner {
+  let stopped: NodeJS.Signals | undefined;
+  let running: ChildProcess | undefined;
+  for (const signal of ['SIGTERM', 'SIGHUP', 'SIGINT'] as const) {
+    process.on(signal, () => {
+      stopped ??= signal;
+      if (signal !== 'SIGINT') running?.kill(signal);
+    });
+  }
+  return {
+    pnpm: (pnpmArgs) =>
+      new Promise((resolve) => {
+        // A preopen run stopped between two steps starts no more of them.
+        if (stopped) {
+          resolve(signalStatus(stopped));
+          return;
+        }
+        // pnpm's child inherits the current environment, just as the old shell did.
+        const child = spawn(process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', pnpmArgs, {
+          cwd: process.cwd(),
+          stdio: 'inherit',
+        });
+        running = child;
+        const settle = (status: number) => {
+          running = undefined;
+          resolve(stopped ? signalStatus(stopped) : status);
+        };
+        child.on('error', () => settle(1));
+        child.on('close', (code, signal) => settle(code ?? (signal ? signalStatus(signal) : 1)));
+      }),
+    stoppedBy: () => stopped,
+  };
+}
+
+/**
+ * How many turbo runs each gate makes, every one with `--summarize`: `verify:checks`
+ * has the typecheck-and-lint step and the test step, and preopen has only the first
+ * (`verify:preopen:turbo`). scripts/__tests__/verify-proof.test.ts holds these to
+ * package.json.
+ */
+const TURBO_RUNS: Record<ProofLevel, number> = { full: 2, preopen: 1 };
+
+/**
+ * Run one gate to its proof, refusing a run that a signal stopped or whose turbo steps
+ * did not finish every task.
+ */
+async function runGate(
+  level: ProofLevel,
+  verify: (runner: StoppableRunner, excluded: readonly string[]) => Promise<number>,
+  excluded: readonly string[] = []
+): Promise<number> {
+  const cwd = process.cwd();
+  const { watchTurboRuns } = await import('./turbo-runs.ts');
+  const turbo = watchTurboRuns(git(cwd, 'rev-parse', '--show-toplevel'), TURBO_RUNS[level]);
+  const runner = stoppableRunner();
+  const status = await runVerification(cwd, (globs) => verify(runner, globs), excluded, {
+    level,
+    unfinished: () => {
+      const signal = runner.stoppedBy();
+      return signal ? `stopped by ${signal}` : turbo.unfinished();
+    },
+  });
+  const signal = runner.stoppedBy();
+  if (!signal) return status;
+  console.error(`${gateName(level)} was stopped by ${signal}; no proof recorded`);
+  return signalStatus(signal);
+}
+
 if (isMain()) {
   const [command, ...args] = process.argv.slice(2);
   // Read from this script's own repository, so the lists match the checks it ships with.
   const root = path.resolve(import.meta.dirname, '../..');
-  const pnpm = (pnpmArgs: readonly string[]): number =>
-    // pnpm's child inherits the current environment, just as the old shell did.
-    spawnSync(process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', pnpmArgs, {
-      cwd: process.cwd(),
-      stdio: 'inherit',
-    }).status ?? 1;
   // A forced or filtered run is not the gate a proof stands for, so it is refused
   // outright. Each gate has its own command, so `pnpm verify --preopen` is refused too,
   // and the message shows only what the person typed after the script name.
@@ -261,32 +362,28 @@ if (isMain()) {
     }
     // pnpm appends these to the end of verify:checks, which is the turbo test step,
     // and quotes each one so the shell never expands the glob.
-    process.exitCode = runVerification(
-      process.cwd(),
-      (globs) => pnpm(['run', 'verify:checks', ...globs.map((glob) => `--exclude=${glob}`)]),
+    process.exitCode = await runGate(
+      'full',
+      (runner, globs) =>
+        runner.pnpm(['run', 'verify:checks', ...globs.map((glob) => `--exclude=${glob}`)]),
       excluded
     );
   } else if (command === 'run-preopen') {
     const { planPreopen, runPreopen } = await import('./preopen.ts');
-    process.exitCode = runVerification(
-      process.cwd(),
-      () => {
-        let steps: PreopenStep[];
-        try {
-          steps = planPreopen(process.cwd(), root);
-        } catch (error) {
-          console.error(error instanceof Error ? error.message : String(error));
-          return 2;
-        }
-        console.log(
-          `pnpm verify:preopen runs ${steps.map((step) => step.name).join(', ')}; ` +
-            'the package tests are left to CI, and arming never reads this proof'
-        );
-        return runPreopen(steps, (step) => pnpm(step.args));
-      },
-      [],
-      'preopen'
-    );
+    process.exitCode = await runGate('preopen', async (runner) => {
+      let steps: PreopenStep[];
+      try {
+        steps = planPreopen(process.cwd(), root);
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : String(error));
+        return 2;
+      }
+      console.log(
+        `pnpm verify:preopen runs ${steps.map((step) => step.name).join(', ')}; ` +
+          'the package tests are left to CI, and arming never reads this proof'
+      );
+      return runPreopen(steps, (step) => runner.pnpm(step.args));
+    });
   } else {
     const [ref, ...flags] = args;
     const parsed = command === 'check' && ref ? checkFlags(flags) : undefined;

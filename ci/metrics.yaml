@@ -178,6 +178,14 @@ tracked:
       armed on the logged `--no-verify-proof` escape or a coordinator
       override. Hand-audited from the arm log and escapes.jsonl in the common
       git dir; not computed by the daily collector, which cannot see either.
+  - id: tracked.unfinished-verify-proofs
+    unit: count
+    definition: >-
+      `pnpm verify` proofs recorded per 7 days for a run that did not finish:
+      a signal stopped it, or a turbo step started tasks it never finished,
+      and the gate still exited 0. Read by hand from the verify output people
+      report beside the proof files in the common git dir; not computed by
+      the daily collector, which sees neither.
   - id: tracked.first-run-green-share
     unit: ratio
     definition: >-

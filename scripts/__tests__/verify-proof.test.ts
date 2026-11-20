@@ -1,9 +1,11 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import {
+  appendFileSync,
   copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -16,6 +18,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { readBinaryTestGlobs, runVerification } from '../verify-proof/cli.ts';
 import { planPreopen, runPreopen, type PreopenStep } from '../verify-proof/preopen.ts';
+import { watchTurboRuns } from '../verify-proof/turbo-runs.ts';
 
 const script = path.resolve(import.meta.dirname, '../verify-proof/cli.ts');
 let repo: string;
@@ -29,6 +32,80 @@ const check = (...args: string[]) =>
   spawnSync(process.execPath, [script, 'check', sha, ...args], { cwd: repo, encoding: 'utf8' });
 const refusal = () =>
   `no pnpm verify pass recorded for ${sha.slice(0, 12)}; run pnpm verify, or pass --no-verify-proof\n`;
+
+/** Where turbo writes its run summaries in the fixture repository. */
+const turboRuns = () => path.join(repo, '.turbo/runs');
+
+/**
+ * A run summary the way `turbo run --summarize` writes it, with made-up values. Only
+ * `execution` is read; these defaults are a run where every task finished.
+ */
+const runSummary = (execution: Record<string, number> = {}) =>
+  JSON.stringify({
+    id: '2fYw4fJ0example0run0summary0',
+    version: '1',
+    turboVersion: '2.10.13',
+    execution: {
+      command: 'turbo run test --affected',
+      repoPath: '',
+      success: 2,
+      failed: 0,
+      cached: 1,
+      attempted: 3,
+      startTime: 1_763_600_000_000,
+      endTime: 1_763_600_042_000,
+      exitCode: 0,
+      ...execution,
+    },
+    tasks: [],
+  });
+
+/**
+ * Put a fake `pnpm` first on the fixture's PATH. Its body may call `write_runs <n>`,
+ * which writes n turbo run summaries holding `$PROOF_TEST_SUMMARY`, the way each
+ * `turbo run --summarize` step does.
+ */
+function installFakePnpm(body: string): void {
+  const bin = path.join(repo, '.git/bin');
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(
+    path.join(bin, 'pnpm'),
+    [
+      '#!/bin/sh',
+      'write_runs() {',
+      '  mkdir -p .turbo/runs; i=0',
+      '  while [ "$i" -lt "$1" ]; do',
+      '    i=$((i + 1)); runs=$((${runs:-0} + 1))',
+      `    printf '%s\\n' "$PROOF_TEST_SUMMARY" > ".turbo/runs/run-$$-$runs.json"`,
+      '  done',
+      '}',
+      body,
+      '',
+    ].join('\n'),
+    { mode: 0o755 }
+  );
+  // The real repository ignores .turbo/, so turbo's summaries never dirty its tree.
+  mkdirSync(path.join(repo, '.git/info'), { recursive: true });
+  appendFileSync(path.join(repo, '.git/info/exclude'), '.turbo/\n');
+}
+
+/** A CLI run's environment: the fake pnpm first on PATH, and a finished run summary. */
+const cliEnv = (extra: Record<string, string> = {}) => ({
+  // eslint-disable-next-line no-restricted-syntax -- scripts/ has no env.ts; child processes inherit PATH and git config
+  ...process.env,
+  // eslint-disable-next-line no-restricted-syntax -- scripts/ has no env.ts; the fake pnpm must come first on PATH
+  PATH: `${path.join(repo, '.git/bin')}:${process.env.PATH}`,
+  PROOF_TEST_SUMMARY: runSummary(),
+  ...extra,
+});
+
+/** Run a gate (`run` or `run-preopen`) through the CLI in the fixture repository, to completion. */
+const runGate = (command: string, extra: Record<string, string> = {}) =>
+  spawnSync(process.execPath, [script, command], {
+    cwd: repo,
+    encoding: 'utf8',
+    env: cliEnv(extra),
+  });
 
 beforeEach(() => {
   repo = mkdtempSync(path.join(tmpdir(), 'verify-proof-'));
@@ -52,20 +129,8 @@ describe('verification proof', () => {
   });
 
   it('runs the checks exactly once through the CLI and preserves a failed exit', () => {
-    const bin = path.join(repo, '.git/bin');
-    mkdirSync(bin, { recursive: true });
-    writeFileSync(
-      path.join(bin, 'pnpm'),
-      '#!/bin/sh\necho "$*" >> .git/gate-runs\nexit "${PROOF_TEST_EXIT:-0}"\n',
-      { mode: 0o755 }
-    );
-    const run = (status: string) =>
-      spawnSync(process.execPath, [script, 'run'], {
-        cwd: repo,
-        encoding: 'utf8',
-        // eslint-disable-next-line no-restricted-syntax -- scripts/ has no env.ts; child processes inherit PATH and git config
-        env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, PROOF_TEST_EXIT: status },
-      });
+    installFakePnpm('echo "$*" >> .git/gate-runs\nwrite_runs 2\nexit "${PROOF_TEST_EXIT:-0}"');
+    const run = (status: string) => runGate('run', { PROOF_TEST_EXIT: status });
     // The host-binary suites are left to CI: every glob in the data file rides as an exclude.
     const globs = readBinaryTestGlobs(path.resolve(import.meta.dirname, '../..'));
     const gateRun = `run verify:checks ${globs.map((glob) => `--exclude=${glob}`).join(' ')}\n`;
@@ -76,16 +141,18 @@ describe('verification proof', () => {
       readFileSync(path.join(repo, '.git/dorkos-verify-proof', sha), 'utf8')
     );
     expect(proof.excluded).toEqual(globs);
+    // The summaries it judged are turbo's to write and the gate's to clear once they pass.
+    expect(readdirSync(turboRuns())).toEqual([]);
     expect(run('8').status).toBe(8);
     expect(check().status).toBe(1);
     expect(readFileSync(path.join(repo, '.git/gate-runs'), 'utf8')).toBe(gateRun + gateRun);
   });
 
-  it('records exactly the excludes it handed to the checks', () => {
+  it('records exactly the excludes it handed to the checks', async () => {
     const excluded = ['**/fixture/**/*.binary.test.ts', '**/other/*.binary.test.ts'];
     let seen: readonly string[] | undefined;
     expect(
-      runVerification(
+      await runVerification(
         repo,
         (globs) => {
           seen = globs;
@@ -108,16 +175,16 @@ describe('verification proof', () => {
     expect(check().status).toBe(0);
   });
 
-  it('records an empty exclusion list when nothing was left out', () => {
-    expect(runVerification(repo, () => 0)).toBe(0);
+  it('records an empty exclusion list when nothing was left out', async () => {
+    expect(await runVerification(repo, () => 0)).toBe(0);
     const proof = JSON.parse(
       readFileSync(path.join(repo, '.git/dorkos-verify-proof', sha), 'utf8')
     );
     expect(proof.excluded).toEqual([]);
   });
 
-  it('accepts an older proof with no exclusion list, since it left nothing out', () => {
-    expect(runVerification(repo, () => 0)).toBe(0);
+  it('accepts an older proof with no exclusion list, since it left nothing out', async () => {
+    expect(await runVerification(repo, () => 0)).toBe(0);
     const proof = path.join(repo, '.git/dorkos-verify-proof', sha);
     const { excluded: _excluded, ...older } = JSON.parse(readFileSync(proof, 'utf8'));
     writeFileSync(proof, JSON.stringify(older));
@@ -150,8 +217,8 @@ describe('verification proof', () => {
     expect(result.stdout).toBe('');
   });
 
-  it('refuses a record for another tree', () => {
-    expect(runVerification(repo, () => 0)).toBe(0);
+  it('refuses a record for another tree', async () => {
+    expect(await runVerification(repo, () => 0)).toBe(0);
     const proof = path.join(repo, '.git/dorkos-verify-proof', sha);
     const record = JSON.parse(readFileSync(proof, 'utf8'));
     writeFileSync(proof, JSON.stringify({ ...record, tree: '0'.repeat(40) }));
@@ -159,8 +226,8 @@ describe('verification proof', () => {
     expect(check().stderr).toBe(refusal());
   });
 
-  it('allows a matching record and shares it with another worktree', () => {
-    expect(runVerification(repo, () => 0)).toBe(0);
+  it('allows a matching record and shares it with another worktree', async () => {
+    expect(await runVerification(repo, () => 0)).toBe(0);
     expect(check().status).toBe(0);
     const sibling = path.join(repo, 'sibling');
     git('worktree', 'add', '--detach', sibling, sha);
@@ -221,8 +288,8 @@ describe('verification proof', () => {
       'an exclusion list that is not a list of globs',
       (record: object) => JSON.stringify({ ...record, excluded: '**/*.binary.test.ts' }),
     ],
-  ])('refuses a proof file holding %s', (_label, contents) => {
-    expect(runVerification(repo, () => 0)).toBe(0);
+  ])('refuses a proof file holding %s', async (_label, contents) => {
+    expect(await runVerification(repo, () => 0)).toBe(0);
     const proof = path.join(repo, '.git/dorkos-verify-proof', sha);
     const record = JSON.parse(readFileSync(proof, 'utf8'));
     writeFileSync(proof, typeof contents === 'string' ? contents : contents(record));
@@ -243,8 +310,8 @@ describe('verification proof', () => {
     expect(check().stderr).toBe(refusal());
   });
 
-  it('judges valid proof the same from a checkout with unrelated edits', () => {
-    expect(runVerification(repo, () => 0)).toBe(0);
+  it('judges valid proof the same from a checkout with unrelated edits', async () => {
+    expect(await runVerification(repo, () => 0)).toBe(0);
     // The arm script checks from the main checkout, which carries other people's edits.
     writeFileSync(path.join(repo, 'example.txt'), 'someone else is mid-edit');
     writeFileSync(path.join(repo, 'scratch.txt'), 'untracked');
@@ -253,10 +320,10 @@ describe('verification proof', () => {
     expect(result.stderr).toBe('');
   });
 
-  it('records nothing for a dirty starting tree even if checks clean it', () => {
+  it('records nothing for a dirty starting tree even if checks clean it', async () => {
     writeFileSync(path.join(repo, 'example.txt'), 'dirty');
     expect(
-      runVerification(repo, () => {
+      await runVerification(repo, () => {
         writeFileSync(path.join(repo, 'example.txt'), 'original');
         return 0;
       })
@@ -264,9 +331,9 @@ describe('verification proof', () => {
     expect(check().status).toBe(1);
   });
 
-  it('records nothing if files change during checks', () => {
+  it('records nothing if files change during checks', async () => {
     expect(
-      runVerification(repo, () => {
+      await runVerification(repo, () => {
         writeFileSync(path.join(repo, 'example.txt'), 'changed');
         return 0;
       })
@@ -275,9 +342,9 @@ describe('verification proof', () => {
     expect(check().status).toBe(1);
   });
 
-  it('records nothing if HEAD changes during checks', () => {
+  it('records nothing if HEAD changes during checks', async () => {
     expect(
-      runVerification(repo, () => {
+      await runVerification(repo, () => {
         git('commit', '--allow-empty', '-qm', 'new head');
         return 0;
       })
@@ -287,16 +354,16 @@ describe('verification proof', () => {
     expect(check().status).toBe(1);
   });
 
-  it('preserves failure and invalidates an older pass', () => {
-    expect(runVerification(repo, () => 0)).toBe(0);
-    expect(runVerification(repo, () => 7)).toBe(7);
+  it('preserves failure and invalidates an older pass', async () => {
+    expect(await runVerification(repo, () => 0)).toBe(0);
+    expect(await runVerification(repo, () => 7)).toBe(7);
     expect(check().status).toBe(1);
   });
 
-  it('records no proof for untracked source and invalidates the older pass', () => {
-    runVerification(repo, () => 0);
+  it('records no proof for untracked source and invalidates the older pass', async () => {
+    await runVerification(repo, () => 0);
     writeFileSync(path.join(repo, 'untracked.txt'), 'new source');
-    expect(runVerification(repo, () => 0)).toBe(0);
+    expect(await runVerification(repo, () => 0)).toBe(0);
     expect(check().status).toBe(1);
     expect(check().stderr).toBe(refusal());
   });
@@ -318,8 +385,8 @@ describe('the preopen level (DOR-4728)', () => {
     expect(pkg.scripts['verify:preopen:turbo']).not.toMatch(/turbo run test\b/);
   });
 
-  it('records a preopen pass in its own file, which the default check never accepts', () => {
-    expect(runVerification(repo, () => 0, [], 'preopen')).toBe(0);
+  it('records a preopen pass in its own file, which the default check never accepts', async () => {
+    expect(await runVerification(repo, () => 0, [], { level: 'preopen' })).toBe(0);
     expect(existsSync(path.join(proofs(), sha))).toBe(false);
     const proof = JSON.parse(readFileSync(path.join(proofs(), `${sha}.preopen`), 'utf8'));
     expect(proof).toEqual({
@@ -335,31 +402,31 @@ describe('the preopen level (DOR-4728)', () => {
     expect(check('--level', 'preopen').status).toBe(0);
   });
 
-  it('never touches an existing full proof, whether the preopen run passes or fails', () => {
-    expect(runVerification(repo, () => 0)).toBe(0);
+  it('never touches an existing full proof, whether the preopen run passes or fails', async () => {
+    expect(await runVerification(repo, () => 0)).toBe(0);
     const full = path.join(proofs(), sha);
     const bytes = readFileSync(full);
-    expect(runVerification(repo, () => 0, [], 'preopen')).toBe(0);
+    expect(await runVerification(repo, () => 0, [], { level: 'preopen' })).toBe(0);
     expect(readFileSync(full).equals(bytes)).toBe(true);
-    expect(runVerification(repo, () => 7, [], 'preopen')).toBe(7);
+    expect(await runVerification(repo, () => 7, [], { level: 'preopen' })).toBe(7);
     expect(readFileSync(full).equals(bytes)).toBe(true);
     // The failed rerun cleared its own earlier pass, and only that.
     expect(existsSync(path.join(proofs(), `${sha}.preopen`))).toBe(false);
     expect(check().status).toBe(0);
   });
 
-  it('records a full pass at level full and leaves a preopen proof where it was', () => {
-    expect(runVerification(repo, () => 0, [], 'preopen')).toBe(0);
+  it('records a full pass at level full and leaves a preopen proof where it was', async () => {
+    expect(await runVerification(repo, () => 0, [], { level: 'preopen' })).toBe(0);
     const preopen = readFileSync(path.join(proofs(), `${sha}.preopen`));
-    expect(runVerification(repo, () => 0)).toBe(0);
+    expect(await runVerification(repo, () => 0)).toBe(0);
     expect(JSON.parse(readFileSync(path.join(proofs(), sha), 'utf8')).level).toBe('full');
     expect(readFileSync(path.join(proofs(), `${sha}.preopen`)).equals(preopen)).toBe(true);
   });
 
   it.each(['preopen', 'quick', null, 1])(
     'refuses a full proof file whose level is %j at the default level',
-    (level) => {
-      expect(runVerification(repo, () => 0)).toBe(0);
+    async (level) => {
+      expect(await runVerification(repo, () => 0)).toBe(0);
       const full = path.join(proofs(), sha);
       writeFileSync(full, JSON.stringify({ ...JSON.parse(readFileSync(full, 'utf8')), level }));
       expect(check().status).toBe(1);
@@ -370,8 +437,8 @@ describe('the preopen level (DOR-4728)', () => {
     }
   );
 
-  it('reads a proof with no level as full, so proofs from before DOR-4728 stay valid', () => {
-    expect(runVerification(repo, () => 0)).toBe(0);
+  it('reads a proof with no level as full, so proofs from before DOR-4728 stay valid', async () => {
+    expect(await runVerification(repo, () => 0)).toBe(0);
     const full = path.join(proofs(), sha);
     const { level: _level, ...older } = JSON.parse(readFileSync(full, 'utf8'));
     writeFileSync(full, JSON.stringify(older));
@@ -380,14 +447,14 @@ describe('the preopen level (DOR-4728)', () => {
     expect(check('--level', 'preopen').status).toBe(0);
   });
 
-  it('accepts a full pass at the preopen level, since it covers more', () => {
-    expect(runVerification(repo, () => 0)).toBe(0);
+  it('accepts a full pass at the preopen level, since it covers more', async () => {
+    expect(await runVerification(repo, () => 0)).toBe(0);
     expect(existsSync(path.join(proofs(), `${sha}.preopen`))).toBe(false);
     expect(check('--level', 'preopen').status).toBe(0);
   });
 
-  it.each(['full', undefined])('refuses a preopen file that claims level %j', (level) => {
-    expect(runVerification(repo, () => 0, [], 'preopen')).toBe(0);
+  it.each(['full', undefined])('refuses a preopen file that claims level %j', async (level) => {
+    expect(await runVerification(repo, () => 0, [], { level: 'preopen' })).toBe(0);
     const file = path.join(proofs(), `${sha}.preopen`);
     writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), level }));
     expect(check('--level', 'preopen').status).toBe(1);
@@ -395,46 +462,41 @@ describe('the preopen level (DOR-4728)', () => {
     expect(check().status).toBe(1);
   });
 
-  it('refuses a preopen file for another tree', () => {
-    expect(runVerification(repo, () => 0, [], 'preopen')).toBe(0);
+  it('refuses a preopen file for another tree', async () => {
+    expect(await runVerification(repo, () => 0, [], { level: 'preopen' })).toBe(0);
     const file = path.join(proofs(), `${sha}.preopen`);
     const record = JSON.parse(readFileSync(file, 'utf8'));
     writeFileSync(file, JSON.stringify({ ...record, tree: '0'.repeat(40) }));
     expect(check('--level', 'preopen').status).toBe(1);
   });
 
-  it('keeps the clean-tree and unchanged-HEAD rules for preopen runs', () => {
+  it('keeps the clean-tree and unchanged-HEAD rules for preopen runs', async () => {
     writeFileSync(path.join(repo, 'example.txt'), 'dirty');
-    expect(runVerification(repo, () => 0, [], 'preopen')).toBe(0);
+    expect(await runVerification(repo, () => 0, [], { level: 'preopen' })).toBe(0);
     expect(check('--level', 'preopen').status).toBe(1);
     writeFileSync(path.join(repo, 'example.txt'), 'original');
     expect(
-      runVerification(
+      await runVerification(
         repo,
         () => {
           git('commit', '--allow-empty', '-qm', 'new head');
           return 0;
         },
         [],
-        'preopen'
+        { level: 'preopen' }
       )
     ).toBe(0);
     expect(check('--level', 'preopen').status).toBe(1);
   });
 
   it('runs the preopen steps through the CLI and records only the preopen proof', () => {
-    const bin = path.join(repo, '.git/bin');
     const log = path.join(repo, '.git/preopen-runs');
-    mkdirSync(bin, { recursive: true });
-    writeFileSync(path.join(bin, 'pnpm'), `#!/bin/sh\necho "$*" >> '${log}'\nexit 0\n`, {
-      mode: 0o755,
-    });
-    const result = spawnSync(process.execPath, [script, 'run-preopen'], {
-      cwd: repo,
-      encoding: 'utf8',
-      // eslint-disable-next-line no-restricted-syntax -- scripts/ has no env.ts; child processes inherit PATH and git config
-      env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
-    });
+    // Only the typecheck and lint step goes through turbo, so only it writes a summary.
+    installFakePnpm(
+      `echo "$*" >> '${log}'\n` +
+        'case "$*" in "run verify:preopen:turbo") write_runs 1 ;; esac\nexit 0'
+    );
+    const result = runGate('run-preopen');
     expect(result.status, result.stderr).toBe(0);
     // HEAD is main itself, so nothing changed: the repo-wide scripts suites (which any
     // change can break) and the typecheck and lint step run, nothing else.
@@ -501,8 +563,8 @@ describe('the preopen level (DOR-4728)', () => {
   const runCli = (cli: string, ...args: string[]) =>
     spawnSync(process.execPath, [cli, ...args], { cwd: repo, encoding: 'utf8' });
 
-  it('checks from a lone copy of the CLI, the way the arm script runs it', () => {
-    expect(runVerification(repo, () => 0)).toBe(0);
+  it('checks from a lone copy of the CLI, the way the arm script runs it', async () => {
+    expect(await runVerification(repo, () => 0)).toBe(0);
     withLoneCopy((cli) => {
       const passed = runCli(cli, 'check', sha);
       expect(passed.status, passed.stderr).toBe(0);
@@ -549,7 +611,7 @@ describe("arm.sh's verify-proof call, end to end (DOR-4728)", () => {
       }
     );
 
-  it('refuses a head whose only proof is a real preopen pass, and arms it after a full one', () => {
+  it('refuses a head whose only proof is a real preopen pass, and arms it after a full one', async () => {
     // main carries the checker under test, the way origin/main does for arm.sh.
     mkdirSync(path.join(repo, 'scripts/verify-proof'), { recursive: true });
     copyFileSync(script, path.join(repo, 'scripts/verify-proof/cli.ts'));
@@ -560,14 +622,14 @@ describe("arm.sh's verify-proof call, end to end (DOR-4728)", () => {
     // Not realpath'd: arm.sh names its folder by `pwd`, which keeps a symlinked path.
     const coord = mkdtempSync(path.join(tmpdir(), 'verify-proof-coord-'));
     try {
-      expect(runVerification(repo, () => 0, [], 'preopen')).toBe(0);
+      expect(await runVerification(repo, () => 0, [], { level: 'preopen' })).toBe(0);
       expect(existsSync(path.join(proofs(), `${sha}.preopen`))).toBe(true);
       expect(existsSync(path.join(proofs(), sha))).toBe(false);
       const refused = armCheck(coord);
       expect(refused.status, refused.stderr).toBe(1);
       expect(refused.stderr).toBe(refusal());
       // The same head after a real full run arms, so the refusal above is the level's doing.
-      expect(runVerification(repo, () => 0)).toBe(0);
+      expect(await runVerification(repo, () => 0)).toBe(0);
       const armed = armCheck(coord);
       expect(armed.status, armed.stderr).toBe(0);
       expect(armed.stderr).toBe('');
@@ -742,7 +804,7 @@ describe('what a preopen run checks (DOR-4728)', () => {
     expect(names(planPreopen(repo, root))).toEqual(['test:scripts', 'typecheck-lint']);
   });
 
-  it('stops at the first failing step and returns its exit code', () => {
+  it('stops at the first failing step and returns its exit code', async () => {
     const steps: PreopenStep[] = [
       { name: 'test:scripts', args: ['run', 'test:scripts'] },
       { name: 'lint:changed', args: ['exec', 'eslint'] },
@@ -753,10 +815,206 @@ describe('what a preopen run checks (DOR-4728)', () => {
       ran.push(step.name);
       return step.name === fail ? 3 : 0;
     };
-    expect(runPreopen(steps, exec('lint:changed'))).toBe(3);
+    expect(await runPreopen(steps, exec('lint:changed'))).toBe(3);
     expect(ran).toEqual(['test:scripts', 'lint:changed']);
     ran.length = 0;
-    expect(runPreopen(steps, exec())).toBe(0);
+    expect(await runPreopen(steps, exec())).toBe(0);
     expect(ran).toEqual(['test:scripts', 'lint:changed', 'typecheck-lint']);
+  });
+});
+
+describe('a proof only for a run that finished (DOR-4616)', () => {
+  const proof = () => path.join(proofs(), sha);
+  /** The incident's numbers: a turbo stopped mid-run that printed 29 of 35 and exited 0. */
+  const cutShort = runSummary({ attempted: 35, success: 20, cached: 9 });
+
+  /** Start the CLI without waiting for it, so a test can signal it mid-run. */
+  const startCli = (command: string) => {
+    const child = spawn(process.execPath, [script, command], {
+      cwd: repo,
+      env: cliEnv(),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stderr = '';
+    child.stderr.setEncoding('utf8').on('data', (chunk: string) => (stderr += chunk));
+    child.stdout.resume();
+    const exited = new Promise<{ code: number | null; signal: string | null; stderr: string }>(
+      (resolve) => child.on('close', (code, signal) => resolve({ code, signal, stderr }))
+    );
+    return { child, exited };
+  };
+  /** Wait, bounded, for the fake pnpm to say it has started. */
+  const started = async () => {
+    for (let i = 0; i < 200 && !existsSync(path.join(repo, '.git/pnpm-started')); i++) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    expect(existsSync(path.join(repo, '.git/pnpm-started'))).toBe(true);
+  };
+  /**
+   * A pnpm that behaves like turbo under a signal: it shuts down, writes summaries
+   * that look finished, and exits 0. Without a signal it runs for a second and passes.
+   */
+  const turboLikePnpm = () =>
+    installFakePnpm(
+      [
+        `trap 'echo TERM >> .git/pnpm-signals; write_runs 2; exit 0' TERM`,
+        `trap 'echo INT >> .git/pnpm-signals; write_runs 2; exit 0' INT`,
+        'echo started > .git/pnpm-started',
+        'sleep 1 & wait $!',
+        'write_runs 2',
+        'exit 0',
+      ].join('\n')
+    );
+
+  it('records no proof for a turbo stopped mid-run that still exited 0', () => {
+    // The first step finished; the test step was stopped with 29 of its 35 tasks done.
+    installFakePnpm(
+      [
+        'write_runs 1',
+        'echo " Tasks:    29 successful, 35 total"',
+        'PROOF_TEST_SUMMARY="$PROOF_TEST_CUT_SHORT"; write_runs 1',
+        'exit 0',
+      ].join('\n')
+    );
+    const result = runGate('run', { PROOF_TEST_CUT_SHORT: cutShort });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('pnpm verify exited 0 but did not finish');
+    expect(result.stderr).toContain('shows 29 of 35 tasks finished, 0 failed, exit code 0');
+    expect(result.stderr).toContain('no proof recorded');
+    expect(existsSync(proof())).toBe(false);
+    expect(check().status).toBe(1);
+    // The unfinished summary stays for the person to read; the finished one is cleared.
+    expect(readdirSync(turboRuns())).toHaveLength(1);
+  });
+
+  it('records no proof when a turbo step wrote no summary', () => {
+    installFakePnpm('write_runs 1\nexit 0');
+    const result = runGate('run');
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('expected 2 turbo run summaries in .turbo/runs, found 1');
+    expect(existsSync(proof())).toBe(false);
+  });
+
+  it('records no preopen proof for a typecheck and lint step stopped mid-run', () => {
+    installFakePnpm(
+      'case "$*" in "run verify:preopen:turbo") ' +
+        'PROOF_TEST_SUMMARY="$PROOF_TEST_CUT_SHORT"; write_runs 1 ;; esac\nexit 0'
+    );
+    const result = runGate('run-preopen', { PROOF_TEST_CUT_SHORT: cutShort });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('pnpm verify:preopen exited 0 but did not finish');
+    expect(check('--level', 'preopen').status).toBe(1);
+  });
+
+  it('records no proof for a verify stopped with TERM, and passes the TERM on', async () => {
+    turboLikePnpm();
+    const run = startCli('run');
+    await started();
+    run.child.kill('SIGTERM');
+    const result = await run.exited;
+    // A shell's code for a TERMed run, not a signal death and never 0.
+    expect({ code: result.code, signal: result.signal }).toEqual({ code: 143, signal: null });
+    expect(result.stderr).toContain('pnpm verify was stopped by SIGTERM; no proof recorded');
+    expect(readFileSync(path.join(repo, '.git/pnpm-signals'), 'utf8')).toBe('TERM\n');
+    expect(existsSync(proof())).toBe(false);
+    expect(check().status).toBe(1);
+  });
+
+  it('records no proof for a verify that got INT, which it leaves to the terminal', async () => {
+    turboLikePnpm();
+    const run = startCli('run');
+    await started();
+    run.child.kill('SIGINT');
+    const result = await run.exited;
+    expect({ code: result.code, signal: result.signal }).toEqual({ code: 130, signal: null });
+    expect(result.stderr).toContain('pnpm verify was stopped by SIGINT; no proof recorded');
+    // A terminal sends INT to the whole group, so the command already has it.
+    expect(existsSync(path.join(repo, '.git/pnpm-signals'))).toBe(false);
+    expect(existsSync(proof())).toBe(false);
+  });
+
+  it('records a proof for the same run when nothing stopped it', async () => {
+    turboLikePnpm();
+    const result = await startCli('run').exited;
+    expect(result.code, result.stderr).toBe(0);
+    expect(check().status).toBe(0);
+  });
+
+  it('gives each gate the turbo steps the CLI counts, every one with --summarize', () => {
+    const scripts = JSON.parse(
+      readFileSync(path.resolve(import.meta.dirname, '../../package.json'), 'utf8')
+    ).scripts as Record<string, string>;
+    // Each step's own arguments: what comes before `--` is turbo's, after it the task's.
+    const turboSteps = (name: string) =>
+      (scripts[name] ?? '')
+        .split('&&')
+        .filter((part) => /\bturbo run\b/.test(part))
+        .map((part) => part.split(' -- ')[0]);
+    // TURBO_RUNS in scripts/verify-proof/cli.ts: two for the full gate, one for preopen.
+    expect(turboSteps('verify:checks')).toHaveLength(2);
+    expect(turboSteps('verify:preopen:turbo')).toHaveLength(1);
+    for (const step of [...turboSteps('verify:checks'), ...turboSteps('verify:preopen:turbo')]) {
+      expect(step).toMatch(/\bturbo run .*--summarize\b/);
+    }
+  });
+});
+
+describe("watchTurboRuns: turbo's own counts decide (DOR-4616)", () => {
+  const root = () => repo;
+  const write = (name: string, contents: string) => {
+    mkdirSync(turboRuns(), { recursive: true });
+    writeFileSync(path.join(turboRuns(), name), contents);
+  };
+
+  it('passes runs where every task that started finished, cache hits included', () => {
+    const watch = watchTurboRuns(root(), 2);
+    write('a.json', runSummary());
+    write('b.json', runSummary({ success: 0, cached: 4, attempted: 4 }));
+    expect(watch.unfinished()).toBeUndefined();
+    expect(readdirSync(turboRuns())).toEqual([]);
+  });
+
+  it('passes a run with no affected tasks at all', () => {
+    const watch = watchTurboRuns(root(), 1);
+    write('a.json', runSummary({ success: 0, cached: 0, attempted: 0 }));
+    expect(watch.unfinished()).toBeUndefined();
+  });
+
+  it('ignores summaries that were there before the gate started', () => {
+    write('old.json', '{"not": "a run summary"}');
+    const watch = watchTurboRuns(root(), 1);
+    write('new.json', runSummary());
+    expect(watch.unfinished()).toBeUndefined();
+    expect(readdirSync(turboRuns())).toEqual(['old.json']);
+  });
+
+  it.each([
+    ['a failed task', { failed: 1, success: 1 }, '2 of 3 tasks finished, 1 failed, exit code 0'],
+    ['a cancelled task', { success: 1 }, '2 of 3 tasks finished, 0 failed, exit code 0'],
+    ['a non-zero exit code', { exitCode: 1 }, '3 of 3 tasks finished, 0 failed, exit code 1'],
+  ])('refuses %s, and keeps that summary', (_label, execution, reason) => {
+    const watch = watchTurboRuns(root(), 1);
+    write('a.json', runSummary(execution));
+    expect(watch.unfinished()).toBe(`turbo's run summary a.json shows ${reason}`);
+    expect(readdirSync(turboRuns())).toEqual(['a.json']);
+  });
+
+  it.each([
+    ['corrupt JSON', '{"execution":'],
+    ['no execution block', '{"tasks": []}'],
+    ['a count that is not a number', runSummary().replace('"attempted":3', '"attempted":"3"')],
+  ])('refuses a summary holding %s', (_label, contents) => {
+    const watch = watchTurboRuns(root(), 1);
+    write('a.json', contents);
+    expect(watch.unfinished()).toBe("turbo's run summary a.json could not be read");
+  });
+
+  it.each([
+    [0, 'expected 1 turbo run summary in .turbo/runs, found 0'],
+    [2, 'expected 1 turbo run summary in .turbo/runs, found 2'],
+  ])('refuses %i summaries where it expects one', (count, reason) => {
+    const watch = watchTurboRuns(root(), 1);
+    for (let i = 0; i < count; i++) write(`run-${i}.json`, runSummary());
+    expect(watch.unfinished()).toBe(reason);
   });
 });
