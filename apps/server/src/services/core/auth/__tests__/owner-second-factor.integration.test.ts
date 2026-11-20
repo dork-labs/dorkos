@@ -22,6 +22,7 @@ import { createApiApp } from '../../../../http/api-chain.js';
 import { mountBetterAuth } from '../../../../http/better-auth.js';
 import { mountOwnerPasskeySignIn } from '../../../../http/sign-in/owner-passkey-sign-in.js';
 import { frontDoorListener } from '../../../../http/front-door.js';
+import { createDevicesRoutes } from '../../../../routes/devices.js';
 import { MainRequestAdmission } from '../../lifecycle/main-request-admission.js';
 import { configManager, initConfigManager } from '../../config-manager.js';
 import { markIngress, type RequestIngress } from '../../remote/ingress-mark.js';
@@ -50,6 +51,7 @@ function buildApp(): RequestListener {
       mountOwnerPasskeySignIn(early, getAuth()!);
     },
   });
+  app.route('/api/devices', createDevicesRoutes());
   const chain = frontDoorListener(app);
   return (req, res) => {
     const via = req.headers[INGRESS_HEADER];
@@ -107,8 +109,22 @@ beforeEach(() => {
   resetPasskeyChallengesForTests();
 });
 
-describe('before any second factor is set up', () => {
+describe('before any second factor works remotely', () => {
   it('a password signs in from another device as before', async () => {
+    expect((await signIn('own-tunnel')).status).toBe(200);
+  });
+
+  it('a passkey made only for this computer asks nothing of another device', async () => {
+    const here = new SoftAuthenticator({ rpId: 'localhost', origin: ORIGIN, userHandle: 'aGVyZQ' });
+    addPasskey({
+      userId: readOwnerAccount()!.id,
+      label: 'Desk',
+      credentialId: here.credentialId,
+      publicKey: here.cosePublicKeyBase64url(),
+      alg: here.coseAlg,
+      signCount: 0,
+      rpId: 'localhost',
+    });
     expect((await signIn('own-tunnel')).status).toBe(200);
   });
 });
@@ -127,6 +143,29 @@ describe('with an authenticator app set up', () => {
     expect(res.headers['set-cookie'] ?? []).toEqual([]);
   });
 
+  it.each(['/api/auth/sign-in/email/', '/API/auth/sign-in/email', '/api//auth/sign-in/email'])(
+    'asks for it however the path is spelled: %s',
+    async (url) => {
+      const res = await post(url, 'own-tunnel').send({ email: EMAIL, password: PASSWORD });
+      expect(res.status).not.toBe(200);
+      expect(String(res.headers['set-cookie'] ?? '')).not.toMatch(/session_token=[^;]/);
+    }
+  );
+
+  it('a wrong password with any code gets the ordinary refusal, and the code is never tried', async () => {
+    const code = codeNow();
+    const res = await post('/api/auth/sign-in/email', 'own-tunnel').send({
+      email: EMAIL,
+      password: 'not-the-password',
+      totpCode: code,
+    });
+    expect(res.status).toBe(401);
+    expect(res.body.code).not.toBe('SECOND_FACTOR_REQUIRED');
+    expect(res.body.code).not.toBe('SECOND_FACTOR_REFUSED');
+    // The step was not spent: the same code still works with the right password.
+    expect((await signIn('own-tunnel', code)).status).toBe(200);
+  });
+
   it('refuses a wrong code', async () => {
     const res = await signIn('own-tunnel', '000000' === codeNow() ? '111111' : '000000');
     expect(res.status).toBe(401);
@@ -139,6 +178,38 @@ describe('with an authenticator app set up', () => {
     expect((await signIn('own-tunnel', code)).status).toBe(401);
   });
 
+  it('a remote sign-in is listed with its device in Signed-in devices, and can be signed out there', async () => {
+    // Two minutes on, so this test has a time step no other test spent.
+    const realNow = Date.now;
+    Date.now = () => realNow() + 120_000;
+    let res;
+    try {
+      res = await signIn('own-tunnel', codeNow()).set('User-Agent', 'Mozilla/5.0 (iPhone) Safari');
+    } finally {
+      Date.now = realNow;
+    }
+    expect(res.status).toBe(200);
+    const cookie = ((res.headers['set-cookie'] as unknown as string[]) ?? [])
+      .map((value) => value.split(';')[0])
+      .join('; ');
+    const listed = await request(target.server)
+      .get('/api/devices/sessions')
+      .set('Host', LOCAL)
+      .set(INGRESS_HEADER, 'own-tunnel')
+      .set('Cookie', cookie);
+    expect(listed.status).toBe(200);
+    const mine = listed.body.sessions.find((row: { current: boolean }) => row.current);
+    expect(mine).toMatchObject({ route: 'tunnel' });
+    expect(mine.name).not.toBe('');
+    const out = await request(target.server)
+      .delete(`/api/devices/sessions/${mine.id}`)
+      .set('Host', LOCAL)
+      .set('Origin', ORIGIN)
+      .set(INGRESS_HEADER, 'own-tunnel')
+      .set('Cookie', cookie);
+    expect(out.status).toBe(204);
+  });
+
   it('never asks at this computer, which is how the owner gets back in', async () => {
     expect((await signIn('direct')).status).toBe(200);
   });
@@ -149,7 +220,19 @@ describe('with an authenticator app set up', () => {
     expect(res.status).toBe(401);
   });
 
-  it('forwarding headers on this computer’s listener never skip the check for a tunnel', async () => {
+  it('forwarding headers on this computer’s listener never earn the skip: they only ask more', async () => {
+    const res = await post('/api/auth/sign-in/email', 'direct')
+      .set('X-Forwarded-For', '203.0.113.9')
+      .set('X-Forwarded-Host', 'elsewhere.example')
+      .set('X-Forwarded-Proto', 'https')
+      .send({ email: EMAIL, password: PASSWORD });
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe('SECOND_FACTOR_REQUIRED');
+    // Without them, this computer's own listener never asks.
+    expect((await signIn('direct')).status).toBe(200);
+  });
+
+  it('forwarding headers that name this computer never skip the check for a tunnel', async () => {
     const res = await post('/api/auth/sign-in/email', 'own-tunnel')
       .set('X-Forwarded-For', '127.0.0.1')
       .set('X-Forwarded-Host', 'localhost')

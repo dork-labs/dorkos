@@ -2,6 +2,7 @@
 covers:
   - 'feat(auth): Wi-Fi sign-in by a one-time code from this computer, and owner passkeys and authenticator codes (DOR-4744, DOR-3647)'
   - 'feat(auth): app screens for Wi-Fi sign-in codes, device approval and sign-in checks (DOR-4744, DOR-3647)'
+  - 'fix(auth): review fixes and final copy for Wi-Fi sign-in and sign-in checks (DOR-4744, DOR-3647)'
 ---
 
 ### Added

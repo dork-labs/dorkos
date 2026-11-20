@@ -31,7 +31,7 @@ describe('LoginScreen', () => {
     signIn.error = { message: 'needs more', status: 401, code: 'SECOND_FACTOR_REQUIRED' };
     render(<LoginScreen />);
     expect(screen.getByText('One more step')).toBeInTheDocument();
-    const code = screen.getByLabelText('Code from your authenticator app');
+    const code = screen.getByLabelText('Enter the code from your authenticator app.');
     expect(code).toHaveAttribute('autocomplete', 'one-time-code');
     fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'kai@example.com' } });
     fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'secret' } });

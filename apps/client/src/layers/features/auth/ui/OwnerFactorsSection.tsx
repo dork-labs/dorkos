@@ -2,7 +2,22 @@ import { useId, useState, type FormEvent } from 'react';
 import QRCode from 'react-qr-code';
 import { KeyRound, Smartphone } from 'lucide-react';
 import type { OwnerFactor } from '@dorkos/shared/signed-in-devices';
-import { Button, Field, FieldLabel, Input, Skeleton } from '@/layers/shared/ui';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+  Button,
+  Field,
+  FieldLabel,
+  Input,
+  Skeleton,
+} from '@/layers/shared/ui';
 import { passkeysAvailable } from '../lib/passkey-ceremony';
 import { useOwnerFactors } from '../model/use-owner-factors';
 
@@ -38,6 +53,7 @@ export function OwnerFactorsSection() {
               key={factor.id}
               factor={factor}
               busy={factors.busy}
+              isLast={factors.factors.length === 1}
               onRemove={() => void factors.remove(factor.id)}
             />
           ))
@@ -53,25 +69,21 @@ export function OwnerFactorsSection() {
           onCancel={factors.cancelAuthenticator}
         />
       ) : (
-        <div className="flex flex-wrap gap-2">
+        <div className="space-y-1.5">
           {canMakePasskey && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => void factors.addPasskey()}
-              disabled={factors.busy}
-            >
-              Add a passkey
-            </Button>
+            <AddRow
+              icon={KeyRound}
+              label="Passkey"
+              busy={factors.busy}
+              onAdd={() => void factors.addPasskey()}
+            />
           )}
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => void factors.startAuthenticator()}
-            disabled={factors.busy}
-          >
-            Add an authenticator app
-          </Button>
+          <AddRow
+            icon={Smartphone}
+            label="Authenticator app"
+            busy={factors.busy}
+            onAdd={() => void factors.startAuthenticator()}
+          />
         </div>
       )}
 
@@ -88,35 +100,82 @@ export function OwnerFactorsSection() {
   );
 }
 
+function AddRow({
+  icon: Icon,
+  label,
+  busy,
+  onAdd,
+}: {
+  icon: typeof KeyRound;
+  label: string;
+  busy: boolean;
+  onAdd: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2 rounded-md border px-3 py-2">
+      <div className="flex items-center gap-2">
+        <Icon className="text-muted-foreground size-4 shrink-0" />
+        <p className="text-sm">{label}</p>
+      </div>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={onAdd}
+        disabled={busy}
+        aria-label={`Add ${label}`}
+      >
+        Add
+      </Button>
+    </div>
+  );
+}
+
 function FactorRow({
   factor,
   busy,
+  isLast,
   onRemove,
 }: {
   factor: OwnerFactor;
   busy: boolean;
+  /** Whether removing it leaves a password alone for other devices. */
+  isLast: boolean;
   onRemove: () => void;
 }) {
-  const Icon = factor.kind === 'passkey' ? KeyRound : Smartphone;
-  const detail = factor.kind === 'passkey' && factor.host ? `Works on ${factor.host}` : null;
+  const passkey = factor.kind === 'passkey';
+  const Icon = passkey ? KeyRound : Smartphone;
+  const name = passkey ? 'Passkey' : 'Authenticator app';
+  const added = `added ${new Date(factor.addedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+  const meta = [name, passkey ? factor.host : null, added].filter(Boolean).join(' · ');
   return (
     <div className="flex items-center justify-between gap-2 rounded-md border px-3 py-2">
       <div className="flex min-w-0 items-center gap-2">
         <Icon className="text-muted-foreground size-4 shrink-0" />
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium">{factor.label}</p>
-          {detail && <p className="text-muted-foreground truncate text-xs">{detail}</p>}
-        </div>
+        <p className="truncate text-sm">{meta}</p>
       </div>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={onRemove}
-        disabled={busy}
-        aria-label={`Remove ${factor.label}`}
-      >
-        Remove
-      </Button>
+      <AlertDialog>
+        <AlertDialogTrigger asChild>
+          <Button variant="ghost" size="sm" disabled={busy} aria-label={`Remove ${name}`}>
+            Remove
+          </Button>
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {passkey ? 'Remove this passkey?' : 'Remove this authenticator app?'}
+            </AlertDialogTitle>
+            {isLast && (
+              <AlertDialogDescription>
+                Other devices will sign in with your password only.
+              </AlertDialogDescription>
+            )}
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={onRemove}>Remove</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -149,11 +208,12 @@ function AuthenticatorSetup({
       <div className="flex justify-center rounded-lg bg-white p-3">
         <QRCode value={uri} size={160} level="M" />
       </div>
-      <p className="text-muted-foreground text-xs break-all">
-        Or type this key: <span className="font-mono">{secret}</span>
+      <p className="text-muted-foreground text-xs">Can’t scan? Enter this key:</p>
+      <p className="font-mono text-xs [overflow-wrap:anywhere]">
+        {secret.match(/.{1,4}/g)?.join(' ')}
       </p>
       <Field className="gap-1.5">
-        <FieldLabel htmlFor={codeId}>The 6-digit code it shows</FieldLabel>
+        <FieldLabel htmlFor={codeId}>Type the 6-digit code it shows.</FieldLabel>
         <Input
           id={codeId}
           inputMode="numeric"

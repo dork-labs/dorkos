@@ -40,6 +40,7 @@ import {
 import {
   finishAddingPasskey,
   startAddingPasskey,
+  thisComputerPasskeyOrigins,
 } from '../services/core/auth/factors/owner-passkeys.js';
 import { newTotpSecret, totpUri, verifyTotp } from '../services/core/auth/factors/totp.js';
 import { notify } from '../services/notifications/notification-service.js';
@@ -145,7 +146,10 @@ export function createOwnerFactorRoutes(): Hono<ApiEnv> {
     if (typeof added === 'string') {
       return c.json(errorBody('That passkey wasn’t added. Try again.', 'PASSKEY_REFUSED'), 400);
     }
-    recordSignInTrustChange(owner.userId, 'passkey-added');
+    const here = thisComputerPasskeyOrigins().some(
+      (origin) => new URL(origin).hostname === added.host
+    );
+    recordSignInTrustChange(owner.userId, here ? 'passkey-added-here' : 'passkey-added');
     void notify('signin.check_added', {
       factorId: added.factorId,
       kind: 'passkey',
@@ -189,7 +193,7 @@ export function createOwnerFactorRoutes(): Hono<ApiEnv> {
     const step =
       secret && typeof body?.code === 'string' ? verifyTotp(secret, body.code, null) : null;
     if (step === null) {
-      return c.json(errorBody('That code didn’t match. Try the next one.', 'CODE_REFUSED'), 400);
+      return c.json(errorBody('That code didn’t match. Try the newest one.', 'CODE_REFUSED'), 400);
     }
     confirmTotp(factor.id, step);
     recordSignInTrustChange(owner.userId, 'authenticator-added');

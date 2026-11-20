@@ -27,8 +27,8 @@
  * {@link MAX_MISSES_PER_REQUEST} wrong codes; the listener as a whole takes
  * {@link MAX_MISSES_PER_WINDOW} wrong codes per {@link MISS_WINDOW_MS}.
  *
- * A code typed for the wrong request ends the request it was made for too:
- * whoever typed it may have read it off the network, so neither signs in.
+ * A code typed for the wrong request ends the request it was made for too, so
+ * a code only ever works on the one device it was approved for.
  *
  * Every refusal reads the same, so a caller cannot tell an unknown id from an
  * expired or used one.
@@ -45,6 +45,9 @@ export const WIFI_SIGN_IN_CODE_TTL_MS = 5 * 60 * 1000;
 
 /** Most requests open at once on this computer. */
 export const MAX_OPEN_REQUESTS = 5;
+
+/** Most requests one address may have open at once. */
+export const MAX_OPEN_PER_ADDRESS = 2;
 
 /** Most requests one address may start per window. */
 export const MAX_STARTS_PER_ADDRESS = 5;
@@ -64,8 +67,11 @@ export const MISS_WINDOW_MS = 15 * 60 * 1000;
 /** Characters a code is made of: no 0/O, 1/I/L, so it reads aloud and types cleanly. */
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 
-/** Code length: 8 characters, about 39 bits. */
-export const WIFI_SIGN_IN_CODE_LENGTH = 8;
+/**
+ * Code length: 6 characters, about 29 bits, shown as two groups of three. Short
+ * enough to type, and the miss limits below leave a guesser nowhere near it.
+ */
+export const WIFI_SIGN_IN_CODE_LENGTH = 6;
 
 /** Match code length: 4 characters, enough to tell two requests apart by eye. */
 export const WIFI_SIGN_IN_MATCH_LENGTH = 4;
@@ -177,6 +183,8 @@ export function startWifiSignIn(
 ): { requestId: string; matchCode: string; expiresAt: string } | null {
   sweep(now);
   if (open.size >= MAX_OPEN_REQUESTS) return null;
+  const mine = [...open.values()].filter((request) => request.address === device.address);
+  if (mine.length >= MAX_OPEN_PER_ADDRESS) return null;
   const recent = starts.get(device.address) ?? [];
   if (recent.length >= MAX_STARTS_PER_ADDRESS) return null;
   starts.set(device.address, [...recent, now]);
@@ -268,13 +276,15 @@ export function redeemWifiSignIn(
   now = Date.now()
 ): { userId: string } | { refusal: WifiSignInRefusal } {
   sweep(now);
-  if (misses.length >= MAX_MISSES_PER_WINDOW) return { refusal: 'too-many-tries' };
   const typedHash = hash(normalizeWifiSignInCode(typed));
   const request = bySecret(requestId);
+  // A right code for its own request works even while others are guessing:
+  // the limit below holds wrong codes back, never the person with the right one.
   if (request?.approval && timingSafeEqual(typedHash, request.approval.codeHash)) {
     open.delete(request.viewId);
     return { userId: request.approval.userId };
   }
+  if (misses.length >= MAX_MISSES_PER_WINDOW) return { refusal: 'too-many-tries' };
   // A code made for another request ends that request too (see the module doc).
   for (const other of open.values()) {
     if (

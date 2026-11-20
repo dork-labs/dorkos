@@ -58,7 +58,7 @@ describe('WifiSignInScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Ask for a code' }));
     expect(await screen.findByLabelText('K 7 Q X')).toBeInTheDocument();
     expect(screen.getByText('Safari on iPhone')).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('Code from the computer'), {
+    fireEvent.change(screen.getByLabelText('Code'), {
       target: { value: 'abcd2345' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
@@ -78,12 +78,12 @@ describe('WifiSignInScreen', () => {
     );
     renderScreen();
     fireEvent.click(screen.getByRole('button', { name: 'Ask for a code' }));
-    fireEvent.change(await screen.findByLabelText('Code from the computer'), {
+    fireEvent.change(await screen.findByLabelText('Code'), {
       target: { value: 'WRONG123' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
     expect(
-      await screen.findByText('That code didn’t work. Check it, or ask for a new one.')
+      await screen.findByText('That code didn’t match. Check it and try again.')
     ).toBeInTheDocument();
     expect(getAuthRequired()).toBe(true);
   });

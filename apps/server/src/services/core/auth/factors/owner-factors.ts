@@ -265,15 +265,25 @@ export function findPasskey(credentialId: string): OwnerFactorRow | undefined {
  * Record a passkey's use and its new signature counter.
  *
  * @param id - The factor id.
+ * @param previous - The counter the check read before it.
  * @param signCount - The counter the authenticator reported.
  * @param now - The current time, for tests.
+ * @returns Whether this use was recorded; `false` when another use got there first.
  */
-export function usePasskey(id: string, signCount: number, now = Date.now()): void {
-  db()
+export function usePasskey(
+  id: string,
+  previous: number,
+  signCount: number,
+  now = Date.now()
+): boolean {
+  // Only if the counter is still the one this check read, so two checks at
+  // once cannot both pass on it.
+  const result = db()
     .update(ownerFactors)
     .set({ signCount, lastUsedAt: new Date(now) })
-    .where(eq(ownerFactors.id, id))
+    .where(and(eq(ownerFactors.id, id), eq(ownerFactors.signCount, previous)))
     .run();
+  return result.changes > 0;
 }
 
 /**

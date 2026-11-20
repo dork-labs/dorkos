@@ -6,6 +6,7 @@
  */
 import { createStepUpRoutes } from '../../../../routes/step-up.js';
 import { confirmAuthFixture } from './confirm-write.js';
+import { wifiSignInCookie } from './wifi-test-sign-in.js';
 import { NOT_FROM_WIFI } from '../sessions/wifi-level.js';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -57,6 +58,8 @@ function buildApp(): RequestListener {
 
 /** Sign in through one route; returns the cookie pairs it set. */
 async function signInVia(ingress: RequestIngress, body: Record<string, unknown> = {}) {
+  // Wi-Fi takes no password; a device signs in by code (DOR-4744).
+  if (ingress === 'wifi') return { status: 200, cookie: await wifiSignInCookie(getAuth()!, LOCAL) };
   let req = request(target.server)
     .post('/api/auth/sign-in/email')
     .set('Host', LOCAL)
@@ -232,9 +235,8 @@ describe('a sign-in works only on the route it was made on', () => {
       ).toBe(401);
     }
 
-    const listed = await authCall('get', 'list-sessions', 'wifi', cookie);
-    expect(listed.status).toBe(200);
-    expect(listed.body.length).toBeGreaterThan(0);
+    // On Wi-Fi only reading and ending your own sign-in reach Better Auth (DOR-4744).
+    expect((await authCall('get', 'list-sessions', 'wifi', cookie)).status).toBe(403);
     const who = await authCall('get', 'get-session', 'wifi', cookie);
     expect(who.body).toMatchObject({ session: { route: 'wifi' } });
   });

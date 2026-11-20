@@ -160,6 +160,7 @@ export type SignInTrustChange =
   | 'device-runs-agents-on'
   | 'device-runs-agents-off'
   | 'passkey-added'
+  | 'passkey-added-here'
   | 'authenticator-added'
   | 'factor-removed';
 
@@ -177,10 +178,11 @@ const TRUST_CHANGES: Record<SignInTrustChange, { action: string; summary: string
     action: 'auth.device_runs_agents_off',
     summary: 'A Wi-Fi device can no longer run agents',
   },
-  'passkey-added': {
+  'passkey-added-here': {
     action: 'auth.passkey_added',
     summary: 'A passkey was added on this computer',
   },
+  'passkey-added': { action: 'auth.passkey_added', summary: 'A passkey was added' },
   'authenticator-added': {
     action: 'auth.authenticator_added',
     summary: 'An authenticator app was added',

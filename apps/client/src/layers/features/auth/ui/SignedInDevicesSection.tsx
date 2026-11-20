@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { LogOut, MonitorSmartphone } from 'lucide-react';
 import type { SignedInDevice, SignedInDeviceRoute } from '@dorkos/shared/signed-in-devices';
 import {
@@ -27,7 +28,7 @@ import { WifiSignInRequests } from './WifiSignInRequests';
  */
 const ROUTE_LABELS: Record<SignedInDeviceRoute, string | null> = {
   local: null,
-  wifi: 'Plain Wi-Fi',
+  wifi: 'Wi-Fi',
   tunnel: 'Remote access',
   managed: 'Remote access',
   network: 'Another network',
@@ -180,6 +181,15 @@ function RunsAgentsSwitch({
   trust: DeviceTrust | null;
 }) {
   const on = device.runsAgents === true;
+  const [confirming, setConfirming] = useState(false);
+  const warning = (
+    <>
+      <p className="text-muted-foreground text-xs">
+        Anyone on the same Wi-Fi could take over this session.
+      </p>
+      <p className="text-muted-foreground text-xs">It turns off after 12 hours idle.</p>
+    </>
+  );
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between gap-2 text-sm">
@@ -187,14 +197,33 @@ function RunsAgentsSwitch({
         <Switch
           checked={on}
           disabled={!trust || trust.pendingId === device.id}
-          onCheckedChange={(next) => void trust?.setRunsAgents(device.id, next)}
+          // Turning it on asks first; turning it off answers at once.
+          onCheckedChange={(next) =>
+            next ? setConfirming(true) : void trust?.setRunsAgents(device.id, false)
+          }
           aria-label={`Run agents from ${device.name}`}
         />
       </div>
-      <p className="text-muted-foreground text-xs">
-        Anyone on the same Wi-Fi could take over this session.
-      </p>
-      <p className="text-muted-foreground text-xs">It turns off after 12 hours idle.</p>
+      {warning}
+      {!trust && (
+        <p className="text-muted-foreground text-xs">Change this on the computer DorkOS runs on.</p>
+      )}
+      <AlertDialog open={confirming} onOpenChange={setConfirming}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Run agents from {device.name}?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-1">{warning}</div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void trust?.setRunsAgents(device.id, true)}>
+              Turn on
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -221,9 +250,19 @@ function DeviceSummary({
         <div className="flex items-center gap-2">
           <p className="truncate text-sm font-medium">{device.name}</p>
           {device.current && <Badge variant="secondary">This device</Badge>}
+          {device.route === 'wifi' && (
+            <Badge
+              variant="outline"
+              title="Not encrypted between this device and the computer DorkOS runs on."
+            >
+              Plain Wi-Fi
+            </Badge>
+          )}
         </div>
         <p className="text-muted-foreground text-xs">
-          {via ? `${via} · ${lastActive}` : lastActive}
+          {[via, lastActive, device.runsAgents ? 'On until 12 hours idle' : null]
+            .filter(Boolean)
+            .join(' · ')}
         </p>
       </div>
       {canSignOut && (

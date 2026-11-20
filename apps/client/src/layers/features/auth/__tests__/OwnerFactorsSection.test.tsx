@@ -40,10 +40,10 @@ describe('OwnerFactorsSection', () => {
 
   it('adds an authenticator app once one of its codes is confirmed', async () => {
     const transport = setup();
-    fireEvent.click(await screen.findByRole('button', { name: 'Add an authenticator app' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Add Authenticator app' }));
     expect(await screen.findByText('Scan this with your authenticator app.')).toBeInTheDocument();
-    expect(screen.getByText('ABCDEFGH')).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('The 6-digit code it shows'), {
+    expect(screen.getByText('ABCD EFGH')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Type the 6-digit code it shows.'), {
       target: { value: '123456' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
@@ -59,7 +59,13 @@ describe('OwnerFactorsSection', () => {
     const transport = setup();
     vi.mocked(transport.listOwnerFactors).mockResolvedValue({
       factors: [
-        { id: 'k1', kind: 'passkey', label: 'Laptop', host: 'studio.example', addedAt: 'x' },
+        {
+          id: 'k1',
+          kind: 'passkey',
+          label: 'Laptop',
+          host: 'studio.example',
+          addedAt: '2026-11-20T00:00:00Z',
+        },
       ],
     });
     cleanup();
@@ -71,8 +77,13 @@ describe('OwnerFactorsSection', () => {
         </TransportProvider>
       </QueryClientProvider>
     );
-    expect(await screen.findByText('Works on studio.example')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Remove Laptop' }));
+    expect(await screen.findByText(/^Passkey · studio\.example · added/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Passkey' }));
+    expect(await screen.findByText('Remove this passkey?')).toBeInTheDocument();
+    expect(
+      screen.getByText('Other devices will sign in with your password only.')
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
     await waitFor(() => expect(transport.removeOwnerFactor).toHaveBeenCalledWith('k1'));
   });
 

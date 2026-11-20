@@ -130,9 +130,17 @@ describe('a code', () => {
     expect(redeemWifiSignIn(requestId, code, NOW)).toEqual({ refusal: 'refused' });
   });
 
-  it('the listener stops taking codes after too many wrong ones', () => {
+  it('the listener stops taking wrong codes after too many, but a right one still works', () => {
     for (let i = 0; i < MAX_MISSES_PER_WINDOW; i += 1) redeemWifiSignIn('nope', 'WRONGONE', NOW);
     const { requestId, code } = approved('10.0.0.9');
-    expect(redeemWifiSignIn(requestId, code, NOW)).toEqual({ refusal: 'too-many-tries' });
+    expect(redeemWifiSignIn(requestId, 'WRONGONE', NOW)).toEqual({ refusal: 'too-many-tries' });
+    expect(redeemWifiSignIn(requestId, code, NOW)).toEqual({ userId: 'owner-1' });
+  });
+
+  it('one address may have only a couple of requests open at once', () => {
+    startWifiSignIn(PHONE, NOW);
+    startWifiSignIn(PHONE, NOW);
+    expect(startWifiSignIn(PHONE, NOW)).toBeNull();
+    expect(startWifiSignIn({ ...PHONE, address: '10.0.0.7' }, NOW)).not.toBeNull();
   });
 });

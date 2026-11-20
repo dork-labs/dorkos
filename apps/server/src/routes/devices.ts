@@ -63,7 +63,8 @@ import {
   finishPasskeyCheck,
   startPasskeyCheck,
 } from '../services/core/auth/factors/owner-passkeys.js';
-import { isAtThisComputer } from '../services/core/auth/gate-policy.js';
+import { classifyRequest } from '../lib/request-classifier.js';
+import { currentServerRole } from '../lib/server-role.js';
 import { recordSignInTrustChange } from '../services/core/auth/auth-audit.js';
 import {
   PASSKEY_CHECK_CODE,
@@ -200,7 +201,8 @@ export function createDevicesRoutes(auth: () => Auth | undefined = getAuth): Hon
     }
     const caller = await resolveCaller(c);
     if (caller instanceof Response) return caller;
-    const atTheMac = isAtThisComputer(facts);
+    // The classifier's own verdict, never a container port or an address.
+    const atTheMac = classifyRequest(facts, currentServerRole()).kind === 'this-computer';
     if (!caller || !caller.atThisComputer || !atTheMac || caller.sessionId === undefined) {
       return c.json(
         errorBody('Do this on the computer DorkOS runs on.', NEEDS_PERSON_AT_THIS_COMPUTER),

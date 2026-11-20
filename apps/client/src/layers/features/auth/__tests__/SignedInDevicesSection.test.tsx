@@ -67,7 +67,8 @@ describe('SignedInDevicesSection', () => {
     expect(screen.queryByText(/This computer/)).not.toBeInTheDocument();
     expect(screen.getByText('This device')).toBeInTheDocument();
     expect(screen.getByText('Last active just now')).toBeInTheDocument();
-    expect(screen.getByText('Plain Wi-Fi · Last active just now')).toBeInTheDocument();
+    expect(screen.getByText('Wi-Fi · Last active just now')).toBeInTheDocument();
+    expect(screen.getByText('Plain Wi-Fi')).toBeInTheDocument();
   });
 
   it('at this computer, signs out another device and everywhere else', async () => {
@@ -132,6 +133,9 @@ describe('SignedInDevicesSection', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('It turns off after 12 hours idle.')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('switch', { name: 'Run agents from Safari on iPhone' }));
+    expect(await screen.findByText('Run agents from Safari on iPhone?')).toBeInTheDocument();
+    expect(transport.setDeviceRunsAgents).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Turn on' }));
     await waitFor(() => expect(transport.setDeviceRunsAgents).toHaveBeenCalledTimes(2));
     expect(get).toHaveBeenCalledTimes(1);
     expect(vi.mocked(transport.setDeviceRunsAgents).mock.calls[1]![2]).toMatchObject({
@@ -145,6 +149,7 @@ describe('SignedInDevicesSection', () => {
     const { transport } = setup(list);
     const toggle = await screen.findByRole('switch', { name: 'Run agents from Safari on iPhone' });
     expect(toggle).toBeDisabled();
+    expect(screen.getByText('Change this on the computer DorkOS runs on.')).toBeInTheDocument();
     expect(transport.listWifiSignInRequests).not.toHaveBeenCalled();
   });
 
@@ -165,16 +170,20 @@ describe('SignedInDevicesSection', () => {
     });
     vi.mocked(transport.approveWifiSignIn)
       .mockResolvedValueOnce({ kind: 'passkey-check', options: { challenge: 'Y2hhbGxlbmdl' } })
-      .mockResolvedValueOnce({ kind: 'approved', code: 'ABCD2345', expiresAt: NOW });
+      .mockResolvedValueOnce({
+        kind: 'approved',
+        code: 'ABC234',
+        expiresAt: new Date(Date.now() + 4.5 * 60_000).toISOString(),
+      });
     Object.defineProperty(navigator, 'credentials', {
       value: { get: vi.fn().mockResolvedValue(fakeAssertion()) },
       configurable: true,
     });
 
-    expect(await screen.findByText('Firefox on Linux')).toBeInTheDocument();
+    expect(await screen.findByText(/Firefox on Linux · Wi-Fi 192\.168\.1\.40/)).toBeInTheDocument();
     expect(screen.getByLabelText('K 7 Q X')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Approve' }));
-    expect(await screen.findByLabelText('A B C D 2 3 4 5')).toBeInTheDocument();
+    expect(await screen.findByLabelText('A B C 2 3 4')).toBeInTheDocument();
     expect(screen.getByText('Expires in 5 minutes.')).toBeInTheDocument();
   });
 
@@ -197,7 +206,7 @@ describe('SignedInDevicesSection', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Approve' }));
     expect(
       await screen.findByText(
-        'Add a passkey on this computer first, in Signing in from other devices.'
+        'Add a passkey on this computer first (Safari or Chrome), then approve here.'
       )
     ).toBeInTheDocument();
   });

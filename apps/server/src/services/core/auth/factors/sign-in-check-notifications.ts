@@ -37,10 +37,7 @@ export const SIGN_IN_CHECK_ENTRIES: {
     storage: 'event',
     subjectType: 'system',
     locate: (p) => ({ subjectId: p.factorId }),
-    title: (p) =>
-      p.kind === 'passkey'
-        ? 'A passkey was added on this computer'
-        : 'An authenticator app was added',
+    title: (p) => (p.kind === 'passkey' ? 'A passkey was added' : 'An authenticator app was added'),
     body: (p) => (p.kind === 'passkey' && p.host ? `It works on ${p.host}. ${REMEDY}` : REMEDY),
     dedupeKey: (p) => `signin-check:${p.factorId}`,
     relay: 'never',

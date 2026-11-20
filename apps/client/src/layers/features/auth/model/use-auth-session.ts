@@ -151,9 +151,9 @@ export function usePasskeySignIn(): AuthActionState<[]> {
       if (!asked.ok) return fail('No passkey for this address. Use your authenticator app.');
       const response = await runPasskeyCheck(asked.body.options);
       const done = await postSignIn('/owner-sign-in/passkey/finish', { response });
-      if (!done.ok) return fail('That passkey didn’t sign you in. Try again.');
+      if (!done.ok) return fail('The passkey didn’t go through. Try again.');
     } catch {
-      return fail('The passkey was cancelled. Try again.');
+      return fail('The passkey didn’t go through. Try again.');
     }
     setIsPending(false);
     resumeBootCacheAfterSignIn(queryClient);
@@ -246,7 +246,7 @@ export function useWifiCodeSignIn(): WifiCodeSignIn {
         setError(
           tooMany
             ? 'Too many tries. Ask for a new code.'
-            : 'That code didn’t work. Check it, or ask for a new one.'
+            : 'That code didn’t match. Check it and try again.'
         );
         return false;
       }

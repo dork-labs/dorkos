@@ -29,6 +29,7 @@ import { withRegistrationCaller } from '../../services/core/auth/registration-po
 import { ingressOf } from '../../services/core/remote/ingress-mark.js';
 import type { ApiEnv } from '../api-chain.js';
 import { honoRequestFacts } from '../request-facts.js';
+import { deviceHeaders } from './device-headers.js';
 
 /** The path the finish answers on. */
 export const OWNER_PASSKEY_FINISH_PATH = '/api/owner-sign-in/passkey/finish';
@@ -53,7 +54,8 @@ export function mountOwnerPasskeySignIn(app: Hono<ApiEnv>, auth: Auth): void {
       { kind: 'sign-in', userId: owner.id },
       String(facts.headers.origin)
     );
-    if (typeof options === 'string') return c.json(refused, options === 'no-passkey' ? 404 : 403);
+    // One answer whatever the reason, so it says nothing about which addresses have a passkey.
+    if (typeof options === 'string') return c.json(refused, 403);
     return c.json({ options });
   });
 
@@ -74,7 +76,12 @@ export function mountOwnerPasskeySignIn(app: Hono<ApiEnv>, auth: Auth): void {
     if (typeof checked === 'string') return c.json(refused, 401);
     const requestClass = classifyRequest(facts, currentServerRole());
     const { headers } = await withRegistrationCaller(requestClass, () =>
-      auth.api.signInCheckedAccount({ body: { userId: checked.userId }, returnHeaders: true })
+      auth.api.signInCheckedAccount({
+        body: { userId: checked.userId },
+        // The device's own browser and address, so Signed-in devices can name it.
+        headers: deviceHeaders(facts.headers),
+        returnHeaders: true,
+      })
     );
     for (const cookie of headers.getSetCookie()) c.header('Set-Cookie', cookie, { append: true });
     return c.json({ ok: true });

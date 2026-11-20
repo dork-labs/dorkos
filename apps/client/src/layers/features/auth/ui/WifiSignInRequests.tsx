@@ -16,7 +16,6 @@ export function WifiSignInRequests({ trust }: { trust: DeviceTrust }) {
   if (trust.requests.length === 0) return null;
   return (
     <div className="space-y-2">
-      <p className="text-sm font-medium">Waiting to sign in</p>
       {trust.requests.map((request) => (
         <RequestCard key={request.id} request={request} trust={trust} />
       ))}
@@ -26,7 +25,7 @@ export function WifiSignInRequests({ trust }: { trust: DeviceTrust }) {
       <p className="text-muted-foreground text-xs">Use it only on networks you trust.</p>
       {trust.needsPasskey && (
         <p className="text-muted-foreground text-xs" role="status">
-          Add a passkey on this computer first, in Signing in from other devices.
+          Add a passkey on this computer first (Safari or Chrome), then approve here.
         </p>
       )}
       {trust.error && (
@@ -47,19 +46,20 @@ function RequestCard({ request, trust }: { request: WifiSignInRequest; trust: De
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <Wifi className="text-muted-foreground size-3.5 shrink-0" />
-            <p className="truncate text-sm font-medium">{request.deviceName}</p>
+            <p className="text-sm font-medium">Sign-in request</p>
           </div>
-          <p className="text-muted-foreground text-xs">
-            {request.address} · {formatRelativeTime(request.requestedAt)}
+          <p className="text-muted-foreground text-xs [overflow-wrap:anywhere]">
+            {request.deviceName} · Wi-Fi {request.address} ·{' '}
+            {formatRelativeTime(request.requestedAt)}
           </p>
         </div>
         <CodeGroups code={request.matchCode} className="text-base" />
       </div>
       {shown ? (
         <div className="space-y-1 text-center">
-          <p className="text-muted-foreground text-xs">Type this code on the device:</p>
+          <p className="text-muted-foreground text-xs">Type this code on {request.deviceName}:</p>
           <CodeGroups code={shown.code} />
-          <p className="text-muted-foreground text-xs">Expires in 5 minutes.</p>
+          <p className="text-muted-foreground text-xs">{expiresIn(shown.expiresAt)}</p>
         </div>
       ) : (
         <>
@@ -83,4 +83,10 @@ function RequestCard({ request, trust }: { request: WifiSignInRequest; trust: De
       )}
     </div>
   );
+}
+
+/** "Expires in N minutes", from the time the server gave. */
+function expiresIn(expiresAt: string): string {
+  const minutes = Math.max(1, Math.ceil((Date.parse(expiresAt) - Date.now()) / 60_000));
+  return minutes === 1 ? 'Expires in 1 minute.' : `Expires in ${minutes} minutes.`;
 }

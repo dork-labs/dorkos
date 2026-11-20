@@ -42,20 +42,25 @@ export function WifiSignInScreen() {
             onClick={() => void signIn.ask()}
             disabled={signIn.step === 'asking'}
           >
-            {signIn.step === 'asking' ? 'Asking…' : 'Ask for a code'}
+            {signIn.step === 'asking' ? 'Asking…' : signIn.error ? 'Ask again' : 'Ask for a code'}
           </Button>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2 text-center">
               <p className="text-sm">
-                On the computer, approve{' '}
-                <span className="font-medium">{signIn.deviceName ?? 'this device'}</span> if it
-                shows this code:
+                Open DorkOS on the computer it runs on and approve{' '}
+                <span className="font-medium">{signIn.deviceName ?? 'this device'}</span>.
               </p>
-              {signIn.matchCode && <CodeGroups code={signIn.matchCode} />}
+              <p className="text-sm">Then type the code it shows.</p>
+              {signIn.matchCode && (
+                <>
+                  <p className="text-muted-foreground text-xs">The request there shows:</p>
+                  <CodeGroups code={signIn.matchCode} />
+                </>
+              )}
             </div>
             <Field className="gap-1.5">
-              <FieldLabel htmlFor={codeId}>Code from the computer</FieldLabel>
+              <FieldLabel htmlFor={codeId}>Code</FieldLabel>
               <Input
                 id={codeId}
                 autoComplete="one-time-code"
@@ -72,7 +77,7 @@ export function WifiSignInScreen() {
               {signIn.step === 'signing-in' ? 'Signing in…' : 'Sign in'}
             </Button>
             <Button type="button" variant="ghost" className="w-full" onClick={signIn.reset}>
-              Start again
+              Cancel
             </Button>
           </form>
         )}

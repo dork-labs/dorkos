@@ -304,7 +304,7 @@ export async function finishPasskeyCheck(
   if (!verified.verified || !verified.authenticationInfo.userVerified) return 'not-verified';
   const next = verified.authenticationInfo.newCounter;
   if ((next > 0 || stored > 0) && next <= stored) return 'counter';
-  usePasskey(key.id, next, now);
+  if (!usePasskey(key.id, stored, next, now)) return 'counter';
   return { userId: key.userId, factorId: key.id };
 }
 

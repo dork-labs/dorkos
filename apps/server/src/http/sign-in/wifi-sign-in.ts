@@ -30,6 +30,7 @@ import {
 import { ingressOf } from '../../services/core/remote/ingress-mark.js';
 import type { ApiEnv } from '../api-chain.js';
 import { honoRequestFacts } from '../request-facts.js';
+import { deviceHeaders } from './device-headers.js';
 
 /** The longest request id or code read. */
 const MAX_FIELD = 128;
@@ -84,7 +85,12 @@ export function mountWifiSignIn(app: Hono<ApiEnv>, auth: Auth): void {
     // Inside the request's class, so the session is stamped `wifi`.
     const requestClass = classifyRequest(facts, currentServerRole());
     const { headers } = await withRegistrationCaller(requestClass, () =>
-      auth.api.signInCheckedAccount({ body: { userId: redeemed.userId }, returnHeaders: true })
+      auth.api.signInCheckedAccount({
+        body: { userId: redeemed.userId },
+        // The device's own browser and address, so Signed-in devices can name it.
+        headers: deviceHeaders(facts.headers),
+        returnHeaders: true,
+      })
     );
     for (const cookie of headers.getSetCookie()) c.header('Set-Cookie', cookie, { append: true });
     return c.json({ ok: true });

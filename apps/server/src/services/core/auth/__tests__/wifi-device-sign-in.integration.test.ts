@@ -251,7 +251,7 @@ describe('a one-time code from this computer', () => {
     expect(listed.body.requests[0].matchCode).toBe(started.body.matchCode);
   });
 
-  it('a code typed for another request ends both', async () => {
+  it('a code typed for another request ends the request it was made for', async () => {
     const a = await post('/api/wifi-sign-in/start', 'wifi').send({});
     const code = await approveAtDesk(await newestRequestId());
     const b = await post('/api/wifi-sign-in/start', 'wifi').send({});

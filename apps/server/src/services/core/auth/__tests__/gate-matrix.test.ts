@@ -44,6 +44,8 @@ vi.mock('../index.js', () => ({
     },
   }),
   hasAnyUser: () => posture.owner,
+  // No database: a Wi-Fi sign-in's last use is not recorded here.
+  readAuthDb: () => undefined,
   verifyRequestAuth: async () => null,
 }));
 vi.mock('../../../../env.js', async (importOriginal) => {
