@@ -86,5 +86,6 @@ If you have no account for the service at all (not even under unavailable), or y
 To give up access you no longer need, use ${tool('narrow_own_access')}. ${tool('narrow_agent_access')} takes another agent's access to an app away, with a one-line reason that's shown to the person and not sent to the other agent; the person can undo it. ${tool('list_access_changes')} lists those changes. Neither tool gives access or disconnects an app. ${tool('approve_request')} gives another agent the Read it asked for, from an app you hold at a level yourself, never write; ${tool('undo_access_change')} undoes one change. The person sees both and can undo them.
 A command-line login in a shell (Composio's or any other service's) grants DorkOS nothing; only the owner connects services, in the DorkOS app.
 Never ask for or inspect account credentials. These tools recheck grants on every call; approval requirements and revocations still apply.
-${outsideWordsNote().trimStart()}`;
+${outsideWordsNote().trimStart()}
+"Let agents write back without asking" allows writes to the same connection when only reading it marked this turn (Linear only). Only the person can enable it on that app’s Connections page; never ask them to flip it to bypass a prompt. Sends and deletes still ask, and other approval rules still apply.`;
 }
