@@ -7,6 +7,7 @@ covers:
   - "fix(auth): use the app's word for a sign-in on the Wi-Fi warning (DOR-4744)"
   - 'fix(auth): every Wi-Fi sign-in from before the code sign-in signs in again (DOR-4744)'
   - 'test(server): list the sign-in and sign-in check routes in the route censuses (DOR-4744, DOR-3647)'
+  - 'docs(changelog): every Wi-Fi device signs in again after updating (DOR-4744)'
 ---
 
 ### Added
@@ -17,4 +18,4 @@ covers:
 
 ### Changed
 
-- **Wi-Fi devices sign in again after updating.** Phones and other devices signed in over Wi-Fi sign in again with a code after updating. **Run agents from this device** starts off for each of them.
+- **Wi-Fi devices sign in again after updating.** Every phone or other device signed in over Wi-Fi is signed out once and signs in again with a code. **Run agents from this device** starts off for each of them.
