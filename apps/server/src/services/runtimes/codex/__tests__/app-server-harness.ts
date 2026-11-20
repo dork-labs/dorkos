@@ -7,6 +7,7 @@ import { ConnectorThreadKeyRegistry } from '../../../connectors/principal/thread
 import type { ConnectorRuntimeTools } from '../../connector-tools.js';
 import type { CreditsRelay } from '../../../core/cloud/credits-relay.js';
 import { CodexAppServerPool } from '../app-server/process-pool.js';
+import type { HeavyAskDeps } from '../app-server/load-gate-hold.js';
 import { createCodexTransport, type CodexTransportKind } from '../transport/index.js';
 import type { CodexCompactRequest, CodexTurnRequest } from '../transport/codex-transport.js';
 import { createCodexEventContext } from '../event-mapper.js';
@@ -37,6 +38,8 @@ export interface AppServerHarnessOptions {
   backgroundWork?: { coalesceMs?: number; ceilingMs?: number };
   /** The realpath seam; defaults to prefixing `/real`. */
   realpath?: (path: string) => string;
+  /** The load gate a heavy command's ask waits in (DOR-4209). */
+  loadGate?: HeavyAskDeps;
 }
 
 /**
@@ -75,6 +78,7 @@ export function makeAppServerHarness(options: AppServerHarnessOptions = {}) {
       ? { interactionExpireMs: options.interactionExpireMs }
       : {}),
     backgroundWork: { coalesceMs: 20, ...options.backgroundWork },
+    ...(options.loadGate ? { loadGate: options.loadGate } : {}),
   });
   const bindings: Array<{ sessionId: string; threadId: string; replaces?: string }> = [];
 
