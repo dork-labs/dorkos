@@ -450,8 +450,10 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     what: 'decides a permission tier, and is therefore the whole gate',
     call: 'enforceCapabilityTier(',
     allowed: {
-      'services/core/capabilities/registry.ts':
-        'the registry choke point — every capability inherits the gate from inside invoke (DOR-467)',
+      // When DOR-4868 removes this helper, the registry.ts entry must return and
+      // registry.ts must call enforceCapabilityTier directly again.
+      'services/core/capabilities/package-review/continuation.ts':
+        'the registry invoke gate, extracted for DOR-4868; ordinary requests call enforceCapabilityTier, and only a same-session/input one-shot grant with the exact content token can continue (DOR-467)',
       'services/core/mcp-tool-gate.ts':
         'the hand-registered MCP tools, which are not registry capabilities and so cannot inherit it (DOR-468)',
       'routes/shapes.ts':

@@ -17,6 +17,7 @@
  */
 import { z } from 'zod';
 import { extendZodWithOpenApiOnce } from './zod-openapi.js';
+export { runsAnyProgram } from './extension-approval/program-risk.js';
 
 extendZodWithOpenApiOnce();
 

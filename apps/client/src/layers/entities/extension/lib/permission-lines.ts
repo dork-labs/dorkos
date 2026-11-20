@@ -12,6 +12,7 @@ import {
   BRIDGE_WRITES,
   BRIDGE_WRITES_NONE,
   bridgeWritesFor,
+  runsAnyProgram,
   type ExtensionApprovalAdditions,
   type ExtensionApprovalPermissions,
   type PendingExtensionApproval,
@@ -114,35 +115,7 @@ export interface ExtensionPermissionSet {
   appOpens?: string[];
 }
 
-/**
- * Programs that can start any other program, so allowing one allows
- * everything. Compared by file name, case-insensitive, without `.exe`.
- */
-const RUNS_ANYTHING = new Set([
-  'sh',
-  'bash',
-  'zsh',
-  'cmd',
-  'powershell',
-  'pwsh',
-  'node',
-  'python',
-  'python3',
-  'osascript',
-  'env',
-  'xargs',
-]);
-
-/**
- * Whether allowing this program allows any program: a shell or interpreter,
- * named bare (`bash`) or by path (`/bin/bash`, `C:\\…\\pwsh.exe`).
- *
- * @param name - The `allow.run` entry.
- */
-export function runsAnyProgram(name: string): boolean {
-  const base = name.split(/[\\/]/).pop() ?? name;
-  return RUNS_ANYTHING.has(base.toLowerCase().replace(/\.exe$/, ''));
-}
+export { runsAnyProgram };
 
 /**
  * A line's words as a person reads them, names included, items after.
