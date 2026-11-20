@@ -972,6 +972,28 @@
               "string",
               "null"
             ]
+          },
+          "unknown": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "since": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "key",
+                "label",
+                "since"
+              ]
+            }
           }
         },
         "required": [
