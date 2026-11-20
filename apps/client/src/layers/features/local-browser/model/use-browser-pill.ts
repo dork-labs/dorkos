@@ -45,9 +45,9 @@ export function useBrowserPill({ state, sessionId, action }: UseBrowserPillOptio
     });
 
   const actions: BrowserStatusPillActions = {
-    onTakeOver: () => void action(() => transport.takeOverLocalBrowser()),
-    onPause: () => void action(() => transport.pauseLocalBrowser()),
-    onResume: () => void action(() => transport.resumeLocalBrowser()),
+    onTakeOver: () => void action(() => transport.takeOverLocalBrowser(sessionId)),
+    onPause: () => void action(() => transport.pauseLocalBrowser(sessionId)),
+    onResume: () => void action(() => transport.resumeLocalBrowser(sessionId)),
   };
   if (pill?.kind === 'your-turn') {
     const { handoffId } = pill;
@@ -60,7 +60,7 @@ export function useBrowserPill({ state, sessionId, action }: UseBrowserPillOptio
     };
   }
   if (pill?.kind === 'you')
-    actions.onHandBack = () => handBack(() => transport.resumeLocalBrowser());
+    actions.onHandBack = () => handBack(() => transport.resumeLocalBrowser(sessionId));
   if (pill?.kind === 'paused-sign-in') {
     const waiting = pill.sessionId;
     actions.onShowSignIn = () => void navigate(toSession({ session: waiting }));
