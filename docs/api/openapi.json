@@ -33279,7 +33279,21 @@
           "Local browser"
         ],
         "summary": "Read the browser connection",
-        "description": "Only the owner on this computer can call this route. Includes preparation, selected tab, sharing chat, Pause state, any handoff and the latest sign-in.",
+        "description": "Only the owner on this computer can call this route. Reads the selected chat’s browser page, or Your browser when sessionId is omitted. Includes preparation, selected tab, sharing chat, Pause state, its handoff and latest sign-in.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "description": "Select this chat’s browser page. Omit it for Your browser."
+            },
+            "required": false,
+            "description": "Select this chat’s browser page. Omit it for Your browser.",
+            "name": "sessionId",
+            "in": "query"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Current browser state, with its handoff and sign-in",
@@ -34018,6 +34032,18 @@
             "required": true,
             "name": "id",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "description": "Select this chat’s browser page. Omit it for Your browser."
+            },
+            "required": false,
+            "description": "Select this chat’s browser page. Omit it for Your browser.",
+            "name": "sessionId",
+            "in": "query"
           }
         ],
         "responses": {
@@ -34237,6 +34263,20 @@
         ],
         "summary": "Open a web address in the selected tab",
         "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Accepts HTTP or HTTPS addresses and invalidates earlier observations. Refused during a handoff. Takes the page from a chat sharing it first, as take-over does. A bare host may ask for one HTTP fallback when the HTTPS page cannot connect; a timeout never falls back.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "description": "Select this chat’s browser page. Omit it for Your browser."
+            },
+            "required": false,
+            "description": "Select this chat’s browser page. Omit it for Your browser.",
+            "name": "sessionId",
+            "in": "query"
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -34619,6 +34659,20 @@
         ],
         "summary": "Take the page from the agent",
         "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Pauses the chat sharing the page and refuses its every browser call, reads included, until a person resumes, opens or disconnects the browser. Does nothing when no chat shares it or during a handoff.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "description": "Select this chat’s browser page. Omit it for Your browser."
+            },
+            "required": false,
+            "description": "Select this chat’s browser page. Omit it for Your browser.",
+            "name": "sessionId",
+            "in": "query"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Current browser state, with its handoff and sign-in",
@@ -34955,6 +35009,20 @@
         ],
         "summary": "Move the selected tab back or forward through its own history",
         "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Goes to the nearest page that way the address rules still allow, skipping refused ones. Every load on the way, a redirect included, runs the same rules; a refused one leaves the person on the page they were on (`history_refused`). Takes the page from a chat sharing it first, as take-over does, so that agent stays shut out even when the step is refused. Refused during a handoff.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "description": "Select this chat’s browser page. Omit it for Your browser."
+            },
+            "required": false,
+            "description": "Select this chat’s browser page. Omit it for Your browser.",
+            "name": "sessionId",
+            "in": "query"
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -35336,6 +35404,20 @@
         ],
         "summary": "Pause agent browser actions",
         "description": "Only the owner on this computer can call this route. Immediately refuses new and queued agent actions. An action already sent may still finish. Human browser controls remain available.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "description": "Select this chat’s browser page. Omit it for Your browser."
+            },
+            "required": false,
+            "description": "Select this chat’s browser page. Omit it for Your browser.",
+            "name": "sessionId",
+            "in": "query"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Current browser state",
@@ -35553,6 +35635,20 @@
         ],
         "summary": "Resume agent browser actions",
         "description": "Only the owner on this computer can call this route. The agent must read a fresh observation before its next action. During a handoff this hands the browser back, and after a take-over it gives the page back to the agent.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "description": "Select this chat’s browser page. Omit it for Your browser."
+            },
+            "required": false,
+            "description": "Select this chat’s browser page. Omit it for Your browser.",
+            "name": "sessionId",
+            "in": "query"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Current browser state, with its handoff and sign-in",
@@ -36321,6 +36417,356 @@
         ],
         "summary": "Disconnect the browser",
         "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Stops sharing immediately. Closes DorkOS-owned pages and windows, keeping their saved sign-ins. A pending close blocks new opens. During a handoff it ends the agent’s task, as Stop task does.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "description": "Select this chat’s browser page. Omit it for Your browser."
+            },
+            "required": false,
+            "description": "Select this chat’s browser page. Omit it for Your browser.",
+            "name": "sessionId",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current browser state, with its handoff and sign-in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "preparation": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "stage": {
+                          "type": "string",
+                          "enum": [
+                            "checking",
+                            "downloading",
+                            "launching"
+                          ]
+                        },
+                        "component": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "chromium",
+                            "headless-shell",
+                            "ffmpeg",
+                            null
+                          ]
+                        },
+                        "percent": {
+                          "type": [
+                            "number",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "maximum": 100
+                        }
+                      },
+                      "required": [
+                        "stage",
+                        "component",
+                        "percent"
+                      ]
+                    },
+                    "connectionId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "sessionId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "mode": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "embedded",
+                        "new-window",
+                        null
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "disconnected",
+                        "connected",
+                        "closed"
+                      ]
+                    },
+                    "paused": {
+                      "type": "boolean"
+                    },
+                    "tabs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "url": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "openedOverHttp": {
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
+                          },
+                          "canGoBack": {
+                            "type": "boolean"
+                          },
+                          "canGoForward": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "url",
+                          "title"
+                        ]
+                      }
+                    },
+                    "selectedTabId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "handoff": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "sessionId": {
+                          "type": "string"
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentFolder": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "profileId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "reason": {
+                          "type": "string",
+                          "enum": [
+                            "wall",
+                            "password"
+                          ]
+                        },
+                        "site": {
+                          "type": "string"
+                        },
+                        "askedAt": {
+                          "type": "string"
+                        },
+                        "refused": {
+                          "type": "boolean"
+                        },
+                        "outcome": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "handed-back",
+                            "stopped",
+                            "window-closed",
+                            null
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "sessionId",
+                        "agentName",
+                        "agentId",
+                        "agentFolder",
+                        "profileId",
+                        "reason",
+                        "site",
+                        "askedAt",
+                        "outcome"
+                      ]
+                    },
+                    "signIn": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "profileId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "site": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "open",
+                            "saving",
+                            "saved",
+                            "failed"
+                          ]
+                        },
+                        "startedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "profileId",
+                        "site",
+                        "status",
+                        "startedAt"
+                      ]
+                    },
+                    "takenOver": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "preparation",
+                    "connectionId",
+                    "sessionId",
+                    "mode",
+                    "status",
+                    "paused",
+                    "tabs",
+                    "selectedTabId",
+                    "revision",
+                    "handoff",
+                    "signIn",
+                    "takenOver"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not the owner on this computer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The browser cannot complete this request in its current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The browser operation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/local-browser/handoff/state": {
+      "get": {
+        "tags": [
+          "Local browser"
+        ],
+        "summary": "Read the current browser handoff",
+        "description": "Only the owner on this computer can call this route. Reads this computer’s current handoff independently of the selected chat page. This owner view does not grant an agent access to another chat’s page.",
         "responses": {
           "200": {
             "description": "Current browser state, with its handoff and sign-in",
@@ -36656,7 +37102,21 @@
           "Local browser"
         ],
         "summary": "Open the plain sign-in window",
-        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Opens installed Chrome, or managed Chromium, without a debugging channel on the chosen profile. An embedded handoff keeps its native view detached; a separate window uses the handoff’s saved page. Otherwise takes a page the person typed. Accepts https, or http on this computer only. Password saving is off in that window.",
+        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Opens installed Chrome, or managed Chromium, without a debugging channel on the chosen profile. An embedded handoff keeps its native view detached; a separate window uses the handoff’s saved page. Otherwise takes a page the person typed. A handoffId selects its own chat and ignores the sessionId query. Accepts https, or http on this computer only. Password saving is off in that window.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "description": "Select this chat’s browser page. Omit it for Your browser."
+            },
+            "required": false,
+            "description": "Select this chat’s browser page. Omit it for Your browser.",
+            "name": "sessionId",
+            "in": "query"
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {

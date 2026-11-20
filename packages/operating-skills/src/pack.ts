@@ -447,7 +447,7 @@ export interface OperatingSkill {
  *   label and dialog. An agent seeded at 60 would believe DorkOS refuses a marked turn's
  *   build, and that every server-code change at Full runs at once.
  */
-export const OPERATING_SKILLS_VERSION = 61;
+export const OPERATING_SKILLS_VERSION = 63;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

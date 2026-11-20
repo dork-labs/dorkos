@@ -38,6 +38,10 @@ import type { SignInWindow } from './sign-in-window.js';
 
 /** The parts of the browser service a handoff steers. */
 export interface HandoverBrowser {
+  /** Refuse a profile-wide swap while another lease or person owns pages there. */
+  requireExclusiveProfile?(profileId?: string | null): void;
+  /** Page custody independent of the handoff record, such as a person viewer. */
+  requireAgentPage?(): void;
   profileRemoval?: { assertAvailable(): void };
   state(): Promise<LocalBrowserState>;
   capabilities(): { newWindow: boolean };
@@ -56,6 +60,9 @@ export interface HandoverBrowser {
   disconnect(): Promise<LocalBrowserState>;
 }
 
+import { assertSignInUrl, siteOnly } from './handoff-guards/addresses.js';
+export { assertSignInUrl, siteOnly } from './handoff-guards/addresses.js';
+
 export type { OutsideTurnCheck, OutsideTurnReason };
 
 /** Where to put the agent back when the person hands the browser back. */
@@ -69,49 +76,25 @@ interface ReopenAt {
 export const HANDED_OVER_NEXT =
   'The person has the browser now. End your turn and wait. You get a message when they hand it back. Never ask again or retry on your own.';
 
-/**
- * A sign-in page must be `https:`, or `http:` on this computer only.
- *
- * @param value - The address to open.
- */
-export function assertSignInUrl(value: string): URL {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    throw new LocalBrowserError(
-      'unsupported_address',
-      'Use a website address starting with https.'
-    );
-  }
-  const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
-  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && local))
-    throw new LocalBrowserError(
-      'unsupported_address',
-      'Use a website address starting with https.'
-    );
-  return url;
-}
-
-/**
- * A page's address cut to its site: the origin, or for an address with none
- * (`about:`, `data:`) its scheme alone.
- *
- * @param value - The tab's address.
- */
-export function siteOnly(value: string): string {
-  try {
-    const url = new URL(value);
-    if (url.origin !== 'null') return url.origin;
-    // A blank tab carries nothing, and the panel names it "New tab".
-    return url.href === 'about:blank' ? url.href : url.protocol;
-  } catch {
-    return '';
-  }
-}
-
 /** One handoff at a time, and the plain sign-in window it can open. */
 export class BrowserHandover {
+  /** Metadata-only arbitration for the install's single active handoff. */
+  hasActiveHandoff(): boolean {
+    return (
+      this.preparingHandoff ||
+      this.answeringHandoff ||
+      this.record?.outcome === null ||
+      this.signIns.active
+    );
+  }
+  /** Person card lookup is independent of whichever chat the UI currently shows. */
+  ownsHandoff(id: string): boolean {
+    return this.record?.id === id;
+  }
+  /** Physical sign-in ownership is distinct from an answered handoff record. */
+  signInHoldsProfile(profileId: string | null): boolean {
+    return this.signIns.holds(this.folderOf(profileId));
+  }
   private signingIn = 0;
   private preparingHandoff = false;
   private answeringHandoff = false;
@@ -258,6 +241,7 @@ export class BrowserHandover {
       // pause fails the lock stays on: failing closed, and Resume clears it.
       this.takenFrom = state.sessionId;
       await this.browser.pause();
+      await this.browser.handToPerson();
       logger.info('[Browser] A person took the browser', { sessionId: state.sessionId });
       this.changed();
     }
@@ -304,6 +288,7 @@ export class BrowserHandover {
     }
     if (this.signIns.active && (await this.signInOnAgentProfile()))
       throw new LocalBrowserError('signing_in', 'A person is signing in. Wait until they finish.');
+    this.browser.requireAgentPage?.();
   }
 
   /**
@@ -378,6 +363,7 @@ export class BrowserHandover {
     const site = new URL(tab.url).host;
     if (!site) throw new LocalBrowserError('no_site', 'Open the website first, then ask again.');
     if (state.mode === 'new-window') assertSignInUrl(tab.url);
+    if (state.mode === 'new-window') this.browser.requireExclusiveProfile?.();
     // DorkOS's own reading, taken before handing over clears it; never the agent's word (DOR-4097).
     const refused = this.browser.lastRefusalHost?.() === site;
     await this.browser.handToPerson();
@@ -478,6 +464,7 @@ export class BrowserHandover {
       profileId = input.profileId ?? null;
       this.assertProfileExists(profileId);
     }
+    this.browser.requireExclusiveProfile?.(profileId);
     const folder = await prepareProfileFolder(this.dataDirectory(), profileId);
     // Only one Chromium can hold a profile, so the agent's window on it closes first, and comes
     // back once the sign-in ends (DOR-4693). Never while the person is using it.
@@ -486,6 +473,7 @@ export class BrowserHandover {
       state.status !== 'disconnected' &&
       this.browser.currentProfileId() === profileId;
     if (agentWindowOnProfile) {
+      this.browser.requireExclusiveProfile?.();
       if (this.record?.outcome === null || this.takenFrom !== null) throw browserInUseRefusal();
       this.reopenAfterSignIn = agentWindowAt(state, profileId);
       await this.browser.disconnect();

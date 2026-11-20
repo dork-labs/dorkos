@@ -128,9 +128,12 @@ describe('a site that refuses the in-app browser (DOR-4097)', () => {
     expect(setBounds.mock.calls.at(-1)?.[0].visible).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: 'Open sign-in window' }));
     await waitFor(() =>
-      expect(transport.signInLocalBrowser).toHaveBeenCalledExactlyOnceWith({
-        url: 'https://accounts.example.com',
-      })
+      expect(transport.signInLocalBrowser).toHaveBeenCalledExactlyOnceWith(
+        {
+          url: 'https://accounts.example.com',
+        },
+        'chat-one'
+      )
     );
   });
 
@@ -142,9 +145,12 @@ describe('a site that refuses the in-app browser (DOR-4097)', () => {
     expect(await screen.findByText('northwind.example won’t open here.')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Open in its own window' }));
     await waitFor(() =>
-      expect(transport.signInLocalBrowser).toHaveBeenCalledExactlyOnceWith({
-        url: 'https://shop.northwind.example',
-      })
+      expect(transport.signInLocalBrowser).toHaveBeenCalledExactlyOnceWith(
+        {
+          url: 'https://shop.northwind.example',
+        },
+        'chat-one'
+      )
     );
   });
 

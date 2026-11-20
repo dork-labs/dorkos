@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { LocalBrowserPersonState } from '@dorkos/shared/local-browser';
 import {
-  LOCAL_BROWSER_STATE_KEY,
+  LOCAL_BROWSER_HANDOFF_KEY,
+  localBrowserStateKey,
   useLocalBrowserPersonState,
 } from '@/layers/entities/local-browser';
 import { useTransport } from '@/layers/shared/model';
@@ -18,7 +19,9 @@ import { handoffErrorMessage, handoffStep } from '../lib/handoff-step';
 export function useBrowserHandoff(sessionId?: string | null) {
   const transport = useTransport();
   const queryClient = useQueryClient();
-  const { data: state } = useLocalBrowserPersonState();
+  const { data: state } = useLocalBrowserPersonState(sessionId);
+  const stateKey =
+    sessionId === undefined ? LOCAL_BROWSER_HANDOFF_KEY : localBrowserStateKey(sessionId);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // The handoff this card showed open. Only that one gets a receipt, so a chat opened
@@ -40,8 +43,8 @@ export function useBrowserHandoff(sessionId?: string | null) {
     try {
       const next = await call();
       // An older read must not put back a handoff that has just ended.
-      await queryClient.cancelQueries({ queryKey: LOCAL_BROWSER_STATE_KEY });
-      if (next) queryClient.setQueryData(LOCAL_BROWSER_STATE_KEY, next);
+      await queryClient.cancelQueries({ queryKey: stateKey });
+      if (next) queryClient.setQueryData(stateKey, next);
       return true;
     } catch (cause) {
       setError(handoffErrorMessage(cause));
@@ -94,7 +97,10 @@ export function useBrowserHandoff(sessionId?: string | null) {
       // A plain browser answer says nothing about the handoff, so nothing is cached from it.
       if (selectedTabId)
         void run(async () => {
-          await transport.selectLocalBrowserTab(selectedTabId);
+          await transport.selectLocalBrowserTab(
+            selectedTabId,
+            handoff?.sessionId ?? state?.sessionId
+          );
         });
     },
     stopTask: async () => {

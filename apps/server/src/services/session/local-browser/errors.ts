@@ -13,7 +13,7 @@ export class LocalBrowserError extends Error {
    *
    * @param code - The refusal an agent can act on.
    * @param message - DorkOS's own words; never text from a page, a chat or a person.
-   * @param fields - Untrusted text (a chat's title) kept beside the sentence, never in it.
+   * @param fields - Optional route metadata; agent output permits only recognized refusal reasons.
    */
   constructor(
     public readonly code: string,
@@ -226,4 +226,9 @@ export function navigationRefusal(error: unknown): LocalBrowserError {
 /** One recovery message for setup cancelled before the browser is ready. */
 export function browserSetupCancelled(): LocalBrowserError {
   return new LocalBrowserError('cancelled', 'Browser setup stopped. Open it again to continue.');
+}
+
+/** A changed Page consumes the prior observation and requires a fresh read. */
+export function stalePageRefusal(): LocalBrowserError {
+  return new LocalBrowserError('stale_page', 'The page changed. Read it again before acting.');
 }

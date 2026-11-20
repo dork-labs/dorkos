@@ -342,7 +342,10 @@ Read the page first: the names it prints are the names the other five take. This
 serves or proxies; a real website is shown here, not driven, so drive it in the Agent browser
 (${T}local_browser_observe, ${T}local_browser_act). It works only in a one-on-one chat, once the person
 shares one from a direct chat with you:
-Open browser in its right panel, or Take it here if another chat has it. It never reaches a room: in a room,
+Open browser in this chat’s right panel. Each chat owns its page; another chat opening one does not move yours.
+On not_opened or tab_gone, ask the person to reopen this chat’s browser. On profile_busy or profile_held, wait until the person finishes
+using that browser; never close a sibling page. A held or stopped page needs the person to hand it back or resume.
+The Agent browser never reaches a room: in a room,
 tell the person the Agent browser works only in a direct chat, and ask them to continue there with you.
 With more than one tab open, leave
 documentId out to act in the tab whose window last brought a preview to the front. Every one of these six

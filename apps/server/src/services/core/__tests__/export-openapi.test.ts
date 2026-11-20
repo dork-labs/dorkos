@@ -15,6 +15,38 @@ describe('export-openapi', () => {
     expect(Object.keys(spec.paths ?? {}).length).toBeGreaterThan(0);
   });
 
+  it('documents selected browser controls separately from the owner’s current handoff', () => {
+    const paths = generateOpenAPISpec().paths ?? {};
+    const handoff = paths['/api/local-browser/handoff/state']?.get;
+    expect(handoff?.description).toContain('Only the owner on this computer');
+    expect(handoff?.parameters ?? []).toEqual([]);
+    expect(handoff?.responses).toHaveProperty('200');
+    for (const [path, method] of [
+      ['state', 'get'],
+      ['tabs/{id}/select', 'post'],
+      ['navigate', 'post'],
+      ['take-over', 'post'],
+      ['history', 'post'],
+      ['pause', 'post'],
+      ['resume', 'post'],
+      ['disconnect', 'post'],
+      ['sign-in', 'post'],
+    ] as const) {
+      const operation = paths[`/api/local-browser/${path}`]?.[method];
+      expect(operation?.parameters, path).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            name: 'sessionId',
+            in: 'query',
+            required: false,
+            schema: expect.objectContaining({ type: 'string', minLength: 1, maxLength: 256 }),
+            description: expect.stringContaining('Omit it for Your browser'),
+          }),
+        ])
+      );
+    }
+  });
+
   it('documents document room notifications without recursive JSON expansion or scope cursor fields', () => {
     const spec = generateOpenAPISpec();
     const stream = JSON.stringify([
