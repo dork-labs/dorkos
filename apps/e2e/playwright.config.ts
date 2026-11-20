@@ -579,8 +579,8 @@ export default defineConfig({
       })),
     },
     // **No page load waits on Google Fonts** (DOR-4871). `fixtures/base.ts`
-    // serves the client's Inter from a local copy on every context it creates,
-    // so text keeps Inter's metrics. This switch is the backstop for contexts no
+    // serves the client's Inter and JetBrains Mono from local copies on every
+    // context it creates, so text keeps the real fonts' metrics. This switch is the backstop for contexts no
     // fixture reaches (`browser.newContext()` in a spec): it makes both Google
     // Fonts hosts fail to resolve at once, so an unrouted request errors instead
     // of stalling `load`. Routed requests never reach DNS. See

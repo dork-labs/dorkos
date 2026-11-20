@@ -5,6 +5,7 @@ import {
   GOOGLE_FONTS_CSS,
   GOOGLE_FONTS_FILES,
   GOOGLE_FONTS_HOST_RULES,
+  LOCAL_FAMILIES,
   LOCAL_FONT_BASE,
   stubGoogleFonts,
 } from '../google-fonts-stub';
@@ -25,6 +26,7 @@ import {
 const INTER_URL =
   'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono&display=swap';
 const LATIN = `${LOCAL_FONT_BASE}inter-latin-wght-normal.woff2`;
+const MONO_LATIN = `${LOCAL_FONT_BASE}jetbrains-mono-latin-wght-normal.woff2`;
 
 type Outcome = 'network' | 'aborted' | 'unanswered' | { fulfilled: Record<string, unknown> };
 
@@ -88,7 +90,7 @@ function fulfilled(outcome: Outcome): Record<string, unknown> {
 }
 
 describe('stubGoogleFonts', () => {
-  it("answers the client's Inter stylesheet with Inter faces on local URLs", async () => {
+  it("answers the client's stylesheet with Inter and JetBrains Mono faces on local URLs", async () => {
     const response = fulfilled(await answer(await stubbed(), INTER_URL));
     expect(response).toMatchObject({ status: 200, contentType: 'text/css' });
 
@@ -99,19 +101,36 @@ describe('stubGoogleFonts', () => {
     expect(css).toContain('font-display: block;');
     expect(css).toContain(`url('${LATIN}') format('woff2-variations')`);
     expect(css).toContain(`url('${LATIN}') format('woff2')`);
+    expect(css).toContain("font-family: 'JetBrains Mono';");
+    expect(css).not.toContain('JetBrains Mono Variable');
+    expect(css).toContain(`url('${MONO_LATIN}') format('woff2-variations')`);
+    expect(css).toContain(`url('${MONO_LATIN}') format('woff2')`);
     // Every font URL the stylesheet names is on the local path.
     const urls = [...css.matchAll(/url\('([^']+)'\)/g)].map((m) => m[1]);
     expect(urls.length).toBeGreaterThan(0);
     for (const url of urls) expect(url?.startsWith(LOCAL_FONT_BASE), url).toBe(true);
   });
 
-  it('answers a local font URL with the real woff2 bytes', async () => {
-    const response = fulfilled(await answer(await stubbed(), LATIN));
-    expect(response).toMatchObject({ status: 200, contentType: 'font/woff2' });
-    const body = response.body as Buffer;
-    expect(Buffer.isBuffer(body)).toBe(true);
-    expect(body.length).toBeGreaterThan(1000);
-    expect(body.subarray(0, 4).toString('latin1')).toBe('wOF2');
+  it('answers each local font URL with the real woff2 bytes', async () => {
+    const routes = await stubbed();
+    for (const url of [LATIN, MONO_LATIN]) {
+      const response = fulfilled(await answer(routes, url));
+      expect(response, url).toMatchObject({ status: 200, contentType: 'font/woff2' });
+      const body = response.body as Buffer;
+      expect(Buffer.isBuffer(body), url).toBe(true);
+      expect(body.length, url).toBeGreaterThan(1000);
+      expect(body.subarray(0, 4).toString('latin1'), url).toBe('wOF2');
+    }
+  });
+
+  it('answers a stylesheet for one of the two with only that family', async () => {
+    const routes = await stubbed();
+    const mono = String(
+      fulfilled(await answer(routes, 'https://fonts.googleapis.com/css2?family=JetBrains+Mono'))
+        .body
+    );
+    expect(mono).toContain("font-family: 'JetBrains Mono';");
+    expect(mono).not.toContain("font-family: 'Inter';");
   });
 
   it('answers another family with an empty stylesheet', async () => {
@@ -147,6 +166,7 @@ describe('stubGoogleFonts', () => {
       'https://fonts.googleapis.com/icon?family=Material+Icons',
       'https://fonts.googleapis.com/css2?family=%%%',
       'https://fonts.gstatic.com/',
+      MONO_LATIN,
       'https://fonts.gstatic.com/s/jetbrainsmono/v18/x.woff2',
     ]) {
       const outcome = await answer(routes, url);
@@ -165,6 +185,22 @@ describe('stubGoogleFonts', () => {
     const routes = await stubbed();
     expect(routes.map((r) => r.argCount)).toEqual([2, 2]);
     expect(routes.map((r) => r.pattern)).toEqual([GOOGLE_FONTS_CSS, GOOGLE_FONTS_FILES]);
+  });
+});
+
+describe('the families served are the ones the client asks for', () => {
+  it("matches the inter pairing's names in font-config.ts", () => {
+    // Read as text: apps/e2e depends on no client code.
+    const source = readFileSync(
+      fileURLToPath(new URL('../../client/src/layers/shared/lib/font-config.ts', import.meta.url)),
+      'utf8'
+    );
+    const inter = source.slice(source.indexOf("key: 'inter'"), source.indexOf("key: 'geist'"));
+    expect(inter).toContain("sans: \"'Inter', ");
+    expect(inter).toContain("mono: \"'JetBrains Mono', ");
+    expect(inter).toContain('family=Inter:');
+    expect(inter).toContain('family=JetBrains+Mono&');
+    expect(LOCAL_FAMILIES.map((f) => f.family)).toEqual(['Inter', 'JetBrains Mono']);
   });
 });
 

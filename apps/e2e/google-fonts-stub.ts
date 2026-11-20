@@ -10,10 +10,12 @@
  *
  * {@link stubGoogleFonts} answers those requests from this machine instead:
  *
- * - A stylesheet that asks for Inter gets `@font-face` rules for Inter whose
- *   files are the ones `@fontsource-variable/inter` ships (the same variable
- *   font Google serves), at {@link LOCAL_FONT_BASE}. Text renders in Inter with
- *   Inter's metrics, so layout matches a run that reached Google.
+ * - A stylesheet that asks for Inter or JetBrains Mono (the client's default
+ *   pairing) gets `@font-face` rules for those families whose files are the
+ *   ones `@fontsource-variable/inter` and `@fontsource-variable/jetbrains-mono`
+ *   ship (the same variable fonts Google serves), at {@link LOCAL_FONT_BASE}.
+ *   Text renders with the real fonts' metrics, so layout matches a run that
+ *   reached Google.
  * - Those URLs are answered with the file's bytes, read once.
  * - Any other stylesheet gets an empty one, and any other font file is aborted.
  *   Nothing is passed through: every Google Fonts URL is answered or refused.
@@ -21,9 +23,6 @@
  * The first version of this fix seeded the `system` font instead. That changed
  * line widths, and run 44831381307 failed two layout-sensitive specs on it
  * (`sidebar-model-showcase.spec.ts:197`, `file-tree-open.spec.ts:49`).
- *
- * Only Inter is served. The client's `inter` URL also asks for JetBrains Mono,
- * which falls back to the platform monospace font here.
  *
  * Installed on every context by `fixtures/base.ts`. As a backstop for contexts
  * no fixture reaches (`browser.newContext()` in a spec), `playwright.config.ts`
@@ -56,63 +55,81 @@ export const LOCAL_FONT_BASE = 'https://fonts.gstatic.com/__dorkos-e2e__/';
 export const GOOGLE_FONTS_HOST_RULES =
   '--host-resolver-rules=MAP fonts.googleapis.com ~NOTFOUND, MAP fonts.gstatic.com ~NOTFOUND';
 
-const INTER_DIR = dirname(
-  createRequire(import.meta.url).resolve('@fontsource-variable/inter/package.json')
-);
+/**
+ * The client's `inter` pairing, spelled as `font-config.ts` spells it: the
+ * Google family name, and the `@fontsource-variable` package with that font.
+ */
+export const LOCAL_FAMILIES = [
+  { family: 'Inter', pkg: '@fontsource-variable/inter' },
+  { family: 'JetBrains Mono', pkg: '@fontsource-variable/jetbrains-mono' },
+] as const;
 
-let interCss: { css: string; files: Set<string> } | undefined;
+type LocalFamily = (typeof LOCAL_FAMILIES)[number]['family'];
+
+const requireFromHere = createRequire(import.meta.url);
+const stylesheets = new Map<LocalFamily, string>();
+/** Every servable file name, mapped to the package folder that holds it. */
+const fileDirs = new Map<string, string>();
 const fontBytes = new Map<string, Buffer>();
 
 /**
- * The package's variable-weight stylesheet, renamed to the family the client
- * asks for (`'Inter'`, not `'Inter Variable'`) and pointed at
- * {@link LOCAL_FONT_BASE}. Keeps the package's per-script `unicode-range`
+ * One family's stylesheet: the package's variable-weight CSS, renamed to the
+ * family the client asks for (`'Inter'`, not `'Inter Variable'`) and pointed
+ * at {@link LOCAL_FONT_BASE}. Keeps the package's per-script `unicode-range`
  * split, as Google's stylesheet does. `font-display: block` so no test sees a
  * fallback-font frame.
  */
-export function interStylesheet(): { css: string; files: Set<string> } {
-  if (interCss) return interCss;
-  const files = new Set<string>();
-  const css = readFileSync(join(INTER_DIR, 'wght.css'), 'utf8')
-    .replace(/font-family: 'Inter Variable';/g, "font-family: 'Inter';")
+export function familyStylesheet(family: LocalFamily): string {
+  const cached = stylesheets.get(family);
+  if (cached !== undefined) return cached;
+  const entry = LOCAL_FAMILIES.find((f) => f.family === family);
+  if (!entry) throw new Error(`no local font for ${family}`);
+  const dir = dirname(requireFromHere.resolve(`${entry.pkg}/package.json`));
+  let count = 0;
+  const css = readFileSync(join(dir, 'wght.css'), 'utf8')
+    .replace(/font-family: '[^']+ Variable';/g, `font-family: '${family}';`)
     .replace(/font-display: swap;/g, 'font-display: block;')
     .replace(
       /src: url\(\.\/files\/([\w.-]+\.woff2)\) format\('woff2-variations'\);/g,
       (_match, file: string) => {
-        files.add(file);
+        count += 1;
+        fileDirs.set(file, join(dir, 'files'));
         const url = `${LOCAL_FONT_BASE}${file}`;
         return `src: url('${url}') format('woff2-variations'), url('${url}') format('woff2');`;
       }
     );
-  if (files.size === 0) throw new Error('@fontsource-variable/inter wght.css lists no woff2 files');
-  interCss = { css, files };
-  return interCss;
+  if (count === 0) throw new Error(`${entry.pkg} wght.css lists no woff2 files`);
+  stylesheets.set(family, css);
+  return css;
 }
 
-/** Whether a Google Fonts stylesheet URL asks for the Inter family. */
-export function asksForInter(url: string): boolean {
-  return new URL(url).searchParams
+/** The local families a Google Fonts stylesheet URL asks for, in its order. */
+export function localFamiliesIn(url: string): LocalFamily[] {
+  const names = new URL(url).searchParams
     .getAll('family')
-    .some((family) => family.split(':')[0]?.trim() === 'Inter');
+    .map((family) => family.split(':')[0]?.trim());
+  return LOCAL_FAMILIES.map((f) => f.family).filter((family) => names.includes(family));
 }
 
-/** Bytes of one of the stylesheet's font files, or `undefined` for any other name. */
+/** Bytes of one of the stylesheets' font files, or `undefined` for any other name. */
 export function localFontFile(url: string): Buffer | undefined {
   if (!url.startsWith(LOCAL_FONT_BASE)) return undefined;
   const file = url.slice(LOCAL_FONT_BASE.length).split(/[?#]/)[0] ?? '';
-  if (!interStylesheet().files.has(file)) return undefined;
+  for (const { family } of LOCAL_FAMILIES) familyStylesheet(family);
+  const dir = fileDirs.get(file);
+  if (!dir) return undefined;
   let bytes = fontBytes.get(file);
   if (!bytes) {
-    bytes = readFileSync(join(INTER_DIR, 'files', file));
+    bytes = readFileSync(join(dir, file));
     fontBytes.set(file, bytes);
   }
   return bytes;
 }
 
 async function answerStylesheet(route: Route): Promise<void> {
-  let body = '';
+  let body: string;
   try {
-    if (asksForInter(route.request().url())) body = interStylesheet().css;
+    body = localFamiliesIn(route.request().url()).map(familyStylesheet).join('\n');
   } catch {
     body = '';
   }
