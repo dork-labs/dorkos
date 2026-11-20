@@ -130,6 +130,12 @@ export const STEP_UP_ACTION_KINDS = [
   'devices.sign-out-others',
   /** Sign out every device through the auth API. */
   'devices.sign-out-all',
+  /** Let one Wi-Fi device run agents at their own level (DOR-4744). */
+  'devices.wifi-runs-agents',
+  /** Approve a device's Wi-Fi sign-in and show its one-time code (DOR-4744). */
+  'devices.wifi-sign-in-approve',
+  /** Add or remove a second way to prove a sign-in from another device (DOR-3647). */
+  'owner-factor.change',
   /** Allow an MCP server for every agent (DOR-3213). */
   'mcp-server.allow-global',
   /** Turn on the person's own browser for agents (DOR-3214). */

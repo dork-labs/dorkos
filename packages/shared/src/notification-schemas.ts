@@ -187,6 +187,11 @@ export const NOTIFICATION_KINDS = [
    */
   'web.new_device',
   /**
+   * A passkey or authenticator app was added to the owner's account, so it
+   * now proves a sign-in from another device (DOR-3647).
+   */
+  'signin.check_added',
+  /**
    * An agent's folder holds files whose names say they are secrets, which no
    * rule keeps that agent from reading (DOR-3292). Names only, never contents;
    * once per set of files.

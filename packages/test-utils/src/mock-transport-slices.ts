@@ -57,6 +57,10 @@ type SliceMethods =
   | 'listSignedInDevices'
   | 'signOutDevice'
   | 'signOutEverywhereElse'
+  | 'setDeviceRunsAgents'
+  | 'listWifiSignInRequests'
+  | 'approveWifiSignIn'
+  | 'declineWifiSignIn'
   | 'setAccountNoAutoMove'
   | 'getFrameBridgeStatus'
   | 'getAgentLevel'
@@ -108,6 +112,11 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
     listSignedInDevices: vi.fn().mockResolvedValue({ sessions: [], canSignOutOthers: false }),
     signOutDevice: vi.fn().mockResolvedValue(undefined),
     signOutEverywhereElse: vi.fn().mockResolvedValue({ signedOut: 0 }),
+    // No device is waiting, and every change succeeds.
+    setDeviceRunsAgents: vi.fn().mockResolvedValue(undefined),
+    listWifiSignInRequests: vi.fn().mockResolvedValue({ requests: [] }),
+    approveWifiSignIn: vi.fn().mockResolvedValue({ kind: 'needs-passkey' }),
+    declineWifiSignIn: vi.fn().mockResolvedValue(undefined),
     listAuditEvents: vi.fn().mockResolvedValue({ events: [] }),
     getAccountTimeline: vi.fn().mockResolvedValue({ events: [] }),
     getChatActivity: vi.fn().mockResolvedValue({ sent: [], stops: [] }),

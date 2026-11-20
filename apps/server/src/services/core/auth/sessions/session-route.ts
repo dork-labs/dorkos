@@ -20,7 +20,7 @@
  * - **No route means this computer.** A session made before routes were
  *   recorded, or by in-process code, works only on `local`.
  * - **Wi-Fi sign-ins last 7 days at most**, counted from the sign-in, whatever
- *   use renews. **Every other device's sign-in lasts 90 days at most**
+ *   use renews, and end after 12 hours unused (DOR-4744). **Every other device's sign-in lasts 90 days at most**
  *   (DOR-3172): use keeps one alive for 30 days at a time, but never past
  *   that, so a copied cookie cannot live forever. This computer's own
  *   sign-ins have no such limit: the desk is trusted as it always was.
@@ -48,6 +48,12 @@ export type SessionRoute = (typeof SESSION_ROUTES)[number];
 
 /** How long a Wi-Fi sign-in lasts at most, from the moment it was made: 7 days. */
 export const WIFI_SESSION_MAX_SECONDS = 7 * 24 * 60 * 60;
+
+/**
+ * How long a Wi-Fi sign-in may sit unused before it ends: 12 hours, on top of
+ * its 7-day limit. Counted on the server from {@link RoutedSession.lastActiveAt}.
+ */
+export const WIFI_SESSION_IDLE_SECONDS = 12 * 60 * 60;
 
 /**
  * How long any other device's sign-in lasts at most, from the moment it was
@@ -127,6 +133,21 @@ export interface RoutedSession {
   route?: string | null;
   /** When the sign-in was made. */
   createdAt?: Date | string;
+  /** When a request last used it; `null` or absent until its first use. */
+  lastActiveAt?: Date | string | null;
+}
+
+/**
+ * Whether a Wi-Fi sign-in has sat unused past {@link WIFI_SESSION_IDLE_SECONDS}.
+ * Unused since it was made counts from the sign-in itself.
+ *
+ * @param session - The session.
+ * @param now - The current time, for tests.
+ */
+export function wifiSessionIdle(session: RoutedSession, now = Date.now()): boolean {
+  const since = session.lastActiveAt ?? session.createdAt;
+  if (since === undefined || since === null) return true;
+  return !(now - new Date(since).getTime() <= WIFI_SESSION_IDLE_SECONDS * 1000);
 }
 
 /**
@@ -152,6 +173,7 @@ export function sessionWorksOn(
     const age = now - new Date(session.createdAt).getTime();
     if (!(age <= max * 1000)) return false;
   }
+  if (requestRoute === 'wifi' && wifiSessionIdle(session, now)) return false;
   return true;
 }
 

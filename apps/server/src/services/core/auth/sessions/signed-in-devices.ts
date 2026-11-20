@@ -19,7 +19,7 @@ import type { Auth } from '../index.js';
 import { markSignedOutFromDevices, unmarkSignedOutFromDevices } from '../auth-audit.js';
 import { isDesktopSignIn } from '../desktop-sign-in.js';
 import { describeUserAgent, userAgentPlatform } from '../../../../lib/http/user-agent.js';
-import { SESSION_ROUTES } from './session-route.js';
+import { SESSION_ROUTES, wifiSessionIdle } from './session-route.js';
 
 /** The session row fields read here. */
 interface SessionRow {
@@ -31,6 +31,17 @@ interface SessionRow {
   updatedAt: Date | string;
   userAgent?: string | null;
   route?: string | null;
+  lastActiveAt?: Date | string | null;
+  wifiAgentTurnsAt?: Date | string | null;
+}
+
+/**
+ * Whether a row is still a live sign-in: unexpired, and for Wi-Fi not past its
+ * 12-hour idle limit, which ends it as surely as its expiry (DOR-4744).
+ */
+function isLiveRow(row: SessionRow, now: number): boolean {
+  if (new Date(row.expiresAt).getTime() <= now) return false;
+  return row.route !== 'wifi' || !wifiSessionIdle(row, now);
 }
 
 /** The key device ids are derived under; new at each start. */
@@ -105,7 +116,7 @@ async function liveRowsOf(auth: Auth, userId: string): Promise<SessionRow[]> {
   const context = await auth.$context;
   const rows = (await context.internalAdapter.listSessions(userId)) as unknown as SessionRow[];
   const now = Date.now();
-  return rows.filter((row) => new Date(row.expiresAt).getTime() > now);
+  return rows.filter((row) => isLiveRow(row, now));
 }
 
 /**
@@ -129,6 +140,7 @@ export async function listSignedInDevices(
       lastSeenAt: iso(row.updatedAt),
       current: row.id === currentSessionId,
       name: deviceNameOf(row.userAgent, isDesktopSignIn(row.token)),
+      ...(routeOf(row.route) === 'wifi' ? { runsAgents: row.wifiAgentTurnsAt != null } : {}),
       sort: new Date(row.updatedAt).getTime(),
     }))
     .sort((a, b) => Number(b.current) - Number(a.current) || b.sort - a.sort)
@@ -277,7 +289,5 @@ export async function liveSessionIds(
     limit: ids.length,
   })) as SessionRow[];
   const now = Date.now();
-  return new Set(
-    rows.filter((row) => new Date(row.expiresAt).getTime() > now).map((row) => row.id)
-  );
+  return new Set(rows.filter((row) => isLiveRow(row, now)).map((row) => row.id));
 }

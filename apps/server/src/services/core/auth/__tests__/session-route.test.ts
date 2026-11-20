@@ -9,6 +9,7 @@ import {
   sessionMaxSeconds,
   sessionRouteOf,
   sessionWorksOn,
+  WIFI_SESSION_IDLE_SECONDS,
   WIFI_SESSION_MAX_SECONDS,
   withoutSessionCookies,
 } from '../sessions/session-route.js';
@@ -36,13 +37,61 @@ describe('sessionWorksOn', () => {
   });
 
   it('holds a Wi-Fi session to 7 days, and refuses one with no sign-in time', () => {
-    expect(sessionWorksOn({ route: 'wifi', createdAt: new Date(NOW - WEEK) }, 'wifi', NOW)).toBe(
+    const inUse = new Date(NOW);
+    expect(
+      sessionWorksOn(
+        { route: 'wifi', createdAt: new Date(NOW - WEEK), lastActiveAt: inUse },
+        'wifi',
+        NOW
+      )
+    ).toBe(true);
+    expect(
+      sessionWorksOn(
+        { route: 'wifi', createdAt: new Date(NOW - WEEK - 1), lastActiveAt: inUse },
+        'wifi',
+        NOW
+      )
+    ).toBe(false);
+    expect(sessionWorksOn({ route: 'wifi' }, 'wifi', NOW)).toBe(false);
+  });
+
+  it('ends a Wi-Fi session left unused for 12 hours (DOR-4744)', () => {
+    const idle = WIFI_SESSION_IDLE_SECONDS * 1000;
+    const signedIn = new Date(NOW - 2 * idle);
+    const used = (ago: number) =>
+      sessionWorksOn(
+        { route: 'wifi', createdAt: signedIn, lastActiveAt: new Date(NOW - ago) },
+        'wifi',
+        NOW
+      );
+    expect(used(idle)).toBe(true);
+    expect(used(idle + 1)).toBe(false);
+    // Never used since it was made: counted from the sign-in.
+    expect(sessionWorksOn({ route: 'wifi', createdAt: new Date(NOW - idle) }, 'wifi', NOW)).toBe(
       true
     );
     expect(
-      sessionWorksOn({ route: 'wifi', createdAt: new Date(NOW - WEEK - 1) }, 'wifi', NOW)
+      sessionWorksOn({ route: 'wifi', createdAt: new Date(NOW - idle - 1) }, 'wifi', NOW)
     ).toBe(false);
-    expect(sessionWorksOn({ route: 'wifi' }, 'wifi', NOW)).toBe(false);
+  });
+
+  it('a recent use never stretches a Wi-Fi session past 7 days', () => {
+    expect(
+      sessionWorksOn(
+        { route: 'wifi', createdAt: new Date(NOW - WEEK - 1), lastActiveAt: new Date(NOW) },
+        'wifi',
+        NOW
+      )
+    ).toBe(false);
+  });
+
+  it('puts no idle limit on other routes', () => {
+    const longAgo = new Date(NOW - 2 * WIFI_SESSION_IDLE_SECONDS * 1000);
+    for (const route of ['tunnel', 'managed', 'local'] as const) {
+      expect(sessionWorksOn({ route, createdAt: longAgo, lastActiveAt: longAgo }, route, NOW)).toBe(
+        true
+      );
+    }
   });
 
   it('holds every other device to 90 days however often it is used (DOR-3172)', () => {

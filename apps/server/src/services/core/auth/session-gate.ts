@@ -77,6 +77,7 @@ import {
   type SessionRoute,
 } from './sessions/session-route.js';
 import { inRestartWindow, sessionRecentlyEnded } from './sessions/live-connections.js';
+import { noteWifiSessionUsed } from './sessions/wifi-activity.js';
 import { personProofMatches } from './person-proof.js';
 import { PERSON_PROOF_HEADER } from '@dorkos/shared/person-session';
 
@@ -433,6 +434,8 @@ async function verifySessionCookie(
         sessionWorksOn(result.session, route) &&
         !sessionRecentlyEnded(result.session.id)
       ) {
+        // Its idle limit counts from here (`./sessions/wifi-activity.ts`).
+        if (route === 'wifi') noteWifiSessionUsed(result.session.id);
         return {
           userId: result.user.id,
           credential: 'cookie',

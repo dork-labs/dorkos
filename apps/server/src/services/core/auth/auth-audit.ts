@@ -154,6 +154,63 @@ export function recordSignInRateLimited(userAgent?: string): void {
   });
 }
 
+/** A change to how the owner's sign-ins are proved or what a device may do (DOR-3647, DOR-4744). */
+export type SignInTrustChange =
+  | 'wifi-sign-in-approved'
+  | 'device-runs-agents-on'
+  | 'device-runs-agents-off'
+  | 'passkey-added'
+  | 'authenticator-added'
+  | 'factor-removed';
+
+/** The audit action and the line Activity shows, per change. */
+const TRUST_CHANGES: Record<SignInTrustChange, { action: string; summary: string }> = {
+  'wifi-sign-in-approved': {
+    action: 'auth.wifi_sign_in_approved',
+    summary: 'A Wi-Fi sign-in was approved on this computer',
+  },
+  'device-runs-agents-on': {
+    action: 'auth.device_runs_agents_on',
+    summary: 'A Wi-Fi device was allowed to run agents',
+  },
+  'device-runs-agents-off': {
+    action: 'auth.device_runs_agents_off',
+    summary: 'A Wi-Fi device can no longer run agents',
+  },
+  'passkey-added': {
+    action: 'auth.passkey_added',
+    summary: 'A passkey was added on this computer',
+  },
+  'authenticator-added': {
+    action: 'auth.authenticator_added',
+    summary: 'An authenticator app was added',
+  },
+  'factor-removed': { action: 'auth.factor_removed', summary: 'A sign-in check was removed' },
+};
+
+/**
+ * Record a change to how the owner's sign-ins are proved, or what one device
+ * may do. Never a code, a secret or a key.
+ *
+ * @param userId - The owner who made it.
+ * @param change - What changed.
+ */
+export function recordSignInTrustChange(userId: string, change: SignInTrustChange): void {
+  const trail = auditTrail();
+  if (!trail) return;
+  const { action, summary } = TRUST_CHANGES[change];
+  recordAudit({
+    actor: trail.accounts.forUser(userId),
+    source: { surface: 'app' },
+    action,
+    operation: 'auth',
+    target: { type: 'account', id: userId },
+    outcome: 'ok',
+    summary,
+    visibility: 'space',
+  });
+}
+
 /**
  * Record the owner's account being created, and link the install id the log
  * named them by until now to the new account id, so their history reads as one

@@ -66,6 +66,13 @@ export const session = sqliteTable(
     // with the browser, the session cannot outlive a working day, and the app
     // signs it out when it sits idle.
     publicComputer: integer('public_computer', { mode: 'boolean' }).default(false).notNull(),
+    // When a request last used this sign-in (DOR-4744). Written for Wi-Fi
+    // sign-ins only, at most once a minute, and read for their 12-hour idle limit.
+    lastActiveAt: integer('last_active_at', { mode: 'timestamp_ms' }),
+    // When the owner, at this computer, let this one Wi-Fi sign-in run agents at
+    // their own level (DOR-4744). Null means off, which every sign-in starts as.
+    // Ends with the sign-in.
+    wifiAgentTurnsAt: integer('wifi_agent_turns_at', { mode: 'timestamp_ms' }),
   },
   (table) => [index('session_userId_idx').on(table.userId)]
 );
