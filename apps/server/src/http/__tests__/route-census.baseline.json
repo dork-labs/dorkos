@@ -514,6 +514,7 @@
     "POST /api/extensions/:id/media-tickets",
     "POST /api/extensions/:id/move-out",
     "POST /api/extensions/:id/remove",
+    "POST /api/extensions/:id/restart",
     "POST /api/extensions/:id/revoke",
     "POST /api/extensions/:id/rooms/:roomId/threads/:entryId/replies",
     "POST /api/extensions/:id/start-work",

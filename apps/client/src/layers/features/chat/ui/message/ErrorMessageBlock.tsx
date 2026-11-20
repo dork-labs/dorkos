@@ -234,9 +234,11 @@ function ErrorCard({
   const derivedSubtext = isAuthError ? authSubtext(runtimeLabel) : copy?.subtext;
   const heading = isCreditsRefusal
     ? 'Couldn’t reach DorkOS credits'
-    : legacyModelError
-      ? (derivedHeading ?? 'Error')
-      : (headingOverride ?? derivedHeading ?? 'Error');
+    : code === 'codex_git_metadata_unavailable'
+      ? 'Choose another folder'
+      : legacyModelError
+        ? (derivedHeading ?? 'Error')
+        : (headingOverride ?? derivedHeading ?? 'Error');
   const runtimeText = effectiveMessage.trim();
   // Category copy that explains the failure keeps the subtext slot; anywhere
   // else the runtime's own words win, with the category sentence as fallback.

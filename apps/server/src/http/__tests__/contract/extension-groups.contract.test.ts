@@ -279,6 +279,20 @@ const CASES: ContractCase[] = [
     expect: { status: 400, schema: z.object({ error: z.string() }).strict() },
   },
   {
+    // DOR-4785: the Restart on a stopped-app notice meets the same chain as every write.
+    name: 'restart refuses a page from another site',
+    method: 'POST',
+    path: `/api/extensions/${MISSING}/restart`,
+    headers: CROSS_SITE,
+    expect: { status: 403, body: CORS_REFUSED },
+  },
+  {
+    name: 'restart of an extension that is not installed is a 404',
+    method: 'POST',
+    path: `/api/extensions/${MISSING}/restart`,
+    expect: { status: 404, body: { error: `Extension '${MISSING}' not found` } },
+  },
+  {
     name: 'the bundle of an extension that is not installed is a 404',
     path: `/api/extensions/${MISSING}/bundle`,
     expect: { status: 404, body: { error: `Bundle not available for '${MISSING}'` } },

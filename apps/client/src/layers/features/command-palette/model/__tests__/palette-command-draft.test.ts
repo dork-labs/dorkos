@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 // Deliberately reaching for another feature. The claim under test is an
 // AGREEMENT between two features — the palette writes composer text, the chat

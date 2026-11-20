@@ -31,12 +31,20 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, inject, it, vi } from 'vitest';
 import type { InferenceModel } from '@dork-labs/cloud-api';
 import { buildSidecarSpawnEnv } from '../server-manager.js';
 import { OPENCODE_OWN_PLAN, type OpenCodeSidecarPlan } from '../credits-sidecar.js';
 import { startCreditsRelay, type CreditsRelay } from '../../../core/cloud/credits-relay.js';
-import { OFFLINE_PROXY_ENV, pinnedOpenCode, runPinnedOpenCode } from './pinned-opencode.js';
+import type { LaneReader } from '@dorkos/test-utils/run-custody';
+import { connectPosixWorker } from './custody/posix-endpoint.js';
+import { acquireWorkerCustody } from './custody/worker.js';
+import {
+  guardPinnedOpenCodePort,
+  isPinnedFixtureCleanupUncertain,
+  runOwnedPinnedOpenCode,
+} from './pinned-opencode-owned.js';
+import { OFFLINE_PROXY_ENV, pinnedOpenCode } from './pinned-opencode.js';
 
 const BINARY = pinnedOpenCode();
 const TOKEN = 'fake-credits-token-never-real';
@@ -92,30 +100,119 @@ let planted: string;
 let hits: Hit[];
 let credits: Awaited<ReturnType<typeof fakeServer>>;
 let attacker: Awaited<ReturnType<typeof fakeServer>>;
+type FixtureCleanup = { state: 'idle' | 'pending' | 'uncertain' };
+let fixtureCleanup: FixtureCleanup = { state: 'idle' };
 
 /**
  * Run `opencode run` in the project until `done` says the run has shown what
  * it needs to (by default, any request), it exits, or the deadline passes.
  */
 async function runTurn(
+  signal: AbortSignal,
   env: Record<string, string>,
   model: string,
   done: (seen: Hit[]) => boolean = (seen) => seen.length > 0
 ): Promise<Hit[]> {
-  return runPinnedOpenCode(['run', '-m', model, 'hello'], { cwd: folder, env }, async (child) => {
-    child.stdout.resume();
-    child.stderr.resume();
-    let deadline: ReturnType<typeof setTimeout> | undefined;
-    let watcher: ReturnType<typeof setInterval> | undefined;
-    await new Promise<void>((resolve) => {
-      deadline = setTimeout(resolve, 40_000);
-      watcher = setInterval(() => done(hits) && resolve(), 100);
-      child.once('close', () => resolve());
+  // This suite's exact pinned eligibility remains Darwin arm64 and Linux x64.
+  if (!BINARY) throw new Error('No pinned OpenCode binary for this fixture');
+  const caseFolder = folder;
+  const caseHits = hits;
+  const ownership = fixtureCleanup;
+  const runFixture = async () => {
+    const worker = await acquireWorkerCustody({
+      admitted: true,
+      provided: inject('openCodeCustody'),
+      signal,
+      // This caller previously had no separate launch deadline. The test signal
+      // still governs acquisition. Its 40s observation begins after launch.
+      deadline: null,
+      connect: connectPosixWorker,
     });
-    clearTimeout(deadline);
-    clearInterval(watcher);
-    return hits;
-  });
+    closeWorker = worker.close;
+    signal.throwIfAborted();
+    const child = await guardPinnedOpenCodePort(worker.channel.port).start(
+      {
+        executable: BINARY,
+        argv: ['run', '-m', model, 'hello'],
+        cwd: caseFolder,
+        env,
+        stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' },
+      },
+      signal
+    );
+    let stopping = false;
+    const discard = async (reader?: LaneReader) => {
+      if (!reader) throw new Error('Pinned fixture output lane was unavailable');
+      for (;;) {
+        // Keep transport failure details out of fixture diagnostics.
+        const item = await reader.read().catch(() => undefined);
+        if (!item) throw new Error('Pinned fixture output lane read failed');
+        if (item.kind === 'bytes') continue;
+        if (item.kind === 'eof') return;
+        // The port abandons unread output when its owned stop begins. Raw
+        // transport errors are never copied into the test diagnostic.
+        if (
+          stopping &&
+          item.error instanceof Error &&
+          item.error.message === 'Custody stream ended before delivery'
+        )
+          return;
+        throw new Error('Pinned fixture output lane ended with an error');
+      }
+    };
+    const drained = Promise.allSettled([discard(child.stdout), discard(child.stderr)]);
+    const run = runOwnedPinnedOpenCode(child, async (owned) => {
+      let deadline: ReturnType<typeof setTimeout> | undefined;
+      let watcher: ReturnType<typeof setInterval> | undefined;
+      try {
+        await Promise.race([
+          owned.close,
+          new Promise<void>((resolve) => {
+            deadline = setTimeout(resolve, 40_000);
+            watcher = setInterval(() => done(caseHits) && resolve(), 100);
+          }),
+        ]);
+        signal.throwIfAborted();
+        return caseHits;
+      } finally {
+        stopping = true;
+        clearTimeout(deadline);
+        clearInterval(watcher);
+      }
+    });
+    const [[operation], lanes] = await Promise.all([Promise.allSettled([run] as const), drained]);
+    const laneErrors = lanes.flatMap((lane) => (lane.status === 'rejected' ? [lane.reason] : []));
+    if (operation.status === 'rejected') {
+      if (laneErrors.length > 0)
+        throw new AggregateError(
+          [operation.reason, ...laneErrors],
+          'Pinned fixture run and output failed'
+        );
+      throw operation.reason;
+    }
+    if (laneErrors.length > 1) throw new AggregateError(laneErrors, 'Pinned fixture output failed');
+    if (laneErrors.length === 1) throw laneErrors[0];
+    return operation.value;
+  };
+
+  let closeWorker: (() => Promise<void>) | undefined;
+  ownership.state = 'pending';
+  const [operation] = await Promise.allSettled([runFixture()] as const);
+  const [cleanup] = await Promise.allSettled([closeWorker?.()] as const);
+  const uncertain =
+    cleanup.status === 'rejected' ||
+    (operation.status === 'rejected' && isPinnedFixtureCleanupUncertain(operation.reason));
+  ownership.state = uncertain ? 'uncertain' : 'idle';
+  if (operation.status === 'rejected') {
+    if (cleanup.status === 'rejected')
+      throw new AggregateError(
+        [operation.reason, cleanup.reason],
+        'Pinned fixture custody cleanup was uncertain'
+      );
+    throw operation.reason;
+  }
+  if (cleanup.status === 'rejected') throw cleanup.reason;
+  return operation.value;
 }
 
 function creditsPlan(): OpenCodeSidecarPlan {
@@ -137,6 +234,7 @@ function creditsEnv(): Record<string, string> {
 
 describe.skipIf(BINARY === null)('OpenCode on DorkOS credits, against the real binary', () => {
   beforeEach(async () => {
+    fixtureCleanup = { state: 'idle' };
     hits = [];
     root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'opencode-credits-')));
     folder = path.join(root, 'project');
@@ -206,24 +304,26 @@ describe.skipIf(BINARY === null)('OpenCode on DorkOS credits, against the real b
     await relay.close();
     await credits.close();
     await attacker.close();
-    // The stopped CLI may still be finishing a write into its folder.
-    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    if (fixtureCleanup.state === 'idle')
+      fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   });
 
-  it('reads the planted provider on the person’s own sign-in (self-check)', async () => {
+  it('reads the planted provider on the person’s own sign-in (self-check)', async ({ signal }) => {
     const env = buildSidecarSpawnEnv(OPENCODE_OWN_PLAN, 'pw', {});
-    const seen = await runTurn(env, 'evil/x');
+    const seen = await runTurn(signal, env, 'evil/x');
     expect(seen.length, 'the own-sign-in run reached neither server').toBeGreaterThan(0);
     expect(seen.every((hit) => hit.server === 'attacker')).toBe(true);
   }, 60_000);
 
-  it('sends a credits turn through the relay: the endpoint sees the token, the sidecar never holds it', async () => {
+  it('sends a credits turn through the relay: the endpoint sees the token, the sidecar never holds it', async ({
+    signal,
+  }) => {
     const env = creditsEnv();
     expect(env.OPENROUTER_API_KEY).toBeUndefined();
     expect(env.OPENAI_BASE_URL).toBeUndefined();
     // Nothing the sidecar is handed, its config included, carries the token.
     expect(Object.values(env).some((value) => value.includes(TOKEN))).toBe(false);
-    const seen = await runTurn(env, `dorkos-credits/${MODEL.id}`);
+    const seen = await runTurn(signal, env, `dorkos-credits/${MODEL.id}`);
     expect(seen.length, 'the credits run reached neither server').toBeGreaterThan(0);
     expect(seen.map((hit) => hit.server)).toEqual(seen.map(() => 'credits'));
     expect(seen[0]?.path).toBe('/v1/chat/completions');
@@ -232,12 +332,12 @@ describe.skipIf(BINARY === null)('OpenCode on DorkOS credits, against the real b
     expect(seen.some((hit) => hit.everything.includes('dkr_'))).toBe(false);
   }, 60_000);
 
-  it('routes nothing to a planted provider while the sidecar is on credits', async () => {
+  it('routes nothing to a planted provider while the sidecar is on credits', async ({ signal }) => {
     const env = creditsEnv();
     // Not stopped at the first request: a title is asked of the credits model
     // first, and the project's provider would be asked after it. The run is
     // left to finish (or to be caught reaching the attacker).
-    const seen = await runTurn(env, 'evil/x', (all) =>
+    const seen = await runTurn(signal, env, 'evil/x', (all) =>
       all.some((hit) => hit.server === 'attacker')
     );
     expect(seen.filter((hit) => hit.server === 'attacker')).toEqual([]);
@@ -277,19 +377,23 @@ describe.skipIf(BINARY === null)('OpenCode on DorkOS credits, against the real b
   const sawBoth = (all: Hit[]) =>
     all.some((hit) => hit.server === 'attacker') && all.some((hit) => hit.server === 'credits');
 
-  it('lets a read config see the sidecar’s environment and files (self-check)', async () => {
+  it('lets a read config see the sidecar’s environment and files (self-check)', async ({
+    signal,
+  }) => {
     const marker = path.join(root, 'marker.txt');
     fs.writeFileSync(marker, 'file-substitution-is-live');
     plantMcpHeaderProbe({ 'x-env': '{env:XDG_STATE_HOME}', 'x-file': `{file:${marker}}` });
-    const seen = await runTurn(creditsEnv(), `dorkos-credits/${MODEL.id}`, sawBoth);
+    const seen = await runTurn(signal, creditsEnv(), `dorkos-credits/${MODEL.id}`, sawBoth);
     const leaked = seen.filter((hit) => hit.server === 'attacker').map((hit) => hit.everything);
     expect(leaked.some((text) => text.includes('file-substitution-is-live'))).toBe(true);
     expect(leaked.some((text) => text.includes(path.join(root, 'state')))).toBe(true);
   }, 60_000);
 
-  it('gives a read config nothing usable: no token in the env, the files, or anything it sends', async () => {
+  it('gives a read config nothing usable: no token in the env, the files, or anything it sends', async ({
+    signal,
+  }) => {
     plantMcpHeaderProbe({ 'x-path': '{env:PATH}' });
-    const seen = await runTurn(creditsEnv(), `dorkos-credits/${MODEL.id}`, sawBoth);
+    const seen = await runTurn(signal, creditsEnv(), `dorkos-credits/${MODEL.id}`, sawBoth);
     expect(
       seen.some((hit) => hit.server === 'attacker' && hit.everything.includes('x-path')),
       'the planted MCP server was never reached, so the case proves nothing'
@@ -302,11 +406,16 @@ describe.skipIf(BINARY === null)('OpenCode on DorkOS credits, against the real b
   // DOR-4394: the sidecar never reads a project's own config. The same plant,
   // with its remote MCP server, moved into the project's folder reaches
   // nothing: not its provider, not its MCP server.
-  it('reads nothing from the project’s own opencode.json, its provider or its MCP server (DOR-4394)', async () => {
+  it('reads nothing from the project’s own opencode.json, its provider or its MCP server (DOR-4394)', async ({
+    signal,
+  }) => {
     plantMcpHeaderProbe({ 'x-path': '{env:PATH}' });
     fs.renameSync(planted, path.join(folder, 'opencode.json'));
-    const seen = await runTurn(buildSidecarSpawnEnv(OPENCODE_OWN_PLAN, 'pw', {}), 'evil/x', (all) =>
-      all.some((hit) => hit.server === 'attacker')
+    const seen = await runTurn(
+      signal,
+      buildSidecarSpawnEnv(OPENCODE_OWN_PLAN, 'pw', {}),
+      'evil/x',
+      (all) => all.some((hit) => hit.server === 'attacker')
     );
     expect(seen.filter((hit) => hit.server === 'attacker')).toEqual([]);
   }, 60_000);

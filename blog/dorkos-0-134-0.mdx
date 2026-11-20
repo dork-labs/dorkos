@@ -56,3 +56,5 @@ DorkOS 0.134.0 gets Codex chats starting again on Linux computers that also use 
 This release only adds to the database, and 0.133.0 runs on it as it is. To go back, install 0.133.0. On 0.133.0, a Blocked or Ask on agents' to-dos stops applying again.
 
 DorkOS still saves a backup before it changes the database, in `~/.dork/backups/`. If you came from 0.133.0, it's named `dork-<date>-<time>-pre-20261108035027_dor3547_extension_grant_subject.db` (the time is UTC). To restore it instead, quit DorkOS, delete `dork.db-wal` and `dork.db-shm` from `~/.dork/`, copy the backup over `~/.dork/dork.db`, then install 0.133.0. You lose anything written since the upgrade, so if you removed access or revoked a connection since then, do it again.
+
+Newer backups start with `dork-auto-` instead of `dork-`. [Both filename forms restore the same way](/docs/self-hosting/docker#database-snapshots).

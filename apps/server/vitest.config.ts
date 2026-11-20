@@ -450,7 +450,10 @@ export default defineConfig({
     // under `node_modules/.cache/dorkos-contract/`, and the run's boot mode
     // (tsx under `--watch` or `DORKOS_CONTRACT_TSX=1`). It builds nothing
     // itself; the first contract boot does.
-    globalSetup: ['src/http/__tests__/contract/global-setup.ts'],
+    globalSetup: [
+      'src/http/__tests__/contract/global-setup.ts',
+      'src/services/runtimes/opencode/__tests__/custody/global-setup.ts',
+    ],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],

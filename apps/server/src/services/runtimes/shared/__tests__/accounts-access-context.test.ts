@@ -76,6 +76,14 @@ describe('Accounts turn awareness', () => {
       expect(text).not.toContain('openUrl');
       // Setup waits on the person, so the agent never promises a time (DOR-2850).
       expect(text).toContain('Never promise how long it takes or say it is instant');
+      // The same-connection exception stays narrow, and the agent never seeks a wider grant.
+      expect(text).toContain(
+        '"Let agents write back without asking" allows writes to the same connection when only reading it marked this turn (Linear only).'
+      );
+      expect(text).toContain(
+        'Only the person can enable it on that app’s Connections page; never ask them to flip it to bypass a prompt.'
+      );
+      expect(text).toContain('Sends and deletes still ask, and other approval rules still apply.');
       expect(text).toContain('approval_required');
       expect(text).toContain('top-level approvalToken');
       expect(text).toContain('never inside arguments');

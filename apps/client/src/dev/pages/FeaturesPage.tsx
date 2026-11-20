@@ -28,6 +28,7 @@ import { BrowserStatusPillShowcases } from '../showcases/BrowserStatusPillShowca
 import { BrowserPageErrorShowcases } from '../showcases/BrowserPageErrorShowcases';
 import { TriageHeaderShowcases } from '../showcases/TriageHeaderShowcases';
 import { InboxShowcases } from '../showcases/InboxShowcases';
+import { ExtensionStoppedShowcases } from '../showcases/ExtensionStoppedShowcases';
 import { ExtensionUpdateShowcases } from '../showcases/ExtensionUpdateShowcases';
 import { PlacesReaskShowcases } from '../showcases/PlacesReaskShowcases';
 import { AppApprovalCardShowcases } from '../showcases/AppApprovalCardShowcases';
@@ -117,6 +118,7 @@ export function HomeInboxPage() {
       <BrowserPageErrorShowcases />
       <TriageHeaderShowcases />
       <InboxShowcases />
+      <ExtensionStoppedShowcases />
       <ExtensionUpdateShowcases />
       <PlacesReaskShowcases />
       <AppApprovalCardShowcases />

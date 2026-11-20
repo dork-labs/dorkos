@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useAppStore } from '../app-store';
 import { readPipGeometry } from '../app-store-helpers';

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The two zero-query lists: which conversations are live, and what a person was
  * last in.

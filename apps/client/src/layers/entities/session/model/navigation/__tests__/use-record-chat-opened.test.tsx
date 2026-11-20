@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The chat page records every chat it shows as opened by you (spec
  * `your-activity-first` D3) — so opening by deep link counts as touched.
