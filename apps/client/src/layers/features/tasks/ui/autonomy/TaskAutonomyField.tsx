@@ -78,9 +78,12 @@ export function TaskAutonomyField({
           and the run needs attention (DOR-3123 A1). Read from what the runtime
           declared, never from a guess about the prompt. */}
       {current !== undefined && asksWhileUnattended(current) && <TaskUnattendedWarning />}
+      {/* Without the ask line: the design review kept a schedule's note to
+          what the stop covers and who decides DorkOS's own actions (DOR-3841). */}
       <PermissionModeScopeNote
         mode={mode}
         {...(current ? { descriptor: current } : {})}
+        omitAskLine
         className="px-1"
       />
     </fieldset>

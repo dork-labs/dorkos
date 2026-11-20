@@ -84,6 +84,31 @@ vi.mock('cronstrue', () => ({
   },
 }));
 
+/**
+ * The schedule save confirm says exactly this and nothing else (DOR-3841
+ * design review): the stop in the title, the consequence as its description,
+ * the line about DorkOS's own actions, and the two buttons. The mode's own
+ * sentence and what it covers are already on the form behind it.
+ */
+function expectScheduleConfirm(confirm: HTMLElement, stop: string, promise: string) {
+  expect(within(confirm).getByRole('heading')).toHaveTextContent(`Turn on ${stop}`);
+  expect(confirm).toHaveAccessibleDescription(
+    'Every run of this schedule acts on its own. Nobody is asked first.'
+  );
+  expect(confirm).toHaveTextContent(
+    'DorkOS’s own actions, like deleting a schedule, follow your Permissions settings.'
+  );
+  expect(confirm).not.toHaveTextContent(promise);
+  expect(confirm).not.toHaveTextContent(/This covers editing files/);
+  expect(confirm).not.toHaveTextContent(/To stop an ask/);
+  expect(within(confirm).queryByTestId('consent-asks-note')).toBeNull();
+  expect(
+    within(confirm)
+      .getAllByRole('button')
+      .map((b) => b.textContent)
+  ).toEqual(['Cancel', `Turn on ${stop}`]);
+}
+
 function createWrapper(transport: Transport, seed?: (client: QueryClient) => void) {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -1330,7 +1355,7 @@ describe('CreateTaskDialog', () => {
       // either (`actsWithoutAsking`), and the dialog says so (DOR-3841).
       fireEvent.click(screen.getByText('Save'));
       const confirm = await screen.findByRole('alertdialog');
-      expect(within(confirm).getByTestId('consent-asks-note')).toBeInTheDocument();
+      expectScheduleConfirm(confirm, 'Act', 'Edits files and runs commands inside the workspace.');
       expect(transport.updateTask).not.toHaveBeenCalled();
     });
   });
@@ -1368,6 +1393,30 @@ describe('CreateTaskDialog', () => {
       );
     });
 
+    it('leaves the ask line out of the form’s note at Full autonomy', async () => {
+      // Design review: on a schedule, the note at Full says what the stop
+      // covers and who decides DorkOS's own actions, and nothing about asks.
+      const schedule = createMockSchedule({
+        id: 'sched-full',
+        permissionMode: 'bypassPermissions',
+      });
+      const Wrapper = createWrapper(createMockTransport());
+
+      render(
+        <Wrapper>
+          <CreateTaskDialog open={true} onOpenChange={vi.fn()} editTask={schedule} />
+        </Wrapper>
+      );
+      await waitFor(() =>
+        expect(screen.getByRole('radio', { name: 'Full autonomy' })).toBeChecked()
+      );
+      expect(screen.getByText(/This covers editing files/)).toBeInTheDocument();
+      expect(
+        screen.getByText(/DorkOS’s own actions, like deleting a schedule/)
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/To stop an ask/)).toBeNull();
+    });
+
     it('asks once before creating at Full autonomy, and Cancel saves nothing', async () => {
       const transport = createMockTransport({
         createTask: vi.fn().mockResolvedValue(createMockSchedule({ id: 'sched-new' })),
@@ -1389,11 +1438,11 @@ describe('CreateTaskDialog', () => {
 
       fireEvent.click(screen.getByText('Create task'));
       let confirm = await screen.findByRole('alertdialog');
-      expect(within(confirm).getByRole('heading')).toHaveTextContent('Turn on Full autonomy');
-      expect(confirm).toHaveTextContent(
+      expectScheduleConfirm(
+        confirm,
+        'Full autonomy',
         'Runs everything without asking, including outside this project.'
       );
-      expect(confirm).toHaveTextContent('Every run of this schedule acts on its own.');
       expect(transport.createTask).not.toHaveBeenCalled();
 
       fireEvent.click(within(confirm).getByRole('button', { name: 'Cancel' }));
@@ -1558,7 +1607,7 @@ describe('CreateTaskDialog', () => {
       await waitFor(() => expect(create).toBeEnabled());
       fireEvent.click(create);
       const confirm = await screen.findByRole('alertdialog');
-      expect(within(confirm).getByTestId('consent-asks-note')).toBeInTheDocument();
+      expectScheduleConfirm(confirm, 'Act', codex.permissionModes!.values[1]!.promise);
       expect(transport.createTask).not.toHaveBeenCalled();
     });
 

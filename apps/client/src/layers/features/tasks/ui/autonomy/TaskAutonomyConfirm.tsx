@@ -29,6 +29,9 @@ export function TaskAutonomyConfirm({ descriptor, onCancel, onConfirm }: TaskAut
     <UnattendedAutonomyDialog
       descriptor={descriptor}
       consequence={<p>Every run of this schedule acts on its own. Nobody is asked first.</p>}
+      // The form beside it already shows the mode's own sentence and what it
+      // covers, so the dialog says only what saving changes (DOR-3841 review).
+      restatesMode={false}
       onCancel={onCancel}
       onConfirm={onConfirm}
     />

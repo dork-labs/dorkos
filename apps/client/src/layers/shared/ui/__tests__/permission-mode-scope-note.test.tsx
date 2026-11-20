@@ -113,6 +113,21 @@ describe('PermissionModeScopeNote', () => {
     expect(screen.queryByText(/Standing permissions/)).not.toBeInTheDocument();
   });
 
+  it('leaves out only the lines a schedule surface asks it to (DOR-3841)', () => {
+    // The schedule form drops the ask line; its save confirm drops the covers
+    // line too. The line about DorkOS's own actions is never optional.
+    const { unmount } = render(<PermissionModeScopeNote mode="bypassPermissions" omitAskLine />);
+    expect(screen.getByText(/This covers editing files/)).toBeInTheDocument();
+    expect(screen.getByText(/DorkOS’s own actions/)).toBeInTheDocument();
+    expect(screen.queryByText(/To stop an ask/)).toBeNull();
+    unmount();
+
+    render(<PermissionModeScopeNote mode="bypassPermissions" omitAskLine omitCoversLine />);
+    expect(screen.queryByText(/This covers editing files/)).toBeNull();
+    expect(screen.getByText(/DorkOS’s own actions/)).toBeInTheDocument();
+    expect(screen.queryByText(/To stop an ask/)).toBeNull();
+  });
+
   it('appears for the other spelling of the same thing', () => {
     // `always-allow` is the test-mode runtime's name for "run everything". A note
     // that only knew one spelling would be silent on a session that bypasses.

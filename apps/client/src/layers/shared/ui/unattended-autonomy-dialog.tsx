@@ -26,6 +26,13 @@ export interface UnattendedAutonomyDialogProps {
   descriptor: PermissionModeDescriptor | null;
   /** What this surface will do once nobody is asked. One or two plain sentences. */
   consequence: ReactNode;
+  /**
+   * Whether the dialog repeats the mode's own sentence, its never-asks note and
+   * what the mode covers. On by default. A caller whose screen already shows
+   * all three beside the control passes `false` (the schedule form, DOR-3841):
+   * the body is then the consequence and the line about DorkOS's own actions.
+   */
+  restatesMode?: boolean;
   /** Close without applying. */
   onCancel: () => void;
   /** Apply the mode. */
@@ -67,6 +74,7 @@ export interface UnattendedAutonomyDialogProps {
 export function UnattendedAutonomyDialog({
   descriptor,
   consequence,
+  restatesMode = true,
   onCancel,
   onConfirm,
 }: UnattendedAutonomyDialogProps) {
@@ -88,9 +96,17 @@ export function UnattendedAutonomyDialog({
             <TrustModeIcon descriptor={descriptor ?? undefined} className={`size-4 ${tone}`} />
             {descriptor && consentActionLabel(descriptor)}
           </AlertDialogTitle>
-          <AlertDialogDescription>
-            {descriptor?.promise}
-            {/* The fact the title cannot carry on a stop whose name promises
+          {!restatesMode ? (
+            // The consequence IS the description here, so `aria-describedby`
+            // still names the one thing the dialog says. A `div`, because a
+            // consequence may carry its own paragraphs.
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">{consequence}</div>
+            </AlertDialogDescription>
+          ) : (
+            <AlertDialogDescription>
+              {descriptor?.promise}
+              {/* The fact the title cannot carry on a stop whose name promises
                 asking — absent at the autonomy stop, where the title already
                 says it. INSIDE the description, not beside it: the description
                 is what `aria-describedby` points at, and the one sentence
@@ -101,17 +117,27 @@ export function UnattendedAutonomyDialog({
                 accessible description is computed from text content, which
                 ignores the block layout, so without it a screen reader runs the
                 promise straight into this sentence with no gap. */}
-            {asksNote && ' '}
-            {asksNote && (
-              <span className="text-foreground mt-2 block" data-testid="consent-asks-note">
-                {asksNote}
-              </span>
-            )}
-          </AlertDialogDescription>
+              {asksNote && ' '}
+              {asksNote && (
+                <span className="text-foreground mt-2 block" data-testid="consent-asks-note">
+                  {asksNote}
+                </span>
+              )}
+            </AlertDialogDescription>
+          )}
         </AlertDialogHeader>
         {/* A `div`, not a `p`: a consequence may carry its own paragraphs. */}
-        <div className="text-muted-foreground space-y-2 text-sm">{consequence}</div>
-        {descriptor && <PermissionModeScopeNote mode={descriptor.id} descriptor={descriptor} />}
+        {restatesMode && (
+          <div className="text-muted-foreground space-y-2 text-sm">{consequence}</div>
+        )}
+        {descriptor && (
+          <PermissionModeScopeNote
+            mode={descriptor.id}
+            descriptor={descriptor}
+            omitCoversLine={!restatesMode}
+            omitAskLine={!restatesMode}
+          />
+        )}
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction onClick={onConfirm}>
