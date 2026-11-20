@@ -505,7 +505,9 @@ describe('snapshotDaily', () => {
       await expect(snapshotDaily(db, { dir: backups, now })).rejects.toBeInstanceOf(
         SnapshotFailedError
       );
-      expect(readFileSync(dest)).toEqual(bytes);
+      // Buffer#equals, not toEqual: a deep compare of a ~2 MB database walks it
+      // byte by byte and alone outran the 5s test timeout on CI.
+      expect(readFileSync(dest).equals(bytes)).toBe(true);
     } finally {
       lock.exec('ROLLBACK');
       lock.close();
