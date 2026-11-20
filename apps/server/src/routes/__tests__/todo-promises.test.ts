@@ -32,6 +32,8 @@ describe('to-do routes', () => {
   let service: TodoPromiseService;
   /** Whether the caller counts as the install's owner; flipped per test. */
   let owner: boolean;
+  /** Whether the install has an owner account; flipped per test. */
+  let ownerAccount: boolean;
   let db: Db;
 
   /** A row's stored authority columns. */
@@ -45,12 +47,14 @@ describe('to-do routes', () => {
 
   beforeEach(() => {
     owner = true;
+    ownerAccount = true;
     db = createTestDb();
     service = new TodoPromiseService({ store: new TodoPromiseStore(db) });
     const deps = {
       isOwner: () => owner,
       // The real proof: these requests carry no session cookie, as a local program's would not.
       personProven: personProof,
+      ownerExists: () => ownerAccount,
       confirm: new TodoConfirm({
         store: new TodoPromiseStore(db),
         reopen: (actor, id, note) =>
@@ -97,7 +101,7 @@ describe('to-do routes', () => {
   });
 
   describe('person authority needs proof (DOR-3088, Security Must for PR 2)', () => {
-    it('never mints person authority from the open gate: login off, no agent headers, no cookie', async () => {
+    it('never mints person authority from the open gate once an owner account exists: login off, no agent headers, no cookie', async () => {
       // `isOwner` passes, as it does for any program on this computer with login off.
       const res = await request(fixtureServer)
         .post('/api/agents/agent-ana/todo-promises')
@@ -122,6 +126,100 @@ describe('to-do routes', () => {
         .send({ state: 'open', dueAt: '2099-10-12T09:00:00Z' });
       expect(res.status).toBe(200);
       expect(power(made.id)).toEqual({ authority: 'runtime-default', marks: '{"outsider":true}' });
+    });
+  });
+
+  describe('on an install with no owner account (DOR-3832)', () => {
+    beforeEach(() => {
+      ownerAccount = false;
+    });
+
+    it('saves a promise a person adds as theirs, not at the stranger bound', async () => {
+      const res = await request(fixtureServer)
+        .post('/api/agents/agent-ana/todo-promises')
+        .send({ what: 'Send Acme the quote' });
+      expect(res.status).toBe(201);
+      expect(power(res.body.id)).toEqual({ authority: 'person', marks: '{}' });
+    });
+
+    it('lets the person drop a promise they added with one click, no note, and keeps it theirs', async () => {
+      const added = await request(fixtureServer)
+        .post('/api/agents/agent-ana/todo-promises')
+        .send({ what: 'Send Acme the quote' });
+      const res = await request(fixtureServer)
+        .patch(`/api/todo-promises/${added.body.id}`)
+        .send({ state: 'dropped' });
+      expect(res.status).toBe(200);
+      expect(res.body.state).toBe('dropped');
+      expect(power(added.body.id)).toEqual({ authority: 'person', marks: '{}' });
+    });
+
+    it('still refuses every agent caller, verified or not, on add and on change', async () => {
+      const made = service.create(
+        'agent-ana',
+        { what: 'Ship it' },
+        { kind: 'person', proven: true }
+      );
+      for (const header of ['/agents/ana', '/agents/bo', 'not-a-token']) {
+        const add = await request(fixtureServer)
+          .post('/api/agents/agent-ana/todo-promises')
+          .set(AGENT_IDENTITY_HEADER, header)
+          .send({ what: 'Reply' });
+        expect(add.status, header).toBe(403);
+        expect(add.body.code, header).toBe('NOT_A_PERSON');
+        const drop = await request(fixtureServer)
+          .patch(`/api/todo-promises/${made.id}`)
+          .set(AGENT_IDENTITY_HEADER, header)
+          .send({ state: 'dropped' });
+        expect(drop.status, header).toBe(403);
+        expect(drop.body.code, header).toBe('NOT_A_PERSON');
+      }
+      expect(service.list()).toHaveLength(1);
+      expect(service.get(made.id)!.state).toBe('open');
+    });
+  });
+
+  describe('once an owner account exists, a request that proves nobody is unchanged', () => {
+    it('still stores its add at the stranger bound and needs a note to drop one somebody gave', async () => {
+      const added = await request(fixtureServer)
+        .post('/api/agents/agent-ana/todo-promises')
+        .send({ what: 'Send Acme the quote' });
+      expect(power(added.body.id)).toEqual({
+        authority: 'runtime-default',
+        marks: '{"outsider":true}',
+      });
+      const given = service.create(
+        'agent-ana',
+        { what: 'Ship it' },
+        { kind: 'person', proven: true }
+      );
+      const res = await request(fixtureServer)
+        .patch(`/api/todo-promises/${given.id}`)
+        .send({ state: 'dropped' });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('NOTHING_TO_CHANGE');
+      expect(service.get(given.id)!.state).toBe('open');
+      expect(power(given.id)).toEqual({ authority: 'person', marks: '{}' });
+    });
+
+    it('refuses a caller that is not the owner (login on, no owner credential)', async () => {
+      const given = service.create(
+        'agent-ana',
+        { what: 'Ship it' },
+        { kind: 'person', proven: true }
+      );
+      owner = false;
+      const add = await request(fixtureServer)
+        .post('/api/agents/agent-ana/todo-promises')
+        .send({ what: 'Reply' });
+      expect(add.status).toBe(403);
+      const drop = await request(fixtureServer)
+        .patch(`/api/todo-promises/${given.id}`)
+        .send({ state: 'dropped' });
+      expect(drop.status).toBe(403);
+      expect(drop.body.code).toBe('NOT_YOURS');
+      expect(service.list()).toHaveLength(1);
+      expect(service.get(given.id)!.state).toBe('open');
     });
   });
 

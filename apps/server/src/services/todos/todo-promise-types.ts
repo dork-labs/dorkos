@@ -52,10 +52,27 @@ export type TodoPromiseActor =
       kind: 'person';
       /**
        * True only for a request carrying the owner's own session cookie (`personProof`). A person
-       * who did not prove it writes the stranger bound, never `person` authority.
+       * who did not prove it writes the stranger bound, never `person` authority, unless the
+       * install has no owner account (`ownerless`).
        */
       proven?: boolean;
+      /**
+       * True when the install has no owner account, so no request can ever be proven (DOR-3832).
+       * Set by the server from its own account store, never from a request.
+       */
+      ownerless?: boolean;
     };
+
+/**
+ * Whether a person's words on a promise count as the person's own (DOR-3832): proven by the
+ * owner's session, or on an install with no owner account, where there is nobody to prove and the
+ * person in the app is the only person there is. Anything less is the stranger bound.
+ *
+ * @param actor - The person acting.
+ */
+export function speaksAsPerson(actor: Extract<TodoPromiseActor, { kind: 'person' }>): boolean {
+  return actor.proven === true || actor.ownerless === true;
+}
 
 /** What a new to-do carries. */
 export interface NewTodoPromise {

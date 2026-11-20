@@ -35,6 +35,12 @@ export function useCreateTodoPromise() {
 }
 
 /**
+ * The headline of the one failure report a change gets: the app's toast, with the server's own
+ * sentence under it. Not "Try again": a refusal says why, and trying again would not change it.
+ */
+const CHANGE_FAILED = 'Couldn’t change the to-do.';
+
+/**
  * Mark a promise kept, missed or dropped, or move its date.
  *
  * @returns The TanStack mutation.
@@ -44,6 +50,7 @@ export function useUpdateTodoPromise() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, body }: UpdateTodoPromiseInput) => transport.updateTodoPromise(id, body),
+    meta: { errorLabel: CHANGE_FAILED },
     onSettled: () => queryClient.invalidateQueries({ queryKey: todoPromiseKeys.all }),
   });
 }
@@ -65,6 +72,7 @@ export function useConfirmTodoPromise() {
   return useMutation({
     mutationFn: ({ id, answer }: ConfirmTodoPromiseInput) =>
       transport.confirmTodoPromise(id, answer),
+    meta: { errorLabel: CHANGE_FAILED },
     onSettled: () => queryClient.invalidateQueries({ queryKey: todoPromiseKeys.all }),
   });
 }

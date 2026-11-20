@@ -38,6 +38,7 @@ import { TodoDueTimers, timedTodo } from './timing/todo-due-timers.js';
 import { TodoWakeHub } from './timing/todo-wake-hub.js';
 import {
   CLOSE_ACTION,
+  speaksAsPerson,
   TodoPromiseError,
   type NewTodoPromise,
   type TodoPromiseActor,
@@ -279,7 +280,7 @@ export class TodoPromiseService {
    * @param agentId - The Mesh id of the agent that promised.
    * @param input - What, to whom, by when, and where it was made.
    * @param assigner - Who made it: the agent itself (the default), or a person (`person`
-   *   authority only when `proven`).
+   *   authority only when proven, or on an install with no owner account: {@link speaksAsPerson}).
    * @throws {TodoPromiseError} `PAST_DUE` when the due date has passed.
    */
   create(
@@ -297,7 +298,7 @@ export class TodoPromiseService {
             authority: ownWordsAuthority(input.originLevel),
             marks: agentWordsMarks(input.originLevel, input.originMarks ?? NO_MARKS),
           }
-        : authorityOf({ kind: 'person', proven: assigner.proven === true });
+        : authorityOf({ kind: 'person', proven: speaksAsPerson(assigner) });
     const row: AgentTodoRow = {
       id: ulid(),
       agentId,
@@ -373,7 +374,14 @@ export class TodoPromiseService {
         "Only an agent's own promise can be missed. Mark a to-do kept, or dropped with a note."
       );
     }
-    if (change.state === 'dropped' && !isOwnPromise(row) && !change.note?.trim()) {
+    // An agent declining a to-do somebody gave it says why. The person who gave it needs no note
+    // to take it back (DOR-3832); one who cannot vouch for being that person still writes one.
+    if (
+      change.state === 'dropped' &&
+      !isOwnPromise(row) &&
+      !change.note?.trim() &&
+      !(actor.kind === 'person' && speaksAsPerson(actor))
+    ) {
       throw new TodoPromiseError('NOTHING_TO_CHANGE', 'Say why in a note when declining a to-do.');
     }
     const result = this.dispatch(row, change);
@@ -417,7 +425,8 @@ export class TodoPromiseService {
    * An agent's own promise is the agent's own words whoever closes or reopens it: the agent's own
    * change holds it to its turn's level and marks, and a person's change (proven or not) leaves it
    * alone, since no words of theirs reach the wake. Any other row counts every actor at their own
-   * authority, and a person counts as `person` only with proof.
+   * authority, and a person counts as `person` only with proof, or with no owner account to prove
+   * (the same rule as adding one).
    */
   private lowerFloor(row: AgentTodoRow, actor: TodoPromiseActor): void {
     if (isOwnPromise(row) && actor.kind === 'person') return;
@@ -446,7 +455,7 @@ export class TodoPromiseService {
                   level: actor.level,
                   marks: actor.marks ?? NO_MARKS,
                 }
-              : { kind: 'person', proven: actor.proven === true }
+              : { kind: 'person', proven: speaksAsPerson(actor) }
           );
     if (floor.authority === row.authority && floor.authorityMarks === row.authorityMarks) return;
     const updated = this.store.update(row.id, floor)!;

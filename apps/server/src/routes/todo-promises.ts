@@ -59,12 +59,19 @@ export interface TodoPromiseRouterDeps {
   isOwner(facts: RequestFacts): boolean;
   /**
    * Whether this request proves the owner in person: the owner's own session cookie
-   * (`personProof`). Only then does a change carry `person` authority (DOR-3088); the open gate
-   * `isOwner` passes with login off is not proof, since any program here can reach it.
+   * (`personProof`). Once an owner account exists, only then does a change carry `person`
+   * authority (DOR-3088); the open gate `isOwner` passes with login off is not proof, since any
+   * program here can reach it.
    *
    * @param facts - The request's facts, carrying the resolved caller.
    */
   personProven(facts: RequestFacts): boolean;
+  /**
+   * Whether this install has an owner account. When it has none, nobody can be proven, and the
+   * person in the app writes as the person (DOR-3832). A failed lookup must read as an owner, so
+   * this fails closed.
+   */
+  ownerExists(): boolean;
   /** Takes a person's answer to "was it kept?" (DOR-3034). */
   confirm: Pick<TodoConfirm, 'answer'>;
 }
@@ -115,7 +122,22 @@ function actorOf(
     };
   }
   if (!deps.isOwner(facts)) return { refused: c.json(errorBody(NOT_YOUR_AGENT, 'NOT_YOURS'), 403) };
-  return { actor: { kind: 'person', proven: deps.personProven(facts) } };
+  return { actor: personOf(facts, deps) };
+}
+
+/**
+ * The person behind a request that already passed the agent and owner checks: proven by the
+ * owner's session, or, on an install with no owner account, the only person there is (DOR-3832,
+ * the same shape as `routes/todos.ts`).
+ */
+function personOf(
+  facts: RequestFacts,
+  deps: TodoPromiseRouterDeps
+): Extract<TodoPromiseActor, { kind: 'person' }> {
+  const proven = deps.personProven(facts);
+  return proven
+    ? { kind: 'person', proven }
+    : { kind: 'person', proven, ownerless: !deps.ownerExists() };
 }
 
 /**
@@ -194,8 +216,7 @@ export function createAgentTodoPromisesRoutes(deps: TodoPromiseRouterDeps): Hono
       return c.json(errorBody('No agent on the team has that id.', 'UNKNOWN_AGENT'), 404);
     }
     try {
-      const assigner = { kind: 'person', proven: deps.personProven(facts) } as const;
-      return c.json(deps.service.create(agentId, body.data, assigner), 201);
+      return c.json(deps.service.create(agentId, body.data, personOf(facts, deps)), 201);
     } catch (err) {
       return refusal(c, err);
     }
