@@ -1,5 +1,5 @@
 /** The full screen guard, with a fake DevTools session. Nothing here launches a browser. */
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Page } from 'playwright-core';
 import { FullScreenGuard, withFullScreenRefused, type GuardSession } from '../full-screen-guard.js';
 
@@ -21,6 +21,7 @@ function fakeSession(fullScreen: unknown = false) {
 }
 const page = (closed = false) => ({ isClosed: () => closed }) as unknown as Page;
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+afterEach(() => vi.useRealTimers());
 
 describe('the header', () => {
   it('keeps every header the site sent, in order, and adds the refusal last', () => {
@@ -108,33 +109,77 @@ describe('reading full screen', () => {
     await expect(guard.inFullScreen(target)).resolves.toBe(true);
   });
 
-  it('fails closed: unwatched, no session, a failed read, or a strange answer', async () => {
+  it('distinguishes an unknown state from a page actually in full screen', async () => {
     await expect(
       new FullScreenGuard(async () => fakeSession().session).inFullScreen(page())
-    ).resolves.toBe(true);
+    ).resolves.toBeNull();
 
     const refused = new FullScreenGuard(async () => {
       throw new Error('no session');
     });
     const one = page();
     refused.watch(one);
-    await expect(refused.inFullScreen(one)).resolves.toBe(true);
+    await expect(refused.inFullScreen(one)).resolves.toBeNull();
 
     const broken = fakeSession();
     broken.send.mockRejectedValue(new Error('closed'));
     const failing = new FullScreenGuard(async () => broken.session);
     const two = page();
     failing.watch(two);
-    await expect(failing.inFullScreen(two)).resolves.toBe(true);
+    await expect(failing.inFullScreen(two)).resolves.toBeNull();
 
     const odd = new FullScreenGuard(async () => fakeSession('maybe').session);
     const three = page();
     odd.watch(three);
-    await expect(odd.inFullScreen(three)).resolves.toBe(true);
+    await expect(odd.inFullScreen(three)).resolves.toBeNull();
   });
 });
 
 describe('refusing an agent', () => {
+  it.each(['Page.getFrameTree', 'Page.createIsolatedWorld', 'Runtime.evaluate'])(
+    'keeps reads blocked with an honest error when %s loses its context',
+    async (command) => {
+      const { session, send } = fakeSession();
+      const original = send.getMockImplementation()!;
+      send.mockImplementation(async (method, params) => {
+        if (method === command) throw new Error('Execution context was destroyed');
+        return original(method, params);
+      });
+      const guard = new FullScreenGuard(async () => session);
+      guard.watch(page());
+      await expect(guard.requireNone()).rejects.toMatchObject({
+        code: 'screen_state_unavailable',
+      });
+    }
+  );
+
+  it('keeps a timed-out read blocked without claiming the page is full screen', async () => {
+    vi.useFakeTimers();
+    const { session, send } = fakeSession();
+    const original = send.getMockImplementation()!;
+    send.mockImplementation(async (method, params) => {
+      if (method === 'Runtime.evaluate') return new Promise(() => {});
+      return original(method, params);
+    });
+    const guard = new FullScreenGuard(async () => session);
+    guard.watch(page());
+    const refused = guard.requireNone().then(
+      () => null,
+      (error: unknown) => error
+    );
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(await refused).toMatchObject({ code: 'screen_state_unavailable' });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('clears the check timer when the page answers', async () => {
+    vi.useFakeTimers();
+    const guard = new FullScreenGuard(async () => fakeSession(false).session);
+    guard.watch(page());
+    await expect(guard.requireNone()).resolves.toBeUndefined();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('passes with nothing watched, as in the Mac app’s panel', async () => {
     await expect(new FullScreenGuard().requireNone()).resolves.toBeUndefined();
   });

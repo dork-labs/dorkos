@@ -10,6 +10,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
+import { PACKAGE_REVIEW_APPS } from './marketplace-summary-samples';
 import { IsolatedQueryProvider } from './marketplace-query-provider';
 
 // The barrel first, then the leaves it does not carry — see the import rule in
@@ -135,7 +136,10 @@ export function ConfirmUpdatesDialogShowcase() {
   const stale = summarizeUpdates(
     MOCK_INSTALLED_FOR_UPDATES,
     indexChecks(MOCK_UPDATE_CHECKS)
-  ).available;
+  ).available.map((item) => ({
+    ...item,
+    check: { ...item.check, extensions: PACKAGE_REVIEW_APPS },
+  }));
   const [open, setOpen] = useState<'all' | 'one' | null>(null);
 
   return (

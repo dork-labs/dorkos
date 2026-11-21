@@ -1443,6 +1443,12 @@ describe('PermissionPreviewBuilder', () => {
       expect(tokenSecret?.description).toContain('Bot token');
       const signing = preview.secrets.find((s) => s.key === 'slack_signing_secret');
       expect(signing?.required).toBe(false);
+      expect(
+        preview.extensions[0]?.secrets?.map(({ key, required }) => ({ key, required }))
+      ).toEqual([
+        { key: 'slack_token', required: true },
+        { key: 'slack_signing_secret', required: false },
+      ]);
     });
   });
 

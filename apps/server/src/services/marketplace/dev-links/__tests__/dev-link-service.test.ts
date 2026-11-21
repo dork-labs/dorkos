@@ -952,9 +952,9 @@ describe('a dev link and the permission set its yes covers (DOR-2686)', () => {
   it('says full access on the card for a server half that runs inside DorkOS', async () => {
     // Purpose: the in-process case is named, never left implicit.
     await writeFile(path.join(work, '.dork', 'extensions', 'flow-dash', 'server.ts'), '');
-    expect(await service().describeApproval({ path: work, scope: 'global' })).toContain(
-      'flow-dash: runs inside DorkOS with full access to this computer'
-    );
+    const shown = await service().describeApproval({ path: work, scope: 'global' });
+    expect(shown).toContain('flow-dash: runs inside DorkOS with full access to this computer');
+    expect(shown).not.toContain('runs nothing on its own');
   });
 
   it('says screens only on the card for an extension with no server half', async () => {

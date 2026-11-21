@@ -220,7 +220,9 @@ export function createApiApp(options: ApiChainOptions): Hono<ApiEnv> {
         : decideGateAccess(requestClass, readGatePosture());
     const decision = await decideSessionGate(c.req.method, c.req.path, facts, access);
     if (!decision.allowed) {
-      return decision.refusal ? c.json(decision.refusal, 403) : c.json(authRequiredBody(), 401);
+      return decision.refusal
+        ? c.json(decision.refusal, 403)
+        : c.json(authRequiredBody(facts.ingress), 401);
     }
     if (decision.user) c.set('user', decision.user);
     // The agent an agent computer's gate proved, so the audit actor names it.

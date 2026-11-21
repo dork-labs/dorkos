@@ -82,16 +82,22 @@ function scopedAnswer<T>(
   service: LocalBrowserService,
   context: CapabilityHandlerContext,
   run: (lease: ReturnType<LocalBrowserService['leaseFor']>) => Promise<T>,
-  options: { handingOver?: boolean; effect?: boolean; checkOutsideTurn?: boolean } = {}
+  options: {
+    handingOver?: boolean;
+    effect?: boolean;
+    checkOutsideTurn?: boolean;
+    refusalOnly?: boolean;
+    captured?: ReturnType<LocalBrowserService['leaseFor']>;
+  } = {}
 ): Promise<T> {
-  const { handingOver = false, effect = false } = options;
-  const lease = requireSession(service, context);
+  const { handingOver = false, effect = false, refusalOnly = false } = options;
+  const lease = options.captured ?? requireSession(service, context);
   const allowed = async () => {
     await answer(async () => service.handover.refuseWhileSigningIn(context.sessionId!));
     await answer(() => lease.requireProfileAccess(context.sessionId!));
     if (!handingOver) {
       await answer(() => lease.handover.requireAgentMayUse(context.sessionId!));
-      await answer(() => lease.requireNotFullScreen());
+      if (!refusalOnly) await answer(() => lease.requireNotFullScreen());
     }
     if (options.checkOutsideTurn) {
       const reason = await service.handover.outsideTurnReason(context.sessionId!);
@@ -165,24 +171,42 @@ export function createLocalBrowserDomain(service: LocalBrowserService): Capabili
             annotations: { idempotentHint: true },
           },
         },
-        invoke: (_deps, _input, context) =>
-          scopedAnswer(
-            service,
-            context,
-            async (lease) => {
-              const observation = await lease.observe();
-              if (!observation.refusal) return observation;
-              // A turn the handoff would refuse is never pointed at it (DOR-4693).
-              const marked = await service.handover.outsideTurnReason(context.sessionId!);
-              return !isOutsideOriginTurn(marked)
-                ? observation
-                : {
-                    ...observation,
-                    refusal: { ...observation.refusal, next: LOCAL_BROWSER_REFUSAL_HELD_NEXT },
-                  };
-            },
-            { checkOutsideTurn: true }
-          ),
+        invoke: (_deps, _input, context) => {
+          const lease = requireSession(service, context);
+          const refusalOnly = lease.hasNavigationRefusal?.() === true;
+          return (async () => {
+            const observation = await scopedAnswer(
+              service,
+              context,
+              async (current) => {
+                const observation = refusalOnly
+                  ? current.observeRefusal()
+                  : await current.observe();
+                if (!observation.refusal) return observation;
+                const marked = await service.handover.outsideTurnReason(context.sessionId!);
+                return marked === null || marked === 'read_outside_text'
+                  ? observation
+                  : {
+                      ...observation,
+                      refusal: { ...observation.refusal, next: LOCAL_BROWSER_REFUSAL_HELD_NEXT },
+                    };
+              },
+              { refusalOnly, captured: lease, checkOutsideTurn: true }
+            );
+            if (refusalOnly && !lease.hasNavigationRefusal(observation.tabId, observation.url))
+              throw new CapabilityToolError({
+                code: 'stale_page',
+                error: 'The page changed. Read it again before acting.',
+              });
+            if (refusalOnly)
+              return answer(async () => {
+                lease.assertCurrent();
+                lease.requireRefusalCurrent(observation.tabId, observation.url);
+                return observation;
+              });
+            return observation;
+          })();
+        },
       }),
       defineCapability({
         id: 'local_browser.screenshot',

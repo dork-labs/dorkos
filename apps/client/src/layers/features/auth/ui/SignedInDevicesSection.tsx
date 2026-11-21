@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { LogOut, MonitorSmartphone } from 'lucide-react';
 import type { SignedInDevice, SignedInDeviceRoute } from '@dorkos/shared/signed-in-devices';
 import {
@@ -14,9 +15,12 @@ import {
   Button,
   QueryErrorState,
   Skeleton,
+  Switch,
 } from '@/layers/shared/ui';
 import { formatRelativeTime } from '@/layers/shared/lib';
 import { useSignedInDevices } from '../model/use-signed-in-devices';
+import { useDeviceTrust, type DeviceTrust } from '../model/use-device-trust';
+import { TrustNote, WifiSignInRequests } from './WifiSignInRequests';
 
 /**
  * How each way in reads under a device's name. This computer says nothing: the
@@ -39,11 +43,15 @@ const ROUTE_LABELS: Record<SignedInDeviceRoute, string | null> = {
  * Other devices, and "Sign out everywhere else", sign out only from the
  * computer DorkOS runs on, which the server decides (`canSignOutOthers`).
  * Signing a device out closes whatever it had open.
+ *
+ * At that computer it also lists Wi-Fi devices waiting to sign in, and each
+ * Wi-Fi row has a "Run agents from this device" switch (DOR-4744).
  */
 export function SignedInDevicesSection() {
   const devices = useSignedInDevices();
   const list = devices.data?.sessions ?? [];
   const canSignOutOthers = devices.data?.canSignOutOthers ?? false;
+  const trust = useDeviceTrust(canSignOutOthers);
   const hasOthers = list.some((device) => !device.current);
 
   return (
@@ -57,6 +65,8 @@ export function SignedInDevicesSection() {
           Signing a device out closes everything it had open.
         </p>
       </div>
+
+      {canSignOutOthers && <WifiSignInRequests trust={trust} />}
 
       <div className="space-y-1.5">
         {devices.isLoading ? (
@@ -77,6 +87,7 @@ export function SignedInDevicesSection() {
               canSignOut={!device.current && canSignOutOthers}
               signingOut={devices.pendingId === device.id}
               onSignOut={() => devices.signOutDevice(device.id)}
+              trust={canSignOutOthers ? trust : null}
             />
           ))
         ) : (
@@ -129,23 +140,132 @@ function DeviceRow({
   canSignOut,
   signingOut,
   onSignOut,
+  trust,
 }: {
   device: SignedInDevice;
   canSignOut: boolean;
   signingOut: boolean;
   onSignOut: () => void;
+  /** Set at the computer DorkOS runs on, where a Wi-Fi row's switch can change. */
+  trust: DeviceTrust | null;
 }) {
   const via = ROUTE_LABELS[device.route];
   const lastActive = `Last active ${sentenceCase(formatRelativeTime(device.lastSeenAt))}`;
   return (
-    <div className="flex items-center justify-between gap-2 rounded-md border px-3 py-2">
+    <div className="space-y-2 rounded-md border px-3 py-2">
+      <DeviceSummary
+        device={device}
+        via={via}
+        lastActive={lastActive}
+        canSignOut={canSignOut}
+        signingOut={signingOut}
+        onSignOut={onSignOut}
+      />
+      {device.route === 'wifi' && device.runsAgents !== undefined && (
+        <RunsAgentsSwitch device={device} trust={trust} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * The opt-in that lets one Wi-Fi device run agents at their own level. Off for
+ * every new device; changed only at the computer DorkOS runs on, and turning
+ * it on asks for a passkey there.
+ */
+function RunsAgentsSwitch({
+  device,
+  trust,
+}: {
+  device: SignedInDevice;
+  trust: DeviceTrust | null;
+}) {
+  const on = device.runsAgents === true;
+  const [confirming, setConfirming] = useState(false);
+  const warning = (
+    <>
+      <p className="text-muted-foreground text-xs">
+        Anyone on the same Wi-Fi could take over this sign-in.
+      </p>
+      <p className="text-muted-foreground text-xs">It turns off after 12 hours idle.</p>
+    </>
+  );
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between gap-2 text-sm">
+        <span>Run agents from this device</span>
+        <Switch
+          checked={on}
+          disabled={!trust || trust.pendingId === device.id}
+          // Turning it on asks first; turning it off answers at once.
+          onCheckedChange={(next) =>
+            next ? setConfirming(true) : void trust?.setRunsAgents(device.id, false)
+          }
+          aria-label={`Run agents from ${device.name}`}
+        />
+      </div>
+      {!trust && (
+        <p className="text-muted-foreground text-xs">Change this on the computer DorkOS runs on.</p>
+      )}
+      {trust?.lastId === device.id && <TrustNote trust={trust} />}
+      <AlertDialog open={confirming} onOpenChange={setConfirming}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Run agents from {device.name}?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-1">{warning}</div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void trust?.setRunsAgents(device.id, true)}>
+              Turn on
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+/** A device's name, how it came in, and its sign-out button. */
+function DeviceSummary({
+  device,
+  via,
+  lastActive,
+  canSignOut,
+  signingOut,
+  onSignOut,
+}: {
+  device: SignedInDevice;
+  via: string | null;
+  lastActive: string;
+  canSignOut: boolean;
+  signingOut: boolean;
+  onSignOut: () => void;
+}) {
+  // On a phone the name gets the whole width and wraps, and Sign out takes its
+  // own row: the name is what says which device this is.
+  return (
+    <div className="flex flex-col items-start gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
       <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <p className="truncate text-sm font-medium">{device.name}</p>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <p className="text-sm font-medium break-words sm:truncate">{device.name}</p>
           {device.current && <Badge variant="secondary">This device</Badge>}
+          {device.route === 'wifi' && (
+            <Badge
+              variant="outline"
+              className="hidden sm:inline-flex"
+              title="Not encrypted between this device and the computer DorkOS runs on."
+            >
+              Plain Wi-Fi
+            </Badge>
+          )}
         </div>
         <p className="text-muted-foreground text-xs">
-          {via ? `${via} · ${lastActive}` : lastActive}
+          {[via, lastActive, device.runsAgents ? 'On until 12 hours idle' : null]
+            .filter(Boolean)
+            .join(' · ')}
         </p>
       </div>
       {canSignOut && (
@@ -155,6 +275,7 @@ function DeviceRow({
           onClick={onSignOut}
           disabled={signingOut}
           aria-label={`Sign out ${device.name}`}
+          className="-ml-2 sm:ml-0"
         >
           <LogOut className="mr-1.5 size-3.5" />
           {signingOut ? 'Signing out…' : 'Sign out'}

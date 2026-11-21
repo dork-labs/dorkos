@@ -11,6 +11,7 @@ export async function selectPersonPage(
 ): Promise<LocalBrowserState> {
   const page = state.tabs.get(id);
   if (!page) throw new LocalBrowserError('closed', 'That tab closed. Choose another tab.');
+  if (id !== state.selectedTabId) state.navigation.reset();
   state.selectedTabId = id;
   state.metadata.refresh(page);
   state.invalidate();

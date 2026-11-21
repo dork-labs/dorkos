@@ -189,6 +189,8 @@ Open PRs from a worktree branch based on `origin/main`. **Direct pushes to `main
 
 One topic, one PR. If an open PR touches the same files or must land first, stack on it with `gh stack` instead of branching from `origin/main`; merge a stack only with `gh stack merge` from its top PR, never `gh pr merge --auto` on a layer whose base is not `main` (that skips the queue). UI PRs run their affected Playwright specs locally before pushing and say so.
 
+**Every gate names an owner and a time, and every OK names one commit.** A PR waiting on a review, a label or a waiver says who does it and by when ("@x labels `abc1234` by 15:00"), never "someone should" (E31 in `meta/agent-etiquette.md`). An OK from Security, QA, the designer or the PM covers only the commit it names (E32), and that commit must be the head that gets armed: any push voids every OK on the PR, so ask again at the new head.
+
 ## Hard Rules
 
 Non-negotiable, enforced by ESLint/CI/convention. Rules 1-4 are ESLint `error`s, so they fail the lefthook pre-commit hook, `pnpm verify`, and the required `lint` check in the merge queue. Rule 5 also rides `lint`; 6-7 are hooks; 9 rides the required `typecheck` check:
@@ -218,6 +220,8 @@ The full guide, written for agents, is [contributing/ci.md](contributing/ci.md):
 - **Agents arm only through `arm.sh`; never `gh pr merge`.** It runs every gate first and stamps the head with an `arm-record` status. On every queue entry, `arm-door.yml` takes out a head with no Security label at or after it or no verify proof, whoever queued it, and names any entry queued without the stamp (DOR-4648). Apply `hold` (or `do-not-merge`, `wip`, `blocked`) to keep a green PR from being armed. `merge-tail.yml` is off (2026-11-18) until it runs the same gate code. An admin merge is never the answer (`.claude/hooks/merge-guard.mjs` refuses it).
 - **Only Security's `label-pr.sh` adds or removes `security-*` labels; no agent touches them by hand.** It also writes the `PASS` line in Security's review file that `arm.sh` checks for, so `arm.sh` refuses a hand-added `security-reviewed` or `security-deep-reviewed` (DOR-4711). If you think a PR needs one, ask Security.
 - **A red is not a reason to add load** (Team plan: 60 concurrent jobs, 19-25 per push). First failed-checks ejection from the queue: don't push or rerun; read the failing job, and once it is plainly not yours re-arm once through `arm.sh` (85% re-pass unchanged). The same check failing again on the same head is a regression only the queue can see (browser tests run only there): stop re-arming, read the log, push a fix. A PR check that is not yours: `gh run rerun <run-id> --failed`, once. Never an empty commit.
+- **Heavy local runs take turns through `heavy.sh`** (the maintainers' shared slot gate; it lives outside the repo): `pnpm verify` at either level, full test suites, builds, installs, Playwright and Docker. Never run one around it. Wait while the 1-minute load is 24 or more (16 for full builds, installs and Docker) or free disk is under the floor (46 GB now; the PM may waive it for one named PR). A single test file, one package's typecheck or lint, git and gh need no slot.
+- **A release goes first.** While a release is being cut, every other PR stays held, not armed or queued, and heavy runs the release doesn't name wait, until the release is on npm and checked there (the registry answers 200 for the new version).
 
 ## Signing outward writes (agent provenance)
 
