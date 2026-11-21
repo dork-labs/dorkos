@@ -7,10 +7,16 @@ describe('font-config', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it('all non-system configs have a googleFontsUrl', () => {
-    FONT_CONFIGS.filter((f) => f.key !== 'system').forEach((f) => {
-      expect(f.googleFontsUrl).toBeTruthy();
+  it('every font a person picks in Settings, but the default and system, loads from Google', () => {
+    FONT_CONFIGS.filter((f) => f.key !== 'system' && f.key !== DEFAULT_FONT).forEach((f) => {
+      expect(f.googleFontsUrl).toMatch(/^https:\/\/fonts\.googleapis\.com\//);
     });
+  });
+
+  // Purpose (DOR-4872): the default ships with the app, so a start asks Google
+  // for nothing and never waits on it.
+  it('the default font makes no Google request', () => {
+    expect(getFontConfig(DEFAULT_FONT).googleFontsUrl).toBeNull();
   });
 
   it('system config has null googleFontsUrl', () => {
