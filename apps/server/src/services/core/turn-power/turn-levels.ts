@@ -223,12 +223,23 @@ export function marksOf(
 
 /**
  * The latest turn this process recorded under an id, with its capture record, for
- * `captureCurrentTransfer` alone. Read only, by type: the capture copies what it keeps.
+ * `captureCurrentTransfer` alone. A deep-frozen copy, never the live record: nothing a reader does
+ * to it can make a later capture read as current.
  *
  * @param sessionId - The id the turn was sent under.
  */
 export function recordedTurnOf(sessionId: string): RecordedTurnView | undefined {
-  return turnLevels.get(sessionId);
+  const record = turnLevels.get(sessionId);
+  return record === undefined ? undefined : deepFreeze(structuredClone(record));
+}
+
+/** Freeze a plain value and everything inside it. */
+function deepFreeze<T>(value: T): T {
+  if (typeof value === 'object' && value !== null) {
+    for (const child of Object.values(value)) deepFreeze(child);
+    Object.freeze(value);
+  }
+  return value;
 }
 
 /**

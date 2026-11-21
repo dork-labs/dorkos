@@ -12,6 +12,7 @@ import {
   aliasTurnLevel,
   carryTurnLevel,
   markRunningTurn,
+  recordedTurnOf,
   TURN_LEVEL_MEMORY,
 } from '../turn-levels.js';
 import { captureCurrentTransfer } from '../current-transfer.js';
@@ -199,6 +200,27 @@ describe('recorded current transferable handoff capture', () => {
     const next = await record(runtime, session);
     expect(next).toBeGreaterThan(serial);
     expect(captureCurrentTransfer(session, serial).state).toBe('unknown');
+  });
+  it('hands readers a frozen copy, so nothing done to it reaches the live record', async () => {
+    const runtime = recorder(),
+      session = fresh();
+    const serial = await record(runtime, session);
+    const view = recordedTurnOf(session)! as unknown as {
+      level: { reach: string };
+      capture: { serial: number; eligible: boolean };
+    };
+    expect(Object.isFrozen(view.capture)).toBe(true);
+    // Try to forge a newer current turn and a wider level through the copy.
+    expect(() => {
+      view.capture.serial = serial + 1;
+    }).toThrow(TypeError);
+    expect(() => {
+      view.level.reach = 'read';
+    }).toThrow(TypeError);
+    expect(recordedTurnOf(session)!.capture.serial).toBe(serial);
+    expect(lastTurnLevelOf(session)?.reach).not.toBe('read');
+    expect(captureCurrentTransfer(session, serial + 1).state).toBe('unknown');
+    expect(captureCurrentTransfer(session, serial).state).toBe('recorded-transfer');
   });
   it('actual bounded recorder eviction refuses rather than manufacturing clean marks', async () => {
     const runtime = recorder(),
