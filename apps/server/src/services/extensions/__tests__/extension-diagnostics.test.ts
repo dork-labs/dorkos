@@ -1,9 +1,6 @@
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
 import { describe, expect, it } from 'vitest';
-import {
-  extensionErrors,
-  withSupervisedStatus,
-} from '../isolation/recovery/extension-diagnostics.js';
+import { extensionErrors, withSupervisedStatus } from '../isolation/recovery/diagnostics.js';
 
 function record(id: string, status: ExtensionRecordPublic['status']): ExtensionRecordPublic {
   return { id, status } as ExtensionRecordPublic;

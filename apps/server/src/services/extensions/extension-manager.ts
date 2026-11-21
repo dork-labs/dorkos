@@ -15,10 +15,7 @@
  * @module services/extensions/extension-manager
  */
 import path from 'path';
-import {
-  extensionErrors,
-  withSupervisedStatus,
-} from './isolation/recovery/extension-diagnostics.js';
+import { extensionErrors, withSupervisedStatus } from './isolation/recovery/diagnostics.js';
 import type { ExtensionHttpHandler } from './http/extension-http.js';
 import type { ExtensionRecord, ExtensionRecordPublic } from '@dorkos/extension-api';
 import { isEnabled, setEnabled, type CoreExtensionInfo } from './extension-enable-resolution.js';
