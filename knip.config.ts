@@ -63,6 +63,9 @@ const config: KnipConfig = {
         'cmdk', // The shared UI registry's command.tsx imports this.
         'vaul', // The shared UI registry's drawer.tsx imports this.
         'tw-animate-css', // Animation regression tests read the installed stylesheet from disk.
+        // Named only inside url() in src/bundled-fonts.css, which knip's CSS reader skips.
+        '@fontsource-variable/inter',
+        '@fontsource-variable/jetbrains-mono',
       ],
       ignore: [
         // Per-app Zod env convention (AGENTS.md): present even before any VITE_* var exists.
