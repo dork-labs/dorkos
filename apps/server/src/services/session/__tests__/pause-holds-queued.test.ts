@@ -689,12 +689,12 @@ describe('a pause between a queued turn’s start and its first model request (D
     expect(asked?.[1]).toBe('from A: add the totals');
   });
 
-  it('a mark that lived only in memory is held to the default on the rerun (Security Must 2)', async () => {
+  it('a mark the plan carried is kept on the rerun, from its row (Security Must 2, DOR-4350)', async () => {
     setQueuedChatCeilingResolver(undefined);
     const { runs, opts } = await cutPauseResume([], { carriedMarks: { outsider: true } });
 
     expect(runs).toBe(2);
-    expect(boundsOf(opts[1]!.permissionCeiling)).toContain('runtime-default');
+    expect((opts[1]!.carriedMarks as { outsider?: boolean } | undefined)?.outsider).toBe(true);
   });
 
   /**
@@ -832,9 +832,26 @@ describe('a held message never loses the limits its plan carried (DOR-4327, Secu
     expectNoRaise();
   });
 
+  // The row keeps the unattended answer itself (DOR-4350), so the resumed turn is the queued one,
+  // still with nobody to ask, rather than a turn held to the default.
   it('an unattended turn, as a heartbeat queues', async () => {
     await queueMarkedThenPauseResume({ unattended: true });
     expect(ran()).toContain('marked words');
-    expectNoRaise();
+    const opts = optsRan()[ran().indexOf('marked words')]!;
+    expect(opts.unattended).toBe(true);
+    expect(boundsOf(opts.permissionCeiling)).not.toContain('runtime-default');
+  });
+
+  // DOR-4350: the row keeps the limits themselves, so the resumed turn is the turn that was
+  // queued, its mark naming the outside source, not a plain turn held to the default.
+  it('resumes with its outsider mark and its very ceiling', async () => {
+    const bound = { asks: 'never', reach: 'everything' } as const;
+    await queueMarkedThenPauseResume({
+      carriedMarks: { outsider: true },
+      permissionCeiling: bound,
+    });
+    const opts = optsRan()[ran().indexOf('marked words')]!;
+    expect(opts.carriedMarks).toEqual({ outsider: true });
+    expect(boundsOf(opts.permissionCeiling)).toEqual([bound]);
   });
 });

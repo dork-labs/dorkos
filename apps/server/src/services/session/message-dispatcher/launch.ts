@@ -53,6 +53,7 @@ import type { PausedAgentRef } from '../../mesh/pause/agent-pause.js';
 import type { DispatchPlan, InFlightTurn } from './types.js';
 import { joinWaitingChatRows } from './join-chat-rows.js';
 import { isOwnersCleanSend } from './owner-send.js';
+import { withKeptCeiling } from './carried-limits.js';
 
 /** How many times a recovered row may fail to start before it is given up (DOR-3287). */
 export const RECOVERED_START_TRIES = 3;
@@ -206,6 +207,9 @@ export function launchDispatchInner(
   // The note is the turn's, not the chat's: the owner's own clean send ends it (DOR-4693). Every
   // other turn keeps it, and a room turn sets and ends its own (`room-turn-runner.ts`).
   const carriesWords = launchCarriesWords(clientId, messageId);
+  // What the row kept of the turn's limits (DOR-4350): a plan rebuilt after a pause or a restart
+  // carries none of its own, so the row's go with it. They only add.
+  const kept = getMessageQueueStore()?.get(messageId)?.carriedLimits ?? null;
   const ownersClean = isOwnersCleanSend(plan);
   // The one verdict the turn seam reads to clear a held chat (DOR-4515), by the id the runtime gets.
   // Every launch decides afresh, so a verdict never outlives the attempt it was found for.
@@ -251,7 +255,7 @@ export function launchDispatchInner(
         const ceiling = launchCeiling(
           clientId,
           messageId,
-          turn.permissionCeiling,
+          withKeptCeiling(turn.permissionCeiling, kept?.ceiling),
           getMessageQueueStore()?.get(messageId)?.heldToDefault === true
         );
         return ceiling !== undefined ? { permissionCeiling: ceiling } : {};
@@ -265,6 +269,7 @@ export function launchDispatchInner(
       // A mark the turn carries on from work it continues: it marks, and lowers nothing (DOR-3561).
       // A mini app's message carries one too, read from who queued the row (DOR-4594).
       ...(turn.carriedMarks?.outsider === true ||
+      kept?.outsider === true ||
       launchCarriesHold(clientId, messageId) ||
       isExtensionClientId(clientId)
         ? { carriedMarks: { outsider: true as const } }
@@ -272,7 +277,7 @@ export function launchDispatchInner(
       ...(turn.stallTimeoutMs !== undefined ? { stallTimeoutMs: turn.stallTimeoutMs } : {}),
       ...(turn.privateReceiptId !== undefined ? { privateReceiptId: turn.privateReceiptId } : {}),
       ...(turn.privateDispatchSignal ? { privateDispatchSignal: turn.privateDispatchSignal } : {}),
-      ...(turn.unattended ? { unattended: true } : {}),
+      ...(turn.unattended || kept?.unattended === true ? { unattended: true } : {}),
       // The turn is running: THIS is the instant the message stops waiting, and
       // every window is told so in the same beat — a queue chip that outlives
       // the message it stands for is a lie about what is still waiting.
