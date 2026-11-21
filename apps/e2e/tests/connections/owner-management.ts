@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
-import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
+import { expect, type APIRequestContext, type Locator, type Page } from '@playwright/test';
+import { test } from '../../fixtures/base';
 import { interceptNext } from '@dorkos/test-utils/playwright-routes';
 import { describeViolation, runAxe } from '../../axe.js';
 import {

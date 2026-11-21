@@ -1,4 +1,4 @@
-import { test } from '@playwright/test';
+import { test } from '../../fixtures/base';
 
 /**
  * The shared setup of the `chromium-mock` spec files (`chat-mock*.spec.ts`).

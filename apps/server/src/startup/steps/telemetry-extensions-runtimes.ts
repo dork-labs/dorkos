@@ -262,6 +262,7 @@ export async function startTelemetryExtensionsAndRuntimes(
   // The first scan ran before any runtime could say an agent's level, so it held every copy that
   // follows its agent (`path-trust-edits.ts`). Look again now.
   refs.extensionManager?.requestRefresh();
+  await refs.extensionManager?.startFileWatcher();
   // And whenever a person changes a level, so a lowered agent's next edit finds its copy held.
   onPermissionsChanged(() => refs.extensionManager?.requestRefresh());
 

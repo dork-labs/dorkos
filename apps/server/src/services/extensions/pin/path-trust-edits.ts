@@ -15,8 +15,9 @@
  *
  * At Full, an edit runs only when every file it changed can be traced, by content, to the
  * author's own turn that held no mark and ran under no ceiling (`path-trust-writers.ts`,
- * DOR-4528). The files it is traced from are the ones last TRUSTED: first seen, last run after
- * such an edit, or last approved by a person. They never move while the agent is below Full, so a
+ * DOR-4528). The files it is traced from are the ones last TRUSTED: scaffolded, last run after
+ * such an edit, or last approved by a person. A missing baseline waits; a legacy saved digest
+ * migrates only when its files still match. They never move while the agent is below Full, so a
  * change made then is traced too. Both sides are read from verified snapshots, never the live
  * folder. An edit that cannot be traced (a marked turn's, a shell's, one made while the server
  * was down) is pinned to the trusted files, and stays held until a person approves it: a later
@@ -43,6 +44,8 @@ import { markTrusted, tiedToAuthor, type AuthorCheck } from './path-trust-writer
 
 /** What a scan needs from the rest of the server (tests pass their own). */
 export interface PathTrustEditDeps {
+  /** False for a watcher; true for ordinary discovery that may verify a matching legacy digest. */
+  establishBaseline?: boolean;
   /** Whether the agent at this folder is at Full autonomy now. A failure counts as no. */
   agentAtFull: (agentPath: string) => Promise<boolean>;
   /** Pin one copy's approval to these files. */
@@ -130,12 +133,19 @@ interface SeenState {
   below: string[];
   untied: string[];
   trusted: Record<string, TrustedFiles>;
+  /** A legacy digest matched on an observer scan, awaiting ordinary verification. */
+  legacyBaselines?: Record<string, { digest: string; approval: string }>;
   distrustNew?: true;
 }
 
 /** Whether a value is a plain object. */
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** Match the protected approval as well as the files before restoring a legacy pin. */
+function approvalKey(source: ExtensionApprovedSource): string {
+  return JSON.stringify(Object.entries(source).sort(([a], [b]) => a.localeCompare(b)));
+}
 
 /** What the last scan saw: nothing when the file is not there, `distrustNew` when it is but fails. */
 async function readSeen(dorkHome: string): Promise<SeenState> {
@@ -155,9 +165,11 @@ async function readSeen(dorkHome: string): Promise<SeenState> {
       below: parsed.below ?? [],
       untied: parsed.untied ?? [],
       trusted: parsed.trusted ?? {},
+      ...(parsed.legacyBaselines ? { legacyBaselines: parsed.legacyBaselines } : {}),
       ...(parsed.distrustNew === true ? { distrustNew: true as const } : {}),
     };
     if (!isRecord(state.digests) || !isRecord(state.trusted)) throw new Error('bad shape');
+    if (state.legacyBaselines && !isRecord(state.legacyBaselines)) throw new Error('bad shape');
     if (!Array.isArray(state.below) || !Array.isArray(state.untied)) throw new Error('bad shape');
     return state;
   } catch {
@@ -170,8 +182,11 @@ async function writeSeen(dorkHome: string, state: SeenState): Promise<void> {
   const file = seenFile(dorkHome);
   await fs.mkdir(path.dirname(file), { recursive: true });
   const temp = `${file}.${randomUUID()}.tmp`;
-  const { digests, below, untied, trusted, distrustNew } = state;
-  await fs.writeFile(temp, JSON.stringify({ digests, below, untied, trusted, distrustNew }));
+  const { digests, below, untied, trusted, legacyBaselines, distrustNew } = state;
+  await fs.writeFile(
+    temp,
+    JSON.stringify({ digests, below, untied, trusted, legacyBaselines, distrustNew })
+  );
   await fs.rename(temp, file);
 }
 
@@ -183,6 +198,40 @@ function oneAtATime<T>(work: () => Promise<T>): Promise<T> {
   const run = queue.then(work, work);
   queue = run.catch(() => undefined);
   return run;
+}
+
+/**
+ * Record exactly the files just scaffolded, before publishing a path-trust approval.
+ * A first discovery can then judge an intervening edit against these files.
+ * Returns false if those files cannot be verified or their baseline cannot be saved.
+ */
+export function noteScaffoldTrusted(
+  dorkHome: string,
+  id: string,
+  scaffold: { targetDir: string; digest: string | null }
+): Promise<boolean> {
+  return oneAtATime(async () => {
+    try {
+      if (!scaffold.digest) return false;
+      const files = await verifiedFilesOf(dorkHome, { path: scaffold.targetDir }, scaffold.digest);
+      if (!files) return false;
+      const state = await readSeen(dorkHome);
+      state.trusted[id] = { digest: scaffold.digest, files };
+      state.digests[id] = scaffold.digest;
+      state.untied = state.untied.filter((held) => held !== id);
+      await writeSeen(dorkHome, state);
+      markTrusted(id);
+      return true;
+    } catch (err) {
+      logger.warn('[Extensions] Could not record the scaffold baseline', { err: String(err) });
+      return false;
+    }
+  });
+}
+
+/** The path-trust copies whose files already have a baseline, for the file watcher. */
+export function pathTrustBaselineIds(dorkHome: string): Promise<ReadonlySet<string>> {
+  return oneAtATime(async () => new Set(Object.keys((await readSeen(dorkHome)).trusted)));
 }
 
 /**
@@ -220,7 +269,7 @@ export function notePersonApproval(
 }
 
 /**
- * Apply the rule to every path-trust copy a scan found. The first sight of a copy only records.
+ * Apply the rule to every path-trust copy a scan found. Unknown files wait for a person.
  * Never throws: a failure leaves the copy as it was for the next scan.
  *
  * @param records - The copies this scan found.
@@ -232,9 +281,9 @@ export function notePathTrustEdits(
   records: readonly ExtensionRecord[],
   approvals: { approvedSources?: Record<string, ExtensionApprovedSource> } | undefined,
   dorkHome: string,
-  deps: PathTrustEditDeps = LIVE
+  deps: Partial<PathTrustEditDeps> = {}
 ): Promise<void> {
-  return oneAtATime(() => scan(records, approvals, dorkHome, deps));
+  return oneAtATime(() => scan(records, approvals, dorkHome, { ...LIVE, ...deps }));
 }
 
 /** One scan, run by {@link notePathTrustEdits} after any other read or write of the file. */
@@ -265,12 +314,51 @@ async function scan(
     for (const record of records) {
       const source = approvals?.approvedSources?.[record.id];
       const digest = record.currentDigest;
+      let legacy = state.legacyBaselines?.[record.id];
+      if (
+        legacy &&
+        (!source ||
+          !digest ||
+          !keepsPathTrust(record, source) ||
+          legacy.digest !== digest ||
+          legacy.approval !== approvalKey(source))
+      ) {
+        delete state.legacyBaselines![record.id];
+        legacy = undefined;
+        changed = true;
+      }
       if (!source || !digest || !source.authorHome) continue;
       if (!keepsPathTrust(record, source)) continue;
       const before = seen[record.id];
-      if (before === undefined && state.distrustNew) {
-        // What the file held is gone: a copy it does not name waits for a person.
-        if (!source.digest) deps.pin(record.id, MATCHES_NOTHING);
+      if (legacy && deps.establishBaseline === true) {
+        delete state.legacyBaselines![record.id];
+        changed = true;
+        if (legacy.digest === digest && source.digest === MATCHES_NOTHING) {
+          await trust(record, digest);
+          if (trusted[record.id]?.digest === digest) {
+            deps.pin(record.id, digest);
+            untied.delete(record.id);
+          }
+        }
+      }
+      if (
+        (before === undefined && state.distrustNew) ||
+        (!trusted[record.id] &&
+          (before === undefined || deps.establishBaseline === false || untied.has(record.id)))
+      ) {
+        // Unseen or held files establish no trust. Only an explicit legacy check may migrate.
+        if (
+          before === digest &&
+          !untied.has(record.id) &&
+          !below.has(record.id) &&
+          (!source.digest || source.digest === before)
+        ) {
+          (state.legacyBaselines ??= {})[record.id] = {
+            digest: before,
+            approval: approvalKey({ ...source, digest: MATCHES_NOTHING }),
+          };
+        }
+        if (!trusted[record.id] || !source.digest) deps.pin(record.id, MATCHES_NOTHING);
         untied.add(record.id);
         seen[record.id] = digest;
         changed = true;
@@ -288,14 +376,19 @@ async function scan(
         seen[record.id] = digest;
         changed = true;
       }
-      // First sight, or a copy seen before trusted files were kept: unchanged, not held, and
+      // A copy seen before trusted files were kept: unchanged, not held, and
       // running freely or pinned to exactly the files last seen (the boot scan pins first).
       const settled =
         !edited &&
         !untied.has(record.id) &&
         !below.has(record.id) &&
         (!source.digest || source.digest === before);
-      if (!trusted[record.id] && (before === undefined || settled)) await trust(record, digest);
+      if (
+        deps.establishBaseline === true &&
+        !trusted[record.id] &&
+        (before === undefined || settled)
+      )
+        await trust(record, digest);
       if (!atFull) {
         if (!below.has(record.id)) {
           below.add(record.id);
@@ -352,6 +445,16 @@ async function scan(
         limit: 'an edit to an extension waits for a person',
         agentPath: source.authorHome,
       });
+    }
+    // Discovery names the whole set; an incidental snapshot check names only one copy.
+    if (deps.establishBaseline !== undefined) {
+      const present = new Set(records.map((record) => record.id));
+      for (const id of Object.keys(state.legacyBaselines ?? {})) {
+        if (!present.has(id)) {
+          delete state.legacyBaselines![id];
+          changed = true;
+        }
+      }
     }
     if (changed) {
       await writeSeen(dorkHome, {

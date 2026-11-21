@@ -1,4 +1,5 @@
-import { test as base } from '@playwright/test';
+// `./base` answers Google Fonts locally on every context (DOR-4871).
+import { test as base } from './base';
 import { ChatPage } from '../pages/ChatPage';
 import { DashboardSidebarPage } from '../pages/DashboardSidebarPage';
 import { SettingsPage } from '../pages/SettingsPage';

@@ -100,6 +100,32 @@ export class ExtensionDiscovery {
     core: Map<string, CoreExtensionInfo>,
     projects: readonly string[] = []
   ): Promise<ExtensionRecord[]> {
+    return this.scan({ cwd, config, core, projects, establishBaseline: true });
+  }
+
+  /** Recheck known roots after a file signal, without establishing first-sight trust. */
+  async recheck(
+    cwd: string | null,
+    config: ExtensionsConfig,
+    core: Map<string, CoreExtensionInfo>,
+    projects: readonly string[] = []
+  ): Promise<ExtensionRecord[]> {
+    return this.scan({ cwd, config, core, projects, establishBaseline: false });
+  }
+
+  private async scan({
+    cwd,
+    config,
+    core,
+    projects,
+    establishBaseline,
+  }: {
+    cwd: string | null;
+    config: ExtensionsConfig;
+    core: Map<string, CoreExtensionInfo>;
+    projects: readonly string[];
+    establishBaseline: boolean;
+  }): Promise<ExtensionRecord[]> {
     const globalDir = path.join(this.dorkHome, 'extensions');
     const globalRecords = await this.scanDirectory(globalDir, 'global');
     const globalPluginsDir = path.join(this.dorkHome, 'plugins');
@@ -306,7 +332,7 @@ export class ExtensionDiscovery {
           .join(', ') || 'none'
       }${shadowedResults.length > 0 ? `; ${shadowedResults.length} older copy(ies) not used` : ''}`
     );
-    await notePathTrustEdits(results, config, this.dorkHome);
+    await notePathTrustEdits(results, config, this.dorkHome, { establishBaseline });
     return [...results, ...shadowedResults];
   }
 

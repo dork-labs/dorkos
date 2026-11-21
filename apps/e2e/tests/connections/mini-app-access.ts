@@ -1,7 +1,8 @@
 import { cpSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, type APIRequestContext, type Page } from '@playwright/test';
+import { test } from '../../fixtures/base';
 
 /**
  * The one page where a person lets a mini app read a connected app (DOR-3547,

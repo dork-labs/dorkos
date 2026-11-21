@@ -20,11 +20,14 @@ import type { ExtensionRecord, ExtensionRecordPublic } from '@dorkos/extension-a
 import { isEnabled, setEnabled, type CoreExtensionInfo } from './extension-enable-resolution.js';
 import { ExtensionDiscovery } from './extension-discovery.js';
 import { ExtensionCompiler } from './extension-compiler.js';
+import { applyCompileResult } from './copies/extension-compile-result.js';
 import {
   ExtensionServerLifecycle,
   type ServerLifecycleOptions,
 } from './extension-server-lifecycle.js';
-import { extensionDeclarationDigest } from './agent-tools/declaration-digest.js';
+import { extensionCopyState, runningCopyChanged } from './copies/extension-copy-state.js';
+import { extensionFolderExists } from './copies/extension-copy-presence.js';
+import { ExtensionFileWatcher } from './copies/extension-file-watcher.js';
 import { testClientExtension, testServerCompilation } from './extension-test-harness.js';
 import { scaffoldExtension, buildCreateResult } from './extension-scaffolder.js';
 import { approveNewScaffold, pinScaffoldClient } from './pin/extension-scaffold-approval.js';
@@ -33,7 +36,6 @@ import { logConfigWrite } from '../core/operator/config-write.js';
 import type { ExtensionTemplate } from './extension-templates.js';
 import {
   toPublic,
-  toRecordError,
   type CreateExtensionResult,
   type ReloadExtensionResult,
   type TestExtensionResult,
@@ -77,7 +79,6 @@ import {
 import { declaredSet, isSamePermissionSet } from './isolation/permission-coverage.js';
 import { isExpectedCopy, type ExpectedCopy } from './pin/extension-expected-copy.js';
 import { bundleDigestOf, isPathTrustApproval } from './pin/extension-path-trust.js';
-import { isolationKeyOf } from './isolation/isolation-view.js';
 import { withoutExtension, withoutPersonChoices } from './rooms/extension-room-access.js';
 import { withRunApproval } from './pin/extension-approval-write.js';
 
@@ -111,27 +112,6 @@ export type { CreateExtensionResult, ReloadExtensionResult, TestExtensionResult 
 function isSameCwd(a: string | null, b: string | null): boolean {
   if (a === null || b === null) return a === b;
   return path.resolve(a) === path.resolve(b);
-}
-
-/** Apply a compile result to an extension record (DRY: used by enable, reload, compileEnabled). */
-function applyCompileResult(
-  record: ExtensionRecord,
-  result: Awaited<ReturnType<ExtensionCompiler['compile']>>
-): boolean {
-  if ('error' in result) {
-    record.status = 'compile_error';
-    record.error = toRecordError(result.error);
-    record.sourceHash = result.sourceHash;
-    record.bundleReady = false;
-    record.clientDigest = undefined;
-    return false;
-  }
-  record.status = 'compiled';
-  record.sourceHash = result.sourceHash;
-  record.bundleReady = true;
-  record.clientDigest = bundleDigestOf(result.code);
-  record.error = undefined;
-  return true;
 }
 
 /**
@@ -193,6 +173,7 @@ export class ExtensionManager {
   private undeliveredSkills: RunningSkillsChange | null = null;
   /** Clears an uninstalled extension's tool permission settings; see {@link attachAgentTools}. */
   private forgetToolPermissions: ForgetToolPermissions | null = null;
+  private fileWatcher: ExtensionFileWatcher | null = null;
 
   /**
    * Build the extension system rooted at one DorkOS data directory.
@@ -400,10 +381,27 @@ export class ExtensionManager {
    * known project, so a request handler answers first and clients learn what
    * changed from the `extension_reloaded` broadcast. Scans run one at a time.
    */
-  requestRefresh(): void {
-    void this.enqueue(() => this.switchCopies()).catch((err) => {
+  requestRefresh(options: { establishBaseline?: boolean } = {}): void {
+    void this.enqueue(() => this.switchCopies(options)).catch((err) => {
       logger.warn('[Extensions] A background re-scan failed', err);
     });
+  }
+
+  /** Follow installed source folders once the ordinary startup scans have settled. */
+  async startFileWatcher(): Promise<void> {
+    await this.whenIdle();
+    if (this.fileWatcher) return;
+    this.fileWatcher = new ExtensionFileWatcher({
+      source: this,
+      presenceChanged: () => this.emitChanged(),
+    });
+    await this.fileWatcher.start();
+  }
+
+  /** Release source-folder watches before shutting the server down. */
+  async stopFileWatcher(): Promise<void> {
+    await this.fileWatcher?.stop();
+    this.fileWatcher = null;
   }
 
   /** Resolves once every scan asked for so far has finished. */
@@ -425,15 +423,13 @@ export class ExtensionManager {
   }
 
   /** The scan itself: discover, record, bind old approvals, compile. */
-  private async rescan(): Promise<void> {
+  private async rescan(options: { establishBaseline?: boolean } = {}): Promise<void> {
     const config = configManager.get('extensions');
     const projects = await this.readProjectRoots();
-    const discovered = await this.discovery.discover(
-      this.currentCwd,
-      config,
-      this.coreExtensions,
-      projects
-    );
+    const discover = (
+      options.establishBaseline === false ? this.discovery.recheck : this.discovery.discover
+    ).bind(this.discovery);
+    const discovered = await discover(this.currentCwd, config, this.coreExtensions, projects);
     const records = discovered.filter((rec) => !rec.shadowedBy);
     this.shadowed = discovered.filter((rec) => !!rec.shadowedBy);
 
@@ -513,41 +509,26 @@ export class ExtensionManager {
    *
    * @returns The ids whose copy, or whose right to run, changed.
    */
-  private async switchCopies(): Promise<string[]> {
+  private async switchCopies(options: { establishBaseline?: boolean } = {}): Promise<string[]> {
     const before = new Map(
       [...this.extensions.values()].map((rec) => [
         rec.id,
-        {
-          path: path.resolve(rec.path),
-          runPath: rec.runPath ?? null,
-          runs: mayRunExtensionCode(rec, configManager.get('extensions')),
-          declarations: extensionDeclarationDigest(rec.manifest),
-          isolation: JSON.stringify(isolationKeyOf(rec)),
-        },
+        extensionCopyState(rec, configManager.get('extensions')),
       ])
     );
-    await this.rescan();
+    await this.rescan(options);
     const approvals = configManager.get('extensions');
     const changed: string[] = [];
     for (const rec of this.extensions.values()) {
       const prior = before.get(rec.id);
-      const runs = mayRunExtensionCode(rec, approvals);
-      const switched =
-        !prior ||
-        prior.path !== path.resolve(rec.path) ||
-        prior.runPath !== (rec.runPath ?? null) ||
-        prior.runs !== runs ||
-        // A running copy whose manifest now declares different tools or
-        // skills restarts, so the tools agents see match its manifest
-        // (DOR-2685).
-        (runs && prior.declarations !== extensionDeclarationDigest(rec.manifest)) ||
-        // Where it runs, or what it may reach, changed while it still may
-        // run: restart it under the new declaration (DOR-2686).
-        (runs && prior.isolation !== JSON.stringify(isolationKeyOf(rec)));
-      if (!switched) continue;
+      const current = extensionCopyState(rec, approvals);
+      if (!runningCopyChanged(prior, current)) {
+        if (prior?.shown !== current.shown) changed.push(rec.id);
+        continue;
+      }
       changed.push(rec.id);
       if (prior) await this.serverLifecycle.shutdown(rec.id);
-      if (runs && this.needsServer(rec)) {
+      if (current.runs && this.needsServer(rec)) {
         const result = await this.serverLifecycle.initialize(rec.id, rec);
         if (!result.ok) {
           logger.warn(
@@ -615,7 +596,7 @@ export class ExtensionManager {
    * `status = 'compiled'` over whatever the status was, and `'compiled'` is one of
    * the statuses {@link ExtensionServerLifecycle.initialize} accepts — so
    * `reload_extensions --id <a-disabled-extension>` mounted its routes and ran its
-   * `server.ts`, with the cockpit still showing the toggle as off.
+   * `server.ts`, with the app still showing the toggle as off.
    *
    * The question is asked of {@link isEnabled} against stored config, NOT of
    * `record.status`, precisely because the status field is what the bug corrupts.
@@ -732,7 +713,8 @@ export class ExtensionManager {
     });
     const author = recordAuthor ? agentHome : undefined;
     const autoApproved =
-      approveIfTrusted === true && (await approveNewScaffold(rest.name, scaffoldResult, author));
+      approveIfTrusted === true &&
+      (await approveNewScaffold(this.dorkHome, rest.name, scaffoldResult, author));
 
     await this.reload();
     await this.enable(rest.name);
@@ -947,6 +929,9 @@ export class ExtensionManager {
 
     // The approval is for THIS copy (DOR-2383) and, unless it keeps path trust,
     // for its files as they are on disk right now (DOR-3068).
+    if (!(await extensionFolderExists(record.path))) {
+      throw new ApprovalRefusedError('stale', 'Its folder is gone.');
+    }
     const extensions = configManager.get('extensions');
     const live = await liveDigestOf(record);
     if (options.expectedDigest !== undefined && live !== options.expectedDigest) {
@@ -1244,7 +1229,7 @@ export class ExtensionManager {
    * directly has to come through here too.
    *
    * Running in the browser is not a lesser kind of running. The bundle is
-   * same-origin JavaScript on the cockpit page, so it inherits the person's session
+   * same-origin JavaScript on the app page, so it inherits the person's session
    * on every request it makes — including `POST /api/extensions/<id>/approve`,
    * which would let an agent's own client code approve the agent's server code. It
    * is also on the very screen a person opens to decide. Serving it before the
@@ -1293,7 +1278,7 @@ export class ExtensionManager {
    * Update the CWD and return the diff of extension IDs (added/removed).
    *
    * A cwd that is already the current one changes nothing, so it re-scans
-   * nothing: the cockpit announces its working directory once per page load
+   * nothing: the app announces its working directory once per page load
    * (`POST /api/extensions/cwd-changed`), and that is almost always the
    * directory the server booted with. That second discovery pass existed to
    * answer a question nobody asked, and re-printed the first pass's warnings
