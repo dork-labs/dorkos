@@ -42,6 +42,7 @@ import {
 } from './handoff-guards/done-signing-in.js';
 import {
   assertHandoffProfileExists,
+  signInProfile,
   type HandoverBrowser,
 } from './handoff-guards/handover-browser.js';
 import { refuseAgentDuringHandoff } from './handoff-guards/agent-custody.js';
@@ -49,7 +50,7 @@ import { assertSignInUrl, siteOnly, trimPage } from './handoff-guards/page-addre
 import { prepareProfileFolder } from './profile-folders.js';
 import type { SignInWindow } from './sign-in-window.js';
 
-export type { OutsideTurnCheck, OutsideTurnReason };
+export type { OutsideTurnCheck, OutsideTurnReason, HandoverBrowser };
 
 /** Where to put the agent back when the person hands the browser back. */
 interface ReopenAt {
@@ -59,7 +60,6 @@ interface ReopenAt {
 }
 
 export { assertSignInUrl, siteOnly, SIGNING_IN_REFUSAL };
-export type { HandoverBrowser };
 
 /** What the agent is told after it hands the browser over. */
 export const HANDED_OVER_NEXT =
@@ -84,15 +84,15 @@ export class BrowserHandover {
   signInHoldsProfile(profileId: string | null): boolean {
     return this.signIns.holds(this.folderOf(profileId));
   }
-  private signingIn = 0;
+  private signingProfile: string | null | undefined;
   private preparingHandoff = false;
   private answeringHandoff = false;
 
   /** Includes preparation, saving, and a handoff that can reopen this profile. */
   holdsProfile(profileId: string | null): boolean {
     return (
-      this.preparingHandoff ||
-      this.signingIn > 0 ||
+      (this.preparingHandoff && this.browser.currentProfileId() === profileId) ||
+      (this.signingProfile !== undefined && this.signingProfile === profileId) ||
       this.signIns.holds(this.folderOf(profileId)) ||
       (this.record?.outcome === null && this.record.profileId === profileId)
     );
@@ -399,11 +399,12 @@ export class BrowserHandover {
     // A new sign-in owes nothing to an older one's window (DOR-4693), unless that one is still
     // open: its own end puts its window back.
     if (!this.signIns.active) this.reopenAfterSignIn = undefined;
-    this.signingIn++;
+    if (this.signingProfile !== undefined) throw browserInUseRefusal();
+    this.signingProfile = signInProfile(input, this.browser.currentProfileId(), this.record);
     try {
       return await this.startSignIn(input);
     } finally {
-      this.signingIn--;
+      this.signingProfile = undefined;
     }
   }
 
@@ -446,7 +447,7 @@ export class BrowserHandover {
       this.reopenAt = { sessionId: handoff.sessionId, profileId, url: this.askedUrl ?? tab.url };
     } else {
       url = assertSignInUrl(input.url);
-      profileId = input.profileId ?? null;
+      profileId = signInProfile(input, state.sessionId ? this.browser.currentProfileId() : null);
       assertHandoffProfileExists(this.browser, profileId);
     }
     this.browser.requireExclusiveProfile?.(profileId);
@@ -467,7 +468,7 @@ export class BrowserHandover {
       await this.signIns.start(folder, profileId, url.href);
     } catch (error) {
       // A sign-in that never started never ends, so nothing may reopen on its account.
-      this.reopenAfterSignIn = undefined;
+      if (agentWindowOnProfile) this.reopenAfterSignIn = undefined;
       throw error;
     }
     return this.state();

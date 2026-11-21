@@ -1,6 +1,7 @@
 /** Person-only, profile-wide removal. No site or disk path is accepted. */
 import type { Hono, Context } from 'hono';
 import { z } from 'zod';
+import { LocalBrowserProfileIdSchema } from '@dorkos/shared/local-browser';
 import type { ApiEnv } from '../http/api-chain.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import { readJsonBody } from '../http/request-body.js';
@@ -33,20 +34,18 @@ export function mountLocalBrowserProfileRemoval(
   router.post('/profiles/:id/forget-sign-ins', async (c) => {
     if (!person(c)) return refused(c);
     z.object({}).strict().default({}).parse(readJsonBody(c));
-    const id = z.union([z.literal('default'), z.string().uuid()]).parse(c.req.param('id'));
+    const id = LocalBrowserProfileIdSchema.parse(c.req.param('id'));
     if (id !== 'default' && !deps?.profiles.get(id)) return missing(c);
-    // The panel's one Saved sign-ins row says every site is signed out, so the default's
-    // Forget clears every named profile too, including ones the panel no longer lists.
-    if (id === 'default')
-      await service.profileRemoval.forgetAll(deps?.profiles.list().map((item) => item.id) ?? []);
-    else await service.profileRemoval.forget(id);
+    await service.profileRemoval.forget(id === 'default' ? null : id);
     audit(id, false);
     return c.json({ success: true });
   });
   router.delete('/profiles/:id', async (c) => {
     if (!person(c)) return refused(c);
     z.object({}).strict().default({}).parse(readJsonBody(c));
-    const id = z.string().uuid().parse(c.req.param('id'));
+    const id = LocalBrowserProfileIdSchema.refine((id) => id !== 'default').parse(
+      c.req.param('id')
+    );
     if (!deps?.profiles.get(id)) return missing(c);
     await service.profileRemoval.delete(id, deps.profiles);
     audit(id, true);
