@@ -32,6 +32,7 @@ import type {
   TurnPermissionLevel,
 } from '@dorkos/shared/agent-runtime';
 import { sessionPath } from '@dorkos/shared/session-link';
+import { clampModeToCeiling, type DeclaredModes } from '@dorkos/shared/permission-semantics';
 import type { ActivityService } from '../../activity/activity-service.js';
 import { MARKED_TURN_REASON } from './marked-turn-copy.js';
 
@@ -88,6 +89,28 @@ export function ownLevelBounds(
   });
   if (kept.length === 0) return undefined;
   return kept.length === 1 ? kept[0]! : (kept as TurnPermissionCeiling);
+}
+
+/**
+ * The active choice within person and agent bounds, before marks and stranger holds.
+ * An unknown choice stays unknown.
+ *
+ * @param declared - The runtime's own mode descriptors.
+ * @param mode - The choice for the active turn.
+ * @param ceilings - Current turn and any carried background bounds.
+ */
+export function chosenModeWithinOwnBounds(
+  declared: DeclaredModes,
+  mode: string | undefined,
+  ...ceilings: readonly (TurnPermissionCeiling | undefined)[]
+): string | undefined {
+  if (mode === undefined || !declared.values.some((entry) => entry.id === mode)) return mode;
+  let chosen = mode;
+  for (const ceiling of ceilings) {
+    const own = ownLevelBounds(ceiling);
+    if (own !== undefined) chosen = clampModeToCeiling(declared, chosen, own);
+  }
+  return chosen;
 }
 
 /**
