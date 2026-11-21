@@ -963,6 +963,9 @@ describe('permission to run code inside DorkOS (DOR-516)', () => {
 
     const box = screen.getByTestId('extension-needs-approval-full-stack');
     expect(box).toHaveTextContent('Test Extension wants to run on this computer.');
+    expect(screen.getByTestId('extension-waiting-state-full-stack')).toHaveTextContent(
+      'Off until you allow it.'
+    );
     const facts = within(box).getByTestId('extension-permissions-full-stack');
     expect(facts).toHaveTextContent('AccessRuns inside DorkOS, with full access to this computer');
     expect(facts).toHaveTextContent('Runs asYou');

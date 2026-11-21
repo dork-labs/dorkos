@@ -13,6 +13,7 @@ import { logConfigWrite } from '../../core/operator/config-write.js';
 import { declaredSet } from '../isolation/permission-coverage.js';
 import { approvalFor, liveDigestOf, realPathOf } from './extension-content-pin.js';
 import { isPathTrustApproval } from './extension-path-trust.js';
+import { noteScaffoldTrusted } from './path-trust-edits.js';
 import { rulePath } from '../../runtimes/claude-code/messaging/directory-grants.js';
 import path from 'path';
 
@@ -40,6 +41,7 @@ import path from 'path';
  * including every template that runs inside DorkOS, is pinned to the files
  * just scaffolded, so the agent's first edit waits for a person.
  *
+ * @param dorkHome - Where the trusted scaffold baseline is saved.
  * @param id - The new extension's id.
  * @param scaffold - The folder and manifest the scaffolder just wrote, and
  *   the digest of the files it wrote. Only those exact files are approved: a
@@ -50,6 +52,7 @@ import path from 'path';
  * @returns The approved permission set, or `null` when nothing was approved.
  */
 export async function approveNewScaffold(
+  dorkHome: string,
   id: string,
   scaffold: {
     targetDir: string;
@@ -91,6 +94,11 @@ export async function approveNewScaffold(
   });
   // A folder DorkOS cannot digest waits for a person like any other.
   if (!source) return null;
+  // Establish only the files this authorized create wrote, before any scan
+  // can see its path-trust approval. A missing baseline never grants trust.
+  if (isPathTrustApproval(source) && !(await noteScaffoldTrusted(dorkHome, id, scaffold))) {
+    return null;
+  }
   // Read after the awaits above, so a write made meanwhile is kept.
   const before = configManager.get('extensions');
   configManager.set('extensions', {

@@ -1,6 +1,8 @@
 import type { Page, Route } from '@playwright/test';
+import type { LocalBrowserPersonState } from '@dorkos/shared/local-browser';
 import { test, expect } from '../../fixtures';
 import { LocalBrowserPage } from '../../pages/LocalBrowserPage';
+import { fakeBrowserState } from '../../pages/fake-browser-state';
 
 /**
  * The Agent browser's status pill in the real app (DOR-4428). Only the browser's own
@@ -12,23 +14,16 @@ import { LocalBrowserPage } from '../../pages/LocalBrowserPage';
 
 const ASKED_AT = '2026-11-15T11:58:00.000Z';
 
-type BrowserState = Record<string, unknown> & { takenOver: boolean; paused: boolean };
-
-function drivenBy(sessionId: string): BrowserState {
-  return {
+function drivenBy(sessionId: string): LocalBrowserPersonState {
+  return fakeBrowserState({
     connectionId: 'c1',
     sessionId,
     mode: 'new-window',
     status: 'connected',
-    paused: false,
     tabs: [{ id: 't1', url: 'https://northwind.example/pricing', title: 'Pricing' }],
     selectedTabId: 't1',
     revision: 1,
-    preparation: null,
-    handoff: null,
-    signIn: null,
-    takenOver: false,
-  };
+  });
 }
 
 /**
@@ -40,7 +35,7 @@ async function chatWithBrowser(
   chatPage: { goto: (id?: string, opts?: { dir: string }) => Promise<void> } & {
     sendMessage: (text: string) => Promise<void>;
   },
-  initial: (sessionId: string) => BrowserState = drivenBy
+  initial: (sessionId: string) => LocalBrowserPersonState = drivenBy
 ) {
   const seed = await page.request.post('/api/test/seed-agent');
   expect(seed.ok()).toBe(true);
@@ -67,7 +62,7 @@ async function chatWithBrowser(
         state = {
           ...state,
           paused: false,
-          handoff: { ...(state.handoff as object), outcome: 'handed-back' },
+          handoff: state.handoff && { ...state.handoff, outcome: 'handed-back' },
         };
     }
     return route.fulfill({ json: state });

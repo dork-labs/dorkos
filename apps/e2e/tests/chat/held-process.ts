@@ -41,7 +41,8 @@
  *
  * @module tests/chat/held-process
  */
-import { test, expect } from '@playwright/test';
+import { expect } from '@playwright/test';
+import { test } from '../../fixtures/base';
 import type { APIRequestContext, Page } from '@playwright/test';
 import { ChatPage } from '../../pages/ChatPage.js';
 

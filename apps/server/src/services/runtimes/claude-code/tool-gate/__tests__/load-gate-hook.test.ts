@@ -811,6 +811,9 @@ describe('every answer is no answer', () => {
       occupy: vi.fn(() => null),
       waitWhileBusy: vi.fn(async () => {}),
       waitingJobs: () => [],
+      letThrough: () => 'not-found',
+      markUrgent: () => 'not-found',
+      moveToFront: () => 'not-found',
     };
   }
   const clock = () => 0;
@@ -1125,6 +1128,9 @@ describe('giving slots back', () => {
         occupy: vi.fn(() => null),
         waitWhileBusy: vi.fn(async () => {}),
         waitingJobs: () => [],
+        letThrough: () => 'not-found',
+        markUrgent: () => 'not-found',
+        moveToFront: () => 'not-found',
       },
       () => 0
     );

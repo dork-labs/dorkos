@@ -328,6 +328,7 @@ export function LocalBrowserPanel({
           </div>
           <LocalBrowserView
             sessionId={sessionId}
+            streamChatId={capabilities?.watchStream ? sessionId : null}
             tab={selected ?? null}
             connectionId={state.connectionId ?? null}
             embedded={mode === 'embedded'}

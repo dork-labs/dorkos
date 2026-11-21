@@ -417,6 +417,9 @@ describe('a chat never waits behind its own slot', () => {
       occupy: vi.fn(() => null),
       waitWhileBusy: vi.fn(async () => {}),
       waitingJobs: () => [],
+      letThrough: () => 'not-found',
+      markUrgent: () => 'not-found',
+      moveToFront: () => 'not-found',
     }));
     const ana = m.chat('ana', 'bypassPermissions', { 'perm-a': 'call-a', 'perm-h': 'call-h' });
     ana.permissions.pendingPermissionSessions.set('perm-h', 'ses_helper');

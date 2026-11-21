@@ -27,6 +27,9 @@ function gateGiving(slot: HeldSlot): LoadGate {
     occupy: vi.fn(() => slot),
     waitWhileBusy: vi.fn(async () => {}),
     waitingJobs: () => [],
+    letThrough: () => 'not-found',
+    markUrgent: () => 'not-found',
+    moveToFront: () => 'not-found',
   };
 }
 
