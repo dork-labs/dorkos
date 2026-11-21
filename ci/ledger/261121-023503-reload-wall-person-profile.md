@@ -16,7 +16,7 @@ that call. Carry the approved public-Chrome fixture into this branch and reuse
 its invented CI identity, real signed profile bindings and person-open-first
 setup. After the agent reuses the initialized profile, navigation, reads and
 handoff stay on that chat's page session. Cleanup closes every fixture session
-and its in-memory database.
+without constructing a database; signed profile records remain memory-only.
 
 This is fixture hygiene, with no production authorization change or pipeline
 speed claim. The CI-only assertions and loopback-only reload witness remain;

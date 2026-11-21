@@ -4,6 +4,15 @@ import { PUBLIC_CHROME_CHAT } from '../local-browser-ci/public-chrome-profile.js
 import { openReloadWallBrowser } from '../local-browser-ci/reload-wall-profile.js';
 import { browserProofPage } from '../local-browser-ci/proof-page.js';
 
+// The native reload witness must also work with Electron's SQLite ABI installed.
+vi.mock('better-sqlite3', () => ({
+  default: class {
+    constructor() {
+      throw new Error('The native reload witness cannot construct SQLite.');
+    }
+  },
+}));
+
 it('initializes the reload witness as a person and keeps its work on the same chat page', async () => {
   vi.stubEnv('CI', 'true');
   vi.stubEnv('DISPLAY', ':0'); // The backend is fake, including on headless CI.

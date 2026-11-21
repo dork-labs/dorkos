@@ -5,6 +5,29 @@ import {
   PUBLIC_CHROME_CHAT,
 } from '../local-browser-ci/public-chrome-profile.js';
 
+// Packaged CI has Electron's SQLite ABI. This witness must work without constructing SQLite.
+vi.mock('better-sqlite3', () => ({
+  default: class {
+    constructor() {
+      throw new Error('The native browser witness cannot construct SQLite.');
+    }
+  },
+}));
+
+it('refuses the browser helper outside CI before a browser launches', async () => {
+  vi.stubEnv('CI', 'false');
+  const page = await leaseFixture();
+  try {
+    await expect(createPublicChromeBrowser(page.directory, page.backend)).rejects.toThrow(
+      'CI-only'
+    );
+    expect(page.backend.launch).not.toHaveBeenCalled();
+  } finally {
+    await page.cleanup();
+    vi.unstubAllEnvs();
+  }
+});
+
 it('requires the person to initialize the invented agent profile before an agent can reuse it', async () => {
   vi.stubEnv('CI', 'true');
   vi.stubEnv('DISPLAY', ':0'); // The backend below is fake, including on headless CI.
