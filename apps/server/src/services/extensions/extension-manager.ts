@@ -20,7 +20,7 @@ import type { ExtensionRecord, ExtensionRecordPublic } from '@dorkos/extension-a
 import { isEnabled, setEnabled, type CoreExtensionInfo } from './extension-enable-resolution.js';
 import { ExtensionDiscovery } from './extension-discovery.js';
 import { ExtensionCompiler } from './extension-compiler.js';
-import { applyCompileResult } from './copies/extension-compile-result.js';
+import { applyCompileResult, compileEnabledRecords } from './copies/extension-compile-result.js';
 import {
   ExtensionServerLifecycle,
   type ServerLifecycleOptions,
@@ -39,6 +39,7 @@ import {
   type CreateExtensionResult,
   type ReloadExtensionResult,
   type TestExtensionResult,
+  type ToggleExtensionResult,
 } from './extension-manager-types.js';
 import {
   approvedSourceOf,
@@ -412,7 +413,15 @@ export class ExtensionManager {
     );
   }
 
-  /** Run `job` after every scan queued before it, one at a time. */
+  /**
+   * Run `job` after every scan queued before it, one at a time.
+   *
+   * A scan reads the config once and then replaces every record, so turning
+   * an extension on or off, approving or withdrawing it, starting or reloading
+   * its server half all run here too. Run beside a scan, the change landed on
+   * a record the scan then threw away (DOR-4886). A job must never wait on
+   * another queued job: it would wait behind itself.
+   */
   private enqueue<T>(job: () => Promise<T>): Promise<T> {
     const next = this.scans.then(job, job);
     this.scans = next.then(
@@ -442,7 +451,8 @@ export class ExtensionManager {
     await dropGoneExtensions(records, this.shadowed, this.forgetToolPermissions);
     await placeSnapshots(this.dorkHome, records, configManager.get('extensions'));
 
-    await this.compileEnabled();
+    // One extension's unexpected compile throw never stops the rest.
+    await compileEnabledRecords(this.extensions.values(), this.compiler);
     this.emitChanged();
   }
 
@@ -606,7 +616,12 @@ export class ExtensionManager {
    * `isEnabled` still says yes and the next reload after a fix goes straight
    * through — the edit-fix-reload loop keeps working.
    */
-  async reloadExtension(id: string): Promise<ReloadExtensionResult> {
+  reloadExtension(id: string): Promise<ReloadExtensionResult> {
+    return this.enqueue(() => this.reloadExtensionNow(id));
+  }
+
+  /** {@link reloadExtension}'s body, run on the scan queue. */
+  private async reloadExtensionNow(id: string): Promise<ReloadExtensionResult> {
     const record = this.extensions.get(id);
     if (!record) throw new Error(`Extension '${id}' not found`);
 
@@ -818,13 +833,17 @@ export class ExtensionManager {
   }
 
   /** Enable an extension: add to config, trigger compilation. */
-  async enable(
-    id: string
-  ): Promise<{ extension: ExtensionRecordPublic; reloadRequired: boolean } | null> {
+  enable(id: string): Promise<ToggleExtensionResult> {
+    return this.enqueue(() => this.enableNow(id));
+  }
+
+  /** {@link enable}'s body, run on the scan queue. */
+  private async enableNow(id: string): Promise<ToggleExtensionResult> {
     // An id this manager has not seen may have just arrived on disk: the
     // marketplace plugin install enables each extension it carries right after
     // moving the plugin into place, before anything re-scanned (DOR-2383).
-    if (!this.extensions.has(id)) await this.reload();
+    // Already on the queue, so the re-scan runs here rather than behind it.
+    if (!this.extensions.has(id)) await this.switchCopies();
     const record = this.extensions.get(id);
     if (!record) return null;
     if (record.status === 'incompatible' || record.status === 'invalid') return null;
@@ -864,9 +883,12 @@ export class ExtensionManager {
   }
 
   /** Disable an extension: remove from config. */
-  async disable(
-    id: string
-  ): Promise<{ extension: ExtensionRecordPublic; reloadRequired: boolean } | null> {
+  disable(id: string): Promise<ToggleExtensionResult> {
+    return this.enqueue(() => this.disableNow(id));
+  }
+
+  /** {@link disable}'s body, run on the scan queue. */
+  private async disableNow(id: string): Promise<ToggleExtensionResult> {
     const record = this.extensions.get(id);
     if (!record) return null;
 
@@ -920,9 +942,17 @@ export class ExtensionManager {
    * @throws {ApprovalRefusedError} When the files changed since the card, or
    *   the copy must be pinned and its folder cannot be digested.
    */
-  async approveToRun(
+  approveToRun(
     id: string,
     options: { expectedDigest?: string } = {}
+  ): Promise<ExtensionRecordPublic | null> {
+    return this.enqueue(() => this.approveToRunNow(id, options));
+  }
+
+  /** {@link approveToRun}'s body, run on the scan queue. */
+  private async approveToRunNow(
+    id: string,
+    options: { expectedDigest?: string }
   ): Promise<ExtensionRecordPublic | null> {
     const record = this.extensions.get(id);
     if (!record) return null;
@@ -1075,14 +1105,14 @@ export class ExtensionManager {
    * @param id - Extension id to revoke.
    * @returns The updated public record, or `null` when no such extension exists.
    */
-  async revokeRunApproval(id: string): Promise<ExtensionRecordPublic | null> {
-    const record = this.extensions.get(id);
-    if (!record) return null;
-
-    if (record.origin === 'user') this.recordDismissal(record, 'stopping an extension');
-    await this.forgetRunApproval(id);
-
-    return this.publicOf(record, configManager.get('extensions'));
+  revokeRunApproval(id: string): Promise<ExtensionRecordPublic | null> {
+    return this.enqueue(async () => {
+      const record = this.extensions.get(id);
+      if (!record) return null;
+      if (record.origin === 'user') this.recordDismissal(record, 'stopping an extension');
+      await this.forgetRunApprovalNow(id);
+      return this.publicOf(record, configManager.get('extensions'));
+    });
   }
 
   /**
@@ -1104,7 +1134,12 @@ export class ExtensionManager {
    *   approval recorded for a copy outside it is about another package that
    *   carries the same id (DOR-2383), so it is kept, and that copy keeps running.
    */
-  async forgetRunApproval(id: string, installRoot?: string): Promise<void> {
+  forgetRunApproval(id: string, installRoot?: string): Promise<void> {
+    return this.enqueue(() => this.forgetRunApprovalNow(id, installRoot));
+  }
+
+  /** {@link forgetRunApproval}'s body, run on the scan queue. */
+  private async forgetRunApprovalNow(id: string, installRoot?: string): Promise<void> {
     // A "Not now" (or "Stop it") recorded for a copy inside the package being
     // removed goes with it (DOR-2517): a reinstall is a new decision, even at
     // the same version and path. One recorded for a copy elsewhere is about
@@ -1197,11 +1232,13 @@ export class ExtensionManager {
   }
 
   /** Initialize server-side extension code (delegated to server lifecycle). */
-  async initializeServer(id: string): Promise<{ ok: boolean; error?: string }> {
-    const record = this.extensions.get(id);
-    if (!record) return { ok: false, error: 'Extension not found' };
-    await this.recheckPin(record);
-    return this.serverLifecycle.initialize(id, record);
+  initializeServer(id: string): Promise<{ ok: boolean; error?: string }> {
+    return this.enqueue(async () => {
+      const record = this.extensions.get(id);
+      if (!record) return { ok: false, error: 'Extension not found' };
+      await this.recheckPin(record);
+      return this.serverLifecycle.initialize(id, record);
+    });
   }
 
   /** Shut down a server-side extension (delegated to server lifecycle). */
@@ -1335,38 +1372,6 @@ export class ExtensionManager {
       (record.hasServerEntry || record.hasDataProxy) &&
       ['compiled', 'active'].includes(record.status)
     );
-  }
-
-  /**
-   * Compile all enabled extensions, updating their records with results.
-   *
-   * Same isolation as {@link initialize}'s server-side loop, and for the
-   * same reason: an unexpected throw from `compiler.compile()` for one
-   * extension must not abort compilation for every extension after it in
-   * this pass. `compiler.compile()` itself now degrades most known
-   * failures (an unreadable entry file, a cache directory it can't
-   * create) to an `{ error }` result rather than throwing — this `try` is
-   * the remaining backstop for anything that doesn't.
-   */
-  private async compileEnabled(): Promise<void> {
-    const enabled = Array.from(this.extensions.values()).filter((r) => r.status === 'enabled');
-    for (const record of enabled) {
-      try {
-        const result = await this.compiler.compile(record);
-        applyCompileResult(record, result);
-      } catch (err) {
-        logger.error(
-          `[Extensions] Compile threw an unexpected error for ${record.id} — skipping it and continuing with the rest`,
-          err
-        );
-        record.status = 'compile_error';
-        record.error = {
-          code: 'compilation_failed',
-          message: err instanceof Error ? err.message : String(err),
-        };
-        record.bundleReady = false;
-      }
-    }
   }
 }
 
