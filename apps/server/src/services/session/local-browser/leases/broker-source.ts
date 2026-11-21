@@ -15,6 +15,8 @@ export interface BrowserBrokerSource {
   readonly work: BrowserPageWork;
   isCurrent(): boolean;
   facts(): BrowserPageFacts;
+  committed(): { generation: number; url: string };
+  protectionAllowed(): boolean;
   onChange(listener: () => void): () => void;
   authorize(): Promise<void>;
   assertWatchAllowed(): void;
@@ -58,6 +60,8 @@ export function captureBrokerSource(
   });
   return {
     binding,
+    committed: () => ({ generation: state.mainFrameChanges, url: page.url() }),
+    protectionAllowed: () => session.viewerPageAllowed(page),
     assertWatchAllowed: () => session.assertViewerWatchAllowed(page),
     facts: () =>
       Object.freeze({

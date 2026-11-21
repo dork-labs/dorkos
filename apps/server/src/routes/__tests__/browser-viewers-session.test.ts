@@ -107,6 +107,7 @@ beforeEach(async () => {
       leaseId: 'fixture-tab',
       tabId: 'fixture-tab',
     },
+    abandon: async () => undefined,
     close: async () => undefined,
     identity: {
       chatId: 'fixture-chat',

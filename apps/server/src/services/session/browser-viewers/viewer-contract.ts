@@ -26,6 +26,7 @@ export interface ViewerFrame {
 /** The narrow read-only broker seam. It cannot launch, select, navigate or type. */
 export interface ViewerPage {
   readonly binding: BrowserPageBinding;
+  abandon(): Promise<void>;
   close(): Promise<void>;
   readonly identity: ViewerPageIdentity;
   /** Synchronous revocation of this exact page generation, including waiting deliveries. */

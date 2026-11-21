@@ -14,6 +14,11 @@ import { composeRegistry } from '../../../core/capabilities/index.js';
 import { createLocalBrowserDomain } from '../capabilities.js';
 import { LocalBrowserService } from '../service.js';
 import type { LocalBrowserBackend } from '../playwright-backend.js';
+import { PERSON_SAFETY_EXPRESSION } from '../leases/viewer-control/person-safety.js';
+import type {
+  BrowserPersonInputLease,
+  BrowserViewerPageHandle,
+} from '../leases/broker-contract.js';
 import { SignInWindow } from '../sign-in-window.js';
 
 /** A controllable protocol boundary; no browser binary or server is started. */
@@ -127,7 +132,9 @@ export async function leaseFixture(leaseAudit?: (record: unknown) => Promise<voi
   const protocolSessions: {
     page: Page;
     events: EventEmitter;
-    send: ReturnType<typeof vi.fn>;
+    send: ReturnType<
+      typeof vi.fn<(command: string, params?: { expression?: string }) => Promise<unknown>>
+    >;
     detach: ReturnType<typeof vi.fn>;
   }[] = [];
   const backend: LocalBrowserBackend = {
@@ -151,9 +158,11 @@ export async function leaseFixture(leaseAudit?: (record: unknown) => Promise<voi
         }),
         newCDPSession: vi.fn(async (page: Page) => {
           const events = new EventEmitter();
-          const send = vi.fn(async (command: string) => {
+          const send = vi.fn(async (command: string, params?: { expression?: string }) => {
             if (command === 'Page.getFrameTree') return { frameTree: { frame: { id: 'frame' } } };
             if (command === 'Page.createIsolatedWorld') return { executionContextId: 1 };
+            if (command === 'Runtime.evaluate' && params?.expression === PERSON_SAFETY_EXPRESSION)
+              return { result: { value: { title: 'Page', text: 'Ordinary page' } } };
             return { result: { value: false } };
           });
           const detach = vi.fn(async () => undefined);
@@ -229,4 +238,17 @@ export async function leaseFixture(leaseAudit?: (record: unknown) => Promise<voi
       await rm(directory, { recursive: true, force: true });
     },
   };
+}
+
+/** Server-side paint/address receipt confirmation; no client flag grants input. */
+export function confirmPersonPaint(
+  lease: BrowserPersonInputLease,
+  viewer: BrowserViewerPageHandle
+) {
+  const generation = viewer.facts().navigationGeneration;
+  lease.confirmPaint({
+    navigationGeneration: generation,
+    addressGeneration: generation,
+    viewportGeneration: 1,
+  });
 }

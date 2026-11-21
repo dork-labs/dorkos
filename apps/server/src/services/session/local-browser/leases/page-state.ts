@@ -17,6 +17,7 @@ export class BrowserPageState {
   revision = 0;
   // Frame churn fences reads without consuming every action revision.
   frameChanges = 0;
+  mainFrameChanges = 0;
   observation?: LocalBrowserObservation;
   observedNodes?: JSHandle<ObservedPageNodes>;
   readonly metadata: LocalBrowserTabMetadata;
@@ -127,7 +128,8 @@ export class BrowserPageState {
       active: () => [...this.tabs.values()].includes(page),
       selected: () => this.tabs.get(this.selectedTabId ?? '') === page,
       invalidate: () => this.invalidate(),
-      framesChanged: () => {
+      framesChanged: (mainFrame) => {
+        if (mainFrame) this.mainFrameChanges++;
         this.frameChanges++;
         this.addresses(page);
         this.notify();
