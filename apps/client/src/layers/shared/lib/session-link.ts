@@ -21,8 +21,9 @@
 import type { SessionAllocationSource, Transport } from '@dorkos/shared/transport';
 import { z } from 'zod';
 import { SESSION_ROUTE, sessionPath } from '@dorkos/shared/session-link';
-// The leaf rather than the `shared/model` barrel, so a link builder never pulls
-// the model layer's React hooks in with it.
+// Leaves rather than the `shared/model` barrel, so a link builder never pulls
+// the rest of the model layer in with it. The birth store is the one write:
+// `newSessionTarget` hands a parked greeting to the chat it just acknowledged.
 import { mergeDialogSearch } from '../model/dialog-search-schema';
 import { useAgentBirthStore } from '../model/agent-birth/agent-birth-store';
 
