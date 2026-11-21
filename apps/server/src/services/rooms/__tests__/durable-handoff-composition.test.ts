@@ -528,6 +528,34 @@ describe('durable public handoff full composition', () => {
     f.notices.flush();
     expect(f.db.select().from(m.db.sessionMessageAcceptanceReceipts).all()).toHaveLength(1);
   });
+  it('replays a queued outsider-marked hand-off after restart with the same marks a live one gets', async () => {
+    const marksOf = (request: RoomTurnRequest) => ({
+      outsideWords: request.outsideWords,
+      externalAuthor: request.externalAuthor,
+      carriedOutsider: request.carriedOutsider,
+      teammate: request.teammate,
+      permissionCeiling: request.permissionCeiling,
+    });
+    // The same drafting turn, handed off live with no restart.
+    const live = (await f.registry.invoke(
+      'rooms.post',
+      { roomId, text: 'Live draft' },
+      { identity: identity(), sessionId: 'caller', mcpServer: 'in-session' }
+    )) as { handoffId: string };
+    await f.harness.service.handoffs.idle();
+    expect(f.harness.service.handoffs.status(live.handoffId, authorId)).toMatchObject({
+      status: 'posted',
+    });
+    const liveMarks = marksOf(f.runner.requests.at(-1)!);
+    // The drafting turn ran at the runtime default, a stranger's bound, so it is marked.
+    expect(liveMarks).toMatchObject({ outsideWords: true, externalAuthor: true, carriedOutsider: true });
+    const id = await admitThenStop();
+    const saved = JSON.parse(f.harness.store.handoffOutbox.readOwned(id, authorId)!.envelopeJson);
+    expect(saved.carry).toMatchObject({ outsider: true, outsideWords: true, externalAuthor: true });
+    await reopen();
+    expect(f.runner.requests).toHaveLength(1);
+    expect(marksOf(f.runner.requests[0]!)).toEqual(liveMarks);
+  });
   it.each(['preparing', 'running'] as const)(
     'boot never replays ambiguous %s model work',
     async (state) => {
