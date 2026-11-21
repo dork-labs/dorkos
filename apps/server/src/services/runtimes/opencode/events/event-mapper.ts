@@ -387,7 +387,8 @@ function streamErrorCopy(err: unknown): RuntimeErrorCopy {
  * - a stream that ends without `session.idle` still gets its trailing `done`
  *   so consumers can key turn teardown on it.
  *
- * @param events - Demuxed per-session wire events (from the global stream)
+ * @param events - Demuxed per-session wire events (from the global stream),
+ *   plus server-tagged host events, which pass through unmapped
  * @param ctx - Per-turn mapping context (mutated)
  */
 export async function* mapOpenCodeTurn(

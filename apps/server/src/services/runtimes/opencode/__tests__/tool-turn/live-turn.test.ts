@@ -26,6 +26,7 @@ import {
   toolStateRunning,
   toolPart,
 } from '../opencode-sse-fixtures.js';
+import { hostTurnEvent, isHostTurnEvent } from '../../tool-turn/host-events.js';
 import { toolTurnFixture } from './fixture.js';
 
 const fixtures: Awaited<ReturnType<typeof toolTurnFixture>>[] = [];
@@ -321,6 +322,10 @@ describe('OpenCode current tool turn', () => {
     );
     // A vendor can supply JSON keys, never the private server symbol.
     const vendorEvent = { ...event, hostEvent: true, __host: true };
+    // The private tag does not survive a JSON round trip, whatever key a vendor picks.
+    const tagged = hostTurnEvent({ type: 'text_delta', data: { text: 'x' } } as StreamEvent);
+    expect(isHostTurnEvent(tagged)).toBe(true);
+    expect(isHostTurnEvent(JSON.parse(JSON.stringify(tagged)))).toBe(false);
     f.sidecar.emit(vendorEvent);
     await vi.waitFor(() =>
       expect(run.events.filter((e) => e.type === 'approval_required')).toHaveLength(1)
@@ -505,10 +510,10 @@ describe('OpenCode current tool turn', () => {
     const pending = hold(f, facts);
     expect(pending.approvals.claimVerdictDelivery(pending.ticket.approvalId)).toBe(false);
     f.sidecar.emit(sessionIdle(id));
-    await new Promise<void>((r) => setImmediate(r));
+    // The consumer is still paused, so the turn itself stays current while its hold retires.
+    await vi.waitFor(() => expect(facts.signal.aborted).toBe(true));
     expect(f.opens.mock.calls[0]![1].isCurrent()).toBe(true);
     expect(f.opens.mock.calls[0]![0].signal.aborted).toBe(false);
-    expect(facts.signal.aborted).toBe(true);
     await expect(pending.held).resolves.toBe('timeout');
     expect(pending.approvals.claimVerdictDelivery(pending.ticket.approvalId)).toBe(true);
     pending.approvals.releaseVerdictDelivery(pending.ticket.approvalId);

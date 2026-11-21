@@ -460,7 +460,9 @@ export class OpenCodeRuntime implements AgentRuntime {
           'bypassPermissions',
         ...(forAgent !== undefined ? { forAgent } : {}),
         grants: validatedGrants(opts?.additionalDirectories, cwd),
-        // Apply this turn's explicit ceiling to native approvals without changing stored settings.
+        // Held per ask, like the grants: a turn another agent's post or a
+        // stranger's message started is answered at no looser a level than its
+        // sender's (spec `trusted-by-default-flip` §4). Stored settings stay as they are.
         ...(opts?.permissionCeiling !== undefined
           ? { permissionCeiling: opts.permissionCeiling }
           : {}),
