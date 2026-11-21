@@ -60,6 +60,7 @@ describe('package card disclosure', () => {
       installedVersion: '1.0.0',
       latestVersion: '2.0.0',
       disclosed: NOTHING,
+      contentHash: 'digest-a',
     } as const;
     await provider.requestInstallConfirmation({
       packageName: 'scheduled, old-metadata',
