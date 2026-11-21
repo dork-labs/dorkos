@@ -211,7 +211,11 @@ describe('setupAutoUpdater / checkForUpdatesInteractive (C1/C2)', () => {
     const send = vi.mocked(win.webContents.send);
     expect(send).toHaveBeenCalledWith('update:status', { state: 'checking' });
     expect(send).toHaveBeenCalledWith('update:status', { state: 'available', version: '2.0.0' });
-    expect(send).toHaveBeenCalledWith('update:status', { state: 'downloading', percent: 42 });
+    expect(send).toHaveBeenCalledWith('update:status', {
+      state: 'downloading',
+      percent: 42,
+      version: '2.0.0',
+    });
     expect(send).toHaveBeenCalledWith('update:status', { state: 'not-available' });
     expect(send).toHaveBeenCalledWith('update:status', { state: 'error', message: 'boom' });
   });
@@ -1353,5 +1357,129 @@ describe('handing the restart to the installer (DOR-1455)', () => {
     setupAutoUpdater(() => null);
 
     expect(purgeStaleStagedUpdates).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * DOR-4846: the card names the real version while it downloads, and a stopped
+ * download offers a retry. Neither progress nor an error says which version it
+ * is about, so the main process tags both with the one `update-available` named.
+ */
+describe('download progress and download errors carry the version', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  /** Boot the updater packaged, with a window, and clear what it sent. */
+  async function bootPackaged() {
+    const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.isPackaged = true;
+    app.getVersion = vi.fn(() => '0.138.0');
+    const { autoUpdater, resetAutoUpdaterMock } = await getAutoUpdaterMock();
+    resetAutoUpdaterMock();
+
+    const autoUpdaterModule = await import('../auto-updater');
+    const win = new BrowserWindow({ width: 1200, height: 800 });
+    autoUpdaterModule.setupAutoUpdater(() => win as unknown as Electron.BrowserWindow);
+    const sent = () =>
+      win.webContents.send.mock.calls
+        .filter(([channel]: unknown[]) => channel === 'update:status')
+        .map(([, status]: unknown[]) => status);
+    return { app, autoUpdater, autoUpdaterModule, sent };
+  }
+
+  const progress = (percent: number) =>
+    ({ percent, transferred: percent * 10, total: 1000, bytesPerSecond: 100 }) as ProgressInfo;
+
+  it('names the version update-available announced on every progress report', async () => {
+    const { autoUpdater, sent } = await bootPackaged();
+
+    autoUpdater.emit('update-available', { version: '0.139.0' } as UpdateInfo);
+    autoUpdater.emit('download-progress', progress(42));
+
+    expect(sent()).toContainEqual({ state: 'downloading', percent: 42, version: '0.139.0' });
+  });
+
+  it('names the version on an error that stopped its download', async () => {
+    const { autoUpdater, autoUpdaterModule, sent } = await bootPackaged();
+
+    autoUpdater.emit('update-available', { version: '0.139.0' } as UpdateInfo);
+    autoUpdater.emit('download-progress', progress(10));
+    autoUpdater.emit('error', new Error('net::ERR_CONNECTION_RESET'));
+
+    expect(sent().at(-1)).toEqual({
+      state: 'error',
+      message: 'net::ERR_CONNECTION_RESET',
+      version: '0.139.0',
+    });
+    // And the replay a reopened window starts from says the same.
+    expect(autoUpdaterModule.getLastUpdateStatus()).toEqual(sent().at(-1));
+  });
+
+  it('names no version on a failed check, when nothing was downloading', async () => {
+    const { autoUpdater, sent } = await bootPackaged();
+
+    autoUpdater.emit('checking-for-update');
+    autoUpdater.emit('error', new Error('getaddrinfo ENOTFOUND'));
+
+    expect(sent().at(-1)).toEqual({ state: 'error', message: 'getaddrinfo ENOTFOUND' });
+  });
+
+  it('forgets the version once the download lands', async () => {
+    const { autoUpdater, sent } = await bootPackaged();
+
+    autoUpdater.emit('update-available', { version: '0.139.0' } as UpdateInfo);
+    autoUpdater.emit('update-downloaded', { version: '0.139.0' } as UpdateDownloadedEvent);
+    // A later check failing is not about the download that already finished.
+    autoUpdater.emit('error', new Error('getaddrinfo ENOTFOUND'));
+
+    expect(sent().at(-1)).toEqual({ state: 'error', message: 'getaddrinfo ENOTFOUND' });
+  });
+
+  it('retries with a fresh check, and keeps a failed retry about the same version', async () => {
+    const { autoUpdater, autoUpdaterModule, sent } = await bootPackaged();
+    autoUpdater.emit('update-available', { version: '0.139.0' } as UpdateInfo);
+    autoUpdater.emit('error', new Error('net::ERR_CONNECTION_RESET'));
+    vi.mocked(autoUpdater.checkForUpdates).mockClear();
+
+    autoUpdaterModule.retryUpdateDownload();
+    expect(autoUpdater.checkForUpdates).toHaveBeenCalledTimes(1);
+
+    // Still offline: the retry's own check fails before anything is found.
+    autoUpdater.emit('checking-for-update');
+    autoUpdater.emit('error', new Error('getaddrinfo ENOTFOUND'));
+
+    expect(sent().at(-1)).toEqual({
+      state: 'error',
+      message: 'getaddrinfo ENOTFOUND',
+      version: '0.139.0',
+    });
+  });
+
+  it('swallows the rejection a failed retry check also returns', async () => {
+    const { autoUpdater, autoUpdaterModule } = await bootPackaged();
+    vi.mocked(autoUpdater.checkForUpdates).mockRejectedValue(new Error('offline'));
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+
+    autoUpdaterModule.retryUpdateDownload();
+    await new Promise((resolve) => setImmediate(resolve));
+
+    process.off('unhandledRejection', unhandled);
+    expect(unhandled).not.toHaveBeenCalled();
+  });
+
+  it('does nothing in an unpackaged build', async () => {
+    const { app, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.isPackaged = false;
+    const { autoUpdater, resetAutoUpdaterMock } = await getAutoUpdaterMock();
+    resetAutoUpdaterMock();
+    const { retryUpdateDownload } = await import('../auto-updater');
+
+    retryUpdateDownload();
+
+    expect(autoUpdater.checkForUpdates).not.toHaveBeenCalled();
   });
 });

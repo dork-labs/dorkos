@@ -36,6 +36,7 @@ vi.mock('../about', () => ({ setupAboutPanel: vi.fn() }));
 vi.mock('../auto-updater', () => ({
   setupAutoUpdater: vi.fn(),
   restartToUpdate: vi.fn(async () => undefined),
+  retryUpdateDownload: vi.fn(),
   getLastUpdateStatus: vi.fn(() => null),
   isRestartingToUpdate: vi.fn(() => false),
   consumeUpdateRestart: vi.fn(() => false),
@@ -653,6 +654,21 @@ describe('update IPC handlers', () => {
     handler();
 
     expect(autoUpdater.restartToUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it('update:retry routes to retryUpdateDownload (DOR-4846)', async () => {
+    const { app, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.requestSingleInstanceLock = vi.fn(() => true);
+
+    const autoUpdater = await import('../auto-updater');
+    vi.mocked(autoUpdater.retryUpdateDownload).mockClear();
+    await import('../index');
+
+    const handler = await getOnHandler('update:retry');
+    handler();
+
+    expect(autoUpdater.retryUpdateDownload).toHaveBeenCalledTimes(1);
   });
 
   it('get-update-status replays the last status to the tracked renderer, and rejects a stray sender', async () => {

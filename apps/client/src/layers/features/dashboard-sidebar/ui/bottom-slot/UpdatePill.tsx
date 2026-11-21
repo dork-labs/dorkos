@@ -2,8 +2,9 @@
  * The transient update pill (BC-44).
  *
  * Present only while there is something to say about an update. On the desktop
- * app that means a downloaded update waiting for a restart, or one that was
- * staged and then failed to install; on a web or CLI install it means a newer
+ * app that means a download in progress or one that failed (DOR-4846), a
+ * downloaded update waiting for a restart, or one that was staged and then
+ * failed to install; on a web or CLI install it means a newer
  * published version, and the pill hands over the one command that installs it.
  *
  * It lived inside `SidebarFooterStrip`, stacked above the nav row. It is a
@@ -18,6 +19,7 @@
 import { useCallback } from 'react';
 import { Check, Copy, Download, RotateCw, X } from 'lucide-react';
 import { cn, useCopyFeedback } from '@/layers/shared/lib';
+import { Progress } from '@/layers/shared/ui';
 import type { UpdateReadiness } from './use-update-ready';
 
 /** The command that updates a web/CLI install, offered by the pill. */
@@ -33,6 +35,26 @@ const UPDATE_COMMAND = 'npm update -g dorkos';
  */
 const INSTALL_FAILED_COPY =
   'The update couldn’t install itself. Download a fresh copy. Your settings and agents stay put.';
+
+/**
+ * What the card says while an update downloads (DOR-4846). Names the real
+ * version, so a person who saw "available" knows this is that one.
+ *
+ * @param version - The version downloading, or `null` from an older shell.
+ */
+function downloadingCopy(version: string | null): string {
+  return version ? `Downloading ${version}…` : 'Downloading the update…';
+}
+
+/**
+ * What the card says when a download stopped: what happened, then the likely
+ * fix. The button beside it is the retry.
+ *
+ * @param version - The version that failed to download.
+ */
+function downloadFailedCopy(version: string): string {
+  return `Couldn’t download ${version}. Check your connection and try again.`;
+}
 
 /** Shared by both shapes of the pill, so the amber reads the same either way. */
 const PILL_CLASSES =
@@ -81,6 +103,48 @@ export function UpdatePill({ update }: UpdatePillProps) {
   }, [copy]);
 
   if (update.kind === 'none') return null;
+
+  if (update.kind === 'desktop-downloading') {
+    // Quiet on purpose: nothing to press yet. The bright pill is kept for the
+    // restart, the one moment the person has something to do.
+    const label = downloadingCopy(update.version);
+    return (
+      <div role="group" aria-label="Update downloading" className="flex flex-col gap-1.5 px-0.5">
+        <div className="text-sidebar-foreground/70 text-2xs flex items-center justify-between gap-2">
+          <span className="truncate">{label}</span>
+          {update.percent !== null && (
+            <span className="shrink-0 tabular-nums">{Math.floor(update.percent)}%</span>
+          )}
+        </div>
+        {update.percent !== null && (
+          <Progress value={update.percent} aria-label={label} className="h-1" />
+        )}
+      </div>
+    );
+  }
+
+  if (update.kind === 'desktop-download-failed') {
+    return (
+      <div
+        role="group"
+        aria-label="Update didn’t download"
+        className="flex flex-col gap-1.5 px-0.5"
+      >
+        <p className="text-sidebar-foreground/70 text-2xs leading-snug">
+          {downloadFailedCopy(update.version)}
+        </p>
+        <button
+          type="button"
+          onClick={update.retry}
+          aria-label={`Try downloading ${update.version} again`}
+          className={cn(PILL_CLASSES, 'self-start')}
+        >
+          <RotateCw className="size-(--size-icon-xs)" />
+          Try again
+        </button>
+      </div>
+    );
+  }
 
   if (update.kind === 'desktop-restart') {
     return (

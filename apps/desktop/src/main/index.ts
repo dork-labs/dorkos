@@ -13,6 +13,7 @@ import { setupAboutPanel } from './about';
 import {
   setupAutoUpdater,
   restartToUpdate,
+  retryUpdateDownload,
   getLastUpdateStatus,
   isRestartingToUpdate,
   consumeUpdateRestart,
@@ -413,6 +414,12 @@ if (refusedSwitch !== null) {
   // apply updates).
   ipcMain.on('update:restart', () => {
     void restartToUpdate();
+  });
+
+  // The card's retry after a failed download (DOR-4846). Same shape as the
+  // restart: fire-and-forget, the outcome comes back on `update:status`.
+  ipcMain.on('update:retry', () => {
+    retryUpdateDownload();
   });
 
   // Replay the last `downloading`/`downloaded` status — called once by the
