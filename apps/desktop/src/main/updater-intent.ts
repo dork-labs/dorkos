@@ -1,7 +1,7 @@
 import { app } from 'electron';
 import { join } from 'node:path';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import log from 'electron-log';
+import { updaterLog } from './updater/log';
 
 /**
  * What the app was told it was about to install, remembered across the restart
@@ -91,7 +91,7 @@ export function readUpdateIntent(): UpdateIntent | null {
     return null;
   }
   if (isUpdateIntent(parsed)) return parsed;
-  log.warn('[updater] Discarding an unreadable install-attempt record.');
+  updaterLog.warn('[updater] Discarding an unreadable install-attempt record.');
   clearUpdateIntent();
   return null;
 }
@@ -119,7 +119,7 @@ export function writeUpdateIntent(offeredVersion: string): UpdateIntent | null {
     writeFileSync(intentFilePath(), JSON.stringify(intent));
     return intent;
   } catch (err) {
-    log.warn('[updater] Could not record the install attempt.', err);
+    updaterLog.warn('[updater] Could not record the install attempt.', err);
     return null;
   }
 }
@@ -132,7 +132,7 @@ export function clearUpdateIntent(): void {
     // A file that will not delete means the next launch re-judges an attempt
     // that actually succeeded — annoying, never fatal, and not worth a throw
     // from the launch path.
-    log.warn('[updater] Could not clear the recorded install attempt.', err);
+    updaterLog.warn('[updater] Could not clear the recorded install attempt.', err);
   }
 }
 
