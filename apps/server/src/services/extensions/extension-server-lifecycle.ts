@@ -16,7 +16,6 @@
  *
  * @module services/extensions/extension-server-lifecycle
  */
-import fs from 'fs/promises';
 import path from 'path';
 import { Router } from 'express';
 import type { ExtensionRecord, ExtensionToolStatus } from '@dorkos/extension-api';
@@ -26,6 +25,7 @@ import { bridgeExpressRouterHere } from './http/express-bridge.js';
 import { createFetchHandler } from './http/fetch-handler.js';
 import { firstAnswer, type ExtensionHttpHandler } from './http/extension-http.js';
 import { createDataProviderContext } from './extension-server-api-factory.js';
+import { recordContextDeps } from './server-bundle/extension-context-deps.js';
 import { toRecordError, type ActiveServerExtension } from './extension-manager-types.js';
 import {
   EXTENSION_NOT_APPROVED_CODE,
@@ -56,10 +56,16 @@ import { resolveChildEntry } from './isolation/child-entry.js';
 import * as extensionConnections from './connections/extension-connections-ctx.js';
 import { settleWithin } from './settle-within.js';
 import { loadInProcessBundle } from './server-bundle/load-in-process.js';
+import { writeServerBundle } from './server-bundle/write-server-bundle.js';
+import { runDirMissingMessage, runDirOf } from './pin/run-dir.js';
 import { createIsolatedHandler } from './isolation/isolated-router.js';
 import { RestartPolicy, type RestartPolicyOptions } from './isolation/restart-policy.js';
 import { tellExtensionStopped } from './isolation/notices/tell-extension-stopped.js';
 import { env } from '../../env.js';
+
+// The person's stored approvals as they are now: `ctx.inbox` reads its
+// allowed places through this on every call (DOR-4282).
+const storedApprovals = () => configManager.get('extensions');
 
 /**
  * Everything the running instance of an extension was built from, as one
@@ -422,11 +428,11 @@ export class ExtensionServerLifecycle {
     // Shut down the stale instance before its replacement takes over
     await this.stop(id);
 
-    // Written to disk, so stack traces and source maps name a real file.
-    const tempDir = path.join(this.dorkHome, 'cache', 'extensions', 'server', '_run');
-    await fs.mkdir(tempDir, { recursive: true });
-    const tempFile = path.join(tempDir, `${id}.js`);
-    await fs.writeFile(tempFile, compiled.code, 'utf-8');
+    const tempFile = await writeServerBundle(this.dorkHome, id, compiled.code);
+    // A rescan while it compiled may have taken its checked copy away, and a
+    // pinned copy never starts from the folder it was found in (`pin/run-dir.ts`).
+    // Asked after the last wait: both starts read its folder before any other.
+    if (!runDirOf(record)) return { ok: false, error: runDirMissingMessage(record.manifest.name) };
 
     if (runsSeparately(record)) return this.startIsolated(id, record, tempFile, sourceKey);
     // Running inside DorkOS now: any connection it held is revoked (DOR-3547, N3).
@@ -435,6 +441,8 @@ export class ExtensionServerLifecycle {
     let registered: (() => void) | undefined;
     let closeTools: (() => void) | undefined;
     try {
+      // Refuses a pinned copy with no snapshot before its bundle is loaded.
+      const deps = recordContextDeps(id, record, this.dorkHome, storedApprovals);
       const registerFn = serverEntryRegister(loadInProcessBundle(tempFile));
       if (!registerFn) {
         return { ok: false, error: 'Server entry does not export a register function' };
@@ -443,17 +451,8 @@ export class ExtensionServerLifecycle {
       const router = Router();
       // Starting again lifts the stop on its messages (DOR-2683).
       getAgentSendService()?.extensionStarted(id);
-      const toolChecks = checkDeclaredTools(record.manifest);
       const { ctx, getScheduledCleanups, releaseListeners, dispose, tools } =
-        createDataProviderContext({
-          extensionId: id,
-          // A copy that runs by origin runs from its verified snapshot, so what
-          // it reaches relative to itself at runtime is the snapshot's too.
-          extensionDir: record.runPath ?? record.path,
-          dorkHome: this.dorkHome,
-          extensionName: record.manifest.name,
-          toolChecks,
-        });
+        createDataProviderContext(deps);
       // A register() that throws, or returns something unusable, must leave
       // nothing behind: its schedules are cancelled, its account listeners and
       // advisor released, and a late `ctx` call starts nothing. This instance
@@ -484,7 +483,7 @@ export class ExtensionServerLifecycle {
 
       // register() finished: no more handlers. Only an instance that started
       // has tools, and only the declared tools it handled (DOR-2685).
-      const agentTools = sealAgentTools(id, record.manifest.name, toolChecks, tools);
+      const agentTools = sealAgentTools(id, record.manifest.name, deps.toolChecks, tools);
 
       // Its routes first; its proxy and its fetch handler get what they pass on.
       const handler = firstAnswer(
@@ -672,18 +671,12 @@ export class ExtensionServerLifecycle {
       this.policySources.set(id, sourceKey);
     }
 
+    // Refuses a pinned copy with no snapshot before anything is lifted.
+    const deps = recordContextDeps(id, record, this.dorkHome, storedApprovals);
     // Starting again lifts the stop on its messages (DOR-2683).
     getAgentSendService()?.extensionStarted(id);
-    const toolChecks = checkDeclaredTools(record.manifest);
     const connections = extensionConnections.isolatedConnectionsFor(record);
-    const built = createDataProviderContext({
-      extensionId: id,
-      extensionDir: record.runPath ?? record.path,
-      dorkHome: this.dorkHome,
-      extensionName: name,
-      toolChecks,
-      connections: connections.api,
-    });
+    const built = createDataProviderContext({ ...deps, connections: connections.api });
     const release = (): void => {
       built.tools.close();
       built.dispose();
@@ -697,7 +690,7 @@ export class ExtensionServerLifecycle {
         extensionId: id,
         displayName: name,
         bundlePath,
-        extensionDir: record.runPath ?? record.path,
+        extensionDir: deps.extensionDir,
         dorkHome: this.dorkHome,
         isolation,
         dorkosPort: this.options.dorkosPort ?? env.DORKOS_PORT,
@@ -710,7 +703,7 @@ export class ExtensionServerLifecycle {
         ctx: built.ctx,
         projectRoots: async () => (await built.ctx.projects.list()).map((p) => p.root),
         timings: { loadTimeoutMs: this.registerTimeoutMs, ...this.options.isolatedTimings },
-        tools: toolChecks,
+        tools: deps.toolChecks,
         // Its tools leave the registry before anything else of the dead
         // child is released, so a call still running fails as stopped.
         onGone: () => {
@@ -754,7 +747,7 @@ export class ExtensionServerLifecycle {
     // register() finished in the child (`registered`), and every tool it
     // bound was bound through the real ctx.tools.handle on the way: seal the
     // host's binding exactly as after an in-process register() (spec §8).
-    const agentTools = sealAgentTools(id, name, toolChecks, built.tools);
+    const agentTools = sealAgentTools(id, name, deps.toolChecks, built.tools);
     this.serverExtensions.set(id, {
       extensionId: id,
       handler: createIsolatedHandler({ displayName: name, host, proxy: this.proxyFor(id, record) }),

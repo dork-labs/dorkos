@@ -5,6 +5,7 @@
  *
  * @module dev/showcases/marketplace-summary-samples
  */
+import type { PermissionPreview } from '@dorkos/shared/marketplace-schemas';
 import type { MarketplaceApprovalSummary } from '@dorkos/shared/approval-schemas';
 
 /** An update of one plugin: two rows that add power, one removed, the rest unchanged. */
@@ -69,6 +70,7 @@ export const INSTALL_SUMMARY: MarketplaceApprovalSummary = {
           kind: 'extension',
           change: 'new',
           text: 'The extension "sample-flow-panel" runs server code inside DorkOS, with full access to DorkOS',
+          items: ['Shows in: pages', 'Secrets: SAMPLE_TOKEN (optional)'],
         },
         {
           kind: 'hook',
@@ -80,7 +82,8 @@ export const INSTALL_SUMMARY: MarketplaceApprovalSummary = {
         {
           kind: 'schedule',
           change: 'new',
-          text: 'Scheduled job "sample-groom": runs on "0 9 * * 1", can edit files without asking, arrives switched off, and would wait for your approval too',
+          text: 'Scheduled job "sample-groom": Every Monday at 9:00 AM, can edit files without asking, arrives switched off, and would wait for your approval too',
+          command: '"0 9 * * 1"',
         },
         { kind: 'host', change: 'new', text: 'Contacts "api.sample.invalid"' },
         { kind: 'secret', change: 'new', text: 'Asks for the secret "SAMPLE_TOKEN" (optional)' },
@@ -107,3 +110,81 @@ export const SAMPLE_FULL_DETAIL = [
       `  skill "sample-skill-${i}" ("skills/sample-skill-${i}/SKILL.md") may use without asking: "Bash(git status:*)", "Bash(gh pr view:*)", "Read"`
   ),
 ].join('\n');
+
+/** Per-app declarations for the package approval design checks; no live data. */
+export const PACKAGE_REVIEW_APPS: PermissionPreview['extensions'] = [
+  {
+    id: 'sample-board',
+    slots: ['pages', 'right-panel'],
+    hasServer: true,
+    isolation: { runtime: 'subprocess', net: ['api.sample.invalid'], run: ['node'], agents: true },
+    secrets: [{ key: 'SAMPLE_BOARD_KEY', required: true }],
+  },
+  {
+    id: 'sample-notes',
+    slots: ['pages'],
+    hasServer: false,
+    isolation: { runtime: 'in-process', net: [], run: [], agents: false },
+    secrets: [],
+  },
+];
+
+/** The small content card, with each app followed by the package's schedule. */
+export const PACKAGE_REVIEW_DETAIL = [
+  'Mini app "sample-board":',
+  '  Shows in: pages, right-panel',
+  '  Can connect to: api.sample.invalid',
+  '  Can run: node',
+  '  Can run node, which can run any program.',
+  '  Can message your agents and start chats.',
+  '  Secrets: SAMPLE_BOARD_KEY (required)',
+  'Mini app "sample-notes":',
+  '  Shows in: pages',
+  '  Only screens; no server code.',
+  '  No secrets declared.',
+  'Scheduled job "Sample check": Every day at 9:00 AM.',
+  '  Asks before editing files. Arrives switched off.',
+].join('\n');
+
+/** The small content review uses the same structured rows as a large package. */
+export const PACKAGE_REVIEW_SUMMARY: MarketplaceApprovalSummary = {
+  operation: 'install',
+  fullDetailLength: PACKAGE_REVIEW_DETAIL.length,
+  packages: [
+    {
+      name: 'sample-board',
+      where: 'plugin, installed globally',
+      toVersion: '1.0.0',
+      power: 'adds',
+      unchangedCount: 0,
+      risks: [
+        {
+          kind: 'extension',
+          change: 'new',
+          text: 'The mini app "sample-board" runs server code in a separate process',
+          items: [
+            'Shows in: pages, right-panel',
+            'Runs separately from DorkOS.',
+            'Can connect to: api.sample.invalid',
+            'Can run: node',
+            'Can run node, which can run any program.',
+            'Can message your agents and start chats.',
+            'Secrets: SAMPLE_BOARD_KEY (required)',
+          ],
+        },
+        {
+          kind: 'extension',
+          change: 'new',
+          text: 'The mini app "sample-notes" has only screens',
+          items: ['Shows in: pages', 'Only screens; no server code.', 'No secrets declared.'],
+        },
+        {
+          kind: 'schedule',
+          change: 'new',
+          text: 'Scheduled job "Sample check": Every day at 9:00 AM, asks before editing files, arrives switched off',
+          command: '"0 9 * * *"',
+        },
+      ],
+    },
+  ],
+};

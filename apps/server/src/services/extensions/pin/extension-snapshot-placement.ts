@@ -33,9 +33,15 @@ import {
 } from '../extension-load-policy.js';
 import { collectSnapshots, ensureSnapshot, snapshotRootOf } from './extension-snapshots.js';
 import { configManager } from '../../core/config-manager.js';
-import { digestRootOf, liveDigestOf, pinStillHolds } from './extension-content-pin.js';
+import {
+  awaitsNextScan,
+  digestRootOf,
+  liveDigestOf,
+  pinStillHolds,
+} from './extension-content-pin.js';
 import { isPathTrustApproval } from './extension-path-trust.js';
 import { notePathTrustEdits, notePersonApproval } from './path-trust-edits.js';
+import { repinPlacesOnlyUpdates } from './places-only-update.js';
 
 /**
  * Point a copy at the verified snapshot of `digest`, made from its folder
@@ -133,11 +139,16 @@ export async function refreshPathTrustRun(
  *
  * @param dorkHome - DorkOS's data directory.
  * @param record - The extension record; updated in place.
+ * @param onNewMiss - Called once when this check first leaves the copy waiting
+ *   for the next scan ({@link awaitsNextScan}), so the caller can ask for that
+ *   scan. A rescanned record already holds the changed digest, so it is never
+ *   marked again and the request cannot repeat.
  * @returns Whether it may go on loading.
  */
 export async function recheckAtItsLevel(
   dorkHome: string,
-  record: ExtensionRecord
+  record: ExtensionRecord,
+  onNewMiss?: () => void
 ): Promise<boolean> {
   const live = await liveDigestOf(record);
   if (live) {
@@ -149,17 +160,22 @@ export async function recheckAtItsLevel(
   if (await refreshPathTrustRun(dorkHome, record, approvals)) {
     return record.originProblem !== 'changed';
   }
-  return pinStillHolds(record, approvals);
+  const waited = awaitsNextScan(record);
+  const holds = await pinStillHolds(record, approvals);
+  if (!waited && awaitsNextScan(record)) onNewMiss?.();
+  return holds;
 }
 
 /**
  * Point every copy that runs from a snapshot at one (the three kinds in the
  * module note). A copy whose snapshot cannot be made loses its standing
- * instead of running from the folder.
+ * instead of running from the folder. First, a pin whose copy changed only
+ * by newly added places moves to the new files (`places-only-update.ts`), so
+ * that copy keeps running while its new places wait.
  *
  * @param dorkHome - DorkOS's data directory.
  * @param records - The copies this scan chose.
- * @param approvals - `config.extensions`.
+ * @param stored - `config.extensions`.
  * @param approvedDigest - Set by `approveToRun`: the digest of the files a person just approved.
  *   A yes to a path-trust copy records them as trusted first, so later edits are traced from
  *   exactly those (DOR-4528).
@@ -167,9 +183,10 @@ export async function recheckAtItsLevel(
 export async function placeSnapshots(
   dorkHome: string,
   records: readonly ExtensionRecord[],
-  approvals: ExtensionApprovals,
+  stored: ExtensionApprovals,
   approvedDigest?: string | null
 ): Promise<void> {
+  const approvals = await repinPlacesOnlyUpdates(dorkHome, records, stored);
   for (const record of records) {
     if (record.origin !== 'user' || record.devLink) continue;
     const source = approvals.approvedSources?.[record.id];

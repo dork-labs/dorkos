@@ -45,10 +45,16 @@ const UPDATE: MarketplaceApprovalSummary = {
 function buildApproval(summary: MarketplaceApprovalSummary): PendingApproval {
   return {
     approvalId: '01JZ0000000000000000000009',
-    capabilityId: 'marketplace.update',
-    capabilityTitle: 'Update installed packages',
+    capabilityId: `marketplace.${summary.operation}`,
+    capabilityTitle:
+      summary.operation === 'install'
+        ? 'Install a marketplace package'
+        : 'Update installed packages',
     tier: 'destructive',
-    summary: 'Update 1 installed package to a newer version, each where it is installed.',
+    summary:
+      summary.operation === 'install'
+        ? 'Install "sample-flow" from "sample-market".'
+        : 'Update 1 installed package to a newer version, each where it is installed.',
     detail: 'the rows as text, for surfaces that cannot draw the summary',
     marketplaceSummary: summary,
     requestedBy: '/Users/dev/agents/dorkbot',
@@ -98,6 +104,51 @@ afterEach(() => {
 });
 
 describe('ApprovalCard with a Marketplace summary', () => {
+  it.each(['install', 'update'] as const)(
+    'keeps the version visible on a single %s review',
+    (operation) => {
+      const summary = structuredClone(UPDATE);
+      summary.operation = operation;
+      if (operation === 'install') summary.packages[0]!.fromVersion = undefined;
+      renderCard(buildApproval(summary));
+      expect(
+        screen.getByText(operation === 'install' ? 'Version 0.66.1' : '0.66.0 → 0.66.1')
+      ).toBeInTheDocument();
+    }
+  );
+
+  it('names the content review separately from its first permission card', () => {
+    renderCard(buildApproval(UPDATE));
+    expect(screen.getByText('Review what’s in "sample-flow"')).toBeInTheDocument();
+    expect(screen.queryByText('Update installed packages')).not.toBeInTheDocument();
+  });
+
+  it('shows the first package card’s next-step note as plain text', () => {
+    renderCard({
+      ...buildApproval(UPDATE),
+      marketplaceSummary: undefined,
+      detail: 'DorkOS will show you what’s in it next.',
+    });
+    expect(screen.getByText('DorkOS will show you what’s in it next.').tagName).toBe('P');
+  });
+
+  it('shows each app declaration as a readable row', () => {
+    const summary = structuredClone(UPDATE);
+    summary.packages[0]!.risks = [
+      {
+        kind: 'extension',
+        change: 'new',
+        text: 'Mini app "sample-board"',
+        items: ['Shows in: pages', 'Can run node, which can run any program.'],
+      },
+    ];
+    renderCard(buildApproval(summary));
+    const warning = screen.getByText('Can run node, which can run any program.');
+    expect(warning.closest('li')).toHaveAttribute('data-slot', 'marketplace-app-declaration');
+    expect(warning).not.toHaveClass('font-mono');
+    expect(warning).toHaveClass('text-status-warning-fg');
+  });
+
   it('shows the rows that add power instead of the detail', () => {
     renderCard(buildApproval(UPDATE));
 
@@ -178,7 +229,7 @@ describe('ApprovalCard with a Marketplace summary', () => {
 
     expect(screen.getByText('Once installed it can do 8 things.')).toBeInTheDocument();
     const groups = screen.getAllByRole('region').map((region) => region.getAttribute('aria-label'));
-    expect(groups).toEqual(['Runs inside DorkOS', 'Runs code', 'Uses secrets and skills']);
+    expect(groups).toEqual(['Mini apps', 'Runs code', 'Uses secrets and skills']);
     expect(screen.queryByText(/"s0"/)).not.toBeInTheDocument();
   });
 

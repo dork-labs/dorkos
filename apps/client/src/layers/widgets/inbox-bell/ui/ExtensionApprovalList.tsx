@@ -26,6 +26,9 @@ import {
 } from '@/layers/entities/extension';
 import { InboxDecisionRow } from '@/layers/features/inbox';
 import { DecisionFrame } from './ExtensionDecisionList';
+import { PlacesReaskCard } from './PlacesReaskCard';
+import { newPlacesLine } from '../lib/places-reask';
+import { usePlacesReaskGroup } from '../model/use-places-reask-group';
 
 /**
  * The exact copy a row shows, sent with either answer so the server acts only
@@ -57,6 +60,7 @@ function approvalOf(approval: PendingExtensionApproval): ApproveExtensionInput {
     ...(permissions ? { permissions } : {}),
     // The files the row showed: an edit after it was drawn is refused as stale.
     ...(approval.digest ? { expectedDigest: approval.digest } : {}),
+    ...(approval.placesOnly ? { placesOnly: true } : {}),
   };
 }
 
@@ -121,11 +125,22 @@ const RUNS_AS_YOU_TAIL = / ?It runs as you\.$/;
  * The row's words, as Security wrote them (Nov 8). A copy allowed before whose
  * files changed says so, with what changed and when; one that also wants a
  * power the last yes did not cover says that first, in the Designer's words
- * (DOR-4531); a first run asks to run.
+ * (DOR-4531); a first run asks to run. An app that keeps running while only
+ * new places wait asks about those places alone (DOR-4282).
  *
  * @param approval - The waiting copy.
  */
 function wordsOf(approval: PendingExtensionApproval) {
+  if (approval.placesOnly) {
+    const line = newPlacesLine(approval);
+    return {
+      changed: false,
+      title: `${approval.name} wants to show in new places.`,
+      why: `It keeps working meanwhile. ${line.charAt(0).toUpperCase()}${line.slice(1)}.`,
+      approveLabel: 'Allow',
+      rejectLabel: 'Not now',
+    };
+  }
   if (isChangedSinceAllowed(approval)) {
     return {
       changed: true,
@@ -170,11 +185,40 @@ export function ExtensionApprovalList({
 }: ExtensionApprovalListProps) {
   const answerContext = useConfig().data?.approvalAnswerContext;
   const { approve, dismiss, pending } = useExtensionApprovalActions();
+  // Two or more apps asking only because they now say where they show share
+  // one card (DOR-4282); one alone, or one that also wants more, keeps its own.
+  const group = usePlacesReaskGroup(approvals, focusId);
   if (approvals.length === 0) return null;
 
   return (
     <div data-slot="extension-approval-list" className="mt-2 flex flex-col gap-1">
-      {approvals.map((approval) => {
+      {group.rows.length > 0 && (
+        <PlacesReaskCard
+          rows={group.rows}
+          pending={pending}
+          answerContext={answerContext}
+          // The row collapses as it is answered, so the card keeps its shape
+          // while the answer is sent; a refusal puts the row back (DOR-4282).
+          // One left on "Confirm it's you" stays until a fresh list says.
+          onAllow={({ approval }) => {
+            group.answered(approval, 'allowed');
+            approve(
+              approvalOf(approval),
+              () => group.confirmed(approval),
+              () => group.retracted(approval)
+            );
+          }}
+          onNotNow={({ approval }) => {
+            group.answered(approval, 'not-now');
+            dismiss(
+              copyOf(approval),
+              () => group.confirmed(approval),
+              () => group.retracted(approval)
+            );
+          }}
+        />
+      )}
+      {group.rest.map((approval) => {
         const gifts = agentGiftsFromApproval(approval);
         const giftsLine = agentGiftsLine(gifts);
         const words = wordsOf(approval);

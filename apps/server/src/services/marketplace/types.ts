@@ -302,6 +302,8 @@ export interface PreviewExtension {
    * Optional only so a preview from an older server still reads.
    */
   hasServer?: boolean;
+  /** Secrets declared by this app, without their values. Absent on older previews. */
+  secrets?: { key: string; required: boolean; description?: string }[];
 }
 
 export interface PermissionPreview {

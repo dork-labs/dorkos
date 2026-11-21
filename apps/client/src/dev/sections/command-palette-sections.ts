@@ -82,4 +82,12 @@ export const COMMAND_PALETTE_SECTIONS: PlaygroundSection[] = [
     category: 'Command Palette',
     keywords: ['live', 'cmd', 'k', 'global', 'frecency', 'prefix', 'search', 'full'],
   },
+  // AppOriginShowcases (DOR-4282)
+  {
+    id: 'app-names-on-dialogs-and-commands',
+    title: 'App names on dialogs and commands',
+    page: 'command-palette',
+    category: 'Command Palette',
+    keywords: ['app', 'extension', 'dialog', 'strip', 'from', 'name', 'command'],
+  },
 ];
