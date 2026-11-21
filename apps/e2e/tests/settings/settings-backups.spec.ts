@@ -79,8 +79,8 @@ test.describe('Settings → Backups', () => {
     await expect(rows).toHaveCount(2);
     await expect(rows.nth(0)).toContainText('Kept by DorkOS');
     await expect(rows.nth(1)).toContainText('Older copy');
-    await expect(panel.getByRole('button', { name: `Remove ${OLDER}` })).toBeVisible();
-    await expect(panel.getByRole('button', { name: `Move ${OLDER}` })).toBeVisible();
+    await expect(panel.getByRole('button', { name: `Remove ${OLDER}`, exact: true })).toBeVisible();
+    await expect(panel.getByRole('button', { name: `Move ${OLDER}`, exact: true })).toBeVisible();
     await expect(panel.getByRole('button', { name: /dork-auto-20261119-daily\.db/ })).toHaveCount(
       0
     );
@@ -91,7 +91,9 @@ test.describe('Settings → Backups', () => {
     await settingsPage.open();
     await settingsPage.switchTab('Backups');
 
-    await settingsPage.activePanel.getByRole('button', { name: `Remove ${OLDER}` }).click();
+    await settingsPage.activePanel
+      .getByRole('button', { name: `Remove ${OLDER}`, exact: true })
+      .click();
     const confirm = page.getByRole('alertdialog', { name: 'Remove this backup?' });
     await expect(confirm).toBeVisible();
     expect(removed).toEqual([]);
@@ -100,7 +102,9 @@ test.describe('Settings → Backups', () => {
     await expect(confirm).toBeHidden();
     expect(removed).toEqual([]);
 
-    await settingsPage.activePanel.getByRole('button', { name: `Remove ${OLDER}` }).click();
+    await settingsPage.activePanel
+      .getByRole('button', { name: `Remove ${OLDER}`, exact: true })
+      .click();
     await page.getByRole('button', { name: 'Remove backup' }).click();
     await expect.poll(() => removed).toEqual([OLDER]);
     await expect(settingsPage.activePanel.getByTestId('backups-total')).toHaveText(
