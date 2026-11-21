@@ -19,19 +19,19 @@ export class LocalBrowserTabMetadata {
       active(): boolean;
       selected(): boolean;
       invalidate(): void;
-      framesChanged(): void;
+      framesChanged(mainFrame: boolean): void;
       closed(): void;
     }
   ): void {
     if (this.tracked.has(page)) return;
     this.tracked.add(page);
-    const framesChanged = () => {
-      if (owner.active() && owner.selected()) owner.framesChanged();
+    const framesChanged = (mainFrame: boolean) => {
+      if (owner.active() && owner.selected()) owner.framesChanged(mainFrame);
     };
-    page.on('frameattached', framesChanged);
-    page.on('framedetached', framesChanged);
+    page.on('frameattached', () => framesChanged(false));
+    page.on('framedetached', () => framesChanged(false));
     page.on('framenavigated', (frame) => {
-      framesChanged();
+      framesChanged(frame === page.mainFrame());
       if (frame !== page.mainFrame() || !owner.active()) return;
       this.refresh(page, { newDocument: true });
       if (owner.selected()) owner.invalidate();

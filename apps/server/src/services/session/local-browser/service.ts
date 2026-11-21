@@ -62,7 +62,7 @@ export class LocalBrowserService {
       );
     return session.captureViewerPage();
   });
-  /** A watch binds the broker's exact captured Page and authenticated owner ingress. */
+  /** Verified ingress captures only the selected chat's existing broker page. */
   readonly viewerPages: { resolve: ResolveViewerPage } = {
     resolve: (chatId, principal, viewerId) =>
       captureViewerPage(this.pageBroker, chatId, principal, viewerId),
