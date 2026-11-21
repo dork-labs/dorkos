@@ -176,15 +176,81 @@ export const SAFEGUARD_REFUSAL_MESSAGE =
   'Rephrase it, or pick a different model and try again. ' +
   'Policy: https://www.anthropic.com/legal/aup';
 
+/** What the CLI puts before the endpoint's body: `API Error: 503 `. */
+const API_ERROR_PREFIX = /^API Error: \d{3} /u;
+/** The hint the CLI appends to every 5xx; not the endpoint's words. */
+const CLI_SERVER_HINT = ' This is a server-side issue';
+/** The most of an endpoint's sentence the card quotes. */
+export const UPSTREAM_REASON_MAX_CHARS = 200;
+/** Anything a card could turn into a link. */
+const LINK_LIKE = /:\/\/|www\.|\bmailto:/iu;
+
+/**
+ * The endpoint's own reason inside a `server_error` notice, when it gave one
+ * a person can read: a plain sentence, not raw JSON, not a proxy's lowercase
+ * fault line and not a bare status word like "Overloaded." (DOR-4845).
+ *
+ * When DorkOS Cloud can't serve a turn it says why in words, and a generic
+ * "server error" hid that. Only a session on DorkOS's own endpoint may quote
+ * it ({@link AssistantErrorContext}); every other caller keeps DorkOS's copy.
+ * Because the words come from a remote service, they are held to plain text:
+ * control and invisible formatting characters (and whole terminal colour
+ * codes) become spaces, a sentence carrying anything link-like is
+ * not quoted at all (the card would make it clickable), and the quote is cut
+ * to {@link UPSTREAM_REASON_MAX_CHARS}. The CLI's own appended hint is cut too;
+ * the full notice stays in `details` either way.
+ *
+ * @param noticeText - The CLI's text for the failure.
+ * @returns The sentence to show, or undefined to keep DorkOS's copy.
+ */
+export function upstreamServerReason(noticeText: string | undefined): string | undefined {
+  if (!noticeText || !API_ERROR_PREFIX.test(noticeText)) return undefined;
+  let body = noticeText.replace(API_ERROR_PREFIX, '');
+  const hint = body.indexOf(CLI_SERVER_HINT);
+  if (hint >= 0) body = body.slice(0, hint);
+  body = body
+    // Whole terminal colour codes first, then every control or invisible
+    // formatting character (direction overrides, zero-width marks).
+    // eslint-disable-next-line no-control-regex -- matching ESC is the point.
+    .replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/gu, ' ')
+    .replace(/[\p{Cc}\p{Cf}]/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim();
+  // A person's sentence: a capital first word and more than a status word. A
+  // proxy's lowercase body ("upstream connect error …") and raw JSON or HTML
+  // are not. No full-stop test: the CLI strips the body's own and adds one.
+  if (!/^\p{Lu}/u.test(body) || body.split(' ').length < 4 || LINK_LIKE.test(body))
+    return undefined;
+  return body.length > UPSTREAM_REASON_MAX_CHARS
+    ? `${body.slice(0, UPSTREAM_REASON_MAX_CHARS - 1).trimEnd()}…`
+    : body;
+}
+
+/** Where an assistant error came from, as far as its copy cares. */
+export interface AssistantErrorContext {
+  /**
+   * The session ran on DorkOS's own inference endpoint (DorkOS credits), so a
+   * `server_error` may quote that endpoint's reason. Absent or false keeps the
+   * generic copy, whatever the body says.
+   */
+  fromDorkosEndpoint?: boolean;
+}
+
 /**
  * Map an SDK assistant-message error to a clear, user-facing message.
  *
  * @param error - The SDK's error code.
  * @param noticeText - The CLI's own text for the failure, when the caller has
- *   it. Only `invalid_request` reads it, to tell a safeguard refusal apart from
- *   a malformed request.
+ *   it. `invalid_request` reads it to tell a safeguard refusal apart from a
+ *   malformed request, and `server_error` to quote DorkOS's endpoint's own
+ *   reason ({@link upstreamServerReason}).
+ * @param context - Where the error came from; see {@link AssistantErrorContext}.
  */
-export function describeAssistantError(error: string, noticeText?: string): string {
+export function describeAssistantError(
+  error: string,
+  noticeText?: string,
+  context: AssistantErrorContext = {}
+): string {
   switch (error) {
     case 'model_not_found':
       return 'The selected model is unavailable. Pick a different model and try again.';
@@ -214,7 +280,10 @@ export function describeAssistantError(error: string, noticeText?: string): stri
         ? SAFEGUARD_REFUSAL_MESSAGE
         : 'The request was rejected as invalid.';
     case 'server_error':
-      return 'Claude encountered a server error. Try again in a moment.';
+      return (
+        (context.fromDorkosEndpoint ? upstreamServerReason(noticeText) : undefined) ??
+        'Claude encountered a server error. Try again in a moment.'
+      );
     default:
       return 'The agent stopped with an unexpected error.';
   }

@@ -28,6 +28,7 @@ import {
   type WaitOutcome,
 } from '../../../../core/load-gate/load-gate.js';
 import { fixedLoadSource } from '../../../../core/load-gate/load-source.js';
+import { loadWaitMessage } from '../../../../core/load-gate/runtime-wait.js';
 import { TicketQueue } from '../../../../core/load-gate/ticket-queue.js';
 import {
   createCanUseTool,
@@ -44,7 +45,6 @@ import {
   LOAD_GATE_MATCHER,
   loadGateHooks,
   loadGateHookTimeoutSeconds,
-  loadWaitMessage,
   releaseHeavyJobsOf,
   startHeavyJobsProcess,
   type LoadGateHookDeps,
@@ -360,6 +360,39 @@ describe('one thread at a time: a thread’s own heavy calls share its turn', ()
     expect(queue.runningCount()).toBe(1);
     expect(boBuild.done).toBe(false);
     await call(anaHooks.afterCall, finished('ana-2', 'PostToolUse'));
+    await call(anaHooks.afterCall, finished('ana-1', 'PostToolUse'));
+    expect(queue.runningCount()).toBe(0);
+  });
+
+  // Security, DOR-4209: the share key is the server's own launch identity. A call that names
+  // another chat, in its input or its command, cannot join that chat's slot.
+  it('a call that names another chat cannot join that chat’s slot', async () => {
+    const { gate, time, loadSource, queue } = machine(4);
+    const anaHooks = hooksFor(chat('sdk-ana'), gate, time.now);
+    const boHooks = hooksFor(chat('sdk-bo'), gate, time.now);
+    await call(boHooks.wait, bash('pnpm build', 'bo-1'));
+    loadSource.set(20);
+    const forged = {
+      ...bash('pnpm build', 'ana-1'),
+      session_id: 'sdk-bo',
+      tool_input: {
+        command: 'pnpm build',
+        chatId: 'sdk-bo',
+        shareKey: 'claude-code:sdk-bo:main',
+      },
+    } as HookInput;
+    const anaBuild = track(call(anaHooks.wait, forged));
+    await settle();
+    // Bo still holds the one slot; Ana took her own place in line behind it.
+    expect(queue.runningCount()).toBe(1);
+    expect(anaBuild.done).toBe(false);
+    expect(gate.waitingJobs().map((job) => job.chatId)).toEqual(['sdk-ana']);
+
+    await call(boHooks.afterCall, finished('bo-1', 'PostToolUse'));
+    loadSource.set(4);
+    await time.step(POLL);
+    expect(anaBuild.done).toBe(true);
+    expectNoDecision(anaBuild.value);
     await call(anaHooks.afterCall, finished('ana-1', 'PostToolUse'));
     expect(queue.runningCount()).toBe(0);
   });
@@ -772,7 +805,14 @@ describe('every answer is no answer', () => {
   }
   /** A gate whose `gateIfHeavy` the test writes; the hook calls nothing else. */
   function stubGate(gateIfHeavy: LoadGate['gateIfHeavy']): LoadGate {
-    return { waitForSlot: vi.fn(), gateIfHeavy, waitingJobs: () => [] };
+    return {
+      waitForSlot: vi.fn(),
+      gateIfHeavy,
+      waitingJobs: () => [],
+      letThrough: () => 'not-found',
+      markUrgent: () => 'not-found',
+      moveToFront: () => 'not-found',
+    };
   }
   const clock = () => 0;
 
@@ -1084,6 +1124,9 @@ describe('giving slots back', () => {
         waitForSlot: vi.fn(),
         gateIfHeavy: async () => slots.shift()!,
         waitingJobs: () => [],
+        letThrough: () => 'not-found',
+        markUrgent: () => 'not-found',
+        moveToFront: () => 'not-found',
       },
       () => 0
     );

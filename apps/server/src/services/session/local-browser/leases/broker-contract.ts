@@ -59,6 +59,7 @@ export interface BrowserViewerPageHandle {
   readonly identity: BrowserViewerIdentity;
   isCurrent(): boolean;
   assertCurrent(): void;
+  assertWatchAllowed(): void;
   /** Page-local metadata only; viewport transforms come from the exact screencast frames. */
   facts(): BrowserPageFacts;
   onPageChange(listener: (facts: BrowserPageFacts) => void): () => void;

@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
+import { test } from '../../fixtures/base';
 import { BasePage } from '../../pages/BasePage.js';
 import { ALPHA, mockCommunities, type CommunitySpec } from './community-mocks.js';
 

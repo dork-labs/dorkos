@@ -53,6 +53,9 @@ function tools(): ConnectorRuntimeTools {
       renewalPermit: {} as never,
     }),
     renew: vi.fn(),
+    resolveToolTurn: vi.fn(async () => {
+      throw new Error('Live tools are not part of this fixture.');
+    }),
     resolve: vi.fn().mockResolvedValue({ status: 'resolved', principal }),
     revoke: vi.fn().mockResolvedValue(undefined),
   };
