@@ -46,7 +46,7 @@ function listedSiblings(body: string): string[] {
 }
 
 describe('OPERATING_SKILLS_PACK', () => {
-  it('ships the twelve canonical skills, umbrella first', () => {
+  it('ships the thirteen canonical skills, umbrella first', () => {
     expect(OPERATING_SKILLS_PACK.map((s) => s.name)).toEqual([
       'operating-dorkos',
       'managing-agents',
@@ -60,6 +60,7 @@ describe('OPERATING_SKILLS_PACK', () => {
       'working-on-a-heartbeat',
       'continuing-on-another-account',
       'building-dorkos-apps',
+      'waiting-for-a-busy-computer',
     ]);
   });
 
@@ -625,6 +626,60 @@ describe('working-on-a-heartbeat', () => {
   it('is named in the umbrella sibling list, and the pack is stamped for it', () => {
     expect(bodyOf('operating-dorkos')).toContain('working-on-a-heartbeat');
     expect(OPERATING_SKILLS_VERSION).toBeGreaterThanOrEqual(40);
+  });
+});
+
+/**
+ * The load-gate skill (DOR-4209). Each assertion pins a fact a wrong word turns
+ * into an agent that dodges the line, or reports a busy computer as a red build.
+ */
+describe('waiting-for-a-busy-computer', () => {
+  const wait = bodyOf('waiting-for-a-busy-computer');
+  const flat = wait.replace(/\s+/g, ' ');
+
+  it("quotes the chat's own wait words, from runtime-wait.ts", () => {
+    expect(flat).toContain('Waiting for the computer to calm down. 3rd in line.');
+    expect(flat).toContain(
+      'Still waiting for the computer. 3rd in line. It runs anyway in about 3h.'
+    );
+    expect(flat).toContain('Next in line.');
+  });
+
+  it("states the classifier's one-file rule and that commits and pushes are heavy", () => {
+    expect(flat).toContain('exactly one test file');
+    expect(flat).toContain('`git commit` and `git push`, because they run hooks');
+    expect(flat).toContain('`playwright test`, even for one file');
+  });
+
+  it("says exit 75 is try-later, never a failing test, and the off switch is the person's", () => {
+    expect(flat).toContain('exits **75** (EX_TEMPFAIL)');
+    expect(flat).toContain('Never report it as a failing test or a red build.');
+    expect(flat).toMatch(/That switch is the person's\. Use it only when they tell you to\./);
+  });
+
+  it('names the background gap and forbids every workaround', () => {
+    for (const rule of [
+      '**Background.**',
+      '**Hiding.**',
+      '**Splitting.**',
+      '**Settings and switches.**',
+    ]) {
+      expect(wait).toContain(rule);
+    }
+    expect(flat).toContain('waits for its turn to start and then gives it back');
+  });
+
+  it('gives the person the three actions and the agent none', () => {
+    for (const action of ['**Let through**', '**Urgent**', '**Move to front**']) {
+      expect(wait).toContain(action);
+    }
+    expect(flat).toContain('You cannot do any of these');
+    expect(flat).toContain('There is no tool for it.');
+  });
+
+  it('is named in the umbrella sibling list, and the pack is stamped for it', () => {
+    expect(bodyOf('operating-dorkos')).toContain('waiting-for-a-busy-computer');
+    expect(OPERATING_SKILLS_VERSION).toBeGreaterThanOrEqual(70);
   });
 });
 
