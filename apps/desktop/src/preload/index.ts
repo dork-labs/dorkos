@@ -388,6 +388,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
    */
   restartToUpdate: (): void => ipcRenderer.send('update:restart'),
   /**
+   * Try a failed update download again — wired to the in-app card's retry
+   * button. Only meaningful after an {@link onUpdateStatus} `error` that names
+   * a version; the outcome arrives as further status events.
+   */
+  retryUpdate: (): void => ipcRenderer.send('update:retry'),
+  /**
    * Subscribe to native updater lifecycle events (checking → available →
    * downloading → downloaded, or not-available / error) so the in-app sidebar
    * card can reflect them. `cb` receives a discriminated-union status.

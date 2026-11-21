@@ -112,6 +112,84 @@ describe('Database Migrations', () => {
     expect(() => runMigrations(db)).not.toThrow();
   });
 
+  it('adds draft sources to a database that already has owner sign-in data', () => {
+    const db = createDb(':memory:');
+    const raw = db.$client;
+    try {
+      // Journal index 209 is main's owner sign-in migration, before draft sources.
+      migrate(db, { migrationsFolder: migrationsFolderThrough(209) });
+      raw.exec(`
+        INSERT INTO "user" (id, name, email, role)
+          VALUES ('upgrade-owner', 'Fixture Owner', 'upgrade-owner@example.invalid', 'owner');
+        INSERT INTO "session" (id, token, expires_at, updated_at, user_id, route,
+                               last_active_at, wifi_agent_turns_at)
+          VALUES ('upgrade-sign-in', 'fixture-session-value', 1800000000000, 1795200000000,
+                  'upgrade-owner', 'wifi', 1795200000100, 1795200000200);
+        INSERT INTO owner_factors (id, user_id, kind, label, confirmed_at)
+          VALUES ('upgrade-factor', 'upgrade-owner', 'totp', 'Fixture factor', 1795200000000);
+        INSERT INTO session_locations (id, owner_id, cwd, created_at)
+          VALUES ('upgrade-location', 'upgrade-owner', '/fixture/project', '2026-11-21T00:00:00Z');
+        INSERT INTO session_metadata (session_id, created_at, model, model_launch_state)
+          VALUES ('upgrade-chat', '2026-11-21T00:00:00Z', 'fixture-model', 'pending-v1');
+      `);
+
+      const existingRows = () => ({
+        owner: raw.prepare(`SELECT * FROM "user" WHERE id = 'upgrade-owner'`).get(),
+        signIn: raw.prepare(`SELECT * FROM "session" WHERE id = 'upgrade-sign-in'`).get(),
+        factor: raw.prepare("SELECT * FROM owner_factors WHERE id = 'upgrade-factor'").get(),
+        location: raw
+          .prepare("SELECT * FROM session_locations WHERE id = 'upgrade-location'")
+          .get(),
+        chat: raw.prepare("SELECT * FROM session_metadata WHERE session_id = 'upgrade-chat'").get(),
+      });
+      const before = existingRows();
+      expect(before).toMatchObject({
+        owner: { id: 'upgrade-owner', role: 'owner' },
+        signIn: {
+          route: 'wifi',
+          last_active_at: 1795200000100,
+          wifi_agent_turns_at: 1795200000200,
+        },
+        factor: { user_id: 'upgrade-owner', confirmed_at: 1795200000000 },
+        location: { owner_id: 'upgrade-owner', cwd: '/fixture/project' },
+        chat: { model: 'fixture-model', model_launch_state: 'pending-v1' },
+      });
+      expect(
+        raw
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session_draft_sources'"
+          )
+          .get()
+      ).toBeUndefined();
+
+      runMigrations(db);
+
+      expect(existingRows()).toEqual(before);
+      raw
+        .prepare(
+          `INSERT INTO session_draft_sources
+           (session_id, owner_id, source_kind, location_id, source_path, source_created_at)
+           VALUES ('upgrade-chat', 'upgrade-owner', 'person-location', 'upgrade-location',
+                   '/fixture/project', '2026-11-21T00:00:00Z')`
+        )
+        .run();
+      expect(
+        raw.prepare("SELECT * FROM session_draft_sources WHERE session_id = 'upgrade-chat'").get()
+      ).toEqual({
+        session_id: 'upgrade-chat',
+        owner_id: 'upgrade-owner',
+        source_kind: 'person-location',
+        location_id: 'upgrade-location',
+        registered_agent_id: null,
+        source_path: '/fixture/project',
+        source_created_at: '2026-11-21T00:00:00Z',
+      });
+      expect(raw.pragma('foreign_key_check')).toEqual([]);
+    } finally {
+      raw.close();
+    }
+  });
+
   it('creates all expected tables', () => {
     const db = createDb(':memory:');
     runMigrations(db);
@@ -279,6 +357,7 @@ describe('Database Migrations', () => {
       // Durable DorkOS-id <-> OpenCode-session-id bindings so OpenCode
       // session ids survive a server restart (DOR-251, migration 0027).
       'opencode_sessions',
+      'owner_factors',
       'pulse_dispatch_log',
       'pulse_runs',
       'pulse_schedules',

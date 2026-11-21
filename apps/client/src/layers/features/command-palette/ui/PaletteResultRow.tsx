@@ -113,14 +113,25 @@ export function PaletteResultRow({
     case 'feature': {
       const Icon = ICON_MAP[item.data.icon];
       return (
-        <CommandItem value={item.data.label} onSelect={() => onFeatureAction(item.data.action)}>
+        <CommandItem
+          value={item.data.label}
+          onSelect={() => onFeatureAction(item.data.action)}
+          // An app's command is named "<label>, <app>" (DOR-4282): the full
+          // app name, said the same way in every browser, rather than joined
+          // from the row's pieces around the dot the eye reads.
+          aria-label={item.data.appName ? `${item.data.label}, ${item.data.appName}` : undefined}
+        >
           <motion.div
             whileHover={{ x: 2 }}
             transition={{ duration: 0.1, ease: EASE_OUT }}
             className="flex w-full items-center gap-2"
           >
-            {Icon && <Icon className="size-4" />}
-            <span>{item.data.label}</span>
+            {Icon && <Icon className="size-4 shrink-0" />}
+            {item.data.appName ? (
+              <PaletteAppCommand label={item.data.label} appName={item.data.appName} />
+            ) : (
+              <span>{item.data.label}</span>
+            )}
             {item.data.shortcut && (
               <span className="text-muted-foreground ml-auto text-xs">{item.data.shortcut}</span>
             )}
@@ -164,6 +175,30 @@ export function PaletteResultRow({
       );
     }
   }
+}
+
+/**
+ * An app command's label, then the app it came from: "Plan this week ·
+ * Planner" (DOR-4282). The name is DorkOS's record of the app, so every app
+ * command names its app. The label is never cut; the app's name sits beside
+ * it when it fits, on its own line below when it does not, and is cut at the
+ * end only when even that line is too short. The dot is for the eye; a reader
+ * hears the row's own name, "<label>, <app>", set on the option.
+ */
+function PaletteAppCommand({ label, appName }: { label: string; appName: string }) {
+  return (
+    <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2">
+      <span>{label}</span>
+      <span
+        data-slot="palette-app-name"
+        className="text-muted-foreground max-w-full min-w-0 truncate text-xs"
+        title={appName}
+      >
+        <span aria-hidden>· </span>
+        {appName}
+      </span>
+    </span>
+  );
 }
 
 /**

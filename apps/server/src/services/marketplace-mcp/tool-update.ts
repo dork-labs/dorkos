@@ -236,9 +236,8 @@ async function confirmBatch(
   updates: ApprovableUpdate[],
   context: MarketplaceConfirmationContext | undefined
 ): Promise<ToolResponse | undefined> {
-  // A person already approved this exact call at the capability tier gate, or
-  // the caller may decide approvals itself: asking again would be a second card
-  // for one action.
+  // Only the verified person calling directly skips the content card. A
+  // generic upstream permission approval does not cover staged package files.
   if (context?.preApproved) return undefined;
 
   const req: ConfirmationRequest = {
@@ -246,6 +245,7 @@ async function confirmBatch(
     operation: 'update',
     updates,
     ...(context?.requestedBy ? { requestedBy: context.requestedBy } : {}),
+    ...(context?.outsideWords ? { outsideWords: true } : {}),
   };
   const confirmation = args.confirmationToken
     ? await deps.confirmationProvider.resolveToken(args.confirmationToken, req)

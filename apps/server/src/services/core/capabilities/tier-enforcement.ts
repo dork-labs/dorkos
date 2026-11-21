@@ -115,6 +115,8 @@ import type { PermissionAreaId, PermissionSource } from '@dorkos/shared/permissi
 
 import { isTrustedCaller } from './trusted-caller.js';
 import { nobodyToAskMessage, turnHasNobodyToAsk } from '../turn-power/full-autonomy.js';
+import { turnReadOutsideWords } from '../turn-power/outsider-turn.js';
+import { withOutsideWordsNote } from '../approvals/notes/outside-words.js';
 import { blockedLimitMessage } from './blocked-limit-message.js';
 import {
   blockedPermissionMessage,
@@ -899,7 +901,11 @@ export function enforceCapabilityTier(request: TierEnforcementRequest): TierEnfo
       const remaining = subject ? describeRemainingArguments(action, input) : undefined;
       ticket = gate!.approvals.request({
         ...binding,
-        summary: describeGatedAttempt(action, input, identity, subject, serviceAction),
+        summary: withOutsideWordsNote(
+          describeGatedAttempt(action, input, identity, subject, serviceAction),
+          action.id.startsWith('marketplace.') &&
+            turnReadOutsideWords(requestingSession?.sessionId, identity?.agentPath)
+        ),
         ...(detail !== undefined ? { detail } : {}),
         ...(requestedBy ? { requestedBy } : {}),
         ...(subject ? { subject } : {}),

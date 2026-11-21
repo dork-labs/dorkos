@@ -33,6 +33,7 @@ export default defineConfig({
     './src/schema/session/work-claims.ts',
     './src/schema/workspace.ts',
     './src/schema/auth.ts',
+    './src/schema/owner/owner-factors.ts',
     // Historical inputs keep generated SQL from dropping rows before application backfill.
     './src/schema/connected-accounts.ts',
     './src/schema/connector-attachments.ts',

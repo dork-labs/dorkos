@@ -14,6 +14,7 @@ import type { SearchableItem } from '../use-palette-search';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import type { CommandPaletteContribution, ExtensionPageContribution } from '@/layers/shared/model';
+import { setExtensionNames } from '@/layers/shared/lib/extension-names';
 
 /**
  * The instant this hook reasons about time from — noon, local.
@@ -261,6 +262,7 @@ describe('usePaletteItems', () => {
     mockUseSlotContributions.mockReturnValue(DEFAULT_PALETTE_CONTRIBUTIONS);
     mockUseMenuExtensionPages.mockReturnValue([]);
     hub.value = false;
+    setExtensionNames({});
   });
 
   // --- Static content groups ---
@@ -769,6 +771,63 @@ describe('usePaletteItems', () => {
     const item = result.current.searchableItems.find((i) => i.id === 'browse');
     expect(item?.type).toBe('quick-action');
     expect(item?.keywords).toEqual(['files', 'folder']);
+  });
+
+  describe('an app’s command (DOR-4282)', () => {
+    /** A command the way `registerCommand` adds one for the app `planner`. */
+    const appCommand: CommandPaletteContribution = {
+      id: 'planner:open-settings',
+      // A label that names DorkOS, so the name shown can only come from the record.
+      label: 'Open DorkOS settings',
+      icon: 'Settings',
+      action: 'ext:planner:open-settings',
+      category: 'feature',
+      extensionId: 'planner',
+    };
+
+    function featureData(items: PaletteItems, id: string) {
+      const item = items.searchableItems.find((i) => i.id === id);
+      return item?.type === 'feature' ? item.data : undefined;
+    }
+
+    it('carries the app’s name from DorkOS’s record, not anything in its label', () => {
+      setExtensionNames({ planner: 'Planner' });
+      mockUseSlotContributions.mockReturnValue([...DEFAULT_PALETTE_CONTRIBUTIONS, appCommand]);
+
+      const { result } = renderHook(() => usePaletteItems(null, NOW));
+
+      expect(featureData(result.current, 'planner:open-settings')?.appName).toBe('Planner');
+    });
+
+    it('shows no name, never the raw id, while the record has not loaded', () => {
+      mockUseSlotContributions.mockReturnValue([...DEFAULT_PALETTE_CONTRIBUTIONS, appCommand]);
+
+      const { result } = renderHook(() => usePaletteItems(null, NOW));
+
+      expect(featureData(result.current, 'planner:open-settings')?.appName).toBeUndefined();
+    });
+
+    it('shows no name for a blank one, or an id that is an object key', () => {
+      setExtensionNames({ planner: '   ' });
+      mockUseSlotContributions.mockReturnValue([
+        ...DEFAULT_PALETTE_CONTRIBUTIONS,
+        appCommand,
+        { ...appCommand, id: 'constructor:go', extensionId: 'constructor' },
+      ]);
+
+      const { result } = renderHook(() => usePaletteItems(null, NOW));
+
+      expect(featureData(result.current, 'planner:open-settings')?.appName).toBeUndefined();
+      expect(featureData(result.current, 'constructor:go')?.appName).toBeUndefined();
+    });
+
+    it('gives DorkOS’s own commands no app name', () => {
+      setExtensionNames({ planner: 'Planner' });
+
+      const { result } = renderHook(() => usePaletteItems(null, NOW));
+
+      expect(featureData(result.current, 'settings')?.appName).toBeUndefined();
+    });
   });
 
   it('hands the room lists back unread first', () => {

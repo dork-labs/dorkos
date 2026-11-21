@@ -817,6 +817,7 @@ describe('UpdateFlow', () => {
         installRoot,
         // Held to what its check disclosed: the only way a reinstall runs.
         approvedDisclosure: disclosedEffectsOf(buildEmptyPreview()),
+        approvedContentHash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
       });
       expect(ctx.sourceManager.list).not.toHaveBeenCalled();
     });
@@ -874,6 +875,7 @@ describe('UpdateFlow', () => {
         projectPath: undefined,
         installRoot: upRoot,
         approvedDisclosure: disclosedEffectsOf(buildEmptyPreview()),
+        approvedContentHash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
       });
       expect(result.applied.map((a) => a.packageName)).toEqual(['up']);
     });

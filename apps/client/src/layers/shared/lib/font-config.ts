@@ -12,7 +12,12 @@
  *   - description: Subtitle in dropdown (e.g., "Inter + JetBrains Mono")
  *   - sans: CSS font-family value for UI text
  *   - mono: CSS font-family value for code blocks
- *   - googleFontsUrl: URL for the Google Fonts stylesheet (null = no external load)
+ *   - googleFontsUrl: URL for the Google Fonts stylesheet (null = no external load:
+ *     system fonts, or a pairing shipped with the app in `src/bundled-fonts.css`)
+ *
+ * The default pairing is shipped with the app, so a start never asks Google for
+ * anything and never waits on it (DOR-4872). Only a font a person picks in
+ * Settings loads from Google.
  */
 
 export interface FontConfig {
@@ -39,8 +44,8 @@ export const FONT_CONFIGS = [
     description: 'Inter + JetBrains Mono',
     sans: "'Inter', system-ui, sans-serif",
     mono: "'JetBrains Mono', ui-monospace, monospace",
-    googleFontsUrl:
-      'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono&display=swap',
+    // Shipped with the app (`src/bundled-fonts.css`): Inter 400-600, Mono 400.
+    googleFontsUrl: null,
   },
   {
     key: 'geist',

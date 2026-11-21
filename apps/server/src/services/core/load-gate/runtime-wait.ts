@@ -71,6 +71,24 @@ export function loadWaitEvent(status: WaitStatus, settings: LoadGateSettings | n
 }
 
 /**
+ * What the chat says while a new reply waits for the computer to calm down before it starts
+ * (DOR-4743). It is not in the line, so it has no place to tell, and it starts anyway at
+ * `maxWaitMinutes`, so there is no "still waiting" to say either.
+ */
+const LOAD_START_WAIT_MESSAGE = 'Waiting for the computer to calm down before starting.';
+
+/**
+ * The chat's status line while a new reply waits to start: the same `waiting_for_load` status a
+ * waiting job sends, so the app shows and clears it the same way.
+ */
+export function loadStartWaitEvent(): StreamEvent {
+  return {
+    type: 'system_status',
+    data: { message: LOAD_START_WAIT_MESSAGE, status: LOAD_WAIT_STATUS },
+  };
+}
+
+/**
  * Read the load-gate settings, or `null` when they cannot be read (the config not loaded yet).
  *
  * @param settings - The settings getter.

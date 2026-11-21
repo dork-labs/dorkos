@@ -15,6 +15,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 import type { Logger } from '@dorkos/shared/logger';
+import { RESERVED_APP_NAME_MESSAGE } from '@dorkos/extension-api';
 import { ExtensionCompiler } from '../../../extensions/extension-compiler.js';
 import {
   buildCompilerRecord,
@@ -64,6 +65,17 @@ describe('a staged plugin install', () => {
       "export { dial } from '../../../../scripts/dial';\n"
     );
     expect(await install('flow')).toBeNull();
+  });
+
+  it('refuses an extension whose name is DorkOS’s own, before it compiles (DOR-4282)', async () => {
+    await write(
+      path.join(extDir, 'extension.json'),
+      '{"id":"flow","name":"Dork OS Settings","version":"1.0.0"}'
+    );
+    await write(path.join(extDir, 'index.ts'), 'export const x = 1;\n');
+    const err = await install('flow');
+    expect(err?.message).toContain("Extension 'flow' can't be installed.");
+    expect(err?.message).toContain(RESERVED_APP_NAME_MESSAGE);
   });
 
   it('holds the record to the staged plugin folder and nothing wider', async () => {

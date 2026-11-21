@@ -31,6 +31,18 @@ async function getAutoUpdaterMock() {
   return electronUpdater as unknown as typeof import('./electron-updater-mock');
 }
 
+/** The default electron-log double, standing in for `main.log`. */
+async function getMainLog() {
+  const electronLog = await import('electron-log');
+  return (electronLog as unknown as typeof import('./electron-log-mock')).default;
+}
+
+/** The updater's own logger double (DOR-4847): where every updater line belongs. */
+async function getUpdaterLog() {
+  const electronLog = await import('electron-log');
+  return (electronLog as unknown as typeof import('./electron-log-mock')).updaterLogDouble;
+}
+
 /** The mocked server supervisor, whose `stopServer` the restart path calls directly. */
 async function getServerProcessMock() {
   return import('../server-process');
@@ -211,7 +223,11 @@ describe('setupAutoUpdater / checkForUpdatesInteractive (C1/C2)', () => {
     const send = vi.mocked(win.webContents.send);
     expect(send).toHaveBeenCalledWith('update:status', { state: 'checking' });
     expect(send).toHaveBeenCalledWith('update:status', { state: 'available', version: '2.0.0' });
-    expect(send).toHaveBeenCalledWith('update:status', { state: 'downloading', percent: 42 });
+    expect(send).toHaveBeenCalledWith('update:status', {
+      state: 'downloading',
+      percent: 42,
+      version: '2.0.0',
+    });
     expect(send).toHaveBeenCalledWith('update:status', { state: 'not-available' });
     expect(send).toHaveBeenCalledWith('update:status', { state: 'error', message: 'boom' });
   });
@@ -735,7 +751,7 @@ describe('install intent and the next-launch verdict (DOR-1454)', () => {
     // `vi.mock(..., factory)` is memoized for the whole file, so the log double
     // is one object across every test here and its calls accumulate. Cases below
     // count warn lines, so this clears them per launch.
-    const log = (await import('electron-log')).default;
+    const log = await getUpdaterLog();
     for (const level of [log.info, log.warn, log.error]) vi.mocked(level).mockClear();
 
     const intent = await import('../updater-intent');
@@ -784,7 +800,7 @@ describe('install intent and the next-launch verdict (DOR-1454)', () => {
   });
 
   it('tells the renderer, warns once, and KEEPS the record when the update did not land', async () => {
-    const log = (await import('electron-log')).default;
+    const log = await getUpdaterLog();
     const { autoUpdaterModule, intent, win } = await launch('0.58.0');
     intent.writeUpdateIntent('0.63.0');
 
@@ -1117,7 +1133,7 @@ describe('handing the restart to the installer (DOR-1455)', () => {
     vi.mocked(stopServer).mockClear();
     vi.mocked(stopServer).mockResolvedValue(undefined);
 
-    const log = (await import('electron-log')).default;
+    const log = await getUpdaterLog();
     const intent = await import('../updater-intent');
     const autoUpdaterModule = await import('../auto-updater');
     const quitGuard = await import('../quit-guard');
@@ -1205,7 +1221,7 @@ describe('handing the restart to the installer (DOR-1455)', () => {
     expect(log.error).toHaveBeenCalled();
   });
 
-  it('leaves a main.log a person can reconstruct the whole restart from', async () => {
+  it('leaves an updater log a person can reconstruct the whole restart from', async () => {
     const { autoUpdater: nativeAutoUpdater } = await getElectronMock();
     const { autoUpdaterModule, log } = await bootWithStagedUpdate();
 
@@ -1353,5 +1369,259 @@ describe('handing the restart to the installer (DOR-1455)', () => {
     setupAutoUpdater(() => null);
 
     expect(purgeStaleStagedUpdates).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * DOR-4846: the card names the real version while it downloads, and a stopped
+ * download offers a retry. Neither progress nor an error says which version it
+ * is about, so the main process tags both with the one `update-available` named.
+ */
+describe('download progress and download errors carry the version', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  /** Boot the updater packaged, with a window, and clear what it sent. */
+  async function bootPackaged() {
+    const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.isPackaged = true;
+    app.getVersion = vi.fn(() => '0.138.0');
+    const { autoUpdater, resetAutoUpdaterMock } = await getAutoUpdaterMock();
+    resetAutoUpdaterMock();
+
+    const autoUpdaterModule = await import('../auto-updater');
+    const win = new BrowserWindow({ width: 1200, height: 800 });
+    autoUpdaterModule.setupAutoUpdater(() => win as unknown as Electron.BrowserWindow);
+    const sent = () =>
+      win.webContents.send.mock.calls
+        .filter(([channel]: unknown[]) => channel === 'update:status')
+        .map(([, status]: unknown[]) => status);
+    return { app, autoUpdater, autoUpdaterModule, sent };
+  }
+
+  const progress = (percent: number) =>
+    ({ percent, transferred: percent * 10, total: 1000, bytesPerSecond: 100 }) as ProgressInfo;
+
+  it('names the version update-available announced on every progress report', async () => {
+    const { autoUpdater, sent } = await bootPackaged();
+
+    autoUpdater.emit('update-available', { version: '0.139.0' } as UpdateInfo);
+    autoUpdater.emit('download-progress', progress(42));
+
+    expect(sent()).toContainEqual({ state: 'downloading', percent: 42, version: '0.139.0' });
+  });
+
+  it('names the version on an error that stopped its download', async () => {
+    const { autoUpdater, autoUpdaterModule, sent } = await bootPackaged();
+
+    autoUpdater.emit('update-available', { version: '0.139.0' } as UpdateInfo);
+    autoUpdater.emit('download-progress', progress(10));
+    autoUpdater.emit('error', new Error('net::ERR_CONNECTION_RESET'));
+
+    expect(sent().at(-1)).toEqual({
+      state: 'error',
+      message: 'net::ERR_CONNECTION_RESET',
+      version: '0.139.0',
+    });
+    // And the replay a reopened window starts from says the same.
+    expect(autoUpdaterModule.getLastUpdateStatus()).toEqual(sent().at(-1));
+  });
+
+  it('names no version on a failed check, when nothing was downloading', async () => {
+    const { autoUpdater, sent } = await bootPackaged();
+
+    autoUpdater.emit('checking-for-update');
+    autoUpdater.emit('error', new Error('getaddrinfo ENOTFOUND'));
+
+    expect(sent().at(-1)).toEqual({ state: 'error', message: 'getaddrinfo ENOTFOUND' });
+  });
+
+  it('forgets the version once the download lands', async () => {
+    const { autoUpdater, sent } = await bootPackaged();
+
+    autoUpdater.emit('update-available', { version: '0.139.0' } as UpdateInfo);
+    autoUpdater.emit('update-downloaded', { version: '0.139.0' } as UpdateDownloadedEvent);
+    // A later check failing is not about the download that already finished.
+    autoUpdater.emit('error', new Error('getaddrinfo ENOTFOUND'));
+
+    expect(sent().at(-1)).toEqual({ state: 'error', message: 'getaddrinfo ENOTFOUND' });
+  });
+
+  it('retries with a fresh check, and keeps a failed retry about the same version', async () => {
+    const { autoUpdater, autoUpdaterModule, sent } = await bootPackaged();
+    autoUpdater.emit('update-available', { version: '0.139.0' } as UpdateInfo);
+    autoUpdater.emit('error', new Error('net::ERR_CONNECTION_RESET'));
+    vi.mocked(autoUpdater.checkForUpdates).mockClear();
+
+    autoUpdaterModule.retryUpdateDownload();
+    expect(autoUpdater.checkForUpdates).toHaveBeenCalledTimes(1);
+
+    // Still offline: the retry's own check fails before anything is found.
+    autoUpdater.emit('checking-for-update');
+    autoUpdater.emit('error', new Error('getaddrinfo ENOTFOUND'));
+
+    expect(sent().at(-1)).toEqual({
+      state: 'error',
+      message: 'getaddrinfo ENOTFOUND',
+      version: '0.139.0',
+    });
+  });
+
+  it('swallows the rejection a failed retry check also returns', async () => {
+    const { autoUpdater, autoUpdaterModule } = await bootPackaged();
+    vi.mocked(autoUpdater.checkForUpdates).mockRejectedValue(new Error('offline'));
+    const unhandled = vi.fn();
+    process.on('unhandledRejection', unhandled);
+
+    autoUpdaterModule.retryUpdateDownload();
+    await new Promise((resolve) => setImmediate(resolve));
+
+    process.off('unhandledRejection', unhandled);
+    expect(unhandled).not.toHaveBeenCalled();
+  });
+
+  it('does nothing in an unpackaged build', async () => {
+    const { app, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.isPackaged = false;
+    const { autoUpdater, resetAutoUpdaterMock } = await getAutoUpdaterMock();
+    resetAutoUpdaterMock();
+    const { retryUpdateDownload } = await import('../auto-updater');
+
+    retryUpdateDownload();
+
+    expect(autoUpdater.checkForUpdates).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * DOR-4847: the updater writes to its own file. Its lines used to share
+ * `main.log`, whose rotation took the evidence of a missing update with it.
+ */
+describe('the updater log', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  /** Boot the updater packaged, with a window, and clear both log doubles. */
+  async function bootPackaged() {
+    const { app, BrowserWindow, dialog, resetElectronMock } = await getElectronMock();
+    resetElectronMock();
+    app.isPackaged = true;
+    app.getVersion = vi.fn(() => '0.138.0');
+    const { autoUpdater, resetAutoUpdaterMock } = await getAutoUpdaterMock();
+    resetAutoUpdaterMock();
+    const { resetLogMock } = (await import('electron-log')) as unknown as typeof import('./electron-log-mock'); // prettier-ignore
+    resetLogMock();
+    const mainLog = await getMainLog();
+    const updaterLog = await getUpdaterLog();
+
+    const autoUpdaterModule = await import('../auto-updater');
+    const win = new BrowserWindow({ width: 1200, height: 800 });
+    autoUpdaterModule.setupAutoUpdater(() => win as unknown as Electron.BrowserWindow);
+    vi.mocked(dialog.showMessageBox).mockClear();
+    return { autoUpdater, autoUpdaterModule, dialog, mainLog, updaterLog };
+  }
+
+  /** Every line a logger double received at `level`, as text. */
+  function lines(logger: { info: unknown }, level: 'info' | 'warn' | 'error' = 'info'): string[] {
+    const fn = (logger as Record<string, (...args: unknown[]) => void>)[level]!;
+    return vi.mocked(fn).mock.calls.map((args) => args.map(String).join(' '));
+  }
+
+  it('hands electron-updater the updater logger, not the main one', async () => {
+    const { autoUpdater, mainLog, updaterLog } = await bootPackaged();
+
+    expect(autoUpdater.logger).toBe(updaterLog);
+    expect(autoUpdater.logger).not.toBe(mainLog);
+  });
+
+  it('leaves one line in main.log saying where the updater log is', async () => {
+    const { mainLog } = await bootPackaged();
+
+    const pointers = lines(mainLog).filter((line) => line.includes('[updater]'));
+    expect(pointers).toHaveLength(1);
+    expect(pointers[0]).toMatch(/\.dork\/logs\/updater\.log\.$/);
+  });
+
+  it('logs check, available, progress, downloaded and error to the updater log only', async () => {
+    const { autoUpdater, mainLog, updaterLog } = await bootPackaged();
+    vi.mocked(mainLog.info).mockClear();
+
+    autoUpdater.emit('checking-for-update');
+    autoUpdater.emit('update-available', { version: '0.139.0' } as UpdateInfo);
+    autoUpdater.emit('download-progress', {
+      percent: 42.5,
+      transferred: 425,
+      total: 1000,
+      bytesPerSecond: 100,
+    } as ProgressInfo);
+    autoUpdater.emit('update-downloaded', { version: '0.139.0' } as UpdateDownloadedEvent);
+    autoUpdater.emit('error', new Error('network down'));
+
+    const info = lines(updaterLog);
+    for (const fragment of [
+      'Checking for an update (running 0.138.0)',
+      'Update available: 0.139.0',
+      'Downloading: 42% (425 of 1000 bytes',
+      'Downloaded 0.139.0',
+    ]) {
+      expect(info.some((line) => line.includes(fragment))).toBe(true);
+    }
+    expect(lines(updaterLog, 'error').some((line) => line.includes('network down'))).toBe(true);
+    expect(mainLog.info).not.toHaveBeenCalled();
+    expect(mainLog.error).not.toHaveBeenCalled();
+  });
+
+  it('logs download progress once per ten percent, not once per tick', async () => {
+    const { autoUpdater, updaterLog } = await bootPackaged();
+    autoUpdater.emit('update-available', { version: '0.139.0' } as UpdateInfo);
+
+    for (let percent = 0; percent <= 100; percent += 0.5) {
+      autoUpdater.emit('download-progress', {
+        percent,
+        transferred: percent * 10,
+        total: 1000,
+        bytesPerSecond: 100,
+      } as ProgressInfo);
+    }
+
+    // 0%, 10%, ... 100%: eleven lines for 201 ticks.
+    expect(lines(updaterLog).filter((line) => line.includes('Downloading:'))).toHaveLength(11);
+  });
+
+  it('starts the progress lines over for the next download', async () => {
+    const { autoUpdater, updaterLog } = await bootPackaged();
+    const progress = (percent: number) =>
+      autoUpdater.emit('download-progress', {
+        percent,
+        transferred: 0,
+        total: 1000,
+        bytesPerSecond: 0,
+      } as ProgressInfo);
+
+    autoUpdater.emit('update-available', { version: '0.139.0' } as UpdateInfo);
+    progress(95);
+    autoUpdater.emit('update-available', { version: '0.140.0' } as UpdateInfo);
+    progress(5);
+
+    expect(lines(updaterLog).filter((line) => line.includes('Downloading:'))).toHaveLength(2);
+  });
+
+  it('logs an error from an interactive check too, not only the dialog', async () => {
+    const { autoUpdater, autoUpdaterModule, dialog, updaterLog } = await bootPackaged();
+    vi.mocked(autoUpdater.checkForUpdates).mockImplementation(async () => {
+      autoUpdater.emit('error', new Error('certificate expired'));
+      return null;
+    });
+
+    autoUpdaterModule.checkForUpdatesInteractive();
+
+    await vi.waitFor(() => expect(dialog.showMessageBox).toHaveBeenCalled());
+    expect(lines(updaterLog, 'error').some((line) => line.includes('certificate expired'))).toBe(
+      true
+    );
   });
 });

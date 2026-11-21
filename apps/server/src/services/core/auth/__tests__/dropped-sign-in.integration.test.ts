@@ -86,11 +86,12 @@ describe('a sign-in the browser would drop', () => {
     expect(res.status).toBe(200);
   });
 
-  it('leaves the Wi-Fi listener alone, since it rewrites the cookie for plain http itself', async () => {
+  it('never explains a drop on the Wi-Fi listener, which takes a code, not a password', async () => {
     viaIngress = 'wifi';
     try {
       const res = await signIn(LAN);
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('WIFI_SIGN_IN_NEEDS_CODE');
     } finally {
       viaIngress = null;
     }

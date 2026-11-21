@@ -236,7 +236,7 @@ import path from 'path';
 import type { ExtensionRecord } from '@dorkos/extension-api';
 import type { ExtensionApprovedSource } from '@dorkos/shared/config-schema';
 import type { ExtensionsConfig } from './extension-enable-resolution.js';
-import { declaredSet, isCovered } from './isolation/permission-coverage.js';
+import { declaredSet, isCoveredApartFromPlaces } from './isolation/permission-coverage.js';
 import { clientPinHolds, keepsPathTrust } from './pin/extension-path-trust.js';
 
 /**
@@ -265,20 +265,30 @@ export type ExtensionCopy = Pick<ExtensionRecord, 'id' | 'origin' | 'path' | 'so
 export type ExtensionApprovals = Pick<ExtensionsConfig, 'approvedToRun' | 'approvedSources'> &
   Partial<Pick<ExtensionsConfig, 'trustedSources' | 'approvedPermissions'>>;
 
-// FAIL-OPEN BY DESIGN, so every writer must spread: an absent
-// `approvedPermissions` map (or entry) reads as the full in-process set, which
-// is what every approval before DOR-2686 was for. A write to `extensions`
-// that rebuilds the object without spreading the stored one drops the map and
-// silently widens every approval that runs separately. Pinned by
-// `isolation/__tests__/permission-coverage.test.ts`.
+// FAIL-OPEN BY DESIGN for what it reaches, so every writer must spread: an
+// absent `approvedPermissions` map (or entry) reads as the full in-process
+// set, which is what every approval before DOR-2686 was for. It covers only
+// `LEGACY_APPROVED_SLOTS` (right-panel and settings.tabs) of the places an app
+// shows in (DOR-4282): any other declared place stays off until a person
+// allows it (`isolation/place-grace.ts`). A write to
+// `extensions` that rebuilds the object without spreading the stored one
+// drops the map and silently widens every approval that runs separately.
+// Pinned by `isolation/__tests__/permission-coverage.test.ts`.
 
 /** A copy with the manifest it declares its permission set in. */
 export type ExtensionDeclaringCopy = ExtensionCopy & Pick<ExtensionRecord, 'manifest'>;
 
 /**
  * Whether the permission set this copy declares now is covered by the set
- * stored with its approval (DOR-2686). A missing entry is the full in-process
- * set, so it covers anything. Pure.
+ * stored with its approval (DOR-2686), apart from new places. A missing entry
+ * is the full in-process set, so it covers any reach.
+ *
+ * Places are left out on purpose (DOR-4282): when new places are all a copy
+ * adds, it keeps running with what its approval covered, and DorkOS keeps
+ * each new place off until a person allows it (`allowedPlacesOf` in
+ * `isolation/place-grace.ts`, which the screen gate and `ctx.inbox` read).
+ * Any other addition (a host, a program, agent access, the runtime, an app it
+ * calls) still stops the whole app. Pure.
  *
  * @param copy - The extension record in question.
  * @param approvals - `config.extensions`, or the approval fields of it.
@@ -287,7 +297,10 @@ export function isWithinApprovedPermissions(
   copy: ExtensionDeclaringCopy,
   approvals: ExtensionApprovals
 ): boolean {
-  return isCovered(declaredSet(copy.manifest), approvals.approvedPermissions?.[copy.id]);
+  return isCoveredApartFromPlaces(
+    declaredSet(copy.manifest),
+    approvals.approvedPermissions?.[copy.id]
+  );
 }
 
 /**
@@ -528,6 +541,7 @@ export function mayRunExtensionCode(
   if (isFromTrustedSource(copy, approvals)) return true;
   // The approval names this copy AND what it declares now fits inside the set
   // the person approved: a widened manifest waits for them again (DOR-2686).
+  // New places alone do not stop it; each waits on its own (DOR-4282).
   return isApprovedCopy(copy, approvals) && isWithinApprovedPermissions(copy, approvals);
 }
 

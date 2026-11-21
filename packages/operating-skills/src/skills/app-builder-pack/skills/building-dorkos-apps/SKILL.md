@@ -93,7 +93,8 @@ person an approval is "just a formality".
      turn read someone else's words waits for their yes. Below Full, every change waits.
 3. Edit the files in the `path` it returns. Keep the starter's structure. Set
    `minHostVersion` to the first DorkOS release with every API you use; the starter's
-   `0.1.0` is a placeholder.
+   `0.1.0` is a placeholder. **Declare every place you register in `contributions`**,
+   and only those: an undeclared one draws nothing ([placement.md](placement.md#declare-every-place-in-contributions)).
 4. Read [pitfalls.md](pitfalls.md) before you write any code: the sandboxed frame, the
    fill view, layout, data and TSX all have traps that pass your tests.
 
@@ -101,17 +102,15 @@ person an approval is "just a formality".
 
 In a marked turn, or one held to a limit, your own `.dork/extensions/` folder is
 read-only and `create_extension` creates nothing. That rule is on purpose. Build in
-the person's personal marketplace instead: each version is one install card.
-The steps are in [personal-marketplace.md](personal-marketplace.md). Never ask
-anyone to copy files in from Terminal.
+the person's personal marketplace instead: each version is one install card. The steps
+are in [personal-marketplace.md](personal-marketplace.md). Never ask anyone to copy files in from Terminal.
 
 ## Test, then check it started
 
-1. `test_extension(id)`. Expect `status: ok` and the contribution counts you meant
-   (for example `dashboard.sections: 1`). A failure names the phase; fix and rerun.
+1. `test_extension(id)`. Expect `status: ok`, the contribution counts you meant (for
+   example `dashboard.sections: 1`) and no `warnings`. A failure names the phase; fix and rerun.
 2. `test_extension` uses a mock API. It doesn't prove the app starts for real. After
-   the person approves and it installs, call `list_extensions` and read your app's
-   entry:
+   the person approves and it installs, call `list_extensions` and read your app's entry:
    - `status: compiled` only means the bundle built.
    - With server code, `serverStatus` must be `active`. `inactive` or an error means it
      didn't start, whatever the compile said.
@@ -142,10 +141,11 @@ Don't claim it was reviewed, safe or approved unless that happened.
 ## Changing an app later
 
 Every version goes back to the person for approval, and to your team's security
-reviewer for a placement check if you have one. Bump `version` in `extension.json`,
-rerun `test_extension`, check `serverStatus` again, redo the screenshots for any surface
-that changed, and repeat the reach list with what changed marked. Until they allow it,
-the new version is held: some or all of it won't run, `list_extensions` shows `waitsForPerson: true`,
+reviewer for a placement check if you have one. Bump `version` in `extension.json`
+(unless the fix only adds places; see placement.md), rerun `test_extension`, check
+`serverStatus` again, redo the screenshots for any surface that changed, and repeat
+the reach list with what changed marked. Until they allow it, the new version is
+held: some or all of it won't run, `list_extensions` shows `waitsForPerson: true`,
 and they see "Turn on <app>?" in Activity. Never hand them a shell command instead.
 
 ## When the docs don't answer

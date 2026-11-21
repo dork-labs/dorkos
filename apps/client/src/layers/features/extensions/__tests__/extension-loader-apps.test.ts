@@ -64,12 +64,21 @@ afterEach(() => {
 function record(id: string, scope: 'global' | 'local' = 'global'): ExtensionRecordPublic {
   return {
     id,
-    manifest: { clientApiVersion: 2, id, name: id, version: '1.0.0' },
+    // The places `moduleFor` registers in (DOR-4282).
+    manifest: {
+      clientApiVersion: 2,
+      id,
+      name: id,
+      version: '1.0.0',
+      contributions: { pages: true, 'settings.tabs': true },
+    },
     status: 'compiled',
     scope,
     origin: 'user',
     bundleReady: true,
     approvedToRun: true,
+    // And a person allowed both.
+    allowedSlots: ['pages', 'settings.tabs'],
     hasServerEntry: false,
     hasDataProxy: false,
     shadowedBy: null,
@@ -93,7 +102,10 @@ describe('apps built for the old extension API', () => {
   function oldApp(id: string, rightPanel = false): ExtensionRecordPublic {
     const old = record(id);
     delete (old.manifest as { clientApiVersion?: 2 }).clientApiVersion;
-    if (rightPanel) old.manifest.contributions = { 'right-panel': true };
+    if (rightPanel) {
+      old.manifest.contributions = { 'right-panel': true };
+      old.allowedSlots = ['right-panel'];
+    }
     return old;
   }
 
@@ -131,6 +143,18 @@ describe('apps built for the old extension API', () => {
     expect(
       screen.getByText('It was built for an older version of DorkOS. Ask its maker for an update.')
     ).toBeInTheDocument();
+  });
+
+  // Purpose: the needs-update tab shows only where its tab may show (DOR-4282).
+  it('adds no needs-update tab when a person has not allowed its panel tab', async () => {
+    const old = { ...oldApp('reed', true), allowedSlots: [] };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, json: async () => [old] }))
+    );
+    await loader.initialize();
+    const ids = useExtensionRegistry.getState().slots['right-panel'].map((entry) => entry.id);
+    expect(ids).not.toContain('reed:needs-update');
   });
 });
 
@@ -212,7 +236,8 @@ describe('independent app loads', () => {
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(importExtensionModule).toHaveBeenLastCalledWith(
       expect.stringMatching(/\/extensions\/pond\/bundle\?t=\d+/),
-      expect.objectContaining({ id: 'pond' })
+      expect.objectContaining({ id: 'pond' }),
+      ['pages', 'settings.tabs']
     );
     expect(loader.getLoaded().has('pond')).toBe(true);
     expect(useExtensionRegistry.getState().slots['settings.tabs'].map((tab) => tab.id)).toEqual([

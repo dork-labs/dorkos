@@ -144,7 +144,11 @@ export const MINI_APP = {
   description: 'Track every step before launch day.',
 } as const;
 
-/** The mini app's manifest, the shape `create_extension` writes. */
+/**
+ * The mini app's manifest: a page-only app on the version 1 API, declaring the
+ * one place its source registers (`registerPage`), since DorkOS shows an app
+ * only where its manifest says it shows.
+ */
 export const MINI_APP_MANIFEST = {
   id: MINI_APP.id,
   name: 'Launch Checklist',
@@ -152,6 +156,7 @@ export const MINI_APP_MANIFEST = {
   description: MINI_APP.description,
   author: 'Atlas',
   minHostVersion: '0.1.0',
+  contributions: { pages: true },
 } as const;
 
 /**

@@ -22,6 +22,8 @@ import type { MainRequestAdmission } from '../services/core/lifecycle/main-reque
 import { createApiApp, type ApiEnv } from './api-chain.js';
 import { mountBetterAuth } from './better-auth.js';
 import { mountDesktopSignIn } from './desktop-sign-in.js';
+import { mountWifiSignIn } from './sign-in/wifi-sign-in.js';
+import { mountOwnerPasskeySignIn } from './sign-in/owner-passkey-sign-in.js';
 import { createClientFiles } from './client-files.js';
 import { serveRouteCensus } from './route-census/census.js';
 import type { Db } from '@dorkos/db';
@@ -60,6 +62,7 @@ import { createCapabilitiesInvokeRoutes } from '../routes/capabilities-invoke.js
 import commandRoutes from '../routes/commands.js';
 import { createCommunityConnectionsRoutes } from '../routes/community-connections.js';
 import configRoutes from '../routes/config.js';
+import { createConfigBackupsRoutes } from '../routes/config-backups.js';
 import { mountComputerRoutes, type ComputerRoutesService } from '../routes/computers.js';
 import {
   createAgentTodoPromisesRoutes,
@@ -130,6 +133,7 @@ import { STEP_UP_PATH } from '@dorkos/shared/step-up';
 import { createStepUpRoutes } from '../routes/step-up.js';
 import { createRelayPasskeyPageRoutes } from '../routes/relay-passkey-page.js';
 import { createDevicesRoutes } from '../routes/devices.js';
+import { createOwnerFactorRoutes } from '../routes/owner-factors.js';
 import { createDocLinkRoutes } from '../routes/docs-links.js';
 import { createRemoteCommunitiesRoutes } from '../routes/remote-communities.js';
 import { createSearchRoutes, type SearchRouterDeps } from '../routes/search.js';
@@ -374,6 +378,8 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
       if (isAgentComputer()) return;
       if (auth) mountBetterAuth(early, { auth, maxAttempts: env.DORKOS_AUTH_SIGNIN_RATE_LIMIT });
       if (auth) mountDesktopSignIn(early, auth);
+      if (auth) mountWifiSignIn(early, auth);
+      if (auth) mountOwnerPasskeySignIn(early, auth);
       if (deps.connectorEventIngress) {
         mountConnectorSignedIngress(early, deps.connectorEventIngress);
       }
@@ -428,6 +434,8 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/remote-access', createRemoteAccessRoutes());
   app.route('/api/lan-access', createLanAccessRoutes());
   app.route('/api/cloud', cloudRoutes);
+  // Settings → Backups: its own group, beside config (DOR-4253).
+  app.route('/api/config/backups', createConfigBackupsRoutes());
   app.route('/api/config', configRoutes);
   app.route('/api/mcp-config', mcpConfigRoutes);
   app.route(
@@ -593,6 +601,7 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/', createRelayPasskeyPageRoutes());
   // A person's own signed-in devices, and signing them out (DOR-2969).
   app.route('/api/devices', createDevicesRoutes());
+  app.route('/api/owner-factors', createOwnerFactorRoutes());
   // The docs in one space, for wiki links; the `/api` 404 while Docs is off.
   app.route('/api/documents', createDocLinkRoutes());
   if (deps.heartbeatTriage) {

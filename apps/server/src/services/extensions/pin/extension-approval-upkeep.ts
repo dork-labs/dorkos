@@ -109,7 +109,13 @@ export function ratchetFullAccessApprovals(records: readonly ExtensionRecord[]):
     const stored = permissions[record.id];
     if (stored && stored.runtime !== 'in-process') continue;
     if (!isApprovedCopy(record, before)) continue;
-    additions[record.id] = declared;
+    // The places stay as the stored yes had them (DOR-4282): one that never
+    // recorded places keeps reading as such, so it covers the same places,
+    // keeps its grace (`isolation/place-grace.ts`), and a place its card
+    // never named still asks once. A ratchet never widens.
+    const reach: ApprovedPermissionSet = { ...declared };
+    delete reach.slots;
+    additions[record.id] = stored?.slots ? { ...reach, slots: stored.slots } : reach;
   }
   if (Object.keys(additions).length === 0) return;
   configManager.set('extensions', {

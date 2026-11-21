@@ -46,6 +46,7 @@ const GROUPS = [
   'cloud',
   'cloud-communities',
   'devices',
+  'owner-factors',
   'session-relay',
   'session-relay-passkeys',
   'config',
@@ -90,6 +91,15 @@ const EXCEPTIONS: Record<string, string> = {
   'session-relay-passkeys DELETE /': 'Existing password check removes a damaged passkey file.',
   'session-relay-passkeys DELETE /:credentialId': 'Existing password check removes a passkey.',
   'config PUT /agents/defaultAgent': 'Changes a preference.',
+  'devices POST /sign-in-requests/:id/approve':
+    'Held by a fresh passkey check at this computer instead of a password (DOR-4744).',
+  'devices POST /sign-in-requests/:id/decline': 'Turns a device away; grants nothing.',
+  'devices PUT /sessions/:id/runs-agents':
+    'Held by a fresh passkey check at this computer instead of a password (DOR-4744).',
+  'owner-factors POST /passkeys/finish':
+    'Consumes the one-use challenge from the confirmed /passkeys/options.',
+  'owner-factors POST /authenticator/confirm':
+    'Confirms the secret the confirmed /authenticator/start made; needs its code.',
   // DOR-4355 M3, route by route: each of these only narrows, reads or answers once.
   'connector-management POST /reviews': 'Asks the owner to review an agent; grants nothing.',
   'connector-management POST /reconciliation/previews':
@@ -184,6 +194,8 @@ const OTHER_FRONT_DOOR_CALLERS: Record<string, string> = {
     'Shared runtime bars and the key-save hold (HOLD_HELPERS); runtimes.ts routes are checked.',
   'runtimes-doe-setup.ts': 'Runtime sign-in and model settings are N.',
   'cloud-owner-bar.ts': 'Shared account owner bar; writes are classified in its callers.',
+  'config-backups.ts':
+    "Removes or moves the person's own older database copies; grants nothing (N).",
   'approval-person-bars.ts':
     'Shared approval answer bars; no routes. Its caller approvals.ts is classified below.',
   'cloud-community-move-http.ts': 'Delegated cloud-communities POST /moves hold, checked below.',

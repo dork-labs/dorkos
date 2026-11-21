@@ -1,4 +1,4 @@
-import { expect, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, type APIRequestContext, type APIResponse, type Page } from '@playwright/test';
 import { test } from '../../fixtures/base';
 import { ChatPage } from '../../pages/ChatPage.js';
 
@@ -9,6 +9,7 @@ interface ChatConnectHarness {
 
 interface OwnerAgentRequest {
   requestId: string;
+  serviceSlug: string;
   status: string;
 }
 
@@ -28,6 +29,7 @@ const REQUEST_INPUT = {
  */
 export function registerChatConnectCardTests(harness: ChatConnectHarness): void {
   test.describe('Connections — connect and allow from the chat', () => {
+    const startRequest = registerSlackRequestCleanup(harness.apiUrl);
     // The card's first question depends on which accounts of the app exist,
     // and this project's server is shared by every Connections case. Earlier
     // cases leave Gmail connected, disconnected and removed, and the scripted
@@ -47,7 +49,7 @@ export function registerChatConnectCardTests(harness: ChatConnectHarness): void 
       test.setTimeout(90_000);
       const agent = await seedAgent(request, harness.apiUrl);
       const { sessionId } = await openRequestingChat(page, request, harness.apiUrl, agent);
-      const held = startHeldRequest(request, harness.apiUrl, sessionId, agent.agentDir);
+      const held = startRequest(request, harness.apiUrl, sessionId, agent.agentDir);
 
       const card = page.getByTestId('chat-agent-request');
       await expect(card.getByRole('heading', { name: 'Connect Slack' })).toBeVisible();
@@ -93,7 +95,7 @@ export function registerChatConnectCardTests(harness: ChatConnectHarness): void 
       await connectSlackViaApi(request, harness.apiUrl);
       const agent = await seedAgent(request, harness.apiUrl);
       const { sessionId } = await openRequestingChat(page, request, harness.apiUrl, agent);
-      const held = startHeldRequest(request, harness.apiUrl, sessionId, agent.agentDir);
+      const held = startRequest(request, harness.apiUrl, sessionId, agent.agentDir);
 
       const card = page.getByTestId('chat-agent-request');
       await expect(
@@ -119,6 +121,8 @@ export function registerChatConnectCardTests(harness: ChatConnectHarness): void 
  */
 export function registerChatConnectFirstStepTests(harness: ChatConnectHarness): void {
   test.describe('Connections — asked for an app before anything is set up', () => {
+    const startRequest = registerSlackRequestCleanup(harness.apiUrl);
+
     test('takes the request, shows the one-time step first, then signs in and allows', async ({
       page,
       request,
@@ -129,7 +133,7 @@ export function registerChatConnectFirstStepTests(harness: ChatConnectHarness): 
       // Nothing reaches Slack yet, so the agent's call answers at once with
       // the ways in to offer the person, rather than waiting in silence (FB-57).
       // The request is still recorded, and its card is still shown.
-      const opened = await startHeldRequest(request, harness.apiUrl, sessionId, agent.agentDir);
+      const opened = await startRequest(request, harness.apiUrl, sessionId, agent.agentDir);
       expect(opened.ok(), await opened.text()).toBe(true);
       expect(readMcpResult(await opened.json())).toMatchObject({
         status: 'awaiting_owner',
@@ -165,6 +169,51 @@ export function registerChatConnectFirstStepTests(harness: ChatConnectHarness): 
       await releaseStep(request, harness.apiUrl, sessionId);
     });
   });
+}
+
+/** Deny leftover requests on this sequential leg and settle calls before fixture teardown. */
+function registerSlackRequestCleanup(apiUrl: string): typeof startHeldRequest {
+  const heldCalls: Array<Promise<PromiseSettledResult<APIResponse>[]>> = [];
+  test.beforeEach(async ({ request }) => {
+    await clearPendingSlackRequests(request, apiUrl);
+  });
+  test.afterEach(async ({ request }) => {
+    let results: PromiseSettledResult<APIResponse>[];
+    try {
+      await clearPendingSlackRequests(request, apiUrl);
+    } finally {
+      results = (await Promise.all(heldCalls.splice(0))).flat();
+    }
+    for (const result of results) {
+      if (result.status === 'rejected') throw result.reason;
+    }
+  });
+  return (...args) => {
+    const held = startHeldRequest(...args);
+    // Observe rejections immediately, even if a UI assertion fails before awaiting the call.
+    heldCalls.push(Promise.allSettled([held]));
+    return held;
+  };
+}
+
+/** Answer only pending Slack requests; other Connections cases own their own services. */
+async function clearPendingSlackRequests(
+  request: APIRequestContext,
+  apiUrl: string
+): Promise<void> {
+  const list = await request.get(`${apiUrl}/api/connectors/agent-requests?state=pending`);
+  expect(list.ok(), await list.text()).toBe(true);
+  const { requests } = (await list.json()) as { requests: OwnerAgentRequest[] };
+  for (const pending of requests) {
+    // The pending list also includes granted requests whose turn has not resumed yet.
+    if (pending.serviceSlug !== 'slack' || pending.status !== 'awaiting_owner') continue;
+    const denied = await request.post(
+      `${apiUrl}/api/connectors/agent-requests/${encodeURIComponent(pending.requestId)}/decision`,
+      { data: { decision: 'denied' } }
+    );
+    expect(denied.ok(), await denied.text()).toBe(true);
+    expect(await denied.json()).toMatchObject({ requestId: pending.requestId, status: 'denied' });
+  }
 }
 
 /** Disconnect every Slack account still connected, so a case starts with none. */

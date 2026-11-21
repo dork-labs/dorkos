@@ -1,10 +1,10 @@
 import { build, version as esbuildVersion } from 'esbuild';
 import type { BuildOptions } from 'esbuild';
 import {
-  PLUGIN_CHANGED_CODE,
   containmentBoundaryOf,
   containmentPlugin,
   containmentRootOf,
+  refusePluginChanged,
   stillPinned,
   type ContainmentBoundary,
 } from './extension-plugin-guard.js';
@@ -14,6 +14,7 @@ import { HOST_HONO_NAMESPACE, hostHono, hostHonoPlugin } from './server-bundle/h
 
 import { logger } from '../../lib/logger.js';
 import { BundleVouchers } from './pin/extension-bundle-vouchers.js';
+import { runDirOf, runDirRefusal } from './pin/run-dir.js';
 import type { ExtensionRecord } from '@dorkos/extension-api';
 import { EXTENSION_BUNDLE_GLOBAL as CLIENT_BUNDLE_GLOBAL } from '@dorkos/extension-api';
 import {
@@ -386,12 +387,11 @@ export class ExtensionCompiler {
    *          Also returns the `sourceHash` for cache keying.
    */
   async compile(record: ExtensionRecord): Promise<CompileResult> {
-    return this.guarded(record, () => this.compileClient(record));
+    return this.guarded(record, (runDir) => this.compileClient(record, runDir));
   }
 
-  /** The body of {@link compile}, run inside {@link guarded}. */
-  private async compileClient(record: ExtensionRecord): Promise<CompileResult> {
-    const runDir = record.runPath ?? record.path;
+  /** The body of {@link compile}, run inside {@link guarded} from `runDir`. */
+  private async compileClient(record: ExtensionRecord, runDir: string): Promise<CompileResult> {
     const entryResult = await this.resolveEntryPoint(runDir);
     if ('error' in entryResult) {
       return { error: entryResult.error, sourceHash: '' };
@@ -443,11 +443,11 @@ export class ExtensionCompiler {
     const entryPath = record.runPath
       ? path.join(record.runPath, path.relative(record.path, record.serverEntryPath))
       : record.serverEntryPath;
-    return this.guarded(record, () =>
+    return this.guarded(record, (runDir) =>
       this.compileCached(
         record.id,
         entryPath,
-        record.runPath ?? record.path,
+        runDir,
         SERVER_TARGET,
         containmentRootOf(record),
         containmentBoundaryOf(record)
@@ -460,40 +460,22 @@ export class ExtensionCompiler {
    * after the bundle is built or read (`extension-plugin-guard.ts`). On a
    * mismatch nothing is returned to run, and the record loses its trusted
    * origin at once, so every other gate refuses it too until the next scan
-   * judges it afresh.
+   * judges it afresh. A pinned copy with no snapshot to build from is refused
+   * before anything is read (`pin/run-dir.ts`).
    *
    * @param record - The copy being compiled.
-   * @param run - The compile itself.
+   * @param run - The compile itself, from the folder {@link runDirOf} names.
    */
   private async guarded(
     record: ExtensionRecord,
-    run: () => Promise<CompileResult>
+    run: (runDir: string) => Promise<CompileResult>
   ): Promise<CompileResult> {
-    if (!(await stillPinned(record))) return this.refuseChanged(record);
-    const result = await run();
-    if (!(await stillPinned(record))) return this.refuseChanged(record);
+    const runDir = runDirOf(record);
+    if (!runDir) return runDirRefusal(record);
+    if (!(await stillPinned(record))) return refusePluginChanged(record);
+    const result = await run(runDir);
+    if (!(await stillPinned(record))) return refusePluginChanged(record);
     return result;
-  }
-
-  /** The refusal for a copy whose plugin files changed since they were checked. */
-  private refuseChanged(record: ExtensionRecord): CompileResult {
-    record.trustedOrigin = undefined;
-    record.pinnedDigest = undefined;
-    record.originProblem = 'changed';
-    logger.warn(
-      `[Extensions] Not loading ${record.id}: its plugin's files changed after DorkOS checked them`
-    );
-    const message =
-      `${record.manifest.name}'s files changed after DorkOS checked them, so DorkOS didn't ` +
-      `load it. It will ask before it runs again.`;
-    return {
-      error: {
-        code: 'compilation_failed',
-        message,
-        errors: [{ text: `${PLUGIN_CHANGED_CODE}: ${message}` }],
-      },
-      sourceHash: '',
-    };
   }
 
   /**
