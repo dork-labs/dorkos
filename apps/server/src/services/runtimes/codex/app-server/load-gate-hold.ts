@@ -21,39 +21,43 @@
  * (`codex:<chat>:main`, `core/load-gate/chat-turns.ts`): a second heavy ask that arrives while the
  * first still waits takes the same place, not a ticket of its own, and goes on with it. Codex
  * withdrawing one of them leaves the place standing for the others. The key is not what keeps a
- * Codex chat from waiting behind itself: its slot goes back before any card goes up, so no Codex
- * ask can ever wait for a slot its own chat holds. It only keeps a turn's asks together. Only the main thread's asks are ever held:
- * an ask from a Codex helper's own thread names no DorkOS turn and goes to the normal handling,
- * which refuses it.
+ * Codex ask from waiting on itself: its slot goes back before any card goes up. It only keeps a
+ * turn's asks together. The chat's running commands count under a key of their own
+ * (`running-commands.ts`), because Codex reports a command it is about to ask about as started: so
+ * an ask can wait behind a command its own chat is running, which never waits on the ask. Only the
+ * main thread's asks are ever held: an ask from a Codex helper's own thread names no DorkOS turn
+ * and goes to the normal handling, which refuses it.
  *
  * **The slot is given back as the normal handling starts.** That handling ends in a person's card
  * or a refusal, every time: DorkOS never approves a Codex command on its own. A card gives its slot
  * back, the rule Claude Code's hook follows, because a person approving is already a gate and a card
  * can wait for hours. A refusal runs nothing. So a Codex job waits for its turn to be asked about,
- * and once a person approves, it runs straight away, outside the line. Should DorkOS ever answer a
- * Codex ask on its own, this has to keep the slot until the command's `item/completed`.
+ * and once a person approves, it runs straight away, without waiting again. While it runs it is
+ * counted, as every Codex command is (below).
  *
- * **Not held: what Codex runs without asking (DOR-4743).** On Full access (`approvalPolicy:
- * 'never'`, `turn-parts.ts`) Codex asks about nothing, and on the other levels it asks only about a
- * command that needs more than its sandbox allows, or one a person has not already approved for the
- * session. DorkOS sees such a command only once it is running, so it never waits. The approval
- * policy is deliberately left as it is. In this repo, `scripts/heavy-run-lock.sh`, run by the pnpm
- * scripts and git hooks, still makes Codex's pnpm and git jobs wait.
+ * **Counted, not held: what Codex runs without asking (DOR-4743).** On Full access
+ * (`approvalPolicy: 'never'`, `turn-parts.ts`) Codex asks about nothing, and on the other levels
+ * it asks only about a command that needs more than its sandbox allows, or one a person has not
+ * already approved for the session. DorkOS sees such a command only once it is running, so it
+ * cannot wait; it takes a slot while it runs instead, and a new Codex reply waits to start on a
+ * busy computer while Codex commands hold slots (`running-commands.ts`, which this holder owns, so
+ * an asked command's slot goes back while its ask waits and comes back once it is answered). The
+ * approval policy is deliberately left as it is.
  *
  * Nothing here logs or shows command text: the program's name and counts only.
  *
  * @module services/runtimes/codex/app-server/load-gate-hold
  */
 import type { StreamEvent } from '@dorkos/shared/types';
-import {
-  waitForHeavyTurn,
-  wouldHold,
-  type RuntimeWaitDeps,
-} from '../../../core/load-gate/runtime-wait.js';
+import { waitForHeavyTurn, wouldHold } from '../../../core/load-gate/runtime-wait.js';
 import type { ServerRequest } from './protocol/methods.js';
+import { CodexRunningCommands, type RunningCommandsDeps } from './running-commands.js';
 
-/** What the holder waits with: the gate, the settings and the log, the server's own by default. */
-export type HeavyAskDeps = RuntimeWaitDeps;
+/**
+ * What the holder waits and counts with: the gate, the settings, the log and the clock, the
+ * server's own by default.
+ */
+export type HeavyAskDeps = RunningCommandsDeps;
 
 /** The one ask a heavy command can be held at. */
 const COMMAND_APPROVAL_METHOD = 'item/commandExecution/requestApproval';
@@ -136,13 +140,17 @@ export class CodexHeavyAsks {
   private readonly waiting = new Map<string, WaitingAsk>();
   /** The items each turn already held once: a second ask about one (its network) never waits. */
   private readonly held = new WeakMap<HeldAskTurn, Set<string>>();
+  /** The heavy commands Codex is running, counted in the same line (DOR-4743). */
+  readonly running: CodexRunningCommands;
 
   /**
    * Construct the holder.
    *
    * @param deps - The gate, the settings and the log; the server's own by default.
    */
-  constructor(private readonly deps: HeavyAskDeps = {}) {}
+  constructor(private readonly deps: HeavyAskDeps = {}) {
+    this.running = new CodexRunningCommands(deps);
+  }
 
   /**
    * Hold one server request if it is a heavy command's ask in one of DorkOS's open turns, then
@@ -162,13 +170,11 @@ export class CodexHeavyAsks {
   ): unknown {
     const turn = requestTurn(byThread, process, request);
     const ask = turn === undefined ? undefined : askedCommand(request);
-    if (
-      turn === undefined ||
-      ask === undefined ||
-      !wouldHold(ask.command, this.deps) ||
-      this.heldBefore(turn, ask.itemId)
-    ) {
-      return answer();
+    if (turn === undefined || ask === undefined) return answer();
+    // A light command, the gate off, or a second ask about one command (its network access): no
+    // wait, but its card still holds no slot.
+    if (!wouldHold(ask.command, this.deps) || this.heldBefore(turn, ask.itemId)) {
+      return this.cardHoldsNoSlot(turn, ask.itemId, answer);
     }
     const key = waitKey(process.key, request.id);
     const entry: WaitingAsk = { stop: new AbortController(), withdrawn: false, turnEnded: false };
@@ -179,6 +185,9 @@ export class CodexHeavyAsks {
       entry.turnEnded = true;
       entry.stop.abort();
     });
+    // Asked about, the command is not running: the slot its `item/started` took goes back while
+    // the ask waits and its card is up, so it is never counted twice.
+    this.running.suspend(turn, ask.itemId);
     const waited = waitForHeavyTurn(
       {
         command: ask.command,
@@ -194,8 +203,23 @@ export class CodexHeavyAsks {
       // Before the card goes up, never after: see the module's TSDoc.
       slot?.release();
       // Codex withdrew it, or its turn is over: nobody is left to ask (see the module's TSDoc).
-      return entry.withdrawn || entry.turnEnded ? undefined : answer();
+      if (entry.withdrawn || entry.turnEnded) return undefined;
+      return this.cardHoldsNoSlot(turn, ask.itemId, answer);
     });
+  }
+
+  /**
+   * Run the normal handling (a person's card, or a refusal) with the command's slot given back, and
+   * take it again once the ask is answered: it runs then, or Codex reports it declined at once and
+   * its `item/completed` gives the slot back. A card can wait for hours; it never holds a slot.
+   */
+  private cardHoldsNoSlot(
+    turn: HeldAskTurn,
+    itemId: string | undefined,
+    answer: () => unknown
+  ): Promise<unknown> {
+    this.running.suspend(turn, itemId);
+    return Promise.resolve(answer()).finally(() => this.running.resume(turn, itemId));
   }
 
   /**

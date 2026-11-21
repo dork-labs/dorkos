@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import { createAwakeClock, type AwakeClock } from '@dorkos/shared/awake-clock';
 import { RUN_START_WAIT_MS } from '../timing/wake-settle.js';
 import { RunAccounting } from '../run-accounting.js';
 import { TaskStore, type CreateTaskStoreInput } from '../task-store.js';
@@ -15,6 +16,13 @@ function taskInput(
     filePath: `/tmp/tasks/${overrides.name.toLowerCase().replace(/\s+/g, '-')}/SKILL.md`,
     ...overrides,
   };
+}
+
+/** The wall clock (faked or not), reporting the sleep `slept` says. */
+function sleptFor(slept: () => number): AwakeClock {
+  const real = createAwakeClock();
+  real.dispose();
+  return { ...real, sleptMs: slept, sleptSince: slept };
 }
 
 describe('RunAccounting (DOR-1482)', () => {
@@ -114,7 +122,10 @@ describe('RunAccounting (DOR-1482)', () => {
     // A runner that dies mid-run writes nothing, so without a deadline its slot
     // would be held for the life of the process — silently shrinking the cap.
     vi.useFakeTimers();
-    const runs = new RunAccounting(store);
+    const runs = new RunAccounting(
+      store,
+      sleptFor(() => 0)
+    );
     const run = store.createRun(taskId, 'scheduled');
     runs.addRelay(run.id, 60_000);
 
@@ -126,6 +137,27 @@ describe('RunAccounting (DOR-1482)', () => {
     expect(runs.count()).toBe(0);
     // The row is left exactly as it was: this process does not know it failed.
     expect(store.getRun(run.id)!.status).toBe('running');
+  });
+
+  it('keeps a relay slot through time the computer slept (DOR-3286)', () => {
+    // The runner's deadline counts only awake time, so a slot that counted the
+    // sleep would be handed back on wake under a run that is still going.
+    vi.useFakeTimers();
+    let slept = 0;
+    const runs = new RunAccounting(
+      store,
+      sleptFor(() => slept)
+    );
+    const run = store.createRun(taskId, 'scheduled');
+    runs.addRelay(run.id, 60_000);
+    const slotMs = 60_000 + RUN_START_WAIT_MS + 60_000;
+
+    vi.advanceTimersByTime(slotMs - 1_000 + 8 * 60 * 60_000);
+    slept = 8 * 60 * 60_000; // a second short of its slot's length was awake
+    expect(runs.count()).toBe(1);
+
+    vi.advanceTimersByTime(2_000);
+    expect(runs.count()).toBe(0);
   });
 
   it('only hands back an abort handle for a run this process is executing', () => {

@@ -8,6 +8,7 @@ import { streakCountsFrom } from '../history/schedule-health.js';
 import type { Task, TaskRun } from '@dorkos/shared/types';
 import type { RoomEntryBody } from '@dorkos/shared/room-schemas';
 import {
+  isSleptDuringRunError,
   scheduleClockTime,
   scheduleFailureClause,
   scheduleFailureTitle,
@@ -80,6 +81,11 @@ export class ScheduleNotices {
   private finished(run: TaskRun): void {
     if (run.status !== 'failed' && run.status !== 'needs_attention' && run.status !== 'completed')
       return;
+    // A run the computer's sleep broke says nothing about the schedule, and is
+    // tried again on wake: it neither counts toward a streak nor ends one, as
+    // in `schedule-health.ts` (DOR-3286).
+    const told = (r: TaskRun) => !isSleptDuringRunError(r.error);
+    if (!told(run)) return;
     const task = this.deps.store.getTask(run.scheduleId);
     if (!task) return;
     // A callback can run after a later row was written. Bound this snapshot to
@@ -87,7 +93,8 @@ export class ScheduleNotices {
     const history = this.deps.store
       .listRuns({ taskId: task.id, limit: 1000 })
       .filter(
-        (r) => r.id <= run.id && ['failed', 'needs_attention', 'completed'].includes(r.status)
+        (r) =>
+          r.id <= run.id && ['failed', 'needs_attention', 'completed'].includes(r.status) && told(r)
       )
       .sort((a, b) => b.id.localeCompare(a.id));
     const older = history.filter((r) => r.id !== run.id);

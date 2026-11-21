@@ -808,6 +808,8 @@ describe('every answer is no answer', () => {
     return {
       waitForSlot: vi.fn(),
       gateIfHeavy,
+      occupy: vi.fn(() => null),
+      waitWhileBusy: vi.fn(async () => {}),
       waitingJobs: () => [],
       letThrough: () => 'not-found',
       markUrgent: () => 'not-found',
@@ -1123,6 +1125,8 @@ describe('giving slots back', () => {
       {
         waitForSlot: vi.fn(),
         gateIfHeavy: async () => slots.shift()!,
+        occupy: vi.fn(() => null),
+        waitWhileBusy: vi.fn(async () => {}),
         waitingJobs: () => [],
         letThrough: () => 'not-found',
         markUrgent: () => 'not-found',
