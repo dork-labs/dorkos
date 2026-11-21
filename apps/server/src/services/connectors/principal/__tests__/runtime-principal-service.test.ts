@@ -9,7 +9,10 @@ import {
   runMigrations,
   type Db,
 } from '@dorkos/db';
-import type { OpenConnectorTurnInput } from '../../runtime-principal-port.js';
+import {
+  RuntimeToolContextUnavailableError,
+  type OpenConnectorTurnInput,
+} from '../../runtime-principal-port.js';
 import {
   ConnectorRuntimeAuthorityError,
   ConnectorRuntimePrincipalService,
@@ -60,6 +63,31 @@ describe('ConnectorRuntimePrincipalService', () => {
   function openTurn(service: ConnectorRuntimePrincipalService, value = input) {
     return service.openTurn(value, { isCurrent: () => ownerCurrent });
   }
+
+  it('keeps connection lifecycle independent of optional live-tool facts', async () => {
+    const service = makeService('boot-a', 'secret-bearer');
+    await service.initializeBoot();
+    const readToolTurn = vi.fn(() => {
+      throw new RuntimeToolContextUnavailableError();
+    });
+    const opened = await service.openTurn(input, { isCurrent: () => ownerCurrent, readToolTurn });
+    await expect(
+      service.renew({ bindingId: opened.bindingId, permit: opened.renewalPermit })
+    ).resolves.toMatchObject({ status: 'renewed' });
+    const resolved = await service.resolve({
+      bearer: opened.bearer,
+      expectedRuntime: input.runtime,
+      expectedCanonicalCwd: input.canonicalCwd,
+    });
+    expect(resolved.status).toBe('resolved');
+    if (resolved.status !== 'resolved') throw new Error('Expected authentic connector authority');
+    expect(isServerPrincipal(resolved.principal)).toBe(true);
+    expect(readToolTurn).not.toHaveBeenCalled();
+    await service.revoke(opened.bindingId, 'turn_terminal');
+    await expect(
+      service.resolve({ bearer: opened.bearer, expectedRuntime: input.runtime })
+    ).resolves.toEqual({ status: 'refused', reason: 'revoked' });
+  });
 
   it('requires the boot barrier and never stores the raw bearer', async () => {
     const service = makeService('boot-a', 'secret-bearer');

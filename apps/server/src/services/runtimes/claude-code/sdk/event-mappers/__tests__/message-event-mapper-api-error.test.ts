@@ -14,6 +14,7 @@ import { mapMessageEvent } from '../message-event-mapper.js';
 import { SAFEGUARD_REFUSAL_MESSAGE, SURFACED_ASSISTANT_ERRORS } from '../../sdk-error-mapping.js';
 import type { AgentSession, ToolState } from '../../../agent-types.js';
 import type { ErrorEvent } from '@dorkos/shared/types';
+import { creditsClaudeRoot } from '../../../credits-root.js';
 
 vi.mock('../../../../../../lib/logger.js', () => ({
   logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -35,8 +36,12 @@ function apiErrorMessage(error: string, text: string | undefined): SDKMessage {
   } as unknown as SDKMessage;
 }
 
-async function errorEvents(message: SDKMessage): Promise<ErrorEvent[]> {
-  const session = { sdkSessionId: null, hasStarted: true } as unknown as AgentSession;
+async function errorEvents(message: SDKMessage, accountRoot?: string): Promise<ErrorEvent[]> {
+  const session = {
+    sdkSessionId: null,
+    hasStarted: true,
+    ...(accountRoot !== undefined && { accountRoot }),
+  } as unknown as AgentSession;
   const toolState = {
     toolNameById: new Map(),
     resolvedResultIds: new Set(),
@@ -72,6 +77,56 @@ describe('live API-error assistant message', () => {
 
     expect(event.message).toBe('The request was rejected as invalid.');
     expect(event.details).toBe('API Error: 400 messages: text content blocks must be non-empty');
+  });
+
+  // DOR-4845: after "continue on another account", every turn ended in the
+  // generic "server error" while the endpoint had said exactly why. Live and
+  // reload must quote the same sentence.
+  const PAUSED_NOTICE =
+    'API Error: 503 The service is paused for maintenance. Nothing was charged. Try again later. ' +
+    'This is a server-side issue, usually temporary — try again in a moment. ' +
+    'If it persists, check your inference gateway (gateway.example.com).';
+
+  it('quotes DorkOS credits’ plain reason for a server error, as reload does', async () => {
+    const [event] = await errorEvents(
+      apiErrorMessage('server_error', PAUSED_NOTICE),
+      creditsClaudeRoot()
+    );
+
+    expect(event).toEqual({
+      message: 'The service is paused for maintenance. Nothing was charged. Try again later.',
+      code: 'server_error',
+      category: 'execution_error',
+      details: PAUSED_NOTICE,
+    });
+  });
+
+  it('never files a quoted server error as a sign-in failure', async () => {
+    const [event] = await errorEvents(
+      apiErrorMessage(
+        'server_error',
+        'API Error: 503 Your access token was revoked by the service for now. This is a server-side issue, usually temporary.'
+      ),
+      creditsClaudeRoot()
+    );
+    expect(event.message).toBe('Your access token was revoked by the service for now.');
+    expect(event.category).toBe('execution_error');
+  });
+
+  it('keeps DorkOS copy for the same reply on a person’s own account', async () => {
+    const [event] = await errorEvents(
+      apiErrorMessage('server_error', PAUSED_NOTICE),
+      '/demo/home/.claude'
+    );
+    expect(event.message).toBe('Claude encountered a server error. Try again in a moment.');
+    expect(event.details).toBe(PAUSED_NOTICE);
+  });
+
+  it('keeps DorkOS copy for a bare status word', async () => {
+    const [event] = await errorEvents(
+      apiErrorMessage('server_error', 'API Error: 529 Overloaded.')
+    );
+    expect(event.message).toBe('Claude encountered a server error. Try again in a moment.');
   });
 
   it('emits no details when the CLI wrote no text', async () => {

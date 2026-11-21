@@ -72,6 +72,15 @@ describe('permission.asked → approval_required', () => {
     expect(data.blockedPath).toBeUndefined();
   });
 
+  it('records which tool call an ask gates, so a held bash call’s slot finds its end (DOR-4209)', () => {
+    const state = { ...permissions(), permissionCallIds: new Map<string, string>() };
+    mapPermissionAsked(LIVE_BASH_ASKED, state);
+    expect(state.permissionCallIds.get('per_ff0006910001mhtgQCU3N0PfUD')).toBe('call_esj3yoqx');
+    // An ask that names no call records nothing.
+    mapPermissionAsked({ id: 'per_1', sessionID: 'ses_1', permission: 'bash' }, state);
+    expect(state.permissionCallIds.has('per_1')).toBe(false);
+  });
+
   it('surfaces the file an edit request wants to touch', () => {
     const [event] = mapPermissionAsked(LIVE_EDIT_ASKED, permissions());
     const data = event?.data as ApprovalEvent;

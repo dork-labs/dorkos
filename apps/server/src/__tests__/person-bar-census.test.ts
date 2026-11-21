@@ -61,6 +61,8 @@ const ROUTE_BARS: Record<string, readonly string[]> = {
   'routes/extensions-approval.ts': ['refusedNotAPerson'],
   'routes/extensions.ts': ['refusedNotAPerson'],
   'routes/extensions-trusted-sources.ts': ['refusedNotAPerson'],
+  // The person's view of the load gate's waiting line, reads included (DOR-4209).
+  'routes/system-load-gate.ts': ['refusedNotAPerson'],
   'routes/extensions-person-bar.ts': ['requireOperatorCookieUnderLogin', 'trustedCaller'],
   'services/extensions/inbox/extension-inbox-context.ts': ['assessPerson'],
   'routes/marketplace/package-actions.ts': ['trustedCaller'],

@@ -38,6 +38,9 @@ function fixture(enabled = true) {
       expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
       renewalPermit: permit,
     })),
+    resolveToolTurn: vi.fn(async () => {
+      throw new Error('Live tools are not part of this fixture.');
+    }),
     resolve: vi.fn(),
     renew: vi.fn(),
     revoke: vi.fn(async () => {}),

@@ -25,6 +25,7 @@ import type { LoadGateSettings } from '@dorkos/shared/config-schema';
 import { logger } from '../../../lib/logger.js';
 import { abortError, createChatTurns } from './chat-turns.js';
 import { classifyCommand } from './heavy-classifier.js';
+import { createJobActions, type LoadGateJobActions } from './job-actions.js';
 import { JOB_LABEL } from './job-label.js';
 import { LocalLine, type LocalPlace } from './local-line.js';
 import { systemLoadSource, type LoadSource } from './load-source.js';
@@ -111,8 +112,15 @@ export interface WaitRequest extends JobOwner {
   priority?: TicketPriority;
 }
 
-/** A waiting job as the person sees it: the shared ticket, and who it is for when this server knows. */
-export type WaitingJob = Ticket & JobOwner;
+/**
+ * A waiting job as the person sees it: the shared ticket, and who it is for
+ * when this server knows. `ownedHere` says whether this server queued it; for
+ * one it did, `job` is the label this server kept, not the one in the file.
+ */
+export type WaitingJob = Ticket & JobOwner & { ownedHere: boolean };
+
+/** What this server keeps about a job it queued. */
+type KeptOwner = JobOwner & { job: string };
 
 /** How one wait is run. */
 export interface WaitOptions {
@@ -146,8 +154,8 @@ export interface LoadGateOptions {
   log?: (line: string) => void;
 }
 
-/** The machine-wide load gate. */
-export interface LoadGate {
+/** The machine-wide load gate, and a person's actions on its waiting jobs. */
+export interface LoadGate extends LoadGateJobActions {
   /**
    * Wait until a heavy job may run.
    *
@@ -190,7 +198,22 @@ interface Line {
   leave(): void;
 }
 
-const isAbort = (error: unknown): boolean => (error as Error | undefined)?.name === 'AbortError';
+/**
+ * Whether `error` is a stopped wait.
+ *
+ * @param error - What a wait rejected with.
+ */
+export const isAbortError = (error: unknown): boolean =>
+  (error as Error | undefined)?.name === 'AbortError';
+
+/**
+ * A short, fixed name for what went wrong, for a runtime's log: the error's class, never its
+ * message, which could carry a path or a command.
+ *
+ * @param error - What a wait rejected with.
+ */
+export const errorName = (error: unknown): string =>
+  error instanceof Error && /^\w{1,40}$/.test(error.name) ? error.name : 'unknown';
 
 /** A short, fixed name for what went wrong: an error code or class, never a message. */
 function errorKind(error: unknown): string {
@@ -255,7 +278,7 @@ export function createLoadGate(options: LoadGateOptions): LoadGate {
   const sleep = options.sleep ?? abortableSleep;
   const log = options.log ?? ((line: string) => logger.warn(line));
   const leaseMs = Math.max(DEFAULT_LEASE_MS, LEASE_POLLS * pollMs);
-  const owners = new Map<string, JobOwner>();
+  const owners = new Map<string, KeptOwner>();
   const local = new LocalLine();
   const failuresLogged = new Set<string>();
   let queue: TicketQueue | undefined;
@@ -368,7 +391,7 @@ export function createLoadGate(options: LoadGateOptions): LoadGate {
       if (result === 'slot') return heldSlot(ticket, 'ran', waitedMs, settings);
       if (result !== 'let-through') return null;
       // Not "by a person": any program running as this user can write the mark. The route a
-      // person uses (PR4) is where who did it gets recorded.
+      // person uses (`routes/system-load-gate.ts`) is where who did it gets recorded.
       log(`[LoadGate] ${jobPhrase(ticket.job)} was let through`);
       return heldSlot(ticket, 'let-through', waitedMs, settings);
     },
@@ -442,7 +465,7 @@ export function createLoadGate(options: LoadGateOptions): LoadGate {
     try {
       return await waitTurn(localLine(place), job, startedAt, opts);
     } catch (error) {
-      if (isAbort(error)) throw error;
+      if (isAbortError(error)) throw error;
       noteFailure('The load gate could not wait; heavy jobs run without waiting', error);
       return plainSlot('gate-error', now() - startedAt);
     } finally {
@@ -463,6 +486,7 @@ export function createLoadGate(options: LoadGateOptions): LoadGate {
       // The shared queue works again: a later failure is news again.
       failuresLogged.clear();
       owners.set(ticket.id, {
+        job: request.job,
         ...(request.agentName === undefined ? {} : { agentName: request.agentName }),
         ...(request.chatId === undefined ? {} : { chatId: request.chatId }),
         ...(request.chatTitle === undefined ? {} : { chatTitle: request.chatTitle }),
@@ -470,7 +494,7 @@ export function createLoadGate(options: LoadGateOptions): LoadGate {
       return await waitTurn(sharedLine(ticket), request.job, startedAt, opts);
     } catch (error) {
       if (ticket !== undefined) leaveQuietly(ticket);
-      if (isAbort(error)) throw error;
+      if (isAbortError(error)) throw error;
       noteFailure(
         "The shared load-gate queue could not be used; heavy jobs wait in this server's own line, one at a time",
         error
@@ -505,10 +529,14 @@ export function createLoadGate(options: LoadGateOptions): LoadGate {
       try {
         return openQueue()
           .list()
-          .map((ticket) => ({ ...ticket, ...owners.get(ticket.id) }));
+          .map((ticket) => {
+            const owner = owners.get(ticket.id);
+            return { ...ticket, ...owner, ownedHere: owner !== undefined };
+          });
       } catch {
         return [];
       }
     },
+    ...createJobActions(openQueue),
   };
 }

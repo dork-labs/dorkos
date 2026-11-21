@@ -209,6 +209,11 @@ export interface OpenCodePermissionState {
   readonly pendingPermissionSessions: Map<string, string>;
   /** Latest native tool input, keyed by session and call id, including children. */
   readonly nativeToolInputs?: Map<string, Record<string, unknown>>;
+  /**
+   * Permission id → the tool call it gates, when the ask names one: how a heavy `bash` call's
+   * slot finds its call's end (`messaging/load-gate-hold.ts`, DOR-4209).
+   */
+  readonly permissionCallIds?: Map<string, string>;
 }
 
 /** `permission.asked` as it rides the wire — absent from the SDK's Event union. */
@@ -262,6 +267,7 @@ export function mapPermissionAsked(
   // live-verified) — the one piece of metadata the approval card has a field for.
   const filepath = metadata['filepath'];
   const tool = parsed.data.tool;
+  if (tool) state.permissionCallIds?.set(id, tool.callID);
   const nativeInput = tool ? state.nativeToolInputs?.get(`${sessionID}:${tool.callID}`) : undefined;
   const searchRoot =
     nativeInput && ['grep', 'glob'].includes(permission)
