@@ -62,6 +62,7 @@ import { createCapabilitiesInvokeRoutes } from '../routes/capabilities-invoke.js
 import commandRoutes from '../routes/commands.js';
 import { createCommunityConnectionsRoutes } from '../routes/community-connections.js';
 import configRoutes from '../routes/config.js';
+import { createConfigBackupsRoutes } from '../routes/config-backups.js';
 import { mountComputerRoutes, type ComputerRoutesService } from '../routes/computers.js';
 import {
   createAgentTodoPromisesRoutes,
@@ -433,6 +434,8 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/remote-access', createRemoteAccessRoutes());
   app.route('/api/lan-access', createLanAccessRoutes());
   app.route('/api/cloud', cloudRoutes);
+  // Settings → Backups: its own group, beside config (DOR-4253).
+  app.route('/api/config/backups', createConfigBackupsRoutes());
   app.route('/api/config', configRoutes);
   app.route('/api/mcp-config', mcpConfigRoutes);
   app.route(

@@ -22,6 +22,7 @@ import { createShellCheckMethods } from './shell-check-methods';
 import { createLoadGateMethods } from './load-gate-methods';
 import { createQueuedChatMethods } from './queued-chat-methods';
 import { createConnectorSpendingMethods } from './connector-spending-methods';
+import { createConnectorWritesBackMethods } from './connector-writes-back-methods';
 import { createRemoteAccessMethods } from './remote-access-methods';
 import { createMarketplaceMethods } from './marketplace-methods';
 import { createHarnessMethods } from './harness-methods';
@@ -62,6 +63,7 @@ import { createDocLinkMethods } from './doc-link-methods';
 import { createFrameBridgeMethods } from './frame-bridge-methods';
 import { createMiniAppAccessMethods } from './mini-app-access-methods';
 import { createExtensionRestartMethods } from './extension-restart-methods';
+import { createBackupsMethods } from './backups-methods';
 
 // ---------------------------------------------------------------------------
 // Declaration merging
@@ -87,6 +89,7 @@ export interface HttpTransport
     ReturnType<typeof createLoadGateMethods>,
     ReturnType<typeof createQueuedChatMethods>,
     ReturnType<typeof createConnectorSpendingMethods>,
+    ReturnType<typeof createConnectorWritesBackMethods>,
     ReturnType<typeof createRemoteAccessMethods>,
     ReturnType<typeof createMarketplaceMethods>,
     ReturnType<typeof createHarnessMethods>,
@@ -126,7 +129,8 @@ export interface HttpTransport
     ReturnType<typeof createDocLinkMethods>,
     ReturnType<typeof createFrameBridgeMethods>,
     ReturnType<typeof createMiniAppAccessMethods>,
-    ReturnType<typeof createExtensionRestartMethods> {}
+    ReturnType<typeof createExtensionRestartMethods>,
+    ReturnType<typeof createBackupsMethods> {}
 
 // ---------------------------------------------------------------------------
 // Class
@@ -155,6 +159,7 @@ export class HttpTransport implements Transport {
       createLoadGateMethods(baseUrl),
       createQueuedChatMethods(baseUrl, () => this.clientId),
       createConnectorSpendingMethods(baseUrl),
+      createConnectorWritesBackMethods(baseUrl),
       createRemoteAccessMethods(baseUrl),
       createMarketplaceMethods(baseUrl),
       createHarnessMethods(baseUrl),
@@ -194,7 +199,8 @@ export class HttpTransport implements Transport {
       createDocLinkMethods(baseUrl),
       createFrameBridgeMethods(baseUrl),
       createMiniAppAccessMethods(baseUrl),
-      createExtensionRestartMethods(baseUrl)
+      createExtensionRestartMethods(baseUrl),
+      createBackupsMethods(baseUrl)
     );
   }
 }

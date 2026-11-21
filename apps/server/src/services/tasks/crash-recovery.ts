@@ -32,7 +32,12 @@
  *    to start (`RUN_START_WAIT_MS`, DOR-4576), by the lock's stale margin.**
  *    Whatever process owns such a run would have aborted it at the deadline
  *    (`runDeadline`'s hard cap in `executeRunDirect`, the dispatch budget on the
- *    relay path). Past it, no live process can still be running it.
+ *    relay path). Past it, no live process can still be running it. Measured
+ *    in awake time, as those deadlines are (DOR-3286): this is the rule a
+ *    follower promoted after a closed lid applies, and the owner of a run the
+ *    computer slept through is still inside its limit on wake. Sleep before
+ *    this process started is not seen, so a sweep at boot still counts it;
+ *    that can only end a run later than its owner would, never earlier.
  *
  * Everything else is left exactly as it is: a manual run with no deadline,
  * started by a process that may well still be alive and working on it. That is
@@ -61,9 +66,14 @@
  *
  * @module services/tasks/crash-recovery
  */
+import { getAwakeClock, type AwakeClock } from '@dorkos/shared/awake-clock';
 import type { TaskStore } from './task-store.js';
 import { SCHEDULER_LOCK_STALE_TTL_MS, type LeaderLock } from './scheduler-lock.js';
 import { RUN_START_WAIT_MS } from './timing/wake-settle.js';
+import type { RunAccounting } from './run-accounting.js';
+import { createTaggedLogger } from '../../lib/logger.js';
+
+const logger = createTaggedLogger('Tasks');
 
 /** What one sweep did, for the caller to log. */
 export interface InterruptedRunSweep {
@@ -85,12 +95,14 @@ export interface InterruptedRunSweep {
  *   (single-process and test setups, where this process is always the leader).
  * @param liveHere - Runs this process is executing right now; never swept,
  *   whatever the rules below would otherwise say about them.
+ * @param clock - Sees the computer sleep, so rule 3 counts awake time.
  * @returns How many runs were ended and how many were left alone.
  */
 export function sweepInterruptedRuns(
   store: TaskStore,
   leaderLock: LeaderLock | null,
-  liveHere: ReadonlySet<string> = new Set()
+  liveHere: ReadonlySet<string> = new Set(),
+  clock: AwakeClock = getAwakeClock()
 ): InterruptedRunSweep {
   // A follower ends nothing. Its own runs, if any, are covered by rule 3 on the
   // leader's next boot or by its own boot once it is promoted.
@@ -108,7 +120,7 @@ export function sweepInterruptedRuns(
     return { swept: store.markRunsInterrupted(running.map((run) => run.id)), left: 0 };
   }
 
-  const now = Date.now();
+  const now = clock.now();
   const doomed: string[] = [];
   for (const run of running) {
     // Rule 2: only a leader writes a scheduled run, and this process is the
@@ -129,11 +141,37 @@ export function sweepInterruptedRuns(
     if (Number.isNaN(startedAt)) continue;
     // Its limit counts only once its turn starts, after up to that long in line (DOR-4576).
     const deadline = maxRuntime + RUN_START_WAIT_MS + SCHEDULER_LOCK_STALE_TTL_MS;
-    if (now - startedAt > deadline) doomed.push(run.id);
+    // Awake time only, as its owner counts it (DOR-3286): a run the computer
+    // slept through is not past a deadline its owner has not reached.
+    const awakeFor = now - startedAt - clock.sleptSince(startedAt);
+    if (awakeFor > deadline) doomed.push(run.id);
   }
 
   return {
     swept: doomed.length > 0 ? store.markRunsInterrupted(doomed) : 0,
     left: running.length - doomed.length,
   };
+}
+
+/**
+ * Run {@link sweepInterruptedRuns} for a scheduler and log what it did.
+ *
+ * @param store - The task store.
+ * @param leaderLock - The scheduler's leader lock, or null when it has none.
+ * @param runs - The runs the scheduler is accountable for; never swept.
+ * @param clock - Sees the computer sleep, so rule 3 counts awake time.
+ */
+export function endInterruptedRuns(
+  store: TaskStore,
+  leaderLock: LeaderLock | null,
+  runs: Pick<RunAccounting, 'heldRunIds'>,
+  clock: AwakeClock
+): void {
+  const { swept, left } = sweepInterruptedRuns(store, leaderLock, runs.heldRunIds(), clock);
+  if (swept > 0) logger.info(`marked ${swept} interrupted run(s) as failed`);
+  if (left > 0) {
+    logger.debug(
+      `left ${left} unfinished run(s) alone — this process cannot show they were interrupted`
+    );
+  }
 }

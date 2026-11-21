@@ -6,6 +6,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { pulseRuns, pulseSchedules, type Db } from '@dorkos/db';
 import { eq } from 'drizzle-orm';
+import { sleptDuringRunError } from '@dorkos/shared/schedule-notice-copy';
 import {
   healthOf,
   HEALTHY,
@@ -87,6 +88,21 @@ describe('healthOf', () => {
     expect(healthOf([run('r1', 'failed', { error: 'Sign in again: 401' })]).reason?.kind).toBe(
       'signin_needed'
     );
+  });
+
+  it('leaves out runs the computer’s sleep broke, so they never make a streak (DOR-3286)', () => {
+    const slept = { error: sleptDuringRunError() };
+    // A run broken by sleep, then its retry broken the same way: not failing.
+    expect(healthOf([run('r2', 'failed', slept), run('r1', 'failed', slept)])).toEqual(HEALTHY);
+    // Nor does one sit between two real failures and break their streak.
+    const after = new Date(Date.parse(STREAKS_COUNTED_FROM) + 60_000).toISOString();
+    const later = new Date(Date.parse(STREAKS_COUNTED_FROM) + 120_000).toISOString();
+    const health = healthOf([
+      run('r3', 'failed', { error: 'x', startedAt: later }),
+      run('r2', 'failed', { ...slept, startedAt: later }),
+      run('r1', 'failed', { error: 'y', startedAt: after }),
+    ]);
+    expect(health).toMatchObject({ state: 'failing', streak: 2, recentStreak: 2, lastRunId: 'r3' });
   });
 });
 

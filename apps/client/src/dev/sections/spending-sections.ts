@@ -29,3 +29,19 @@ export const SPENDING_SECTIONS: PlaygroundSection[] = [
     keywords: ['spends money', 'coins', 'marker', 'paid', 'chip'],
   },
 ];
+
+/**
+ * Sections for a connected app's writes-back switch (DOR-4794), shown beside the
+ * spending surfaces on the Home, Inbox & Approvals page.
+ *
+ * Source: WritesBackShowcases.
+ */
+export const WRITES_BACK_SECTIONS: PlaygroundSection[] = [
+  {
+    id: 'write-back-without-asking',
+    title: 'Write back without asking',
+    page: 'home-inbox',
+    category: 'Connections',
+    keywords: ['write back', 'without asking', 'same app', 'sync', 'confirm', 'switch'],
+  },
+];

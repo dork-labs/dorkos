@@ -18,6 +18,7 @@ import {
   Cable,
   ScrollText,
   SquareTerminal,
+  DatabaseBackup,
 } from 'lucide-react';
 import { TabbedDialog, type TabbedDialogTab } from '@/layers/shared/ui';
 import { useSettingsDeepLink, type SettingsTab } from '@/layers/shared/model';
@@ -44,6 +45,7 @@ import { SecurityPanel } from '@/layers/features/auth';
 import { DorkosAccountTab } from './DorkosAccountTab';
 import { RemoteAccessTab } from './RemoteAccessTab';
 import { PrivacyTab } from './PrivacyTab';
+import { BackupsTab } from './backups/BackupsTab';
 import { TerminalCommandTab } from './terminal-command/TerminalCommandTab';
 import { DangerZoneTab } from './DangerZoneTab';
 import { ExperimentsTab } from './ExperimentsTab';
@@ -85,6 +87,8 @@ const SETTINGS_TAB_PARTS: Record<BuiltInSettingsTab, SettingsTabParts> = {
   // a tab and opened a second modal on top of this one.
   'remote-access': { icon: Globe, component: RemoteAccessTab },
   privacy: { icon: Lock, component: PrivacyTab },
+  // The database copies on this computer, and Remove or Move for older ones (DOR-4253).
+  backups: { icon: DatabaseBackup, component: BackupsTab },
   // `dorkos` in the person's own Terminal; only in the desktop app (DOR-3105).
   'terminal-command': { icon: SquareTerminal, component: TerminalCommandTab },
   server: { icon: Server, component: ServerTab },

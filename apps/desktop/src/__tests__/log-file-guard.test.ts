@@ -10,4 +10,12 @@ describe('the desktop test log guard', () => {
     expect(file.startsWith(tmpdir())).toBe(true);
     expect(file).not.toContain('@dorkos');
   });
+
+  it('keeps a created logger in the temp directory even after its module points it elsewhere', async () => {
+    // The updater's module sets its own path as it is created (DOR-4847); the guard has to win.
+    const { updaterLog } = await import('../main/updater/log');
+    const file = updaterLog.transports.file.getFile().path;
+    expect(file.startsWith(tmpdir())).toBe(true);
+    expect(file.endsWith('updater.log')).toBe(true);
+  });
 });

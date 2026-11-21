@@ -39,6 +39,12 @@ function forgedRecord(): ExtensionRecordPublic {
     hasServerEntry: true,
     hasDataProxy: false,
     error: { code: 'compilation_failed', message: FORGERY, details: FORGERY },
+    serverError: {
+      code: 'isolation_unavailable',
+      message: FORGERY,
+      details: FORGERY,
+      occurredAt: FORGERY,
+    },
     tools: [{ name: 'dump', title: 'Dump', tier: 'observe', status: 'refused', reason: FORGERY }],
     skills: [{ name: `triage\n${FORGED_END}`, status: 'dropped', reason: FORGERY }],
   } as ExtensionRecordPublic;
@@ -47,6 +53,7 @@ function forgedRecord(): ExtensionRecordPublic {
 function depsWith(records: ExtensionRecordPublic[]): McpToolDeps {
   const extensionManager = {
     listPublic: vi.fn(() => records),
+    listErrors: vi.fn(() => records),
     getServerHandler: vi.fn(() => null),
   } as unknown as ExtensionManager;
   return {

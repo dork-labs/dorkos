@@ -103,8 +103,14 @@ interface Candidate {
   identity: fs.Stats;
 }
 
-/** Refuse folder substitution or a symlink as the snapshot directory itself. */
-function sameDirectory(dir: string, realDir: string, identity: fs.Stats): boolean {
+/**
+ * Refuse folder substitution or a symlink as the snapshot directory itself.
+ *
+ * @param dir - The snapshot directory as configured
+ * @param realDir - Its real path when first read
+ * @param identity - Its `lstat` when first read
+ */
+export function sameDirectory(dir: string, realDir: string, identity: fs.Stats): boolean {
   const current = fs.lstatSync(dir);
   return (
     current.isDirectory() &&
@@ -114,8 +120,13 @@ function sameDirectory(dir: string, realDir: string, identity: fs.Stats): boolea
   );
 }
 
-/** A partial sibling or SQLite journal means this name is not eligible for pruning. */
-function hasWriteInProgress(file: string): boolean {
+/**
+ * A partial sibling or SQLite journal means this name is not eligible for pruning,
+ * or for a person's Remove or Move (DOR-4253).
+ *
+ * @param file - Absolute path of a snapshot copy
+ */
+export function hasWriteInProgress(file: string): boolean {
   return [
     '.partial',
     '.partial-journal',

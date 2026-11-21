@@ -373,6 +373,8 @@ export const CONFIG_DISCLOSURE = {
   'extensions.approvedSources': 'withhold',
   // The old approvals still waiting for a copy (DOR-3068). Nothing an agent needs.
   'extensions.legacyUnsourced': 'withhold',
+  // The old approvals still waiting for their places (DOR-4891). Nothing an agent needs.
+  'extensions.legacySlotless': 'withhold',
   // The permission set each approval covers (DOR-2686). Nothing an agent needs:
   // the extension's own manifest says what it declares.
   'extensions.approvedPermissions': 'withhold',

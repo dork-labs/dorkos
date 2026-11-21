@@ -31,6 +31,12 @@ export const AWAKE_TICK_MS = 5_000;
 export const SLEEP_GAP_MS = 30_000;
 /** The longest delay Node honours; a longer one fires at once. */
 const MAX_TIMER_MS = 2 ** 31 - 1;
+/**
+ * How many sleeps the clock remembers for {@link AwakeClock.sleptSince}. A Mac
+ * with Power Nap logs several hundred a week; past this the oldest are dropped,
+ * and a question about that far back under-counts.
+ */
+const SLEEPS_KEPT = 10_000;
 
 /** Timer functions, injectable so tests run on a controlled clock. */
 export interface AwakeTimers {
@@ -55,6 +61,13 @@ export interface AwakeClock {
   now(): number;
   /** Total milliseconds this process has seen the computer asleep. */
   sleptMs(): number;
+  /**
+   * Milliseconds this process has seen the computer asleep after a wall-clock
+   * instant. Sleep before this process started is not seen, and each sleep
+   * counts at most a tick of awake time with it (as {@link sleptMs} does), so a
+   * deadline built on it may run a little late, never early.
+   */
+  sleptSince(at: number): number;
   /** When the computer last woke, or null if it has not slept since start. */
   lastWakeAt(): number | null;
   /** The timers this clock runs on, for deadlines built over it. */
@@ -87,19 +100,23 @@ export function createAwakeClock(options: AwakeClockOptions = {}): AwakeClock {
   let lastSample = now();
   let slept = 0;
   let wokeAt: number | null = null;
+  // Each sleep seen, oldest first, for `sleptSince`.
+  const sleeps: Array<{ from: number; to: number }> = [];
 
   // Asked by the tick AND by every reader, so a deadline that fires on wake
   // before the tick does still sees the sleep it fired because of.
   const sample = (): void => {
     const at = now();
     const gap = at - lastSample;
-    lastSample = at;
     // The whole gap counts as sleep, though up to a tick of it was awake: a
     // deadline then runs at most a tick long, never stops a run early.
     if (gap > tickMs + SLEEP_GAP_MS) {
       slept += gap;
       wokeAt = at;
+      sleeps.push({ from: lastSample, to: at });
+      if (sleeps.length > SLEEPS_KEPT) sleeps.shift();
     }
+    lastSample = at;
   };
   const tick = timers.setInterval(sample, tickMs);
 
@@ -110,12 +127,40 @@ export function createAwakeClock(options: AwakeClockOptions = {}): AwakeClock {
       sample();
       return slept;
     },
+    sleptSince: (at) => {
+      sample();
+      let total = 0;
+      // Only the part of each sleep after `at` counts.
+      for (const sleep of sleeps) total += Math.max(0, sleep.to - Math.max(sleep.from, at));
+      return total;
+    },
     lastWakeAt: () => {
       sample();
       return wokeAt;
     },
     dispose: () => timers.clearInterval(tick),
   };
+}
+
+/**
+ * How soon after a wake a failure is put down to the sleep. A turn the sleep
+ * broke fails the moment the computer wakes: its connection is gone, or a
+ * plain timer that slept with it fires at once. A failure later than this has
+ * a cause of its own.
+ */
+export const WAKE_BLAME_MS = 2 * 60 * 1000;
+
+/**
+ * Whether a failure now is most likely the computer's sleep (DOR-3286): it
+ * slept since `sleptAtStart` was read, and woke within {@link WAKE_BLAME_MS}.
+ *
+ * @param clock - The clock that sees sleep.
+ * @param sleptAtStart - `clock.sleptMs()` when the work started.
+ */
+export function justWokeFromSleep(clock: AwakeClock, sleptAtStart: number): boolean {
+  if (clock.sleptMs() <= sleptAtStart) return false;
+  const wokeAt = clock.lastWakeAt();
+  return wokeAt !== null && clock.now() - wokeAt <= WAKE_BLAME_MS;
 }
 
 let processClock: AwakeClock | null = null;

@@ -26,9 +26,11 @@ declare global {
     | { state: 'checking' }
     | { state: 'available'; version: string }
     | { state: 'not-available' }
-    | { state: 'downloading'; percent: number }
+    /** `version` names what is downloading; absent only from an older shell. */
+    | { state: 'downloading'; percent: number; version?: string }
     | { state: 'downloaded'; version: string }
-    | { state: 'error'; message: string }
+    /** `version` is set only when the error stopped a download of it (DOR-4846). */
+    | { state: 'error'; message: string; version?: string }
     /**
      * An update was staged, the app restarted for it, and the version that
      * came back up is still the old one. Decided by the main process at
@@ -317,6 +319,12 @@ declare global {
      * {@link onUpdateStatus} `downloaded` event.
      */
     restartToUpdate(): void;
+    /**
+     * Try a failed update download again — wired to the in-app card's retry
+     * button. Only meaningful after an {@link onUpdateStatus} `error` that
+     * names a version. Optional: a shell older than DOR-4846 has no retry.
+     */
+    retryUpdate?(): void;
     /**
      * Subscribe to native updater lifecycle events so the in-app sidebar card
      * can reflect them. `cb` receives a {@link DesktopUpdateStatus}.

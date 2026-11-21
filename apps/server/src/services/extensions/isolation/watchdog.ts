@@ -120,3 +120,17 @@ export function startLoggedWatchdog(
       logger.info(`[Extensions] ${extensionId}: DorkOS was busy ${ms} ms; not held against it`),
   });
 }
+
+/**
+ * A startup deadline measured while the host can read the child's reply.
+ * Reuse the watchdog's stall credit and deferred verdict, without sending pings.
+ * The deadline is checked at most 100 ms after its awake-time budget expires.
+ */
+export function startStartupDeadline(timeoutMs: number, onTimeout: () => void): Watchdog {
+  return startWatchdog({
+    pingIntervalMs: Math.min(100, timeoutMs / 4),
+    pongTimeoutMs: timeoutMs,
+    ping: () => undefined,
+    onSilent: onTimeout,
+  });
+}

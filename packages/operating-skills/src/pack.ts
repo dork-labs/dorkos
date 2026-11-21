@@ -467,8 +467,13 @@ export interface OperatingSkill {
  * - 68: `using-the-agent-browser` teaches the reload-wall handoff, a fresh reading
  *   after hand-back, and waiting on held, busy or closing browsers.
  *   An agent seeded at 67 would not know its page closes before the person's window.
+ * - 69: `building-dorkos-apps` moves to App Builder Pack 1.1.8 (DOR-4282): declare
+ *   every place in `contributions`, since an undeclared one is refused; when an update
+ *   that only adds places keeps running; which names pass for DorkOS; and that DorkOS
+ *   draws the app's name on ⌘K rows and dialogs. An agent seeded at 68 would leave
+ *   places undeclared and put the app's name in every ⌘K label.
  */
-export const OPERATING_SKILLS_VERSION = 68;
+export const OPERATING_SKILLS_VERSION = 69;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

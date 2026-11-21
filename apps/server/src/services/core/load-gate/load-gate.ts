@@ -19,6 +19,10 @@
  * server's memory, for the person's own list ({@link LoadGate.waitingJobs}); the
  * shared folder never holds it.
  *
+ * A job no hold could reach before it ran (a Codex command nobody was asked about, DOR-4743) is
+ * counted instead: {@link LoadGate.occupy} takes it a slot at once, so the jobs behind it wait for
+ * it, and {@link LoadGate.waitWhileBusy} lets a runtime hold back new work that could start more.
+ *
  * @module services/core/load-gate/load-gate
  */
 import type { LoadGateSettings } from '@dorkos/shared/config-schema';
@@ -41,7 +45,7 @@ import type { HolderProbe } from './holder-identity.js';
 
 const MS_PER_MINUTE = 60_000;
 /** How often a waiting job checks again, and a running job refreshes its slot. */
-const DEFAULT_POLL_MS = 5_000;
+export const DEFAULT_POLL_MS = 5_000;
 /** How often a waiting job's caller hears how the wait is going. */
 const DEFAULT_NOTICE_EVERY_MS = 60_000;
 /** A record lasts this many polls without a heartbeat, and never less than the default lease. */
@@ -130,6 +134,17 @@ export interface WaitOptions {
   onWait?: (status: WaitStatus) => void | Promise<void>;
 }
 
+/** How a wait for the computer to calm down is doing, as its caller sees it. Counts only. */
+export type BusyStatus = Pick<WaitStatus, 'load' | 'maxLoad' | 'waitedMs'>;
+
+/** How one {@link LoadGate.waitWhileBusy} is run. */
+export interface BusyWaitOptions {
+  /** Stops the wait: it rejects with an `AbortError`. */
+  signal?: AbortSignal;
+  /** Hears how the wait is going: once when it starts waiting, then every minute or so. */
+  onWait?: (status: BusyStatus) => void | Promise<void>;
+}
+
 /** Everything the gate reads, each replaceable in tests. */
 export interface LoadGateOptions {
   /** The current `runtimes.loadGate` settings, read again on every check. */
@@ -179,6 +194,27 @@ export interface LoadGate extends LoadGateJobActions {
     request: JobOwner & { priority?: TicketPriority; shareKey?: string },
     options?: WaitOptions
   ): Promise<HeldSlot | null>;
+  /**
+   * Count a heavy job that is already running, one no hold could reach before it started (a Codex
+   * command nobody was asked about, DOR-4743). It takes a slot now, never waiting, past the load
+   * limit and the slot count: the job runs whatever the line says, and the jobs behind it wait for
+   * it as for any other. With a `shareKey` it shares its thread's turn, as `gateIfHeavy` does.
+   *
+   * @param command - The shell command line.
+   * @param request - Which thread it belongs to.
+   * @returns The slot to give back when the job ends, or `null` when it is light or the gate is off.
+   */
+  occupy(command: string, request?: { shareKey?: string }): HeldSlot | null;
+  /**
+   * Wait while the computer is busy (the load at or above `maxLoad`) and `busy` says so. Returns
+   * at once when either is not so, or the gate is off. It is for new work a person asked for (a
+   * reply), not a heavy job, so it waits no longer than `maxWaitMinutes`, not the hard cap; and it
+   * fails open: when the settings or the load cannot be read, it returns.
+   *
+   * @param busy - The caller's own reason to wait, read again on every check.
+   * @param options - Cancellation and progress.
+   */
+  waitWhileBusy(busy: () => boolean, options?: BusyWaitOptions): Promise<void>;
   /**
    * Every waiting job, with who it is for where this server queued it. For the
    * person's own list only: never hand it to an agent.
@@ -503,6 +539,98 @@ export function createLoadGate(options: LoadGateOptions): LoadGate {
     }
   }
 
+  /**
+   * Take a slot at once for a job already running: past every limit, the way the hard cap does, so
+   * it counts as running for everyone behind it. When the shared folder fails, this server's own
+   * line counts it instead; it never waits and never throws.
+   */
+  function occupyNow(job: string, settings: LoadGateSettings | null): HeldSlot {
+    if (settings !== null) {
+      let ticket: Ticket | undefined;
+      try {
+        ticket = openQueue().enqueue({ job });
+        openQueue().forceAcquire(ticket);
+        failuresLogged.clear();
+        return heldSlot(ticket, 'ran', 0, settings);
+      } catch (error) {
+        if (ticket !== undefined) leaveQuietly(ticket);
+        noteFailure(
+          "The shared load-gate queue could not be used; heavy jobs wait in this server's own line, one at a time",
+          error
+        );
+      }
+    }
+    local.forceStart(local.join());
+    return plainSlot('gate-error', 0, () => local.finish());
+  }
+
+  /** The settings and the load when the caller should wait at all; `null` when it should not. */
+  const busyNow = (busy: () => boolean): { settings: LoadGateSettings; load: number } | null => {
+    try {
+      const settings = options.config();
+      if (!settings.enabled || !busy()) return null;
+      const load = loadSource.fiveMinute();
+      return load < settings.maxLoad ? null : { settings, load };
+    } catch (error) {
+      noteFailure('The load gate could not check the computer; work starts without waiting', error);
+      return null;
+    }
+  };
+
+  /** {@link report}'s twin for a wait with no place in line: a handler's failure is only logged. */
+  const reportBusy = (onWait: BusyWaitOptions['onWait'], status: BusyStatus): void => {
+    const failed = (): void => log('[LoadGate] A wait progress handler failed');
+    try {
+      const result = onWait?.(status);
+      if (result instanceof Promise) result.catch(failed);
+    } catch {
+      failed();
+    }
+  };
+
+  async function waitWhileBusy(busy: () => boolean, opts: BusyWaitOptions = {}): Promise<void> {
+    const startedAt = now();
+    let nextNotice = startedAt;
+    for (;;) {
+      const busyFor = busyNow(busy);
+      if (busyFor === null) return;
+      const { settings, load } = busyFor;
+      const waitedMs = now() - startedAt;
+      // What waits here is new work a person asked for, not a heavy job: it waits no longer than
+      // `maxWaitMinutes`, where a heavy job would only be told it is still waiting.
+      if (waitedMs >= settings.maxWaitMinutes * MS_PER_MINUTE) {
+        log(
+          `[LoadGate] Work started after waiting ${Math.round(waitedMs / MS_PER_MINUTE)} min, the longest it waits`
+        );
+        return;
+      }
+      if (opts.signal?.aborted) throw abortError();
+      if (now() >= nextNotice) {
+        reportBusy(opts.onWait, { load, maxLoad: settings.maxLoad, waitedMs });
+        nextNotice = now() + noticeEveryMs;
+      }
+      await sleep(pollMs, opts.signal);
+    }
+  }
+
+  /**
+   * The settings, and the job's label when `command` is heavy and the gate is on: the reading
+   * `gateIfHeavy` makes, for a job that is already running.
+   */
+  const heavyJob = (command: string): { settings: LoadGateSettings | null; job: string } | null => {
+    let settings: LoadGateSettings | null;
+    try {
+      settings = options.config();
+    } catch {
+      // Unreadable settings: classify with the built-in list; counting it fails open.
+      settings = null;
+    }
+    if (settings?.enabled === false) return null;
+    const classification = classifyCommand(command, settings?.heavyCommands);
+    if (!classification.heavy || classification.reason === undefined) return null;
+    return { settings, job: classification.reason };
+  };
+
   // A thread's own heavy calls share its turn, so two in one batch never wait on each other.
   const chatTurns = createChatTurns(waitForSlot, report);
 
@@ -525,6 +653,14 @@ export function createLoadGate(options: LoadGateOptions): LoadGate {
       if (shareKey === undefined) return waitForSlot(job, opts);
       return chatTurns.join(shareKey, job, opts ?? {});
     },
+    occupy(command, request = {}) {
+      const heavy = heavyJob(command);
+      if (heavy === null) return null;
+      const take = (): HeldSlot => occupyNow(heavy.job, heavy.settings);
+      if (request.shareKey === undefined) return take();
+      return chatTurns.occupy(request.shareKey, take);
+    },
+    waitWhileBusy,
     waitingJobs() {
       try {
         return openQueue()

@@ -92,10 +92,23 @@ function machine(load = 20, gate?: () => LoadGate) {
     log: (line) => lines.push(line),
   });
   const log = { warn: vi.fn() };
-  const deps: HeavyAskDeps = { gate: gate ?? (() => real), settings: () => settings, log };
+  const deps: HeavyAskDeps = {
+    gate: gate ?? (() => real),
+    settings: () => settings,
+    log,
+    now: time.now,
+  };
   const h = makeAppServerHarness({ loadGate: deps });
   harnesses.push(h);
-  return { h, time, loadSource, lines, log, queue: new TicketQueue({ dir, now: time.now }) };
+  return {
+    h,
+    time,
+    loadSource,
+    lines,
+    log,
+    gate: real,
+    queue: new TicketQueue({ dir, now: time.now }),
+  };
 }
 
 /** A command item that Codex asks about before it runs, the way 0.154 does. */
@@ -145,17 +158,38 @@ function askingThenParkedTurn(command: string, itemId: string): FakeTurnScript {
   };
 }
 
-/** Read a running turn until an event of `type`, keeping what was read. */
+/**
+ * A turn that runs `command` without asking, the way Full access (or a command its sandbox allows)
+ * does, and keeps it running until the test ends it: with its `item/completed`, or with the turn
+ * alone.
+ */
+function runningCommand(command: string, itemId: string) {
+  let end!: (how: 'completed' | 'turn-only') => void;
+  const ended = new Promise<'completed' | 'turn-only'>((resolve) => (end = resolve));
+  const script: FakeTurnScript = async (ctx) => {
+    const item = commandItem(command, itemId);
+    ctx.emit('item/started', { item, startedAtMs: Date.now() });
+    const how = await Promise.race([ended, ctx.turn.interrupted.then(() => 'stopped' as const)]);
+    if (how === 'completed') {
+      ctx.emit('item/completed', { item: { ...item, status: 'completed', exitCode: 0 } });
+    }
+    ctx.complete(how === 'stopped' ? 'interrupted' : 'completed');
+  };
+  return { script, end };
+}
+
+/** Read a running turn until an event of one of `types`, keeping what was read. */
 async function until(
   gen: AsyncGenerator<StreamEvent>,
-  type: StreamEvent['type'],
+  types: StreamEvent['type'] | StreamEvent['type'][],
   seen: StreamEvent[] = []
 ): Promise<StreamEvent> {
+  const wanted = Array.isArray(types) ? types : [types];
   for (;;) {
     const next = await gen.next();
-    if (next.done) throw new Error(`the turn ended before ${type}: ${JSON.stringify(seen)}`);
+    if (next.done) throw new Error(`the turn ended before ${wanted}: ${JSON.stringify(seen)}`);
     seen.push(next.value);
-    if (next.value.type === type) return next.value;
+    if (wanted.includes(next.value.type)) return next.value;
   }
 }
 
@@ -464,43 +498,460 @@ describe('a chat never waits behind itself', () => {
   });
 });
 
-describe('Full access: the accepted gap (DOR-4743)', () => {
-  it('raises no ask, so a heavy command runs without waiting even on a busy computer', async () => {
+/** A Full-access turn request. Rendering Full's file profile reads the disk, so its folders exist. */
+function fullAccess(h: Harness, sessionId: string) {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-load-gate-full-')));
+  const cwd = path.join(root, 'project');
+  const data = path.join(root, 'data');
+  const home = path.join(root, 'home');
+  for (const folder of [cwd, data, home]) fs.mkdirSync(folder);
+  const base = h.request({ sessionId });
+  const roots = { cwd, data, home, accounts: [], agentFolders: [cwd], agentHomes: [] };
+  return {
+    request: h.request({
+      sessionId,
+      cwd,
+      settings: { permissionMode: 'bypassPermissions' },
+      tools: { ...base.tools, filePolicy: { writable: [], roots } },
+    }),
+    cleanup: () => fs.rmSync(root, { recursive: true, force: true }),
+  };
+}
+
+describe('a command Codex runs without asking counts in the line (DOR-4743)', () => {
+  it('at Full access fills the slot, so another chat’s build waits until it completes', async () => {
+    const { h, time, queue, gate } = machine(4);
+    const build = runningCommand('pnpm build', 'full-1');
+    h.host.home(PERSON_HOME).nextTurn(build.script);
+    const full = fullAccess(h, 'full');
+    try {
+      const ana = h.transport.runTurn(full.request);
+      await until(ana, 'tool_call_start');
+      const fake = h.host.home(PERSON_HOME).processes[0]!;
+      // Codex is told never to ask, so there is no ask to hold: the command is already running.
+      expect(fake.requestsOf('turn/start')[0]).toMatchObject({ approvalPolicy: 'never' });
+      expect(queue.runningCount()).toBe(1);
+
+      // Any other heavy job, on any runtime, waits behind it, though the computer is calm.
+      const other = gate.waitForSlot({ job: 'tsc' });
+      let ran = false;
+      void other.then(() => (ran = true));
+      await time.step(POLL);
+      expect(ran).toBe(false);
+      expect(queue.list()).toHaveLength(1);
+
+      build.end('completed');
+      const after = await rest(ana);
+      expect(after.some((event) => event.type === 'system_status')).toBe(false);
+      expect(after.find((e) => e.type === 'tool_call_end')).toMatchObject({
+        data: { toolCallId: 'full-1', status: 'complete' },
+      });
+      await time.step(POLL);
+      expect(ran).toBe(true);
+      (await other).release();
+      expect(queue.runningCount()).toBe(0);
+    } finally {
+      full.cleanup();
+    }
+  });
+
+  it('gives the slot back when the turn ends without the command’s completion', async () => {
     const { h, queue } = machine(20);
-    h.host.home(PERSON_HOME).nextTurn((ctx) => {
-      const item = commandItem('pnpm build', 'full-1');
+    const build = runningCommand('pnpm build', 'a-1');
+    h.host.home(PERSON_HOME).nextTurn(build.script);
+    const ana = h.transport.runTurn(h.request({ sessionId: 'ana' }));
+    await until(ana, 'tool_call_start');
+    expect(queue.runningCount()).toBe(1);
+    build.end('turn-only');
+    await rest(ana);
+    await settle();
+    expect(queue.runningCount()).toBe(0);
+  });
+
+  it('gives the slot back when the Codex process goes away', async () => {
+    const { h, queue } = machine(20);
+    h.host.home(PERSON_HOME).nextTurn(runningCommand('pnpm build', 'a-1').script);
+    const ana = h.transport.runTurn(h.request({ sessionId: 'ana' }));
+    await until(ana, 'tool_call_start');
+    expect(queue.runningCount()).toBe(1);
+    h.host.home(PERSON_HOME).processes[0]!.kill('SIGKILL');
+    const after = await rest(ana);
+    expect(after.filter((e) => e.type === 'done')).toHaveLength(1);
+    await settle();
+    expect(queue.runningCount()).toBe(0);
+  });
+
+  it('takes no slot for a light command', async () => {
+    const { h, queue } = machine(20);
+    const listing = runningCommand('ls -la', 'l-1');
+    h.host.home(PERSON_HOME).nextTurn(listing.script);
+    const ana = h.transport.runTurn(h.request({ sessionId: 'ana' }));
+    await until(ana, 'tool_call_start');
+    expect(queue.runningCount()).toBe(0);
+    listing.end('completed');
+    await rest(ana);
+  });
+
+  it('an asked command counts once: nothing while its ask waits and its card is up, one slot while it runs', async () => {
+    const { h, time, loadSource, queue } = machine(20);
+    let finish!: () => void;
+    h.host.home(PERSON_HOME).nextTurn(async (ctx) => {
+      const item = commandItem('pnpm build', 'a-1');
+      // 0.154's order: the command is reported started, then asked about.
       ctx.emit('item/started', { item, startedAtMs: Date.now() });
+      await ctx.serverRequest(ASK, { kind: 'command', itemId: 'a-1', command: 'pnpm build' });
+      await new Promise<void>((resolve) => (finish = resolve));
       ctx.emit('item/completed', { item: { ...item, status: 'completed', exitCode: 0 } });
       ctx.complete('completed');
     });
-    // Rendering Full's file profile reads the disk, so its folders must exist (as in the
-    // transport's own Full test).
-    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-load-gate-full-')));
-    const cwd = path.join(root, 'project');
-    const data = path.join(root, 'data');
-    const home = path.join(root, 'home');
-    for (const folder of [cwd, data, home]) fs.mkdirSync(folder);
-    const base = h.request({ sessionId: 'full' });
-    const roots = { cwd, data, home, accounts: [], agentFolders: [cwd], agentHomes: [] };
-    try {
-      const events = await h.run(
-        h.request({
-          sessionId: 'full',
-          cwd,
-          settings: { permissionMode: 'bypassPermissions' },
-          tools: { ...base.tools, filePolicy: { writable: [], roots } },
-        })
-      );
-      const fake = h.host.home(PERSON_HOME).processes[0]!;
-      // Codex is told never to ask, so there is no ask to hold.
-      expect(fake.requestsOf('turn/start')[0]).toMatchObject({ approvalPolicy: 'never' });
-      expect(events.some((event) => event.type === 'system_status')).toBe(false);
-      expect(events.find((e) => e.type === 'tool_call_end')).toMatchObject({
-        data: { toolCallId: 'full-1', status: 'complete' },
+    const ana = h.transport.runTurn(h.request({ sessionId: 'ana' }));
+    expect(waitWords(await until(ana, ['system_status', 'approval_required']))).toBe(
+      'Waiting for the computer to calm down. Next in line.'
+    );
+    await settle();
+    expect(queue.list()).toHaveLength(1);
+    expect(queue.runningCount()).toBe(0);
+
+    loadSource.set(4);
+    await time.step(POLL);
+    await until(ana, 'approval_required');
+    expect(queue.list()).toHaveLength(0);
+    expect(queue.runningCount()).toBe(0);
+
+    h.transport.answerApproval('ana', 'a-1', true);
+    await vi.waitFor(() => expect(typeof finish).toBe('function'));
+    expect(queue.runningCount()).toBe(1);
+    finish();
+    await rest(ana);
+    expect(queue.runningCount()).toBe(0);
+    expect(queue.list()).toHaveLength(0);
+    expect(replies(h)).toEqual([{ decision: 'accept' }]);
+  });
+});
+
+describe('a card never holds a slot (DOR-4743)', () => {
+  it('an ask that arrives before its item/started: the command takes no slot until the ask is answered', async () => {
+    const { h, time, loadSource, queue } = machine(20);
+    let started!: () => void;
+    let finish!: () => void;
+    h.host.home(PERSON_HOME).nextTurn(async (ctx) => {
+      const item = commandItem('pnpm build', 'a-1');
+      // The other order: asked about first, reported started while the ask still waits.
+      const reply = ctx.serverRequest(ASK, {
+        kind: 'command',
+        itemId: 'a-1',
+        command: 'pnpm build',
       });
-      expect(queue.list()).toHaveLength(0);
-    } finally {
-      fs.rmSync(root, { recursive: true, force: true });
+      await new Promise<void>((resolve) => (started = resolve));
+      ctx.emit('item/started', { item, startedAtMs: Date.now() });
+      await reply;
+      await new Promise<void>((resolve) => (finish = resolve));
+      ctx.emit('item/completed', { item: { ...item, status: 'completed', exitCode: 0 } });
+      ctx.complete('completed');
+    });
+    const ana = h.transport.runTurn(h.request({ sessionId: 'ana' }));
+    expect(waitWords(await until(ana, ['system_status', 'approval_required']))).toBe(
+      'Waiting for the computer to calm down. Next in line.'
+    );
+    started();
+    await until(ana, 'tool_call_start');
+    await settle();
+    // Reported started, but still asked about: it is not running, and holds nothing.
+    expect(queue.runningCount()).toBe(0);
+    expect(queue.list()).toHaveLength(1);
+
+    loadSource.set(4);
+    await time.step(POLL);
+    await until(ana, 'approval_required');
+    expect(queue.runningCount()).toBe(0);
+
+    h.transport.answerApproval('ana', 'a-1', true);
+    await vi.waitFor(() => expect(typeof finish).toBe('function'));
+    expect(queue.runningCount()).toBe(1);
+    finish();
+    await rest(ana);
+    expect(queue.runningCount()).toBe(0);
+    expect(queue.list()).toHaveLength(0);
+  });
+
+  it('a second ask about a running command (its network access) gives the slot back while its card is up, and takes it again once answered', async () => {
+    const { h, time, loadSource, queue, gate } = machine(4);
+    let networkAsk!: () => void;
+    let finish!: () => void;
+    h.host.home(PERSON_HOME).nextTurn(async (ctx) => {
+      const item = commandItem('pnpm build', 'a-1');
+      ctx.emit('item/started', { item, startedAtMs: Date.now() });
+      await ctx.serverRequest(ASK, { kind: 'command', itemId: 'a-1', command: 'pnpm build' });
+      // Running, it reaches for the network, and Codex asks again about the same item.
+      await new Promise<void>((resolve) => (networkAsk = resolve));
+      await ctx.serverRequest(ASK, {
+        kind: 'command',
+        itemId: 'a-1',
+        approvalId: 'net-1',
+        command: 'pnpm build',
+        networkApprovalContext: { host: 'registry.npmjs.org', protocol: 'https' },
+      });
+      await new Promise<void>((resolve) => (finish = resolve));
+      ctx.emit('item/completed', { item: { ...item, status: 'completed', exitCode: 0 } });
+      ctx.complete('completed');
+    });
+    const ana = h.transport.runTurn(h.request({ sessionId: 'ana' }));
+    const first = await until(ana, 'approval_required');
+    h.transport.answerApproval('ana', (first.data as { toolCallId: string }).toolCallId, true);
+    await vi.waitFor(() => expect(typeof networkAsk).toBe('function'));
+    // Approved and running: it holds the one slot, and another chat's job waits behind it.
+    expect(queue.runningCount()).toBe(1);
+    const other = gate.gateIfHeavy('pnpm test', { chatId: 'bo', shareKey: 'claude-code:bo:main' });
+    let otherIn = false;
+    void other.then(() => (otherIn = true));
+    await settle();
+    await time.step(POLL);
+    expect(otherIn).toBe(false);
+
+    // The network ask's card is up: the slot goes back, and the other job gets in meanwhile.
+    networkAsk();
+    const second = await until(ana, 'approval_required');
+    expect(queue.runningCount()).toBe(0);
+    await time.step(POLL);
+    expect(otherIn).toBe(true);
+    expect(queue.runningCount()).toBe(1);
+    (await other)!.release();
+    expect(queue.runningCount()).toBe(0);
+
+    // The computer turns busy and a third chat's job waits in line while the card is still up.
+    loadSource.set(20);
+    const third = gate.gateIfHeavy('tsc', { chatId: 'cy', shareKey: 'claude-code:cy:main' });
+    let thirdIn = false;
+    void third.then(() => (thirdIn = true));
+    await settle();
+    expect(queue.list()).toHaveLength(1);
+
+    // Answered, the command runs again at once, on a slot it takes without waiting in the line
+    // (a card never makes a person's yes wait behind the line, DOR-4209): the third job still waits.
+    h.transport.answerApproval('ana', (second.data as { toolCallId: string }).toolCallId, true);
+    await vi.waitFor(() => expect(typeof finish).toBe('function'));
+    expect(queue.runningCount()).toBe(1);
+    expect(queue.list()).toHaveLength(1);
+    expect(thirdIn).toBe(false);
+    finish();
+    await rest(ana);
+    expect(queue.runningCount()).toBe(0);
+    expect(replies(h)).toHaveLength(2);
+    loadSource.set(4);
+    await time.step(POLL);
+    expect(thirdIn).toBe(true);
+    (await third)!.release();
+    expect(queue.runningCount()).toBe(0);
+  });
+});
+
+describe('one slot: a command and its own ask never wait on each other (DOR-4743)', () => {
+  it('a heavy command reported started, then asked about, gives its slot to its ask, so neither waits forever; another chat’s job gets in after it completes', async () => {
+    // One slot, and a busy computer: the shape of a self-deadlock, if the running command kept
+    // the only slot (`codex:<chat>:running`) while its own ask waited for one (`codex:<chat>:main`).
+    expect(settings.slots).toBe(1);
+    const { h, time, loadSource, queue, gate } = machine(20);
+    let ask!: () => void;
+    let finish!: () => void;
+    h.host.home(PERSON_HOME).nextTurn(async (ctx) => {
+      const item = commandItem('pnpm build', 'a-1');
+      // 0.154's order: the command is reported started, then asked about.
+      ctx.emit('item/started', { item, startedAtMs: Date.now() });
+      await new Promise<void>((resolve) => (ask = resolve));
+      await ctx.serverRequest(ASK, { kind: 'command', itemId: 'a-1', command: 'pnpm build' });
+      await new Promise<void>((resolve) => (finish = resolve));
+      ctx.emit('item/completed', { item: { ...item, status: 'completed', exitCode: 0 } });
+      ctx.complete('completed');
+    });
+    const ana = h.transport.runTurn(h.request({ sessionId: 'ana' }));
+
+    // Reported started, not yet asked about: it holds the one slot.
+    await until(ana, 'tool_call_start');
+    await vi.waitFor(() => expect(typeof ask).toBe('function'));
+    expect(queue.runningCount()).toBe(1);
+    expect(queue.list()).toHaveLength(0);
+
+    // Asked about: the slot goes back while the ask waits, so the ask is not waiting on itself.
+    ask();
+    expect(waitWords(await until(ana, ['system_status', 'approval_required']))).toBe(
+      'Waiting for the computer to calm down. Next in line.'
+    );
+    await settle();
+    expect(queue.runningCount()).toBe(0);
+    expect(queue.list()).toHaveLength(1);
+    await time.step(POLL);
+    expect(queue.runningCount()).toBe(0);
+    expect(queue.list()).toHaveLength(1);
+
+    // The computer calms down: the one slot is free, so the ask gets its turn and its card.
+    loadSource.set(4);
+    await time.step(POLL);
+    await until(ana, 'approval_required');
+    expect(queue.runningCount()).toBe(0);
+    expect(queue.list()).toHaveLength(0);
+
+    // The computer turns busy again while the card is up. Approved, the command runs on the one
+    // slot at once, without waiting in the line: a person's yes never waits behind it (DOR-4209).
+    loadSource.set(20);
+    h.transport.answerApproval('ana', 'a-1', true);
+    await vi.waitFor(() => expect(typeof finish).toBe('function'));
+    expect(queue.runningCount()).toBe(1);
+    expect(queue.list()).toHaveLength(0);
+    loadSource.set(4);
+
+    // Another chat's heavy job (a Claude Code chat's build, say) waits behind it.
+    const other = gate.gateIfHeavy('pnpm test', { chatId: 'bo', shareKey: 'claude-code:bo:main' });
+    let otherIn = false;
+    void other.then(() => (otherIn = true));
+    await settle();
+    await time.step(POLL);
+    expect(otherIn).toBe(false);
+    expect(queue.runningCount()).toBe(1);
+    expect(queue.list()).toHaveLength(1);
+
+    // It completes and the turn ends: the slot is free, and the other job gets in.
+    finish();
+    const after = await rest(ana);
+    expect(after.find((e) => e.type === 'tool_call_end')).toMatchObject({
+      data: { toolCallId: 'a-1', status: 'complete' },
+    });
+    expect(after.filter((e) => e.type === 'done')).toHaveLength(1);
+    expect(queue.runningCount()).toBe(0);
+    await time.step(POLL);
+    expect(otherIn).toBe(true);
+    expect(queue.runningCount()).toBe(1);
+    (await other)!.release();
+    expect(queue.runningCount()).toBe(0);
+    expect(queue.list()).toHaveLength(0);
+    expect(replies(h)).toEqual([{ decision: 'accept' }]);
+  });
+});
+
+describe('a new Codex reply waits to start on a busy computer while Codex commands run (DOR-4743)', () => {
+  /** Ana's chat runs a heavy command without asking; it holds a slot until `end`. */
+  async function anaRunning(m: ReturnType<typeof machine>) {
+    const build = runningCommand('pnpm build', 'a-1');
+    m.h.host.home(PERSON_HOME).nextTurn(build.script);
+    const ana = m.h.transport.runTurn(m.h.request({ sessionId: 'ana' }));
+    await until(ana, 'tool_call_start');
+    expect(m.queue.runningCount()).toBe(1);
+    return { ana, build, fake: m.h.host.home(PERSON_HOME).processes[0]! };
+  }
+
+  it('waits, saying so, and starts once the slot frees', async () => {
+    const m = machine(20);
+    const { ana, build, fake } = await anaRunning(m);
+    const bo = m.h.transport.runTurn(m.h.request({ sessionId: 'bo' }));
+    expect(waitWords(await until(bo, 'system_status'))).toBe(
+      'Waiting for the computer to calm down before starting.'
+    );
+    await m.time.step(POLL);
+    // Codex was never told about Bo's message.
+    expect(fake.requestsOf('turn/start')).toHaveLength(1);
+
+    build.end('completed');
+    await rest(ana);
+    await m.time.step(POLL);
+    const after = await rest(bo);
+    expect(fake.requestsOf('turn/start')).toHaveLength(2);
+    expect(after.filter((e) => e.type === 'done')).toHaveLength(1);
+  });
+
+  it('starts once the computer calms down, while the command still runs', async () => {
+    const m = machine(20);
+    const { ana, build, fake } = await anaRunning(m);
+    const bo = m.h.transport.runTurn(m.h.request({ sessionId: 'bo' }));
+    await until(bo, 'system_status');
+    m.loadSource.set(4);
+    await m.time.step(POLL);
+    await rest(bo);
+    expect(fake.requestsOf('turn/start')).toHaveLength(2);
+    build.end('completed');
+    await rest(ana);
+  });
+
+  it('a Stop while it waits ends it, and Codex is never told about the message', async () => {
+    const m = machine(20);
+    const { ana, build, fake } = await anaRunning(m);
+    const stop = new AbortController();
+    const bo = m.h.transport.runTurn(m.h.request({ sessionId: 'bo', signal: stop.signal }));
+    await until(bo, 'system_status');
+    stop.abort();
+    expect(await m.h.transport.interrupt('bo')).toMatchObject({ outcome: 'not-running' });
+    expect(await rest(bo)).toEqual([{ type: 'done', data: { sessionId: 'bo' } }]);
+    m.loadSource.set(4);
+    await m.time.step(POLL);
+    expect(fake.requestsOf('turn/start')).toHaveLength(1);
+    build.end('completed');
+    await rest(ana);
+  });
+
+  it('does not wait at all while the computer is calm', async () => {
+    const m = machine(4);
+    const { ana, build, fake } = await anaRunning(m);
+    const bo = await m.h.run(m.h.request({ sessionId: 'bo' }));
+    expect(bo.some((event) => event.type === 'system_status')).toBe(false);
+    expect(fake.requestsOf('turn/start')).toHaveLength(2);
+    build.end('completed');
+    await rest(ana);
+  });
+
+  it('does not wait on a busy computer while no Codex command runs', async () => {
+    const { h } = machine(20);
+    const bo = await h.run(h.request({ sessionId: 'bo' }));
+    expect(bo.some((event) => event.type === 'system_status')).toBe(false);
+    expect(bo.filter((e) => e.type === 'done')).toHaveLength(1);
+  });
+
+  it('starts anyway after maxWaitMinutes on a computer kept busy, and not before', async () => {
+    const m = machine(20);
+    const { ana, build, fake } = await anaRunning(m);
+    const bo = m.h.transport.runTurn(m.h.request({ sessionId: 'bo' }));
+    const seen: StreamEvent[] = [];
+    await until(bo, 'system_status', seen);
+    // Read on, so Bo's turn goes ahead the moment its wait ends.
+    const boDone = rest(bo, seen);
+    await m.time.step(59 * MINUTE);
+    expect(fake.requestsOf('turn/start')).toHaveLength(1);
+    await m.time.step(MINUTE);
+    await boDone;
+    expect(fake.requestsOf('turn/start')).toHaveLength(2);
+    expect(m.queue.runningCount()).toBe(1);
+    const notices = seen.filter(
+      (e) =>
+        e.type === 'system_status' && (e.data as { status?: unknown }).status === LOAD_WAIT_STATUS
+    );
+    expect(notices.length).toBeGreaterThan(0);
+    // It starts at the cap, so it never says it is still waiting or when it starts anyway.
+    for (const notice of notices) {
+      expect(waitWords(notice)).toBe('Waiting for the computer to calm down before starting.');
     }
+    expect(m.lines).toContain('[LoadGate] Work started after waiting 60 min, the longest it waits');
+    build.end('completed');
+    await rest(ana);
+  });
+
+  it('a compaction does not wait to start: it runs no commands', async () => {
+    const m = machine(20);
+    const { ana, build } = await anaRunning(m);
+    const base = m.h.request({ sessionId: 'bo' });
+    const compaction = m.h.transport.compact({
+      binary: base.binary,
+      sessionId: 'bo',
+      boundThreadId: base.boundThreadId,
+      cwd: base.cwd,
+      settings: base.settings,
+      launch: base.launch,
+      signal: base.signal,
+      events: base.events,
+      onThreadBound: base.onThreadBound,
+    });
+    const first = await compaction.next();
+    expect(first.done).toBe(false);
+    expect(first.value).not.toMatchObject({ data: { status: LOAD_WAIT_STATUS } });
+    const after = await rest(compaction);
+    expect([first.value as StreamEvent, ...after].filter((e) => e.type === 'done')).toHaveLength(1);
+    build.end('completed');
+    await rest(ana);
   });
 });

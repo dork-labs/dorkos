@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LoadGateSettings } from '@dorkos/shared/config-schema';
-import { createLoadGate, type HeldSlot, type WaitStatus } from '../load-gate.js';
+import { createLoadGate, type BusyStatus, type HeldSlot, type WaitStatus } from '../load-gate.js';
 import { fixedLoadSource } from '../load-source.js';
 import { prepareDir } from '../queue-folder.js';
 import { DEFAULT_LEASE_MS, TicketQueue } from '../ticket-queue.js';
@@ -521,5 +521,155 @@ describe('gateIfHeavy', () => {
     settings.heavyCommands = { add: [], remove: ['tsc'] };
     const { gate } = setup(99);
     await expect(gate.gateIfHeavy('tsc -p .', {})).resolves.toBeNull();
+  });
+});
+
+describe('occupy: a heavy job already running counts at once (DOR-4743)', () => {
+  it('takes a slot past the load limit, never waiting, and never joins the line', async () => {
+    const { gate, queue } = setup(99);
+    const running = gate.occupy('pnpm build');
+    expect(running).toMatchObject({ outcome: 'ran', waitedMs: 0 });
+    expect(queue.runningCount()).toBe(1);
+    expect(queue.list()).toEqual([]);
+    running!.release();
+    expect(queue.runningCount()).toBe(0);
+  });
+
+  it('makes the next heavy job wait behind it until it ends', async () => {
+    const { gate, time } = setup(4);
+    const running = gate.occupy('pnpm build')!;
+    const next = track(gate.waitForSlot({ job: 'tsc' }));
+    await settle();
+    await time.step(POLL);
+    expect(next.slot).toBeUndefined();
+    running.release();
+    await time.step(POLL);
+    expect(next.slot?.outcome).toBe('ran');
+    next.slot!.release();
+  });
+
+  it('takes nothing for a light command, or while the gate is off', () => {
+    const { gate, queue } = setup(99);
+    expect(gate.occupy('ls -la')).toBeNull();
+    settings.enabled = false;
+    expect(gate.occupy('pnpm build')).toBeNull();
+    expect(queue.runningCount()).toBe(0);
+  });
+
+  it('shares one slot among one thread’s running jobs, given back with the last', () => {
+    const { gate, queue } = setup(99);
+    const build = gate.occupy('pnpm build', { shareKey: 'codex:c1:running' })!;
+    const test = gate.occupy('pnpm test', { shareKey: 'codex:c1:running' })!;
+    expect(queue.runningCount()).toBe(1);
+    build.release();
+    expect(queue.runningCount()).toBe(1);
+    test.release();
+    expect(queue.runningCount()).toBe(0);
+  });
+
+  it('never lets a thread still in line past it: the running job counts on its own', async () => {
+    const { gate, time, queue } = setup(20);
+    const waiting = track(gate.gateIfHeavy('pnpm build', { shareKey: 'k' }));
+    await settle();
+    const running = gate.occupy('pnpm test', { shareKey: 'k' })!;
+    expect(queue.runningCount()).toBe(1);
+    expect(queue.list()).toHaveLength(1);
+    await time.step(POLL);
+    expect(waiting.slot).toBeUndefined();
+    running.release();
+    expect(queue.runningCount()).toBe(0);
+    expect(queue.list()).toHaveLength(1);
+  });
+
+  it('counts in this server’s own line when the shared folder fails', async () => {
+    const { gate, time, lines } = setup(4);
+    breakFolder();
+    const running = gate.occupy('pnpm build')!;
+    expect(running.outcome).toBe('gate-error');
+    const next = track(gate.waitForSlot({ job: 'tsc' }));
+    await settle();
+    await time.step(POLL);
+    expect(next.slot).toBeUndefined();
+    running.release();
+    await time.step(POLL);
+    expect(next.slot?.outcome).toBe('gate-error');
+    expect(JSON.stringify(lines)).not.toMatch(/build/);
+  });
+});
+
+describe('waitWhileBusy (DOR-4743)', () => {
+  /** Track a busy-wait without awaiting it. */
+  function trackWait(wait: Promise<void>) {
+    const state: { done: boolean; error?: unknown } = { done: false };
+    wait.then(
+      () => (state.done = true),
+      (error: unknown) => (state.error = error)
+    );
+    return state;
+  }
+
+  it('returns at once while the computer is calm, or when the caller has no reason to wait', async () => {
+    const calm = setup(4);
+    const seen: BusyStatus[] = [];
+    await calm.gate.waitWhileBusy(() => true, { onWait: (s) => void seen.push(s) });
+    const busy = setup(20);
+    await busy.gate.waitWhileBusy(() => false, { onWait: (s) => void seen.push(s) });
+    expect(seen).toEqual([]);
+  });
+
+  it('waits while both hold, says so every minute, and returns once either stops', async () => {
+    const { gate, time, loadSource } = setup(20);
+    let running = true;
+    const seen: BusyStatus[] = [];
+    const wait = trackWait(gate.waitWhileBusy(() => running, { onWait: (s) => void seen.push(s) }));
+    await settle();
+    expect(seen).toEqual([{ load: 20, maxLoad: 16, waitedMs: 0 }]);
+    await time.step(MINUTE);
+    expect(wait.done).toBe(false);
+    expect(seen).toHaveLength(2);
+    running = false;
+    await time.step(POLL);
+    expect(wait.done).toBe(true);
+
+    running = true;
+    const again = trackWait(gate.waitWhileBusy(() => running));
+    await settle();
+    expect(again.done).toBe(false);
+    loadSource.set(4);
+    await time.step(POLL);
+    expect(again.done).toBe(true);
+  });
+
+  it('stops with an AbortError', async () => {
+    const { gate } = setup(20);
+    const stop = new AbortController();
+    const wait = trackWait(gate.waitWhileBusy(() => true, { signal: stop.signal }));
+    await settle();
+    stop.abort();
+    await settle();
+    expect((wait.error as Error | undefined)?.name).toBe('AbortError');
+  });
+
+  it('gives up at maxWaitMinutes, not the hard cap: what waits here is a person’s reply', async () => {
+    const { gate, time, lines } = setup(20);
+    const wait = trackWait(gate.waitWhileBusy(() => true));
+    await settle();
+    await time.step(59 * MINUTE);
+    expect(wait.done).toBe(false);
+    await time.step(MINUTE);
+    expect(wait.done).toBe(true);
+    expect(lines).toEqual(['[LoadGate] Work started after waiting 60 min, the longest it waits']);
+  });
+
+  it('fails open when the settings cannot be read', async () => {
+    const broken = createLoadGate({
+      config: () => {
+        throw new Error('not loaded');
+      },
+      dir,
+      loadSource: fixedLoadSource(20),
+      log: () => {},
+    });
+    await expect(broken.waitWhileBusy(() => true)).resolves.toBeUndefined();
   });
 });

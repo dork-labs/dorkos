@@ -219,18 +219,16 @@ export interface ExtensionRecord {
   /** Structured error info (compilation failure, manifest parse error, etc.) */
   error?: { code: string; message: string; details?: string };
   /**
-   * A failure to rebuild the SERVER entry (`server.ts`) while a previous version
-   * of it is still mounted and answering requests.
+   * A server start, rebuild or runtime failure, independent of its client bundle.
    *
    * Deliberately NOT `status`/`error`: those are one field each for the whole
    * extension, and `status` is what `ExtensionManager.readBundle` and the client
    * loader gate the CLIENT bundle on. Writing `compile_error` there for a
    * server-side failure would take the extension's perfectly good UI off the
-   * screen in every new tab — a bigger break than the one being reported. This
-   * field says the narrower, true thing: the running server code no longer
-   * matches its source. Cleared when a fixed version takes over.
+   * screen in every new tab — a bigger break than the one being reported.
+   * Cleared when a working version takes over. Stops carry an ISO 8601 time.
    */
-  serverError?: { code: string; message: string; details?: string };
+  serverError?: { code: string; message: string; details?: string; occurredAt?: string };
   /**
    * When a restart of an extension that runs separately is pending after it
    * stopped (DOR-2686), as ISO 8601; `null` or absent otherwise. The card says
@@ -277,12 +275,11 @@ export interface ExtensionRecordPublic {
   sourcePlugin?: string;
   error?: { code: string; message: string; details?: string };
   /**
-   * The extension's server half failed to rebuild and the previously loaded
-   * version is still running. The cockpit shows this as a warning line beside an
-   * otherwise healthy extension — `status` and `bundleReady` are untouched, so
-   * the client bundle keeps loading. See {@link ExtensionRecord.serverError}.
+   * A server start, rebuild or runtime failure, including the latest stop time.
+   * `status` and `bundleReady` are untouched, so the client bundle keeps loading.
+   * See {@link ExtensionRecord.serverError}.
    */
-  serverError?: { code: string; message: string; details?: string };
+  serverError?: { code: string; message: string; details?: string; occurredAt?: string };
   /**
    * When a restart is pending after it stopped (DOR-2686), as ISO 8601, or
    * `null`. See {@link ExtensionRecord.restartingAt}. Absent from an older server.

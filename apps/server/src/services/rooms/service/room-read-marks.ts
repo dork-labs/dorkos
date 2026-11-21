@@ -111,7 +111,8 @@ export function projectMemberMatches(
 
 /** Mark the caller's turn when anything a read returned holds outside words. */
 function markIfOutside(rooms: RoomService, caller: CallerTurn, read: readonly ReadMessage[]): void {
-  if (read.length > 0 && readHoldsOutsideWords(rooms, read)) markCallerTurnOutsider(caller);
+  if (read.length > 0 && readHoldsOutsideWords(rooms, read))
+    markCallerTurnOutsider(caller, { kind: 'room' });
 }
 
 /** Whether any of these rooms has a member on a bridged chat, or one nobody can resolve. */
@@ -137,7 +138,7 @@ export function projectRoomsRead(
   caller: CallerTurn,
   details: readonly RoomDetail[]
 ): Record<string, unknown>[] {
-  if (roomsHoldOutsideNames(rooms, details)) markCallerTurnOutsider(caller);
+  if (roomsHoldOutsideNames(rooms, details)) markCallerTurnOutsider(caller, { kind: 'room' });
   return details.map((detail) => projectDetail(rooms, detail));
 }
 
@@ -166,7 +167,7 @@ export function projectMemberRoomList(
   } catch {
     outside = true;
   }
-  if (outside) markCallerTurnOutsider(caller);
+  if (outside) markCallerTurnOutsider(caller, { kind: 'room' });
   return listed.map((room) => ({
     roomId: room.roomId,
     kind: room.kind,

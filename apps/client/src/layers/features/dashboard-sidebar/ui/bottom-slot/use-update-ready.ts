@@ -48,6 +48,14 @@ const DOWNLOAD_FALLBACK_URL = links.site;
  */
 export type UpdateReadiness =
   | { kind: 'none' }
+  /**
+   * A desktop update on its way down (DOR-4846). `percent` is `null` before
+   * the first progress report, so the card names the version without a bar.
+   * `version` is `null` only from a shell too old to send it.
+   */
+  | { kind: 'desktop-downloading'; version: string | null; percent: number | null }
+  /** A desktop download that stopped with an error; retrying fetches it again. */
+  | { kind: 'desktop-download-failed'; version: string; retry: () => void }
   /** A downloaded desktop update, waiting for a restart. */
   | { kind: 'desktop-restart'; restart: () => void }
   /**
@@ -70,16 +78,62 @@ function downloadFreshCopy(): void {
 }
 
 /**
- * Read whether an update is ready.
+ * What the desktop card shows for the native updater's status.
  *
- * A download still in progress is deliberately `none`: it is not something
- * anybody can act on, and the slot should be offering whatever else it has. A
- * failed install is the opposite — it is the one update state a person MUST be
- * told about, so it qualifies for the slot exactly as a waiting restart does.
+ * A download in progress takes the slot (DOR-4846). It used to be `none`, so
+ * between "an update is available" and the download finishing the sidebar said
+ * nothing at all, and a download that failed said nothing ever. A failed
+ * install still outranks everything: restarting is the one thing that did not
+ * work, so it is never offered again for that version.
+ *
+ * @param status - The folded native updater status.
+ * @param retryingVersion - A version a retry is fetching, if one was pressed.
+ * @param actions - The restart and retry the card's buttons call.
+ */
+function desktopReadiness(
+  status: DesktopUpdateStatus | null,
+  retryingVersion: string | null,
+  actions: { restart: () => void; retry: () => void }
+): UpdateReadiness {
+  if (status?.state === 'install-failed') {
+    return { kind: 'desktop-install-failed', downloadFresh: downloadFreshCopy };
+  }
+  if (retryingVersion) {
+    return { kind: 'desktop-downloading', version: retryingVersion, percent: null };
+  }
+  switch (status?.state) {
+    case 'downloaded':
+      return { kind: 'desktop-restart', restart: actions.restart };
+    case 'downloading':
+      return {
+        kind: 'desktop-downloading',
+        version: status.version ?? null,
+        percent: status.percent,
+      };
+    // The download starts the moment an update is found; the first progress
+    // report can take a while on a slow line.
+    case 'available':
+      return { kind: 'desktop-downloading', version: status.version, percent: null };
+    case 'error':
+      // Only a stopped download names a version; a failed check stays quiet.
+      return status.version
+        ? { kind: 'desktop-download-failed', version: status.version, retry: actions.retry }
+        : { kind: 'none' };
+    default:
+      return { kind: 'none' };
+  }
+}
+
+/**
+ * Read whether there is an update to show.
+ *
+ * On the desktop app that is a download in progress, a failed download, a
+ * download waiting for a restart, or a failed install ({@link desktopReadiness}).
+ * On a web or CLI install it is a newer published version.
  */
 export function useUpdateReady(): UpdateReadiness {
   const { data: config } = useConfig();
-  const { isDesktop, status: desktopStatus, restart } = useDesktopUpdater();
+  const { isDesktop, status: desktopStatus, restart, retry, retryingVersion } = useDesktopUpdater();
   const updateConfig = useUpdateConfig();
 
   const version = config?.version;
@@ -105,15 +159,7 @@ export function useUpdateReady(): UpdateReadiness {
     if (isHub) return { kind: 'none' };
     // Desktop reflects the native updater: `npm update -g dorkos` updates the
     // CLI, not the running `.app`.
-    if (isDesktop) {
-      // A restart is never re-offered for an update that already refused to
-      // install — restarting is precisely the thing that did not work.
-      if (desktopStatus?.state === 'install-failed') {
-        return { kind: 'desktop-install-failed', downloadFresh: downloadFreshCopy };
-      }
-      if (desktopStatus?.state !== 'downloaded') return { kind: 'none' };
-      return { kind: 'desktop-restart', restart };
-    }
+    if (isDesktop) return desktopReadiness(desktopStatus, retryingVersion, { restart, retry });
 
     const ready =
       latestVersion !== null &&
@@ -123,5 +169,16 @@ export function useUpdateReady(): UpdateReadiness {
     if (!ready) return { kind: 'none' };
 
     return { kind: 'command', latestVersion, dismiss: () => dismiss(latestVersion) };
-  }, [isHub, isDesktop, desktopStatus, restart, latestVersion, version, dismissed, dismiss]);
+  }, [
+    isHub,
+    isDesktop,
+    desktopStatus,
+    retryingVersion,
+    restart,
+    retry,
+    latestVersion,
+    version,
+    dismissed,
+    dismiss,
+  ]);
 }

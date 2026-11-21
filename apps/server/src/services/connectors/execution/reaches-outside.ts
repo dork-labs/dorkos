@@ -17,7 +17,9 @@
  */
 import type { CapabilityPreflightResult } from '../../core/capabilities/index.js';
 import type { AuthorizedConnectorExecution } from './authorization-service.js';
+import type { Db } from '@dorkos/db';
 import { spendPreflightFor } from '../spending/spend-gate.js';
+import { writesBackUnaskedFor } from '../access/writes-back-store.js';
 
 /** Writes that change only the person's own account: drafts, labels, restoring trash, their calendars. */
 const STAYS_IN_ACCOUNT: ReadonlySet<string> = new Set([
@@ -101,14 +103,20 @@ export function writeReachesOutside(operationSlug: string, args: Record<string, 
  * authority, its card, and whether it reaches people outside or cannot be undone. A read reaches
  * nobody, a destructive action cannot be undone, and a write is decided by what it does.
  *
+ * It also carries the action's stored class and whether the person let agents write back to
+ * this connection unasked (DOR-4794, `core/prompts/should-ask.ts`). Without the
+ * database that choice reads as off, so the write keeps today's ask.
+ *
  * @param authorized - The call the authorization service just prepared.
+ * @param db - The connector database, to read the person's writes-back choice.
  */
 export function preflightResultOf(
   authorized: Pick<
     AuthorizedConnectorExecution,
     'authorityBinding' | 'serviceAction' | 'operation' | 'arguments' | 'actorKind' | 'agentId'
   > &
-    Partial<Pick<AuthorizedConnectorExecution, 'sessionId'>>
+    Partial<Pick<AuthorizedConnectorExecution, 'sessionId'>>,
+  db?: Db
 ): CapabilityPreflightResult {
   const { capabilityClassification, operationSlug } = authorized.operation;
   // A paid run's answer from the monthly limit (DOR-4204 PR 2): run, ask, or refuse.
@@ -117,6 +125,15 @@ export function preflightResultOf(
     ...(spend ? { spend } : {}),
     authorityBinding: authorized.authorityBinding,
     approvalServiceAction: authorized.serviceAction,
+    sameSource: {
+      toolkit: authorized.operation.toolkit,
+      classification: capabilityClassification,
+      // Only a `write` can skip its card, so only a write reads the choice.
+      writesBackUnasked:
+        capabilityClassification === 'write' && db !== undefined
+          ? writesBackUnaskedFor(db, authorized.authorityBinding.approvalScope.connectionId)
+          : false,
+    },
     outward:
       capabilityClassification === 'read'
         ? false

@@ -38,23 +38,49 @@ const LEVELS = ['info', 'warn', 'error', 'debug', 'verbose'] as const;
  * rather than inferred: an inferred type here names `@vitest/spy` through a
  * pnpm-internal path, which `tsc` rightly refuses to emit as portable.
  */
-type ElectronLogMock = Record<(typeof LEVELS)[number], LogFn> & {
-  /** How the real module reports where it is writing. */
-  transports: { file: { getFile: () => { path: string } } };
+type LoggerDouble = Record<(typeof LEVELS)[number], LogFn> & {
+  /** How the real module reports where it is writing, and where it is told to. */
+  transports: {
+    file: { getFile: () => { path: string }; resolvePathFn?: () => string };
+  };
 };
 
+type ElectronLogMock = LoggerDouble & {
+  /** A separate logger with its own file, as `log.create({ logId })` returns. */
+  create: Mock<(options: { logId: string }) => LoggerDouble>;
+};
+
+/** A logger double with fresh level spies. */
+function createLoggerDouble(filePath: string): LoggerDouble {
+  return {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+    verbose: vi.fn(),
+    transports: { file: { getFile: () => ({ path: filePath }) } },
+  };
+}
+
+/**
+ * The logger `log.create({ logId: 'updater' })` hands back (DOR-4847).
+ *
+ * A separate object from the default double, so a test can tell a line that
+ * reached the updater's own file from one that reached `main.log`.
+ */
+export const updaterLogDouble = createLoggerDouble(`${LOG_DIRECTORY}/updater.log`);
+
 const log: ElectronLogMock = {
-  info: vi.fn(),
-  warn: vi.fn(),
-  error: vi.fn(),
-  debug: vi.fn(),
-  verbose: vi.fn(),
-  transports: { file: { getFile: () => ({ path: LOG_FILE_PATH }) } },
+  ...createLoggerDouble(LOG_FILE_PATH),
+  create: vi.fn(() => updaterLogDouble),
 };
 
 export default log;
 
 /** Reset recorded log calls between tests — call from `beforeEach`. */
 export function resetLogMock(): void {
-  for (const level of LEVELS) log[level].mockClear();
+  for (const level of LEVELS) {
+    log[level].mockClear();
+    updaterLogDouble[level].mockClear();
+  }
 }
