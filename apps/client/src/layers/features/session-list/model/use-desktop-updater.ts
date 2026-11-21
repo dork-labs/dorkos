@@ -14,6 +14,14 @@ export interface DesktopUpdater {
   status: DesktopUpdateStatus | null;
   /** Restart the app to install a downloaded update. */
   restart: () => void;
+  /** Try a failed download again. Only meaningful while `status` is an `error` naming a version. */
+  retry: () => void;
+  /**
+   * The version a retry is fetching, from the press until the updater answers
+   * past `checking`; otherwise `null`. Lets the card say "Downloading" at once
+   * instead of vanishing while the retry's check runs.
+   */
+  retryingVersion: string | null;
 }
 
 /** States the card can draw and a person can act on; the rest are passing noise. */
@@ -70,6 +78,7 @@ function foldStatus(
 export function useDesktopUpdater(): DesktopUpdater {
   const isDesktop = typeof window !== 'undefined' && !!window.electronAPI?.onUpdateStatus;
   const [status, setStatus] = useState<DesktopUpdateStatus | null>(null);
+  const [retryingVersion, setRetryingVersion] = useState<string | null>(null);
 
   useEffect(() => {
     const api = window.electronAPI;
@@ -77,6 +86,8 @@ export function useDesktopUpdater(): DesktopUpdater {
 
     const unsubscribe = api.onUpdateStatus((next) => {
       setStatus((prev) => foldStatus(prev, next));
+      // The retry's own check says `checking` first; anything after it is the answer.
+      if (next.state !== 'checking') setRetryingVersion(null);
     });
 
     // Replay a status that fired before this renderer subscribed (macOS
@@ -92,5 +103,13 @@ export function useDesktopUpdater(): DesktopUpdater {
     window.electronAPI?.restartToUpdate?.();
   }, []);
 
-  return { isDesktop, status, restart };
+  const failedVersion = status?.state === 'error' ? (status.version ?? null) : null;
+  const retry = useCallback(() => {
+    const api = window.electronAPI;
+    if (!failedVersion || !api?.retryUpdate) return;
+    setRetryingVersion(failedVersion);
+    api.retryUpdate();
+  }, [failedVersion]);
+
+  return { isDesktop, status, restart, retry, retryingVersion };
 }
