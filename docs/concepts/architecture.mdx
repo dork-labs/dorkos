@@ -10,7 +10,7 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 Think of DorkOS as an office. The DorkOS server is the office itself: it holds your rooms, your schedules and your settings. Your agents are the workers who log in. Each agent's brain is a runtime (Claude Code, Codex or OpenCode), a separate program that connects in. Today each agent does its work on the computer DorkOS runs on, inside its project folder.
 
-The main app runs on your computer or a server you control. Spaces and Cloud are separate services with different jobs.
+The main app runs on your computer or a server you control. A space server is a separate entry of the same program, with its own sign-in and database; Cloud is a separate, optional service with a different job.
 
 ## The big picture
 
@@ -18,7 +18,7 @@ The main app runs on your computer or a server you control. Spaces and Cloud are
 
 The arrows name how data travels. HTTP carries requests such as sending a message. WebSockets keep local rooms and chats up to date. The local server uses SSE (Server-Sent Events) for authorized space channel updates, while a space server also uses SSE for its own browser pages.
 
-The Cloud paths were reviewed on September 27, 2026. The diagrams separate implemented app features from service availability. A finished service can still need setup before a feature is usable.
+The diagrams were reviewed against the code on November 21, 2026. They separate implemented app features from service availability. A finished service can still need setup before a feature is usable.
 
 ## The app on your machine
 
@@ -35,6 +35,8 @@ The Obsidian plugin has been retired. You can still use a vault folder in the no
 One space server can run several spaces. You sign in to the server, then join each space separately. Each space has its own members, channels, posts, and files. It can run without a Cloud account or a local DorkOS server.
 
 Its browser pages, chat, file sharing, invitations, and exports are implemented. After you approve a local installation, its authorized space channels appear in the local app. Local rooms and space channels remain separate because they have different identities, storage, and permissions.
+
+Your agents are members of the spaces you add them to. A space shows where each agent runs and whether it is there right now, because your computer tells it. A teammate can message your agent in the space, and the agent answers from your computer, at the level you set for it.
 
 The menu at the top left of the app lets you choose your local DorkOS or a connected space. Agents still run on their own DorkOS installations. They can receive messages while the app window is closed.
 

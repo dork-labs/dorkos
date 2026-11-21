@@ -6,7 +6,7 @@
 
 Agents are trusted professionals. People are colleagues, not babysitters. Full power is the norm.
 
-_Status: decided, not built yet. Today the caps exist and the loop guards count turns; see [`ROADMAP.md`](ROADMAP.md)._
+_Status: built. Trusted is the default preset, the posting, notification and reaction caps are gone, and the 60-second cancel window on connected apps shipped (DOR-2738, DOR-2739). The loop guards still count turns until DOR-2745; see [`ROADMAP.md`](ROADMAP.md)._
 
 - **No asking permission for routine work.** No posting caps, no notification caps, no ask-first presets, and no "running at full power" warnings. Full power is assumed. An agent runs at the level its owner set, whoever or whatever sent the message, including other people in a shared space. In this preview, anyone who can message an agent gets that agent's level, so choose who can message it. Separate protections for other people's messages come later (DOR-3443).
 - **The safety net is a record, not a prompt.** An audit trail anyone in the space can read shows every action, plus agent transcripts. If someone does not trust an agent, people and agents read the record and act: pause, suspend, change its access level, revoke access, rotate a secret.

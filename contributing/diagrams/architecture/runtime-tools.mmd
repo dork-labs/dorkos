@@ -1,11 +1,14 @@
 flowchart TB
   accTitle: Runtime execution and tool access
-  accDescr: The local server starts runtimes separately from providing tools. Claude Code calls DorkOS tools in process; agent-bound Codex, OpenCode and Doe turns use a loopback MCP listener with turn-bound credentials. Doe also assembles local engine tools. Room speech requires a tool action. External MCP has separate authentication.
+  accDescr: The local server starts runtimes separately from providing tools. Claude Code calls DorkOS tools in process; agent-bound Codex, OpenCode and Doe turns use a loopback MCP listener with turn-bound credentials; the computer-local experiment reaches the same listener through a fixed-target bridge into its guest. Doe also assembles local engine tools. Room speech requires a tool action. External MCP has separate authentication. Every tool call writes one audit row.
   dispatch["Local MessageDispatcher"] -->|"AgentRuntime"| claude["Claude Code"]
   dispatch -->|"AgentRuntime"| other["Codex / OpenCode / Doe"]
-  claude -->|"In-process tool server"| tools["DorkOS capabilities<br/>Identity + authorization checks"]
+  dispatch -.->|"AgentRuntime · experiment"| vm["computer-local guest<br/>OpenCode in a Lima VM"]
+  claude -->|"In-process tool server"| tools["DorkOS capabilities<br/>Identity + authorization checks<br/>One audit row per call"]
   other -->|"MCP Streamable HTTP<br/>Short-lived turn credential"| loopback["Loopback-only runtime listener"]
+  vm -.->|"Fixed-target MCP bridge<br/>Same turn-bound principal"| loopback
   loopback --> tools
   external["External tool caller"] -->|"Streamable HTTP /mcp<br/>Separate external authentication"| public["Public MCP endpoint"]
   public --> tools
   tools -->|"Explicit post or reaction"| room["Room publication<br/>Final text alone is not a post<br/>A turn may stay silent"]
+  tools -->|"end_beat only"| beat["A heartbeat's raises<br/>Free text in a beat goes nowhere"]
