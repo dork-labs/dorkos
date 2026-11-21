@@ -169,3 +169,84 @@ describe('useDesktopUpdater — statuses that must not be swallowed', () => {
     await vi.waitFor(() => expect(result.current.status).toEqual(FAILED));
   });
 });
+
+/** DOR-4846: a failed download can be retried from the card. */
+describe('useDesktopUpdater retry', () => {
+  function stubDesktop() {
+    const emitRef: { current?: (status: DesktopUpdateStatus) => void } = {};
+    const retryUpdate = vi.fn();
+    window.electronAPI = {
+      onUpdateStatus: (cb: (status: DesktopUpdateStatus) => void) => {
+        emitRef.current = cb;
+        return vi.fn();
+      },
+      restartToUpdate: vi.fn(),
+      retryUpdate,
+      getUpdateStatus: vi.fn().mockResolvedValue(null),
+    } as unknown as ElectronAPI;
+    return { emitRef, retryUpdate };
+  }
+
+  const failedDownload: DesktopUpdateStatus = {
+    state: 'error',
+    message: 'net::ERR_CONNECTION_RESET',
+    version: '0.139.0',
+  };
+
+  it('lets an error replace a download in progress', () => {
+    const { emitRef } = stubDesktop();
+    const { result } = renderHook(() => useDesktopUpdater());
+
+    act(() => emitRef.current?.({ state: 'downloading', percent: 40, version: '0.139.0' }));
+    act(() => emitRef.current?.(failedDownload));
+
+    expect(result.current.status).toEqual(failedDownload);
+  });
+
+  it('asks the shell to retry and remembers which version until the updater answers', () => {
+    const { emitRef, retryUpdate } = stubDesktop();
+    const { result } = renderHook(() => useDesktopUpdater());
+    act(() => emitRef.current?.(failedDownload));
+
+    act(() => result.current.retry());
+    expect(retryUpdate).toHaveBeenCalledTimes(1);
+    expect(result.current.retryingVersion).toBe('0.139.0');
+
+    // The retry's own check is not an answer yet.
+    act(() => emitRef.current?.({ state: 'checking' }));
+    expect(result.current.retryingVersion).toBe('0.139.0');
+
+    act(() => emitRef.current?.({ state: 'available', version: '0.139.0' }));
+    expect(result.current.retryingVersion).toBeNull();
+  });
+
+  it('clears the retry when it fails again, so the error and its button come back', () => {
+    const { emitRef } = stubDesktop();
+    const { result } = renderHook(() => useDesktopUpdater());
+    act(() => emitRef.current?.(failedDownload));
+    act(() => result.current.retry());
+
+    act(() => emitRef.current?.(failedDownload));
+
+    expect(result.current.retryingVersion).toBeNull();
+    expect(result.current.status).toEqual(failedDownload);
+  });
+
+  it('does nothing for an error that names no version (a failed check)', () => {
+    const { emitRef, retryUpdate } = stubDesktop();
+    const { result } = renderHook(() => useDesktopUpdater());
+    act(() => emitRef.current?.({ state: 'error', message: 'getaddrinfo ENOTFOUND' }));
+
+    act(() => result.current.retry());
+
+    expect(retryUpdate).not.toHaveBeenCalled();
+    expect(result.current.retryingVersion).toBeNull();
+  });
+
+  it('is a safe no-op in the browser', () => {
+    const { result } = renderHook(() => useDesktopUpdater());
+
+    expect(() => result.current.retry()).not.toThrow();
+    expect(result.current.retryingVersion).toBeNull();
+  });
+});

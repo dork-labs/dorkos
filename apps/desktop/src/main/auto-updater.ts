@@ -34,9 +34,19 @@ export type UpdateStatus =
   | { state: 'checking' }
   | { state: 'available'; version: string }
   | { state: 'not-available' }
-  | { state: 'downloading'; percent: number }
+  /**
+   * `version` comes from the `update-available` that started the download
+   * (electron-updater's `ProgressInfo` carries none), so the card can name the
+   * real version. Absent only if progress ever arrived before that event.
+   */
+  | { state: 'downloading'; percent: number; version?: string }
   | { state: 'downloaded'; version: string }
-  | { state: 'error'; message: string }
+  /**
+   * `version` is set only when the error stopped a download of that version
+   * (DOR-4846). A failed background check has none: there was nothing to show
+   * and nothing the person can retry.
+   */
+  | { state: 'error'; message: string; version?: string }
   /**
    * An update was staged, the app restarted for it, and the version that came
    * back up is still the old one — the failure Squirrel cannot report in-process
@@ -69,6 +79,16 @@ let getMainWindow: (() => BrowserWindow | null) | null = null;
 
 /** True while a foreground ("Check for Updates…") check is in flight — gates which events show a dialog vs. only log. */
 let checkingInteractively = false;
+
+/**
+ * The version being downloaded: set by `update-available`, cleared when the
+ * download lands or there is nothing to download. Progress and errors are
+ * tagged with it, because neither event says which version it is about.
+ */
+let downloadingVersion: string | null = null;
+
+/** The version whose download last failed, for {@link retryUpdateDownload}. */
+let failedDownloadVersion: string | null = null;
 
 /**
  * True when electron-updater failed only because the *newest* GitHub release
@@ -179,10 +199,13 @@ export function setupAutoUpdater(mainWindowAccessor: () => BrowserWindow | null)
     updaterLog.info(`[updater] Update available: ${info.version}. Downloading it.`);
     lastLoggedProgressStep = -1;
     sendUpdateStatus({ state: 'available', version: info.version });
+    downloadingVersion = info.version;
   });
 
   autoUpdater.on('update-not-available', () => {
     updaterLog.info('[updater] No update available.');
+    downloadingVersion = null;
+    failedDownloadVersion = null;
     sendUpdateStatus({ state: 'not-available' });
     if (checkingInteractively) {
       void showMessageBox({
@@ -197,11 +220,17 @@ export function setupAutoUpdater(mainWindowAccessor: () => BrowserWindow | null)
 
   autoUpdater.on('download-progress', (progress: ProgressInfo) => {
     logDownloadProgress(progress);
-    sendUpdateStatus({ state: 'downloading', percent: progress.percent });
+    sendUpdateStatus({
+      state: 'downloading',
+      percent: progress.percent,
+      ...(downloadingVersion ? { version: downloadingVersion } : {}),
+    });
   });
 
   autoUpdater.on('update-downloaded', (event: UpdateDownloadedEvent) => {
     updaterLog.info(`[updater] Downloaded ${event.version}; it installs on the next restart.`);
+    downloadingVersion = null;
+    failedDownloadVersion = null;
     checkingInteractively = false;
     // Read before the send, which may retire the failure this asks about.
     const knownBad = failedInstallStandingFor(event.version);
@@ -270,6 +299,10 @@ export function setupAutoUpdater(mainWindowAccessor: () => BrowserWindow | null)
     void recoverFromStalledRestart(`the updater reported: ${err.message}`);
     resetUpdateRestartState();
 
+    // Taken before either branch: whichever runs, this download is over.
+    const stoppedDownload = downloadingVersion;
+    downloadingVersion = null;
+
     // A not-yet-ready release (metadata file 404) means "nothing to install
     // right now", not a failure. Surface it like `update-not-available` so the
     // sidebar card never turns red and an interactive check gets a calm notice
@@ -279,6 +312,7 @@ export function setupAutoUpdater(mainWindowAccessor: () => BrowserWindow | null)
         '[updater] Update metadata not published yet; treating as no update available.',
         err.message
       );
+      failedDownloadVersion = null;
       sendUpdateStatus({ state: 'not-available' });
       if (checkingInteractively) {
         void showMessageBox({
@@ -295,7 +329,14 @@ export function setupAutoUpdater(mainWindowAccessor: () => BrowserWindow | null)
 
     // Logged on both paths: a dialog someone dismissed is not a record.
     updaterLog.error('[updater] Update error:', err);
-    sendUpdateStatus({ state: 'error', message: err.message });
+    // Tagged with the version only when a download was under way, so the card
+    // offers a retry for a failed download and stays quiet for a failed check.
+    failedDownloadVersion = stoppedDownload;
+    sendUpdateStatus({
+      state: 'error',
+      message: err.message,
+      ...(stoppedDownload ? { version: stoppedDownload } : {}),
+    });
     if (checkingInteractively) {
       void showMessageBox({
         type: 'error',
@@ -383,6 +424,26 @@ export function checkForUpdatesInteractive(): void {
       detail: error.message,
     });
   });
+}
+
+/**
+ * Try a failed download again, from the sidebar card's retry button
+ * (DOR-4846), via the `update:retry` IPC.
+ *
+ * A fresh check rather than a bare download: electron-updater downloads on its
+ * own once a check finds the update, and a check is the only way back in after
+ * an error. Silent like the background checks; the outcome reaches the card as
+ * status events. Until the check says otherwise, an error is still about the
+ * version that failed, so a retry that fails offline keeps its retry button.
+ *
+ * No-ops when `!app.isPackaged`, matching {@link setupAutoUpdater}.
+ */
+export function retryUpdateDownload(): void {
+  if (!app.isPackaged) return;
+  downloadingVersion = failedDownloadVersion;
+  // The `error` listener already reports a failure as status; the rejection
+  // that comes with it carries nothing more.
+  autoUpdater.checkForUpdates().catch(() => undefined);
 }
 
 /**
