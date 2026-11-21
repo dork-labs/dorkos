@@ -11,6 +11,7 @@ import type {
   ExtensionToolStatus,
 } from '@dorkos/extension-api';
 import type { ExtensionHttpHandler } from './http/extension-http.js';
+import type { ExtensionMediaFetch } from './http/media-fetch.js';
 import type { ApprovedPermissionSet } from '@dorkos/shared/config-schema';
 import {
   isScreenHalfWithheld,
@@ -18,6 +19,8 @@ import {
   type ExtensionApprovals,
 } from './extension-load-policy.js';
 import type { IsolatedExtensionHost } from './isolation/isolated-host.js';
+import { allowedPlacesOf } from './isolation/place-grace.js';
+import { awaitsNextScan } from './pin/extension-content-pin.js';
 import type { RunningExtensionTools } from './agent-tools/tool-binding.js';
 
 /** Tracks an active server-side extension instance. */
@@ -25,6 +28,12 @@ export interface ActiveServerExtension {
   extensionId: string;
   /** Answers `/api/ext/<id>/*` (`extension-http.ts`). */
   handler: ExtensionHttpHandler;
+  /**
+   * Answers a video by ticket (`http/media-fetch.ts`, DOR-4321). Null or
+   * absent when it cannot: a proxy-only extension, or one with only an
+   * Express router.
+   */
+  mediaFetch?: ExtensionMediaFetch | null;
   cleanup: (() => void) | null;
   scheduledCleanups: Array<() => void>;
   /**
@@ -123,6 +132,12 @@ export interface ReloadExtensionResult {
   };
 }
 
+/** Result of turning an extension on or off, or null when there is no such extension. */
+export type ToggleExtensionResult = {
+  extension: ExtensionRecordPublic;
+  reloadRequired: boolean;
+} | null;
+
 /** Result of headless extension testing via `testExtension()`. */
 export interface TestExtensionResult {
   status: 'ok' | 'error';
@@ -164,6 +179,8 @@ export function toPublic(
   tools?: ExtensionToolStatus[]
 ): ExtensionRecordPublic {
   const screensPaused = isScreenHalfWithheld(record, approvals);
+  // The places a person allowed, plus any an old approval keeps (DOR-4282).
+  const allowedSlots = allowedPlacesOf(record, approvals);
   return {
     id: record.id,
     manifest: record.manifest,
@@ -181,8 +198,11 @@ export function toPublic(
     hasDataProxy: record.hasDataProxy,
     approvedToRun: mayRunExtensionCode(record, approvals),
     screensPaused,
+    allowedSlots,
     shadowedBy: record.shadowedBy ?? null,
     ...(record.originProblem ? { originProblem: record.originProblem } : {}),
+    // Its files changed after the scan; the next scan decides (DOR-4282).
+    ...(awaitsNextScan(record) ? { awaitingScan: true } : {}),
     ...(record.devLink ? { devLink: { path: record.devLink.path } } : {}),
     ...(record.currentDigest ? { digest: record.currentDigest } : {}),
     ...(tools ? { tools } : {}),

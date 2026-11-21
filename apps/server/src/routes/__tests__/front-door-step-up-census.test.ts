@@ -15,6 +15,7 @@ const M3_GROUPS = [
   'connector-providers',
   'connector-spending',
   'connector-access-changes',
+  'connector-writes-back',
   'mini-app-access-page',
   'marketplace/package-actions',
   'marketplace/updates',
@@ -46,6 +47,7 @@ const GROUPS = [
   'cloud',
   'cloud-communities',
   'devices',
+  'owner-factors',
   'session-relay',
   'session-relay-passkeys',
   'config',
@@ -89,6 +91,15 @@ const EXCEPTIONS: Record<string, string> = {
   'session-relay-passkeys DELETE /': 'Existing password check removes a damaged passkey file.',
   'session-relay-passkeys DELETE /:credentialId': 'Existing password check removes a passkey.',
   'config PUT /agents/defaultAgent': 'Changes a preference.',
+  'devices POST /sign-in-requests/:id/approve':
+    'Held by a fresh passkey check at this computer instead of a password (DOR-4744).',
+  'devices POST /sign-in-requests/:id/decline': 'Turns a device away; grants nothing.',
+  'devices PUT /sessions/:id/runs-agents':
+    'Held by a fresh passkey check at this computer instead of a password (DOR-4744).',
+  'owner-factors POST /passkeys/finish':
+    'Consumes the one-use challenge from the confirmed /passkeys/options.',
+  'owner-factors POST /authenticator/confirm':
+    'Confirms the secret the confirmed /authenticator/start made; needs its code.',
   // DOR-4355 M3, route by route: each of these only narrows, reads or answers once.
   'connector-management POST /reviews': 'Asks the owner to review an agent; grants nothing.',
   'connector-management POST /reconciliation/previews':
@@ -174,6 +185,8 @@ const OTHER_FRONT_DOOR_CALLERS: Record<string, string> = {
   'admin.ts': 'Reset prepare creates only a one-use reset token; no lasting credential (N).',
   'extension-caller-token.ts':
     'Short-lived, session-bound frame identity only; no lasting credential (N).',
+  'extension-media.ts':
+    'Short-lived video link for one path of one app, as no person; no lasting credential (N).',
   'workbench-serve.ts':
     'Scoped serve/proxy URLs are transient preview grants, not front-door credentials (N).',
   'mcp-servers.ts': 'Already holds add, replace and widen; mcp-servers-step-up.test.ts covers it.',
@@ -181,13 +194,18 @@ const OTHER_FRONT_DOOR_CALLERS: Record<string, string> = {
     'Shared runtime bars and the key-save hold (HOLD_HELPERS); runtimes.ts routes are checked.',
   'runtimes-doe-setup.ts': 'Runtime sign-in and model settings are N.',
   'cloud-owner-bar.ts': 'Shared account owner bar; writes are classified in its callers.',
+  'config-backups.ts':
+    "Removes or moves the person's own older database copies; grants nothing (N).",
   'approval-person-bars.ts':
     'Shared approval answer bars; no routes. Its caller approvals.ts is classified below.',
   'cloud-community-move-http.ts': 'Delegated cloud-communities POST /moves hold, checked below.',
   'account-signin.ts': 'Runtime account sign-in is N.',
   'computers.ts': 'Computer naming and removal; own separate owner checks.',
   'heartbeats.ts': 'Beat preferences and schedule ownership; no front-door credentials.',
-  'local-browser.ts': 'Browser actions retain their existing person checks.',
+  'local-browser.ts':
+    'Browser controls and handoff-state reads are local owner-only; actions retain their person checks.',
+  'browser-viewers.ts':
+    'Local watch-only owner-session subscriptions and frame reads retain person checks; programs and API keys are refused. Subscribe adds no lasting grant and delete only narrows, so neither needs front-door step-up (N). No input or remote access is mounted.',
   'local-browser-profiles.ts': 'Browser profiles retain their existing person checks.',
   'local-browser-profile-removal.ts': 'Only removes access.',
   'your-browser.ts': 'Browser handoff retains its existing person checks.',
@@ -222,6 +240,8 @@ const OTHER_FRONT_DOOR_CALLERS: Record<string, string> = {
   'connector-execution.ts': 'Runs a call under grants already given; grants nothing (N).',
   'connector-mini-app-access.ts': 'Only revokes a mini app’s account access (N).',
   'extensions-removal.ts': 'Only removes or forgets an extension (N).',
+  'extensions-restart.ts':
+    'Restarts one extension that is already on and approved; turns nothing on and approves nothing, like POST /reload (N).',
   'extensions-start-work.ts': 'Starts one chat, capped from Wi-Fi; grants nothing lasting (N).',
   'extensions-step-up.ts': 'Moves an extension out; the moved copy is never re-trusted (N).',
   'hook-review-routes.ts': 'Asks about a hook again; grants nothing (N).',
@@ -249,6 +269,8 @@ const OTHER_FRONT_DOOR_CALLERS: Record<string, string> = {
   'agents.ts':
     'Creates an agent only from the template or package review the person was shown (DOR-2325), and PATCH /current refuses operator-only fields (instructions and model, no grant).',
   'system-shell-check.ts': 'Continues past a shell check in memory until the next restart (N).',
+  'system-load-gate.ts':
+    'Lets one waiting job run now or moves it up the line; grants nothing (N).',
 };
 
 /** What the route groups name their Hono app. */
@@ -320,6 +342,8 @@ const NARROWING: Record<string, string[]> = {
   // Main's DOR-4204 routes: lowering the limit, or raising a price, answers at once.
   'connector-spending PUT /limit': ['!raises'],
   'connector-spending PUT /prices/:toolkit': ['!loosens'],
+  // DOR-4794: turning writes back off only narrows, so it answers at once.
+  'connector-writes-back PUT /connections/:connectionId/writes-back': ['!on'],
 };
 const DELEGATES = new Map([
   ['patchConfig', exportedHandler(parse('config-patch-http'), 'patchConfig')],
@@ -523,6 +547,7 @@ describe('front-door write census', () => {
       'connector-resources': '/api/connectors',
       'connector-events': '/api/connectors',
       'connector-access-changes': '/api/connectors',
+      'connector-writes-back': '/api/connectors',
       'mini-app-access-page': '/api/connectors',
       'connector-providers': '/api/connectors/providers',
       'connector-spending': '/api/connectors/spending',

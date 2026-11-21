@@ -18,6 +18,7 @@ import {
   Clock,
   Download,
   Hourglass,
+  KeyRound,
   LogIn,
   Mail,
   MailX,
@@ -107,6 +108,8 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   // Something an extension asks a person (spec `flow-multiproject` §7): a
   // question, whoever raised it.
   'extension.decision': MessageCircleQuestion,
+  // An extension that stopped on its own, restarted or left off (DOR-4785).
+  'extension.stopped': Puzzle,
   // Someone asked to take over a community this person owns (DOR-2543).
   'community.owner-replacement': TriangleAlert,
   'community.teammate-limit': CircleAlert,
@@ -130,6 +133,10 @@ export const NOTIFICATION_ICONS: Record<NotificationKind, LucideIcon> = {
   'mcp-server.reserved_name': ShieldAlert,
   // A browser this computer had never seen used chat from the web (DOR-2946).
   'web.new_device': MonitorSmartphone,
+  // A passkey or authenticator app was added to the owner's account (DOR-3647).
+  'signin.check_added': KeyRound,
+  // One was removed (DOR-3647).
+  'signin.check_removed': KeyRound,
   // Files in an agent's folder whose names say they are secrets (DOR-3292).
   'agent.secret_files': ShieldAlert,
   // An agent's folder allow list too long for its approval card (DOR-4455).
@@ -325,7 +332,11 @@ const BURST_VERB: Record<GroupableNotificationKind, (count: number) => string> =
 export function notificationLink(notification: NotificationDTO): NotificationLink | null {
   const { subject, kind, sessionId } = notification;
 
-  if (kind === 'step-up.remote-refused')
+  if (
+    kind === 'step-up.remote-refused' ||
+    kind === 'signin.check_added' ||
+    kind === 'signin.check_removed'
+  )
     return { ...appRoutes.home(), search: { settings: 'security' } };
   if (kind === 'agent.unreachable') {
     return { ...appRoutes.home(), search: { detail: 'offline-agent', itemId: subject.id } };
@@ -341,10 +352,11 @@ export function notificationLink(notification: NotificationDTO): NotificationLin
     // one row in the inbox that has something to DO would draw as plain text.
     return { ...appRoutes.home(), search: { settings: RUNTIMES_SETTINGS_TAB } };
   }
-  if (kind === 'extension.approval') {
+  if (kind === 'extension.approval' || kind === 'extension.stopped') {
     // Settings → Extensions, where the same extension's card can turn it on —
     // the same place its phone-free arrival deep-links to
-    // (`standingDeepLink` in the server's `escalation-service.ts`).
+    // (`standingDeepLink` in the server's `escalation-service.ts`). An
+    // extension that stopped on its own shows why on that card (DOR-4785).
     return { ...appRoutes.home(), search: { settings: EXTENSIONS_SETTINGS_TAB } };
   }
   if (kind === 'account.signin_review') {

@@ -279,6 +279,7 @@ describe('Database Migrations', () => {
       // Durable DorkOS-id <-> OpenCode-session-id bindings so OpenCode
       // session ids survive a server restart (DOR-251, migration 0027).
       'opencode_sessions',
+      'owner_factors',
       'pulse_dispatch_log',
       'pulse_runs',
       'pulse_schedules',
@@ -335,6 +336,7 @@ describe('Database Migrations', () => {
       // already been read (migration 0037).
       'search_sources',
       'session',
+      'session_birth_allocations',
       'session_connection_overrides',
       // Per-session connector-attachment overrides — a tombstone table (state
       // 'attached'|'detached'), never a plain delete (connection-scoping spec

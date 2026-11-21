@@ -20,6 +20,10 @@ import { resetHeldStepUpsForTests } from '../../services/core/auth/step-up/step-
 import { env } from '../../env.js';
 import { createStepUpRoutes } from '../step-up.js';
 import { createPersonSessionRoutes } from '../person-session.js';
+import { wifiSignInCookie } from '../../services/core/auth/__tests__/wifi-test-sign-in.js';
+
+/** The `Host` a Wi-Fi sign-in is made under here; the listener's mark decides the route. */
+const HOST_FOR_WIFI = `localhost:${env.DORKOS_PORT}`;
 
 const PASSWORD = 'made-up-correct-horse-battery';
 const EMAIL = 'owner@northwind.example.test';
@@ -96,6 +100,11 @@ export function frontDoorStepUpHarness(
     expect(created.status).toBe(200);
     for (const ingress of ['direct', 'own-tunnel', 'managed', 'wifi'] as const) {
       for (const suffix of ['', '-other']) {
+        // Wi-Fi takes no password; a device signs in by code (DOR-4744).
+        if (ingress === 'wifi') {
+          cookies.set(`${ingress}${suffix}`, await wifiSignInCookie(getAuth()!, HOST_FOR_WIFI));
+          continue;
+        }
         const signedIn = await call('post', '/api/auth/sign-in/email', ingress).send({
           email: EMAIL,
           password: PASSWORD,
@@ -129,6 +138,13 @@ export function frontDoorStepUpHarness(
       call('post', '/api/auth/sign-in/email', ingress).send({ email: EMAIL, password: PASSWORD }),
     currentCookie: (ingress: RequestIngress = 'direct') => cookies.get(ingress)!,
     renew: async (ingress: RequestIngress, otherSession = false) => {
+      if (ingress === 'wifi') {
+        cookies.set(
+          `${ingress}${otherSession ? '-other' : ''}`,
+          await wifiSignInCookie(getAuth()!, HOST_FOR_WIFI)
+        );
+        return;
+      }
       const signedIn = await call('post', '/api/auth/sign-in/email', ingress).send({
         email: EMAIL,
         password: PASSWORD,

@@ -188,6 +188,7 @@ export const DORKOS_TOOL_READS: Readonly<Record<string, DorkosToolRead>> = {
   'agent.pause': 'local',
   'agent.resume': 'local',
   'agent.list_paused': 'local',
+  'approvals.withdraw': 'local',
   'local_browser.state': 'local',
   'local_browser.ask_person': 'local',
   'memory.write': 'local',
@@ -262,7 +263,7 @@ export function dorkosToolReadOf(name: string): DorkosToolRead {
 export function markAfterDorkosTool(name: string, caller: CallerTurn, returned?: unknown): void {
   const read = dorkosToolReadOf(name);
   if (read === 'outside' || (typeof read === 'function' && holdsOutside(read, returned))) {
-    markCallerTurnOutsider(caller);
+    markCallerTurnOutsider(caller, { kind: 'dorkos-tool' });
   }
 }
 

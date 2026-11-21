@@ -41,8 +41,9 @@
  *
  * ## Running
  *
- * - **Watchdog.** A ping every 5 s; no pong for 15 s kills the child as
- *   `server_unresponsive`. So does a host-to-child backlog over 1,000
+ * - **Watchdog.** A ping every 5 s; no pong for 15 s, while DorkOS itself was
+ *   awake, kills the child as `server_unresponsive` (`watchdog.ts`, DOR-4785).
+ *   So does a host-to-child backlog over 1,000
  *   unwritten messages.
  * - **Exit classification.** An exit the host asked for is `stopped`; V8's
  *   "heap out of memory" marker on stderr makes it `server_out_of_memory`; a
@@ -96,6 +97,7 @@ import { LogForwarder, type ForwardLogger } from './log-forwarder.js';
 import { boundedMessageSize } from './message-size.js';
 import { RunBroker } from './run-broker.js';
 import { VirtualSocket } from './virtual-socket.js';
+import { startLoggedWatchdog, startStartupDeadline, type Watchdog } from './watchdog.js';
 import { requirePersonCopy } from '../inbox/extension-inbox-context.js';
 import type { ToolHandleCheck } from '../agent-tools/tool-handle-rules.js';
 
@@ -220,8 +222,7 @@ export class IsolatedExtensionHost {
   /** What the current child's self-check said about `node:sqlite` (false until it says). */
   private helloSqliteOff = false;
   private exitPromise: Promise<void> | null = null;
-  private pingTimer: NodeJS.Timeout | null = null;
-  private lastPongAt = 0;
+  private watchdog: Watchdog | null = null;
   private pingCount = 0;
   private backlog = 0;
   private drainWaiters: (() => void)[] = [];
@@ -427,7 +428,7 @@ export class IsolatedExtensionHost {
       settleStart = resolve;
     });
     let phase: 'hello' | 'load' | 'register' | 'running' = 'hello';
-    const timer = setTimeout(() => {
+    const timer = startStartupDeadline(this.timings.helloTimeoutMs, () => {
       if (phase === 'hello') {
         this.options.logger.warn(
           `[Extensions] ${this.options.extensionId}: no self-check within ${this.timings.helloTimeoutMs} ms`
@@ -435,8 +436,8 @@ export class IsolatedExtensionHost {
         this.killNow();
         settleStart(unavailable);
       }
-    }, this.timings.helloTimeoutMs);
-    let loadTimer: NodeJS.Timeout | null = null;
+    });
+    let loadTimer: Watchdog | null = null;
 
     // Tell the lifecycle the running child is gone, once: on 'exit' (the
     // moment the process ended, so its tools are unlisted at once) or, at the
@@ -475,8 +476,8 @@ export class IsolatedExtensionHost {
           socket.sever(new Error(`${name} stopped while answering.`));
         }
         this.connections.clear();
-        clearTimeout(timer);
-        if (loadTimer) clearTimeout(loadTimer);
+        timer.stop();
+        loadTimer?.stop();
         this.stopWatchdog();
         this.broker?.killAll();
         this.broker = null;
@@ -514,7 +515,7 @@ export class IsolatedExtensionHost {
       const message = raw as ChildMessage;
       if (phase === 'hello') {
         if (message.type !== 'hello') return;
-        clearTimeout(timer);
+        timer.stop();
         if (!selfCheckPassed(message)) {
           this.options.logger.warn(
             `[Extensions] ${this.options.extensionId}: self-check failed on Node ${message.node}: ` +
@@ -581,7 +582,7 @@ export class IsolatedExtensionHost {
             return { error: copy.error, code: copy.code, message: copy.agent };
           })(),
         });
-        loadTimer = setTimeout(() => {
+        loadTimer = startStartupDeadline(this.timings.loadTimeoutMs, () => {
           if (phase !== 'load' && phase !== 'register') return;
           this.killNow();
           settleStart({
@@ -589,14 +590,14 @@ export class IsolatedExtensionHost {
             code: 'server_start_timeout',
             message: `${name} took too long to start. Reload it to try again.`,
           });
-        }, this.timings.loadTimeoutMs);
+        });
         return;
       }
       if (this.routeCtx(message)) return;
       if (phase === 'load') {
         if (message.type !== 'loaded') return;
         if (!message.ok) {
-          if (loadTimer) clearTimeout(loadTimer);
+          loadTimer?.stop();
           this.options.logger.warn(
             `[Extensions] ${this.options.extensionId}: couldn't load: ${message.error ?? 'unknown error'}`
           );
@@ -613,7 +614,7 @@ export class IsolatedExtensionHost {
       }
       if (phase === 'register') {
         if (message.type !== 'registered') return;
-        if (loadTimer) clearTimeout(loadTimer);
+        loadTimer?.stop();
         if (!message.ok) {
           this.options.logger.warn(
             `[Extensions] ${this.options.extensionId}: register() failed: ${message.error ?? 'unknown error'}`
@@ -747,7 +748,7 @@ export class IsolatedExtensionHost {
   private onRunningMessage(message: ChildMessage): void {
     switch (message.type) {
       case 'pong':
-        this.lastPongAt = Date.now();
+        this.watchdog?.pong();
         break;
       case 'run-spawn': {
         if (this.outstanding >= ISOLATION_LIMITS.maxOutstandingCalls) {
@@ -845,27 +846,22 @@ export class IsolatedExtensionHost {
     return new Promise((resolve) => this.drainWaiters.push(resolve));
   }
 
-  /** Ping on an interval; a child silent past the pong timeout is killed. */
+  /** Ping on an interval; a child silent past the pong timeout, while DorkOS was awake, is killed. */
   private startWatchdog(): void {
-    this.lastPongAt = Date.now();
-    this.pingTimer = setInterval(() => {
-      if (Date.now() - this.lastPongAt > this.timings.pongTimeoutMs) {
-        this.options.logger.warn(
-          `[Extensions] ${this.options.extensionId}: stopped responding, stopping it`
-        );
+    this.watchdog = startLoggedWatchdog(this.options.extensionId, this.options.logger, {
+      ...this.timings,
+      ping: () => this.send({ type: 'ping', n: ++this.pingCount }),
+      onSilent: () => {
         this.killReason = 'server_unresponsive';
         this.killNow();
-        return;
-      }
-      this.send({ type: 'ping', n: ++this.pingCount });
-    }, this.timings.pingIntervalMs);
-    this.pingTimer.unref();
+      },
+    });
   }
 
   /** Stop pinging. */
   private stopWatchdog(): void {
-    if (this.pingTimer) clearInterval(this.pingTimer);
-    this.pingTimer = null;
+    this.watchdog?.stop();
+    this.watchdog = null;
   }
 
   /**

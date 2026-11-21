@@ -28,7 +28,7 @@ Every message one agent sends another lands in a chat you can open. It is marked
    dorkos --dir /path/to/projects
    ```
 
-2. Open the Mesh panel and run a discovery scan. Mesh walks your project folders looking for agent markers (things like a `.claude/` folder or a `.dork/agent.json` file) and lists each project it finds as a candidate. Approve the ones you want; deny the rest. If the scan comes back empty, check that `--dir` points at the parent folder that actually contains your projects, not a project itself.
+2. Press `⌘K` (or `Ctrl+K`), choose **Bring in existing projects**, then **Search for projects**. Mesh walks your project folders looking for agent markers (things like a `.claude/` folder or a `.dork/agent.json` file) and lists each project it finds. Choose **Add** for the ones you want; **Skip** or **Deny** the rest. If the scan comes back empty, check that `--dir` points at the parent folder that actually contains your projects, not a project itself.
 3. Open a chat with one approved agent and ask it to message another:
 
    > Tell the frontend agent about the new `/users` endpoint.

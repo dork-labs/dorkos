@@ -196,6 +196,8 @@ export const serverEnvSchema = z.object({
   DORKOS_MARK_STRANGER_TURNS: boolFlagDefaultOn,
   // Your browser discovery (DOR-3215): hidden and refused until explicitly enabled at boot.
   DORKOS_YOUR_BROWSER_ENABLED: boolFlag,
+  // Owner-only local agent-page viewing. Remote viewing and input have separate review stages.
+  DORKOS_AGENT_BROWSER_STREAM: boolFlag,
   // The official DorkOS space's public link (spec `official-community-space`
   // D4). When set, even to '', it overrules `spaces.official.url` in config;
   // '' turns the exception off. Read through

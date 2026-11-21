@@ -1,3 +1,4 @@
+import { PackageReviewCards, LargePackageReviewCard } from './PackageReviewCards';
 import { RemoteApprovalSection } from './RemoteApprovalShowcase';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import { PlaygroundSection } from '../PlaygroundSection';
@@ -6,6 +7,7 @@ import { ShowcaseDemo } from '../ShowcaseDemo';
 import { ApprovalList, ApprovalsUnavailable } from '@/layers/features/approvals';
 import { AgentRequestApprovalShowcase } from './AgentRequestApprovalShowcase';
 import { AgentRaiseCardShowcase } from './AgentRaiseCardShowcase';
+import { ConfigPatchCardShowcase } from './ConfigPatchCardShowcase';
 import { INSTALL_SUMMARY, UPDATE_SUMMARY } from './marketplace-summary-samples';
 
 /**
@@ -164,6 +166,9 @@ export function ApprovalCardShowcase() {
           </WidthColumn>
         </div>
       </ShowcaseDemo>
+
+      <PackageReviewCards sample={sample} />
+      <LargePackageReviewCard sample={sample} />
 
       <RemoteApprovalSection />
 
@@ -328,7 +333,6 @@ export function ApprovalCardShowcase() {
               // No agent path either, which is what keeps Always allow off this
               // card. The two travel together on a real anonymous request.
               hasAgentPath: false,
-              area: null,
               alwaysOffered: false,
               // The surface is known even when the caller is not, so the card
               // says the true thing rather than the vague one (DOR-1929).
@@ -356,22 +360,6 @@ export function ApprovalCardShowcase() {
                 'Update 2 installed packages to a newer version, each where it is installed.',
               detail: 'The rows as text.',
               marketplaceSummary: UPDATE_SUMMARY,
-            }),
-          ]}
-        />
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>A large Marketplace install, with an in-process extension</ShowcaseLabel>
-      <ShowcaseDemo responsive>
-        <ApprovalList
-          approvals={[
-            sample({
-              approvalId: '01JZ0000000000000000000072',
-              capabilityId: 'marketplace.install',
-              capabilityTitle: 'Install a marketplace package',
-              summary: 'Install "sample-flow" from "sample-market"',
-              detail: 'The rows as text.',
-              marketplaceSummary: INSTALL_SUMMARY,
             }),
           ]}
         />
@@ -535,6 +523,7 @@ export function ApprovalCardShowcase() {
           ]}
         />
       </ShowcaseDemo>
+      <ConfigPatchCardShowcase />
     </PlaygroundSection>
   );
 }

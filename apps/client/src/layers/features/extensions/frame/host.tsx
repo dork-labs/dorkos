@@ -1,6 +1,7 @@
 import { createElement, useEffect, useRef, useState, type ReactElement } from 'react';
 import {
   APP_ROUTE_METHODS,
+  declaresContribution,
   EXTENSION_EVENT_KINDS as SDK_EVENT_KINDS,
   type ExtensionManifest,
   type ExtensionModule,
@@ -14,7 +15,7 @@ import {
   bridgeWriteAllowed,
   declaresBridgeCapability,
 } from '@dorkos/shared/extension-approval-schemas';
-import { readAppMedia } from './app-media';
+import { mintAppMediaUrl, readAppMedia } from './app-media';
 import { createAppCaller } from './app-call';
 import { extensionRequestPath, readAppResponse } from './app-request';
 import { offerAppDownload } from './download';
@@ -62,10 +63,20 @@ const methodArgs: Record<string, z.ZodType> = {
   'forward.stamps': args(z.array(text).max(50)),
 };
 
-/** Start one isolated module; only its data and trusted React wrappers reach the registry. */
+/** Why a canvas document is refused, undeclared or not allowed alike. Fixed text. */
+const CANVAS_REFUSED = 'This app can’t open canvas documents yet.';
+
+/**
+ * Start one isolated module; only its data and trusted React wrappers reach the registry.
+ *
+ * @param code - The app's approved bundle, as text.
+ * @param manifest - Its manifest, from DorkOS's records.
+ * @param allowedSlots - The places DorkOS's record allows it now (DOR-4282). Absent allows none.
+ */
 export function isolatedExtensionModule(
   code: string,
-  manifest: ExtensionManifest
+  manifest: ExtensionManifest,
+  allowedSlots: readonly string[] = []
 ): ExtensionModule {
   return {
     async activate(api) {
@@ -267,6 +278,14 @@ export function isolatedExtensionModule(
               });
               return readAppMedia(response);
             }
+            // A long video streams by ticket; the frame's <video> loads it itself (DOR-4321).
+            if (method === 'mediaUrl') {
+              if (!manifest.capabilities?.http)
+                throw new Error('This app has not declared server requests.');
+              const [path] = args(text).parse(input);
+              extensionRequestPath(api.id, path);
+              return mintAppMediaUrl(api.id, path);
+            }
             if (method === 'navigate') {
               const [path] = args(text).parse(input);
               // Answered, never thrown, so the app can say why nothing happened.
@@ -283,6 +302,9 @@ export function isolatedExtensionModule(
               return { ok: true };
             }
             if (method === 'openCanvas') {
+              // Undeclared, or declared and not allowed yet: the same refusal (DOR-4282).
+              if (!declaresContribution(manifest, 'canvas') || !allowedSlots.includes('canvas'))
+                throw new Error(CANVAS_REFUSED);
               const [content] = args(FrameCanvasContentSchema).parse(input);
               // The host's own open stamps this app's id on the document's record;
               // the tab says "Opened by" from DorkOS's records, never the page's title.

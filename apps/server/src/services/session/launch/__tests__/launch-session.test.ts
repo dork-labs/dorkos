@@ -109,6 +109,24 @@ describe('dispatchSessionMessage', () => {
     }
   );
 
+  // The dispatcher marks a mini app's words by who queued the row (DOR-4594), so the first turn of
+  // a chat a mini app starts is marked only if its lock identity reaches the dispatcher (DOR-4603).
+  // A pin of that hand-over: the marking itself is proven in `message-dispatcher-chat-messages.test.ts`.
+  it('hands a chat a mini app starts to the dispatcher under the app’s identity, not a person’s', async () => {
+    registerTestHomes([]);
+    await dispatchSessionMessage({
+      sessionId: SESSION,
+      request: { content: 'hi', cwd: '/work/project' },
+      clientId: 'extension:made-up-board',
+      meshCore: undefined,
+      roomSessionPlace: undefined,
+      origin: { kind: 'extension-start' },
+    });
+    expect(dispatchMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ clientId: 'extension:made-up-board', turnStarter: 'agent' })
+    );
+  });
+
   it.each([undefined, '/agents/known'])(
     'resolves a registered Codex home without a warning (explicit agent: %s)',
     async (agentPath) => {

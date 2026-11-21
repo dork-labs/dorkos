@@ -12,7 +12,7 @@ It covers:
 - telling the person, in plain words, what the app can reach before they allow it
 - least privilege: no network, connections, secrets or agent tools unless the request names them
 - screenshots of every surface the app takes, at phone and desktop width, light and dark
-- the person's approval for the first run, every file change and every widened reach
+- the person's approval for the first run, every screen change and every widened reach
 
 Files:
 
@@ -20,5 +20,6 @@ Files:
 - `skills/building-dorkos-apps/placement.md`: the interview, every surface and how to add it, open platform gaps
 - `skills/building-dorkos-apps/pitfalls.md`: mistakes that pass tests and fail in DorkOS
 - `skills/building-dorkos-apps/example.md`: a worked example, scaffold to test
+- `skills/building-dorkos-apps/personal-marketplace.md`: building when your own folder is read-only
 
 The pack runs nothing and holds no keys. It's instructions only.

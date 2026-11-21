@@ -41,7 +41,59 @@ export const RUN_LINE = {
   couldNotStart: 'This run couldn’t start',
   nothingAvailable: 'Nothing was available to run',
   serverRestart: 'Interrupted by server restart',
+  computerSlept: 'Interrupted: the computer slept',
 } as const;
+
+/** A runtime's usage-limit line: the one outside text matched, and only to choose words. */
+const USAGE_LIMIT_LINE = /\b(usage|weekly|daily|monthly|session|5-hour) limit\b|hit your limit/i;
+
+/** How `run-outcome` opens an expired sign-in's line. */
+const SIGN_IN_OPENING = 'Sign in again:';
+
+/**
+ * What a run that broke while the computer slept says, instead of the error the
+ * runtime raised on wake (DOR-3286). Only the fact: a scheduled run is tried
+ * once more after the wake, but the row a retry writes cannot know it is the
+ * last try, and a line that promised one would then be untrue. The retry shows
+ * as its own run, due at the same time. Such a run never counts toward a
+ * failing streak (`schedule-health.ts`), so the notice never words it.
+ */
+export function sleptDuringRunError(): string {
+  return `${RUN_LINE.computerSlept} during this run.`;
+}
+
+/**
+ * A run's ending, with a failure put down to the computer's sleep when it just
+ * woke from one (`justWokeFromSleep` in `awake-clock.ts`): what the runtime
+ * raised on wake (a dropped connection, a stalled turn) sends a person looking
+ * for the wrong fault. A sign-in or usage-limit line is kept, because it names
+ * a cause the person must act on, which a retry would only meet again. Both
+ * dispatch paths write their row through this, so the two cannot disagree.
+ *
+ * @param fields - The ending as the run would otherwise record it.
+ * @param justWoke - Whether the computer slept during the run and just woke.
+ */
+export function withSleepBlame<T extends { status?: string; error?: string | null }>(
+  fields: T,
+  justWoke: boolean
+): T {
+  const error = fields.error ?? '';
+  const ownCause = error.startsWith(SIGN_IN_OPENING) || USAGE_LIMIT_LINE.test(error);
+  return justWoke && fields.status === 'failed' && !ownCause
+    ? { ...fields, error: sleptDuringRunError() }
+    : fields;
+}
+
+/**
+ * Whether a stored run line is {@link sleptDuringRunError}'s, exactly. The same
+ * field holds a runtime's own error text, and one that merely opened with these
+ * words must not earn a retry or leave a failing streak (DOR-3286 review).
+ *
+ * @param error - The run's recorded error, if any.
+ */
+export function isSleptDuringRunError(error: string | null | undefined): boolean {
+  return error === sleptDuringRunError();
+}
 
 /** Rows written before {@link runTimeLimitError} existed on the relay path. */
 const LEGACY_TIMEOUT_OPENING = 'Run timed out';
@@ -64,7 +116,7 @@ const ERROR_CAUSES: ReadonlyArray<readonly [readonly string[] | RegExp, string]>
     'it never started',
   ],
   [[RUN_LINE.serverRestart], 'DorkOS restarted during the run'],
-  [/\b(usage|weekly|daily|monthly|session|5-hour) limit\b|hit your limit/i, 'it hit a usage limit'],
+  [USAGE_LIMIT_LINE, 'it hit a usage limit'],
 ];
 
 /** Whether a stored line opens one of these ways, or matches the pattern. */
@@ -116,33 +168,33 @@ export function scheduleClockTime(instant: Date, timeZone?: string | null): stri
     .replace(/^0/, '');
 }
 
-/** A calendar day key (`2026-11-11`) in a time zone, or the local one. */
-function dayKey(instant: Date, timeZone?: string | null): string {
-  return instant.toLocaleDateString('en-CA', {
+/** A calendar day number in a time zone, or the local one, read with `formatToParts`. */
+function calendarDay(instant: Date, timeZone?: string | null): number {
+  const parts: Record<string, number> = {};
+  for (const part of new Intl.DateTimeFormat('en-US', {
     year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
+    month: 'numeric',
+    day: 'numeric',
     ...(timeZone ? { timeZone } : {}),
-  });
-}
-
-/** Whole calendar days from `now` to `instant`, in the given zone. */
-function daysAhead(instant: Date, now: Date, timeZone?: string | null): number {
-  return Math.round(
-    (Date.parse(dayKey(instant, timeZone)) - Date.parse(dayKey(now, timeZone))) / 86_400_000
-  );
+  }).formatToParts(instant)) {
+    if (part.type === 'year' || part.type === 'month' || part.type === 'day') {
+      parts[part.type] = Number(part.value);
+    }
+  }
+  return Date.UTC(parts.year!, parts.month! - 1, parts.day!) / 86_400_000;
 }
 
 /**
- * "Next try 12:00 PM." for the Needs you card: 12-hour, with a day when it
- * isn't today ("tomorrow at 9:00 AM", "Sat at 9:00 AM", "Nov 25 at 9:00 AM").
- * Every space is a no-break space, so the clause wraps as one piece.
+ * When a schedule runs next, in the one wording every surface uses
+ * (DOR-4483): a 12-hour time, with a day when it isn't today ("12:00 PM",
+ * "tomorrow at 9:00 AM", "Sat at 9:00 AM", "Nov 25 at 9:00 AM"). A past
+ * instant names its date.
  *
- * @param instant - When the schedule tries again.
+ * @param instant - When the schedule runs next.
  * @param now - The current time.
  * @param timeZone - The zone to read days and hours in; the local one when omitted.
  */
-export function scheduleNextTry(instant: Date, now: Date, timeZone?: string | null): string {
+export function nextRunWhen(instant: Date, now: Date, timeZone?: string | null): string {
   const zone = timeZone ? { timeZone } : {};
   const time = instant.toLocaleTimeString('en-US', {
     hour: 'numeric',
@@ -150,16 +202,30 @@ export function scheduleNextTry(instant: Date, now: Date, timeZone?: string | nu
     hour12: true,
     ...zone,
   });
-  const days = daysAhead(instant, now, timeZone);
+  const days = calendarDay(instant, timeZone) - calendarDay(now, timeZone);
+  // A time alone means today. A run already past (the computer slept, the
+  // server was down) names its date, so it never reads as later today.
   const day =
-    days <= 0
+    days === 0
       ? null
       : days === 1
         ? 'tomorrow'
-        : days < 7
+        : days > 1 && days < 7
           ? instant.toLocaleDateString('en-US', { weekday: 'short', ...zone })
           : instant.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...zone });
-  return `Next try ${day ? `${day} at ` : ''}${time}.`.replace(/\s/g, '\u00a0');
+  return day ? `${day} at ${time}` : time;
+}
+
+/**
+ * "Next try 12:00 PM." for the Needs you card, worded by {@link nextRunWhen}.
+ * Every space is a no-break space, so the clause wraps as one piece.
+ *
+ * @param instant - When the schedule tries again.
+ * @param now - The current time.
+ * @param timeZone - The zone to read days and hours in; the local one when omitted.
+ */
+export function scheduleNextTry(instant: Date, now: Date, timeZone?: string | null): string {
+  return `Next try ${nextRunWhen(instant, now, timeZone)}.`.replace(/\s/g, '\u00a0');
 }
 
 /**

@@ -113,7 +113,7 @@ vi.mock('fs/promises', () => ({
     readFile: vi.fn(),
     readdir: vi.fn(),
     rm: vi.fn(),
-    stat: vi.fn(),
+    stat: vi.fn().mockResolvedValue({ isDirectory: () => true }),
   },
 }));
 
@@ -185,7 +185,13 @@ describe('an approval covers the permission set it was given for', () => {
     await manager.initialize(null);
     await manager.approveToRun('mail-app');
     expect(stored.value.approvedPermissions).toEqual({
-      'mail-app': { runtime: 'subprocess', net: ['imap.example.com:993'], run: [], agents: false },
+      'mail-app': {
+        runtime: 'subprocess',
+        net: ['imap.example.com:993'],
+        run: [],
+        agents: false,
+        slots: [],
+      },
     });
     mockConfigSet.mockClear();
     mockDiscover.mockResolvedValue([makeRecord(isolated({ net: ['imap.example.com:993'] }))]);
@@ -218,6 +224,7 @@ describe('an approval covers the permission set it was given for', () => {
       net: ['imap.example.com:993'],
       run: ['bash'],
       agents: true,
+      slots: [],
     });
     expect(mayRunExtensionCode(manager.get('mail-app')!, stored.value)).toBe(true);
   });
@@ -271,6 +278,7 @@ describe('an approval covers the permission set it was given for', () => {
     mockDiscover.mockResolvedValue([makeRecord(isolated({ net: ['a.example.com'] }))]);
     await manager.reload();
     expect(stored.value.approvedPermissions).toEqual({
+      // No `slots`: it never recorded places, so it still reads as such (DOR-4282).
       'mail-app': { runtime: 'subprocess', net: ['a.example.com'], run: [], agents: false },
     });
     const v2 = manager.get('mail-app')!;

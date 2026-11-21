@@ -10,7 +10,7 @@ export class EmbeddedBrowserAttachment {
   private browser?: Browser;
   constructor(
     private readonly guest: Awaited<ReturnType<EmbeddedBrowserPort['open']>>,
-    private readonly backend: LocalBrowserBackend,
+    private readonly backend: Pick<LocalBrowserBackend, 'connect'>,
     private readonly closed: () => void
   ) {}
 

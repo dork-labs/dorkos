@@ -160,6 +160,7 @@ export function createOpenCodeEventContext(
     subagentRuns: new Map(),
     subagentTaskIdBySession: new Map(),
     pendingPermissionSessions: new Map(),
+    permissionCallIds: new Map(),
     roleByMessageId: new Map(),
   };
 }

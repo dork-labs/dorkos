@@ -13,10 +13,12 @@ import {
   type SourceKey,
 } from '@dorkos/marketplace';
 import { validatePackage } from '@dorkos/marketplace/package-validator';
+import { reservedAppNameProblem } from '@dorkos/extension-api';
 import { fileUrlToPath } from '../package-fetcher.js';
 import type { ResolvedPackageSource } from '../package-resolver.js';
 import { skillFileProblems } from '../flows/install-skill-pack.js';
 import { assertShipsNoRuntimeState } from '../lib/content-hash.js';
+import { discoverStagedExtensions } from '../lib/staged-extensions.js';
 import { sourceKeyOfFetchable } from '../lib/source-provenance.js';
 import { validatePackageSchedules } from '../lib/schedules/validate-package-schedules.js';
 import { UnsupportedSourceUrlError } from '../sources/source-url-policy.js';
@@ -209,9 +211,20 @@ export class PackageStager {
  * Convert an {@link InstallRequest} into the single-string input shape
  * accepted by {@link PackageResolver.resolve}. Precedence:
  *
- * 1. `req.source` (explicit git URL or local path) → `${name}@${source}`.
+ * 1. `req.source` (explicit source URL) → `${name}@${source}`.
  * 2. `req.marketplace` (configured marketplace name) → `${name}@${marketplace}`.
- * 3. Bare `req.name` → resolver searches every enabled marketplace.
+ * 3. `req.name` unchanged → local path, shorthand, or bare-name lookup.
+ *
+ * For a local folder, put the path in `req.name` and omit `source` and
+ * `marketplace`.
+ *
+ * Project-local request (the normal preview and approval steps still apply):
+ * ```ts
+ * const request: InstallRequest = {
+ *   name: '/path/to/package',
+ *   projectPath: agentHome,
+ * };
+ * ```
  *
  * @internal
  */
@@ -246,8 +259,9 @@ function resolveRelativeSubpath(source: string, pluginRoot?: string): string {
 /**
  * Refuse a staged package that can never install, from its content alone: a
  * schedule that could never run (croner's reading of the cron and timezone, a
- * `skillRef` the package does not ship, two schedules on one directory), and,
- * for a skill pack, a `SKILL.md` DorkOS's parser rejects. Nothing here reads
+ * `skillRef` the package does not ship, two schedules on one directory), a
+ * bundled app whose name is DorkOS's own (DOR-4282), and, for a skill pack, a
+ * `SKILL.md` DorkOS's parser rejects. Nothing here reads
  * the install target, the network or npm, so an update runs it before its
  * uninstall half.
  *
@@ -266,6 +280,12 @@ function resolveRelativeSubpath(source: string, pluginRoot?: string): string {
  */
 export async function assertInstallable(staged: StagedPackage): Promise<void> {
   const problems = await validatePackageSchedules(staged.packagePath, staged.manifest);
+  // An update that renames a bundled app to a refused name is refused here,
+  // before its uninstall half, so the old version stays installed (DOR-4282).
+  for (const ext of await discoverStagedExtensions(staged.packagePath)) {
+    const nameProblem = reservedAppNameProblem(ext.manifest.name);
+    if (nameProblem) problems.push(`Extension '${ext.id}' can't be installed. ${nameProblem}`);
+  }
   if (staged.manifest.type === 'skill-pack') {
     problems.push(...(await skillFileProblems(staged.packagePath)));
   }

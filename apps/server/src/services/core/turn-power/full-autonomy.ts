@@ -32,6 +32,7 @@ import type {
   TurnPermissionLevel,
 } from '@dorkos/shared/agent-runtime';
 import { sessionPath } from '@dorkos/shared/session-link';
+import { clampModeToCeiling, type DeclaredModes } from '@dorkos/shared/permission-semantics';
 import type { ActivityService } from '../../activity/activity-service.js';
 import { MARKED_TURN_REASON } from './marked-turn-copy.js';
 
@@ -91,6 +92,28 @@ export function ownLevelBounds(
 }
 
 /**
+ * The active choice within person and agent bounds, before marks and stranger holds.
+ * An unknown choice stays unknown.
+ *
+ * @param declared - The runtime's own mode descriptors.
+ * @param mode - The choice for the active turn.
+ * @param ceilings - Current turn and any carried background bounds.
+ */
+export function chosenModeWithinOwnBounds(
+  declared: DeclaredModes,
+  mode: string | undefined,
+  ...ceilings: readonly (TurnPermissionCeiling | undefined)[]
+): string | undefined {
+  if (mode === undefined || !declared.values.some((entry) => entry.id === mode)) return mode;
+  let chosen = mode;
+  for (const ceiling of ceilings) {
+    const own = ownLevelBounds(ceiling);
+    if (own !== undefined) chosen = clampModeToCeiling(declared, chosen, own);
+  }
+  return chosen;
+}
+
+/**
  * Record what the chat a turn runs in is set to, and whether anybody can be asked in it. Called by
  * the turn-level seam on every send, beside the turn's own (bounded) level.
  *
@@ -108,15 +131,17 @@ export function noteChosenTurn(
 }
 
 /**
- * Carry both answers to the id a runtime renamed a conversation to mid-turn.
+ * Carry both answers to the id a runtime renamed a conversation to mid-turn. The turn under `from`
+ * is the latest, so its answers replace whatever `to` held from an older turn, a "no" included
+ * (DOR-4606): an older Full under `to` never outlives a newer turn below it.
  *
  * @param from - The id the turn was sent under.
  * @param to - The id the runtime renamed it to.
  */
 export function aliasChosenTurn(from: string, to: string): void {
   if (from === to) return;
-  if (fullChats.has(from)) keep(fullChats, to, true);
-  if (unattendedChats.has(from)) keep(unattendedChats, to, true);
+  keep(fullChats, to, fullChats.has(from));
+  keep(unattendedChats, to, unattendedChats.has(from));
 }
 
 /**

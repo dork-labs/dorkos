@@ -16,7 +16,7 @@ import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { STORAGE_KEYS, MAX_RECENT_CWDS } from '@/layers/shared/lib/constants';
 import { type FontFamilyKey, DEFAULT_FONT, getFontConfig } from '@/layers/shared/lib/font-config';
-import { loadGoogleFont, applyFontCSS } from '@/layers/shared/lib/font-loader';
+import { loadGoogleFont, removeGoogleFont, applyFontCSS } from '@/layers/shared/lib/font-loader';
 import {
   readBool,
   writeBool,
@@ -63,7 +63,9 @@ function restoreDefaultTypography(): {
   } catch {}
   document.documentElement.style.setProperty('--user-font-scale', '1');
   const defaultConfig = getFontConfig(DEFAULT_FONT);
+  // The default ships with the app, so a font picked before loses its link.
   if (defaultConfig.googleFontsUrl) loadGoogleFont(defaultConfig.googleFontsUrl);
+  else removeGoogleFont();
   applyFontCSS(defaultConfig.sans, defaultConfig.mono);
   return { fontSize: 'medium', fontFamily: DEFAULT_FONT };
 }

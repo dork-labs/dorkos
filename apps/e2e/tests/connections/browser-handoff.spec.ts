@@ -1,5 +1,6 @@
 import type { Page, Route } from '@playwright/test';
 import { test, expect } from '../../fixtures';
+import { fakeBrowserState } from '../../pages/fake-browser-state';
 
 /**
  * The Agent browser handoff card in the real app. Only the browser's own state and
@@ -10,7 +11,7 @@ import { test, expect } from '../../fixtures';
 const ASKED_AT = '2026-11-03T14:30:00.000Z';
 
 function handoffState(sessionId: string, reason: 'wall' | 'password') {
-  return {
+  return fakeBrowserState({
     connectionId: 'c1',
     sessionId,
     mode: 'new-window',
@@ -19,9 +20,6 @@ function handoffState(sessionId: string, reason: 'wall' | 'password') {
     tabs: [{ id: 't1', url: 'https://northwind.example/fares', title: 'Fares' }],
     selectedTabId: 't1',
     revision: 1,
-    preparation: null,
-    signIn: null,
-    takenOver: false,
     handoff: {
       id: 'h1',
       sessionId,
@@ -34,7 +32,7 @@ function handoffState(sessionId: string, reason: 'wall' | 'password') {
       askedAt: ASKED_AT,
       outcome: null,
     },
-  };
+  });
 }
 
 /** Open a chat with one finished turn, and hand its browser to the person. */
@@ -58,8 +56,8 @@ async function chatWithHandoff(
   const sessionId = new URL(page.url()).searchParams.get('session')!;
   const answers: string[] = [];
   const asked = handoffState(sessionId, reason);
-  let state: ReturnType<typeof handoffState> = windowClosed
-    ? { ...asked, status: 'closed', tabs: [], selectedTabId: null as never }
+  let state = windowClosed
+    ? fakeBrowserState({ ...asked, status: 'closed', tabs: [], selectedTabId: null })
     : asked;
   await page.route('**/api/local-browser/**', async (route: Route) => {
     const url = new URL(route.request().url()).pathname;
@@ -70,9 +68,9 @@ async function chatWithHandoff(
       if (url.endsWith('/handoff/hand-back') || url.endsWith('/handoff/stop'))
         state = {
           ...state,
-          handoff: {
+          handoff: state.handoff && {
             ...state.handoff,
-            outcome: (url.endsWith('stop') ? 'stopped' : 'handed-back') as never,
+            outcome: url.endsWith('stop') ? 'stopped' : 'handed-back',
           },
         };
     }

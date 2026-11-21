@@ -29,7 +29,8 @@
  *
  * @module tests/chat/session-read-state
  */
-import { test, expect, request as apiRequest } from '@playwright/test';
+import { expect, request as apiRequest } from '@playwright/test';
+import { test } from '../../fixtures/base';
 import type { APIRequestContext, Locator, Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { ChatPage } from '../../pages/ChatPage.js';

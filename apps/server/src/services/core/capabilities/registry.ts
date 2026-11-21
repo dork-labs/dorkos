@@ -17,14 +17,12 @@
  *
  * @module services/core/capabilities/registry
  */
-import { createHash } from 'node:crypto';
 import { runAsAgent } from '../../audit/audit-trail.js';
 import { z } from 'zod';
 import {
   EXTENSION_TOOL_UNAVAILABLE_CODE,
   EXTENSION_TOOL_UNAVAILABLE_MESSAGE,
   isExtensionCapabilityId,
-  stableStringify,
   type CapabilityCatalog,
   type McpServerId,
   type SerializedCapability,
@@ -39,12 +37,11 @@ import type { ApprovalServiceAction } from '@dorkos/shared/approval-schemas';
 import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
 import {
   CapabilityGateRefusal,
-  enforceCapabilityTier,
   type ApprovalRetryChannel,
   type GrantedApproval,
 } from './tier-enforcement.js';
 import { isTrustedCaller, type TrustedCaller } from './trusted-caller.js';
-import { resolveCallPermission } from './permission-enforcement.js';
+import { connectorGateFacts, resolveCallPermission } from './permission-enforcement.js';
 import { principalTurnOf } from './marked-turn-holds.js';
 import { refuseSpend, spendPermission, type SpendPreflight } from './spend-permission.js';
 import { agentComputerActionRefusal } from '../agent-computer/hub-owned.js';
@@ -66,12 +63,15 @@ import {
   type ExtensionContribution,
 } from './extension-contribution.js';
 import { markAfterDorkosTool } from './dorkos-tool-reads.js';
+import { createPackageReviewContinuations } from './package-review/continuation.js';
+import { computeCatalogVersion } from './catalog/version.js';
+export { computeCatalogVersion } from './catalog/version.js';
 
 /**
  * What a transport adapter supplies to {@link CapabilityRegistry.invoke}.
  *
  * Threaded from whichever surface received the call (the invoke route, an MCP
- * server, a cockpit route) down to the registry, which is the single choke point
+ * server, an app route) down to the registry, which is the single choke point
  * every surface funnels through — so the tier gate runs once, here, and
  * attribution is recorded once, here, rather than duplicated into every adapter.
  *
@@ -546,23 +546,6 @@ function notify(
 }
 
 /**
- * Compute the stable `catalogVersion` content hash over a set of serialized
- * capabilities.
- *
- * The hash is order-independent in two senses: capabilities are sorted by id,
- * and every object's keys are sorted recursively ({@link stableStringify}),
- * before hashing — so neither the order domains were composed in nor the order
- * fields were written in changes the version. Only the actual content does.
- *
- * @param capabilities - The serialized capabilities to hash.
- * @returns The first 12 hex chars of the SHA-256 digest.
- */
-export function computeCatalogVersion(capabilities: readonly SerializedCapability[]): string {
-  const sorted = [...capabilities].sort((a, b) => a.id.localeCompare(b.id));
-  return createHash('sha256').update(stableStringify(sorted)).digest('hex').slice(0, 12);
-}
-
-/**
  * Compose one immutable {@link CapabilityRegistry} from the given domains,
  * capturing `deps` for invocation.
  *
@@ -590,6 +573,7 @@ export function composeRegistry(
   deps: CapabilityDeps,
   onInvocation?: CapabilityInvocationObserver
 ): CapabilityRegistry {
+  const packageReviews = createPackageReviewContinuations();
   const byId = new Map<string, CapabilityDefinition>();
   const mcpToolNames = new Map<string, string>();
   const cliVerbs = new Map<string, string>();
@@ -860,6 +844,7 @@ export function composeRegistry(
         ...(supplied.connectorAgentId ? { connectorAgentId: supplied.connectorAgentId } : {}),
         ...(supplied.connectorSurface ? { connectorSurface: supplied.connectorSurface } : {}),
       };
+      let rememberPackageReview: ReturnType<typeof packageReviews.gate>['remember'] | undefined;
       const invocationContext: CapabilityHandlerContext = supplied.trusted
         ? { trusted: supplied.trusted, ...surface }
         : { ...(supplied.identity ? { identity: supplied.identity } : {}), ...surface };
@@ -926,7 +911,7 @@ export function composeRegistry(
               ...(supplied.identity ? { identity: supplied.identity } : {}),
               ...(supplied.sessionId ? { sessionId: supplied.sessionId } : {}),
               ...principalTurnOf(supplied.serverPrincipal),
-              ...(preflight?.outward === false ? { outward: false } : {}),
+              ...connectorGateFacts(preflight),
             });
         // A paid run that must ask does so at every level (DOR-4204 PR 2).
         const permission = spendAsks ? spendPermission(resolved) : resolved;
@@ -939,7 +924,7 @@ export function composeRegistry(
         const change = capability.describeApprovalChange
           ? await capability.describeApprovalChange(deps, parsed, supplied)
           : undefined;
-        const decision = enforceCapabilityTier({
+        const { decision, remember } = packageReviews.gate({
           // A read raises no card by its tier; a paid one that must ask does.
           action:
             spendAsks && capability.tier === 'observe'
@@ -969,7 +954,9 @@ export function composeRegistry(
           ...(preflight ? { connectorAuthority: preflight.authorityBinding.approvalScope } : {}),
           // A card the turn's outside words raised says so, unless it names a reason (DOR-3969).
           ...(serviceAction
-            ? { serviceAction: withOutsideWordsReason(serviceAction, permission?.forOutsideWords) }
+            ? {
+                serviceAction: withOutsideWordsReason(serviceAction, permission?.forOutsideWords),
+              }
             : {}),
           // So the agent reads that it costs money, not only "set to ask" (DOR-4447).
           // `only` when nothing but the spend limit would raise this card: a read
@@ -991,6 +978,7 @@ export function composeRegistry(
         });
         if (decision.outcome !== 'allowed') throw new CapabilityGateRefusal(decision);
         if (decision.approval) invocationContext.approval = decision.approval;
+        rememberPackageReview = remember;
         if (change !== undefined) invocationContext.approvedChange = change;
       }
 
@@ -1007,6 +995,7 @@ export function composeRegistry(
           () => capability.invoke(deps, parsed, invocationContext),
           { inSession: supplied.mcpServer === 'in-session' }
         );
+        rememberPackageReview?.(result, invocationContext.approval);
         if (byAgent) markAfterDorkosTool(capability.id, invocationContext, result);
         return result;
       };

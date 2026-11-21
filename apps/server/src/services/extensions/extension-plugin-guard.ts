@@ -28,6 +28,8 @@ import path from 'path';
 import type { Plugin } from 'esbuild';
 import type { ExtensionRecord } from '@dorkos/extension-api';
 import { installFolderDigest } from '../marketplace/lib/install-digest.js';
+import { logger } from '../../lib/logger.js';
+import type { CompilationError } from './extension-build-cache.js';
 import { installRootOf } from './extension-trusted-origin.js';
 
 /** The code a pinned-digest refusal carries. */
@@ -165,4 +167,37 @@ export async function stillPinned(
   if (!root) return false;
   const now = await installFolderDigest(root);
   return now.kind === 'digest' && now.digest === record.pinnedDigest;
+}
+
+/**
+ * The compile refusal for a copy whose plugin files changed since they were
+ * checked ({@link stillPinned} said no). The record loses its trusted origin
+ * and its pin at once, so every other gate refuses it too until the next scan
+ * judges it afresh.
+ *
+ * @param record - The copy being compiled; updated in place.
+ */
+export function refusePluginChanged(
+  record: Pick<
+    ExtensionRecord,
+    'id' | 'manifest' | 'trustedOrigin' | 'pinnedDigest' | 'originProblem'
+  >
+): { error: CompilationError; sourceHash: string } {
+  record.trustedOrigin = undefined;
+  record.pinnedDigest = undefined;
+  record.originProblem = 'changed';
+  logger.warn(
+    `[Extensions] Not loading ${record.id}: its plugin's files changed after DorkOS checked them`
+  );
+  const message =
+    `${record.manifest.name}'s files changed after DorkOS checked them, so DorkOS didn't ` +
+    `load it. It will ask before it runs again.`;
+  return {
+    error: {
+      code: 'compilation_failed',
+      message,
+      errors: [{ text: `${PLUGIN_CHANGED_CODE}: ${message}` }],
+    },
+    sourceHash: '',
+  };
 }

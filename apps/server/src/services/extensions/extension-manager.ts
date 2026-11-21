@@ -15,16 +15,20 @@
  * @module services/extensions/extension-manager
  */
 import path from 'path';
+import { extensionErrors, withSupervisedStatus } from './isolation/recovery/diagnostics.js';
 import type { ExtensionHttpHandler } from './http/extension-http.js';
 import type { ExtensionRecord, ExtensionRecordPublic } from '@dorkos/extension-api';
 import { isEnabled, setEnabled, type CoreExtensionInfo } from './extension-enable-resolution.js';
 import { ExtensionDiscovery } from './extension-discovery.js';
 import { ExtensionCompiler } from './extension-compiler.js';
+import { applyCompileResult, compileEnabledRecords } from './copies/extension-compile-result.js';
 import {
   ExtensionServerLifecycle,
   type ServerLifecycleOptions,
 } from './extension-server-lifecycle.js';
-import { extensionDeclarationDigest } from './agent-tools/declaration-digest.js';
+import { extensionCopyState, runningCopyChanged } from './copies/extension-copy-state.js';
+import { extensionFolderExists } from './copies/extension-copy-presence.js';
+import { ExtensionFileWatcher } from './copies/extension-file-watcher.js';
 import { testClientExtension, testServerCompilation } from './extension-test-harness.js';
 import { scaffoldExtension, buildCreateResult } from './extension-scaffolder.js';
 import { approveNewScaffold, pinScaffoldClient } from './pin/extension-scaffold-approval.js';
@@ -33,10 +37,10 @@ import { logConfigWrite } from '../core/operator/config-write.js';
 import type { ExtensionTemplate } from './extension-templates.js';
 import {
   toPublic,
-  toRecordError,
   type CreateExtensionResult,
   type ReloadExtensionResult,
   type TestExtensionResult,
+  type ToggleExtensionResult,
 } from './extension-manager-types.js';
 import {
   approvedSourceOf,
@@ -77,7 +81,6 @@ import {
 import { declaredSet, isSamePermissionSet } from './isolation/permission-coverage.js';
 import { isExpectedCopy, type ExpectedCopy } from './pin/extension-expected-copy.js';
 import { bundleDigestOf, isPathTrustApproval } from './pin/extension-path-trust.js';
-import { isolationKeyOf } from './isolation/isolation-view.js';
 import { withoutExtension, withoutPersonChoices } from './rooms/extension-room-access.js';
 import { withRunApproval } from './pin/extension-approval-write.js';
 
@@ -113,27 +116,6 @@ function isSameCwd(a: string | null, b: string | null): boolean {
   return path.resolve(a) === path.resolve(b);
 }
 
-/** Apply a compile result to an extension record (DRY: used by enable, reload, compileEnabled). */
-function applyCompileResult(
-  record: ExtensionRecord,
-  result: Awaited<ReturnType<ExtensionCompiler['compile']>>
-): boolean {
-  if ('error' in result) {
-    record.status = 'compile_error';
-    record.error = toRecordError(result.error);
-    record.sourceHash = result.sourceHash;
-    record.bundleReady = false;
-    record.clientDigest = undefined;
-    return false;
-  }
-  record.status = 'compiled';
-  record.sourceHash = result.sourceHash;
-  record.bundleReady = true;
-  record.clientDigest = bundleDigestOf(result.code);
-  record.error = undefined;
-  return true;
-}
-
 /**
  * What {@link ExtensionManager.attachSkillDelivery} does with a change to the
  * running extensions' skills (DOR-2685).
@@ -153,8 +135,6 @@ export interface ExtensionSkillDelivery {
  * Facade for the extension system.
  */
 export class ExtensionManager {
-  /** DorkOS's data directory, which every extension root is read relative to. */
-  readonly dorkHome: string;
   private discovery: ExtensionDiscovery;
   private compiler: ExtensionCompiler;
   private serverLifecycle: ExtensionServerLifecycle;
@@ -195,11 +175,13 @@ export class ExtensionManager {
   private undeliveredSkills: RunningSkillsChange | null = null;
   /** Clears an uninstalled extension's tool permission settings; see {@link attachAgentTools}. */
   private forgetToolPermissions: ForgetToolPermissions | null = null;
+  private fileWatcher: ExtensionFileWatcher | null = null;
 
   /**
    * Build the extension system rooted at one DorkOS data directory.
    *
-   * @param dorkHome - DorkOS's data directory.
+   * @param dorkHome - DorkOS's data directory, which every extension root is
+   *   read relative to.
    * @param coreExtensions - Tier metadata for the bundled core extensions.
    * @param options - Server lifecycle options (`ServerLifecycleOptions` in
    *   `extension-server-lifecycle.ts`): how long a server `register()` may
@@ -207,11 +189,10 @@ export class ExtensionManager {
    *   isolated extensions. Tests shorten them.
    */
   constructor(
-    dorkHome: string,
+    readonly dorkHome: string,
     coreExtensions: CoreExtensionInfo[] = [],
     options: Omit<ServerLifecycleOptions, 'recordOf' | 'onStatusChange'> = {}
   ) {
-    this.dorkHome = dorkHome;
     this.coreExtensions = new Map(coreExtensions.map((info) => [info.id, info]));
     this.discovery = new ExtensionDiscovery(dorkHome);
     this.compiler = new ExtensionCompiler(dorkHome);
@@ -242,18 +223,7 @@ export class ExtensionManager {
    * copies never run, so they go through `toPublic` without tool statuses.
    */
   private publicOf(record: ExtensionRecord, approvals: ExtensionApprovals): ExtensionRecordPublic {
-    // An isolated extension's restart or stop after crashes outlives any one
-    // record (they are rebuilt every scan), so the lifecycle keeps it and it
-    // is laid over the record here (DOR-2686).
-    const supervised = this.serverLifecycle.supervisedStatus(record.id);
-    const shown =
-      supervised.serverError || supervised.restartingAt
-        ? {
-            ...record,
-            serverError: supervised.serverError ?? record.serverError,
-            restartingAt: supervised.restartingAt ?? null,
-          }
-        : record;
+    const shown = withSupervisedStatus(record, this.serverLifecycle.supervisedStatus(record.id));
     return toPublic(shown, approvals, this.serverLifecycle.toolStatuses(record));
   }
 
@@ -402,10 +372,27 @@ export class ExtensionManager {
    * known project, so a request handler answers first and clients learn what
    * changed from the `extension_reloaded` broadcast. Scans run one at a time.
    */
-  requestRefresh(): void {
-    void this.enqueue(() => this.switchCopies()).catch((err) => {
+  requestRefresh(options: { establishBaseline?: boolean } = {}): void {
+    void this.enqueue(() => this.switchCopies(options)).catch((err) => {
       logger.warn('[Extensions] A background re-scan failed', err);
     });
+  }
+
+  /** Follow installed source folders once the ordinary startup scans have settled. */
+  async startFileWatcher(): Promise<void> {
+    await this.whenIdle();
+    if (this.fileWatcher) return;
+    this.fileWatcher = new ExtensionFileWatcher({
+      source: this,
+      presenceChanged: () => this.emitChanged(),
+    });
+    await this.fileWatcher.start();
+  }
+
+  /** Release source-folder watches before shutting the server down. */
+  async stopFileWatcher(): Promise<void> {
+    await this.fileWatcher?.stop();
+    this.fileWatcher = null;
   }
 
   /** Resolves once every scan asked for so far has finished. */
@@ -416,7 +403,15 @@ export class ExtensionManager {
     );
   }
 
-  /** Run `job` after every scan queued before it, one at a time. */
+  /**
+   * Run `job` after every scan queued before it, one at a time.
+   *
+   * A scan reads the config once and then replaces every record, so turning
+   * an extension on or off, approving or withdrawing it, starting or reloading
+   * its server half all run here too. Run beside a scan, the change landed on
+   * a record the scan then threw away (DOR-4886). A job must never wait on
+   * another queued job: it would wait behind itself.
+   */
   private enqueue<T>(job: () => Promise<T>): Promise<T> {
     const next = this.scans.then(job, job);
     this.scans = next.then(
@@ -427,15 +422,13 @@ export class ExtensionManager {
   }
 
   /** The scan itself: discover, record, bind old approvals, compile. */
-  private async rescan(): Promise<void> {
+  private async rescan(options: { establishBaseline?: boolean } = {}): Promise<void> {
     const config = configManager.get('extensions');
     const projects = await this.readProjectRoots();
-    const discovered = await this.discovery.discover(
-      this.currentCwd,
-      config,
-      this.coreExtensions,
-      projects
-    );
+    const discover = (
+      options.establishBaseline === false ? this.discovery.recheck : this.discovery.discover
+    ).bind(this.discovery);
+    const discovered = await discover(this.currentCwd, config, this.coreExtensions, projects);
     const records = discovered.filter((rec) => !rec.shadowedBy);
     this.shadowed = discovered.filter((rec) => !!rec.shadowedBy);
 
@@ -448,7 +441,8 @@ export class ExtensionManager {
     await dropGoneExtensions(records, this.shadowed, this.forgetToolPermissions);
     await placeSnapshots(this.dorkHome, records, configManager.get('extensions'));
 
-    await this.compileEnabled();
+    // One extension's unexpected compile throw never stops the rest.
+    await compileEnabledRecords(this.extensions.values(), this.compiler);
     this.emitChanged();
   }
 
@@ -515,41 +509,26 @@ export class ExtensionManager {
    *
    * @returns The ids whose copy, or whose right to run, changed.
    */
-  private async switchCopies(): Promise<string[]> {
+  private async switchCopies(options: { establishBaseline?: boolean } = {}): Promise<string[]> {
     const before = new Map(
       [...this.extensions.values()].map((rec) => [
         rec.id,
-        {
-          path: path.resolve(rec.path),
-          runPath: rec.runPath ?? null,
-          runs: mayRunExtensionCode(rec, configManager.get('extensions')),
-          declarations: extensionDeclarationDigest(rec.manifest),
-          isolation: JSON.stringify(isolationKeyOf(rec)),
-        },
+        extensionCopyState(rec, configManager.get('extensions')),
       ])
     );
-    await this.rescan();
+    await this.rescan(options);
     const approvals = configManager.get('extensions');
     const changed: string[] = [];
     for (const rec of this.extensions.values()) {
       const prior = before.get(rec.id);
-      const runs = mayRunExtensionCode(rec, approvals);
-      const switched =
-        !prior ||
-        prior.path !== path.resolve(rec.path) ||
-        prior.runPath !== (rec.runPath ?? null) ||
-        prior.runs !== runs ||
-        // A running copy whose manifest now declares different tools or
-        // skills restarts, so the tools agents see match its manifest
-        // (DOR-2685).
-        (runs && prior.declarations !== extensionDeclarationDigest(rec.manifest)) ||
-        // Where it runs, or what it may reach, changed while it still may
-        // run: restart it under the new declaration (DOR-2686).
-        (runs && prior.isolation !== JSON.stringify(isolationKeyOf(rec)));
-      if (!switched) continue;
+      const current = extensionCopyState(rec, approvals);
+      if (!runningCopyChanged(prior, current)) {
+        if (prior?.shown !== current.shown) changed.push(rec.id);
+        continue;
+      }
       changed.push(rec.id);
       if (prior) await this.serverLifecycle.shutdown(rec.id);
-      if (runs && this.needsServer(rec)) {
+      if (current.runs && this.needsServer(rec)) {
         const result = await this.serverLifecycle.initialize(rec.id, rec);
         if (!result.ok) {
           logger.warn(
@@ -617,7 +596,7 @@ export class ExtensionManager {
    * `status = 'compiled'` over whatever the status was, and `'compiled'` is one of
    * the statuses {@link ExtensionServerLifecycle.initialize} accepts — so
    * `reload_extensions --id <a-disabled-extension>` mounted its routes and ran its
-   * `server.ts`, with the cockpit still showing the toggle as off.
+   * `server.ts`, with the app still showing the toggle as off.
    *
    * The question is asked of {@link isEnabled} against stored config, NOT of
    * `record.status`, precisely because the status field is what the bug corrupts.
@@ -627,7 +606,12 @@ export class ExtensionManager {
    * `isEnabled` still says yes and the next reload after a fix goes straight
    * through — the edit-fix-reload loop keeps working.
    */
-  async reloadExtension(id: string): Promise<ReloadExtensionResult> {
+  reloadExtension(id: string): Promise<ReloadExtensionResult> {
+    return this.enqueue(() => this.reloadExtensionNow(id));
+  }
+
+  /** {@link reloadExtension}'s body, run on the scan queue. */
+  private async reloadExtensionNow(id: string): Promise<ReloadExtensionResult> {
     const record = this.extensions.get(id);
     if (!record) throw new Error(`Extension '${id}' not found`);
 
@@ -734,7 +718,8 @@ export class ExtensionManager {
     });
     const author = recordAuthor ? agentHome : undefined;
     const autoApproved =
-      approveIfTrusted === true && (await approveNewScaffold(rest.name, scaffoldResult, author));
+      approveIfTrusted === true &&
+      (await approveNewScaffold(this.dorkHome, rest.name, scaffoldResult, author));
 
     await this.reload();
     await this.enable(rest.name);
@@ -754,6 +739,11 @@ export class ExtensionManager {
   listPublic(): ExtensionRecordPublic[] {
     const approvals = configManager.get('extensions');
     return Array.from(this.extensions.values()).map((record) => this.publicOf(record, approvals));
+  }
+
+  /** Broken clients and stopped servers, with their latest reason even during backoff. */
+  listErrors(): ExtensionRecordPublic[] {
+    return extensionErrors(this.listPublic(), (id) => this.serverLifecycle.supervisedStatus(id));
   }
 
   /**
@@ -838,13 +828,17 @@ export class ExtensionManager {
   }
 
   /** Enable an extension: add to config, trigger compilation. */
-  async enable(
-    id: string
-  ): Promise<{ extension: ExtensionRecordPublic; reloadRequired: boolean } | null> {
+  enable(id: string): Promise<ToggleExtensionResult> {
+    return this.enqueue(() => this.enableNow(id));
+  }
+
+  /** {@link enable}'s body, run on the scan queue. */
+  private async enableNow(id: string): Promise<ToggleExtensionResult> {
     // An id this manager has not seen may have just arrived on disk: the
     // marketplace plugin install enables each extension it carries right after
     // moving the plugin into place, before anything re-scanned (DOR-2383).
-    if (!this.extensions.has(id)) await this.reload();
+    // Already on the queue, so the re-scan runs here rather than behind it.
+    if (!this.extensions.has(id)) await this.switchCopies();
     const record = this.extensions.get(id);
     if (!record) return null;
     if (record.status === 'incompatible' || record.status === 'invalid') return null;
@@ -884,9 +878,12 @@ export class ExtensionManager {
   }
 
   /** Disable an extension: remove from config. */
-  async disable(
-    id: string
-  ): Promise<{ extension: ExtensionRecordPublic; reloadRequired: boolean } | null> {
+  disable(id: string): Promise<ToggleExtensionResult> {
+    return this.enqueue(() => this.disableNow(id));
+  }
+
+  /** {@link disable}'s body, run on the scan queue. */
+  private async disableNow(id: string): Promise<ToggleExtensionResult> {
     const record = this.extensions.get(id);
     if (!record) return null;
 
@@ -940,15 +937,26 @@ export class ExtensionManager {
    * @throws {ApprovalRefusedError} When the files changed since the card, or
    *   the copy must be pinned and its folder cannot be digested.
    */
-  async approveToRun(
+  approveToRun(
     id: string,
     options: { expectedDigest?: string } = {}
+  ): Promise<ExtensionRecordPublic | null> {
+    return this.enqueue(() => this.approveToRunNow(id, options));
+  }
+
+  /** {@link approveToRun}'s body, run on the scan queue. */
+  private async approveToRunNow(
+    id: string,
+    options: { expectedDigest?: string }
   ): Promise<ExtensionRecordPublic | null> {
     const record = this.extensions.get(id);
     if (!record) return null;
 
     // The approval is for THIS copy (DOR-2383) and, unless it keeps path trust,
     // for its files as they are on disk right now (DOR-3068).
+    if (!(await extensionFolderExists(record.path))) {
+      throw new ApprovalRefusedError('stale', 'Its folder is gone.');
+    }
     const extensions = configManager.get('extensions');
     const live = await liveDigestOf(record);
     if (options.expectedDigest !== undefined && live !== options.expectedDigest) {
@@ -1092,14 +1100,14 @@ export class ExtensionManager {
    * @param id - Extension id to revoke.
    * @returns The updated public record, or `null` when no such extension exists.
    */
-  async revokeRunApproval(id: string): Promise<ExtensionRecordPublic | null> {
-    const record = this.extensions.get(id);
-    if (!record) return null;
-
-    if (record.origin === 'user') this.recordDismissal(record, 'stopping an extension');
-    await this.forgetRunApproval(id);
-
-    return this.publicOf(record, configManager.get('extensions'));
+  revokeRunApproval(id: string): Promise<ExtensionRecordPublic | null> {
+    return this.enqueue(async () => {
+      const record = this.extensions.get(id);
+      if (!record) return null;
+      if (record.origin === 'user') this.recordDismissal(record, 'stopping an extension');
+      await this.forgetRunApprovalNow(id);
+      return this.publicOf(record, configManager.get('extensions'));
+    });
   }
 
   /**
@@ -1121,7 +1129,12 @@ export class ExtensionManager {
    *   approval recorded for a copy outside it is about another package that
    *   carries the same id (DOR-2383), so it is kept, and that copy keeps running.
    */
-  async forgetRunApproval(id: string, installRoot?: string): Promise<void> {
+  forgetRunApproval(id: string, installRoot?: string): Promise<void> {
+    return this.enqueue(() => this.forgetRunApprovalNow(id, installRoot));
+  }
+
+  /** {@link forgetRunApproval}'s body, run on the scan queue. */
+  private async forgetRunApprovalNow(id: string, installRoot?: string): Promise<void> {
     // A "Not now" (or "Stop it") recorded for a copy inside the package being
     // removed goes with it (DOR-2517): a reinstall is a new decision, even at
     // the same version and path. One recorded for a copy elsewhere is about
@@ -1214,11 +1227,13 @@ export class ExtensionManager {
   }
 
   /** Initialize server-side extension code (delegated to server lifecycle). */
-  async initializeServer(id: string): Promise<{ ok: boolean; error?: string }> {
-    const record = this.extensions.get(id);
-    if (!record) return { ok: false, error: 'Extension not found' };
-    await this.recheckPin(record);
-    return this.serverLifecycle.initialize(id, record);
+  initializeServer(id: string): Promise<{ ok: boolean; error?: string }> {
+    return this.enqueue(async () => {
+      const record = this.extensions.get(id);
+      if (!record) return { ok: false, error: 'Extension not found' };
+      await this.recheckPin(record);
+      return this.serverLifecycle.initialize(id, record);
+    });
   }
 
   /** Shut down a server-side extension (delegated to server lifecycle). */
@@ -1230,6 +1245,9 @@ export class ExtensionManager {
   getServerHandler(id: string): ExtensionHttpHandler | null {
     return this.serverLifecycle.getHandler(id);
   }
+
+  /** How the media route asks a running extension for a video (DOR-4321), or null. */
+  readonly getMediaFetch = (id: string) => this.serverLifecycle.mediaFetch(id);
 
   /**
    * Read a compiled bundle for serving to the client.
@@ -1243,7 +1261,7 @@ export class ExtensionManager {
    * directly has to come through here too.
    *
    * Running in the browser is not a lesser kind of running. The bundle is
-   * same-origin JavaScript on the cockpit page, so it inherits the person's session
+   * same-origin JavaScript on the app page, so it inherits the person's session
    * on every request it makes — including `POST /api/extensions/<id>/approve`,
    * which would let an agent's own client code approve the agent's server code. It
    * is also on the very screen a person opens to decide. Serving it before the
@@ -1292,7 +1310,7 @@ export class ExtensionManager {
    * Update the CWD and return the diff of extension IDs (added/removed).
    *
    * A cwd that is already the current one changes nothing, so it re-scans
-   * nothing: the cockpit announces its working directory once per page load
+   * nothing: the app announces its working directory once per page load
    * (`POST /api/extensions/cwd-changed`), and that is almost always the
    * directory the server booted with. That second discovery pass existed to
    * answer a question nobody asked, and re-printed the first pass's warnings
@@ -1333,11 +1351,11 @@ export class ExtensionManager {
 
   /**
    * Re-read a digest-pinned copy's live files before a load (DOR-3068). On a
-   * change, its server half stops and it waits for a person, so an edit made
-   * after the last scan never runs.
+   * change, its server half stops and it waits, so an edit made after the
+   * last scan never runs; a change no scan has seen yet asks for one.
    */
   private async recheckPin(record: ExtensionRecord): Promise<void> {
-    if (await recheckAtItsLevel(this.dorkHome, record)) return;
+    if (await recheckAtItsLevel(this.dorkHome, record, () => this.requestRefresh())) return;
     logger.warn(`[Extensions] ${record.id} changed since a person approved it; it waits for them`);
     await this.serverLifecycle.shutdown(record.id);
     this.emitChanged();
@@ -1349,38 +1367,6 @@ export class ExtensionManager {
       (record.hasServerEntry || record.hasDataProxy) &&
       ['compiled', 'active'].includes(record.status)
     );
-  }
-
-  /**
-   * Compile all enabled extensions, updating their records with results.
-   *
-   * Same isolation as {@link initialize}'s server-side loop, and for the
-   * same reason: an unexpected throw from `compiler.compile()` for one
-   * extension must not abort compilation for every extension after it in
-   * this pass. `compiler.compile()` itself now degrades most known
-   * failures (an unreadable entry file, a cache directory it can't
-   * create) to an `{ error }` result rather than throwing — this `try` is
-   * the remaining backstop for anything that doesn't.
-   */
-  private async compileEnabled(): Promise<void> {
-    const enabled = Array.from(this.extensions.values()).filter((r) => r.status === 'enabled');
-    for (const record of enabled) {
-      try {
-        const result = await this.compiler.compile(record);
-        applyCompileResult(record, result);
-      } catch (err) {
-        logger.error(
-          `[Extensions] Compile threw an unexpected error for ${record.id} — skipping it and continuing with the rest`,
-          err
-        );
-        record.status = 'compile_error';
-        record.error = {
-          code: 'compilation_failed',
-          message: err instanceof Error ? err.message : String(err),
-        };
-        record.bundleReady = false;
-      }
-    }
   }
 }
 

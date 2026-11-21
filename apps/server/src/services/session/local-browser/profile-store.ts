@@ -9,6 +9,8 @@ export interface LocalBrowserProfileStore {
   list(): LocalBrowserProfile[];
   get(id: string): LocalBrowserProfile | undefined;
   create(label: string): LocalBrowserProfile;
+  /** Register a server-chosen profile without changing any saved site data. */
+  ensure(id: string, label: string): LocalBrowserProfile;
   /** Whether a binding exists for this agent at this real folder, with a valid signature. */
   isBound(profileId: string, agentId: string, agentFolder: string): boolean;
   /** Sign and store a binding. Call only after the person confirmed it's them. */
@@ -50,7 +52,8 @@ function sameSignature(a: string, b: string): boolean {
  */
 export function createLocalBrowserProfileStore(
   db: Db,
-  bindingKey: () => Buffer
+  bindingKey: () => Buffer,
+  revoked: (profileId: string, agentId?: string) => void = () => undefined
 ): LocalBrowserProfileStore {
   const agentIds = (profileId: string) =>
     db
@@ -84,6 +87,16 @@ export function createLocalBrowserProfileStore(
       const row = { id: randomUUID(), label, createdAt: new Date().toISOString() };
       db.insert(agentBrowserProfiles).values(row).run();
       return { ...row, agentIds: [] };
+    },
+    ensure(id, label) {
+      const row = { id, label, createdAt: new Date().toISOString() };
+      db.insert(agentBrowserProfiles).values(row).onConflictDoNothing().run();
+      const existing = db
+        .select()
+        .from(agentBrowserProfiles)
+        .where(eq(agentBrowserProfiles.id, id))
+        .get()!;
+      return { ...existing, agentIds: agentIds(id) };
     },
     isBound(profileId, agentId, agentFolder) {
       const row = db
@@ -120,6 +133,7 @@ export function createLocalBrowserProfileStore(
     },
     unbind(profileId, agentId) {
       db.delete(agentBrowserProfileAgents).where(matching(profileId, agentId)).run();
+      revoked(profileId, agentId);
     },
     remove(profileId) {
       db.transaction((tx) => {
@@ -128,6 +142,7 @@ export function createLocalBrowserProfileStore(
           .run();
         tx.delete(agentBrowserProfiles).where(eq(agentBrowserProfiles.id, profileId)).run();
       });
+      revoked(profileId);
     },
   };
 }

@@ -51,6 +51,10 @@ export const HELD_WRITES = new Set([
   'post /api/cloud/communities/{communityId}/restore',
   'delete /api/devices/sessions/{id}',
   'post /api/devices/sign-out-all',
+  // Adding or removing a sign-in check (DOR-3647).
+  'post /api/owner-factors/passkeys/options',
+  'post /api/owner-factors/authenticator/start',
+  'delete /api/owner-factors/{id}',
   // A raise, or an Undo, of what agents may do; lowering answers at once.
   'put /api/permissions/preset',
   'patch /api/permissions/defaults',
@@ -71,6 +75,8 @@ export const HELD_WRITES = new Set([
   'post /api/connectors/connections/{connectionId}/events/subscriptions',
   'put /api/connectors/connections/{connectionId}/events/source',
   'post /api/connectors/access-changes/{changeId}/undo',
+  // DOR-4794: turning writes back on; turning it off answers at once.
+  'put /api/connectors/connections/{connectionId}/writes-back',
   'post /api/marketplace/packages/{name}/install',
   'post /api/marketplace/packages/{name}/keep-files',
   'post /api/marketplace/updates',

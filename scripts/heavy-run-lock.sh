@@ -12,7 +12,9 @@
 #                                           scripts/heavy-turbo-slot.mjs)
 #
 # It forwards the command's output and exit code unchanged, so on a quiet
-# machine it is invisible: the first slot is free and the command starts.
+# machine it is invisible: the first slot is free and the command starts. The
+# one exception: a run stopped by INT or QUIT exits 128+n even when the command
+# itself exited 0 (see "A SIGNAL NEVER BECOMES A PASS" below).
 #
 # WHY THIS EXISTS
 #
@@ -108,8 +110,11 @@
 # gets skipped. The load guard lives in the sidecar, after those checks, so a
 # run that already lost its cap this way is not load-checked either.
 #
-# HARD RULE 7. Nothing here kills anything. The sidecar asks whether a pid
-# exists with `kill 0`, which sends no signal, and it signals no process at all.
+# HARD RULE 7. The lock kills nothing. The sidecar asks whether a pid exists
+# with `kill 0`, which sends no signal, and it signals no process at all. The
+# app's line (below) signals exactly one process, its own helper, by the pid it
+# started: to pass on a signal this shell received, or to give up on a start
+# that hung.
 #
 # ENVIRONMENT
 #   DORKOS_HEAVY_SLOTS          concurrent heavy runs allowed (ci/config.yaml
@@ -137,6 +142,17 @@
 #   DORKOS_HEAVY_LOADAVG_CMD    a command that prints the load, in place of
 #                               /proc/loadavg or `sysctl -n vm.loadavg`; the
 #                               fixtures use it to fake one
+#   DORKOS_LOAD_GATE_LINE=0     a --job skips the app's line for heavy jobs
+#                               (see "THE APP'S LINE" below), keeping this lock;
+#                               recorded as a `line_off` note
+#   DORKOS_LOAD_GATE_TSX        the tsx that runs scripts/load-gate/turn.ts
+#                               (node_modules/.bin/tsx); its own DORKOS_LOAD_GATE_*
+#                               overrides are listed in that file
+#   DORKOS_LOAD_GATE_START_SECONDS  how long the helper may take to reach the
+#                               line before this lock runs the job alone (60)
+#   DORKOS_LOAD_GATE_IN_TURN    set by the helper on the copy of this script it
+#                               runs inside the turn; not for people
+# scripts/test-load-gate-turn.sh drives the app's line.
 # The fixture suite (scripts/test-heavy-run-lock.sh) drives every path through
 # them with second-scale values.
 #
@@ -240,10 +256,29 @@ LOAD_POLL_SECONDS="${LOAD_POLL_SECONDS:-30}"
 check_load=0
 [ "$job" = 1 ] && [ -z "$hold_pid" ] && check_load=1
 
+# A SIGNAL NEVER BECOMES A PASS (DOR-4616). The command runs in the foreground,
+# where bash treats SIGINT and SIGQUIT specially: it waits for the command, and
+# when the command caught the signal and exited 0 (turbo does, after shutting
+# its tasks down) bash carries on as though nothing happened. So a Ctrl-C'd run
+# used to exit 0. These traps record the signal instead, and the exit is then
+# 128+n whatever the command returned. Neither signal is passed on: a terminal
+# sends both to the whole process group, so the command already has it. TERM
+# and HUP need no trap: with none set they end this shell at once, which its
+# parent sees as a death by that signal, never as 0.
+run_command() {
+  stopped=0
+  trap 'stopped=130' INT
+  trap 'stopped=131' QUIT
+  "$@"
+  status=$?
+  trap - INT QUIT
+  [ "$stopped" != 0 ] && exit "$stopped"
+  exit "$status"
+}
+
 run_uncapped() {
   [ -n "$hold_pid" ] && exit 0
-  "$@"
-  exit $?
+  run_command "$@"
 }
 
 if [ "${DORKOS_HEAVY_LOCK:-1}" = 0 ]; then
@@ -256,6 +291,112 @@ fi
 # one): waiting again would wait on our own parent.
 [ -n "${DORKOS_HEAVY_SLOT_HELD:-}" ] && run_uncapped "$@"
 case "${CI:-}" in '' | 0 | false) ;; *) run_uncapped "$@" ;; esac
+
+# THE APP'S LINE, FIRST (DOR-4209 PR5a). A --job (or --tests) waits its turn in
+# the line DorkOS keeps for agents' heavy shell jobs, `/tmp/dorkos-load-gate-<uid>`,
+# so the repo's runs and agents' runs are one first-come line, under the app's
+# `runtimes.loadGate` settings (slots, max load, hard cap). scripts/load-gate/turn.ts
+# takes the turn, through the server's own TicketQueue, and once it comes runs
+# THIS SCRIPT AGAIN inside it (`DORKOS_LOAD_GATE_IN_TURN=1`), which skips the
+# line and takes this lock's slot and load guard as before.
+#
+# The order is the agents' order, and it is the point. An agent's gated command
+# already holds an app slot when its nested `heavy-run-lock --job` asks for one
+# of these. If repo runs took this lock first, three of them could each hold a
+# slot here while waiting for the app's, and the agent's nested call would wait
+# out its whole bound behind them; slots held by runs that only wait also stall
+# the commit gate. So nothing holds a slot here while it waits for the app.
+#
+# The commit gate (no --job), --hold, a nested call, CI and DORKOS_HEAVY_LOCK=0
+# never join it; DORKOS_LOAD_GATE_LINE=0 skips the line alone, recorded as
+# `line_off`. It never fails closed: no tsx, an unusable folder, a helper that
+# dies before starting, or one that has not reached the line after
+# DORKOS_LOAD_GATE_START_SECONDS (60) all fall through to this lock alone, and a
+# run nested inside an agent's gated command goes straight through. A Ctrl-C (or
+# TERM, HUP) during the wait runs nothing.
+line=0
+if [ -n "${DORKOS_LOAD_GATE_IN_TURN:-}" ]; then
+  unset DORKOS_LOAD_GATE_IN_TURN
+elif [ "$job" = 1 ] && [ -z "$hold_pid" ]; then
+  line=1
+fi
+TSX="${DORKOS_LOAD_GATE_TSX:-$repo_root/node_modules/.bin/tsx}"
+TURN_START_SECONDS="${DORKOS_LOAD_GATE_START_SECONDS:-60}"
+case $TURN_START_SECONDS in '' | *[!0-9]* | 0) TURN_START_SECONDS=60 ;; esac
+self="$here/$(basename -- "$0")"
+
+# Returns only to fall through to this lock alone; a turn that ran (or was
+# stopped) exits with its status.
+join_line() {
+  [ "$line" = 1 ] || return 0
+  if [ "${DORKOS_LOAD_GATE_LINE:-1}" = 0 ]; then
+    ci_steward_note line_off
+    return 0
+  fi
+  if [ ! -x "$TSX" ]; then
+    echo "[heavy-run-lock] no tsx in this checkout — not waiting in the app's line for heavy jobs." >&2
+    return 0
+  fi
+  # The helper writes `waiting` here once its ticket is in line, `ran` when the
+  # command starts, `stopped` when a signal ended the wait.
+  turn_file=$(mktemp "${TMPDIR:-/tmp}/dorkos-load-gate-turn.XXXXXX" 2>/dev/null) || return 0
+  mode=--job
+  [ "$tests" = 1 ] && mode=--tests
+  # In the background so the start can be bounded, with this shell's stdin
+  # handed on explicitly (a background job's would otherwise be /dev/null).
+  { exec 7<&0; } 2>/dev/null || exec 7</dev/null
+  DORKOS_LOAD_GATE_TURN_FILE="$turn_file" "$TSX" "$repo_root/scripts/load-gate/turn.ts" \
+    --wrap "$self" "$mode" -- "$@" <&7 7<&- &
+  turn_pid=$!
+  exec 7<&-
+  # Signals sent to this shell alone go to the helper, by the pid held here.
+  trap 'kill -INT "$turn_pid" 2>/dev/null' INT
+  trap 'kill -TERM "$turn_pid" 2>/dev/null' TERM
+  trap 'kill -HUP "$turn_pid" 2>/dev/null' HUP
+  # THE START IS BOUNDED. A helper that has not reached the line in time is
+  # given up on: `.late` tells it never to start the command, then it is
+  # stopped, by its pid only, and this lock runs the command alone.
+  (
+    for _ in $(seq 1 "$TURN_START_SECONDS"); do
+      sleep 1
+      [ -s "$turn_file" ] && exit 0
+      kill -0 "$turn_pid" 2>/dev/null || exit 0
+    done
+    [ -s "$turn_file" ] && exit 0
+    : >"$turn_file.late"
+    kill -TERM "$turn_pid" 2>/dev/null
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      sleep 0.2
+      kill -0 "$turn_pid" 2>/dev/null || exit 0
+    done
+    kill -KILL "$turn_pid" 2>/dev/null
+  ) </dev/null >/dev/null 2>&1 &
+  watch_pid=$!
+  # A trapped signal ends `wait` early; wait again while the helper lives.
+  while :; do
+    wait "$turn_pid"
+    turn_status=$?
+    [ "$turn_status" -gt 128 ] && kill -0 "$turn_pid" 2>/dev/null && continue
+    break
+  done
+  kill "$watch_pid" 2>/dev/null
+  wait "$watch_pid" 2>/dev/null
+  trap - INT TERM HUP
+  turn_said=$(cat -- "$turn_file" 2>/dev/null)
+  if [ -e "$turn_file.late" ]; then
+    # Both files stay: a wedged helper that wakes later must still see `.late`.
+    echo "[heavy-run-lock] the app's line for heavy jobs did not start within ${TURN_START_SECONDS}s — running without it." >&2
+    return 0
+  fi
+  rm -f -- "$turn_file"
+  case $turn_said in ran | stopped) exit "$turn_status" ;; esac
+  # Killed by a signal before it could say so: still a stop, so nothing runs.
+  case $turn_status in 129 | 130 | 143) exit "$turn_status" ;; esac
+  echo "[heavy-run-lock] the app's line for heavy jobs did not start (exit $turn_status) — running without it." >&2
+  return 0
+}
+join_line "$@"
+
 case $SLOTS in '' | *[!0-9]* | 0) run_uncapped "$@" ;; esac
 
 if ! command -v "$PERL" >/dev/null 2>&1; then
@@ -606,5 +747,4 @@ esac
 # Exported even after a timeout: a nested call must not queue a second time
 # behind slots its own parent already gave up waiting for.
 export DORKOS_HEAVY_SLOT_HELD=1
-"$@"
-exit $?
+run_command "$@"

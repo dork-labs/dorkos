@@ -2,7 +2,12 @@ import fs from 'fs/promises';
 import type { Dirent } from 'fs';
 import path from 'path';
 import { notePathTrustEdits } from './pin/path-trust-edits.js';
-import { ExtensionManifestSchema, NO_SERVER_CODE_TO_ISOLATE } from '@dorkos/extension-api';
+import {
+  ExtensionManifestSchema,
+  NO_SERVER_CODE_TO_ISOLATE,
+  RESERVED_APP_NAME_CODE,
+  reservedAppNameProblem,
+} from '@dorkos/extension-api';
 import { checkDeclaredTools, summarizeToolCheck } from '@dorkos/extension-api/tool-check';
 import { isInstallSiblingName } from '@dorkos/shared/marketplace-schemas';
 import type { ExtensionRecord, ExtensionManifest } from '@dorkos/extension-api';
@@ -100,6 +105,32 @@ export class ExtensionDiscovery {
     core: Map<string, CoreExtensionInfo>,
     projects: readonly string[] = []
   ): Promise<ExtensionRecord[]> {
+    return this.scan({ cwd, config, core, projects, establishBaseline: true });
+  }
+
+  /** Recheck known roots after a file signal, without establishing first-sight trust. */
+  async recheck(
+    cwd: string | null,
+    config: ExtensionsConfig,
+    core: Map<string, CoreExtensionInfo>,
+    projects: readonly string[] = []
+  ): Promise<ExtensionRecord[]> {
+    return this.scan({ cwd, config, core, projects, establishBaseline: false });
+  }
+
+  private async scan({
+    cwd,
+    config,
+    core,
+    projects,
+    establishBaseline,
+  }: {
+    cwd: string | null;
+    config: ExtensionsConfig;
+    core: Map<string, CoreExtensionInfo>;
+    projects: readonly string[];
+    establishBaseline: boolean;
+  }): Promise<ExtensionRecord[]> {
     const globalDir = path.join(this.dorkHome, 'extensions');
     const globalRecords = await this.scanDirectory(globalDir, 'global');
     const globalPluginsDir = path.join(this.dorkHome, 'plugins');
@@ -188,7 +219,7 @@ export class ExtensionDiscovery {
       const proof = proveOrigin(rec, installs, onDisk, devRoots);
       if (proof.origin) {
         rec.trustedOrigin = proof.origin;
-        if (proof.pinnedDigest) rec.pinnedDigest = proof.pinnedDigest;
+        if (proof.pinnedDigest) rec.pinnedDigest = rec.originPinnedDigest = proof.pinnedDigest;
       }
       if (proof.problem) rec.originProblem = proof.problem;
       if (onDisk.folder.kind === 'digest') {
@@ -306,7 +337,7 @@ export class ExtensionDiscovery {
           .join(', ') || 'none'
       }${shadowedResults.length > 0 ? `; ${shadowedResults.length} older copy(ies) not used` : ''}`
     );
-    await notePathTrustEdits(results, config, this.dorkHome);
+    await notePathTrustEdits(results, config, this.dorkHome, { establishBaseline });
     return [...results, ...shadowedResults];
   }
 
@@ -335,6 +366,17 @@ export class ExtensionDiscovery {
         : 'user';
     if (origin === 'user') await this.readContent(rec, config);
     if (rec.status === 'invalid') return { ...rec, origin };
+    // DorkOS draws an app's name beside what it shows, so only DorkOS's own
+    // apps may carry DorkOS's name or its page names (DOR-4282).
+    const nameProblem = origin === 'user' ? reservedAppNameProblem(rec.manifest.name) : null;
+    if (nameProblem) {
+      return {
+        ...rec,
+        origin,
+        status: 'invalid',
+        error: { code: RESERVED_APP_NAME_CODE, message: nameProblem },
+      };
+    }
     if (!this.checkCompatibility(rec.manifest)) return { ...rec, status: 'incompatible', origin };
     return { ...rec, status: isEnabled(rec.id, config, core) ? 'enabled' : 'disabled', origin };
   }

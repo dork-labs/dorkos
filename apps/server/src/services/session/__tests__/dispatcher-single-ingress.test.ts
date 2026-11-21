@@ -54,6 +54,12 @@ const ALLOWED = new Map<string, string>([
     'The single ingress itself — this is the one place the calls belong.',
   ],
   [
+    'apps/server/src/services/session/message-dispatcher/turn-deps.ts',
+    'The dispatcher-owned turn port. Only message-dispatcher.ts registers this ' +
+      'builder; it forwards the launcher’s already-gated call to the resolved ' +
+      'runtime, and is not an independent ingress.',
+  ],
+  [
     'apps/server/src/services/session/trigger-turn.ts',
     'The dispatcher’s launcher. It never resolves a runtime; it calls the narrow ' +
       'port the dispatcher hands it (`deps.sendMessage`), which is the same thing ' +
@@ -140,7 +146,20 @@ const ALLOWED = new Map<string, string>([
  * the runtime only through the dispatcher's two gates — `deliverSteer` for a
  * steer, `deliverStage` for a stage — never around them.
  */
-const TURN_STARTERS = ['.sendMessage(', '.executeCommandIntent(', '.deliverIntoTurn('];
+const TURN_STARTERS = [
+  {
+    needle: '.sendMessage(',
+    dispatcherFile: 'apps/server/src/services/session/message-dispatcher/turn-deps.ts',
+  },
+  {
+    needle: '.executeCommandIntent(',
+    dispatcherFile: 'apps/server/src/services/session/message-dispatcher.ts',
+  },
+  {
+    needle: '.deliverIntoTurn(',
+    dispatcherFile: 'apps/server/src/services/session/message-dispatcher.ts',
+  },
+];
 
 /**
  * Files under `SCOPE` whose working-tree contents contain `needle`.
@@ -183,7 +202,7 @@ function filesCalling(needle: string): string[] {
 }
 
 describe('every person-initiated turn goes through the message dispatcher', () => {
-  it.each(TURN_STARTERS)('nothing outside the dispatcher calls %s', (needle) => {
+  it.each(TURN_STARTERS)('nothing outside the dispatcher calls $needle', ({ needle }) => {
     const offenders = filesCalling(needle).filter((file) => !ALLOWED.has(file));
 
     expect(
@@ -199,11 +218,9 @@ describe('every person-initiated turn goes through the message dispatcher', () =
 
   it('the guard actually reaches the dispatcher, so a passing run means something', () => {
     // A grep that matched nothing anywhere would pass this suite while asserting
-    // nothing at all. The dispatcher itself must be found, every time.
-    for (const needle of TURN_STARTERS) {
-      expect(filesCalling(needle)).toContain(
-        'apps/server/src/services/session/message-dispatcher.ts'
-      );
+    // nothing at all. Each exact dispatcher call site must be found, every time.
+    for (const { needle, dispatcherFile } of TURN_STARTERS) {
+      expect(filesCalling(needle)).toContain(dispatcherFile);
     }
   });
 });

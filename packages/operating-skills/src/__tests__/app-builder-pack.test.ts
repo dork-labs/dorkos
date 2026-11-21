@@ -19,7 +19,7 @@ import { BUILDING_DORKOS_APPS_FILES } from '../skills/building-dorkos-apps.files
  */
 
 /** The pinned tree's `MANIFEST.sha256`, hashed: the exact value Security reviews. */
-const REVIEWED_MANIFEST_SHA256 = 'f851eb9f5f2c1632c5eb898c10ef743069bf653ac88be04a575b5a2c1f797d98';
+const REVIEWED_MANIFEST_SHA256 = '20b63d0927ce762758eec5c5a842d935adea681bb7f2ea08217ffa2c8b78a2fb';
 
 const PACK_DIR = fileURLToPath(new URL('../skills/app-builder-pack/', import.meta.url));
 const SKILL_DIR = path.join(PACK_DIR, 'skills', 'building-dorkos-apps');
@@ -59,7 +59,7 @@ describe('the vendored App Builder Pack is the reviewed tree', () => {
     const entries = manifestEntries();
     // Pinned to the reviewed count, so a manifest that stopped parsing cannot
     // pass by checking nothing.
-    expect(entries).toHaveLength(7);
+    expect(entries).toHaveLength(8);
     for (const [hash, rel] of entries) {
       expect({ file: rel, hash: sha256(readFileSync(path.join(PACK_DIR, rel))) }).toEqual({
         file: rel,
@@ -79,7 +79,7 @@ describe('the vendored App Builder Pack is the reviewed tree', () => {
     );
     expect(manifest.name).toBe('app-builder-pack');
     expect(APP_BUILDER_PACK_PIN.version).toBe(manifest.version);
-    expect(APP_BUILDER_PACK_PIN.version).toBe('1.1.2');
+    expect(APP_BUILDER_PACK_PIN.version).toBe('1.1.8');
   });
 });
 
@@ -107,7 +107,12 @@ describe('the shipped skill is the vendored tree', () => {
 
   it('ships every supporting file byte for byte', () => {
     const supporting = listFiles(SKILL_DIR).filter((f) => f !== 'SKILL.md');
-    expect(supporting.sort()).toEqual(['example.md', 'pitfalls.md', 'placement.md']);
+    expect(supporting.sort()).toEqual([
+      'example.md',
+      'personal-marketplace.md',
+      'pitfalls.md',
+      'placement.md',
+    ]);
     expect(Object.keys(buildingDorkosApps.files ?? {}).sort()).toEqual(supporting);
     for (const file of supporting) {
       expect(sha256(buildingDorkosApps.files![file]!)).toBe(

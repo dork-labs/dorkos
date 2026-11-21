@@ -19,8 +19,10 @@ import { createSessionMethods } from './session-methods';
 import { createSessionStreamMethods } from './session-stream-methods';
 import { createSystemMethods } from './system-methods';
 import { createShellCheckMethods } from './shell-check-methods';
+import { createLoadGateMethods } from './load-gate-methods';
 import { createQueuedChatMethods } from './queued-chat-methods';
 import { createConnectorSpendingMethods } from './connector-spending-methods';
+import { createConnectorWritesBackMethods } from './connector-writes-back-methods';
 import { createRemoteAccessMethods } from './remote-access-methods';
 import { createMarketplaceMethods } from './marketplace-methods';
 import { createHarnessMethods } from './harness-methods';
@@ -60,6 +62,8 @@ import { createSignInLandingMethods } from './sign-in-landing-methods';
 import { createDocLinkMethods } from './doc-link-methods';
 import { createFrameBridgeMethods } from './frame-bridge-methods';
 import { createMiniAppAccessMethods } from './mini-app-access-methods';
+import { createExtensionRestartMethods } from './extension-restart-methods';
+import { createBackupsMethods } from './backups-methods';
 
 // ---------------------------------------------------------------------------
 // Declaration merging
@@ -82,8 +86,10 @@ export interface HttpTransport
     ReturnType<typeof createSessionStreamMethods>,
     ReturnType<typeof createSystemMethods>,
     ReturnType<typeof createShellCheckMethods>,
+    ReturnType<typeof createLoadGateMethods>,
     ReturnType<typeof createQueuedChatMethods>,
     ReturnType<typeof createConnectorSpendingMethods>,
+    ReturnType<typeof createConnectorWritesBackMethods>,
     ReturnType<typeof createRemoteAccessMethods>,
     ReturnType<typeof createMarketplaceMethods>,
     ReturnType<typeof createHarnessMethods>,
@@ -122,7 +128,9 @@ export interface HttpTransport
     ReturnType<typeof createSignInLandingMethods>,
     ReturnType<typeof createDocLinkMethods>,
     ReturnType<typeof createFrameBridgeMethods>,
-    ReturnType<typeof createMiniAppAccessMethods> {}
+    ReturnType<typeof createMiniAppAccessMethods>,
+    ReturnType<typeof createExtensionRestartMethods>,
+    ReturnType<typeof createBackupsMethods> {}
 
 // ---------------------------------------------------------------------------
 // Class
@@ -140,7 +148,7 @@ export class HttpTransport implements Transport {
     Object.assign(
       this,
       createComputerMethods(baseUrl, () => this.clientId),
-      createLocalBrowserMethods(baseUrl),
+      createLocalBrowserMethods(baseUrl, () => this.clientId),
       createTasksMethods(baseUrl),
       createRelayMethods(baseUrl, () => this.clientId),
       createMeshMethods(baseUrl),
@@ -148,8 +156,10 @@ export class HttpTransport implements Transport {
       createSessionStreamMethods(baseUrl, this),
       createSystemMethods(baseUrl),
       createShellCheckMethods(baseUrl),
+      createLoadGateMethods(baseUrl),
       createQueuedChatMethods(baseUrl, () => this.clientId),
       createConnectorSpendingMethods(baseUrl),
+      createConnectorWritesBackMethods(baseUrl),
       createRemoteAccessMethods(baseUrl),
       createMarketplaceMethods(baseUrl),
       createHarnessMethods(baseUrl),
@@ -188,7 +198,9 @@ export class HttpTransport implements Transport {
       createSignInLandingMethods(baseUrl),
       createDocLinkMethods(baseUrl),
       createFrameBridgeMethods(baseUrl),
-      createMiniAppAccessMethods(baseUrl)
+      createMiniAppAccessMethods(baseUrl),
+      createExtensionRestartMethods(baseUrl),
+      createBackupsMethods(baseUrl)
     );
   }
 }

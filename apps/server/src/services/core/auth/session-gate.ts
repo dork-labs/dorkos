@@ -23,6 +23,13 @@
  *   block the credential-less frame. Dev-server previews need no exemption at
  *   all: they no longer ride this server's routes, they answer on a listener of
  *   their own (DOR-1260).
+ * - **`/api/extensions/media/<ticket>`, and only that exact shape** — a video an
+ *   app's frame plays (`routes/extension-media.ts`, DOR-4321). The frame is an
+ *   opaque origin and its `<video>` carries no cookie, so the 256-bit ticket in
+ *   the path, minted by the gated `POST /api/extensions/:id/media-tickets`, is
+ *   the capability. It names one path of one app and acts as no person. Only a
+ *   whole ticket is exempt, never a prefix, so every route of an app called
+ *   `media` stays gated.
  * - **On an agent computer, none of these.** Its gate decides every path,
  *   not only `/api` and `/mcp`: the liveness probe passes, `/mcp` and A2A go
  *   to their own authorizer, and everything else needs a live agent identity
@@ -70,6 +77,7 @@ import {
   type SessionRoute,
 } from './sessions/session-route.js';
 import { inRestartWindow, sessionRecentlyEnded } from './sessions/live-connections.js';
+import { noteWifiSessionUsed } from './sessions/wifi-activity.js';
 import { personProofMatches } from './person-proof.js';
 import { PERSON_PROOF_HEADER } from '@dorkos/shared/person-session';
 
@@ -143,10 +151,22 @@ function isGatedHealthPath(path: string): boolean {
 }
 
 /**
+ * A media URL with a whole ticket (43 base64url characters), matched on the
+ * path exactly as the router sees it, case and all: the router is
+ * case-sensitive, so this is the only spelling that reaches the media route,
+ * and no other spelling (`/api/extensions/MEDIA/…`) is ever exempt.
+ */
+const MEDIA_TICKET_PATH = /^\/api\/extensions\/media\/[A-Za-z0-9_-]{43}$/;
+
+/**
  * Paths that always pass while login is enabled: the Better Auth endpoints (so
  * sign-in is reachable), the health probe, and on a hub the link path.
+ *
+ * @param path - The path, lowercased.
+ * @param exactPath - The same path in its original case, for the one
+ *   exemption that must match it exactly.
  */
-function isExemptPath(path: string): boolean {
+function isExemptPath(path: string, exactPath: string): boolean {
   if (isGatedHealthPath(path)) return false;
   return (
     path.startsWith('/api/auth/') ||
@@ -154,6 +174,8 @@ function isExemptPath(path: string): boolean {
     path.startsWith('/api/health/') ||
     // Signed-token-authorized embedded-browser content (see the module doc).
     path.startsWith('/api/workbench/serve/') ||
+    // A video an app's frame plays, by its ticket (see the module doc).
+    MEDIA_TICKET_PATH.test(exactPath) ||
     // A computer redeeming a link code, on a hub only (see the module doc).
     (path === RELAY_LINK_PATH && currentServerRole() === 'hub') ||
     // A new approvals passkey coming back to this computer (see the module doc).
@@ -282,13 +304,18 @@ export const AUTH_REQUIRED_BODY = { error: 'Unauthorized', code: 'AUTH_REQUIRED'
 
 /**
  * The session gate's `401`, saying how to sign in: on a hub, with a DorkOS
- * account (`services/core/hub/hub-sign-in.ts`), since a hub has no passwords.
- * Elsewhere the app's own sign-in form.
+ * account (`services/core/hub/hub-sign-in.ts`), since a hub has no passwords;
+ * over Wi-Fi, with a one-time code from this computer (DOR-4744), since Wi-Fi
+ * takes no password. Elsewhere the app's own sign-in form.
+ *
+ * @param ingress - The listener the request came in on, when known.
  */
-export function authRequiredBody(): typeof AUTH_REQUIRED_BODY & { signInWith?: 'dorkos' } {
-  return currentServerRole() === 'hub'
-    ? { ...AUTH_REQUIRED_BODY, signInWith: 'dorkos' }
-    : AUTH_REQUIRED_BODY;
+export function authRequiredBody(
+  ingress?: RequestFacts['ingress']
+): typeof AUTH_REQUIRED_BODY & { signInWith?: 'dorkos' | 'wifi-code' } {
+  if (currentServerRole() === 'hub') return { ...AUTH_REQUIRED_BODY, signInWith: 'dorkos' };
+  if (ingress === 'wifi') return { ...AUTH_REQUIRED_BODY, signInWith: 'wifi-code' };
+  return AUTH_REQUIRED_BODY;
 }
 
 /** What the session gate decided about one request. */
@@ -346,7 +373,7 @@ export async function decideSessionGate(
   // Only the API surface and the MCP endpoint are gated; SPA assets pass so the
   // login screen can load. The Better Auth endpoints and the health probe are
   // always reachable.
-  if (!isSessionGatedPath(lowered) || isExemptPath(lowered)) return { allowed: true };
+  if (!isSessionGatedPath(lowered) || isExemptPath(lowered, path)) return { allowed: true };
 
   if (access === 'refused') return { allowed: false };
 
@@ -412,6 +439,8 @@ async function verifySessionCookie(
         sessionWorksOn(result.session, route) &&
         !sessionRecentlyEnded(result.session.id)
       ) {
+        // Its idle limit counts from here (`./sessions/wifi-activity.ts`).
+        if (route === 'wifi') noteWifiSessionUsed(result.session.id);
         return {
           userId: result.user.id,
           credential: 'cookie',

@@ -8,7 +8,9 @@ import {
   AWAKE_TICK_MS,
   awakeTimeout,
   createAwakeClock,
+  justWokeFromSleep,
   pausableAwakeTimeout,
+  WAKE_BLAME_MS,
   type AwakeTimers,
 } from '../awake-clock.js';
 
@@ -84,6 +86,47 @@ describe('awake clock', () => {
     const clock = createAwakeClock({ now: hand.now, timers: hand.timers });
     hand.sleep(20_000);
     expect(clock.sleptMs()).toBe(0);
+  });
+
+  it('says how much of the sleep came after an instant', () => {
+    const hand = handClock();
+    const clock = createAwakeClock({ now: hand.now, timers: hand.timers });
+    hand.advance(10 * MIN);
+    hand.sleep(2 * HOUR);
+    hand.advance(10 * MIN);
+    const between = hand.now();
+    hand.advance(10 * MIN);
+    hand.sleep(3 * HOUR);
+
+    // Ticks land on the 10-minute marks here, so every gap is exactly a sleep.
+    expect(clock.sleptMs()).toBe(5 * HOUR);
+    expect(clock.sleptSince(0)).toBe(5 * HOUR);
+    // Only the second sleep came after `between`.
+    expect(clock.sleptSince(between)).toBe(3 * HOUR);
+    // An instant inside a sleep counts only the rest of it.
+    const midSecond = hand.now() - HOUR;
+    expect(clock.sleptSince(midSecond)).toBe(HOUR);
+    expect(clock.sleptSince(hand.now())).toBe(0);
+  });
+});
+
+describe('justWokeFromSleep (DOR-3286)', () => {
+  it('blames a failure on sleep only right after a wake that came since the start', () => {
+    const hand = handClock();
+    const clock = createAwakeClock({ now: hand.now, timers: hand.timers });
+    const atStart = clock.sleptMs();
+    hand.advance(10 * MIN);
+    expect(justWokeFromSleep(clock, atStart)).toBe(false); // never slept
+
+    hand.sleep(HOUR);
+    expect(justWokeFromSleep(clock, atStart)).toBe(true);
+    hand.advance(WAKE_BLAME_MS - 5_000);
+    expect(justWokeFromSleep(clock, atStart)).toBe(true);
+    hand.advance(10_000);
+    // Awake well past the wake: a failure now has a cause of its own.
+    expect(justWokeFromSleep(clock, atStart)).toBe(false);
+    // A sleep before the work started is not this work's.
+    expect(justWokeFromSleep(clock, clock.sleptMs())).toBe(false);
   });
 });
 

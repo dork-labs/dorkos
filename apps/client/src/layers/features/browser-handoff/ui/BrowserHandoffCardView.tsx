@@ -1,4 +1,10 @@
-import { Hand, KeyRound, LogIn, Monitor, Play } from 'lucide-react';
+import { Check, Hand, KeyRound, LogIn, Monitor, Play } from 'lucide-react';
+import {
+  DONE_SIGNING_IN,
+  SIGN_IN_QUIT_LINE,
+  SIGN_IN_SAVING,
+  signInOpenLine,
+} from '@/layers/entities/local-browser';
 import { shortenHomePath } from '@/layers/shared/lib';
 import { Button } from '@/layers/shared/ui';
 import { cardAgentName } from '../lib/agent-name';
@@ -16,24 +22,28 @@ export interface BrowserHandoffCardViewProps {
   step: HandoffStep;
   /** Whether the agent's own window can be raised. */
   canShowWindow: boolean;
+  /** The sign-in window was asked to quit and hasn't, so the person quits it with ⌘Q. */
+  needsQuit?: boolean;
   /** The sign-in lands in the default profile, which every agent shares. */
   sharedProfile?: boolean;
   /** A button's call is running. */
   busy: boolean;
   error: string | null;
   onContinue: () => void;
+  /** Quit the sign-in window and save it, for when its close can't be seen. */
+  onDone: () => void;
   onSignIn: () => void;
   onOpenWindow: () => void;
   onShowWindow: () => void;
   onStop: () => void;
 }
 
-/** The status line for each step of the plain sign-in window. */
-function signInStatus(step: HandoffStep, site: string): string | null {
-  if (step === 'sign-in-open') return 'Sign-in window open. Sign in, then close the window.';
-  if (step === 'saving') return 'Saving your sign-in…';
+/** The status line for each step of the plain sign-in window, in the words the panel uses too. */
+function signInStatus(step: HandoffStep, site: string, needsQuit: boolean): string | null {
+  if (step === 'sign-in-open') return needsQuit ? SIGN_IN_QUIT_LINE : signInOpenLine(site);
+  if (step === 'saving') return SIGN_IN_SAVING;
   if (step === 'saved') return `Signed in to ${site}.`;
-  if (step === 'failed') return 'Couldn’t save your sign-in. Try again.';
+  if (step === 'failed') return 'Couldn’t save your sign-in.';
   return null;
 }
 
@@ -49,10 +59,12 @@ export function BrowserHandoffCardView({
   agentFolder,
   step,
   canShowWindow,
+  needsQuit = false,
   sharedProfile = false,
   busy,
   error,
   onContinue,
+  onDone,
   onSignIn,
   onOpenWindow,
   onShowWindow,
@@ -60,7 +72,7 @@ export function BrowserHandoffCardView({
 }: BrowserHandoffCardViewProps) {
   const name = cardAgentName(agentName);
   const asksPassword = step === 'sign-in' || step === 'failed';
-  const status = signInStatus(step, site);
+  const status = signInStatus(step, site, needsQuit);
   const canContinue = step === 'person' || step === 'wall' || step === 'saved';
   // The host goes in the wrapping title, never in a button, so a long one can't push a
   // control out of the card on a phone.
@@ -161,7 +173,19 @@ export function BrowserHandoffCardView({
         {asksPassword && (
           <Button disabled={busy} onClick={onSignIn} className="min-h-11 md:min-h-9">
             <LogIn className="size-4" aria-hidden />
-            Open sign-in window
+            {step === 'failed' ? 'Sign in again' : 'Open sign-in window'}
+          </Button>
+        )}
+        {(step === 'sign-in-open' || step === 'saving') && (
+          <Button
+            // Inert while saving, and shown as such, but it stays put so the layout holds.
+            disabled={step === 'saving' || busy}
+            aria-disabled={step === 'saving' || busy}
+            onClick={onDone}
+            className="min-h-11 md:min-h-9"
+          >
+            <Check className="size-4" aria-hidden />
+            {DONE_SIGNING_IN}
           </Button>
         )}
         {/* Show window leads on a wall: it's the next thing to do. */}
@@ -171,13 +195,12 @@ export function BrowserHandoffCardView({
             Show window
           </Button>
         )}
-        {(canContinue || step === 'saving') && (
+        {canContinue && (
           <Button
             variant={showWindowFirst ? 'secondary' : 'default'}
-            // Inert while saving, but it stays put so the next step doesn't move the layout.
-            aria-disabled={step === 'saving' || busy}
+            aria-disabled={busy}
             onClick={() => {
-              if (canContinue && !busy) onContinue();
+              if (!busy) onContinue();
             }}
             className="min-h-11 md:min-h-9"
           >

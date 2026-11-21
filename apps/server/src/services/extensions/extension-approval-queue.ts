@@ -19,7 +19,9 @@
  * - it is `origin: 'user'` (DorkOS's own extensions never ask),
  * - it may not run ({@link mayRunExtensionCode} says no), or its screen half
  *   may not load ({@link mayLoadClientHalf}: a copy that keeps path trust
- *   whose client bundle changed since the yes, DOR-3068),
+ *   whose client bundle changed since the yes, DOR-3068), or it runs but
+ *   declares places its approval does not cover ({@link waitingPlacesOf},
+ *   DOR-4282: those stay off while the rest keeps running),
  * - it is not turned off, invalid or incompatible (someone who turned it off
  *   is not asked), and
  * - the person has not said "Not now" to this copy at this version
@@ -52,7 +54,11 @@
  */
 import fs from 'fs/promises';
 import path from 'path';
-import type { ExtensionRecord } from '@dorkos/extension-api';
+import {
+  CONTRIBUTION_WORDS,
+  declaredContributions,
+  type ExtensionRecord,
+} from '@dorkos/extension-api';
 import {
   extensionApprovalSubjectId,
   type ExtensionApprovalAdditions,
@@ -72,6 +78,7 @@ import {
 import { resolveStanding } from '../notifications/notification-service.js';
 import { broadcastStandingResolved, raiseStanding } from '../notifications/standing-events.js';
 import type { ExtensionManager } from './extension-manager.js';
+import { presentExtensionCopies } from './copies/extension-copy-presence.js';
 import type { ExtensionsConfig } from './extension-enable-resolution.js';
 import {
   isApprovedByOrigin,
@@ -82,9 +89,14 @@ import {
   type ExtensionApprovals,
 } from './extension-load-policy.js';
 import { addedSince, declaredSet } from './isolation/permission-coverage.js';
+import { waitingPlacesOf } from './isolation/place-grace.js';
 import { calledAppsView } from './isolation/called-apps.js';
 import { screenWrites } from './isolation/screen-writes.js';
-import { approvedVersionOf, changedFilesSince } from './pin/extension-content-pin.js';
+import {
+  approvedVersionOf,
+  awaitsNextScan,
+  changedFilesSince,
+} from './pin/extension-content-pin.js';
 import { PROGRAM_NOT_FOUND } from './isolation/resolve-program.js';
 
 /** The longest the second line of an approval row may be. */
@@ -127,7 +139,8 @@ const firstSeen = new Map<string, string>();
 
 /**
  * Whether a person is being asked about this extension right now. Pure apart
- * from the stored config it is handed.
+ * from the stored config it is handed and whether its pin missed since its
+ * scan (`awaitsNextScan`).
  *
  * @param record - The extension record.
  * @param extensions - `config.extensions`.
@@ -138,8 +151,26 @@ export function isPendingApproval(
 ): boolean {
   if (record.origin !== 'user') return false;
   if (NOT_ASKED_STATUSES.has(record.status)) return false;
-  if (mayLoadClientHalf(record, extensions)) return false;
+  // Its pin missed between scans: paused, and the next scan decides.
+  if (awaitsNextScan(record)) return false;
+  if (isFullyAllowed(record, extensions)) return false;
   return !isDismissedCopy(record, extensions);
+}
+
+/**
+ * Whether nothing about this copy waits: it runs, its screen half loads, and
+ * every place it declares is allowed (DOR-4282).
+ */
+function isFullyAllowed(record: ExtensionRecord, extensions: ExtensionApprovals): boolean {
+  return mayLoadClientHalf(record, extensions) && waitingPlacesOf(record, extensions).length === 0;
+}
+
+/**
+ * Whether the copy runs and only new places wait (DOR-4282): its row asks
+ * about those places alone, and saying no leaves the app running without them.
+ */
+function waitsOnlyForPlaces(record: ExtensionRecord, extensions: ExtensionApprovals): boolean {
+  return mayLoadClientHalf(record, extensions) && waitingPlacesOf(record, extensions).length > 0;
 }
 
 /**
@@ -152,7 +183,7 @@ function isPutOff(
 ): boolean {
   return (
     record.origin === 'user' &&
-    !mayLoadClientHalf(record, extensions) &&
+    !isFullyAllowed(record, extensions) &&
     isDismissedCopy(record, extensions)
   );
 }
@@ -169,6 +200,15 @@ function capped(text: string, max = APPROVAL_NAME_MAX_LENGTH): string {
 }
 
 /**
+ * The text with its first letter capitalized.
+ *
+ * @param text - The text.
+ */
+function capitalized(text: string): string {
+  return `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
+}
+
+/**
  * Join phrases plainly: "a", "a and b", "a, b, and c".
  *
  * @param parts - The phrases, in order.
@@ -180,22 +220,31 @@ function joinPlainly(parts: readonly string[]): string {
 }
 
 /**
- * What the manifest says the extension adds, as nouns ("Flow tab", "Flow
- * settings page"), or nothing when it does not say.
+ * Every place the manifest declares, in DorkOS's words and card order, each
+ * with its article ("a Flow tab", "⌘K commands"), or nothing when it declares
+ * none.
  *
- * The manifest's `contributions` map is informational — nothing enforces it —
- * but it is the only honest source there is, and a line that guessed would be
- * worse than no line.
+ * The `contributions` map is binding (DOR-4282): DorkOS shows the app only in
+ * these places, so this list is all of them. The panel tab and Settings page
+ * carry the app's name, as they always have; every other place is DorkOS's
+ * own words, never the app's.
  *
  * @param name - The extension's (capped) name.
  * @param record - The extension record.
  */
 function contributedNouns(name: string, record: ExtensionRecord): string[] {
-  const contributions = record.manifest.contributions ?? {};
-  const nouns: string[] = [];
-  if (contributions['right-panel']) nouns.push(`${name} tab`);
-  if (contributions['settings.tabs']) nouns.push(`${name} settings page`);
-  return nouns;
+  return declaredContributions(record.manifest).map((key) =>
+    key === 'right-panel'
+      ? `a ${name} tab`
+      : key === 'settings.tabs'
+        ? `a ${name} settings page`
+        : CONTRIBUTION_WORDS[key]
+  );
+}
+
+/** A place without its article, for "Flow tab and ⌘K commands added". */
+function bareNoun(noun: string): string {
+  return noun.replace(/^an? /, '');
 }
 
 /**
@@ -293,7 +342,7 @@ function whyLine(
   const { purpose, description } = record.manifest;
   let middle = '';
   if (nouns.length > 0) {
-    const what = joinPlainly(nouns.map((noun) => `a ${noun}`));
+    const what = joinPlainly(nouns);
     const trimmedPurpose = purpose?.trim().replace(/\.+$/, '');
     middle = `This adds ${what}${trimmedPurpose ? ` that ${trimmedPurpose}` : ''}.`;
   } else if (description?.trim()) {
@@ -466,12 +515,13 @@ async function describeCopy(
     name,
     sourceLabel: sourceLabelOf(record, provenance),
     runsInServer: record.hasServerEntry || record.hasDataProxy,
-    adds: nouns.length > 0 ? `It adds ${joinPlainly(nouns.map((noun) => `a ${noun}`))}` : null,
-    addedNouns: nouns.length > 0 ? `${joinPlainly(nouns)} added` : null,
+    adds: nouns.length > 0 ? `It adds ${joinPlainly(nouns)}` : null,
+    addedNouns: nouns.length > 0 ? `${capitalized(joinPlainly(nouns.map(bareNoun)))} added` : null,
     since,
     why: whyLine(record, name, nouns, provenance, change),
     permissions: await permissionsOf(record, lookup),
     added: addedSinceApproval(record, configManager.get('extensions')),
+    placesOnly: waitsOnlyForPlaces(record, configManager.get('extensions')),
     ...agentGiftsOf(record),
     digest: record.currentDigest ?? null,
     changedFiles: change?.files ?? null,
@@ -520,7 +570,10 @@ export async function permissionsOf(
 ): Promise<ExtensionApprovalPermissions> {
   const hasPage = await hasClientEntry(record.runPath ?? record.path);
   const called = calledAppsView(record, lookup);
+  // The places it declares, so the yes echoes them and a new one asks (DOR-4282).
+  const slots = declaredContributions(record.manifest);
   const apps = {
+    ...(slots.length > 0 ? { slots } : {}),
     // With neither screens nor a server part, it can change nothing at all,
     // and the card says so; a server part's reach has its own lines above.
     ...(hasPage
@@ -602,29 +655,27 @@ function byAge(a: ApprovalFacts, b: ApprovalFacts): number {
  *
  * @param source - The extension manager.
  */
-async function readCopies(
-  source: ApprovalQueueSource
-): Promise<{ pending: ApprovalFacts[]; putOff: ApprovalFacts[] }> {
+async function readCopies(source: ApprovalQueueSource): Promise<{
+  pending: ApprovalFacts[];
+  putOff: ApprovalFacts[];
+  records: Map<string, ExtensionRecord>;
+}> {
   const extensions = configManager.get('extensions');
-  const records = source.listRecords();
+  const records = await presentExtensionCopies(source.listRecords());
   const byId = new Map(records.map((record) => [record.id, record]));
   const lookup: AppLookup = (id) => byId.get(id);
+  const describe = (predicate: (record: ExtensionRecord) => boolean) =>
+    Promise.all(
+      records.filter(predicate).map((record) => describeCopy(record, source.dorkHome, lookup))
+    );
   const [pending, putOff] = await Promise.all([
-    Promise.all(
-      records
-        .filter((record) => isPendingApproval(record, extensions))
-        .map((record) => describeCopy(record, source.dorkHome, lookup))
-    ),
-    Promise.all(
-      records
-        .filter((record) => isPutOff(record, extensions))
-        .map((record) => describeCopy(record, source.dorkHome, lookup))
-    ),
+    describe((record) => isPendingApproval(record, extensions)),
+    describe((record) => isPutOff(record, extensions)),
   ]);
   // Only a copy still waiting needs its first sighting remembered.
   const waitingKeys = new Set(pending.map(conditionKey));
   for (const key of firstSeen.keys()) if (!waitingKeys.has(key)) firstSeen.delete(key);
-  return { pending: pending.sort(byAge), putOff };
+  return { pending: pending.sort(byAge), putOff, records: byId };
 }
 
 /**
@@ -709,7 +760,7 @@ function isSameCopy(
 function endingOf(facts: ApprovalFacts, current: ExtensionRecord | undefined): Ending {
   if (!isSameCopy(facts, current)) return 'cancelled';
   const extensions = configManager.get('extensions');
-  if (mayLoadClientHalf(current, extensions)) return 'approved';
+  if (isFullyAllowed(current, extensions)) return 'approved';
   if (isDismissedCopy(current, extensions)) return 'dismissed';
   return 'cancelled';
 }
@@ -748,10 +799,9 @@ export class ExtensionApprovalQueue {
   /** The body of {@link sync}. */
   private async syncOnce(announce: boolean): Promise<void> {
     try {
-      const { pending, putOff } = await readCopies(this.source);
+      const { pending, putOff, records } = await readCopies(this.source);
       const next = new Map(pending.map((facts) => [conditionKey(facts), facts]));
       const nextPutOff = new Map(putOff.map((facts) => [conditionKey(facts), facts]));
-      const records = new Map(this.source.listRecords().map((record) => [record.id, record]));
 
       for (const [key, facts] of this.previous) {
         if (next.has(key)) continue;

@@ -13,6 +13,9 @@ function principalPort(): ConnectorRuntimePrincipalPort {
   return {
     openTurn: vi.fn(),
     renew: vi.fn(),
+    resolveToolTurn: vi.fn(async () => {
+      throw new Error('Live tools are not part of this fixture.');
+    }),
     resolve: vi.fn(),
     revoke: vi.fn(),
   };

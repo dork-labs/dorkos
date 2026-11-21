@@ -9,6 +9,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
+import { RESERVED_APP_NAME_MESSAGE } from '@dorkos/extension-api';
 import { scaffoldExtension } from '../extension-scaffolder.js';
 
 let tmpRoot: string;
@@ -113,6 +114,21 @@ describe('scaffoldExtension', () => {
       });
     }
   }
+
+  it.each(['dorkos', 'dork-os-helper', 'settings', 'inbox'])(
+    'refuses %j, a name that is DorkOS’s own (DOR-4282)',
+    async (name) => {
+      await expect(
+        scaffoldExtension({
+          name,
+          template: 'command',
+          scope: 'global',
+          dorkHome,
+          currentCwd: null,
+        })
+      ).rejects.toThrow(RESERVED_APP_NAME_MESSAGE);
+    }
+  );
 
   it('refuses to overwrite an extension that already exists', async () => {
     await scaffoldExtension({

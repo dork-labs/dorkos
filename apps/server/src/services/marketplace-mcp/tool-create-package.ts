@@ -125,6 +125,7 @@ export function createCreatePackageHandler(deps: MarketplaceMcpDeps) {
       operation: 'create-package' as const,
       packageType: args.type,
       ...(context?.requestedBy ? { requestedBy: context.requestedBy } : {}),
+      ...(context?.outsideWords ? { outsideWords: true } : {}),
     };
     // A person already approved this exact invocation at the capability tier gate;
     // asking again would be a second card for one action.
@@ -194,6 +195,21 @@ export function createCreatePackageHandler(deps: MarketplaceMcpDeps) {
           error: err instanceof Error ? err.message : String(err),
         }
       );
+    }
+
+    // 4. Re-read the personal marketplace into the cache install resolves from, so
+    //    `marketplace_install` finds the new package at once (DOR-4851). Nothing on the
+    //    install path reads a source itself: on a fresh server it refused with "no cached
+    //    document", and a cache written earlier did not list the new package. Non-fatal.
+    try {
+      const personal = (await deps.sourceManager.list()).find(
+        (source) => source.name === PERSONAL_MARKETPLACE_NAME
+      );
+      if (personal) await deps.fetcher.fetchMarketplaceJson(personal);
+    } catch (err) {
+      deps.logger.warn('[marketplace_create_package] failed to refresh the personal marketplace', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
 
     return jsonContent({

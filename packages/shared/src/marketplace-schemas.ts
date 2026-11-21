@@ -607,6 +607,8 @@ export interface PermissionPreview {
     };
     /** Whether it has a server half; without one it is screens only (DOR-2686). */
     hasServer?: boolean;
+    /** Secrets declared by this app, without their values. Absent on older previews. */
+    secrets?: { key: string; required: boolean; description?: string }[];
   }[];
   /** Shell hooks the package registers with the harness, commands verbatim. */
   hooks: PreviewHook[];
@@ -836,7 +838,7 @@ export interface ConflictReport {
 export interface InstallOptions {
   /** Restrict lookup to a specific marketplace source. */
   marketplace?: string;
-  /** Override with an explicit git URL or local path. */
+  /** Override with an explicit source URL; local paths belong in the package name. */
   source?: string;
   /** Force reinstall even if the same version is already present. */
   force?: boolean;
@@ -1131,6 +1133,8 @@ export interface InstallationUpdateCheck extends UpdateCheckResult {
    * confirm step can say what the new version adds or changes.
    */
   installedDisclosed?: DisclosedEffects | null;
+  /** Each bundled mini app's declarations, as staged; absent on older servers. */
+  extensions?: PermissionPreview['extensions'];
 }
 
 /**

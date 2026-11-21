@@ -43,7 +43,7 @@ status: ideation
 - `research/20260316_error_categorization_retry.md`: Prior research on SDK result subtype taxonomy and user-facing copy. Covers a different layer (SDK `result` messages) — not the catch-block errors identified here.
 - `research/20260316_sdk_result_error_ux_patterns.md`: UX patterns for error display, retry affordance taxonomy, `ErrorMessageBlock` component spec.
 - `contributing/relay-adapters.md`: Adapter development guide — confirms whitelist model for event routing.
-- `specs/error-categorization-retry/02-specification.md`: Spec #139 — covers client-side error categorization and retry UI. Complementary to this fix (this fix ensures errors reach the client in the first place).
+- [`error-categorization-retry/02-specification.md`](https://github.com/dork-labs/dorkos/blob/2b98f06e42fab0c9f36c789387138bfc1b211116/specs/error-categorization-retry/02-specification.md): Spec #139 — covers client-side error categorization and retry UI. Complementary to this fix (this fix ensures errors reach the client in the first place).
 - GitHub issue `anthropics/claude-agent-sdk-typescript#72`: Confirms "exit code 1 is used for ALL SDK crashes; there's no way to distinguish reasons."
 - GitHub issue `anthropics/claude-code#23115`: Confirms configurable retry env vars were requested and declined (`NOT_PLANNED`).
 

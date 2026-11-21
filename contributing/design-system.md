@@ -109,18 +109,18 @@ One brand color, used with purpose: **orange** (HSL `24 90% 44%` light / `24 88%
 
 ## Typography
 
-System fonts. They load instantly, render crisply, and feel native to the platform.
+The default is Inter + JetBrains Mono, shipped with the app. The system stacks below are the fallback until the app store sets the font, and they are what the "System default" choice uses.
 
 ### Font Stacks
 
-Default stacks (from `--font-sans` and `--font-mono` in `index.css`):
+Fallback stacks (from `--font-sans` and `--font-mono` in `index.css`):
 
 ```
 Sans:  system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif
 Mono:  ui-monospace, 'SF Mono', 'Cascadia Code', 'Fira Code', Menlo, Consolas, monospace
 ```
 
-Users can override font family via Settings → Appearance. The app store (`setFontFamily`) loads Google Fonts dynamically and updates `--font-sans`/`--font-mono` via JavaScript. Avoid hardcoding specific font names in component styles.
+Users can override font family via Settings → Appearance. The default pairing (Inter + JetBrains Mono) ships with the app in `apps/client/src/bundled-fonts.css`, from the `@fontsource-variable` packages, so a start makes no request to Google and never waits on one (DOR-4872). "System default" loads nothing. Any other choice is loaded from Google Fonts by the app store (`setFontFamily`), which also updates `--font-sans`/`--font-mono` via JavaScript. Avoid hardcoding specific font names in component styles.
 
 ### Scale
 

@@ -8,6 +8,7 @@ import type {
 import type { SessionStatus } from '@dorkos/shared/session-stream';
 import { useSessionListStore } from '@/layers/entities/session';
 import { TransportProvider } from '@/layers/shared/model';
+import { BrowserHandoffCard } from '@/layers/features/browser-handoff';
 import { LocalBrowserPanel } from '@/layers/features/local-browser';
 import { createPlaygroundTransport } from '../playground-transport';
 import { PlaygroundSection } from '../PlaygroundSection';
@@ -56,6 +57,12 @@ const CONNECTED_HERE: LocalBrowserPersonState = {
     { id: 'demo-tab', title: 'Pricing', url: 'https://www.example.com/pricing?plan=team' },
     { id: 'demo-popup', title: 'Sign in to Example', url: 'https://accounts.example.com/signin' },
   ],
+};
+
+/** Atlas's own browser, in its own Chrome window. No real account or page. */
+const AGENT_HERE: LocalBrowserPersonState = {
+  ...CONNECTED_HERE,
+  profile: { id: 'agent-atlas', label: 'Atlas · browser', agentId: 'atlas', agentName: 'Atlas' },
 };
 
 /**
@@ -122,6 +129,15 @@ const WAITING_HERE: LocalBrowserPersonState = {
   },
 };
 
+/**
+ * The person stopped Atlas's task, but its sign-in window is still open for them (DOR-4731).
+ * On a Mac its close is never seen, so the panel offers Done signing in.
+ */
+const STOPPED_SIGN_IN_OPEN: LocalBrowserPersonState = {
+  ...WAITING_HERE,
+  handoff: { ...WAITING_HERE.handoff!, outcome: 'stopped' },
+};
+
 /** The person closed the sign-in window and it saved; only Continue is left (DOR-4325). */
 const WINDOW_CLOSED_HERE: LocalBrowserPersonState = {
   ...WAITING_HERE,
@@ -182,22 +198,28 @@ function browserTransport(
  * The panel in Atlas's chat reading one browser state, from a scoped transport and
  * its own query cache: the browser's state is one app-wide query, so demos sharing
  * the Playground's cache would all show whichever state loaded first.
- * `visible` stays off so several demos on one page don't pull focus and scroll.
+ * Most demos keep `visible` off to avoid pulling focus; sharing demos need the live controls.
  */
 function PanelDemo({
   state,
   open,
   afterOpen,
+  interactive = false,
+  shareRefused = false,
 }: {
   /** What the browser reports, or `null` for a browser DorkOS can't reach. */
   state: LocalBrowserPersonState | null;
   open?: () => Promise<never>;
   /** What the browser reports once Open browser was pressed: a handoff that began meanwhile. */
   afterOpen?: LocalBrowserPersonState;
+  /** Allow the person to open and answer the real sharing card in this demo. */
+  interactive?: boolean;
+  /** Show the marked-turn refusal after the person presses Share browser. */
+  shareRefused?: boolean;
 }) {
   const [transport] = useState<Transport>(() => {
     let current = state;
-    return browserTransport(
+    const base = browserTransport(
       () => {
         if (!current) throw new Error('The browser didn’t answer.');
         return current;
@@ -209,6 +231,29 @@ function PanelDemo({
           return open();
         })
     );
+    if (!interactive) return base;
+    return new Proxy(base, {
+      get: (target, prop, receiver) => {
+        if (prop === 'bindLocalBrowserProfile')
+          return async () => {
+            if (shareRefused)
+              throw Object.assign(new Error('Sharing waits.'), { code: 'outside_turn' });
+            return { id: 'default', label: 'Your browser', agentIds: ['atlas'], createdAt: 'now' };
+          };
+        if (prop === 'openLocalBrowser')
+          return async (input: { profileId?: string }) => {
+            current = {
+              ...AGENT_HERE,
+              profile: input.profileId
+                ? { ...AGENT_HERE.profile!, id: 'default', label: 'Your browser' }
+                : AGENT_HERE.profile,
+            };
+            return current;
+          };
+        if (prop === 'selectLocalBrowserTab') return async () => current;
+        return Reflect.get(target, prop, receiver) as unknown;
+      },
+    });
   });
   useEffect(() => {
     if (state?.sessionId !== IN_USE_WORKING.sessionId) return;
@@ -224,7 +269,13 @@ function PanelDemo({
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
         <div className="bg-background h-[36rem] w-full max-w-sm rounded-lg border">
-          <LocalBrowserPanel visible={false} sessionId="chat-atlas" agentName="Atlas" />
+          <LocalBrowserPanel
+            visible={interactive}
+            sessionId="chat-atlas"
+            agentName="Atlas"
+            // The app passes the chat's own card, as the Browser panel does (DOR-4731).
+            handoffCard={<BrowserHandoffCard sessionId="chat-atlas" />}
+          />
         </div>
       </TransportProvider>
     </QueryClientProvider>
@@ -306,6 +357,28 @@ export function LocalBrowserPanelShowcases() {
       <ShowcaseDemo>
         <PanelDemo state={CONNECTED_HERE} />
       </ShowcaseDemo>
+      <ShowcaseLabel>Atlas · browser: own window and sharing card</ShowcaseLabel>
+      <ShowcaseDemo>
+        <PanelDemo state={AGENT_HERE} interactive />
+      </ShowcaseDemo>
+      <ShowcaseLabel>Sharing refused: press Share yours, then Share browser</ShowcaseLabel>
+      <ShowcaseDemo>
+        <PanelDemo state={AGENT_HERE} interactive shareRefused />
+      </ShowcaseDemo>
+      <ShowcaseLabel>Atlas · browser: sign-in notice under the header</ShowcaseLabel>
+      <ShowcaseDemo>
+        <PanelDemo
+          state={{
+            ...AGENT_HERE,
+            signIn: {
+              profileId: 'agent-atlas',
+              site: 'example.com',
+              status: 'open',
+              startedAt: '2026-11-19T12:00:00.000Z',
+            },
+          }}
+        />
+      </ShowcaseDemo>
       <ShowcaseLabel>Back and Forward follow the page’s own history: press them</ShowcaseLabel>
       <ShowcaseDemo>
         <HistoryDemo start={1} />
@@ -333,6 +406,10 @@ export function LocalBrowserPanelShowcases() {
       <ShowcaseLabel>This chat’s agent waits on you after the sign-in window closed</ShowcaseLabel>
       <ShowcaseDemo>
         <PanelDemo state={WINDOW_CLOSED_HERE} />
+      </ShowcaseDemo>
+      <ShowcaseLabel>Task stopped, sign-in window still open: Done signing in</ShowcaseLabel>
+      <ShowcaseDemo>
+        <PanelDemo state={STOPPED_SIGN_IN_OPEN} />
       </ShowcaseDemo>
       <ShowcaseLabel>This chat’s agent handed you its page in the Mac app</ShowcaseLabel>
       <ShowcaseDemo>

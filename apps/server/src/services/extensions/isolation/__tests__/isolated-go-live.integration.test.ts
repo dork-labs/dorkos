@@ -23,6 +23,10 @@ import path from 'node:path';
 import { Hono } from 'hono';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ExtensionsConfig } from '../../extension-enable-resolution.js';
+import { IsolatedExtensionHost } from '../isolated-host.js';
+import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
+import { createGetExtensionErrorsHandler } from '../../../runtimes/claude-code/mcp-tools/extension-tools.js';
+import { logger } from '../../../../lib/logger.js';
 
 vi.mock('../../../../lib/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -65,6 +69,8 @@ vi.mock('../../../core/auth/session-gate.js', async (importOriginal) => ({
 import { ExtensionManager } from '../../extension-manager.js';
 import { grantsDigestOf } from '../../pin/extension-path-trust.js';
 import { placeSnapshots } from '../../pin/extension-snapshot-placement.js';
+import { liveDigestOf } from '../../pin/extension-content-pin.js';
+import { noteScaffoldTrusted } from '../../pin/path-trust-edits.js';
 import {
   noteWriteDone,
   noteWriteStarting,
@@ -75,6 +81,14 @@ import { honoGroupListener } from '../../../../http/__tests__/hono-group-listene
 import type { ApiEnv } from '../../../../http/api-chain.js';
 import { setAgentSendService, type AgentSendService } from '../../agent-send/agent-send.js';
 import { setExtensionInbox, type ExtensionInboxService } from '../../inbox/extension-inbox.js';
+import { registerExtensionRestartRoute } from '../../../../routes/extensions-restart.js';
+import { createDb, runMigrations } from '@dorkos/db';
+import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
+import { NotificationStore } from '../../../notifications/notification-store.js';
+import {
+  NotificationService,
+  setNotificationService,
+} from '../../../notifications/notification-service.js';
 
 const ID = 'iso-live';
 const NAME = 'Iso Live';
@@ -128,6 +142,15 @@ const sends = {
   started: [] as string[],
 };
 const inbox = { stopped: [] as string[], running: [] as string[] };
+
+/** The real notification store the person's bell reads (DOR-4785). */
+let notifications: NotificationStore;
+
+/** What the person was told about this extension stopping, newest first. */
+function stoppedNotices(): NotificationDTO[] {
+  return notifications.list({ limit: 50, unread: false, kind: ['extension.stopped'] })
+    .notifications;
+}
 
 /**
  * Write the extension's files; `allow` widens or narrows what it declares. Each write is noted as
@@ -184,11 +207,20 @@ async function boot(
   watchdog: { pingIntervalMs: number; pongTimeoutMs: number } = {
     pingIntervalMs: 1_000,
     pongTimeoutMs: 30_000,
-  }
+  },
+  delays = [10, 20, 40]
 ): Promise<void> {
+  // These lifecycle cases start with an approved scaffold. Record its exact initial files;
+  // later installs remain edits and must pass the real tracing checks.
+  expect(
+    await noteScaffoldTrusted(dorkHome, ID, {
+      targetDir: extDir,
+      digest: await liveDigestOf({ path: extDir }),
+    })
+  ).toBe(true);
   manager = new ExtensionManager(dorkHome, [], {
     dorkosPort: 1,
-    restartPolicy: { delays: [10, 20, 40], budget },
+    restartPolicy: { delays, budget },
     isolatedTimings: watchdog,
   });
   manager.followProjects(
@@ -234,6 +266,28 @@ function card() {
   return manager.listPublic().find((r) => r.id === ID)!;
 }
 
+/** Refuse selected starts through the real child's permission self-check. */
+function refuseStarts(refuse: (attempt: number) => boolean) {
+  const realStart = IsolatedExtensionHost.prototype.start;
+  let attempts = 0;
+  vi.spyOn(IsolatedExtensionHost.prototype, 'start').mockImplementation(function (
+    this: IsolatedExtensionHost
+  ) {
+    attempts++;
+    if (refuse(attempts)) this['options'].testSeams = { omitPermission: true };
+    return realStart.call(this);
+  });
+  return () => attempts;
+}
+
+/** Diagnose through the real manager and MCP handler. */
+async function extensionErrors() {
+  const result = await createGetExtensionErrorsHandler({
+    extensionManager: manager,
+  } as McpToolDeps)();
+  return JSON.parse(result.content[0].text);
+}
+
 /** Whether a process with this id exists (signal 0 checks, never signals). */
 function alive(pid: number): boolean {
   try {
@@ -274,6 +328,10 @@ beforeEach(async () => {
   sends.started = [];
   inbox.stopped = [];
   inbox.running = [];
+  const db = createDb(':memory:');
+  runMigrations(db);
+  notifications = new NotificationStore(db);
+  setNotificationService(new NotificationService(notifications));
   stored.value = {
     enabled: [ID],
     disabled: [],
@@ -337,15 +395,190 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  // A reload by id that finds files changed since the last scan asks for a
+  // background scan (DOR-4282). It compiles and writes snapshots under
+  // `cache/extensions`, so let it and the skills ledger finish before the
+  // server stops and the folder goes; a scan still writing made `rm` fail
+  // with ENOTEMPTY.
+  await manager?.whenIdle();
+  await manager?.whenSkillsSettled();
   await manager?.shutdownServer(ID);
+  vi.restoreAllMocks();
   server.closeAllConnections();
   await new Promise((resolve) => server.close(resolve));
   setAgentSendService(undefined);
   setExtensionInbox(null);
+  setNotificationService(null);
   await fs.rm(dorkHome, { recursive: true, force: true });
 });
 
 describe('an isolated extension goes live through the real lifecycle', () => {
+  it(
+    'recovers after a watchdog kill and a refused automatic self-check',
+    async () => {
+      await install();
+      const attempts = refuseStarts((attempt) => attempt === 2);
+      await boot(3, { pingIntervalMs: 100, pongTimeoutMs: 500 });
+      const first = (await get(`/api/ext/${ID}/ping`)).body.pid;
+      expect(first).toEqual(expect.any(Number));
+      await post(`/api/ext/${ID}/hang`);
+      await until(() => attempts() === 3, 10_000);
+      await until(async () => (await get(`/api/ext/${ID}/ping`)).status === 200);
+      expect((await get(`/api/ext/${ID}/ping`)).body.pid).not.toBe(first);
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('self-check failed'));
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('isolation_unavailable'));
+      expect((await extensionErrors()).count).toBe(0);
+    },
+    TEST_MS
+  );
+
+  it(
+    'reports a refused initial start and its time without automatically retrying it',
+    async () => {
+      await install();
+      const since = Date.now();
+      const attempts = refuseStarts(() => true);
+      await boot();
+      const data = await extensionErrors();
+      expect(data.count).toBe(1);
+      expect(data.errors[0].serverError.code).toBe('isolation_unavailable');
+      expect(Date.parse(data.errors[0].serverError.occurredAt)).toBeGreaterThanOrEqual(since);
+      expect(manager.listErrors()[0].serverError).toEqual(data.errors[0].serverError);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(attempts()).toBe(1);
+    },
+    TEST_MS
+  );
+
+  it(
+    'reports a refused retry during backoff and cancels it on an explicit stop',
+    async () => {
+      await install();
+      const attempts = refuseStarts((attempt) => attempt > 1);
+      await boot(3, { pingIntervalMs: 100, pongTimeoutMs: 500 }, [10, 1_000]);
+      const since = Date.now();
+      await post(`/api/ext/${ID}/hang`);
+      await until(
+        async () =>
+          (await extensionErrors()).errors.some(
+            (error: { serverError?: { code: string } }) =>
+              error.serverError?.code === 'isolation_unavailable'
+          ),
+        10_000
+      );
+      const error = (await extensionErrors()).errors[0].serverError;
+      expect(Date.parse(error.occurredAt)).toBeGreaterThanOrEqual(since);
+      expect(card().restartingAt).toEqual(expect.any(String));
+      expect(card().serverError).toBeUndefined();
+      expect(attempts()).toBe(2);
+      await manager.shutdownServer(ID);
+      await new Promise((resolve) => setTimeout(resolve, 1_200));
+      expect(attempts()).toBe(2);
+      expect(manager.getServerHandler(ID)).toBeNull();
+      expect(card().restartingAt).toBeNull();
+    },
+    TEST_MS
+  );
+
+  it(
+    'bounds refused automatic restarts and tells the person when it gives up',
+    async () => {
+      await install();
+      const attempts = refuseStarts((attempt) => attempt > 1);
+      await boot(3, { pingIntervalMs: 100, pongTimeoutMs: 500 });
+      await post(`/api/ext/${ID}/hang`);
+      await until(() => stoppedNotices().some((notice) => notice.tier === 'notable'));
+      expect(attempts()).toBe(3);
+      expect(manager.getServerHandler(ID)).toBeNull();
+      expect((await extensionErrors()).errors[0].serverError.code).toBe('isolation_unavailable');
+      expect((await manager.initializeServer(ID)).ok).toBe(false);
+      expect(attempts()).toBe(3);
+      expect(stoppedNotices().find((notice) => notice.tier === 'notable')).toMatchObject({
+        title: `The ${NAME} app is off`,
+        body: 'It couldn’t restart. Use Restart to try again.',
+        actions: [{ id: 'restart-extension', label: 'Restart', style: 'primary' }],
+      });
+    },
+    TEST_MS
+  );
+
+  it(
+    'does not retry a compile failure using a previous isolation refusal',
+    async () => {
+      await install();
+      const attempts = refuseStarts((attempt) => attempt === 2);
+      await boot(5, { pingIntervalMs: 100, pongTimeoutMs: 500 }, [10, 1_000, 1_000]);
+      await post(`/api/ext/${ID}/hang`);
+      await until(
+        async () =>
+          (await extensionErrors()).errors.some(
+            (error: { serverError?: { code: string } }) =>
+              error.serverError?.code === 'isolation_unavailable'
+          ),
+        10_000
+      );
+      vi.spyOn(manager.getCompiler(), 'compileServer').mockResolvedValueOnce({
+        sourceHash: 'synthetic-compile-failure',
+        error: { code: 'compilation_failed', message: 'Synthetic compile failure', errors: [] },
+      });
+      await until(() => stoppedNotices().some((notice) => notice.tier === 'notable'), 10_000);
+      expect(attempts()).toBe(2);
+      expect((await extensionErrors()).errors[0].serverError.code).toBe('server_start_failed');
+      expect(card().restartingAt).toBeNull();
+    },
+    TEST_MS
+  );
+
+  it(
+    'counts a child that dies before mounting once and continues its existing backoff',
+    async () => {
+      await install();
+      const realStart = IsolatedExtensionHost.prototype.start;
+      let attempts = 0;
+      vi.spyOn(IsolatedExtensionHost.prototype, 'start').mockImplementation(async function (
+        this: IsolatedExtensionHost
+      ) {
+        attempts++;
+        const result = await realStart.call(this);
+        if (attempts === 2) {
+          this.killNow();
+          await this.stop();
+        }
+        return result;
+      });
+      await boot();
+      await post(`/api/ext/${ID}/crash`);
+      await until(() => attempts === 3, 10_000);
+      await until(async () => (await get(`/api/ext/${ID}/ping`)).status === 200);
+      expect(stoppedNotices().filter((notice) => notice.tier === 'notable')).toEqual([]);
+      expect((await extensionErrors()).count).toBe(0);
+    },
+    TEST_MS
+  );
+
+  it(
+    'leaves a non-isolation restart failure off with a reason and a Restart notice',
+    async () => {
+      await install();
+      const attempts = refuseStarts(() => false);
+      await boot(3, { pingIntervalMs: 100, pongTimeoutMs: 500 });
+      vi.spyOn(manager.getCompiler(), 'compileServer').mockRejectedValueOnce(
+        new Error('Synthetic automatic compile error')
+      );
+      await post(`/api/ext/${ID}/hang`);
+      await until(() => stoppedNotices().some((notice) => notice.tier === 'notable'), 10_000);
+      expect(attempts()).toBe(1);
+      expect((await extensionErrors()).errors[0].serverError).toMatchObject({
+        code: 'server_start_failed',
+        message: expect.stringContaining('Synthetic automatic compile error'),
+      });
+      expect(stoppedNotices().find((notice) => notice.tier === 'notable')?.body).toBe(
+        'It couldn’t restart. Use Restart to try again.'
+      );
+    },
+    TEST_MS
+  );
+
   // Purpose: approved and started, it answers through DorkOS from its own
   // process (not this one), and ctx crosses the boundary to the real store.
   it(
@@ -432,6 +665,22 @@ describe('an isolated extension goes live through the real lifecycle', () => {
       expect(card().serverError?.message).toBe(
         `${NAME} stopped unexpectedly 3 times. Reload it to try again.`
       );
+      // The person was told, by name: one "restarted" row for the first two
+      // stops, then one "is off" row with Restart (DOR-4785).
+      await until(() => stoppedNotices().length === 2);
+      const [off, restarted] = stoppedNotices();
+      expect(restarted).toMatchObject({
+        tier: 'quiet',
+        subject: { type: 'system', id: `extension:${ID}` },
+        title: `The ${NAME} app stopped unexpectedly. DorkOS is restarting it.`,
+      });
+      expect(off).toMatchObject({
+        tier: 'notable',
+        subject: { type: 'system', id: `extension:${ID}` },
+        title: `The ${NAME} app is off`,
+        body: 'It stopped 3 times in 10 minutes, so DorkOS left it off.',
+        actions: [{ id: 'restart-extension', label: 'Restart', style: 'primary' }],
+      });
       await new Promise((r) => setTimeout(r, 700));
       expect(manager.getServerHandler(ID)).toBeNull();
       expect((await get(`/api/ext/${ID}/ping`)).status).toBe(404);
@@ -441,9 +690,32 @@ describe('an isolated extension goes live through the real lifecycle', () => {
       expect(init.ok).toBe(false);
       expect(manager.getServerHandler(ID)).toBeNull();
 
-      await manager.reloadExtension(ID);
+      const restart = new Hono<ApiEnv>();
+      restart.use(async (c, next) => {
+        c.set('user', { userId: 'owner', credential: 'cookie' });
+        await next();
+      });
+      registerExtensionRestartRoute(restart, manager, /^[a-z0-9][a-z0-9-]*$/, () => {});
+      const restartedResponse = await restart.request(
+        `/${ID}/restart`,
+        { method: 'POST' },
+        {
+          incoming: { headers: {}, socket: { remoteAddress: '127.0.0.1' }, method: 'POST' },
+        }
+      );
+      expect(restartedResponse.status).toBe(200);
       expect((await get(`/api/ext/${ID}/ping`)).status).toBe(200);
       expect(card().serverError).toBeUndefined();
+      // One explicit press gives one fresh three-stop budget. Nothing retries
+      // the notice's action when the app stops again.
+      const stopsBeforeRestart = unexpectedStops();
+      for (let crash = 1; crash <= 3; crash++) {
+        await until(async () => (await get(`/api/ext/${ID}/ping`)).status === 200);
+        await post(`/api/ext/${ID}/crash`);
+        await until(() => unexpectedStops() === stopsBeforeRestart + crash);
+      }
+      await until(() => card().serverError?.code === 'server_crashed');
+      expect(manager.getServerHandler(ID)).toBeNull();
     },
     TEST_MS
   );
@@ -511,10 +783,22 @@ describe('an isolated extension goes live through the real lifecycle', () => {
       await install();
       await boot(1, { pingIntervalMs: 200, pongTimeoutMs: 1_500 });
       const pid = (await get(`/api/ext/${ID}/ping`)).body.pid as number;
+      const since = Date.now();
       await post(`/api/ext/${ID}/hang`);
       await until(() => card().serverError?.code === 'server_unresponsive');
       expect(card().serverError?.message).toBe(`${NAME} stopped responding, so DorkOS stopped it.`);
+      // Never quiet: a watchdog stop that ends the restarts says so (DOR-4785).
+      await until(() => stoppedNotices().length === 1);
+      expect(stoppedNotices()[0]).toMatchObject({
+        title: `The ${NAME} app is off`,
+        body: 'It stopped once in 10 minutes, so DorkOS left it off.',
+      });
       expect(alive(pid)).toBe(false);
+      const data = await extensionErrors();
+      expect(data.count).toBe(1);
+      expect(data.errors[0].serverError.code).toBe('server_unresponsive');
+      expect(Date.parse(data.errors[0].serverError.occurredAt)).toBeGreaterThanOrEqual(since);
+      expect(manager.listErrors()[0].serverError).toEqual(data.errors[0].serverError);
       expect((await get('/api/health')).status).toBe(200);
     },
     TEST_MS
@@ -543,9 +827,14 @@ describe('an isolated extension goes live through the real lifecycle', () => {
       agentLevel.mode = 'bypassPermissions';
       await install('v1');
       await boot();
+      expect((await get(`/api/ext/${ID}/ping`)).body.version).toBe('v1');
       agentLevel.mode = 'default';
       await install('v2');
+      // An edit no scan has seen asks for one in the background (DOR-4282);
+      // the shared teardown waits for it before deleting the data folder.
+      const refresh = vi.spyOn(manager, 'requestRefresh');
       await manager.reloadExtension(ID);
+      expect(refresh).toHaveBeenCalledTimes(1);
       expect((await get(`/api/ext/${ID}/ping`)).body.version).not.toBe('v2');
       agentLevel.mode = 'bypassPermissions';
     },

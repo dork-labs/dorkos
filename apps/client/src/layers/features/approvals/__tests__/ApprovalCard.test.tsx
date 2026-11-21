@@ -11,7 +11,7 @@
  */
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
-import { act, render, screen, cleanup, waitFor } from '@testing-library/react';
+import { act, render, screen, cleanup, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -649,6 +649,97 @@ describe('ApprovalCard', () => {
       expect(line.tagName).toBe('P');
       expect(block!.contains(line)).toBe(false);
     });
+
+    // DOR-4775: a settings change lists every key; the last one must be on the card too.
+    it('shows every line of a 20-setting change on an act card, the last one included', () => {
+      const lines = [
+        'tunnel.enabled: yes',
+        ...Array.from(
+          { length: 19 },
+          (_, i) => `ui.someLongHarmlessSettingName${i}: "${'y'.repeat(70)}"`
+        ),
+      ];
+      lines.push('mesh.scanRoots');
+      const detail = lines.join('\n');
+      renderCard(
+        buildApproval({
+          capabilityId: 'operator.config_patch',
+          capabilityTitle: 'Update configuration',
+          tier: 'act',
+          summary:
+            '"Warden" wants to change 21 settings. 2 need you: tunnel.enabled, mesh.scanRoots',
+          detail,
+        })
+      );
+      const block = document.querySelector('[data-slot="approval-detail"]');
+      expect(block!.textContent).toBe(detail);
+      expect(block!.textContent).toContain('mesh.scanRoots');
+      expect(block!.className).not.toMatch(/line-clamp|truncate/);
+    });
+
+    // DOR-4775: on a phone a long setting name wraps between its parts, not mid-word.
+    it('lets a long setting name wrap after each dot, adding no characters', () => {
+      const detail =
+        'runtimes.claudeCode.projectAccounts["/tmp/made-up/client.app"].allow: adds "Work" (needs you)';
+      renderCard(
+        buildApproval({
+          capabilityId: 'operator.config_patch',
+          capabilityTitle: 'Update configuration',
+          tier: 'act',
+          summary:
+            '"Warden" wants to change 1 setting. 1 needs you: runtimes.claudeCode.projectAccounts…',
+          detail,
+        })
+      );
+      const block = document.querySelector('[data-slot="approval-detail"]')!;
+      expect(block.textContent).toBe(detail);
+      expect(block.querySelectorAll('wbr')).toHaveLength(detail.split('.').length - 1);
+    });
+
+    it('gives each setting its own hanging-indent line and keeps "(needs you)" whole', () => {
+      const detail = ['tunnel.enabled: no → yes (needs you)', 'ui.theme: "light" → "dark"'].join(
+        '\n'
+      );
+      renderCard(
+        buildApproval({
+          capabilityId: 'operator.config_patch',
+          capabilityTitle: 'Update configuration',
+          tier: 'act',
+          summary: '"Warden" wants to change 2 settings. 1 needs you: tunnel.enabled',
+          detail,
+        })
+      );
+      const block = document.querySelector('[data-slot="approval-detail"]')!;
+      expect(block.textContent).toBe(detail);
+      const lines = block.querySelectorAll(':scope > span');
+      expect(lines).toHaveLength(2);
+      for (const line of lines) expect(line.className).toMatch(/-indent-4/);
+      const mark = screen.getByText('(needs you)');
+      expect(mark.className).toMatch(/whitespace-nowrap/);
+    });
+
+    // DOR-4778: the sentence names the riskiest setting first; no clamp may hide it.
+    it('never clamps a settings change’s sentence, so its riskiest setting stays in view', () => {
+      const summary =
+        '"A long agent name, padded out" wants to change 9 settings. 4 need you: projectAccounts.allow, tunnel.enabled, mesh.scanRoots and 1 more';
+      renderCard(
+        buildApproval({
+          capabilityId: 'operator.config_patch',
+          capabilityTitle: 'Update configuration',
+          tier: 'act',
+          summary,
+          detail: 'tunnel.enabled: yes',
+        })
+      );
+      const sentence = screen.getByText(summary);
+      expect(sentence.className).not.toMatch(/line-clamp/);
+    });
+
+    it('still clamps another act card’s sentence', () => {
+      const summary = '"Scout" wants to run "Rename a chat" with title: Weekly numbers';
+      renderCard(buildApproval({ capabilityId: 'sessions.rename', tier: 'act', summary }));
+      expect(screen.getByText(summary).className).toMatch(/line-clamp-2/);
+    });
   });
 });
 
@@ -912,6 +1003,113 @@ describe('a connected-app action says what it does (DOR-2504)', () => {
       expect(
         screen.getByText(
           '2 values are too long to show. If you’re unsure what this sends, don’t allow it.'
+        )
+      ).toBeInTheDocument();
+    });
+  });
+
+  // DOR-4592: every recipient on its own line, above the rest, with nothing folded.
+  describe('who a send goes to', () => {
+    const recipients = [
+      { label: 'Recipient email', address: 'ann@example.com' },
+      { label: 'CC', address: 'bo@example.org' },
+      { label: 'CC', address: 'cy@example.net' },
+      { label: 'BCC', address: 'di@example.com' },
+      { label: 'BCC', address: 'evil<U+202E>moc.elpmaxe@ann' },
+    ];
+    const gmailSend = {
+      ...GMAIL_DELETE,
+      actionName: 'Send email',
+      recipients,
+      details: [{ label: 'Subject', value: 'Garden note' }],
+    };
+
+    it('lists all five recipients, in order, above the other details, with no “more”', () => {
+      const { container } = renderCard(connectorApproval(gmailSend));
+      const box = container.querySelector('[data-slot="approval-service-recipients"]')!;
+      expect([...box.querySelectorAll('dd')].map((dd) => dd.textContent)).toEqual(
+        recipients.map((r) => r.address)
+      );
+      expect([...box.querySelectorAll('dt')].map((dt) => dt.textContent)).toEqual(
+        recipients.map((r) => r.label)
+      );
+      const details = container.querySelector('[data-slot="approval-service-details"]')!;
+      expect(box.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      const action = container.querySelector('[data-slot="approval-service-action"]')!;
+      expect(action.textContent).not.toMatch(/\bmore\b/u);
+    });
+
+    it('shows each address as plain text, never a link', () => {
+      const { container } = renderCard(connectorApproval(gmailSend));
+      const box = container.querySelector('[data-slot="approval-service-recipients"]')!;
+      expect(box.querySelector('a')).toBeNull();
+      expect(screen.getByText('evil<U+202E>moc.elpmaxe@ann')).toBeInTheDocument();
+    });
+
+    it('keeps the list in view while “Show everything” is open', async () => {
+      const user = userEvent.setup();
+      const { container } = renderCard(
+        connectorApproval({
+          ...gmailSend,
+          everything: [{ label: 'Subject', value: 'Garden note', depth: 0 }],
+        })
+      );
+      await user.click(screen.getByRole('button', { name: 'Show everything' }));
+      expect(container.querySelector('[data-slot="approval-service-recipients"]')).not.toBeNull();
+    });
+
+    // jsdom lays nothing out, so the box's sizes are set by hand; what's under
+    // test is which edge gets the shadow, not how it looks.
+    it('shades the edge a capped list still has rows behind, and only that edge', () => {
+      const { container } = renderCard(connectorApproval(gmailSend));
+      const box = container.querySelector<HTMLElement>(
+        '[data-slot="approval-service-recipients"]'
+      )!;
+      Object.defineProperty(box, 'clientHeight', { configurable: true, value: 100 });
+      Object.defineProperty(box, 'scrollHeight', { configurable: true, value: 300 });
+      const edge = (name: string) =>
+        container.querySelector(`[data-slot="approval-recipients-edge-${name}"]`);
+
+      fireEvent.scroll(box);
+      expect(edge('top')).toBeNull();
+      expect(edge('bottom')).not.toBeNull();
+
+      box.scrollTop = 200;
+      fireEvent.scroll(box);
+      expect(edge('top')).not.toBeNull();
+      expect(edge('bottom')).toBeNull();
+    });
+
+    it('draws no shadow when every recipient fits', () => {
+      const { container } = renderCard(connectorApproval(gmailSend));
+      const box = container.querySelector<HTMLElement>(
+        '[data-slot="approval-service-recipients"]'
+      )!;
+      fireEvent.scroll(box);
+      expect(container.querySelector('[data-slot^="approval-recipients-edge-"]')).toBeNull();
+    });
+
+    it('a send that hides a recipient keeps its name and offers no Allow', () => {
+      renderCard({
+        ...connectorApproval({ ...gmailSend, recipientsShortened: 1 }),
+        cannotAllow: true,
+      });
+      expect(screen.getByText('Send email')).toBeInTheDocument();
+      expect(screen.queryByText(/wants to run commands/u)).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Allow' })).not.toBeInTheDocument();
+      // The card keeps its usual answer in its usual place, and no second "can't be shown" line.
+      expect(screen.getByRole('button', { name: 'Don’t allow' })).toBeInTheDocument();
+      expect(screen.queryByText(/can't be shown in full/u)).not.toBeInTheDocument();
+      expect(
+        screen.getByText('One address is too long to show, so this can’t be allowed.')
+      ).toBeInTheDocument();
+    });
+
+    it('says plainly how many recipients it couldn’t list', () => {
+      renderCard(connectorApproval({ ...gmailSend, recipientsCut: 3 }));
+      expect(
+        screen.getByText(
+          '3 more recipients aren’t shown, so this can’t be allowed. Ask for a smaller send.'
         )
       ).toBeInTheDocument();
     });

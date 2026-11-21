@@ -104,4 +104,5 @@ stored in the app is shown as plain text, never as HTML or a clickable action.
 - Agent tool names are lowercase words joined by single underscores, and agents see them
   as `ext_<id with - as _>__<name>`. Keep the whole thing within 64 characters.
 - Bump `version` on every change, so the person and the extension list can tell builds
-  apart.
+  apart. The one exception is a fix that only adds places to an app in your own
+  folder (placement.md).

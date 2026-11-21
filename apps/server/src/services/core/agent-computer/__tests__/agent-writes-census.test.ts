@@ -51,8 +51,30 @@ const OWN_AUTHORIZER: ReadonlyMap<string, string> = new Map([
   ['POST /a2a/agents/:id', 'A2A, decided as /mcp is'],
 ]);
 
+/**
+ * Writes that change what agents may do in a person's connected app. These are
+ * refused to agents, and they must stay that way: an agent must never widen its
+ * own access.
+ */
+const PERSON_ONLY_GRANTS: readonly string[] = [
+  'DELETE /api/connectors/connections/:connectionId/exclusions/:agentId',
+  'PUT /api/connectors/connections/:connectionId/exclusions/:agentId',
+  'POST /api/connectors/access-changes/:changeId/undo',
+  // Letting agents that only read an app write back to it without asking (DOR-4794).
+  'PUT /api/connectors/connections/:connectionId/writes-back',
+];
+
 /** Every write an agent computer refuses to agents, by why. */
 const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[] = [
+  [
+    'owner-only browser viewing; no agent credential reaches page pixels',
+    [
+      'ALL /api/browser-viewers/*',
+      'POST /api/browser-viewers',
+      'POST /api/browser-viewers/:viewerId/frame',
+      'DELETE /api/browser-viewers/:viewerId',
+    ],
+  ],
   [
     'setup is the hub’s',
     [
@@ -222,6 +244,7 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'POST /api/local-browser/profiles/:id/agents',
       'DELETE /api/local-browser/profiles/:id/agents/:agentId',
       'POST /api/local-browser/sign-in',
+      'POST /api/local-browser/sign-in/done',
       'POST /api/local-browser/handoff/hand-back',
       'POST /api/local-browser/handoff/stop',
       'POST /api/notifications/read-all',
@@ -258,8 +281,13 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'POST /api/extensions/:id/enable',
       'POST /api/extensions/:id/forget',
       'POST /api/extensions/:id/init-server',
+      // A frame's video link and the route it plays on (DOR-4321).
+      'POST /api/extensions/:id/media-tickets',
+      'ALL /api/extensions/media/:ticket',
       'POST /api/extensions/:id/move-out',
       'POST /api/extensions/:id/remove',
+      // Only a person may reset the stop budget with Restart (DOR-4785).
+      'POST /api/extensions/:id/restart',
       'POST /api/extensions/:id/revoke',
       'POST /api/extensions/:id/start-work',
       'POST /api/extensions/approve-set',
@@ -332,6 +360,20 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'ALL /api/devices/*',
       'DELETE /api/devices/sessions/:id',
       'POST /api/devices/sign-out-all',
+      // Wi-Fi sign-in codes, a device's switch and the owner's sign-in checks (DOR-4744, DOR-3647).
+      'POST /api/devices/sign-in-requests/:id/approve',
+      'POST /api/devices/sign-in-requests/:id/decline',
+      'PUT /api/devices/sessions/:id/runs-agents',
+      'ALL /api/owner-factors/*',
+      'DELETE /api/owner-factors/:id',
+      'POST /api/owner-factors/authenticator/confirm',
+      'POST /api/owner-factors/authenticator/start',
+      'POST /api/owner-factors/passkeys/finish',
+      'POST /api/owner-factors/passkeys/options',
+      'POST /api/owner-sign-in/passkey/finish',
+      'POST /api/owner-sign-in/passkey/options',
+      'POST /api/wifi-sign-in/finish',
+      'POST /api/wifi-sign-in/start',
       'DELETE /api/session-relay/passkeys',
       'DELETE /api/session-relay/passkeys/:credentialId',
       'POST /api/session-relay/passkeys/finish',
@@ -460,11 +502,13 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
   [
     'settings are the hub’s',
     [
+      'DELETE /api/config/backups/:name',
       'DELETE /api/profile/avatar',
       'DELETE /api/profile/identities/:authorId',
       'DELETE /api/push/subscriptions/:id',
       'PATCH /api/config',
       'PATCH /api/profile',
+      'POST /api/config/backups/:name/move',
       'POST /api/config/mcp/reveal-token',
       'POST /api/config/mcp/rotate-token',
       'POST /api/onboarding/first-run',
@@ -533,6 +577,14 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
     ],
   ],
   [
+    'the waiting line of heavy jobs is a person’s to reorder (DOR-4209)',
+    [
+      'POST /api/system/load-gate/jobs/:id/front',
+      'POST /api/system/load-gate/jobs/:id/let-through',
+      'POST /api/system/load-gate/jobs/:id/urgent',
+    ],
+  ],
+  [
     'runtime sign-ins are the hub’s',
     [
       'POST /api/runtimes/:type/credential',
@@ -574,6 +626,10 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
     'person-only Undo of an agent’s access change (spec agent-grant-autonomy); it can re-widen access',
     ['POST /api/connectors/access-changes/:changeId/undo'],
   ],
+  [
+    'person-only: writing back without asking widens every reading agent’s power (DOR-4794)',
+    ['PUT /api/connectors/connections/:connectionId/writes-back'],
+  ],
 ];
 
 /** The write methods an `ALL` route answers. */
@@ -611,6 +667,14 @@ describe('the write census', () => {
   it('names only routes the server serves', () => {
     const classified = [...AGENT_COMPUTER_WRITES.keys(), ...OWN_AUTHORIZER.keys(), ...refused];
     expect(classified.filter((route) => !WRITE_ROUTES.includes(route))).toEqual([]);
+  });
+
+  it('keeps every person-only grant route refused, never open to agents', () => {
+    const open = [...AGENT_COMPUTER_WRITES.keys(), ...OWN_AUTHORIZER.keys()];
+    for (const route of PERSON_ONLY_GRANTS) {
+      expect(open, route).not.toContain(route);
+      expect(refused, route).toContain(route);
+    }
   });
 
   it('gives every open write a reason', () => {

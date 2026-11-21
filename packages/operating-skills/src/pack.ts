@@ -436,8 +436,44 @@ export interface OperatingSkill {
  * - 60: `scheduling-tasks` teaches moving an agent's own live Bypass task to Don't
  *   ask with its own exact commands, in one call and with no card (DOR-4315 PR 2).
  *   An agent seeded at 59 would leave a narrowable task at Bypass, or ask a person.
+ * - 61: `building-dorkos-apps` moves to App Builder Pack 1.1.4 (DOR-4061, DOR-4756;
+ *   it replaces 1.1.3, which never shipped). The agent checks a request's source
+ *   itself for files and commands, since DorkOS marks only outside messages, web
+ *   pages, searches, connected-app reads and other servers' tools; a change to an
+ *   app's server code at Full runs without a card only when made with Claude Code's
+ *   own file tools in an unmarked turn. It never links app source into DorkOS, never
+ *   writes an app's stored data or secrets on disk, keeps private strings out of app
+ *   code, gives the reach list while approval waits, and names the app on every ⌘K
+ *   label and dialog. An agent seeded at 60 would believe DorkOS refuses a marked turn's
+ *   build, and that every server-code change at Full runs at once.
+ * - 63: `using-the-agent-browser` teaches that each chat owns its own page (DOR-4273):
+ *   chats of one agent share sign-ins, an agent never closes another chat's page,
+ *   waits while a sign-in is busy or a person holds the browser, and never recovers
+ *   a page from its URL, title or tab order. An agent seeded at 61 would expect one
+ *   shared page per install.
+ * - 64: `continuing-on-another-account` teaches moving your own seat from another
+ *   chat at the usage threshold, once your answer in that room ends (DOR-3833).
+ *   An agent seeded at 63 would still believe only a person can move it.
+ * - 65: `building-dorkos-apps` moves to App Builder Pack 1.1.5 (DOR-4851). In a marked
+ *   or limited turn its own extensions folder is read-only and `create_extension`
+ *   creates nothing, so it builds in the personal marketplace: one card a version.
+ *   An agent seeded at 64 would hit a bare refusal and hand the person a Terminal copy.
+ * - 66: `building-dorkos-apps` moves to App Builder Pack 1.1.6 (DOR-4854): what a held
+ *   version looks like, and that app settings are the person's, set in Settings > Add-ons.
+ *   An agent seeded at 65 would not know where a person sets an app's data folder.
+ * - 67: `using-the-agent-browser` teaches separate signed-out profiles per agent,
+ *   person-only sharing and own-window agent pages while retaining per-chat leases.
+ *   An agent seeded at 66 would still expect the person’s default browser.
+ * - 68: `using-the-agent-browser` teaches the reload-wall handoff, a fresh reading
+ *   after hand-back, and waiting on held, busy or closing browsers.
+ *   An agent seeded at 67 would not know its page closes before the person's window.
+ * - 69: `building-dorkos-apps` moves to App Builder Pack 1.1.8 (DOR-4282): declare
+ *   every place in `contributions`, since an undeclared one is refused; when an update
+ *   that only adds places keeps running; which names pass for DorkOS; and that DorkOS
+ *   draws the app's name on ⌘K rows and dialogs. An agent seeded at 68 would leave
+ *   places undeclared and put the app's name in every ⌘K label.
  */
-export const OPERATING_SKILLS_VERSION = 60;
+export const OPERATING_SKILLS_VERSION = 69;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

@@ -44,7 +44,7 @@ import {
   type ConnectionWayHealthPort,
 } from '../readiness/connection-readiness.js';
 import { agentGrantScope, type AgentGrantDenial } from './agent-grant-scope.js';
-import { describeServiceAction } from './approval-service-action.js';
+import { describeServiceAction } from './approval-card/service-action.js';
 import { grantRefusal } from './grant-refusal.js';
 import { managedAgentAccess } from './managed-agent-access.js';
 import { preflightResultOf } from './reaches-outside.js';
@@ -241,7 +241,7 @@ export class ConnectorExecutionAuthorizationService {
 
   /** Produce the authenticated preflight result consumed by the registry tier gate. */
   async preflight(input: PrepareConnectorExecutionInput): Promise<CapabilityPreflightResult> {
-    return preflightResultOf(await this.prepare(input));
+    return preflightResultOf(await this.prepare(input), this.db);
   }
 
   /** Resolve the immutable capability id for a program target without accepting a caller override. */

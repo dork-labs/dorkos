@@ -352,7 +352,16 @@ export function TaskRow({
                 {task.timingOverridden && (
                   <span data-slot="task-timing-override"> &middot; Your timing</span>
                 )}
-                {nextRunLabel && <> &middot; {nextRunLabel}</>}
+                {/* One piece: at 390 it drops to the next line whole (DOR-4483). */}
+                {nextRunLabel && (
+                  <>
+                    {' '}
+                    &middot;{' '}
+                    <span data-slot="task-next-run" className="whitespace-nowrap">
+                      {nextRunLabel}
+                    </span>
+                  </>
+                )}
                 <TaskFailingSince task={task} />
               </div>
             )}

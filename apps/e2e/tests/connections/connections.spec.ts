@@ -1,4 +1,5 @@
-import { test, expect, type Page, type APIRequestContext, type TestInfo } from '@playwright/test';
+import { expect, type Page, type APIRequestContext, type TestInfo } from '@playwright/test';
+import { test } from '../../fixtures/base';
 import { BasePage } from '../../pages/BasePage.js';
 import { ConnectionsPage } from '../../pages/ConnectionsPage.js';
 import { describeViolation, runAxe, settleAnimations } from '../../axe.js';

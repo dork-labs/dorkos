@@ -1,5 +1,7 @@
 import { createYourBrowserRoutes } from '../routes/your-browser.js';
 import { createLocalBrowserRoutes } from '../routes/local-browser.js';
+import { createBrowserViewerRoutes, browserViewerBodyRule } from '../routes/browser-viewers.js';
+import { BrowserViewerRegistry } from '../services/session/browser-viewers/viewer-registry.js';
 import type { LocalBrowserService } from '../services/session/local-browser/service.js';
 import type { LocalBrowserProfileRouteDeps } from '../routes/local-browser-profiles.js';
 /**
@@ -20,6 +22,8 @@ import type { MainRequestAdmission } from '../services/core/lifecycle/main-reque
 import { createApiApp, type ApiEnv } from './api-chain.js';
 import { mountBetterAuth } from './better-auth.js';
 import { mountDesktopSignIn } from './desktop-sign-in.js';
+import { mountWifiSignIn } from './sign-in/wifi-sign-in.js';
+import { mountOwnerPasskeySignIn } from './sign-in/owner-passkey-sign-in.js';
 import { createClientFiles } from './client-files.js';
 import { serveRouteCensus } from './route-census/census.js';
 import type { Db } from '@dorkos/db';
@@ -58,6 +62,7 @@ import { createCapabilitiesInvokeRoutes } from '../routes/capabilities-invoke.js
 import commandRoutes from '../routes/commands.js';
 import { createCommunityConnectionsRoutes } from '../routes/community-connections.js';
 import configRoutes from '../routes/config.js';
+import { createConfigBackupsRoutes } from '../routes/config-backups.js';
 import { mountComputerRoutes, type ComputerRoutesService } from '../routes/computers.js';
 import {
   createAgentTodoPromisesRoutes,
@@ -78,6 +83,7 @@ import errorRoutes from '../routes/errors.js';
 import { createExtensionApiRoutes } from '../routes/extension-api.js';
 import { createExtensionsRoutes, type ExtensionsRouterDeps } from '../routes/extensions.js';
 import { createExtensionFrameRoutes } from '../routes/extension-frame.js';
+import { createExtensionMediaRoutes } from '../routes/extension-media.js';
 import { appScreenRunsIn } from '../routes/app-screen-runs.js';
 import {
   createExtensionDecisionsRoutes,
@@ -127,6 +133,7 @@ import { STEP_UP_PATH } from '@dorkos/shared/step-up';
 import { createStepUpRoutes } from '../routes/step-up.js';
 import { createRelayPasskeyPageRoutes } from '../routes/relay-passkey-page.js';
 import { createDevicesRoutes } from '../routes/devices.js';
+import { createOwnerFactorRoutes } from '../routes/owner-factors.js';
 import { createDocLinkRoutes } from '../routes/docs-links.js';
 import { createRemoteCommunitiesRoutes } from '../routes/remote-communities.js';
 import { createSearchRoutes, type SearchRouterDeps } from '../routes/search.js';
@@ -361,7 +368,9 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
     // limit; document events are page envelopes, so they may be smaller. A
     // signed Relay webhook keeps its raw bytes while its receiver is mounted.
     // A hub's link path is open before its code is checked, so it reads 4 KB.
-    bodyRules: [feedbackBodyRule, docEventBodyRule, relayWebhookBodyRule, hubLinkBodyRule],
+    bodyRules: [feedbackBodyRule, docEventBodyRule, relayWebhookBodyRule, hubLinkBodyRule].concat(
+      browserViewerBodyRule
+    ),
     clientFiles: options.clientDist ? createClientFiles(options.clientDist) : undefined,
     beforeBodyParsing: (early) => {
       // A sealed agent computer mounts nothing ahead of its gate (DOR-2940): no
@@ -369,6 +378,8 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
       if (isAgentComputer()) return;
       if (auth) mountBetterAuth(early, { auth, maxAttempts: env.DORKOS_AUTH_SIGNIN_RATE_LIMIT });
       if (auth) mountDesktopSignIn(early, auth);
+      if (auth) mountWifiSignIn(early, auth);
+      if (auth) mountOwnerPasskeySignIn(early, auth);
       if (deps.connectorEventIngress) {
         mountConnectorSignedIngress(early, deps.connectorEventIngress);
       }
@@ -423,6 +434,8 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/api/remote-access', createRemoteAccessRoutes());
   app.route('/api/lan-access', createLanAccessRoutes());
   app.route('/api/cloud', cloudRoutes);
+  // Settings → Backups: its own group, beside config (DOR-4253).
+  app.route('/api/config/backups', createConfigBackupsRoutes());
   app.route('/api/config', configRoutes);
   app.route('/api/mcp-config', mcpConfigRoutes);
   app.route(
@@ -513,6 +526,15 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
       '/api/extension-frame',
       createExtensionFrameRoutes({ appScreenRuns: records.callerRuns, manifest: records.manifest })
     );
+    // Video for an app's frame (DOR-4321), after the extensions routes so
+    // `/media/:ticket` never shadows an app called `media`.
+    app.route(
+      '/api/extensions',
+      createExtensionMediaRoutes({
+        manifest: records.manifest,
+        mediaFetch: (id) => manager.getMediaFetch(id),
+      })
+    );
   }
   // These two are mounted on all of `/api`, because their paths span several
   // prefixes. Their groups register only their own concrete paths, so mounting them at `/api` claims
@@ -575,6 +597,7 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   app.route('/', createRelayPasskeyPageRoutes());
   // A person's own signed-in devices, and signing them out (DOR-2969).
   app.route('/api/devices', createDevicesRoutes());
+  app.route('/api/owner-factors', createOwnerFactorRoutes());
   // The docs in one space, for wiki links; the `/api` 404 while Docs is off.
   app.route('/api/documents', createDocLinkRoutes());
   if (deps.heartbeatTriage) {
@@ -583,11 +606,19 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   if (deps.wakersOff)
     app.route('/api/heartbeats/wakers-off', createWakersOffRoutes(deps.wakersOff));
   if (deps.terminal) app.route('/api/terminal', createTerminalRoutes(deps.terminal));
-  if (deps.localBrowser)
+  if (deps.localBrowser) {
     app.route(
       '/api/local-browser',
       createLocalBrowserRoutes(deps.localBrowser, deps.localBrowserProfiles)
     );
+    app.route(
+      '/api/browser-viewers',
+      createBrowserViewerRoutes(
+        new BrowserViewerRegistry(deps.localBrowser.viewerPages.resolve),
+        () => env.DORKOS_AGENT_BROWSER_STREAM
+      )
+    );
+  }
   if (deps.mcpServers) {
     app.route(
       '/api/mcp-servers',

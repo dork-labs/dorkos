@@ -5,7 +5,8 @@
  * a canvas document's route controls, a space's docs, a person's signed-in
  * devices, an account's automatic moves, a framed page's script decision, an
  * agent's level, undoing an agent's task mode, global MCP servers, the shell
- * check, sending another chat's queued message now), joined here so `transport.ts` extends one name. Nothing consuming
+ * check, sending another chat's queued message now, the load gate's waiting line, the database
+ * backups), joined here so `transport.ts` extends one name. Nothing consuming
  * the port sees a difference.
  *
  * @module shared/transport-slices
@@ -30,6 +31,7 @@ import type { HistoryTransport } from './transport-history.js';
 import type { ConnectorHoldTransport } from './transport-connector-holds.js';
 import type { ConnectorAccessChangeTransport } from './transport-connector-access-changes.js';
 import type { MiniAppAccessTransport } from './transport-mini-app-access.js';
+import type { ExtensionRestartTransport } from './transport-extension-restarts.js';
 import type { HubComputersTransport, SessionRelayTransport } from './transport-hub.js';
 import type { SignInLandingTransport } from './transport-sign-in-landing.js';
 import type { CanvasDocRouteTransport } from './transport-canvas-doc-routes.js';
@@ -43,8 +45,11 @@ import type { ApprovalTransport } from './transport-approvals.js';
 import type { TaskModeUndoTransport } from './transport-task-mode.js';
 import type { GlobalMcpTransport } from './transport-global-mcp.js';
 import type { ShellCheckTransport } from './transport-shell-check.js';
+import type { LoadGateTransport } from './transport-load-gate.js';
 import type { QueuedChatTransport } from './transport-queued-chat.js';
 import type { ConnectorSpendingTransport } from './transport-connector-spending.js';
+import type { ConnectorWritesBackTransport } from './transport-connector-writes-back.js';
+import type { BackupsTransport } from './transport-backups.js';
 
 /** Every Transport slice declared outside `transport.ts`. */
 export interface TransportSlices
@@ -70,6 +75,7 @@ export interface TransportSlices
     ConnectorHoldTransport,
     ConnectorAccessChangeTransport,
     MiniAppAccessTransport,
+    ExtensionRestartTransport,
     HubComputersTransport,
     SessionRelayTransport,
     SignInLandingTransport,
@@ -83,5 +89,8 @@ export interface TransportSlices
     TaskModeUndoTransport,
     GlobalMcpTransport,
     ShellCheckTransport,
+    LoadGateTransport,
     QueuedChatTransport,
-    ConnectorSpendingTransport {}
+    ConnectorSpendingTransport,
+    ConnectorWritesBackTransport,
+    BackupsTransport {}

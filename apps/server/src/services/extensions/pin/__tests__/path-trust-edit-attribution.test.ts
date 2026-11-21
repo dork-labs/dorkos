@@ -18,7 +18,7 @@ import {
 import type { TurnMarks } from '../../../core/turn-power/turn-marks.js';
 import { isApprovedByPath } from '../../extension-load-policy.js';
 import { grantsDigestOf } from '../extension-path-trust.js';
-import { notePathTrustEdits } from '../path-trust-edits.js';
+import { notePathTrustEdits, notePersonApproval } from '../path-trust-edits.js';
 
 const manifest = {
   id: 'desk',
@@ -108,6 +108,7 @@ describe('path-trust edits are traced to the turn that made them', () => {
         desk: { path: folder, authorHome: home, grants: grantsDigestOf(manifest) },
       },
     };
+    await notePersonApproval(dorkHome, copyAt('sha256:1'), 'sha256:1', filesOf);
   });
   afterEach(async () => {
     setMarkedFullActivity(undefined);

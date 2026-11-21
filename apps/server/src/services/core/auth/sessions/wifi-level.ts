@@ -233,7 +233,7 @@ export const WIFI_REFUSED_ROUTES: readonly WifiRefusedRoute[] = [
     surface: 'host',
     methods: 'writes',
     pattern:
-      /^\/api\/extensions\/(?:reload|approve-set|[^/]+\/(?:enable|disable|init-server|approve|revoke|dismiss-approval|remove|forget|move-out|secrets|settings|project-settings|room-access|forward-agents|forward\/pending))(?:\/|$)/,
+      /^\/api\/extensions\/(?:reload|approve-set|[^/]+\/(?:enable|disable|init-server|restart|approve|revoke|dismiss-approval|remove|forget|move-out|secrets|settings|project-settings|room-access|forward-agents|forward\/pending))(?:\/|$)/,
     reason: `Turn on and set up extensions ${ON_THE_COMPUTER}`,
   },
   {
@@ -338,6 +338,20 @@ export const WIFI_REFUSED_ROUTES: readonly WifiRefusedRoute[] = [
     methods: 'writes',
     pattern: /^\/api\/devices\/sign-out-all(?:\/|$)/,
     reason: `Sign out everywhere ${ON_THE_COMPUTER}`,
+  },
+  {
+    // Which device may sign in, and what it may do, is set at the computer (DOR-4744).
+    surface: 'front-door',
+    methods: 'all',
+    pattern: /^\/api\/devices\/(?:sign-in-requests|sessions\/[^/]+\/runs-agents)(?:\/|$)/,
+    reason: `Approve devices ${ON_THE_COMPUTER}`,
+  },
+  {
+    // The owner's passkeys and authenticator apps (DOR-3647).
+    surface: 'front-door',
+    methods: 'all',
+    pattern: /^\/api\/owner-factors(?:\/|$)/,
+    reason: `Change sign-in checks ${ON_THE_COMPUTER}`,
   },
   {
     surface: 'sign-out-all',

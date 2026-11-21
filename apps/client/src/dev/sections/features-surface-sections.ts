@@ -1,13 +1,13 @@
 import type { PlaygroundSection } from '../playground-registry';
 import { FEATURE_BROWSER_SECTIONS } from './features-browser-sections';
-import { SPENDING_SECTIONS } from './spending-sections';
+import { SPENDING_SECTIONS, WRITES_BACK_SECTIONS } from './spending-sections';
 
 /**
  * Sections for the Home, Inbox & Approvals page: the surfaces a person
  * answers things on.
  *
  * Sources: PipPanelShowcases, ApprovalsShowcases, ScheduleApprovalShowcases,
- * TriageHeaderShowcases, InboxShowcases, ExtensionUpdateShowcases, PresenceStripShowcases,
+ * TriageHeaderShowcases, InboxShowcases, ExtensionUpdateShowcases, PlacesReaskShowcases, PresenceStripShowcases,
  * HomeStatesShowcases, TodosShowcases, ConnectionsShowcases, PausedConnectionShowcases,
  * CommunityHostingShowcases, McpServerCardShowcases, McpServerSheetShowcases.
  *
@@ -60,6 +60,14 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     category: 'Approvals',
     keywords: ['approval', 'error', 'offline', 'retry', 'unavailable', 'failed read'],
   },
+  // SendRecipientsShowcases
+  {
+    id: 'send-recipients',
+    title: 'Send recipients',
+    page: 'home-inbox',
+    category: 'Approvals',
+    keywords: ['approval', 'send', 'email', 'recipients', 'to', 'cc', 'bcc', 'decline only'],
+  },
   // InboxShowcases
   {
     id: 'inbox-bell',
@@ -84,6 +92,13 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     page: 'home-inbox',
     category: 'Inbox',
     keywords: ['inbox', 'notification', 'row', 'unread', 'read', 'activity', 'history'],
+  },
+  {
+    id: 'stopped-app-rows',
+    title: 'Stopped app rows',
+    page: 'home-inbox',
+    category: 'Inbox',
+    keywords: ['extension', 'mini app', 'stopped', 'restart', 'watchdog', 'off'],
   },
   {
     id: 'access-change-rows',
@@ -115,6 +130,14 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     page: 'home-inbox',
     category: 'Inbox',
     keywords: ['extension', 'update', 'new power', 'files changed', 'approval', 're-ask'],
+  },
+  // PlacesReaskShowcases
+  {
+    id: 'places-re-ask-card',
+    title: 'Places re-ask card',
+    page: 'home-inbox',
+    category: 'Inbox',
+    keywords: ['app', 'extension', 'places', 'contributions', 'grouped', 'approval', 're-ask'],
   },
   // AppApprovalCardShowcases
   {
@@ -272,6 +295,7 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     keywords: ['to-do', 'todo', 'check', 'due', 'overdue', 'declined', 'limited', 'undo'],
   },
   ...SPENDING_SECTIONS,
+  ...WRITES_BACK_SECTIONS,
   // ConnectionsShowcases
   {
     id: 'approw',

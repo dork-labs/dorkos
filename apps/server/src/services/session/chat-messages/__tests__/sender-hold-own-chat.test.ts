@@ -18,6 +18,7 @@ import type { StreamEvent } from '@dorkos/shared/types';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
 import { lastTurnLevelOf, recordTurnLevels } from '../../../core/turn-power/turn-levels.js';
 import { resetLiveOutsiderTurns } from '../../../core/turn-power/live-outsider-turns.js';
+import { noteOwnersCleanSend } from '../../../core/turn-power/held-chat-mark.js';
 import {
   carryBridgedSender,
   setContinuationHoldDb,
@@ -230,8 +231,9 @@ describe('the hold a message carries comes from its own chat (DOR-4693)', () => 
     expect(sendCarriesHold(renamed)).toBe(true);
   });
 
-  // Security: no bulk clear. A chat's next turn that starts unmarked is the natural clear.
-  it('stops holding once the chat’s next turn starts unmarked', async () => {
+  // Security: no bulk clear. Only the owner's own clean send clears it (DOR-4515): a later turn
+  // nobody newly asked for re-reads the same words, so it keeps the hold.
+  it('keeps holding through a later turn that is not the owner’s own clean send', async () => {
     const chat = fresh();
     for await (const _event of recorded().sendMessage(chat, 'a stranger’s words', {
       cwd: home,
@@ -239,7 +241,29 @@ describe('the hold a message carries comes from its own chat (DOR-4693)', () => 
     })) {
       // drain
     }
-    for await (const _event of recorded().sendMessage(chat, 'the owner', { cwd: home })) {
+    for await (const _event of recorded().sendMessage(chat, 'a scheduled run', {
+      cwd: home,
+      unattended: true,
+    })) {
+      // drain
+    }
+    expect(sendCarriesHold(chat)).toBe(true);
+  });
+
+  it('stops holding once the owner’s own clean send starts', async () => {
+    const chat = fresh();
+    for await (const _event of recorded().sendMessage(chat, 'a stranger’s words', {
+      cwd: home,
+      permissionCeiling: 'runtime-default',
+    })) {
+      // drain
+    }
+    noteOwnersCleanSend('owner-send-1', chat);
+    for await (const _event of recorded().sendMessage(chat, 'the owner', {
+      cwd: home,
+      turnStarter: 'person',
+      messageId: 'owner-send-1',
+    })) {
       // drain
     }
     expect(sendCarriesHold(chat)).toBe(false);

@@ -261,10 +261,9 @@ describe('list_extensions handler', () => {
 });
 
 describe('get_extension_errors handler', () => {
-  it('returns only extensions in error states', async () => {
+  it('returns the manager error records', async () => {
     const manager = createMockManager({
-      listPublic: vi.fn(() => [
-        makePublicRecord('healthy', { status: 'compiled', bundleReady: true }),
+      listErrors: vi.fn(() => [
         makePublicRecord('invalid-ext', {
           status: 'invalid',
           error: { code: 'invalid_manifest', message: 'Bad manifest' },
@@ -274,7 +273,6 @@ describe('get_extension_errors handler', () => {
           error: { code: 'compilation_failed', message: 'Syntax error' },
         }),
         makePublicRecord('incompat', { status: 'incompatible' }),
-        makePublicRecord('active-ext', { status: 'active', bundleReady: true }),
         makePublicRecord('act-err', {
           status: 'activate_error',
           error: { code: 'activate_error', message: 'Activation failed' },
@@ -292,16 +290,11 @@ describe('get_extension_errors handler', () => {
     expect(ids).toContain('broken');
     expect(ids).toContain('incompat');
     expect(ids).toContain('act-err');
-    expect(ids).not.toContain('healthy');
-    expect(ids).not.toContain('active-ext');
   });
 
   it('returns empty list when no extensions have errors', async () => {
     const manager = createMockManager({
-      listPublic: vi.fn(() => [
-        makePublicRecord('ok-1', { status: 'compiled' }),
-        makePublicRecord('ok-2', { status: 'disabled' }),
-      ]),
+      listErrors: vi.fn(() => []),
     });
     const handler = createGetExtensionErrorsHandler(createDeps(manager));
 

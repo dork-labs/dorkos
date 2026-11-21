@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The blended ranking, asserted against fixed corpora (design-decisions §15).
  *

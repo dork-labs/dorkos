@@ -221,6 +221,19 @@ export {
 } from './backup.js';
 export type { MigrationState, SnapshotOptions } from './backup.js';
 
+// The person's view of the backup folder: list, and remove or move older copies (DOR-4253).
+export {
+  listBackupCopies,
+  removeOlderBackupCopy,
+  moveOlderBackupCopy,
+  type BackupCopy,
+  type BackupCopyKind,
+  type BackupCopyList,
+  type BackupCopyRefusal,
+  type BackupMoveRefusal,
+  type BackupMoveResult,
+} from './backup-copies.js';
+
 // Re-export the percentile-extension feature probe (DOR-166) — shared by any
 // store that aggregates with `percentile_cont()` so a build predating
 // better-sqlite3 12.10 degrades to `NULL` instead of throwing.

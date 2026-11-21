@@ -99,12 +99,17 @@ import {
   resolveEffectivePermissionMode,
 } from './permission-mode-guard.js';
 import { resolveThinkingOptions } from './thinking-config.js';
-import { createEditBaselineCapture, detectSlashCommandName } from './message-sender-shared.js';
+import {
+  createEditBaselineCapture,
+  detectSlashCommandName,
+  editBaselineMatcher,
+} from './message-sender-shared.js';
 import type { MessageSenderOpts, ResolvedLaunch } from './message-sender-shared.js';
 import { neverAsks, turnPermissionMode } from '../turn-permission.js';
 import { auditToolHookMatchers } from '../audit-tool-hooks.js';
 import { createHeldTurnHook } from '../tool-gate/held-turn-hook.js';
 import { protectedFileMatcher } from '../tool-gate/protected-file-hook.js';
+import { ownExtensionsMatcher } from '../tool-gate/own-extensions-hook.js';
 import { turnReadRoots } from '../tool-gate/held-turn-reads.js';
 import { shellGuardMatcher } from '../shell-guard/shell-guard-launch.js';
 import { createNeverAskHook, turnOutsideChecks } from '../tool-gate/never-ask-hook.js';
@@ -119,6 +124,7 @@ import {
 import { applyRepoConfigStep, applyRepoMcpServers } from '../repo-settings/launch-repo-config.js';
 import { prepareOwnFolder } from '../folder-settings/own-folder-open.js';
 import { createStopHook } from '../tool-gate/stop-hook.js';
+import { loadGateHooks } from '../tool-gate/load-gate-hook.js';
 import { hasUnmovedClaudeMemory } from '../claude-memory-folder.js';
 import { launchPrompt } from './launch/launch-content.js';
 
@@ -808,13 +814,16 @@ export async function resolveLaunch(args: {
     plugins: (opts.plugins ?? []).map((plugin) => plugin.path),
     accountRoot,
   });
+  // One launch's heavy-job hooks (DOR-4209), built here because a card gives its call's slot back.
+  const loadGate = loadGateHooks(session, { sessionId, agentName: agentDisplayName });
   sdkOptions.canUseTool = createCanUseTool(
     session,
     logger,
     editBaselineCapture,
     resolveIdentity,
     { cwd: effectiveCwd, roots: readRoots },
-    outsideChecks
+    outsideChecks,
+    loadGate.releaseCall
   );
   // Pre-edit baseline capture must ALSO ride the SDK PreToolUse hook (DOR-212):
   // `canUseTool` is skipped entirely under `bypassPermissions`, but PreToolUse
@@ -845,6 +854,9 @@ export async function resolveLaunch(args: {
         cwd: effectiveCwd,
         ...(turnAgentPath ? { agentPath: turnAgentPath } : {}),
       }),
+      // A held turn's own mini apps folder (DOR-4851): the deny rule's refusal, with the rule
+      // and the route that works named.
+      ownExtensionsMatcher(session, { sessionId, cwd: effectiveCwd, agentHome: turnAgentPath }),
       // The shell's route to protected files (DOR-3300): reads ask below Full,
       // writes to any agent's setup files are refused at every level.
       shellGuardMatcher(session, {
@@ -867,20 +879,12 @@ export async function resolveLaunch(args: {
       },
       // Who wrote a mini app's files, so path trust runs only its author's unheld edits (DOR-4528).
       noteWritesBefore(session, { sessionId, cwd: effectiveCwd, agentHome: turnAgentPath }),
-      {
-        matcher: 'Edit|Write|MultiEdit|NotebookEdit',
-        hooks: [
-          async (hookInput) => {
-            if (hookInput.hook_event_name === 'PreToolUse') {
-              await editBaselineCapture(
-                hookInput.tool_name,
-                (hookInput.tool_input ?? {}) as Record<string, unknown>
-              );
-            }
-            return { continue: true };
-          },
-        ],
-      },
+      editBaselineMatcher(editBaselineCapture),
+      // A heavy shell job waits its turn while the computer is busy (DOR-4209). It answers
+      // nothing, so the hooks above still decide; the CLI may run them all side by side, so
+      // nothing depends on this being last. Its slots come back from the hooks below and, when
+      // the process dies, from `releaseHeavyJobsOf` on both dispatch paths.
+      loadGate.wait,
     ],
     // Tell auto mode's permission classifier which safety tier DorkOS's own
     // gate put this tool at, and that the call passed that gate
@@ -904,12 +908,15 @@ export async function resolveLaunch(args: {
       },
       ...auditHooks.PostToolUse,
       NOTE_WRITES_AFTER,
+      loadGate.afterCall,
     ],
     // A helper agent's tool calls never reach the stream the audit record
     // reads, so these record them (spec `audit-trail` PR3). Observe-only.
-    PostToolUseFailure: [...auditHooks.PostToolUseFailure, NOTE_WRITES_AFTER],
-    // Pending session timers, and the agent's own folder at turn end (`stop-hook.ts`).
-    Stop: [{ hooks: [createStopHook(session, ownFolder.atTurnEnd)] }],
+    PostToolUseFailure: [...auditHooks.PostToolUseFailure, NOTE_WRITES_AFTER, loadGate.afterCall],
+    // Pending session timers, and the agent's own folder at turn end (`stop-hook.ts`); also any
+    // heavy-job slot a refused call never gave back (`load-gate-hook.ts`).
+    Stop: [{ hooks: [createStopHook(session, ownFolder.atTurnEnd)] }, loadGate.sweep],
+    ...loadGate.backstops,
   };
   sdkOptions.onElicitation = (request, { signal }) => {
     logger.debug('[sendMessage] elicitation request', {

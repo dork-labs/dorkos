@@ -1,9 +1,14 @@
 import type { Page } from 'playwright-core';
 import type { LocalBrowserTab } from '@dorkos/shared/local-browser';
 import { openedOverHttp } from './history/opened-over-http.js';
+import type { PageWorkTracker } from './leases/page-work.js';
 
 /** Event-refreshed tab labels; polling never evaluates an unrelated page's document. */
 export class LocalBrowserTabMetadata {
+  constructor(
+    private readonly trackWork: PageWorkTracker = (operation) => operation,
+    private readonly readable: () => boolean = () => true
+  ) {}
   private tracked = new WeakSet<Page>();
   private entries = new WeakMap<Page, { title: string; url: string; pending: boolean }>();
 
@@ -14,19 +19,19 @@ export class LocalBrowserTabMetadata {
       active(): boolean;
       selected(): boolean;
       invalidate(): void;
-      framesChanged(): void;
+      framesChanged(mainFrame: boolean): void;
       closed(): void;
     }
   ): void {
     if (this.tracked.has(page)) return;
     this.tracked.add(page);
-    const framesChanged = () => {
-      if (owner.active() && owner.selected()) owner.framesChanged();
+    const framesChanged = (mainFrame: boolean) => {
+      if (owner.active() && owner.selected()) owner.framesChanged(mainFrame);
     };
-    page.on('frameattached', framesChanged);
-    page.on('framedetached', framesChanged);
+    page.on('frameattached', () => framesChanged(false));
+    page.on('framedetached', () => framesChanged(false));
     page.on('framenavigated', (frame) => {
-      framesChanged();
+      framesChanged(frame === page.mainFrame());
       if (frame !== page.mainFrame() || !owner.active()) return;
       this.refresh(page, { newDocument: true });
       if (owner.selected()) owner.invalidate();
@@ -52,6 +57,7 @@ export class LocalBrowserTabMetadata {
 
   /** Refresh without waiting, retaining same-document labels and deduplicating pending reads. */
   refresh(page: Page, options: { newDocument?: boolean } = {}): void {
+    if (!this.readable()) return;
     const entries = this.entries;
     const url = page.url();
     const previous = entries.get(page);
@@ -62,8 +68,7 @@ export class LocalBrowserTabMetadata {
       pending: true,
     };
     entries.set(page, record);
-    void page
-      .title()
+    void this.trackWork(page.title())
       .then((title) => {
         record.pending = false;
         if (

@@ -313,6 +313,19 @@ jobs:
       - name: Merge-guard hook fixtures
         run: bash scripts/test-merge-guard.sh
 
+      # Opening a PR is code, not prose (2026-11-20: a brief said "open with
+      # hold", the arm script refused hold and never lifted it, and 19 PRs sat
+      # for 9 hours). open-pr.sh holds the rules (cap, computed labels,
+      # provenance, hold only with a reason), pr-create-guard refuses a bare
+      # `gh pr create`, and hold-reason-check.sh is the advisory hold-reason
+      # workflow's decision. Stubbed `gh`, throwaway git repos, node for the
+      # guard and the security-path classifier.
+      - name: Open-PR script, PR-create guard and hold-reason fixtures
+        run: |
+          bash scripts/test-pr-create-guard.sh
+          bash scripts/test-open-pr.sh
+          bash scripts/test-hold-reason-check.sh
+
       # in-project.sh is the wrapper every working-tree hook in settings.json
       # runs through; it decides whether a hook runs at all once a session has
       # cd-ed into a sibling repo. Hermetic (throwaway git checkouts in a temp
@@ -529,6 +542,14 @@ jobs:
       - name: Heavy-run lock fixtures
         run: bash scripts/test-heavy-run-lock.sh
 
+      # Under pipefail, `… | grep -q` is a coin toss: grep exits at its first
+      # match, the writer dies of SIGPIPE, and the pipeline reads as a miss on
+      # input that matched (76 in 5,000 on a loaded runner, dorkos-cloud #463).
+      # Under `if !` that miss fails OPEN. This lint keeps the shape out of
+      # scripts, hooks and workflows. A grep over files, a few milliseconds.
+      - name: No pipe into grep -q
+        run: bash scripts/test-no-early-exit-grep.sh
+
       # sweep-ephemeral-docker.sh reclaims the containers, volumes and networks a
       # SIGKILLed run leaves behind, and it is the one gate script whose failure
       # mode is DELETING something rather than missing something. Its fixtures
@@ -674,6 +695,14 @@ jobs:
       - name: No-code scope fixtures
         run: bash scripts/test-no-code-scope.sh
 
+      # release-branch-contents.sh is the rule for what a pull request into a
+      # release/v<X.Y.Z> branch may carry (DOR-4639): only cherry-picks of main
+      # with a matching patch-id and the release commit. A rule that quietly
+      # loosens lets a commit main never saw ship to npm. Hermetic (throwaway
+      # repos with a local origin), git and jq, no pnpm.
+      - name: Release-branch contents fixtures
+        run: bash scripts/test-release-branch-contents.sh
+
   # The TypeScript under scripts/ belongs to no pnpm workspace, so `pnpm verify`'s
   # affected-only turbo run resolves a scripts-only change to 0 affected packages
   # and covers none of it. Without this job the Q3 harness — its overlap and work
@@ -779,6 +808,17 @@ jobs:
       # banned without weakening any owner directory's SDK confinement.
       - name: Stable Supertest import guard fixtures
         run: bash scripts/test-supertest-import-guard.sh
+
+      # The app's line in heavy-run-lock.sh (DOR-4209): a --job waits in the
+      # same first-come line as agents' heavy jobs, through the server's own
+      # TicketQueue, so it needs tsx and zod and lives here, beside the only
+      # node_modules. It pins both directions of the shared line against a job
+      # TicketQueue itself queued, that a run nested in an app-held job never
+      # waits on its parent, that every broken path still runs the command, and
+      # that the slot comes back on success, failure and a signal. Throwaway
+      # queue folder and DORK_HOME per case, load fixed at 0.
+      - name: Load-gate line fixtures
+        run: bash scripts/test-load-gate-turn.sh
 
       # In `harness` for the same reason as the suite above it: it is the only
       # job with a node_modules, and this suite needs the REAL prettier. A stub

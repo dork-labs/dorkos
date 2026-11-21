@@ -237,6 +237,8 @@ function executionCapability(
         throw new Error(`Connector execution capability ${id} ran without registry preflight.`);
       }
       const executionDeps = requireExecutionDeps(deps);
+      // The connection the preflight verified, never the one the arguments name (DOR-4794).
+      const { connectionId } = context.preflight.authorityBinding.approvalScope;
       const held = context.approval?.via === 'hold' ? context.approval.holdId : undefined;
       let outcome: HeldActionOutcome = 'not_sent';
       try {
@@ -256,8 +258,11 @@ function executionCapability(
         // A held action's waiting row is replaced by how it came out.
         if (held) executionDeps.holds?.recordOutcome(held, outcome);
         // A read hands the turn someone else's text, whatever came back (DOR-3969). Every read,
-        // not a list of apps: nearly every read carries text someone else wrote.
-        if (classification === 'read') markCallerTurnOutsider(context);
+        // not a list of apps: nearly every read carries text someone else wrote. The mark names
+        // the account, so a write back to that same account alone can skip the ask (DOR-4794).
+        if (classification === 'read') {
+          markCallerTurnOutsider(context, { kind: 'connector', connectionId });
+        }
       }
     },
   });

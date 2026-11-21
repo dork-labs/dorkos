@@ -11,7 +11,7 @@ import { claudeTranscriptPath } from '../../session/fleet/carry-over-summary.js'
 import { isTurnInFlight } from '../../session/message-dispatcher/turn-probes.js';
 import { agentPause } from '../../mesh/pause/agent-pause.js';
 import { getAccountUsageStore } from '../../core/usage/current-usage-store.js';
-import { mayAutoPickClaudeRoot } from '../../runtimes/claude-code/accounts/account-login-metadata.js';
+import { mayAutoPickClaudeFolder } from '../../core/usage/account-ranking.js';
 import type { RecoveryAuthority } from './required-launch-store.js';
 import type { Seat } from './seat-mover.js';
 
@@ -111,7 +111,7 @@ export async function failedSeatCandidate(seat: Seat): Promise<FailedSeatCandida
         !runtime.isHelperWorking?.(sessionId) &&
         usage !== undefined &&
         usage.state === 'ok' &&
-        mayAutoPickClaudeRoot(authority.root) &&
+        mayAutoPickClaudeFolder(authority.root) &&
         disk.mtimeMs === signature.mtimeMs &&
         disk.size === signature.size
       );

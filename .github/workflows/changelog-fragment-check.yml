@@ -63,8 +63,19 @@ concurrency:
   # keyed on its own run id, so nothing can cancel it or replace it while it is
   # pending. The newest run in a group is never the cancelled one, so the
   # newest head always reports (ledger 261031-020633).
-  group: ${{ github.workflow }}-${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.run_id) }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_target' }}
+  #
+  # Except it was, once (#4054, 2026-11-20): a burst of label edits queued
+  # several runs at one head in that group, GitHub cancelled the NEWEST before
+  # any job started, and a required context is read from the newest run of its
+  # workflow, so both checks read as "expected" and the PR could not queue. So
+  # a label event that cannot change the answer (any label but
+  # `skip-changelog`) now gets its own run-id group and is never cancelled: at
+  # worst a few extra one-minute runs. `opened`, `reopened`, `synchronize` and
+  # `skip-changelog` edits keep the shared group, where a newer push or a
+  # newer skip decision really does make the older run worthless (ledger
+  # 261120-201356).
+  group: ${{ github.workflow }}-${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && !((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name != 'skip-changelog') && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.run_id) }}
+  cancel-in-progress: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && !((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name != 'skip-changelog') }}
 
 # Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
 # hard cutoff for Node 20 runtime.
@@ -148,6 +159,56 @@ jobs:
           python3 .claude/scripts/changelog_backfill.py \
             --since "${{ steps.base.outputs.sha }}" --validate --changed-only
 
+      # Node 24 for the release-branch step below (type stripping). Unconditional
+      # so the required job never branches on it; it costs seconds.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+
+      # RELEASE BRANCHES (DOR-4639). A pull request into `release/v<X.Y.Z>` may
+      # carry only cherry-picks of main commits and the release commit, which
+      # is `chore(` and owes no fragment. Every cherry-picked commit already
+      # passed this job's coverage on its own pull request into main, and its
+      # fragment, if it had one, rides along in the pick. So on a release base
+      # coverage is not asked again (the next step skips there); PROVENANCE is
+      # asked instead, here, by running main's copy of the same rule as the
+      # `release-branch-contents` check (DOR-4638's check-picks.ts, which needs
+      # node 24's type stripping, hence the setup-node above; until DOR-4638 is
+      # on main this step fails closed on a release base). Provenance here is
+      # ADVISORY: the PR's own copy of this workflow YAML, and an earlier step
+      # in this same job that runs PR code (the changelog backfill script),
+      # can defeat it. The real gate is `release-branch-contents`, required as
+      # a workflow pinned to main.
+      #
+      # No `if:`: on any other base, and on `merge_group` (no base_ref), the
+      # body is a no-op, which keeps it out of the census allowlist. Inputs
+      # through `env:` only; the branch name is validated by the script.
+      - name: On a release branch, prove every commit came from main
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          case "$BASE_REF" in
+            release/*) ;;
+            *)
+              echo "base '${BASE_REF:-none}' is not a release branch; coverage is decided below."
+              exit 0
+              ;;
+          esac
+          git fetch --no-tags --quiet origin +refs/heads/main:refs/remotes/origin/main
+          if ! git cat-file -e origin/main:packages/cli/scripts/release-branch/check-picks.ts 2>/dev/null; then
+            echo "::error::main has no packages/cli/scripts/release-branch/check-picks.ts (DOR-4638 is not on main yet), so provenance cannot be proven. Refusing."
+            exit 2
+          fi
+          git show origin/main:scripts/ci/release-branch-contents.sh > "$RUNNER_TEMP/release-branch-contents.sh"
+          mkdir -p "$RUNNER_TEMP/release-branch-rule"
+          git archive origin/main packages/cli/scripts/release-branch |
+            tar -x -C "$RUNNER_TEMP/release-branch-rule" --strip-components=4
+          bash "$RUNNER_TEMP/release-branch-contents.sh" --rule-dir "$RUNNER_TEMP/release-branch-rule" \
+            --base-ref "$BASE_REF" --base-sha "$BASE_SHA" --head-sha "$HEAD_SHA"
+
       # COVERAGE — skipped (success) when the PR carries `skip-changelog`, so a
       # deliberate non-user-facing PR is never blocked and the check still reports
       # green. `--changed-only` here too, so a stray malformed fragment downgrades
@@ -162,7 +223,7 @@ jobs:
       # carries, and fail there. That is the worst possible place to discover it:
       # the queue would eject the PR with no obvious cause.
       - name: Require a changelog fragment for every user-facing commit
-        if: ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'skip-changelog') }}
+        if: ${{ github.event_name == 'pull_request' && !startsWith(github.base_ref, 'release/') && !contains(github.event.pull_request.labels.*.name, 'skip-changelog') }}
         run: |
           python3 .claude/scripts/changelog_backfill.py \
             --since "${{ steps.base.outputs.sha }}" \
@@ -215,7 +276,13 @@ jobs:
     # reconciles a LABEL against a DIFF, and the label only exists on the pull
     # request. It has already run there, and a PR cannot reach this queue without
     # passing it.
-    if: ${{ contains(github.event.pull_request.labels.*.name, 'skip-changelog') }}
+    #
+    # On a release base it skips too (DOR-4639): there the label decides
+    # nothing, because coverage is replaced by provenance (see fragment-present),
+    # and a cherry-pick legitimately brings the fragment its main pull request
+    # added. Refusing that fragment because someone labelled the release pull
+    # request would be a red with no defect behind it.
+    if: ${{ contains(github.event.pull_request.labels.*.name, 'skip-changelog') && !startsWith(github.base_ref, 'release/') }}
     runs-on: ubuntu-latest
     # Measured, not guessed (CI Steward phase 0, 2026-09-19): 99 completed
     # runs over 2026-09-14..09-19, p95 0.37 min, max 0.83. Ceiling =

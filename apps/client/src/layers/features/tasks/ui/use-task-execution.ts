@@ -61,14 +61,35 @@ export function useAgentRuntime(
   agents: readonly AgentPathLike[],
   agentId: string | undefined
 ): string | null {
+  return useAgentRuntimeState(agents, agentId).runtime;
+}
+
+/**
+ * {@link useAgentRuntime}'s answer, plus whether it IS an answer yet.
+ *
+ * `runtime: null` means both "this agent names no runtime" and "its manifest
+ * has not been read", and the save confirm cannot treat those alike: a Codex
+ * agent's Act never asks, and read as "no runtime" it would look like the
+ * default runtime's Act, which does (DOR-3841). `known` is false only while the
+ * selected agent's manifest is still being read; a failed read counts as known,
+ * so a broken lookup never holds a form shut.
+ *
+ * @param agents - The picker's agents, each with the project path its manifest lives in.
+ * @param agentId - The selected agent's id, or `''`/undefined for none.
+ */
+export function useAgentRuntimeState(
+  agents: readonly AgentPathLike[],
+  agentId: string | undefined
+): { runtime: string | null; known: boolean } {
   // Keyed on the joined paths rather than the array identity: callers build
   // this list with `?? []` off a query result, so the array is a fresh object
   // on most renders while its contents are unchanged.
   const pathsKey = agents.map((a) => a.projectPath).join('\n');
   const paths = useMemo(() => (pathsKey ? pathsKey.split('\n') : []), [pathsKey]);
-  const { data: resolvedAgents } = useResolvedAgents(paths);
+  const { data: resolvedAgents, isPending } = useResolvedAgents(paths);
   const path = agentId ? agents.find((a) => a.id === agentId)?.projectPath : undefined;
-  return path ? (resolvedAgents?.[path]?.runtime ?? null) : null;
+  if (!path) return { runtime: null, known: true };
+  return { runtime: resolvedAgents?.[path]?.runtime ?? null, known: !isPending };
 }
 
 /**

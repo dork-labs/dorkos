@@ -31,6 +31,22 @@ import type { InstallResult } from '../../marketplace/types.js';
 import { TokenConfirmationProvider } from '../confirmation-provider.js';
 import { createInstallHandler } from '../tool-install.js';
 import type { MarketplaceMcpDeps } from '../marketplace-mcp-tools.js';
+import { marketplaceDomain } from '../marketplace-capabilities.js';
+import {
+  composeRegistry,
+  CapabilityGateRefusal,
+  initCapabilityTierGate,
+  resetCapabilityTierGate,
+  initPermissionGate,
+  resetPermissionGate,
+} from '../../core/capabilities/index.js';
+import { noopLogger } from '@dorkos/shared/logger';
+import { recordTurnLevels } from '../../core/turn-power/turn-levels.js';
+import { CLAUDE_CODE_CAPABILITIES } from '../../runtimes/claude-code/runtime-constants.js';
+import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
+import type { StreamEvent } from '@dorkos/shared/types';
+
+import { flowSizedPreview } from './fixtures/large-packages.js';
 
 const PACKAGE_NAME = 'note-taker';
 
@@ -55,6 +71,7 @@ describe('a marketplace install approval binds the commands it disclosed', () =>
   let dorkHome: string;
   let approvals: ApprovalService;
   let handler: ReturnType<typeof createInstallHandler>;
+  let deps: MarketplaceMcpDeps;
   /** Every command that actually reached the install, in order. */
   let executed: string[];
 
@@ -117,19 +134,220 @@ describe('a marketplace install approval binds the commands it disclosed', () =>
     };
 
     approvals = new ApprovalService(createTestDb());
-    handler = createInstallHandler({
+    deps = {
       installer,
       confirmationProvider: new TokenConfirmationProvider(approvals),
       onPluginsChanged: () => {},
       consent: { settle: async () => {}, removed: () => {} },
-    } as unknown as MarketplaceMcpDeps);
+    } as unknown as MarketplaceMcpDeps;
+    handler = createInstallHandler(deps);
   });
 
   afterEach(async () => {
+    resetCapabilityTierGate();
+    resetPermissionGate();
     await rm(join(stagedPackage, '..'), { recursive: true, force: true });
   });
 
-  /** Grant every pending approval, the way the cockpit's Allow button does. */
+  it.each([
+    { large: false, blockBeforeApply: false },
+    { large: true, blockBeforeApply: false },
+    { large: false, blockBeforeApply: true },
+  ])(
+    'rechecks permission through the package content review: %j',
+    async ({ large, blockBeforeApply }) => {
+      if (large) {
+        const preview = deps.installer.preview.bind(deps.installer);
+        deps.installer.preview = async (request) => {
+          const result = await preview(request);
+          return {
+            ...result,
+            preview: { ...result.preview, skillTools: flowSizedPreview().skillTools },
+          };
+        };
+      }
+      let packages: 'ask' | 'blocked' = 'ask';
+      initCapabilityTierGate({ approvals });
+      initPermissionGate({
+        readConfig: () => ({
+          preset: 'careful',
+          defaults: { areas: { packages }, actions: {} },
+        }),
+        readAgentPermissions: async () => undefined,
+      });
+      const registry = composeRegistry([marketplaceDomain], {
+        logger: noopLogger,
+        marketplaceDeps: deps,
+      });
+      const identity = {
+        agentPath: '/sample/agents/scout',
+        displayName: 'Scout',
+        createdAt: '2026-11-20',
+      };
+      const first = await registry
+        .invoke(
+          'marketplace.install',
+          { name: PACKAGE_NAME },
+          { identity, sessionId: 'sample-review-session' }
+        )
+        .catch((error) => error);
+      if (
+        !(first instanceof CapabilityGateRefusal) ||
+        first.decision.outcome !== 'approval_required'
+      ) {
+        throw new Error('Expected the permission card');
+      }
+      const { approvalId, approvalToken } = first.decision.payload;
+      approvals.grant(approvalId);
+      const second = await registry.invoke(
+        'marketplace.install',
+        { name: PACKAGE_NAME },
+        { identity, sessionId: 'sample-review-session', approvalToken }
+      );
+      expect(second).toMatchObject({ status: 'requires_confirmation' });
+      expect(executed).toEqual([]);
+      expect(approvals.listPending()).toHaveLength(1);
+      const contentCard = approvals.listPending()[0]!;
+      if (large) expect(contentCard.marketplaceSummary).toBeDefined();
+      expect(approvals.fullDetail(contentCard.approvalId) ?? contentCard.detail).toContain(
+        HARMLESS
+      );
+      const content = second as { confirmationToken: string };
+      approvals.grant(approvals.listPending()[0]!.approvalId);
+      if (blockBeforeApply) packages = 'blocked';
+      if (blockBeforeApply) {
+        await expect(
+          registry.invoke(
+            'marketplace.install',
+            { name: PACKAGE_NAME, confirmationToken: content.confirmationToken },
+            { identity, sessionId: 'sample-review-session' }
+          )
+        ).rejects.toMatchObject({
+          decision: { outcome: 'denied', payload: { reason: 'permission_blocked' } },
+        });
+        expect(executed).toEqual([]);
+        return;
+      }
+      const installed = await registry.invoke(
+        'marketplace.install',
+        { name: PACKAGE_NAME, confirmationToken: content.confirmationToken },
+        { identity, sessionId: 'sample-review-session' }
+      );
+      expect(installed).toMatchObject({ status: 'installed' });
+      expect(executed).toEqual([HARMLESS]);
+      expect(approvals.listPending()).toEqual([]);
+    }
+  );
+
+  it('stores the server-owned marked-turn context on both cards', async () => {
+    const sessionId = 'sample-marked-review-session';
+    const runtime = recordTurnLevels(
+      {
+        type: 'claude-code',
+        getCapabilities: () => CLAUDE_CODE_CAPABILITIES,
+        async *sendMessage(): AsyncGenerator<StreamEvent> {
+          yield { type: 'done', data: {} } as StreamEvent;
+        },
+      } as unknown as AgentRuntime,
+      () => 'acceptEdits'
+    );
+    for await (const _event of runtime.sendMessage(sessionId, 'sample', {
+      permissionCeiling: 'runtime-default',
+    })) {
+      /* drain */
+    }
+    initCapabilityTierGate({ approvals });
+    initPermissionGate({
+      readConfig: () => ({
+        preset: 'careful',
+        defaults: { areas: { packages: 'ask' }, actions: {} },
+      }),
+      readAgentPermissions: async () => undefined,
+    });
+    const registry = composeRegistry([marketplaceDomain], {
+      logger: noopLogger,
+      marketplaceDeps: deps,
+    });
+    const identity = {
+      agentPath: '/sample/agents/scout',
+      displayName: 'Scout',
+      createdAt: '2026-11-20',
+    };
+    const first = await registry
+      .invoke('marketplace.install', { name: PACKAGE_NAME }, { identity, sessionId })
+      .catch((error) => error);
+    if (
+      !(first instanceof CapabilityGateRefusal) ||
+      first.decision.outcome !== 'approval_required'
+    ) {
+      throw new Error('Expected the permission card');
+    }
+    expect(approvals.listPending()[0]!.summary).toContain(
+      'This request followed words from outside your team.'
+    );
+    approvals.grant(first.decision.payload.approvalId);
+    await registry.invoke(
+      'marketplace.install',
+      { name: PACKAGE_NAME },
+      { identity, sessionId, approvalToken: first.decision.payload.approvalToken }
+    );
+    expect(approvals.listPending()).toHaveLength(1);
+    for await (const _event of runtime.sendMessage(sessionId, 'sample')) {
+      /* drain */
+    }
+    expect(approvals.listPending()[0]!.summary).toContain(
+      'This request followed words from outside your team.'
+    );
+    expect(executed).toEqual([]);
+  });
+
+  it('keeps content approval on a standing grant when only the token changes', async () => {
+    initCapabilityTierGate({ approvals });
+    initPermissionGate({
+      readConfig: () => ({
+        preset: 'careful',
+        defaults: { areas: {}, actions: { 'marketplace.install': 'allowed' } },
+      }),
+      readAgentPermissions: async () => undefined,
+    });
+    const registry = composeRegistry([marketplaceDomain], {
+      logger: noopLogger,
+      marketplaceDeps: deps,
+    });
+    const identity = {
+      agentPath: '/sample/agents/scout',
+      displayName: 'Scout',
+      createdAt: '2026-11-20',
+    };
+    const caller = { identity, sessionId: 'sample-standing-session' };
+    expect(
+      await registry.invoke('marketplace.install', { name: PACKAGE_NAME }, caller)
+    ).toMatchObject({ status: 'requires_confirmation' });
+    const changed = await registry.invoke(
+      'marketplace.install',
+      { name: PACKAGE_NAME, confirmationToken: 'forged-content-token' },
+      caller
+    );
+    expect(changed).not.toMatchObject({ status: 'installed' });
+    expect(executed).toEqual([]);
+  });
+
+  it('asks again when staged bytes change without changing the effect list', async () => {
+    const first = parsePayload<{ status: string; confirmationToken: string }>(
+      await handler({ name: PACKAGE_NAME })
+    );
+    expect(first.status).toBe('requires_confirmation');
+    const card = approvals.listPending()[0]!;
+    await writeFile(join(stagedPackage, 'README.md'), 'A different staged revision.');
+    approvals.grant(card.approvalId);
+    const retry = parsePayload<{ status: string }>(
+      await handler({ name: PACKAGE_NAME, confirmationToken: first.confirmationToken })
+    );
+    expect(retry.status).toBe('requires_confirmation');
+    expect(executed).toEqual([]);
+  });
+
+  /** Grant every pending approval, the way the approval card's Allow button does. */
   function grantPending(): void {
     for (const pending of approvals.listPending()) approvals.grant(pending.approvalId);
   }

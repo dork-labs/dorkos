@@ -1,3 +1,8 @@
+import {
+  withinSessionBirthWrite,
+  withSessionBirthWrite,
+  SessionBirthWriteError,
+} from '../runtime-seam/session-birth-write.js';
 /**
  * Whether a chat's latest turn read words DorkOS cannot vouch for, kept on the
  * chat's row so it outlives a restart (DOR-3037).
@@ -25,7 +30,7 @@
  *
  * @module services/core/turn-power/continuation-hold
  */
-import { eq, sessionMetadata, sql, type Db } from '@dorkos/db';
+import { eq, sessionBirthAllocations, sessionMetadata, sql, type Db } from '@dorkos/db';
 import type { TurnPermissionBound } from '@dorkos/shared/agent-runtime';
 import { primaryOf, queueKeyOf } from '../../session/resolution/session-key-registry.js';
 import { logger } from '../../../lib/logger.js';
@@ -98,23 +103,26 @@ export function noteBridgedSender(
       if (strangers.size > WRITTEN_MAX) strangers.delete(strangers.values().next().value as string);
     }
     try {
-      db.insert(sessionMetadata)
-        .values({
-          sessionId: key,
-          runtime: null,
-          createdAt: new Date().toISOString(),
-          bridgedSender: stranger ? 'stranger' : 'vouched',
-        })
-        .onConflictDoUpdate({
-          target: sessionMetadata.sessionId,
-          // `stranger` overwrites anything; `vouched` only fills a chat with no record.
-          set: {
-            bridgedSender: stranger
-              ? 'stranger'
-              : sql`coalesce(${sessionMetadata.bridgedSender}, 'vouched')`,
-          },
-        })
-        .run();
+      withSessionBirthWrite(db, key, undefined, (tx) =>
+        tx
+          .insert(sessionMetadata)
+          .values({
+            sessionId: key,
+            runtime: null,
+            createdAt: new Date().toISOString(),
+            bridgedSender: stranger ? 'stranger' : 'vouched',
+          })
+          .onConflictDoUpdate({
+            target: sessionMetadata.sessionId,
+            // `stranger` overwrites anything; `vouched` only fills a chat with no record.
+            set: {
+              bridgedSender: stranger
+                ? 'stranger'
+                : sql`coalesce(${sessionMetadata.bridgedSender}, 'vouched')`,
+            },
+          })
+          .run()
+      );
     } catch (err) {
       logger.warn('[continuation-hold] could not record whose words a bridged chat holds', {
         sessionId: key,
@@ -265,31 +273,43 @@ export function chatHeldStrangerWords(sessionId: string): boolean {
 export function carryBridgedSender(fromId: string, toId: string): void {
   if (!db || fromId === toId) return;
   try {
-    const senderOf = (id: string) =>
-      db!
-        .select({ sender: sessionMetadata.bridgedSender })
-        .from(sessionMetadata)
-        .where(eq(sessionMetadata.sessionId, id))
-        .get();
-    const from = senderOf(fromId);
-    if (!from) return;
-    const to = senderOf(toId);
-    const merged = to
-      ? mergedHolds(
-          { lastTurnHeld: null, bridgedSender: from.sender },
-          { lastTurnHeld: null, bridgedSender: to.sender }
-        ).bridgedSender
-      : from.sender;
-    if (to && to.sender === merged) return;
-    db.insert(sessionMetadata)
-      .values({
-        sessionId: toId,
-        runtime: null,
-        createdAt: new Date().toISOString(),
-        bridgedSender: merged,
-      })
-      .onConflictDoUpdate({ target: sessionMetadata.sessionId, set: { bridgedSender: merged } })
-      .run();
+    const merged = withSessionBirthWrite(db, toId, undefined, (tx) => {
+      // This best-effort alias notification is not the authenticated rekey owner.
+      if (
+        tx
+          .select()
+          .from(sessionBirthAllocations)
+          .where(eq(sessionBirthAllocations.sessionId, fromId))
+          .get()
+      )
+        throw new SessionBirthWriteError('context');
+      const senderOf = (id: string) =>
+        tx
+          .select({ sender: sessionMetadata.bridgedSender })
+          .from(sessionMetadata)
+          .where(eq(sessionMetadata.sessionId, id))
+          .get();
+      const from = senderOf(fromId);
+      if (!from) return;
+      const to = senderOf(toId);
+      const merged = to
+        ? mergedHolds(
+            { lastTurnHeld: null, bridgedSender: from.sender },
+            { lastTurnHeld: null, bridgedSender: to.sender }
+          ).bridgedSender
+        : from.sender;
+      if (to && to.sender === merged) return;
+      tx.insert(sessionMetadata)
+        .values({
+          sessionId: toId,
+          runtime: null,
+          createdAt: new Date().toISOString(),
+          bridgedSender: merged,
+        })
+        .onConflictDoUpdate({ target: sessionMetadata.sessionId, set: { bridgedSender: merged } })
+        .run();
+      return merged;
+    });
     if (merged === 'stranger') strangers.add(toId);
   } catch (err) {
     logger.warn('[continuation-hold] could not carry whose words a bridged chat holds', {
@@ -335,15 +355,31 @@ export function noteTurnHold(sessionId: string, held: boolean): void {
   if (!db) return;
   if (written.get(key) === held) return;
   try {
-    db.insert(sessionMetadata)
-      .values({
-        sessionId: key,
-        runtime: null,
-        createdAt: new Date().toISOString(),
-        lastTurnHeld: held,
-      })
-      .onConflictDoUpdate({ target: sessionMetadata.sessionId, set: { lastTurnHeld: held } })
-      .run();
+    // Under every id the chat answers to (DOR-4515): after a rename its row moves to the newer id,
+    // and after a restart nothing links the two, so a hold kept only under the first id is lost.
+    // An outstanding allocation under any id refuses the whole hold.
+    db.transaction(
+      (tx) => {
+        for (const id of chatKeys(sessionId)) {
+          withinSessionBirthWrite(tx, id, undefined, (writer) =>
+            writer
+              .insert(sessionMetadata)
+              .values({
+                sessionId: id,
+                runtime: null,
+                createdAt: new Date().toISOString(),
+                lastTurnHeld: held,
+              })
+              .onConflictDoUpdate({
+                target: sessionMetadata.sessionId,
+                set: { lastTurnHeld: held },
+              })
+              .run()
+          );
+        }
+      },
+      { behavior: 'immediate' }
+    );
     written.delete(key);
     written.set(key, held);
     if (written.size > WRITTEN_MAX) written.delete(written.keys().next().value as string);

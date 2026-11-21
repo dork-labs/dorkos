@@ -136,13 +136,16 @@ describe('page errors DorkOS draws in the page area (DOR-4430)', () => {
     fireEvent.change(field, { target: { value: 'https://northwind.example/' } });
     fireEvent.submit(field.closest('form')!);
     await waitFor(() =>
-      expect(transport.navigateLocalBrowser).toHaveBeenCalledWith('https://northwind.example/')
+      expect(transport.navigateLocalBrowser).toHaveBeenCalledWith('https://northwind.example/', {
+        sessionId: 'chat-one',
+      })
     );
     emit({ failure: failure('ERR_NAME_NOT_RESOLVED') });
     fireEvent.click(await screen.findByRole('button', { name: 'Search for it' }));
     await waitFor(() =>
       expect(transport.navigateLocalBrowser).toHaveBeenLastCalledWith(
-        'https://duckduckgo.com/?q=https%3A%2F%2Fnorthwind.example%2F'
+        'https://duckduckgo.com/?q=https%3A%2F%2Fnorthwind.example%2F',
+        { sessionId: 'chat-one' }
       )
     );
   });
@@ -207,7 +210,9 @@ describe('page errors DorkOS draws in the page area (DOR-4430)', () => {
     expect(screen.queryByRole('button', { name: /proceed|continue|anyway/i })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Go back' }));
     // The same guarded step as the chrome's Back (DOR-4449), never the host's own goBack.
-    await waitFor(() => expect(transport.stepLocalBrowserHistory).toHaveBeenCalledWith('back'));
+    await waitFor(() =>
+      expect(transport.stepLocalBrowserHistory).toHaveBeenCalledWith('back', 'chat-one')
+    );
     expect(page).not.toHaveBeenCalledWith('owned', 'back');
   });
 
@@ -216,7 +221,11 @@ describe('page errors DorkOS draws in the page area (DOR-4430)', () => {
     emit({ failure: failure('ERR_CERT_DATE_INVALID') });
     await screen.findByRole('alert');
     fireEvent.click(screen.getByRole('button', { name: 'Go back' }));
-    await waitFor(() => expect(transport.navigateLocalBrowser).toHaveBeenCalledWith('about:blank'));
+    await waitFor(() =>
+      expect(transport.navigateLocalBrowser).toHaveBeenCalledWith('about:blank', {
+        sessionId: 'chat-one',
+      })
+    );
     expect(transport.stepLocalBrowserHistory).not.toHaveBeenCalled();
     expect(page).not.toHaveBeenCalledWith('owned', 'back');
   });

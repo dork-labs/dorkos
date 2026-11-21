@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { isNonFatalErrorCode, UNREADABLE_ENTRY_ERROR_CODE } from '@dorkos/shared/run-outcome';
 import type { SessionSnapshot, SessionStatus } from '@dorkos/shared/session-stream';

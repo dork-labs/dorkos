@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { createAwakeClock, type AwakeClock } from '@dorkos/shared/awake-clock';
 import { sweepInterruptedRuns } from '../crash-recovery.js';
 import { TaskStore, type CreateTaskStoreInput } from '../task-store.js';
 import { SCHEDULER_LOCK_STALE_TTL_MS, type LeaderLock } from '../scheduler-lock.js';
@@ -25,6 +26,13 @@ const leader: LeaderLock = {
   release: () => {},
   isLeaderNow: true,
 };
+
+/** The real clock, reporting that the computer slept `ms` since any instant. */
+function sleptFor(ms: number): AwakeClock {
+  const real = createAwakeClock();
+  real.dispose();
+  return { ...real, sleptMs: () => ms, sleptSince: () => ms };
+}
 
 const follower: LeaderLock = {
   tryAcquire: () => false,
@@ -124,6 +132,24 @@ describe('sweepInterruptedRuns (DOR-1482)', () => {
     expect(store.getRun(overdue.id)!.status).toBe('failed');
     expect(store.getRun(withinLimit.id)!.status).toBe('running');
     expect(store.getRun(queued.id)!.status).toBe('running');
+  });
+
+  it('measures a run against its limit in awake time, as its owner does (DOR-3286)', () => {
+    // A follower promoted after a closed lid sweeps on wake. The run's owner
+    // counts only awake time, so a run the computer slept through is still
+    // inside its limit, however long ago it started by the wall clock.
+    const task = store.createTask(
+      taskInput({ name: 'Slept through', cron: '0 * * * *', maxRuntime: 60_000 })
+    );
+    const run = store.createRun(task.id, 'manual');
+    const deadline = 60_000 + RUN_START_WAIT_MS + SCHEDULER_LOCK_STALE_TTL_MS;
+    startedAgo(run.id, deadline + 5_000);
+
+    // Ten minutes of that was sleep: awake, it is still inside its deadline.
+    expect(sweepInterruptedRuns(store, leader, new Set(), sleptFor(10 * 60_000)).swept).toBe(0);
+    expect(store.getRun(run.id)!.status).toBe('running');
+    // One second of sleep leaves it past the deadline all the same.
+    expect(sweepInterruptedRuns(store, leader, new Set(), sleptFor(1_000)).swept).toBe(1);
   });
 
   it('never ends a run THIS process is executing, whatever the rules say', () => {

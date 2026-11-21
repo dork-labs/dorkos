@@ -17,13 +17,13 @@ vi.mock('../../updater-intent', async (importOriginal) => ({
   clearUpdateIntent: vi.fn(),
 }));
 
-import log from 'electron-log';
 import { prepareUpdateRestart } from '../../auto-updater';
 import { purgeStaleStagedUpdates } from '../cache';
 import { clearUpdateIntent } from '../../updater-intent';
 import { checkForManualOverwrite, resetManualOverwriteState } from '../manual-overwrite';
 import { app, BrowserWindow, dialog, resetElectronMock } from '../../__tests__/electron-mock';
-import { resetLogMock } from '../../__tests__/electron-log-mock';
+// Updater lines go to the updater's own log (DOR-4847), not main.log.
+import { resetLogMock, updaterLogDouble as log } from '../../__tests__/electron-log-mock';
 
 /**
  * Noticing an app replaced on disk while it kept running (DOR-1455, spec

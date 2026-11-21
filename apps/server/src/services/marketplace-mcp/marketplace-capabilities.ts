@@ -38,6 +38,8 @@ import {
 } from '../core/capabilities/index.js';
 import type { CapabilityDeps, CapabilityHandlerContext } from '../core/capabilities/index.js';
 import { unwrapMcpEnvelope } from '../core/capabilities/mcp-envelope.js';
+import { turnReadOutsideWords } from '../core/turn-power/outsider-turn.js';
+import { quoteSummaryValue } from '../core/approvals/index.js';
 import type { MarketplaceConfirmationContext } from './confirmation-provider.js';
 
 import type { MarketplaceMcpDeps } from './marketplace-mcp-tools.js';
@@ -90,26 +92,35 @@ function requireMarketplaceDeps(deps: CapabilityDeps): MarketplaceMcpDeps {
  *   area-level Allowed under Trusted. An install or update brings someone
  *   else's code in, so it keeps the marketplace's confirmation (trust never
  *   extends to code from strangers).
+ * @param requiresContentApproval - A generic permission approval cannot approve package contents.
  * @returns The handler-facing caller context.
  */
 function callerContext(
   context: CapabilityHandlerContext,
-  runsWhenTrusted = false
+  runsWhenTrusted = false,
+  requiresContentApproval = false
 ): MarketplaceConfirmationContext {
   const requestedBy = context.identity
     ? context.identity.displayName || context.identity.agentPath
     : undefined;
+  // A turn that read words from outside the team never spends a standing Allowed (an Always
+  // allow, or Allowed under Trusted): those were set for the agent's own work, not for words
+  // steering it from outside. Only a card answered for this exact call counts (DOR-4851).
+  const outsideWords =
+    context.identity !== undefined &&
+    turnReadOutsideWords(context.sessionId, context.identity.agentPath);
   const preApproved =
     Boolean(context.trusted) ||
-    personAlreadySaidYes(context.approval) ||
-    (runsWhenTrusted && allowedUnderTrusted(context.approval));
+    (!requiresContentApproval &&
+      (outsideWords
+        ? context.approval?.via === 'approval'
+        : personAlreadySaidYes(context.approval) ||
+          (runsWhenTrusted && allowedUnderTrusted(context.approval))));
   return {
     ...(requestedBy ? { requestedBy } : {}),
-    // Four reasons the handler must not ask: an approval the tier gate spent on
-    // this exact call, a caller that proved it may DECIDE approvals (for whom
-    // the confirmation this flow would go and fetch is its own), an Allowed the
-    // person set on this one action (an Always allow), or, for an uninstall,
-    // an Allowed area under Trusted.
+    ...(outsideWords ? { outsideWords: true } : {}),
+    // Package contents need their own digest-bound yes. Other operations
+    // retain the existing permission and trusted-caller decisions.
     ...(preApproved ? { preApproved: true } : {}),
   };
 }
@@ -294,14 +305,23 @@ export const marketplaceDomain: CapabilityDomain = {
       id: 'marketplace.install',
       title: 'Install package',
       description:
-        'Install a package from a configured marketplace. When your permissions allow it, it ' +
-        'installs at once; otherwise it needs user confirmation: the first call returns ' +
+        'Install a package from a configured marketplace. A permission card may come first. ' +
+        'Package contents always need user confirmation: the review call returns ' +
         'status:requires_confirmation with a token, and after the user approves in DorkOS you ' +
         're-call with confirmationToken to complete the install. A package that brings hooks or ' +
         'global plugins still asks the user before those run.',
       tier: 'act',
       area: 'packages',
       approvalDisplayFields: ['name', 'marketplace', 'projectPath'],
+      // The card is built before input validation, so a call without a name
+      // still gets a sentence rather than a crash.
+      approvalSentence: (input) => {
+        const name = (input as { name?: unknown } | undefined)?.name;
+        return typeof name === 'string'
+          ? `wants to install ${quoteSummaryValue(name)}`
+          : 'wants to install a package';
+      },
+      approvalViewDetail: () => 'DorkOS will show you what’s in it next.',
       input: z.object(InstallInputSchema),
       output: z.unknown(),
       surfaces: {
@@ -314,7 +334,10 @@ export const marketplaceDomain: CapabilityDomain = {
       },
       invoke: async (deps, input, context) =>
         unwrapMcpEnvelope(
-          await createInstallHandler(requireMarketplaceDeps(deps))(input, callerContext(context))
+          await createInstallHandler(requireMarketplaceDeps(deps))(
+            input,
+            callerContext(context, false, true)
+          )
         ),
     }),
     defineCapability({
@@ -327,7 +350,7 @@ export const marketplaceDomain: CapabilityDomain = {
         '(installPath, scope, agentPath). Nothing changes. ' +
         'Narrow it with names (every copy of those packages) and/or installPaths (exact copies, as a check reported them). ' +
         'Pass apply:true to reinstall every selected package that has a newer version, each where it is installed. ' +
-        'When your permissions allow it, apply installs at once. Otherwise it needs user confirmation: the first apply call checks, then returns status:requires_confirmation with a token ' +
+        'A permission card may come first. Apply always needs confirmation of the package contents: the review call checks, then returns status:requires_confirmation with a token ' +
         'and the updates it would make (versions, and every command, scheduled job, server, monitor and skill tool the new versions bring). ' +
         'After the user approves in DorkOS, re-call with the same arguments plus confirmationToken. If a new version changed ' +
         'in between, it asks again. Too many updates for one approval are refused: apply fewer, by installPaths. ' +
@@ -336,6 +359,8 @@ export const marketplaceDomain: CapabilityDomain = {
       // Same area as install: an applied update is an install of a new version.
       area: 'packages',
       approvalDisplayFields: ['names', 'installPaths', 'apply'],
+      approvalSentence: () => 'wants to review package updates',
+      approvalViewDetail: () => 'DorkOS will show you what’s in it next.',
       input: z.object(UpdateInputSchema),
       output: z.unknown(),
       surfaces: {
@@ -348,7 +373,10 @@ export const marketplaceDomain: CapabilityDomain = {
       },
       invoke: async (deps, input, context) =>
         unwrapMcpEnvelope(
-          await createUpdateHandler(requireMarketplaceDeps(deps))(input, callerContext(context))
+          await createUpdateHandler(requireMarketplaceDeps(deps))(
+            input,
+            callerContext(context, false, true)
+          )
         ),
     }),
     defineCapability({

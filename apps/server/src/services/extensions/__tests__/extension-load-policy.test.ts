@@ -22,7 +22,10 @@
  * @module services/extensions/__tests__/extension-load-policy
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { Hono } from 'hono';
 import type { ExtensionRecord } from '@dorkos/extension-api';
+import type { ApiEnv } from '../../../http/api-chain.js';
+import { registerExtensionRestartRoute } from '../../../routes/extensions-restart.js';
 import {
   approvedSourceOf,
   isApprovedCopy,
@@ -150,7 +153,7 @@ vi.mock('fs/promises', () => ({
     readFile: vi.fn(),
     readdir: vi.fn(),
     rm: vi.fn(),
-    stat: vi.fn(),
+    stat: vi.fn().mockResolvedValue({ isDirectory: () => true }),
   },
 }));
 
@@ -483,7 +486,8 @@ describe('the dev loop stays free after one approval, for the approved files', (
       // The yes covers what it declares: an in-process extension, so full
       // access (DOR-2686).
       approvedPermissions: {
-        'my-ext': { runtime: 'in-process', net: [], run: [], agents: false },
+        // A new approval always records its places, even none (DOR-4282).
+        'my-ext': { runtime: 'in-process', net: [], run: [], agents: false, slots: [] },
       },
     });
     // The approve route is what makes one click enough: the extension is running
@@ -551,6 +555,37 @@ describe('the dev loop stays free after one approval, for the approved files', (
     expect(stored.value.approvedSources?.['my-ext']?.digest).toBe(D2);
     expect(manager.getServerHandler('my-ext')).not.toBeNull();
     expect(await manager.readBundle('my-ext')).toBe(OBSERVABLE_BUNDLE);
+  });
+
+  // DOR-4785 (Security): the Restart on a stopped-app notice is the reload, so
+  // it runs nothing a person has not approved either.
+  it('refuses an edit to approved files through the notice’s Restart, and runs nothing new', async () => {
+    await manager.initialize(null);
+    await manager.approveToRun('my-ext');
+    // The app stopped; then its files changed.
+    await manager.shutdownServer('my-ext');
+    folderDigest.value = D2;
+
+    const router = new Hono<ApiEnv>();
+    router.use(async (c, next) => {
+      c.set('user', { userId: 'owner', credential: 'cookie' });
+      await next();
+    });
+    registerExtensionRestartRoute(router, manager, /^[a-z0-9][a-z0-9-]*$/, () => {});
+    mockCompileServer.mockClear();
+    const res = await router.request(
+      '/my-ext/restart',
+      { method: 'POST' },
+      {
+        incoming: { headers: {}, socket: { remoteAddress: '127.0.0.1' }, method: 'POST' },
+      }
+    );
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: 'needs_approval' });
+    expect(mockCompileServer).not.toHaveBeenCalled();
+    expect(manager.getServerHandler('my-ext')).toBeNull();
+    expect(manager.listPublic()[0]?.approvedToRun).toBe(false);
   });
 
   it('refuses a yes whose card showed other files (expectedDigest)', async () => {

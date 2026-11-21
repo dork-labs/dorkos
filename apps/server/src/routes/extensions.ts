@@ -52,6 +52,7 @@ import { registerExtensionInboxRoutes } from './extensions-inbox.js';
 import { registerExtensionStartWorkRoute } from './extensions-start-work.js';
 import { registerExtensionRoomRoutes } from './extensions-rooms.js';
 import { registerExtensionPrefsRoutes } from './extensions-prefs.js';
+import { registerExtensionRestartRoute } from './extensions-restart.js';
 import { liveForwardDeps, registerExtensionForwardRoutes } from './extensions-forward.js';
 import type { PersonForwardDeps } from '../services/extensions/forward/person-forward.js';
 import { refusedNotAPerson, type PersonBarCopy } from './extensions-person-bar.js';
@@ -109,7 +110,7 @@ const SetSettingBodySchema = z.object({
 });
 
 /** Validates extension IDs match the manifest schema pattern (kebab-case alphanumeric). */
-const SAFE_EXT_ID = /^[a-z0-9][a-z0-9-]*$/;
+export const SAFE_EXT_ID = /^[a-z0-9][a-z0-9-]*$/;
 
 /**
  * What `/enable` and `/disable` say when a bar refuses them (DOR-1507).
@@ -704,6 +705,7 @@ export function createExtensionsRoutes(deps: ExtensionsRouterDeps): Hono<ApiEnv>
     safeId: SAFE_EXT_ID,
   });
   registerExtensionForwardRoutes(router, extensionManager, SAFE_EXT_ID, liveForwardDeps(deps.mesh));
+  registerExtensionRestartRoute(router, extensionManager, SAFE_EXT_ID, broadcastExtensionReloaded);
 
   return router;
 }

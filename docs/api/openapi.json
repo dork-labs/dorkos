@@ -972,6 +972,28 @@
               "string",
               "null"
             ]
+          },
+          "unknown": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "since": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "key",
+                "label",
+                "since"
+              ]
+            }
           }
         },
         "required": [
@@ -1957,6 +1979,7 @@
           "disk",
           "load",
           "accounts",
+          "signed-out",
           "chat-cap",
           "permission",
           "agent-paused",
@@ -3134,6 +3157,86 @@
         "required": [
           "changeId",
           "undoId"
+        ],
+        "additionalProperties": false
+      },
+      "ConnectorWritesBack": {
+        "type": "object",
+        "properties": {
+          "connectionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "writesBackUnasked": {
+            "type": "boolean"
+          },
+          "writesBackAttestedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "supported": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "connectionId",
+          "writesBackUnasked",
+          "writesBackAttestedAt",
+          "supported"
+        ],
+        "additionalProperties": false
+      },
+      "ConnectorWritesBackChange": {
+        "type": "object",
+        "properties": {
+          "connectionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "writesBackUnasked": {
+            "type": "boolean"
+          },
+          "writesBackAttestedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "supported": {
+            "type": "boolean"
+          },
+          "changed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "connectionId",
+          "writesBackUnasked",
+          "writesBackAttestedAt",
+          "supported",
+          "changed"
+        ],
+        "additionalProperties": false
+      },
+      "ConnectorWritesBackChangeRequest": {
+        "type": "object",
+        "properties": {
+          "writesBackUnasked": {
+            "type": "boolean"
+          },
+          "confirmsNoOutsideSync": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "required": [
+          "writesBackUnasked"
         ],
         "additionalProperties": false
       },
@@ -5514,6 +5617,21 @@
             "minLength": 1,
             "maxLength": 120
           },
+          "recipients": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ApprovalServiceRecipient"
+            },
+            "maxItems": 2000
+          },
+          "recipientsCut": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "recipientsShortened": {
+            "type": "integer",
+            "minimum": 1
+          },
           "details": {
             "type": "array",
             "items": {
@@ -5554,6 +5672,26 @@
           "accountLabel",
           "actionName",
           "details"
+        ],
+        "additionalProperties": false
+      },
+      "ApprovalServiceRecipient": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60
+          },
+          "address": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 320
+          }
+        },
+        "required": [
+          "label",
+          "address"
         ],
         "additionalProperties": false
       },
@@ -5806,7 +5944,8 @@
           "reason": {
             "type": "string",
             "enum": [
-              "credits-not-covered"
+              "credits-not-covered",
+              "account-not-available"
             ]
           }
         },
@@ -7105,7 +7244,8 @@
               "reason": {
                 "type": "string",
                 "enum": [
-                  "credits-not-covered"
+                  "credits-not-covered",
+                  "account-not-available"
                 ]
               }
             },
@@ -12283,6 +12423,17 @@
           "pending_approval"
         ]
       },
+      "TriggerTaskRequest": {
+        "type": "object",
+        "properties": {
+          "permissionMode": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The mode picked on the approval card; the stricter of it and the cap runs."
+          }
+        },
+        "additionalProperties": false
+      },
       "TaskRun": {
         "type": "object",
         "properties": {
@@ -14865,6 +15016,10 @@
               "null"
             ],
             "default": null
+          },
+          "placesOnly": {
+            "type": "boolean",
+            "default": false
           }
         },
         "required": [
@@ -14924,6 +15079,12 @@
           },
           "hasPage": {
             "type": "boolean"
+          },
+          "slots": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "writes": {
             "type": "array",
@@ -15012,6 +15173,12 @@
             "type": "boolean"
           },
           "apps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "slots": {
             "type": "array",
             "items": {
               "type": "string"
@@ -15146,6 +15313,13 @@
                 }
               },
               "appOpens": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20
+              },
+              "slots": {
                 "type": "array",
                 "items": {
                   "type": "string"
@@ -20188,6 +20362,7 @@
           "credits.refused",
           "extension.approval",
           "extension.decision",
+          "extension.stopped",
           "community.owner-replacement",
           "community.teammate-limit",
           "community.teammate-limits-reset",
@@ -20203,6 +20378,8 @@
           "mcp-server.tool_added",
           "mcp-server.reserved_name",
           "web.new_device",
+          "signin.check_added",
+          "signin.check_removed",
           "agent.secret_files",
           "agent.folder_rules_too_long",
           "account.signin_review",
@@ -21818,6 +21995,13 @@
                             "type": "string"
                           },
                           "maxItems": 20
+                        },
+                        "slots": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "maxItems": 20
                         }
                       },
                       "required": [
@@ -21993,6 +22177,13 @@
                         "type": "string"
                       },
                       "maxItems": 20
+                    },
+                    "slots": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "maxItems": 20
                     }
                   },
                   "required": [
@@ -22023,6 +22214,97 @@
           "plugin",
           "members",
           "setHash"
+        ]
+      },
+      "ExtensionMediaTicket": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Where the video plays: `/api/extensions/media/<ticket>`, on this server."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "ExtensionMediaTicketRequest": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 4000,
+            "description": "The path below the app, e.g. `/videos/intro.mp4`. No query, no empty, `.` or `..` part, and no `%`, `\\`, `#` or control character."
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "BackupList": {
+        "type": "object",
+        "properties": {
+          "folder": {
+            "type": "string",
+            "description": "The backup folder, `<data dir>/backups`."
+          },
+          "copies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BackupCopy"
+            },
+            "description": "Newest first."
+          },
+          "totalBytes": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "folder",
+          "copies",
+          "totalBytes"
+        ]
+      },
+      "BackupCopy": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The file name inside the backup folder; the id every action takes."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "daily",
+              "pre-upgrade"
+            ],
+            "description": "What the copy was taken for."
+          },
+          "managed": {
+            "type": "boolean",
+            "description": "True for `dork-auto-` copies, which DorkOS prunes on its own."
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "When the copy was taken, from its name (ISO 8601, UTC)."
+          },
+          "busy": {
+            "type": "boolean",
+            "description": "A write is in progress next to it, so it cannot be acted on now."
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "managed",
+          "sizeBytes",
+          "createdAt",
+          "busy"
         ]
       }
     },
@@ -29065,6 +29347,16 @@
                     },
                     "code": {
                       "type": "string"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_SESSION",
+                        "NO_RECORDED_FOLDER",
+                        "ROOT_MISMATCH",
+                        "FOLDER_GONE",
+                        "OUTSIDE_BOUNDARY"
+                      ]
                     }
                   },
                   "required": [
@@ -29087,6 +29379,16 @@
                     },
                     "code": {
                       "type": "string"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_SESSION",
+                        "NO_RECORDED_FOLDER",
+                        "ROOT_MISMATCH",
+                        "FOLDER_GONE",
+                        "OUTSIDE_BOUNDARY"
+                      ]
                     }
                   },
                   "required": [
@@ -29109,6 +29411,16 @@
                     },
                     "code": {
                       "type": "string"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_SESSION",
+                        "NO_RECORDED_FOLDER",
+                        "ROOT_MISMATCH",
+                        "FOLDER_GONE",
+                        "OUTSIDE_BOUNDARY"
+                      ]
                     }
                   },
                   "required": [
@@ -29445,6 +29757,16 @@
                     },
                     "code": {
                       "type": "string"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_SESSION",
+                        "NO_RECORDED_FOLDER",
+                        "ROOT_MISMATCH",
+                        "FOLDER_GONE",
+                        "OUTSIDE_BOUNDARY"
+                      ]
                     }
                   },
                   "required": [
@@ -29467,6 +29789,16 @@
                     },
                     "code": {
                       "type": "string"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_SESSION",
+                        "NO_RECORDED_FOLDER",
+                        "ROOT_MISMATCH",
+                        "FOLDER_GONE",
+                        "OUTSIDE_BOUNDARY"
+                      ]
                     }
                   },
                   "required": [
@@ -29489,6 +29821,16 @@
                     },
                     "code": {
                       "type": "string"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_SESSION",
+                        "NO_RECORDED_FOLDER",
+                        "ROOT_MISMATCH",
+                        "FOLDER_GONE",
+                        "OUTSIDE_BOUNDARY"
+                      ]
                     }
                   },
                   "required": [
@@ -29573,7 +29915,7 @@
             }
           },
           "404": {
-            "description": "Existing file not found",
+            "description": "Existing file not found, or the document save was refused; a refused save may name which check refused (DOR-4442)",
             "content": {
               "application/json": {
                 "schema": {
@@ -29584,6 +29926,16 @@
                     },
                     "code": {
                       "type": "string"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "NOT_SESSION",
+                        "NO_RECORDED_FOLDER",
+                        "ROOT_MISMATCH",
+                        "FOLDER_GONE",
+                        "OUTSIDE_BOUNDARY"
+                      ]
                     }
                   },
                   "required": [
@@ -32676,6 +33028,190 @@
         }
       }
     },
+    "/api/connectors/connections/{connectionId}/writes-back": {
+      "get": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Whether agents may write back to an app they only read",
+        "description": "Owner only. On: an agent whose turn read only this app may make a change back in it without asking. Deletions, sends and changes in any other app still ask.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "connectionId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The switch, and when the person confirmed it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorWritesBack"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such app account here, or it belongs to someone else (`connection_not_found`), or no such agent (`agent_not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Connectors"
+        ],
+        "summary": "Let agents write back to an app they only read, or stop it",
+        "description": "Owner only; no agent or program can set it. Turning it on needs `confirmsNoOutsideSync`: DorkOS cannot see whether the app copies what it holds to another place on its own, so the person confirms it does not, and the time is kept. Turning it off answers at once.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "connectionId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectorWritesBackChangeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What the change did",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectorWritesBackChange"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is invalid, or turns it on without the confirmation",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "404": {
+            "description": "No such app account here, or it belongs to someone else (`connection_not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The switch is not offered for this app, because its changes can reach other people (`writes_back_unsupported_app`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "step_up_required"
+                      ]
+                    },
+                    "heldActionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code",
+                    "heldActionId",
+                    "expiresAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/connectors/mini-app-access": {
       "get": {
         "tags": [
@@ -33069,6 +33605,9 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "watchStream": {
+                      "type": "boolean"
+                    },
                     "platform": {
                       "type": "string",
                       "minLength": 1
@@ -33170,7 +33709,21 @@
           "Local browser"
         ],
         "summary": "Read the browser connection",
-        "description": "Only the owner on this computer can call this route. Includes preparation, selected tab, sharing chat, Pause state, any handoff and the latest sign-in.",
+        "description": "Only the owner on this computer can call this route. Reads the selected chat’s browser page, or Your browser when sessionId is omitted. Includes preparation, selected tab, sharing chat, Pause state, its handoff and latest sign-in.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "description": "Select this chat’s browser page. Omit it for Your browser."
+            },
+            "required": false,
+            "description": "Select this chat’s browser page. Omit it for Your browser.",
+            "name": "sessionId",
+            "in": "query"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Current browser state, with its handoff and sign-in",
@@ -33179,6 +33732,36 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "profile": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "agentId",
+                        "agentName"
+                      ]
+                    },
                     "preparation": {
                       "type": [
                         "object",
@@ -33400,6 +33983,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -33532,7 +34121,7 @@
                   },
                   "profileId": {
                     "type": "string",
-                    "format": "uuid"
+                    "pattern": "^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$"
                   }
                 },
                 "required": [
@@ -33551,6 +34140,36 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "profile": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "agentId",
+                        "agentName"
+                      ]
+                    },
                     "preparation": {
                       "type": [
                         "object",
@@ -33772,6 +34391,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -33909,6 +34534,18 @@
             "required": true,
             "name": "id",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "description": "Select this chat’s browser page. Omit it for Your browser."
+            },
+            "required": false,
+            "description": "Select this chat’s browser page. Omit it for Your browser.",
+            "name": "sessionId",
+            "in": "query"
           }
         ],
         "responses": {
@@ -33919,6 +34556,36 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "profile": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "agentId",
+                        "agentName"
+                      ]
+                    },
                     "preparation": {
                       "type": [
                         "object",
@@ -34128,6 +34795,20 @@
         ],
         "summary": "Open a web address in the selected tab",
         "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Accepts HTTP or HTTPS addresses and invalidates earlier observations. Refused during a handoff. Takes the page from a chat sharing it first, as take-over does. A bare host may ask for one HTTP fallback when the HTTPS page cannot connect; a timeout never falls back.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "description": "Select this chat’s browser page. Omit it for Your browser."
+            },
+            "required": false,
+            "description": "Select this chat’s browser page. Omit it for Your browser.",
+            "name": "sessionId",
+            "in": "query"
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -34160,6 +34841,36 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "profile": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "agentId",
+                        "agentName"
+                      ]
+                    },
                     "preparation": {
                       "type": [
                         "object",
@@ -34381,6 +35092,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -34510,6 +35227,20 @@
         ],
         "summary": "Take the page from the agent",
         "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Pauses the chat sharing the page and refuses its every browser call, reads included, until a person resumes, opens or disconnects the browser. Does nothing when no chat shares it or during a handoff.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "description": "Select this chat’s browser page. Omit it for Your browser."
+            },
+            "required": false,
+            "description": "Select this chat’s browser page. Omit it for Your browser.",
+            "name": "sessionId",
+            "in": "query"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Current browser state, with its handoff and sign-in",
@@ -34518,6 +35249,36 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "profile": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "agentId",
+                        "agentName"
+                      ]
+                    },
                     "preparation": {
                       "type": [
                         "object",
@@ -34739,6 +35500,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -34846,6 +35613,20 @@
         ],
         "summary": "Move the selected tab back or forward through its own history",
         "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Goes to the nearest page that way the address rules still allow, skipping refused ones. Every load on the way, a redirect included, runs the same rules; a refused one leaves the person on the page they were on (`history_refused`). Takes the page from a chat sharing it first, as take-over does, so that agent stays shut out even when the step is refused. Refused during a handoff.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "description": "Select this chat’s browser page. Omit it for Your browser."
+            },
+            "required": false,
+            "description": "Select this chat’s browser page. Omit it for Your browser.",
+            "name": "sessionId",
+            "in": "query"
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -34877,6 +35658,36 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "profile": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "agentId",
+                        "agentName"
+                      ]
+                    },
                     "preparation": {
                       "type": [
                         "object",
@@ -35098,6 +35909,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -35227,6 +36044,20 @@
         ],
         "summary": "Pause agent browser actions",
         "description": "Only the owner on this computer can call this route. Immediately refuses new and queued agent actions. An action already sent may still finish. Human browser controls remain available.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "description": "Select this chat’s browser page. Omit it for Your browser."
+            },
+            "required": false,
+            "description": "Select this chat’s browser page. Omit it for Your browser.",
+            "name": "sessionId",
+            "in": "query"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Current browser state",
@@ -35235,6 +36066,36 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "profile": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "agentId",
+                        "agentName"
+                      ]
+                    },
                     "preparation": {
                       "type": [
                         "object",
@@ -35444,6 +36305,20 @@
         ],
         "summary": "Resume agent browser actions",
         "description": "Only the owner on this computer can call this route. The agent must read a fresh observation before its next action. During a handoff this hands the browser back, and after a take-over it gives the page back to the agent.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "description": "Select this chat’s browser page. Omit it for Your browser."
+            },
+            "required": false,
+            "description": "Select this chat’s browser page. Omit it for Your browser.",
+            "name": "sessionId",
+            "in": "query"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Current browser state, with its handoff and sign-in",
@@ -35452,6 +36327,36 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "profile": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "agentId",
+                        "agentName"
+                      ]
+                    },
                     "preparation": {
                       "type": [
                         "object",
@@ -35673,6 +36578,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -35795,7 +36706,7 @@
                         "properties": {
                           "id": {
                             "type": "string",
-                            "format": "uuid"
+                            "pattern": "^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$"
                           },
                           "label": {
                             "type": "string",
@@ -36109,7 +37020,7 @@
                   "properties": {
                     "id": {
                       "type": "string",
-                      "format": "uuid"
+                      "pattern": "^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$"
                     },
                     "label": {
                       "type": "string",
@@ -36212,6 +37123,20 @@
         ],
         "summary": "Disconnect the browser",
         "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Stops sharing immediately. Closes DorkOS-owned pages and windows, keeping their saved sign-ins. A pending close blocks new opens. During a handoff it ends the agent’s task, as Stop task does.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "description": "Select this chat’s browser page. Omit it for Your browser."
+            },
+            "required": false,
+            "description": "Select this chat’s browser page. Omit it for Your browser.",
+            "name": "sessionId",
+            "in": "query"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Current browser state, with its handoff and sign-in",
@@ -36220,6 +37145,36 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "profile": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "agentId",
+                        "agentName"
+                      ]
+                    },
                     "preparation": {
                       "type": [
                         "object",
@@ -36441,6 +37396,384 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
+                        }
+                      },
+                      "required": [
+                        "profileId",
+                        "site",
+                        "status",
+                        "startedAt"
+                      ]
+                    },
+                    "takenOver": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "preparation",
+                    "connectionId",
+                    "sessionId",
+                    "mode",
+                    "status",
+                    "paused",
+                    "tabs",
+                    "selectedTabId",
+                    "revision",
+                    "handoff",
+                    "signIn",
+                    "takenOver"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not the owner on this computer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The browser cannot complete this request in its current state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The browser operation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/local-browser/handoff/state": {
+      "get": {
+        "tags": [
+          "Local browser"
+        ],
+        "summary": "Read the current browser handoff",
+        "description": "Only the owner on this computer can call this route. Reads this computer’s current handoff independently of the selected chat page. This owner view does not grant an agent access to another chat’s page.",
+        "responses": {
+          "200": {
+            "description": "Current browser state, with its handoff and sign-in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "profile": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "agentId",
+                        "agentName"
+                      ]
+                    },
+                    "preparation": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "stage": {
+                          "type": "string",
+                          "enum": [
+                            "checking",
+                            "downloading",
+                            "launching"
+                          ]
+                        },
+                        "component": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "chromium",
+                            "headless-shell",
+                            "ffmpeg",
+                            null
+                          ]
+                        },
+                        "percent": {
+                          "type": [
+                            "number",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "maximum": 100
+                        }
+                      },
+                      "required": [
+                        "stage",
+                        "component",
+                        "percent"
+                      ]
+                    },
+                    "connectionId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "sessionId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "mode": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "embedded",
+                        "new-window",
+                        null
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "disconnected",
+                        "connected",
+                        "closed"
+                      ]
+                    },
+                    "paused": {
+                      "type": "boolean"
+                    },
+                    "tabs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "url": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "openedOverHttp": {
+                            "type": "boolean",
+                            "description": "True while this tab is on a site DorkOS opened over plain http because https failed. The page is not secure: never type a password or payment details."
+                          },
+                          "canGoBack": {
+                            "type": "boolean"
+                          },
+                          "canGoForward": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "url",
+                          "title"
+                        ]
+                      }
+                    },
+                    "selectedTabId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "revision": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "handoff": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "sessionId": {
+                          "type": "string"
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentFolder": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "profileId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "reason": {
+                          "type": "string",
+                          "enum": [
+                            "wall",
+                            "password"
+                          ]
+                        },
+                        "site": {
+                          "type": "string"
+                        },
+                        "askedAt": {
+                          "type": "string"
+                        },
+                        "refused": {
+                          "type": "boolean"
+                        },
+                        "outcome": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "handed-back",
+                            "stopped",
+                            "window-closed",
+                            null
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "sessionId",
+                        "agentName",
+                        "agentId",
+                        "agentFolder",
+                        "profileId",
+                        "reason",
+                        "site",
+                        "askedAt",
+                        "outcome"
+                      ]
+                    },
+                    "signIn": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "profileId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "site": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "open",
+                            "saving",
+                            "saved",
+                            "failed"
+                          ]
+                        },
+                        "startedAt": {
+                          "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -36547,7 +37880,21 @@
           "Local browser"
         ],
         "summary": "Open the plain sign-in window",
-        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Opens installed Chrome, or managed Chromium, without a debugging channel on the chosen profile. An embedded handoff keeps its native view detached; a separate window uses the handoff’s saved page. Otherwise takes a page the person typed. Accepts https, or http on this computer only. Password saving is off in that window.",
+        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Opens installed Chrome, or managed Chromium, without a debugging channel on the chosen profile. An embedded handoff keeps its native view detached; a separate window uses the handoff’s saved page. Otherwise takes a page the person typed. A handoffId selects its own chat and ignores the sessionId query. Accepts https, or http on this computer only. Password saving is off in that window.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "description": "Select this chat’s browser page. Omit it for Your browser."
+            },
+            "required": false,
+            "description": "Select this chat’s browser page. Omit it for Your browser.",
+            "name": "sessionId",
+            "in": "query"
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -36563,7 +37910,7 @@
                       },
                       "profileId": {
                         "type": "string",
-                        "format": "uuid"
+                        "pattern": "^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$"
                       }
                     },
                     "required": [
@@ -36597,6 +37944,36 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "profile": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "agentId",
+                        "agentName"
+                      ]
+                    },
                     "preparation": {
                       "type": [
                         "object",
@@ -36818,6 +38195,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -36940,6 +38323,157 @@
         }
       }
     },
+    "/api/local-browser/sign-in/done": {
+      "post": {
+        "tags": [
+          "Local browser"
+        ],
+        "summary": "Finish the open sign-in window",
+        "description": "Only the owner on this computer can call this route. Only the owner, in person, can call this route: no agent, API key or approval token. Quits the sign-in window DorkOS opened, so its sign-in saves. Names the handoff it answers, or none for a window no handoff waits on. Answers at once; the state says when it saved or failed, and a saved one is handed back to the handoff named. A handoffId selects its own chat and ignores the sessionId query. Without one, the query selects the chat’s sign-in window, or Your browser when omitted.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "description": "Select this chat’s browser page. Omit it for Your browser."
+            },
+            "required": false,
+            "description": "Select this chat’s browser page. Omit it for Your browser.",
+            "name": "sessionId",
+            "in": "query"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "handoffId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "The window was asked to quit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accepted": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "accepted"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not the owner on this computer",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No sign-in window of this handoff can be finished",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The browser operation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/local-browser/handoff/hand-back": {
       "post": {
         "tags": [
@@ -36975,6 +38509,36 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "profile": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "agentId",
+                        "agentName"
+                      ]
+                    },
                     "preparation": {
                       "type": [
                         "object",
@@ -37196,6 +38760,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -37353,6 +38923,36 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "profile": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "agentId",
+                        "agentName"
+                      ]
+                    },
                     "preparation": {
                       "type": [
                         "object",
@@ -37574,6 +39174,12 @@
                         },
                         "startedAt": {
                           "type": "string"
+                        },
+                        "needsQuit": {
+                          "type": "boolean",
+                          "enum": [
+                            true
+                          ]
                         }
                       },
                       "required": [
@@ -42311,6 +43917,9 @@
                           },
                           "name": {
                             "type": "string"
+                          },
+                          "runsAgents": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -42577,6 +44186,1098 @@
                   "required": [
                     "error",
                     "code"
+                  ]
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "step_up_required"
+                      ]
+                    },
+                    "heldActionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code",
+                    "heldActionId",
+                    "expiresAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/devices/sessions/{id}/runs-agents": {
+      "put": {
+        "tags": [
+          "Devices"
+        ],
+        "summary": "Let a Wi-Fi device run agents",
+        "description": "Lets one Wi-Fi sign-in start turns at the agent’s own level, or stops it. Every sign-in starts with this off. Only the owner at the computer DorkOS runs on may change it, from the app’s own page. Turning it on needs a fresh passkey check, as approving a sign-in does: the first call answers `428` (`PASSKEY_CHECK_REQUIRED`), the second sends `{ on, passkey }`. It ends when the device signs out or sits unused for 12 hours.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "on": {
+                    "type": "boolean"
+                  },
+                  "passkey": {}
+                },
+                "required": [
+                  "on"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Changed"
+          },
+          "401": {
+            "description": "Not signed in, or the passkey check did not pass",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "An agent, a per-user API key or the relay (`DEVICES_PEOPLE_ONLY`), or, for a write that needs it, not the owner at the computer DorkOS runs on or signed in over https (`NEEDS_PERSON_AT_THIS_COMPUTER`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No live Wi-Fi sign-in of yours has that id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Add a passkey on this computer first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Run this passkey check, then call again with its response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "options": {}
+                  },
+                  "required": [
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/devices/sign-in-requests": {
+      "get": {
+        "tags": [
+          "Devices"
+        ],
+        "summary": "Devices asking to sign in over Wi-Fi",
+        "description": "Devices on Wi-Fi waiting for the owner to approve their sign-in: what each says it is, its address and when it asked. Only for the owner at the computer DorkOS runs on.",
+        "responses": {
+          "200": {
+            "description": "The waiting requests, newest first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "requests": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "deviceName": {
+                            "type": "string"
+                          },
+                          "address": {
+                            "type": "string"
+                          },
+                          "requestedAt": {
+                            "type": "string"
+                          },
+                          "expiresAt": {
+                            "type": "string"
+                          },
+                          "matchCode": {
+                            "type": "string"
+                          },
+                          "approved": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "deviceName",
+                          "address",
+                          "requestedAt",
+                          "expiresAt",
+                          "matchCode",
+                          "approved"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "requests"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "An agent, a per-user API key or the relay (`DEVICES_PEOPLE_ONLY`), or, for a write that needs it, not the owner at the computer DorkOS runs on or signed in over https (`NEEDS_PERSON_AT_THIS_COMPUTER`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/devices/sign-in-requests/{id}/approve": {
+      "post": {
+        "tags": [
+          "Devices"
+        ],
+        "summary": "Approve a Wi-Fi sign-in",
+        "description": "Approves one waiting device and answers a one-time code to type on it. The first call answers `428` with a passkey check (`PASSKEY_CHECK_REQUIRED`); the second sends `{ passkey }`, the browser’s response to it. Each check approves one request once. With no passkey on this computer it answers `409` (`PASSKEY_NEEDED`). Only for the owner at the computer DorkOS runs on, from the app’s own page.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "passkey": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Approved: the code to type on the device",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "expiresAt"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The passkey check did not pass",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "An agent, a per-user API key or the relay (`DEVICES_PEOPLE_ONLY`), or, for a write that needs it, not the owner at the computer DorkOS runs on or signed in over https (`NEEDS_PERSON_AT_THIS_COMPUTER`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "That request has ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Add a passkey on this computer first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Run this passkey check, then call again with its response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "options": {}
+                  },
+                  "required": [
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/devices/sign-in-requests/{id}/decline": {
+      "post": {
+        "tags": [
+          "Devices"
+        ],
+        "summary": "Decline a Wi-Fi sign-in",
+        "description": "Turns one waiting device away. Only for the owner at the computer DorkOS runs on.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Declined"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "An agent, a per-user API key or the relay (`DEVICES_PEOPLE_ONLY`), or, for a write that needs it, not the owner at the computer DorkOS runs on or signed in over https (`NEEDS_PERSON_AT_THIS_COMPUTER`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/owner-factors": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Your sign-in checks",
+        "description": "The passkeys and authenticator apps that prove a sign-in from another device. Never a secret or a key.",
+        "responses": {
+          "200": {
+            "description": "The sign-in checks, each saying whether it works from another device",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "factors": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "totp",
+                              "passkey"
+                            ]
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "host": {
+                            "type": "string"
+                          },
+                          "addedAt": {
+                            "type": "string"
+                          },
+                          "lastUsedAt": {
+                            "type": "string"
+                          },
+                          "worksFromAway": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "kind",
+                          "label",
+                          "addedAt",
+                          "worksFromAway"
+                        ]
+                      }
+                    },
+                    "everHadAway": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "factors",
+                    "everHadAway"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner, in the app, at the computer DorkOS runs on or signed in over https",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/owner-factors/passkeys/options": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Start adding a passkey",
+        "description": "After a passkey check when this computer has a passkey, then \"Confirm it’s you\": a challenge to make a passkey on this computer’s own address. The person is always verified. At this computer only.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The options to hand the browser",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "options": {}
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner, in the app, at the computer DorkOS runs on. Never another device.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "step_up_required"
+                      ]
+                    },
+                    "heldActionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code",
+                    "heldActionId",
+                    "expiresAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/owner-factors/passkeys/finish": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Finish adding a passkey",
+        "description": "Stores the new passkey, writes an Activity line and raises a notice. Each challenge works once.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "response": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Added",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "host": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "host"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The passkey was not added",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner, in the app, at the computer DorkOS runs on. Never another device.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/owner-factors/authenticator/start": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Start adding an authenticator app",
+        "description": "After a passkey check when this computer has a passkey, then \"Confirm it’s you\": a new secret and the address an authenticator app scans. It counts only once one of its codes is confirmed.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The new secret to scan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "secret": {
+                      "type": "string"
+                    },
+                    "uri": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "secret",
+                    "uri"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner, in the app, at the computer DorkOS runs on. Never another device.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Confirm this action in the app. Complete /api/step-up/{heldActionId}/password from the same signed-in browser. Nothing has changed yet. Narrowing and signing out your own device stay immediate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "step_up_required"
+                      ]
+                    },
+                    "heldActionId": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "requestCode": {
+                      "type": "string",
+                      "pattern": "^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}(?:-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{4}){2}$"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "code",
+                    "heldActionId",
+                    "expiresAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/owner-factors/authenticator/confirm": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Confirm an authenticator app",
+        "description": "One good code from the app confirms it.",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "code": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "code"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Confirmed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The code did not match",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner, in the app, at the computer DorkOS runs on. Never another device.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nothing waiting to confirm",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/owner-factors/{id}": {
+      "delete": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Remove a sign-in check",
+        "description": "After a passkey check when this computer has a passkey, then \"Confirm it’s you\": removes one passkey or authenticator app and raises a notice. Once one that works from another device has existed, a password alone never signs in from one again.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed"
+          },
+          "403": {
+            "description": "Not the owner, in the app, at the computer DorkOS runs on. Never another device.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Already gone",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
                   ]
                 }
               }
@@ -44803,7 +47504,8 @@
                         "reason": {
                           "type": "string",
                           "enum": [
-                            "credits-not-covered"
+                            "credits-not-covered",
+                            "account-not-available"
                           ]
                         }
                       },
@@ -48337,6 +51039,16 @@
             "in": "path"
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TriggerTaskRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "201": {
             "description": "Run started",
@@ -48352,6 +51064,16 @@
                   "required": [
                     "runId"
                   ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body is not valid, or the picked mode is not one the task can run in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -105438,6 +108160,417 @@
         }
       }
     },
+    "/api/extensions/{id}/media-tickets": {
+      "post": {
+        "tags": [
+          "Extensions"
+        ],
+        "summary": "Get a video link for an app’s frame",
+        "description": "What `api.mediaUrl(path)` asks for. Only a person’s DorkOS window may ask: the request must name a trusted `Origin`, and an agent or an API key is refused. The app must use the frame (`clientApiVersion: 2`), declare `capabilities.http`, and be running with a `fetch` handler or in its own process. The link works for 10 minutes after its last use and 2 hours at most, an app keeps 16, and every link of an app ends when it stops, reloads or updates. It plays that one path and acts as no person.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExtensionMediaTicketRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The video link",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExtensionMediaTicket"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid extension id, or a path that is not plainly inside the app",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login is enabled and the caller is not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not a person’s DorkOS window, or a write stamped by another app",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The app is not running, does not use the frame, or cannot stream video",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/extensions/media/{ticket}": {
+      "get": {
+        "tags": [
+          "Extensions"
+        ],
+        "summary": "Play an app’s video by its link",
+        "description": "Needs no sign-in: the ticket is the credential. DorkOS asks the app’s own route for the ticket’s path with only `Range` and `If-Range`, tells the app its caller is not a person, and streams the answer. A query string is ignored. `HEAD` answers the headers only; any other method is answered `405`. Only `200`, `206` and `416` pass, a success must be `video/mp4` or `video/webm`, and only `Content-Type`, `Content-Length`, `Content-Range`, `Accept-Ranges`, `ETag` and `Last-Modified` cross from the app. Every answer carries `X-Content-Type-Options: nosniff`, `Content-Security-Policy: sandbox; default-src 'none'`, `Content-Disposition: inline`, `Cache-Control: private, no-store`, `Referrer-Policy: no-referrer` and `Cross-Origin-Resource-Policy: cross-origin`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "ticket",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "range",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "if-range",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The whole video",
+            "content": {
+              "video/mp4": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "video/webm": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "206": {
+            "description": "The range asked for"
+          },
+          "404": {
+            "description": "The link is unknown or has expired (the same answer for both)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Only GET and HEAD",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "The app answered with something that is not MP4 or WebM"
+          },
+          "416": {
+            "description": "The range asked for is not in the video"
+          },
+          "502": {
+            "description": "The app did not answer, or answered with another status"
+          }
+        }
+      }
+    },
+    "/api/config/backups": {
+      "get": {
+        "tags": [
+          "Config"
+        ],
+        "summary": "List the database backup copies on this computer",
+        "description": "Every copy a DorkOS writer made in `<data dir>/backups`: daily and before-update copies, both the `dork-auto-` ones DorkOS prunes and older `dork-` ones it never touches. Only regular files with a writer’s name are listed; symbolic links never are. Person-only: a caller naming itself an agent, an approval token, a program credential, another site, or a request from another computer (except the owner over an encrypted connection) is refused before anything is read. There is no MCP tool for this.",
+        "responses": {
+          "200": {
+            "description": "The copies and their total size",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login is enabled and the caller is not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: only a person can see this (`person_only`), or only at this computer (`not_at_this_computer`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/config/backups/{name}": {
+      "delete": {
+        "tags": [
+          "Config"
+        ],
+        "summary": "Remove an older backup copy",
+        "description": "Deletes one older `dork-` copy. The file is re-checked right before it is deleted: a regular file in the real backup folder, unchanged, with no write in progress. Person-only: a caller naming itself an agent, an approval token, a program credential, another site, or a request from another computer (except the owner over an encrypted connection) is refused before anything is read. There is no MCP tool for this.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "A listed copy’s file name."
+            },
+            "required": true,
+            "description": "A listed copy’s file name.",
+            "name": "name",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login is enabled and the caller is not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: only a person can remove a backup (`person_only`), or only at this computer (`not_at_this_computer`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such older copy (`not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "DorkOS manages it (`managed`), a write is in progress (`busy`), or it changed (`changed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/config/backups/{name}/move": {
+      "post": {
+        "tags": [
+          "Config"
+        ],
+        "summary": "Move an older backup copy to another folder",
+        "description": "Copies one older `dork-` copy into an existing folder inside the directory boundary or on an external drive (`/Volumes/<drive>/…`), never the data folder. The destination is resolved once to its real path, so a link is followed and every check reads the folder written to. Nothing there is overwritten. The copy must match in size and pass SQLite’s `integrity_check`; only then is the original removed, and only if unchanged. A failed check deletes the new file and keeps the original. Person-only: a caller naming itself an agent, an approval token, a program credential, another site, or a request from another computer (except the owner over an encrypted connection) is refused before anything is read. There is no MCP tool for this.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "A listed copy’s file name."
+            },
+            "required": true,
+            "description": "A listed copy’s file name.",
+            "name": "name",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "destination": {
+                    "type": "string",
+                    "description": "An existing absolute folder."
+                  }
+                },
+                "required": [
+                  "destination"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Moved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "destinationPath": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "destinationPath"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The destination does not exist (`destination_invalid`), is neither inside the directory boundary nor on an external drive (`destination_outside`), is the data folder or inside it (`destination_in_data_folder`), or is the backup folder (`destination_is_backups`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login is enabled and the caller is not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: only a person can move a backup (`person_only`), or only at this computer (`not_at_this_computer`); or DorkOS cannot write to the destination (`destination_not_writable`). The original stays.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such older copy (`not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "DorkOS manages it (`managed`), it is busy (`busy`) or changed (`changed`), a file of that name is already there (`destination_exists`), the copy could not be written (`copy_failed`), or it failed its check (`verify_failed`). The original stays.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "The destination’s disk is full (`destination_full`). The original stays.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/step-up/{heldActionId}": {
       "get": {
         "tags": [
@@ -105515,6 +108648,7 @@
                         "devices.sign-out-one",
                         "devices.sign-out-others",
                         "devices.sign-out-all",
+                        "owner-factor.change",
                         "mcp-server.allow-global",
                         "own-browser.enable",
                         "own-browser.add-site",

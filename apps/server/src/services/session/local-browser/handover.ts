@@ -25,7 +25,6 @@ import {
   agentWindowAt,
   browserInUseRefusal,
   reopenAgentWindow,
-  selectedTabRefused,
   type AgentWindowRestore,
 } from './handoff-guards/agent-window-restore.js';
 import {
@@ -33,94 +32,63 @@ import {
   type OutsideTurnCheck,
   type OutsideTurnReason,
 } from './handoff-guards/outside-turn-reason.js';
+import {
+  doneStep,
+  logHandBackFailure,
+  PendingHandBack,
+  SIGNING_IN_REFUSAL,
+  signingInRefusal,
+} from './handoff-guards/done-signing-in.js';
+import {
+  assertHandoffProfileExists,
+  signInProfile,
+  type HandoverBrowser,
+  type HandoffReopenAt,
+} from './handoff-guards/handover-browser.js';
+import { refuseAgentDuringHandoff } from './handoff-guards/agent-custody.js';
+import { assertSignInUrl, siteOnly, trimPage } from './handoff-guards/page-address.js';
 import { prepareProfileFolder } from './profile-folders.js';
 import type { SignInWindow } from './sign-in-window.js';
+import { handoffLaunchAdmission, launchHandoffSignIn } from './handoff-guards/launch-admission.js';
+import {
+  prepareHandoffPage,
+  refusedHere,
+  requireHandoffPage,
+  requireRefusalIdentity,
+} from './handoff-guards/prepare-handoff.js';
+export type { OutsideTurnCheck, OutsideTurnReason, HandoverBrowser };
 
-/** The parts of the browser service a handoff steers. */
-export interface HandoverBrowser {
-  profileRemoval?: { assertAvailable(): void };
-  state(): Promise<LocalBrowserState>;
-  capabilities(): { newWindow: boolean };
-  currentProfileId(): string | null;
-  /** The host of the page DorkOS last read, when that reading was a refusal (DOR-4097). */
-  lastRefusalHost?(): string | null;
-  /** Whether a named profile exists. False until startup wires the profile list. */
-  profileExists(id: string): boolean;
-  open(input: LocalBrowserOpen): Promise<LocalBrowserState>;
-  selectTab(id: string): Promise<LocalBrowserState>;
-  navigate(url: string, options?: { httpFallback?: boolean }): Promise<LocalBrowserState>;
-  stepHistory(direction: LocalBrowserHistoryDirection): Promise<LocalBrowserState>;
-  pause(): Promise<LocalBrowserState>;
-  handToPerson(): Promise<LocalBrowserState>;
-  resume(): Promise<LocalBrowserState>;
-  disconnect(): Promise<LocalBrowserState>;
-}
-
-export type { OutsideTurnCheck, OutsideTurnReason };
-
-/** Where to put the agent back when the person hands the browser back. */
-interface ReopenAt {
-  sessionId: string;
-  profileId: string | null;
-  url?: string;
-}
+export { assertSignInUrl, siteOnly, SIGNING_IN_REFUSAL };
 
 /** What the agent is told after it hands the browser over. */
 export const HANDED_OVER_NEXT =
   'The person has the browser now. End your turn and wait. You get a message when they hand it back. Never ask again or retry on your own.';
 
-/**
- * A sign-in page must be `https:`, or `http:` on this computer only.
- *
- * @param value - The address to open.
- */
-export function assertSignInUrl(value: string): URL {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    throw new LocalBrowserError(
-      'unsupported_address',
-      'Use a website address starting with https.'
-    );
-  }
-  const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
-  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && local))
-    throw new LocalBrowserError(
-      'unsupported_address',
-      'Use a website address starting with https.'
-    );
-  return url;
-}
-
-/**
- * A page's address cut to its site: the origin, or for an address with none
- * (`about:`, `data:`) its scheme alone.
- *
- * @param value - The tab's address.
- */
-export function siteOnly(value: string): string {
-  try {
-    const url = new URL(value);
-    if (url.origin !== 'null') return url.origin;
-    // A blank tab carries nothing, and the panel names it "New tab".
-    return url.href === 'about:blank' ? url.href : url.protocol;
-  } catch {
-    return '';
-  }
-}
-
 /** One handoff at a time, and the plain sign-in window it can open. */
 export class BrowserHandover {
-  private signingIn = 0;
+  /** Metadata-only arbitration for the install's single active handoff. */
+  hasActiveHandoff(): boolean {
+    return (
+      this.preparingHandoff ||
+      this.answeringHandoff ||
+      this.record?.outcome === null ||
+      this.signIns.active
+    );
+  }
+  /** Person card lookup is independent of whichever chat the UI currently shows. */
+  ownsHandoff = (id: string): boolean => this.record?.id === id;
+  /** Physical sign-in ownership is distinct from an answered handoff record. */
+  signInHoldsProfile = (profileId: string | null): boolean =>
+    this.signIns.holds(this.folderOf(profileId));
+  private signingProfile: string | null | undefined;
   private preparingHandoff = false;
   private answeringHandoff = false;
 
   /** Includes preparation, saving, and a handoff that can reopen this profile. */
   holdsProfile(profileId: string | null): boolean {
     return (
-      this.preparingHandoff ||
-      this.signingIn > 0 ||
+      (this.preparingHandoff && this.browser.currentProfileId() === profileId) ||
+      (this.signingProfile !== undefined && this.signingProfile === profileId) ||
       this.signIns.holds(this.folderOf(profileId)) ||
       (this.record?.outcome === null && this.record.profileId === profileId)
     );
@@ -132,7 +100,7 @@ export class BrowserHandover {
     this.changed();
   }
   private record: LocalBrowserHandoff | null = null;
-  private reopenAt?: ReopenAt;
+  private reopenAt?: HandoffReopenAt;
   /** The agent's window a refusal's sign-in closed, to reopen when that sign-in ends (DOR-4693). */
   private reopenAfterSignIn?: AgentWindowRestore;
   // The agent's page when it asked. Saved here, so Continue never takes a URL from the agent.
@@ -143,6 +111,8 @@ export class BrowserHandover {
   // A person took the page from this chat (DOR-4428): its agent can't read or use it
   // until a person resumes, opens or closes the browser.
   private takenFrom: string | null = null;
+  // The handoff a Done signing in waits to hand back once its window saves (DOR-4731).
+  private readonly pendingHandBack = new PendingHandBack();
   // Fails closed until startup says how to read a turn's marks.
   // Until startup wires the live check, every turn reads as a stranger's: fails closed.
   private outsideTurn: OutsideTurnCheck = async () => 'outsider_turn';
@@ -181,6 +151,9 @@ export class BrowserHandover {
     this.signIns.onChange(() => {
       listener();
       this.restoreAfterSignIn();
+      // A Done signing in waiting on this save hands back once it lands (DOR-4731).
+      const handBack = this.pendingHandBack.settle(this.signIns.current?.status, this.openId());
+      if (handBack) void this.handBack(handBack).catch((e) => logHandBackFailure(handBack, e));
     });
   }
 
@@ -225,7 +198,7 @@ export class BrowserHandover {
    * than the person's own window (DOR-4163).
    */
   async state(): Promise<LocalBrowserPersonState> {
-    const state = this.trimmed(await this.browser.state());
+    const state = trimPage(await this.browser.state(), this.record);
     return {
       ...state,
       handoff: this.record,
@@ -258,6 +231,7 @@ export class BrowserHandover {
       // pause fails the lock stays on: failing closed, and Resume clears it.
       this.takenFrom = state.sessionId;
       await this.browser.pause();
+      await this.browser.handToPerson();
       logger.info('[Browser] A person took the browser', { sessionId: state.sessionId });
       this.changed();
     }
@@ -273,14 +247,7 @@ export class BrowserHandover {
 
   /** A person's Pause, answered with the same trimmed tabs as {@link state}. */
   async pause(): Promise<LocalBrowserState> {
-    return this.trimmed(await this.browser.pause());
-  }
-
-  /** Every tab cut to its site, with no title, while a person has the browser. */
-  private trimmed(state: LocalBrowserState): LocalBrowserState {
-    if (this.record?.outcome !== null) return state;
-    const tabs = state.tabs.map((tab) => ({ ...tab, url: siteOnly(tab.url), title: '' }));
-    return { ...state, tabs };
+    return trimPage(await this.browser.pause(), this.record);
   }
 
   /**
@@ -291,19 +258,15 @@ export class BrowserHandover {
   async requireAgentMayUse(sessionId: string): Promise<void> {
     this.refuseStopped(sessionId);
     this.refuseTaken();
-    if (this.preparingHandoff || (this.record && this.record.outcome === null)) {
-      // QA reads these: every browser call an agent tried while a person had the browser.
-      logger.info('[Browser] Refused an agent call during a handoff', {
-        handoffId: this.record?.id,
-        sessionId,
-      });
-      throw new LocalBrowserError(
-        'handed_to_person',
-        'A person has the browser. Wait until they hand it back.'
-      );
-    }
-    if (this.signIns.active && (await this.signInOnAgentProfile()))
-      throw new LocalBrowserError('signing_in', 'A person is signing in. Wait until they finish.');
+    refuseAgentDuringHandoff(this.record, this.preparingHandoff, sessionId);
+    if (this.signIns.active && this.signInHoldsProfile(this.browser.currentProfileId()))
+      throw signingInRefusal();
+    this.browser.requireAgentPage?.();
+  }
+
+  /** Refuse only this chat while its sign-in window is open. */
+  refuseWhileSigningIn(): void {
+    if (this.signIns.active) throw signingInRefusal();
   }
 
   /**
@@ -331,9 +294,11 @@ export class BrowserHandover {
     // A stranger's words must not be able to raise a window or ask the person anything. A turn
     // marked only by a page the agent read may still hand over that page, when DorkOS's own
     // reading found it refused the browser (DOR-4693): the page is what needs the person.
+    const refusalIdentity = this.browser.refusalIdentity?.();
     const marked = await this.outsideTurn(sessionId);
-    if (marked !== null && !(marked === 'read_outside_text' && (await this.refusedHere())))
+    if (marked !== null && !(marked === 'read_outside_text' && (await refusedHere(this.browser))))
       throw outsideTurnRefusal(marked);
+    requireRefusalIdentity(this.browser, marked, refusalIdentity);
     this.refuseStopped(sessionId);
     this.refuseTaken();
     if (this.preparingHandoff || this.answeringHandoff)
@@ -341,11 +306,17 @@ export class BrowserHandover {
     const open = this.record?.outcome === null ? this.record : null;
     if (open?.sessionId === sessionId)
       return { handoffId: open.id, site: open.site, next: HANDED_OVER_NEXT };
-    if (open || this.signIns.active)
+    if (open)
       throw new LocalBrowserError('busy', 'A browser handoff is already open. Finish it first.');
+    this.refuseWhileSigningIn();
     this.preparingHandoff = true;
     try {
-      return await this.prepareHandoff(sessionId, reason, asker);
+      return await this.prepareHandoff(
+        sessionId,
+        reason,
+        asker,
+        marked === 'read_outside_text' ? refusalIdentity : undefined
+      );
     } finally {
       this.preparingHandoff = false;
     }
@@ -357,56 +328,51 @@ export class BrowserHandover {
    *
    * @param sessionId - The calling chat.
    */
-  outsideTurnReason(sessionId: string): Promise<OutsideTurnReason | null> {
-    return this.outsideTurn(sessionId);
-  }
-
-  /** Whether DorkOS's own last reading found the selected tab's site refusing the browser. */
-  private refusedHere(): Promise<boolean> {
-    return selectedTabRefused(this.browser, this.browser.lastRefusalHost?.() ?? null);
-  }
+  outsideTurnReason = (sessionId: string) => this.outsideTurn(sessionId);
 
   private async prepareHandoff(
     sessionId: string,
     reason: LocalBrowserHandoffReason,
-    asker: { name: string; folder: string } | null
+    asker: { name: string; folder: string } | null,
+    expectedRefusal?: string | null
   ) {
     const state = await this.browser.state();
-    const tab = state.tabs.find((candidate) => candidate.id === state.selectedTabId);
-    if (state.status !== 'connected' || !tab)
-      throw new LocalBrowserError('no_tab', 'Choose the tab your agent should use.');
-    const site = new URL(tab.url).host;
-    if (!site) throw new LocalBrowserError('no_site', 'Open the website first, then ask again.');
-    if (state.mode === 'new-window') assertSignInUrl(tab.url);
-    // DorkOS's own reading, taken before handing over clears it; never the agent's word (DOR-4097).
-    const refused = this.browser.lastRefusalHost?.() === site;
-    await this.browser.handToPerson();
-    const profileId = this.browser.currentProfileId();
-    this.record = {
+    const snapshot = prepareHandoffPage(this.browser, state, sessionId, expectedRefusal);
+    const { tab, site, refused, profileId } = snapshot;
+    const handed = await this.browser.handToPerson();
+    requireHandoffPage(this.browser, snapshot, handed);
+    const handoff: LocalBrowserHandoff = {
       id: randomUUID(),
       sessionId,
       agentName: asker?.name ?? null,
       agentId: asker ? (this.agentIdAt(asker.folder) ?? null) : null,
       agentFolder: asker?.folder ?? null,
-      profileId: this.browser.currentProfileId(),
+      profileId,
       reason,
       site,
       askedAt: new Date(this.now()).toISOString(),
       ...(refused ? { refused: true } : {}),
       outcome: null,
     };
-    this.reopenAt = undefined;
-    this.askedUrl = tab.url;
-    if (state.mode === 'new-window') {
-      this.reopenAt = { sessionId, profileId, url: tab.url };
-      // No page-reading connection, automation pipe or theme extension survives
-      // into the person's window. Form fields do not survive this deliberate swap.
-      await this.browser.disconnect();
-      const folder = await prepareProfileFolder(this.dataDirectory(), profileId);
-      await this.signIns.start(folder, profileId, assertSignInUrl(tab.url).href);
+    if (snapshot.mode === 'new-window') {
+      await launchHandoffSignIn(
+        this.browser,
+        this.signIns,
+        this.dataDirectory(),
+        snapshot,
+        handoffLaunchAdmission(this.browser, snapshot, this.outsideTurn, () => {
+          this.refuseStopped(snapshot.chatId);
+          this.refuseTaken();
+        })
+      );
     }
     // Bring the agent's window to the person. Its strip and card are drawn by DorkOS.
-    if (state.mode === 'embedded') await this.browser.selectTab(tab.id).catch(() => undefined);
+    if (snapshot.mode === 'embedded') await this.browser.selectTab(tab.id).catch(() => undefined);
+    // A failed close or sign-in must not leave an unpublished handoff that a retry calls success.
+    this.record = handoff;
+    this.reopenAt =
+      snapshot.mode === 'new-window' ? { sessionId, profileId, url: tab.url } : undefined;
+    this.askedUrl = tab.url;
     this.changed();
     this.handedOver(this.record);
     logger.info('[Browser] An agent handed the browser to a person', {
@@ -428,11 +394,12 @@ export class BrowserHandover {
     // A new sign-in owes nothing to an older one's window (DOR-4693), unless that one is still
     // open: its own end puts its window back.
     if (!this.signIns.active) this.reopenAfterSignIn = undefined;
-    this.signingIn++;
+    if (this.signingProfile !== undefined) throw browserInUseRefusal();
+    this.signingProfile = signInProfile(input, this.browser.currentProfileId(), this.record);
     try {
       return await this.startSignIn(input);
     } finally {
-      this.signingIn--;
+      this.signingProfile = undefined;
     }
   }
 
@@ -442,7 +409,7 @@ export class BrowserHandover {
     let profileId: string | null;
     if ('handoffId' in input) {
       const handoff = this.openHandoff(input.handoffId);
-      this.assertProfileExists(this.browser.currentProfileId());
+      assertHandoffProfileExists(this.browser, this.browser.currentProfileId());
       if (state.mode === 'embedded' && state.status === 'connected') {
         await this.browser.handToPerson();
         return this.state();
@@ -450,7 +417,7 @@ export class BrowserHandover {
       if (this.reopenAt?.url) {
         if (!this.signIns.active) {
           // The saved page's profile can differ from the current one; refuse it too (DOR-4180).
-          this.assertProfileExists(this.reopenAt.profileId);
+          assertHandoffProfileExists(this.browser, this.reopenAt.profileId);
           const folder = await prepareProfileFolder(this.dataDirectory(), this.reopenAt.profileId);
           await this.signIns.start(
             folder,
@@ -475,9 +442,10 @@ export class BrowserHandover {
       this.reopenAt = { sessionId: handoff.sessionId, profileId, url: this.askedUrl ?? tab.url };
     } else {
       url = assertSignInUrl(input.url);
-      profileId = input.profileId ?? null;
-      this.assertProfileExists(profileId);
+      profileId = signInProfile(input, state.sessionId ? this.browser.currentProfileId() : null);
+      assertHandoffProfileExists(this.browser, profileId);
     }
+    this.browser.requireExclusiveProfile?.(profileId);
     const folder = await prepareProfileFolder(this.dataDirectory(), profileId);
     // Only one Chromium can hold a profile, so the agent's window on it closes first, and comes
     // back once the sign-in ends (DOR-4693). Never while the person is using it.
@@ -486,6 +454,7 @@ export class BrowserHandover {
       state.status !== 'disconnected' &&
       this.browser.currentProfileId() === profileId;
     if (agentWindowOnProfile) {
+      this.browser.requireExclusiveProfile?.();
       if (this.record?.outcome === null || this.takenFrom !== null) throw browserInUseRefusal();
       this.reopenAfterSignIn = agentWindowAt(state, profileId);
       await this.browser.disconnect();
@@ -494,22 +463,34 @@ export class BrowserHandover {
       await this.signIns.start(folder, profileId, url.href);
     } catch (error) {
       // A sign-in that never started never ends, so nothing may reopen on its account.
-      this.reopenAfterSignIn = undefined;
+      if (agentWindowOnProfile) this.reopenAfterSignIn = undefined;
       throw error;
     }
     return this.state();
   }
 
   /**
-   * Refuse a sign-in on a named profile that's gone, before any folder is made: making
-   * one would bring a deleted profile back, with no entry to see or delete it (DOR-4180).
-   * The default profile has no id and always exists.
+   * The person's Done signing in: quit the sign-in window so it saves, then hand the named
+   * handoff back as Continue would (see `handoff-guards/done-signing-in`). With no handoff it
+   * only ends a window none waits on, and hands nothing back. Answers at once. Person only.
    *
-   * @param profileId - The profile the sign-in would land in.
+   * @param handoffId - The open handoff whose own sign-in window this is, if any.
    */
-  private assertProfileExists(profileId: string | null): void {
-    if (profileId !== null && !this.browser.profileExists(profileId))
-      throw new LocalBrowserError('profile_not_found', 'That browser profile no longer exists.');
+  async finishSignIn(handoffId?: string): Promise<void> {
+    if (handoffId === undefined) {
+      if (this.preparingHandoff || this.answeringHandoff)
+        throw new LocalBrowserError('busy', 'The browser handoff is changing. Wait a moment.');
+      // An open handoff's window is answered through that handoff, never around it.
+      this.refuseDuringHandoff();
+      return this.signIns.done();
+    }
+    const handoff = this.openHandoff(handoffId);
+    if (doneStep(this.signIns.current, this.signIns.active, handoff) === 'hand-back') {
+      await this.handBack(handoffId);
+      return;
+    }
+    this.pendingHandBack.arm(handoffId);
+    this.signIns.done();
   }
 
   /**
@@ -560,6 +541,8 @@ export class BrowserHandover {
     this.answeringHandoff = true;
     try {
       this.stoppedFor = handoff.sessionId;
+      // Stop ends the task: a Done signing in still saving must not hand back (DOR-4731).
+      this.pendingHandBack.clear();
       await this.browser.pause();
       this.end(handoff, 'stopped');
       return this.state();
@@ -630,7 +613,7 @@ export class BrowserHandover {
   async selectTab(id: string): Promise<LocalBrowserState> {
     if (this.record?.outcome === null && id !== (await this.browser.state()).selectedTabId)
       this.refuseDuringHandoff();
-    return this.trimmed(await this.browser.selectTab(id));
+    return trimPage(await this.browser.selectTab(id), this.record);
   }
 
   /**
@@ -721,6 +704,7 @@ export class BrowserHandover {
 
   private end(handoff: LocalBrowserHandoff, outcome: LocalBrowserHandoffOutcome): void {
     if (this.record?.id === handoff.id) this.record = { ...handoff, outcome };
+    this.pendingHandBack.clear(handoff.id);
     logger.info('[Browser] A browser handoff ended', { handoffId: handoff.id, outcome });
     this.reopenAt = undefined;
     this.askedUrl = undefined;
@@ -729,9 +713,8 @@ export class BrowserHandover {
     this.ended({ ...handoff, outcome });
   }
 
-  private async signInOnAgentProfile(): Promise<boolean> {
-    return this.signIns.holds(this.folderOf(this.browser.currentProfileId()));
-  }
+  /** The open handoff's id, or null when none is open. */
+  private openId = (): string | null => (this.record?.outcome === null ? this.record.id : null);
 
   /** The folder `prepareProfileFolder` gives a profile, without touching the disk. */
   private folderOf(profileId: string | null): string {

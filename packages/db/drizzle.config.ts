@@ -24,6 +24,7 @@ export default defineConfig({
     './src/schema/session/room-seat-launch-requirements.ts',
     './src/schema/session/session-started-by.ts',
     './src/schema/session/session-locations.ts',
+    './src/schema/session/session-birth-allocations.ts',
     './src/schema/session/session-native-bindings.ts',
     './src/schema/session/session-touches.ts',
     './src/schema/session/turn-context.ts',
@@ -31,6 +32,7 @@ export default defineConfig({
     './src/schema/session/work-claims.ts',
     './src/schema/workspace.ts',
     './src/schema/auth.ts',
+    './src/schema/owner/owner-factors.ts',
     // Historical inputs keep generated SQL from dropping rows before application backfill.
     './src/schema/connected-accounts.ts',
     './src/schema/connector-attachments.ts',

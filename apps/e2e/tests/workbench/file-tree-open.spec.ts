@@ -5,6 +5,7 @@ import type { Page } from '@playwright/test';
 import { test, expect } from '../../fixtures';
 import { draftSessionUrl } from '../../pages/session-draft';
 import { seedRoom } from '../rooms/room-sheet-helpers';
+import { observeCanvasOpenOrdering, openSettledCanvasTab } from './canvas-open-helpers';
 
 const PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a7x8AAAAASUVORK5CYII=',
@@ -40,20 +41,29 @@ test.describe('Opening files from the tree @smoke', () => {
     const agent = await roomsApi.registerAgent(`File reader ${roomsApi.runId}`, '📁', '#6366f1');
     await writeFile(join(agent.path, 'brief.md'), '# Agent file preview\n');
     await writeFile(join(agent.path, 'sample.png'), PNG);
-    await rightPanel.goto(await draftSessionUrl(page, randomUUID(), agent.path));
+    const sessionId = randomUUID();
+    await rightPanel.goto(await draftSessionUrl(page, sessionId, agent.path));
 
     for (const name of ['brief.md', 'sample.png']) {
       const tab = rightPanel.header.getByRole('tab', { name, exact: true });
+      const openFile = {
+        page,
+        tabs: tab,
+        sessionId,
+        expected:
+          name === 'sample.png'
+            ? { type: 'image' as const, src: name }
+            : { type: 'file' as const, sourcePath: name },
+        open: () => clickFileName(page, name),
+      };
       await rightPanel.selectView('Files');
-      await clickFileName(page, name);
-      await expect(tab).toHaveAttribute('aria-selected', 'true');
+      await openSettledCanvasTab({ ...openFile, observeBeforeResponse: observeCanvasOpenOrdering });
       await page.getByRole('button', { name: `Close ${name} view` }).click();
       await expect(tab).toBeHidden();
 
       // The click this ticket is about: the same file again, after its tab closed.
       await rightPanel.selectView('Files');
-      await clickFileName(page, name);
-      await expect(tab).toHaveAttribute('aria-selected', 'true');
+      await openSettledCanvasTab(openFile);
     }
     await expect(page.getByRole('img', { name: 'Canvas image' })).toBeVisible();
     await expect

@@ -30,14 +30,20 @@ export type CellStatus =
 /** A tier of proof; see "Evidence tiers" in `runtime-capability-matrix`. */
 export type EvidenceTier = 'U' | 'E' | 'L';
 
+/** The exact case behind a cell's proof claim. */
+export type MatrixEvidenceReference =
+  { tier: 'U' | 'E'; file: string; title: string } | { tier: 'L'; file: string; caseId: string };
+
 /** One runtime's answer to one capability. */
 export interface MatrixCell {
   /** How far this runtime gets. */
   status: CellStatus;
   /** Why, in one sentence. Required for every status but `supported`. */
   reason?: string;
-  /** The tiers of proof this cell claims. A `U` claim is checked by the census. */
+  /** The proof tiers this cell claims. */
   evidence?: readonly EvidenceTier[];
+  /** Named cases in test files or checked-in live receipts. */
+  references?: readonly MatrixEvidenceReference[];
   /** The tracker item that will change this cell. Required for `planned`. */
   ticket?: string;
 }
@@ -59,6 +65,11 @@ export const MATRIX_GROUPS = {
   MEDIA: 'Attachments and media',
   COST: 'Cost and usage',
   CMP: 'Compaction',
+  ROOM: 'Rooms',
+  TASK: 'Scheduled tasks',
+  RELAY: 'Relay',
+  EXT: 'Extension tools',
+  AWAKE: 'Sleep and keep-awake',
   GRD: 'Safety guards',
 } as const;
 

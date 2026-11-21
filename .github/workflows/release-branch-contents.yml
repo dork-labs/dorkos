@@ -1,0 +1,114 @@
+name: release-branch-contents
+
+# A pull request into a release branch may carry only cherry-picks of commits
+# already on main and the release commit (DOR-4639, decision DOR-4636).
+#
+# Releases ship from short-lived `release/v<X.Y.Z>` branches cut from the main
+# commit QA pinned, so main keeps merging during a release. The branch is only
+# safe if nothing reaches it that main does not already hold: a fix found during
+# the release lands on main first and is then cherry-picked (Security,
+# DOR-3100). The rule is DOR-4638's packages/cli/scripts/release-branch/
+# check-picks.ts, the same function the release publish runs, wrapped by
+# scripts/ci/release-branch-contents.sh (branch shape, base and history checks,
+# sanity checks on the rule's verdict, the summary table; pinned by
+# scripts/test-release-branch-contents.sh). In short, every commit in base..head
+# must be either
+#
+#   * a `git cherry-pick -x` of a main commit whose byte-exact patch equals the
+#     commit its trailer names (whitespace counts, unlike `git patch-id`), or
+#   * the release commit `chore(release): v<X.Y.Z>` for the branch's own
+#     version, touching only release metadata.
+#
+# Merge commits, new commits, edited or conflict-resolved picks are refused. A
+# conflict-resolved pick has no waiver here by design: land the shape the
+# branch needs on main first, or take it to Security (contributing/ci.md,
+# "Release branches").
+#
+# THE RULE COMES FROM MAIN. The steps below run main's copy of the script and
+# of the rule folder, never the ones in this pull request's checkout, so a pull request cannot edit the
+# rule that grades it (the same guard as no-code-scope.sh in test.yml, Security
+# #3238). This YAML itself still comes from the pull request's merge ref, as for
+# every `pull_request` workflow; pinning it to main takes a required WORKFLOW in
+# the release ruleset (like security-gate), which is Security's call.
+#
+# `release/**`, not `release/v*`, so a pull request into a misnamed branch goes
+# red with a reason instead of leaving a required check pending forever. The
+# script refuses any branch that is not exactly `release/v<X.Y.Z>`.
+#
+# UNTRUSTED INPUT. The branch name and the shas reach the script through `env:`
+# and quoted arguments, never through `${{ }}` inside `run:`. Commit subjects
+# are read by the script as data and printed sanitized.
+#
+# NO MERGE QUEUE. The release ruleset has no merge queue (few pull requests,
+# one writer), so there is no `merge_group:` trigger. If a queue is ever turned
+# on for release/*, this workflow needs a `merge_group` leg BEFORE the ruleset
+# change, or the required check deadlocks the queue (test.yml's header).
+
+on:
+  pull_request:
+    branches: ['release/**']
+    # `edited` covers a retarget: a new base is a new range to judge.
+    types: [opened, synchronize, reopened, edited]
+
+concurrency:
+  # A push to a pull request makes its older runs here worthless, so they
+  # cancel. The newest run in a group is never the cancelled one, so the newest
+  # head always reports (ledger 261031-020633).
+  group: ${{ github.workflow }}-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  release-branch-contents:
+    runs-on: ubuntu-latest
+    # No run data yet (a new check); a full-history checkout of this repo and a
+    # few hundred patch fingerprints take well under two minutes. Re-measure after the
+    # first release and adjust with a ci/ledger entry.
+    timeout-minutes: 10
+    steps:
+      # Full history: reachability from main and the base is the whole
+      # question, so a shallow clone would make it unanswerable. The script
+      # refuses a shallow clone rather than guess.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      # check-picks.ts is TypeScript run by node's type stripping, as DOR-4638's
+      # release-publish.yml runs it.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+
+      # Both halves come from MAIN: this repo's shell check, and DOR-4638's
+      # rule folder (packages/cli/scripts/release-branch/, which imports only
+      # itself and node builtins, so it runs from a temp folder with nothing
+      # installed). Until DOR-4638 is on main there is no rule, and the check
+      # fails closed (exit 2) rather than pass.
+      - name: Read main's copy of the rule
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --quiet origin +refs/heads/main:refs/remotes/origin/main
+          if ! git cat-file -e origin/main:packages/cli/scripts/release-branch/check-picks.ts 2>/dev/null; then
+            echo "::error::main has no packages/cli/scripts/release-branch/check-picks.ts (DOR-4638 is not on main yet), so there is no rule to judge this pull request by. Refusing."
+            exit 2
+          fi
+          git show origin/main:scripts/ci/release-branch-contents.sh > "$RUNNER_TEMP/release-branch-contents.sh"
+          mkdir -p "$RUNNER_TEMP/release-branch-rule"
+          git archive origin/main packages/cli/scripts/release-branch |
+            tar -x -C "$RUNNER_TEMP/release-branch-rule" --strip-components=4
+
+      - name: Judge every commit in the pull request
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          bash "$RUNNER_TEMP/release-branch-contents.sh" --rule-dir "$RUNNER_TEMP/release-branch-rule" \
+            --base-ref "$BASE_REF" --base-sha "$BASE_SHA" --head-sha "$HEAD_SHA"

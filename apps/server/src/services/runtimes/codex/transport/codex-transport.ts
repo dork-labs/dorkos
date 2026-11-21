@@ -3,15 +3,16 @@
  * `codex-app-server-transport` §3, ADR 261005-113107).
  *
  * Everything above "run one resolved turn" stays in the runtime: settings, the
- * cwd chain, who pays (and the refusal when credits cannot), the model swap,
+ * cwd chain, who pays (and the refusal when credits cannot), the credits model swap,
  * the connector binding and its lease, the identity token, the managed MCP
  * servers, the context gate, prompt assembly, registry and `codex_threads`
  * writes, and media capture. A transport receives one {@link CodexTurnRequest}
- * with all of that already decided and turns it into StreamEvents.
+ * with all of that decided and turns it into StreamEvents. Personal model
+ * availability is checked on the acquired account process before the thread
+ * loads; a verified fallback is handed back for the runtime to remember.
  *
- * Two implementations: `exec` (one `codex exec` per turn through the SDK, the
- * code that shipped before this seam, moved unchanged) and `app-server` (one
- * long-lived `codex app-server` per home).
+ * Production uses `app-server` (one long-lived process per home), including
+ * the legacy `exec` setting. Scripted exec transports remain test fixtures.
  *
  * @module services/runtimes/codex/transport/codex-transport
  */
@@ -27,6 +28,7 @@ import type { DorkosMcpInjection } from '../../shared/dorkos-mcp-injection.js';
 import type { ConnectorRuntimeMcpInjection } from '../../connector-tools.js';
 import type { CodexFilePolicy } from '../policy/protected-profile.js';
 import type { CodexManagedMcpServers } from '../mcp-server-config.js';
+import type { CodexToolEventDelivery } from '../tool-turn/tool-turn-context.js';
 import type { CodexEventContext } from '../event-mapper.js';
 import type { BackgroundWake } from '../app-server/background-work.js';
 
@@ -90,12 +92,16 @@ export interface CodexTurnRequest {
   readonly signal: AbortSignal;
   /** The turn's mapping context (thread id, media state, usage reader). */
   readonly events: CodexEventContext;
+  /** Attach the current single-consumer stream sink; undefined retires it before close. */
+  onToolEvents?(deliver: CodexToolEventDelivery | undefined): void;
   /**
    * Persist the session ↔ thread binding. `replaces` names a bound thread the
    * transport found could not continue (spec §6), so the binding is replaced
    * rather than first-write-wins.
    */
   onThreadBound(threadId: string, replaces?: string): void;
+  /** Remember a verified account-default replacement for subsequent turns. */
+  onModelReplacement?(model: string): void | Promise<void>;
   /**
    * Whether the turn's thread fetched its DorkOS tool list, once a turn that
    * was handed them has completed (DOR-4393). Only the server's own record of

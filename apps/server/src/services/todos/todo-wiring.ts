@@ -91,6 +91,8 @@ export function wireTodos(deps: TodoWiringDeps): TodoWiring {
     isOwner: (facts) => refuseUnlessAccountOwner(facts) === undefined,
     // Only the owner's own session cookie mints `person` authority (DOR-3088).
     personProven: personProof,
+    // With no owner account nobody can be proven; a failed lookup reads as an owner (DOR-3832).
+    ownerExists: ownerAccountExists,
     confirm,
   };
   const todoStore = new TodoStore(deps.db);

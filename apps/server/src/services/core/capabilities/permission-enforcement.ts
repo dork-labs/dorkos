@@ -85,6 +85,8 @@ import {
 import { turnReadOutsideWords } from '../turn-power/outsider-turn.js';
 import { choseFullAutonomy, recordMarkedFullAction } from '../turn-power/full-autonomy.js';
 import { HELD_IN_A_MARKED_TURN, markedTurnCardArea } from './marked-turn-holds.js';
+import { shouldAsk, type ConnectorGateFacts } from '../prompts/should-ask.js';
+export { connectorGateFacts } from '../prompts/connector-gate-facts.js';
 import type { PermissionStop } from '@dorkos/shared/agent-runtime';
 import type { AgentIdentity } from '../agent-identity/agent-identity-service.js';
 import type { GatedAction } from './tier-enforcement.js';
@@ -386,24 +388,21 @@ function stricter(a: ResolvedPermission, b: ResolvedPermission): ResolvedPermiss
  * @param request - The action, the calling identity, and the parsed input.
  * @returns The permission to hand the gate, or `null` when the action has no area.
  */
-export async function resolveCallPermission(request: {
-  action: PermissionGatedAction;
-  identity?: AgentIdentity;
-  /** The parsed input, so an action whose input reaches other areas is decided on it. */
-  input?: unknown;
-  /** The calling session, when the surface verified one. */
-  sessionId?: string;
-  /**
-   * The chat and agent a turn-bound runtime principal names, for a surface that verified the
-   * principal but no session or identity (the connector loopback): its turn's marks count too.
-   */
-  principalTurn?: { sessionId: string; agentPath: string };
-  /**
-   * False when the connector preflight read this call as one that reaches nobody outside the
-   * team and can be undone (a draft, a label). Anything else counts as outward (DOR-3683).
-   */
-  outward?: boolean;
-}): Promise<CallPermission | null> {
+export async function resolveCallPermission(
+  request: ConnectorGateFacts & {
+    action: PermissionGatedAction;
+    identity?: AgentIdentity;
+    /** The parsed input, so an action whose input reaches other areas is decided on it. */
+    input?: unknown;
+    /** The calling session, when the surface verified one. */
+    sessionId?: string;
+    /**
+     * The chat and agent a turn-bound runtime principal names, for a surface that verified the
+     * principal but no session or identity (the connector loopback): its turn's marks count too.
+     */
+    principalTurn?: { sessionId: string; agentPath: string };
+  }
+): Promise<CallPermission | null> {
   const { action, identity, principalTurn } = request;
   // Read from the turn's own record, never from the model: the session's
   // latest turn, or for a caller with no session, any running turn of its agent.
@@ -494,7 +493,9 @@ export async function resolveCallPermission(request: {
     // people outside the team or cannot be undone (DOR-3683): a send, an event change, a new event with invitees.
     const outwardAtFull = marked && full && request.outward !== false;
     const cardArea = strangerTurn || outwardAtFull ? markedTurnCardArea(action.id) : undefined;
-    if (cardArea !== undefined) {
+    // A write back to the one app the turn read, with the person's yes, skips it (DOR-4794).
+    const ask = cardArea && shouldAsk('connector.write.marked-same-source', request).decision;
+    if (cardArea !== undefined && ask !== 'allow') {
       return {
         area: cardArea,
         state: 'ask',
@@ -503,8 +504,8 @@ export async function resolveCallPermission(request: {
         forOutsideWords: true,
       };
     }
-    // No area: the tier decides, and an `act` call runs unasked (`execute_write`).
-    if (action.tier === 'act') noteIfUnasked(null);
+    // No area: the tier decides, and an `act` call runs unasked (`execute_write`), with one line.
+    if (action.tier === 'act' && cardArea === undefined) noteIfUnasked(null);
     return null;
   }
   // The strictest area DorkOS knows about, for the two refusals below.
@@ -664,19 +665,23 @@ export function blockedPermissionMessage(permission: CallPermission): string {
  *
  * A destructive action always can. An `act` action can when it has an area,
  * because the person may set that area to Ask. An `observe` action never asks
- * on its own. The request tool (`forwardsApproval`) always can: it raises the
- * card of whatever action it asks for, and a retry presents that card's token.
+ * on its own, but a live preflight can require approval for spending even on a
+ * read, or for outside words on an area-less write. The request tool
+ * (`forwardsApproval`) always can: it raises the card of whatever action it asks
+ * for, and a retry presents that card's token.
  *
- * @param action - The action's tier and area.
+ * @param action - The action's tier, area and live approval hooks.
  */
 export function canRaiseApproval(action: {
   tier: GatedAction['tier'];
   area?: PermissionAreaId | null;
   forwardsApproval?: boolean;
+  preflight?: (...args: never[]) => unknown;
 }): boolean {
   // The request tool raises the card of the action it asks for, so it carries
   // the token that answers it.
   if (action.forwardsApproval === true) return true;
+  if (action.preflight) return true;
   if (action.tier === 'destructive') return true;
   return action.tier === 'act' && action.area !== undefined && action.area !== null;
 }

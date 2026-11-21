@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The stylesheet half of the identity interaction grammar.
  *

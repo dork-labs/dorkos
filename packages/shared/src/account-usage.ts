@@ -16,10 +16,18 @@ import { extendZodWithOpenApiOnce } from './zod-openapi.js';
 import { ledgerSlug } from './ledger-slug.js';
 import { ACCOUNT_ID_PATTERN } from './account-identity.js';
 import { mergeWindow, readingsOf } from './ledger-window-merge.js';
-import type { LimitPlan, UsageStatus } from './schemas.js';
+import type { LimitPlan } from './schemas.js';
+import { PLAN_WINDOW_KEYS } from './account-plan-usage.js';
 
 export { ledgerSlug } from './ledger-slug.js';
 export { codexObservations } from './account-usage-codex.js';
+export { subscriptionUsageOf, withAccountSubscription } from './account-plan-usage.js';
+export {
+  DismissFoundFolderRequestSchema,
+  FoundClaudeFolderSchema,
+  type DismissFoundFolderRequest,
+  type FoundClaudeFolder,
+} from './claude-found-folders.js';
 
 extendZodWithOpenApiOnce();
 
@@ -697,6 +705,16 @@ export const AccountUsageSchema = z
     limit: z.object({ window: z.string(), resetsAt: z.string().nullable() }).nullable(),
     /** The ledger's last write, or `null` when there is no ledger. */
     updatedAt: z.string().nullable(),
+    /**
+     * The plan windows whose share cannot be read now (DOR-4620), each with
+     * `since`, the moment it went unknown: a stale share's reading plus the
+     * window's length, or the reading's own time when the source gave no share.
+     * A window that went stale and dropped out of `windows` is listed too.
+     * Omitted when every plan window the ledger holds reads a share.
+     */
+    unknown: z
+      .array(z.object({ key: z.string(), label: z.string(), since: z.string() }))
+      .optional(),
   })
   .openapi('AccountUsage');
 
@@ -754,7 +772,8 @@ export const SPEND_LIMIT_WINDOW = 'spend';
  * Build the wire shape for one account from its ledger, read at `now`.
  *
  * Stale windows are left out. `limit` is the first readable window (in display
- * order) whose status is `rejected`, else {@link SPEND_LIMIT_WINDOW} when
+ * order) whose status is `rejected` or whose `usedPct` reached 100, else
+ * {@link SPEND_LIMIT_WINDOW} when
  * `spend.limitUsd` is set and `spend.costUsd` reached it (a spend reading never
  * goes stale). `state` is `limited` with a `limit`; `unknown` with no current
  * window and no spend, except on OpenCode, where that is a local model and
@@ -774,8 +793,11 @@ export function toAccountUsage(
 ): AccountUsage {
   const keys = Object.keys(ledger?.windows ?? {}).sort(compareWindowKeys);
   const windows: AccountUsage['windows'] = [];
+  const unknown: NonNullable<AccountUsage['unknown']> = [];
   for (const key of keys) {
     const read = readWindow(ledger!.windows[key], now, key);
+    const since = PLAN_WINDOW_KEYS.has(key) && unknownSince(key, ledger!.windows[key], read);
+    if (since) unknown.push({ key, label: windowLabel(key), since });
     if (!read) continue;
     windows.push({
       key,
@@ -791,10 +813,10 @@ export function toAccountUsage(
 
   const runtime = identity.runtime ?? ledger?.runtime ?? 'claude-code';
   const spend = ledger?.spend ?? null;
-  const rejected = windows.find((w) => w.status === 'rejected');
+  const full = windows.find((w) => w.status === 'rejected' || (w.usedPct ?? 0) >= 100);
   const spendReached = spend !== null && spend.limitUsd !== null && spend.costUsd >= spend.limitUsd;
-  const limit = rejected
-    ? { window: rejected.key, resetsAt: rejected.resetsAt }
+  const limit = full
+    ? { window: full.key, resetsAt: full.resetsAt }
     : spendReached
       ? { window: SPEND_LIMIT_WINDOW, resetsAt: null }
       : null;
@@ -825,7 +847,32 @@ export function toAccountUsage(
     state,
     limit,
     updatedAt: ledger?.updatedAt ?? null,
+    ...(unknown.length > 0 ? { unknown } : {}),
   };
+}
+
+/**
+ * When a plan window's share went unknown (DOR-4620), or `null` while it is
+ * known: a share, a fresh 0 after a reset, or a window that rejected work. The
+ * time stays put across readings that carry no share: a kept share or a
+ * rejection is unknown from when it went stale; a status-only window with a
+ * reset time from when that window began, since no reading in it gave a share
+ * (each moves `observedAt`, so that would read as a fresh blip); otherwise from
+ * the reading's own time. A window that dropped out of `windows` is still named.
+ */
+function unknownSince(key: string, stored: unknown, read: ReadWindow | null): string | null {
+  if (read && (read.usedPct !== null || read.expired || read.status === 'rejected')) return null;
+  const entry = parseEntry(stored);
+  if (!entry) return null;
+  const observed = Date.parse(entry.observedAt);
+  const length = windowLengthMs(key, entry);
+  const ms =
+    entry.usedPct !== null || entry.status === 'rejected'
+      ? observed + length
+      : entry.resetsAt !== null
+        ? Math.min(observed, Date.parse(entry.resetsAt) - length)
+        : observed;
+  return new Date(ms).toISOString();
 }
 
 // === Carrying a limited session over (spec `claude-account-fleet` D9) ===
@@ -950,123 +997,3 @@ export const LimitHistoryResponseSchema = z
 
 /** Inferred type for {@link LimitHistoryResponseSchema}. */
 export type LimitHistoryResponse = z.infer<typeof LimitHistoryResponseSchema>;
-
-// === A session's subscription usage, read from its account ===
-//
-// The server derives a Claude Code session's subscription `usage` from its
-// account's record (spec `claude-account-fleet` §6 U), and a client applying an
-// `account_usage` event must reach the same answer, so the rule lives here once.
-
-/**
- * The windows the binding window is chosen from: the plan windows the SDK's
- * usage call reports, the same set `mapSdkUsageResponse` has always picked
- * from. Model-scoped and overage windows describe a slice of the plan, not the
- * plan, so they never stand for it.
- */
-const PLAN_WINDOW_KEYS: ReadonlySet<string> = new Set([
-  'five_hour',
-  'seven_day',
-  'seven_day_oauth_apps',
-  'seven_day_opus',
-  'seven_day_sonnet',
-]);
-
-/**
- * The binding window of an account as a subscription {@link UsageStatus}, or
- * `undefined` when no plan window has a percentage (an API-key account, or
- * nothing observed yet). The window with the HIGHEST share used wins, as
- * `mapSdkUsageResponse` picks it: it is the one that stops work first.
- *
- * @param usage - The account's usage from the store.
- */
-export function subscriptionUsageOf(usage: AccountUsage): UsageStatus | undefined {
-  let binding: AccountUsage['windows'][number] | undefined;
-  for (const window of usage.windows) {
-    if (!PLAN_WINDOW_KEYS.has(window.key) || window.usedPct === null) continue;
-    if (!binding || window.usedPct > binding.usedPct!) binding = window;
-  }
-  if (!binding) return undefined;
-  const utilization = binding.usedPct! / 100;
-  const state =
-    binding.status === 'rejected' || utilization >= 1
-      ? ('exhausted' as const)
-      : binding.status === 'allowed_warning'
-        ? ('warning' as const)
-        : undefined;
-  return {
-    kind: 'subscription',
-    utilization,
-    windowLabel: binding.label,
-    ...(binding.resetsAt ? { resetsAt: binding.resetsAt } : {}),
-    ...(state ? { state } : {}),
-  };
-}
-
-/**
- * A session's `usage` with its subscription fields taken from the account and
- * its own cost kept: the account's binding window plus the session's
- * `costUsd`/`costBasis` and its `detail` line (such as "Using overage
- * capacity"). Returns `held` unchanged when the account has no plan window with
- * a percentage.
- *
- * @param held - The session's current `usage`, or `null`.
- * @param account - The account the session bills.
- */
-export function withAccountSubscription(
-  held: UsageStatus | null,
-  account: AccountUsage
-): UsageStatus | null {
-  const subscription = subscriptionUsageOf(account);
-  if (!subscription) return held;
-  return {
-    ...subscription,
-    ...(held?.costUsd !== undefined ? { costUsd: held.costUsd } : {}),
-    ...(held?.costBasis !== undefined ? { costBasis: held.costBasis } : {}),
-    ...(held?.detail !== undefined ? { detail: held.detail } : {}),
-  };
-}
-
-// === Account folders found on this computer ===
-
-/**
- * A Claude account folder found on this computer that is not registered,
- * dismissed, or the machine's default account, as
- * `GET /api/runtimes/claude-code/accounts/found` serves it (spec
- * `claude-account-ui` §7.4). Settings offers it with an Add button; nothing is
- * registered until a person clicks it.
- */
-export const FoundClaudeFolderSchema = z
-  .object({
-    /** The folder, absolute. */
-    path: z.string(),
-    /** The folder's own name (the path's last part), such as `.claude2`. */
-    name: z.string(),
-    /**
-     * When the account was last used: the newest change among its `projects/`
-     * folder, that folder's children and the files directly inside each child,
-     * ISO-8601. `null` when none could be read.
-     */
-    lastUsedAt: z.string().nullable(),
-    /** Whether the folder holds a file Claude Code saves when an organization manages the account. */
-    orgManaged: z.boolean(),
-    /** The name of that file, or `null` when there is none. */
-    orgMarker: z.string().nullable(),
-  })
-  .openapi('FoundClaudeFolder');
-
-/** Inferred type for {@link FoundClaudeFolderSchema}. */
-export type FoundClaudeFolder = z.infer<typeof FoundClaudeFolderSchema>;
-
-/**
- * The body of `POST /api/runtimes/claude-code/accounts/found/dismiss`: the
- * found folder to stop offering (spec `claude-account-ui` §7.4).
- */
-export const DismissFoundFolderRequestSchema = z
-  .object({
-    /** The folder, as the found list gave it. */
-    path: z.string().min(1),
-  })
-  .openapi('DismissFoundFolderRequest');
-
-/** Inferred type for {@link DismissFoundFolderRequestSchema}. */
-export type DismissFoundFolderRequest = z.infer<typeof DismissFoundFolderRequestSchema>;

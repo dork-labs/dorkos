@@ -876,7 +876,10 @@ describe('DevLinkService and the hot-reload watcher', () => {
 
 describe('a dev link and the permission set its yes covers (DOR-2686)', () => {
   /** Rewrite the linked extension's manifest with these server capabilities. */
-  async function declare(serverCapabilities: object | string): Promise<void> {
+  async function declare(
+    serverCapabilities: object | string,
+    contributions?: Record<string, boolean>
+  ): Promise<void> {
     await writeFile(
       path.join(work, '.dork', 'extensions', 'flow-dash', 'extension.json'),
       typeof serverCapabilities === 'string'
@@ -886,9 +889,26 @@ describe('a dev link and the permission set its yes covers (DOR-2686)', () => {
             name: 'flow-dash',
             version: '1.0.0',
             serverCapabilities,
+            ...(contributions ? { contributions } : {}),
           })
     );
   }
+
+  it('names the places on the card, and refuses a yes once the folder adds one (DOR-4282)', async () => {
+    // Purpose: the places an app shows in are part of what a dev-link yes
+    // covers, so a place added between the card and the click voids it.
+    await declare({ runtime: 'subprocess' }, { pages: true });
+    const svc = service();
+    const shown = await svc.describeApproval({ path: work, scope: 'global' });
+    expect(shown).toContain('flow-dash: runs separately; no internet; shows in a page');
+
+    await declare({ runtime: 'subprocess' }, { pages: true, dialog: true });
+    const err = await refusal(
+      svc.link({ path: work, scope: 'global', via: 'agent-card', expectedChange: shown })
+    );
+    expect(err).toMatchObject({ code: 'dev_link_changed', status: 409 });
+    expect(approvals.approvedToRun).toEqual([]);
+  });
 
   it('records what the folder declares beside the dev-link binding', async () => {
     // Purpose: the dev link's yes covers the set the folder declares when it
@@ -898,7 +918,13 @@ describe('a dev link and the permission set its yes covers (DOR-2686)', () => {
     await service().link({ path: work, scope: 'global', via: 'app' });
     expect(approvals.approvedSources['flow-dash']).toMatchObject({ devLink: work });
     expect(approvals.approvedPermissions).toEqual({
-      'flow-dash': { runtime: 'subprocess', net: ['api.example.com:443'], run: [], agents: false },
+      'flow-dash': {
+        runtime: 'subprocess',
+        net: ['api.example.com:443'],
+        run: [],
+        agents: false,
+        slots: [],
+      },
     });
   });
 
@@ -926,9 +952,9 @@ describe('a dev link and the permission set its yes covers (DOR-2686)', () => {
   it('says full access on the card for a server half that runs inside DorkOS', async () => {
     // Purpose: the in-process case is named, never left implicit.
     await writeFile(path.join(work, '.dork', 'extensions', 'flow-dash', 'server.ts'), '');
-    expect(await service().describeApproval({ path: work, scope: 'global' })).toContain(
-      'flow-dash: runs inside DorkOS with full access to this computer'
-    );
+    const shown = await service().describeApproval({ path: work, scope: 'global' });
+    expect(shown).toContain('flow-dash: runs inside DorkOS with full access to this computer');
+    expect(shown).not.toContain('runs nothing on its own');
   });
 
   it('says screens only on the card for an extension with no server half', async () => {
@@ -958,6 +984,7 @@ describe('a dev link and the permission set its yes covers (DOR-2686)', () => {
       net: ['a.example.com'],
       run: [],
       agents: false,
+      slots: [],
     });
   });
 
@@ -997,6 +1024,7 @@ describe('a dev link and the permission set its yes covers (DOR-2686)', () => {
       net: [],
       run: [],
       agents: false,
+      slots: [],
     });
   });
 

@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { TaskFailureReason } from '../types.js';
 import {
+  isSleptDuringRunError,
+  nextRunWhen,
   scheduleFailureClause,
   scheduleFailureSentence,
   scheduleFullName,
   scheduleNextTry,
   scheduleNoticeName,
+  sleptDuringRunError,
+  withSleepBlame,
 } from '../schedule-notice-copy.js';
 import { runTimeLimitError } from '../run-time-limit.js';
 
@@ -75,6 +79,38 @@ describe('scheduleFailureClause (DOR-4121)', () => {
   });
 });
 
+describe('a run the computer’s sleep broke (DOR-3286)', () => {
+  it('says only the fact, in plain words', () => {
+    expect(sleptDuringRunError()).toBe('Interrupted: the computer slept during this run.');
+  });
+
+  it('puts a failure just after a wake down to the sleep', () => {
+    const ended = { status: 'failed', error: 'fetch failed' };
+    expect(withSleepBlame(ended, true)).toEqual({ status: 'failed', error: sleptDuringRunError() });
+    expect(withSleepBlame(ended, false)).toBe(ended);
+    // Only a failure: a stopped or finished run keeps its own line.
+    const stopped = { status: 'cancelled', error: 'Run cancelled' };
+    expect(withSleepBlame(stopped, true)).toBe(stopped);
+  });
+
+  it('keeps a cause the person must act on, which a retry would only meet again', () => {
+    for (const error of ['Sign in again: 401', 'You’ve hit your weekly limit · resets Aug 24']) {
+      const ended = { status: 'failed', error };
+      expect(withSleepBlame(ended, true)).toBe(ended);
+    }
+  });
+
+  it('is told apart from every other run line', () => {
+    expect(isSleptDuringRunError(sleptDuringRunError())).toBe(true);
+    // A runtime's own text that only opens with the same words is not the line.
+    expect(isSleptDuringRunError(`${sleptDuringRunError()} Then: fetch failed`)).toBe(false);
+    expect(isSleptDuringRunError('Interrupted: the computer slept, it says')).toBe(false);
+    // The restart line opens with the same word, and must not match.
+    expect(isSleptDuringRunError('Interrupted by server restart')).toBe(false);
+    expect(isSleptDuringRunError(null)).toBe(false);
+  });
+});
+
 describe('schedule names', () => {
   const long = { name: 'x', displayName: 'Hourly uptime check for the status page' };
 
@@ -124,5 +160,36 @@ describe('scheduleNextTry', () => {
         'America/Chicago'
       )
     ).toBe('Next try 9:00 PM.');
+  });
+});
+
+describe('nextRunWhen (DOR-4483)', () => {
+  const now = new Date('2026-11-13T12:00:00.000Z'); // Fri 6:00 AM in Chicago
+
+  it('is the one wording both surfaces use', () => {
+    const zone = 'America/Chicago';
+    expect(nextRunWhen(new Date('2026-11-13T18:00:00.000Z'), now, zone)).toBe('12:00 PM');
+    expect(nextRunWhen(new Date('2026-11-14T08:30:00.000Z'), now, zone)).toBe(
+      'tomorrow at 2:30 AM'
+    );
+    expect(nextRunWhen(new Date('2026-11-16T15:00:00.000Z'), now, zone)).toBe('Mon at 9:00 AM');
+    expect(nextRunWhen(new Date('2026-11-20T15:00:00.000Z'), now, zone)).toBe('Nov 20 at 9:00 AM');
+  });
+
+  it('counts calendar days in the zone, not 24-hour spans, across a clock change', () => {
+    // Sat Nov 1 2025, 11:00 PM Chicago, to Mon Nov 3 after the clocks went back.
+    expect(
+      nextRunWhen(
+        new Date('2025-11-03T15:00:00.000Z'),
+        new Date('2025-11-02T04:00:00.000Z'),
+        'America/Chicago'
+      )
+    ).toBe('Mon at 9:00 AM');
+  });
+
+  it('names the date of a run already past, so it never reads as today', () => {
+    expect(nextRunWhen(new Date('2026-11-12T15:00:00.000Z'), now, 'America/Chicago')).toBe(
+      'Nov 12 at 9:00 AM'
+    );
   });
 });

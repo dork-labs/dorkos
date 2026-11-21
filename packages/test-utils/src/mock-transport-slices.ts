@@ -14,7 +14,8 @@
  * connection's settings, which succeeds, and undoing an agent's task mode,
  * where there is nothing to undo, and sending another chat's queued message
  * now, which joins the running turn.
- * Heartbeats, a hub's computers and the spend limit come from their own mocks.
+ * Heartbeats, a hub's computers, the spend limit and a connected app's
+ * writes-back switch come from their own mocks.
  *
  * @module test-utils/mock-transport-slices
  */
@@ -26,6 +27,7 @@ import { createMockLocalBrowserTransport } from './mock-local-browser-transport.
 import { createMockHeartbeatTransport } from './mock-heartbeat-transport.js';
 import { createMockHubTransport, createMockSessionRelayTransport } from './mock-hub-transport.js';
 import { createMockConnectorSpendingTransport } from './mock-connector-spending-transport.js';
+import { createMockConnectorWritesBackTransport } from './mock-connector-writes-back-transport.js';
 
 /** The methods {@link transportSliceMocks} covers. */
 type SliceMethods =
@@ -41,6 +43,10 @@ type SliceMethods =
   | 'undoAccessChange'
   | 'getMiniAppAccess'
   | 'revokeMiniAppAccess'
+  | 'restartExtension'
+  | 'listBackups'
+  | 'removeBackup'
+  | 'moveBackup'
   | 'getSignInLanding'
   | 'retrySignIn'
   | 'getCanvasDocRoutes'
@@ -56,6 +62,16 @@ type SliceMethods =
   | 'listSignedInDevices'
   | 'signOutDevice'
   | 'signOutEverywhereElse'
+  | 'setDeviceRunsAgents'
+  | 'listWifiSignInRequests'
+  | 'approveWifiSignIn'
+  | 'declineWifiSignIn'
+  | 'listOwnerFactors'
+  | 'startAddingPasskey'
+  | 'finishAddingPasskey'
+  | 'startAddingAuthenticator'
+  | 'confirmAuthenticator'
+  | 'removeOwnerFactor'
   | 'setAccountNoAutoMove'
   | 'getFrameBridgeStatus'
   | 'getAgentLevel'
@@ -90,9 +106,11 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
   ReturnType<typeof createMockComputerTransport> &
   ReturnType<typeof createMockHubTransport> &
   ReturnType<typeof createMockSessionRelayTransport> &
-  ReturnType<typeof createMockConnectorSpendingTransport> {
+  ReturnType<typeof createMockConnectorSpendingTransport> &
+  ReturnType<typeof createMockConnectorWritesBackTransport> {
   return {
     ...createMockConnectorSpendingTransport(),
+    ...createMockConnectorWritesBackTransport(),
     ...createMockHeartbeatTransport(),
     ...createMockComputerTransport(),
     ...createMockLocalBrowserTransport(),
@@ -107,6 +125,21 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
     listSignedInDevices: vi.fn().mockResolvedValue({ sessions: [], canSignOutOthers: false }),
     signOutDevice: vi.fn().mockResolvedValue(undefined),
     signOutEverywhereElse: vi.fn().mockResolvedValue({ signedOut: 0 }),
+    // No device is waiting, and every change succeeds.
+    setDeviceRunsAgents: vi.fn().mockResolvedValue({ kind: 'done' }),
+    listWifiSignInRequests: vi.fn().mockResolvedValue({ requests: [] }),
+    approveWifiSignIn: vi.fn().mockResolvedValue({ kind: 'needs-passkey' }),
+    declineWifiSignIn: vi.fn().mockResolvedValue(undefined),
+    // No sign-in checks yet; adding one succeeds.
+    listOwnerFactors: vi.fn().mockResolvedValue({ factors: [], everHadAway: false }),
+    startAddingPasskey: vi.fn().mockResolvedValue({ kind: 'options', options: {} }),
+    finishAddingPasskey: vi.fn().mockResolvedValue({ id: 'f1', host: 'localhost' }),
+    startAddingAuthenticator: vi.fn().mockResolvedValue({
+      kind: 'started',
+      pending: { id: 'f2', secret: 'ABCDEFGH', uri: 'otpauth://totp/DorkOS' },
+    }),
+    confirmAuthenticator: vi.fn().mockResolvedValue({ id: 'f2' }),
+    removeOwnerFactor: vi.fn().mockResolvedValue({ kind: 'done' }),
     listAuditEvents: vi.fn().mockResolvedValue({ events: [] }),
     getAccountTimeline: vi.fn().mockResolvedValue({ events: [] }),
     getChatActivity: vi.fn().mockResolvedValue({ sent: [], stops: [] }),
@@ -118,6 +151,14 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
       .fn()
       .mockImplementation(async (agentId: string) => ({ agentId, paused: false, changed: true })),
     getMiniAppAccess: vi.fn().mockResolvedValue({ waiting: [], allowed: [] }),
+    restartExtension: vi.fn().mockResolvedValue(undefined),
+    listBackups: vi
+      .fn()
+      .mockResolvedValue({ folder: '/home/demo/.dork/backups', copies: [], totalBytes: 0 }),
+    removeBackup: vi.fn().mockResolvedValue(undefined),
+    moveBackup: vi.fn().mockImplementation(async (name: string, destination: string) => ({
+      destinationPath: `${destination}/${name}`,
+    })),
     revokeMiniAppAccess: vi
       .fn()
       .mockImplementation(async (approvalId: string) => ({ status: 'revoked', approvalId })),

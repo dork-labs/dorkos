@@ -230,6 +230,8 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
   'mcp-server.tool_added': { server: 'tracker', tool: 'export_all', agentNames: ['Quill'] },
   'mcp-server.reserved_name': { server: 'dorkos' },
   'web.new_device': { deviceRef: 'ref-1', label: 'Safari on iPhone' },
+  'signin.check_added': { factorId: 'f-1', kind: 'passkey', host: 'localhost' },
+  'signin.check_removed': { factorId: 'f-1', kind: 'authenticator' },
   'agent.secret_files': {
     agentId: 'agent-1',
     agentName: 'Scout',
@@ -238,6 +240,13 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
     fingerprint: 'fp-1',
   },
   'agent.folder_rules_too_long': { agentId: 'agent-1', agentName: 'Scout', hash: 'h-1' },
+  'extension.stopped': {
+    extensionId: 'people',
+    name: 'People',
+    reason: 'server_unresponsive',
+    state: 'restarting',
+    stoppedAt: '2026-11-19T10:00:00.000Z',
+  },
   'browser.handoff': {
     handoffId: 'h-1',
     sessionId: 'sess-1',
@@ -314,8 +323,12 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
   // A saved server stopped reaching agents: worth fixing, nothing waits on it (DOR-4262).
   'mcp-server.reserved_name': 'notable',
   'web.new_device': 'notable',
+  'signin.check_added': 'notable',
+  'signin.check_removed': 'notable',
   'agent.secret_files': 'notable',
   'agent.folder_rules_too_long': 'notable',
+  // The fixture is a restart: history only. One that stays off is notable (DOR-4785).
+  'extension.stopped': 'quiet',
   // A notice with a way to act, never a hold: nothing waits on it (DOR-3245).
   'account.signin_review': 'notable',
   'browser.handoff': 'notable',
@@ -417,6 +430,7 @@ describe('notification registry', () => {
       'dm.received',
       'extension.approval',
       'extension.decision',
+      'extension.stopped',
       'heartbeat.credits-offer',
       'mcp-server.reserved_name',
       'mcp-server.tool_added',
@@ -428,6 +442,8 @@ describe('notification registry', () => {
       'schedule.parked',
       'session.error',
       'shell.check_down',
+      'signin.check_added',
+      'signin.check_removed',
       'signin.required',
       'spending.limit-reached',
       'spending.meter-reset',
@@ -748,6 +764,86 @@ describe('notification registry', () => {
         entry.dedupeKey(open)
       );
       expect(entry.locate(open).subjectId).toBe(open.decisionId);
+    });
+  });
+
+  describe('an extension that stopped on its own (DOR-4785)', () => {
+    const entry = notificationEntry('extension.stopped');
+    const restarting = PAYLOADS['extension.stopped'];
+    const off = {
+      ...restarting,
+      state: 'off' as const,
+      stoppedAt: '2026-11-19T10:05:00.000Z',
+      stops: 3,
+      windowMinutes: 10,
+    };
+    const reasons = ['server_unresponsive', 'server_crashed', 'server_out_of_memory'] as const;
+    const words = (text: string | undefined) => (text ?? '').split(/\s+/).filter(Boolean).length;
+
+    it('says DorkOS restarted it, by name and reason, quietly and with nothing to press', () => {
+      expect(reasons.map((reason) => entry.title({ ...restarting, reason }))).toEqual([
+        'The People app stopped responding. DorkOS is restarting it.',
+        'The People app stopped unexpectedly. DorkOS is restarting it.',
+        'The People app ran out of memory. DorkOS is restarting it.',
+      ]);
+      expect(entry.body?.(restarting)).toBeUndefined();
+      expect(resolvePerKind(entry.tier, restarting)).toBe('quiet');
+      expect(entry.actions?.(restarting)).toEqual([]);
+    });
+
+    it('calls it an app, so a name like People never reads as humans, and never says "app app"', () => {
+      expect(entry.title({ ...off, name: 'Notes' })).toBe('The Notes app is off');
+      expect(entry.title({ ...off, name: 'Budget App' })).toBe('The Budget App is off');
+      expect(entry.title({ ...restarting, name: 'Budget App' })).toBe(
+        'The Budget App stopped responding. DorkOS is restarting it.'
+      );
+    });
+
+    it('says it is off once DorkOS gave up, how often it stopped, and offers Restart', () => {
+      expect(entry.title(off)).toBe('The People app is off');
+      expect(reasons.map((reason) => entry.body?.({ ...off, reason }))).toEqual([
+        'It stopped 3 times in 10 minutes, so DorkOS left it off.',
+        'It stopped 3 times in 10 minutes, so DorkOS left it off.',
+        'It stopped 3 times in 10 minutes, so DorkOS left it off.',
+      ]);
+      expect(resolvePerKind(entry.tier, off)).toBe('notable');
+      expect(entry.actions?.(off)).toEqual([
+        { id: 'restart-extension', label: 'Restart', style: 'primary' },
+      ]);
+    });
+
+    it('keeps every block within 15 words', () => {
+      for (const reason of reasons) {
+        for (const p of [
+          { ...restarting, reason },
+          { ...off, reason },
+        ]) {
+          expect(words(entry.title(p))).toBeLessThanOrEqual(15);
+          expect(words(entry.body?.(p))).toBeLessThanOrEqual(15);
+        }
+      }
+    });
+
+    it('never leaves the app', () => {
+      expect(resolvePerKind(entry.relay, restarting)).toBe('never');
+      expect(resolvePerKind(entry.relay, off)).toBe('never');
+      expect(entry.storage).toBe('event');
+    });
+
+    it('files both rows under the app, one restart row per app, and one off row per give-up', () => {
+      expect(entry.locate(restarting).subjectId).toBe('extension:people');
+      expect(entry.locate(off).subjectId).toBe('extension:people');
+      // Every later restart of the same app inside the window is the same row.
+      expect(entry.dedupeKey({ ...restarting, stoppedAt: '2026-11-19T10:01:00.000Z' })).toBe(
+        entry.dedupeKey(restarting)
+      );
+      expect(entry.dedupeKey(off)).not.toBe(entry.dedupeKey(restarting));
+      expect(entry.dedupeKey({ ...off, stoppedAt: '2026-11-19T11:00:00.000Z' })).not.toBe(
+        entry.dedupeKey(off)
+      );
+      expect(entry.dedupeKey({ ...restarting, extensionId: 'flow' })).not.toBe(
+        entry.dedupeKey(restarting)
+      );
     });
   });
 

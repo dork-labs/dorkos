@@ -2,7 +2,13 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import type { AccountUsageStore } from '../../../../core/usage/account-usage-store.js';
 import { setAccountUsageStore } from '../../../../core/usage/current-usage-store.js';
 import { resetAccountProbeState } from '../../accounts/account-probe.js';
-import { getAccountTools, handleAccountsProbe, handleAccountsUsage } from '../account-tools.js';
+import type { AccountUsage } from '@dorkos/shared/account-usage';
+import {
+  getAccountTools,
+  handleAccountsProbe,
+  handleAccountsUsage,
+  usageAttention,
+} from '../account-tools.js';
 import type { McpToolDeps } from '../types.js';
 
 describe('accounts_usage', () => {
@@ -14,7 +20,35 @@ describe('accounts_usage', () => {
       list: vi.fn().mockReturnValue(accounts),
     } as unknown as AccountUsageStore);
     const result = await handleAccountsUsage();
-    expect('structuredContent' in result && result.structuredContent).toEqual({ accounts });
+    expect('structuredContent' in result && result.structuredContent).toEqual({
+      attention: [],
+      accounts,
+    });
+  });
+
+  // DOR-4620. Red when: an unreadable account is left out of `attention`, read as 0%.
+  it('puts out accounts first, then unreadable usage with since when, then never-read ones', () => {
+    const base = { runtime: 'claude-code' as const, label: null };
+    const accounts = [
+      { ...base, accountId: 'fresh', state: 'ok' },
+      {
+        ...base,
+        accountId: 'blind',
+        state: 'ok',
+        unknown: [
+          { key: 'seven_day', label: 'Weekly', since: '2026-11-18T03:00:00.000Z' },
+          { key: 'five_hour', label: '5-hour window', since: '2026-11-18T01:00:00.000Z' },
+        ],
+      },
+      { ...base, accountId: 'never', state: 'unknown' },
+      { ...base, accountId: 'out', state: 'limited' },
+      { ...base, accountId: 'high', state: 'warning' },
+    ] as unknown as AccountUsage[];
+    expect(usageAttention(accounts)).toEqual([
+      { ...base, accountId: 'out', reason: 'limited', since: null },
+      { ...base, accountId: 'blind', reason: 'usage-unknown', since: '2026-11-18T01:00:00.000Z' },
+      { ...base, accountId: 'never', reason: 'never-read', since: null },
+    ]);
   });
 
   it('answers an error before the store is running', async () => {

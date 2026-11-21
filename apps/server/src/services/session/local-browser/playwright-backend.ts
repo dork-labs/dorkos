@@ -15,7 +15,8 @@ import {
 import { LocalBrowserError } from './errors.js';
 import { BrowserDownloadProgress, type BrowserPreparationListener } from './preparation.js';
 import { installedChromePath } from './connection/chrome-installation.js';
-import { disablePasswordSaving } from './plain-chromium.js';
+import { disablePasswordSaving, disableTabRestore, profileHeld } from './plain-chromium.js';
+import { prepareAgentLaunch } from './connection/agent-launch.js';
 const runFile = promisify(execFile);
 const require = createRequire(import.meta.url);
 export const LOCAL_PLAYWRIGHT_VERSION = '1.65.0-alpha-2026-10-30';
@@ -55,12 +56,14 @@ export interface LocalBrowserBackend {
    * @param signal - Cancels the browser download and setup.
    * @param onPreparation - Told how the download and launch are going.
    * @param agentName - The chat's agent, for the window's title; null when it isn't known.
+   * @param admitOwnedLaunch - Internal pool authority: recheck custody and physical generation.
    */
   launch(
     storagePath: string,
     signal?: AbortSignal,
     onPreparation?: BrowserPreparationListener,
-    agentName?: string | null
+    agentName?: string | null,
+    admitOwnedLaunch?: () => void
   ): Promise<BrowserContext>;
   connect(endpoint: string, headers?: Record<string, string>): Promise<Browser>;
 }
@@ -133,12 +136,27 @@ export async function managedChromiumPath(): Promise<string> {
 }
 
 export const productionBackend: LocalBrowserBackend = {
-  async launch(storagePath, signal, onPreparation, agentName) {
+  async launch(storagePath, signal, onPreparation, agentName, admitOwnedLaunch) {
     assertLocalPlaywrightVersion();
     const chrome = installedChromePath();
     if (!chrome) await acquireLocalChromium(signal, onPreparation);
     signal?.throwIfAborted();
     onPreparation?.({ stage: 'launching', component: null, percent: null });
+    // Only the server's owned profile pool supplies this authority. An existing
+    // physical browser is never attached, rewritten or given startup cleanup.
+    const admit = () => {
+      admitOwnedLaunch?.();
+      if (profileHeld(storagePath))
+        throw new LocalBrowserError(
+          'profile_busy',
+          'This browser is busy. Ask the person to finish using it.'
+        );
+    };
+    if (admitOwnedLaunch) {
+      admit();
+      await disableTabRestore(storagePath, admit);
+      admit();
+    }
     // The profile is shared with the plain sign-in window, and with the basic
     // password store a saved password is readable on disk. Neither window saves one.
     await disablePasswordSaving(storagePath);
@@ -146,30 +164,41 @@ export const productionBackend: LocalBrowserBackend = {
     const theme = chrome ? undefined : await writeAgentWindowTheme(storagePath);
     // Playwright launch does not accept AbortSignal. The service retains setup ownership
     // and closes a context that arrives after cancellation; never race this result away.
+    if (admitOwnedLaunch) admit();
     const context = await chromium.launchPersistentContext(storagePath, {
       ...(chrome ? { channel: 'chrome' } : {}),
       timeout: BROWSER_LAUNCH_TIMEOUT_MS,
       headless: false,
       viewport: null,
       chromiumSandbox: true,
+      // Leave display and accessibility preferences to the person's operating system.
+      colorScheme: null,
+      reducedMotion: null,
+      forcedColors: null,
+      contrast: null,
       args: [
+        '--disable-sync',
         `${PINNED_DISABLED_FEATURES_ARG},HttpsUpgrades,HttpsFirstBalancedModeAutoEnable`,
         ...(theme ? agentWindowThemeArgs(theme) : []),
         agentWindowNameArg(agentName),
       ],
-      // Without the automation flag the window looks like the person's Chrome;
-      // password saving is off in the profile itself. The theme's own flag allows
-      // that one folder and no other extension, in place of Playwright's blanket one.
+      // The automation pipe stays intact; password saving is off in the profile.
+      // The theme flag permits just its own extension folder, replacing the blanket block.
       ignoreDefaultArgs: [
         '--enable-automation',
         PINNED_DISABLED_FEATURES_ARG,
+        // Restore Chrome's color management and ordinary popup blocking.
+        '--force-color-profile=srgb',
+        '--disable-popup-blocking',
         ...(theme ? ['--disable-extensions'] : []),
       ],
     });
     try {
       // Installed Chrome no longer supports the flags that load our code-free theme.
       // Use built-in profile colour/name/avatar prefs, keeping extensions disabled.
-      if (!chrome) await assertAgentFrame(context);
+      if (admitOwnedLaunch)
+        await prepareAgentLaunch(context, admitOwnedLaunch, chrome ? undefined : assertAgentFrame);
+      else if (!chrome) await assertAgentFrame(context);
     } catch (error) {
       await context.close().catch(() => undefined);
       throw error;

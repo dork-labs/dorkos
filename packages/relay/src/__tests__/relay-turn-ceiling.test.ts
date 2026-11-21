@@ -11,6 +11,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { loadCeilingMs } from '@dorkos/shared/test-budget';
 import { RelayCore } from '../relay-core.js';
 import { dispatchTurnAccounting, RelayTurnCeiling } from '../turn-ceiling.js';
 import { TASK_SCHEDULER_PRINCIPAL, type RelayEnvelope } from '@dorkos/shared/relay-schemas';
@@ -22,6 +23,17 @@ import type {
   RelayPublisher,
   RelayLogger,
 } from '../types.js';
+
+/**
+ * Every case drives a real RelayCore over Maildir and SQLite, so on a loaded
+ * machine bodies and closes outrun vitest's 5s/10s defaults on healthy code
+ * (DOR-4679). Sized from the load clamp's worst case: 20s per test, 40s per
+ * hook. The 60s cap only bites if LOAD_SCALE_MAX rises.
+ */
+vi.setConfig({
+  testTimeout: loadCeilingMs(5_000),
+  hookTimeout: Math.min(60_000, loadCeilingMs(10_000)),
+});
 
 const AGENT_SUBJECT = 'relay.agent.demo.agent-1';
 const TASKS_SUBJECT = 'relay.system.tasks.nightly-report';

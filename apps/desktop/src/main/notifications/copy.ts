@@ -175,7 +175,10 @@ export function notificationDeepLink(dto: NotificationDTO): string {
   if (dto.kind === 'signin.required') return `/?settings=${RUNTIMES_SETTINGS_TAB}`;
   // Settings → Extensions, where the extension's card can turn it on: the same
   // destination its inbox row and its arrival banner open.
-  if (dto.kind === 'extension.approval') return `/?settings=${EXTENSIONS_SETTINGS_TAB}`;
+  // So does an extension that stopped and stays off (DOR-4785).
+  if (dto.kind === 'extension.approval' || dto.kind === 'extension.stopped') {
+    return `/?settings=${EXTENSIONS_SETTINGS_TAB}`;
+  }
   // An agent's high-risk action in a connected app still waiting to run: the
   // Inbox, on its own row, where Cancel is. The same place its phone push and
   // its inbox row open (spec `trusted-by-default-flip` §5.6).

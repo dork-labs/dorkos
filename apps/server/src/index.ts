@@ -14,7 +14,7 @@ import { lanAccess } from './services/core/lan-access/index.js';
 import { registerRemoteListener } from './middleware/remote-access-switch.js';
 import { exitOnPortConflict } from './services/core/lifecycle/port-conflict.js';
 import { createSignalShutdown } from './lib/shutdown-signal.js';
-import { getCloudLinkManager } from './services/core/auth/cloud-link.js';
+import { stopCloudLinkManager } from './services/core/auth/cloud-link.js';
 import { stopCreditsLifecycle } from './services/core/cloud/credits-inference.js';
 import { configManager } from './services/core/config-manager.js';
 import { setGitGuardRoots } from './services/core/agent-identity/index.js';
@@ -552,11 +552,10 @@ async function shutdownServices(reason: 'authority' | 'shutdown' = 'shutdown') {
     await refs.skillsWatcher.stop();
     refs.skillsWatcher = undefined;
   }
-  // Every dev link's watch closes here, so shutdown leaves no handle open.
-  if (refs.devLinkWatcher) {
-    await refs.devLinkWatcher.stop();
-    refs.devLinkWatcher = undefined;
-  }
+  // Source watches close before shutdown leaves their service references behind.
+  await refs.extensionManager?.stopFileWatcher();
+  await refs.devLinkWatcher?.stop();
+  refs.devLinkWatcher = undefined;
   refs.searchIndexer?.stop();
   refs.todoWiring?.stop();
   refs.workQueueWiring?.stop();
@@ -576,7 +575,7 @@ async function shutdownServices(reason: 'authority' | 'shutdown' = 'shutdown') {
   tlsServer = null;
   // After every runtime and the scheduler: nothing is left to hold awake.
   await keepAwakeService.stop();
-  getCloudLinkManager().stop();
+  stopCloudLinkManager();
   stopCreditsLifecycle();
   // Flush and tear down debug tracing last so late spans are written. No-op
   // when tracing is off.

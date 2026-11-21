@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ExtensionAPI, ExtensionManifest } from '@dorkos/extension-api';
 import {
@@ -50,11 +51,12 @@ async function call(method: string, args: unknown[], extensionId = 'atlas') {
   await port.receive({ type: 'call', extensionId, requestId: id, method, args });
   return port.messages.find((message) => (message as { requestId?: number }).requestId === id);
 }
-async function start(extra: Partial<ExtensionManifest> = {}) {
-  const result = isolatedExtensionModule('globalThis.executed = true', {
-    ...manifest,
-    ...extra,
-  }).activate(api);
+async function start(extra: Partial<ExtensionManifest> = {}, allowedSlots?: string[]) {
+  const result = isolatedExtensionModule(
+    'globalThis.executed = true',
+    { ...manifest, ...extra },
+    allowedSlots
+  ).activate(api);
   await port.receive({ type: 'ready' });
   stop = (await result) || undefined;
 }
@@ -220,6 +222,53 @@ describe('isolated app host', () => {
     );
     expect(await call('media', ['/../quill/cover.png'])).toHaveProperty('error');
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  describe('a video link (DOR-4321)', () => {
+    const URL_PATH = `/api/extensions/media/${'a'.repeat(43)}`;
+    it('is refused without the declared capability, before asking the server', async () => {
+      await start();
+      expect(await call('mediaUrl', ['/videos/intro.mp4'])).toHaveProperty('error');
+      expect(fetch).not.toHaveBeenCalled();
+    });
+    it('refuses a path that leaves the app, before asking the server', async () => {
+      await start({ capabilities: { http: true } });
+      for (const path of ['../x', '/../quill/x.mp4', '/a//b.mp4', '/a%2Fb.mp4']) {
+        expect(await call('mediaUrl', [path])).toHaveProperty('error');
+      }
+      expect(fetch).not.toHaveBeenCalled();
+    });
+    it('asks for the path below the app and answers an absolute link', async () => {
+      await start({ capabilities: { http: true } });
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response(JSON.stringify({ url: URL_PATH }), { status: 201 })
+      );
+      const reply = (await call('mediaUrl', ['/videos/intro.mp4'])) as { value: string };
+      expect(reply.value).toBe(new URL(URL_PATH, window.location.origin).href);
+      expect(fetch).toHaveBeenCalledWith(
+        '/api/extensions/atlas/media-tickets',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ path: '/videos/intro.mp4' }),
+          headers: expect.objectContaining({ 'X-DorkOS-Extension': 'atlas' }),
+        })
+      );
+    });
+    it('rejects a refusal, and never hands over another address', async () => {
+      await start({ capabilities: { http: true } });
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ error: 'That app is not running, or cannot stream video.' }),
+          {
+            status: 404,
+          }
+        )
+      );
+      expect(await call('mediaUrl', ['/a.mp4'])).toHaveProperty('error');
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response(JSON.stringify({ url: 'https://elsewhere.example/x.mp4' }), { status: 201 })
+      );
+      expect(await call('mediaUrl', ['/a.mp4'])).toHaveProperty('error');
+    });
   });
   describe('calling another app (DOR-3293)', () => {
     const ledger = {
@@ -568,6 +617,23 @@ describe('isolated app host', () => {
     await start();
     expect(await call('rooms.reply', ['room-1', 'entry-1', 'hello'])).toHaveProperty('error');
     expect(await call('forward.send', [{ text: 'hi', itemId: 'i' }])).toHaveProperty('error');
+  });
+  it('opens canvas documents only for an app that declares them and was allowed (DOR-4282)', async () => {
+    const openCanvas = vi.fn();
+    Object.assign(api, { openCanvas });
+    const note = { type: 'markdown', content: '# Notes' };
+    // Undeclared: refused, even with an allowed list naming it.
+    await start({}, ['canvas']);
+    expect(await call('openCanvas', [note])).toHaveProperty('error');
+    stop?.();
+    // Declared and not allowed yet: the same refusal, never a silent null.
+    await start({ contributions: { canvas: true } }, []);
+    expect(await call('openCanvas', [note])).toHaveProperty('error');
+    expect(openCanvas).not.toHaveBeenCalled();
+    stop?.();
+    await start({ contributions: { canvas: true } }, ['canvas']);
+    expect(await call('openCanvas', [note])).toHaveProperty('value', null);
+    expect(openCanvas).toHaveBeenCalledOnce();
   });
   it('refuses prototype names as bridge operations', async () => {
     await start();

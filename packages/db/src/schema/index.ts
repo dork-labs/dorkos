@@ -27,6 +27,7 @@ export * from './session/session-context.js';
 export * from './session/session-started-by.js';
 export * from './workspace.js';
 export * from './auth.js';
+export * from './owner/owner-factors.js';
 export * from './unclaimed-chats.js';
 export * from './connectors/connections.js';
 export * from './connectors/connector-events.js';
@@ -55,6 +56,7 @@ export * from './browser/registry.js';
 export * from './browser/agent-profiles.js';
 
 export * from './session/session-locations.js';
+export * from './session/session-birth-allocations.js';
 
 export * from './session/session-native-bindings.js';
 export * from './session/session-touches.js';

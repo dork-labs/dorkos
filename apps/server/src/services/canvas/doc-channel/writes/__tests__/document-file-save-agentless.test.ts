@@ -30,6 +30,7 @@ import { DocChannelNotFoundError } from '../../authorization.js';
 import { DocRouteGrantError } from '../../grant-policy.js';
 import { readDocSourceDescriptor } from '../../doc-source-policy.js';
 import { authorityFixture } from './authority-fixtures.js';
+import { logger } from '../../../../../lib/logger.js';
 import {
   discoverOriginalDocumentFileSaves,
   saveOriginalDocumentFile,
@@ -219,9 +220,10 @@ it('a chat with no agent cannot save a file outside the folder it recorded', asy
       { headers: {} }
     )
   ).rejects.toBeInstanceOf(DocChannelNotFoundError);
-  await request(docs.server)
+  const outside = await request(docs.server)
     .get(`/api/canvas/docs/${encodeURIComponent(opened.id)}/file-saves`)
     .expect(404);
+  expect(outside.body.reason).toBe('OUTSIDE_BOUNDARY');
   expect(await fs.readFile(path, 'utf8')).toBe(content);
 });
 
@@ -242,6 +244,8 @@ it('a document with no recorded folder answers 404, not a server fault, on both 
   );
   expect(discovery.status).toBe(404);
   expect(discovery.body.code).toBe('DOC_FILE_SAVE_UNAVAILABLE');
+  // DOR-4442: the refusal says which check refused, as a code with no path in it.
+  expect(discovery.body.reason).toBe('NO_RECORDED_FOLDER');
   const saved = await request(files.server)
     .put('/api/files/content')
     .send({
@@ -253,6 +257,8 @@ it('a document with no recorded folder answers 404, not a server fault, on both 
     });
   expect(saved.status).toBe(404);
   expect(saved.body.code).toBe('CANVAS_DOCUMENT_NOT_FOUND');
+  expect(saved.body.reason).toBe('NO_RECORDED_FOLDER');
+  expect(JSON.stringify([discovery.body, saved.body])).not.toContain(h.dir);
   expect(await fs.readFile(path, 'utf8')).toBe('unchanged');
 });
 
@@ -279,7 +285,8 @@ it('binding the chat to an agent elsewhere moves the root and refuses the old fo
   const elsewhere = join(h.dir, 'agent-home');
   await fs.mkdir(elsewhere);
   bindSession(h, elsewhere);
-  await request(docs.server).get(doc.endpoint).expect(404);
+  const moved = await request(docs.server).get(doc.endpoint).expect(404);
+  expect(moved.body.reason).toBe('ROOT_MISMATCH');
   const input = doc.input();
   await expect(
     saveOriginalDocumentFile(h.http.fileWrites, input, { headers: {} })
@@ -345,5 +352,80 @@ it('a recorded folder that no longer exists answers 404, not a fault worth retry
   const doc = await openInChat(h, recorded, 'notes.md', recorded);
   await request(docs.server).get(doc.endpoint).expect(200);
   await fs.rm(recorded, { recursive: true });
-  await request(docs.server).get(doc.endpoint).expect(404);
+  const gone = await request(docs.server).get(doc.endpoint).expect(404);
+  expect(gone.body.reason).toBe('FOLDER_GONE');
+});
+
+it('never tells a caller who is not the owner why it was refused (DOR-4442)', async () => {
+  const h = await setup(null);
+  const path = join(h.dir, 'opened-by-a-person.md');
+  await fs.writeFile(path, 'unchanged', { flag: 'wx' });
+  const doc = h.rooms.canvas.open(`session:${SESSION}`, 'owner', {
+    type: 'file',
+    title: 'No folder on record',
+    sourcePath: path,
+  });
+  // Refused before the caller is known to be the owner: the reason stays in the log.
+  await expect(
+    discoverOriginalDocumentFileSaves(h.http.fileWrites, doc.id, {
+      headers: { 'x-dorkos-agent': 'presented' },
+    })
+  ).rejects.toMatchObject({ reason: 'NOT_OPERATOR' });
+  const asAgent = await request(docs.server)
+    .get(`/api/canvas/docs/${encodeURIComponent(doc.id)}/file-saves`)
+    .set('x-dorkos-agent', 'presented');
+  expect(asAgent.status).toBe(404);
+  expect(asAgent.body).toEqual({
+    error: 'The document save evidence is not available.',
+    code: 'DOC_FILE_SAVE_UNAVAILABLE',
+  });
+});
+
+it('a caller who is not the owner gets the old body even where the folder is gone (DOR-4442)', async () => {
+  const h = await setup(null);
+  const recorded = join(h.dir, 'gone-for-everyone');
+  await fs.mkdir(recorded);
+  const doc = await openInChat(h, recorded, 'notes.md', recorded);
+  await fs.rm(recorded, { recursive: true });
+  // The owner is told the folder is gone...
+  const owner = await request(docs.server).get(doc.endpoint).expect(404);
+  expect(owner.body.reason).toBe('FOLDER_GONE');
+  // ...but a caller who is not the owner is refused before any folder is looked at.
+  const stranger = await request(docs.server)
+    .get(doc.endpoint)
+    .set('x-dorkos-agent', 'presented')
+    .expect(404);
+  expect(stranger.body).toEqual({
+    error: 'The document save evidence is not available.',
+    code: 'DOC_FILE_SAVE_UNAVAILABLE',
+  });
+});
+
+it('a boundary refusal carries only its code, never the path, in the body or the log (DOR-4442)', async () => {
+  const h = await setup(null, (dir) => dirname(dir));
+  const recorded = join(h.dir, 'recorded-for-log');
+  await fs.mkdir(recorded);
+  const path = join(h.dir, 'outside-the-recorded-folder.md');
+  await fs.writeFile(path, 'unchanged', { flag: 'wx' });
+  const opened = h.rooms.canvas.open(
+    `session:${SESSION}`,
+    'owner',
+    { type: 'file', title: 'Notes', sourcePath: path },
+    {
+      principal: h.runtime.principal,
+      tree: { resolvedCwd: recorded, sourceLabel: null, treeKind: null, aheadOfMain: null },
+    }
+  );
+  const info = vi.spyOn(logger, 'info');
+  const refused = await request(docs.server)
+    .get(`/api/canvas/docs/${encodeURIComponent(opened.id)}/file-saves`)
+    .expect(404);
+  expect(refused.body.reason).toBe('OUTSIDE_BOUNDARY');
+  expect(JSON.stringify(refused.body)).not.toContain(h.dir);
+  const logged = info.mock.calls.filter(([message]) =>
+    String(message).includes('document save check refused')
+  );
+  expect(logged).toEqual([
+    ['[file-saves] a document save check refused', { reason: 'OUTSIDE_BOUNDARY' }],
+  ]);
 });

@@ -1,9 +1,10 @@
 import { ApprovalStepUpNote } from './ApprovalStepUpNote';
 import { HookApprovalCard } from './HookApprovalCard';
-import { useId } from 'react';
+import { useId, type ReactNode } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { Lock } from 'lucide-react';
 import { approvalHeading, type PendingApproval } from '@dorkos/shared/approval-schemas';
+import { revealHiddenCharacters } from '@dorkos/shared/marketplace-schemas';
 import { getPermissionArea, isFloorArea } from '@dorkos/shared/permissions';
 import { Badge, Button, RequestCode } from '@/layers/shared/ui';
 import { useNow } from '@/layers/shared/model';
@@ -208,6 +209,9 @@ export function ApprovalCard(props: ApprovalCardProps) {
 /** The permission-change capability; allowing one lasts, so the desk confirms it too. */
 const CHANGE_PERMISSION_CAPABILITY = 'permissions.change';
 
+/** The settings-change capability; its sentence leads with the riskiest setting. */
+const CONFIG_PATCH_CAPABILITY_ID = 'operator.config_patch';
+
 /**
  * Whether the card must wait for the server before drawing its receipt.
  *
@@ -272,11 +276,15 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
   // A paid run (DOR-4204 spec §4): money on the card, Allow once only.
   const spend = approval.serviceAction?.spend;
   const spendLineId = useId();
-  const heading = approval.cannotAllow
-    ? `${approval.packageLabel ?? 'This package'} wants to run commands`
-    : spend
-      ? 'Run a paid action'
-      : (approval.serviceAction?.actionName ?? approval.capabilityTitle);
+  // A send that hides a recipient is decline-only too (DOR-4592); it keeps its action's name.
+  const heading =
+    approval.cannotAllow && !approval.serviceAction
+      ? `${approval.packageLabel ?? 'This package'} wants to run commands`
+      : spend
+        ? 'Run a paid action'
+        : approval.marketplaceSummary
+          ? `Review what’s in ${approval.marketplaceSummary.packages.map((pkg) => revealHiddenCharacters(JSON.stringify(pkg.name))).join(', ')}`
+          : (approval.serviceAction?.actionName ?? approval.capabilityTitle);
   const areaLabel = approval.area ? (getPermissionArea(approval.area)?.label ?? null) : null;
   // A floor area never offers Always allow, and says why; every other reason it
   // is absent needs no sentence (see the component docblock).
@@ -357,6 +365,14 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
                 </Badge>
               )}
           </div>
+          {/* A send that hides a recipient can only be declined, and still shows
+              who it was going to and why it can't be allowed (DOR-4592). */}
+          {approval.cannotAllow && approval.serviceAction && (
+            <ApprovalServiceAction
+              action={approval.serviceAction}
+              destructive={approval.tier === 'destructive'}
+            />
+          )}
           {!approval.cannotAllow && (
             <>
               {/* An extension's tool says which extension it is from (DOR-2685),
@@ -428,6 +444,10 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
                       'text-muted-foreground mt-0.5 text-xs break-words',
                       approval.tier !== 'destructive' &&
                         !approval.answerNeedsStepUp &&
+                        // A settings change names its riskiest setting in the
+                        // sentence; a clamp would cut it at phone widths (DOR-4778).
+                        approval.capabilityId !== CONFIG_PATCH_CAPABILITY_ID &&
+                        !approval.capabilityId.startsWith('marketplace.') &&
                         'line-clamp-2'
                     )}
                   >
@@ -449,21 +469,29 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
               phone it gets up to half the screen: the card is full width there,
               and a settings file or a script is otherwise read a few lines at a
               time (DOR-2325). */}
-              {/* A Marketplace list too long for the detail comes as a summary
-              instead (DOR-3070): every row that adds power, then a link to
+              {/* Mini apps, schedules and long Marketplace lists use structured
+              rows (DOR-3070): every row that adds power, then a link to
               the whole list. It replaces the detail, which only restates it. */}
               {approval.marketplaceSummary ? (
                 <ApprovalMarketplaceSummary
                   approvalId={approval.approvalId}
                   summary={approval.marketplaceSummary}
                 />
+              ) : (approval.capabilityId === 'marketplace.install' ||
+                  approval.capabilityId === 'marketplace.update') &&
+                approval.detail === 'DorkOS will show you what’s in it next.' ? (
+                <p className="text-muted-foreground mt-1.5 text-xs">{approval.detail}</p>
               ) : (
                 approval.detail !== undefined && (
                   <pre
                     data-slot="approval-detail"
                     className="border-border/60 bg-muted/40 text-muted-foreground mt-1.5 max-h-[50dvh] overflow-auto rounded-md border p-2 font-mono text-xs break-words whitespace-pre-wrap md:max-h-56"
                   >
-                    {approval.detail}
+                    {approval.capabilityId === CONFIG_PATCH_CAPABILITY_ID ? (
+                      <SettingsLines detail={approval.detail} />
+                    ) : (
+                      breakAtDots(approval.detail)
+                    )}
                   </pre>
                 )
               )}
@@ -510,7 +538,8 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
             </AskCard.Receipt>
           ) : (
             <>
-              {approval.cannotAllow && (
+              {/* A send says which recipient it can't show, beside its list (DOR-4592). */}
+              {approval.cannotAllow && !approval.serviceAction && (
                 <p className="text-muted-foreground max-w-xs text-xs">
                   {"This request can't be shown in full, so it can't be allowed yet."}
                 </p>
@@ -609,7 +638,11 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
                     )
                   }
                 >
-                  {approval.cannotAllow ? 'Decline' : onWifi ? 'Deny' : 'Don’t allow'}
+                  {approval.cannotAllow && !approval.serviceAction
+                    ? 'Decline'
+                    : onWifi
+                      ? 'Deny'
+                      : 'Don’t allow'}
                 </Button>
               </AskCard.Actions>
             </>
@@ -636,4 +669,42 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
       </div>
     </motion.div>
   );
+}
+
+/**
+ * A detail with a chance to wrap after every dot, so a long setting name on a
+ * phone breaks between its parts (`runtimes.claudeCode.` then `projectAccounts`)
+ * rather than mid-word (DOR-4775). Adds no characters, so a copy is the text.
+ */
+function breakAtDots(text: string): ReactNode {
+  return text.split(/(?<=\.)/).flatMap((part, i) => (i === 0 ? [part] : [<wbr key={i} />, part]));
+}
+
+/** What the server ends a line a person must decide with (`config-patch-card.ts`). */
+const NEEDS_YOU_MARK = ' (needs you)';
+
+/**
+ * A settings card's detail, one setting per block with a hanging indent, so a
+ * long one that wraps on a phone sits under its own name and the next one
+ * plainly starts fresh. The "(needs you)" mark never splits across lines.
+ * Each block keeps its newline, so a copy is still the text (DOR-4775).
+ */
+function SettingsLines({ detail }: { detail: string }) {
+  const lines = detail.split('\n');
+  return lines.map((line, i) => {
+    const marked = line.endsWith(NEEDS_YOU_MARK);
+    const text = marked ? line.slice(0, -NEEDS_YOU_MARK.length) : line;
+    return (
+      <span key={i} className="block pl-4 -indent-4">
+        {breakAtDots(text)}
+        {marked && (
+          <>
+            {' '}
+            <span className="whitespace-nowrap">{NEEDS_YOU_MARK.trim()}</span>
+          </>
+        )}
+        {i < lines.length - 1 && '\n'}
+      </span>
+    );
+  });
 }

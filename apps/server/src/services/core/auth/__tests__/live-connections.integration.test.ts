@@ -7,6 +7,7 @@
  */
 import { createStepUpRoutes } from '../../../../routes/step-up.js';
 import { confirmAuthFixture } from './confirm-write.js';
+import { wifiSignInCookie } from './wifi-test-sign-in.js';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -128,6 +129,10 @@ const USER_AGENT: Partial<Record<RequestIngress, string>> = {
  */
 async function signInVia(ingress: RequestIngress, browser = true): Promise<string> {
   const userAgent = browser ? USER_AGENT[ingress] : undefined;
+  // Wi-Fi takes no password; a device signs in by code (DOR-4744).
+  if (ingress === 'wifi') {
+    return wifiSignInCookie(getAuth()!, String(headersVia(ingress, '').host ?? ''), userAgent);
+  }
   const res = await request(target.server)
     .post('/api/auth/sign-in/email')
     .set({ ...headersVia(ingress, ''), ...(userAgent ? { 'user-agent': userAgent } : {}) })

@@ -37,7 +37,8 @@ const RUN = {
 
 function runHistory(session: { permissionMode: string }) {
   const deps = {
-    taskStore: { listRuns: () => [RUN] },
+    // A global schedule: whose runs it may read is `run-history-scope.test.ts`'s (DOR-4600).
+    taskStore: { listRuns: () => [RUN], getTask: () => ({ id: 'sched-1', agentId: null }) },
     defaultCwd: '/tmp/test',
     dorkHome: '/tmp/test-dork-home',
   } as unknown as McpToolDeps;

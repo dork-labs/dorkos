@@ -3,6 +3,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { TaskStore } from '../task-store.js';
 import { ScheduleNotices } from '../notices/schedule-notices.js';
 import { STALE_SKIP_REASON } from '../timing/occurrence.js';
+import { sleptDuringRunError } from '@dorkos/shared/schedule-notice-copy';
 
 afterEach(() => vi.useRealTimers());
 
@@ -126,6 +127,20 @@ describe('schedule notices', () => {
     expect(post).not.toHaveBeenCalled();
     await finish('failed');
     expect(post).toHaveBeenCalledTimes(1);
+  });
+
+  it('never calls a run and its retry, both broken by sleep, failed twice (DOR-3286)', async () => {
+    const { finish, store, task, post } = setup();
+    await finish('failed', sleptDuringRunError());
+    await finish('failed', sleptDuringRunError());
+    expect(post).not.toHaveBeenCalled();
+    expect(store.runHistory()(task.id).health.state).toBe('ok');
+    // Nor does one between two real failures hide them.
+    await finish('failed');
+    await finish('failed', sleptDuringRunError());
+    await finish('failed');
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post.mock.calls[0][1].text).toContain('failed twice in a row');
   });
 });
 

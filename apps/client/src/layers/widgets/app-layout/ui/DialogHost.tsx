@@ -9,6 +9,7 @@ import {
   type DialogContribution,
   type DialogOpenState,
 } from '@/layers/shared/model';
+import { ExtensionDialogOriginBand } from './ExtensionDialogOrigin';
 
 /**
  * Derive the setter name from an `openStateKey` by capitalizing its first letter
@@ -89,7 +90,9 @@ function StoreDialog({
 /**
  * Renders a dialog that keeps its own open flag (an extension dialog). It is
  * mounted only while open: an extension cannot be trusted to honour `open`, and
- * one that ignored it would otherwise sit on screen for good.
+ * one that ignored it would otherwise sit on screen for good. An app's dialog
+ * also carries DorkOS's "From <name>" strip, drawn beside the app's component
+ * and outside its error boundary, so the app's own markup never wraps it.
  */
 function OwnStateDialog({
   contribution,
@@ -104,7 +107,7 @@ function OwnStateDialog({
   // A dialog that throws closes itself instead of taking every other dialog
   // (Settings, Tasks…) down with it. The boundary unmounts with the dialog, so
   // opening it again starts clean.
-  return (
+  const dialog = (
     <ErrorBoundary
       fallback={null}
       onError={(error) => {
@@ -114,6 +117,13 @@ function OwnStateDialog({
     >
       <Component open onOpenChange={openState.set} />
     </ErrorBoundary>
+  );
+  if (!contribution.extensionId) return dialog;
+  return (
+    <>
+      {dialog}
+      <ExtensionDialogOriginBand extensionId={contribution.extensionId} />
+    </>
   );
 }
 

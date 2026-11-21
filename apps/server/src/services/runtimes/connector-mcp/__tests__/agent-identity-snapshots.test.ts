@@ -18,6 +18,9 @@ function backing(): ConnectorRuntimePrincipalPort {
     })),
     renew: vi.fn(async () => ({ status: 'renewed' as const, expiresAt: renewedExpiresAt })),
     resolve: vi.fn(),
+    resolveToolTurn: vi.fn(async () => {
+      throw new Error('Live tools are not part of this fixture.');
+    }),
     revoke: vi.fn(),
   };
 }
@@ -46,6 +49,23 @@ function openInput(sessionId: string) {
 }
 
 describe('AgentIdentitySnapshotPrincipalPort', () => {
+  it('delegates live tool caller resolution to the same backing service without identity fallback', async () => {
+    const principals = backing();
+    const caller = { read: vi.fn(), assertCurrent: vi.fn() } as never;
+    vi.mocked(principals.resolveToolTurn).mockResolvedValueOnce(caller);
+    const snapshots = new AgentIdentitySnapshotPrincipalPort({
+      principals,
+      snapshotIdentity: vi.fn(),
+      identityWasRevoked: async () => false,
+    });
+    const proof = principal('binding-a', 'session-a');
+    await expect(snapshots.resolveToolTurn(proof)).resolves.toBe(caller);
+    expect(principals.resolveToolTurn).toHaveBeenCalledExactlyOnceWith(proof);
+    await expect(snapshots.resolveToolTurn(proof)).rejects.toThrow(
+      'Live tools are not part of this fixture.'
+    );
+  });
+
   it('keeps each concurrent turn on the exact identity captured before its launch', async () => {
     let currentName = 'Agent A';
     const principals = backing();

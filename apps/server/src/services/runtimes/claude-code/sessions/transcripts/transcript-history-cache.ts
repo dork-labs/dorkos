@@ -33,8 +33,10 @@
  * @module services/runtimes/claude-code/sessions/transcripts/transcript-history-cache
  */
 import fs from 'fs/promises';
+import path from 'node:path';
 import type { HistoryMessage } from '@dorkos/shared/types';
 import { createTranscriptParser } from '../transcript-parser.js';
+import { isCreditsClaudeRoot } from '../../credits-root.js';
 import type { TranscriptImageRef, TranscriptLine, TranscriptParser } from '../transcript-parser.js';
 import { createTaskParser, type TaskParser } from '../task-reader.js';
 import type { TaskItem } from '@dorkos/shared/types';
@@ -242,7 +244,11 @@ export class TranscriptHistoryCache {
           mtimeMs: 0,
           offset: 0,
           tail: Buffer.alloc(0),
-          parser: createTranscriptParser(),
+          // `<root>/projects/<slug>/<id>.jsonl`: a credits transcript may quote
+          // DorkOS's endpoint on reload, as its live turn did (DOR-4845).
+          parser: createTranscriptParser({
+            fromDorkosEndpoint: isCreditsClaudeRoot(path.resolve(filePath, '..', '..', '..')),
+          }),
           tasks: createTaskParser(),
           result: [],
           estimatedBytes: 0,

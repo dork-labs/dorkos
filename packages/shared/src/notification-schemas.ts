@@ -116,6 +116,13 @@ export const NOTIFICATION_KINDS = [
    */
   'extension.decision',
   /**
+   * An extension that runs separately stopped on its own: it hung, crashed or ran out of memory
+   * (DOR-4785). One row per app an hour while DorkOS restarts it, and one more when DorkOS
+   * leaves it off, with a Restart. Quiet while restarting, notable when off; relay never,
+   * so it never reaches a phone.
+   */
+  'extension.stopped',
+  /**
    * Someone asked the host to make someone else the owner of a community this person owns, or
    * that request completed (DOR-2543). One per request and phase.
    */
@@ -179,6 +186,13 @@ export const NOTIFICATION_KINDS = [
    * the owner's hub (spec `everything-is-a-space` step B3). Once per browser.
    */
   'web.new_device',
+  /**
+   * A passkey or authenticator app was added to the owner's account, so it
+   * now proves a sign-in from another device (DOR-3647).
+   */
+  'signin.check_added',
+  /** A passkey or authenticator app was removed from the owner's account (DOR-3647). */
+  'signin.check_removed',
   /**
    * An agent's folder holds files whose names say they are secrets, which no
    * rule keeps that agent from reading (DOR-3292). Names only, never contents;

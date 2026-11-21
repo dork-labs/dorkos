@@ -70,6 +70,7 @@ function taskInput(
 const NO_SLEEP: AwakeClock = {
   now: () => Date.now(),
   sleptMs: () => 0,
+  sleptSince: () => 0,
   lastWakeAt: () => null,
   timers: {
     setTimeout: (fn, ms) => setTimeout(fn, ms),

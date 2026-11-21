@@ -14,6 +14,10 @@ import { triggerTurn, type TriggerTurnResult } from '../trigger-turn.js';
 import { emitQueueUpdate } from '../queue-stream-events.js';
 import { TURN_NO_ANSWER } from '../launch/turn-not-started.js';
 import { noteRoomTurnWords } from '../../core/turn-power/outside-words.js';
+import {
+  forgetOwnersCleanSend,
+  noteOwnersCleanSend,
+} from '../../core/turn-power/held-chat-mark.js';
 import { isExtensionClientId } from '../../extensions/agent-send/extension-client-id.js';
 import {
   getPrivateSessionMessageAcceptanceService,
@@ -206,7 +210,12 @@ export function launchDispatchInner(
   // What the row kept of the turn's limits (DOR-4350): a plan rebuilt after a pause or a restart
   // carries none of its own, so the row's go with it. They only add.
   const kept = getMessageQueueStore()?.get(messageId)?.carriedLimits ?? null;
-  if (carriesWords || isOwnersCleanSend(plan)) {
+  const ownersClean = isOwnersCleanSend(plan);
+  // The one verdict the turn seam reads to clear a held chat (DOR-4515), by the id the runtime gets.
+  // Every launch decides afresh, so a verdict never outlives the attempt it was found for.
+  if (ownersClean) noteOwnersCleanSend(runtimeMessageIdFor(messageId), plan.sessionId);
+  else forgetOwnersCleanSend(runtimeMessageIdFor(messageId));
+  if (carriesWords || ownersClean) {
     const canonical = plan.runtime.getInternalSessionId(plan.sessionId) ?? plan.sessionId;
     for (const id of new Set([plan.sessionId, sessionKey, canonical])) {
       noteRoomTurnWords(id, carriesWords);

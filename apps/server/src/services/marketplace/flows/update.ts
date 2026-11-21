@@ -366,6 +366,7 @@ export class UpdateFlow {
         contentHash,
         installedDisclosed,
         extensions: preview.extensions,
+        request: { ...planned.request, approvedContentHash: contentHash },
       };
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);

@@ -11,6 +11,10 @@ import {
   waitingForAgents,
 } from '../../../extensions/extension-agent-text.js';
 import { listPendingExtensionApprovals } from '../../../extensions/extension-approval-queue.js';
+import {
+  MINI_APP_STORY_SECTION,
+  MINI_APP_STORY_TEXT,
+} from '../../../extensions/guidance/mini-app-story.js';
 import type { PendingExtensionApproval } from '@dorkos/shared/extension-approval-schemas';
 import {
   createCreateExtensionHandler,
@@ -29,6 +33,7 @@ export { createCreateExtensionHandler, type ExtensionCreatorResolver };
  */
 const EXTENSION_API_REFERENCE = `# DorkOS Extension API Reference
 
+${MINI_APP_STORY_SECTION}
 ## Client-Side: ExtensionModule Interface
 
 Runs in a sandboxed frame: no network, cookies or parent window; use \`api\`.
@@ -64,7 +69,8 @@ interface ExtensionAPI {
 
   // --- Own server routes, /api/ext/<id>/<path> (needs manifest capabilities.http) ---
   request<T>(path: string, options?: { method?: string; body?: unknown; app?: string }): Promise<T>;
-  media(path: string): Promise<Blob>; // picture/video, 32 MB, for URL.createObjectURL
+  media(path: string): Promise<Blob>; // picture/short video, 32 MB
+  mediaUrl(path: string): Promise<string>; // video <src>, streams
   settings: { get<T>(): Promise<T> };
   // Asks the person first; JSON/text/CSV/Markdown/PDF/PNG/JPEG/WebP, 10 MB, never opened
   download(name: string, mimeType: string, data: string | ArrayBuffer | Blob): Promise<'saved' | 'cancelled'>;
@@ -74,7 +80,7 @@ interface ExtensionAPI {
   getState(): ExtensionReadableState;
   subscribe(selector: (state: ExtensionReadableState) => unknown, callback: (value: unknown) => void): () => void;
 
-  // --- Events (curated, privacy-safe push channel; requires manifest capabilities.events) ---
+  // --- Events (needs manifest capabilities.events) ---
   events: {
     subscribe(kinds: ExtensionEventKind[], handler: (event: ExtensionEvent) => void): () => void;
   };
@@ -91,27 +97,16 @@ interface ExtensionAPI {
 }
 \`\`\`
 
-## ExtensionPointId (Available Slots)
+## Places: manifest \`contributions\`
 
-\`\`\`typescript
-type ExtensionPointId =
-  | 'sidebar.footer'
-  | 'dashboard.sections'
-  | 'command-palette.items'
-  | 'dialog'
-  | 'settings.tabs'
-  | 'right-panel';
-\`\`\`
+Set every place the app uses to true, e.g. \`{ "contributions": { "pages": true } }\`.
+DorkOS refuses any other registration, names each place on the approval card, and asks
+again when an update adds one. Keys: pages, right-panel, dashboard.sections, settings.tabs,
+status-bar, command-palette.items, dialog, sidebar.footer, canvas, inbox (ctx.inbox).
+DorkOS draws the app's name on its dialogs and ⌘K rows. Names starting with DorkOS, or
+DorkOS page names (Settings, Inbox, Tasks, Apps...), are refused.
 
-## ExtensionReadableState
-
-\`\`\`typescript
-interface ExtensionReadableState {
-  currentCwd: string | null;
-  activeSessionId: string | null;
-  agentId: string | null;
-}
-\`\`\`
+ExtensionReadableState: \`{ currentCwd, activeSessionId, agentId }\`, each string or null.
 
 ## ExtensionEvent (curated, privacy-safe)
 
@@ -125,12 +120,7 @@ Scoping: \`turn.*\` and \`tool.*\` are foreground-gated (active session only);
 all console relay traffic); \`session.switched\` describes the foreground itself.
 
 \`\`\`typescript
-type ExtensionEventKind =
-  | 'session.started' | 'session.ended' | 'session.switched'  // category: session
-  | 'turn.started' | 'turn.completed'                         // category: turn
-  | 'tool.activity'                                           // category: tool
-  | 'relay.message';                                          // category: relay
-
+// A kind's category is the part before the dot: session, turn, tool, relay.
 type ExtensionEvent =
   | { kind: 'session.started'; sessionId: string }
   | { kind: 'session.ended'; sessionId: string }
@@ -149,51 +139,23 @@ Manifest declaration (a category grants all its kinds):
 
 ## Usage Examples
 
-### Dashboard Section
+### Command Palette Item
 \`\`\`typescript
-export function activate(api: ExtensionAPI) {
-  api.registerComponent('dashboard.sections', 'my-section', MyComponent, { priority: 50 });
-}
+api.registerCommand('greet', 'Say Hello', () => api.notify('Hello!'));
 \`\`\`
 
 ### Right-Panel Tab (contextual inspector)
 \`\`\`typescript
-export function activate(api: ExtensionAPI) {
-  // label names the tab; priority sorts the strip (lower = leftward). The panel
-  // container owns the header (tab strip + close), so MyPanel renders only the body.
-  api.registerComponent('right-panel', 'my-panel', MyPanel, {
-    label: 'My Panel',
-    priority: 50,
-    showIn: { pages: ['session'] },
-  });
-}
-\`\`\`
-
-### Command Palette Item
-\`\`\`typescript
-export function activate(api: ExtensionAPI) {
-  api.registerCommand('greet', 'Say Hello', () => {
-    api.notify('Hello from my extension!', { type: 'success' });
-  });
-}
-\`\`\`
-
-### Settings Tab with Persistence
-\`\`\`typescript
-export function activate(api: ExtensionAPI) {
-  api.registerSettingsTab('config', 'My Settings', MySettingsPanel);
-}
+// The panel owns the header, so MyPanel renders only the body.
+api.registerComponent('right-panel', 'my-panel', MyPanel,
+  { label: 'My Panel', priority: 50, showIn: { pages: ['session'] } });
 \`\`\`
 
 ### Subscribing to Events (declare capabilities.events in the manifest)
 \`\`\`typescript
-export function activate(api: ExtensionAPI) {
-  return api.events.subscribe(['turn.completed', 'tool.activity'], (event) => {
-    if (event.kind === 'turn.completed') {
-      api.notify(\`Turn done in \${event.durationMs}ms (\${event.toolCallCount} tools)\`);
-    }
-  });
-}
+// inside activate(api):
+return api.events.subscribe(['turn.completed'], (e) =>
+  e.kind === 'turn.completed' && api.notify(\`Took \${e.durationMs ?? '?'}ms\`));
 \`\`\`
 
 ### Storage
@@ -210,10 +172,7 @@ Extensions with server-side capabilities export a \`register\` function from \`s
 import type { ServerExtensionRegister } from '@dorkos/extension-api/server';
 
 const register: ServerExtensionRegister = (router, ctx) => {
-  router.get('/data', async (req, res) => {
-    const apiKey = await ctx.secrets.get('my_api_key');
-    res.json({ data: 'from server' });
-  });
+  router.get('/data', async (_req, res) => res.json({ hasKey: await ctx.secrets.has('api_key') }));
 };
 
 export default register;
@@ -244,41 +203,23 @@ interface DataProviderContext {
   // subscribe(fn) → turn.started / turn.done / turn.failed by messageId
   readonly agent: AgentApi;
   // Bind handlers for the tools extension.json declares (call during register)
-  readonly tools: {
-    handle(
-      name: string,
-      handler: (input: unknown, call: { signal: AbortSignal; agentId: string | null })
-        => unknown | Promise<unknown>
-    ): void;
-  };
+  readonly tools: { handle(name: string, handler: (input: unknown,
+    call: { signal: AbortSignal; agentId: string | null }) => unknown | Promise<unknown>): void };
 }
 \`\`\`
 
 ### Manifest: serverCapabilities
 
 \`\`\`json
-{
-  "serverCapabilities": {
-    "serverEntry": "./server.ts",
-    "externalHosts": ["https://api.example.com"],
-    "secrets": [
-      { "key": "api_key", "label": "API Key", "required": true }
-    ]
-  }
-}
+{ "serverCapabilities": { "serverEntry": "./server.ts", "externalHosts": ["https://api.example.com"],
+  "secrets": [{ "key": "api_key", "label": "API Key", "required": true }] } }
 \`\`\`
 
 ### Manifest: dataProxy (zero-code proxy)
 
 \`\`\`json
-{
-  "dataProxy": {
-    "baseUrl": "https://api.example.com",
-    "authHeader": "Authorization",
-    "authType": "Bearer",
-    "authSecret": "api_key"
-  }
-}
+{ "dataProxy": { "baseUrl": "https://api.example.com", "authHeader": "Authorization",
+  "authType": "Bearer", "authSecret": "api_key" } }
 \`\`\`
 
 Proxy routes are auto-mounted at \`/api/ext/{id}/proxy/*\`.
@@ -373,12 +314,9 @@ async function waitingById(
   }
 }
 
-/** Error statuses that indicate an extension has a problem. */
-const ERROR_STATUSES = new Set(['invalid', 'incompatible', 'compile_error', 'activate_error']);
-
 /**
- * Handler factory for `get_extension_errors` — returns only extensions
- * that are in an error state (invalid, incompatible, compile_error, activate_error).
+ * Handler factory for `get_extension_errors`: broken clients and stopped servers,
+ * including the reason and time of a stop while an automatic retry is pending.
  *
  * Useful for agents diagnosing extension problems without sifting through
  * healthy extensions in the full list.
@@ -389,10 +327,7 @@ export function createGetExtensionErrorsHandler(deps: McpToolDeps) {
     if (!manager) {
       return jsonContent({ error: 'Extension system is not available' }, true);
     }
-    const errors = manager
-      .listPublic()
-      .filter((ext) => ERROR_STATUSES.has(ext.status))
-      .map(extensionForAgents);
+    const errors = manager.listErrors().map(extensionForAgents);
     return jsonContent({ note: EXTENSION_TEXT_NOTE, errors, count: errors.length });
   };
 }
@@ -536,7 +471,9 @@ export function extensionToolDefinitions(
         'It runs at once unless DorkOS asks the person first; then it waits for their approval. autoApproved in the reply says it runs. ' +
         'Called from your own chat, it is always created in your own folder, at .dork/extensions/<name>, whatever scope says. ' +
         'There, once it runs separately ("runtime": "subprocess"), edits to its server code load without a click from the person. ' +
-        'Edits to its screen code (what the app shows) still wait for the person to approve them.',
+        'Edits to its screen code (what the app shows) still wait for the person to approve them. ' +
+        'In a marked turn, or one held to a limit, it creates nothing and its reply says how to build in the personal marketplace instead. ' +
+        MINI_APP_STORY_TEXT,
       {
         name: z
           .string()
