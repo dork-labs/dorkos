@@ -65,6 +65,8 @@ vi.mock('../../../core/auth/session-gate.js', async (importOriginal) => ({
 import { ExtensionManager } from '../../extension-manager.js';
 import { grantsDigestOf } from '../../pin/extension-path-trust.js';
 import { placeSnapshots } from '../../pin/extension-snapshot-placement.js';
+import { liveDigestOf } from '../../pin/extension-content-pin.js';
+import { noteScaffoldTrusted } from '../../pin/path-trust-edits.js';
 import {
   noteWriteDone,
   noteWriteStarting,
@@ -75,6 +77,14 @@ import { honoGroupListener } from '../../../../http/__tests__/hono-group-listene
 import type { ApiEnv } from '../../../../http/api-chain.js';
 import { setAgentSendService, type AgentSendService } from '../../agent-send/agent-send.js';
 import { setExtensionInbox, type ExtensionInboxService } from '../../inbox/extension-inbox.js';
+import { registerExtensionRestartRoute } from '../../../../routes/extensions-restart.js';
+import { createDb, runMigrations } from '@dorkos/db';
+import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
+import { NotificationStore } from '../../../notifications/notification-store.js';
+import {
+  NotificationService,
+  setNotificationService,
+} from '../../../notifications/notification-service.js';
 
 const ID = 'iso-live';
 const NAME = 'Iso Live';
@@ -128,6 +138,15 @@ const sends = {
   started: [] as string[],
 };
 const inbox = { stopped: [] as string[], running: [] as string[] };
+
+/** The real notification store the person's bell reads (DOR-4785). */
+let notifications: NotificationStore;
+
+/** What the person was told about this extension stopping, newest first. */
+function stoppedNotices(): NotificationDTO[] {
+  return notifications.list({ limit: 50, unread: false, kind: ['extension.stopped'] })
+    .notifications;
+}
 
 /**
  * Write the extension's files; `allow` widens or narrows what it declares. Each write is noted as
@@ -186,6 +205,14 @@ async function boot(
     pongTimeoutMs: 30_000,
   }
 ): Promise<void> {
+  // These lifecycle cases start with an approved scaffold. Record its exact initial files;
+  // later installs remain edits and must pass the real tracing checks.
+  expect(
+    await noteScaffoldTrusted(dorkHome, ID, {
+      targetDir: extDir,
+      digest: await liveDigestOf({ path: extDir }),
+    })
+  ).toBe(true);
   manager = new ExtensionManager(dorkHome, [], {
     dorkosPort: 1,
     restartPolicy: { delays: [10, 20, 40], budget },
@@ -274,6 +301,10 @@ beforeEach(async () => {
   sends.started = [];
   inbox.stopped = [];
   inbox.running = [];
+  const db = createDb(':memory:');
+  runMigrations(db);
+  notifications = new NotificationStore(db);
+  setNotificationService(new NotificationService(notifications));
   stored.value = {
     enabled: [ID],
     disabled: [],
@@ -342,6 +373,7 @@ afterEach(async () => {
   await new Promise((resolve) => server.close(resolve));
   setAgentSendService(undefined);
   setExtensionInbox(null);
+  setNotificationService(null);
   await fs.rm(dorkHome, { recursive: true, force: true });
 });
 
@@ -432,6 +464,22 @@ describe('an isolated extension goes live through the real lifecycle', () => {
       expect(card().serverError?.message).toBe(
         `${NAME} stopped unexpectedly 3 times. Reload it to try again.`
       );
+      // The person was told, by name: one "restarted" row for the first two
+      // stops, then one "is off" row with Restart (DOR-4785).
+      await until(() => stoppedNotices().length === 2);
+      const [off, restarted] = stoppedNotices();
+      expect(restarted).toMatchObject({
+        tier: 'quiet',
+        subject: { type: 'system', id: `extension:${ID}` },
+        title: `The ${NAME} app stopped unexpectedly. DorkOS is restarting it.`,
+      });
+      expect(off).toMatchObject({
+        tier: 'notable',
+        subject: { type: 'system', id: `extension:${ID}` },
+        title: `The ${NAME} app is off`,
+        body: 'It stopped 3 times in 10 minutes, so DorkOS left it off.',
+        actions: [{ id: 'restart-extension', label: 'Restart', style: 'primary' }],
+      });
       await new Promise((r) => setTimeout(r, 700));
       expect(manager.getServerHandler(ID)).toBeNull();
       expect((await get(`/api/ext/${ID}/ping`)).status).toBe(404);
@@ -441,9 +489,32 @@ describe('an isolated extension goes live through the real lifecycle', () => {
       expect(init.ok).toBe(false);
       expect(manager.getServerHandler(ID)).toBeNull();
 
-      await manager.reloadExtension(ID);
+      const restart = new Hono<ApiEnv>();
+      restart.use(async (c, next) => {
+        c.set('user', { userId: 'owner', credential: 'cookie' });
+        await next();
+      });
+      registerExtensionRestartRoute(restart, manager, /^[a-z0-9][a-z0-9-]*$/, () => {});
+      const restartedResponse = await restart.request(
+        `/${ID}/restart`,
+        { method: 'POST' },
+        {
+          incoming: { headers: {}, socket: { remoteAddress: '127.0.0.1' }, method: 'POST' },
+        }
+      );
+      expect(restartedResponse.status).toBe(200);
       expect((await get(`/api/ext/${ID}/ping`)).status).toBe(200);
       expect(card().serverError).toBeUndefined();
+      // One explicit press gives one fresh three-stop budget. Nothing retries
+      // the notice's action when the app stops again.
+      const stopsBeforeRestart = unexpectedStops();
+      for (let crash = 1; crash <= 3; crash++) {
+        await until(async () => (await get(`/api/ext/${ID}/ping`)).status === 200);
+        await post(`/api/ext/${ID}/crash`);
+        await until(() => unexpectedStops() === stopsBeforeRestart + crash);
+      }
+      await until(() => card().serverError?.code === 'server_crashed');
+      expect(manager.getServerHandler(ID)).toBeNull();
     },
     TEST_MS
   );
@@ -514,6 +585,12 @@ describe('an isolated extension goes live through the real lifecycle', () => {
       await post(`/api/ext/${ID}/hang`);
       await until(() => card().serverError?.code === 'server_unresponsive');
       expect(card().serverError?.message).toBe(`${NAME} stopped responding, so DorkOS stopped it.`);
+      // Never quiet: a watchdog stop that ends the restarts says so (DOR-4785).
+      await until(() => stoppedNotices().length === 1);
+      expect(stoppedNotices()[0]).toMatchObject({
+        title: `The ${NAME} app is off`,
+        body: 'It stopped once in 10 minutes, so DorkOS left it off.',
+      });
       expect(alive(pid)).toBe(false);
       expect((await get('/api/health')).status).toBe(200);
     },
@@ -543,6 +620,7 @@ describe('an isolated extension goes live through the real lifecycle', () => {
       agentLevel.mode = 'bypassPermissions';
       await install('v1');
       await boot();
+      expect((await get(`/api/ext/${ID}/ping`)).body.version).toBe('v1');
       agentLevel.mode = 'default';
       await install('v2');
       await manager.reloadExtension(ID);

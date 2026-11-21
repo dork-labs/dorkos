@@ -83,7 +83,7 @@ export async function rejectUnknownModel(
   }
   let offered: ModelOption[];
   try {
-    offered = await runtime.getSupportedModels();
+    offered = await runtime.getSupportedModels(options.sessionId);
   } catch {
     logger.debug('[model gate] declined: the catalog probe threw', {
       runtime: runtime.type,

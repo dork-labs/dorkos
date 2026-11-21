@@ -14,7 +14,8 @@
  *   - a docs-only pull request answers `false`, a code change `true`;
  *   - a checkout that cannot see the base (depth 1, or no merge commit) and a
  *     script that errors answer `true`, never `false`;
- *   - the queue and the canary always answer `true`;
+ *   - the queue, the canary and a pull request into a release branch (its
+ *     EVENT is `release_pull_request`, DOR-4639) always answer `true`;
  *   - test-shard and test-binary skip only on the literal `false`, on a pull
  *     request only, and the jobs still report to the `test` fan-in.
  */
@@ -203,7 +204,7 @@ describe("test-shard-count's no-code scope decision", () => {
     expect(decide(repo, 'pull_request')).toMatchObject({ code: 0, run: 'true' });
   });
 
-  it.each(['merge_group', 'schedule', 'workflow_dispatch'])(
+  it.each(['merge_group', 'schedule', 'workflow_dispatch', 'release_pull_request'])(
     'always runs on %s, whatever changed',
     (event) => {
       const repo = checkout({ changes: ['docs/x.md'], depth: depth() });
@@ -240,9 +241,12 @@ describe("test-shard reads the answer and skips only on 'false'", () => {
     expect(read('pull_request', t)).toMatchObject({ code: 0, run: 'true' });
   });
 
-  it.each(['merge_group', 'schedule', 'workflow_dispatch'])('never skips on %s', (event) => {
-    expect(read(event, 'false')).toMatchObject({ code: 0, run: 'true' });
-  });
+  it.each(['merge_group', 'schedule', 'workflow_dispatch', 'release_pull_request'])(
+    'never skips on %s',
+    (event) => {
+      expect(read(event, 'false')).toMatchObject({ code: 0, run: 'true' });
+    }
+  );
 
   it('is wired to test-shard-count, gates only the PR test step, and never skips its job', () => {
     const step = stepText('test-shard', STEP);
@@ -253,7 +257,7 @@ describe("test-shard reads the answer and skips only on 'false'", () => {
       .split('\n')
       .filter((line) => line.includes('steps.noscope.outputs.run'));
     expect(gated).toEqual([
-      "        if: ${{ github.event_name == 'pull_request' && steps.noscope.outputs.run == 'true' }}",
+      "        if: ${{ github.event_name == 'pull_request' && !startsWith(github.base_ref, 'release/') && steps.noscope.outputs.run == 'true' }}",
     ]);
     expect(jobText('test-shard')).not.toMatch(/^ {4}if:/m);
   });
@@ -278,9 +282,12 @@ describe("test-binary honours the same 'false'", () => {
     expect(plan({ EVENT: 'pull_request', TESTS })).toMatchObject({ code: 0, run: 'true' });
   });
 
-  it.each(['merge_group', 'schedule', 'workflow_dispatch'])('never skips on %s', (EVENT) => {
-    expect(plan({ EVENT, TESTS: 'false' })).toMatchObject({ code: 0, run: 'true' });
-  });
+  it.each(['merge_group', 'schedule', 'workflow_dispatch', 'release_pull_request'])(
+    'never skips on %s',
+    (EVENT) => {
+      expect(plan({ EVENT, TESTS: 'false' })).toMatchObject({ code: 0, run: 'true' });
+    }
+  );
 
   it('reads it from test-shard-count', () => {
     expect(stepText('test-binary', 'Decide which binary suites run')).toMatch(

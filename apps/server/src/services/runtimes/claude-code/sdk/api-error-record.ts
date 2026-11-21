@@ -35,7 +35,11 @@
  */
 import type { ErrorPart } from '@dorkos/shared/types';
 import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
-import { describeAssistantError, SURFACED_ASSISTANT_ERRORS } from './sdk-error-mapping.js';
+import {
+  describeAssistantError,
+  SURFACED_ASSISTANT_ERRORS,
+  type AssistantErrorContext,
+} from './sdk-error-mapping.js';
 
 /**
  * The record fields this module reads — a structural subset of both
@@ -110,19 +114,27 @@ export function isApiErrorRecord(line: ApiErrorMarkers): boolean {
  *
  * @param code - The record's `error` code, when it carried one.
  * @param noticeText - The text the CLI wrote into the record, trimmed.
+ * @param context - Where the transcript's session ran, so a reload quotes
+ *   exactly what the live path quoted (DOR-4845).
  */
-export function buildApiErrorPart(code: string | undefined, noticeText: string): ErrorPart {
+export function buildApiErrorPart(
+  code: string | undefined,
+  noticeText: string,
+  context: AssistantErrorContext = {}
+): ErrorPart {
   const hasDorkosCopy = code !== undefined && SURFACED_ASSISTANT_ERRORS.has(code);
   // A notice with no text of its own would otherwise render a blank card, so it
   // falls back to the mapper's default sentence. Measured 0 of 249 records, so
   // this is a guard rather than a case.
   const message =
     hasDorkosCopy || noticeText === ''
-      ? describeAssistantError(code ?? '', noticeText)
+      ? describeAssistantError(code ?? '', noticeText, context)
       : noticeText;
 
   const part: ErrorPart = { type: 'error', message };
-  if (detectAuthError({ message, code })) {
+  // A server error is never a sign-in failure, whatever an endpoint's quoted
+  // words say (DOR-4845); the live mapper holds the same line.
+  if (code !== 'server_error' && detectAuthError({ message, code })) {
     part.category = 'auth_error';
   } else if (hasDorkosCopy) {
     part.category = 'execution_error';

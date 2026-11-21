@@ -39,6 +39,7 @@ import type { AgentSession } from '../agent-types.js';
 import { fireLaunchProbes } from '../messaging/launch-probes.js';
 import { noteLaunchedAppend } from '../messaging/turn-context/turn-context-record.js';
 import { launchQuery } from '../sdk/launch-query.js';
+import { startHeavyJobsProcess } from '../tool-gate/load-gate-hook.js';
 import type { MessageSenderOpts, ResolvedLaunch } from '../messaging/message-sender-shared.js';
 import { captureLaunchFingerprint } from './launch-fingerprint.js';
 import type { DispatchDecision, LaunchFingerprint } from './launch-fingerprint.js';
@@ -174,12 +175,18 @@ export function createPumpLauncher(
     // added HERE rather than in the shared resolver: only a persistent process
     // can be orphaned by a server that dies without running its shutdown, so
     // only a persistent process is written into the ledger the next boot sweeps
-    // (DOR-1310). The resume-per-message path keeps the SDK's own spawn.
+    // (DOR-1310). The resume-per-message path keeps the SDK's own spawn. The
+    // same seam sees this process start and end, however it ends, and gives
+    // back the heavy-job slots it held, and only its own: a recovery boot reuses
+    // this plan, and the old process's exit can land after the new one started
+    // (DOR-4209). A dead process runs no hook, so nothing else would.
     const live = launchQuery({
       prompt,
       options: {
         ...plan.sdkOptions,
-        spawnClaudeCodeProcess: createTrackedSpawn(sharedWarmProcessLedger()),
+        spawnClaudeCodeProcess: createTrackedSpawn(sharedWarmProcessLedger(), () =>
+          startHeavyJobsProcess(plan.sdkOptions)
+        ),
       },
       session,
       // What this subprocess supports, asked once per PROCESS, once its servers

@@ -14,9 +14,11 @@ export function BrowserHandoffInboxItem() {
     step,
     canShowWindow,
     sharedProfile,
+    needsQuit,
     busy,
     error,
     continueAgent,
+    doneSigningIn,
     signIn,
     openWindow,
     showWindow,
@@ -38,9 +40,11 @@ export function BrowserHandoffInboxItem() {
         step={step}
         canShowWindow={canShowWindow}
         sharedProfile={sharedProfile}
+        needsQuit={needsQuit}
         busy={busy}
         error={error}
         onContinue={() => void continueAgent()}
+        onDone={doneSigningIn}
         onSignIn={signIn}
         onOpenWindow={openWindow}
         onShowWindow={showWindow}

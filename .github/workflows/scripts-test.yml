@@ -313,6 +313,19 @@ jobs:
       - name: Merge-guard hook fixtures
         run: bash scripts/test-merge-guard.sh
 
+      # Opening a PR is code, not prose (2026-11-20: a brief said "open with
+      # hold", the arm script refused hold and never lifted it, and 19 PRs sat
+      # for 9 hours). open-pr.sh holds the rules (cap, computed labels,
+      # provenance, hold only with a reason), pr-create-guard refuses a bare
+      # `gh pr create`, and hold-reason-check.sh is the advisory hold-reason
+      # workflow's decision. Stubbed `gh`, throwaway git repos, node for the
+      # guard and the security-path classifier.
+      - name: Open-PR script, PR-create guard and hold-reason fixtures
+        run: |
+          bash scripts/test-pr-create-guard.sh
+          bash scripts/test-open-pr.sh
+          bash scripts/test-hold-reason-check.sh
+
       # in-project.sh is the wrapper every working-tree hook in settings.json
       # runs through; it decides whether a hook runs at all once a session has
       # cd-ed into a sibling repo. Hermetic (throwaway git checkouts in a temp
@@ -681,6 +694,14 @@ jobs:
       # should make to the merge queue, as ejections. Hermetic, no pnpm.
       - name: No-code scope fixtures
         run: bash scripts/test-no-code-scope.sh
+
+      # release-branch-contents.sh is the rule for what a pull request into a
+      # release/v<X.Y.Z> branch may carry (DOR-4639): only cherry-picks of main
+      # with a matching patch-id and the release commit. A rule that quietly
+      # loosens lets a commit main never saw ship to npm. Hermetic (throwaway
+      # repos with a local origin), git and jq, no pnpm.
+      - name: Release-branch contents fixtures
+        run: bash scripts/test-release-branch-contents.sh
 
   # The TypeScript under scripts/ belongs to no pnpm workspace, so `pnpm verify`'s
   # affected-only turbo run resolves a scripts-only change to 0 affected packages

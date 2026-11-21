@@ -170,10 +170,12 @@ export {
   ClaudeCodeSettingsSchema,
   DoeInferenceConfigSchema,
   DoeRuntimeSettingsSchema,
+  LoadGateSettingsSchema,
 } from './config-schema/runtime-settings.js';
 export type {
   CodexTransportSetting,
   DoeInferenceConfig,
+  LoadGateSettings,
 } from './config-schema/runtime-settings.js';
 export {
   RawMcpServerConfigSchema,

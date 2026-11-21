@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import type { RoomEntry } from '@dorkos/shared/room-schemas';
 import { mergeRoomHistory, olderCursor } from '../lib/history';

@@ -116,6 +116,13 @@ export const NOTIFICATION_KINDS = [
    */
   'extension.decision',
   /**
+   * An extension that runs separately stopped on its own: it hung, crashed or ran out of memory
+   * (DOR-4785). One row per app an hour while DorkOS restarts it, and one more when DorkOS
+   * leaves it off, with a Restart. Quiet while restarting, notable when off; relay never,
+   * so it never reaches a phone.
+   */
+  'extension.stopped',
+  /**
    * Someone asked the host to make someone else the owner of a community this person owns, or
    * that request completed (DOR-2543). One per request and phase.
    */

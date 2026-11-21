@@ -145,6 +145,8 @@ export interface LocalBrowserObservation {
   refusal?: { kind: 'sign-in' | 'blocked'; host: string; next: string };
 }
 export interface LocalBrowserCapabilities {
+  /** Whether the owner-only local watch stream is enabled at server boot. */
+  watchStream?: boolean;
   platform: string;
   managedChromiumVersion: string;
   unavailableReasons: Partial<Record<LocalBrowserMode, string>>;
@@ -186,6 +188,11 @@ export const LocalBrowserSignInSchema = z.object({
   site: z.string(),
   status: z.enum(['open', 'saving', 'saved', 'failed']),
   startedAt: z.string(),
+  /**
+   * The window was asked to quit and hasn't: the person quits it with ⌘Q, and its exit still
+   * saves the sign-in (DOR-4731, macOS only). Absent otherwise.
+   */
+  needsQuit: z.literal(true).optional(),
 });
 export type LocalBrowserSignIn = z.infer<typeof LocalBrowserSignInSchema>;
 
@@ -243,6 +250,14 @@ export const LocalBrowserSignInRequestSchema = z.union([
 ]);
 export type LocalBrowserSignInRequest = z.infer<typeof LocalBrowserSignInRequestSchema>;
 
+/**
+ * A person's Done signing in (DOR-4731): the handoff whose sign-in window it ends, or none
+ * for a window no handoff waits on, such as one a stopped task left open.
+ */
+export const LocalBrowserSignInDoneSchema = z
+  .object({ handoffId: z.string().min(1).optional() })
+  .strict();
+
 /** Which handoff a person's Hand back or Stop task answers. */
 export const LocalBrowserHandoffAnswerSchema = z.object({ handoffId: z.string().min(1) }).strict();
 
@@ -293,6 +308,8 @@ export const LocalBrowserObservationSchema = z.object({
 });
 
 export const LocalBrowserCapabilitiesSchema = z.object({
+  /** Local owner-only viewing is opt-in at server boot; older servers omit this hint. */
+  watchStream: z.boolean().optional(),
   platform: z.string().min(1),
   managedChromiumVersion: z.string(),
   unavailableReasons: z.object({

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { resolve } from 'node:path';
 import { ESLint, type Linter } from 'eslint';
 import { describe, it, expect, beforeAll } from 'vitest';

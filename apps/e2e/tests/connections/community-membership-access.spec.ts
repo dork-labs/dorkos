@@ -1,4 +1,5 @@
-import { test, expect, type Locator, type Page, type TestInfo } from '@playwright/test';
+import { expect, type Locator, type Page, type TestInfo } from '@playwright/test';
+import { test } from '../../fixtures/base';
 import { BasePage } from '../../pages/BasePage.js';
 import { describeViolation, runAxe } from '../../axe.js';
 import { ALPHA, mockCommunities, type CommunitySpec } from './community-mocks.js';

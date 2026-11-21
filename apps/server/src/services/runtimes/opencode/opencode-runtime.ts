@@ -764,6 +764,8 @@ export class OpenCodeRuntime implements AgentRuntime {
         cwd,
         permissions: ctx,
         protectedRoots: protectedPathRoots(cwd, agentPath, this.meshCore),
+        // A Stop ends a heavy shell job's wait for the machine's line (DOR-4209).
+        signal: controller.signal,
       };
       // Says the turn is alive while a slow model is still answering (FB-68).
       for await (const mapped of mapLiveOpenCodeTurn(queue, ctx)) {
@@ -1022,9 +1024,7 @@ export class OpenCodeRuntime implements AgentRuntime {
       );
     }
     if (turn.phase !== 'running') {
-      logger.debug('[OpenCodeRuntime] cancelled turn before sidecar trigger', {
-        sessionId,
-      });
+      logger.debug('[OpenCodeRuntime] cancelled turn before sidecar trigger', { sessionId });
       return { outcome: 'closed', runtime: this.type };
     }
     const ack = await awaitAbortAck(async () => {

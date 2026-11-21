@@ -1842,6 +1842,65 @@ describe('CodexRuntime — the transport seam (ADR 261005-113107)', () => {
     return out;
   }
 
+  it.each([
+    { kind: 'unchanged', stored: 'old', expected: 'account-default' },
+    { kind: 'changed during launch', stored: 'old', expected: 'new-choice' },
+    { kind: 'turn override', stored: 'old', expected: 'old' },
+    { kind: 'unset durable model', stored: undefined, expected: 'account-default' },
+    { kind: 'no row', stored: undefined, expected: undefined },
+  ])('keeps the next-turn setting correct when $kind', async ({ kind, stored, expected }) => {
+    const db = createTestDb();
+    const threadMap = new CodexThreadMap(db);
+    const store = new RuntimeRegistry();
+    store.setDb(db);
+    if (kind !== 'no row') {
+      await store.saveSessionSettings('s1', { effort: 'medium', model: stored });
+    }
+
+    const { transport, requests } = recordingTransport();
+    const playTurn = transport.runTurn;
+    transport.runTurn = async function* (request) {
+      if (requests.length === 0) {
+        if (kind === 'changed during launch') {
+          await runtime.updateSession('s1', { model: 'new-choice' });
+        }
+        await request.onModelReplacement?.('account-default');
+      }
+      yield* playTurn(request);
+    };
+    const runtime = new CodexRuntime({
+      threadMap,
+      resolveBinary: async () => '/opt/codex',
+      transport,
+    });
+    runtime.setSessionSettings(store);
+    runtime.ensureSession('s1', { cwd: '/project', model: stored });
+    await drain(
+      runtime.sendMessage('s1', 'first', {
+        cwd: '/project',
+        ...(kind === 'turn override' ? { model: 'turn-only-old' } : {}),
+      })
+    );
+    expect(requests[0]!.settings.model).toBe(kind === 'turn override' ? 'turn-only-old' : stored);
+    expect((await store.getSessionSettings('s1'))?.model).toBe(expected);
+    expect(await store.getSessionSettings('thread-from-transport')).toBeNull();
+    if (kind !== 'no row') {
+      expect(await store.getSessionSettings('s1')).toMatchObject({ effort: 'medium' });
+    }
+    await drain(runtime.sendMessage('s1', 'second', { cwd: '/project' }));
+    expect(requests[1]!.settings.model).toBe(expected);
+
+    const next = recordingTransport();
+    const restarted = new CodexRuntime({
+      threadMap,
+      resolveBinary: async () => '/opt/codex',
+      transport: next.transport,
+    });
+    restarted.setSessionSettings(store);
+    await drain(restarted.sendMessage('s1', 'after restart', { cwd: '/project' }));
+    expect(next.requests[0]!.settings.model).toBe(expected);
+  });
+
   it('hands the transport one resolved turn and persists the binding it reports', async () => {
     const db = createTestDb();
     const threadMap = new CodexThreadMap(db);

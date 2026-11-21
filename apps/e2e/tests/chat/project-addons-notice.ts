@@ -1,4 +1,5 @@
-import { expect, test } from '@playwright/test';
+import { expect } from '@playwright/test';
+import { test } from '../../fixtures/base';
 import { ChatPage } from '../../pages/ChatPage.js';
 
 /** What the project add-ons notice tests need from the shared mock leg. */

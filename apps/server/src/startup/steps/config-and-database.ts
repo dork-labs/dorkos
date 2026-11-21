@@ -173,7 +173,7 @@ export async function openConfigAndDatabase(
   // boot with nobody asked. Deliberately NOT wrapped in a try/catch: if the
   // snapshot cannot be written, the right answer is to stop and say so rather
   // than take an irreversible step with no way back (`snapshotBeforeMigrations`).
-  const preMigrationSnapshot = snapshotBeforeMigrations(db, { dir: backupsDir });
+  const preMigrationSnapshot = snapshotBeforeMigrations(db, { dir: backupsDir, log: logger });
   if (preMigrationSnapshot) {
     logger.info(`[DB] Snapshot taken before migrating: ${preMigrationSnapshot}`);
   }

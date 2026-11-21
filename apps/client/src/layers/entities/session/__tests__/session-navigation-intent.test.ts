@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import type { InPlaceNavigationState } from '@/layers/shared/model';
 import {

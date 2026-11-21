@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The inline desktop-shell class detector in `index.html` (DOR-562).
  *

@@ -67,6 +67,15 @@ const PERSON_ONLY_GRANTS: readonly string[] = [
 /** Every write an agent computer refuses to agents, by why. */
 const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[] = [
   [
+    'owner-only browser viewing; no agent credential reaches page pixels',
+    [
+      'ALL /api/browser-viewers/*',
+      'POST /api/browser-viewers',
+      'POST /api/browser-viewers/:viewerId/frame',
+      'DELETE /api/browser-viewers/:viewerId',
+    ],
+  ],
+  [
     'setup is the hub’s',
     [
       'ALL /api/admin/*',
@@ -235,6 +244,7 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'POST /api/local-browser/profiles/:id/agents',
       'DELETE /api/local-browser/profiles/:id/agents/:agentId',
       'POST /api/local-browser/sign-in',
+      'POST /api/local-browser/sign-in/done',
       'POST /api/local-browser/handoff/hand-back',
       'POST /api/local-browser/handoff/stop',
       'POST /api/notifications/read-all',
@@ -276,6 +286,8 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'ALL /api/extensions/media/:ticket',
       'POST /api/extensions/:id/move-out',
       'POST /api/extensions/:id/remove',
+      // Only a person may reset the stop budget with Restart (DOR-4785).
+      'POST /api/extensions/:id/restart',
       'POST /api/extensions/:id/revoke',
       'POST /api/extensions/:id/start-work',
       'POST /api/extensions/approve-set',
@@ -546,6 +558,14 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'POST /api/canvas/docs/:id/routes/:routeId/revoke',
       'POST /api/canvas/docs/:id/work/:batchId/clear',
       'POST /api/canvas/docs/:id/work/:batchId/replay',
+    ],
+  ],
+  [
+    'the waiting line of heavy jobs is a person’s to reorder (DOR-4209)',
+    [
+      'POST /api/system/load-gate/jobs/:id/front',
+      'POST /api/system/load-gate/jobs/:id/let-through',
+      'POST /api/system/load-gate/jobs/:id/urgent',
     ],
   ],
   [

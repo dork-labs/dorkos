@@ -164,7 +164,8 @@ export function issueApprovalChallenge(
   try {
     inputSha256 = hashApprovalInput(value);
   } catch {
-    // Input nested past what the hash can walk: no statement could hold it either.
+    // Input the hash refuses (not plain JSON, or nested past what it can walk):
+    // no statement could hold it either.
     return { ok: false, reason: 'too-large' };
   }
   const displayName = signableDisplayName(input.pending.displayName);

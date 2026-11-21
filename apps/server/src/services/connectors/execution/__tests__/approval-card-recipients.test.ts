@@ -8,7 +8,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ApprovalServiceAction } from '@dorkos/shared/approval-schemas';
 import { storableServiceAction } from '../../../core/approvals/approval-storable.js';
-import { describeServiceAction } from '../approval-service-action.js';
+import { describeServiceAction } from '../approval-card/service-action.js';
 
 const ADDRESSES = ['ann@example.com', 'bo.lee@example.org', 'cy+news@example.net'];
 

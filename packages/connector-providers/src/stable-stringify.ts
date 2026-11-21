@@ -26,6 +26,8 @@
  * is fine for the catalog (plain serialized schemas) and NOT fine for anything
  * security-relevant: `hashApprovalInput` therefore rejects non-plain values
  * before calling this, rather than hashing a value it would silently flatten.
+ * Prototype-named own keys (`__proto__`, `constructor`, `prototype`) are kept
+ * as plain keys here, and approvals refuse them outright.
  *
  * @param value - Any plain JSON value. Dates, Sets, Maps, and class instances
  *   lose information here; do not pass them.
@@ -39,6 +41,9 @@ export function stableStringify(value: unknown): string {
  * Recursively return a structural copy of `value` with every object's keys in
  * sorted order. Arrays keep their order; primitives pass through.
  *
+ * Each copy is a null-prototype object, so every own key, whatever its name, is
+ * written as an ordinary key and nothing is inherited.
+ *
  * @param value - The value to canonicalize.
  * @returns A key-sorted structural copy.
  */
@@ -47,7 +52,7 @@ function sortKeysDeep(value: unknown): unknown {
     return value.map(sortKeysDeep);
   }
   if (value !== null && typeof value === 'object') {
-    const sorted: Record<string, unknown> = {};
+    const sorted = Object.create(null) as Record<string, unknown>;
     for (const key of Object.keys(value as Record<string, unknown>).sort()) {
       sorted[key] = sortKeysDeep((value as Record<string, unknown>)[key]);
     }

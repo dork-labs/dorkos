@@ -5,6 +5,7 @@ export async function protocolFixture(
   protocol: ModelDescriptor['protocol'],
   options: {
     tool?: string;
+    toolOnRequest?: number;
     toolArguments?: Record<string, unknown>;
     textChunks?: string[];
     thinkingChunks?: string[];
@@ -53,7 +54,7 @@ export async function protocolFixture(
       );
       return;
     }
-    const tool = options.tool && requests === 1;
+    const tool = options.tool && requests === (options.toolOnRequest ?? 1);
     res.writeHead(200, { 'content-type': 'text/event-stream' });
     const send = (event: Record<string, unknown>) =>
       res.write(

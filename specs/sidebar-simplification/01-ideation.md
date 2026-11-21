@@ -98,7 +98,7 @@ evidence (measurements, traces, bug table, Linear sweep) is in
 
 - `specs/sidebar-now-today-library` (BC-1..3, BC-28..35, BC-45 amended by this)
 - `specs/sidebar-groups`, `specs/smart-agent-groups` (rename + top-level render)
-- `specs/feature-promo-system` (dismiss regression, slot placement)
+- [`feature-promo-system`](https://github.com/dork-labs/dorkos/tree/2b98f06e42fab0c9f36c789387138bfc1b211116/specs/feature-promo-system) (dismiss regression, slot placement)
 - `specs/rooms` §8.5 / §14.4 (the convergence it predicted; "a DM has no cwd"
   is false in code)
 - `specs/unified-conversation` (the surfaces are already one compound; 2A is

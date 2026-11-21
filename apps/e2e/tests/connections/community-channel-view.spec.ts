@@ -1,4 +1,5 @@
-import { test, expect, type Page, type Route } from '@playwright/test';
+import { expect, type Page, type Route } from '@playwright/test';
+import { test } from '../../fixtures/base';
 import { BETA, ROOM, mockCommunities } from './community-mocks.js';
 import { controllableStream, frame, push } from './community-stream.js';
 

@@ -1,4 +1,5 @@
-import { test, expect } from '@playwright/test';
+import { expect } from '@playwright/test';
+import { test } from '../fixtures/base';
 
 // The /marketplace pages render from the LIVE dork-labs/marketplace registry,
 // fetched SERVER-side with hourly ISR (apps/site, features/marketplace/lib/

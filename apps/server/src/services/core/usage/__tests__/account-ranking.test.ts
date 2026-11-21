@@ -187,6 +187,34 @@ describe('rankAccounts: the default ranking', () => {
 });
 
 describe('rankAccounts: with an advisor', () => {
+  it('keeps limited accounts unusable even when the advisor recommends them', async () => {
+    installStore([
+      { id: 'out', state: 'limited', weekly: 100 },
+      { id: 'spare', weekly: 40 },
+    ]);
+    advise(() => ({
+      accounts: [
+        { id: 'out', eligible: true, reason: 'Pick this one' },
+        { id: 'spare', eligible: true, reason: 'Has room' },
+      ],
+      recommendedId: 'out',
+    }));
+
+    const ranking = await rankAccounts(continueCtx);
+    expect(ranking.accounts[0]).toMatchObject({
+      id: 'out',
+      eligible: false,
+      reason: 'Out of usage',
+    });
+    expect(ranking.recommendedId).toBe('spare');
+    expect(ranking.accounts.filter(mayAutoPick).map((row) => row.id)).toEqual(['spare']);
+    expect(
+      coreRanking('claude-code', null)
+        .filter(mayAutoPick)
+        .map((row) => row.id)
+    ).toEqual(['spare']);
+  });
+
   it("uses the advisor's order, drops unknown ids, keeps hidden ids absent, and fills rows in", async () => {
     installStore([
       { id: 'work', weekly: 10 },

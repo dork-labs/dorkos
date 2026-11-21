@@ -11,6 +11,10 @@ import {
   waitingForAgents,
 } from '../../../extensions/extension-agent-text.js';
 import { listPendingExtensionApprovals } from '../../../extensions/extension-approval-queue.js';
+import {
+  MINI_APP_STORY_SECTION,
+  MINI_APP_STORY_TEXT,
+} from '../../../extensions/guidance/mini-app-story.js';
 import type { PendingExtensionApproval } from '@dorkos/shared/extension-approval-schemas';
 import {
   createCreateExtensionHandler,
@@ -29,6 +33,7 @@ export { createCreateExtensionHandler, type ExtensionCreatorResolver };
  */
 const EXTENSION_API_REFERENCE = `# DorkOS Extension API Reference
 
+${MINI_APP_STORY_SECTION}
 ## Client-Side: ExtensionModule Interface
 
 Runs in a sandboxed frame: no network, cookies or parent window; use \`api\`.
@@ -126,12 +131,7 @@ Scoping: \`turn.*\` and \`tool.*\` are foreground-gated (active session only);
 all console relay traffic); \`session.switched\` describes the foreground itself.
 
 \`\`\`typescript
-type ExtensionEventKind =
-  | 'session.started' | 'session.ended' | 'session.switched'  // category: session
-  | 'turn.started' | 'turn.completed'                         // category: turn
-  | 'tool.activity'                                           // category: tool
-  | 'relay.message';                                          // category: relay
-
+// A kind's category is the part before the dot: session, turn, tool, relay.
 type ExtensionEvent =
   | { kind: 'session.started'; sessionId: string }
   | { kind: 'session.ended'; sessionId: string }
@@ -150,18 +150,15 @@ Manifest declaration (a category grants all its kinds):
 
 ## Usage Examples
 
-### Dashboard Section
+### Command Palette Item
 \`\`\`typescript
-export function activate(api: ExtensionAPI) {
-  api.registerComponent('dashboard.sections', 'my-section', MyComponent, { priority: 50 });
-}
+api.registerCommand('greet', 'Say Hello', () => api.notify('Hello!'));
 \`\`\`
 
 ### Right-Panel Tab (contextual inspector)
 \`\`\`typescript
 export function activate(api: ExtensionAPI) {
-  // label names the tab; priority sorts the strip (lower = leftward). The panel
-  // container owns the header (tab strip + close), so MyPanel renders only the body.
+  // The panel owns the header, so MyPanel renders only the body.
   api.registerComponent('right-panel', 'my-panel', MyPanel, {
     label: 'My Panel',
     priority: 50,
@@ -170,31 +167,11 @@ export function activate(api: ExtensionAPI) {
 }
 \`\`\`
 
-### Command Palette Item
-\`\`\`typescript
-export function activate(api: ExtensionAPI) {
-  api.registerCommand('greet', 'Say Hello', () => {
-    api.notify('Hello from my extension!', { type: 'success' });
-  });
-}
-\`\`\`
-
-### Settings Tab with Persistence
-\`\`\`typescript
-export function activate(api: ExtensionAPI) {
-  api.registerSettingsTab('config', 'My Settings', MySettingsPanel);
-}
-\`\`\`
-
 ### Subscribing to Events (declare capabilities.events in the manifest)
 \`\`\`typescript
-export function activate(api: ExtensionAPI) {
-  return api.events.subscribe(['turn.completed', 'tool.activity'], (event) => {
-    if (event.kind === 'turn.completed') {
-      api.notify(\`Turn done in \${event.durationMs}ms (\${event.toolCallCount} tools)\`);
-    }
-  });
-}
+// inside activate(api):
+return api.events.subscribe(['turn.completed'], (e) =>
+  e.kind === 'turn.completed' && api.notify(\`Took \${e.durationMs ?? '?'}ms\`));
 \`\`\`
 
 ### Storage
@@ -537,7 +514,9 @@ export function extensionToolDefinitions(
         'It runs at once unless DorkOS asks the person first; then it waits for their approval. autoApproved in the reply says it runs. ' +
         'Called from your own chat, it is always created in your own folder, at .dork/extensions/<name>, whatever scope says. ' +
         'There, once it runs separately ("runtime": "subprocess"), edits to its server code load without a click from the person. ' +
-        'Edits to its screen code (what the app shows) still wait for the person to approve them.',
+        'Edits to its screen code (what the app shows) still wait for the person to approve them. ' +
+        'In a marked turn, or one held to a limit, it creates nothing and its reply says how to build in the personal marketplace instead. ' +
+        MINI_APP_STORY_TEXT,
       {
         name: z
           .string()

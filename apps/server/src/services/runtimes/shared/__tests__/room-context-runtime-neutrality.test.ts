@@ -105,18 +105,18 @@ function expectFencedRoomContext(rendered: string): void {
 }
 
 describe('every runtime fences a room message the same way', () => {
-  it('claude-code', () => {
+  it('carries room context for Claude Code', () => {
     expectFencedRoomContext(renderContextEntry(ENTRY));
   });
 
-  it('codex', () => {
+  it('carries room context for Codex', () => {
     const prompt = buildCodexPrompt(USER_TEXT, { additionalContext: [ENTRY] });
     expectFencedRoomContext(prompt);
     // The user's message stays pristine and last.
     expect(prompt.endsWith(USER_TEXT)).toBe(true);
   });
 
-  it('opencode', () => {
+  it('carries room context for OpenCode', () => {
     const parts = buildOpenCodeParts(USER_TEXT, { additionalContext: [ENTRY] });
     expectFencedRoomContext(parts.map((part) => part.text).join('\n\n'));
     expect(parts[parts.length - 1].text).toBe(USER_TEXT);

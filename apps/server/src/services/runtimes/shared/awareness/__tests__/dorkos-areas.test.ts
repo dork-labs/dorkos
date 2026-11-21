@@ -83,7 +83,7 @@ describe('buildDorkosAreasBlock', () => {
   it('keeps every step that needs a person (Security, DOR-3219 diet)', () => {
     // The trim may shorten a line, never drop what tells an agent to ask a person.
     expect(block).toContain('only a person adds one for all agents (Tools)');
-    expect(block).toContain('build extensions a person approves');
+    expect(block).toContain('build mini apps a person approves');
     expect(block).toContain('a person shares it (Agent browser)');
     expect(block).toContain('per-app grant (Connected apps)');
     for (const label of ['Permissions', 'Safety limits', 'Tools & packages'])

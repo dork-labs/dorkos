@@ -126,6 +126,9 @@ test.describe('Settings → Extensions rows', () => {
     await orbit.getByRole('button', { name: 'Review Orbit Calendar' }).click();
     await expect(orbit.getByRole('button', { name: 'Allow' })).toBeFocused();
     await expect(orbit).toContainText('Orbit Calendar wants to run on this computer.');
+    await expect(orbit.getByTestId('extension-waiting-state-orbit-calendar')).toHaveText(
+      'Off until you allow it.'
+    );
     await page.keyboard.press('Escape');
     await expect(orbit.locator('[data-row-button]')).toBeFocused();
     await expect(orbit.locator('[data-row-button]')).toHaveAttribute('aria-expanded', 'false');

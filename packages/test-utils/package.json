@@ -11,6 +11,11 @@
     "./directory-membership-vectors": "./src/directory-membership-vectors.ts",
     "./mock-factories": "./src/mock-factories.ts",
     "./opencode-binary": "./src/opencode-binary.ts",
+    "./run-custody": "./src/run-custody/index.mjs",
+    "./run-custody/posix": {
+      "types": "./src/run-custody/posix/index.d.mts",
+      "import": "./src/run-custody/posix/index.mjs"
+    },
     "./react-helpers": "./src/react-helpers.tsx",
     "./sse-helpers": "./src/sse-helpers.ts",
     "./sse-test-helpers": "./src/sse-test-helpers.ts",
