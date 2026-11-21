@@ -18,7 +18,9 @@ export type PrivateSessionMessageSourceRef =
       /** Current lease owner conditionally consumed by the fixed adapter. */
       leaseOwner: string;
     }
-  | { kind: 'document_event_batch'; batchId: string; sourceGeneration: string };
+  | { kind: 'document_event_batch'; batchId: string; sourceGeneration: string }
+  // Server-owned reference only. No tool/HTTP schema accepts this kind.
+  | { kind: 'room_handoff_terminal'; handoffId: string; sourceGeneration: string };
 
 /** Trusted source data returned while the acceptance transaction is open. */
 export interface PrivateSessionMessageDraft {
@@ -125,6 +127,8 @@ export interface ClaimedPrivateSessionMessage extends PrivateSessionMessageTurnI
 /** Final synchronous source result immediately before the runtime effect. */
 export interface PrivateSessionMessageTurnInput {
   content: string;
+  /** Frozen transferable policy from the closed public handoff adapter only. */
+  roomHandoffCarry?: import('../../rooms/room-trigger/aside.js').AsideCarry;
   docEvents?: CanvasChannelDocEventsContext;
 }
 
@@ -152,3 +156,10 @@ export interface DeferredPrivateSessionMessage {
 /** Ordinary protected sources keep their existing claimed result. */
 export type PrivateSessionMessageClaimResult =
   ClaimedPrivateSessionMessage | DeferredPrivateSessionMessage;
+
+/** Stable source identity from the closed server-owned reference union. */
+export function privateSourceIdOf(ref: PrivateSessionMessageSourceRef): string {
+  if (ref.kind === 'document_event_batch') return ref.batchId;
+  if (ref.kind === 'room_handoff_terminal') return ref.handoffId;
+  return ref.kind === 'connector_agent_request' ? ref.requestId : ref.inboxId;
+}

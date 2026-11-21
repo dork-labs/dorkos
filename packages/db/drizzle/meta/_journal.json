@@ -1471,6 +1471,13 @@
       "when": 1795210120514,
       "tag": "20261120212840_dor4744_owner_sign_in",
       "breakpoints": true
+    },
+    {
+      "idx": 210,
+      "version": "6",
+      "when": 1795266236800,
+      "tag": "20261121130356_dor3816_durable_handoffs",
+      "breakpoints": true
     }
   ]
 }

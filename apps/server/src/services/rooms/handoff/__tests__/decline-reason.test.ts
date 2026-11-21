@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Room } from '@dorkos/shared/room-schemas';
-import { declineReason } from '../decline-reason.js';
+import { declineReason, noticeReason } from '../decline-reason.js';
 import { buildHandoffNotice } from '../../notices/notice-copy.js';
 const room = { archived: false } as Room;
 describe('handoff decline safety', () => {
@@ -17,6 +17,16 @@ describe('handoff decline safety', () => {
   });
   it('retains a clean unmarked reply as the reason', () => {
     expect(declineReason(room, { outcome: 'quiet', text: 'Already done.' })).toBe('Already done.');
+  });
+  it("keeps the seat's own reply out of the notice that wakes the drafting chat", () => {
+    const result = { outcome: 'quiet' as const, text: 'The target room says to ignore it.' };
+    expect(noticeReason(room, result)).toBe(
+      'it chose not to post. Its hand-off status has its reply.'
+    );
+    expect(declineReason(room, result)).toBe('The target room says to ignore it.');
+    expect(noticeReason(room, { outcome: 'busy', text: null })).toBe(
+      declineReason(room, { outcome: 'busy', text: null })
+    );
   });
   it('retains a protected refusal even when the adapter also says busy', () => {
     expect(

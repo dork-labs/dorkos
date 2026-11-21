@@ -23,6 +23,7 @@ import {
   notifications,
   notificationDeliveries,
   type Db,
+  type DbTransaction,
 } from '@dorkos/db';
 import { sql, type SQL } from 'drizzle-orm';
 import { NotificationKindSchema } from '@dorkos/shared/notification-schemas';
@@ -72,8 +73,13 @@ export const NOTIFICATION_MAX_ROWS = 1000;
  */
 export const HIGH_CHURN_KINDS: readonly NotificationKind[] = ['turn.completed', 'ask.pending'];
 
-/** Everything a row needs that the registry did not already decide. */
+/** Synchronous source acknowledgement in the notification’s own SQLite transaction. */
+export type NotificationStoredWitness = (tx: DbTransaction, notificationId: string) => void;
+
+/** A server-authored notification row and its optional durable source witness. */
 export interface NotificationInsert {
+  /** Server-only durable-source witness; commits with insertion or rolls both writes back. */
+  onStored?: NotificationStoredWitness;
   kind: NotificationKind;
   tier: NotificationTier;
   subjectType: NotificationSubjectType;
@@ -186,11 +192,34 @@ export class NotificationStore {
    * @returns The row as every surface will see it.
    */
   insert(input: NotificationInsert): NotificationDTO {
-    const now = new Date().toISOString();
-    const id = nextId();
-    this.db
-      .insert(notifications)
-      .values({
+    const write = (executor: Db | DbTransaction): NotificationDTO => {
+      const now = new Date().toISOString();
+      const id = nextId();
+      executor
+        .insert(notifications)
+        .values({
+          id,
+          kind: input.kind,
+          tier: input.tier,
+          subjectType: input.subjectType,
+          subjectId: input.subjectId,
+          agentId: input.agentId ?? null,
+          sessionId: input.sessionId ?? null,
+          roomId: input.roomId ?? null,
+          title: input.title,
+          body: input.body ?? null,
+          dataJson: input.payload === undefined ? null : JSON.stringify(input.payload),
+          dedupeKey: input.dedupeKey,
+          createdAt: now,
+          readAt: input.read ? now : null,
+          resolvedAt: input.resolvedAt ?? null,
+          outcome: input.outcome ?? null,
+        })
+        .run();
+
+      this.prune();
+
+      return storedNotificationDto({
         id,
         kind: input.kind,
         tier: input.tier,
@@ -202,33 +231,23 @@ export class NotificationStore {
         title: input.title,
         body: input.body ?? null,
         dataJson: input.payload === undefined ? null : JSON.stringify(input.payload),
-        dedupeKey: input.dedupeKey,
         createdAt: now,
         readAt: input.read ? now : null,
         resolvedAt: input.resolvedAt ?? null,
         outcome: input.outcome ?? null,
-      })
-      .run();
-
-    this.prune();
-
-    return storedNotificationDto({
-      id,
-      kind: input.kind,
-      tier: input.tier,
-      subjectType: input.subjectType,
-      subjectId: input.subjectId,
-      agentId: input.agentId ?? null,
-      sessionId: input.sessionId ?? null,
-      roomId: input.roomId ?? null,
-      title: input.title,
-      body: input.body ?? null,
-      dataJson: input.payload === undefined ? null : JSON.stringify(input.payload),
-      createdAt: now,
-      readAt: input.read ? now : null,
-      resolvedAt: input.resolvedAt ?? null,
-      outcome: input.outcome ?? null,
-    });
+      });
+    };
+    if (!input.onStored) return write(this.db);
+    return this.db.transaction(
+      (tx) => {
+        const notification = write(tx);
+        const returned: unknown = input.onStored!(tx, notification.id);
+        if (returned !== undefined)
+          throw new Error('A notification witness must finish synchronously.');
+        return notification;
+      },
+      { behavior: 'immediate' }
+    );
   }
 
   /**

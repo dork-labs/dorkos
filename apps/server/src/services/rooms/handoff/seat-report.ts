@@ -22,8 +22,8 @@
  * queued chat message would; the wait is bounded by {@link SEAT_REPORT_WAIT_MAX_MS}. Reports to
  * one seat run one after the other, in the order they came.
  *
- * Reports live in this process; a restart drops one still waiting, as a queued hand-off is. Whoever
- * hands one in hears how it ended and may try again (`chat-report-back.ts`, DOR-3720).
+ * Report-back saves the report in the hand-off outbox before handing it in. A busy report remains
+ * replayable until the final beforeRun claim. Started work is never replayed after a restart.
  *
  * @module server/services/rooms/handoff/seat-report
  */
@@ -46,6 +46,10 @@ const SEAT_REPORT_RECHECK_MS = 30_000;
 
 /** One report on its way to a seat. */
 export interface SeatReport {
+  /** The outbox's final effect claim and original wait deadline, set only by server report-back. */
+  beforeRun?: () => boolean;
+  waitDeadlineAt?: number;
+  outsideWords?: boolean;
   /** The spin-off that sent it. */
   fromSessionId: string;
   /** The spin-off's agent home (the seat's own agent). */
@@ -69,6 +73,11 @@ export interface SeatOf {
 /** Spin-off reports into room seats, for one room service. */
 export class RoomSeatReports {
   /** Each seat's queue, so two reports to one seat run one after the other. */
+  private stopped = false;
+  /** Stop owned waits without changing the durable report state. */
+  stop(): void {
+    this.stopped = true;
+  }
   private readonly chains = new Map<string, Promise<void>>();
   /** Every report not yet settled, for {@link RoomSeatReports.idle}. */
   private readonly pending = new Set<Promise<boolean>>();
@@ -122,6 +131,7 @@ export class RoomSeatReports {
    * @param onSettled - Told once whether the seat's turn ran. Not called when this returns false.
    */
   deliver(seatSessionId: string, report: SeatReport, onSettled?: (ran: boolean) => void): boolean {
+    if (this.stopped) return false;
     const seat = this.seatOf(seatSessionId);
     if (seat === null) return false;
     // A seat starts spin-offs as its own agent; a report from any other agent is not one.
@@ -148,11 +158,16 @@ export class RoomSeatReports {
 
   /** Run one report in its seat, waiting out a busy one. True when a turn ran. */
   private async run(seat: SeatOf, report: SeatReport): Promise<boolean> {
-    const deadline = Date.now() + SEAT_REPORT_WAIT_MAX_MS;
-    const carried = carryFrom(report.fromSessionId, report.fromAgentPath, report.marks);
+    const deadline = report.waitDeadlineAt ?? Date.now() + SEAT_REPORT_WAIT_MAX_MS;
+    const memberEpoch = this.core.store.getMember(seat.roomId, seat.authorId)?.joinedAt;
+    const carried = {
+      ...carryFrom(report.fromSessionId, report.fromAgentPath, report.marks),
+      ...(report.outsideWords ? { outsideWords: true as const } : {}),
+    };
     let result: AsideResult | null = null;
     try {
       for (;;) {
+        if (this.stopped || Date.now() >= deadline) break;
         const room = this.core.store.getRoom(seat.roomId);
         if (room === null || room.archived) break;
         // A room nobody has posted in yet still hears the report: the turn is about its start.
@@ -163,6 +178,20 @@ export class RoomSeatReports {
           authorId: seat.authorId,
           prompt: seatReportPrompt(report),
           carried: withRoomMarks(this.core, seat.authorId, carried, room, latest),
+          beforeRun: () => {
+            const currentRoom = this.core.store.getRoom(seat.roomId);
+            const member = this.core.store.getMember(seat.roomId, seat.authorId);
+            return (
+              !this.stopped &&
+              Date.now() < deadline &&
+              currentRoom !== null &&
+              !currentRoom.archived &&
+              memberEpoch !== undefined &&
+              member?.joinedAt === memberEpoch &&
+              this.core.authors.getById(seat.authorId)?.naturalKey === report.fromAgentPath &&
+              (report.beforeRun?.() ?? true)
+            );
+          },
         });
         const left = deadline - Date.now();
         if (result.outcome !== 'busy' || left <= 0) break;
