@@ -495,7 +495,7 @@ export function LocalBrowserPanel({
             <SavedSignIns
               enabled={signInsReadable}
               disabled={busy || cancelling}
-              profile={state?.profile ?? { id: 'default', label: 'Your browser' }}
+              profile={state?.profile ?? { id: 'default', label: 'Your browser', agentName: null }}
             />
           )}
         </PageAreaBlock>

@@ -21,6 +21,7 @@ import { AgentMcpOAuthService } from '../../services/mesh/agent-mcp-oauth-servic
 import { localDialHost } from '@dorkos/shared/local-dial-host';
 import { env } from '../../env.js';
 import { logger } from '../../lib/logger.js';
+import { notify } from '../../services/notifications/notification-service.js';
 import { resumeAfterMcpSignin } from '../../services/mesh/mcp-signin-resume.js';
 import { AgentMcpServerService } from '../../services/mesh/agent-mcp-server-service.js';
 import { scrubAgentBrowserStateAtStartup } from '../../services/browser/agent-browser-guard.js';

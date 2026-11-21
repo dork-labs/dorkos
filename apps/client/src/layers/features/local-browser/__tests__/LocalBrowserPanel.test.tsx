@@ -1773,9 +1773,9 @@ describe('LocalBrowserPanel', () => {
     });
     it.each([
       { id: 'agent-atlas', label: 'Atlas · browser', agentId: 'atlas', agentName: 'Atlas' },
-      { id: 'default', label: 'Your browser', agentId: null },
+      { id: 'default', label: 'Your browser', agentId: null, agentName: null },
       { id: 'default', label: 'Your browser', agentId: 'atlas', agentName: 'Atlas' },
-      { id: 'agent-unnamed', label: 'Agent browser', agentId: 'unnamed' },
+      { id: 'agent-unnamed', label: 'Agent browser', agentId: 'unnamed', agentName: null },
     ])('the menu forgets only $label when given that browser', async (profile) => {
       transport.forgetLocalBrowserSignIns.mockResolvedValue({ success: true });
       const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });

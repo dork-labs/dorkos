@@ -14,7 +14,11 @@ vi.mock('@/layers/shared/model', async (original) => ({
 }));
 function mount(
   enabled = true,
-  profile: ForgetSignInsDialogProps['profile'] = { id: 'default', label: 'Your browser' }
+  profile: ForgetSignInsDialogProps['profile'] = {
+    id: 'default',
+    label: 'Your browser',
+    agentName: null,
+  }
 ) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   const view = render(
@@ -80,9 +84,9 @@ describe('Saved sign-ins (DOR-4105)', () => {
 
   it.each([
     { id: 'agent-atlas', label: 'Atlas · browser', agentName: 'Atlas' },
-    { id: 'default', label: 'Your browser' },
+    { id: 'default', label: 'Your browser', agentName: null },
     { id: 'default', label: 'Your browser', agentName: 'Atlas' },
-    { id: 'agent-unnamed', label: 'Agent browser' },
+    { id: 'agent-unnamed', label: 'Agent browser', agentName: null },
   ])('the empty-state row forgets only $label', async (profile) => {
     mount(true, profile);
     fireEvent.click(screen.getByRole('button', { name: 'Forget saved sign-ins…' }));
