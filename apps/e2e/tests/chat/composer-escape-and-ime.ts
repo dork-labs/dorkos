@@ -30,7 +30,8 @@
  *
  * @module tests/chat/composer-escape-and-ime
  */
-import { test, expect, request as apiRequest } from '@playwright/test';
+import { expect, request as apiRequest } from '@playwright/test';
+import { test } from '../../fixtures/base';
 import type { Locator, Page } from '@playwright/test';
 import { ChatPage } from '../../pages/ChatPage.js';
 import { expectComposerText, expectFieldFocused } from '../../pages/composer-probe.js';

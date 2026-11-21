@@ -18,6 +18,7 @@
 import { useMemo } from 'react';
 import { skipToken, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import type { AccountUsage } from '@dorkos/shared/account-usage';
+import type { Transport } from '@dorkos/shared/transport';
 import { useTransport } from '../TransportContext';
 import { accountKeys } from './query-keys';
 
@@ -137,6 +138,38 @@ export interface AccountUsageView {
 const EMPTY: readonly AccountUsage[] = [];
 
 /**
+ * The fetch settings every observer of `accountKeys.usage(runtime)` shares:
+ * whichever observer configured the entry last is what a refresh runs with.
+ * Localhost answers whatever the wifi is doing (see `useConfig`, DOR-2103).
+ */
+const USAGE_QUERY_OPTIONS = {
+  staleTime: ACCOUNT_USAGE_STALE_TIME_MS,
+  networkMode: 'always',
+} as const;
+
+/**
+ * The one fetcher for `accountKeys.usage(runtime)`, given to EVERY observer of
+ * that entry, the cache-only ones included.
+ *
+ * The entry's fetcher is whichever observer set its options last, and a
+ * refresh of every account read (`accountKeys.all`, as choosing DorkOS credits
+ * does) refetches it with that one. A cache-only reader that gave none left a
+ * refresh with nothing to run (DOR-4845: "Missing queryFn"); readers that must
+ * not fetch say so with `enabled: false` instead.
+ */
+function usageQueryFn(transport: Transport, queryClient: QueryClient, runtime: string) {
+  const key = accountKeys.usage(runtime);
+  return async (): Promise<AccountUsage[]> => {
+    const { accounts } = await transport.getAccountUsage(runtime);
+    // The route answers for every account of the runtime, so its list is the
+    // list; only an account an event updated since keeps that newer reading.
+    const current = queryClient.getQueryData<AccountUsage[]>(key) ?? [];
+    const currentByKey = new Map(current.map((usage) => [recordKey(usage), usage]));
+    return accounts.map((usage) => newer(currentByKey.get(recordKey(usage)), usage));
+  };
+}
+
+/**
  * Read one runtime's account usage.
  *
  * Reads the cache the session list seeds, so it normally makes no request.
@@ -165,18 +198,9 @@ export function useAccountUsage(
 
   const query = useQuery({
     queryKey: key,
-    queryFn: async (): Promise<AccountUsage[]> => {
-      const { accounts } = await transport.getAccountUsage(runtime!);
-      // The route answers for every account of the runtime, so its list is the
-      // list; only an account an event updated since keeps that newer reading.
-      const current = queryClient.getQueryData<AccountUsage[]>(key) ?? [];
-      const currentByKey = new Map(current.map((usage) => [recordKey(usage), usage]));
-      return accounts.map((usage) => newer(currentByKey.get(recordKey(usage)), usage));
-    },
-    staleTime: ACCOUNT_USAGE_STALE_TIME_MS,
+    queryFn: runtime ? usageQueryFn(transport, queryClient, runtime) : skipToken,
+    ...USAGE_QUERY_OPTIONS,
     enabled: !!runtime && (opts.fetch === true || lacksAccount),
-    // Localhost answers whatever the wifi is doing (see `useConfig`, DOR-2103).
-    networkMode: 'always',
   });
   const records = query.data ?? EMPTY;
 
@@ -206,10 +230,16 @@ export function useAccountUsageRecord(
   account: { accountId: string | null; path: string | null }
 ): AccountUsage | null {
   const { accountId, path } = account;
+  const transport = useTransport();
+  const queryClient = useQueryClient();
   const { data } = useQuery({
     queryKey: accountKeys.usage(runtime ?? ''),
-    // Cache only: `useAccountUsage` owns the request.
-    queryFn: skipToken,
+    // Cache only: `useAccountUsage` owns the request. The real fetcher is still
+    // given, so a refresh this observer happens to have configured last can
+    // run; `enabled: false` is what keeps this one from ever asking.
+    queryFn: runtime ? usageQueryFn(transport, queryClient, runtime) : skipToken,
+    ...USAGE_QUERY_OPTIONS,
+    enabled: false,
     select: (records: AccountUsage[]) =>
       (accountId !== null ? records.find((usage) => usage.accountId === accountId) : undefined) ??
       (path !== null ? records.find((usage) => usage.path === path) : undefined) ??

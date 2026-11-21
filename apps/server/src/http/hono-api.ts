@@ -1,5 +1,7 @@
 import { createYourBrowserRoutes } from '../routes/your-browser.js';
 import { createLocalBrowserRoutes } from '../routes/local-browser.js';
+import { createBrowserViewerRoutes, browserViewerBodyRule } from '../routes/browser-viewers.js';
+import { BrowserViewerRegistry } from '../services/session/browser-viewers/viewer-registry.js';
 import type { LocalBrowserService } from '../services/session/local-browser/service.js';
 import type { LocalBrowserProfileRouteDeps } from '../routes/local-browser-profiles.js';
 /**
@@ -363,7 +365,9 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
     // limit; document events are page envelopes, so they may be smaller. A
     // signed Relay webhook keeps its raw bytes while its receiver is mounted.
     // A hub's link path is open before its code is checked, so it reads 4 KB.
-    bodyRules: [feedbackBodyRule, docEventBodyRule, relayWebhookBodyRule, hubLinkBodyRule],
+    bodyRules: [feedbackBodyRule, docEventBodyRule, relayWebhookBodyRule, hubLinkBodyRule].concat(
+      browserViewerBodyRule
+    ),
     clientFiles: options.clientDist ? createClientFiles(options.clientDist) : undefined,
     beforeBodyParsing: (early) => {
       // A sealed agent computer mounts nothing ahead of its gate (DOR-2940): no
@@ -596,11 +600,19 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
   if (deps.wakersOff)
     app.route('/api/heartbeats/wakers-off', createWakersOffRoutes(deps.wakersOff));
   if (deps.terminal) app.route('/api/terminal', createTerminalRoutes(deps.terminal));
-  if (deps.localBrowser)
+  if (deps.localBrowser) {
     app.route(
       '/api/local-browser',
       createLocalBrowserRoutes(deps.localBrowser, deps.localBrowserProfiles)
     );
+    app.route(
+      '/api/browser-viewers',
+      createBrowserViewerRoutes(
+        new BrowserViewerRegistry(deps.localBrowser.viewerPages.resolve),
+        () => env.DORKOS_AGENT_BROWSER_STREAM
+      )
+    );
+  }
   if (deps.mcpServers) {
     app.route(
       '/api/mcp-servers',

@@ -101,6 +101,8 @@ export interface DoeContextOptions {
   cwd: string;
   agentPath?: AgentHome;
   opts?: MessageOpts;
+  /** A local room turn that owes an answer uses plain-text posting guidance. */
+  plainTextRoomReply?: boolean;
   hostConnected: boolean;
   agentToAgent?: boolean;
   /** Where the facts are read from; only the context viewer passes one. */
@@ -124,7 +126,12 @@ export async function buildDoeContextParts(options: DoeContextOptions): Promise<
   const blocked = visibility ? renderBlockedAreaLines(visibility.blockedAreas) : '';
   const roomTurn = options.opts?.roomTurn !== undefined;
   const parts: ContextPart[] = [
-    { block: 'gen_ui', text: GEN_UI_CONTEXT },
+    options.plainTextRoomReply
+      ? {
+          block: null,
+          text: 'Use plain text for this room reply. When post_to_room is available, put the answer in its text argument and leave widget JSON out.',
+        }
+      : { block: 'gen_ui', text: GEN_UI_CONTEXT },
     ...(append.parts ?? [{ block: null, text: append.text }]),
     {
       block: roomTurn ? null : 'room_tools',

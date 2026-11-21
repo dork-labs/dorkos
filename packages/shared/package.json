@@ -293,6 +293,10 @@
       "types": "./src/connector-spending.ts",
       "default": "./dist/connector-spending.js"
     },
+    "./load-gate-queue": {
+      "types": "./src/load-gate-queue.ts",
+      "default": "./dist/load-gate-queue.js"
+    },
     "./community-space-settings": {
       "types": "./src/community-space-settings.ts",
       "default": "./dist/community-space-settings.js"

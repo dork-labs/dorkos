@@ -329,9 +329,11 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/extension-frame');
     // 89 -> 90: every schedule and heartbeat that cannot wake (DOR-3641).
     expect(mounts).toContain('/api/heartbeats/wakers-off');
-    // 90 -> 91: the person's own backup copies, ahead of `/api/config` (DOR-4253).
+    // 90 -> 91: the owner-only browser watch stream (DOR-2667).
+    expect(mounts).toContain('/api/browser-viewers');
+    // 91 -> 92: the person's own backup copies, ahead of `/api/config` (DOR-4253).
     expect(mounts).toContain('/api/config/backups');
-    expect(mounts).toHaveLength(91);
+    expect(mounts).toHaveLength(92);
     const byHand = [
       '/',
       '/x/fixture',

@@ -1,4 +1,5 @@
-import { test, expect } from '@playwright/test';
+import { expect } from '@playwright/test';
+import { test } from '../fixtures/base';
 
 // apps/site runs on port 6244 in dev (see apps/site/package.json `dev` script).
 // The default Playwright baseURL targets apps/client; this suite overrides it to

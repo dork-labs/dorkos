@@ -54,6 +54,15 @@ const OWN_AUTHORIZER: ReadonlyMap<string, string> = new Map([
 /** Every write an agent computer refuses to agents, by why. */
 const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[] = [
   [
+    'owner-only browser viewing; no agent credential reaches page pixels',
+    [
+      'ALL /api/browser-viewers/*',
+      'POST /api/browser-viewers',
+      'POST /api/browser-viewers/:viewerId/frame',
+      'DELETE /api/browser-viewers/:viewerId',
+    ],
+  ],
+  [
     'setup is the hub’s',
     [
       'ALL /api/admin/*',
@@ -538,6 +547,14 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'POST /api/canvas/docs/:id/routes/:routeId/revoke',
       'POST /api/canvas/docs/:id/work/:batchId/clear',
       'POST /api/canvas/docs/:id/work/:batchId/replay',
+    ],
+  ],
+  [
+    'the waiting line of heavy jobs is a person’s to reorder (DOR-4209)',
+    [
+      'POST /api/system/load-gate/jobs/:id/front',
+      'POST /api/system/load-gate/jobs/:id/let-through',
+      'POST /api/system/load-gate/jobs/:id/urgent',
     ],
   ],
   [

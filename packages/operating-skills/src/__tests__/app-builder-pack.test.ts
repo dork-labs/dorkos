@@ -19,7 +19,7 @@ import { BUILDING_DORKOS_APPS_FILES } from '../skills/building-dorkos-apps.files
  */
 
 /** The pinned tree's `MANIFEST.sha256`, hashed: the exact value Security reviews. */
-const REVIEWED_MANIFEST_SHA256 = 'c611280485a14d946088f80ce1141ef1366a19f34f7545d218a595dd55b6d2d3';
+const REVIEWED_MANIFEST_SHA256 = '07e0bab73a88a5e440c93d343dd81bccb06bfa597c0a727fcce165547ee76305';
 
 const PACK_DIR = fileURLToPath(new URL('../skills/app-builder-pack/', import.meta.url));
 const SKILL_DIR = path.join(PACK_DIR, 'skills', 'building-dorkos-apps');
@@ -79,7 +79,7 @@ describe('the vendored App Builder Pack is the reviewed tree', () => {
     );
     expect(manifest.name).toBe('app-builder-pack');
     expect(APP_BUILDER_PACK_PIN.version).toBe(manifest.version);
-    expect(APP_BUILDER_PACK_PIN.version).toBe('1.1.5');
+    expect(APP_BUILDER_PACK_PIN.version).toBe('1.1.6');
   });
 });
 
