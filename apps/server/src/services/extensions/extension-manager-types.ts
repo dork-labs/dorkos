@@ -132,6 +132,12 @@ export interface ReloadExtensionResult {
   };
 }
 
+/** Result of turning an extension on or off, or null when there is no such extension. */
+export type ToggleExtensionResult = {
+  extension: ExtensionRecordPublic;
+  reloadRequired: boolean;
+} | null;
+
 /** Result of headless extension testing via `testExtension()`. */
 export interface TestExtensionResult {
   status: 'ok' | 'error';
