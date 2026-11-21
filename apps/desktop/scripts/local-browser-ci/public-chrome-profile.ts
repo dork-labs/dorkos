@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { LocalBrowserService } from '../../../server/src/services/session/local-browser/service.js';
 import type { LocalBrowserBackend } from '../../../server/src/services/session/local-browser/playwright-backend.js';
+import type { LocalBrowserProfileStore } from '../../../server/src/services/session/local-browser/profile-store.js';
 import { createAgentBrowserProfiles } from '../../../server/src/services/session/local-browser/agent-profiles/agent-profiles.js';
 import { createCiProfileStore } from './profile-store.js';
 import {
@@ -15,7 +16,14 @@ export const PUBLIC_CHROME_CHAT = 'made-up-ci-browser';
 const AGENT = 'made-up-ci-agent';
 
 /** No owner database, real agent folder, saved sign-ins or production runtime is used. */
-export async function createPublicChromeBrowser(directory: string, backend: LocalBrowserBackend) {
+export async function createPublicChromeBrowser(
+  directory: string,
+  backend: LocalBrowserBackend
+): Promise<{
+  browser: LocalBrowserService;
+  profiles: LocalBrowserProfileStore;
+  close(): Promise<void>;
+}> {
   if (process.env.CI !== 'true') throw new Error('The public Chrome fixture is CI-only.');
   const folder = path.join(directory, 'agents', AGENT);
   await mkdir(folder, { recursive: true });
