@@ -201,7 +201,9 @@ export function createRoomCollaborators(
     reactions: new RoomReactions(core, visibility, publisher),
     turnControl,
     canvas,
-    handoffs: new RoomHandoffs(core, (roomId, body) => systemPosts.postNotice(roomId, body)),
+    handoffs: new RoomHandoffs(core, (roomId, entryId, body, within, bind) =>
+      systemPosts.postServiceNotification(roomId, entryId, body, within, bind)
+    ),
     introductions,
   };
 }

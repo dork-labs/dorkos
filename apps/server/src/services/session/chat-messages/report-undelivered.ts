@@ -41,12 +41,20 @@ export async function notifyUndeliveredReport(
   } catch {
     agentId = undefined;
   }
-  await deps.notify('report.undelivered', {
+  const payload = {
     sessionId: report.sessionId,
     parentSessionId: report.parentSessionId,
     sessionLabel,
     ...(agentId ? { agentId } : {}),
     reason: report.reason,
-    at: new Date().toISOString(),
-  });
+    ...(report.reportId ? { reportId: report.reportId } : {}),
+    ...(report.recoveryUnavailable ? { recoveryUnavailable: true } : {}),
+    ...(report.deliveryUnknown ? { deliveryUnknown: true } : {}),
+    at: report.at ?? new Date().toISOString(),
+  };
+  const result = report.onStored
+    ? await deps.notify('report.undelivered', payload, { onStored: report.onStored })
+    : await deps.notify('report.undelivered', payload);
+  if (result.notification === null && !result.deduped)
+    throw new Error('The report notification was not stored.');
 }

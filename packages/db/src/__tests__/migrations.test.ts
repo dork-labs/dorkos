@@ -317,7 +317,9 @@ describe('Database Migrations', () => {
       // (ADR 260726-170125, migration 0034).
       'room_entries',
       'room_entry_reactions',
+      'room_handoff_outbox',
       'room_members',
+      'room_report_outbox',
       // The cache of which rooms have a git repo of their own. Truth is the
       // `room-repo.json` sidecar in each room's home directory; this table is
       // rebuildable from it (migration 0081, DOR-1591).

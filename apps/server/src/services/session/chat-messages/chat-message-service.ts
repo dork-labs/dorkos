@@ -98,6 +98,8 @@ export interface ChatCaller {
   agentPath: string;
   /** For a report, set by the server alone: the marks of the turn it speaks for, read as it ended. */
   marksAtTurnEnd?: TurnMarks;
+  /** Server report snapshot: outside words read before a restart remain outside words. */
+  outsideWordsAtTurnEnd?: boolean;
 }
 
 /** What `chat_send` takes. */

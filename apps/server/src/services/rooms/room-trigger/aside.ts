@@ -79,6 +79,12 @@ export interface AsideInput {
   prepareCarry?: () => AsideCarry;
   /** Told the turn's dispatch id once its claim is held, so its posts can be told apart. */
   onClaimed?: (dispatchId: string) => void;
+  /** Server-owned final hand-off barrier; false cancels before calling the runner. */
+  onStarted?: () => boolean;
+  /** Durable public attempt admission, synchronous before the sole reservation. */
+  beforeRun?: () => boolean;
+  /** Only the seat-recovery leg that owns the move (DOR-4328) may publish this fresh seat. */
+  onSeatRecovered?: (oldSessionId: string, freshSessionId: string) => void;
 }
 
 /** An aside, once its claim is held. */
@@ -341,9 +347,11 @@ export async function runAsideInDispatch(
     refusePausedRoomTurn(request);
     // One synchronous reservation per admitted runner attempt. Later runtime/dispatch
     // refusals retain the existing attempt accounting; there is no refund policy here.
+    if (input.beforeRun?.() === false) return refusedAside('gone');
     const afford = self.deps.budget.tryReserve(room.id);
     if (!afford.allowed) return refusedAside('budget');
     if (afford.counted) self.notices.budgetRecovered(room.id);
+    if (input.onStarted?.() === false) return refusedAside('gone');
     const result = await self.deps.runner.run(request);
     if (result.unanswered !== 'busy') settleSeatLaunch(self, room.id, authorId, input.sessionId);
     if (result.sessionId !== input.sessionId) {

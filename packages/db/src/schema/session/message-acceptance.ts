@@ -12,7 +12,12 @@ export const sessionMessageAcceptanceReceipts = sqliteTable(
   {
     id: text('id').primaryKey(),
     sourceKind: text('source_kind', {
-      enum: ['connector_agent_request', 'connector_event', 'document_event_batch'],
+      enum: [
+        'connector_agent_request',
+        'connector_event',
+        'document_event_batch',
+        'room_handoff_terminal',
+      ],
     }).notNull(),
     sourceId: text('source_id').notNull(),
     sourceGeneration: text('source_generation').notNull(),
