@@ -187,8 +187,9 @@ static int run_attempt(HANDLE input, HANDLE main_pipe, HANDLE scope_pipe,
     return announce("owner-lost-before-resume") ? 0 : 1;
   if (result.resumed && result.end == DORKOS_RUN_COMPLETED && result.leader_exit_code == CHILD_EXIT)
     return announce("resumed") ? 0 : 1;
-  if (result.resumed && result.leader_exit_code ==
-                            (wcscmp(mode, L"--leader-subject") == 0 ? CHILD_EXIT : ERROR_CANCELLED)) {
+  if (result.resumed &&
+      result.leader_exit_code ==
+          (DWORD)(wcscmp(mode, L"--leader-subject") == 0 ? CHILD_EXIT : ERROR_CANCELLED)) {
     if (result.end == DORKOS_RUN_MAIN_OWNER_LOST) return announce("main-owner-closed") ? 0 : 1;
     if (result.end == DORKOS_RUN_SCOPE_OWNER_LOST) return announce("scope-owner-closed") ? 0 : 1;
   }
