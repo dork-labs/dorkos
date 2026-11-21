@@ -21,13 +21,13 @@ export function assertOpenable(
       'unsupported',
       'Choose where the Agent browser opens: in DorkOS or in its own window.'
     );
+  if (input.mode === 'embedded' && input.profileId)
+    throw new LocalBrowserError('unsupported', 'This browser opens in its own window.');
   if (input.mode === 'embedded' && !hasEmbedded)
     throw new LocalBrowserError(
       'unsupported',
       'Opening the Agent browser in DorkOS needs the desktop app.'
     );
-  if (input.mode === 'embedded' && input.profileId)
-    throw new LocalBrowserError('unsupported', 'Open a browser profile in its own window.');
   if (input.profileId && !profileExists?.(input.profileId))
     throw new LocalBrowserError('profile_not_found', 'That browser profile no longer exists.');
   if (input.mode === 'new-window' && !capabilities.newWindow)

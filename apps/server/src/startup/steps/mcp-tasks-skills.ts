@@ -1,19 +1,5 @@
-import { localBrowserHost } from '../local-browser.js';
+import { wireLocalBrowserProfiles } from './local-browser-wiring.js';
 import type { OpenConfigAndDatabaseResult } from './config-and-database.js';
-import { realpathSync } from 'node:fs';
-import { eq, sessionMetadata } from '@dorkos/db';
-import {
-  createLocalBrowserProfileAccess,
-  createLocalBrowserProfileProof,
-} from '../../services/session/local-browser/profile-access.js';
-import { loadProfileBindingKey } from '../../services/session/local-browser/profile-folders.js';
-import { createLocalBrowserProfileStore } from '../../services/session/local-browser/profile-store.js';
-import { liveOutsideTurnCheck } from '../../services/session/local-browser/outside-turn.js';
-import { agentWindowLabel } from '../../services/session/local-browser/agent-window/index.js';
-import { handBackWake } from '../../services/session/local-browser/hand-back-wake/index.js';
-import { eventFanOut } from '../../services/core/event-fan-out.js';
-import { notify } from '../../services/notifications/notification-service.js';
-import { localBrowserChangedAnnouncer } from '../../services/core/streams/live-change-broadcasts.js';
 /**
  * Managed MCP servers, the external MCP server, the route dependency bag,
  * Tasks, and the skills projection watcher.
@@ -35,6 +21,7 @@ import { AgentMcpOAuthService } from '../../services/mesh/agent-mcp-oauth-servic
 import { localDialHost } from '@dorkos/shared/local-dial-host';
 import { env } from '../../env.js';
 import { logger } from '../../lib/logger.js';
+import { notify } from '../../services/notifications/notification-service.js';
 import { resumeAfterMcpSignin } from '../../services/mesh/mcp-signin-resume.js';
 import { AgentMcpServerService } from '../../services/mesh/agent-mcp-server-service.js';
 import { scrubAgentBrowserStateAtStartup } from '../../services/browser/agent-browser-guard.js';
@@ -419,99 +406,14 @@ export async function wireMcpTasksAndSkills(refs: ServerRefs, built: WireMcpTask
 
   // `deps` is what the route groups read (`http/hono-api.ts`), each set where
   // the service it hands over is ready.
-  const localBrowserService = localBrowserHost.start(dorkHome);
-  // Read once and kept in memory, so a key swapped on disk changes nothing until a restart.
-  let bindingKey: Buffer | undefined;
-  const localBrowserProfiles = createLocalBrowserProfileStore(
+  const { service: localBrowserService, profiles: localBrowserProfiles } = wireLocalBrowserProfiles(
+    refs,
     built.db,
-    () => (bindingKey ??= loadProfileBindingKey(dorkHome)),
-    (profileId, agentId) => {
-      void localBrowserService
-        .revokeProfileAccess(profileId, agentId)
-        .catch(() => logger.warn('[Browser] A revoked browser page is still closing'));
-    }
-  );
-  const realFolder = (folder: string) => {
-    try {
-      return realpathSync(folder);
-    } catch {
-      return undefined;
-    }
-  };
-  localBrowserService.useProfileAccess(
-    createLocalBrowserProfileAccess({
-      profiles: localBrowserProfiles,
-      resolveSessionRuntime: (sessionId) => runtimeRegistry.resolveSessionRuntime(sessionId),
-      guardsOf: (type) => {
-        try {
-          return runtimeRegistry.get(type).getCapabilities().guards;
-        } catch {
-          return undefined; // Not registered, or unreadable: no guards.
-        }
-      },
-      getSessionAgentPath: (sessionId) => runtimeRegistry.getSessionAgentPath(sessionId),
-      agentIdAtPath: (agentPath) => refs.meshCore?.getByPath(agentPath)?.id,
-      realFolder,
-    }),
-    (id) => localBrowserProfiles.get(id) !== undefined,
-    createLocalBrowserProfileProof({
-      profiles: localBrowserProfiles,
-      sessionFacts: (sessionId) =>
-        built.db
-          .select({ runtime: sessionMetadata.runtime, agentPath: sessionMetadata.agentPath })
-          .from(sessionMetadata)
-          .where(eq(sessionMetadata.sessionId, sessionId))
-          .get(),
-      guardsOf: (type) => {
-        try {
-          return runtimeRegistry.get(type).getCapabilities().guards;
-        } catch {
-          return undefined;
-        }
-      },
-      agentIdAtPath: (agentPath) => refs.meshCore?.getByPath(agentPath)?.id,
-      realFolder,
-    })
-  );
-  localBrowserService.useSessionAgentLookup(async (sessionId) => {
-    const agentPath = await runtimeRegistry.getSessionAgentPath(sessionId);
-    return agentPath ? refs.meshCore?.getByPath(agentPath)?.id : undefined;
-  });
-  localBrowserService.windowNames.use(async (sessionId) => {
-    const agentPath = await runtimeRegistry.getSessionAgentPath(sessionId);
-    const agent = agentPath ? refs.meshCore?.getByPath(agentPath) : undefined;
-    return agent ? agentWindowLabel(agent) : undefined;
-  });
-  localBrowserService.handover.useOutsideTurnCheck(liveOutsideTurnCheck());
-  localBrowserService.handover.useAgentIdLookup(
-    (agentFolder) => refs.meshCore?.getByPath(agentFolder)?.id
-  );
-  localBrowserService.handover.useChangeListener(localBrowserChangedAnnouncer(eventFanOut));
-  localBrowserService.handover.useHandoffListener((handoff) => {
-    void notify('browser.handoff', {
-      handoffId: handoff.id,
-      sessionId: handoff.sessionId,
-      site: handoff.site,
-      agentName: handoff.agentName,
-      agentId: handoff.agentId,
-    });
-  });
-  localBrowserService.handover.useEndListener(
-    handBackWake({
-      meshCore: () => refs.meshCore,
-      roomSessionPlace: () => refs.roomSessionPlacePort,
-    })
+    dorkHome
   );
   const deps: HonoApiDeps = {
     localBrowser: localBrowserService,
-    localBrowserProfiles: {
-      profiles: localBrowserProfiles,
-      agent: (agentId) => {
-        const agent = refs.meshCore?.listWithPaths().find((entry) => entry.id === agentId);
-        const projectPath = agent && realFolder(agent.projectPath);
-        return agent && projectPath ? { name: agent.name, projectPath } : undefined;
-      },
-    },
+    localBrowserProfiles,
     mcpServers: globalMcpServers,
     mcpServerTools: new GlobalMcpToolLedger(dorkHome),
     connectorEventIngress: connectorSignedIngress,

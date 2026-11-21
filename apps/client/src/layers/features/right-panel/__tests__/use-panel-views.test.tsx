@@ -542,7 +542,9 @@ describe('relevant panel views', () => {
       })
     );
     act(() => result.current.activate(`resource/${id}`));
-    expect(result.current.visible.map((view) => view.id)).toContain('resource/actual-new');
+    // The reopened pending tab stands for its echo; the echo is not a second tab.
+    expect(result.current.visible.map((view) => view.id)).toContain(`resource/${id}`);
+    expect(result.current.visible.map((view) => view.id)).not.toContain('resource/actual-new');
     act(() =>
       useAppStore.getState().applyCanvasEvent('one', {
         documentId: 'actual-new',
@@ -715,7 +717,7 @@ describe('relevant panel views', () => {
     }
   );
 
-  it('clears temporary echo deferral when the pending view is explicitly reopened', async () => {
+  it('shows one tab, not two, when the pending view is reopened after its echo arrived', async () => {
     const { resolve } = deferredDocument();
     useAppStore.getState().loadCanvasForSession('one');
     const { result } = renderHook(() => usePanelViews(contributions, '/session'));
@@ -731,9 +733,36 @@ describe('relevant panel views', () => {
     );
     expect(result.current.visible.map((view) => view.id)).not.toContain('resource/actual-new');
     act(() => result.current.activate(`resource/${pendingId}`));
-    expect(result.current.visible.map((view) => view.id)).toContain('resource/actual-new');
+    const before = result.current.visible.map((view) => view.id);
+    expect(before).toContain(`resource/${pendingId}`);
+    expect(before).not.toContain('resource/actual-new');
     await act(async () => resolve(serverDocument('actual-new')));
-    expect(result.current.visible.map((view) => view.id)).toContain('resource/actual-new');
+    const after = result.current.visible.map((view) => view.id);
+    expect(after).toContain('resource/actual-new');
+    expect(after).not.toContain(`resource/${pendingId}`);
+    expect(result.current.activeId).toBe('resource/actual-new');
+  });
+
+  it('never shows an open document twice while its echo arrives before the POST answers', async () => {
+    const { resolve } = deferredDocument();
+    useAppStore.getState().loadCanvasForSession('one');
+    const { result } = renderHook(() => usePanelViews(contributions, '/session'));
+    act(() => useAppStore.getState().openCanvasDocument(serverDocument('actual-new').content));
+    const pendingId = useAppStore.getState().openDocuments[0].id;
+    act(() =>
+      useAppStore.getState().applyCanvasEvent('one', {
+        documentId: 'actual-new',
+        document: serverDocument('actual-new'),
+        change: 'opened',
+      })
+    );
+    const before = result.current.visible.map((view) => view.id);
+    expect(before).toContain(`resource/${pendingId}`);
+    expect(before).not.toContain('resource/actual-new');
+    await act(async () => resolve(serverDocument('actual-new')));
+    const after = result.current.visible.map((view) => view.id);
+    expect(after).toContain('resource/actual-new');
+    expect(after).not.toContain(`resource/${pendingId}`);
   });
 
   it('retains an unbound document closure through an ambient draft-ID assignment', () => {

@@ -80,6 +80,7 @@ describe('pinned managed browser preparation', () => {
     try {
       await productionBackend.launch('test-only-storage');
       expect(launch.mock.calls[0]![1]).toMatchObject({ channel: 'chrome' });
+      expect(launch.mock.calls[0]![1]?.args).toContain('--disable-sync');
       expect(mocks.execFile).not.toHaveBeenCalled();
       expect(context.newPage).not.toHaveBeenCalled();
     } finally {
@@ -176,6 +177,7 @@ describe('pinned managed browser preparation', () => {
         chromiumSandbox: true,
         // Keep the pinned feature overrides and allow only the theme extension.
         args: [
+          '--disable-sync',
           `${defaultFeatures},HttpsUpgrades,HttpsFirstBalancedModeAutoEnable`,
           `--disable-extensions-except=${path.join('.agent-window-theme')}`,
           `--load-extension=${path.join('.agent-window-theme')}`,

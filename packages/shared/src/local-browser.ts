@@ -3,19 +3,31 @@ import { z } from 'zod';
 
 export const LocalBrowserModeSchema = z.enum(['embedded', 'new-window']);
 export type LocalBrowserMode = z.infer<typeof LocalBrowserModeSchema>;
+/** A single safe folder component chosen by the server or a person-shared profile record. */
+export const LocalBrowserProfileIdSchema = z
+  .string()
+  .regex(/^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$/);
+/** The active browser's name and the registered agent the person opened it for. */
+export const LocalBrowserProfileChoiceSchema = z.object({
+  id: LocalBrowserProfileIdSchema,
+  label: z.string(),
+  agentId: z.string().nullable(),
+  agentName: z.string().nullable(),
+});
+export type LocalBrowserProfileChoice = z.infer<typeof LocalBrowserProfileChoiceSchema>;
 export const LocalBrowserOpenSchema = z
   .object({
     mode: LocalBrowserModeSchema,
     sessionId: z.string().min(1).max(200).optional(),
     url: z.string().url().optional(),
-    /** A named profile to open in a new window. Left out, the default sign-ins are used. */
-    profileId: z.string().uuid().optional(),
+    /** Explicit person-shared profile; otherwise the server chooses the agent's own browser. */
+    profileId: LocalBrowserProfileIdSchema.optional(),
   })
   .strict();
 export type LocalBrowserOpen = z.infer<typeof LocalBrowserOpenSchema>;
 /** A named set of browser sign-ins, and the agents a person let use it. */
 export const LocalBrowserProfileSchema = z.object({
-  id: z.string().uuid(),
+  id: LocalBrowserProfileIdSchema,
   label: z.string().min(1).max(80),
   createdAt: z.string(),
   agentIds: z.array(z.string()),
@@ -111,6 +123,8 @@ export const LocalBrowserPreparationSchema = z.object({
 export type LocalBrowserPreparation = z.infer<typeof LocalBrowserPreparationSchema>;
 
 export interface LocalBrowserState {
+  /** The selected profile, named by the server. */
+  profile?: LocalBrowserProfileChoice;
   connectionId: string | null;
   sessionId: string | null;
   mode: LocalBrowserMode | null;
@@ -157,6 +171,7 @@ export interface LocalBrowserCapabilities {
 }
 
 export const LocalBrowserStateSchema = z.object({
+  profile: LocalBrowserProfileChoiceSchema.optional(),
   preparation: LocalBrowserPreparationSchema.nullable(),
   connectionId: z.string().nullable(),
   sessionId: z.string().nullable(),
@@ -218,7 +233,7 @@ export const LocalBrowserHandoffSchema = z.object({
   agentId: z.string().nullable(),
   /** The asking agent's folder, from its identity token. Show it beside the name. */
   agentFolder: z.string().nullable(),
-  /** The agent's named profile, or null for the default one every agent shares. */
+  /** The selected profile, or null for the person's default browser. */
   profileId: z.string().nullable(),
   reason: LocalBrowserHandoffReasonSchema,
   /** The host of the agent's page when it asked, from its URL. Never a name the agent gave. */
@@ -242,8 +257,8 @@ export const LocalBrowserSignInRequestSchema = z.union([
   z
     .object({
       url: z.string().url(),
-      /** A named profile. Left out, the default sign-ins are used. */
-      profileId: z.string().uuid().optional(),
+      /** A person-selected profile. Otherwise sign in to the current agent's browser. */
+      profileId: LocalBrowserProfileIdSchema.optional(),
     })
     .strict(),
   z.object({ handoffId: z.string().min(1) }).strict(),
