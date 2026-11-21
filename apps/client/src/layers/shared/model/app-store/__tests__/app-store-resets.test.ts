@@ -49,6 +49,7 @@ describe('CoreSlice — resets', () => {
     it('puts typography back to its default in state, storage, and the document', () => {
       seed();
       expect(document.documentElement.style.getPropertyValue('--user-font-scale')).not.toBe('1');
+      expect(document.getElementById('google-fonts-link')).not.toBeNull();
 
       useAppStore.getState().resetAppearance();
 
@@ -57,6 +58,8 @@ describe('CoreSlice — resets', () => {
       expect(localStorage.getItem('dorkos-font-size')).toBeNull();
       expect(localStorage.getItem('dorkos-font-family')).toBeNull();
       expect(document.documentElement.style.getPropertyValue('--user-font-scale')).toBe('1');
+      // The default ships with the app: the picked font's Google link goes (DOR-4872).
+      expect(document.getElementById('google-fonts-link')).toBeNull();
     });
 
     it('leaves every cross-slice storage key standing', () => {

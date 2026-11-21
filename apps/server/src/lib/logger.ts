@@ -309,7 +309,12 @@ function sizeOf(filePath: string): number {
   }
 }
 
-/** A rotated log file's name, parsed: `dorkos.YYYY-MM-DD[.N].log`. */
+/**
+ * A rotated log file's name, parsed: `dorkos.YYYY-MM-DD[.N].log`.
+ *
+ * Cleanup deletes only what this matches. Keep it to `dorkos.` names: the Mac
+ * app writes its `updater.log` into this same folder (DOR-4847).
+ */
 const ROTATED_LOG_PATTERN = /^dorkos\.(\d{4}-\d{2}-\d{2})(?:\.(\d+))?\.log$/;
 
 /**

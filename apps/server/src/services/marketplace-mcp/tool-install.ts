@@ -118,8 +118,8 @@ async function resolveConfirmation(
   contentHash: string,
   context?: MarketplaceConfirmationContext
 ): Promise<ConfirmationResult> {
-  // A person already approved this exact invocation at the capability tier gate;
-  // asking again would be a second card for one action.
+  // Only the person calling directly may skip the content card. A generic
+  // permission approval carries no staged digest and never approves a package.
   if (context?.preApproved) return { status: 'approved' };
 
   // `marketplace` and `projectPath` ride along verbatim because both reach
@@ -134,11 +134,14 @@ async function resolveConfirmation(
     ...(args.projectPath !== undefined && { projectPath: args.projectPath }),
     preview: preview.preview,
     contentHash,
+    resolvedPackageName: preview.manifest.name,
+    packageType: preview.manifest.type,
     origin: {
       version: preview.manifest.version,
       ...(args.marketplace !== undefined && { source: args.marketplace }),
     },
     ...(context?.requestedBy ? { requestedBy: context.requestedBy } : {}),
+    ...(context?.outsideWords ? { outsideWords: true } : {}),
   };
   if (args.confirmationToken) {
     return deps.confirmationProvider.resolveToken(args.confirmationToken, req);
@@ -246,8 +249,8 @@ export function createInstallHandler(deps: MarketplaceMcpDeps) {
         // What the approval actually covered. `install()` resolves the package a
         // second time and re-checks its own resolve against this before writing
         // anything, which closes the window between THIS preview and that one
-        // (DOR-647). Passed even on the `preApproved` path: the tier gate's yes is
-        // still a yes about the package as it stood when this preview was built.
+        // (DOR-647). Direct person calls bind this resolve too; an upstream
+        // permission-card yes never replaces this content check.
         approvedDisclosure: disclosedEffectsOf(preview.preview),
         // And the files and type the card showed: a staged copy that hashes
         // differently, or that became another type of package, is refused

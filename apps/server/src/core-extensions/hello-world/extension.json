@@ -5,6 +5,7 @@
   "description": "A sample extension that adds a page, a status-bar item, a right-panel tab and an Activity section",
   "author": "DorkOS",
   "contributions": {
+    "pages": true,
     "dashboard.sections": true,
     "command-palette.items": true,
     "right-panel": true,

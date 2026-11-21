@@ -129,6 +129,31 @@ describe('slots and load', () => {
     expect(queue.tryAcquire(b, OPEN)).toBe('slot');
   });
 
+  it('names the owner of every running job, let-through ones included, and only those', () => {
+    const other = 424_245;
+    // The other owner is live with the start time it recorded.
+    const probe: HolderProbe = {
+      isAlive: (pid) => pid === other || pid === process.pid,
+      startedAt: (pid) => (pid === other ? 9_000 : null),
+    };
+    const queue = new TicketQueue({ dir, probe });
+    const elsewhere = new TicketQueue({ dir, probe, self: { pid: other, startedAt: 9_000 } });
+    const a = queue.enqueue({ job: 'pnpm' });
+    const b = elsewhere.enqueue({ job: 'tsc' });
+    const waiting = queue.enqueue({ job: 'tsc' });
+    expect(queue.runningOwners()).toEqual([]);
+    expect(queue.tryAcquire(a, OPEN)).toBe('slot');
+    elsewhere.forceAcquire(b);
+    // The waiting ticket owns nothing that runs.
+    expect(queue.runningOwners().sort((x, y) => x - y)).toEqual(
+      [process.pid, other].sort((x, y) => x - y)
+    );
+    queue.release(a);
+    elsewhere.release(b);
+    queue.release(waiting);
+    expect(queue.runningOwners()).toEqual([]);
+  });
+
   it('releases safely twice, leaving only number claims behind', () => {
     const queue = new TicketQueue({ dir });
     const a = queue.enqueue({ job: 'pnpm' });

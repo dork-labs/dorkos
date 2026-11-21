@@ -46,6 +46,8 @@ const config: KnipConfig = {
         // (contributing/connections-security-verification.md).
         'scripts/composio-repository-write-arguments.mjs',
         'scripts/composio-money-word-candidates.mjs',
+        // scripts/heavy-run-lock.sh runs load-gate/turn.ts through tsx (DOR-4209).
+        'scripts/load-gate/turn.ts',
       ],
     },
     'apps/client': {
@@ -61,6 +63,9 @@ const config: KnipConfig = {
         'cmdk', // The shared UI registry's command.tsx imports this.
         'vaul', // The shared UI registry's drawer.tsx imports this.
         'tw-animate-css', // Animation regression tests read the installed stylesheet from disk.
+        // Named only inside url() in src/bundled-fonts.css, which knip's CSS reader skips.
+        '@fontsource-variable/inter',
+        '@fontsource-variable/jetbrains-mono',
       ],
       ignore: [
         // Per-app Zod env convention (AGENTS.md): present even before any VITE_* var exists.

@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
-import { leaseFixture } from './page-leases-fixture.js';
+import { confirmPersonPaint, leaseFixture } from './page-leases-fixture.js';
 import { BrowserLeaseJournal } from '../leases/lease-journal.js';
 import type { Page } from 'playwright-core';
 const fixtures: Awaited<ReturnType<typeof leaseFixture>>[] = [];
@@ -113,6 +113,7 @@ it('records person input by kind without recording its text', async () => {
     viewerId: 'view',
   });
   const control = await f.service.pageBroker.takePersonControl(viewer);
+  confirmPersonPaint(control, viewer);
   await control.runPerson({ kind: 'text', text: 'Made-up confidential words' });
   const contents = await readFile(path.join(f.directory, 'local-browser', 'leases.jsonl'), 'utf8');
   const records = contents

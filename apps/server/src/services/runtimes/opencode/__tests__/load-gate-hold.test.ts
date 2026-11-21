@@ -414,6 +414,8 @@ describe('a chat never waits behind its own slot', () => {
     const m = machine(4, () => ({
       waitForSlot: vi.fn(),
       gateIfHeavy,
+      occupy: vi.fn(() => null),
+      waitWhileBusy: vi.fn(async () => {}),
       waitingJobs: () => [],
       letThrough: () => 'not-found',
       markUrgent: () => 'not-found',

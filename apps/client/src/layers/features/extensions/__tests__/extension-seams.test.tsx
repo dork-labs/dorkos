@@ -39,6 +39,14 @@ import {
 import { createAppRouter } from '@/router';
 import { createExtensionAPI } from '../model/extension-api-factory';
 import type { ExtensionAPIDeps } from '../model/types';
+import { EXTENSION_CONTRIBUTION_KEYS } from '@dorkos/extension-api';
+
+/** Every place declared, for tests of what a registration does once it is allowed. */
+const DECLARES_ALL = {
+  contributions: Object.fromEntries(EXTENSION_CONTRIBUTION_KEYS.map((key) => [key, true])),
+  // And a person allowed every one (DOR-4282).
+  allowedSlots: [...EXTENSION_CONTRIBUTION_KEYS],
+};
 
 vi.mock('sonner', () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }));
 
@@ -74,7 +82,7 @@ afterEach(() => {
 
 describe('registerPage (§6.5)', () => {
   it('routes: the page answers its address, params filled', () => {
-    const { api } = createExtensionAPI('flow', realDeps());
+    const { api } = createExtensionAPI('flow', realDeps(), [], DECLARES_ALL);
     api.registerPage('', Page, { title: 'Flow' });
     api.registerPage('p/:name', Page, { title: 'Project' });
 
@@ -87,7 +95,7 @@ describe('registerPage (§6.5)', () => {
   });
 
   it('lists: pages with no params, unless menu is false', () => {
-    const { api } = createExtensionAPI('flow', realDeps());
+    const { api } = createExtensionAPI('flow', realDeps(), [], DECLARES_ALL);
     api.registerPage('', Page, { title: 'Flow' });
     api.registerPage('p/:name', Page, { title: 'Project' });
     api.registerPage('debug', Page, { title: 'Debug', menu: false });
@@ -97,7 +105,7 @@ describe('registerPage (§6.5)', () => {
   });
 
   it('refuses a path that is not the page shape', () => {
-    const { api } = createExtensionAPI('flow', realDeps());
+    const { api } = createExtensionAPI('flow', realDeps(), [], DECLARES_ALL);
     expect(() => api.registerPage('/leading', Page, { title: 'X' })).toThrow(/registerPage/);
     expect(useExtensionRegistry.getState().slots.pages).toEqual([]);
   });
@@ -108,7 +116,7 @@ describe('registerPage (§6.5)', () => {
     ['no options at all', undefined],
   ])('refuses a page with %s, out loud', (_label, options) => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const { api } = createExtensionAPI('flow', realDeps());
+    const { api } = createExtensionAPI('flow', realDeps(), [], DECLARES_ALL);
     const unregister = api.registerPage('', Page, options as never);
 
     expect(useExtensionRegistry.getState().slots.pages).toEqual([]);
@@ -118,7 +126,7 @@ describe('registerPage (§6.5)', () => {
 
   it('replaces a page registered twice, and says so', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const { api } = createExtensionAPI('flow', realDeps());
+    const { api } = createExtensionAPI('flow', realDeps(), [], DECLARES_ALL);
     api.registerPage('', Page, { title: 'First' });
     api.registerPage('', Page, { title: 'Second' });
 
@@ -128,7 +136,7 @@ describe('registerPage (§6.5)', () => {
   });
 
   it('is removed when the extension deactivates', () => {
-    const { api, cleanups } = createExtensionAPI('flow', realDeps());
+    const { api, cleanups } = createExtensionAPI('flow', realDeps(), [], DECLARES_ALL);
     api.registerPage('', Page, { title: 'Flow' });
     for (const fn of cleanups) fn();
     expect(useExtensionRegistry.getState().slots.pages).toEqual([]);
@@ -148,7 +156,9 @@ describe('navigate (§6.5, D4, invariant 11)', () => {
     await router.load();
     const { api } = createExtensionAPI(
       'hello',
-      realDeps((opts) => void router.navigate({ href: opts.to }))
+      realDeps((opts) => void router.navigate({ href: opts.to })),
+      [],
+      DECLARES_ALL
     );
 
     api.navigate('/x/hello/p/one?page=3&v=1.10&project=2024');
@@ -167,7 +177,7 @@ describe('navigate (§6.5, D4, invariant 11)', () => {
   ])('refuses %s', (_label, path) => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     const navigate = vi.fn();
-    const { api } = createExtensionAPI('hello', realDeps(navigate));
+    const { api } = createExtensionAPI('hello', realDeps(navigate), [], DECLARES_ALL);
 
     api.navigate(path);
 
@@ -176,7 +186,7 @@ describe('navigate (§6.5, D4, invariant 11)', () => {
 
   it('still reaches core routes', () => {
     const navigate = vi.fn();
-    const { api } = createExtensionAPI('hello', realDeps(navigate));
+    const { api } = createExtensionAPI('hello', realDeps(navigate), [], DECLARES_ALL);
     api.navigate('/team');
     expect(navigate).toHaveBeenCalledWith({ to: '/team' });
   });
@@ -184,7 +194,7 @@ describe('navigate (§6.5, D4, invariant 11)', () => {
 
 describe('setTabMarker (§6.7)', () => {
   it('marks a tab the extension registered, and clears it', () => {
-    const { api } = createExtensionAPI('flow', realDeps());
+    const { api } = createExtensionAPI('flow', realDeps(), [], DECLARES_ALL);
     api.registerComponent('right-panel', 'flow-tab', Item, { label: 'Flow' });
 
     api.setTabMarker('flow-tab', 'attention');
@@ -196,9 +206,9 @@ describe('setTabMarker (§6.7)', () => {
 
   it('does nothing, out loud, for a tab it did not register', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const other = createExtensionAPI('other', realDeps()).api;
+    const other = createExtensionAPI('other', realDeps(), [], DECLARES_ALL).api;
     other.registerComponent('right-panel', 'flow-tab', Item);
-    const { api } = createExtensionAPI('flow', realDeps());
+    const { api } = createExtensionAPI('flow', realDeps(), [], DECLARES_ALL);
 
     api.setTabMarker('flow-tab', 'attention');
 
@@ -207,7 +217,7 @@ describe('setTabMarker (§6.7)', () => {
   });
 
   it('clears its marks when the extension deactivates', () => {
-    const { api, cleanups } = createExtensionAPI('flow', realDeps());
+    const { api, cleanups } = createExtensionAPI('flow', realDeps(), [], DECLARES_ALL);
     api.registerComponent('right-panel', 'flow-tab', Item);
     api.setTabMarker('flow-tab', 'attention');
 
@@ -256,7 +266,7 @@ describe('registerStatusBarItem (§6.6)', () => {
   }
 
   it('promotes the Add-ons slot when an item’s when() says so', () => {
-    const { api } = createExtensionAPI('flow', realDeps());
+    const { api } = createExtensionAPI('flow', realDeps(), [], DECLARES_ALL);
     api.registerStatusBarItem('run-chip', Item, {
       label: 'Flow run',
       when: (ctx) => ctx.project !== null,
@@ -267,7 +277,7 @@ describe('registerStatusBarItem (§6.6)', () => {
 
   it('hides an item whose when() throws, and keeps the bar', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const { api } = createExtensionAPI('flow', realDeps());
+    const { api } = createExtensionAPI('flow', realDeps(), [], DECLARES_ALL);
     api.registerStatusBarItem('run-chip', Item, {
       label: 'Flow run',
       when: () => {
@@ -280,7 +290,7 @@ describe('registerStatusBarItem (§6.6)', () => {
   });
 
   it('an urgent item wins a contested slot, and a quiet one gives it up', () => {
-    const { api } = createExtensionAPI('flow', realDeps());
+    const { api } = createExtensionAPI('flow', realDeps(), [], DECLARES_ALL);
     let urgent = true;
     api.registerStatusBarItem('run-chip', Item, { label: 'Flow run', urgent: () => urgent });
 
@@ -328,7 +338,7 @@ describe('currentProject (§6.4)', () => {
         <TransportProvider transport={transport}>{children}</TransportProvider>
       </QueryClientProvider>
     );
-    const { api } = createExtensionAPI('flow', realDeps());
+    const { api } = createExtensionAPI('flow', realDeps(), [], DECLARES_ALL);
     const heard: unknown[] = [];
     api.subscribe(
       (state) => state.currentProject,

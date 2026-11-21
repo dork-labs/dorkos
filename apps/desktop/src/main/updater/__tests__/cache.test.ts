@@ -6,11 +6,11 @@ import path from 'node:path';
 vi.mock('electron', () => import('../../__tests__/electron-mock'));
 vi.mock('electron-log', () => import('../../__tests__/electron-log-mock'));
 
-import log from 'electron-log';
 import { purgeStaleStagedUpdates } from '../cache';
 import { resetAppBundleCache } from '../app-bundle';
 import { app, resetElectronMock } from '../../__tests__/electron-mock';
-import { resetLogMock } from '../../__tests__/electron-log-mock';
+// Updater lines go to the updater's own log (DOR-4847), not main.log.
+import { resetLogMock, updaterLogDouble as log } from '../../__tests__/electron-log-mock';
 
 /**
  * Purging a staged update the running app has already passed (DOR-1455, spec

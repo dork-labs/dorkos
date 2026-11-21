@@ -88,7 +88,7 @@ test.describe('Settings — Advanced fold, desktop @smoke', () => {
     await settingsPage.open();
     await settingsPage.expandAdvanced();
     // The last tab of the everyday list — an extension's Add-ons tab, when one
-    // is installed, sits after Privacy & data.
+    // is installed, sits after Backups.
     const lastEveryday = settingsPage.tabList.getByRole('tab').last();
     await lastEveryday.click();
     await lastEveryday.focus();

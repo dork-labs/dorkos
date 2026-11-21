@@ -31,6 +31,7 @@ import type {
   SignOutEverywhereElseResult,
 } from '@dorkos/shared/signed-in-devices';
 import type { ApiEnv } from '../http/api-chain.js';
+import { readJsonBody } from '../http/request-body.js';
 import { honoRequestFacts } from '../http/request-facts.js';
 import type { RequestFacts } from '../http/request-facts.js';
 import {
@@ -52,6 +53,18 @@ import {
   signOutOtherSessions,
   signOutSession,
 } from '../services/core/auth/sessions/signed-in-devices.js';
+import { setWifiAgentTurns } from '../services/core/auth/sessions/wifi-agent-turns.js';
+import {
+  approveWifiSignIn,
+  declineWifiSignIn,
+  listWifiSignInRequests,
+} from '../services/core/auth/sessions/wifi-sign-in-requests.js';
+import { passkeyChecked } from '../http/sign-in/passkey-check.js';
+import { classifyRequest } from '../lib/request-classifier.js';
+import { currentServerRole } from '../lib/server-role.js';
+import { recordSignInTrustChange } from '../services/core/auth/auth-audit.js';
+import type { WifiSignInRequestList } from '@dorkos/shared/signed-in-devices';
+import { isOwnOriginJsonWrite, NOT_FROM_OWN_PAGE } from '../lib/http/own-origin-write.js';
 
 /** Refusal code for an agent, an API key or the relay. */
 export const DEVICES_PEOPLE_ONLY = 'DEVICES_PEOPLE_ONLY';
@@ -98,7 +111,7 @@ async function resolveCaller(c: Context<ApiEnv>): Promise<DevicesCaller | null |
     c.set('user', user);
     return { userId: user.userId, sessionId: user.sessionId, atThisComputer };
   }
-  if (!atThisComputer) return c.json(authRequiredBody(), 401);
+  if (!atThisComputer) return c.json(authRequiredBody(facts.ingress), 401);
   // The person at this computer, with no sign-in of their own: the owner's.
   const owner = readOwnerAccount();
   return owner ? { userId: owner.id, atThisComputer } : null;
@@ -164,6 +177,92 @@ export function createDevicesRoutes(auth: () => Auth | undefined = getAuth): Hon
       subject: 'signed-in devices',
       run,
     });
+  });
+
+  /**
+   * The bar for approving a Wi-Fi device or letting one run agents: the owner,
+   * signed in, at this computer by the classifier's verdict (never an
+   * encrypted route, never a header), from one of this server's own pages.
+   */
+  const ownerAtTheMac = async (
+    c: Context<ApiEnv>,
+    write: boolean
+  ): Promise<{ userId: string; sessionId: string } | Response> => {
+    const facts = honoRequestFacts(c);
+    if (write && !isOwnOriginJsonWrite(facts.headers)) {
+      return c.json(errorBody('Do this in the DorkOS app.', NOT_FROM_OWN_PAGE), 403);
+    }
+    const caller = await resolveCaller(c);
+    if (caller instanceof Response) return caller;
+    // The classifier's own verdict, never a container port or an address.
+    const atTheMac = classifyRequest(facts, currentServerRole()).kind === 'this-computer';
+    if (!caller || !caller.atThisComputer || !atTheMac || caller.sessionId === undefined) {
+      return c.json(
+        errorBody('Do this on the computer DorkOS runs on.', NEEDS_PERSON_AT_THIS_COMPUTER),
+        403
+      );
+    }
+    return { userId: caller.userId, sessionId: caller.sessionId };
+  };
+
+  router.put('/sessions/:id/runs-agents', async (c) => {
+    const instance = auth();
+    const notFound = (): Response =>
+      c.json(errorBody('That sign-in has already ended.', 'DEVICE_NOT_FOUND'), 404);
+    if (!instance) return notFound();
+    const owner = await ownerAtTheMac(c, true);
+    if (owner instanceof Response) return owner;
+    const body = (readJsonBody(c) ?? null) as { on?: unknown; passkey?: unknown } | null;
+    if (typeof body?.on !== 'boolean') {
+      return c.json(errorBody('Say whether this device may run agents.', 'INVALID_BODY'), 400);
+    }
+    const on = body.on;
+    const deviceId = c.req.param('id');
+    const sessionId = await findSignedInDevice(instance, owner.userId, deviceId);
+    if (!sessionId) return notFound();
+    // Turning it on needs a fresh passkey check; turning it off only takes power away.
+    if (on) {
+      const checked = await passkeyChecked(c, owner, `wifi-runs-agents:${deviceId}`, body.passkey);
+      if (checked !== true) return checked;
+    }
+    if (!setWifiAgentTurns(owner.userId, sessionId, on)) return notFound();
+    recordSignInTrustChange(owner.userId, on ? 'device-runs-agents-on' : 'device-runs-agents-off');
+    return c.body(null, 204);
+  });
+
+  router.get('/sign-in-requests', async (c) => {
+    const owner = await ownerAtTheMac(c, false);
+    if (owner instanceof Response) return owner;
+    return c.json({ requests: listWifiSignInRequests() } satisfies WifiSignInRequestList);
+  });
+
+  router.post('/sign-in-requests/:id/approve', async (c) => {
+    const owner = await ownerAtTheMac(c, true);
+    if (owner instanceof Response) return owner;
+    const viewId = c.req.param('id');
+    const gone = (): Response =>
+      c.json(
+        errorBody('That request has ended. Ask the device to try again.', 'REQUEST_ENDED'),
+        404
+      );
+    if (!listWifiSignInRequests().some((request) => request.id === viewId && !request.approved)) {
+      return gone();
+    }
+    const body = (readJsonBody(c) ?? null) as { passkey?: unknown } | null;
+    const checked = await passkeyChecked(c, owner, `wifi-sign-in-approve:${viewId}`, body?.passkey);
+    if (checked !== true) return checked;
+    const approved = approveWifiSignIn(viewId, owner.userId);
+    if (!approved) return gone();
+    recordSignInTrustChange(owner.userId, 'wifi-sign-in-approved');
+    c.header('Cache-Control', 'no-store');
+    return c.json(approved);
+  });
+
+  router.post('/sign-in-requests/:id/decline', async (c) => {
+    const owner = await ownerAtTheMac(c, true);
+    if (owner instanceof Response) return owner;
+    declineWifiSignIn(c.req.param('id'));
+    return c.body(null, 204);
   });
 
   router.post('/sign-out-all', async (c) => {

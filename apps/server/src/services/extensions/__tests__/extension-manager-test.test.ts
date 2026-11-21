@@ -81,6 +81,11 @@ function approved(ids: string[]): {
   };
 }
 
+/** A recorded yes to full access in these places (DOR-4282). */
+function inProcessWith(slots: string[]) {
+  return { runtime: 'in-process' as const, net: [], run: [], agents: false, slots };
+}
+
 function makeRecord(id: string, overrides: Partial<ExtensionRecord> = {}): ExtensionRecord {
   return {
     id,
@@ -256,8 +261,16 @@ describe('ExtensionManager.testExtension', () => {
         'throw-ext',
         'no-activate',
         'good-ext',
+        'loose-ext',
         'empty-ext',
       ]),
+      // The places each yes was given for (DOR-4282). Without a recorded set,
+      // an approval covers only a panel tab and a Settings page, so a manifest
+      // declaring any other place is refused before activate() ever runs.
+      approvedPermissions: {
+        'good-ext': inProcessWith(['command-palette.items', 'dashboard.sections', 'settings.tabs']),
+        'loose-ext': inProcessWith(['pages']),
+      },
     });
     mockDiscover.mockResolvedValue([]);
     manager = new ExtensionManager('/fake/dork-home');
@@ -355,7 +368,19 @@ describe('ExtensionManager.testExtension', () => {
   });
 
   it('returns contribution counts for valid extension', async () => {
-    const record = makeRecord('good-ext', { status: 'disabled' });
+    const record = makeRecord('good-ext', {
+      status: 'disabled',
+      manifest: {
+        id: 'good-ext',
+        name: 'good-ext',
+        version: '1.0.0',
+        contributions: {
+          'dashboard.sections': true,
+          'command-palette.items': true,
+          'settings.tabs': true,
+        },
+      },
+    });
     mockDiscover.mockResolvedValue([record]);
     mockCompile.mockResolvedValue({ code: 'code', sourceHash: 'goodhash' });
 
@@ -382,6 +407,62 @@ describe('ExtensionManager.testExtension', () => {
     expect(result.contributions!['sidebar.footer']).toBe(0);
     expect(result.contributions!['dialog']).toBe(0);
     expect(result.message).toContain('3 contribution(s)');
+  });
+
+  it('counts only declared places, and warns for the rest and for the canvas (DOR-4282)', async () => {
+    const record = makeRecord('loose-ext', {
+      status: 'disabled',
+      manifest: {
+        id: 'loose-ext',
+        name: 'loose-ext',
+        version: '1.0.0',
+        contributions: { pages: true },
+      },
+    });
+    mockDiscover.mockResolvedValue([record]);
+    mockCompile.mockResolvedValue({ code: 'code', sourceHash: 'loosehash' });
+    mockReadBundle.mockResolvedValue(`
+      var __dorkosExtension = { activate(api) {
+        api.registerPage('', function() {}, { title: 'Home' });
+        api.registerCommand('go', 'Go', function() {});
+        api.openCanvas({ type: 'markdown', content: '# Hi' });
+      } };
+    `);
+
+    await manager.initialize(null);
+    const result = await manager.testExtension('loose-ext');
+
+    expect(result.status).toBe('ok');
+    expect(result.contributions!['pages']).toBe(1);
+    expect(result.contributions!['command-palette.items']).toBe(0);
+    expect(result.message).toContain('1 contribution(s)');
+    expect(result.warnings).toEqual([
+      expect.stringContaining('command-palette.items adds nothing'),
+      expect.stringContaining('canvas adds nothing'),
+    ]);
+  });
+
+  // Purpose: new places alone never stop the app (DOR-4282, option C): each
+  // waits on its own, and the rest of it runs as before.
+  it('keeps going when the only thing its approval does not cover is a new place (DOR-4282)', async () => {
+    // Approved before places were recorded: covers a panel tab and a Settings page only.
+    const record = makeRecord('throw-ext', {
+      manifest: {
+        id: 'throw-ext',
+        name: 'throw-ext',
+        version: '1.0.0',
+        contributions: { pages: true },
+      },
+    });
+    mockDiscover.mockResolvedValue([record]);
+    mockCompile.mockResolvedValue({ code: 'code', sourceHash: 'pagehash' });
+    mockReadBundle.mockResolvedValue('var __dorkosExtension = { activate() {} };');
+
+    await manager.initialize(null);
+    const result = await manager.testExtension('throw-ext');
+
+    expect(result.phase).not.toBe('approval');
+    expect(mockCompile).toHaveBeenCalled();
   });
 
   it('returns zero contributions when activate registers nothing', async () => {

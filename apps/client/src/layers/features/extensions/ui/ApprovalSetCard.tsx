@@ -17,6 +17,7 @@ import type {
   ApprovalSetResult,
   ExtensionApprovalSet,
 } from '@dorkos/shared/extension-approval-schemas';
+import { contributionWords } from '@dorkos/extension-api';
 import { Button } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 
@@ -84,8 +85,19 @@ export function grantLines(grant: ApprovalSetGrant): Array<[string, string]> {
   return lines;
 }
 
-/** Access, runs as, and network for one member, as a single approval card says them. */
-function memberFacts(member: ApprovalSetMemberView): Array<[string, string]> {
+/**
+ * Access, runs as, network and where it shows for one member, as a single
+ * approval card says them. The places are DorkOS's fixed words (DOR-4282).
+ */
+export function memberFacts(member: ApprovalSetMemberView): Array<[string, string]> {
+  const places = contributionWords(member.permissions.slots ?? []);
+  const showsIn: Array<[string, string]> =
+    places.length > 0 ? [['Shows in', places.join(', ')]] : [];
+  return [...reachFacts(member), ...showsIn];
+}
+
+/** Access, runs as, and network for one member. */
+function reachFacts(member: ApprovalSetMemberView): Array<[string, string]> {
   const { permissions } = member;
   if (permissions.runtime === 'subprocess') {
     return [

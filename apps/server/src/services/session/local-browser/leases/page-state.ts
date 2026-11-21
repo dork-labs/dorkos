@@ -6,14 +6,18 @@ import { LocalBrowserTabMetadata } from '../tab-metadata.js';
 import type { PageWorkTracker } from './page-work.js';
 import { observeSelectedPage, screenshotSelectedPage } from '../connection/observe-page.js';
 import { LocalBrowserError } from '../errors.js';
+import { NavigationRefusals } from '../connection/navigation-refusal.js';
+import { localBrowserRefusalNext } from '@dorkos/shared/local-browser-refusal';
 
 /** Page-local observations and tab identities; no profile or chat can adopt these handles. */
 export class BrowserPageState {
+  readonly navigation = new NavigationRefusals();
   readonly tabs = new Map<string, Page>();
   selectedTabId: string | null = null;
   revision = 0;
   // Frame churn fences reads without consuming every action revision.
   frameChanges = 0;
+  mainFrameChanges = 0;
   observation?: LocalBrowserObservation;
   observedNodes?: JSHandle<ObservedPageNodes>;
   readonly metadata: LocalBrowserTabMetadata;
@@ -52,6 +56,7 @@ export class BrowserPageState {
   /** Install nodes only after the exact page's read and custody fences succeed. */
   async observe(page: Page, refuse: () => void): Promise<LocalBrowserObservation> {
     refuse();
+    if (this.navigation.refusal(page)) return this.observeRefusal(page, refuse);
     this.invalidate();
     const observed = await observeSelectedPage(page, this.selectedTabId!, {
       revision: () => this.revision,
@@ -61,9 +66,30 @@ export class BrowserPageState {
         new LocalBrowserError('stale_page', 'The page changed. Read it again before acting.'),
       track: this.trackWork,
     });
+    this.navigation.readSnapshot(page, observed.observation.snapshot);
+    if (this.navigation.refusal(page)) {
+      void observed.nodes.dispose().catch(() => undefined);
+      return this.observeRefusal(page, refuse);
+    }
     this.observedNodes = observed.nodes;
     this.observation = observed.observation;
     return observed.observation;
+  }
+
+  /** A browser-event proof grants no DOM handles or actionable page reading. */
+  observeRefusal(page: Page, refuse: () => void): LocalBrowserObservation {
+    refuse();
+    this.invalidate();
+    const refusal = this.navigation.refusal(page);
+    if (!refusal)
+      throw new LocalBrowserError('stale_page', 'The page changed. Read it again before acting.');
+    return (this.observation = {
+      revision: this.revision,
+      tabId: this.selectedTabId!,
+      url: page.url(),
+      snapshot: '',
+      refusal: { ...refusal, next: localBrowserRefusalNext(refusal.kind) },
+    });
   }
 
   /** Pixels grant no action revision and retain the physical read reservation. */
@@ -96,12 +122,14 @@ export class BrowserPageState {
     for (const [id, known] of this.tabs) if (known === page) return id;
     const id = randomUUID();
     this.tabs.set(id, page);
+    this.navigation.watch(page);
     this.watch(page);
     this.metadata.track(page, {
       active: () => [...this.tabs.values()].includes(page),
       selected: () => this.tabs.get(this.selectedTabId ?? '') === page,
       invalidate: () => this.invalidate(),
-      framesChanged: () => {
+      framesChanged: (mainFrame) => {
+        if (mainFrame) this.mainFrameChanges++;
         this.frameChanges++;
         this.addresses(page);
         this.notify();

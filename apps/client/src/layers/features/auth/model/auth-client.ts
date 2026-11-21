@@ -49,6 +49,11 @@ export interface AuthError {
   code?: string;
   /** Seconds to wait before retrying, when the server rate-limited the request. */
   retryAfter?: number;
+  /**
+   * At a sign-in's second step: the checks that work from this device
+   * (`authenticator`, `passkey`), sent only once the password matched.
+   */
+  methods?: readonly string[];
 }
 
 /** Better Auth-style result envelope: exactly one of `data` / `error` is set. */
@@ -133,6 +138,7 @@ async function toAuthError(res: Response): Promise<AuthError> {
     message?: string;
     error?: unknown;
     code?: string;
+    methods?: unknown;
   };
   const retryHeader = res.headers.get('X-Retry-After') ?? res.headers.get('Retry-After');
   const retryAfter = retryHeader ? Number(retryHeader) : undefined;
@@ -145,6 +151,9 @@ async function toAuthError(res: Response): Promise<AuthError> {
     status: res.status,
     code: body.code,
     retryAfter: Number.isFinite(retryAfter) ? retryAfter : undefined,
+    ...(Array.isArray(body.methods)
+      ? { methods: body.methods.filter((m): m is string => typeof m === 'string') }
+      : {}),
   };
 }
 

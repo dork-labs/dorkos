@@ -37,6 +37,53 @@ async function setup() {
   return { ...f, registry, starts, emit };
 }
 describe('one physical broker producer per server-bound Page (V6)', () => {
+  it.each(['github.io', 'vercel.app'])(
+    'never follows a watch across private tenants on %s',
+    async (suffix) => {
+      const f = await setup();
+      const page = f.contexts[0].pages[0];
+      page.navigate(`https://a.${suffix}`);
+      const watching = await f.registry.subscribe(principal, 'chat-a');
+      const old = f.starts()[0];
+      page.navigate(`https://b.${suffix}`);
+      f.emit(old);
+      await expect(
+        f.registry.frame(principal, watching.viewerId, watching.nonce)
+      ).rejects.toMatchObject({ code: 'viewer_denied' });
+      expect(f.starts()).toHaveLength(1);
+      await vi.waitFor(() => expect(old.detach).toHaveBeenCalledOnce());
+    }
+  );
+
+  it('refuses watch and screencast during same-profile sign-in while the captured page stays current (W1)', async () => {
+    const f = await setup();
+    const viewer = await f.service.pageBroker.captureViewerLease('chat-a', {
+      ownerId: 'owner',
+      appSessionId: 'app',
+      clientInstanceId: 'client',
+      viewerId: 'held-view',
+    });
+    const session = f.service.personSession('chat-a');
+    const active = vi
+      .spyOn(session.handover, 'signInHoldsProfile')
+      .mockImplementation((profile) => profile === 'agent-atlas');
+    try {
+      expect(viewer.isCurrent()).toBe(true);
+      const before = f.protocolSessions.length;
+      expect(() => viewer.assertWatchAllowed()).toThrow();
+      await expect(viewer.openScreencast()).rejects.toThrow();
+      await expect(f.registry.subscribe(principal, 'chat-a')).rejects.toMatchObject({
+        code: 'viewer_unavailable',
+      });
+      expect(viewer.isCurrent()).toBe(true);
+      expect(f.protocolSessions).toHaveLength(before);
+      expect(f.starts()).toHaveLength(0);
+    } finally {
+      active.mockRestore();
+      await viewer.close();
+    }
+  });
+
   it('shares concurrent captures while keeping each viewer authority separate', async () => {
     const f = await setup();
     const viewers = await Promise.all(

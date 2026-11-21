@@ -20,6 +20,7 @@ import {
 import { cloudOriginsForThisServer } from '../../core/cloud/cloud-api-origin.js';
 import { localBrowserAppOrigins } from './app-origins.js';
 import { LocalBrowserError } from './errors.js';
+import { signingInRefusal } from './handoff-guards/done-signing-in.js';
 import type { BrowserProfileAccessGate } from './profile-access.js';
 import { BrowserProfileRemoval } from './profile-removal/index.js';
 import { AgentWindowNames } from './agent-window/index.js';
@@ -61,7 +62,7 @@ export class LocalBrowserService {
       );
     return session.captureViewerPage();
   });
-  /** A watch binds the broker's exact captured Page and authenticated owner ingress. */
+  /** Verified ingress captures only the selected chat's existing broker page. */
   readonly viewerPages: { resolve: ResolveViewerPage } = {
     resolve: (chatId, principal, viewerId) =>
       captureViewerPage(this.pageBroker, chatId, principal, viewerId),
@@ -177,6 +178,17 @@ export class LocalBrowserService {
             sessionId === null ? Promise.resolve(undefined) : this.agentForSession(sessionId),
         }
       );
+      session.requireHandoffCustody = (profile) => {
+        for (const other of this.pageSessions()) {
+          if (other === session || other.currentProfileId() !== profile) continue;
+          if (other.personHeld())
+            throw new LocalBrowserError(
+              'profile_held',
+              'A person is using this browser. Wait until they hand it back.'
+            );
+          if (other.handover.signInHoldsProfile(profile)) throw signingInRefusal();
+        }
+      };
       session.requireExclusiveProfile = (requested) => {
         const id = requested === undefined ? session!.currentProfileId() : requested;
         if (

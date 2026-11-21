@@ -92,18 +92,18 @@ Each chat owns its page. Chats of one agent share sign-ins; different agents hav
 The site is not saved, or its sign-in ran out. Stop and say so, in one message:
 
 1. Name the site you need.
-2. If this chat already shares a page, call \`local_browser_ask_person\` with
-   reason \`password\`. It pauses the browser and asks the person to take over.
-   End your turn and wait for the hand-back message. Do not keep reading or
-   acting while the person has the browser.
+2. If this chat already shares a page, call \`local_browser_ask_person\` with reason \`password\`. It pauses the browser and asks the person to take over. End your turn and wait for the hand-back message. Do not keep reading or acting while the person has the browser.
 3. Otherwise ask the person to share a browser page with this chat (Browser, in the right
    panel's + menu) and sign in there.
-4. Carry on in that page with your shared-browser tools once the person is ready
-   (or, after a handoff, once they hand it back).
+4. Carry on in that page with your shared-browser tools once the person is ready (or, after a handoff, once they hand it back).
 
-For a human check or another step only a person may take, use the same handoff
-with reason \`wall\`. A refusal or Stop is not a wall to get
-past. Never use the handoff to work around either.
+For a human check or another step only a person may take, use the same handoff with reason \`wall\`. A refusal or Stop is not a wall to get past. Never use the handoff to work around either.
+On own-window handoffs, DorkOS closes your page cleanly, then opens a separate Chrome window for the person.
+After hand-back it reopens the same address; form entries are lost. Observe again before acting.
+- On \`site_changed\`, stop and ask the person to check the page; observe again when they are ready.
+- On \`profile_held\`, \`profile_busy\` or \`signing_in\`, stop and wait for the person.
+- On \`busy\` or \`closing\`, stop and ask the person to wait for closing. If the message says to restart DorkOS, ask the person to restart it.
+- On \`closed\`, stop and ask the person to reconnect; observe again once they do. Never retry around these refusals or switch browsers to bypass them.
 
 ### Sign-in links from untrusted text
 

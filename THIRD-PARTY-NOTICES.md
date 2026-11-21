@@ -65,3 +65,5 @@ SOFTWARE.
 ## Fonts
 
 IBM Plex, under the SIL Open Font License 1.1, ships with the website. Its licence sits beside the font files in `apps/site/src/app/fonts/OFL.txt` and `apps/site/src/lib/og/fonts/OFL.txt`.
+
+Inter (Copyright 2016 The Inter Project Authors) and JetBrains Mono (Copyright 2020 The JetBrains Mono Project Authors), both under the SIL Open Font License 1.1, ship with the app as its default font, from npm `@fontsource-variable/inter` and `@fontsource-variable/jetbrains-mono` 5.3.0. Their licence is `apps/client/src/fonts/OFL.txt`. The client build is bundled into the `dorkos` npm package, so `packages/cli/THIRD-PARTY-NOTICES.md` repeats it.

@@ -7,11 +7,12 @@
  * level at most, whatever the agent's own level: every file or shell step asks,
  * and from Wi-Fi the only answers are Allow once or Deny.
  *
- * **Except the owner's own words (DOR-3242).** The owner chose to have their
- * own messages from Wi-Fi count as theirs, ahead of HTTPS on that path
- * (DOR-3173). A request is the owner's own when the session gate verified the
- * owner's sign-in cookie on it, made on the Wi-Fi route, with no agent header
- * beside it, sent by the app's own page ({@link isOwnerOnWifi}). Anything else
+ * **Except the owner's own words, on a device they chose (DOR-3242, DOR-4744).**
+ * A request is the owner's own when the session gate verified the owner's
+ * sign-in cookie on it, made on the Wi-Fi route, with no agent header beside
+ * it, sent by the app's own page, AND the owner turned on "run agents" for
+ * that one sign-in at this computer (`./wifi-agent-turns.ts`). Every sign-in
+ * starts with it off ({@link isOwnerOnWifi}). Anything else
  * from Wi-Fi is still held: an API key, no sign-in, a teammate, an agent, or a
  * page on another site riding the cookie. What a person on Wi-Fi may *change*
  * is decided elsewhere and is unchanged (`./wifi-raise-guard.ts`,
@@ -35,6 +36,7 @@ import type { TurnPermissionBound, TurnPermissionCeiling } from '@dorkos/shared/
 import type { RequestFacts } from '../../../../http/request-facts.js';
 import { presentsAgentIdentity } from '../../../../middleware/agent-identity.js';
 import { readOwnerAccount } from '../index.js';
+import { wifiAgentTurnsAllowed } from './wifi-agent-turns.js';
 import { isFromWifi } from './wifi-level.js';
 
 /** The bound a turn a Wi-Fi request starts runs under: the runtime's default. */
@@ -69,9 +71,12 @@ function fromOwnPage(headers: RequestFacts['headers']): boolean {
 function isOwnerOnWifi(facts: WifiTurnFacts): boolean {
   const { user } = facts;
   if (user?.credential !== 'cookie' || user.route !== 'wifi') return false;
+  if (user.sessionId === undefined) return false;
   if (presentsAgentIdentity(facts) || !fromOwnPage(facts.headers)) return false;
   const owner = readOwnerAccount();
-  return owner !== null && owner.id === user.userId;
+  if (owner === null || owner.id !== user.userId) return false;
+  // Only a device the owner let run agents, at this computer (DOR-4744).
+  return wifiAgentTurnsAllowed(user.sessionId);
 }
 
 /**

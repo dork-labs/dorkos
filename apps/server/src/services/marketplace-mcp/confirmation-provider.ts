@@ -29,7 +29,7 @@
  * The token state machine lives in `services/core/approvals` (spec
  * `agent-trust` §3.3) — one approval primitive shared with capability tier
  * enforcement, so an operator sees marketplace installs and every other gated
- * action on the same cockpit card. This module only translates between that
+ * action on the same approval card. This module only translates between that
  * primitive and the `ConfirmationResult` shape the marketplace tools speak.
  *
  * @module services/marketplace-mcp/confirmation-provider
@@ -53,6 +53,8 @@ import type { ApprovableUpdate } from '../marketplace/flows/update-installed.js'
 import { describeUpdatesInFull, UPDATE_DETAIL_MAX_LENGTH } from './update-approval-detail.js';
 import type { MarketplaceCardInput } from '../core/approvals/approval-storable.js';
 import { planMarketplaceCard } from './approval-summary-card.js';
+import { describePackageInFull } from '../marketplace/preview/extension-disclosure.js';
+import { withOutsideWordsNote } from '../core/approvals/notes/outside-words.js';
 
 /** The kind of mutation a confirmation request is gating. */
 export type ConfirmationOperation =
@@ -170,7 +172,7 @@ export interface ConfirmationRequest {
    */
   contentHash?: string;
   /**
-   * Install only, shown on the card and not bound: the version and where the
+   * Install only: the bound version and the displayed source where the
    * package comes from, so a person can tell what they are approving (the
    * binding above already pins the bytes).
    */
@@ -213,6 +215,10 @@ export interface ConfirmationRequest {
    * is the same install.
    */
   requestedBy?: string;
+  /** Server-owned outside-words context, captured when this request is raised. */
+  outsideWords?: boolean;
+  /** The resolved manifest's name, distinct from an install lookup alias. */
+  resolvedPackageName?: string;
 }
 
 /**
@@ -225,30 +231,13 @@ export interface ConfirmationRequest {
 export interface MarketplaceConfirmationContext {
   /** Label for the agent that asked, for the approval card. */
   requestedBy?: string;
+  /** Read from the verified turn, never from tool arguments. */
+  outsideWords?: boolean;
   /**
-   * A person ALREADY approved this exact invocation at the capability tier gate,
-   * which spends an approval bound to the same arguments this handler is about to
-   * act on. The handler must not ask again: one action, one card.
-   *
-   * ## What it is actually set for, which is more than the line above implies
-   *
-   * `callerContext` (`marketplace-capabilities.ts`) sets this on a person's yes
-   * for this action OR `context.trusted`. The first is the tier gate's spent
-   * approval (a destructive call, or an `act` call whose Tools & packages area is
-   * set to Ask), or an Allowed the person set on this one action (spec
-   * `agent-permissions`); an area-level Allowed never counts, so the undecided
-   * install keeps this confirmation. The second is a caller that proved it may
-   * DECIDE approvals — and it is not tier-scoped, so a trusted caller installing a
-   * package (`marketplace.install` is tier `act`, gated by nothing upstream) skips
-   * this provider entirely and no card is ever shown.
-   *
-   * That is the standing posture, not a regression, and it is deliberate as far as
-   * it goes: a caller who can grant its own approval gains nothing from being asked.
-   * It is written down here because the previous wording said "only ever set for
-   * `destructive`", which is false, and a reader trusting it would conclude an
-   * install always shows a card. Whether `trusted` should short-circuit an `act`
-   * capability's own confirmation is a separate question from DOR-647's binding,
-   * and is left to a follow-up rather than changed under it.
+   * The verified person is calling directly, or (for operations without a
+   * package-content card) the capability gate already approved the action.
+   * Install and update never set this for a generic upstream approval: it
+   * carries no staged digest. Their content-bound confirmation still runs.
    */
   preApproved?: boolean;
 }
@@ -433,6 +422,10 @@ function bindingOf(req: ConfirmationRequest): MarketplaceBinding {
       // a set; binding the label too would re-ask whenever a scan listed the same
       // packages in another order.
       packageName: req.updates ? null : req.packageName,
+      ...(req.resolvedPackageName !== undefined && {
+        resolvedPackageName: req.resolvedPackageName,
+      }),
+      ...(req.origin?.version !== undefined && { version: req.origin.version }),
       // Absence is bound as absence: an unnamed marketplace searches every
       // enabled source, which is not the same effect as a pinned one.
       marketplace: req.marketplace ?? null,
@@ -473,9 +466,13 @@ function bindingOf(req: ConfirmationRequest): MarketplaceBinding {
  */
 function canonicalUpdates(
   updates: readonly ApprovableUpdate[]
-): Pick<ApprovableUpdate, 'installPath' | 'latestVersion' | 'disclosed' | 'contentHash'>[] {
+): Pick<
+  ApprovableUpdate,
+  'packageName' | 'installPath' | 'latestVersion' | 'disclosed' | 'contentHash'
+>[] {
   return updates
     .map((u) => ({
+      packageName: u.packageName,
       installPath: u.installPath,
       latestVersion: u.latestVersion,
       disclosed: u.disclosed,
@@ -487,9 +484,8 @@ function canonicalUpdates(
 /**
  * What a card shows, or the refusal raised in its place.
  *
- * A Marketplace install or update whose full list fits shows it whole in
- * `detail`, as it always has. One too long for that gets a summary card
- * instead (DOR-3070, `approval-summary-card.ts`): every row that gives it
+ * Mini apps and schedules use structured rows, even on short cards. A
+ * list too long for `detail` also gets those rows (DOR-3070): every item that gives it
  * more power, with the full list one link away. A template or a workspace too
  * long to show is still refused; nothing is ever cut.
  */
@@ -592,7 +588,7 @@ function describeInstallInFull(req: ConfirmationRequest): string {
     `Version ${JSON.stringify(req.origin?.version ?? 'not stated')}, from ${JSON.stringify(req.origin?.source ?? req.marketplace ?? 'any enabled marketplace')}.`,
     ...(agent && req.projectPath ? [`A new agent, in ${JSON.stringify(req.projectPath)}.`] : []),
     '',
-    ...describeEffectsInFull(disclosedEffectsOf(req.preview), where),
+    ...describePackageInFull(disclosedEffectsOf(req.preview), req.preview?.extensions, where),
   ];
   return lines.join('\n');
 }
@@ -787,7 +783,7 @@ function staleApprovalReason(req: ConfirmationRequest, binding: MarketplaceBindi
  * Flow:
  * 1. The agent calls `marketplace_install`; the provider records an approval and
  *    returns `{ status: 'pending', token }`.
- * 2. The approval appears on the operator's cockpit card, and they decide it by
+ * 2. The approval appears on the operator's approval card, and they decide it by
  *    approval id through `POST /api/approvals/:id/grant|deny`. There is
  *    deliberately no decide-by-token path: the agent holds the token, so one
  *    would let a requester approve its own request.
@@ -850,7 +846,7 @@ export class TokenConfirmationProvider implements ConfirmationProvider {
     const ticket = this.approvals.request({
       capabilityId: binding.capabilityId,
       inputHash: binding.inputHash,
-      summary: summaryOf(req),
+      summary: withOutsideWordsNote(summaryOf(req), req.outsideWords),
       ...(card.detail !== undefined && { detail: card.detail }),
       ...(card.marketplace && { marketplace: card.marketplace }),
       ...(req.requestedBy ? { requestedBy: req.requestedBy } : {}),

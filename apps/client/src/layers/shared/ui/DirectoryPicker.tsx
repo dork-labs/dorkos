@@ -7,6 +7,7 @@ import { resolveAgentVisual } from '@/layers/shared/lib/resolve-agent-visual';
 import { formatRelativeTime, shortenHomePath } from '@/layers/shared/lib/session-utils';
 import { IdentityAvatar } from './identity-avatar';
 import { PathBreadcrumb } from './path-breadcrumb';
+import { DirectoryPickerPathField } from './directory-picker-path-field';
 import { Spinner } from './spinner';
 import {
   ResponsiveDialog,
@@ -44,6 +45,29 @@ export interface DirectoryPickerProps {
   initialPath?: string | null;
   /** Map of directory path -> agent manifest for rendering agent identity in recents. */
   resolvedAgents?: Record<string, AgentManifest | null>;
+  /** The dialog's title, when it picks something other than a working folder. */
+  title?: string;
+  /** One line under the title about where the pick should not go. */
+  note?: string;
+  /**
+   * A field to type a folder path, for one the browser can't reach (an
+   * external drive). Enter browses to it; while it holds text, the footer
+   * button picks it instead of the browsed folder.
+   */
+  pathField?: { label: string; placeholder?: string };
+  /** The footer button's label. */
+  selectLabel?: string;
+  /** Leave the dialog open after a pick, so the caller can show a refusal and close it itself. */
+  keepOpenOnSelect?: boolean;
+  /** The caller's refusal for the last pick, shown above the footer. */
+  error?: string | null;
+  /** A pick is running; the footer button waits. */
+  pending?: boolean;
+  /**
+   * Open on the folder browser, ignoring recent working folders. For a pick
+   * where a project folder is not the usual answer (moving a backup, DOR-4253).
+   */
+  browseOnly?: boolean;
 }
 
 /** Modal dialog for browsing the filesystem and selecting a working directory. */
@@ -53,6 +77,14 @@ export function DirectoryPicker({
   onSelect,
   initialPath,
   resolvedAgents,
+  title = 'Select working folder',
+  note,
+  pathField,
+  selectLabel = 'Use this folder',
+  keepOpenOnSelect = false,
+  error,
+  pending = false,
+  browseOnly = false,
 }: DirectoryPickerProps) {
   const transport = useTransport();
   const queryClient = useQueryClient();
@@ -60,13 +92,21 @@ export function DirectoryPicker({
   const [currentPath, setCurrentPath] = useState(initialPath || '');
   const [showHidden, setShowHidden] = useState(false);
   const [view, setView] = useState<PickerView>(() =>
-    getInitialView(recentCwds, initialPath ?? null)
+    browseOnly ? 'browse' : getInitialView(recentCwds, initialPath ?? null)
   );
 
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [newFolderError, setNewFolderError] = useState<string | null>(null);
   const newFolderInputRef = useRef<HTMLInputElement>(null);
+
+  const [typedPath, setTypedPath] = useState('');
+  // Each opening starts with an empty typed path.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) setTypedPath('');
+  }
 
   const onClose = useCallback(() => onOpenChange(false), [onOpenChange]);
 
@@ -77,13 +117,19 @@ export function DirectoryPicker({
     staleTime: 30_000,
   });
 
-  // eslint-disable-next-line react-hooks/preserve-manual-memoization -- Semantic clarity
+  const typed = typedPath.trim();
   const handleSelect = useCallback(() => {
-    if (data?.path) {
-      onSelect(data.path);
-      onClose();
-    }
-  }, [data?.path, onSelect, onClose]);
+    // A typed path wins over the browsed folder: it is the one the person named last.
+    const chosen = typed || (view === 'browse' ? data?.path : undefined);
+    if (!chosen) return;
+    onSelect(chosen);
+    if (!keepOpenOnSelect) onClose();
+  }, [typed, view, data?.path, onSelect, onClose, keepOpenOnSelect]);
+
+  const handleBrowseTyped = useCallback((path: string) => {
+    setCurrentPath(path);
+    setView('browse');
+  }, []);
 
   const handleViewChange = useCallback((v: PickerView) => {
     setView(v);
@@ -98,6 +144,8 @@ export function DirectoryPicker({
   const handleNavigate = useCallback((dirPath: string) => {
     setCurrentPath(dirPath);
     setView('browse');
+    // Clicking into a folder is a new choice; a stale typed path must not win over it.
+    setTypedPath('');
   }, []);
 
   const handleRecentSelect = useCallback(
@@ -164,6 +212,8 @@ export function DirectoryPicker({
     }
   }, [isCreatingFolder]);
 
+  // A browse-only pick never offers recent working folders.
+  const showRecents = recentCwds.length > 0 && !browseOnly;
   const toggleBtn = (active: boolean, position: 'left' | 'right') =>
     `p-1.5 transition-colors ${position === 'left' ? 'rounded-l-md' : 'rounded-r-md'} ${
       active ? 'bg-accent text-foreground' : 'text-muted-foreground/40 hover:text-muted-foreground'
@@ -174,15 +224,14 @@ export function DirectoryPicker({
       <ResponsiveDialogContent className="max-h-[85vh] max-w-lg gap-0 overflow-hidden p-0 sm:rounded-xl">
         {/* Header */}
         <ResponsiveDialogHeader className="space-y-0 border-b px-4 py-3">
-          <ResponsiveDialogTitle className="text-sm font-medium">
-            Select working folder
-          </ResponsiveDialogTitle>
+          <ResponsiveDialogTitle className="text-sm font-medium">{title}</ResponsiveDialogTitle>
+          {note && <p className="text-muted-foreground pt-1 text-xs">{note}</p>}
         </ResponsiveDialogHeader>
 
         {/* Navigation bar */}
         <div className="bg-muted/30 flex items-center gap-2 overflow-x-auto border-b px-4 py-2">
           <div className="flex flex-shrink-0 items-center rounded-md border">
-            {recentCwds.length > 0 && (
+            {showRecents && (
               <button
                 type="button"
                 onClick={() => handleViewChange('recent')}
@@ -199,7 +248,7 @@ export function DirectoryPicker({
                 handleViewChange('browse');
                 handleNavigate('');
               }}
-              className={toggleBtn(view === 'browse', recentCwds.length > 0 ? 'right' : 'left')}
+              className={toggleBtn(view === 'browse', showRecents ? 'right' : 'left')}
               aria-label="Browse folders"
               title="Browse"
             >
@@ -379,6 +428,25 @@ export function DirectoryPicker({
           )}
         </div>
 
+        {pathField ? (
+          <div className="border-t px-4 py-3">
+            <DirectoryPickerPathField
+              label={pathField.label}
+              placeholder={pathField.placeholder}
+              value={typedPath}
+              onChange={setTypedPath}
+              onBrowse={handleBrowseTyped}
+              error={error}
+            />
+          </div>
+        ) : (
+          error && (
+            <p role="alert" className="text-destructive border-t px-4 py-3 text-xs">
+              {error}
+            </p>
+          )
+        )}
+
         {/* Footer */}
         <div className="bg-muted/20 flex items-center justify-end gap-2 border-t px-4 py-3">
           <button
@@ -391,10 +459,10 @@ export function DirectoryPicker({
           <button
             type="button"
             onClick={handleSelect}
-            disabled={!data?.path || view !== 'browse'}
+            disabled={pending || (!typed && (!data?.path || view !== 'browse'))}
             className="bg-primary text-primary-foreground hover:bg-primary/90 rounded-md px-3 py-1.5 text-xs transition-colors disabled:opacity-50"
           >
-            Use this folder
+            {selectLabel}
           </button>
         </div>
       </ResponsiveDialogContent>

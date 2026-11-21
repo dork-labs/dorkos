@@ -7,13 +7,28 @@
  */
 import { useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ExtensionDialogProps } from '@dorkos/extension-api';
-import { createInitialSlots, useExtensionRegistry } from '@/layers/shared/model';
+import {
+  createDialogOpenState,
+  createInitialSlots,
+  useExtensionRegistry,
+} from '@/layers/shared/model';
+import { setExtensionNames } from '@/layers/shared/lib/extension-names';
 import { createExtensionAPI } from '@/layers/features/extensions/model/extension-api-factory';
 import type { ExtensionAPIDeps } from '@/layers/features/extensions/model/types';
 import { DialogHost } from '../ui/DialogHost';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/layers/shared/ui';
+import { EXTENSION_CONTRIBUTION_KEYS } from '@dorkos/extension-api';
+
+/** Every place declared, for tests of what a registration does once it is allowed. */
+const DECLARES_ALL = {
+  contributions: Object.fromEntries(EXTENSION_CONTRIBUTION_KEYS.map((key) => [key, true])),
+  // And a person allowed every one (DOR-4282).
+  allowedSlots: [...EXTENSION_CONTRIBUTION_KEYS],
+};
 
 vi.mock('@/layers/shared/model', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/shared/model')>();
@@ -50,6 +65,21 @@ function makeDeps(): ExtensionAPIDeps {
     registerCommandHandler: vi.fn(),
     unregisterCommandHandler: vi.fn(),
   } as ExtensionAPIDeps;
+}
+
+/**
+ * Render the host with DorkOS's app names already listed (the loader fills
+ * them before any app activates), so the strip over an app's dialog has the
+ * names to draw.
+ */
+function renderHost(names: Record<string, string> = {}) {
+  setExtensionNames(names);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={client}>
+      <DialogHost />
+    </QueryClientProvider>
+  );
 }
 
 /** How many times the dialog below has mounted. */
@@ -99,18 +129,18 @@ afterEach(() => {
 
 describe('extension dialogs (registerDialog → DialogHost)', () => {
   it('stays closed until open() is called', () => {
-    const { api } = createExtensionAPI('flow', makeDeps());
+    const { api } = createExtensionAPI('flow', makeDeps(), [], DECLARES_ALL);
     api.registerDialog('pause', PauseDialog);
-    render(<DialogHost />);
+    renderHost();
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(mounts).toBe(0);
   });
 
   it('opens on open(), closes on close(), and reopens', () => {
-    const { api } = createExtensionAPI('flow', makeDeps());
+    const { api } = createExtensionAPI('flow', makeDeps(), [], DECLARES_ALL);
     const dialog = api.registerDialog('pause', PauseDialog);
-    render(<DialogHost />);
+    renderHost();
 
     act(() => dialog.open());
     expect(screen.getByRole('dialog', { name: 'Pause' })).toBeInTheDocument();
@@ -125,9 +155,9 @@ describe('extension dialogs (registerDialog → DialogHost)', () => {
   });
 
   it('opens when open() is called before the host renders', () => {
-    const { api } = createExtensionAPI('flow', makeDeps());
+    const { api } = createExtensionAPI('flow', makeDeps(), [], DECLARES_ALL);
     api.registerDialog('pause', PauseDialog).open();
-    render(<DialogHost />);
+    renderHost();
 
     expect(screen.getByRole('dialog', { name: 'Pause' })).toBeInTheDocument();
   });
@@ -137,9 +167,9 @@ describe('extension dialogs (registerDialog → DialogHost)', () => {
     ['a click outside', () => fireEvent.click(screen.getByTestId('backdrop'))],
     ['its own close button', () => fireEvent.click(screen.getByRole('button', { name: 'Close' }))],
   ])('closes on %s through onOpenChange, and reopens after', (_how, closeIt) => {
-    const { api } = createExtensionAPI('flow', makeDeps());
+    const { api } = createExtensionAPI('flow', makeDeps(), [], DECLARES_ALL);
     const dialog = api.registerDialog('pause', PauseDialog);
-    render(<DialogHost />);
+    renderHost();
 
     act(() => dialog.open());
     act(() => closeIt());
@@ -150,9 +180,9 @@ describe('extension dialogs (registerDialog → DialogHost)', () => {
   });
 
   it('hides a dialog that ignores its open prop', () => {
-    const { api } = createExtensionAPI('flow', makeDeps());
+    const { api } = createExtensionAPI('flow', makeDeps(), [], DECLARES_ALL);
     const dialog = api.registerDialog('careless', CarelessDialog);
-    render(<DialogHost />);
+    renderHost();
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     act(() => dialog.open());
@@ -169,9 +199,9 @@ describe('extension dialogs (registerDialog → DialogHost)', () => {
       }, [onOpenChange]);
       return <div role="dialog" aria-label="Capturing" />;
     }
-    const { api, cleanups } = createExtensionAPI('flow', makeDeps());
+    const { api, cleanups } = createExtensionAPI('flow', makeDeps(), [], DECLARES_ALL);
     const dialog = api.registerDialog('capturing', Capturing);
-    render(<DialogHost />);
+    renderHost();
     act(() => dialog.open());
     const onOpenChange = captured!;
 
@@ -186,11 +216,11 @@ describe('extension dialogs (registerDialog → DialogHost)', () => {
   });
 
   it('keeps one extension dialog open at a time, across extensions', () => {
-    const flow = createExtensionAPI('flow', makeDeps()).api;
-    const other = createExtensionAPI('other', makeDeps()).api;
+    const flow = createExtensionAPI('flow', makeDeps(), [], DECLARES_ALL).api;
+    const other = createExtensionAPI('other', makeDeps(), [], DECLARES_ALL).api;
     const pause = flow.registerDialog('pause', PauseDialog);
     const careless = other.registerDialog('careless', CarelessDialog);
-    render(<DialogHost />);
+    renderHost();
 
     act(() => pause.open());
     expect(screen.getByRole('dialog', { name: 'Pause' })).toBeInTheDocument();
@@ -201,15 +231,122 @@ describe('extension dialogs (registerDialog → DialogHost)', () => {
     expect(screen.queryByRole('dialog', { name: 'Pause' })).not.toBeInTheDocument();
   });
 
+  describe('the strip DorkOS draws over an app’s dialog (DOR-4282)', () => {
+    /** An app dialog whose own text names DorkOS, so the strip's name can only come from the record. */
+    function NamedNotice() {
+      return (
+        <div role="dialog" aria-label="Notice">
+          <p>DorkOS</p>
+          <p>From DorkOS</p>
+        </div>
+      );
+    }
+
+    it('names the app from DorkOS’s record, outside the app’s own dialog', () => {
+      const { api } = createExtensionAPI('planner', makeDeps(), [], DECLARES_ALL);
+      api.registerDialog('notice', NamedNotice).open();
+      renderHost({ planner: 'Planner', other: 'Other' });
+
+      const strip = screen.getByText('From Planner');
+      expect(strip.closest('[data-slot="extension-dialog-origin"]')).toBeInTheDocument();
+      const dialog = screen.getByRole('dialog', { name: 'Notice' });
+      expect(dialog).not.toContainElement(strip);
+      expect(within(dialog).queryByText('From Planner')).not.toBeInTheDocument();
+    });
+
+    // Purpose: a long name stays inside the strip's column on a phone, cut at
+    // the end, with the icon kept (jsdom has no layout, so this pins the
+    // classes: capped at its column, never at the screen).
+    it('keeps a long name inside its column, cut at the end', () => {
+      const { api } = createExtensionAPI('planner', makeDeps(), [], DECLARES_ALL);
+      api.registerDialog('notice', NamedNotice).open();
+      renderHost({ planner: 'A made-up app with a very long name that runs out of room' });
+
+      const text = screen.getByText(/^From A made-up app/);
+      expect(text.className).toMatch(/\btruncate\b/);
+      const strip = text.closest('[data-slot="extension-dialog-origin"]')!;
+      expect(strip.className).toContain('max-w-[min(20rem,100%)]');
+      expect(strip.className).toMatch(/\bmin-w-0\b/);
+      expect(strip.querySelector('svg')?.getAttribute('class')).toMatch(/\bshrink-0\b/);
+    });
+
+    it('draws nothing, never the id, while the name is not known', () => {
+      const { api } = createExtensionAPI('planner', makeDeps(), [], DECLARES_ALL);
+      api.registerDialog('notice', NamedNotice).open();
+      renderHost();
+
+      expect(screen.getByRole('dialog', { name: 'Notice' })).toBeInTheDocument();
+      expect(document.querySelector('[data-slot="extension-dialog-origin"]')).toBeNull();
+      expect(screen.queryByText(/From planner/)).not.toBeInTheDocument();
+    });
+
+    it('takes no clicks and stays out of what a modal hides from screen readers', () => {
+      const { api } = createExtensionAPI('planner', makeDeps(), [], DECLARES_ALL);
+      api.registerDialog('notice', NamedNotice).open();
+      renderHost({ planner: 'Planner' });
+
+      const band = screen.getByText('From Planner').closest('[role="status"]');
+      expect(band).toHaveAttribute('aria-live', 'polite');
+      expect(band).toHaveClass('pointer-events-none');
+      // Nothing inside opts back into clicks.
+      expect(band?.querySelector('.pointer-events-auto')).toBeNull();
+    });
+
+    it('stays readable beside a modal Radix dialog, which hides the rest of the page', () => {
+      function ModalDialog({ onOpenChange }: ExtensionDialogProps) {
+        return (
+          <Dialog open onOpenChange={onOpenChange}>
+            <DialogContent>
+              <DialogTitle>Modal</DialogTitle>
+              <DialogDescription>An app dialog.</DialogDescription>
+            </DialogContent>
+          </Dialog>
+        );
+      }
+      const { api } = createExtensionAPI('planner', makeDeps(), [], DECLARES_ALL);
+      api.registerDialog('modal', ModalDialog).open();
+      const { container } = renderHost({ planner: 'Planner' });
+
+      expect(screen.getByRole('dialog', { name: 'Modal' })).toBeInTheDocument();
+      // The modal did hide the rest of the page…
+      expect(container.closest('[aria-hidden="true"]')).not.toBeNull();
+      // …but not the strip.
+      expect(screen.getByText('From Planner').closest('[aria-hidden="true"]')).toBeNull();
+    });
+
+    it('goes when the dialog closes', () => {
+      const { api } = createExtensionAPI('planner', makeDeps(), [], DECLARES_ALL);
+      const dialog = api.registerDialog('notice', NamedNotice);
+      renderHost({ planner: 'Planner' });
+
+      act(() => dialog.open());
+      expect(screen.getByText('From Planner')).toBeInTheDocument();
+      act(() => dialog.close());
+      expect(screen.queryByText('From Planner')).not.toBeInTheDocument();
+    });
+
+    it('is not drawn over DorkOS’s own dialogs', () => {
+      const openState = createDialogOpenState();
+      useExtensionRegistry
+        .getState()
+        .register('dialog', { id: 'make-todo', component: CarelessDialog, openState });
+      openState.set(true);
+      renderHost({ planner: 'Planner' });
+
+      expect(screen.getByRole('dialog', { name: 'Careless' })).toBeInTheDocument();
+      expect(document.querySelector('[data-slot="extension-dialog-origin"]')).toBeNull();
+    });
+  });
+
   it('closes a dialog that throws, leaving the host and other dialogs working', () => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
     function Broken(): never {
       throw new Error('boom');
     }
-    const { api } = createExtensionAPI('flow', makeDeps());
+    const { api } = createExtensionAPI('flow', makeDeps(), [], DECLARES_ALL);
     const broken = api.registerDialog('broken', Broken);
     const pause = api.registerDialog('pause', PauseDialog);
-    render(<DialogHost />);
+    renderHost();
 
     act(() => broken.open());
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();

@@ -60,6 +60,8 @@ export interface ExtensionStoppedPayloads {
     stops?: number;
     /** `off` only: the window those stops fell in, in minutes. */
     windowMinutes?: number;
+    /** The final automatic start was refused, rather than another running child stopping. */
+    restartFailed?: boolean;
   };
 }
 
@@ -92,6 +94,7 @@ const RESTARTING: Record<ExtensionStopReason, (name: string) => string> = {
  * @param p - The payload.
  */
 function offBody(p: ExtensionStoppedPayload): string {
+  if (p.restartFailed) return 'It couldn’t restart. Use Restart to try again.';
   const stops = p.stops ?? 3;
   const minutes = Math.max(1, p.windowMinutes ?? 10);
   const count = stops === 1 ? 'once' : `${stops} times`;

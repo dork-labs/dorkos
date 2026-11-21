@@ -9,7 +9,6 @@ import {
   assertLocalBrowserUrl,
   browserClosedRefusal,
   personPausedRefusal,
-  protectedPageRefusal,
   browserSetupCancelled,
   stalePageRefusal,
 } from '../errors.js';
@@ -30,8 +29,10 @@ import {
 import { AgentWindowNames, FullScreenGuard } from '../agent-window/index.js';
 import { productionBackend, type LocalBrowserBackend } from '../playwright-backend.js';
 import type { PageSessionBackend, PageConnection } from './profile-connection.js';
+import { BrowserPageProtection } from './page-protection.js';
 import { BrowserPageHandles } from './page-handles.js';
 import { BrowserAgentPageActions } from './page-action.js';
+import { BrowserPageRefusals } from './admission/page-refusals.js';
 import { BrowserPageState } from './page-state.js';
 import type { PageSessionHost } from './page-session-host.js';
 import { BrowserAgentPageReads } from './agent-page-reads.js';
@@ -88,9 +89,8 @@ export class LocalBrowserPageSession {
     this.actions,
     () => this.shared?.drainProfile?.() ?? Promise.resolve()
   );
-  runAgentOperation<T>(effect: boolean, run: () => Promise<T>): Promise<T> {
-    return this.runtime.operations.run(effect, run);
-  }
+  runAgentOperation = <T>(effect: boolean, run: () => Promise<T>): Promise<T> =>
+    this.runtime.operations.run(effect, run);
   private readonly fullScreen = new FullScreenGuard(undefined, this.runtime.work.track, () =>
     this.requireAgentPage()
   );
@@ -141,13 +141,14 @@ export class LocalBrowserPageSession {
       moves: this.moves,
       assertAvailable: () => {
         this.authority.assertCurrent('person');
-        this.assertNotClosing();
+        this.closing.assertAvailable();
       },
       invalidate: () => this.invalidate(),
       revision: () => this.pageState.revision,
       stale: stalePageRefusal,
       setPaused: (paused) => {
         this.paused = paused;
+        if (paused) this.pageState.navigation.reset();
       },
       driving: () => this.sessionId !== null && !this.paused,
       page: () => this.page(),
@@ -204,7 +205,7 @@ export class LocalBrowserPageSession {
 
   async open(input: LocalBrowserOpen): Promise<LocalBrowserState> {
     this.profileRemoval.assertAvailable();
-    this.assertNotClosing();
+    this.closing.assertAvailable();
     if (this.actions.active)
       throw new LocalBrowserError('busy', 'A browser action is finishing. Read the page again.');
     if (this.opening)
@@ -300,10 +301,7 @@ export class LocalBrowserPageSession {
   }
 
   /** Whether this exact Page can still be resolved, without reading its document. */
-  hasLivePage(): boolean {
-    const page = this.pageState.tabs.get(this.pageState.selectedTabId ?? '');
-    return this.status === 'connected' && !!page && !page.isClosed();
-  }
+  hasLivePage = (): boolean => this.handles.hasLivePage();
 
   /** Pending acquisitions and unresolved closure retain their resource slot. */
   hasPageReservation(): boolean {
@@ -331,10 +329,11 @@ export class LocalBrowserPageSession {
     );
   }
 
-  matchesProfileGrant(profileId: string | null, agentId?: string): boolean {
-    return this.authority.matches(profileId, agentId);
-  }
+  matchesProfileGrant = (profileId: string | null, agentId?: string): boolean =>
+    this.authority.matches(profileId, agentId);
   assertAuthorityCurrent = (): void => this.authority.assertCurrent();
+  requireHandoffAuthority = (chat: string): Promise<void> => this.authority.require(chat);
+  requireHandoffCustody: (profile: string | null) => void = () => undefined;
 
   /** Revoke before awaiting cleanup; person custody never becomes an agent grant again. */
   async revoke(): Promise<void> {
@@ -344,9 +343,7 @@ export class LocalBrowserPageSession {
   }
 
   /** The owned page connection, for host profile reservations only. */
-  pageConnection(): PageConnection | undefined {
-    return this.ownedContext;
-  }
+  pageConnection = (): PageConnection | undefined => this.ownedContext;
 
   private readonly handles = new BrowserPageHandles(
     this,
@@ -359,7 +356,7 @@ export class LocalBrowserPageSession {
       sessionId: this.sessionId,
       connectionId: this.connectionId,
     }),
-    () => this.assertNotClosing()
+    () => this.closing.assertAvailable()
   );
   restorePersonFocus = (page: Page) => this.handles.restorePersonFocus(page);
   /** Capture identity once; a replacement under the same chat id cannot inherit this call. */
@@ -367,18 +364,40 @@ export class LocalBrowserPageSession {
   /** Host-only source for the typed owner viewer, never a tool argument. */
   captureViewerPage = () => this.handles.viewer();
 
-  /** Preserve protected-origin and per-profile sign-in refusal for metadata-only watching. */
-  assertViewerWatchAllowed(page: Page): void {
-    if (this.handover.signInHoldsProfile(this.currentProfileId()))
-      throw new Error('viewer_unavailable');
-    this.refuseProtectedPage(page);
-  }
+  /** Capture this lease's close identity before handoff can await any physical teardown. */
+  captureHandoffClose = (state: LocalBrowserState, profileId: string | null) =>
+    this.handles.handoffClose(state, profileId, this.closing);
+
+  private readonly protection = new BrowserPageProtection(
+    this.handover,
+    () => this.profileId,
+    () => this.cloudOrigins(),
+    () => this.appOrigins(),
+    () => {
+      this.paused = true;
+      this.invalidate();
+    }
+  );
+  /** Host-only metadata guard; it performs no agent read while held. */
+  readonly viewerPageAllowed = (page: Page) => this.protection.allowed(page);
+  readonly assertViewerWatchAllowed = (page: Page) => this.protection.watch(page);
 
   /** The profile the browser opened last, or null for the default one. */
   readonly currentProfileId = (): string | null => this.profileId;
 
   /** The host of the page last read, when that reading was a refusal; cleared by any change. */
-  readonly lastRefusalHost = (): string | null => this.pageState.observation?.refusal?.host ?? null;
+  readonly refusals = new BrowserPageRefusals({
+    state: this.pageState,
+    identity: () => ({
+      connectionId: this.connectionId,
+      connected: this.status === 'connected' && !this.detachedState,
+      paused: this.paused,
+    }),
+    page: () => this.page(true),
+    protect: (page) => this.protection.refuse(page),
+  });
+  readonly lastRefusalHost = () => this.refusals.lastHost();
+  readonly refusalIdentity = () => this.refusals.identity();
 
   /** Whether a named profile exists. False until startup wires the profile list, as for open. */
   readonly profileExists = (id: string): boolean => this.authority.profiles.exists?.(id) ?? false;
@@ -386,9 +405,8 @@ export class LocalBrowserPageSession {
   /**
    * Set once at startup; a named browser remains unavailable until access is wired.
    */
-  useProfileAccess(...wiring: Parameters<BrowserProfileAccessGate['use']>): void {
+  useProfileAccess = (...wiring: Parameters<BrowserProfileAccessGate['use']>): void =>
     this.authority.profiles.use(...wiring);
-  }
 
   /** On a named profile, the chat's agent must be one a person added, on every call. */
   async requireProfileAccess(sessionId: string): Promise<void> {
@@ -408,7 +426,7 @@ export class LocalBrowserPageSession {
     admit: () => this.requireAgentPage(),
     sync: () => this.syncTabs(),
     selected: () => this.page(true),
-    refuse: (page) => this.refuseProtectedPage(page),
+    refuse: (page) => this.protection.refuse(page),
     describe: () => this.snapshot(true),
   });
   agentState = () => this.reads.state();
@@ -421,7 +439,7 @@ export class LocalBrowserPageSession {
   }
 
   async selectTab(id: string): Promise<LocalBrowserState> {
-    this.assertNotClosing();
+    this.closing.assertAvailable();
     this.syncTabs();
     return selectPersonPage(this.pageState, id, () => this.state());
   }
@@ -443,12 +461,12 @@ export class LocalBrowserPageSession {
     page: () => this.page(true),
     assertAvailable: () => {
       this.shared?.assertAgentAction?.();
-      this.assertNotClosing();
+      this.closing.assertAvailable();
       assertAgentMayAct(this.status, this.paused);
     },
     assertDestination: (url) =>
       assertLocalBrowserUrl(url, 'agent', this.cloudOrigins(), this.appOrigins()),
-    refuse: (page) => this.refuseProtectedPage(page),
+    refuse: (page) => this.protection.refuse(page),
     stale: stalePageRefusal,
     admit: (revision) => this.admit(revision),
     invalidate: () => this.invalidate(),
@@ -466,9 +484,7 @@ export class LocalBrowserPageSession {
     this.closing.active ? this.closeConnection(false) : this.personControl.handToPerson();
   resume = () => this.personControl.resume();
 
-  async disconnect(): Promise<LocalBrowserState> {
-    return this.closeConnection(true);
-  }
+  disconnect = (): Promise<LocalBrowserState> => this.closeConnection(true);
 
   /**
    * Close the connection and release what it holds. `closed` is the person closing
@@ -480,6 +496,7 @@ export class LocalBrowserPageSession {
     await this.closing.run(
       () => {
         this.pageState.metadata.clear();
+        this.pageState.navigation.clear();
         this.preparation.clear();
         this.lifecycle++;
         this.paused = true;
@@ -503,20 +520,15 @@ export class LocalBrowserPageSession {
     return this.state();
   }
 
-  private assertNotClosing(): void {
-    this.closing.assertAvailable();
-  }
-
-  private contexts(): Pick<BrowserContext, 'pages' | 'newPage'>[] {
-    return this.ownedContext ? [this.ownedContext] : (this.browser?.contexts() ?? []);
-  }
+  private contexts = (): Pick<BrowserContext, 'pages' | 'newPage'>[] =>
+    this.ownedContext ? [this.ownedContext] : (this.browser?.contexts() ?? []);
   private syncTabs(): void {
     if (this.detachedState || this.closing.active || this.status !== 'connected') return;
     this.pageState.sync(this.contexts().flatMap((context) => context.pages()));
   }
   /** The selected tab; `forAgent` picks the agent's words for a handoff's pause (DOR-4678). */
   private page(forAgent = false): Page {
-    this.assertNotClosing();
+    this.closing.assertAvailable();
     this.syncTabs();
     const page = this.pageState.tabs.get(this.pageState.selectedTabId ?? '');
     if (this.detachedState) throw forAgent ? agentPausedRefusal() : personPausedRefusal();
@@ -538,28 +550,13 @@ export class LocalBrowserPageSession {
     // keep it held, as a failed Disconnect does.
     void this.closeConnection(false, true).catch(() => undefined);
   }
-  private invalidate(): void {
-    this.pageState.invalidate();
-  }
+  private invalidate = () => this.pageState.invalidate();
   private admit(revision: number): void {
     this.shared?.assertAgentAction?.();
     this.authority.assertCurrent();
-    this.assertNotClosing();
+    this.closing.assertAvailable();
     assertAgentMayAct(this.status, this.paused);
     if (revision !== this.pageState.revision) throw stalePageRefusal();
-    this.refuseProtectedPage(this.page(true));
-  }
-  /**
-   * An agent never reads or acts on a page showing DorkOS or Cloud, in the
-   * tab or in any of its frames (DOR-3196): agent control pauses until the
-   * person resumes it, and the agent is refused.
-   */
-  private refuseProtectedPage(page: Page): void {
-    const urls = [page.url(), ...page.frames().map((frame) => frame.url())];
-    const refusal = protectedPageRefusal(urls, this.cloudOrigins(), this.appOrigins());
-    if (!refusal) return;
-    this.paused = true;
-    this.invalidate();
-    throw refusal;
+    this.protection.refuse(this.page(true));
   }
 }

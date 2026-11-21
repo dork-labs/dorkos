@@ -27,6 +27,7 @@ function fixture() {
       tabId: 'tab-a',
     },
     close: vi.fn(async () => undefined),
+    abandon: vi.fn(async () => undefined),
     signal: lifetime.signal,
     assertLive: () => {
       if (!current) throw Error('changed');
