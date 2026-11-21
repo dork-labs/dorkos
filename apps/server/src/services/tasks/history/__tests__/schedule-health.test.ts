@@ -177,6 +177,17 @@ describe('scheduleHealth', () => {
     expect(health.get('s2')).toEqual(HEALTHY);
   });
 
+  it('starts a new failure streak after recovery when runs share a start time', () => {
+    const startedAt = '2026-11-13T01:00:00.000Z';
+    // A ULID's random suffix can sort earlier runs ahead of later ones.
+    insert('r4', 's1', 'failed', startedAt);
+    insert('r3', 's1', 'failed', startedAt);
+    insert('r2', 's1', 'completed', startedAt);
+    insert('r1', 's1', 'failed', startedAt);
+
+    expect(scheduleHealth(db).get('s1')).toMatchObject({ streak: 1, lastRunId: 'r1' });
+  });
+
   it('counts two failures after the schedule last changed', () => {
     insert('c1', 's1', 'failed', '2026-11-13T01:00:00.000Z');
     insert('c2', 's1', 'failed', '2026-11-13T02:00:00.000Z');
