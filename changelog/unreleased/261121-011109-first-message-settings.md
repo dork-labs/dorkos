@@ -5,4 +5,4 @@ covers:
 
 ### Fixed
 
-- Keep your chosen model and approval settings when you send the first message in a new chat. This applies to chats from a saved folder or with an agent you’ve added.
+- Keep your chosen model and approval settings when you send the first message in a new chat. This applies to new chats from a saved folder and new chats with an agent.
