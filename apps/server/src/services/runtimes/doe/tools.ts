@@ -35,6 +35,7 @@ export interface DoeHostOptions extends DoeBuilderLifecycle {
   sessionId: string;
   cwd: string;
   opts?: MessageOpts;
+  plainTextRoomReply?: boolean;
   signal: AbortSignal;
   agentPath?: AgentHome;
   managedMcp?: ManagedMcpServerResolver;
@@ -80,6 +81,7 @@ export async function assembleDoeHost(options: DoeHostOptions) {
       cwd: options.cwd,
       agentPath,
       opts: options.opts,
+      plainTextRoomReply: options.plainTextRoomReply,
       hostConnected: mcp.hostConnected,
       agentToAgent,
     });

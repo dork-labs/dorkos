@@ -557,7 +557,7 @@ describe('what claude-code says it does with media', () => {
     expect(runtime.getCapabilities().mediaOutput).toBe('none');
   });
 
-  it('RT-MEDIA-01: promises attachments once the composition root hands it a store', () => {
+  it('promises attachments once the composition root hands it a store', () => {
     const runtime = new ClaudeCodeRuntime(
       '/tmp/dorkos-conformance',
       '/projects/conformance',
