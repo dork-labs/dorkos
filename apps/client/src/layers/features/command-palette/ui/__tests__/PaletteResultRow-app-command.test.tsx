@@ -80,6 +80,24 @@ describe('PaletteResultRow — a command', () => {
     expect(screen.getByTitle('Planner')).toBeInTheDocument();
   });
 
+  // Purpose: the option's accessible name is "<label>, <app>", whole and the
+  // same in every browser: what a screen reader says and what the browser
+  // suite clicks by (`extension-seams.spec.ts`).
+  it('is named "<label>, <app>" for screen readers', () => {
+    renderRow({
+      id: 'hello-world:toggle',
+      label: 'Hello World: Toggle Tab Dot',
+      icon: 'Settings',
+      action: 'ext:hello-world:toggle',
+      appName: 'Hello World',
+    });
+
+    expect(
+      // A string name matches the whole name exactly.
+      screen.getByRole('option', { name: 'Hello World: Toggle Tab Dot, Hello World' })
+    ).toBeInTheDocument();
+  });
+
   // Purpose: on a phone the label stays whole and the app's name moves to its
   // own line rather than both squeezing (jsdom has no layout, so this pins the
   // classes that do it: a wrapping group, and only the name is cut).
@@ -106,7 +124,8 @@ describe('PaletteResultRow — a command', () => {
   it('draws no app name on DorkOS’s own command', () => {
     renderRow({ id: 'settings', label: 'Settings', icon: 'Settings', action: 'openSettings' });
 
-    const option = screen.getByRole('option', { name: /Settings/ });
+    const option = screen.getByRole('option', { name: 'Settings' });
+    expect(option).not.toHaveAttribute('aria-label');
     expect(option).toHaveTextContent(/^Settings$/);
     expect(option).not.toHaveTextContent('·');
   });
