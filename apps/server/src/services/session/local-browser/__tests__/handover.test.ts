@@ -56,7 +56,9 @@ function fakeBrowser(initial = connected()) {
     navigate: vi.fn(async () => state),
     stepHistory: vi.fn(async () => state),
     pause: vi.fn(async () => (state = { ...state, paused: true })),
-    handToPerson: vi.fn(async () => (state = { ...state, paused: true })),
+    handToPerson: vi.fn<HandoverBrowser['handToPerson']>(
+      async () => (state = { ...state, paused: true })
+    ),
     resume: vi.fn(async () => (state = { ...state, paused: false })),
     disconnect: vi.fn(async () => (state = { ...state, status: 'disconnected', sessionId: null })),
   } satisfies HandoverBrowser;
@@ -132,6 +134,30 @@ function setup(outside = false, mode: 'embedded' | 'new-window' = 'embedded') {
 }
 
 describe('detached handoffs', () => {
+  it.each(['url', 'tab', 'profile', 'connection', 'session'] as const)(
+    'refuses a changed %s after the pause without opening a sign-in window',
+    async (move) => {
+      const f = setup(false, 'new-window');
+      f.browser.handToPerson.mockImplementationOnce(async () => {
+        const next = { ...connected(), paused: true };
+        if (move === 'url') next.tabs = [{ ...next.tabs[0]!, url: 'https://other.example/' }];
+        if (move === 'tab') {
+          next.selectedTabId = 't2';
+          next.tabs = [{ ...next.tabs[0]!, id: 't2' }];
+        }
+        if (move === 'profile') f.setProfile('p2');
+        if (move === 'connection') next.connectionId = 'c2';
+        if (move === 'session') next.sessionId = 'chat-2';
+        return f.set(next);
+      });
+      await expect(f.handover.ask('chat-1', 'wall')).rejects.toMatchObject({
+        code: 'site_changed',
+      });
+      expect(f.signIns.start).not.toHaveBeenCalled();
+      expect(f.browser.resume).not.toHaveBeenCalled();
+      expect(await f.handover.state()).toMatchObject({ paused: true, handoff: null });
+    }
+  );
   it('does not publish a handoff or report success on retry after its close times out', async () => {
     const { handover, browser, signIns, set } = setup(false, 'new-window');
     const handedOver = vi.fn();
