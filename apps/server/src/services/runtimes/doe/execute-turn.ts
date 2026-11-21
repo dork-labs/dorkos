@@ -5,6 +5,9 @@ import {
   type Resources,
   type BeatRequest,
   type BeatResult,
+  type JsonValue,
+  type ModelMessage,
+  type ScopedExecutionOptions,
 } from '@dorkos/doe';
 import type {
   AgentRuntime,
@@ -43,6 +46,33 @@ import type { DoeRuntimeOptions } from './doe-runtime.js';
 import type { DoeSessionStore } from './session-store.js';
 /** What a chat with no AI to run on says (credits not chosen, nothing configured). */
 export const DOE_NOT_CONNECTED = 'Connect AI to use this agent.';
+
+const ROOM_REPLY_REMINDER =
+  'If your answer is for the room, use post_to_room to give a short plain-text reply to the addressed message. Use a reaction if acknowledgment is enough.';
+
+function assistantParts(message: ModelMessage) {
+  if (message.role !== 'assistant' || !Array.isArray(message.content)) return [];
+  return message.content.filter(
+    (part): part is Record<string, JsonValue> =>
+      part !== null && typeof part === 'object' && !Array.isArray(part)
+  );
+}
+
+function stoppedWithPrivateReply(messages: readonly ModelMessage[]): boolean {
+  const last = messages.at(-1);
+  return (
+    last?.stopReason === 'stop' &&
+    assistantParts(last).some(
+      (part) => part.type === 'text' && typeof part.text === 'string' && part.text.trim()
+    ) &&
+    !messages.some(
+      (message) =>
+        message.role === 'toolResult' ||
+        assistantParts(message).some((part) => part.type === 'toolCall')
+    )
+  );
+}
+
 /** The notice a chat gets when DorkOS's pick stands in for a model credits do not serve. */
 function substitutionNotice(
   replaced: { from: string; fromName: string; toName: string },
@@ -176,6 +206,11 @@ export async function executeDoeTurn(
     }
     const config = DoeInferenceConfigSchema.parse(record.inference);
     turn.credits = config.source === 'dorkos-credits';
+    const room = opts?.additionalContext?.find((entry) => entry.kind === 'room_context')?.data;
+    const localRoomAnswer =
+      config.source === 'local' &&
+      Boolean(room?.addressing.addressedNow || room?.addressing.answerOwed);
+    const plainTextRoomReply = localRoomAnswer && opts?.roomTurn !== undefined;
     const modelChoice =
       substituted ?? opts?.model ?? persisted?.model ?? record.session.model ?? config.model;
     const model = await (hostState.options.resolveModel ?? resolveDoeInference)({
@@ -240,6 +275,7 @@ export async function executeDoeTurn(
       sessionId: id,
       cwd,
       opts,
+      plainTextRoomReply,
       full: mode === 'bypassPermissions',
       signal: controller.signal,
       agentPath,
@@ -267,9 +303,26 @@ export async function executeDoeTurn(
     });
     controller.signal.throwIfAborted();
     hostState.connected(host);
-    const base = host.resources;
+    const { resources: base, registry } = host;
+    let roomReminder: 'available' | 'pending' | 'spent' = 'available';
+    const finishTurn: NonNullable<ScopedExecutionOptions['finishTurn']> = async (
+      messages,
+      signal
+    ) => {
+      if (roomReminder === 'pending') roomReminder = 'spent';
+      if (roomReminder !== 'available' || signal.aborted || !stoppedWithPrivateReply(messages))
+        return;
+      if (!registry.selected().some((tool) => tool.name === 'post_to_room')) return;
+      roomReminder = 'pending';
+      return 'continue';
+    };
+    // Keep the reminder in the private model context only for the next Pi request.
     const loadSystem = async (): Promise<string> =>
-      [await base.load(), ...turn.extraContext].join('\n\n');
+      [
+        await base.load(),
+        ...turn.extraContext,
+        ...(roomReminder === 'pending' ? [ROOM_REPLY_REMINDER] : []),
+      ].join('\n\n');
     // What the engine loads is what the model is handed: recorded there, and nowhere earlier.
     const recordSystem = doeContextRecorder({ sessionId: id, opts, mode, content });
     const resources: Resources = {
@@ -317,7 +370,10 @@ export async function executeDoeTurn(
         content: content!,
         window: model,
       });
-      const result = await turn.engine.run(content!, { signal: controller.signal });
+      const result = await turn.engine.run(content!, {
+        signal: controller.signal,
+        ...(plainTextRoomReply ? { finishTurn } : {}),
+      });
       if (result.stopReason === 'error') {
         const error = result.messages.at(-1)?.errorMessage;
         throw new Error(
@@ -326,14 +382,11 @@ export async function executeDoeTurn(
       }
       if (result.stopReason === 'aborted') reason = 'interrupted';
       else if (result.stopReason === 'length') reason = 'max_turns';
-      else if (config.source === 'local' && !mapper.hasParentOutput && !result.approvalDenied) {
+      else if (localRoomAnswer && !mapper.hasParentOutput && !result.approvalDenied) {
         // The room already knows which answers are owed. An overheard message can end quietly.
-        const room = opts?.additionalContext?.find((entry) => entry.kind === 'room_context')?.data;
-        if (room?.addressing.addressedNow || room?.addressing.answerOwed) {
-          throw new Error(
-            'The model returned an empty reply. Try again or choose a different model.'
-          );
-        }
+        throw new Error(
+          'The model returned an empty reply. Try again or choose a different model.'
+        );
       }
     }
   } catch (error) {

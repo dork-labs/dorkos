@@ -127,6 +127,22 @@ function roomReply(addressedNow: boolean, answerOwed?: 'lead'): MessageOpts {
   };
 }
 
+function roomPostTool(execute: ToolDescriptor['execute']): ToolDescriptor {
+  return {
+    name: 'post_to_room',
+    description: 'Post an answer to the room',
+    initialLoad: true,
+    schema: {
+      type: 'object',
+      properties: { roomId: { type: 'string' }, text: { type: 'string' } },
+      required: ['roomId', 'text'],
+    },
+    execute,
+  };
+}
+
+const roomReminder = 'If your answer is for the room, use post_to_room';
+
 describe('DoeRuntime actual SDK wire', () => {
   for (const protocol of [
     'anthropic-messages',
@@ -160,6 +176,8 @@ describe('DoeRuntime actual SDK wire', () => {
             ? '/v1/responses'
             : '/v1/chat/completions',
       ]);
+      if (protocol === 'openai-completions')
+        expect(JSON.stringify(wire.bodies[0]?.messages)).toContain('<gen_ui>');
       expect(credentials.resolve).not.toHaveBeenCalled();
       expect(runtime.isTurnOpen(id)).toBe(false);
     });
@@ -169,11 +187,18 @@ describe('DoeRuntime actual SDK wire', () => {
     { description: 'empty', textChunks: [], room: roomReply(true) },
     { description: 'whitespace-only', textChunks: [' ', '\n'], room: roomReply(false, 'lead') },
   ])('reports a $description local completion as a failed reply', async ({ textChunks, room }) => {
-    const { runtime, wire, id } = await setup('openai-completions', { textChunks });
+    const post = vi.fn(async () => ({ content: [] }));
+    const { runtime, wire, id } = await setup(
+      'openai-completions',
+      { textChunks },
+      {},
+      roomPostTool(post)
+    );
     const events = await collect(runtime.sendMessage(id, 'Answer locally', room));
 
     expect(text(events).trim()).toBe('');
     expect(wire.requests()).toBe(1);
+    expect(post).not.toHaveBeenCalled();
     expect(events.filter((event) => event.type === 'error')).toEqual([
       {
         type: 'error',
@@ -193,7 +218,154 @@ describe('DoeRuntime actual SDK wire', () => {
     const events = await collect(runtime.sendMessage(id, 'For your information', roomReply(false)));
 
     expect(wire.requests()).toBe(1);
+    expect(JSON.stringify(wire.bodies[0]?.messages)).toContain('<gen_ui>');
     expect(events.filter((event) => event.type === 'error')).toEqual([]);
+    expect(terminal(events)).toMatchObject({ terminalReason: 'completed' });
+  });
+
+  it.each([
+    { trigger: 'the person addressed it', room: roomReply(true) },
+    { trigger: 'the room lead owes a reply', room: roomReply(false, 'lead') },
+  ])('requests a plain-text local room post when $trigger', async ({ room }) => {
+    const answer = {
+      roomId: 'fixture-room',
+      text: 'Pick three priorities and put a time beside each one.',
+    };
+    const post = vi.fn(async () => ({ content: [] }));
+    const { runtime, wire, id } = await setup(
+      'openai-completions',
+      { tool: 'post_to_room', toolArguments: answer, textChunks: [] },
+      {},
+      roomPostTool(post)
+    );
+    const events: StreamEvent[] = [];
+    for await (const event of runtime.sendMessage(id, 'Make a daily plan board', room)) {
+      events.push(event);
+      if (event.type === 'approval_required') {
+        expect(
+          runtime.approveTool(id, (event.data as { toolCallId: string }).toolCallId, true)
+        ).toBe(true);
+      }
+    }
+
+    const request = wire.bodies[0];
+    const messages = JSON.stringify(request?.messages);
+    expect(messages).toContain('Use plain text for this room reply.');
+    expect(messages).not.toContain('<gen_ui>');
+    expect(messages).toContain('Ids here: this room is fixture-room');
+    expect(request?.tools).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ function: expect.objectContaining({ name: 'post_to_room' }) }),
+      ])
+    );
+    expect(post).toHaveBeenCalledExactlyOnceWith(answer, expect.anything());
+    expect(wire.requests()).toBe(2);
+    expect(text(events).trim()).toBe('');
+    expect(events.filter((event) => event.type === 'error')).toEqual([]);
+    expect(terminal(events)).toMatchObject({ terminalReason: 'completed' });
+  });
+
+  it('reminds local Doe privately once before an explicit room post (DOR-2843)', async () => {
+    const answer = { roomId: 'fixture-room', text: 'List the next three steps.' };
+    const post = vi.fn(async () => ({ content: [{ type: 'text', text: 'Posted' }] }));
+    const { runtime, wire, id } = await setup(
+      'openai-completions',
+      {
+        tool: 'post_to_room',
+        toolOnRequest: 2,
+        toolArguments: answer,
+        textChunks: ['Private planning text.'],
+        thinkingChunks: ['Considering the room instructions.'],
+      },
+      {},
+      roomPostTool(post)
+    );
+    const events: StreamEvent[] = [];
+    for await (const event of runtime.sendMessage(id, 'Make a daily plan board', roomReply(true))) {
+      events.push(event);
+      if (event.type === 'approval_required') {
+        expect(post).not.toHaveBeenCalled();
+        const callId = (event.data as { toolCallId: string }).toolCallId;
+        expect(runtime.approveTool(id, callId, true)).toBe(true);
+      }
+    }
+
+    expect(wire.requests()).toBe(3);
+    expect(
+      wire.bodies.map(({ messages }) => JSON.stringify(messages).includes(roomReminder))
+    ).toEqual([false, true, false]);
+    const reminderRequest = wire.bodies[1]?.messages as Array<{ role: string; content: string }>;
+    expect(reminderRequest).toContainEqual({
+      role: 'user',
+      content: 'Make a daily plan board',
+    });
+    expect(reminderRequest.filter(({ role }) => role === 'user')).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'approval_required')).toHaveLength(1);
+    expect(post).toHaveBeenCalledExactlyOnceWith(answer, expect.anything());
+    expect(events.filter((event) => event.type === 'error')).toEqual([]);
+    expect(events.filter((event) => event.type === 'done')).toHaveLength(1);
+    expect(terminal(events)).toMatchObject({ terminalReason: 'completed' });
+    expect(runtime.isTurnOpen(id)).toBe(false);
+  });
+
+  it.each([
+    {
+      name: 'when the local model keeps its reply private',
+      room: roomReply(true),
+      loaded: true,
+      requests: 2,
+    },
+    { name: 'for an unaddressed room', room: roomReply(false), loaded: true, requests: 1 },
+    { name: 'for direct chat', room: undefined, loaded: true, requests: 1 },
+    {
+      name: 'when the room post is unavailable',
+      room: roomReply(true),
+      loaded: false,
+      requests: 1,
+    },
+  ])('bounds the room reminder $name', async ({ room, loaded, requests }) => {
+    const post = vi.fn(async () => ({ content: [] }));
+    const { runtime, wire, id } = await setup(
+      'openai-completions',
+      { textChunks: ['Private text.'] },
+      {},
+      loaded ? roomPostTool(post) : undefined
+    );
+    const events = await collect(runtime.sendMessage(id, 'Fixture message', room));
+
+    expect(wire.requests()).toBe(requests);
+    const reminderRequests = wire.bodies.filter(({ messages }) =>
+      JSON.stringify(messages).includes(roomReminder)
+    );
+    expect(reminderRequests).toHaveLength(requests - 1);
+    expect(post).not.toHaveBeenCalled();
+    expect(terminal(events)).toMatchObject({ terminalReason: 'completed' });
+  });
+
+  it('leaves the normal completion after a denied room post in place', async () => {
+    const post = vi.fn(async () => ({ content: [] }));
+    const { runtime, wire, id } = await setup(
+      'openai-completions',
+      {
+        tool: 'post_to_room',
+        toolArguments: { roomId: 'fixture-room', text: 'Fixture answer.' },
+        textChunks: ['Private text after denial.'],
+      },
+      {},
+      roomPostTool(post)
+    );
+    const events: StreamEvent[] = [];
+    for await (const event of runtime.sendMessage(id, 'Answer locally', roomReply(true))) {
+      events.push(event);
+      if (event.type === 'approval_required') {
+        const callId = (event.data as { toolCallId: string }).toolCallId;
+        expect(runtime.approveTool(id, callId, false)).toBe(true);
+      }
+    }
+    expect(wire.requests()).toBe(2);
+    expect(JSON.stringify(wire.bodies)).not.toContain(roomReminder);
+    expect(events.filter((event) => event.type === 'approval_required')).toHaveLength(1);
+    expect(post).not.toHaveBeenCalled();
     expect(terminal(events)).toMatchObject({ terminalReason: 'completed' });
   });
 
