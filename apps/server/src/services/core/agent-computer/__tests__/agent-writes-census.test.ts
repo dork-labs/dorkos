@@ -54,6 +54,15 @@ const OWN_AUTHORIZER: ReadonlyMap<string, string> = new Map([
 /** Every write an agent computer refuses to agents, by why. */
 const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[] = [
   [
+    'owner-only browser viewing; no agent credential reaches page pixels',
+    [
+      'ALL /api/browser-viewers/*',
+      'POST /api/browser-viewers',
+      'POST /api/browser-viewers/:viewerId/frame',
+      'DELETE /api/browser-viewers/:viewerId',
+    ],
+  ],
+  [
     'setup is the hub’s',
     [
       'ALL /api/admin/*',

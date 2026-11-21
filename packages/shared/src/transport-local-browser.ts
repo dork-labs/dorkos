@@ -8,8 +8,40 @@ import type {
   LocalBrowserState,
 } from './local-browser.js';
 
+/** One volatile subscription, usable only beside its original authenticated app session. */
+export interface BrowserViewerSubscription {
+  viewerId: string;
+  nonce: string;
+  binding: { chatId: string; profileId: string | null; connectionId: string; tabId: string };
+}
+
+/** Bounded in-memory JPEG bytes and the receipt acknowledged only after painting. */
+export interface BrowserViewerFrame {
+  sequence: number;
+  generation: number;
+  width: number;
+  height: number;
+  byteLength: number;
+  receipt: string;
+  bytes: Uint8Array;
+}
+
+/** Person-only viewing; this port has no page input or browser acquisition. */
+export interface BrowserViewerTransport {
+  /** Subscribe to the server-resolved existing page for a chat. */
+  subscribeBrowserViewer(chatId: string, signal?: AbortSignal): Promise<BrowserViewerSubscription>;
+  /** Acknowledge a painted frame and wait for one newer frame, or idle liveness. */
+  nextBrowserViewerFrame(
+    viewer: BrowserViewerSubscription,
+    receipt?: string,
+    signal?: AbortSignal
+  ): Promise<BrowserViewerFrame | null>;
+  /** Release only this subscription, without closing its browser page. */
+  closeBrowserViewer(viewer: BrowserViewerSubscription): Promise<void>;
+}
+
 /** Human controls for a local, live browser; agent actions use a separate scoped tool surface. */
-export interface LocalBrowserTransport {
+export interface LocalBrowserTransport extends BrowserViewerTransport {
   /** Scan profile metadata only after a person taps Find my browsers. Never cache the response. */
   scanYourBrowsers(): Promise<import('./your-browser.js').YourBrowserScan>;
   getLocalBrowserState(sessionId?: string | null): Promise<LocalBrowserPersonState>;
