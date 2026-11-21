@@ -242,14 +242,16 @@ export function CreateAgentDialog() {
             onCreated();
             return;
           }
-          if (!isStillWanted?.()) return;
+          // A person who clicked away keeps the greeting for the agent's next new chat.
+          const keepForLater = () => useAgentBirthStore.getState().defer(birth);
+          if (!isStillWanted?.()) return keepForLater();
           void newSessionTarget(
             transport,
             { agentId: data.id, runtime: data.runtime },
             { isStillWanted }
           )
             .then((target) => {
-              if (!isStillWanted()) return;
+              if (!isStillWanted()) return keepForLater();
               useAgentBirthStore.getState().register(target.search.session, birth);
               return navigate(target);
             })

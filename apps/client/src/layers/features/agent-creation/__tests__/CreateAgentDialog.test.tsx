@@ -11,6 +11,7 @@ import { newSessionTarget } from '@/layers/shared/lib';
 import { createQueryClientConfig } from '@/layers/shared/lib';
 import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { useImportProjectsStore, useAgentBirthStore } from '@/layers/shared/model';
+import { beginSessionNavigation } from '@/layers/entities/session';
 import {
   useAutoKickoff,
   __resetFiredKickoffsForTest,
@@ -585,6 +586,48 @@ describe('CreateAgentDialog', () => {
         runtime: 'codex',
       }),
     });
+  });
+
+  it('keeps the greeting for the next new chat when the person clicks away mid-create', async () => {
+    const user = userEvent.setup();
+    const transport = createMockTransport();
+    vi.mocked(transport.createAgent).mockResolvedValue({
+      id: 'id',
+      name: 'scout',
+      displayName: 'Scout',
+      runtime: 'claude-code',
+      registeredAt: '2026-07-20T00:00:00.000Z',
+      _path: '/home/test/.dork/agents/scout',
+      capabilities: [],
+    } as never);
+    let resolveAcknowledgement!: (value: { sessionId: string }) => void;
+    vi.mocked(transport.allocateSession).mockReturnValueOnce(
+      new Promise<{ sessionId: string }>((resolve) => {
+        resolveAcknowledgement = resolve;
+      })
+    );
+    renderDialog(transport);
+
+    const nameInput = await reachNamingViaDesign(user);
+    await user.type(nameInput, 'Scout');
+    await user.click(screen.getByTestId('create-button'));
+    await waitFor(() => expect(transport.allocateSession).toHaveBeenCalledTimes(1));
+
+    // The person opens something else while the chat is still being set up.
+    beginSessionNavigation(() => ({ pathname: '/channels', search: {} }));
+    resolveAcknowledgement({ sessionId: 'abandoned-chat' });
+
+    await waitFor(() =>
+      expect(useAgentBirthStore.getState().deferred.id?.path).toBe('/home/test/.dork/agents/scout')
+    );
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(useAgentBirthStore.getState().records).toEqual({});
+
+    // The next new chat with that agent says hello.
+    vi.mocked(transport.allocateSession).mockResolvedValueOnce({ sessionId: 'next-chat' });
+    await newSessionTarget(transport, { agentId: 'id' });
+    expect(useAgentBirthStore.getState().records['next-chat']?.fired).toBe(false);
+    expect(useAgentBirthStore.getState().deferred).toEqual({});
   });
 
   it('onboarding (onCreated set): parks a birth without navigating, then the first session claims + fires it once', async () => {

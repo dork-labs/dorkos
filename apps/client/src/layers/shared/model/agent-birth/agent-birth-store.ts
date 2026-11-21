@@ -83,9 +83,17 @@ interface AgentBirthState {
    * fired latch is preserved. No-op when no record exists at `oldId`.
    */
   migrate: (oldId: string, newId: string) => void;
-  /** An agent created by a host flow can defer its greeting until a draft is acknowledged. */
+  /**
+   * Greetings waiting for a chat, keyed by agent id: an agent created by a host
+   * flow, or one whose creator clicked away before its first chat opened.
+   */
   deferred: Record<string, Omit<AgentBirthRecord, 'fired'>>;
+  /** Park a greeting until the agent's next acknowledged new chat claims it. */
   defer: (record: Omit<AgentBirthRecord, 'fired'>) => void;
+  /**
+   * Move a parked greeting onto a newly acknowledged chat, matched by agent id
+   * or, without one, by folder. No-op when the chat already has a record.
+   */
   claimDeferred: (sessionId: string, source: { cwd?: string; agentId?: string }) => void;
 }
 
