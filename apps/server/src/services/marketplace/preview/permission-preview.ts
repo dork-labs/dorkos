@@ -502,6 +502,13 @@ export class PermissionPreviewBuilder {
         slots: extractSlots(extManifest.contributions),
         isolation: isolationOfManifest(extManifest),
         hasServer: await hasServerHalf(join(extRoot, id), extManifest),
+        secrets: (extManifest.serverCapabilities?.secrets ?? []).map(
+          ({ key, required, description }) => ({
+            key,
+            required,
+            ...(description ? { description } : {}),
+          })
+        ),
       }))
     );
 

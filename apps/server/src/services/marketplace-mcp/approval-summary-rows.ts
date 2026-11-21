@@ -38,6 +38,7 @@ import {
   type DisclosedEffects,
 } from '@dorkos/shared/marketplace-schemas';
 import type { MarketplaceRisk, MarketplaceRiskKind } from '@dorkos/shared/approval-schemas';
+import { describePackageScheduleWhen } from '../marketplace/preview/schedule-when.js';
 
 /**
  * A value written out whole, quoted and escaped, with every hidden or
@@ -171,14 +172,14 @@ function itemsOf(effects: DisclosedEffects | null, where: string): Item[] {
     })),
     ...effects.schedules.map((job): Item => {
       const text =
-        `Scheduled job ${whole(job.name)}: ${job.cron ? `runs on ${whole(job.cron)}` : 'runs only when asked'}, ` +
+        `Scheduled job ${whole(job.name)}: ${describePackageScheduleWhen(job.cron)}, ` +
         `${describeSchedulePermissionMode(job.permissionMode)}, ${describeScheduleArrival(job.startsEnabled)}`;
       return {
         kind: 'schedule',
         id: stableStringify(['schedule', job.name]),
         value: stableStringify(job),
-        row: { kind: 'schedule', text },
-        was: text,
+        row: { kind: 'schedule', text, ...(job.cron ? { command: whole(job.cron) } : {}) },
+        was: job.cron ? `${text}\n${whole(job.cron)}` : text,
       };
     }),
     ...effects.skillTools.map((entry): Item => ({

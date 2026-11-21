@@ -48,6 +48,7 @@ describe('Marketplace summary approval card', () => {
       scope: 'global',
       installedVersion: '0.66.0',
       latestVersion: '0.66.1',
+      extensions: [],
       disclosed: bulkyUnchanged(),
       installedDisclosed: bulkyUnchanged(),
       contentHash: 'sha256:new',
@@ -264,7 +265,7 @@ describe('Marketplace summary approval card', () => {
         expect.objectContaining({
           kind: 'extension',
           change: 'broader',
-          items: ['Contacts "api.sample.invalid"'],
+          items: expect.arrayContaining(['Can connect to: api.sample.invalid']),
         }),
       ]);
     });
