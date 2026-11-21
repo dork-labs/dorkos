@@ -1,3 +1,4 @@
+import { withSessionBirthWrite } from '../runtime-seam/session-birth-write.js';
 /**
  * Whether one chat may follow its agent's level UP at the start of a turn
  * (DOR-3175), read from what the database keeps.
@@ -78,18 +79,22 @@ export function createChatRiseFacts(db: Db): ChatRiseFacts {
     personSet: (sessionId) => guarded(sessionId, false, () => rowOf(sessionId)?.byPerson === true),
     notePersonSetMode: (sessionId) => {
       try {
-        db.insert(sessionMetadata)
-          .values({
-            sessionId: primaryOf(sessionId),
-            runtime: null,
-            createdAt: new Date().toISOString(),
-            permissionModeByPerson: true,
-          })
-          .onConflictDoUpdate({
-            target: sessionMetadata.sessionId,
-            set: { permissionModeByPerson: true },
-          })
-          .run();
+        const key = primaryOf(sessionId);
+        withSessionBirthWrite(db, key, undefined, (tx) =>
+          tx
+            .insert(sessionMetadata)
+            .values({
+              sessionId: key,
+              runtime: null,
+              createdAt: new Date().toISOString(),
+              permissionModeByPerson: true,
+            })
+            .onConflictDoUpdate({
+              target: sessionMetadata.sessionId,
+              set: { permissionModeByPerson: true },
+            })
+            .run()
+        );
       } catch (err) {
         logger.warn('[agent-level] could not note a person’s chat mode', {
           sessionId,

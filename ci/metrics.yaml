@@ -225,6 +225,15 @@ tracked:
       merges cleanly); median over the window's ticks. Read by hand from the
       "Arm auto-merge on finished PRs" step logs (`PR #N -> SKIP
       mergeability-unknown` lines); not computed by the daily collector.
+  - id: tracked.expected-context-blocks
+    unit: count
+    definition: >-
+      Pull requests per 7 days that sat green but could not queue because
+      GitHub reported "N of M required status checks are expected": the
+      newest workflow run for a required context was cancelled before any job
+      started, so the context never reported at the head. Read by hand from
+      arm attempts that failed that way and the room reports of them; not
+      computed by the daily collector.
   - id: tracked.review-runs-per-merged-pr
     unit: count
     definition: Automated review runs per merged PR.

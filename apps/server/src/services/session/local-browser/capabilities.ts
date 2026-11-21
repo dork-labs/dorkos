@@ -16,6 +16,7 @@ import {
   type CapabilityHandlerContext,
 } from '../../core/capabilities/index.js';
 import { LocalBrowserError, type LocalBrowserService } from './service.js';
+import { isOutsideOriginTurn } from './handoff-guards/outside-turn-reason.js';
 
 declare module '../../core/capabilities/capability-definition.js' {
   interface CapabilityDeps {
@@ -75,14 +76,15 @@ async function answer<T>(run: () => Promise<T>): Promise<T> {
 /**
  * Sharing is rechecked after every await before any answer can reach another chat.
  * While a person has the browser, every call but the handoff itself is refused.
+ * Page tools also check the turn on every profile: none has a trusted signed-out signal.
  */
 function scopedAnswer<T>(
   service: LocalBrowserService,
   context: CapabilityHandlerContext,
   run: (lease: ReturnType<LocalBrowserService['leaseFor']>) => Promise<T>,
-  handingOver = false,
-  effect = false
+  options: { handingOver?: boolean; effect?: boolean; checkOutsideTurn?: boolean } = {}
 ): Promise<T> {
+  const { handingOver = false, effect = false } = options;
   const lease = requireSession(service, context);
   const allowed = async () => {
     await answer(async () => service.handover.refuseWhileSigningIn(context.sessionId!));
@@ -90,6 +92,16 @@ function scopedAnswer<T>(
     if (!handingOver) {
       await answer(() => lease.handover.requireAgentMayUse(context.sessionId!));
       await answer(() => lease.requireNotFullScreen());
+    }
+    if (options.checkOutsideTurn) {
+      const reason = await service.handover.outsideTurnReason(context.sessionId!);
+      if (isOutsideOriginTurn(reason))
+        throw new CapabilityToolError({
+          code: 'outside_turn',
+          reason,
+          error: 'This turn can’t use the browser.',
+          next: 'Ask the person in your direct chat.',
+        });
     }
     await answer(async () => lease.assertCurrent());
   };
@@ -154,18 +166,23 @@ export function createLocalBrowserDomain(service: LocalBrowserService): Capabili
           },
         },
         invoke: (_deps, _input, context) =>
-          scopedAnswer(service, context, async (lease) => {
-            const observation = await lease.observe();
-            if (!observation.refusal) return observation;
-            // A turn the handoff would refuse is never pointed at it (DOR-4693).
-            const marked = await service.handover.outsideTurnReason(context.sessionId!);
-            return marked === null || marked === 'read_outside_text'
-              ? observation
-              : {
-                  ...observation,
-                  refusal: { ...observation.refusal, next: LOCAL_BROWSER_REFUSAL_HELD_NEXT },
-                };
-          }),
+          scopedAnswer(
+            service,
+            context,
+            async (lease) => {
+              const observation = await lease.observe();
+              if (!observation.refusal) return observation;
+              // A turn the handoff would refuse is never pointed at it (DOR-4693).
+              const marked = await service.handover.outsideTurnReason(context.sessionId!);
+              return !isOutsideOriginTurn(marked)
+                ? observation
+                : {
+                    ...observation,
+                    refusal: { ...observation.refusal, next: LOCAL_BROWSER_REFUSAL_HELD_NEXT },
+                  };
+            },
+            { checkOutsideTurn: true }
+          ),
       }),
       defineCapability({
         id: 'local_browser.screenshot',
@@ -186,13 +203,18 @@ export function createLocalBrowserDomain(service: LocalBrowserService): Capabili
           },
         },
         invoke: (_deps, _input, context) =>
-          scopedAnswer(service, context, async (lease) => {
-            const image = await lease.screenshot();
-            return new CapabilityImageResult(
-              { data: image.data, mimeType: image.mimeType },
-              { revision: image.revision, tabId: image.tabId }
-            );
-          }),
+          scopedAnswer(
+            service,
+            context,
+            async (lease) => {
+              const image = await lease.screenshot();
+              return new CapabilityImageResult(
+                { data: image.data, mimeType: image.mimeType },
+                { revision: image.revision, tabId: image.tabId }
+              );
+            },
+            { checkOutsideTurn: true }
+          ),
       }),
       defineCapability({
         id: 'local_browser.act',
@@ -222,8 +244,7 @@ export function createLocalBrowserDomain(service: LocalBrowserService): Capabili
               await lease.action(input.action);
               return lease.agentState();
             },
-            false,
-            true
+            { effect: true, checkOutsideTurn: true }
           );
         },
       }),
@@ -257,7 +278,7 @@ export function createLocalBrowserDomain(service: LocalBrowserService): Capabili
                   ? { name: context.identity.displayName, folder: context.identity.agentPath }
                   : null
               ),
-            true
+            { handingOver: true }
           ),
       }),
     ],

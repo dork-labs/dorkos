@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * Tests for the cockpit crash reporter (DOR-318): it relays a caught error to
  * `transport.reportError` exactly ONCE per unique error per session (dedup), and

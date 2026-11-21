@@ -2,6 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import { logger } from '../../../lib/logger.js';
 import { carrySessionMarks } from '../../core/turn-power/seat-marks.js';
+import type { RecoveryBirthContext } from '../../core/runtime-seam/recovery-birth-source.js';
 import { reseatSettings } from '../../session/fleet/carry-over-power.js';
 import type { RankedAccount } from '../../core/usage/account-ranking.js';
 import type { ReseatNoticeReason } from '../notices/notice-copy.js';
@@ -14,6 +15,7 @@ import type {
   PendingLaunch,
 } from './seat-mover.js';
 import type { FailedSeatCandidate } from './failed-seat-candidate.js';
+import type { RecoveryLaunchInput } from './required-launch-store.js';
 /** One immutable replacement plan; recovery retains current admission through publication. */
 export interface SeatReplacementPlan {
   trigger: ReseatTrigger;
@@ -39,41 +41,61 @@ export async function replaceRoomSeat(
 ): Promise<SeatMove> {
   const newSessionId = deps.newSessionId?.() ?? randomUUID();
   const old = seat.sessionId;
-  // Power first (Must 1): the row exists before anything can launch on it.
+  const recovery = plan.recovery;
+  let prepared: { input: RecoveryLaunchInput; birth: RecoveryBirthContext } | undefined;
+  if (recovery) {
+    if (old === null || !deps.requiredLaunches || !recovery.currentAllowed())
+      throw new Error('Recovery admission changed.');
+    const input = {
+      ...recovery.candidate.authority,
+      id: randomUUID(),
+      destinationSessionId: newSessionId,
+      sourceSessionId: old,
+      sourceDispatchId: recovery.candidate.sourceDispatchId,
+      startSeq: recovery.candidate.startSeq,
+      endSeq: recovery.candidate.endSeq,
+      roomId: seat.roomId,
+      authorId: seat.authorId,
+    };
+    prepared = {
+      input,
+      birth: deps.requiredLaunches.prepareReplacement(
+        input,
+        seat.agentPath,
+        recovery.currentAllowed
+      ),
+    };
+  }
   const settings = old === null ? null : await deps.settingsOf(old);
   // A stored mode is the person-set level and wins; with none, the seat ran
   // at its agent's effective level, so that is what it keeps.
   const ranAt = settings?.permissionMode
     ? undefined
     : await deps.effectiveModeOf(seat, plan.runtime);
-  await deps.saveSettings(newSessionId, {
-    ...reseatSettings(settings, deps.declaredModes(plan.runtime), ranAt),
-    ...(plan.recovery && settings?.fastMode !== undefined ? { fastMode: settings.fastMode } : {}),
-  });
-  // Marks next (Must 2), before the first turn.
-  if (old !== null) carrySessionMarks(old, newSessionId);
-  const seedContext = plan.recovery
-    ? 'Your earlier room chat stopped on a server error. This is new work, not a retry.'
-    : await hooks.seedFor();
-  if (plan.recovery) {
-    if (old === null || !deps.requiredLaunches || !plan.recovery.currentAllowed())
+  if (recovery && !recovery.currentAllowed()) throw new Error('Recovery admission changed.');
+  const replacementSettings = reseatSettings(settings, deps.declaredModes(plan.runtime), ranAt);
+  let seedContext: string | undefined;
+  if (recovery) {
+    if (old === null || !deps.requiredLaunches || !prepared || !recovery.currentAllowed())
       throw new Error('Recovery admission changed.');
-    deps.requiredLaunches.publish(
-      {
-        ...plan.recovery.candidate.authority,
-        id: randomUUID(),
-        destinationSessionId: newSessionId,
-        sourceSessionId: old,
-        sourceDispatchId: plan.recovery.candidate.sourceDispatchId,
-        startSeq: plan.recovery.candidate.startSeq,
-        endSeq: plan.recovery.candidate.endSeq,
-        roomId: seat.roomId,
-        authorId: seat.authorId,
+    deps.requiredLaunches.publish(prepared.input, recovery.currentAllowed, {
+      birth: prepared.birth,
+      settings: {
+        ...replacementSettings,
+        ...(settings?.fastMode !== undefined ? { fastMode: settings.fastMode } : {}),
       },
-      plan.recovery.currentAllowed
-    );
-  } else if (!deps.rebind(seat.roomId, seat.authorId, newSessionId)) {
-    throw new Error('The room would not move this seat to its new session.');
+    });
+    // Carry process-local marks before exposing the pending launch or yielding.
+    carrySessionMarks(old, newSessionId);
+    seedContext =
+      'Your earlier room chat stopped on a server error. This is new work, not a retry.';
+  } else {
+    // Power and marks come before publication, in the same order as before.
+    await deps.saveSettings(newSessionId, replacementSettings);
+    if (old !== null) carrySessionMarks(old, newSessionId);
+    seedContext = await hooks.seedFor();
+    if (!deps.rebind(seat.roomId, seat.authorId, newSessionId))
+      throw new Error('The room would not move this seat to its new session.');
   }
   if (old !== null) hooks.recordSeatMove(old);
   hooks.pending({

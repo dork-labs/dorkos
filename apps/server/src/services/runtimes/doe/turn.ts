@@ -22,6 +22,7 @@ function inputText(input: unknown): string {
 /** Accumulate real provider readings without inventing missing cost or token counts. */
 export class DoeTurnEvents {
   private readonly usages: ModelUsage[] = [];
+  private parentProducedOutput = false;
   private compactionStarted?: number;
   private readonly children = new Map<
     string,
@@ -55,6 +56,11 @@ export class DoeTurnEvents {
 
   private emit(event: StreamEvent): void {
     for (const timed of timeRuntimeEvents(this, [event])) this.emitEvent(timed);
+  }
+
+  /** Whether the parent produced text, reasoning, or a tool call in this turn. */
+  get hasParentOutput(): boolean {
+    return this.parentProducedOutput;
   }
 
   /** Correlate the real child scope before any child callback reaches the display stream. */
@@ -147,13 +153,19 @@ export class DoeTurnEvents {
     }
     switch (event.type) {
       case 'text':
-        if (parent) this.emit({ type: 'text_delta', data: { text: event.delta } });
-
+        if (parent) {
+          if (event.delta.trim()) this.parentProducedOutput = true;
+          this.emit({ type: 'text_delta', data: { text: event.delta } });
+        }
         break;
       case 'thinking':
-        if (parent) this.emit({ type: 'thinking_delta', data: { text: event.delta } });
+        if (parent) {
+          if (event.delta.trim()) this.parentProducedOutput = true;
+          this.emit({ type: 'thinking_delta', data: { text: event.delta } });
+        }
         break;
       case 'tool-start':
+        if (parent) this.parentProducedOutput = true;
         this.emit({
           type: 'tool_call_start',
           data: {

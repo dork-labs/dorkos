@@ -805,3 +805,19 @@ So `summarize` was the only exposed call, and the rest are safe by construction 
 every DorkOS call to a required-payload route already sends a complete body. The standing rule for new
 calls: **a `body?:` in the SDK types proves nothing.** Check the route, and cover it in the live arm of
 `__tests__/conformance.test.ts` (`DORKOS_OPENCODE_LIVE=1`), because a mocked test never can.
+
+## 10. Pinned sidecar cleanup tests (DOR-4500)
+
+The pinned readiness and runner-exit tests are opt-in with
+`DORKOS_OPENCODE_PINNED_SERVE_PROOF=1`. On macOS they use the reviewed test observer
+selected by the normal Vitest custody setup. They use a temporary home, the
+pinned package binary and local startup only. See the
+[implementation record](../../../../../../specs/opencode-run-custody/04-implementation.md#pinned-opencode-cleanup-on-macos)
+for the run scope and results.
+
+The regular suite collects the outer runner-exit test. Its nested Vitest
+configuration selects only the worker fixture. The parent owns the nested
+runner and reads the guardian's cleanup record. The test keeps its private
+diagnostics on failure and removes its fixture directory after a verified
+clean exit. This covers the macOS runner-exit case. The broader platform and
+caller matrix is tracked in the OpenCode custody spec.

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * What the touch-chips simulator scenario promises.
  *

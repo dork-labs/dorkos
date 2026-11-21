@@ -63,8 +63,19 @@ concurrency:
   # keyed on its own run id, so nothing can cancel it or replace it while it is
   # pending. The newest run in a group is never the cancelled one, so the
   # newest head always reports (ledger 261031-020633).
-  group: ${{ github.workflow }}-${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.run_id) }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_target' }}
+  #
+  # Except it was, once (#4054, 2026-11-20): a burst of label edits queued
+  # several runs at one head in that group, GitHub cancelled the NEWEST before
+  # any job started, and a required context is read from the newest run of its
+  # workflow, so both checks read as "expected" and the PR could not queue. So
+  # a label event that cannot change the answer (any label but
+  # `skip-changelog`) now gets its own run-id group and is never cancelled: at
+  # worst a few extra one-minute runs. `opened`, `reopened`, `synchronize` and
+  # `skip-changelog` edits keep the shared group, where a newer push or a
+  # newer skip decision really does make the older run worthless (ledger
+  # 261120-201356).
+  group: ${{ github.workflow }}-${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && !((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name != 'skip-changelog') && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.run_id) }}
+  cancel-in-progress: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && !((github.event.action == 'labeled' || github.event.action == 'unlabeled') && github.event.label.name != 'skip-changelog') }}
 
 # Opt into Node 24 for every JavaScript-based action ahead of GitHub's Sept 2026
 # hard cutoff for Node 20 runtime.

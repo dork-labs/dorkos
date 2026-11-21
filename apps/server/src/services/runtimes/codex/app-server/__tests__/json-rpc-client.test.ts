@@ -170,6 +170,14 @@ describe('requests', () => {
     ],
     ['bwrap: Creating new namespace failed: Operation not permitted', 'sandbox-unavailable'],
     ['bwrap: No permissions to create new namespace', 'sandbox-unavailable'],
+    // Codex 0.163's bundled bwrap under Docker's default seccomp profile (DOR-3800).
+    [
+      "bwrap: No permissions to create a new namespace, likely because the kernel does not allow non-privileged user namespaces. On e.g. debian this can be enabled with 'sysctl kernel.unprivileged_userns_clone=1'.",
+      'sandbox-unavailable',
+    ],
+    // The same bwrap under Ubuntu's AppArmor with the DorkOS profile (DOR-3800).
+    ['bwrap: Failed to make / slave: Permission denied', 'sandbox-unavailable'],
+    ['bwrap: Failed to make / slave: Invalid argument', 'other'],
     // The real thread/start text from the native ubuntu row (DOR-3950).
     [
       "error creating thread: failed to load AGENTS.md instructions for environment `local`: fs sandbox helper failed with status exit status: 1: bwrap: Can't create file at /tmp/bwrap-scope-WEAkZm/home/.claude/backups/.claude.json.backup.1794126006599: Read-only file system",

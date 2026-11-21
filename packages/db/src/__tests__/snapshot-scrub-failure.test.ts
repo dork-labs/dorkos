@@ -33,7 +33,7 @@ afterEach(() => {
 
 describe('a scrub that fails', () => {
   it('fails a pre-migration snapshot and leaves no file behind', () => {
-    const file = join(dir, 'backups', 'dork-20261108-000000-pre-x.db');
+    const file = join(dir, 'backups', 'dork-auto-20261108-000000-pre-0001_made_up.db');
     expect(() => snapshotSqlite(db.$client, file)).toThrow(/made-up scrub failure/);
     expect(existsSync(file)).toBe(false);
     expect(readdirSync(join(dir, 'backups'))).toEqual([]);

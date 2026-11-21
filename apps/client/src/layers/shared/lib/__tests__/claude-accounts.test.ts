@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * Naming and validating Claude account paths (spec `claude-code-accounts`).
  *

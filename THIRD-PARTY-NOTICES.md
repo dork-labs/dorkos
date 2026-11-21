@@ -56,6 +56,12 @@ SOFTWARE.
 - Licence: MIT, Copyright (c) 2025 Mario Zechner
 - DorkOS path: `packages/doe/src/registry/bm25.ts`, extracted from `packages/coding-agent/src/extensions/tool-search/tool.ts`. Details and the permission notice are in `packages/doe/THIRD-PARTY-NOTICES.md`.
 
+## Moby profiles (Docker's default seccomp profile)
+
+- Upstream: https://github.com/moby/profiles, commit `9ee3204f0d0cfa19ca2c6a7b0fcf5a2b353954ae`, file `seccomp/default.json`
+- Licence: Apache License 2.0 (https://www.apache.org/licenses/LICENSE-2.0), by the Moby project authors; the upstream repository carries no NOTICE file
+- DorkOS paths: `docker/seccomp/upstream-default-9ee3204f0d0c.json` (unchanged copy) and `docker/seccomp/dorkos-codex.json` (modified: one added syscall rule, marked by its `comment`), served by the website as `apps/site/public/dorkos-codex.json`. The licence text is `docker/seccomp/LICENSE`, and `docker/seccomp/README.md` describes the change.
+
 ## Fonts
 
 IBM Plex, under the SIL Open Font License 1.1, ships with the website. Its licence sits beside the font files in `apps/site/src/app/fonts/OFL.txt` and `apps/site/src/lib/og/fonts/OFL.txt`.

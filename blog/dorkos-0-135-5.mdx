@@ -41,3 +41,5 @@ DorkOS 0.135.5 is a security release. The agent browser no longer offers a tool 
 0.135.5 adds a table and a column for work queues, and rebuilds the table of mini app approvals with stricter checks. 0.135.4 starts on it as it is: in a test it started, its pages loaded, schedules ran and no rows were lost. To go back, install 0.135.4.
 
 DorkOS still saves a backup before it changes the database, in `~/.dork/backups/`. If you came from 0.135.4, it's named `dork-<date>-<time>-pre-20261110044508_work_queue_permissions.db` (the time is UTC). To restore it, quit DorkOS, delete `dork.db-wal` and `dork.db-shm` from `~/.dork/`, copy the backup over `~/.dork/dork.db`, then install 0.135.4. You lose anything written since the upgrade, so if you removed access, revoked a connection or revoked a mini app's access since then, do it again.
+
+Newer backups start with `dork-auto-` instead of `dork-`. [Both filename forms restore the same way](/docs/self-hosting/docker#database-snapshots).

@@ -42,6 +42,9 @@ export const REPO_WIDE_SUITES = [
   '__tests__/ci-apt-resilience.test.ts',
   '__tests__/code-only.test.ts',
   '__tests__/codex-sandbox-job.test.ts',
+  // Reads docker/seccomp/, apps/site/public/, docs/self-hosting/docker.mdx and
+  // the cli-smoke-test workflow (DOR-3800).
+  '__tests__/codex-seccomp-profile.test.ts',
   '__tests__/community-acceptance-readiness.test.ts',
   '__tests__/community-release-workflow.test.ts',
   '__tests__/composio-sdk-import-boundary.test.ts',
