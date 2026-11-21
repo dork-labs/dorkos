@@ -9,8 +9,10 @@ name: arm-door
 #     no `security-reviewed` label added at or after it (every PR, the release
 #     range check's rule), or no verify proof: the arm script's `arm-record`
 #     stamp naming one, a docs-only diff, or every required check and all six
-#     test shards green at the head. So a careful merge by a person from the
-#     GitHub page still goes through.
+#     test shards green at the head. And, when the head touches config or
+#     migration code, QA's `qa-real-data` label added after it
+#     (scripts/qa-real-data.sh, the rule the arm script runs; DOR-4904). So a
+#     careful merge by a person from the GitHub page still goes through.
 #   - The arm script only gets a comment. Gates met but no `arm-record` stamp
 #     means it went in some other way, and the author is told once.
 #
@@ -23,10 +25,10 @@ name: arm-door
 #
 # merge-tail (disabled since 2026-11-18) is held to the same gates: an entry it
 # queues stays only if the head carries Security's label and a proof this can
-# see (docs-only or green CI; it has no stamp), and it is told once that the
-# arm script was skipped. The arm script's other gates (QA's and the designer's
-# sign-offs) are not checked here, so merge-tail stays off until it runs the
-# arm script's gate code.
+# see (docs-only or green CI; it has no stamp), and QA's label where it needs
+# one, and it is told once that the arm script was skipped. The arm script's
+# other gates (the designer's sign-off among them) are not checked here, so
+# merge-tail stays off until it runs the arm script's gate code.
 #
 # A stamp is not a signature: every agent acts on GitHub as one login, so a
 # session can post one by hand. Per-role GitHub Apps are the real fix
@@ -137,20 +139,48 @@ jobs:
           else
             for f in committed seen statuses runs; do echo null > "$w/$f"; done
           fi
-          JQ='.' rd "$w/labels" gh api --paginate "repos/$REPO/issues/$pr/events?per_page=100" \
-            --jq '.[] | select(.event == "labeled" and .label.name == "security-reviewed") | .created_at | tojson'
-          JQ='.' rd "$w/files" gh api --paginate "repos/$REPO/pulls/$pr/files?per_page=100" \
-            --jq '.[] | {filename, previous_filename}'
+          # Each list is read once, and every field is derived from that read (DOR-4904).
+          # Label events: Security's, and QA's real-data label (a label taken off still has its
+          # event, so the labels on it now are read too).
+          if gh api --paginate "repos/$REPO/issues/$pr/events?per_page=100" \
+               --jq '.[] | select(.event == "labeled") | {name: .label.name, at: .created_at}' \
+               > "$w/events.raw" 2>/dev/null; then
+            jq -s -c '[.[] | select(.name == "security-reviewed") | .at]' "$w/events.raw" > "$w/labels" 2>/dev/null || echo null > "$w/labels"
+            jq -s -c '[.[] | select(.name == "qa-real-data") | .at]' "$w/events.raw" > "$w/qa-labels" 2>/dev/null || echo null > "$w/qa-labels"
+          else
+            echo null > "$w/labels"; echo null > "$w/qa-labels"
+          fi
+          JQ='.' rd "$w/current-labels" gh api --paginate "repos/$REPO/issues/$pr/labels?per_page=100" \
+            --jq '.[].name | tojson'
+          # Files: names for the gates, and per-file patches for QA's gate, built by the jq filter
+          # in scripts/qa-real-data.sh, the one the arm script uses. A base from before DOR-4904
+          # has no such file: patches stay null and that base's arm-door.sh never reads them.
+          if gh api --paginate "repos/$REPO/pulls/$pr/files?per_page=100" \
+               --jq '.[] | {filename, previous_filename, status, additions, deletions, patch}' \
+               > "$w/files.raw" 2>/dev/null; then
+            jq -s -c 'map({filename, previous_filename})' "$w/files.raw" > "$w/files" 2>/dev/null || echo null > "$w/files"
+            pjq=$(bash scripts/qa-real-data.sh patches-jq 2>/dev/null) || pjq=
+            if [[ -n "$pjq" ]] && jq -r -s "$pjq" "$w/files.raw" > "$w/patches.raw" 2>/dev/null; then
+              jq -R -s . "$w/patches.raw" > "$w/patches" 2>/dev/null || echo null > "$w/patches"
+            else
+              echo null > "$w/patches"
+            fi
+          else
+            echo null > "$w/files"; echo null > "$w/patches"
+          fi
           JQ='.[0]' rd "$w/changed" gh api "repos/$REPO/pulls/$pr" --jq .changed_files
           jq -c '.contexts // null' ci/required-checks.json > "$w/required" 2>/dev/null || echo null > "$w/required"
 
           jq -n --arg head "$head" \
             --slurpfile committed "$w/committed" --slurpfile seen "$w/seen" --slurpfile statuses "$w/statuses" \
             --slurpfile runs "$w/runs" --slurpfile labels "$w/labels" --slurpfile files "$w/files" \
-            --slurpfile changed "$w/changed" --slurpfile required "$w/required" '
+            --slurpfile changed "$w/changed" --slurpfile required "$w/required" \
+            --slurpfile qalabels "$w/qa-labels" --slurpfile current "$w/current-labels" \
+            --slurpfile patches "$w/patches" '
             {head: $head, headCommittedAt: $committed[0], headSeenAt: $seen[0], labelEvents: $labels[0],
              statuses: $statuses[0], checkRuns: $runs[0], required: $required[0],
-             files: $files[0], changedFiles: $changed[0]}' > "$w/payload.json" 2>/dev/null \
+             files: $files[0], changedFiles: $changed[0],
+             labels: $current[0], qaLabelEvents: $qalabels[0], patches: $patches[0]}' > "$w/payload.json" 2>/dev/null \
             || echo '{}' > "$w/payload.json"
 
           bash scripts/arm-door.sh verdict "$w/payload.json" > "$w/verdict.txt" 2>/dev/null || :

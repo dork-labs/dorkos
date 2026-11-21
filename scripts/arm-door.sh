@@ -23,6 +23,12 @@
 #          check and all six `test-shard (k/6)` jobs passed as GitHub Actions
 #          check runs at the head, never for a PR touching .github/, where a
 #          workflow the PR adds could post such a run).
+#        - QA's `qa-real-data` label, added after the head (the same head time
+#          as above), when the PR touches config or migration code, writes the
+#          connector upgrade ledger, has a file GitHub sent no patch for, or
+#          carries that label at all. scripts/qa-real-data.sh decides, the
+#          file the arm script reads from main, so the two can't drift apart (DOR-4904:
+#          #4096 went in without the arm script and merged without it).
 #      So a careful merge by a person from the GitHub page goes through: the
 #      gates decide, not the tool.
 #   2. The arm script, which only gets a comment. An entry whose gates are met
@@ -39,9 +45,12 @@
 #       typecheck pull_request run on the PR's branch, or null), labelEvents: [security-reviewed
 #       label times], statuses: [head commit statuses], checkRuns: [head check
 #       runs], required: [required contexts], files: [{filename,
-#       previous_filename}], changedFiles}. Prints one line:
+#       previous_filename}], changedFiles, labels: [current label names],
+#       qaLabelEvents: [qa-real-data label times], patches: per-file patch text
+#       built with `qa-real-data.sh patches-jq`}. Prints one line:
 #         PULL <reason>[,<reason>]          take it out (no-security-label,
-#                                           security-label-older-than-head, no-proof)
+#                                           security-label-older-than-head, no-proof,
+#                                           no-qa-label, qa-label-older-than-head)
 #         KEEP gates-met proof=<p> stamp=<yes|no>
 #         KEEP unreadable <field>           could not decide (exit 2)
 #   scripts/arm-door.sh comment <pull|unarmed|unreadable> <pr> <head-sha> <detail>
@@ -80,7 +89,54 @@ case "$cmd" in
       echo "KEEP unreadable $missing"
       exit 2
     fi
-    jq -r '
+    # Gate 3: QA's real-data label, decided by scripts/qa-real-data.sh, the same file the arm
+    # script runs, so the path rule and the label-time rule can't drift apart (DOR-4904). Its
+    # inputs are the arm script's: current label names, the PR's file names, per-file patches.
+    # A QA input it cannot read is a soft unknown, like an unknown seen time: the other gates
+    # still pull, and only if they pass is the entry kept as unreadable.
+    qabad=$(jq -r '
+      [ (if (.labels | type) == "array" then empty else "labels" end),
+        (if (.qaLabelEvents | type) == "array" then empty else "qaLabelEvents" end),
+        (if (.patches | type) == "string" then empty else "patches" end)
+      ] | first // "" | if . == "" then "" else "unreadable:\(.)" end' "$src" 2>/dev/null) || qabad=unreadable:payload
+    if [[ -z "$qabad" ]]; then
+      qtmp=$(mktemp -d) || { echo "KEEP unreadable payload"; exit 2; }
+      trap 'rm -rf "$qtmp"' EXIT
+      if jq -r '.labels[] | strings' "$src" > "$qtmp/labels" \
+          && jq -r '.files[].filename | strings' "$src" > "$qtmp/files" \
+          && jq -j '.patches' "$src" > "$qtmp/patches"; then
+        qrc=0
+        bash "$(dirname "$0")/qa-real-data.sh" needs "$qtmp/labels" "$qtmp/files" "$qtmp/patches" >/dev/null 2>&1 || qrc=$?
+      else
+        qrc=2
+      fi
+      case "$qrc" in
+        1) ;;
+        0)
+          # The head time gate 1 uses: the later of the committer date and when this PR got it.
+          # `|`, not a tab: read folds runs of a whitespace separator, so an empty field would shift.
+          if IFS='|' read -r qhead qseen qlabel < <(jq -r '
+              ((.headSeenAt | strings | select(. != "")) // null) as $seen
+              | [([.headCommittedAt, $seen] | map(select(. != null)) | max),
+                 ($seen // ""),
+                 (if any(.labels[]; . == "qa-real-data") then ([.qaLabelEvents[] | strings] | max // "") else "" end)]
+              | join("|")' "$src" 2>/dev/null); then
+            if bash "$(dirname "$0")/qa-real-data.sh" fresh "$qhead" "$qlabel" >/dev/null 2>&1; then
+              # Newer than the committer date, but GitHub's own time is unknown: can't judge.
+              [[ -n "$qseen" ]] || qabad=unreadable:headSeenAt
+            elif [[ -z "$qlabel" ]]; then
+              qabad=no-qa-label
+            else
+              qabad=qa-label-older-than-head
+            fi
+          else
+            qabad=unreadable:payload
+          fi
+          ;;
+        *) qabad=unreadable:qa-real-data ;;
+      esac
+    fi
+    jq -r --arg qabad "$qabad" '
       def isdoc: ((test("^/") or test("(^|/)\\.\\.(/|$)")) | not)
                  and (test("^(contributing|docs)/") or test("\\.md$"));
       .head as $h
@@ -118,9 +174,12 @@ case "$cmd" in
          elif $ci then "ci-green"
          else null end) as $proof
       | ([(if $labelbad == "unreadable-seen" then null else $labelbad end),
-          (if $proof == null then "no-proof" else null end)] | map(select(. != null))) as $bad
+          (if $proof == null then "no-proof" else null end),
+          (if $qabad == "" or ($qabad | startswith("unreadable:")) then null else $qabad end)]
+         | map(select(. != null))) as $bad
       | if ($bad | length) > 0 then "PULL \($bad | join(","))"
         elif $labelbad == "unreadable-seen" then "KEEP unreadable headSeenAt"
+        elif ($qabad | startswith("unreadable:")) then "KEEP unreadable \($qabad | ltrimstr("unreadable:"))"
         else "KEEP gates-met proof=\($proof) stamp=\(if $stamped then "yes" else "no" end)" end
     ' "$src" 2>/dev/null || { echo "KEEP unreadable payload"; exit 2; }
     ;;
@@ -135,11 +194,13 @@ case "$cmd" in
         case ",$detail," in *",no-security-label,"*) echo "- Security's \`security-reviewed\` label was never added." ;; esac
         case ",$detail," in *",security-label-older-than-head,"*) echo "- Security's \`security-reviewed\` label is older than this commit. Security labels each new commit." ;; esac
         case ",$detail," in *",no-proof,"*) echo "- No verify proof: no local \`pnpm verify\` pass or PM waiver recorded by the arm script, and the required checks and all six test shards are not green here (or the PR changes \`.github/\`)." ;; esac
+        case ",$detail," in *",no-qa-label,"*) echo "- It needs QA's real-data upgrade check (config or migration code, the connector upgrade ledger, a file too big to read, or the label itself), and QA's \`qa-real-data\` label is not on it. QA runs the check at this commit first." ;; esac
+        case ",$detail," in *",qa-label-older-than-head,"*) echo "- QA's \`qa-real-data\` label is older than this commit. QA re-runs the real-data upgrade check at each new commit." ;; esac
         echo
         echo "**What to do:** get the missing check at this commit, then arm it through the arm script."
         ;;
       unarmed)
-        echo "**Queued without the arm script.** This commit (\`${head:0:7}\`) has what it needs to merge ($detail), so it stays in the queue. But it went in some other way, so the arm script's other checks (QA's and the designer's sign-offs) were not run."
+        echo "**Queued without the arm script.** This commit (\`${head:0:7}\`) has what it needs to merge ($detail), so it stays in the queue. But it went in some other way, so the arm script's other checks (the designer's sign-off among them) were not run."
         echo
         echo "**Next time:** agents arm only through the arm script, never \`gh pr merge\`."
         ;;
