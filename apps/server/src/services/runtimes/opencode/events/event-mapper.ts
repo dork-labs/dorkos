@@ -56,6 +56,7 @@
  *
  * @module services/runtimes/opencode/event-mapper
  */
+import { isHostTurnEvent, type OpenCodeTurnEvent } from '../tool-turn/host-events.js';
 import { openCodeTimingEvents } from './request-timing.js';
 import type { Event, GlobalEvent } from '@opencode-ai/sdk';
 import type { StreamEvent } from '@dorkos/shared/types';
@@ -390,11 +391,15 @@ function streamErrorCopy(err: unknown): RuntimeErrorCopy {
  * @param ctx - Per-turn mapping context (mutated)
  */
 export async function* mapOpenCodeTurn(
-  events: AsyncIterable<OpenCodeWireEvent>,
+  events: AsyncIterable<OpenCodeTurnEvent>,
   ctx: OpenCodeEventContext
 ): AsyncGenerator<StreamEvent> {
   try {
     for await (const event of events) {
+      if (isHostTurnEvent(event)) {
+        yield event;
+        continue;
+      }
       for (const mapped of mapOpenCodeEvent(event, ctx)) {
         if (mapped.type === 'done') {
           yield* closeOpenPermissions(ctx);
