@@ -158,6 +158,28 @@ describe('re-scans move the server half onto the new copy', () => {
     expect(lifecycle.shutdown).not.toHaveBeenCalled();
     expect(lifecycle.initialize).not.toHaveBeenCalled();
   });
+
+  it('announces changed waiting files without restarting a held copy', async () => {
+    stored.value.approvedToRun = [];
+    stored.value.approvedSources = {};
+    const held = { ...flowIn('a', '1.0.0'), trustedOrigin: undefined, currentDigest: 'sha256:old' };
+    mockDiscover.mockResolvedValue([held]);
+    await manager.reload();
+    const announce = vi.fn();
+    manager.followProjects(
+      { roots: async () => [], onChange: () => () => undefined },
+      { announce }
+    );
+    vi.clearAllMocks();
+    mockDiscover.mockResolvedValue([{ ...held, currentDigest: 'sha256:new' }]);
+
+    manager.requestRefresh();
+    await manager.whenIdle();
+
+    expect(announce).toHaveBeenCalledWith(['flow']);
+    expect(lifecycle.shutdown).not.toHaveBeenCalled();
+    expect(lifecycle.initialize).not.toHaveBeenCalled();
+  });
 });
 
 describe('"Stop trusting" pins only what is on, to that exact copy', () => {

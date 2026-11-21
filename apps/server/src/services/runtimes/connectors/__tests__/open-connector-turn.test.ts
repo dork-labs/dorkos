@@ -1,7 +1,11 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { ConnectorRuntimeAuthorityError } from '../../../connectors/principal/runtime-principal-service.js';
 import type { ConnectorRuntimeTools } from '../../connector-tools.js';
 import { openConnectorTurn, type OpenConnectorTurnRequest } from '../open-connector-turn.js';
+
+import { liveTurnFixture } from '../../../connectors/principal/__tests__/runtime-tool-turn.fixture.js';
+import { clearTestHomes } from '../../../core/agent-identity/__tests__/agent-home-fixture.js';
+import { RuntimeToolContextUnavailableError } from '../../../connectors/runtime-principal-port.js';
 
 const BINDING = {
   bindingId: 'binding-1',
@@ -90,5 +94,91 @@ describe('openConnectorTurn (DOR-2752)', () => {
     });
     await expect(openConnectorTurn(t, request())).rejects.toThrow('no lease');
     expect(t.revoke).toHaveBeenCalledWith('binding-1', 'setup_failed');
+  });
+});
+
+// Cross the helper into actual SQLite bindings and canonical live authority.
+describe('openConnectorTurn live tool ownership', () => {
+  const fixtures: Awaited<ReturnType<typeof liveTurnFixture>>[] = [];
+  afterEach(() => {
+    for (const f of fixtures.splice(0)) f.db.$client.close();
+    clearTestHomes();
+    vi.restoreAllMocks();
+  });
+
+  async function open(readTools: boolean) {
+    const f = await liveTurnFixture();
+    fixtures.push(f);
+    const readToolTurn = vi.fn(() => f.facts);
+    const openTurn = vi.spyOn(f.service, 'openTurn');
+    const t = { ...tools(openTurn), principals: f.service };
+    const opened = await openConnectorTurn(
+      t,
+      request({
+        runtime: f.input.runtime,
+        sessionId: f.input.canonicalSessionId,
+        agentPath: f.home,
+        cwd: f.input.canonicalCwd,
+        signal: f.abort.signal,
+        isCurrent: f.ownership.isCurrent,
+        ...(readTools ? { readToolTurn } : {}),
+      })
+    );
+    expect(opened).not.toBeNull();
+    expect(readToolTurn).not.toHaveBeenCalled();
+    const resolved = await f.service.resolve({
+      bearer: opened!.binding.bearer,
+      expectedRuntime: f.input.runtime,
+      expectedCanonicalCwd: f.input.canonicalCwd,
+    });
+    expect(resolved.status).toBe('resolved');
+    if (resolved.status !== 'resolved') throw new Error('Expected current helper principal');
+    return { f, opened: opened!, principal: resolved.principal, readToolTurn, openTurn };
+  }
+
+  it('forwards the unchanged callback and reads fresh facts only after open', async () => {
+    const { f, principal, readToolTurn, openTurn } = await open(true);
+    // The old helper drops the callback and fails this actual caller lookup.
+    await expect(f.service.resolveToolTurn(principal)).resolves.toMatchObject({
+      sessionId: f.input.canonicalSessionId,
+      agentHome: f.home,
+      workingDirectory: f.input.canonicalCwd,
+    });
+    expect(openTurn.mock.calls[0][1].readToolTurn).toBe(readToolTurn);
+    const caller = await f.service.resolveToolTurn(principal);
+    expect(caller.read()).toBe(f.facts);
+    const session = { eventQueue: [], eventQueueNotify: vi.fn() };
+    f.facts = { ...f.facts!, effectiveMode: 'default', chosenMode: 'full', session };
+    expect(caller.read()).toBe(f.facts);
+    expect(caller.read().session).toBe(session);
+    expect(caller.read().signal).toBe(f.abort.signal);
+    f.setCurrent(false);
+    expect(() => caller.read()).toThrow(RuntimeToolContextUnavailableError);
+    await expect(caller.assertCurrent()).rejects.toBeInstanceOf(RuntimeToolContextUnavailableError);
+  });
+
+  it('keeps a legacy connection owner usable without manufacturing tool facts', async () => {
+    const { f, principal, opened, readToolTurn } = await open(false);
+    expect(f.service.isPrincipalCurrent(principal)).toBe(true);
+    await expect(
+      f.service.renew({
+        bindingId: opened.binding.bindingId,
+        permit: opened.binding.renewalPermit,
+      })
+    ).resolves.toMatchObject({ status: 'renewed' });
+    await expect(f.service.resolveToolTurn(principal)).rejects.toBeInstanceOf(
+      RuntimeToolContextUnavailableError
+    );
+    expect(readToolTurn).not.toHaveBeenCalled();
+  });
+
+  it('retires a legacy helper binding on close without restoring tool authority', async () => {
+    const { f, principal, opened } = await open(false);
+    expect(f.service.isPrincipalCurrent(principal)).toBe(true);
+    await f.service.revoke(opened.binding.bindingId, 'turn_terminal');
+    expect(f.service.isPrincipalCurrent(principal)).toBe(false);
+    await expect(f.service.resolveToolTurn(principal)).rejects.toBeInstanceOf(
+      RuntimeToolContextUnavailableError
+    );
   });
 });

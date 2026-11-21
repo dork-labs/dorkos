@@ -235,6 +235,14 @@ describe('path trust for an agent’s own isolated extension (conditions 1 to 3)
     // Pinned, with nothing to pin to: no approval at all.
     expect(approvalFor(copy(), { digest: null })).toBeNull();
   });
+
+  it('requires readable files when constructing an approval for authored code', () => {
+    expect(approvalFor(copy(), { digest: null, authorHome: HOME })).toBeNull();
+  });
+
+  it('keeps the explicit development-link path approval', () => {
+    expect(approvalFor(copy({ devLink: { path: COPY_PATH } }), { digest: null })).not.toBeNull();
+  });
 });
 
 describe('on disk', () => {
@@ -359,6 +367,7 @@ describe('on disk', () => {
     const isolatedDir = path.join(home, '.dork', 'extensions', 'notes');
     await writeExtension(isolatedDir, ISOLATED);
     await approveNewScaffold(
+      dorkHome,
       'notes',
       {
         targetDir: isolatedDir,
@@ -375,6 +384,7 @@ describe('on disk', () => {
     const globalDir = path.join(dorkHome, 'extensions', 'card');
     await writeExtension(globalDir, { ...IN_PROCESS, id: 'card' });
     await approveNewScaffold(
+      dorkHome,
       'card',
       {
         targetDir: globalDir,

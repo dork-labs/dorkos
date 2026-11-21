@@ -128,8 +128,8 @@ export async function pinStillHolds(
  *   the pinned digest is recorded as theirs (`personApprovedDigest`), the one
  *   thing that lets the copy read connected apps (DOR-3547). Every other writer
  *   leaves it out, so its pin never counts as a person's.
- * @returns The approval to store, or null when it must be pinned and there is
- *   no digest to pin it to (the folder holds a link or cannot be read).
+ * @returns The approval to store, or null when its files cannot be read.
+ *   Explicit development links are approved by path alone.
  */
 export function approvalFor(
   copy: ExtensionDeclaringCopy,
@@ -142,11 +142,11 @@ export function approvalFor(
   };
   // A dev link is approved by path alone (DOR-2696).
   if (copy.devLink) return source;
+  if (!options.digest) return null;
   if (keepsPathTrust(copy, source)) {
     delete source.digest;
     return source;
   }
-  if (!options.digest) return null;
   return {
     ...source,
     digest: options.digest,

@@ -1,4 +1,5 @@
-import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, type APIRequestContext, type Page } from '@playwright/test';
+import { test } from '../../fixtures/base';
 import { RightPanelPage } from '../../pages/RightPanelPage.js';
 import { appFrame, appPage } from '../../pages/app-frame.js';
 

@@ -113,7 +113,7 @@ vi.mock('fs/promises', () => ({
     readFile: vi.fn(),
     readdir: vi.fn(),
     rm: vi.fn(),
-    stat: vi.fn(),
+    stat: vi.fn().mockResolvedValue({ isDirectory: () => true }),
   },
 }));
 

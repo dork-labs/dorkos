@@ -33273,6 +33273,9 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "watchStream": {
+                      "type": "boolean"
+                    },
                     "platform": {
                       "type": "string",
                       "minLength": 1

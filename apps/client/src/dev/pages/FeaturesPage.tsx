@@ -11,6 +11,7 @@ import { TasksShowcases } from '../showcases/TasksShowcases';
 import { PersonalityPickerShowcases } from '../showcases/PersonalityPickerShowcases';
 import { PulsePanelShowcase } from '../showcases/PulsePanelShowcases';
 import { ActivityShowcases } from '../showcases/ActivityShowcases';
+import { LoadGateQueueShowcases } from '../showcases/LoadGateQueueShowcases';
 import {
   HarnessPanelShowcases,
   HarnessSyncShowcases,
@@ -81,6 +82,7 @@ export function FeaturesPage() {
       <TasksShowcases />
       <PulsePanelShowcase />
       <ActivityShowcases />
+      <LoadGateQueueShowcases />
       <SkillRowShowcases />
       <HarnessPanelShowcases />
       <HarnessSyncShowcases />

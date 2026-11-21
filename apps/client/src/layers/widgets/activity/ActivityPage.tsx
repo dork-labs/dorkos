@@ -10,6 +10,7 @@ import {
   ActivitySinceLastVisit,
   ActivityViewToggle,
 } from '@/layers/features/activity-feed-page';
+import { LoadGateQueueCard } from '@/layers/features/load-gate-queue';
 import { ActivityTimeline } from './ui/ActivityTimeline';
 import { ActivityLoadMore } from './ui/ActivityLoadMore';
 import { ActivityWeekSummary } from './ui/ActivityWeekSummary';
@@ -23,6 +24,7 @@ import { ExtensionSections } from './ui/ExtensionSections';
  * one on screen fetches.
  *
  *   ActivityViewToggle + ActivityFilterBar (filters belong to the feed only)
+ *   LoadGateQueueCard       (heavy jobs waiting their turn, only while there are some)
  *   ActivityWeekSummary     (week-at-a-glance line + sparkline)
  *   ExtensionSections       (conditional "From your extensions" sections)
  *   ActivityFeedList | AllActionsList
@@ -43,6 +45,9 @@ export function ActivityPage() {
           <ActivityViewToggle view={view} onViewChange={setView} />
           {view === 'activity' && <ActivityFilterBar className="min-w-0 flex-1" />}
         </div>
+
+        {/* Heavy jobs waiting for the computer to be less busy — no card while none wait */}
+        <LoadGateQueueCard />
 
         {/* How busy the week has been — zero DOM until the session list answers */}
         <ActivityWeekSummary />

@@ -552,11 +552,10 @@ async function shutdownServices(reason: 'authority' | 'shutdown' = 'shutdown') {
     await refs.skillsWatcher.stop();
     refs.skillsWatcher = undefined;
   }
-  // Every dev link's watch closes here, so shutdown leaves no handle open.
-  if (refs.devLinkWatcher) {
-    await refs.devLinkWatcher.stop();
-    refs.devLinkWatcher = undefined;
-  }
+  // Source watches close before shutdown leaves their service references behind.
+  await refs.extensionManager?.stopFileWatcher();
+  await refs.devLinkWatcher?.stop();
+  refs.devLinkWatcher = undefined;
   refs.searchIndexer?.stop();
   refs.todoWiring?.stop();
   refs.workQueueWiring?.stop();

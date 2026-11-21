@@ -1,8 +1,11 @@
 /**
  * @vitest-environment jsdom
  */
+import type { ReactNode } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render as renderRaw, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 
 // The held-back mini app line reads live extension state; these tests do not draw it.
 vi.mock('@/layers/entities/extension', async (importOriginal) => ({
@@ -48,9 +51,21 @@ vi.mock('../model/use-session-activity', () => ({
   useSessionActivity: () => useSessionActivity(),
 }));
 
-import { useExtensionRegistry, createInitialSlots } from '@/layers/shared/model';
+import { useExtensionRegistry, createInitialSlots, TransportProvider } from '@/layers/shared/model';
 import type { DashboardSectionContribution } from '@/layers/shared/model';
 import { ActivityPage } from '../ActivityPage';
+
+/** Render under the query client and transport the waiting-jobs card reads through. */
+function render(ui: ReactNode) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return renderRaw(ui, {
+    wrapper: ({ children }) => (
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={createMockTransport()}>{children}</TransportProvider>
+      </QueryClientProvider>
+    ),
+  });
+}
 
 const register = (contribution: DashboardSectionContribution) =>
   useExtensionRegistry.getState().register('dashboard.sections', contribution);

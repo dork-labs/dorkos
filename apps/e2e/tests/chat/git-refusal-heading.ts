@@ -1,5 +1,6 @@
 /** Test-mode only: a typed error card survives normal rendering and durable reload. */
-import { test, expect } from '@playwright/test';
+import { expect } from '@playwright/test';
+import { test } from '../../fixtures/base';
 import { ChatPage } from '../../pages/ChatPage.js';
 
 /** Register on the shared, serial chromium-mock harness; never a real-runtime spec. */

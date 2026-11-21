@@ -315,6 +315,9 @@ describe('extension tools reach and leave the Codex and OpenCode list (DOR-2685)
       principals: {
         openTurn: vi.fn(),
         renew: vi.fn(),
+        resolveToolTurn: vi.fn(async () => {
+          throw new Error('Live tools are not part of this fixture.');
+        }),
         resolve: vi.fn().mockResolvedValue({ status: 'resolved', principal }),
         revoke: vi.fn(),
       },

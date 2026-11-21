@@ -11,6 +11,10 @@ import {
   waitingForAgents,
 } from '../../../extensions/extension-agent-text.js';
 import { listPendingExtensionApprovals } from '../../../extensions/extension-approval-queue.js';
+import {
+  MINI_APP_STORY_SECTION,
+  MINI_APP_STORY_TEXT,
+} from '../../../extensions/guidance/mini-app-story.js';
 import type { PendingExtensionApproval } from '@dorkos/shared/extension-approval-schemas';
 import {
   createCreateExtensionHandler,
@@ -29,6 +33,7 @@ export { createCreateExtensionHandler, type ExtensionCreatorResolver };
  */
 const EXTENSION_API_REFERENCE = `# DorkOS Extension API Reference
 
+${MINI_APP_STORY_SECTION}
 ## Client-Side: ExtensionModule Interface
 
 Runs in a sandboxed frame: no network, cookies or parent window; use \`api\`.
@@ -115,12 +120,7 @@ Scoping: \`turn.*\` and \`tool.*\` are foreground-gated (active session only);
 all console relay traffic); \`session.switched\` describes the foreground itself.
 
 \`\`\`typescript
-type ExtensionEventKind =
-  | 'session.started' | 'session.ended' | 'session.switched'  // category: session
-  | 'turn.started' | 'turn.completed'                         // category: turn
-  | 'tool.activity'                                           // category: tool
-  | 'relay.message';                                          // category: relay
-
+// A kind's category is the part before the dot: session, turn, tool, relay.
 type ExtensionEvent =
   | { kind: 'session.started'; sessionId: string }
   | { kind: 'session.ended'; sessionId: string }
@@ -139,37 +139,23 @@ Manifest declaration (a category grants all its kinds):
 
 ## Usage Examples
 
-### Right-Panel Tab (contextual inspector)
-\`\`\`typescript
-export function activate(api: ExtensionAPI) {
-  // label names the tab; priority sorts the strip (lower = leftward). The panel
-  // container owns the header (tab strip + close), so MyPanel renders only the body.
-  api.registerComponent('right-panel', 'my-panel', MyPanel, {
-    label: 'My Panel',
-    priority: 50,
-    showIn: { pages: ['session'] },
-  });
-}
-\`\`\`
-
 ### Command Palette Item
 \`\`\`typescript
-export function activate(api: ExtensionAPI) {
-  api.registerCommand('greet', 'Say Hello', () => {
-    api.notify('Hello from my extension!', { type: 'success' });
-  });
-}
+api.registerCommand('greet', 'Say Hello', () => api.notify('Hello!'));
+\`\`\`
+
+### Right-Panel Tab (contextual inspector)
+\`\`\`typescript
+// The panel owns the header, so MyPanel renders only the body.
+api.registerComponent('right-panel', 'my-panel', MyPanel,
+  { label: 'My Panel', priority: 50, showIn: { pages: ['session'] } });
 \`\`\`
 
 ### Subscribing to Events (declare capabilities.events in the manifest)
 \`\`\`typescript
-export function activate(api: ExtensionAPI) {
-  return api.events.subscribe(['turn.completed', 'tool.activity'], (event) => {
-    if (event.kind === 'turn.completed') {
-      api.notify(\`Turn done in \${event.durationMs}ms (\${event.toolCallCount} tools)\`);
-    }
-  });
-}
+// inside activate(api):
+return api.events.subscribe(['turn.completed'], (e) =>
+  e.kind === 'turn.completed' && api.notify(\`Took \${e.durationMs ?? '?'}ms\`));
 \`\`\`
 
 ### Storage
@@ -186,10 +172,7 @@ Extensions with server-side capabilities export a \`register\` function from \`s
 import type { ServerExtensionRegister } from '@dorkos/extension-api/server';
 
 const register: ServerExtensionRegister = (router, ctx) => {
-  router.get('/data', async (req, res) => {
-    const apiKey = await ctx.secrets.get('my_api_key');
-    res.json({ data: 'from server' });
-  });
+  router.get('/data', async (_req, res) => res.json({ hasKey: await ctx.secrets.has('api_key') }));
 };
 
 export default register;
@@ -220,41 +203,23 @@ interface DataProviderContext {
   // subscribe(fn) → turn.started / turn.done / turn.failed by messageId
   readonly agent: AgentApi;
   // Bind handlers for the tools extension.json declares (call during register)
-  readonly tools: {
-    handle(
-      name: string,
-      handler: (input: unknown, call: { signal: AbortSignal; agentId: string | null })
-        => unknown | Promise<unknown>
-    ): void;
-  };
+  readonly tools: { handle(name: string, handler: (input: unknown,
+    call: { signal: AbortSignal; agentId: string | null }) => unknown | Promise<unknown>): void };
 }
 \`\`\`
 
 ### Manifest: serverCapabilities
 
 \`\`\`json
-{
-  "serverCapabilities": {
-    "serverEntry": "./server.ts",
-    "externalHosts": ["https://api.example.com"],
-    "secrets": [
-      { "key": "api_key", "label": "API Key", "required": true }
-    ]
-  }
-}
+{ "serverCapabilities": { "serverEntry": "./server.ts", "externalHosts": ["https://api.example.com"],
+  "secrets": [{ "key": "api_key", "label": "API Key", "required": true }] } }
 \`\`\`
 
 ### Manifest: dataProxy (zero-code proxy)
 
 \`\`\`json
-{
-  "dataProxy": {
-    "baseUrl": "https://api.example.com",
-    "authHeader": "Authorization",
-    "authType": "Bearer",
-    "authSecret": "api_key"
-  }
-}
+{ "dataProxy": { "baseUrl": "https://api.example.com", "authHeader": "Authorization",
+  "authType": "Bearer", "authSecret": "api_key" } }
 \`\`\`
 
 Proxy routes are auto-mounted at \`/api/ext/{id}/proxy/*\`.
@@ -513,8 +478,8 @@ export function extensionToolDefinitions(
         'Called from your own chat, it is always created in your own folder, at .dork/extensions/<name>, whatever scope says. ' +
         'There, once it runs separately ("runtime": "subprocess"), edits to its server code load without a click from the person. ' +
         'Edits to its screen code (what the app shows) still wait for the person to approve them. ' +
-        'In a turn that read words from someone other than your owner (a room with another person, Telegram, Slack), or one held to a limit, ' +
-        'your folder is read-only, so it creates nothing and its reply says how to build in the personal marketplace instead.',
+        'In a marked turn, or one held to a limit, it creates nothing and its reply says how to build in the personal marketplace instead. ' +
+        MINI_APP_STORY_TEXT,
       {
         name: z
           .string()

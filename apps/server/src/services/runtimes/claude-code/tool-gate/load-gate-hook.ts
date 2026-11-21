@@ -64,12 +64,15 @@ import { LOAD_WAIT_STATUS } from '@dorkos/shared/schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { logger } from '../../../../lib/logger.js';
 import {
+  errorName,
   hardCapMs,
+  isAbortError,
   type HeldSlot,
   type LoadGate,
   type WaitStatus,
 } from '../../../core/load-gate/load-gate.js';
 import { loadGateSettings, machineLoadGate } from '../../../core/load-gate/machine-load-gate.js';
+import { loadWaitEvent, readSettingsOrNull } from '../../../core/load-gate/runtime-wait.js';
 import type { AgentSession } from '../agent-types.js';
 
 /** The one tool the gate holds: the CLI reads a word-only matcher as an exact tool name. */
@@ -84,8 +87,6 @@ const TIMEOUT_SLACK_MS = 5_000;
 /** How many finished calls are remembered, for a slot granted after its call already ended. */
 const FINISHED_MEMORY = 256;
 const MS_PER_SECOND = 1_000;
-const MS_PER_MINUTE = 60_000;
-const MINUTES_PER_HOUR = 60;
 /** The shipped settings, for the time limit when the live ones cannot be read. */
 const SHIPPED = LoadGateSettingsSchema.parse(undefined);
 
@@ -190,12 +191,6 @@ function noAnswer(): HookJSONOutput {
   return {};
 }
 
-const isAbort = (error: unknown): boolean => (error as Error | undefined)?.name === 'AbortError';
-
-/** A short, fixed name for what went wrong: never a message, which could carry a path. */
-const errorName = (error: unknown): string =>
-  error instanceof Error && /^\w{1,40}$/.test(error.name) ? error.name : 'unknown';
-
 /**
  * The hook's own time limit, in seconds: past the hard cap, so the gate's cap ends a wait first,
  * and never past the longest timer Node can set.
@@ -205,34 +200,6 @@ const errorName = (error: unknown): string =>
 export function loadGateHookTimeoutSeconds(settings: LoadGateSettings | null): number {
   const pastCap = Math.ceil(hardCapMs(settings ?? SHIPPED) / MS_PER_SECOND) + HOOK_TIMEOUT_MARGIN_S;
   return Math.min(pastCap, MAX_TIMER_S);
-}
-
-/** `1st`, `2nd`, `3rd`, `4th`, `11th`, `21st`: English ordinals, where 11 to 13 take `th`. */
-function ordinal(n: number): string {
-  const lastTwo = n % 100;
-  if (lastTwo >= 11 && lastTwo <= 13) return `${n}th`;
-  const suffix = ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th';
-  return `${n}${suffix}`;
-}
-
-/** A rough time left, as a person reads it: `40m`, `3h`. */
-function roughly(ms: number): string {
-  const minutes = Math.max(1, Math.ceil(ms / MS_PER_MINUTE));
-  return minutes < MINUTES_PER_HOUR ? `${minutes}m` : `${Math.round(minutes / MINUTES_PER_HOUR)}h`;
-}
-
-/**
- * What the chat says while a heavy job waits. Its place in line and nothing about the jobs ahead.
- *
- * @param status - How the wait is going, as the gate reports it.
- * @param capMs - When the job runs anyway, or `undefined` when the settings cannot be read.
- */
-export function loadWaitMessage(status: WaitStatus, capMs: number | undefined): string {
-  const place = status.position <= 1 ? 'Next in line' : `${ordinal(status.position)} in line`;
-  if (!status.pastMaxWait) return `Waiting for the computer to calm down. ${place}.`;
-  const runsAnyway =
-    capMs === undefined ? '' : ` It runs anyway in about ${roughly(capMs - status.waitedMs)}.`;
-  return `Still waiting for the computer. ${place}.${runsAnyway}`;
 }
 
 /**
@@ -364,12 +331,7 @@ function waitNotice(
   now: () => number
 ): (status: WaitStatus) => void {
   return (status) => {
-    const current = readSettings();
-    const message = loadWaitMessage(status, current ? hardCapMs(current) : undefined);
-    const event: StreamEvent = {
-      type: 'system_status',
-      data: { message, status: LOAD_WAIT_STATUS },
-    };
+    const event = loadWaitEvent(status, readSettings());
     // A turn whose job waits is still working: record eviction must not take it.
     session.lastActivity = now();
     const stale = session.eventQueue.findIndex(isLoadWait);
@@ -414,13 +376,7 @@ export function loadGateHooks(
   const settings = deps.settings ?? loadGateSettings;
   const now = deps.now ?? Date.now;
   const log = deps.log ?? logger;
-  const readSettings = (): LoadGateSettings | null => {
-    try {
-      return settings();
-    } catch {
-      return null;
-    }
-  };
+  const readSettings = (): LoadGateSettings | null => readSettingsOrNull(settings);
   const timeoutS = loadGateHookTimeoutSeconds(readSettings());
   const slots = new LaunchSlots();
   const say = waitNotice(session, readSettings, now);
@@ -456,7 +412,7 @@ export function loadGateHooks(
     try {
       await holdIfHeavy(input, signal);
     } catch (error) {
-      if (!isAbort(error)) {
+      if (!isAbortError(error)) {
         log.warn('[LoadGate] the wait broke; the command goes on', { error: errorName(error) });
       } else if (
         signal.aborted &&

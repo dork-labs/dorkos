@@ -78,6 +78,7 @@ import {
 import { resolveStanding } from '../notifications/notification-service.js';
 import { broadcastStandingResolved, raiseStanding } from '../notifications/standing-events.js';
 import type { ExtensionManager } from './extension-manager.js';
+import { presentExtensionCopies } from './copies/extension-copy-presence.js';
 import type { ExtensionsConfig } from './extension-enable-resolution.js';
 import {
   isApprovedByOrigin,
@@ -654,29 +655,27 @@ function byAge(a: ApprovalFacts, b: ApprovalFacts): number {
  *
  * @param source - The extension manager.
  */
-async function readCopies(
-  source: ApprovalQueueSource
-): Promise<{ pending: ApprovalFacts[]; putOff: ApprovalFacts[] }> {
+async function readCopies(source: ApprovalQueueSource): Promise<{
+  pending: ApprovalFacts[];
+  putOff: ApprovalFacts[];
+  records: Map<string, ExtensionRecord>;
+}> {
   const extensions = configManager.get('extensions');
-  const records = source.listRecords();
+  const records = await presentExtensionCopies(source.listRecords());
   const byId = new Map(records.map((record) => [record.id, record]));
   const lookup: AppLookup = (id) => byId.get(id);
+  const describe = (predicate: (record: ExtensionRecord) => boolean) =>
+    Promise.all(
+      records.filter(predicate).map((record) => describeCopy(record, source.dorkHome, lookup))
+    );
   const [pending, putOff] = await Promise.all([
-    Promise.all(
-      records
-        .filter((record) => isPendingApproval(record, extensions))
-        .map((record) => describeCopy(record, source.dorkHome, lookup))
-    ),
-    Promise.all(
-      records
-        .filter((record) => isPutOff(record, extensions))
-        .map((record) => describeCopy(record, source.dorkHome, lookup))
-    ),
+    describe((record) => isPendingApproval(record, extensions)),
+    describe((record) => isPutOff(record, extensions)),
   ]);
   // Only a copy still waiting needs its first sighting remembered.
   const waitingKeys = new Set(pending.map(conditionKey));
   for (const key of firstSeen.keys()) if (!waitingKeys.has(key)) firstSeen.delete(key);
-  return { pending: pending.sort(byAge), putOff };
+  return { pending: pending.sort(byAge), putOff, records: byId };
 }
 
 /**
@@ -800,10 +799,9 @@ export class ExtensionApprovalQueue {
   /** The body of {@link sync}. */
   private async syncOnce(announce: boolean): Promise<void> {
     try {
-      const { pending, putOff } = await readCopies(this.source);
+      const { pending, putOff, records } = await readCopies(this.source);
       const next = new Map(pending.map((facts) => [conditionKey(facts), facts]));
       const nextPutOff = new Map(putOff.map((facts) => [conditionKey(facts), facts]));
-      const records = new Map(this.source.listRecords().map((record) => [record.id, record]));
 
       for (const [key, facts] of this.previous) {
         if (next.has(key)) continue;
