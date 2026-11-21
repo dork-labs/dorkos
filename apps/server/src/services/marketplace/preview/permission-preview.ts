@@ -19,7 +19,7 @@ import { EFFECT_BEARING_PATHS, PackageTypeSchema } from '@dorkos/marketplace';
 import { describePackageLink, findPackageLinks } from '@dorkos/marketplace/package-links';
 import { parseSkillFile } from '@dorkos/skills/parser';
 import { SkillFrontmatterSchema, hasSchedule } from '@dorkos/skills';
-import { ExtensionManifestSchema } from '@dorkos/extension-api';
+import { declaredContributions, ExtensionManifestSchema } from '@dorkos/extension-api';
 import { declaredSet } from '../../extensions/isolation/permission-coverage.js';
 import { hasServerHalf } from '../../extensions/isolation/server-half.js';
 import { clampSchedulePermissionMode } from '../../tasks/schedule-permission-clamp.js';
@@ -286,17 +286,6 @@ function readManifestSchedules(manifest: MarketplacePackageManifest): PreviewSch
 }
 
 /**
- * Extract slot IDs from an extension manifest's `contributions` map.
- * Slots are the keys whose value is `true`.
- */
-function extractSlots(contributions: Record<string, boolean> | undefined): string[] {
-  if (!contributions) return [];
-  return Object.entries(contributions)
-    .filter(([, enabled]) => enabled === true)
-    .map(([slot]) => slot);
-}
-
-/**
  * Parse a single requires declaration of the form `<type>:<name>` or
  * `<type>:<name>@<version>`.
  */
@@ -499,7 +488,9 @@ export class PermissionPreviewBuilder {
     preview.extensions = await Promise.all(
       extensionManifests.map(async ({ id, manifest: extManifest }) => ({
         id,
-        slots: extractSlots(extManifest.contributions),
+        // The places it will show in, and only those (DOR-4282); unknown keys
+        // are left out, so the card names only places DorkOS has.
+        slots: declaredContributions(extManifest),
         isolation: isolationOfManifest(extManifest),
         hasServer: await hasServerHalf(join(extRoot, id), extManifest),
         secrets: (extManifest.serverCapabilities?.secrets ?? []).map(
@@ -594,7 +585,9 @@ function collectSecrets(
 function isolationOfManifest(
   manifest: ReturnType<typeof ExtensionManifestSchema.parse>
 ): PreviewExtensionIsolation {
-  return declaredSet(manifest);
+  // The places travel on the extension's own `slots` list.
+  const { slots: _slots, ...set } = declaredSet(manifest);
+  return set;
 }
 
 /**

@@ -14936,6 +14936,10 @@
               "null"
             ],
             "default": null
+          },
+          "placesOnly": {
+            "type": "boolean",
+            "default": false
           }
         },
         "required": [
@@ -14995,6 +14999,12 @@
           },
           "hasPage": {
             "type": "boolean"
+          },
+          "slots": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "writes": {
             "type": "array",
@@ -15083,6 +15093,12 @@
             "type": "boolean"
           },
           "apps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "slots": {
             "type": "array",
             "items": {
               "type": "string"
@@ -15217,6 +15233,13 @@
                 }
               },
               "appOpens": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20
+              },
+              "slots": {
                 "type": "array",
                 "items": {
                   "type": "string"
@@ -21892,6 +21915,13 @@
                             "type": "string"
                           },
                           "maxItems": 20
+                        },
+                        "slots": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "maxItems": 20
                         }
                       },
                       "required": [
@@ -22062,6 +22092,13 @@
                       }
                     },
                     "appOpens": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "maxItems": 20
+                    },
+                    "slots": {
                       "type": "array",
                       "items": {
                         "type": "string"

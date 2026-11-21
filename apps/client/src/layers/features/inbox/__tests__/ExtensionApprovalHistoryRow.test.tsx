@@ -227,7 +227,14 @@ describe('an answered extension approval in the Activity list', () => {
       path: FLOW_PATH,
       version: '1.2.0',
       plugin: 'flow',
-      permissions: { runtime: 'subprocess', net: ['api.linear.app'], run: [], agents: true },
+      // The places the card showed, none here, so the yes records them (DOR-4282).
+      permissions: {
+        runtime: 'subprocess',
+        net: ['api.linear.app'],
+        run: [],
+        agents: true,
+        slots: [],
+      },
       expectedDigest: FLOW_DIGEST,
     });
   });

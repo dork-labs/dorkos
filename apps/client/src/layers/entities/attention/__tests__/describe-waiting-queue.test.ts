@@ -51,6 +51,27 @@ describe('describeWaitingQueue', () => {
         })) as never[],
       }) as WaitingQueueCounts;
 
+    // Purpose: an app that keeps running while new places wait is never
+    // described as not running (DOR-4282).
+    it('says an app waiting only for new places keeps working', () => {
+      const placesOnly = (...names: string[]) =>
+        ({
+          ...queue({}),
+          extensionApprovals: names.map((name) => ({
+            name,
+            changedFiles: null,
+            updatedFrom: null,
+            placesOnly: true,
+          })) as never[],
+        }) as WaitingQueueCounts;
+      expect(describeWaitingQueue(placesOnly('Flow'))).toBe(
+        'Flow wants new places. It keeps working meanwhile.'
+      );
+      expect(describeWaitingQueue(placesOnly('Flow', 'Ledger'))).toBe(
+        '2 mini apps want to show in new places. They keep working meanwhile.'
+      );
+    });
+
     it('says how many new ones wait to be turned on', () => {
       expect(describeWaitingQueue(miniApps('new', 'new'))).toBe(
         "2 mini apps are waiting to be turned on. They won't run until you decide."

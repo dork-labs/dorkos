@@ -16,7 +16,7 @@ import { readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { PACKAGE_TEXT_MAX_BYTES, readTextFileWithin } from '@dorkos/shared/bounded-read';
 import type { ExtensionManifest, ExtensionRecord } from '@dorkos/extension-api';
-import { ExtensionManifestSchema } from '@dorkos/extension-api';
+import { ExtensionManifestSchema, reservedAppNameProblem } from '@dorkos/extension-api';
 import type { Logger } from '@dorkos/shared/logger';
 
 /**
@@ -91,7 +91,8 @@ export async function discoverStagedExtensions(root: string): Promise<StagedExte
  *   name), when it is a plugin. Its extensions are then held to the plugin's
  *   folder, as they are once installed (DOR-3537); without it, each extension
  *   is held to its own folder.
- * @throws When any bundled extension fails to compile, with the bundler's reason.
+ * @throws When any bundled extension fails to compile, with the bundler's
+ *   reason, or carries a name that is DorkOS's own.
  */
 export async function compileStagedExtensions(
   stagingDir: string,
@@ -102,6 +103,9 @@ export async function compileStagedExtensions(
 ): Promise<void> {
   const extensions = await discoverStagedExtensions(stagingDir);
   for (const ext of extensions) {
+    // DorkOS's own names stay DorkOS's (DOR-4282): refused before anything lands.
+    const nameProblem = reservedAppNameProblem(ext.manifest.name);
+    if (nameProblem) throw new Error(`Extension '${ext.id}' can't be installed. ${nameProblem}`);
     const record = buildCompilerRecord(ext, plugin);
     const result = await compiler.compile(record);
     if ('error' in result) {

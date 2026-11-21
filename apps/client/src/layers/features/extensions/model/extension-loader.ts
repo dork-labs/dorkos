@@ -12,6 +12,7 @@ import { createElement } from 'react';
 import { ManifestSettingsPanel, ManifestSettingsIcon } from '../ui/ManifestSettingsPanel';
 import { extensionApiUrl } from './extension-api-url';
 import { setExtensionClientState } from '@/layers/shared/lib/extension-client-state';
+import { clearUndeclaredSlots } from '@/layers/shared/lib/extension-undeclared-slots';
 import { setExtensionNames } from '@/layers/shared/lib/extension-names';
 import { setRunningApps } from '../frame/running-apps';
 import { ExtensionLoadFailure } from '../ui/ExtensionLoadFailure';
@@ -57,7 +58,8 @@ export const EXTENSION_IMPORT_TIMEOUT_MS = 15_000;
 async function importBundle(
   id: string,
   cacheBust: boolean,
-  manifest: ExtensionManifest
+  manifest: ExtensionManifest,
+  allowedSlots?: readonly string[]
 ): Promise<ExtensionModule | null> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -67,7 +69,8 @@ async function importBundle(
     return await Promise.race([
       importExtensionModule(
         extensionApiUrl(`/extensions/${id}/bundle${cacheBust ? `?t=${Date.now()}` : ''}`),
-        manifest
+        manifest,
+        allowedSlots
       ),
       new Promise<never>((_, reject) => {
         timer = setTimeout(
@@ -225,7 +228,9 @@ export class ExtensionLoader {
           return;
         }
         setExtensionClientState(rec.id, 'starting');
-        const module = await importBundle(rec.id, cacheBust, rec.manifest);
+        // What it tried last load is said again only if it tries again.
+        clearUndeclaredSlots(rec.id);
+        const module = await importBundle(rec.id, cacheBust, rec.manifest, rec.allowedSlots);
         if (this.disposed || gen !== this.generation || this.attempts.get(rec.id) !== attempt)
           return;
         this.failedSettings.get(rec.id)?.();
@@ -238,7 +243,8 @@ export class ExtensionLoader {
           rec.id,
           this.deps,
           rec.manifest.capabilities?.events ?? [],
-          rec.manifest
+          // The places a person allowed, from DorkOS's record, never the manifest (DOR-4282).
+          { ...rec.manifest, allowedSlots: rec.allowedSlots }
         );
         try {
           const deactivate = await module.activate(api);
@@ -279,7 +285,9 @@ export class ExtensionLoader {
   private markNeedsUpdate(rec: ExtensionRecordPublic): void {
     this.failedSettings.get(rec.id)?.();
     this.failedSettings.delete(rec.id);
+    // Only where its tab may show: declared, and allowed by DorkOS's record (DOR-4282).
     if (rec.manifest.contributions?.['right-panel'] !== true) return;
+    if (!(rec.allowedSlots ?? []).includes('right-panel')) return;
     const name = rec.manifest.name;
     const unsubscribe = this.deps.registry.register('right-panel', {
       id: `${rec.id}:needs-update`,

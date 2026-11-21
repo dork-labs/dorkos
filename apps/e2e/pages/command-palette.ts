@@ -31,8 +31,14 @@ import type { Locator, Page } from '@playwright/test';
  * @param page - The page to drive.
  * @param item - Exact palette entry to pick, e.g. `Scheduled tasks`. Doubles as
  *   the query typed to bring it back, so it must be the label as rendered.
+ * @param name - The option's accessible name, when it is not the label: an
+ *   app's command is named "<label>, <app>" (DOR-4282). Defaults to `item`.
  */
-export async function openFromCommandPalette(page: Page, item: string): Promise<void> {
+export async function openFromCommandPalette(
+  page: Page,
+  item: string,
+  name: string = item
+): Promise<void> {
   await page.getByRole('button', { name: 'Open command palette' }).click();
   // By test id, not by placeholder: the placeholder is user-facing copy that has
   // already changed twice, and a `getByPlaceholder` that matches nothing waits
@@ -40,7 +46,7 @@ export async function openFromCommandPalette(page: Page, item: string): Promise<
   const search = page.getByTestId('command-palette-input');
   await search.waitFor({ state: 'visible' });
   await search.fill(item);
-  await page.getByRole('option', { name: item, exact: true }).first().click();
+  await page.getByRole('option', { name, exact: true }).first().click();
 }
 
 /**

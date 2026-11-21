@@ -6,7 +6,8 @@
   "author": "DorkOS",
   "minHostVersion": "0.1.0",
   "contributions": {
-    "dashboard.sections": true
+    "dashboard.sections": true,
+    "command-palette.items": true
   },
   "defaultEnabled": false,
   "canDisable": true,

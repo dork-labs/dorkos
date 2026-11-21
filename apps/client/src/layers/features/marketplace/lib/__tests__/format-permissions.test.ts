@@ -274,6 +274,16 @@ describe('formatPermissionPreview → effects → file changes', () => {
 
     expect(rows.map((r) => r.icon)).toEqual(['file', 'puzzle']);
   });
+
+  it('names the places an extension shows in, in DorkOS’s words (DOR-4282)', () => {
+    const preview = makePreview({
+      extensions: [{ id: 'flow-ext', slots: ['pages', 'command-palette.items', 'Sign in'] }],
+    });
+
+    const [row] = formatPermissionPreview(preview, { installBase: DORK_HOME }).effects;
+
+    expect(row?.description).toBe('Shows in: a page, ⌘K commands');
+  });
 });
 
 // ---------------------------------------------------------------------------

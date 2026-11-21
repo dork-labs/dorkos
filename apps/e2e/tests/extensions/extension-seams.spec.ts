@@ -33,6 +33,10 @@ const API_URL = `http://localhost:${MOCK_PORT}`;
 const HELLO = 'hello-world';
 /** Its name, which titles the sandboxed frame each of its views runs in. */
 const HELLO_NAME = 'Hello World';
+/** Its ⌘K command's label, which is also what is typed to find it. */
+const TOGGLE_DOT = 'Hello World: Toggle Tab Dot';
+/** That command's option: an app's command is named "<label>, <app>" (DOR-4282). */
+const TOGGLE_DOT_OPTION = `${TOGGLE_DOT}, ${HELLO_NAME}`;
 
 /** Turn a core extension on or off through the same route Settings uses. */
 async function setEnabled(request: APIRequestContext, id: string, enabled: boolean) {
@@ -194,12 +198,12 @@ test.describe('Extension seams — hello-world’s page, status item and tab dot
     await panel.ensureTabStripOpen();
     await expect(panel.header.getByRole('tab', { name: 'Hello', exact: true })).toBeVisible();
 
-    await openFromCommandPalette(page, 'Hello World: Toggle Tab Dot');
+    await openFromCommandPalette(page, TOGGLE_DOT, TOGGLE_DOT_OPTION);
     const marked = panel.header.getByRole('tab', { name: 'Hello, something needs you' });
     await expect(marked).toBeVisible();
     await expect(marked.locator('[data-slot="right-panel-tab-marker"]')).toBeVisible();
 
-    await openFromCommandPalette(page, 'Hello World: Toggle Tab Dot');
+    await openFromCommandPalette(page, TOGGLE_DOT, TOGGLE_DOT_OPTION);
     await expect(panel.header.getByRole('tab', { name: 'Hello', exact: true })).toBeVisible();
     await expect(panel.header.locator('[data-slot="right-panel-tab-marker"]')).toHaveCount(0);
   });

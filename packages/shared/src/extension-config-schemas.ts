@@ -171,6 +171,13 @@ export const ApprovedPermissionSetSchema = z.object({
    * One it starts opening asks again. Absent: none.
    */
   appOpens: z.array(z.string()).optional(),
+  /**
+   * The places it was approved to show in: its declared `contributions` keys,
+   * sorted (DOR-4282). One it newly declares asks again. Absent on an approval
+   * given before places were recorded: that one covers only the two places
+   * its card named then, a panel tab and a Settings page.
+   */
+  slots: z.array(z.string()).optional(),
 });
 
 /** The permission set a person approved for one extension. */

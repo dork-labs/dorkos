@@ -33,6 +33,7 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 import type { ApprovedPermissionSet, ExtensionApprovedSource } from '@dorkos/shared/config-schema';
+import { narrowestPermissionSet } from './permission-card-line.js';
 import { ExtensionManifestSchema } from '@dorkos/extension-api';
 import { PACKAGE_TEXT_MAX_BYTES, readPackageFileWithin } from '@dorkos/shared/bounded-read';
 import { declaredSet } from '../../extensions/isolation/permission-coverage.js';
@@ -967,10 +968,6 @@ async function declaredIn(
   hasServer: boolean;
   secrets?: { key: string; required: boolean }[];
 }> {
-  const narrowest = {
-    set: { runtime: 'subprocess', net: [], run: [], agents: false } as ApprovedPermissionSet,
-    hasServer: true,
-  };
   try {
     const raw = await readPackageFileWithin(
       folder,
@@ -979,7 +976,7 @@ async function declaredIn(
       "The extension's extension.json"
     );
     const parsed = ExtensionManifestSchema.safeParse(JSON.parse(raw));
-    if (!parsed.success) return narrowest;
+    if (!parsed.success) return { set: narrowestPermissionSet(), hasServer: true };
     return {
       set: declaredSet(parsed.data),
       hasServer: await hasServerHalf(path.join(folder, EXTENSIONS_DIR, id), parsed.data),
@@ -989,7 +986,7 @@ async function declaredIn(
       })),
     };
   } catch {
-    return narrowest;
+    return { set: narrowestPermissionSet(), hasServer: true };
   }
 }
 

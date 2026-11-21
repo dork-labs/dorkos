@@ -49,6 +49,7 @@ import { isEnabled, type CoreExtensionInfo } from '../extension-enable-resolutio
 import { mayRunExtensionCode } from '../extension-load-policy.js';
 import { writeFileAtomic } from '../extension-build-cache.js';
 import type { ExtensionsConfig } from '../extension-enable-resolution.js';
+import { runDirOf } from '../pin/run-dir.js';
 import { logger } from '../../../lib/logger.js';
 
 /** What the reconciler needs besides the records. */
@@ -147,8 +148,11 @@ export async function selectRunningSkills(
     // approval waits for a person, and so do its skills (DOR-2686).
     if (!mayRunExtensionCode(record, ctx.config)) continue;
     // The folder the copy RUNS from: a trusted copy's verified snapshot, so a
-    // project file changed after the scan never becomes a skill.
-    const skillsDir = path.join(record.runPath ?? record.path, 'skills');
+    // project file changed after the scan never becomes a skill. A pinned copy
+    // with no snapshot runs from nowhere, so it offers no skills either.
+    const runDir = runDirOf(record);
+    if (!runDir) continue;
+    const skillsDir = path.join(runDir, 'skills');
     const skills: string[] = [];
     for (const name of [...new Set(declared)].sort()) {
       if (await isRegularFile(path.join(skillsDir, name, 'SKILL.md'))) skills.push(name);

@@ -97,27 +97,16 @@ interface ExtensionAPI {
 }
 \`\`\`
 
-## ExtensionPointId (Available Slots)
+## Places: manifest \`contributions\`
 
-\`\`\`typescript
-type ExtensionPointId =
-  | 'sidebar.footer'
-  | 'dashboard.sections'
-  | 'command-palette.items'
-  | 'dialog'
-  | 'settings.tabs'
-  | 'right-panel';
-\`\`\`
+Set every place the app uses to true, e.g. \`{ "contributions": { "pages": true } }\`.
+DorkOS refuses any other registration, names each place on the approval card, and asks
+again when an update adds one. Keys: pages, right-panel, dashboard.sections, settings.tabs,
+status-bar, command-palette.items, dialog, sidebar.footer, canvas, inbox (ctx.inbox).
+DorkOS draws the app's name on its dialogs and ⌘K rows. Names starting with DorkOS, or
+DorkOS page names (Settings, Inbox, Tasks, Apps...), are refused.
 
-## ExtensionReadableState
-
-\`\`\`typescript
-interface ExtensionReadableState {
-  currentCwd: string | null;
-  activeSessionId: string | null;
-  agentId: string | null;
-}
-\`\`\`
+ExtensionReadableState: \`{ currentCwd, activeSessionId, agentId }\`, each string or null.
 
 ## ExtensionEvent (curated, privacy-safe)
 
@@ -157,14 +146,9 @@ api.registerCommand('greet', 'Say Hello', () => api.notify('Hello!'));
 
 ### Right-Panel Tab (contextual inspector)
 \`\`\`typescript
-export function activate(api: ExtensionAPI) {
-  // The panel owns the header, so MyPanel renders only the body.
-  api.registerComponent('right-panel', 'my-panel', MyPanel, {
-    label: 'My Panel',
-    priority: 50,
-    showIn: { pages: ['session'] },
-  });
-}
+// The panel owns the header, so MyPanel renders only the body.
+api.registerComponent('right-panel', 'my-panel', MyPanel,
+  { label: 'My Panel', priority: 50, showIn: { pages: ['session'] } });
 \`\`\`
 
 ### Subscribing to Events (declare capabilities.events in the manifest)
@@ -188,10 +172,7 @@ Extensions with server-side capabilities export a \`register\` function from \`s
 import type { ServerExtensionRegister } from '@dorkos/extension-api/server';
 
 const register: ServerExtensionRegister = (router, ctx) => {
-  router.get('/data', async (req, res) => {
-    const apiKey = await ctx.secrets.get('my_api_key');
-    res.json({ data: 'from server' });
-  });
+  router.get('/data', async (_req, res) => res.json({ hasKey: await ctx.secrets.has('api_key') }));
 };
 
 export default register;
@@ -222,41 +203,23 @@ interface DataProviderContext {
   // subscribe(fn) → turn.started / turn.done / turn.failed by messageId
   readonly agent: AgentApi;
   // Bind handlers for the tools extension.json declares (call during register)
-  readonly tools: {
-    handle(
-      name: string,
-      handler: (input: unknown, call: { signal: AbortSignal; agentId: string | null })
-        => unknown | Promise<unknown>
-    ): void;
-  };
+  readonly tools: { handle(name: string, handler: (input: unknown,
+    call: { signal: AbortSignal; agentId: string | null }) => unknown | Promise<unknown>): void };
 }
 \`\`\`
 
 ### Manifest: serverCapabilities
 
 \`\`\`json
-{
-  "serverCapabilities": {
-    "serverEntry": "./server.ts",
-    "externalHosts": ["https://api.example.com"],
-    "secrets": [
-      { "key": "api_key", "label": "API Key", "required": true }
-    ]
-  }
-}
+{ "serverCapabilities": { "serverEntry": "./server.ts", "externalHosts": ["https://api.example.com"],
+  "secrets": [{ "key": "api_key", "label": "API Key", "required": true }] } }
 \`\`\`
 
 ### Manifest: dataProxy (zero-code proxy)
 
 \`\`\`json
-{
-  "dataProxy": {
-    "baseUrl": "https://api.example.com",
-    "authHeader": "Authorization",
-    "authType": "Bearer",
-    "authSecret": "api_key"
-  }
-}
+{ "dataProxy": { "baseUrl": "https://api.example.com", "authHeader": "Authorization",
+  "authType": "Bearer", "authSecret": "api_key" } }
 \`\`\`
 
 Proxy routes are auto-mounted at \`/api/ext/{id}/proxy/*\`.

@@ -21,10 +21,13 @@ import {
   usePendingExtensionApprovals,
   useApprovalSets,
 } from '@/layers/entities/extension';
+import { useAppUpdates } from '../model/use-app-updates';
 import {
   isExtensionOff,
+  keepsPlacesForOldApproval,
   matchesExtensionSearch,
   sectionExtensions,
+  waitingPlaces,
 } from '../lib/extension-row-state';
 import { extensionGroupState, groupExtensions, type ExtensionGroup } from '../lib/extension-groups';
 import { ExtensionRow } from './ExtensionRow';
@@ -56,6 +59,9 @@ export function ExtensionsSettingsTab() {
   const { approvals } = usePendingExtensionApprovals();
   // A plugin's extensions waiting to be allowed together (DOR-3583).
   const { data: approvalSets = [] } = useApprovalSets();
+  // Only an app kept on its old places asks for an update, and only when one
+  // exists, so the check runs only then (DOR-4282).
+  const hasUpdate = useAppUpdates(extensions.some(keepsPlacesForOldApproval));
   const [openIds, setOpenIds] = useState<ReadonlySet<string>>(() => new Set());
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<ExtensionFilter>('all');
@@ -100,7 +106,10 @@ export function ExtensionsSettingsTab() {
     const shown = extensions.find((ext) => ext.id === id);
     if (!shown) return;
 
-    // Turning it on echoes the permission set the panel lists (DOR-2686).
+    // A running app whose only wait is new places (DOR-4282).
+    const placesOnly = approve && waitingPlaces(shown).length > 0;
+    // Turning it on echoes the permission set the panel lists (DOR-2686),
+    // its places included.
     const permissions = approve ? approvedSetOf(permissionViewFromRecord(shown)) : undefined;
     mutation.mutate(
       {
@@ -117,7 +126,13 @@ export function ExtensionsSettingsTab() {
           const name = result.extension.manifest.name;
           // "inside DorkOS" only for one that does run inside (DOR-2686).
           const where = result.extension.isolation ? '' : ' inside DorkOS';
-          toast.success(approve ? `${name} can now run${where}` : `${name} stopped running`);
+          toast.success(
+            placesOnly
+              ? `${name} can show in its new places.`
+              : approve
+                ? `${name} can now run${where}`
+                : `${name} stopped running`
+          );
         },
         onError: (err) => {
           if (err instanceof RunApprovalError && err.stale) {
@@ -126,9 +141,14 @@ export function ExtensionsSettingsTab() {
             toast.error(`${shown.manifest.name} changed since you saw it. Check it again.`);
             return;
           }
-          toast.error(approve ? 'Couldn’t let it run.' : 'Couldn’t stop it running.', {
-            description: err.message,
-          });
+          toast.error(
+            placesOnly
+              ? `Couldn’t allow ${shown.manifest.name}’s new places.`
+              : approve
+                ? 'Couldn’t let it run.'
+                : 'Couldn’t stop it running.',
+            { description: err.message }
+          );
         },
       }
     );
@@ -261,6 +281,7 @@ export function ExtensionsSettingsTab() {
       stepUpRisk={stepUpRisks?.find((risk) => risk.id === ext.id)}
       onRemove={handleRemove}
       isRemoving={removeMutation.isPending && removeMutation.variables === ext.id}
+      updateAvailable={hasUpdate(ext)}
     />
   );
   const renderRow = (ext: ExtensionRecordPublic) => rowFor(ext, false);
