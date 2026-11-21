@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261001-130114",
+ "file": "ci/ledger/261001-130114-close-queue-four-shards-verdict.md",
+ "pr": 2443,
+ "merged_at": "2026-10-01T13:38:13Z",
+ "sha": "c5d8ea0b60a620a749a9e9c2b958d0b596d6c8cb",
+ "resolved_at": "2026-11-21T13:20:33.416Z"
+}

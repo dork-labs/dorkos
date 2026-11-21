@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "260928-131854",
+ "file": "ci/ledger/260928-131854-docker-orphan-sweep-fixtures.md",
+ "pr": 2297,
+ "merged_at": "2026-09-28T14:23:55Z",
+ "sha": "27d35daf5133261593f63b0cc5cf4fc5c41104ad",
+ "resolved_at": "2026-11-21T13:20:33.416Z"
+}

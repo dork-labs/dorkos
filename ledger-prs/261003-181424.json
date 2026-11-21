@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261003-181424",
+ "file": "ci/ledger/261003-181424-allow-sleep-and-gh-reads.md",
+ "pr": 2513,
+ "merged_at": "2026-10-03T19:40:31Z",
+ "sha": "4b6c25579e9049ef04c5f686bb68dae9ce78113e",
+ "resolved_at": "2026-11-21T13:20:33.416Z"
+}

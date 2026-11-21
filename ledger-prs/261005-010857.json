@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261005-010857",
+ "file": "ci/ledger/261005-010857-build-connector-providers-before-shared.md",
+ "pr": 2564,
+ "merged_at": "2026-10-05T11:52:52Z",
+ "sha": "091e2392586dd41ad11d78cbbd66d4d1bfc1a21b",
+ "resolved_at": "2026-11-21T13:20:33.416Z"
+}

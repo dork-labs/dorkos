@@ -1,0 +1,35 @@
+{
+ "schema": 1,
+ "id": "260919-175510",
+ "verdict": "inconclusive",
+ "reason": "Confounded: 260919-175514 changed the same gate inside the after-window (2026-09-19T20:53:40Z to 2026-10-17T20:53:40Z), so the movement cannot be attributed to this change alone.",
+ "computed_at": "2026-11-21T13:20:33.416Z",
+ "hypothesis_hash": "8b91d93acbadcbfd",
+ "metric": "gate.wf.update-homebrew.update-formula.failure_rate",
+ "anchor": "2026-09-19T20:53:40Z",
+ "prs": [
+  1928
+ ],
+ "baseline": {
+  "value": 1,
+  "source": "ledger"
+ },
+ "target": 0,
+ "min_n": 10,
+ "before": {
+  "from": "2026-09-12T20:53:40Z",
+  "to": "2026-09-19T20:53:40Z",
+  "n": 2,
+  "value": 1
+ },
+ "after": {
+  "from": "2026-09-19T20:53:40Z",
+  "to": "2026-10-17T20:53:40Z",
+  "n": 27,
+  "value": 0.2593
+ },
+ "confounders": [
+  "260919-175514"
+ ],
+ "slo": null
+}

@@ -1,0 +1,33 @@
+{
+ "schema": 1,
+ "id": "261004-203003",
+ "verdict": "failed",
+ "reason": "gate.wf.harness-windows.harness-windows.failure_rate@pull_request is 0.031 against a target of 0.03, less than halfway from the baseline of 0.0221.",
+ "computed_at": "2026-11-21T13:20:33.416Z",
+ "hypothesis_hash": "dd66ca99688382ba",
+ "metric": "gate.wf.harness-windows.harness-windows.failure_rate@pull_request",
+ "anchor": "2026-10-04T22:17:51Z",
+ "prs": [
+  2554
+ ],
+ "baseline": {
+  "value": 0.0221,
+  "source": "before-window"
+ },
+ "target": 0.03,
+ "min_n": 10,
+ "before": {
+  "from": "2026-09-27T22:17:51Z",
+  "to": "2026-10-04T22:17:51Z",
+  "n": 543,
+  "value": 0.0221
+ },
+ "after": {
+  "from": "2026-10-04T22:17:51Z",
+  "to": "2026-10-18T22:17:51Z",
+  "n": 870,
+  "value": 0.031
+ },
+ "confounders": [],
+ "slo": null
+}

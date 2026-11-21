@@ -1,0 +1,33 @@
+{
+ "schema": 1,
+ "id": "261012-212337",
+ "verdict": "verified",
+ "reason": "gate.wf.browser-test.first-run.failure_rate@merge_group reached 0 against a target of 0.03 (baseline 0).",
+ "computed_at": "2026-11-21T13:20:33.416Z",
+ "hypothesis_hash": "d0535606ee3e23cc",
+ "metric": "gate.wf.browser-test.first-run.failure_rate@merge_group",
+ "anchor": "2026-10-12T22:49:50Z",
+ "prs": [
+  2835
+ ],
+ "baseline": {
+  "value": 0,
+  "source": "ledger"
+ },
+ "target": 0.03,
+ "min_n": 10,
+ "before": {
+  "from": "2026-10-05T22:49:50Z",
+  "to": "2026-10-12T22:49:50Z",
+  "n": 0,
+  "value": null
+ },
+ "after": {
+  "from": "2026-10-12T22:49:50Z",
+  "to": "2026-10-26T22:49:50Z",
+  "n": 636,
+  "value": 0
+ },
+ "confounders": [],
+ "slo": null
+}

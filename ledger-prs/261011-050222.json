@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261011-050222",
+ "file": "ci/ledger/261011-050222-typecheck-heap.md",
+ "pr": 2757,
+ "merged_at": "2026-10-11T05:40:31Z",
+ "sha": "243ed514cd9a0b81486c40d663a5b00424ade857",
+ "resolved_at": "2026-11-21T13:20:33.416Z"
+}

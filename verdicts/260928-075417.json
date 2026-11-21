@@ -1,0 +1,41 @@
+{
+ "schema": 1,
+ "id": "260928-075417",
+ "verdict": "inconclusive",
+ "reason": "Confounded: 260928-075416 changed the same gate inside the after-window (2026-09-28T08:51:18Z to 2026-10-05T08:51:18Z), so the movement cannot be attributed to this change alone.",
+ "computed_at": "2026-11-21T13:20:33.416Z",
+ "hypothesis_hash": "f73081d671ed7d9f",
+ "metric": "gate.wf.browser-test.browser-shard.duration_p90@merge_group",
+ "anchor": "2026-09-28T08:51:18Z",
+ "prs": [
+  2280
+ ],
+ "baseline": {
+  "value": 28.3,
+  "source": "before-window"
+ },
+ "target": 20.3,
+ "min_n": 10,
+ "before": {
+  "from": "2026-09-21T08:51:18Z",
+  "to": "2026-09-28T08:51:18Z",
+  "n": 2054,
+  "value": 28.3
+ },
+ "after": {
+  "from": "2026-09-28T08:51:18Z",
+  "to": "2026-10-05T08:51:18Z",
+  "n": 2425,
+  "value": 22.3
+ },
+ "confounders": [
+  "260928-075416"
+ ],
+ "slo": {
+  "id": "queue-build",
+  "stat": "p50",
+  "before": 29.7,
+  "after": 24,
+  "movement": "better"
+ }
+}

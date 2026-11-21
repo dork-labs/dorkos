@@ -1,0 +1,35 @@
+{
+ "schema": 1,
+ "id": "261002-161720",
+ "verdict": "inconclusive",
+ "reason": "Confounded: 261005-201839 changed the same gate inside the after-window (2026-10-02T17:06:32Z to 2026-10-16T17:06:32Z), so the movement cannot be attributed to this change alone.",
+ "computed_at": "2026-11-21T13:20:33.416Z",
+ "hypothesis_hash": "af43253b0e511178",
+ "metric": "gate.wf.desktop-smoke.packaged-runtime.failure_rate",
+ "anchor": "2026-10-02T17:06:32Z",
+ "prs": [
+  2473
+ ],
+ "baseline": {
+  "value": 0.1394,
+  "source": "before-window"
+ },
+ "target": 0.03,
+ "min_n": 10,
+ "before": {
+  "from": "2026-09-25T17:06:32Z",
+  "to": "2026-10-02T17:06:32Z",
+  "n": 251,
+  "value": 0.1394
+ },
+ "after": {
+  "from": "2026-10-02T17:06:32Z",
+  "to": "2026-10-16T17:06:32Z",
+  "n": 501,
+  "value": 0.008
+ },
+ "confounders": [
+  "261005-201839"
+ ],
+ "slo": null
+}
