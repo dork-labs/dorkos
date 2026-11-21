@@ -40,11 +40,12 @@ function words(value: string): string {
 }
 
 /** An extension's error, every part of it defused. */
-function errorFor(error: NonNullable<ExtensionRecordPublic['error']>) {
+function errorFor(error: NonNullable<ExtensionRecordPublic['serverError']>) {
   return {
     code: words(error.code),
     message: words(error.message),
     ...(error.details ? { details: words(error.details) } : {}),
+    ...(error.occurredAt ? { occurredAt: words(error.occurredAt) } : {}),
   };
 }
 
@@ -71,6 +72,7 @@ export function extensionForAgents(ext: ExtensionRecordPublic) {
     scope: ext.scope,
     ...(ext.manifest.description && { description: words(ext.manifest.description) }),
     ...(ext.error && { error: errorFor(ext.error) }),
+    ...(ext.serverError && { serverError: errorFor(ext.serverError) }),
   };
 }
 

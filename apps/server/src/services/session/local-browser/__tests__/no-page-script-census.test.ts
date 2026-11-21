@@ -13,7 +13,11 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-const ROOTS = [path.resolve(__dirname, '..'), path.resolve(__dirname, '../../../browser')];
+const ROOTS = [
+  path.resolve(__dirname, '..'),
+  path.resolve(__dirname, '../../../browser'),
+  path.resolve(__dirname, '../../browser-viewers'),
+];
 
 /** The protocol methods the agent browser may call, each with a fixed purpose. */
 const ALLOWED_CDP = new Set([
@@ -31,7 +35,17 @@ const ALLOWED_CDP = new Set([
   'Page.startScreencast',
   'Page.screencastFrameAck',
   'Page.stopScreencast',
-  // Only from `agent-window/full-screen-guard.ts`, with a fixed expression.
+  // Person-only `viewer-control/person-input.ts`, after broker custody and schema validation.
+  'Input.dispatchMouseEvent',
+  // Person-only `viewer-control/person-input.ts`, including held-key release.
+  'Input.dispatchKeyEvent',
+  // Person-only `viewer-control/person-input.ts`, including touch cancellation.
+  'Input.dispatchTouchEvent',
+  // Person-only `viewer-control/person-input.ts`, for the owner's bounded text.
+  'Input.insertText',
+  // Person-only `viewer-control/person-input.ts`, including composition cancellation.
+  'Input.imeSetComposition',
+  // Fixed constants only: full-screen-guard, person-input selection, person-safety.
   'Runtime.evaluate',
 ]);
 
@@ -78,8 +92,12 @@ describe('the agent browser runs no script it was handed', () => {
     expect(fromInput).toEqual([]);
   });
 
-  it('the one Runtime.evaluate runs a fixed expression', () => {
+  it('Runtime.evaluate callers use only their reviewed fixed constants', () => {
     const callers = files.filter(({ text }) => text.includes("'Runtime.evaluate'"));
-    expect(callers.map(({ file }) => path.basename(file))).toEqual(['full-screen-guard.ts']);
+    expect(callers.map(({ file }) => path.basename(file)).sort()).toEqual([
+      'full-screen-guard.ts', // fixed document.fullscreenElement !== null expression
+      'person-input.ts', // fixed selectionExpression from selection-copy.ts
+      'person-safety.ts', // fixed PERSON_SAFETY_EXPRESSION
+    ]);
   });
 });

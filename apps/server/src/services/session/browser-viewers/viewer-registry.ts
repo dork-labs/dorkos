@@ -320,8 +320,8 @@ export class BrowserViewerRegistry {
     viewer.cleanup = (async () => {
       try {
         // A producer's first handle outlives its subscriber; its controller does not.
-        // The producer keeps its first read-only handle until the last watcher leaves.
-        if (viewer.page !== producer.page) await viewer.page.close();
+        if (viewer.page === producer.page) await viewer.page.abandon();
+        else await viewer.page.close();
       } catch {
         // A failed reset leaves custody held in the broker; closing never resumes agents.
       } finally {
