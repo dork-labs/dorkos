@@ -15016,6 +15016,10 @@
               "null"
             ],
             "default": null
+          },
+          "placesOnly": {
+            "type": "boolean",
+            "default": false
           }
         },
         "required": [
@@ -15075,6 +15079,12 @@
           },
           "hasPage": {
             "type": "boolean"
+          },
+          "slots": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "writes": {
             "type": "array",
@@ -15163,6 +15173,12 @@
             "type": "boolean"
           },
           "apps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "slots": {
             "type": "array",
             "items": {
               "type": "string"
@@ -15297,6 +15313,13 @@
                 }
               },
               "appOpens": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20
+              },
+              "slots": {
                 "type": "array",
                 "items": {
                   "type": "string"
@@ -21972,6 +21995,13 @@
                             "type": "string"
                           },
                           "maxItems": 20
+                        },
+                        "slots": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          },
+                          "maxItems": 20
                         }
                       },
                       "required": [
@@ -22147,6 +22177,13 @@
                         "type": "string"
                       },
                       "maxItems": 20
+                    },
+                    "slots": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "maxItems": 20
                     }
                   },
                   "required": [
@@ -22202,6 +22239,72 @@
         },
         "required": [
           "path"
+        ]
+      },
+      "BackupList": {
+        "type": "object",
+        "properties": {
+          "folder": {
+            "type": "string",
+            "description": "The backup folder, `<data dir>/backups`."
+          },
+          "copies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BackupCopy"
+            },
+            "description": "Newest first."
+          },
+          "totalBytes": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "folder",
+          "copies",
+          "totalBytes"
+        ]
+      },
+      "BackupCopy": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The file name inside the backup folder; the id every action takes."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "daily",
+              "pre-upgrade"
+            ],
+            "description": "What the copy was taken for."
+          },
+          "managed": {
+            "type": "boolean",
+            "description": "True for `dork-auto-` copies, which DorkOS prunes on its own."
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "When the copy was taken, from its name (ISO 8601, UTC)."
+          },
+          "busy": {
+            "type": "boolean",
+            "description": "A write is in progress next to it, so it cannot be acted on now."
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "managed",
+          "sizeBytes",
+          "createdAt",
+          "busy"
         ]
       }
     },
@@ -108219,6 +108322,251 @@
           },
           "502": {
             "description": "The app did not answer, or answered with another status"
+          }
+        }
+      }
+    },
+    "/api/config/backups": {
+      "get": {
+        "tags": [
+          "Config"
+        ],
+        "summary": "List the database backup copies on this computer",
+        "description": "Every copy a DorkOS writer made in `<data dir>/backups`: daily and before-update copies, both the `dork-auto-` ones DorkOS prunes and older `dork-` ones it never touches. Only regular files with a writer’s name are listed; symbolic links never are. Person-only: a caller naming itself an agent, an approval token, a program credential, another site, or a request from another computer (except the owner over an encrypted connection) is refused before anything is read. There is no MCP tool for this.",
+        "responses": {
+          "200": {
+            "description": "The copies and their total size",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackupList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login is enabled and the caller is not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: only a person can see this (`person_only`), or only at this computer (`not_at_this_computer`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/config/backups/{name}": {
+      "delete": {
+        "tags": [
+          "Config"
+        ],
+        "summary": "Remove an older backup copy",
+        "description": "Deletes one older `dork-` copy. The file is re-checked right before it is deleted: a regular file in the real backup folder, unchanged, with no write in progress. Person-only: a caller naming itself an agent, an approval token, a program credential, another site, or a request from another computer (except the owner over an encrypted connection) is refused before anything is read. There is no MCP tool for this.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "A listed copy’s file name."
+            },
+            "required": true,
+            "description": "A listed copy’s file name.",
+            "name": "name",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        true
+                      ]
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login is enabled and the caller is not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: only a person can remove a backup (`person_only`), or only at this computer (`not_at_this_computer`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such older copy (`not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "DorkOS manages it (`managed`), a write is in progress (`busy`), or it changed (`changed`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/config/backups/{name}/move": {
+      "post": {
+        "tags": [
+          "Config"
+        ],
+        "summary": "Move an older backup copy to another folder",
+        "description": "Copies one older `dork-` copy into an existing folder inside the directory boundary or on an external drive (`/Volumes/<drive>/…`), never the data folder. The destination is resolved once to its real path, so a link is followed and every check reads the folder written to. Nothing there is overwritten. The copy must match in size and pass SQLite’s `integrity_check`; only then is the original removed, and only if unchanged. A failed check deletes the new file and keeps the original. Person-only: a caller naming itself an agent, an approval token, a program credential, another site, or a request from another computer (except the owner over an encrypted connection) is refused before anything is read. There is no MCP tool for this.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "A listed copy’s file name."
+            },
+            "required": true,
+            "description": "A listed copy’s file name.",
+            "name": "name",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "destination": {
+                    "type": "string",
+                    "description": "An existing absolute folder."
+                  }
+                },
+                "required": [
+                  "destination"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Moved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "destinationPath": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "destinationPath"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The destination does not exist (`destination_invalid`), is neither inside the directory boundary nor on an external drive (`destination_outside`), is the data folder or inside it (`destination_in_data_folder`), or is the backup folder (`destination_is_backups`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Login is enabled and the caller is not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Refused: only a person can move a backup (`person_only`), or only at this computer (`not_at_this_computer`); or DorkOS cannot write to the destination (`destination_not_writable`). The original stays.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such older copy (`not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "DorkOS manages it (`managed`), it is busy (`busy`) or changed (`changed`), a file of that name is already there (`destination_exists`), the copy could not be written (`copy_failed`), or it failed its check (`verify_failed`). The original stays.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "The destination’s disk is full (`destination_full`). The original stays.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }

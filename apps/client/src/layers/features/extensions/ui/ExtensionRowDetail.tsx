@@ -5,7 +5,7 @@
  *
  * @module features/extensions/ui/ExtensionRowDetail
  */
-import type { ExtensionRecordPublic } from '@dorkos/extension-api';
+import { contributionWords, type ExtensionRecordPublic } from '@dorkos/extension-api';
 import type { StepUpExtensionRisk } from '@dorkos/shared/step-up';
 import {
   extensionRestartingCopy,
@@ -13,6 +13,7 @@ import {
 } from '@dorkos/shared/extension-server-status';
 import { Button, DevLinkPath } from '@/layers/shared/ui';
 import { openLink } from '@/layers/shared/lib';
+import { useUndeclaredSlots } from '@/layers/shared/lib/extension-undeclared-slots';
 import {
   ExtensionAgentGifts,
   agentGiftsFromRecord,
@@ -22,10 +23,18 @@ import { PanelTabPlacementSection } from './PanelTabPlacementEditor';
 import { RoomAccessEditor } from './RoomAccessEditor';
 import { ForwardAgentsEditor } from './ForwardAgentsEditor';
 import { StepUpRiskRow } from './StepUpRiskRow';
-import { isExtensionOn } from '../lib/extension-row-state';
+import {
+  isExtensionOn,
+  keepsPlacesForOldApproval,
+  waitingPlaces,
+  waitingPlacesLine,
+} from '../lib/extension-row-state';
 import { RemoveExtensionControl, canRemoveHere } from './RemoveExtensionControl';
 
-/** Where a dev link is switched or unlinked: the Marketplace's Installed list (DOR-2696). */
+/**
+ * The Marketplace's Installed list: where a dev link is switched or unlinked
+ * (DOR-2696), and where an app is updated through the normal update path.
+ */
 const INSTALLED_LINK = '/marketplace?view=installed';
 
 /** Props for {@link ExtensionRowDetail}. */
@@ -46,6 +55,13 @@ export interface ExtensionRowDetailProps {
   onRemove?: () => void;
   /** Whether a remove is in flight. */
   isRemoving?: boolean;
+  /**
+   * Allow the new places a running app waits on (DOR-4282): the same
+   * person-only approve call as any other yes.
+   */
+  onAllowNewPlaces: () => void;
+  /** Whether the Marketplace's last check found a newer version of it. */
+  updateAvailable?: boolean;
 }
 
 /** Its access, in one line (the approval panel says it in full). */
@@ -87,6 +103,8 @@ export function ExtensionRowDetail({
   stepUpRisk,
   onRemove,
   isRemoving = false,
+  onAllowNewPlaces,
+  updateAvailable = false,
 }: ExtensionRowDetailProps) {
   const { manifest, serverError } = extension;
   const canStop = extension.origin === 'user' && extension.approvedToRun;
@@ -94,6 +112,13 @@ export function ExtensionRowDetail({
   const isOn = isExtensionOn(extension);
   const gifts = agentGiftsFromRecord(extension);
   const access = accessLine(extension);
+  // Places it tried this load without declaring them, so DorkOS refused them (DOR-4282).
+  const undeclared = contributionWords(useUndeclaredSlots(extension.id));
+  // Places DorkOS keeps for an approval from before places were recorded.
+  const onGrace = keepsPlacesForOldApproval(extension);
+  // Places it declares that wait for a yes while it runs; a Not now in the
+  // Inbox does not hide them here.
+  const newPlaces = waitingPlaces(extension);
 
   return (
     <div className="space-y-4">
@@ -148,6 +173,55 @@ export function ExtensionRowDetail({
         <p className="text-muted-foreground text-sm" role="status">
           {extensionRestartingCopy(manifest.name)}
         </p>
+      )}
+      {undeclared.length > 0 && (
+        <p
+          className="text-status-warning-fg text-sm"
+          data-testid={`extension-undeclared-slots-${extension.id}`}
+        >
+          {undeclared.length === 1 ? 'Uses a place' : 'Uses places'} its card didn’t list:{' '}
+          {undeclared.join(', ')}. Ask its maker to update it.
+        </p>
+      )}
+      {newPlaces.length > 0 && (
+        <div
+          className="text-status-warning-fg flex flex-wrap items-center gap-x-3 gap-y-1 text-sm"
+          data-testid={`extension-new-places-${extension.id}`}
+        >
+          {/* Names exactly what Allow adds: every declared place goes with
+              it, and these are the declared ones not yet allowed. */}
+          <span>{waitingPlacesLine(newPlaces)}</span>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onAllowNewPlaces}
+            disabled={isSettingApproval}
+            aria-label={`Allow ${manifest.name}’s new places`}
+          >
+            Allow
+          </Button>
+        </div>
+      )}
+      {/* Approved before places were recorded, so DorkOS keeps its old places
+          until its files change (DOR-4282). DorkOS's own fixed lines; Update
+          shows only when a newer version exists, and opens the Installed
+          list, whose Update asks as it always does. */}
+      {onGrace && (
+        <div
+          className="text-status-warning-fg flex flex-wrap items-center gap-x-3 gap-y-1 text-sm"
+          data-testid={`extension-place-grace-${extension.id}`}
+        >
+          {updateAvailable ? (
+            <>
+              <span>Update to keep this working.</span>
+              <Button size="sm" variant="outline" onClick={() => void openLink(INSTALLED_LINK)}>
+                Update
+              </Button>
+            </>
+          ) : (
+            <span>Its maker needs to update it. It keeps working until then.</span>
+          )}
+        </div>
       )}
       {extension.originProblem === 'changed' && extension.approvedToRun && (
         <p

@@ -61,6 +61,7 @@ function stale(
     type: 'plugin',
     scope: 'global',
     disclosed: next,
+    extensions: [],
     contentHash: 'sha256:x',
     installedDisclosed: now,
   } as InstallationUpdateCheck;
@@ -121,6 +122,44 @@ describe('summarizeUpdateDisclosures', () => {
 });
 
 describe('ConfirmUpdatesDialog', () => {
+  it('lists app slots, permissions and secret declarations even without background work', () => {
+    const item = stale('sample-pack', NOTHING, NOTHING);
+    item.check.extensions = [
+      {
+        id: 'sample-board',
+        slots: ['pages'],
+        hasServer: true,
+        isolation: {
+          runtime: 'subprocess',
+          net: ['api.sample.invalid'],
+          run: ['node'],
+          agents: true,
+        },
+        secrets: [{ key: 'SAMPLE_KEY', required: true }],
+      },
+    ];
+    render(<ConfirmUpdatesDialog stale={[item]} onCancel={vi.fn()} onConfirm={vi.fn()} />);
+    const apps = screen.getByTestId('preview-extension-reach');
+    for (const value of [
+      'sample-board',
+      'pages',
+      'api.sample.invalid',
+      'node',
+      'Secrets: SAMPLE_KEY (required)',
+    ]) {
+      expect(apps).toHaveTextContent(value);
+    }
+    expect(screen.queryByText(/runs nothing/)).not.toBeInTheDocument();
+  });
+
+  it('never renders a quiet claim when an older check omitted mini app metadata', () => {
+    const item = stale('sample-pack', NOTHING, NOTHING);
+    delete item.check.extensions;
+    render(<ConfirmUpdatesDialog stale={[item]} onCancel={vi.fn()} onConfirm={vi.fn()} />);
+    expect(screen.getByText('Mini app details weren’t included.')).toBeInTheDocument();
+    expect(screen.queryByText(/runs nothing/)).not.toBeInTheDocument();
+  });
+
   it('leads with what is new, folds what is unchanged behind a count, and still lists it all', async () => {
     const user = userEvent.setup();
     const item = stale(

@@ -49,6 +49,8 @@ export interface ApproveExtensionInput extends ExtensionAnswerInput {
   permissions?: ApproveExtensionRequest['permissions'];
   /** The digest of the files the card showed; files changed since are refused as stale. */
   expectedDigest?: string;
+  /** The app already runs and this allows only its new places (DOR-4282): the toast says so. */
+  placesOnly?: boolean;
 }
 
 /** Which copy to put off ("Not now"). */
@@ -106,10 +108,20 @@ function removeOptimistically(
 
 /** What {@link useExtensionApprovalActions} hands its caller. */
 export interface ExtensionApprovalActions {
-  /** Turn the extension on: the same person-only approval Settings uses. */
-  approve: (input: ApproveExtensionInput) => void;
-  /** "Not now": nothing is removed or turned off; the inbox stops asking about this copy. */
-  dismiss: (input: DismissExtensionInput) => void;
+  /**
+   * Turn the extension on: the same person-only approval Settings uses.
+   * `onDone` runs only once the server said yes to this very call, and
+   * `onFail` once it did not (the toast is already shown). A refusal for
+   * "Confirm it's you" waits for a fresh list first: when that no longer
+   * lists the copy, the yes went through elsewhere and `onDone` runs.
+   */
+  approve: (input: ApproveExtensionInput, onDone?: () => void, onFail?: () => void) => void;
+  /**
+   * "Not now": nothing is removed or turned off; the inbox stops asking about
+   * this copy. `onDone` runs only once the server recorded this very call,
+   * and `onFail` once it did not.
+   */
+  dismiss: (input: DismissExtensionInput, onDone?: () => void, onFail?: () => void) => void;
   /** The id whose answer is in flight, and which answer, or `null`. */
   pending: { id: string; action: 'approve' | 'dismiss' } | null;
 }
@@ -150,7 +162,7 @@ export function useExtensionApprovalActions(): ExtensionApprovalActions {
         useTrustOfferStore.getState().offer(id, body.trustOffer.source);
       }
     },
-    onError: (err, { id, name, permissions }) => {
+    onError: (err, { id, name, permissions, placesOnly }) => {
       if (err instanceof AnswerRefused && err.code === STEP_UP_REQUIRED_CODE) return;
       // It changed while the card was on screen: nothing was turned on, and
       // the refresh below redraws the row with what it asks for now, leading
@@ -165,7 +177,12 @@ export function useExtensionApprovalActions(): ExtensionApprovalActions {
         toast.error(`${name} can’t be turned on yet.`, { description: err.message });
         return;
       }
-      toast.error(`Couldn’t turn on ${name}. Try again.`, { description: err.message });
+      toast.error(
+        placesOnly
+          ? `Couldn’t allow ${name}’s new places.`
+          : `Couldn’t turn on ${name}. Try again.`,
+        { description: err.message }
+      );
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: extensionQueryKeys.all });
@@ -200,9 +217,30 @@ export function useExtensionApprovalActions(): ExtensionApprovalActions {
       ? { id: dismiss.variables.id, action: 'dismiss' as const }
       : null;
 
+  /**
+   * After a yes that ended on "Confirm it's you" without one here: whether a
+   * fresh list says the copy no longer waits (confirmed elsewhere). Until it
+   * answers, the caller's row stays as it was answered.
+   */
+  const settledElsewhere = async (err: unknown, id: string): Promise<boolean> => {
+    if (!(err instanceof AnswerRefused) || err.code !== STEP_UP_REQUIRED_CODE) return false;
+    const key = extensionQueryKeys.pendingApprovals();
+    await queryClient.refetchQueries({ queryKey: key }).catch(() => undefined);
+    const listed = queryClient.getQueryData<PendingExtensionApproval[]>(key);
+    return listed !== undefined && !listed.some((approval) => approval.id === id);
+  };
+
   return {
-    approve: (input) => approve.mutate(input),
-    dismiss: (input) => dismiss.mutate(input),
+    // Per call, so a second answer given before the first settles never
+    // swallows the first one's `onDone`. A refusal is already reported by
+    // `onError` above, so the rejected promise only tells `onFail`.
+    approve: (input, onDone, onFail) =>
+      void approve.mutateAsync(input).then(onDone, async (err: unknown) => {
+        if (await settledElsewhere(err, input.id)) onDone?.();
+        else onFail?.();
+      }),
+    dismiss: (input, onDone, onFail) =>
+      void dismiss.mutateAsync(input).then(onDone, () => onFail?.()),
     pending,
   };
 }

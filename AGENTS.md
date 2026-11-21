@@ -221,7 +221,13 @@ The full guide, written for agents, is [contributing/ci.md](contributing/ci.md):
 - **Only Security's `label-pr.sh` adds or removes `security-*` labels; no agent touches them by hand.** It also writes the `PASS` line in Security's review file that `arm.sh` checks for, so `arm.sh` refuses a hand-added `security-reviewed` or `security-deep-reviewed` (DOR-4711). If you think a PR needs one, ask Security.
 - **A red is not a reason to add load** (Team plan: 60 concurrent jobs, 19-25 per push). First failed-checks ejection from the queue: don't push or rerun; read the failing job, and once it is plainly not yours re-arm once through `arm.sh` (85% re-pass unchanged). The same check failing again on the same head is a regression only the queue can see (browser tests run only there): stop re-arming, read the log, push a fix. A PR check that is not yours: `gh run rerun <run-id> --failed`, once. Never an empty commit.
 - **Heavy local runs take turns through `heavy.sh`** (the maintainers' shared slot gate; it lives outside the repo): `pnpm verify` at either level, full test suites, builds, installs, Playwright and Docker. Never run one around it. Wait while the 1-minute load is 24 or more (16 for full builds, installs and Docker) or free disk is under the floor (46 GB now; the PM may waive it for one named PR). A single test file, one package's typecheck or lint, git and gh need no slot.
+- **Heavy runs wait their turn in line.** Add one line for your run at the end of the shared `heavy-order` file (beside `heavy.sh`) and wait until it reaches the top; `heavy.sh` refuses a run that is not next. Never jump the line without the coordinator's OK.
+- **Never print full process command lines** (`ps -ww`, `ps aux`, `ps -ef`, `pgrep -a`): they can show tokens. Use the PID you hold or `lsof -ti :<port>`.
+- **A throwaway test server gets a throwaway home.** Run it on a fresh temp `DORK_HOME` with `DORKOS_TEST_RUNTIME=true`, and point `HOME` and `CLAUDE_CONFIG_DIR` into that temp folder too, never at the real ones.
+- **Test data and screenshots use made-up names only**: never a real person, account or email.
 - **A release goes first.** While a release is being cut, every other PR stays held, not armed or queued, and heavy runs the release doesn't name wait, until the release is on npm and checked there (the registry answers 200 for the new version).
+
+The rest of the room rules (when to speak, hand-offs, OKs) are in [meta/agent-etiquette.md](meta/agent-etiquette.md).
 
 ## Signing outward writes (agent provenance)
 

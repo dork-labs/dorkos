@@ -43,7 +43,7 @@ afterEach(() => {
 });
 
 import { ExtensionsSettingsTab } from '../ui/ExtensionsSettingsTab';
-import { approvalSetSummary } from '../ui/ApprovalSetCard';
+import { approvalSetSummary, memberFacts } from '../ui/ApprovalSetCard';
 import { groupExtensions } from '../lib/extension-groups';
 import { pluginDisplayName } from '@/layers/entities/extension';
 import { toast } from 'sonner';
@@ -151,6 +151,28 @@ describe('approvalSetSummary', () => {
         member('social', { runsInServer: true, reachesInternet: true }),
       ])
     ).toBe('2 run code here · 2 can reach the internet: Writer, Social.');
+  });
+});
+
+describe('memberFacts', () => {
+  it('names every declared place in DorkOS’s words, and drops unknown keys', () => {
+    const facts = memberFacts(
+      member('writer', {
+        permissions: {
+          runtime: 'subprocess',
+          net: [],
+          run: [],
+          agents: false,
+          hasPage: true,
+          slots: ['pages', 'command-palette.items', 'not-a-place'],
+        },
+      })
+    );
+    expect(facts).toContainEqual(['Shows in', 'a page, ⌘K commands']);
+  });
+
+  it('adds no Shows in row when it declares no place', () => {
+    expect(memberFacts(member('a')).map(([label]) => label)).not.toContain('Shows in');
   });
 });
 

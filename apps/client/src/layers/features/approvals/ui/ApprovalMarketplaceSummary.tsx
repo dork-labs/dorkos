@@ -11,7 +11,7 @@ import { ApprovalFullDetailSheet } from './ApprovalFullDetailSheet';
 
 /** How each install group is headed, most powerful first (spec v1.1 call 5). */
 const INSTALL_GROUPS: readonly { label: string; kinds: readonly MarketplaceRiskKind[] }[] = [
-  { label: 'Runs inside DorkOS', kinds: ['extension'] },
+  { label: 'Mini apps', kinds: ['extension'] },
   {
     label: 'Runs code',
     kinds: ['unreadable', 'hook', 'skillCommand', 'mcp', 'lsp', 'monitor', 'executable'],
@@ -67,14 +67,41 @@ function RiskRow({ risk, tagged }: { risk: MarketplaceRisk; tagged: boolean }) {
           {risk.text}
         </p>
         {risk.command !== undefined && (
-          <pre className="bg-background/80 text-foreground mt-1 rounded-md px-2 py-1 font-mono text-xs break-all whitespace-pre-wrap">
+          <pre
+            className={cn(
+              'mt-1 font-mono text-xs break-all whitespace-pre-wrap',
+              risk.kind === 'schedule'
+                ? 'text-muted-foreground'
+                : 'bg-background/80 text-foreground rounded-md px-2 py-1'
+            )}
+          >
             {risk.command}
           </pre>
         )}
-        {risk.items && risk.items.length > 0 && (
-          <p className="text-muted-foreground mt-0.5 font-mono text-xs break-all">
-            {risk.items.join(', ')}
-          </p>
+        {risk.items && risk.items.length > 0 && risk.kind === 'extension' ? (
+          <ul className="mt-1 flex flex-col gap-1">
+            {risk.items.map((line, index) => (
+              <li key={index} data-slot="marketplace-app-declaration">
+                <p
+                  className={cn(
+                    'text-xs break-words',
+                    line.includes('which can run any program.')
+                      ? 'text-status-warning-fg'
+                      : 'text-muted-foreground'
+                  )}
+                >
+                  {line}
+                </p>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          risk.items &&
+          risk.items.length > 0 && (
+            <p className="text-muted-foreground mt-0.5 font-mono text-xs break-all">
+              {risk.items.join(', ')}
+            </p>
+          )
         )}
         {risk.was !== undefined && (
           <p className="text-muted-foreground mt-0.5 text-xs break-all">
@@ -167,14 +194,12 @@ function PackageBlock({
   const verdict = verdictOf(summary, pkg);
   return (
     <div data-slot="marketplace-package" className="min-w-0">
-      {named && (
-        <p className="text-foreground font-mono text-xs break-all">
-          {pkg.name}{' '}
-          <span className="text-muted-foreground">
-            {pkg.fromVersion ? `${pkg.fromVersion} → ${pkg.toVersion}` : pkg.toVersion}
-          </span>
-        </p>
-      )}
+      <p className="text-foreground font-mono text-xs break-all">
+        {named && `${pkg.name} `}
+        <span className="text-muted-foreground">
+          {pkg.fromVersion ? `${pkg.fromVersion} → ${pkg.toVersion}` : `Version ${pkg.toVersion}`}
+        </span>
+      </p>
       <p className="text-muted-foreground text-xs break-words">{pkg.where}</p>
       <p className="mt-1.5 text-xs">
         <span className="text-foreground font-medium">{verdict.lead}</span>{' '}

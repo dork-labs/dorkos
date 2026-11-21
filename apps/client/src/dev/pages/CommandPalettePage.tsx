@@ -1,6 +1,7 @@
 import { PlaygroundPageLayout } from '../PlaygroundPageLayout';
 import { COMMAND_PALETTE_SECTIONS } from '../playground-registry';
 import { CommandPaletteShowcases } from '../showcases/CommandPaletteShowcases';
+import { AppOriginShowcases } from '../showcases/AppOriginShowcases';
 
 /** Command palette component showcase page for the dev playground. */
 export function CommandPalettePage() {
@@ -11,6 +12,7 @@ export function CommandPalettePage() {
       sections={COMMAND_PALETTE_SECTIONS}
     >
       <CommandPaletteShowcases />
+      <AppOriginShowcases />
     </PlaygroundPageLayout>
   );
 }

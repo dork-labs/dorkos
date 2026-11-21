@@ -17,6 +17,8 @@ import type { ExtensionRecord } from '@dorkos/extension-api';
 import { ExtensionCompiler } from '../extension-compiler.js';
 import { installFolderDigest } from '../../marketplace/lib/install-digest.js';
 import { containmentRootOf } from '../extension-plugin-guard.js';
+import { RUN_DIR_MISSING_CODE, runDirMissingMessage, runDirOf } from '../pin/run-dir.js';
+import { recordContextDeps } from '../server-bundle/extension-context-deps.js';
 
 let tmp: string;
 let project: string;
@@ -162,8 +164,10 @@ describe('containment (N1)', () => {
 describe('the pinned digest (N3)', () => {
   it('refuses a client bundle whose plugin changed after the scan, and drops the origin', async () => {
     await write(path.join(extDir, 'index.ts'), 'export const x = 1;\n');
+    const digest = await digestNow();
     const pinned = record({
-      pinnedDigest: await digestNow(),
+      pinnedDigest: digest,
+      originPinnedDigest: digest,
       trustedOrigin: { plugin: 'flow', source: 'dork-labs/marketplace' },
     });
     expect('code' in (await compiler.compile(pinned))).toBe(true);
@@ -181,7 +185,9 @@ describe('the pinned digest (N3)', () => {
 
   it('refuses a server bundle the same way, so `reload_extensions --id` cannot load it', async () => {
     await write(path.join(extDir, 'server.ts'), 'export default () => undefined;\n');
-    const pinned = record({ pinnedDigest: await digestNow() });
+    // A copy pinned by an approval runs from a checked folder; here, the
+    // plugin's own, held to its digest.
+    const pinned = record({ pinnedDigest: await digestNow(), runPath: extDir });
     await write(path.join(extDir, 'server.ts'), 'export default () => "evil";\n');
 
     const result = await compiler.compileServer(pinned);
@@ -189,5 +195,118 @@ describe('the pinned digest (N3)', () => {
     expect('error' in result && result.error.message).toContain(
       'changed after DorkOS checked them'
     );
+  });
+});
+
+describe('a pinned copy runs only from its checked copy (pin/run-dir)', () => {
+  const approvals = () => ({ approvedToRun: [], approvedSources: {} });
+
+  // Purpose: a pinned copy with no snapshot never falls back to the folder it
+  // was found in: nothing is built, client or server, and it does not start.
+  it('refuses to build or start a pinned copy with no snapshot', async () => {
+    await write(path.join(extDir, 'index.ts'), 'export const x = 1;\n');
+    await write(path.join(extDir, 'server.ts'), 'export default () => undefined;\n');
+    const pinned = record({ pinnedDigest: await digestNow() });
+
+    expect(runDirOf(pinned)).toBeNull();
+    const client = await compiler.compile(pinned);
+    const server = await compiler.compileServer(pinned);
+    for (const result of [client, server]) {
+      expect('error' in result && result.error.message).toBe(runDirMissingMessage('Flow'));
+      expect(JSON.stringify(result)).toContain(RUN_DIR_MISSING_CODE);
+    }
+    // Both ways a server half starts build its ctx here first.
+    expect(() => recordContextDeps('flow', pinned, tmp, approvals)).toThrow(
+      runDirMissingMessage('Flow')
+    );
+  });
+
+  // Purpose: a copy nothing pins still builds and starts from its own folder.
+  it('builds and starts an unpinned copy from its own folder', async () => {
+    await write(path.join(extDir, 'index.ts'), 'export const x = 1;\n');
+    const live = record();
+
+    expect(runDirOf(live)).toBe(extDir);
+    expect('code' in (await compiler.compile(live))).toBe(true);
+    expect(recordContextDeps('flow', live, tmp, approvals).extensionDir).toBe(extDir);
+  });
+
+  // Purpose: a pinned copy builds from its snapshot, so a live edit is not
+  // what runs.
+  it('builds a pinned copy from its snapshot, not from the folder', async () => {
+    await write(path.join(extDir, 'index.ts'), 'export const x = "checked";\n');
+    const snapshotRoot = path.join(tmp, 'snapshot', 'flow');
+    await fs.cp(pluginRoot, snapshotRoot, { recursive: true });
+    const snapshotDir = path.join(snapshotRoot, path.relative(pluginRoot, extDir));
+    const pinned = record({ pinnedDigest: await digestNow(), runPath: snapshotDir });
+    await write(path.join(extDir, 'index.ts'), 'export const x = "edited";\n');
+
+    expect(runDirOf(pinned)).toBe(snapshotDir);
+    const result = await compiler.compile(pinned);
+    expect('code' in result && result.code).toContain('checked');
+    expect('code' in result && result.code).not.toContain('edited');
+    expect(recordContextDeps('flow', pinned, tmp, approvals).extensionDir).toBe(snapshotDir);
+  });
+
+  // Purpose: the digest a plugin copy with a proven origin was judged
+  // against keeps it on its folder, re-hashed around every build as before;
+  // the same pin with no proven origin is refused.
+  it('keeps a plugin copy pinned by its proven origin on its own folder', async () => {
+    const digest = await digestNow();
+    const proven = record({
+      scope: 'global',
+      pinnedDigest: digest,
+      originPinnedDigest: digest,
+      trustedOrigin: { plugin: 'flow', source: 'dork-labs/marketplace' },
+    });
+    expect(runDirOf(proven)).toBe(extDir);
+    expect(runDirOf(record({ ...proven, scope: 'local' }))).toBe(extDir);
+    expect(runDirOf({ ...proven, trustedOrigin: undefined })).toBeNull();
+    expect(runDirOf({ ...proven, sourcePlugin: undefined })).toBeNull();
+  });
+
+  // Purpose: the exemption keys on the origin pin, never on a missing
+  // snapshot alone. A pin an approval set (any digest the origin proof did
+  // not) with no snapshot is refused, plugin copy and proven origin or not.
+  it('refuses a pinned copy whose pin is not its origin pin', async () => {
+    const digest = await digestNow();
+    const proven = record({
+      pinnedDigest: digest,
+      originPinnedDigest: digest,
+      trustedOrigin: { plugin: 'flow', source: 'dork-labs/marketplace' },
+    });
+    const otherPin = `sha256:${'e'.repeat(64)}`;
+    expect(runDirOf({ ...proven, pinnedDigest: otherPin })).toBeNull();
+    expect(runDirOf({ ...proven, originPinnedDigest: undefined })).toBeNull();
+    // A copy outside any plugin, pinned, with no snapshot: refused too.
+    expect(runDirOf(record({ sourcePlugin: undefined, pinnedDigest: digest }))).toBeNull();
+  });
+
+  // Purpose: the exempt kind is still held to its pin on both sides of the
+  // build: a file swapped while it bundles is refused after the build.
+  it('re-hashes an origin-pinned copy after the build too', async () => {
+    await write(path.join(extDir, 'index.ts'), 'export const x = 1;\n');
+    const digest = await digestNow();
+    const proven = record({
+      pinnedDigest: digest,
+      originPinnedDigest: digest,
+      trustedOrigin: { plugin: 'flow', source: 'dork-labs/marketplace' },
+    });
+    const target = compiler as unknown as {
+      compileClient: (r: unknown, dir: string) => Promise<unknown>;
+    };
+    const build = target.compileClient.bind(compiler);
+    target.compileClient = async (r, dir) => {
+      const built = await build(r, dir);
+      // Swapped mid-build, after the "before" check already passed.
+      await write(path.join(pluginRoot, 'scripts', 'errors.ts'), 'export const late = 1;\n');
+      return built;
+    };
+
+    const result = await compiler.compile(proven);
+
+    expect(
+      'error' in (result as object) && (result as { error: { message: string } }).error.message
+    ).toContain('changed after DorkOS checked them');
   });
 });

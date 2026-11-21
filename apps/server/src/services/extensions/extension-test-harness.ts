@@ -7,10 +7,12 @@
  *
  * @module services/extensions/extension-test-harness
  */
-import type {
-  ExtensionPointId,
-  ExtensionReadableState,
-  ExtensionRecord,
+import {
+  declaresContribution,
+  isContributionKey,
+  type ExtensionPointId,
+  type ExtensionReadableState,
+  type ExtensionRecord,
 } from '@dorkos/extension-api';
 import type { ExtensionCompiler } from './extension-compiler.js';
 import type { TestExtensionResult } from './extension-manager-types.js';
@@ -55,6 +57,8 @@ export class MockExtensionAPI {
   private counts: Record<string, number> = {};
   /** Calls the real host would refuse, reported with the result. */
   readonly warnings: string[] = [];
+  /** How many times it put a document on the canvas (the `canvas` place). */
+  canvasCalls = 0;
 
   constructor(id: string) {
     this.id = id;
@@ -111,11 +115,17 @@ export class MockExtensionAPI {
   /** No-op: page badges draw nothing headless. */
   setPageBadge(): void {}
 
-  /** No-op: UI command execution. */
-  executeCommand(): void {}
+  /** No-op: UI command execution. Putting a document on the canvas is noted as `canvas`. */
+  executeCommand(command?: { action?: string }): void {
+    if (command?.action === 'open_canvas' || command?.action === 'update_canvas') {
+      this.canvasCalls += 1;
+    }
+  }
 
-  /** No-op: canvas opening. */
-  openCanvas(): void {}
+  /** No-op: canvas opening, noted as `canvas`. */
+  openCanvas(): void {
+    this.canvasCalls += 1;
+  }
 
   /** No-op: client-side navigation. */
   navigate(): void {}
@@ -184,6 +194,34 @@ export class MockExtensionAPI {
       ALL_CONTRIBUTION_KEYS.map((key) => [key, this.counts[key] ?? 0])
     ) as Record<ContributionCountKey, number>;
   }
+
+  /**
+   * The counts the real host would keep: a place the manifest does not declare
+   * counts zero and adds a warning (DOR-4282), as does putting a document on
+   * the canvas without declaring `canvas`.
+   *
+   * @param manifest - The manifest as DorkOS recorded it.
+   */
+  declaredContributions(
+    manifest: ExtensionRecord['manifest']
+  ): Record<ContributionCountKey, number> {
+    const counts = this.getContributions();
+    for (const key of ALL_CONTRIBUTION_KEYS) {
+      if (counts[key] > 0 && isContributionKey(key) && !declaresContribution(manifest, key)) {
+        this.warnings.push(undeclaredWarning(key));
+        counts[key] = 0;
+      }
+    }
+    if (this.canvasCalls > 0 && !declaresContribution(manifest, 'canvas')) {
+      this.warnings.push(undeclaredWarning('canvas'));
+    }
+    return counts;
+  }
+}
+
+/** What a call in an undeclared place says. */
+function undeclaredWarning(key: string): string {
+  return `${key} adds nothing: set "contributions": { "${key}": true } in extension.json`;
 }
 
 /**
@@ -278,7 +316,9 @@ export async function testClientExtension(
     const mockApi = new MockExtensionAPI(id);
     module.activate(mockApi);
 
-    const contributions = mockApi.getContributions();
+    // The real host refuses a place the manifest does not declare (DOR-4282),
+    // so only declared places are counted.
+    const contributions = mockApi.declaredContributions(record.manifest);
     const totalContributions = Object.values(contributions).reduce((sum, count) => sum + count, 0);
 
     logger.info(

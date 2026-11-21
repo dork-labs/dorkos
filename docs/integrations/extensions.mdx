@@ -144,6 +144,31 @@ An extension that saves files into its own folder changes the files you approved
 
 A newly installed extension also shows up in the **Activity inbox** (the bell at the top right) with one short row: "Turn on My Extension?", a line saying what it adds, and three buttons. **Turn it on** starts it straight away, with no reload. **Not now** turns nothing off and removes nothing; the inbox just stops asking until the extension changes version or moves. The line under the question comes from your manifest: list what you add in `contributions` (for example `"right-panel": true`) and say what it is for in `purpose`, a short phrase that finishes the sentence "This adds a My Extension tab that …".
 
+### Declare every place your app shows up
+
+DorkOS shows an app only in the places its `contributions` list sets to `true`, and the approval card names each one. If your code adds something to a place you did not list, DorkOS leaves it out, notes it in the browser console, and says so on your app's row in Settings. If an update only adds places, the app keeps running and only the new places wait for your OK. An app rebuilt by the DorkOS apps build tool keeps running this way with a higher version number too; any other app with a new version number asks again. Any other change to its files asks again, as every update does. The person can allow the new places in the Inbox or on the app's row in Settings.
+
+An app someone allowed before DorkOS checked places keeps its panel tab and Settings page while its installed files stay the same, if DorkOS's marketplace installed it. Every other place it uses waits until you list it and the person allows it.
+
+| Key                     | What it adds        | How your code adds it                        |
+| ----------------------- | ------------------- | -------------------------------------------- |
+| `pages`                 | a page              | `registerPage`                               |
+| `right-panel`           | a panel tab         | `registerComponent('right-panel', …)`        |
+| `dashboard.sections`    | an Activity section | `registerComponent('dashboard.sections', …)` |
+| `settings.tabs`         | a Settings page     | `registerSettingsTab`                        |
+| `status-bar`            | a status bar item   | `registerStatusBarItem`                      |
+| `command-palette.items` | ⌘K commands         | `registerCommand`                            |
+| `dialog`                | dialogs             | `registerDialog`                             |
+| `sidebar.footer`        | a sidebar item      | `registerComponent('sidebar.footer', …)`     |
+| `canvas`                | canvas documents    | opening a document on the canvas             |
+| `inbox`                 | Inbox cards         | `ctx.inbox` in your server half              |
+
+DorkOS puts your app's name on its dialogs and ⌘K commands for you, so leave it out of their titles.
+
+### Names DorkOS keeps
+
+An app's name can't start with "DorkOS", and it can't be one of DorkOS's own page names: Settings, Inbox, Activity, Connections, Marketplace, Security, Tasks, Team, Apps, Workspaces, Channels or DorkBot. Spacing, capital letters, accents, dashes and look-alike letters don't change this, so "Dork OS" and "settings " are refused too. An app with such a name doesn't load, and its row in Settings asks you to rename it. "Dork Notes" is fine.
+
 ## Event subscription
 
 `api.events` is a small, typed push channel. It is deliberately **not** the raw chat stream. Extensions run untrusted in the browser, so the host exposes only a curated set of lifecycle and activity _summaries_:

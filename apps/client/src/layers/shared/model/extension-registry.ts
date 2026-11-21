@@ -121,6 +121,13 @@ export interface CommandPaletteContribution extends BaseContribution {
    * already covers.
    */
   keywords?: string[];
+  /**
+   * The app that added this command, set by DorkOS when an app calls
+   * `registerCommand`; built-in commands never set it. The palette looks the
+   * app's name up by it and draws it beside the label, so every app command
+   * names its app.
+   */
+  extensionId?: string;
 }
 
 /**
@@ -174,6 +181,13 @@ interface DialogContributionBase extends BaseContribution {
    * addressable via URL.
    */
   urlParam?: 'settings' | 'agent' | 'tasks' | 'relay' | 'mesh' | 'profile';
+  /**
+   * The app that added this dialog, set by DorkOS when an app calls
+   * `registerDialog`; built-in dialogs never set it. The host looks the app's
+   * name up by it and draws "From <name>" over the dialog, outside anything the
+   * app draws.
+   */
+  extensionId?: string;
 }
 
 /**

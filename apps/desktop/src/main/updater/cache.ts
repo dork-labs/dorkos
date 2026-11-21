@@ -1,7 +1,7 @@
 import { app } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
-import log from 'electron-log';
+import { updaterLog } from './log';
 import { installedBundleIdentifier } from './app-bundle';
 import { isAtLeastVersion, isNewerVersion } from '../updater-intent';
 
@@ -238,7 +238,7 @@ function ourUpdaterCacheDir(cacheRoot: string): string | null {
     .replace(/^['"]|['"]$/g, '');
 
   if (!declared || !isSafeCacheDirName(declared, UPDATER_DIR_SUFFIX)) {
-    log.warn(
+    updaterLog.warn(
       `[updater] Not purging any download cache: ${APP_UPDATE_CONFIG} named ` +
         `${declared === undefined ? 'no cache directory' : `"${declared}"`}.`
     );
@@ -277,7 +277,7 @@ function remove(target: string): boolean {
     fs.rmSync(target, { recursive: true, force: true });
     return true;
   } catch (err) {
-    log.warn(`[updater] Could not delete ${target}.`, err);
+    updaterLog.warn(`[updater] Could not delete ${target}.`, err);
     return false;
   }
 }
@@ -357,7 +357,9 @@ export function purgeStaleStagedUpdates(installedVersion?: string): string[] {
     const staged = stagedVersion(pendingDir);
     if (staged === null) return removed;
     if (!isAtLeastVersion(running, staged)) {
-      log.info(`[updater] Keeping the staged ${staged} update: it is newer than ${running}.`);
+      updaterLog.info(
+        `[updater] Keeping the staged ${staged} update: it is newer than ${running}.`
+      );
       return removed;
     }
 
@@ -366,13 +368,13 @@ export function purgeStaleStagedUpdates(installedVersion?: string): string[] {
     if (shipItDir !== null) removed.push(...purgeShipItState(shipItDir));
 
     if (removed.length > 0) {
-      log.info(
+      updaterLog.info(
         `[updater] Purged a staged update that ${running} has already caught up with: ` +
           removed.join(', ')
       );
     }
   } catch (err) {
-    log.warn('[updater] Could not check for a stale staged update.', err);
+    updaterLog.warn('[updater] Could not check for a stale staged update.', err);
   }
   return removed;
 }

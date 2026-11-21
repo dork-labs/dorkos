@@ -57,9 +57,16 @@ export class BrowserPageCustody {
     await this.change(true);
   }
 
-  private async change(release: boolean): Promise<void> {
+  /** Renew one held controller through the same drain/reset barrier without granting agents. */
+  async resetHeld(epoch: number): Promise<void> {
+    if (!this.held || this.epoch !== epoch) throw busy();
+    await this.change(false, epoch);
+  }
+
+  private async change(release: boolean, retainedEpoch?: number): Promise<void> {
     if (this.transition) throw busy();
-    this.block();
+    if (retainedEpoch === undefined) this.block();
+    else if (!this.held || this.epoch !== retainedEpoch) throw busy();
     const epoch = this.epoch;
     const transition = Promise.resolve().then(async () => {
       await this.drain();

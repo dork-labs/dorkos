@@ -425,10 +425,16 @@ function describeSkillOf(entry: DisclosedSkillCommand): string {
  *
  * @param effects - What a package runs, or `null` when nothing was previewed.
  * @param where - When its own programs start, in words (e.g. `in every session`).
- * @returns One indented line per effect, or one line saying it runs nothing.
+ * @param mayRunServer - Bundled app code is disclosed separately; suppress the empty-effects promise.
+ * @returns One line per effect, or an empty-effects line only without app server code.
  */
-export function describeEffectsInFull(effects: DisclosedEffects | null, where: string): string[] {
-  if (!effects) return ['  runs nothing on its own'];
+export function describeEffectsInFull(
+  effects: DisclosedEffects | null,
+  where: string,
+  mayRunServer = false
+): string[] {
+  const empty = mayRunServer ? [] : ['  runs nothing on its own'];
+  if (!effects) return empty;
   const lines = [
     ...effects.hooks.map(
       (hook) =>
@@ -466,5 +472,5 @@ export function describeEffectsInFull(effects: DisclosedEffects | null, where: s
       (name) => `  adds the command ${whole(name)} to the agent's PATH (${where})`
     ),
   ];
-  return lines.length > 0 ? lines : ['  runs nothing on its own'];
+  return lines.length > 0 ? lines : empty;
 }

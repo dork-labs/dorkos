@@ -6,6 +6,7 @@ import { openInCanvasBrowser, startDevServer } from '../../pages/canvas-dev-serv
 import { draftSessionUrl } from '../../pages/session-draft';
 import { ChatPage } from '../../pages/ChatPage';
 import { RightPanelPage } from '../../pages/RightPanelPage';
+import { observeCanvasOpenOrdering, openSettledCanvasTab } from './canvas-open-helpers';
 
 /**
  * One session, two windows, one canvas (spec `canvas-agent-seat` §1).
@@ -220,8 +221,14 @@ test.describe('A canvas survives the first-turn rename @smoke', () => {
 
     // And a document in the Canvas tab, both before a single message is sent.
     await rightPanel.selectView('Canvas');
-    await page.getByRole('button', { name: /^Markdown/ }).click();
-    await expect(page.getByRole('tab', { name: DOCUMENT_TAB })).toBeVisible();
+    await openSettledCanvasTab({
+      page,
+      tabs: rightPanel.header.getByRole('tab', { name: DOCUMENT_TAB }),
+      sessionId,
+      expected: { type: 'markdown', title: 'Document' },
+      open: () => page.getByRole('button', { name: /^Markdown/ }).click(),
+      observeBeforeResponse: observeCanvasOpenOrdering,
+    });
 
     await declareRename(page, sessionId, canonicalId);
 

@@ -184,6 +184,7 @@ export type BuiltInSettingsTab =
   | 'permissions'
   | 'instructions'
   | 'privacy'
+  | 'backups'
   | 'danger'
   | 'experiments';
 
@@ -213,7 +214,7 @@ export interface SettingsTabEntry {
  * the command palette both read, so a tab cannot be renamed in one and not the
  * other.
  *
- * You, Agents and This computer are the twelve everyday tabs. Advanced folds
+ * You, Agents and This computer are the thirteen everyday tabs. Advanced folds
  * away the five most people set once or never; folding is not hiding, since
  * every one keeps its id and so its links.
  */
@@ -238,6 +239,8 @@ export const SETTINGS_TAB_DIRECTORY: readonly SettingsTabEntry[] = [
   { id: 'security', label: 'Login & security', group: 'This computer' },
   { id: 'remote-access', label: 'Remote access', group: 'This computer', onHub: false },
   { id: 'privacy', label: 'Privacy & data', group: 'This computer' },
+  // The database copies on this computer, and a person's cleanup of older ones (DOR-4253).
+  { id: 'backups', label: 'Backups', group: 'This computer', onHub: false },
   // `dorkos` in the person's own Terminal, which only the Mac app can install (DOR-3105).
   {
     id: 'terminal-command',

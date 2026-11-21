@@ -164,6 +164,32 @@ async function walk(root: string): Promise<Walk> {
   return { files, links, listing: listings.join('\n') };
 }
 
+/** What the digest covers in one folder, read by the digest's own walk. */
+export interface CoveredTree {
+  /** Every regular file, sorted by root-relative POSIX path. */
+  files: ReadonlyArray<{ rel: string; abs: string; executable: boolean }>;
+  /** Every symbolic link, by the text it points to, sorted. */
+  links: ReadonlyArray<{ rel: string; target: string }>;
+}
+
+/**
+ * The entries a folder's digest is taken over, walked exactly as
+ * {@link installFolderDigest} walks it (same skips, same link rules), so a
+ * comparison covers exactly what the digest covers. Folder listings are not
+ * among them: they only key the cache. Reads no file's bytes.
+ *
+ * @param root - The folder.
+ * @returns The entries, or null when the folder has no digest.
+ */
+export async function coveredTreeOf(root: string): Promise<CoveredTree | null> {
+  const walked = await walk(root);
+  if (walked === 'linked' || walked === 'unreadable') return null;
+  return {
+    files: walked.files.map(({ rel, abs, executable }) => ({ rel, abs, executable })),
+    links: walked.links,
+  };
+}
+
 /** Each file's content hash, by absolute path, with the stamp it was taken at. */
 const fileHashes = new Map<string, { stamp: string; hex: string }>();
 

@@ -40,6 +40,12 @@ import {
 } from '../lib/installed-updates';
 import { PermissionItem, withBreakPoints } from './PermissionPreviewSection';
 import { updateConsequences } from './InstallationIntegrityNote';
+import { PackageMiniApps } from './review/PackageMiniApps';
+
+/** Missing metadata from an older server is not proof that no app runs code. */
+function mayRunServer({ check }: StaleInstallation): boolean {
+  return check.extensions === undefined || check.extensions.some((ext) => ext.hasServer !== false);
+}
 
 interface ConfirmUpdatesDialogProps {
   /** The installations to confirm; `null` keeps the dialog closed. */
@@ -79,8 +85,18 @@ function rowsOf({ check }: StaleInstallation): DisclosureRow[] {
  * @returns The sentence, e.g. "2 of 3 run things on their own · 1 adds something new".
  */
 export function summarizeUpdateDisclosures(stale: readonly StaleInstallation[]): string {
+  if (
+    stale.some(
+      ({ check }) =>
+        check.disclosed == null ||
+        check.extensions === undefined ||
+        check.extensions.some((ext) => ext.hasServer === undefined)
+    )
+  ) {
+    return 'Some package details weren’t included.';
+  }
   const rows = stale.map(rowsOf);
-  const running = rows.filter((r) => r.length > 0).length;
+  const running = rows.filter((r, index) => r.length > 0 || mayRunServer(stale[index]!)).length;
   const adding = rows.filter((r) =>
     r.some((row) => row.change === 'new' || row.change === 'changed')
   ).length;
@@ -150,13 +166,23 @@ function Disclosure(item: StaleInstallation) {
   const rows = rowsOf(item);
   if (rows.length === 0) {
     return (
-      <p className="text-muted-foreground text-xs">The new version runs nothing on its own.</p>
+      <div className="space-y-2">
+        <PackageMiniApps extensions={item.check.extensions} />
+        <p className="text-muted-foreground text-xs">
+          {item.check.disclosed == null
+            ? 'Background work details weren’t included.'
+            : mayRunServer(item)
+              ? 'Mini apps may run server code.'
+              : 'The new version runs nothing on its own.'}
+        </p>
+      </div>
     );
   }
   const lead = rows.filter((r) => r.change !== 'unchanged');
   const unchanged = rows.filter((r) => r.change === 'unchanged');
   return (
     <div className="space-y-1.5">
+      <PackageMiniApps extensions={item.check.extensions} />
       <p className="text-muted-foreground text-xs">
         The new version runs {rows.length === 1 ? 'this' : `these ${rows.length}`} on its own:
       </p>

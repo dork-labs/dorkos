@@ -7,7 +7,7 @@ import { SPENDING_SECTIONS, WRITES_BACK_SECTIONS } from './spending-sections';
  * answers things on.
  *
  * Sources: PipPanelShowcases, ApprovalsShowcases, ScheduleApprovalShowcases,
- * TriageHeaderShowcases, InboxShowcases, ExtensionUpdateShowcases, PresenceStripShowcases,
+ * TriageHeaderShowcases, InboxShowcases, ExtensionUpdateShowcases, PlacesReaskShowcases, PresenceStripShowcases,
  * HomeStatesShowcases, TodosShowcases, ConnectionsShowcases, PausedConnectionShowcases,
  * CommunityHostingShowcases, McpServerCardShowcases, McpServerSheetShowcases.
  *
@@ -130,6 +130,14 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     page: 'home-inbox',
     category: 'Inbox',
     keywords: ['extension', 'update', 'new power', 'files changed', 'approval', 're-ask'],
+  },
+  // PlacesReaskShowcases
+  {
+    id: 'places-re-ask-card',
+    title: 'Places re-ask card',
+    page: 'home-inbox',
+    category: 'Inbox',
+    keywords: ['app', 'extension', 'places', 'contributions', 'grouped', 'approval', 're-ask'],
   },
   // AppApprovalCardShowcases
   {

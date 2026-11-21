@@ -31,6 +31,7 @@ import { TriageHeaderShowcases } from '../showcases/TriageHeaderShowcases';
 import { InboxShowcases } from '../showcases/InboxShowcases';
 import { ExtensionStoppedShowcases } from '../showcases/ExtensionStoppedShowcases';
 import { ExtensionUpdateShowcases } from '../showcases/ExtensionUpdateShowcases';
+import { PlacesReaskShowcases } from '../showcases/PlacesReaskShowcases';
 import { AppApprovalCardShowcases } from '../showcases/AppApprovalCardShowcases';
 import { AccessChangeShowcases } from '../showcases/AccessChangeShowcases';
 import { PresenceStripShowcases } from '../showcases/PresenceStripShowcases';
@@ -122,6 +123,7 @@ export function HomeInboxPage() {
       <InboxShowcases />
       <ExtensionStoppedShowcases />
       <ExtensionUpdateShowcases />
+      <PlacesReaskShowcases />
       <AppApprovalCardShowcases />
       <AccessChangeShowcases />
       <PresenceStripShowcases />

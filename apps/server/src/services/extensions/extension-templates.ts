@@ -254,8 +254,9 @@ function generateDashboardCardTemplate(name: string, description: string): strin
 //   api.getState()                                       — Read-only host state (currentCwd, activeSessionId)
 //   api.subscribe(selector, callback)                    — Subscribe to state changes
 //
-// Available slots: dashboard.sections, command-palette.items, settings.tabs,
-//   sidebar.footer, dialog, right-panel
+// Places (each must be set to true in extension.json "contributions", or the call is refused):
+//   pages, right-panel, dashboard.sections, settings.tabs, status-bar,
+//   command-palette.items, dialog, sidebar.footer, canvas, inbox
 
 import type { FrameExtensionAPI as ExtensionAPI } from '@dorkos/extension-api';
 
@@ -312,8 +313,9 @@ function generateRightPanelTabTemplate(name: string, description: string): strin
 //   api.getState()                                       — Read-only host state (currentCwd, activeSessionId)
 //   api.subscribe(selector, callback)                    — Subscribe to state changes
 //
-// Available slots: dashboard.sections, command-palette.items, settings.tabs,
-//   sidebar.footer, dialog, right-panel
+// Places (each must be set to true in extension.json "contributions", or the call is refused):
+//   pages, right-panel, dashboard.sections, settings.tabs, status-bar,
+//   command-palette.items, dialog, sidebar.footer, canvas, inbox
 
 import type { FrameExtensionAPI as ExtensionAPI } from '@dorkos/extension-api';
 
@@ -369,8 +371,9 @@ function generateCommandTemplate(name: string, description: string): string {
 //   api.download(name, mimeType, data)                   — Save a file; DorkOS asks the person first
 //   api.getState()                                       — Read-only host state (currentCwd, activeSessionId)
 //
-// Available slots: dashboard.sections, command-palette.items, settings.tabs,
-//   sidebar.footer, dialog, right-panel
+// Places (each must be set to true in extension.json "contributions", or the call is refused):
+//   pages, right-panel, dashboard.sections, settings.tabs, status-bar,
+//   command-palette.items, dialog, sidebar.footer, canvas, inbox
 
 import type { FrameExtensionAPI as ExtensionAPI } from '@dorkos/extension-api';
 
@@ -409,8 +412,9 @@ function generateSettingsPanelTemplate(name: string, description: string): strin
 //   api.download(name, mimeType, data)                   — Save a file; DorkOS asks the person first
 //   api.getState()                                       — Read-only host state (currentCwd, activeSessionId)
 //
-// Available slots: dashboard.sections, command-palette.items, settings.tabs,
-//   sidebar.footer, dialog, right-panel
+// Places (each must be set to true in extension.json "contributions", or the call is refused):
+//   pages, right-panel, dashboard.sections, settings.tabs, status-bar,
+//   command-palette.items, dialog, sidebar.footer, canvas, inbox
 
 import type { FrameExtensionAPI as ExtensionAPI } from '@dorkos/extension-api';
 
@@ -474,8 +478,9 @@ function generateDataProviderTemplate(name: string, description: string): string
 //   api.getState()                                       — Read-only host state (currentCwd, activeSessionId)
 //   api.subscribe(selector, callback)                    — Subscribe to state changes
 //
-// Available slots: dashboard.sections, command-palette.items, settings.tabs,
-//   sidebar.footer, dialog, right-panel
+// Places (each must be set to true in extension.json "contributions", or the call is refused):
+//   pages, right-panel, dashboard.sections, settings.tabs, status-bar,
+//   command-palette.items, dialog, sidebar.footer, canvas, inbox
 
 import type { FrameExtensionAPI as ExtensionAPI } from '@dorkos/extension-api';
 

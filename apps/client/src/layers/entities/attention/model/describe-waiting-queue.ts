@@ -24,11 +24,21 @@ export const BROWSER_HANDOFF_WAITING = 'A site wants a person to continue.';
 
 /**
  * The mini apps waiting on a person, by what they wait for: a new one to be
- * turned on, a changed one (an edit or an update) for an OK. One app is named.
+ * turned on, a changed one (an edit or an update) for an OK, or one that
+ * keeps running while new places wait (DOR-4282). One app is named.
  *
  * @param waiting - The mini apps waiting, at least one.
  */
 function describeWaitingMiniApps(waiting: WaitingQueueCounts['extensionApprovals']): string {
+  const placesOnly = waiting.filter((app) => app.placesOnly).length;
+  if (placesOnly === waiting.length) {
+    return placesOnly === 1
+      ? `${waiting[0]!.name} wants new places. It keeps working meanwhile.`
+      : `${placesOnly} mini apps want to show in new places. They keep working meanwhile.`;
+  }
+  if (placesOnly > 0) {
+    return `${waiting.length} mini apps are waiting for your OK. Some won't run until you decide.`;
+  }
   const changed = waiting.filter((app) => app.changedFiles || app.updatedFrom).length;
   if (waiting.length === 1) {
     const name = waiting[0]!.name;
