@@ -19,14 +19,14 @@ export class BrowserLeaseAuthority {
   async begin(chat: string | null, profile: string | null): Promise<void> {
     const generation = ++this.generation;
     this.chat = chat;
-    this.profile = profile;
+    this.profile = profile ?? 'default';
     this.revoked = false;
     this.agentId = undefined;
     this.proof = undefined;
     const agent = chat ? await this.lookup() : undefined;
     if (generation !== this.generation) throw denied();
     this.agentId = agent;
-    if (chat && profile) this.proof = this.profiles.capture(profile, chat, agent);
+    if (chat) this.proof = this.profiles.capture(profile ?? 'default', chat, agent);
     this.assertCurrent();
   }
 
@@ -34,8 +34,10 @@ export class BrowserLeaseAuthority {
     return this.revoked;
   }
 
-  matches(profile: string, agent?: string): boolean {
-    return this.profile === profile && (!agent || !this.agentId || this.agentId === agent);
+  matches(profile: string | null, agent?: string): boolean {
+    return (
+      this.profile === (profile ?? 'default') && (!agent || !this.agentId || this.agentId === agent)
+    );
   }
 
   revoke(): void {

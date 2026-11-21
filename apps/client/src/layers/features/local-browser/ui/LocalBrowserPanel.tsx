@@ -16,6 +16,7 @@ import { useFirstFocus } from '../model/use-first-focus';
 import { useBrowserPill } from '../model/use-browser-pill';
 import { chromeTakesOver } from '../model/browser-pill-state';
 import { BrowserPreparation } from './BrowserPreparation';
+import { BrowserSharing } from './BrowserSharing';
 import { BrowserStatusPill } from './BrowserStatusPill';
 import { WaitingElsewhere } from './WaitingElsewhere';
 import { SavedSignIns } from './SavedSignIns';
@@ -314,75 +315,103 @@ export function LocalBrowserPanel({
           <div className="flex max-h-[50%] min-h-0 shrink-0 flex-col gap-3 overflow-y-auto p-3">
             {/* Below 480px of panel the state sits under the title, so neither wraps (DOR-4265). */}
             <div className="flex flex-col items-start gap-0.5 @min-[480px]/browser-panel:flex-row @min-[480px]/browser-panel:items-center @min-[480px]/browser-panel:justify-between @min-[480px]/browser-panel:gap-2">
-              <h3 className="text-sm font-medium">Agent browser</h3>
+              <h3 className="text-sm font-medium">{state.profile?.label ?? 'Your browser'}</h3>
               <span role="status" className="text-muted-foreground text-xs">
                 {statusWords}
               </span>
             </div>
             {problem}
+            {visible && state.sessionId === sessionId && (
+              <BrowserSharing state={state} action={action} />
+            )}
             {signInNotice}
             {/* With a page open, who has it (Your turn, Only you, Paused) and Pause, Resume,
               Take over and Hand back live in the chrome's status pill (DOR-3111, DOR-4428); the
               tab list, Copy address, Forget saved sign-ins and Close browser live in its ⋯ menu
               (DOR-4429). DorkOS draws both outside the page, so the page can't hide or fake them. */}
           </div>
-          <LocalBrowserView
-            sessionId={sessionId}
-            streamChatId={capabilities?.watchStream ? sessionId : null}
-            tab={selected ?? null}
-            connectionId={state.connectionId ?? null}
-            embedded={mode === 'embedded'}
-            pageVisible={
-              visible &&
-              !query.isError &&
-              !surfaceUnavailable &&
-              // A new empty page is blank; hidden, the page area says what to do instead.
-              selected?.url !== EMPTY_PAGE
-            }
-            surfaceUnavailable={surfaceUnavailable}
-            onUnavailable={unavailable}
-            busy={busy}
-            action={action}
-            onReconnect={open}
-            signIn={state.signIn ?? null}
-            // The site goes on in its own window, where the saved sign-in is (DOR-4097).
-            onOpenOwnWindow={(url) =>
-              void action(() =>
-                transport.openLocalBrowser({
-                  mode: 'new-window',
-                  ...(state.sessionId ? { sessionId: state.sessionId } : {}),
-                  url,
-                })
-              )
-            }
-            agentDriving={pill?.kind === 'driving'}
-            onTakeOver={
-              pill && chromeTakesOver(pill)
-                ? () => void action(() => transport.takeOverLocalBrowser(sessionId))
-                : undefined
-            }
-            status={
-              pill && (
-                <BrowserStatusPill
-                  state={pill}
-                  agentName={handoffHere?.agentName ?? agentName}
+          {state.profile?.agentId && mode === 'new-window' && !capabilities?.watchStream ? (
+            <div
+              data-slot="local-browser-page-area-block"
+              className="flex min-h-0 flex-1 flex-col items-start gap-3 overflow-y-auto px-3 pb-3"
+            >
+              <p className="text-sm font-medium">This browser opens in its own window.</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={busy || !selected}
+                  onClick={() => {
+                    if (selected)
+                      void action(() => transport.selectLocalBrowserTab(selected.id, sessionId));
+                  }}
+                >
+                  Show window
+                </Button>
+                <Button variant="ghost" onClick={(event) => close(event.currentTarget)}>
+                  Close browser
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <LocalBrowserView
+              sessionId={sessionId}
+              streamChatId={capabilities?.watchStream ? sessionId : null}
+              tab={selected ?? null}
+              connectionId={state.connectionId ?? null}
+              embedded={mode === 'embedded'}
+              pageVisible={
+                visible &&
+                !query.isError &&
+                !surfaceUnavailable &&
+                // A new empty page is blank; hidden, the page area says what to do instead.
+                selected?.url !== EMPTY_PAGE
+              }
+              surfaceUnavailable={surfaceUnavailable}
+              onUnavailable={unavailable}
+              busy={busy}
+              action={action}
+              onReconnect={open}
+              signIn={state.signIn ?? null}
+              // The site goes on in its own window, where the saved sign-in is (DOR-4097).
+              onOpenOwnWindow={(url) =>
+                void action(() =>
+                  transport.openLocalBrowser({
+                    mode: 'new-window',
+                    ...(state.sessionId ? { sessionId: state.sessionId } : {}),
+                    url,
+                  })
+                )
+              }
+              agentDriving={pill?.kind === 'driving'}
+              onTakeOver={
+                pill && chromeTakesOver(pill)
+                  ? () => void action(() => transport.takeOverLocalBrowser(sessionId))
+                  : undefined
+              }
+              status={
+                pill && (
+                  <BrowserStatusPill
+                    state={pill}
+                    agentName={handoffHere?.agentName ?? agentName}
+                    busy={busy}
+                    {...pillActions}
+                  />
+                )
+              }
+              menu={(forward) => (
+                <LocalBrowserMenu
+                  state={state}
                   busy={busy}
-                  {...pillActions}
+                  action={action}
+                  canForgetSignIns={signInsReadable}
+                  onClose={close}
+                  canForward={forward.canForward}
+                  onForward={forward.onForward}
                 />
-              )
-            }
-            menu={(forward) => (
-              <LocalBrowserMenu
-                state={state}
-                busy={busy}
-                action={action}
-                canForgetSignIns={signInsReadable}
-                onClose={close}
-                canForward={forward.canForward}
-                onForward={forward.onForward}
-              />
-            )}
-          />
+              )}
+            />
+          )}
         </>
       ) : (
         <PageAreaBlock title={statusShown ? <span role="status">{statusWords}</span> : undefined}>
@@ -464,7 +493,11 @@ export function LocalBrowserPanel({
           )}
           {/* With a page open, Forget is in the browser's ⋯ menu. */}
           {!waitingElsewhere && !opening && (
-            <SavedSignIns enabled={signInsReadable} disabled={busy || cancelling} />
+            <SavedSignIns
+              enabled={signInsReadable}
+              disabled={busy || cancelling}
+              profile={state?.profile ?? { id: 'default', label: 'Your browser', agentName: null }}
+            />
           )}
         </PageAreaBlock>
       )}
