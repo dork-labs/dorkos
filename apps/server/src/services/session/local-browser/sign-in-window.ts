@@ -115,7 +115,8 @@ export class SignInWindow {
   async start(
     profileFolder: string,
     profileId: string | null,
-    url: string
+    url: string,
+    admission?: { require(): Promise<void>; assertCurrent(): void }
   ): Promise<LocalBrowserSignIn> {
     if (this.active)
       throw new LocalBrowserError('signing_in', 'Finish the sign-in that’s already open.');
@@ -140,10 +141,20 @@ export class SignInWindow {
       await (this.deps.prepare ?? preparePlainProfile)(profileFolder);
       const executable = await (this.deps.executable ?? managedChromiumPath)();
       const spawner = this.deps.spawner ?? spawnPlainChromium;
+      if (admission) {
+        await admission.require();
+        admission.assertCurrent();
+        if (this.isHeld(profileFolder))
+          throw new LocalBrowserError(
+            'profile_busy',
+            'Another Agent browser window is still open. Close it, then try again.'
+          );
+      }
       const testBuild = executable !== (this.deps.installedChrome ?? installedChromePath)();
       this.window = spawner(executable, plainChromiumArgs(profileFolder, url, site, testBuild));
-    } catch {
+    } catch (error) {
       this.finish(attempt, 'failed', 'spawn');
+      if (error instanceof LocalBrowserError) throw error;
       throw new LocalBrowserError('sign_in_failed', 'Couldn’t open the sign-in window. Try again.');
     }
     const window = this.window;

@@ -1,4 +1,5 @@
 import { LocalBrowserError } from '../errors.js';
+import type { HandoffCloseProof } from './handoff-close.js';
 /**
  * The parts of the browser service a handoff steers, apart so the handover's guards can name
  * them without importing the handover itself.
@@ -12,18 +13,33 @@ import type {
   LocalBrowserState,
 } from '@dorkos/shared/local-browser';
 
+/** Where to put the agent back when the person hands the browser back. */
+export interface HandoffReopenAt {
+  sessionId: string;
+  profileId: string | null;
+  url?: string;
+}
+
 /** The parts of the browser service a handoff steers. */
 export interface HandoverBrowser {
   /** A physical profile swap needs exclusive custody. */
   requireExclusiveProfile?(profileId?: string | null): void;
+  /** Recheck the admitted chat grant after the physical close, without reopening its journal. */
+  requireHandoffAuthority?(chat: string): Promise<void>;
+  /** Other chats retain their sign-in and person custody while this handoff prepares. */
+  requireHandoffCustody?(profile: string | null): void;
   /** Page custody also applies without a handoff record. */
   requireAgentPage?(): void;
   profileRemoval?: { assertAvailable(): void };
   state(): Promise<LocalBrowserState>;
+  /** Only the exact Page session can certify its own completed close. */
+  captureHandoffClose?(state: LocalBrowserState, profileId: string | null): HandoffCloseProof;
   capabilities(): { newWindow: boolean };
   currentProfileId(): string | null;
   /** The host of the page DorkOS last read, when that reading was a refusal (DOR-4097). */
   lastRefusalHost?(): string | null;
+  /** Opaque server-only connection/tab/URL identity, rechecked across handoff awaits. */
+  refusalIdentity?(): string | null;
   /** Whether a named profile exists. False until startup wires the profile list. */
   profileExists(id: string): boolean;
   open(input: LocalBrowserOpen): Promise<LocalBrowserState>;

@@ -24,6 +24,30 @@ describe('browser handoff guidance (DOR-3218)', () => {
     expect(body).toContain('never ask them to follow the supplied link');
   });
 
+  it('explains the window swap and requires a fresh reading after hand-back', () => {
+    expect(body).toContain(
+      'DorkOS closes your page cleanly, then opens a separate Chrome window for the person'
+    );
+    expect(body).toContain('After hand-back it reopens the same address; form entries are lost');
+    expect(body).toContain('Observe again before acting');
+    expect(OPERATING_SKILLS_VERSION).toBeGreaterThanOrEqual(68);
+  });
+
+  it('distinguishes changed pages, held browsers and incomplete closes', () => {
+    expect(body).toContain(
+      'On `site_changed`, stop and ask the person to check the page; observe again when they are ready'
+    );
+    expect(body).toContain(
+      'On `profile_held`, `profile_busy` or `signing_in`, stop and wait for the person'
+    );
+    expect(body).toContain('On `busy` or `closing`, stop and ask the person to wait for closing');
+    expect(body).toContain('If the message says to restart DorkOS, ask the person to restart it');
+    expect(body).toContain(
+      'On `closed`, stop and ask the person to reconnect; observe again once they do'
+    );
+    expect(body).toContain('Never retry around these refusals or switch browsers to bypass them');
+  });
+
   it('sends an outsider-origin sharing request only to the person, once', () => {
     expect(body).toContain('Send that request to the person you work for, never the sender');
     expect(body).toContain("with `relay_notify_user`, or put a card in the person's DM");
@@ -39,9 +63,8 @@ describe('browser handoff guidance (DOR-3218)', () => {
 
 describe('no named browser profiles (DOR-3219)', () => {
   it('warns off a saved browser folder without calling it a profile', () => {
-    // Security's launch condition: agent instructions never mention browser profiles,
-    // so a cold agent asked "do you have browser profiles?" has nothing to echo.
-    expect(body).not.toMatch(/profile/i);
+    // Keep the browser noun plain; exact refusal codes still have to be findable.
+    expect(body.replace(/`profile_(?:held|busy)`/g, '')).not.toMatch(/profile/i);
     // One word for the person, as everywhere else agents read about the browser.
     expect(body).not.toMatch(/operator/i);
     expect(body).toContain(

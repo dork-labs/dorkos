@@ -20,6 +20,18 @@ export function agentPageHandle(session: LocalBrowserPageSession, assertCurrent:
     requireProfileAccess: (id: string) => run(() => session.requireProfileAccess(id)),
     requireNotFullScreen: () => run(() => session.requireNotFullScreen()),
     agentState: () => run(() => session.agentState()),
+    hasNavigationRefusal: (tabId?: string, url?: string) => {
+      assertCurrent();
+      return session.refusals.has(tabId, url);
+    },
+    observeRefusal: () => {
+      assertCurrent();
+      return session.refusals.observe();
+    },
+    requireRefusalCurrent: (tabId: string, url: string) => {
+      assertCurrent();
+      session.refusals.requireCurrent(tabId, url);
+    },
     observe: () => run(() => session.observe()),
     screenshot: () => run(() => session.screenshot()),
     action: (input: LocalBrowserAction) => run(() => session.action(input)),

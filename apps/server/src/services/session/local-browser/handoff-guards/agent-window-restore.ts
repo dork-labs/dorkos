@@ -76,11 +76,15 @@ export function browserInUseRefusal(): LocalBrowserError {
  * @param refusedHost - The host of the last refused reading, or null for none.
  */
 export async function selectedTabRefused(
-  browser: Pick<HandoverBrowser, 'state'>,
+  browser: Pick<HandoverBrowser, 'state' | 'refusalIdentity' | 'lastRefusalHost'>,
   refusedHost: string | null
 ): Promise<boolean> {
   if (refusedHost === null) return false;
+  const identity = browser.refusalIdentity?.();
   const state = await browser.state();
+  if (identity !== undefined && (identity === null || identity !== browser.refusalIdentity?.()))
+    return false;
+  if (browser.lastRefusalHost && browser.lastRefusalHost() !== refusedHost) return false;
   const tab = state.tabs.find((candidate) => candidate.id === state.selectedTabId);
   if (!tab) return false;
   try {
