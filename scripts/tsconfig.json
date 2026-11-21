@@ -31,6 +31,7 @@
     "check-copy-spec-drift.ts",
     "vitest-flake-reporter.ts",
     "lib/load-wait.ts",
+    "load-gate/**/*.ts",
     "check-knip.ts",
     "knip/**/*.ts",
     "sharding/**/*.ts",
