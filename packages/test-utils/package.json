@@ -30,6 +30,7 @@
     "./supertest": "./src/supertest.ts"
   },
   "scripts": {
+    "build:run-custody:windows": "node src/run-custody/windows/build.mjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
