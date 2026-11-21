@@ -89,6 +89,7 @@ export function LocalBrowserMenu({
       </p>
       <ForgetSignInsDialog
         open={asking}
+        profile={state.profile ?? { id: 'default', label: 'Your browser', agentName: null }}
         onOpenChange={setAsking}
         returnFocus={opener}
         onForgotten={() => setNotice('Sign-ins forgotten.')}

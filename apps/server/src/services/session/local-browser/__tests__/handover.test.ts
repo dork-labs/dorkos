@@ -81,11 +81,20 @@ function fakeSignIns() {
     },
     holds: (candidate: string) =>
       (status === 'open' || status === 'saving') && candidate === folder,
-    start: vi.fn(async (profileFolder: string, _profileId: string | null, _url: string) => {
-      folder = profileFolder;
-      status = 'open';
-      return signIns.current!;
-    }),
+    start: vi.fn(
+      async (
+        profileFolder: string,
+        _profileId: string | null,
+        _url: string,
+        admission?: { require(): Promise<void>; assertCurrent(): void }
+      ) => {
+        await admission?.require();
+        admission?.assertCurrent();
+        folder = profileFolder;
+        status = 'open';
+        return signIns.current!;
+      }
+    ),
     // Like the real one: only an open window is asked to quit, and its save then lands.
     done: vi.fn(() => {
       if (status !== 'open') return;
@@ -186,7 +195,11 @@ describe('detached handoffs', () => {
       expect(signIns.start).toHaveBeenCalledWith(
         path.join(dataDirectory, 'browser-profiles', 'p1'),
         'p1',
-        connected().tabs[0]!.url
+        connected().tabs[0]!.url,
+        expect.objectContaining({
+          require: expect.any(Function),
+          assertCurrent: expect.any(Function),
+        })
       );
       expect(browser.disconnect.mock.invocationCallOrder[0]).toBeLessThan(
         signIns.start.mock.invocationCallOrder[0]!
@@ -515,8 +528,8 @@ describe('BrowserHandover sign-in', () => {
     });
     await expect(handover.requireAgentMayUse('chat-1')).resolves.toBeUndefined();
     const other = setup();
-    await other.handover.signIn({ url: 'https://linear.app/' });
     other.setProfile(null);
+    await other.handover.signIn({ url: 'https://linear.app/' });
     await expect(other.handover.requireAgentMayUse('chat-1')).rejects.toMatchObject({
       code: 'signing_in',
     });
@@ -526,7 +539,9 @@ describe('BrowserHandover sign-in', () => {
     const { handover, browser } = setup();
     browser.open.mockClear();
     await handover.signIn({ url: 'https://linear.app/' });
-    await expect(handover.open({ mode: 'new-window', sessionId: 'chat-1' })).rejects.toMatchObject({
+    await expect(
+      handover.open({ mode: 'new-window', sessionId: 'chat-1', profileId: 'p1' })
+    ).rejects.toMatchObject({
       code: 'signing_in',
     });
     expect(browser.open).not.toHaveBeenCalled();
@@ -917,9 +932,9 @@ describe('a sign-in on a profile that no longer exists (DOR-4180)', () => {
     expect(existsSync(folder)).toBe(false);
   });
 
-  it('still signs in on the default profile, which has no id', async () => {
+  it('still signs in on the person’s explicitly selected default profile', async () => {
     const { handover, signIns } = await deletedProfile();
-    await handover.signIn({ url: 'https://linear.app/' });
+    await handover.signIn({ url: 'https://linear.app/', profileId: 'default' });
     expect(signIns.start).toHaveBeenCalledOnce();
   });
 });
@@ -1209,6 +1224,22 @@ describe('a sign-in started from a refused page', () => {
     }
   );
 
+  it('keeps the first sign-in’s return page when another attempt is refused', async () => {
+    const { handover, browser, signIns, finish, signInMoved } = ownWindow();
+    await handover.signIn({ url: 'https://accounts.example.com/' });
+    signIns.start.mockRejectedValueOnce(new Error('A sign-in is already open'));
+    await expect(handover.signIn({ url: 'https://second.example.com/' })).rejects.toThrow();
+    finish('saved');
+    signInMoved();
+    await vi.waitFor(() =>
+      expect(browser.open).toHaveBeenCalledExactlyOnceWith({
+        mode: 'new-window',
+        sessionId: 'chat-1',
+        url: connected().tabs[0]!.url,
+      })
+    );
+  });
+
   it('reopens nothing for a chat the person stopped meanwhile', async () => {
     const { handover, browser, finish, set, signInMoved } = ownWindow();
     const { handoffId } = await handover.ask('chat-1', 'password');
@@ -1343,9 +1374,10 @@ describe('Done signing in (DOR-4731)', () => {
   // Security (DOR-4731): Done with no handoff named acts only on the open sign-in window
   // DorkOS started, saves it, and never hands anything back.
   it('Done with no handoff saves a window the person opened, and hands nothing back', async () => {
-    const { handover, browser, signIns } = setup(false, 'new-window');
+    const { handover, browser, signIns, set } = setup(false, 'new-window');
     const ended = vi.fn();
     handover.useEndListener(ended);
+    set({ ...connected(), sessionId: null });
     await handover.signIn({ url: 'https://linear.app/' });
     browser.open.mockClear();
     browser.resume.mockClear();
@@ -1371,8 +1403,8 @@ describe('Done signing in (DOR-4731)', () => {
 
   it('tells an agent on the sign-in’s profile why, in plain words', async () => {
     const { handover, setProfile } = setup();
-    await handover.signIn({ url: 'https://linear.app/' });
     setProfile(null);
+    await handover.signIn({ url: 'https://linear.app/' });
     await expect(handover.requireAgentMayUse('chat-1')).rejects.toMatchObject({
       code: 'signing_in',
       message: SIGNING_IN_REFUSAL,

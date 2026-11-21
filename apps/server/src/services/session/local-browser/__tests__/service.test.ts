@@ -740,7 +740,7 @@ describe('local browser ownership and observations', () => {
     }));
     await service.open({ mode: 'new-window', sessionId: 'chat-one' });
     expect(f.context.close).not.toHaveBeenCalled();
-    await service.open({ mode: 'embedded', sessionId: 'chat-one' });
+    await service.open({ mode: 'embedded' });
     expect(f.context.close).toHaveBeenCalledOnce();
     expect((await service.state()).mode).toBe('embedded');
   });
@@ -885,6 +885,10 @@ async function lifecycleFixture() {
 
 async function handoffCloseFixture() {
   const f = await lifecycleFixture();
+  f.service.useProfileAccess(
+    async () => undefined,
+    () => true
+  );
   const signIns = new SignInWindow({
     executable: async () => '/made-up/Chromium',
     installedChrome: () => undefined,
@@ -1321,17 +1325,17 @@ describe('named profiles (DOR-3218)', () => {
     await expect(readFile(path.join(f.dir, 'browser-profiles', profileId))).rejects.toThrow();
   });
 
-  it('asks the access check on each call, and skips it on the default profile', async () => {
+  it('asks the access check on every profile, including default', async () => {
     const f = await create();
     const access = vi.fn(async () => undefined);
     f.service.useProfileAccess(access, () => true);
     await f.service.open({ mode: 'new-window', sessionId: 's' });
     await f.service.requireProfileAccess('s');
-    expect(access).not.toHaveBeenCalled();
+    expect(access).toHaveBeenCalledExactlyOnceWith('default', 's');
     await f.service.open({ mode: 'new-window', profileId, sessionId: 's' });
     await f.service.requireProfileAccess('s');
     await f.service.requireProfileAccess('s');
-    expect(access).toHaveBeenCalledTimes(2);
+    expect(access).toHaveBeenCalledTimes(3);
     expect(access).toHaveBeenLastCalledWith(profileId, 's');
     await f.service.disconnect();
   });
@@ -2142,6 +2146,111 @@ describe('a page load an action starts', () => {
     await f.service.disconnect();
   });
 
+  it.each(['navigate', 'click'] as const)(
+    'reports a committed %s as successful when its old execution context is destroyed (DOR-4817)',
+    async (kind) => {
+      const f = await create();
+      await selectOwned(f.service);
+      const { revision } = await f.service.observe();
+      const target = 'http://fixture.test/committed';
+      const commit = async () => {
+        f.events.emit('request', navigationRequest(f, target));
+        f.navigate(target);
+        throw new Error('Execution context was destroyed, most likely because of a navigation');
+      };
+      if (kind === 'navigate') vi.mocked(f.page.goto).mockImplementationOnce(commit);
+      else
+        f.click.mockImplementation(async (options?: { trial?: boolean }) => {
+          if (!options?.trial) await commit();
+        });
+      const state = await f.service.action(
+        kind === 'navigate'
+          ? { kind, url: target, revision }
+          : { kind, role: 'button', name: 'Save', revision }
+      );
+      expect(state.tabs.find((tab) => tab.id === state.selectedTabId)?.url).toBe(target);
+      expect((await journal(f)).map((record) => record.outcome)).toEqual(['unknown', 'succeeded']);
+      await expect(
+        f.service.action({ kind: 'click', role: 'button', name: 'Save', revision })
+      ).rejects.toMatchObject({ code: 'stale_page' });
+      if (kind === 'navigate') expect(f.page.goto).toHaveBeenCalledTimes(1);
+      else expect(f.click).toHaveBeenCalledTimes(2);
+      await f.service.disconnect();
+    }
+  );
+
+  it.each(['navigate', 'click'] as const)(
+    'does not call an uncommitted %s successful just because its context disappeared',
+    async (kind) => {
+      const f = await create();
+      await selectOwned(f.service);
+      const { revision } = await f.service.observe();
+      const fail = async () => {
+        throw new Error('Execution context was destroyed, most likely because of a navigation');
+      };
+      if (kind === 'navigate') vi.mocked(f.page.goto).mockImplementationOnce(fail);
+      else
+        f.click.mockImplementation(async (options?: { trial?: boolean }) => {
+          if (!options?.trial) await fail();
+        });
+      await expect(
+        f.service.action(
+          kind === 'navigate'
+            ? { kind, url: 'http://fixture.test/absent', revision }
+            : { kind, role: 'button', name: 'Save', revision }
+        )
+      ).rejects.toMatchObject({ code: 'uncertain' });
+      expect((await journal(f)).at(-1)?.outcome).toBe('unknown');
+      await f.service.disconnect();
+    }
+  );
+
+  it('does not hide an unrelated error after a successful navigation', async () => {
+    const f = await create();
+    await selectOwned(f.service);
+    const { revision } = await f.service.observe();
+    const target = 'http://fixture.test/committed';
+    vi.mocked(f.page.goto).mockImplementationOnce(async () => {
+      f.events.emit('request', navigationRequest(f, target));
+      f.navigate(target);
+      throw new Error('Transport disconnected');
+    });
+    await expect(
+      f.service.action({ kind: 'navigate', url: target, revision })
+    ).rejects.toMatchObject({ code: 'uncertain' });
+    await f.service.disconnect();
+  });
+
+  it.each(['navigate', 'click'] as const)(
+    'preserves a real load failure when a %s also loses its execution context',
+    async (kind) => {
+      const f = await create();
+      await selectOwned(f.service);
+      const { revision } = await f.service.observe();
+      const target = 'http://fixture.test/failed';
+      const fail = async () => {
+        const request = navigationRequest(f, target, 'net::ERR_CONNECTION_REFUSED');
+        f.events.emit('request', request);
+        f.events.emit('requestfailed', request);
+        throw new Error('Cannot find context with specified id');
+      };
+      if (kind === 'navigate') vi.mocked(f.page.goto).mockImplementationOnce(fail);
+      else
+        f.click.mockImplementation(async (options?: { trial?: boolean }) => {
+          if (!options?.trial) await fail();
+        });
+      await expect(
+        f.service.action(
+          kind === 'navigate'
+            ? { kind, url: target, revision }
+            : { kind, role: 'button', name: 'Save', revision }
+        )
+      ).rejects.toMatchObject({ code: 'load_failed' });
+      expect((await journal(f)).at(-1)?.outcome).toBe('failed');
+      await f.service.disconnect();
+    }
+  );
+
   it('a click that opens nothing, or only a download, still reports success', async () => {
     const f = await create();
     await selectOwned(f.service);
@@ -2210,9 +2319,10 @@ describe('a page load an action starts', () => {
     await selectOwned(f.service);
     const { revision } = await f.service.observe();
     const before = f.events.listenerCount('requestfailed');
+    const beforeRequests = f.events.listenerCount('request');
     await f.service.action({ kind: 'click', role: 'button', name: 'Save', revision });
     expect(f.events.listenerCount('requestfailed')).toBe(before);
-    expect(f.events.listenerCount('request')).toBe(0);
+    expect(f.events.listenerCount('request')).toBe(beforeRequests);
     await f.service.disconnect();
   });
 
@@ -2695,4 +2805,202 @@ it('leaves an in-app handoff unmarked when no reading saw a refusal', async () =
   f.navigate('https://accounts.google.com/v3/signin/rejected?made=up');
   await service.handover.ask('chat-1', 'password');
   expect((await service.handover.state()).handoff?.refused).toBeUndefined();
+});
+
+describe('browser-owned reload evidence (DOR-4816)', () => {
+  async function open() {
+    const f = await create();
+    const bridge = {
+      endpoint: 'ws://127.0.0.1:9876/page/guest',
+      headers: {},
+      close: vi.fn(async () => undefined),
+      detach: vi.fn(async () => undefined),
+      reattach: vi.fn(async () => undefined),
+    };
+    const service = new LocalBrowserPageSession(f.dir, { open: async () => bridge }, f.backend);
+    await service.open({ mode: 'embedded', sessionId: 'chat-1' });
+    service.handover.useOutsideTurnCheck(async () => 'read_outside_text');
+    f.change('');
+    return { ...f, service, bridge };
+  }
+
+  function commit(f: Awaited<ReturnType<typeof open>>, url: string) {
+    f.events.emit('request', {
+      isNavigationRequest: () => true,
+      frame: () => f.page.mainFrame(),
+      url: () => url,
+    });
+    f.navigate(url);
+  }
+
+  function loop(f: Awaited<ReturnType<typeof open>>) {
+    for (let index = 0; index < 4; index++) commit(f, 'https://shop.example/check');
+  }
+
+  it('returns a blocked reading without touching the unstable document', async () => {
+    const f = await open();
+    loop(f);
+    vi.mocked(f.page.evaluateHandle).mockClear();
+    const observed = await f.service.observe();
+    expect(observed).toMatchObject({
+      snapshot: '',
+      url: 'https://shop.example/check',
+      refusal: { kind: 'blocked', host: 'shop.example' },
+    });
+    expect(f.page.evaluateHandle).not.toHaveBeenCalled();
+    await expect(
+      f.service.action({ kind: 'click', role: 'button', name: 'Save', revision: observed.revision })
+    ).rejects.toMatchObject({ code: 'stale_page' });
+    expect(f.click).not.toHaveBeenCalled();
+    await f.service.disconnect();
+  });
+
+  it('hands over the same looping page even when it reloads after the reading', async () => {
+    const f = await open();
+    loop(f);
+    await f.service.observe();
+    commit(f, 'https://shop.example/check');
+    await expect(f.service.handover.ask('chat-1', 'wall')).resolves.toMatchObject({
+      site: 'shop.example',
+    });
+    expect(f.bridge.detach).toHaveBeenCalledOnce();
+    await f.service.disconnect();
+  });
+
+  it('clears evidence when the page moves to another path on the same host', async () => {
+    const f = await open();
+    loop(f);
+    await f.service.observe();
+    commit(f, 'https://shop.example/account');
+    await expect(f.service.handover.ask('chat-1', 'wall')).rejects.toMatchObject({
+      code: 'outside_turn',
+      fields: { reason: 'read_outside_text' },
+    });
+    expect(f.bridge.detach).not.toHaveBeenCalled();
+    await f.service.disconnect();
+  });
+
+  it('expires proof after ten seconds without another qualifying commit', async () => {
+    const f = await open();
+    vi.useFakeTimers();
+    loop(f);
+    await f.service.observe();
+    await vi.advanceTimersByTimeAsync(10_001);
+    expect(f.service.lastRefusalHost()).toBeNull();
+    await expect(f.service.handover.ask('chat-1', 'wall')).rejects.toMatchObject({
+      code: 'outside_turn',
+    });
+    vi.useRealTimers();
+    await f.service.disconnect();
+  });
+
+  it('does not count same-document moves without a new main-frame request', async () => {
+    const f = await open();
+    for (let index = 0; index < 8; index++) f.navigate('https://shop.example/check');
+    expect((await f.service.observe()).refusal).toBeUndefined();
+    await f.service.disconnect();
+  });
+
+  it('does not count subframe navigation requests', async () => {
+    const f = await open();
+    f.navigate('https://shop.example/check');
+    for (let index = 0; index < 8; index++) {
+      const frame = {};
+      f.events.emit('request', {
+        isNavigationRequest: () => true,
+        frame: () => frame,
+        url: () => 'https://ads.example/refresh',
+      });
+      f.events.emit('framenavigated', frame);
+    }
+    expect((await f.service.observe()).refusal).toBeUndefined();
+    await f.service.disconnect();
+  });
+
+  it('classifies a successfully read empty tree only after load and its grace period', async () => {
+    const f = await open();
+    vi.useFakeTimers();
+    commit(f, 'https://shop.example/blank');
+    expect((await f.service.observe()).refusal).toBeUndefined();
+    f.events.emit('domcontentloaded');
+    expect((await f.service.observe()).refusal).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(2_001);
+    expect((await f.service.observe()).refusal).toMatchObject({
+      kind: 'blocked',
+      host: 'shop.example',
+    });
+    vi.useRealTimers();
+    await f.service.disconnect();
+  });
+
+  it.each(['stranger_chat', 'room_outside_words', 'outsider_turn'] as const)(
+    'keeps the %s handoff gate closed even on a loop',
+    async (reason) => {
+      const f = await open();
+      loop(f);
+      await f.service.observe();
+      f.service.handover.useOutsideTurnCheck(async () => reason);
+      await expect(f.service.handover.ask('chat-1', 'wall')).rejects.toMatchObject({
+        code: 'outside_turn',
+        fields: { reason },
+      });
+      expect(f.bridge.detach).not.toHaveBeenCalled();
+      await f.service.disconnect();
+    }
+  );
+
+  it('forgets proof when its connection closes', async () => {
+    const f = await open();
+    loop(f);
+    await f.service.observe();
+    await f.service.disconnect();
+    expect(f.service.lastRefusalHost()).toBeNull();
+  });
+
+  it('discards proof when another tab is selected, including when returning to the first tab', async () => {
+    const f = await open();
+    loop(f);
+    await f.service.observe();
+    const other = fixture();
+    other.navigate('https://shop.example/other-tab');
+    vi.spyOn(f.context, 'pages').mockReturnValue([f.page, other.page]);
+    const state = await f.service.state();
+    const first = state.selectedTabId!;
+    const second = state.tabs.find((tab) => tab.id !== first)!;
+    await f.service.selectTab(second.id);
+    expect(f.service.lastRefusalHost()).toBeNull();
+    await f.service.selectTab(first);
+    expect(f.service.lastRefusalHost()).toBeNull();
+    await expect(f.service.handover.ask('chat-1', 'wall')).rejects.toMatchObject({
+      code: 'outside_turn',
+    });
+    await f.service.disconnect();
+  });
+
+  it('rechecks the exact page after the handoff gate awaits browser state', async () => {
+    const f = await open();
+    loop(f);
+    await f.service.observe();
+    const state = f.service.state.bind(f.service);
+    vi.spyOn(f.service, 'state').mockImplementationOnce(async () => {
+      commit(f, 'https://shop.example/different-path');
+      return state();
+    });
+    await expect(f.service.handover.ask('chat-1', 'wall')).rejects.toMatchObject({
+      code: 'outside_turn',
+    });
+    expect(f.bridge.detach).not.toHaveBeenCalled();
+    await f.service.disconnect();
+  });
+
+  it('offers one handoff and never reloads the page itself', async () => {
+    const f = await open();
+    loop(f);
+    await f.service.observe();
+    await f.service.handover.ask('chat-1', 'wall');
+    await f.service.handover.ask('chat-1', 'wall').catch(() => undefined);
+    expect(f.bridge.detach).toHaveBeenCalledOnce();
+    expect(f.page.goto).not.toHaveBeenCalled();
+    await f.service.disconnect();
+  });
 });

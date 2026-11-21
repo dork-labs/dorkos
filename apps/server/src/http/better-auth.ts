@@ -22,6 +22,7 @@ import type { TLSSocket } from 'node:tls';
 import type { Context, Hono } from 'hono';
 import type { Auth } from '../services/core/auth/index.js';
 import { buildAccountSignInLimiter, buildAuthRateLimiter } from '../middleware/auth-rate-limit.js';
+import { buildSecondFactorGate } from '../middleware/second-factor-gate.js';
 import type { ApiEnv } from './api-chain.js';
 import { honoRequestFacts } from './request-facts.js';
 import { classifyRequest, type RequestClass } from '../lib/request-classifier.js';
@@ -49,6 +50,10 @@ import { isLoopbackHostHeader } from '../lib/trusted-origins.js';
 import { SETUP_CODE_HEADER, withSetupCodeAttempt } from '../services/core/auth/setup-code.js';
 import { annotateRemoteMcpKeyList } from '../services/core/auth/remote-mcp-audit.js';
 import { confirmAuthWrite } from './better-auth-step-up.js';
+import {
+  WIFI_SIGN_IN_NEEDS_CODE,
+  wifiAuthPathAllowed,
+} from '../services/core/auth/sessions/wifi-auth-paths.js';
 
 /** Options for {@link mountBetterAuth}. */
 export interface BetterAuthOptions {
@@ -70,6 +75,7 @@ export interface BetterAuthOptions {
 export function mountBetterAuth(app: Hono<ApiEnv>, options: BetterAuthOptions): void {
   app.use(buildAuthRateLimiter({ maxAttempts: options.maxAttempts }));
   app.use(buildAccountSignInLimiter());
+  app.use(buildSecondFactorGate());
   app.all('/api/auth/*', async (c) => {
     const facts = honoRequestFacts(c);
     const setupCode = facts.headers[SETUP_CODE_HEADER];
@@ -82,6 +88,17 @@ export function mountBetterAuth(app: Hono<ApiEnv>, options: BetterAuthOptions): 
       .toLowerCase()
       .replace(/\/{2,}/g, '/')
       .replace(/\/$/, '');
+    // Over Wi-Fi a device signs in with a code from this computer, never a
+    // password (`sessions/wifi-auth-paths.ts`, DOR-4744). The listener's own mark decides.
+    if (ingressOf(c.env.incoming) === 'wifi' && !wifiAuthPathAllowed(authPath)) {
+      return c.json(
+        {
+          code: WIFI_SIGN_IN_NEEDS_CODE,
+          message: 'On Wi-Fi, sign in with a code from the computer DorkOS runs on.',
+        },
+        403
+      );
+    }
     const apiKeyWrite = c.req.method === 'POST' && writesApiKey(authPath);
     const signOutKinds: Readonly<Record<string, StepUpActionKind>> = {
       '/api/auth/revoke-session': 'devices.sign-out-one',

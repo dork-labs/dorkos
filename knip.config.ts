@@ -46,6 +46,8 @@ const config: KnipConfig = {
         // (contributing/connections-security-verification.md).
         'scripts/composio-repository-write-arguments.mjs',
         'scripts/composio-money-word-candidates.mjs',
+        // scripts/heavy-run-lock.sh runs load-gate/turn.ts through tsx (DOR-4209).
+        'scripts/load-gate/turn.ts',
       ],
     },
     'apps/client': {

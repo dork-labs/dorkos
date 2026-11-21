@@ -12,6 +12,35 @@ async function setup() {
 }
 
 describe('chat page leases', () => {
+  it('keeps reload evidence and refusal-only readings inside the captured chat page', async () => {
+    const f = await setup();
+    f.service.handover.useOutsideTurnCheck(async () => 'read_outside_text');
+    await f.open('chat-a');
+    await f.open('chat-b');
+    const looping = f.contexts[0].pages[1];
+    for (let index = 0; index < 4; index++) {
+      looping.events.emit('request', {
+        isNavigationRequest: () => true,
+        frame: () => looping.page.mainFrame(),
+        url: () => 'https://shared.example.test/check',
+      });
+      looping.navigate('https://shared.example.test/check');
+    }
+    const observed = await f.observe('chat-b');
+    expect(observed).toMatchObject({ snapshot: '', refusal: { host: 'shared.example.test' } });
+    expect(looping.page.evaluateHandle).not.toHaveBeenCalled();
+    await expect(f.observe('chat-a')).resolves.not.toHaveProperty('refusal');
+    await expect(f.ask('chat-a')).rejects.toMatchObject({ payload: { code: 'outside_turn' } });
+    await expect(
+      f.act('chat-b', {
+        kind: 'scroll',
+        revision: observed.revision,
+        deltaX: 0,
+        deltaY: 10,
+      })
+    ).rejects.toMatchObject({ payload: { code: 'stale_page' } });
+    expect(looping.wheel).not.toHaveBeenCalled();
+  });
   it('reserves six agent pages without charging the person’s own browser or evicting a chat', async () => {
     const f = await setup();
     await f.service.open({ mode: 'new-window' });

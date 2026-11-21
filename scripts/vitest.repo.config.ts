@@ -101,6 +101,7 @@ export const HERMETIC_SUITES = [
   '__tests__/harness-smoke.test.ts',
   '__tests__/heavy-turbo-slot.test.ts',
   '__tests__/knip-ratchet.test.ts',
+  '__tests__/load-gate-turn.test.ts',
   '__tests__/local-gate-shape.test.ts',
   '__tests__/local-worker-cap.test.ts',
   '__tests__/neon-preview-sweep.test.ts',

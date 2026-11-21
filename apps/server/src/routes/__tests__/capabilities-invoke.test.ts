@@ -54,6 +54,13 @@ vi.mock('../../services/core/auth/session-gate.js', async (importOriginal) => ({
 vi.mock('../../services/core/auth/index.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../services/core/auth/index.js')>()),
   readOwnerAccount: () => ({ id: 'owner' }),
+  // The owner allowed this Wi-Fi sign-in to run agents, at the computer (DOR-4744).
+  readAuthDb: await (async () => {
+    const { allowedWifiDeviceDb } =
+      await import('../../services/core/auth/__tests__/wifi-allowed-device.js');
+    const db = allowedWifiDeviceDb('owner', 'wifi-sign-in');
+    return () => db;
+  })(),
 }));
 
 const fixtureTarget = swappableServer();
@@ -434,7 +441,7 @@ describe('a Wi-Fi sign-in and capabilities (DOR-2969)', () => {
       {
         before: async (c, next) => {
           markIngress(c.env.incoming, 'wifi');
-          c.set('user', { userId, credential: 'cookie', route: 'wifi' });
+          c.set('user', { userId, credential: 'cookie', sessionId: 'wifi-sign-in', route: 'wifi' });
           await next();
         },
       }

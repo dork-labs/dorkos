@@ -25,7 +25,6 @@ import {
   agentWindowAt,
   browserInUseRefusal,
   reopenAgentWindow,
-  selectedTabRefused,
   type AgentWindowRestore,
 } from './handoff-guards/agent-window-restore.js';
 import {
@@ -42,24 +41,24 @@ import {
 } from './handoff-guards/done-signing-in.js';
 import {
   assertHandoffProfileExists,
+  signInProfile,
   type HandoverBrowser,
+  type HandoffReopenAt,
 } from './handoff-guards/handover-browser.js';
 import { refuseAgentDuringHandoff } from './handoff-guards/agent-custody.js';
 import { assertSignInUrl, siteOnly, trimPage } from './handoff-guards/page-address.js';
 import { prepareProfileFolder } from './profile-folders.js';
 import type { SignInWindow } from './sign-in-window.js';
-
-export type { OutsideTurnCheck, OutsideTurnReason };
-
-/** Where to put the agent back when the person hands the browser back. */
-interface ReopenAt {
-  sessionId: string;
-  profileId: string | null;
-  url?: string;
-}
+import { handoffLaunchAdmission, launchHandoffSignIn } from './handoff-guards/launch-admission.js';
+import {
+  prepareHandoffPage,
+  refusedHere,
+  requireHandoffPage,
+  requireRefusalIdentity,
+} from './handoff-guards/prepare-handoff.js';
+export type { OutsideTurnCheck, OutsideTurnReason, HandoverBrowser };
 
 export { assertSignInUrl, siteOnly, SIGNING_IN_REFUSAL };
-export type { HandoverBrowser };
 
 /** What the agent is told after it hands the browser over. */
 export const HANDED_OVER_NEXT =
@@ -77,22 +76,19 @@ export class BrowserHandover {
     );
   }
   /** Person card lookup is independent of whichever chat the UI currently shows. */
-  ownsHandoff(id: string): boolean {
-    return this.record?.id === id;
-  }
+  ownsHandoff = (id: string): boolean => this.record?.id === id;
   /** Physical sign-in ownership is distinct from an answered handoff record. */
-  signInHoldsProfile(profileId: string | null): boolean {
-    return this.signIns.holds(this.folderOf(profileId));
-  }
-  private signingIn = 0;
+  signInHoldsProfile = (profileId: string | null): boolean =>
+    this.signIns.holds(this.folderOf(profileId));
+  private signingProfile: string | null | undefined;
   private preparingHandoff = false;
   private answeringHandoff = false;
 
   /** Includes preparation, saving, and a handoff that can reopen this profile. */
   holdsProfile(profileId: string | null): boolean {
     return (
-      this.preparingHandoff ||
-      this.signingIn > 0 ||
+      (this.preparingHandoff && this.browser.currentProfileId() === profileId) ||
+      (this.signingProfile !== undefined && this.signingProfile === profileId) ||
       this.signIns.holds(this.folderOf(profileId)) ||
       (this.record?.outcome === null && this.record.profileId === profileId)
     );
@@ -104,7 +100,7 @@ export class BrowserHandover {
     this.changed();
   }
   private record: LocalBrowserHandoff | null = null;
-  private reopenAt?: ReopenAt;
+  private reopenAt?: HandoffReopenAt;
   /** The agent's window a refusal's sign-in closed, to reopen when that sign-in ends (DOR-4693). */
   private reopenAfterSignIn?: AgentWindowRestore;
   // The agent's page when it asked. Saved here, so Continue never takes a URL from the agent.
@@ -298,9 +294,11 @@ export class BrowserHandover {
     // A stranger's words must not be able to raise a window or ask the person anything. A turn
     // marked only by a page the agent read may still hand over that page, when DorkOS's own
     // reading found it refused the browser (DOR-4693): the page is what needs the person.
+    const refusalIdentity = this.browser.refusalIdentity?.();
     const marked = await this.outsideTurn(sessionId);
-    if (marked !== null && !(marked === 'read_outside_text' && (await this.refusedHere())))
+    if (marked !== null && !(marked === 'read_outside_text' && (await refusedHere(this.browser))))
       throw outsideTurnRefusal(marked);
+    requireRefusalIdentity(this.browser, marked, refusalIdentity);
     this.refuseStopped(sessionId);
     this.refuseTaken();
     if (this.preparingHandoff || this.answeringHandoff)
@@ -313,7 +311,12 @@ export class BrowserHandover {
     this.refuseWhileSigningIn();
     this.preparingHandoff = true;
     try {
-      return await this.prepareHandoff(sessionId, reason, asker);
+      return await this.prepareHandoff(
+        sessionId,
+        reason,
+        asker,
+        marked === 'read_outside_text' ? refusalIdentity : undefined
+      );
     } finally {
       this.preparingHandoff = false;
     }
@@ -325,32 +328,19 @@ export class BrowserHandover {
    *
    * @param sessionId - The calling chat.
    */
-  outsideTurnReason(sessionId: string): Promise<OutsideTurnReason | null> {
-    return this.outsideTurn(sessionId);
-  }
-
-  /** Whether DorkOS's own last reading found the selected tab's site refusing the browser. */
-  private refusedHere(): Promise<boolean> {
-    return selectedTabRefused(this.browser, this.browser.lastRefusalHost?.() ?? null);
-  }
+  outsideTurnReason = (sessionId: string) => this.outsideTurn(sessionId);
 
   private async prepareHandoff(
     sessionId: string,
     reason: LocalBrowserHandoffReason,
-    asker: { name: string; folder: string } | null
+    asker: { name: string; folder: string } | null,
+    expectedRefusal?: string | null
   ) {
     const state = await this.browser.state();
-    const tab = state.tabs.find((candidate) => candidate.id === state.selectedTabId);
-    if (state.status !== 'connected' || !tab)
-      throw new LocalBrowserError('no_tab', 'Choose the tab your agent should use.');
-    const site = new URL(tab.url).host;
-    if (!site) throw new LocalBrowserError('no_site', 'Open the website first, then ask again.');
-    if (state.mode === 'new-window') assertSignInUrl(tab.url);
-    if (state.mode === 'new-window') this.browser.requireExclusiveProfile?.();
-    // DorkOS's own reading, taken before handing over clears it; never the agent's word (DOR-4097).
-    const refused = this.browser.lastRefusalHost?.() === site;
-    await this.browser.handToPerson();
-    const profileId = this.browser.currentProfileId();
+    const snapshot = prepareHandoffPage(this.browser, state, sessionId, expectedRefusal);
+    const { tab, site, refused, profileId } = snapshot;
+    const handed = await this.browser.handToPerson();
+    requireHandoffPage(this.browser, snapshot, handed);
     const handoff: LocalBrowserHandoff = {
       id: randomUUID(),
       sessionId,
@@ -364,19 +354,24 @@ export class BrowserHandover {
       ...(refused ? { refused: true } : {}),
       outcome: null,
     };
-    if (state.mode === 'new-window') {
-      // No page-reading connection, automation pipe or theme extension survives
-      // into the person's window. Form fields do not survive this deliberate swap.
-      await this.browser.disconnect();
-      const folder = await prepareProfileFolder(this.dataDirectory(), profileId);
-      await this.signIns.start(folder, profileId, assertSignInUrl(tab.url).href);
+    if (snapshot.mode === 'new-window') {
+      await launchHandoffSignIn(
+        this.browser,
+        this.signIns,
+        this.dataDirectory(),
+        snapshot,
+        handoffLaunchAdmission(this.browser, snapshot, this.outsideTurn, () => {
+          this.refuseStopped(snapshot.chatId);
+          this.refuseTaken();
+        })
+      );
     }
     // Bring the agent's window to the person. Its strip and card are drawn by DorkOS.
-    if (state.mode === 'embedded') await this.browser.selectTab(tab.id).catch(() => undefined);
+    if (snapshot.mode === 'embedded') await this.browser.selectTab(tab.id).catch(() => undefined);
     // A failed close or sign-in must not leave an unpublished handoff that a retry calls success.
     this.record = handoff;
     this.reopenAt =
-      state.mode === 'new-window' ? { sessionId, profileId, url: tab.url } : undefined;
+      snapshot.mode === 'new-window' ? { sessionId, profileId, url: tab.url } : undefined;
     this.askedUrl = tab.url;
     this.changed();
     this.handedOver(this.record);
@@ -399,11 +394,12 @@ export class BrowserHandover {
     // A new sign-in owes nothing to an older one's window (DOR-4693), unless that one is still
     // open: its own end puts its window back.
     if (!this.signIns.active) this.reopenAfterSignIn = undefined;
-    this.signingIn++;
+    if (this.signingProfile !== undefined) throw browserInUseRefusal();
+    this.signingProfile = signInProfile(input, this.browser.currentProfileId(), this.record);
     try {
       return await this.startSignIn(input);
     } finally {
-      this.signingIn--;
+      this.signingProfile = undefined;
     }
   }
 
@@ -446,7 +442,7 @@ export class BrowserHandover {
       this.reopenAt = { sessionId: handoff.sessionId, profileId, url: this.askedUrl ?? tab.url };
     } else {
       url = assertSignInUrl(input.url);
-      profileId = input.profileId ?? null;
+      profileId = signInProfile(input, state.sessionId ? this.browser.currentProfileId() : null);
       assertHandoffProfileExists(this.browser, profileId);
     }
     this.browser.requireExclusiveProfile?.(profileId);
@@ -467,7 +463,7 @@ export class BrowserHandover {
       await this.signIns.start(folder, profileId, url.href);
     } catch (error) {
       // A sign-in that never started never ends, so nothing may reopen on its account.
-      this.reopenAfterSignIn = undefined;
+      if (agentWindowOnProfile) this.reopenAfterSignIn = undefined;
       throw error;
     }
     return this.state();
@@ -718,9 +714,7 @@ export class BrowserHandover {
   }
 
   /** The open handoff's id, or null when none is open. */
-  private openId(): string | null {
-    return this.record?.outcome === null ? this.record.id : null;
-  }
+  private openId = (): string | null => (this.record?.outcome === null ? this.record.id : null);
 
   /** The folder `prepareProfileFolder` gives a profile, without touching the disk. */
   private folderOf(profileId: string | null): string {
