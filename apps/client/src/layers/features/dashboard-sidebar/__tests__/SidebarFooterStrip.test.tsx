@@ -13,6 +13,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
+import type { Transport } from '@dorkos/shared/transport';
 
 // ---------------------------------------------------------------------------
 // Router. Navigating moves the location, so an "active route" assertion reads
@@ -20,10 +21,18 @@ import '@testing-library/jest-dom/vitest';
 // ---------------------------------------------------------------------------
 const mockNavigate = vi.fn();
 let mockPathname = '/marketplace';
+const allocatedDorkBotSessionId = 'ad9f425e-934a-4b50-85f7-0366b0acfad3';
+const mockAllocateSession = vi
+  .fn<Transport['allocateSession']>()
+  .mockResolvedValue({ sessionId: allocatedDorkBotSessionId });
+const mockCreateSessionLocation = vi
+  .fn<Transport['createSessionLocation']>()
+  .mockResolvedValue({ id: 'test-location' });
 vi.mock('@/layers/shared/model/TransportContext', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/shared/model/TransportContext')>()),
   useTransport: () => ({
-    createSessionLocation: vi.fn(async () => ({ id: 'test-location' })),
+    allocateSession: mockAllocateSession,
+    createSessionLocation: mockCreateSessionLocation,
     getDefaultCwd: vi.fn(async () => ({ path: '/default' })),
   }),
 }));
@@ -438,17 +447,22 @@ describe('SidebarFooterStrip', () => {
     fireEvent.click(screen.getByLabelText('Ask DorkBot'));
 
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledTimes(1));
-    const call = mockNavigate.mock.calls[0][0] as {
-      to: string;
-      search: { dir?: string; session?: string; seed?: string; launchRef?: string; draft?: string };
-    };
-    expect(call.to).toBe('/session');
-    expect(call.search.dir).toBeUndefined();
-    expect(call.search.launchRef).toBe('test-location');
-    expect(call.search.draft).toBe('1');
-    expect(call.search.seed).toBe('dorkbot-help');
-    // A FRESH conversation: a minted id, not a resolved one.
-    expect(call.search.session).toMatch(/^[0-9a-f-]{36}$/);
+    expect(mockAllocateSession).toHaveBeenCalledExactlyOnceWith({
+      kind: 'registered-agent',
+      agentId: 'a1',
+    });
+    expect(mockCreateSessionLocation).not.toHaveBeenCalled();
+    expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/session',
+      search: expect.objectContaining({
+        agentId: 'a1',
+        dir: undefined,
+        launchRef: undefined,
+        draft: '1',
+        seed: 'dorkbot-help',
+        session: allocatedDorkBotSessionId,
+      }),
+    });
     expect(takeAskDorkBotOrigin()).toBe('/marketplace');
   });
 
@@ -459,6 +473,7 @@ describe('SidebarFooterStrip', () => {
     const ask = screen.getByLabelText('Ask DorkBot');
     expect(ask).toBeDisabled();
     fireEvent.click(ask);
+    expect(mockAllocateSession).not.toHaveBeenCalled();
     expect(mockNavigate).not.toHaveBeenCalled();
     // …and the same button works the moment DorkBot has an address, which is
     // what makes the assertion above about readiness rather than about a button
@@ -468,6 +483,10 @@ describe('SidebarFooterStrip', () => {
     renderStrip();
     fireEvent.click(screen.getByLabelText('Ask DorkBot'));
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledTimes(1));
+    expect(mockAllocateSession).toHaveBeenCalledExactlyOnceWith({
+      kind: 'registered-agent',
+      agentId: 'a1',
+    });
   });
 
   // ── BC-44: the update pill ───────────────────────────────────────────────

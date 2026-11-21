@@ -1,5 +1,10 @@
 /** Synchronous runtime binding with current durable birth and required-identity checks. */
-import { isNull, sessionMetadata, type Db } from '@dorkos/db';
+import { and, eq, isNull, sessionDraftSources, sessionMetadata, type Db } from '@dorkos/db';
+import {
+  assertPersonDraftSource,
+  readDraftSource,
+  type PersonDraftWitness,
+} from './person-draft-settings.js';
 import { RequiredSessionIdentityError } from '../../../lib/replay/required-session-identity-error.js';
 import { RequiredRoomLaunchStore } from '../../rooms/reseat/required-launch-store.js';
 import type { TurnOrigin } from '../../session/origin/turn-origin.js';
@@ -25,8 +30,11 @@ function assertBindingSource(
   if (birth.kind === 'required-recovery') {
     if (origin.kind !== 'room' || agentPath !== birth.agentPath)
       throw new SessionBirthWriteError('source');
-  } else if (birth.kind === 'person-location') {
-    if (origin.kind !== 'interactive' && origin.kind !== 'session-relay')
+  } else if (birth.kind === 'person-location' || birth.kind === 'person-agent') {
+    if (
+      (origin.kind !== 'interactive' && origin.kind !== 'session-relay') ||
+      (birth.kind === 'person-agent' && agentPath !== birth.recordedRegisteredPath)
+    )
       throw new SessionBirthWriteError('source');
   } else if (birth.kind === 'room-seat') {
     if (origin.kind !== 'room' || agentPath !== birth.agentPath)
@@ -49,10 +57,42 @@ export function bindSessionWrite(
   seed: Partial<typeof sessionMetadata.$inferInsert>,
   claimMode: SettingsUpdate,
   expectedRequiredId: string | undefined,
-  birth: SessionBirthWriteContext | undefined
+  birth: SessionBirthWriteContext | undefined,
+  draft?: PersonDraftWitness
 ): boolean {
   assertBindingSource(origin, agentPath, birth);
   return withSessionBirthWrite(db, sessionId, birth, (tx, insertBirth) => {
+    const storedDraft = readDraftSource(tx, sessionId);
+    if (draft) {
+      if (
+        birth ||
+        origin.kind !== 'interactive' ||
+        !storedDraft ||
+        (draft.sourceKind === 'person-agent' && agentPath !== draft.sourcePath)
+      )
+        throw new SessionBirthWriteError('source');
+      assertPersonDraftSource(tx, sessionId, draft);
+      const pending = tx
+        .select({ agentPath: sessionMetadata.agentPath })
+        .from(sessionMetadata)
+        .where(
+          and(
+            eq(sessionMetadata.sessionId, sessionId),
+            isNull(sessionMetadata.runtime),
+            eq(sessionMetadata.modelLaunchState, 'pending-v1')
+          )
+        )
+        .get();
+      if (
+        !pending ||
+        (draft.sourceKind === 'person-agent' &&
+          pending.agentPath !== null &&
+          pending.agentPath !== draft.sourcePath)
+      )
+        throw new SessionBirthWriteError('metadata');
+    } else if (storedDraft) {
+      throw new SessionBirthWriteError('context');
+    }
     const currentRequired = new RequiredRoomLaunchStore(tx).forSession(sessionId);
     if (
       currentRequired?.id !== expectedRequiredId ||
@@ -105,6 +145,15 @@ export function bindSessionWrite(
     // better-sqlite3 RunResult: `changes` is the number of rows actually written
     // — 1 for a fresh insert, 1 for a claim, and 0 when `setWhere` refused an
     // already-bound row. That is exactly "this call bound the session".
+    if (draft) {
+      if (result.changes !== 1) throw new SessionBirthWriteError('metadata');
+      assertPersonDraftSource(tx, sessionId, draft);
+      const retired = tx
+        .delete(sessionDraftSources)
+        .where(eq(sessionDraftSources.sessionId, sessionId))
+        .run();
+      if (retired.changes !== 1) throw new SessionBirthWriteError('write');
+    }
     return result.changes > 0;
   });
 }

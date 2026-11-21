@@ -1,3 +1,5 @@
+import { writeSessionSettings } from './runtime-seam/save-session-settings.js';
+import type { PersonDraftWitness } from './runtime-seam/person-draft-settings.js';
 import { bindSessionWrite } from './runtime-seam/bind-session-write.js';
 import { writeNativeSession } from './runtime-seam/native-session-write.js';
 import {
@@ -262,10 +264,12 @@ export class RuntimeRegistry {
     runtime: string,
     origin: TurnOrigin,
     agentPath?: string,
-    birth?: SessionBirthWriteContext
+    birth?: SessionBirthWriteContext,
+    draft?: PersonDraftWitness
   ): Promise<boolean> {
     const db = this.requireDb('persistSessionRuntime');
     const preparedBirth = birth === undefined ? undefined : structuredClone(birth);
+    const preparedDraft = draft === undefined ? undefined : structuredClone(draft);
     const required = this.requiredLaunches().forSession(sessionId);
     if (required && required.destinationSessionId !== sessionId)
       throw new RequiredSessionIdentityError('Recovery alias requires its canonical chat.');
@@ -291,7 +295,8 @@ export class RuntimeRegistry {
         seedPolicy === 'configured-stop' ? seed.permissionMode : undefined
       ),
       required?.id,
-      preparedBirth
+      preparedBirth,
+      preparedDraft
     );
   }
 
@@ -680,25 +685,7 @@ export class RuntimeRegistry {
     settings: SessionSettings,
     birth?: SessionBirthWriteContext
   ): Promise<void> {
-    const db = this.requireDb('saveSessionSettings');
-    const patch = pickSettings(settings);
-    if (Object.keys(patch).length === 0) return;
-    withSessionBirthWrite(db, sessionId, birth, (tx, insertBirth) =>
-      tx
-        .insert(sessionMetadata)
-        .values({
-          sessionId,
-          // No owner: a preference chosen in a picker is not a binding.
-          runtime: null,
-          createdAt: new Date().toISOString(),
-          ...patch,
-          ...insertBirth,
-        })
-        // The UPDATE branch carries the patch alone — it must not disturb a
-        // binding, and there is nothing else here to write.
-        .onConflictDoUpdate({ target: sessionMetadata.sessionId, set: patch })
-        .run()
-    );
+    writeSessionSettings(this.requireDb('saveSessionSettings'), sessionId, settings, birth);
   }
 
   /**

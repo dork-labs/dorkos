@@ -29,6 +29,12 @@ import { AccountsAccessContext } from '../shared/accounts-access-context.js';
  *
  * @module services/runtimes/opencode/opencode-runtime
  */
+import { hasPreparedSettingsMutation } from '../../core/runtime-seam/prepared-settings-write.js';
+import { prepareOpenCodeSettingsUpdate } from './sessions/prepared-settings-update.js';
+import {
+  registerOpenCodeWithPersisted,
+  resolveOpenCodeTurnSettings,
+} from './sessions/session-settings.js';
 import type { OpencodeClient } from '@opencode-ai/sdk';
 import type {
   StreamEvent,
@@ -94,7 +100,7 @@ import {
   type OpenCodeClientProvider,
 } from './sessions/session-mapper.js';
 import { OpenCodeGlobalEventHub, TurnEventQueue } from './events/global-event-hub.js';
-import { OpenCodeSessionRegistry, type OpenCodeSessionPatch } from './sessions/session-registry.js';
+import { OpenCodeSessionRegistry } from './sessions/session-registry.js';
 import {
   enforceApprovals,
   effectiveApprovalMode,
@@ -317,7 +323,7 @@ export class OpenCodeRuntime implements AgentRuntime {
    *
    * Auto-creates untracked sessions (the PATCH-before-first-message path, and
    * every PATCH that follows a restart) through the shared hydration seam
-   * {@link OpenCodeRuntime.registerWithPersisted}, so a change to ONE setting
+   * {@link registerOpenCodeWithPersisted}, so a change to ONE setting
    * keeps the persisted others, then writes the operator's choice through the
    * durable settings store (ADR-0260) so it survives the next restart too. The
    * new mode applies to the very next permission request — enforcement reads
@@ -335,7 +341,24 @@ export class OpenCodeRuntime implements AgentRuntime {
     // Hydrate BEFORE the write-through, so the row this reads is the one that
     // stood before this PATCH: the settings it says nothing about are exactly
     // what has to be recovered, and the ones it names outrank them anyway.
-    await this.registerWithPersisted(sessionId, storable);
+    if (hasPreparedSettingsMutation(sessionId)) {
+      const preparedPort = this.settingsPort;
+      await prepareOpenCodeSettingsUpdate(
+        this.registry,
+        sessionId,
+        storable,
+        preparedPort,
+        () =>
+          this.settingsPort === preparedPort &&
+          this.mapper.hasUnboundPreparedIdentity(sessionId) &&
+          !this.binding.has(sessionId) &&
+          !this.activeTurns.has(sessionId) &&
+          ![...this.settingUp].some((turn) => turn.sessionId === sessionId)
+      );
+      await preparedPort?.saveSessionSettings(sessionId, storable);
+      return { updated: true };
+    }
+    await registerOpenCodeWithPersisted(this.registry, this.settingsPort, sessionId, storable);
     await this.settingsPort?.saveSessionSettings(sessionId, storable);
     return { updated: true };
   }
@@ -370,7 +393,12 @@ export class OpenCodeRuntime implements AgentRuntime {
     content: string,
     opts?: MessageOpts
   ): AsyncGenerator<StreamEvent> {
-    let settings = await this.resolveTurnSettings(sessionId, opts);
+    let settings = await resolveOpenCodeTurnSettings(
+      this.registry,
+      this.settingsPort,
+      sessionId,
+      opts
+    );
     const cwd = opts?.cwd ?? this.registry.get(sessionId)?.cwd ?? this.modelDirectory;
     // Who a room turn is for, which every identity decision below is checked
     // against (DOR-2091). Absent on every turn a room did not trigger.
@@ -512,7 +540,12 @@ export class OpenCodeRuntime implements AgentRuntime {
     // Settings are resolved the same way a prompt resolves them (registry →
     // persisted store), because the model DorkOS would run the next TURN on is
     // the first rung of the compaction model ladder.
-    const settings = await this.resolveTurnSettings(sessionId, opts);
+    const settings = await resolveOpenCodeTurnSettings(
+      this.registry,
+      this.settingsPort,
+      sessionId,
+      opts
+    );
     const cwd = opts?.cwd ?? this.registry.get(sessionId)?.cwd ?? this.modelDirectory;
     yield* this.runOpenCodeTurn(
       sessionId,
@@ -820,92 +853,6 @@ export class OpenCodeRuntime implements AgentRuntime {
         });
       }
     }
-  }
-
-  /**
-   * Register a session's settings, hydrating the durable row (ADR-0260) under
-   * the caller's own fields when the runtime has no memory of the session.
-   * Precedence: explicit → persisted, and for `permissionMode` alone a runtime
-   * default beneath both — a session always runs under SOME mode, while an
-   * unstated model or fastMode is honestly just absent (the sidecar's own
-   * default model, no fast mode) rather than a value this could invent.
-   *
-   * The ONE hydration seam, shared by the two cold entry points that need it —
-   * {@link OpenCodeRuntime.updateSession} and
-   * {@link OpenCodeRuntime.resolveTurnSettings} — because a session loses its
-   * in-memory state on every restart and EITHER a message or a settings PATCH
-   * can be the first thing to arrive afterwards. Registering only the fields a
-   * caller happened to name would drop the row's siblings — a PATCH that picks
-   * a model would reset an enforced `bypassPermissions` session to `default`
-   * while the stored settings (and the app, reading them) kept showing the
-   * operator's real choice (DOR-1152; the claude-code twin is DOR-1151).
-   *
-   * {@link OpenCodeRuntime.ensureSession} is a third cold path and deliberately
-   * does NOT come through here: `SessionOpts.permissionMode` is REQUIRED by the
-   * shared contract — "callers resolve the effective mode (per-send override →
-   * persisted → runtime default) before creating" (`SessionOpts`,
-   * `agent-runtime.ts`) — and its real callers do exactly that, the scheduler
-   * from the task's own mode and the relay from the binding's, on an id it mints
-   * one line earlier that no stored row can describe yet. Reading the store
-   * there would re-derive an answer the caller had already given, or invent one
-   * for a session that has no history.
-   *
-   * A session already tracked in memory reads nothing: its registration is the
-   * live truth, and only the stated fields change.
-   *
-   * @param sessionId - DorkOS session id.
-   * @param explicit - The fields this caller states, which outrank the stored ones.
-   */
-  private async registerWithPersisted(
-    sessionId: string,
-    explicit: OpenCodeSessionPatch = {}
-  ): Promise<void> {
-    const tracked = this.registry.has(sessionId);
-    const persisted = tracked ? null : await this.settingsPort?.getSessionSettings(sessionId);
-    // A tracked session keeps the mode it is running under unless this call
-    // names one; a cold one is born with the persisted mode, or the default.
-    const permissionMode = tracked
-      ? explicit.permissionMode
-      : (explicit.permissionMode ?? persisted?.permissionMode ?? 'default');
-    const model = explicit.model ?? persisted?.model;
-    const fastMode = explicit.fastMode ?? persisted?.fastMode;
-    this.registry.register(sessionId, {
-      ...(permissionMode !== undefined ? { permissionMode } : {}),
-      ...(model !== undefined ? { model } : {}),
-      ...(fastMode !== undefined ? { fastMode } : {}),
-      ...(explicit.cwd !== undefined ? { cwd: explicit.cwd } : {}),
-    });
-  }
-
-  /**
-   * Effective settings for one turn: per-send override → tracked session →
-   * persisted store (hydrated once for untracked sessions, e.g. resume after
-   * a server restart) → runtime default.
-   */
-  private async resolveTurnSettings(
-    sessionId: string,
-    opts?: MessageOpts
-  ): Promise<SessionSettings> {
-    if (!this.registry.has(sessionId)) {
-      // Only the mode and cwd are stated here. A per-send `model`/`fastMode` is
-      // a transient override for THIS turn (Tasks, relay) — it is applied to
-      // the returned settings below and deliberately never tracked, so the
-      // session keeps running on the operator's own choice afterwards.
-      await this.registerWithPersisted(sessionId, {
-        permissionMode: opts?.permissionMode,
-        cwd: opts?.cwd,
-      });
-    }
-    const tracked = this.registry.get(sessionId)!;
-    const model = opts?.model ?? tracked.model;
-    const fastMode = opts?.fastMode ?? tracked.fastMode;
-    return {
-      // A chat that follows its agent up starts from the agent's level this turn
-      // (DOR-3175); the tracked mode is left as it was.
-      permissionMode: opts?.levelPermissionMode ?? opts?.permissionMode ?? tracked.permissionMode,
-      ...(model !== undefined ? { model } : {}),
-      ...(fastMode !== undefined ? { fastMode } : {}),
-    };
   }
 
   // --- Interactive flows ---

@@ -7,6 +7,7 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TransportProvider } from '@/layers/shared/model';
+import { newSessionTarget } from '@/layers/shared/lib';
 import { createQueryClientConfig } from '@/layers/shared/lib';
 import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { useImportProjectsStore, useAgentBirthStore } from '@/layers/shared/model';
@@ -229,7 +230,7 @@ describe('CreateAgentDialog', () => {
       onCreated: null,
     });
     useImportProjectsStore.setState({ isOpen: false });
-    useAgentBirthStore.setState({ records: {} });
+    useAgentBirthStore.setState({ records: {}, deferred: {} });
     __resetFiredKickoffsForTest();
   });
 
@@ -537,11 +538,26 @@ describe('CreateAgentDialog', () => {
       _path: '/home/test/.dork/agents/scout',
       capabilities: [],
     } as never);
+    let resolveAcknowledgement!: (value: { sessionId: string }) => void;
+    const acknowledgement = new Promise<{ sessionId: string }>((resolve) => {
+      resolveAcknowledgement = resolve;
+    });
+    vi.mocked(transport.allocateSession).mockReturnValueOnce(acknowledgement);
     renderDialog(transport);
 
     const nameInput = await reachNamingViaDesign(user);
     await user.type(nameInput, 'Scout');
     await user.click(screen.getByTestId('create-button'));
+
+    await waitFor(() =>
+      expect(transport.allocateSession).toHaveBeenCalledExactlyOnceWith({
+        kind: 'registered-agent',
+        agentId: 'id',
+      })
+    );
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(useAgentBirthStore.getState().records).toEqual({});
+    resolveAcknowledgement({ sessionId: 'acknowledged-greeting' });
 
     // The navigated session id carries the birth; the record's kickoff is the
     // fenced design-your-own INTERVIEW (not a generic hello) — it routes to the
@@ -550,7 +566,7 @@ describe('CreateAgentDialog', () => {
     await waitFor(() => {
       const call = mockNavigate.mock.calls.at(-1)?.[0];
       navigatedSessionId = call?.search?.session;
-      expect(navigatedSessionId).toBeTruthy();
+      expect(navigatedSessionId).toBe('acknowledged-greeting');
     });
     const record = useAgentBirthStore.getState().records[navigatedSessionId!];
     expect(record).toBeDefined();
@@ -561,13 +577,13 @@ describe('CreateAgentDialog', () => {
     expect(record.kickoffMessage).toContain('.dork/SOUL.md');
     expect(mockNavigate).toHaveBeenLastCalledWith({
       to: '/session',
-      search: {
+      search: expect.objectContaining({
         agentId: 'id',
         draft: '1',
         dir: undefined,
         session: navigatedSessionId,
         runtime: 'codex',
-      },
+      }),
     });
   });
 
@@ -595,18 +611,17 @@ describe('CreateAgentDialog', () => {
     await user.type(nameInput, 'Scout');
     await user.click(screen.getByTestId('create-button'));
 
-    // The host hook fired and NO navigation happened — the birth is parked under
-    // a session id nobody will ever visit.
     await waitFor(() => expect(hostOnCreated).toHaveBeenCalledTimes(1));
     expect(mockNavigate).not.toHaveBeenCalled();
+    expect(transport.allocateSession).not.toHaveBeenCalled();
+    expect(useAgentBirthStore.getState().records).toEqual({});
+    expect(useAgentBirthStore.getState().deferred.id.path).toBe('/home/test/.dork/agents/scout');
 
-    const parked = Object.values(useAgentBirthStore.getState().records);
-    expect(parked).toHaveLength(1);
-    expect(parked[0].path).toBe('/home/test/.dork/agents/scout');
-    expect(parked[0].fired).toBe(false);
-
-    // Now the agent's first real session opens in that directory. useAutoKickoff
-    // claims the parked record by directory and fires the hello exactly once.
+    // Only the first acknowledged fresh chat for the agent binds the greeting.
+    vi.mocked(transport.allocateSession).mockResolvedValueOnce({ sessionId: 'first-real-session' });
+    const target = await newSessionTarget(transport, { agentId: 'id' });
+    expect(target.search.session).toBe('first-real-session');
+    expect(useAgentBirthStore.getState().deferred).toEqual({});
     const submitKickoff = vi.fn().mockResolvedValue(undefined);
     const { rerender } = renderHook(
       (props: { sessionId: string }) =>

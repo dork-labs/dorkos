@@ -20,6 +20,7 @@
  */
 import type { InstructionsView } from '@dorkos/shared/agent-instructions-schemas';
 import { vi } from 'vitest';
+import { randomUUID } from 'node:crypto';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockComputerTransport } from './mock-computer-transport.js';
 import { createMockLocalBrowserTransport } from './mock-local-browser-transport.js';
@@ -33,6 +34,9 @@ type SliceMethods =
   | 'listAuditEvents'
   | 'getAccountTimeline'
   | 'getChatActivity'
+  | 'createSessionLocation'
+  | 'allocateSession'
+  | 'getSessionLocation'
   | 'listAgentPauses'
   | 'pauseAgent'
   | 'resumeAgent'
@@ -94,6 +98,12 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
   ReturnType<typeof createMockConnectorSpendingTransport> {
   return {
     ...createMockConnectorSpendingTransport(),
+    createSessionLocation: vi.fn().mockResolvedValue({ id: 'test-location' }),
+    allocateSession: vi.fn(async (source: Parameters<Transport['allocateSession']>[0]) => ({
+      sessionId: randomUUID(),
+      ...(source.kind === 'location' && { launchRef: source.launchRef }),
+    })),
+    getSessionLocation: vi.fn().mockResolvedValue({ cwd: '/test/project' }),
     ...createMockHeartbeatTransport(),
     ...createMockComputerTransport(),
     ...createMockLocalBrowserTransport(),

@@ -648,6 +648,8 @@
     "POST /api/runtimes/opencode/provider/credential/check",
     "POST /api/runtimes/opencode/provision",
     "POST /api/session-locations",
+    "POST /api/session-locations/:id/chats",
+    "POST /api/session-locations/chats",
     "POST /api/session-relay/link",
     "POST /api/session-relay/passkeys/finish",
     "POST /api/session-relay/passkeys/start",

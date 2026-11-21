@@ -4,6 +4,7 @@ import {
   inArray,
   or,
   sessionBirthAllocations,
+  sessionDraftSources,
   sessionMetadata,
   sessionNativeBindings,
   sessionContext,
@@ -40,6 +41,13 @@ export function assertNoOutstandingRekeyBirth(
     .get();
   if (allocation)
     throw new RequiredSessionIdentityError('Canonical rekey has an unconsumed birth allocation.');
+  const draft = db
+    .select({ sessionId: sessionDraftSources.sessionId })
+    .from(sessionDraftSources)
+    .where(inArray(sessionDraftSources.sessionId, [from, to]))
+    .get();
+  if (draft)
+    throw new RequiredSessionIdentityError('A saved-folder draft must bind before rekeying.');
 }
 
 /** Move settings and native rows without silently merging a recovery billing conflict. */

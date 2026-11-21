@@ -312,6 +312,8 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'POST /api/directory',
       'POST /api/discovery/scan',
       'POST /api/session-locations',
+      'POST /api/session-locations/:id/chats',
+      'POST /api/session-locations/chats',
       'POST /api/workspaces',
       'POST /api/workspaces/:id/pin',
       'POST /api/workspaces/ports',

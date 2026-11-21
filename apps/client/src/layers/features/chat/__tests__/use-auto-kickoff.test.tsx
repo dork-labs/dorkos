@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, cleanup, waitFor } from '@testing-library/react';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 
+import { newSessionTarget } from '@/layers/shared/lib';
 import { useAgentBirthStore } from '@/layers/shared/model';
 import { useAutoKickoff, __resetFiredKickoffsForTest } from '../model/kickoff/use-auto-kickoff';
 import type { ChatMessage, ChatStatus } from '../model/chat-types';
@@ -51,7 +53,7 @@ function errorOnlyMsgs(): ChatMessage[] {
 
 describe('useAutoKickoff', () => {
   beforeEach(() => {
-    useAgentBirthStore.setState({ records: {} });
+    useAgentBirthStore.setState({ records: {}, deferred: {} });
     __resetFiredKickoffsForTest();
   });
 
@@ -295,54 +297,55 @@ describe('useAutoKickoff', () => {
     warn.mockRestore();
   });
 
-  // The onboarding-created case (create WITHOUT navigating to a session): the
-  // birth is recorded under an id nobody visits; the agent's real first session
-  // claims it by directory and produces the hello exactly once.
-  it('claims an unvisited birth by directory on the first fresh session and fires once', async () => {
-    seedBirth('never-visited-id');
+  it('claims a deferred birth by directory after allocation and fires once', async () => {
+    useAgentBirthStore.getState().defer(RECORD);
+    const transport = createMockTransport();
+    vi.mocked(transport.allocateSession)
+      .mockResolvedValueOnce({ sessionId: 'first-real-session' })
+      .mockResolvedValueOnce({ sessionId: 'later-real-session' });
     const submitKickoff = vi.fn().mockResolvedValue(undefined);
-    const { unmount } = renderHook(() =>
-      useAutoKickoff({
-        sessionId: 'first-real-session',
-        cwd: RECORD.path,
-        status: 'idle',
-        messages: [],
-        hydrated: true,
-        submitKickoff,
-        submitContent: vi.fn().mockResolvedValue(undefined),
-      })
-    );
+    const mountKickoff = (sessionId: string) =>
+      renderHook(() =>
+        useAutoKickoff({
+          sessionId,
+          cwd: RECORD.path,
+          status: 'idle',
+          messages: [],
+          hydrated: true,
+          submitKickoff,
+          submitContent: vi.fn().mockResolvedValue(undefined),
+        })
+      );
 
-    // The claim re-keys the record; the effect re-run fires the kickoff.
-    await waitFor(() => expect(submitKickoff).toHaveBeenCalledTimes(1));
-    expect(submitKickoff).toHaveBeenCalledWith(RECORD.kickoffMessage, RECORD.path);
-    expect(useAgentBirthStore.getState().records['first-real-session'].fired).toBe(true);
-    expect(useAgentBirthStore.getState().records['never-visited-id']).toBeUndefined();
+    expect(useAgentBirthStore.getState().records).toEqual({});
+    const first = await newSessionTarget(transport, { dir: RECORD.path });
+    expect(first.search.session).toBe('first-real-session');
+    const { unmount } = mountKickoff(first.search.session);
+    expect(submitKickoff).toHaveBeenCalledExactlyOnceWith(RECORD.kickoffMessage, RECORD.path);
+    expect(useAgentBirthStore.getState().records[first.search.session].fired).toBe(true);
+    expect(useAgentBirthStore.getState().deferred).toEqual({});
 
-    // A remount of the same session (or any later fresh session in the dir —
-    // the record is now fired) never fires again.
+    // Remounting the first chat or allocating a later one cannot send another greeting.
     unmount();
-    renderHook(() =>
-      useAutoKickoff({
-        sessionId: 'first-real-session',
-        cwd: RECORD.path,
-        status: 'idle',
-        messages: [],
-        hydrated: true,
-        submitKickoff,
-        submitContent: vi.fn().mockResolvedValue(undefined),
-      })
-    );
+    mountKickoff(first.search.session).unmount();
+    const later = await newSessionTarget(transport, { dir: RECORD.path });
+    expect(later.search.session).toBe('later-real-session');
+    mountKickoff(later.search.session);
+    expect(useAgentBirthStore.getState().records[later.search.session]).toBeUndefined();
     expect(submitKickoff).toHaveBeenCalledTimes(1);
   });
 
-  it('never claims a birth for a different directory', () => {
-    seedBirth('never-visited-id');
+  it('never claims a birth for a different directory', async () => {
+    useAgentBirthStore.getState().defer(RECORD);
+    const transport = createMockTransport();
+    vi.mocked(transport.allocateSession).mockResolvedValue({ sessionId: 'unrelated-session' });
+    const cwd = '/agents/some-other-agent';
+    const target = await newSessionTarget(transport, { dir: cwd });
     const submitKickoff = vi.fn().mockResolvedValue(undefined);
     renderHook(() =>
       useAutoKickoff({
-        sessionId: 'unrelated-session',
-        cwd: '/agents/some-other-agent',
+        sessionId: target.search.session,
+        cwd,
         status: 'idle',
         messages: [],
         hydrated: true,
@@ -351,11 +354,12 @@ describe('useAutoKickoff', () => {
       })
     );
     expect(submitKickoff).not.toHaveBeenCalled();
-    expect(useAgentBirthStore.getState().records['never-visited-id']).toBeDefined();
+    expect(useAgentBirthStore.getState().records[target.search.session]).toBeUndefined();
+    expect(useAgentBirthStore.getState().deferred[RECORD.agentId]).toEqual(RECORD);
   });
 
   it('never claims into a session that already has messages', () => {
-    seedBirth('never-visited-id');
+    useAgentBirthStore.getState().defer(RECORD);
     const submitKickoff = vi.fn().mockResolvedValue(undefined);
     renderHook(() =>
       useAutoKickoff({
@@ -369,8 +373,8 @@ describe('useAutoKickoff', () => {
       })
     );
     expect(submitKickoff).not.toHaveBeenCalled();
-    // The record stays parked under its original key for a truly fresh session.
-    expect(useAgentBirthStore.getState().records['never-visited-id']).toBeDefined();
+    expect(useAgentBirthStore.getState().records['old-session-same-dir']).toBeUndefined();
+    expect(useAgentBirthStore.getState().deferred[RECORD.agentId]).toEqual(RECORD);
   });
 
   // Mid-stream failure: the trigger 202'd (so the rejection retry path never

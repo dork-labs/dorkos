@@ -84,7 +84,7 @@ export async function switchAgentCwd(cwd: string, deps: SwitchAgentCwdDeps): Pro
     }
 
     const target = resolved.isNew
-      ? await newSessionTarget(transport, { dir: cwd, session: resolved.sessionId })
+      ? await newSessionTarget(transport, { dir: cwd }, { isStillWanted })
       : { search: { session: resolved.sessionId } };
     if (!isStillWanted()) return;
     store.setSelectedCwd(cwd);

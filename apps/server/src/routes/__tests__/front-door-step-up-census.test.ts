@@ -52,6 +52,7 @@ const GROUPS = [
   'heartbeat-triage',
   'tasks',
   'mesh',
+  'session-send-message',
   // DOR-4355 M3, checked per route (Security S4): reverting any one hold turns its row red.
   ...M3_GROUPS,
 ];
@@ -203,8 +204,7 @@ const OTHER_FRONT_DOOR_CALLERS: Record<string, string> = {
     'Holds credits create before dispatch; task-credits-step-up.test.ts covers each route.',
   'tasks-update-http.ts':
     'Holds credits grants, live work edits and raising what a task may do (a looser mode, approved tools, arming above Default); binds the task revision and revalidates before dispatch.',
-  'sessions.ts':
-    'Session Runs on ends with that session; session-tools/task-tools credits tests prove children do not inherit it (N).',
+  'sessions.ts': 'Switch now keeps its existing owner check and affects one session (N).',
   'session-continue.ts':
     'Per-session Runs on is N; limit-plans-eligibility proves automatic carry-over uses its independently allowed target.',
   'mesh-agent-patch-http.ts':
@@ -353,11 +353,19 @@ function functionsOf(source: ts.SourceFile): Map<string, ts.Node> {
   return functions;
 }
 
+// Named credits for an ordinary send apply to one chat. Child credits have separate tests.
+const PER_SESSION_WRITE = 'session-send-message POST /:id/messages';
+type WritePolicy = 'exception' | 'per-session' | 'step-up';
+
 const rows = GROUPS.flatMap((name) => {
   const source = parse(name);
   const functions = functionsOf(source);
-  const found: { id: string; calls: Set<string>; policy: string; handlers: readonly ts.Node[] }[] =
-    [];
+  const found: {
+    id: string;
+    calls: Set<string>;
+    policy: WritePolicy;
+    handlers: readonly ts.Node[];
+  }[] = [];
   function visit(node: ts.Node) {
     if (
       ts.isCallExpression(node) &&
@@ -381,7 +389,9 @@ const rows = GROUPS.flatMap((name) => {
         )
           return;
         const calls = new Set(handlers.flatMap((handler) => [...callsFrom(handler, functions)]));
-        found.push({ id, calls, policy: EXCEPTIONS[id] ? 'exception' : 'step-up', handlers });
+        const policy =
+          id === PER_SESSION_WRITE ? 'per-session' : EXCEPTIONS[id] ? 'exception' : 'step-up';
+        found.push({ id, calls, policy, handlers });
       }
     }
     ts.forEachChild(node, visit);
@@ -390,8 +400,10 @@ const rows = GROUPS.flatMap((name) => {
   return found;
 });
 
+const heldOrExemptRows = rows.filter(({ policy }) => policy !== 'per-session');
+
 describe('front-door write census', () => {
-  it.each(rows)('$id: $policy', ({ id, calls, policy, handlers }) => {
+  it.each(heldOrExemptRows)('$id: $policy', ({ id, calls, policy, handlers }) => {
     if (policy === 'exception') {
       expect(EXCEPTIONS[id]).toMatch(/\S.+\.$/);
       return;
@@ -411,6 +423,43 @@ describe('front-door write census', () => {
       unguardedWrites(handlers, NARROWING[id] ?? [], DELEGATES),
       `${id} writes before its hold or in an unclassified branch`
     ).toEqual([]);
+  });
+
+  it('keeps ordinary chat send behind its person and session credits checks', () => {
+    const matching = rows.filter(
+      ({ id, policy }) => id === PER_SESSION_WRITE && policy === 'per-session'
+    );
+    expect(matching).toHaveLength(1);
+    const handlers = matching[0]!.handlers;
+    expect(handlers).toHaveLength(2);
+    const [personBar, send] = handlers;
+    expect(personBar?.getText()).toBe('askForPersonBeforeChat()');
+    if (!send || !ts.isArrowFunction(send) || !ts.isBlock(send.body))
+      throw new Error('Expected the ordinary chat handler after its person check');
+
+    const credits = send.body.statements.find(
+      (statement): statement is ts.IfStatement =>
+        ts.isIfStatement(statement) &&
+        statement.expression.getText().replace(/\s+/g, '') ===
+          'parsed.data.account===CREDITS_ACCOUNT_ID'
+    );
+    const ownerRefusal = `{
+      const refusal = errorRefusalUnlessOwner(honoRequestFacts(c), RUN_ON_CREDITS);
+      if (refusal) return c.json(refusal, 403);
+    }`;
+    expect(credits?.thenStatement.getText().replace(/\s+/g, '')).toBe(
+      ownerRefusal.replace(/\s+/g, '')
+    );
+    const dispatches: ts.CallExpression[] = [];
+    function visit(node: ts.Node) {
+      if (ts.isCallExpression(node) && node.expression.getText() === 'dispatchSessionMessage')
+        dispatches.push(node);
+      ts.forEachChild(node, visit);
+    }
+    visit(send.body);
+    expect(dispatches).toHaveLength(1);
+    expect(dispatches[0]!.getStart()).toBeGreaterThan(credits!.end);
+    expect(unguardedWrites(handlers, [], DELEGATES)).toEqual([]);
   });
 
   it.each([...HOLD_HELPERS])('the shared hold %s really holds', (helper, file) => {
@@ -555,7 +604,7 @@ describe('front-door write census', () => {
     };
     const missing: string[] = [];
     for (const { id, policy } of rows) {
-      if (policy === 'exception') continue;
+      if (policy !== 'step-up') continue;
       const [group, method, route] = id.split(' ') as [string, string, string];
       // Template paths, as their files define them; of pause and resume, resume is the one held.
       const literal = route

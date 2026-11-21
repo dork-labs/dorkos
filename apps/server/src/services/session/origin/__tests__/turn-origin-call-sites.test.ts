@@ -33,7 +33,7 @@ const SRC = fileURLToPath(new URL('../../../..', import.meta.url));
 const EXPECTED: Readonly<Record<string, readonly string[]>> = {
   // A person posted a message and is holding the session's event stream open.
   // It binds through the launch service, which forwards what it is told.
-  'routes/sessions.ts': ['agent-launch', 'interactive'],
+  'routes/session-send-message.ts': ['agent-launch', 'interactive'],
   // An owner opens a normal chat in the retained agent computer.
   'startup/computers.ts': ['interactive'],
   // A room turn, carrying the one fact that decides its power.

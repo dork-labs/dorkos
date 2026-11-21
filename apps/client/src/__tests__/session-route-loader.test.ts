@@ -1,8 +1,14 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
+import { createMemoryHistory } from '@tanstack/react-router';
 import { createMockTransport, createMockSession } from '@dorkos/test-utils/mock-factories';
-import { sessionRouteLoader, sessionLoaderDeps, reloadSessionMatches } from '../router';
+import {
+  createAppRouter,
+  sessionRouteLoader,
+  sessionLoaderDeps,
+  reloadSessionMatches,
+} from '../router';
 import { sessionSearchSchema, newSessionTarget } from '@/layers/shared/lib';
 import {
   clearSessionRouteContext,
@@ -45,10 +51,11 @@ beforeEach(() => {
   );
 });
 let reloadRoute: ReturnType<typeof vi.fn<(sessionId: string) => void>>;
-function run(search: Parameters<typeof sessionSearchSchema.parse>[0]) {
+function run(search: Parameters<typeof sessionSearchSchema.parse>[0], preload = false) {
   return sessionRouteLoader({
     context: { queryClient, transport, reloadRoute },
     deps: sessionLoaderDeps({ search: sessionSearchSchema.parse(search) }),
+    preload,
   });
 }
 async function destination(search: Parameters<typeof sessionSearchSchema.parse>[0]) {
@@ -80,6 +87,7 @@ describe('session route identity and launch lifecycle', () => {
     vi.mocked(transport.getSession).mockRejectedValue(missing);
     await expect(run({ session: 'missing' })).rejects.toBe(missing);
     expect(transport.createSessionLocation).not.toHaveBeenCalled();
+    expect(transport.allocateSession).not.toHaveBeenCalled();
   });
   it('preserves outages as errors', async () => {
     const unavailable = Object.assign(new Error('Unavailable'), { status: 503 });
@@ -129,6 +137,7 @@ describe('session route identity and launch lifecycle', () => {
       );
       await run({ session: `draft-${runtime}`, draft: '1', launchRef: 'opaque-location', runtime });
       expect(transport.getSessionLocation).toHaveBeenCalledWith('opaque-location');
+      expect(transport.allocateSession).not.toHaveBeenCalled();
       expect(transport.getSession).toHaveBeenCalledWith(`draft-${runtime}`, '/chosen/project');
       expect(getSessionRouteContext(`draft-${runtime}`)).toEqual({
         cwd: '/chosen/project',
@@ -176,6 +185,7 @@ describe('session route identity and launch lifecycle', () => {
     expect(getSessionRouteContext('agent-draft')?.cwd).toBe('/agent/project');
   });
   it('creates a portable draft for an empty directory preserving launch intent', async () => {
+    vi.mocked(transport.allocateSession).mockResolvedValueOnce({ sessionId: 'bound-to-receipt' });
     const target = await destination({
       dir: '/empty',
       runtime: 'opencode',
@@ -194,9 +204,81 @@ describe('session route identity and launch lifecycle', () => {
       seed: 'dorkbot-help',
       panel: 'profile',
     });
-    expect(target.session).toMatch(/^[0-9a-f-]{36}$/);
+    expect(target.session).toBe('bound-to-receipt');
     expect(transport.createSessionLocation).toHaveBeenCalledWith('/empty');
+    expect(transport.allocateSession).toHaveBeenCalledExactlyOnceWith({
+      kind: 'location',
+      launchRef: 'opaque-location',
+    });
   });
+  it('keeps an agent launch opaque and refuses an unavailable registration before allocation', async () => {
+    vi.mocked(transport.listMeshAgentPaths).mockResolvedValue({
+      agents: [{ id: 'registered', name: 'Scout', projectPath: '/agents/scout' }],
+    });
+    vi.mocked(transport.allocateSession).mockResolvedValueOnce({ sessionId: 'acknowledged' });
+    await expect(destination({ agentId: 'registered', runtime: 'doe' })).resolves.toMatchObject({
+      session: 'acknowledged',
+      agentId: 'registered',
+      draft: '1',
+      runtime: 'doe',
+    });
+    await expect(run({ agentId: 'gone' })).rejects.toThrow('Agent location is unavailable.');
+    expect(transport.createSessionLocation).not.toHaveBeenCalled();
+    expect(transport.getDefaultCwd).not.toHaveBeenCalled();
+    expect(transport.allocateSession).toHaveBeenCalledExactlyOnceWith({
+      kind: 'registered-agent',
+      agentId: 'registered',
+    });
+  });
+
+  it('keeps a profile or fresh chat intent preload read-only', async () => {
+    await run({ dir: '/first', agentPath: '/profile' }, true);
+    expect(transport.listSessions).toHaveBeenCalledWith('/first');
+    expect(transport.createSessionLocation).not.toHaveBeenCalled();
+    expect(transport.allocateSession).not.toHaveBeenCalled();
+  });
+
+  it('allocates once when the real router click overlaps a read-only intent preload', async () => {
+    let resolveLookup!: (value: { sessions: Session[] }) => void;
+    const lookup = new Promise<{ sessions: Session[] }>((resolve) => {
+      resolveLookup = resolve;
+    });
+    vi.mocked(transport.listSessions).mockReturnValue(lookup);
+    vi.mocked(transport.getSession).mockImplementation(async (id) => {
+      if (id === 'existing') return createMockSession({ id, cwd: '/active' });
+      throw Object.assign(new Error('Pending chat'), { status: 404 });
+    });
+    vi.mocked(transport.allocateSession).mockResolvedValueOnce({
+      sessionId: 'hover-then-click',
+      launchRef: 'opaque-location',
+    });
+    const router = createAppRouter(queryClient, transport);
+    router.update({
+      context: router.options.context,
+      history: createMemoryHistory({ initialEntries: ['/session?session=existing'] }),
+    });
+    await router.load();
+    const options = { to: '/session' as const, search: { launchRef: 'opaque-location' } };
+    const preloading = router.preloadRoute(options);
+    await vi.waitFor(() => expect(transport.listSessions).toHaveBeenCalled());
+    expect(transport.createSessionLocation).not.toHaveBeenCalled();
+    expect(transport.allocateSession).not.toHaveBeenCalled();
+
+    const navigation = router.navigate(options);
+    resolveLookup({ sessions: [] });
+    await Promise.all([preloading, navigation]);
+    expect(router.state.location.search).toMatchObject({
+      session: 'hover-then-click',
+      launchRef: 'opaque-location',
+      draft: '1',
+    });
+    expect(transport.createSessionLocation).not.toHaveBeenCalled();
+    expect(transport.allocateSession).toHaveBeenCalledExactlyOnceWith({
+      kind: 'location',
+      launchRef: 'opaque-location',
+    });
+  });
+
   it('resumes a real conversation and drops instructions aimed at a fresh one', async () => {
     vi.mocked(transport.listSessions).mockResolvedValue({
       sessions: [createMockSession({ id: 'existing', cwd: '/actual/project' })],
@@ -218,6 +300,7 @@ describe('session route identity and launch lifecycle', () => {
       panel: 'profile',
     });
     expect(transport.createSessionLocation).not.toHaveBeenCalled();
+    expect(transport.allocateSession).not.toHaveBeenCalled();
   });
   it('fails lookup rather than minting a session on an unreachable server', async () => {
     vi.mocked(transport.listSessions).mockRejectedValue(new Error('Offline'));
