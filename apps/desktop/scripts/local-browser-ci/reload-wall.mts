@@ -4,7 +4,9 @@ import { createServer } from 'node:http';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { BrowserContext } from 'playwright-core';
-import { LocalBrowserService } from '../../../server/src/services/session/local-browser/service.js';
+import { PUBLIC_CHROME_CHAT } from './public-chrome-profile.js';
+import { openReloadWallBrowser } from './reload-wall-profile.js';
+import { browserProofPage } from './proof-page.js';
 import { BrowserHandover } from '../../../server/src/services/session/local-browser/handover.js';
 import {
   SignInWindow,
@@ -41,17 +43,19 @@ const backend = {
     return (context = await productionBackend.launch(...args));
   },
 };
-const service = new LocalBrowserService(process.env.DORK_HOME, undefined, backend);
+let fixture: Awaited<ReturnType<typeof openReloadWallBrowser>> | undefined;
 const signIns = new SignInWindow();
-const handover = new BrowserHandover(service, signIns, () => process.env.DORK_HOME!);
-handover.useOutsideTurnCheck(async () => 'read_outside_text');
 try {
   await new Promise<void>((resolve) => echo.listen(0, '127.0.0.1', resolve));
   const address = echo.address();
   assert(address && typeof address !== 'string');
   const origin = `http://127.0.0.1:${address.port}`;
-  await service.open({ mode: 'new-window', sessionId: 'made-up-loop-witness', url: origin });
-  const page = context!.pages()[0]!;
+  fixture = await openReloadWallBrowser(process.env.DORK_HOME, backend, origin);
+  const service = fixture.session;
+  const handover = new BrowserHandover(service, signIns, () => process.env.DORK_HOME!);
+  handover.useOutsideTurnCheck(async () => 'read_outside_text');
+  const page = await browserProofPage(service.pageConnection());
+  assert.deepEqual(context!.pages(), [page], 'Only the initialized chat page is used');
   const identity = await page.evaluate(() => ({
     webdriver: navigator.webdriver,
     ua: navigator.userAgent,
@@ -116,7 +120,7 @@ try {
     assert(error instanceof LocalBrowserError);
     assert.equal(error.code, 'screen_state_unavailable');
   }
-  const handed = await handover.ask('made-up-loop-witness', 'wall');
+  const handed = await handover.ask(PUBLIC_CHROME_CHAT, 'wall');
   assert.equal(handed.site, new URL(origin).host);
   assert.equal(signIns.current?.status, 'open');
   assert.equal((await service.state()).status, 'disconnected');
@@ -149,7 +153,7 @@ try {
     }
   } finally {
     try {
-      await service.disconnect();
+      await fixture?.close();
     } finally {
       echo.closeAllConnections();
       await new Promise<void>((resolve) => echo.close(() => resolve()));

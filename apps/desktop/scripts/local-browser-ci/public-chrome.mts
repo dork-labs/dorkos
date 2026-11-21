@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { chromium, type BrowserContext } from 'playwright-core';
 import { browserProofPage } from './proof-page.js';
-import { LocalBrowserService } from '../../../server/src/services/session/local-browser/service.js';
+import { createPublicChromeBrowser, PUBLIC_CHROME_CHAT } from './public-chrome-profile.js';
 import { BrowserHandover } from '../../../server/src/services/session/local-browser/handover.js';
 import { SignInWindow } from '../../../server/src/services/session/local-browser/sign-in-window.js';
 import {
@@ -115,7 +115,8 @@ const backend = {
     return context;
   },
 };
-const browser = new LocalBrowserService(process.env.DORK_HOME!, undefined, backend);
+const fixture = await createPublicChromeBrowser(process.env.DORK_HOME!, backend);
+const { browser } = fixture;
 type Identity = {
   ua: string;
   brands: { brand: string; version: string }[];
@@ -262,17 +263,18 @@ try {
     ['browserscan', 'https://www.browserscan.net/bot-detection'],
     ['godaddy', 'https://sso.godaddy.com/'],
   ] as const;
-  await browser.open({ mode: 'new-window', sessionId: 'made-up-ci-browser' });
+  // The person's open initializes this agent's profile; an agent open may only reuse it.
+  const opened = await browser.openForPerson({ mode: 'new-window', sessionId: PUBLIC_CHROME_CHAT });
+  assert.equal(opened.profile?.id, 'agent-made-up-ci-agent');
+  await browser.open({ mode: 'new-window', sessionId: PUBLIC_CHROME_CHAT });
   const handover = new BrowserHandover(
-    browser.personSession('made-up-ci-browser'),
+    browser.personSession(PUBLIC_CHROME_CHAT),
     signIns,
     () => process.env.DORK_HOME!
   );
   handover.useOutsideTurnCheck(async () => null);
   for (const [name, url] of pages) {
-    const page = await browserProofPage(
-      browser.personSession('made-up-ci-browser').pageConnection()
-    );
+    const page = await browserProofPage(browser.personSession(PUBLIC_CHROME_CHAT).pageConnection());
     assert(context, 'The chat must have its launched context');
     assert.deepEqual(
       context.pages(),
@@ -342,7 +344,7 @@ try {
     await recordTitle(`${name}-agent-native`);
     receipt = undefined;
     const agentPages = new Set(context?.pages() ?? []);
-    const { handoffId } = await handover.ask('made-up-ci-browser', 'wall');
+    const { handoffId } = await handover.ask(PUBLIC_CHROME_CHAT, 'wall');
     const text = await pixels(`${name}-person`, (text) =>
       name === 'echo'
         ? text.includes('Made-up browser check')
@@ -443,6 +445,6 @@ try {
     run().catch((error: unknown) => console.error(`cleanup ${step}: ${String(error)}`));
   signIns.done();
   if (plain) await cleanup('sign-in window', () => plain!.exited);
-  await cleanup('browser', () => browser.closeAll());
+  await cleanup('browser', () => fixture.close());
   await new Promise<void>((resolve) => echo.close(() => resolve()));
 }
