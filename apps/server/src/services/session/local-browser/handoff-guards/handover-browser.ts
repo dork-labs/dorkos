@@ -8,6 +8,7 @@ import { LocalBrowserError } from '../errors.js';
 import type {
   LocalBrowserHistoryDirection,
   LocalBrowserOpen,
+  LocalBrowserSignInRequest,
   LocalBrowserState,
 } from '@dorkos/shared/local-browser';
 
@@ -42,4 +43,14 @@ export function assertHandoffProfileExists(
 ): void {
   if (profileId !== null && !browser.profileExists(profileId))
     throw new LocalBrowserError('profile_not_found', 'That browser profile no longer exists.');
+}
+
+/** Resolve a pending sign-in reservation without reading any page. */
+export function signInProfile(
+  input: LocalBrowserSignInRequest,
+  current: string | null,
+  handoff?: { profileId: string | null } | null
+): string | null {
+  if ('handoffId' in input) return handoff ? handoff.profileId : current;
+  return input.profileId === 'default' ? null : (input.profileId ?? current);
 }

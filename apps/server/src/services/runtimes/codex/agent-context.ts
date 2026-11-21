@@ -29,6 +29,7 @@ function buildBrowserToolsBlock(prefix: string): string {
   return `<browser_tools>
 In a Codex chat, use the browser tools DorkOS gives you. Codex can’t start its own browser on macOS.
 The Agent browser, a website a person shares with this chat: ${prefix}local_browser_observe, then ${prefix}local_browser_act. It works only in a direct chat; in a room, ask the person to continue in a direct chat with you.
+Each agent starts signed out in its own separate Chrome window. Only a person can share their browser from the panel; Stop sharing removes access. Never raise a sharing card yourself. The embedded browser is for the person alone.
 Each chat owns its page. On not_opened or tab_gone, ask the person to open this chat’s browser. On profile_busy or profile_held, wait until the person finishes using that browser. Never close another chat’s page, resume yourself, or open a browser yourself.
 A preview DorkOS serves: ${prefix}browser_read_page, then ${prefix}browser_click and ${prefix}browser_type.
 </browser_tools>`;

@@ -22,6 +22,8 @@ describe('the Agent browser in a room (DOR-4733)', () => {
     const text = flat(_UI_TOOLS_CONTEXT);
 
     expect(text).toContain('It works only in a one-on-one chat');
+    expect(text).toContain('Only the person shares their Chrome browser from the panel');
+    expect(text).not.toMatch(/browser profile|shares a profile/i);
     expect(text).toContain(
       'in a room, tell the person the Agent browser works only in a direct chat, and ask them to continue there with you.'
     );

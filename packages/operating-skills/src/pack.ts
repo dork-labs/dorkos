@@ -461,8 +461,11 @@ export interface OperatingSkill {
  * - 66: `building-dorkos-apps` moves to App Builder Pack 1.1.6 (DOR-4854): what a held
  *   version looks like, and that app settings are the person's, set in Settings > Add-ons.
  *   An agent seeded at 65 would not know where a person sets an app's data folder.
+ * - 67: `using-the-agent-browser` teaches separate signed-out profiles per agent,
+ *   person-only sharing and own-window agent pages while retaining per-chat leases.
+ *   An agent seeded at 66 would still expect the person’s default browser.
  */
-export const OPERATING_SKILLS_VERSION = 66;
+export const OPERATING_SKILLS_VERSION = 67;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

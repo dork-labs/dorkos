@@ -103,9 +103,8 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
   },
   {
     name: 'Agent browser',
-    // One default profile, said here because an agent holding other browser
-    // tools (a person's Chrome MCP servers) called those "profiles" (DOR-4633).
-    can: "drive shared pages (Browser, + menu); ask for one, never send them to a terminal. One default profile; other browser tools aren't profiles.",
+    // Distinguish browser sign-ins without teaching named profiles (DOR-3219, DOR-4633).
+    can: 'own signed-out Chrome; person shares: Browser (+). Stop sharing revokes. Other tools: own sign-ins; never send them to a terminal.',
     covers: ['local_browser.', 'mcp.browser_preset'],
     areas: [],
     gate: 'a person shares it',
