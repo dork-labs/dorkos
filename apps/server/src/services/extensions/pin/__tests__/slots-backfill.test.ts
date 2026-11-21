@@ -268,20 +268,19 @@ describe('backfillSlotlessApprovals', () => {
     expect(stored().approvedPermissions!.notes).toBeUndefined();
   });
 
-  it("gives an agent's own approval its places only under Trusted, as today's path would", () => {
+  it("never gives an agent's own approval places, even under Trusted", () => {
+    // Today's path gives a marked turn a card, and the stored approval cannot
+    // show its turn was unmarked, so it asks (Security, DOR-4891).
     const agentMade = {
       notes: { path: APP_PATH, digest: DIGEST, autoApprovedBy: 'create_extension' as const },
     };
-    // Trusted (the default): `create_extension` records every declared place
-    // without asking, so parity gives them.
     storePre4282Approval({ approvedSources: agentMade });
-    expect(backfill([copy()])).toEqual(['notes']);
+    expect(configManager.get('permissions').preset).not.toBe('careful');
 
-    // Careful: that path waits for a person, so the places ask.
-    configManager.set('permissions', { ...configManager.get('permissions'), preset: 'careful' });
-    storePre4282Approval({ approvedSources: agentMade });
     expect(backfill([copy()])).toEqual([]);
+
     expect(stored().approvedPermissions!.notes).toBeUndefined();
+    expect(backfillEntries()).toHaveLength(0);
   });
 
   it('skips an id the migration did not list', () => {

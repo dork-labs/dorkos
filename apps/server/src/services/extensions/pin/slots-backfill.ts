@@ -43,12 +43,16 @@
  * 5. **Visible.** One config write for the lot, and one audit entry per app
  *    naming the app and its places ({@link SLOTS_BACKFILLED_SUMMARY}).
  *
- * An approval no person gave (`autoApprovedBy: 'create_extension'`) gets places
- * only where today's path would give them without asking: that path records
- * every declared place, `slots` included, but only under the Trusted preset
- * (`extension-scaffold-approval.ts`, the posture check, then the write of
- * `declaredSet`). Under Careful it waits for a person, so such an approval
- * is left alone and its places ask (Security, DOR-4891).
+ * An approval no person gave (`autoApprovedBy: 'create_extension'`) never gets
+ * places. Today's path records an agent's own new app with its places only
+ * when that agent is at Full, under no ceiling, and its turn read no outside
+ * words (`runtimes/claude-code/mcp-tools/extension-create-tool.ts`, the
+ * `approves` check); a marked turn gets a card. The stored approval records
+ * none of that, so an old one cannot show its turn was unmarked, and its
+ * places ask (Security, DOR-4891). An accepted residual: an agent's own
+ * approval written before `autoApprovedBy` was recorded (Oct 14 to Nov 11,
+ * 2026) is stored exactly like a person's yes, so it is treated as one. It
+ * gains only places it already showed in, and its audit entry names them.
  *
  * An app still on grace for places it never declared (`isolation/place-grace.ts`)
  * is left alone too: recording places ends that grace, which would take its
@@ -67,7 +71,6 @@ import {
   type ExtensionRecord,
 } from '@dorkos/extension-api';
 import type { ApprovedPermissionSet } from '@dorkos/shared/config-schema';
-import { trustPosture } from '@dorkos/shared/permissions';
 import { auditTrail, recordAudit } from '../../audit/audit-trail.js';
 import { configManager } from '../../core/config-manager.js';
 import { logConfigWrite } from '../../core/operator/config-write.js';
@@ -132,14 +135,11 @@ export type DigestsBeforeScan = Readonly<Record<string, string | undefined>>;
  * @param record - A copy this scan found.
  * @param stored - `config.extensions`.
  * @param pinnedBefore - The digest each approval held before this scan.
- * @param trusted - Whether the Trusted preset is on, so an agent's own
- *   approval would record its places without asking today.
  */
 function backfilledSlotsOf(
   record: ExtensionRecord,
   stored: StoredExtensions,
-  pinnedBefore: DigestsBeforeScan,
-  trusted: boolean
+  pinnedBefore: DigestsBeforeScan
 ): ExtensionContributionKey[] | null {
   if (!(stored.legacySlotless ?? []).includes(record.id)) return null;
   if (record.origin !== 'user' || record.devLink) return null;
@@ -154,8 +154,8 @@ function backfilledSlotsOf(
   if (!source?.digest || source.devLink) return null;
   // Pinned before this scan: never a pin this scan wrote to whatever it found.
   if (pinnedBefore[record.id] !== source.digest) return null;
-  // Parity with today's agent approval, which records places only under Trusted.
-  if (source.autoApprovedBy && !trusted) return null;
+  // An agent's own approval cannot show its turn was unmarked: it asks.
+  if (source.autoApprovedBy) return null;
   // Rule 1: pinned to these very files, found at this copy's path and plugin.
   if (!isApprovedByDigest(record, stored)) return null;
   if (!mayRunExtensionCode(record, stored)) return null;
@@ -183,13 +183,12 @@ export function backfillSlotlessApprovals(
 ): string[] {
   const before = configManager.get('extensions');
   if (!before.legacySlotless?.length) return [];
-  const trusted = trustPosture(configManager.get('permissions')?.preset) === 'trusted';
   const permissions = before.approvedPermissions ?? {};
   const additions: Record<string, ApprovedPermissionSet> = {};
   const given: { record: ExtensionRecord; slots: ExtensionContributionKey[] }[] = [];
   for (const record of records) {
     if (record.id in additions) continue;
-    const slots = backfilledSlotsOf(record, before, pinnedBefore, trusted);
+    const slots = backfilledSlotsOf(record, before, pinnedBefore);
     if (!slots) continue;
     additions[record.id] = { ...(permissions[record.id] ?? FULL_IN_PROCESS), slots };
     given.push({ record, slots });
