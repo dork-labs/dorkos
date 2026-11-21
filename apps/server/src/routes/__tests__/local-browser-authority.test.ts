@@ -65,7 +65,6 @@ const service = {
   personSession: vi.fn((id: string | null) => ({ handover: selectedControls.get(id) ?? spies })),
   profileRemoval: {
     forget: spies.forgetProfile,
-    forgetAll: spies.forgetProfile,
     delete: spies.deleteProfile,
   },
   capabilities: spies.capabilities,
@@ -101,6 +100,7 @@ const listener = honoGroupListener(
         })),
         list: vi.fn(() => []),
         create: vi.fn(),
+        ensure: vi.fn(),
         isBound: vi.fn(),
         bind: vi.fn(),
         unbind: vi.fn(),
@@ -418,6 +418,48 @@ it.each([
   }
 });
 
+// Grants never accept an agent header, approval token or API-key caller, even with login off.
+const PERSON_ONLY_GRANTS = ['/profiles/11111111-1111-4111-8111-111111111111/agents'] as const;
+it.each(PERSON_ONLY_GRANTS)(
+  'keeps %s person-only without raising a confirmation card',
+  async (path) => {
+    login.on = false;
+    try {
+      for (const headers of [{ 'X-DorkOS-Agent': '' }, { 'X-DorkOS-Approval': 'example' }]) {
+        const response = await request(server)
+          .post('/api/local-browser' + path)
+          .set('Host', 'localhost')
+          .set(headers)
+          .send({ agentId: 'atlas' });
+        expect(response.status).toBe(403);
+        expect(response.body).not.toHaveProperty('heldActionId');
+      }
+    } finally {
+      login.on = true;
+    }
+  }
+);
+it('keeps unsharing person-only for agent, approval-token and API-key callers', async () => {
+  login.on = false;
+  try {
+    for (const headers of [{ 'X-DorkOS-Agent': '' }, { 'X-DorkOS-Approval': 'example' }]) {
+      const response = await request(server)
+        .delete('/api/local-browser/profiles/default/agents/atlas?sessionId=chat-atlas')
+        .set('Host', 'localhost')
+        .set(headers);
+      expect(response.status).toBe(403);
+      expect(response.body).not.toHaveProperty('heldActionId');
+    }
+    user.credential = 'api-key';
+    const response = await request(server)
+      .delete('/api/local-browser/profiles/default/agents/atlas?sessionId=chat-atlas')
+      .set('Host', 'localhost');
+    expect(response.status).toBe(403);
+    expect(response.body).not.toHaveProperty('heldActionId');
+  } finally {
+    login.on = true;
+  }
+});
 // DOR-4731: Done signing in quits only the sign-in window DorkOS opened. It names the
 // handoff it answers and nothing else: never a window, a process or a page.
 describe('POST /sign-in/done', () => {

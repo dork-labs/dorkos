@@ -1,5 +1,5 @@
 /** Profile-owned browsers with chat-scoped Page sessions. */
-import type { LocalBrowserOpen } from '@dorkos/shared/local-browser';
+import type { LocalBrowserOpen, LocalBrowserProfileChoice } from '@dorkos/shared/local-browser';
 import type { CloudOriginEntry } from '@dorkos/shared/cloud-origin';
 import type { EmbeddedBrowserPort } from './desktop-bridge.js';
 import type { LocalBrowserAuditWriter } from './action-audit.js';
@@ -25,6 +25,7 @@ import { BrowserProfileRemoval } from './profile-removal/index.js';
 import { AgentWindowNames } from './agent-window/index.js';
 import { BROWSER_PROFILES_FOLDER } from './profile-folders.js';
 import path from 'node:path';
+import { prepareBrowserOpen } from './agent-profiles/open-profile.js';
 export { LocalBrowserError } from './errors.js';
 export type { EmbeddedBrowserPort } from './desktop-bridge.js';
 
@@ -34,6 +35,19 @@ export class LocalBrowserService {
   private readonly openingChats = new Set<string | null>();
   private readonly retired = new Set<LocalBrowserPageSession>();
   private stopping = false;
+  private readonly selecting = new Map<string | null, AbortController>();
+  private readonly profileChoices = new Map<string | null, LocalBrowserProfileChoice>();
+  private profileSelection?: (input: LocalBrowserOpen) => Promise<LocalBrowserProfileChoice>;
+  private personProfileSelection?: (input: LocalBrowserOpen) => Promise<LocalBrowserProfileChoice>;
+
+  /** Read-only selection is distinct from person-only profile creation and binding. */
+  useProfileSelection(
+    select: (input: LocalBrowserOpen) => Promise<LocalBrowserProfileChoice>,
+    initialize?: (input: LocalBrowserOpen) => Promise<LocalBrowserProfileChoice>
+  ): void {
+    this.profileSelection = select;
+    this.personProfileSelection = initialize ?? select;
+  }
   private readonly connections: BrowserProfileConnections;
   private profileWiring?: Parameters<BrowserProfileAccessGate['use']>;
   readonly handover: BrowserHandoverPool;
@@ -59,6 +73,7 @@ export class LocalBrowserService {
       this.connections.holds(
         path.join(this.dataDirectory, BROWSER_PROFILES_FOLDER, id ?? 'default')
       ),
+    revoke: (id) => this.revokeProfileAccess(id ?? 'default'),
     forgotten: (id) => this.handover.forgetProfileState(id),
     embedded: () => this.embedded,
   });
@@ -110,7 +125,9 @@ export class LocalBrowserService {
     return session;
   }
   async personState(sessionId: string | null) {
-    return this.findSession(sessionId)?.handover.state() ?? emptyBrowserPersonState();
+    const state = await (this.findSession(sessionId)?.handover.state() ??
+      emptyBrowserPersonState());
+    return { ...state, profile: this.profileChoices.get(sessionId) };
   }
 
   private createSession(sessionId: string | null): LocalBrowserPageSession {
@@ -140,7 +157,11 @@ export class LocalBrowserService {
           removal: this.profileRemoval,
           names: this.windowNames,
           leaseAudit: this.leaseAudit,
-          closed: () => this.retired.delete(session!),
+          profile: () => this.profileChoices.get(sessionId),
+          closed: () => {
+            this.retired.delete(session!);
+            this.selecting.get(sessionId)?.abort();
+          },
           assertAgentAction: () => {
             this.handover.refuseWhileSigningIn(sessionId);
             if (this.profileSiblings(session!).some((other) => other.personHeld()))
@@ -189,6 +210,8 @@ export class LocalBrowserService {
 
   /** Reserve before delegating, including awaits inside handoff preparation. */
   private async opening(input: LocalBrowserOpen, person: boolean) {
+    // Forget fences profile selection and creation as well as page acquisition.
+    this.profileRemoval.assertAvailable();
     if (this.stopping)
       throw new LocalBrowserError('closing', 'The browser is closing. Wait a moment.');
     const id = input.sessionId ?? null;
@@ -209,8 +232,31 @@ export class LocalBrowserService {
     this.openingChats.add(id);
     try {
       const target = session ?? this.createSession(id);
-      return await (person ? target.handover.open(input) : target.open(input));
+      const abort = new AbortController();
+      this.selecting.set(id, abort);
+      const prepared = await prepareBrowserOpen(
+        input,
+        {
+          select: person ? this.personProfileSelection : this.profileSelection,
+          exists: (profile) => target.profileExists(profile),
+        },
+        {
+          embedded: Boolean(this.embedded),
+          capabilities: this.capabilities(),
+          signInHoldsProfile: (profile) =>
+            this.pageSessions().some((session) => session.handover.signInHoldsProfile(profile)),
+        }
+      );
+      if (abort.signal.aborted || this.stopping)
+        throw new LocalBrowserError('cancelled', 'The browser opening was cancelled.');
+      this.selecting.delete(id);
+      const state = await (person
+        ? target.handover.open(prepared.input)
+        : target.open(prepared.input));
+      if (prepared.profile) this.profileChoices.set(id, prepared.profile);
+      return { ...state, profile: prepared.profile };
     } finally {
+      this.selecting.delete(id);
       this.openingChats.delete(id);
     }
   }
@@ -233,7 +279,9 @@ export class LocalBrowserService {
   async revokeProfileAccess(profileId: string, agentId?: string): Promise<void> {
     await Promise.all(
       this.pageSessions()
-        .filter((session) => session.matchesProfileGrant(profileId, agentId))
+        .filter((session) =>
+          session.matchesProfileGrant(profileId === 'default' ? null : profileId, agentId)
+        )
         .map((session) => session.revoke())
     );
   }
@@ -241,6 +289,8 @@ export class LocalBrowserService {
   async sessionRemoved(sessionId: string): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (!session) return;
+    this.selecting.get(sessionId)?.abort();
+    this.profileChoices.delete(sessionId);
     this.sessions.delete(sessionId);
     this.retired.add(session);
     try {
@@ -253,6 +303,7 @@ export class LocalBrowserService {
   /** Host shutdown revokes every lease and attempts every physical profile, including unowned pages. */
   async closeAll(): Promise<void> {
     this.stopping = true;
+    for (const abort of this.selecting.values()) abort.abort();
     const results = await Promise.allSettled([
       ...this.pageSessions().map((session) => session.disconnect()),
       this.connections.closeAll(),

@@ -173,9 +173,8 @@ export class LocalBrowserPageSession {
       shared?.removal ?? pageSessionProfileRemoval(dataDirectory, this, embedded);
   }
 
-  capabilities(): LocalBrowserCapabilities {
-    return localBrowserCapabilities(Boolean(this.embedded), this.hostFacts());
-  }
+  capabilities = (): LocalBrowserCapabilities =>
+    localBrowserCapabilities(Boolean(this.embedded), this.hostFacts());
 
   /** The person's view, with whether Back and Forward have a page to go to (DOR-4449). */
   async state(): Promise<LocalBrowserState> {
@@ -191,6 +190,7 @@ export class LocalBrowserPageSession {
     this.syncTabs();
     return this.pageState.describe(
       {
+        profile: this.shared?.profile?.(),
         connectionId: this.connectionId,
         sessionId: this.sessionId,
         mode: this.mode,
@@ -254,7 +254,10 @@ export class LocalBrowserPageSession {
           );
           this.ownedContext.on('close', () => this.closed(connectionId));
         } else {
-          const bridge = await this.embedded!.open(connectionId);
+          const bridge = await this.embedded!.open(connectionId, {
+            sessionId: this.sessionId,
+            profileId: this.profileId,
+          });
           this.embeddedClose = bridge.close;
           setupAbort.signal.throwIfAborted();
           this.embeddedAttachment = new EmbeddedBrowserAttachment(bridge, this.backend, () =>
@@ -328,12 +331,10 @@ export class LocalBrowserPageSession {
     );
   }
 
-  matchesProfileGrant(profileId: string, agentId?: string): boolean {
+  matchesProfileGrant(profileId: string | null, agentId?: string): boolean {
     return this.authority.matches(profileId, agentId);
   }
-  assertAuthorityCurrent(): void {
-    this.authority.assertCurrent();
-  }
+  assertAuthorityCurrent = (): void => this.authority.assertCurrent();
 
   /** Revoke before awaiting cleanup; person custody never becomes an agent grant again. */
   async revoke(): Promise<void> {
