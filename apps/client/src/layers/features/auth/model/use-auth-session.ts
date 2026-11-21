@@ -22,6 +22,7 @@ import {
 import { useAuthClient } from './auth-client-context';
 import type { AuthError, AuthSession, AuthUser } from './auth-client';
 import { confirmItsYou } from './confirm-its-you';
+import { runPasskeyCheck } from '../lib/passkey-ceremony';
 
 /**
  * Everything a sign-in or sign-out may safely re-read.
@@ -86,18 +87,25 @@ interface AuthActionState<Args extends unknown[]> {
  * Sign in with email + password. On success clears the auth-required signal and
  * refetches session + config so gated data reloads behind the (now valid) cookie.
  */
-export function useSignIn(): AuthActionState<[email: string, password: string]> {
+export function useSignIn(): AuthActionState<[email: string, password: string, totpCode?: string]> {
   const client = useAuthClient();
   const queryClient = useQueryClient();
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<AuthError | null>(null);
 
   const run = useCallback(
-    async (email: string, password: string): Promise<AuthActionResult> => {
+    async (email: string, password: string, totpCode?: string): Promise<AuthActionResult> => {
       setIsPending(true);
       setError(null);
       invalidateProtectedCommunityState(queryClient);
-      const { error: err } = await client.signIn.email({ email, password });
+      // From another device, once the owner has a second factor, the
+      // authenticator code rides with the password (DOR-3647); the server
+      // reads it before the password is checked.
+      const { error: err } = await client.signIn.email({
+        email,
+        password,
+        ...(totpCode ? ({ totpCode } as Record<string, string>) : {}),
+      });
       if (err) {
         setIsPending(false);
         setError(err);
@@ -117,6 +125,148 @@ export function useSignIn(): AuthActionState<[email: string, password: string]> 
   );
 
   return { run, isPending, error, reset: () => setError(null) };
+}
+
+/**
+ * Sign the owner in with a passkey, no password (DOR-3647). Runs the passkey
+ * check the server asks for in this browser.
+ */
+export function usePasskeySignIn(): AuthActionState<[]> {
+  const queryClient = useQueryClient();
+  const [isPending, setIsPending] = useState(false);
+  const [error, setError] = useState<AuthError | null>(null);
+
+  const run = useCallback(async (): Promise<AuthActionResult> => {
+    setIsPending(true);
+    setError(null);
+    const fail = (message: string): AuthActionResult => {
+      const err: AuthError = { message, status: 401 };
+      setIsPending(false);
+      setError(err);
+      return { ok: false, error: err };
+    };
+    try {
+      invalidateProtectedCommunityState(queryClient);
+      const asked = await postSignIn('/owner-sign-in/passkey/options', {});
+      if (!asked.ok) return fail('No passkey for this address. Use your authenticator app.');
+      const response = await runPasskeyCheck(asked.body.options);
+      const done = await postSignIn('/owner-sign-in/passkey/finish', { response });
+      if (!done.ok) return fail('The passkey didn’t go through. Try again.');
+    } catch {
+      return fail('The passkey didn’t go through. Try again.');
+    }
+    setIsPending(false);
+    resumeBootCacheAfterSignIn(queryClient);
+    setAuthRequired(false);
+    await queryClient.invalidateQueries({ predicate: refetchableOnAuthChange });
+    return { ok: true };
+  }, [queryClient]);
+
+  return { run, isPending, error, reset: () => setError(null) };
+}
+
+/** Where a Wi-Fi sign-in by code stands (DOR-4744). */
+export type WifiCodeSignInStep = 'idle' | 'asking' | 'waiting' | 'signing-in';
+
+/** What {@link useWifiCodeSignIn} hands the screen. */
+export interface WifiCodeSignIn {
+  readonly step: WifiCodeSignInStep;
+  /** The short code this device shows, to match on the computer. */
+  readonly matchCode: string | null;
+  /** What the computer calls this device ("Safari on iPhone"). */
+  readonly deviceName: string | null;
+  /** A sentence to show, when the last call did not work. */
+  readonly error: string | null;
+  /** Ask the computer DorkOS runs on to approve this device. */
+  ask(): Promise<void>;
+  /** Type the code it showed. */
+  finish(code: string): Promise<boolean>;
+  /** Start again, dropping the request. */
+  reset(): void;
+}
+
+/** POST JSON to a sign-in route and read its answer. */
+async function postSignIn(
+  path: string,
+  body: Record<string, unknown>
+): Promise<{ ok: boolean; status: number; body: Record<string, unknown> }> {
+  const res = await fetch(`/api${path}`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const parsed = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  return { ok: res.ok, status: res.status, body: parsed };
+}
+
+/**
+ * Sign this device in over Wi-Fi: ask the computer DorkOS runs on, then type
+ * the one-time code the owner sees there after approving (DOR-4744). Wi-Fi
+ * takes no password.
+ */
+export function useWifiCodeSignIn(): WifiCodeSignIn {
+  const queryClient = useQueryClient();
+  const [step, setStep] = useState<WifiCodeSignInStep>('idle');
+  const [error, setError] = useState<string | null>(null);
+  const [requestId, setRequestId] = useState<string | null>(null);
+  const [matchCode, setMatchCode] = useState<string | null>(null);
+  const [deviceName, setDeviceName] = useState<string | null>(null);
+
+  const ask = useCallback(async () => {
+    setStep('asking');
+    setError(null);
+    const res = await postSignIn('/wifi-sign-in/start', {}).catch(() => null);
+    if (!res?.ok || typeof res.body.requestId !== 'string') {
+      setStep('idle');
+      setError(
+        res?.status === 429
+          ? 'Too many sign-in requests. Try again in a few minutes.'
+          : 'Couldn’t reach the computer. Check you’re on the same Wi-Fi.'
+      );
+      return;
+    }
+    setRequestId(res.body.requestId);
+    setMatchCode(typeof res.body.matchCode === 'string' ? res.body.matchCode : null);
+    setDeviceName(typeof res.body.deviceName === 'string' ? res.body.deviceName : null);
+    setStep('waiting');
+  }, []);
+
+  const finish = useCallback(
+    async (code: string) => {
+      if (!requestId) return false;
+      setStep('signing-in');
+      setError(null);
+      invalidateProtectedCommunityState(queryClient);
+      const res = await postSignIn('/wifi-sign-in/finish', { requestId, code }).catch(() => null);
+      if (!res?.ok) {
+        const tooMany = res?.status === 429;
+        setStep(tooMany ? 'idle' : 'waiting');
+        if (tooMany) setRequestId(null);
+        setError(
+          tooMany
+            ? 'Too many tries. Ask for a new code.'
+            : 'That code didn’t match. Check it and try again.'
+        );
+        return false;
+      }
+      resumeBootCacheAfterSignIn(queryClient);
+      setAuthRequired(false);
+      await queryClient.invalidateQueries({ predicate: refetchableOnAuthChange });
+      return true;
+    },
+    [queryClient, requestId]
+  );
+
+  const reset = useCallback(() => {
+    setRequestId(null);
+    setMatchCode(null);
+    setDeviceName(null);
+    setError(null);
+    setStep('idle');
+  }, []);
+
+  return { step, matchCode, deviceName, error, ask, finish, reset };
 }
 
 /** The query parameter a failed DorkOS sign-in comes back with. */

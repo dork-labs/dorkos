@@ -24,6 +24,7 @@ import { decideMcpAuth } from '../../../../middleware/mcp-auth.js';
 import { createApiApp } from '../../../../http/api-chain.js';
 import { mountBetterAuth } from '../../../../http/better-auth.js';
 import { createStepUpRoutes } from '../../../../routes/step-up.js';
+import { wifiSignInCookie } from './wifi-test-sign-in.js';
 import { confirmAuthFixture } from './confirm-write.js';
 import { frontDoorListener } from '../../../../http/front-door.js';
 import { MainRequestAdmission } from '../../lifecycle/main-request-admission.js';
@@ -103,6 +104,10 @@ function headersVia(ingress: RequestIngress, cookie: string): Record<string, str
 
 /** Sign in through one route; returns the cookie pairs it set. */
 async function signInVia(ingress: RequestIngress): Promise<string> {
+  // Wi-Fi takes no password; a device signs in by code (DOR-4744).
+  if (ingress === 'wifi') {
+    return wifiSignInCookie(getAuth()!, String(headersVia(ingress, '').host ?? ''));
+  }
   const res = await request(target.server)
     .post('/api/auth/sign-in/email')
     .set(headersVia(ingress, ''))

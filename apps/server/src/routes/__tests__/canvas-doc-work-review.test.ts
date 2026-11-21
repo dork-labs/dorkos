@@ -36,7 +36,8 @@ import { DocWorkReview } from '../../services/canvas/doc-channel/route-controls/
 import { decideAsPerson } from '../../services/canvas/doc-channel/route-controls/person-decision.js';
 import { DocChannelNotFoundError } from '../../services/canvas/doc-channel/authorization.js';
 import { ApprovalService } from '../../services/core/approvals/approval-service.js';
-import { initAuth, readOwnerAccount } from '../../services/core/auth/index.js';
+import { getAuth, initAuth, readOwnerAccount } from '../../services/core/auth/index.js';
+import { wifiSignInCookie } from '../../services/core/auth/__tests__/wifi-test-sign-in.js';
 import { configManager, initConfigManager } from '../../services/core/config-manager.js';
 import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import {
@@ -444,13 +445,8 @@ describe('document work review over the mounted app', () => {
   it('lets a person replay and clear from Wi-Fi: one run under an allowed route', async () => {
     allowTasks();
     const expired = await work('expired');
-    const signIn = await request(server)
-      .post('/api/auth/sign-in/email')
-      .set('Origin', origin)
-      .set('x-test-ingress', 'wifi')
-      .send(ACCOUNT);
-    expect(signIn.status).toBe(200);
-    const wifi = signIn.headers['set-cookie'] as unknown as string[];
+    // Wi-Fi takes no password; a device signs in by code (DOR-4744).
+    const wifi = (await wifiSignInCookie(getAuth()!, 'localhost')).split('; ');
     const replayed = await act(expired, 'replay').set('x-test-ingress', 'wifi').set('Cookie', wifi);
     expect(replayed.status).toBe(200);
     const pending = replayed.body.nextBatchId as string;
@@ -466,13 +462,8 @@ describe('document work review over the mounted app', () => {
   it('runs in-doubt work again from Wi-Fi once the person confirms it may repeat', async () => {
     allowTasks();
     const uncertain = await work('in_doubt');
-    const signIn = await request(server)
-      .post('/api/auth/sign-in/email')
-      .set('Origin', origin)
-      .set('x-test-ingress', 'wifi')
-      .send(ACCOUNT);
-    expect(signIn.status).toBe(200);
-    const wifi = signIn.headers['set-cookie'] as unknown as string[];
+    // Wi-Fi takes no password; a device signs in by code (DOR-4744).
+    const wifi = (await wifiSignInCookie(getAuth()!, 'localhost')).split('; ');
     const unconfirmed = await act(uncertain, 'replay')
       .set('x-test-ingress', 'wifi')
       .set('Cookie', wifi);

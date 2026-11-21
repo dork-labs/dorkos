@@ -1,0 +1,165 @@
+/**
+ * @vitest-environment jsdom
+ *
+ * Settings › Signing in from other devices (DOR-3647): the owner's passkeys
+ * and authenticator apps.
+ */
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { createMockTransport } from '@dorkos/test-utils/mock-factories';
+
+import { TransportProvider } from '@/layers/shared/model';
+import { OwnerFactorsSection } from '../ui/OwnerFactorsSection';
+
+function setup() {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const transport = createMockTransport();
+  render(
+    <QueryClientProvider client={queryClient}>
+      <TransportProvider transport={transport}>
+        <OwnerFactorsSection />
+      </TransportProvider>
+    </QueryClientProvider>
+  );
+  return transport;
+}
+
+afterEach(() => cleanup());
+
+describe('OwnerFactorsSection', () => {
+  it('says when it is asked, and how to get back in', async () => {
+    setup();
+    expect(
+      await screen.findByText('Asked when you sign in from another device. Never at this computer.')
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Lost it? Sign in on the computer DorkOS runs on and remove it.')
+    ).toBeInTheDocument();
+  });
+
+  it('adds an authenticator app once one of its codes is confirmed', async () => {
+    const transport = setup();
+    fireEvent.click(await screen.findByRole('button', { name: 'Add an authenticator app' }));
+    expect(await screen.findByText('Scan this with your authenticator app.')).toBeInTheDocument();
+    expect(screen.getByText('ABCD EFGH')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Type the 6-digit code it shows.'), {
+      target: { value: '123456' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await waitFor(() =>
+      expect(transport.confirmAuthenticator).toHaveBeenCalledWith('f2', '123456')
+    );
+    await waitFor(() =>
+      expect(screen.queryByText('Scan this with your authenticator app.')).not.toBeInTheDocument()
+    );
+  });
+
+  it('lists each one with a way to remove it', async () => {
+    const transport = setup();
+    vi.mocked(transport.listOwnerFactors).mockResolvedValue({
+      factors: [
+        {
+          id: 'k1',
+          kind: 'passkey',
+          label: 'Laptop',
+          host: 'studio.example',
+          addedAt: '2026-11-20T00:00:00Z',
+          worksFromAway: true,
+        },
+      ],
+      everHadAway: true,
+    });
+    cleanup();
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <OwnerFactorsSection />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+    expect(await screen.findByText(/^Passkey · studio\.example · added/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Passkey' }));
+    expect(await screen.findByText('Remove this passkey?')).toBeInTheDocument();
+    expect(
+      screen.getByText('Other devices can’t sign in until you add another here.')
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    await waitFor(() => expect(transport.removeOwnerFactor).toHaveBeenCalledWith('k1', undefined));
+  });
+
+  it('a passkey that works only here sits under "On this computer", never as an away check', async () => {
+    const transport = setup();
+    vi.mocked(transport.listOwnerFactors).mockResolvedValue({
+      factors: [
+        {
+          id: 'k-here',
+          kind: 'passkey',
+          label: 'Desk',
+          host: 'localhost',
+          addedAt: '2026-11-20T00:00:00Z',
+          worksFromAway: false,
+        },
+      ],
+      everHadAway: false,
+    });
+    cleanup();
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <OwnerFactorsSection />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+    const group = (await screen.findByText('On this computer')).parentElement!;
+    // The heading already says where it works, so the row doesn't repeat it.
+    expect(group).toHaveTextContent(/Passkey · added/);
+    expect(group).not.toHaveTextContent('localhost');
+    // Never having had an away check, the away group adds no empty line.
+    expect(
+      screen.queryByText('Other devices can’t sign in until you add one.')
+    ).not.toBeInTheDocument();
+    // Removing it says nothing about other devices: they never relied on it.
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Passkey' }));
+    expect(await screen.findByText('Remove this passkey?')).toBeInTheDocument();
+    expect(
+      screen.queryByText('Other devices can’t sign in until you add another here.')
+    ).not.toBeInTheDocument();
+  });
+
+  it('once an away check existed and none is left, the away group says other devices wait', async () => {
+    const transport = setup();
+    vi.mocked(transport.listOwnerFactors).mockResolvedValue({ factors: [], everHadAway: true });
+    cleanup();
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <OwnerFactorsSection />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+    expect(
+      await screen.findByText('Other devices can’t sign in until you add one.')
+    ).toBeInTheDocument();
+    expect(screen.queryByText('On this computer')).not.toBeInTheDocument();
+  });
+
+  it('shows nothing to a caller the server will not show them to', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const transport = createMockTransport();
+    vi.mocked(transport.listOwnerFactors).mockRejectedValue(
+      Object.assign(new Error('no'), { status: 403 })
+    );
+    const { container } = render(
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>
+          <OwnerFactorsSection />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+    await waitFor(() => expect(container).toBeEmptyDOMElement());
+  });
+});

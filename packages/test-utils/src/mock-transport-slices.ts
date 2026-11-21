@@ -57,6 +57,16 @@ type SliceMethods =
   | 'listSignedInDevices'
   | 'signOutDevice'
   | 'signOutEverywhereElse'
+  | 'setDeviceRunsAgents'
+  | 'listWifiSignInRequests'
+  | 'approveWifiSignIn'
+  | 'declineWifiSignIn'
+  | 'listOwnerFactors'
+  | 'startAddingPasskey'
+  | 'finishAddingPasskey'
+  | 'startAddingAuthenticator'
+  | 'confirmAuthenticator'
+  | 'removeOwnerFactor'
   | 'setAccountNoAutoMove'
   | 'getFrameBridgeStatus'
   | 'getAgentLevel'
@@ -108,6 +118,21 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
     listSignedInDevices: vi.fn().mockResolvedValue({ sessions: [], canSignOutOthers: false }),
     signOutDevice: vi.fn().mockResolvedValue(undefined),
     signOutEverywhereElse: vi.fn().mockResolvedValue({ signedOut: 0 }),
+    // No device is waiting, and every change succeeds.
+    setDeviceRunsAgents: vi.fn().mockResolvedValue({ kind: 'done' }),
+    listWifiSignInRequests: vi.fn().mockResolvedValue({ requests: [] }),
+    approveWifiSignIn: vi.fn().mockResolvedValue({ kind: 'needs-passkey' }),
+    declineWifiSignIn: vi.fn().mockResolvedValue(undefined),
+    // No sign-in checks yet; adding one succeeds.
+    listOwnerFactors: vi.fn().mockResolvedValue({ factors: [], everHadAway: false }),
+    startAddingPasskey: vi.fn().mockResolvedValue({ kind: 'options', options: {} }),
+    finishAddingPasskey: vi.fn().mockResolvedValue({ id: 'f1', host: 'localhost' }),
+    startAddingAuthenticator: vi.fn().mockResolvedValue({
+      kind: 'started',
+      pending: { id: 'f2', secret: 'ABCDEFGH', uri: 'otpauth://totp/DorkOS' },
+    }),
+    confirmAuthenticator: vi.fn().mockResolvedValue({ id: 'f2' }),
+    removeOwnerFactor: vi.fn().mockResolvedValue({ kind: 'done' }),
     listAuditEvents: vi.fn().mockResolvedValue({ events: [] }),
     getAccountTimeline: vi.fn().mockResolvedValue({ events: [] }),
     getChatActivity: vi.fn().mockResolvedValue({ sent: [], stops: [] }),

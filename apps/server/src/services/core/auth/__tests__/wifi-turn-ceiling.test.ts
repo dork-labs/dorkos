@@ -7,10 +7,39 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const owner = vi.hoisted(() => ({ id: 'owner-1' as string | null }));
+const store = vi.hoisted(() => ({ db: undefined as Db | undefined }));
 
 vi.mock('../index.js', () => ({
   readOwnerAccount: () => (owner.id ? { id: owner.id } : null),
+  readAuthDb: () => store.db,
 }));
+
+import { createDb, runMigrations, session, user, type Db } from '@dorkos/db';
+
+/** Wi-Fi sign-ins on the owner's account; `allowed` are the ones let run agents. */
+function seedSessions(allowed: readonly string[]): void {
+  const db = createDb(':memory:');
+  runMigrations(db);
+  const now = new Date();
+  db.insert(user)
+    .values({ id: 'owner-1', name: 'Owner', email: 'owner@dork.test', updatedAt: now })
+    .run();
+  for (const id of ['phone', 'laptop']) {
+    db.insert(session)
+      .values({
+        id,
+        token: `token-${id}`,
+        userId: 'owner-1',
+        route: 'wifi',
+        expiresAt: new Date(now.getTime() + 60 * 60 * 1000),
+        updatedAt: now,
+        lastActiveAt: now,
+        wifiAgentTurnsAt: allowed.includes(id) ? now : null,
+      })
+      .run();
+  }
+  store.db = db;
+}
 
 import type { RequestFacts } from '../../../../http/request-facts.js';
 import type { RequestUser } from '../session-gate.js';
@@ -48,13 +77,56 @@ function facts(
 
 beforeEach(() => {
   owner.id = 'owner-1';
+  seedSessions(['phone']);
 });
 
 afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe('the owner signed in on Wi-Fi is not held', () => {
+describe('a Wi-Fi device runs agents only once the owner allowed it at the computer', () => {
+  const fromAppPage = facts(OWNER_ON_WIFI, {
+    origin: `http://${HOST}`,
+    'sec-fetch-site': 'same-origin',
+  });
+
+  it('holds the owner sign-in from the app page while the device is not allowed', () => {
+    seedSessions([]);
+    expect(wifiTurnHeld(fromAppPage)).toBe(true);
+    expect(wifiTurnCeiling(fromAppPage)).toEqual({ permissionCeiling: WIFI_TURN_CEILING });
+  });
+
+  it('holds it with no page headers at all while the device is not allowed', () => {
+    seedSessions([]);
+    expect(wifiTurnHeld(facts(OWNER_ON_WIFI))).toBe(true);
+  });
+
+  it('allowing one device does not allow another', () => {
+    seedSessions(['laptop']);
+    expect(wifiTurnHeld(fromAppPage)).toBe(true);
+  });
+
+  it('an allowed device that sits idle for 12 hours is held again', () => {
+    seedSessions(['phone']);
+    const idleSince = new Date(Date.now() - 12 * 60 * 60 * 1000 - 1000);
+    store.db!.update(session).set({ lastActiveAt: idleSince, createdAt: idleSince }).run();
+    expect(wifiTurnHeld(fromAppPage)).toBe(true);
+  });
+
+  it('turning it off takes effect on the next turn', () => {
+    seedSessions(['phone']);
+    expect(wifiTurnHeld(fromAppPage)).toBe(false);
+    store.db!.update(session).set({ wifiAgentTurnsAt: null }).run();
+    expect(wifiTurnHeld(fromAppPage)).toBe(true);
+  });
+
+  it('holds a cookie whose session id is missing', () => {
+    const { sessionId: _sessionId, ...noSession } = OWNER_ON_WIFI;
+    expect(wifiTurnHeld(facts(noSession as RequestUser))).toBe(true);
+  });
+});
+
+describe('the owner signed in on Wi-Fi, on an allowed device, is not held', () => {
   it('runs a turn from the app page as at the desk', () => {
     const own = facts(OWNER_ON_WIFI, {
       origin: `http://${HOST}`,
