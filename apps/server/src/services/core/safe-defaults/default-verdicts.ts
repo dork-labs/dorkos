@@ -84,6 +84,9 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   // Absent by default: no old approval waits to be bound, so it binds nothing
   // and approves nothing (DOR-3068). Only the '0.126.1' migration writes it.
   'extensions.legacyUnsourced',
+  // Absent by default: no old approval waits for its places, so it gives none
+  // (DOR-4891). Only the '0.140.0' migration writes it.
+  'extensions.legacySlotless',
   'server.port',
   'server.cwd',
   'server.boundary',

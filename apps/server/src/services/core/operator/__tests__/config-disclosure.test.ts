@@ -371,6 +371,8 @@ describe('CONFIG_DISCLOSURE drift guard', () => {
       'extensions.dismissedApprovals',
       // The agent a mini app forwards the person's comments to (DOR-3325).
       'extensions.forwardAgents',
+      // The old approvals still waiting for their places (DOR-4891).
+      'extensions.legacySlotless',
       // The old approvals still waiting for a copy (DOR-3068).
       'extensions.legacyUnsourced',
       // Which rooms a mini app may reply in as the person (DOR-3017).

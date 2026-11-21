@@ -908,3 +908,43 @@ export function seedLoadGate(store: {
     },
   });
 }
+
+/**
+ * List every approved extension id whose stored permission set records no
+ * places (`slots`), as `extensions.legacySlotless` (DOR-4891). An approval
+ * given before places were recorded (DOR-4282) has none, and an absent entry
+ * is such an approval too. The first scan after start gives each listed id
+ * the places its approved files declare, where the old version showed them,
+ * when those files are unchanged (`pin/slots-backfill.ts`); nothing else ever
+ * reads the list, and that scan clears it.
+ *
+ * Runs once, on the upgrade, so the set it lists is exactly the approvals that
+ * predate this release. An existing list is left alone, so running it twice
+ * changes nothing; no list is written when no approval needs one.
+ *
+ * @param store - The conf store, narrowed to the two calls this needs.
+ */
+export function markSlotlessApprovals(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const extensions = store.get('extensions');
+  if (extensions === null || typeof extensions !== 'object' || Array.isArray(extensions)) return;
+  if (Array.isArray((extensions as { legacySlotless?: unknown }).legacySlotless)) return;
+  const approvedToRun = (extensions as { approvedToRun?: unknown }).approvedToRun;
+  if (!Array.isArray(approvedToRun)) return;
+  const stored = (extensions as { approvedPermissions?: unknown }).approvedPermissions;
+  const permissions =
+    stored !== null && typeof stored === 'object' && !Array.isArray(stored)
+      ? (stored as Record<string, unknown>)
+      : {};
+  const slotless = approvedToRun.filter((id): id is string => {
+    if (typeof id !== 'string') return false;
+    const entry = Object.hasOwn(permissions, id) ? permissions[id] : undefined;
+    return (
+      entry === undefined || (typeof entry === 'object' && entry !== null && !('slots' in entry))
+    );
+  });
+  if (slotless.length === 0) return;
+  store.set('extensions', { ...extensions, legacySlotless: [...new Set(slotless)] });
+}
