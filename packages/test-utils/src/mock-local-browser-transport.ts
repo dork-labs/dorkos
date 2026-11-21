@@ -18,6 +18,9 @@ export function createMockLocalBrowserTransport(): LocalBrowserTransport {
     takenOver: false,
   };
   return {
+    subscribeBrowserViewer: vi.fn().mockRejectedValue(new Error('Browser viewing is off')),
+    nextBrowserViewerFrame: vi.fn().mockRejectedValue(new Error('Browser viewing is off')),
+    closeBrowserViewer: vi.fn().mockResolvedValue(undefined),
     scanYourBrowsers: vi.fn().mockResolvedValue({ supported: true, profiles: [], unreadable: [] }),
     getLocalBrowserState: vi.fn().mockResolvedValue(state),
     getLocalBrowserHandoffState: vi.fn().mockResolvedValue(state),

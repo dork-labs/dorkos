@@ -29,15 +29,16 @@
  */
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import {
-  MATRIX_GROUPS,
   MATRIX_RUNTIMES,
-  type CellStatus,
   type MatrixCell,
   type MatrixFlag,
   type MatrixRuntime,
   type RuntimeCapability,
 } from './runtime-capability-types.js';
 import { GUARD_CAPABILITIES } from './runtime-capability-guards.js';
+import { MEDIA_CAPABILITIES } from './runtime-capability-media.js';
+import { PRODUCT_RUNTIME_CAPABILITIES } from './runtime-capability-product.js';
+import { renderRuntimeCapabilityRows } from './runtime-capability-renderer.js';
 
 export {
   HAS_CAPABILITY,
@@ -46,6 +47,7 @@ export {
   type CellStatus,
   type EvidenceTier,
   type MatrixCell,
+  type MatrixEvidenceReference,
   type MatrixFlag,
   type MatrixGroup,
   type MatrixRuntime,
@@ -129,9 +131,18 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
         reason: 'DorkOS keeps its own id and maps the thread to it; no test pins the round trip.',
       },
       opencode: {
-        status: 'unverified',
+        status: 'partial',
+        evidence: U,
         reason:
-          'DorkOS keeps its own id and maps the sidecar session; no test pins the round trip.',
+          'A fresh mapper re-lists the original DorkOS id from the same database. Sending after a restart remains unverified.',
+        references: [
+          {
+            tier: 'U',
+            file: 'apps/server/src/services/runtimes/opencode/__tests__/session-map.test.ts',
+            title:
+              're-lists the same OpenCode session under its ORIGINAL DorkOS id after a restart',
+          },
+        ],
       },
       doe: yes,
       'test-mode': { status: 'unverified', reason: TEST_FIXTURE },
@@ -438,11 +449,48 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
     flag: flag('supportsManagedMcpServers'),
     cells: {
       'claude-code': {
-        status: 'unverified',
-        reason: 'Declared; no test is titled for it yet.',
+        status: 'partial',
+        evidence: U,
+        reason:
+          'The SDK factory builds options for enabled stdio servers from the agent’s manifest. A tool call remains unverified.',
+        references: [
+          {
+            tier: 'U',
+            file: 'apps/server/src/services/runtimes/claude-code/__tests__/mcp-server-config.test.ts',
+            title: 'injects only the ENABLED server, and dorkos is present and unshadowed',
+          },
+        ],
       },
-      codex: { status: 'unverified', reason: 'Declared; no test is titled for it yet.' },
-      opencode: { status: 'unverified', reason: 'Declared; no test is titled for it yet.' },
+      codex: {
+        status: 'partial',
+        evidence: U,
+        reason: 'Managed HTTP server settings reach app-server. SSE servers are excluded.',
+        references: [
+          {
+            tier: 'U',
+            file: 'apps/server/src/services/runtimes/codex/app-server/__tests__/thread-loader.test.ts',
+            title: 'carries tools, identity and trust over the wire, authenticated by a thread key',
+          },
+          {
+            tier: 'U',
+            file: 'apps/server/src/services/runtimes/codex/__tests__/codex-runtime.test.ts',
+            title: 'drops an sse managed server (Codex has no SSE transport) and injects the rest',
+          },
+        ],
+      },
+      opencode: {
+        status: 'partial',
+        evidence: U,
+        reason: 'Enabled stdio and HTTP servers register before the prompt. SSE is excluded.',
+        references: [
+          {
+            tier: 'U',
+            file: 'apps/server/src/services/runtimes/opencode/__tests__/opencode-runtime.test.ts',
+            title:
+              'registers enabled managed servers into the sidecar before the prompt, dropping sse',
+          },
+        ],
+      },
       doe: yes,
       'test-mode': { status: 'n/a', reason: TEST_FIXTURE },
     },
@@ -646,41 +694,7 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
     },
   },
 
-  // ── Attachments and media ───────────────────────────────────────────────
-  {
-    id: 'RT-MEDIA-01',
-    group: 'MEDIA',
-    title: 'Attach images to a message',
-    expected: 'Images the person attaches reach the agent with the message.',
-    cells: {
-      'claude-code': yes,
-      codex: yes,
-      opencode: {
-        status: 'unverified',
-        reason: 'Not proven by a test titled for it.',
-      },
-      doe: { status: 'not-supported', reason: 'Images cannot be attached to Doe messages yet.' },
-      'test-mode': { status: 'n/a', reason: TEST_FIXTURE },
-    },
-  },
-  {
-    id: 'RT-MEDIA-02',
-    group: 'MEDIA',
-    title: 'Pictures the agent makes',
-    expected:
-      'An image the agent produces reaches the chat as a picture, announced by reference rather than as bytes on the stream.',
-    flag: { label: "mediaOutput !== 'none'", read: (caps) => caps.mediaOutput !== 'none' },
-    cells: {
-      'claude-code': {
-        status: 'not-supported',
-        reason: 'Declared none; tool images are captured but not announced as output.',
-      },
-      codex: { status: 'not-supported', reason: 'Declared none.' },
-      opencode: { status: 'not-supported', reason: 'Declared none.' },
-      doe: { status: 'not-supported', reason: 'DorkOS does not expose this feature.' },
-      'test-mode': { status: 'n/a', reason: TEST_FIXTURE },
-    },
-  },
+  ...MEDIA_CAPABILITIES,
 
   // ── Cost and usage ──────────────────────────────────────────────────────
   {
@@ -755,119 +769,16 @@ export const RUNTIME_CAPABILITIES: readonly RuntimeCapability[] = [
     // since its usage event names none.
     cells: all(yes),
   },
+  ...PRODUCT_RUNTIME_CAPABILITIES,
   ...GUARD_CAPABILITIES,
 ];
 
-/** What to call a status in the doc. */
-const STATUS_MARK: Readonly<Record<CellStatus, string>> = {
-  supported: 'yes',
-  partial: 'partial',
-  unverified: 'unverified',
-  planned: 'planned',
-  'not-supported': 'no',
-  'n/a': 'n/a',
-};
-
-/** One cell as the matrix table shows it. */
-function cellText(cell: MatrixCell): string {
-  const proof = cell.evidence?.length ? ` (${cell.evidence.join(', ')})` : '';
-  const ticket = cell.ticket ? ` ${cell.ticket}` : '';
-  return `${STATUS_MARK[cell.status]}${proof}${ticket}`;
-}
-
-/** Escapes a table cell. */
-function md(text: string): string {
-  return text.replace(/\|/g, '\\|');
-}
-
 /**
- * Renders `contributing/capabilities/runtimes.md` from the registry.
- *
- * Deterministic and dependency-free, so the census can compare the committed
- * file to it byte for byte.
- *
- * @param rows - The capabilities to render; the registry by default.
- * @returns The document's full text.
+ * Render the generated guide for the given rows, defaulting to the registry.
+ * @param rows - Capability rows shown in the guide.
  */
 export function renderRuntimeCapabilityMatrix(
   rows: readonly RuntimeCapability[] = RUNTIME_CAPABILITIES
 ): string {
-  const out: string[] = [];
-  const header = `| ID | Capability | ${MATRIX_RUNTIMES.join(' | ')} |`;
-  const rule = `| --- | --- | ${MATRIX_RUNTIMES.map(() => '---').join(' | ')} |`;
-
-  out.push(
-    '<!-- Generated from packages/test-utils/src/runtime-capability-matrix.ts by `pnpm docs:runtime-capabilities`. Do not edit by hand. -->',
-    '',
-    '# Runtime capabilities',
-    '',
-    'What every agent runtime DorkOS runs should do, and how far each one gets. This is the list of what runtimes **should** do, not only what is built: a capability nobody has built yet enters as a row marked `planned`, with the ticket that will build it.',
-    '',
-    'To add a capability, add a row to `packages/test-utils/src/runtime-capability-matrix.ts` and run `pnpm docs:runtime-capabilities`. The census (`apps/server/src/services/runtimes/__tests__/runtime-capability-census.test.ts`) then checks it.',
-    '',
-    '**Statuses:** `yes` does what the row says. `partial` does some of it. `unverified` says it does and no test proves it yet. `planned` will, under the named ticket. `no` does not, and nothing is planned. `n/a` does not apply.',
-    '',
-    '**Proof:** `U` a deterministic CI test (the shared conformance suite against a mocked backend, or the runtime’s own tests). `E` a browser test on test-mode. `L` a live run against the real backend. Only `L` cells may be claimed in public copy.',
-    '',
-    '**The census checks** that every `U` claim has a test whose title starts with the row id (or a conformance id the row lists) in a test that runs for that runtime; that no test names an unknown id; that no runtime-specific test claims a cell marked `planned`, `no` or `n/a`; that a row with a declared flag agrees with each runtime’s declared capabilities; and that this file matches the registry.',
-    '',
-    '`test-mode` is the scripted fixture runtime the browser tests use, not a product runtime.',
-    ''
-  );
-
-  out.push('## Parity', '', `| Runtime | yes | partial | unverified | planned | no | n/a |`);
-  out.push('| --- | --- | --- | --- | --- | --- | --- |');
-  for (const runtime of MATRIX_RUNTIMES) {
-    const count = (status: CellStatus) =>
-      rows.filter((row) => row.cells[runtime].status === status).length;
-    out.push(
-      `| ${runtime} | ${count('supported')} | ${count('partial')} | ${count('unverified')} | ${count('planned')} | ${count('not-supported')} | ${count('n/a')} |`
-    );
-  }
-  out.push('');
-
-  for (const [group, heading] of Object.entries(MATRIX_GROUPS)) {
-    const inGroup = rows.filter((row) => row.group === group);
-    if (inGroup.length === 0) continue;
-    out.push(`## ${heading}`, '', header, rule);
-    for (const row of inGroup) {
-      out.push(
-        `| ${row.id} | ${md(row.title)} | ${MATRIX_RUNTIMES.map((runtime) => md(cellText(row.cells[runtime]))).join(' | ')} |`
-      );
-    }
-    out.push('');
-    for (const row of inGroup) {
-      const sources = [
-        row.flag ? `flag \`${row.flag.label}\`` : null,
-        row.conformance?.length ? `conformance ${row.conformance.join(', ')}` : null,
-      ].filter(Boolean);
-      out.push(
-        `- **${row.id}** ${md(row.expected)}${sources.length ? ` _(${sources.join('; ')})_` : ''}`
-      );
-    }
-    out.push('');
-  }
-
-  out.push(
-    '## Gaps',
-    '',
-    'Every cell that is not `yes`, `no` or `n/a`, planned work first.',
-    '',
-    '| ID | Runtime | Status | Ticket | Why |',
-    '| --- | --- | --- | --- | --- |'
-  );
-  const order: readonly CellStatus[] = ['planned', 'partial', 'unverified'];
-  for (const status of order) {
-    for (const row of rows) {
-      for (const runtime of MATRIX_RUNTIMES) {
-        const cell = row.cells[runtime];
-        if (cell.status !== status) continue;
-        out.push(
-          `| ${row.id} | ${runtime} | ${STATUS_MARK[status]} | ${cell.ticket ?? ''} | ${md(cell.reason ?? '')} |`
-        );
-      }
-    }
-  }
-  out.push('');
-  return out.join('\n');
+  return renderRuntimeCapabilityRows(rows);
 }
