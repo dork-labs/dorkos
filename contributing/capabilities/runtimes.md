@@ -8,9 +8,11 @@ To add a capability, add a row to `packages/test-utils/src/runtime-capability-ma
 
 **Statuses:** `yes` does what the row says. `partial` does some of it. `unverified` says it does and no test proves it yet. `planned` will, under the named ticket. `no` does not, and nothing is planned. `n/a` does not apply.
 
-**Proof:** `U` a deterministic CI test (the shared conformance suite against a mocked backend, or the runtime’s own tests). `E` a browser test on test-mode. `L` a live run against the real backend. Only `L` cells may be claimed in public copy.
+**Proof tiers** are `U` for a deterministic CI test, `E` for a browser test on test-mode, and `L` for a live run against the real backend. Only `L` cells may be claimed in public copy.
 
-**The census checks** that every `U` claim has a test whose title starts with the row id (or a conformance id the row lists) in a test that runs for that runtime; that no test names an unknown id; that no runtime-specific test claims a cell marked `planned`, `no` or `n/a`; that a row with a declared flag agrees with each runtime’s declared capabilities; and that this file matches the registry.
+The census checks legacy `U` claims against runtime and conformance test titles. An explicit `U` or `E` reference names a test file and its exact test title. The census also checks the declared runtime flags, row IDs, and generated guide.
+
+An `L` reference names a passing case in a JSON receipt under `contributing/capabilities/runtime-evidence/`. Give the receipt a `runtime`, `runtimeVersion`, 40-character Git `revision`, `source` (`live-conformance`, `eval`, or `harness-smoke`), and `mode` set to `live`. Record each case’s `id` and `status` in `cases`. Review the scope of the run before citing it for a cell.
 
 `test-mode` is the scripted fixture runtime the browser tests use, not a product runtime.
 
@@ -18,11 +20,11 @@ To add a capability, add a row to `packages/test-utils/src/runtime-capability-ma
 
 | Runtime | yes | partial | unverified | planned | no | n/a |
 | --- | --- | --- | --- | --- | --- | --- |
-| claude-code | 42 | 1 | 2 | 0 | 1 | 1 |
-| codex | 32 | 1 | 3 | 2 | 8 | 1 |
-| opencode | 28 | 0 | 4 | 3 | 10 | 2 |
-| doe | 34 | 0 | 0 | 2 | 11 | 0 |
-| test-mode | 26 | 0 | 6 | 0 | 0 | 15 |
+| claude-code | 46 | 2 | 4 | 0 | 0 | 2 |
+| codex | 37 | 2 | 5 | 2 | 7 | 1 |
+| opencode | 31 | 2 | 6 | 3 | 9 | 3 |
+| doe | 35 | 1 | 4 | 2 | 11 | 1 |
+| test-mode | 28 | 0 | 10 | 0 | 0 | 16 |
 
 ## Sessions
 
@@ -31,7 +33,7 @@ To add a capability, add a row to `packages/test-utils/src/runtime-capability-ma
 | RT-SES-01 | Track and look up sessions | yes (U) | yes (U) | yes (U) | yes (U) | yes (U) |
 | RT-SES-02 | List a project’s sessions | yes (U) | yes (U) | yes (U) | yes (U) | yes (U) |
 | RT-SES-03 | Resume a conversation | yes (U) | unverified | unverified | yes (U) | unverified |
-| RT-SES-04 | One id for the whole conversation | yes (U) | unverified | unverified | yes (U) | unverified |
+| RT-SES-04 | One id for the whole conversation | yes (U) | unverified | partial (U) | yes (U) | unverified |
 | RT-SES-05 | Settings follow the session | yes (U) | yes (U) | yes (U) | yes (U) | yes (U) |
 | RT-SES-06 | Find a session’s folder without a disk scan | yes (U) | n/a | n/a | yes (U) | n/a |
 | RT-SES-07 | Fork a session | yes (U) | no | yes (U) | no | unverified |
@@ -40,6 +42,7 @@ To add a capability, add a row to `packages/test-utils/src/runtime-capability-ma
 - **RT-SES-02** Listing a project returns the sessions started inside it, including its subfolders, and never a lookalike sibling folder’s.
 - **RT-SES-03** A later message continues the same conversation with its history, including after the server restarts. _(flag `supportsResume`)_
 - **RT-SES-04** The id DorkOS hands out for a new session is the id it is stored, listed and messaged under for its whole life (DOR-2712).
+  - opencode. U [re-lists the same OpenCode session under its ORIGINAL DorkOS id after a restart](../../apps/server/src/services/runtimes/opencode/__tests__/session-map.test.ts)
 - **RT-SES-05** A session whose backend renames it keeps the mode, model and effort the person chose.
 - **RT-SES-06** The runtime answers which folder a live session works in from memory, and never throws. _(conformance C10)_
 - **RT-SES-07** A conversation can be copied into a new session that continues on its own.
@@ -121,10 +124,13 @@ To add a capability, add a row to `packages/test-utils/src/runtime-capability-ma
 | ID | Capability | claude-code | codex | opencode | doe | test-mode |
 | --- | --- | --- | --- | --- | --- | --- |
 | RT-MCP-01 | DorkOS’s own tools | yes (U) | no | no | yes (U) | n/a |
-| RT-MCP-02 | The person’s MCP servers | unverified | unverified | unverified | yes (U) | n/a |
+| RT-MCP-02 | The person’s MCP servers | partial (U) | partial (U) | partial (U) | yes (U) | n/a |
 
 - **RT-MCP-01** The agent can use DorkOS’s tools (rooms, relay, tasks, connections) from inside its turn. _(flag `supportsMcp`)_
 - **RT-MCP-02** MCP servers the person added in DorkOS are available to the agent. _(flag `supportsManagedMcpServers`)_
+  - claude-code. U [injects only the ENABLED server, and dorkos is present and unshadowed](../../apps/server/src/services/runtimes/claude-code/__tests__/mcp-server-config.test.ts)
+  - codex. U [carries tools, identity and trust over the wire, authenticated by a thread key](../../apps/server/src/services/runtimes/codex/app-server/__tests__/thread-loader.test.ts), U [drops an sse managed server (Codex has no SSE transport) and injects the rest](../../apps/server/src/services/runtimes/codex/__tests__/codex-runtime.test.ts)
+  - opencode. U [registers enabled managed servers into the sidecar before the prompt, dropping sse](../../apps/server/src/services/runtimes/opencode/__tests__/opencode-runtime.test.ts)
 
 ## Plugins, prompts and folders
 
@@ -178,11 +184,14 @@ To add a capability, add a row to `packages/test-utils/src/runtime-capability-ma
 
 | ID | Capability | claude-code | codex | opencode | doe | test-mode |
 | --- | --- | --- | --- | --- | --- | --- |
-| RT-MEDIA-01 | Attach images to a message | yes (U) | yes (U) | unverified | no | n/a |
-| RT-MEDIA-02 | Pictures the agent makes | no | no | no | no | n/a |
+| RT-MEDIA-01 | Attach images to a message | unverified | unverified | unverified | no | n/a |
+| RT-MEDIA-02 | Show pictures returned by tools | yes (U) | yes (U) | yes (U) | no | n/a |
 
 - **RT-MEDIA-01** Images the person attaches reach the agent with the message.
-- **RT-MEDIA-02** An image the agent produces reaches the chat as a picture, announced by reference rather than as bytes on the stream. _(flag `mediaOutput !== 'none'`)_
+- **RT-MEDIA-02** A picture returned by an agent’s tool reaches the chat as a stored attachment announced by URL. _(flag `mediaOutput !== 'none'`)_
+  - claude-code. U [announces the image by URL, with the bytes already on disk](../../apps/server/src/services/runtimes/claude-code/sessions/__tests__/pump-turn-stream-media.test.ts)
+  - codex. U [records an MCP image for the runtime to store](../../apps/server/src/services/runtimes/codex/app-server/__tests__/notification-mapper.test.ts), U [announces the image by URL, with the bytes already on disk](../../apps/server/src/services/runtimes/codex/__tests__/media-capture.test.ts)
+  - opencode. U [stores the bytes and announces them by URL](../../apps/server/src/services/runtimes/opencode/__tests__/media-capture.test.ts), U [writes bytes that are actually the image, not a placeholder](../../apps/server/src/services/runtimes/opencode/__tests__/media-capture.test.ts)
 
 ## Cost and usage
 
@@ -203,6 +212,65 @@ To add a capability, add a row to `packages/test-utils/src/runtime-capability-ma
 - **RT-CMP-01** The person can ask for the conversation to be compacted, and progress is reported while it runs. _(flag `commandIntents.compact`)_
 - **RT-CMP-02** An agent asks for its own conversation to be summarized; it runs after the turn ends, and the chat says the agent asked. Its focus note is used where the runtime takes one (Claude Code). _(flag `commandIntents.compact`)_
 - **RT-CMP-03** After each reply the runtime reports the tokens in the context and the size of the window, so DorkOS can tell the agent when it passes 80%. A model whose window the runtime cannot learn reports no window rather than a guess.
+
+## Rooms
+
+| ID | Capability | claude-code | codex | opencode | doe | test-mode |
+| --- | --- | --- | --- | --- | --- | --- |
+| RT-ROOM-01 | Carry room messages as context | yes (U) | yes (U) | yes (U) | partial (U) | unverified |
+| RT-ROOM-02 | Post one reply to the room | unverified | unverified | unverified | unverified | yes (E) |
+
+- **RT-ROOM-01** A room turn receives member messages inside a labeled room context block.
+  - claude-code. U [carries room context for Claude Code](../../apps/server/src/services/runtimes/shared/__tests__/room-context-runtime-neutrality.test.ts)
+  - codex. U [carries room context for Codex](../../apps/server/src/services/runtimes/shared/__tests__/room-context-runtime-neutrality.test.ts)
+  - opencode. U [carries room context for OpenCode](../../apps/server/src/services/runtimes/shared/__tests__/room-context-runtime-neutrality.test.ts)
+  - doe. U [carries neutral $kind context through its shared formatter](../../apps/server/src/services/runtimes/doe/__tests__/context.test.ts)
+- **RT-ROOM-02** A reply posted through the room capability appears once, and a quiet turn nobody asked for leaves the room unchanged.
+  - test-mode. E [a tool-only reply lands once, and its own narration never reaches the room](../../apps/e2e/tests/rooms/room-tool-only-replies.spec.ts), E [nobody asked, so a quiet turn leaves the room unchanged and the pill clears](../../apps/e2e/tests/rooms/room-tool-only-replies.spec.ts)
+
+## Scheduled tasks
+
+| ID | Capability | claude-code | codex | opencode | doe | test-mode |
+| --- | --- | --- | --- | --- | --- | --- |
+| RT-TASK-01 | Run a task on its chosen runtime | unverified | yes (U) | unverified | unverified | unverified |
+
+- **RT-TASK-01** A scheduled run uses its named runtime and records a failure without starting a turn elsewhere when that runtime is disabled.
+  - codex. U [runs the task on the runtime IT names, not the registry default](../../apps/server/src/services/tasks/__tests__/task-scheduler-service.test.ts), U [fails the run loudly when the named runtime is not turned on, and starts no turn](../../apps/server/src/services/tasks/__tests__/task-scheduler-service.test.ts)
+
+## Relay
+
+| ID | Capability | claude-code | codex | opencode | doe | test-mode |
+| --- | --- | --- | --- | --- | --- | --- |
+| RT-RELAY-01 | Deliver to the target agent’s runtime | yes (U) | yes (U) | unverified | unverified | unverified |
+
+- **RT-RELAY-01** An agent message reaches the registered runtime named by the target’s manifest and starts one turn there.
+  - claude-code. U [answers a claude-code agent on claude-code](../../apps/server/src/services/relay/__tests__/agent-subject-target-runtime.integration.test.ts)
+  - codex. U [answers a codex agent on codex, not on the default runtime](../../apps/server/src/services/relay/__tests__/agent-subject-target-runtime.integration.test.ts)
+
+## Extension tools
+
+| ID | Capability | claude-code | codex | opencode | doe | test-mode |
+| --- | --- | --- | --- | --- | --- | --- |
+| RT-EXT-01 | List accepted extension tools | yes (U) | unverified | unverified | unverified | unverified |
+
+- **RT-EXT-01** The session tool list includes accepted extension tools alongside built-in tools and drops extension tools when unregistered.
+  - claude-code. U [lists every core tool and the accepted extension tools, and never the refused one](../../apps/server/src/services/runtimes/claude-code/mcp-tools/__tests__/extension-tool-listing.test.ts)
+
+## Sleep and keep-awake
+
+| ID | Capability | claude-code | codex | opencode | doe | test-mode |
+| --- | --- | --- | --- | --- | --- | --- |
+| RT-AWAKE-01 | Hold keep-awake during an active chat turn | yes (U) | yes (U) | yes (U) | yes (U) | yes (U) |
+| RT-AWAKE-02 | Apply keep-awake in the runtime’s own process | n/a | yes (U) | n/a | n/a | n/a |
+
+- **RT-AWAKE-01** A streamed chat turn through the runtime registry adds one hold to the shared keep-awake counter and releases it when the turn ends.
+  - claude-code. U [holds a turn on any runtime resolved from runtimeRegistry, exactly once](../../apps/server/src/services/core/keep-awake/__tests__/hold-during-turn.test.ts)
+  - codex. U [holds a turn on any runtime resolved from runtimeRegistry, exactly once](../../apps/server/src/services/core/keep-awake/__tests__/hold-during-turn.test.ts)
+  - opencode. U [holds a turn on any runtime resolved from runtimeRegistry, exactly once](../../apps/server/src/services/core/keep-awake/__tests__/hold-during-turn.test.ts)
+  - doe. U [holds a turn on any runtime resolved from runtimeRegistry, exactly once](../../apps/server/src/services/core/keep-awake/__tests__/hold-during-turn.test.ts)
+  - test-mode. U [holds a turn on any runtime resolved from runtimeRegistry, exactly once](../../apps/server/src/services/core/keep-awake/__tests__/hold-during-turn.test.ts)
+- **RT-AWAKE-02** The runtime receives the idle sleep setting when keep-awake applies and reloads the session before its next turn after the setting changes.
+  - codex. U [loads the thread with features.prevent_idle_sleep while keep-awake applies](../../apps/server/src/services/runtimes/codex/__tests__/codex-keep-awake.test.ts), U [leaves it out while keep-awake does not apply](../../apps/server/src/services/runtimes/codex/__tests__/codex-keep-awake.test.ts), U [reloads the thread before its next turn when the keep-awake setting changes](../../apps/server/src/services/runtimes/codex/__tests__/codex-keep-awake.test.ts)
 
 ## Safety guards
 
@@ -227,20 +295,39 @@ Every cell that is not `yes`, `no` or `n/a`, planned work first.
 | RT-GRD-02 | codex | planned | DOR-3598 | Its own `.codex/` and `.agents/` setup is not held below Full. |
 | RT-GRD-02 | opencode | planned | DOR-3598 | Its own `opencode.json` and `.agents/` setup is not held below Full. |
 | RT-GRD-02 | doe | planned | DOR-3598 | An agent home in the data folder is closed to its file tools; an agent in a project folder, and its shell, are not held. |
+| RT-SES-04 | opencode | partial |  | A fresh mapper re-lists the original DorkOS id from the same database. Sending after a restart remains unverified. |
+| RT-MCP-02 | claude-code | partial |  | The SDK factory builds options for enabled stdio servers from the agent’s manifest. A tool call remains unverified. |
+| RT-MCP-02 | codex | partial |  | Managed HTTP server settings reach app-server. SSE servers are excluded. |
+| RT-MCP-02 | opencode | partial |  | Enabled stdio and HTTP servers register before the prompt. SSE is excluded. |
 | RT-LIFE-03 | claude-code | partial | DOR-2717 | Helpers, shells and session timers report back on a warm session; async hooks and durable timers do not. |
 | RT-LIFE-03 | codex | partial | DOR-2717 | Background commands wake the chat; a helper agent that outlives its turn is tracked but not yet proven against Codex. |
+| RT-ROOM-01 | doe | partial |  | The formatter case checks the room block and its label, leaving message text unchecked. |
 | RT-SES-03 | codex | unverified |  | Resumes its thread by id; no test pins a resumed turn seeing earlier history. |
 | RT-SES-03 | opencode | unverified |  | Resumes its session by id; no test pins a resumed turn seeing earlier history. |
 | RT-SES-03 | test-mode | unverified |  | test-mode is a scripted fixture with no backend behind it. |
 | RT-SES-04 | codex | unverified |  | DorkOS keeps its own id and maps the thread to it; no test pins the round trip. |
-| RT-SES-04 | opencode | unverified |  | DorkOS keeps its own id and maps the sidecar session; no test pins the round trip. |
 | RT-SES-04 | test-mode | unverified |  | test-mode is a scripted fixture with no backend behind it. |
 | RT-SES-07 | test-mode | unverified |  | test-mode is a scripted fixture with no backend behind it. |
 | RT-TOOL-01 | test-mode | unverified |  | test-mode is a scripted fixture with no backend behind it. |
 | RT-PERM-04 | claude-code | unverified |  | Declared and offered; no test pins that a plan-mode turn changes nothing. |
-| RT-MCP-02 | claude-code | unverified |  | Declared; no test is titled for it yet. |
-| RT-MCP-02 | codex | unverified |  | Declared; no test is titled for it yet. |
-| RT-MCP-02 | opencode | unverified |  | Declared; no test is titled for it yet. |
 | RT-PLG-02 | test-mode | unverified |  | test-mode is a scripted fixture with no backend behind it. |
 | RT-PLG-03 | test-mode | unverified |  | test-mode is a scripted fixture with no backend behind it. |
-| RT-MEDIA-01 | opencode | unverified |  | Not proven by a test titled for it. |
+| RT-MEDIA-01 | claude-code | unverified |  | The composer sends the saved file path. How the agent receives the image needs a test. |
+| RT-MEDIA-01 | codex | unverified |  | The composer sends the saved file path. How the agent receives the image needs a test. |
+| RT-MEDIA-01 | opencode | unverified |  | The composer sends the saved file path. How the agent receives the image needs a test. |
+| RT-ROOM-01 | test-mode | unverified |  | The browser room cases check delivery after the scripted turn. |
+| RT-ROOM-02 | claude-code | unverified |  | The browser cases drive scripted test-mode replies. |
+| RT-ROOM-02 | codex | unverified |  | The browser cases drive scripted test-mode replies. |
+| RT-ROOM-02 | opencode | unverified |  | The browser cases drive scripted test-mode replies. |
+| RT-ROOM-02 | doe | unverified |  | The browser cases drive scripted test-mode replies. |
+| RT-TASK-01 | claude-code | unverified |  | The scheduler cases use Codex as the named runtime. |
+| RT-TASK-01 | opencode | unverified |  | The scheduler cases use Codex as the named runtime. |
+| RT-TASK-01 | doe | unverified |  | The scheduler cases use Codex as the named runtime. |
+| RT-TASK-01 | test-mode | unverified |  | The scheduler cases use Codex as the named runtime. |
+| RT-RELAY-01 | opencode | unverified |  | The target-manifest delivery cases register Claude Code and Codex. |
+| RT-RELAY-01 | doe | unverified |  | The target-manifest delivery cases register Claude Code and Codex. |
+| RT-RELAY-01 | test-mode | unverified |  | The target-manifest delivery cases register Claude Code and Codex. |
+| RT-EXT-01 | codex | unverified |  | The extension tool-listing case exercises the Claude Code transport. |
+| RT-EXT-01 | opencode | unverified |  | The extension tool-listing case exercises the Claude Code transport. |
+| RT-EXT-01 | doe | unverified |  | The extension tool-listing case exercises the Claude Code transport. |
+| RT-EXT-01 | test-mode | unverified |  | The extension tool-listing case exercises the Claude Code transport. |

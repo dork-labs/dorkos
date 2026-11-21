@@ -1,4 +1,5 @@
-import { test, expect, request as apiRequest } from '@playwright/test';
+import { expect, request as apiRequest } from '@playwright/test';
+import { test } from '../fixtures/base';
 import type { Page } from '@playwright/test';
 import fs from 'fs/promises';
 import path from 'path';

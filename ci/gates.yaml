@@ -247,6 +247,11 @@ gates:
     source: .github/workflows/queue-repeat-guard.yml
     purpose: On every merge-queue entry, takes a PR back out when its head already failed the same required check in two queue builds, and tells the author once.
 
+  # --- hold-reason.yml ---
+  - id: wf.hold-reason.hold-reason
+    source: .github/workflows/hold-reason.yml
+    purpose: Advisory; flags a PR carrying the hold label with no comment starting hold, so every hold says why and who lifts it.
+
   # --- scripts-test.yml ---
   - id: wf.scripts-test.fixtures
     source: .github/workflows/scripts-test.yml
@@ -345,6 +350,9 @@ gates:
   - id: claude.PreToolUse.merge-guard
     source: .claude/settings.json
     purpose: Refuses admin merges and direct REST or GraphQL merges that step around the merge queue and its required checks.
+  - id: claude.PreToolUse.pr-create-guard
+    source: .claude/settings.json
+    purpose: Refuses a bare gh pr create, or a REST or GraphQL PR create, and points to scripts/open-pr.sh, which applies the PR-opening rules.
   - id: claude.PostToolUse.typecheck-changed
     source: .claude/settings.json
     purpose: Typechecks the edited file's workspace after every edit and blocks on type errors.

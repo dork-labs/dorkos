@@ -1,4 +1,5 @@
-import { test, expect, type APIRequestContext, type Page, type Route } from '@playwright/test';
+import { expect, type APIRequestContext, type Page, type Route } from '@playwright/test';
+import { test } from '../../fixtures/base';
 import { appFrame, appPage } from '../../pages/app-frame.js';
 
 /**

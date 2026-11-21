@@ -313,6 +313,19 @@ jobs:
       - name: Merge-guard hook fixtures
         run: bash scripts/test-merge-guard.sh
 
+      # Opening a PR is code, not prose (2026-11-20: a brief said "open with
+      # hold", the arm script refused hold and never lifted it, and 19 PRs sat
+      # for 9 hours). open-pr.sh holds the rules (cap, computed labels,
+      # provenance, hold only with a reason), pr-create-guard refuses a bare
+      # `gh pr create`, and hold-reason-check.sh is the advisory hold-reason
+      # workflow's decision. Stubbed `gh`, throwaway git repos, node for the
+      # guard and the security-path classifier.
+      - name: Open-PR script, PR-create guard and hold-reason fixtures
+        run: |
+          bash scripts/test-pr-create-guard.sh
+          bash scripts/test-open-pr.sh
+          bash scripts/test-hold-reason-check.sh
+
       # in-project.sh is the wrapper every working-tree hook in settings.json
       # runs through; it decides whether a hook runs at all once a session has
       # cd-ed into a sibling repo. Hermetic (throwaway git checkouts in a temp

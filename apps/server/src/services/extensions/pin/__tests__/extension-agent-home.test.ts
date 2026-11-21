@@ -157,20 +157,37 @@ describe('the screen half is always pinned (client digest)', () => {
     for (const sentence of SCREEN_CHANGED.split(/(?<=\.)\s+/)) {
       expect(sentence.split(/\s+/).length).toBeLessThanOrEqual(15);
     }
+    const home = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'extension-row-')));
+    const folder = path.join(home, '.dork', 'extensions', 'notes');
+    await fs.mkdir(folder, { recursive: true });
+    const approvals = agentApproval();
+    approvals.approvedSources!.notes = {
+      ...approvals.approvedSources!.notes!,
+      path: folder,
+      authorHome: home,
+    };
     stored.extensions = {
       enabled: ['notes'],
       disabled: [],
       dismissedApprovals: {},
-      ...agentApproval(),
+      ...approvals,
     };
-    const clientEdit = copy({ clientDigest: bundleDigestOf(EDITED_BUNDLE) });
-    const [row] = await listPendingExtensionApprovals({
-      listRecords: () => [clientEdit],
-      onChange: () => () => undefined,
-      dorkHome: '/nowhere',
-    } as never);
-    expect(row!.why).toBe(SCREEN_CHANGED);
-    expect(row!.changedFiles).toEqual([]);
+    const clientEdit = copy({
+      path: folder,
+      realPath: folder,
+      clientDigest: bundleDigestOf(EDITED_BUNDLE),
+    });
+    try {
+      const [row] = await listPendingExtensionApprovals({
+        listRecords: () => [clientEdit],
+        onChange: () => () => undefined,
+        dorkHome: home,
+      } as never);
+      expect(row!.why).toBe(SCREEN_CHANGED);
+      expect(row!.changedFiles).toEqual([]);
+    } finally {
+      await fs.rm(home, { recursive: true, force: true });
+    }
   });
 
   it('loads no screen code under a path-trust approval that pinned none', () => {
@@ -408,6 +425,7 @@ describe('on disk: an agent’s mini app lives in its folder and stays visible',
     await fs.writeFile(path.join(dir, 'extension.json'), JSON.stringify(ISOLATED));
     await fs.writeFile(path.join(dir, 'server.ts'), 'export default () => {};');
     await approveNewScaffold(
+      dorkHome,
       'notes',
       { targetDir: dir, manifest: ISOLATED, scope: 'local', digest: await scaffoldDigest(dir) },
       link
@@ -527,7 +545,7 @@ describe('on disk: an agent’s mini app lives in its folder and stays visible',
     });
     expect(result.scope).toBe('global');
     // No author is recorded for a global copy, so it is pinned and asks, visibly.
-    await approveNewScaffold('notes', result, home);
+    await approveNewScaffold(dorkHome, 'notes', result, home);
     const source = (stored.extensions.approvedSources as Record<string, Record<string, unknown>>)
       .notes!;
     expect(source).not.toHaveProperty('authorHome');
@@ -540,6 +558,7 @@ describe('on disk: an agent’s mini app lives in its folder and stays visible',
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(path.join(dir, 'extension.json'), JSON.stringify(ISOLATED));
     await approveNewScaffold(
+      dorkHome,
       'notes',
       { targetDir: dir, manifest: ISOLATED, scope: 'local', digest: await scaffoldDigest(dir) },
       odd
@@ -554,7 +573,7 @@ describe('on disk: an agent’s mini app lives in its folder and stays visible',
     const dir = path.join(agentHome, '.dork', 'extensions', 'notes');
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(path.join(dir, 'extension.json'), JSON.stringify(ISOLATED));
-    await approveNewScaffold('notes', {
+    await approveNewScaffold(dorkHome, 'notes', {
       targetDir: dir,
       manifest: ISOLATED,
       digest: await scaffoldDigest(dir),
@@ -572,6 +591,7 @@ describe('on disk: an agent’s mini app lives in its folder and stays visible',
     const scaffolded = await scaffoldDigest(dir);
     await fs.writeFile(path.join(dir, 'index.ts'), 'export const added = 1;');
     const approved = await approveNewScaffold(
+      dorkHome,
       'notes',
       { targetDir: dir, manifest: ISOLATED, scope: 'local', digest: scaffolded },
       agentHome
@@ -586,6 +606,7 @@ describe('on disk: an agent’s mini app lives in its folder and stays visible',
     await fs.mkdir(dir, { recursive: true });
     await fs.writeFile(path.join(dir, 'extension.json'), JSON.stringify(ISOLATED));
     const approved = await approveNewScaffold(
+      dorkHome,
       'notes',
       { targetDir: dir, manifest: ISOLATED, scope: 'local', digest: null },
       agentHome

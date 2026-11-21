@@ -145,6 +145,8 @@ export interface LocalBrowserObservation {
   refusal?: { kind: 'sign-in' | 'blocked'; host: string; next: string };
 }
 export interface LocalBrowserCapabilities {
+  /** Whether the owner-only local watch stream is enabled at server boot. */
+  watchStream?: boolean;
   platform: string;
   managedChromiumVersion: string;
   unavailableReasons: Partial<Record<LocalBrowserMode, string>>;
@@ -306,6 +308,8 @@ export const LocalBrowserObservationSchema = z.object({
 });
 
 export const LocalBrowserCapabilitiesSchema = z.object({
+  /** Local owner-only viewing is opt-in at server boot; older servers omit this hint. */
+  watchStream: z.boolean().optional(),
   platform: z.string().min(1),
   managedChromiumVersion: z.string(),
   unavailableReasons: z.object({

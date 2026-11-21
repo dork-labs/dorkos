@@ -65,6 +65,8 @@ vi.mock('../../../core/auth/session-gate.js', async (importOriginal) => ({
 import { ExtensionManager } from '../../extension-manager.js';
 import { grantsDigestOf } from '../../pin/extension-path-trust.js';
 import { placeSnapshots } from '../../pin/extension-snapshot-placement.js';
+import { liveDigestOf } from '../../pin/extension-content-pin.js';
+import { noteScaffoldTrusted } from '../../pin/path-trust-edits.js';
 import {
   noteWriteDone,
   noteWriteStarting,
@@ -203,6 +205,14 @@ async function boot(
     pongTimeoutMs: 30_000,
   }
 ): Promise<void> {
+  // These lifecycle cases start with an approved scaffold. Record its exact initial files;
+  // later installs remain edits and must pass the real tracing checks.
+  expect(
+    await noteScaffoldTrusted(dorkHome, ID, {
+      targetDir: extDir,
+      digest: await liveDigestOf({ path: extDir }),
+    })
+  ).toBe(true);
   manager = new ExtensionManager(dorkHome, [], {
     dorkosPort: 1,
     restartPolicy: { delays: [10, 20, 40], budget },
@@ -610,6 +620,7 @@ describe('an isolated extension goes live through the real lifecycle', () => {
       agentLevel.mode = 'bypassPermissions';
       await install('v1');
       await boot();
+      expect((await get(`/api/ext/${ID}/ping`)).body.version).toBe('v1');
       agentLevel.mode = 'default';
       await install('v2');
       await manager.reloadExtension(ID);
