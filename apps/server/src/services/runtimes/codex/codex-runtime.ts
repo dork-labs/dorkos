@@ -109,10 +109,12 @@ import {
 import { creditsIsDefaultFor } from '../../core/cloud/credits-defaults.js';
 import { captureCodexMedia } from './media-capture.js';
 import type { SessionAttachmentStore } from '../../session/attachments/index.js';
+import { prepareCodexTurnSettings } from './tool-turn/prepared-turn-settings.js';
+import { CodexToolTurnContext } from './tool-turn/tool-turn-context.js';
 import { CodexSessionRegistry } from './session-registry.js';
 import { CodexNativeSessionReader } from './native-session-reader.js';
 import { CodexThreadMap, codexThreadMetadata, type CodexThreadRecord } from './thread-map.js';
-import { clampModeToCeiling, tightensDeclaredMode } from '@dorkos/shared/permission-semantics';
+import { tightensDeclaredMode } from '@dorkos/shared/permission-semantics';
 import { CODEX_CAPABILITIES } from './runtime-constants.js';
 import {
   createCodexTransport,
@@ -248,7 +250,10 @@ export class CodexRuntime implements AgentRuntime {
   private readonly creditsTurns = new Set<AbortController>();
   private readonly locks = new SessionLockManager();
   /** One AbortController per in-flight turn (NOTES.md Verdict 3). */
-  private readonly activeTurns = new Map<string, AbortController>();
+  private readonly activeTurns = new Map<
+    string,
+    AbortController & { toolTurn?: CodexToolTurnContext }
+  >();
   /** Told when a dispatched turn opens (DOR-2717), on a transport with background work. */
   private readonly dispatchedTurnListeners = new Set<(sessionId: string) => void>();
   /**
@@ -815,7 +820,8 @@ export class CodexRuntime implements AgentRuntime {
     // blank entry it would fill with an auto-preview (see seedFromDurable).
     await this.importNativeThread(sessionId);
     await this.seedFromDurable(sessionId);
-    let settings = await this.resolveTurnSettings(sessionId, opts);
+    const prepared = await this.resolveTurnSettings(sessionId, opts);
+    let settings = prepared.settings;
     const binding = this.threadMap.get(sessionId);
     const boundThreadId = binding?.threadId;
     // Resolution order (post-restart safe): per-send override → in-memory
@@ -908,7 +914,14 @@ export class CodexRuntime implements AgentRuntime {
           (model) => this.registry.register(sessionId, { model })
         );
     const controller = new AbortController();
+    this.activeTurns.get(sessionId)?.toolTurn?.close();
     this.activeTurns.set(sessionId, controller);
+    const toolTurn = new CodexToolTurnContext(
+      () => this.activeTurns.get(sessionId) === controller,
+      () => ({ effectiveMode: settings.permissionMode, chosenMode: prepared.chosenMode }),
+      controller.signal
+    );
+    Object.assign(controller, { toolTurn });
     if (credits) this.creditsTurns.add(controller);
     let connectorBinding: OpenConnectorTurnResult | undefined;
     let connectorSupervisor: ConnectorTurnLeaseSupervisorHandle | undefined;
@@ -925,6 +938,7 @@ export class CodexRuntime implements AgentRuntime {
               cwd,
               signal: controller.signal,
               isCurrent: () => this.activeTurns.get(sessionId) === controller,
+              readToolTurn: () => toolTurn.read(),
               onLost: (loss) => logger.warn('[CodexRuntime] Connections lease lost', loss),
             })
           : null;
@@ -1037,6 +1051,7 @@ export class CodexRuntime implements AgentRuntime {
         },
         signal: controller.signal,
         events: ctx,
+        onToolEvents: (deliver) => toolTurn.setDelivery(deliver),
         // The chat's "lost its DorkOS tools" / "back" notice (DOR-4393).
         onDorkosToolsListing: (listed) => this.registry.noteDorkosTools(sessionId, listed),
         ...replacement,
@@ -1106,6 +1121,7 @@ export class CodexRuntime implements AgentRuntime {
       if (sawCompaction) this.contextGate.forget(sessionId);
       connectorRevokeReason = connectorRuntimeFailed ? 'runtime_failed' : 'turn_terminal';
     } finally {
+      toolTurn.close();
       if (controller.signal.aborted) connectorRevokeReason = 'turn_cancelled';
       connectorSupervisor?.stop();
       try {
@@ -1154,7 +1170,7 @@ export class CodexRuntime implements AgentRuntime {
       throw new Error('executeCommandIntent(compact) is not supported by codex on exec');
     }
     await this.seedFromDurable(sessionId);
-    const settings = await this.resolveTurnSettings(sessionId, opts);
+    const { settings } = await this.resolveTurnSettings(sessionId, opts);
     const binding = this.threadMap.get(sessionId);
     const boundThreadId = binding?.threadId;
     // No thread, no conversation: said before anything about who would pay.
@@ -1197,6 +1213,7 @@ export class CodexRuntime implements AgentRuntime {
     if (creditsSwap?.notice) yield creditsSwap.notice;
     await creditsSwap?.commit();
     const controller = new AbortController();
+    this.activeTurns.get(sessionId)?.toolTurn?.close();
     this.activeTurns.set(sessionId, controller);
     if (credits) this.creditsTurns.add(controller);
     try {
@@ -1234,41 +1251,14 @@ export class CodexRuntime implements AgentRuntime {
   private async resolveTurnSettings(
     sessionId: string,
     opts?: MessageOpts
-  ): Promise<SessionSettings> {
-    if (!this.registry.has(sessionId)) {
-      const persisted = await this.settingsPort?.getSessionSettings(sessionId);
-      this.registry.register(sessionId, {
-        permissionMode: opts?.permissionMode ?? persisted?.permissionMode ?? 'default',
-        ...(persisted?.model !== undefined ? { model: persisted.model } : {}),
-        ...(persisted?.effort !== undefined ? { effort: persisted.effort } : {}),
-        ...(persisted?.fastMode !== undefined ? { fastMode: persisted.fastMode } : {}),
-        ...(opts?.cwd !== undefined ? { cwd: opts.cwd } : {}),
-      });
-    }
-    const tracked = this.registry.get(sessionId)!;
-    const model = opts?.model ?? tracked.model;
-    const effort = opts?.effort ?? tracked.effort;
-    const fastMode = opts?.fastMode ?? tracked.fastMode;
-    // A chat that follows its agent up starts from the agent's level this turn
-    // (DOR-3175); the tracked mode is left as it was.
-    const chosen = opts?.levelPermissionMode ?? opts?.permissionMode ?? tracked.permissionMode;
-    return {
-      // Held to the turn's ceiling, for this turn only: a turn another agent's
-      // post or a stranger's message started runs no looser than its sender,
-      // and the tracked mode is left as the person chose it (spec
-      // `trusted-by-default-flip` §4).
-      permissionMode:
-        opts?.permissionCeiling !== undefined
-          ? clampModeToCeiling(
-              this.getCapabilities().permissionModes,
-              chosen,
-              opts.permissionCeiling
-            )
-          : chosen,
-      ...(model !== undefined ? { model } : {}),
-      ...(effort !== undefined ? { effort } : {}),
-      ...(fastMode !== undefined ? { fastMode } : {}),
-    };
+  ): ReturnType<typeof prepareCodexTurnSettings> {
+    return prepareCodexTurnSettings(
+      this.registry,
+      this.settingsPort,
+      this.getCapabilities().permissionModes,
+      sessionId,
+      opts
+    );
   }
 
   /**

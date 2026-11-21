@@ -10,6 +10,8 @@ import { z } from 'zod';
 import {
   SignedInDeviceListSchema,
   SignOutEverywhereElseResultSchema,
+  WifiSignInApprovalSchema,
+  WifiSignInRequestListSchema,
 } from '@dorkos/shared/signed-in-devices';
 
 const TAGS = ['Devices'];
@@ -84,5 +86,96 @@ export function registerDevicesOpenApi(registry: OpenAPIRegistry): void {
       401: SIGNED_OUT,
       403: PEOPLE_ONLY,
     },
+  });
+
+  registry.registerPath({
+    method: 'put',
+    path: '/api/devices/sessions/{id}/runs-agents',
+    tags: TAGS,
+    summary: 'Let a Wi-Fi device run agents',
+    description:
+      'Lets one Wi-Fi sign-in start turns at the agent’s own level, or stops it. Every ' +
+      'sign-in starts with this off. Only the owner at the computer DorkOS runs on may ' +
+      'change it, from the app’s own page. Turning it on needs a fresh passkey check, as ' +
+      'approving a sign-in does: the first call answers `428` (`PASSKEY_CHECK_REQUIRED`), the ' +
+      'second sends `{ on, passkey }`. It ends when the device signs out or sits unused for ' +
+      '12 hours.',
+    request: {
+      params: z.object({ id: z.string() }),
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({ on: z.boolean(), passkey: z.unknown().optional() }),
+          },
+        },
+      },
+    },
+    responses: {
+      204: { description: 'Changed' },
+      401: json(ErrorSchema, 'Not signed in, or the passkey check did not pass'),
+      403: PEOPLE_ONLY,
+      404: json(ErrorSchema, 'No live Wi-Fi sign-in of yours has that id'),
+      409: json(ErrorSchema, 'Add a passkey on this computer first'),
+      428: json(
+        z.object({ code: z.string(), options: z.unknown() }),
+        'Run this passkey check, then call again with its response'
+      ),
+    },
+  });
+
+  registry.registerPath({
+    method: 'get',
+    path: '/api/devices/sign-in-requests',
+    tags: TAGS,
+    summary: 'Devices asking to sign in over Wi-Fi',
+    description:
+      'Devices on Wi-Fi waiting for the owner to approve their sign-in: what each says it ' +
+      'is, its address and when it asked. Only for the owner at the computer DorkOS runs on.',
+    responses: {
+      200: json(WifiSignInRequestListSchema, 'The waiting requests, newest first'),
+      401: SIGNED_OUT,
+      403: PEOPLE_ONLY,
+    },
+  });
+
+  registry.registerPath({
+    method: 'post',
+    path: '/api/devices/sign-in-requests/{id}/approve',
+    tags: TAGS,
+    summary: 'Approve a Wi-Fi sign-in',
+    description:
+      'Approves one waiting device and answers a one-time code to type on it. The first ' +
+      'call answers `428` with a passkey check (`PASSKEY_CHECK_REQUIRED`); the second ' +
+      'sends `{ passkey }`, the browser’s response to it. Each check approves one request ' +
+      'once. With no passkey on this computer it answers `409` (`PASSKEY_NEEDED`). Only for ' +
+      'the owner at the computer DorkOS runs on, from the app’s own page.',
+    request: {
+      params: z.object({ id: z.string() }),
+      body: {
+        content: { 'application/json': { schema: z.object({ passkey: z.unknown().optional() }) } },
+      },
+    },
+    responses: {
+      200: json(WifiSignInApprovalSchema, 'Approved: the code to type on the device'),
+      401: json(ErrorSchema, 'The passkey check did not pass'),
+      403: PEOPLE_ONLY,
+      404: json(ErrorSchema, 'That request has ended'),
+      409: json(ErrorSchema, 'Add a passkey on this computer first'),
+      428: json(
+        z.object({ code: z.string(), options: z.unknown() }),
+        'Run this passkey check, then call again with its response'
+      ),
+    },
+  });
+
+  registry.registerPath({
+    method: 'post',
+    path: '/api/devices/sign-in-requests/{id}/decline',
+    tags: TAGS,
+    summary: 'Decline a Wi-Fi sign-in',
+    description:
+      'Turns one waiting device away. Only for the owner at the computer DorkOS runs on.',
+    request: { params: z.object({ id: z.string() }) },
+    responses: { 204: { description: 'Declined' }, 401: SIGNED_OUT, 403: PEOPLE_ONLY },
   });
 }

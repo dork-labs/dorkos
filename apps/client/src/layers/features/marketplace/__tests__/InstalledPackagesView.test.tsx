@@ -219,6 +219,7 @@ function makeCheck(
     hasUpdate: false,
     marketplace: 'dorkos-community',
     status: 'current',
+    extensions: [],
     installPath: pkg.installPath,
     type: pkg.type,
     scope: pkg.scope ?? 'global',
@@ -947,6 +948,17 @@ describe('InstalledPackagesView', () => {
       // start, which the row must not overstate.
       const user = userEvent.setup();
       const quiet = staleCheck(REVIEWER, '1.3.0');
+      quiet.extensions = [];
+      quiet.disclosed = {
+        hooks: [],
+        schedules: [],
+        mcpServers: [],
+        lspServers: [],
+        monitors: [],
+        executables: [],
+        skillTools: [],
+        skillCommands: [],
+      };
       const withServer = {
         ...staleCheck(FLOW_ON_ALPHA, '0.7.3'),
         disclosed: {

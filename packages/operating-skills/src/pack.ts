@@ -464,8 +464,11 @@ export interface OperatingSkill {
  * - 67: `using-the-agent-browser` teaches separate signed-out profiles per agent,
  *   person-only sharing and own-window agent pages while retaining per-chat leases.
  *   An agent seeded at 66 would still expect the person’s default browser.
+ * - 68: `using-the-agent-browser` teaches the reload-wall handoff, a fresh reading
+ *   after hand-back, and waiting on held, busy or closing browsers.
+ *   An agent seeded at 67 would not know its page closes before the person's window.
  */
-export const OPERATING_SKILLS_VERSION = 67;
+export const OPERATING_SKILLS_VERSION = 68;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

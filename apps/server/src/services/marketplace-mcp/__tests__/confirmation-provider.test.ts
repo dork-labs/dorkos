@@ -551,6 +551,7 @@ describe('TokenConfirmationProvider — updates', () => {
       scope: 'global',
       installedVersion: '1.0.0',
       latestVersion: '1.2.0',
+      extensions: [],
       disclosed: NOTHING,
       ...overrides,
     };
@@ -604,7 +605,7 @@ describe('TokenConfirmationProvider — updates', () => {
     const [pending] = approvals.listPending();
     expect(pending!.capabilityId).toBe('marketplace.update');
     expect(pending!.summary).toContain('2 installed packages');
-    const detail = pending!.detail!;
+    const detail = approvals.fullDetail(pending!.approvalId) ?? pending!.detail!;
     expect(detail).toContain('"flow" (plugin, installed globally): "1.0.0" → "1.2.0"');
     expect(detail).toContain('runs "echo \\"new hook\\"" when the agent finishes');
     expect(detail).toContain('scheduled job "nightly": runs on "0 3 * * *"');

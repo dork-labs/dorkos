@@ -28,7 +28,8 @@ import {
 import { RoomRepoStore } from '../../services/rooms/repo/room-repo-store.js';
 import { createDocChannelHttpComposition } from '../../services/canvas/doc-channel/http-composition.js';
 import { ApprovalService } from '../../services/core/approvals/approval-service.js';
-import { initAuth, readOwnerAccount } from '../../services/core/auth/index.js';
+import { getAuth, initAuth, readOwnerAccount } from '../../services/core/auth/index.js';
+import { wifiSignInCookie } from '../../services/core/auth/__tests__/wifi-test-sign-in.js';
 import { configManager, initConfigManager } from '../../services/core/config-manager.js';
 import { MainRequestAdmission } from '../../services/core/lifecycle/main-request-admission.js';
 import {
@@ -382,13 +383,8 @@ describe('document route controls over the mounted app', () => {
   it('refuses allowing a route from Wi-Fi, but still reviews and turns off there', async () => {
     declare();
     // A real Wi-Fi sign-in: the session it mints is held to the Wi-Fi level.
-    const signIn = await request(server)
-      .post('/api/auth/sign-in/email')
-      .set('Origin', origin)
-      .set('x-test-ingress', 'wifi')
-      .send({ email: 'owner@dork.test', password: 'correct-horse-battery-staple' });
-    expect(signIn.status).toBe(200);
-    const wifi = signIn.headers['set-cookie'] as unknown as string[];
+    // Wi-Fi takes no password; a device signs in by code (DOR-4744).
+    const wifi = (await wifiSignInCookie(getAuth()!, 'localhost')).split('; ');
     const reviewed = await request(server)
       .post(`${endpoint()}/routes/helper/review`)
       .set('x-test-ingress', 'wifi')

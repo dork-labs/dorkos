@@ -37,6 +37,7 @@ import type { PermissionPreview, PreviewExtension } from '../marketplace/types.j
 import type { ApprovableUpdate } from '../marketplace/flows/update-installed.js';
 import { codeRowCount, effectRows, sortRows, whole } from './approval-summary-rows.js';
 import { placeOf, whenProgramsStart } from './update-approval-detail.js';
+import { extensionDeclarationLines } from '../marketplace/preview/extension-disclosure.js';
 
 /** What a confirmation request carries that the summary reads. */
 export interface SummarySource {
@@ -55,36 +56,39 @@ export type MarketplaceCardPlan =
   | { kind: 'refuse'; reason: string }
   | { kind: 'summary'; detail: string; marketplace: MarketplaceCardInput };
 
-/** The rows an extension with server code shows: the most powerful thing a package can do. */
+/** Every bundled app, with server code first and its declarations written in full. */
 function extensionRows(
   extensions: readonly PreviewExtension[] | undefined,
   change: MarketplaceRisk['change']
 ): MarketplaceRisk[] {
-  return (extensions ?? [])
-    .filter((ext) => ext.hasServer !== false)
-    .map((ext) => {
-      const isolation = ext.isolation;
-      const inProcess = !isolation || isolation.runtime === 'in-process';
-      const items = isolation
-        ? [
-            ...isolation.net.map((host) => `Contacts ${whole(host)}`),
-            ...isolation.run.map((program) => `May start ${whole(program)}`),
-            ...(isolation.agents ? ['May message agents and start agent sessions'] : []),
-          ]
-        : [];
-      const unproven =
-        change === 'broader'
-          ? '. DorkOS cannot show its server code is unchanged, so this counts as more power'
-          : '';
-      return {
-        kind: 'extension' as const,
+  if (extensions === undefined)
+    return [
+      {
+        kind: 'unreadable',
         change,
-        text: inProcess
-          ? `The extension ${whole(ext.id)} runs server code inside DorkOS, with full access to DorkOS${unproven}`
-          : `The extension ${whole(ext.id)} runs server code in a separate process${unproven}`,
-        ...(items.length > 0 && { items }),
-      };
-    });
+        text: 'Mini app details weren’t included. This package may run server code.',
+      },
+    ];
+  return (extensions ?? []).map((ext) => {
+    const isolation = ext.isolation;
+    const inProcess = !isolation || isolation.runtime === 'in-process';
+    const items = extensionDeclarationLines(ext);
+    const unproven =
+      change === 'broader'
+        ? '. DorkOS cannot show its server code is unchanged, so this counts as more power'
+        : '';
+    return {
+      kind: 'extension' as const,
+      change,
+      text:
+        ext.hasServer === false
+          ? `The mini app ${whole(ext.id)} has only screens`
+          : inProcess
+            ? `The extension ${whole(ext.id)} runs server code inside DorkOS, with full access to DorkOS${unproven}`
+            : `The extension ${whole(ext.id)} runs server code in a separate process${unproven}`,
+      ...(items.length > 0 && { items }),
+    };
+  });
 }
 
 /** The rows only an install's preview has: hosts, secrets, libraries and unreadable files. */
@@ -238,7 +242,15 @@ function overCapReason(req: SummarySource, count: number): string {
  *   and the full list to store, or `refuse` with the reason nothing was asked.
  */
 export function planMarketplaceCard(req: SummarySource, fullText: string): MarketplaceCardPlan {
-  if (fullText.length <= APPROVAL_DETAIL_MAX_LENGTH) return { kind: 'full' };
+  const hasAppsOrSchedules =
+    (req.preview?.extensions?.length ?? 0) > 0 ||
+    (req.preview?.schedules?.length ?? 0) > 0 ||
+    req.updates?.some(
+      (update) =>
+        (update.extensions?.length ?? 0) > 0 || (update.disclosed?.schedules.length ?? 0) > 0
+    );
+  const large = fullText.length > APPROVAL_DETAIL_MAX_LENGTH;
+  if (!large && !hasAppsOrSchedules) return { kind: 'full' };
   const packages = req.updates
     ? req.updates.map(updateSummary)
     : req.operation === 'install' && req.preview
@@ -250,8 +262,13 @@ export function planMarketplaceCard(req: SummarySource, fullText: string): Marke
     packages,
     fullDetailLength: fullText.length,
   };
-  const count = codeRowCount(allRows(summary));
-  if (count > MARKETPLACE_SUMMARY_CODE_ROW_CAP) {
+  // Screens-only apps stay visible, but do not spend the code-running cap.
+  const extensions = req.updates
+    ? req.updates.flatMap((update) => update.extensions ?? [])
+    : (req.preview?.extensions ?? []);
+  const screensOnly = extensions.filter((ext) => ext.hasServer === false).length;
+  const count = codeRowCount(allRows(summary)) - screensOnly;
+  if (large && count > MARKETPLACE_SUMMARY_CODE_ROW_CAP) {
     return { kind: 'refuse', reason: overCapReason(req, count) };
   }
   if (fullText.length > APPROVAL_FULL_DETAIL_MAX_LENGTH) {

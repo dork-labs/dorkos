@@ -87,8 +87,9 @@ export function loadFailedError(url: string | undefined, reason: string | undefi
  * it, `settle()` waits up to {@link LOAD_SETTLE_MS} for a started load to commit or fail, then
  * throws {@link loadFailedError} when the tab ended on the browser's error page.
  */
-function watchMainFrameLoad(page: Page): { settle: () => Promise<void>; stop: () => void } {
+function watchMainFrameLoad(page: Page) {
   let started = false;
+  let committed = false;
   let failed: { url: string; reason?: string } | undefined;
   let done!: () => void;
   const finished = new Promise<void>((resolve) => {
@@ -119,7 +120,10 @@ function watchMainFrameLoad(page: Page): { settle: () => Promise<void>; stop: ()
     done();
   };
   const onNavigated = (frame: import('playwright-core').Frame) => {
-    if (frame === page.mainFrame()) done();
+    if (frame === page.mainFrame() && started) {
+      committed = true;
+      done();
+    }
   };
   const stop = () => {
     page.off('request', onRequest);
@@ -129,18 +133,32 @@ function watchMainFrameLoad(page: Page): { settle: () => Promise<void>; stop: ()
   page.on('request', onRequest);
   page.on('requestfailed', onFailed);
   page.on('framenavigated', onNavigated);
+  const settle = async () => {
+    try {
+      // The browser starts the load a moment after the input lands, so give it that moment.
+      if (!started) await within(starting, LOAD_START_MS);
+      if (started && !failed) await within(finished, LOAD_SETTLE_MS);
+    } finally {
+      stop();
+    }
+    if (failed || BROWSER_ERROR_PAGE.test(page.url()))
+      throw loadFailedError(failed?.url, failed?.reason);
+  };
   return {
     stop,
-    settle: async () => {
-      try {
-        // The browser starts the load a moment after the input lands, so give it that moment.
-        if (!started) await within(starting, LOAD_START_MS);
-        if (started && !failed) await within(finished, LOAD_SETTLE_MS);
-      } finally {
+    settle,
+    recover: async (error: unknown): Promise<boolean> => {
+      // Losing the old document is expected only when this dispatch's main-frame
+      // request actually committed. A URL change or an arbitrary exception is not proof.
+      if (
+        !(error instanceof Error) ||
+        !/Execution context was destroyed|Cannot find context with specified id/.test(error.message)
+      ) {
         stop();
+        return false;
       }
-      if (failed || BROWSER_ERROR_PAGE.test(page.url()))
-        throw loadFailedError(failed?.url, failed?.reason);
+      await settle();
+      return committed && !page.isClosed();
     },
   };
 }
@@ -195,6 +213,7 @@ export async function performPageAction(
   admit();
   if (input.kind === 'navigate') {
     // Admission ends at dispatch. A timed-out navigation is never replayed.
+    const load = watchMainFrameLoad(page);
     dispatched();
     try {
       await page.goto(input.url, { waitUntil: 'commit', timeout: ACTION_TIMEOUT_MS });
@@ -202,7 +221,9 @@ export async function performPageAction(
       // A load the browser refused (`net::ERR_…`) says so; anything else stays uncertain.
       const code = netErrorCode(error instanceof Error ? error.message : undefined);
       if (code && code !== 'ERR_ABORTED') throw loadFailedError(input.url, `net::${code}`);
-      throw error;
+      if (!(await load.recover(error))) throw error;
+    } finally {
+      load.stop();
     }
     if (BROWSER_ERROR_PAGE.test(page.url())) throw loadFailedError(input.url, undefined);
   } else if (!observed || !observedNodes) {
@@ -237,8 +258,7 @@ export async function performPageAction(
         try {
           await page.keyboard.press(input.key);
         } catch (error) {
-          load.stop();
-          throw error;
+          if (!(await load.recover(error))) throw error;
         }
         await load.settle();
       } else await page.mouse.wheel(input.deltaX, input.deltaY);
@@ -284,8 +304,7 @@ export async function performPageAction(
         try {
           await handle.click({ timeout: ACTION_TIMEOUT_MS, noWaitAfter: true });
         } catch (error) {
-          load.stop();
-          throw error;
+          if (!(await load.recover(error))) throw error;
         }
         await load.settle();
       } else await handle.fill(input.text, { timeout: ACTION_TIMEOUT_MS });

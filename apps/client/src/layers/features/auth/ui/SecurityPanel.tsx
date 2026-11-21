@@ -17,6 +17,7 @@ import { OwnerSetupScreen } from './OwnerSetupScreen';
 import { OwnerSignInScreen } from './OwnerSignInScreen';
 import { ApiKeysSection } from './ApiKeysSection';
 import { SignedInDevicesSection } from './SignedInDevicesSection';
+import { OwnerFactorsSection } from './OwnerFactorsSection';
 import { useCurrentUser, useSignOut } from '../model/use-auth-session';
 
 /** Which step turning login on needs: create the owner, or sign in as the one that exists. */
@@ -79,7 +80,7 @@ export function SecurityPanel() {
         <p className="text-muted-foreground text-sm">
           {isHub
             ? 'You sign in here with your DorkOS account.'
-            : 'Other devices always need your password. This computer can ask for it too.'}
+            : 'Other devices need a password, or on Wi-Fi a code. This computer can ask too.'}
         </p>
       </div>
 
@@ -127,6 +128,16 @@ export function SecurityPanel() {
         <FieldCard>
           <FieldCardContent>
             <SignedInDevicesSection />
+          </FieldCardContent>
+        </FieldCard>
+      )}
+
+      {/* The owner's passkeys and authenticator apps (DOR-3647). The section
+          hides itself for anyone the server will not show them to. */}
+      {currentUser && (
+        <FieldCard>
+          <FieldCardContent>
+            <OwnerFactorsSection />
           </FieldCardContent>
         </FieldCard>
       )}
