@@ -101,11 +101,25 @@ export function resolveOccurrence(
 ): Occurrence {
   const intendedFor = latestBoundaryAtOrBefore(job, expected, firedAt);
   const lateByMs = Math.max(0, firedAt.getTime() - intendedFor.getTime());
-  const [next] = job.nextRuns(1, intendedFor);
-  const halfInterval = next ? (next.getTime() - intendedFor.getTime()) / 2 : Infinity;
-  const stale =
-    lateByMs >= ON_TIME_GRACE_MS && (lateByMs >= STALE_CEILING_MS || lateByMs >= halfInterval);
+  const stale = isTooLate(job, intendedFor, firedAt);
   return { intendedFor, lateByMs, missed: countMissed(job, expected, intendedFor), stale };
+}
+
+/**
+ * Whether running an occurrence at `at` is too late to be worth it: the rule
+ * {@link Occurrence.stale} states. A run the computer's sleep broke is tried
+ * again by the same rule (DOR-3286).
+ *
+ * @param job - The task's schedule, or null for a task with none (a one-shot),
+ *   which then has only the hour's ceiling.
+ * @param intendedFor - The occurrence.
+ * @param at - When it would run.
+ */
+export function isTooLate(job: OccurrenceSchedule | null, intendedFor: Date, at: Date): boolean {
+  const lateByMs = Math.max(0, at.getTime() - intendedFor.getTime());
+  const [next] = job?.nextRuns(1, intendedFor) ?? [];
+  const halfInterval = next ? (next.getTime() - intendedFor.getTime()) / 2 : Infinity;
+  return lateByMs >= ON_TIME_GRACE_MS && (lateByMs >= STALE_CEILING_MS || lateByMs >= halfInterval);
 }
 
 /**

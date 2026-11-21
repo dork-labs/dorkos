@@ -5,6 +5,7 @@ import {
   refusedToolNames,
   withRefusedAsks,
 } from '@dorkos/shared/run-refusals';
+import { withSleepBlame } from '@dorkos/shared/schedule-notice-copy';
 import { createTaggedLogger } from '../../../lib/logger.js';
 import type { TaskStore } from '../task-store.js';
 import type { RunAccounting } from '../run-accounting.js';
@@ -41,7 +42,7 @@ interface FinalizeInput extends Omit<FailureInput, 'error'> {
   task: Task;
   run: TaskRun;
   terminal: Terminal | undefined;
-  stop: Pick<RunDeadline, 'cancel'>;
+  stop: Pick<RunDeadline, 'cancel' | 'justWoke'>;
   turn: RunTurn | undefined;
   agentManager: { getInternalSessionId(sessionId: string): string | undefined };
   store: Pick<TaskStore, 'updateRun'>;
@@ -80,6 +81,10 @@ export async function finalizeRunTerminal(input: FinalizeInput): Promise<void> {
     input.runs.release(input.run.id);
   }
   if (terminal) {
+    // A failure just after the computer woke from a sleep during the run is put
+    // down to the sleep, worded as the relay path words it, and a scheduled one
+    // is tried again (DOR-3286).
+    terminal = withSleepBlame(terminal, input.stop.justWoke());
     terminal.sessionId = identityFailed
       ? input.sessionId
       : (input.agentManager.getInternalSessionId(input.sessionId) ?? input.sessionId);

@@ -29,10 +29,12 @@ import {
 import {
   awakeTimeout,
   getAwakeClock,
+  justWokeFromSleep,
   pausableAwakeTimeout,
   type AwakeClock,
   type PausableAwakeTimeout,
 } from '@dorkos/shared/awake-clock';
+import { withSleepBlame } from '@dorkos/shared/schedule-notice-copy';
 import type { AdapterContext, DeliveryResult, TraceStoreLike } from '../../types.js';
 import type { AgentRuntimeLike, RefusedAskReporter, TasksStoreLike } from './types.js';
 import { OPERATOR_CANCEL } from './task-cancel-handler.js';
@@ -387,10 +389,15 @@ export async function handleTasksMessage(
   // a run that waited in line still gets all of it (DOR-4576). The TTL above
   // stays the outer bound. Absent on an envelope that carries no limit.
   let limit: PausableAwakeTimeout | undefined;
+  const awakeClock = deps.awakeClock ?? getAwakeClock();
+  // A run that fails just after the computer woke from a sleep during it says
+  // so, not what the runtime raised on wake, and the scheduler tries it again
+  // (DOR-3286).
+  const sleptAtStart = awakeClock.sleptMs();
+  const justWoke = (): boolean => justWokeFromSleep(awakeClock, sleptAtStart);
   if (isExpired(ttlRemaining)) {
     controller.abort();
   } else {
-    const awakeClock = deps.awakeClock ?? getAwakeClock();
     // Awake time only (DOR-3286). Re-armed in steps, so a time limit past
     // 2^31-1 ms (which a bare Node timer fires at once) holds too (DOR-3033).
     cancelDeadline = awakeTimeout(awakeClock, ttlRemaining, () => controller.abort());
@@ -551,7 +558,7 @@ export async function handleTasksMessage(
         // The status, how much got done and the line a person reads, mapped by
         // the one function the direct twin writes its row from too.
         deps.taskStore.updateRun(runId, {
-          ...settledRunFields(outcome.settle(), refusalLine),
+          ...withSleepBlame(settledRunFields(outcome.settle(), refusalLine), justWoke()),
           finishedAt: new Date().toISOString(),
           durationMs,
           outputSummary: truncatedSummary,
@@ -583,14 +590,13 @@ export async function handleTasksMessage(
 
     if (deps.taskStore) {
       deps.taskStore.updateRun(runId, {
-        status: 'failed',
+        ...withSleepBlame({ status: 'failed' as const, error: errorMsg }, justWoke()),
         finishedAt: new Date().toISOString(),
         durationMs,
         outputSummary: withRefusedAsks(
           refusals.summaryLine(),
           outputSummary.slice(0, OUTPUT_SUMMARY_MAX_CHARS)
         ),
-        error: errorMsg,
         refusedTools: refusedToolNames(refusals.all()),
         sessionId: persistedSessionId(),
       });

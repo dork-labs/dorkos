@@ -17,7 +17,8 @@ import type { PublishResult, RelayCore } from '@dorkos/relay';
 import type { Task, TaskRun } from '@dorkos/shared/types';
 import type { TaskDispatchPayload } from '@dorkos/shared/relay-schemas';
 import { TASK_SCHEDULER_PRINCIPAL, taskDispatchSubject } from '@dorkos/shared/relay-schemas';
-import { RUN_LINE } from '@dorkos/shared/schedule-notice-copy';
+import { RUN_LINE, sleptDuringRunError } from '@dorkos/shared/schedule-notice-copy';
+import { getAwakeClock, justWokeFromSleep, type AwakeClock } from '@dorkos/shared/awake-clock';
 import { buildTaskAppend } from './task-append.js';
 import { resolveRunSession } from './session/sticky-session.js';
 import { recordRunSession } from './session/record-run-session.js';
@@ -52,6 +53,8 @@ export interface RelayDispatchDeps {
    * dispatch at all (DOR-3033). Thirty seconds by default; tests shorten it.
    */
   noReceiverRetryMs?: number;
+  /** Sees the computer sleep (DOR-3286). The process clock by default. */
+  clock?: AwakeClock;
 }
 
 /** Fallback deadline for a dispatch envelope when the task sets none. */
@@ -79,10 +82,21 @@ function nothingAnswered(result: PublishResult): boolean {
  * Each sentence opens with a {@link RUN_LINE} constant, which the fails-twice
  * notice reads back into fixed words (DOR-4121).
  *
+ * Nothing answering a run handed over just as the computer woke from a sleep
+ * says so (DOR-3286): it used to read "nothing was available", which sent a
+ * person looking for a missing runtime or account. A delivery deadline is not
+ * one of these: it counts awake time only (`adapter-delivery.ts`), so sleep
+ * cannot run it out.
+ *
  * @param trigger - What started the run
  * @param result - What the publish returned
+ * @param justWoke - Whether the computer slept during the dispatch and just woke
  */
-function notStartedError(trigger: TaskRun['trigger'], result: PublishResult): string {
+function notStartedError(
+  trigger: TaskRun['trigger'],
+  result: PublishResult,
+  justWoke: boolean
+): string {
   if (result.adapterResult?.code === 'at_capacity') {
     return `${RUN_LINE.slotsBusy}, so this run didn’t start.`;
   }
@@ -92,6 +106,7 @@ function notStartedError(trigger: TaskRun['trigger'], result: PublishResult): st
   }
   if (refused !== undefined) return `${RUN_LINE.tooBusy} to take this run, so it didn’t start.`;
   const error = result.adapterResult?.error ?? '';
+  if (justWoke && error === '') return sleptDuringRunError();
   // Raised when a run that DID start never reported how it ended; it must not
   // read as one that never started. The raw adapter text stays in the log.
   if (error.startsWith('adapter delivery timeout')) {
@@ -159,6 +174,8 @@ export async function dispatchRunViaRelay(
   // delivery runs the entire turn inside `publish()` below, so a slot taken any
   // later would be taken after the run had already ended.
   deps.runs.addRelay(run.id, task.maxRuntime);
+  const clock = deps.clock ?? getAwakeClock();
+  const sleptAtStart = clock.sleptMs();
 
   let effectiveCwd: string;
   try {
@@ -352,7 +369,7 @@ export async function dispatchRunViaRelay(
       status: 'failed',
       finishedAt: new Date().toISOString(),
       durationMs: 0,
-      error: notStartedError(run.trigger, result),
+      error: notStartedError(run.trigger, result, justWokeFromSleep(clock, sleptAtStart)),
     });
     logger.warn(`relay dispatch of run ${run.id} did not start`, {
       rejected: result.rejected?.map((entry) => entry.reason),
