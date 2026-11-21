@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(tasks): a scheduled run your Mac slept through says so and runs again after it wakes (DOR-3286)'
+  - 'fix(tasks): match the sleep line exactly, so a runtime error that opens with its words earns no retry (DOR-3286)'
 ---
 
 ### Fixed

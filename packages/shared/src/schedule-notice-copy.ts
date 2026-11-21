@@ -85,12 +85,14 @@ export function withSleepBlame<T extends { status?: string; error?: string | nul
 }
 
 /**
- * Whether a stored run line is {@link sleptDuringRunError}'s.
+ * Whether a stored run line is {@link sleptDuringRunError}'s, exactly. The same
+ * field holds a runtime's own error text, and one that merely opened with these
+ * words must not earn a retry or leave a failing streak (DOR-3286 review).
  *
  * @param error - The run's recorded error, if any.
  */
 export function isSleptDuringRunError(error: string | null | undefined): boolean {
-  return error?.startsWith(RUN_LINE.computerSlept) ?? false;
+  return error === sleptDuringRunError();
 }
 
 /** Rows written before {@link runTimeLimitError} existed on the relay path. */

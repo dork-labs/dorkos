@@ -102,6 +102,9 @@ describe('a run the computer’s sleep broke (DOR-3286)', () => {
 
   it('is told apart from every other run line', () => {
     expect(isSleptDuringRunError(sleptDuringRunError())).toBe(true);
+    // A runtime's own text that only opens with the same words is not the line.
+    expect(isSleptDuringRunError(`${sleptDuringRunError()} Then: fetch failed`)).toBe(false);
+    expect(isSleptDuringRunError('Interrupted: the computer slept, it says')).toBe(false);
     // The restart line opens with the same word, and must not match.
     expect(isSleptDuringRunError('Interrupted by server restart')).toBe(false);
     expect(isSleptDuringRunError(null)).toBe(false);
