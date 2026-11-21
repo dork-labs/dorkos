@@ -455,7 +455,7 @@ export class AppServerCodexTransport implements CodexTransport {
     const keyTurn = threadKeyTurn(keys, loaded, request, sessionId, () =>
       this.loader.markToolsLost(process, loaded.threadId)
     );
-    const queue = new EventQueue();
+    const queue = new EventQueue(() => request.onToolEvents?.(undefined));
     const priorContextTokens = this.contextTokens.get(loaded.threadId);
     const mapper = new AppServerTurnMapper(request.events, {
       rateLimits: () => (onCredits ? [] : this.rolloutRateLimits(process)),
@@ -513,10 +513,7 @@ export class AppServerCodexTransport implements CodexTransport {
           }
         : {}),
     };
-    turn.deliver = (events) => {
-      if (sink.turnId === undefined) early.push(...events);
-      else queue.push(events);
-    };
+    turn.deliver = queue.deliveryBefore(sink, early);
     turn.view = {
       inputOf: (itemId) => mapper.inputOf(itemId),
       runningMcpCalls: (server) => mapper.runningMcpCalls(server),
@@ -559,6 +556,7 @@ export class AppServerCodexTransport implements CodexTransport {
         yield* this.startCompaction(process, loaded.threadId, turn, mapper, queue, adoption, early);
         return;
       }
+      request.onToolEvents?.(turn.deliver);
       let turnId: string;
       try {
         const result = await process.client.request(
@@ -594,6 +592,7 @@ export class AppServerCodexTransport implements CodexTransport {
       queue.push(early.splice(0));
       yield* queue.drain();
     } finally {
+      queue.end();
       // What the next compaction on this thread starts from.
       const tokens = mapper.contextTokens;
       if (tokens !== undefined) this.contextTokens.set(loaded.threadId, tokens);
