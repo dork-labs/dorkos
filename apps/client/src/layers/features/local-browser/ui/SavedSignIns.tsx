@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { Button } from '@/layers/shared/ui';
-import { ForgetSignInsDialog } from './ForgetSignInsDialog';
+import { ForgetSignInsDialog, type ForgetSignInsDialogProps } from './ForgetSignInsDialog';
 
 /**
  * Forget saved sign-ins (DOR-4105) while no page is open: one quiet link at the
@@ -9,9 +9,11 @@ import { ForgetSignInsDialog } from './ForgetSignInsDialog';
  */
 export function SavedSignIns({
   enabled,
+  profile,
   disabled = false,
 }: {
   enabled: boolean;
+  profile: ForgetSignInsDialogProps['profile'];
   disabled?: boolean;
 }) {
   const [asking, setAsking] = useState(false);
@@ -38,6 +40,7 @@ export function SavedSignIns({
       </p>
       <ForgetSignInsDialog
         open={asking}
+        profile={profile}
         onOpenChange={setAsking}
         returnFocus={opener}
         onForgotten={() => setNotice('Sign-ins forgotten.')}

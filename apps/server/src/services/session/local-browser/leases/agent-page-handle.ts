@@ -39,6 +39,7 @@ export function captureAgentPage(
 ) {
   const captured = identity();
   return agentPageHandle(session, () => {
+    session.assertAuthorityCurrent();
     const current = identity();
     if (captured.sessionId && session.handover.isOpenFor(captured.sessionId)) return;
     if (current.status === 'closed' || captured.page?.isClosed())

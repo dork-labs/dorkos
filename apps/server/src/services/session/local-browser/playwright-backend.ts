@@ -172,6 +172,7 @@ export const productionBackend: LocalBrowserBackend = {
       viewport: null,
       chromiumSandbox: true,
       args: [
+        '--disable-sync',
         `${PINNED_DISABLED_FEATURES_ARG},HttpsUpgrades,HttpsFirstBalancedModeAutoEnable`,
         ...(theme ? agentWindowThemeArgs(theme) : []),
         agentWindowNameArg(agentName),

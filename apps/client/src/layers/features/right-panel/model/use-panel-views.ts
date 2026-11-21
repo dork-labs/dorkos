@@ -257,13 +257,13 @@ export function usePanelViews(contributions: RightPanelContribution[], pathname:
       },
     ];
   });
-  // A stream may publish the server row before POST identifies it. Defer only possible
-  // echoes of a closed unresolved open; existing twins and explicit selections stay visible.
+  // A stream may publish the server row before POST identifies it. Defer possible echoes
+  // of every unresolved open, closed or showing: a showing pending tab already stands for
+  // its echo, which would otherwise sit beside it as a second tab for the same file until
+  // the POST settles. Existing twins and explicit selections stay visible.
   const deferredDocuments = new Set<string>();
   if (!roomId) {
-    const pending = (sessionDocuments ?? []).filter(
-      (doc) => doc.id.startsWith('pending:') && viewClosed(`resource/${doc.id}`)
-    );
+    const pending = (sessionDocuments ?? []).filter((doc) => doc.id.startsWith('pending:'));
     for (const doc of sessionDocuments ?? []) {
       if (doc.id.startsWith('pending:') || doc.openedHere) continue;
       if (pending.some((open) => open.pendingCandidateIds?.includes(doc.id)))

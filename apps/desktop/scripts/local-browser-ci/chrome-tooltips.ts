@@ -77,7 +77,7 @@ async function main(): Promise<void> {
         Authorization: `Bearer ${process.env.DORKOS_LOCAL_BROWSER_BRIDGE_TOKEN!}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ connectionId: CONNECTION }),
+      body: JSON.stringify({ connectionId: CONNECTION, sessionId: null, profileId: null }),
     })
   ).json()) as { endpoint: string; headers: Record<string, string> };
   // An attached agent keeps the guest past the bridge's unclaimed-page timer.

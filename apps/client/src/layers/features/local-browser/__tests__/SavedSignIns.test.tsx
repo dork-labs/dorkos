@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SavedSignIns } from '../ui/SavedSignIns';
+import type { ForgetSignInsDialogProps } from '../ui/ForgetSignInsDialog';
 
 const transport = vi.hoisted(() => ({
   forgetLocalBrowserSignIns: vi.fn(),
@@ -11,11 +12,18 @@ vi.mock('@/layers/shared/model', async (original) => ({
   ...(await original<typeof import('@/layers/shared/model')>()),
   useTransport: () => transport,
 }));
-function mount(enabled = true) {
+function mount(
+  enabled = true,
+  profile: ForgetSignInsDialogProps['profile'] = {
+    id: 'default',
+    label: 'Your browser',
+    agentName: null,
+  }
+) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   const view = render(
     <QueryClientProvider client={client}>
-      <SavedSignIns enabled={enabled} />
+      <SavedSignIns enabled={enabled} profile={profile} />
     </QueryClientProvider>
   );
   return { ...view, client };
@@ -46,7 +54,7 @@ describe('Saved sign-ins (DOR-4105)', () => {
     fireEvent.click(trigger);
     const dialog = await screen.findByRole('alertdialog', {
       name: 'Forget saved sign-ins?',
-      description: 'This signs every agent here out of every site. It can’t be undone.',
+      description: 'This signs you out of every site in your browser. It can’t be undone.',
     });
     expect(dialog.textContent?.toLowerCase()).not.toContain('profile');
     const cancel = within(dialog).getByRole('button', { name: 'Cancel' });
@@ -70,8 +78,29 @@ describe('Saved sign-ins (DOR-4105)', () => {
       })
     );
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
-    expect(transport.forgetLocalBrowserSignIns).toHaveBeenCalledExactlyOnceWith(null);
+    expect(transport.forgetLocalBrowserSignIns).toHaveBeenCalledExactlyOnceWith('default');
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ['local-browser', 'state'] });
+  });
+
+  it.each([
+    { id: 'agent-atlas', label: 'Atlas · browser', agentName: 'Atlas' },
+    { id: 'default', label: 'Your browser', agentName: null },
+    { id: 'default', label: 'Your browser', agentName: 'Atlas' },
+    { id: 'agent-unnamed', label: 'Agent browser', agentName: null },
+  ])('the empty-state row forgets only $label', async (profile) => {
+    mount(true, profile);
+    fireEvent.click(screen.getByRole('button', { name: 'Forget saved sign-ins…' }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveTextContent(
+      profile.id === 'default'
+        ? 'This signs you out of every site in your browser. It can’t be undone.'
+        : profile.agentName
+          ? 'This signs Atlas out of every site in its browser. It can’t be undone.'
+          : 'This signs this agent out of every site in its browser. It can’t be undone.'
+    );
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Forget sign-ins' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(transport.forgetLocalBrowserSignIns).toHaveBeenCalledExactlyOnceWith(profile.id);
   });
 
   it('keeps a busy refusal visible in plain words, without raw details', async () => {
