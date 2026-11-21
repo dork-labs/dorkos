@@ -24,12 +24,14 @@ vi.mock('@tanstack/react-router', async (importOriginal) => ({
 vi.mock('@/layers/shared/model/TransportContext', () => ({
   useTransport: () => ({
     createSessionLocation: vi.fn(async () => ({ id: 'test-location' })),
+    allocateSession: vi.fn(async () => ({ sessionId: crypto.randomUUID() })),
     getDefaultCwd: vi.fn(async () => ({ path: '/default' })),
   }),
 }));
 
 const mockSessions = vi.fn<() => { sessions: Session[] }>(() => ({ sessions: [] }));
-vi.mock('@/layers/entities/session', () => ({
+vi.mock('@/layers/entities/session', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/session')>()),
   useSessions: () => mockSessions(),
 }));
 

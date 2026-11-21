@@ -152,9 +152,10 @@ export function useOpenDirectChat(): (
         if ('agentPath' in req && !opts.quiet) {
           const found = await agentChatTarget({ queryClient, transport }, req.agentPath, {
             ...(opts.runtime && { runtime: opts.runtime }),
+            isStillWanted,
           });
-          if (!found) throw new Error('No chat with this agent could be found.');
           if (!isStillWanted()) return 'overtaken';
+          if (!found) throw new Error('No chat with this agent could be found.');
           await navigate({ ...found, ...(opts.replace && { replace: true }) });
           return 'opened';
         }

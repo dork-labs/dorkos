@@ -344,6 +344,7 @@ describe('Database Migrations', () => {
       // Each session's last context reading, so it shows on open and after a
       // restart (spec claude-account-fleet §6 U, migration 0118).
       'session_context',
+      'session_draft_sources',
       // Durable completed-turn event stream for log-backed runtimes
       // (DOR-189, migration 0026).
       'session_events',

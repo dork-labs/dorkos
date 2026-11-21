@@ -5,12 +5,13 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render as rtlRender, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { sessionKeys } from '@/layers/entities/session';
+import { sessionKeys, useSessionChatStore } from '@/layers/entities/session';
 import type { Session } from '@dorkos/shared/types';
 import '@testing-library/jest-dom/vitest';
 import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { useInteractionStore } from '@/layers/entities/interactions';
 import { CommandPaletteDialog } from '../ui/CommandPaletteDialog';
+import { usePaletteActions } from '../model/use-palette-actions';
 import { registerTabOpener } from '@/layers/shared/lib';
 import { enterDesktopShell, leaveDesktopShell } from '@/test-helpers/desktop-shell';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
@@ -363,6 +364,36 @@ describe('CommandPaletteDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGlobalPaletteOpen = true;
+  });
+
+  it('types a command only under the fresh chat acknowledged by the server', async () => {
+    let resolveAcknowledgement!: (value: { sessionId: string }) => void;
+    const acknowledgement = new Promise<{ sessionId: string }>((resolve) => {
+      resolveAcknowledgement = resolve;
+    });
+    vi.mocked(mockTransport.allocateSession).mockReturnValueOnce(acknowledgement);
+    vi.mocked(mockTransport.listSessions).mockResolvedValueOnce({ sessions: [] });
+
+    function CommandAction() {
+      const { handleCommandSelect } = usePaletteActions(vi.fn());
+      return <button onClick={() => handleCommandSelect('/clear')}>Choose clear</button>;
+    }
+
+    render(<CommandAction />);
+    fireEvent.click(screen.getByRole('button', { name: 'Choose clear' }));
+    await waitFor(() => expect(mockTransport.allocateSession).toHaveBeenCalledTimes(1));
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(useSessionChatStore.getState().getSession('palette-ack').input).toBe('');
+
+    resolveAcknowledgement({ sessionId: 'palette-ack' });
+    await waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledExactlyOnceWith({
+        to: '/session',
+        search: expect.objectContaining({ session: 'palette-ack', draft: '1' }),
+      })
+    );
+    expect(useSessionChatStore.getState().getSession('palette-ack').input).toBe('/clear ');
+    expect(mockTransport.postMessage).not.toHaveBeenCalled();
   });
 
   // --- Rendering when open ---

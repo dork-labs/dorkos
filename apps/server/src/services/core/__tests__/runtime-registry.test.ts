@@ -10,6 +10,7 @@ import {
 import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import type { SessionSettings } from '@dorkos/shared/types';
 import { SessionSettingsSchema } from '@dorkos/shared/schemas';
+import { readDraftSource } from '../runtime-seam/person-draft-settings.js';
 import { createTestDb } from '@dorkos/test-utils/db';
 import {
   sessionContext,
@@ -24,6 +25,7 @@ import {
   type Db,
 } from '@dorkos/db';
 import { logger } from '../../../lib/logger.js';
+import { RequiredSessionIdentityError } from '../../../lib/replay/required-session-identity-error.js';
 import {
   SessionLimitStore,
   setSessionLimitStore,
@@ -2282,6 +2284,72 @@ describe('RuntimeRegistry', () => {
       expect(registry.getNativeSessionAccount(sessionId)).toBe('owned-native-account');
     });
 
+    it('refuses native import over a saved-folder draft and still imports an old conversation', async () => {
+      await (await import('../../../lib/boundary.js')).initBoundary(process.cwd());
+      const observed = native();
+      const { cwd } = observed;
+      if (!cwd) throw new Error('Expected the native fixture directory');
+      const caller = { kind: 'operator' } as const;
+      const legacyId = '19c3799f-8028-421b-a110-1b12e54ed47f';
+
+      const ownerId = 'saved-folder-owner';
+      const locationId = 'saved-folder';
+      const stamp = 'saved-folder-generation';
+      db.insert(sessionLocations).values({ id: locationId, ownerId, cwd, createdAt: stamp }).run();
+      db.insert(sessionBirthAllocations)
+        .values({
+          sessionId,
+          version: 1,
+          createdAt: stamp,
+          sourceKind: 'person-location',
+          ownerId,
+          locationId,
+        })
+        .run();
+      await registry.saveSessionSettings(
+        sessionId,
+        { model: 'draft-choice', permissionMode: 'plan' },
+        {
+          kind: 'person-location',
+          sessionId,
+          allocationCreatedAt: stamp,
+          sourceCreatedAt: stamp,
+          ownerId,
+          locationId,
+          cwd,
+        }
+      );
+      const pending = read();
+      const draft = readDraftSource(db, sessionId);
+      expect(pending).toMatchObject({
+        runtime: null,
+        modelLaunchState: 'pending-v1',
+        model: 'draft-choice',
+        permissionMode: 'plan',
+      });
+      expect(draft).toMatchObject({ sessionId, ownerId, locationId, sourcePath: cwd });
+      expect(db.select().from(sessionBirthAllocations).all()).toEqual([]);
+
+      await registry.rememberNativeSession({ ...observed, id: legacyId }, caller);
+      const bindings = () => db.select().from(sessionNativeBindings).all();
+      const legacyBinding = bindings();
+      expect(legacyBinding).toEqual([
+        expect.objectContaining({ sessionId: legacyId, account: observed.account, cwd }),
+      ]);
+      expect(
+        db.select().from(sessionMetadata).where(eq(sessionMetadata.sessionId, legacyId)).get()
+      ).toMatchObject({ runtime: 'opencode', modelLaunchState: null });
+
+      await expect(registry.rememberNativeSession(observed, caller)).rejects.toMatchObject({
+        code: 'SESSION_BIRTH_CONTEXT_UNAVAILABLE',
+        reason: 'context',
+      });
+      expect(read()).toEqual(pending);
+      expect(readDraftSource(db, sessionId)).toEqual(draft);
+      expect(db.select().from(sessionBirthAllocations).all()).toEqual([]);
+      expect(bindings()).toEqual(legacyBinding);
+    });
+
     it('retains the ineligible native-import no-op without touching an allocation', async () => {
       allocate();
       await registry.rememberNativeSession(native(), { kind: 'agent' });
@@ -2377,6 +2445,7 @@ describe('RuntimeRegistry', () => {
         .run();
       return {
         kind: 'person-location',
+        sessionId: id,
         allocationCreatedAt: 'stamp',
         ownerId: 'person',
         locationId: 'owned-location',
@@ -2499,14 +2568,49 @@ describe('RuntimeRegistry', () => {
         { model: 'explicit', permissionMode: 'plan' },
         context
       );
-      expect(read()).toMatchObject({
+      const beforeRekey = read();
+      expect(beforeRekey).toMatchObject({
         runtime: null,
         model: 'explicit',
         permissionMode: 'plan',
         modelLaunchState: 'pending-v1',
       });
       expect(allocations()).toEqual([]);
-      expect(await registry.persistSessionRuntime(id, 'claude-code', A_PERSON)).toBe(true);
+      const source = readDraftSource(db, id);
+      if (source?.sourceKind !== 'person-location' || !source.locationId)
+        throw new Error('Expected the persisted saved location');
+      await expect(
+        registry.persistSessionRuntime(id, 'claude-code', A_PERSON)
+      ).rejects.toMatchObject({
+        code: 'SESSION_BIRTH_CONTEXT_UNAVAILABLE',
+      });
+      const targetId = 'new-canonical-id';
+      const rekey = registry.rekeySessionSettings(id, targetId);
+      await expect(rekey).rejects.toBeInstanceOf(RequiredSessionIdentityError);
+      await expect(rekey).rejects.toMatchObject({
+        message: 'Required session identity could not be preserved.',
+        cause: 'A saved-folder draft must bind before rekeying.',
+      });
+      expect(db.select().from(sessionMetadata).all()).toEqual([beforeRekey]);
+      expect(readDraftSource(db, id)).toEqual(source);
+      expect(readDraftSource(db, targetId)).toBeUndefined();
+      expect(allocations()).toEqual([]);
+      const witness = {
+        ...source,
+        sourceKind: 'person-location' as const,
+        locationId: source.locationId,
+      };
+      expect(
+        await registry.persistSessionRuntime(
+          id,
+          'claude-code',
+          A_PERSON,
+          undefined,
+          undefined,
+          witness
+        )
+      ).toBe(true);
+      expect(readDraftSource(db, id)).toBeUndefined();
       expect(read()).toMatchObject({
         runtime: 'claude-code',
         model: 'explicit',

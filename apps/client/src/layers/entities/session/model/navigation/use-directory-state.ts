@@ -92,7 +92,7 @@ export function useDirectoryState(): [
               return;
             }
             const target = resolved.isNew
-              ? await newSessionTarget(transport, { dir, session: resolved.sessionId })
+              ? await newSessionTarget(transport, { dir }, { isStillWanted })
               : toSession({ session: resolved.sessionId });
             if (!isStillWanted()) return;
             setStoreDir(dir);

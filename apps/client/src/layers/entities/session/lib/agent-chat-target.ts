@@ -11,6 +11,8 @@ import { resolveSessionForCwd, type ResolveSessionDeps } from './resolve-session
 export interface AgentChatTargetOptions {
   /** The runtime a chat made now should start on, when the caller knows it. */
   runtime?: string;
+  /** Allows the caller to abandon a fallback before it requests a draft. */
+  isStillWanted?: () => boolean;
 }
 
 /**
@@ -38,6 +40,7 @@ export async function agentChatTarget(
   const { transport } = deps;
   try {
     const chat = await transport.openDirectChat({ agentPath });
+    if (options.isStillWanted?.() === false) return null;
     return await newSessionTarget(transport, {
       session: chat.sessionId,
       dir: agentPath,
@@ -45,9 +48,14 @@ export async function agentChatTarget(
     });
   } catch (error) {
     if ((error as { status?: number }).status !== 403) throw error;
+    if (options.isStillWanted?.() === false) return null;
     const resolved = await resolveSessionForCwd(deps, agentPath);
-    if (!resolved) return null;
+    if (!resolved || options.isStillWanted?.() === false) return null;
     if (!resolved.isNew) return toSession({ session: resolved.sessionId });
-    return newSessionTarget(transport, { session: resolved.sessionId, dir: agentPath });
+    return newSessionTarget(
+      transport,
+      { dir: agentPath, runtime: options.runtime },
+      { isStillWanted: options.isStillWanted }
+    );
   }
 }

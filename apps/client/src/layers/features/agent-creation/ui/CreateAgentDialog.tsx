@@ -1,7 +1,13 @@
 import { useState, useCallback } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useNavigate } from '@tanstack/react-router';
-import { playCelebration, isSingleEmoji, toSession } from '@/layers/shared/lib';
+import { toast } from 'sonner';
+import {
+  playCelebration,
+  isSingleEmoji,
+  newSessionTarget,
+  reportClientError,
+} from '@/layers/shared/lib';
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
@@ -10,7 +16,8 @@ import {
   ResponsiveDialogDescription,
   DirectoryPicker,
 } from '@/layers/shared/ui';
-import { useImportProjectsStore, useAgentBirthStore } from '@/layers/shared/model';
+import { useImportProjectsStore, useAgentBirthStore, useTransport } from '@/layers/shared/model';
+import { beginSessionNavigation, useLiveLocation } from '@/layers/entities/session';
 import { OpenMeshNotice } from '@/layers/entities/mesh';
 import { EveryAgentAccessNotice, useEveryAgentConnectorGrants } from '@/layers/entities/connectors';
 import { useConfig, useIsHub } from '@/layers/entities/config';
@@ -45,6 +52,8 @@ export function CreateAgentDialog() {
   const openImport = useImportProjectsStore((s) => s.open);
   const createAgent = useCreateAgent();
   const navigate = useNavigate();
+  const transport = useTransport();
+  const readLocation = useLiveLocation();
 
   // Wizard navigation state.
   const [step, setStep] = useState<WizardStep>('gallery');
@@ -187,6 +196,7 @@ export function CreateAgentDialog() {
           }
         : undefined;
     const templateSource = packageOffer ? undefined : (template?.source ?? seed?.template.source);
+    const isStillWanted = onCreated ? null : beginSessionNavigation(readLocation);
     createAgent.mutate(
       {
         name: form.slug,
@@ -207,24 +217,9 @@ export function CreateAgentDialog() {
       },
       {
         onSuccess: (data) => {
-          // Record the birth FIRST — before celebration/close and before any
-          // host-specific early return a caller may add ahead of the navigate
-          // (e.g. onboarding advancing instead of opening a session). Every
-          // create records a birth; the kickoff itself fires on session
-          // ARRIVAL (useAutoKickoff), so a create that never navigates simply
-          // holds an unfired record until the agent's first session opens —
-          // claimed there by directory (see agent-birth-store.claimByPath).
-          //
-          // The birth drives the certificate line and the agent's
-          // auto-first-turn greeting (M4). A persona-bearing agent (a gallery
-          // pick or a Shape's offer) introduces itself and offers a first
-          // action; a blank "Design your own" agent runs the interview — it
-          // greets, asks what to take care of, then writes its own SOUL.md live
-          // in the conversation before offering a first action.
-          const newSessionId = crypto.randomUUID();
           const displayName = data.displayName ?? data.name;
           const origin: KickoffOrigin = template || seed ? 'template' : 'design-your-own';
-          useAgentBirthStore.getState().register(newSessionId, {
+          const birth = {
             name: data.name,
             displayName,
             agentId: data.id,
@@ -237,26 +232,31 @@ export function CreateAgentDialog() {
               displayName,
               capabilities: data.capabilities,
             }),
-          });
+          };
 
+          if (onCreated) useAgentBirthStore.getState().defer(birth);
           playCelebration();
-          // A host flow (onboarding) may take over on create — it stays mounted
-          // underneath and advances itself instead of navigating away.
-          const hostOnCreated = onCreated;
           close();
           resetAll();
-          if (hostOnCreated) {
-            hostOnCreated();
+          if (onCreated) {
+            onCreated();
             return;
           }
-          navigate(
-            toSession({
-              agentId: data.id,
-              draft: '1',
-              session: newSessionId,
-              runtime: data.runtime,
+          if (!isStillWanted?.()) return;
+          void newSessionTarget(
+            transport,
+            { agentId: data.id, runtime: data.runtime },
+            { isStillWanted }
+          )
+            .then((target) => {
+              if (!isStillWanted()) return;
+              useAgentBirthStore.getState().register(target.search.session, birth);
+              return navigate(target);
             })
-          );
+            .catch((error: unknown) => {
+              reportClientError(transport, error);
+              if (isStillWanted()) toast.error('Couldn’t open a new chat.');
+            });
         },
         // A template that needs reviewing is shown here (`isShownInline` keeps
         // it out of the toast); every other failure is the shared toast's.

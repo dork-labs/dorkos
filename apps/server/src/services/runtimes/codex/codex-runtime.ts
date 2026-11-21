@@ -114,8 +114,9 @@ import { CodexToolTurnContext } from './tool-turn/tool-turn-context.js';
 import { CodexSessionRegistry } from './session-registry.js';
 import { CodexNativeSessionReader } from './native-session-reader.js';
 import { CodexThreadMap, codexThreadMetadata, type CodexThreadRecord } from './thread-map.js';
-import { tightensDeclaredMode } from '@dorkos/shared/permission-semantics';
 import { CODEX_CAPABILITIES } from './runtime-constants.js';
+import { hasPreparedSettingsMutation } from '../../core/runtime-seam/prepared-settings-write.js';
+import { updateCodexSessionSettings } from './sessions/session-settings.js';
 import {
   createCodexTransport,
   type CodexTransport,
@@ -162,12 +163,6 @@ const MCP_STATUS_TTL_MS = 60_000;
  * written); still bounded, so a slow disk only costs the gauge.
  */
 const CONTEXT_USAGE_AT_REST_TIMEOUT_MS = 500;
-
-/** This runtime's own mode descriptors — the only meaning any mode id has. */
-const CODEX_MODES = CODEX_CAPABILITIES.permissionModes.values ?? [];
-
-/** The mode a session runs under until something says otherwise. */
-const CODEX_DEFAULT_MODE = CODEX_CAPABILITIES.permissionModes.default ?? 'default';
 
 /** Constructor dependencies for {@link CodexRuntime} (composition root). */
 export interface CodexRuntimeOptions {
@@ -622,26 +617,21 @@ export class CodexRuntime implements AgentRuntime {
    * change takes permissions away, that is reported rather than assumed.
    */
   async updateSession(sessionId: string, opts: SessionSettings): Promise<SessionUpdateResult> {
-    await this.seedFromDurable(sessionId);
-    if (!this.hasThreadProof(sessionId)) {
-      const native = await this.nativeSessions.findSession(sessionId);
-      if (native) this.registry.adoptNative(native);
+    const prepared = hasPreparedSettingsMutation(sessionId);
+    if (!prepared) {
+      await this.seedFromDurable(sessionId);
+      if (!this.hasThreadProof(sessionId)) {
+        const native = await this.nativeSessions.findSession(sessionId);
+        if (native) this.registry.adoptNative(native);
+      }
     }
-    // Read BEFORE the register below overwrites it — this is the mode the
-    // in-flight turn's sandbox was projected from.
-    const prevMode = this.registry.get(sessionId)?.permissionMode ?? CODEX_DEFAULT_MODE;
-    await this.settingsPort?.saveSessionSettings(sessionId, opts);
-    this.registry.register(sessionId, {
-      ...(opts.permissionMode !== undefined ? { permissionMode: opts.permissionMode } : {}),
-      ...(opts.model !== undefined ? { model: opts.model } : {}),
-      ...(opts.effort !== undefined ? { effort: opts.effort } : {}),
-      ...(opts.fastMode !== undefined ? { fastMode: opts.fastMode } : {}),
+    const port = this.settingsPort;
+    return updateCodexSessionSettings(this.registry, sessionId, opts, port, {
+      isTurnOpen: () => this.activeTurns.has(sessionId),
+      ...(prepared && {
+        ownsDraft: () => this.settingsPort === port && !this.hasThreadProof(sessionId),
+      }),
     });
-    const pending =
-      opts.permissionMode !== undefined &&
-      this.activeTurns.has(sessionId) &&
-      tightensDeclaredMode(CODEX_MODES, prevMode, opts.permissionMode);
-    return { updated: true, ...(pending ? { permissionModePendingUntilNextTurn: true } : {}) };
   }
 
   /**

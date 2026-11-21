@@ -275,10 +275,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
 
   // The agent speaks first (M4): a freshly created agent's session opens with an
   // auto-triggered greeting. No-op for every session without a pending birth.
-  // `cwd` lets a fresh session claim a birth recorded by a create that never
-  // navigated (onboarding) — the hello lands on the agent's real first session.
-  // Adapt the kickoff's `(content, cwd)` shape to submitContent's opts, so a
-  // `first-message` birth also runs its first turn in the agent's directory.
+  // A greeting is registered only after its draft id is acknowledged.
   // Memoized so it keeps a stable identity — it sits in useAutoKickoff's effect
   // deps, and a fresh function each render would re-run that effect on every
   // mid-stream token update (harmless given the fire-once guards, but it makes

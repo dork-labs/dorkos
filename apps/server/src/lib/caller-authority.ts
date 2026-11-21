@@ -184,7 +184,7 @@ export function requireOperatorCookieUnderLogin(
   caller: Pick<RequestFacts, 'user'> & GatedFacts,
   subject: string,
   isLoginEnabled?: LoginEnabledLookup
-): OperatorCookieRefusal | undefined {
+): (OperatorCookieRefusal & { status: 403 }) | undefined {
   if (!(isLoginEnabled ? isLoginEnabled() : personSessionRequired(caller))) return undefined;
 
   if (caller.user?.credential === 'cookie') return undefined;

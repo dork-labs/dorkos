@@ -1,5 +1,10 @@
 import { redirect } from '@tanstack/react-router';
-import { sessionLocationTarget, toSession, type SessionSearch } from '@/layers/shared/lib';
+import {
+  newSessionTarget,
+  sessionLocationTarget,
+  toSession,
+  type SessionSearch,
+} from '@/layers/shared/lib';
 import {
   resolveSessionForCwd,
   SESSION_LOOKUP_FAILED_MESSAGE,
@@ -44,17 +49,22 @@ export async function sessionRouteLoader({
   context,
   deps,
   preload = false,
+  abortController,
 }: {
   context: RouterContext;
   deps: SessionLoaderDeps;
   /** Whether this run only warms the cache for a hover, rather than opening the page. */
   preload?: boolean;
+  abortController?: AbortController;
 }) {
+  const signal = abortController?.signal;
+  signal?.throwIfAborted();
   const profileRef =
     deps.profileRef ??
-    (deps.agentPath
+    (deps.agentPath && !preload
       ? (await context.transport.createSessionLocation(deps.agentPath)).id
       : undefined);
+  signal?.throwIfAborted();
   const selectCwd = (sessionId: string, cwd: string, draft: boolean, runtime?: string) => {
     setSessionRouteContext(sessionId, { cwd, draft, ...(runtime && { runtime }) });
   };
@@ -89,7 +99,6 @@ export async function sessionRouteLoader({
           throw error;
       }
       // A copied draft resolves its launch location before any composer can run.
-
       if (!cwd) throw new Error('This chat’s folder isn’t available.');
       selectCwd(
         deps.session,
@@ -98,6 +107,8 @@ export async function sessionRouteLoader({
         deps.runtime
       );
       if (deps.dir || deps.agentPath) {
+        if (preload) return;
+        signal?.throwIfAborted();
         const id = deps.launchRef ?? (await context.transport.createSessionLocation(cwd)).id;
         throw redirect({
           ...toSession((prev) => ({ ...prev, profileRef, dir: undefined, launchRef: id })),
@@ -142,22 +153,26 @@ export async function sessionRouteLoader({
   if (!cwd) cwd = (await context.transport.getDefaultCwd()).path;
   const resolved = await resolveSessionForCwd(context, cwd ?? null);
   if (!resolved) throw new Error(SESSION_LOOKUP_FAILED_MESSAGE);
-  const resolvedCwd = cwd ?? resolved.cwd;
-  let launchRef: string | undefined;
-  if (resolved.isNew) {
-    if (!resolvedCwd) throw new Error('This chat’s folder isn’t available.');
-    launchRef = (await context.transport.createSessionLocation(resolvedCwd)).id;
-    selectCwd(resolved.sessionId, resolvedCwd, true, deps.runtime);
-  }
+  if (preload) return;
+  signal?.throwIfAborted();
+  const target: { search: SessionSearch & { session: string } } = resolved.isNew
+    ? await newSessionTarget(
+        context.transport,
+        { dir: cwd, agentId: deps.agentId, launchRef: deps.launchRef },
+        { signal }
+      )
+    : toSession({ session: resolved.sessionId });
+  signal?.throwIfAborted();
+  if (resolved.isNew && cwd) selectCwd(target.search.session, cwd, true, deps.runtime);
   throw redirect({
     ...toSession((prev) => ({
       ...prev,
+      ...target.search,
       profileRef,
-      session: resolved.sessionId,
       dir: undefined,
-      agentId: undefined,
-      launchRef,
-      draft: resolved.isNew ? '1' : undefined,
+      draft: resolved.isNew ? target.search.draft : undefined,
+      agentId: resolved.isNew ? target.search.agentId : undefined,
+      launchRef: resolved.isNew ? target.search.launchRef : undefined,
       runtime: deps.runtime,
       prompt: resolved.isNew ? deps.prompt : undefined,
       send: resolved.isNew ? deps.send : undefined,

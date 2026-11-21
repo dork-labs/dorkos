@@ -18,11 +18,13 @@
  *
  * @module shared/lib/session-link
  */
+import type { SessionAllocationSource, Transport } from '@dorkos/shared/transport';
 import { z } from 'zod';
 import { SESSION_ROUTE, sessionPath } from '@dorkos/shared/session-link';
 // The leaf rather than the `shared/model` barrel, so a link builder never pulls
 // the model layer's React hooks in with it.
 import { mergeDialogSearch } from '../model/dialog-search-schema';
+import { useAgentBirthStore } from '../model/agent-birth/agent-birth-store';
 
 export { SESSION_ROUTE };
 
@@ -171,24 +173,53 @@ export function sessionHref(search: SessionSearch): string {
   return sessionPath({ ...search, dir: undefined, agentPath: undefined });
 }
 
-/** Prepare a portable fresh-session target without a directory in its URL. */
+type DraftTransport = Pick<
+  Transport,
+  'allocateSession' | 'createSessionLocation' | 'getDefaultCwd'
+>;
+
+/** Open an acknowledged draft, retaining any existing server-supplied session id. */
 export async function newSessionTarget(
-  transport: {
-    createSessionLocation(cwd: string): Promise<{ id: string }>;
-    getDefaultCwd(): Promise<{ path: string }>;
-  },
-  search: SessionSearch & { dir?: string }
-): Promise<SessionTarget<SessionSearch>> {
+  transport: DraftTransport,
+  search: SessionSearch,
+  lifecycle: { signal?: AbortSignal; isStillWanted?: () => boolean } = {}
+): Promise<SessionTarget<SessionSearch & { session: string }>> {
   const { dir, ...rest } = search;
+  const { signal, isStillWanted } = lifecycle;
+  signal?.throwIfAborted();
   const cwd =
     dir ??
     (search.agentId || search.launchRef ? undefined : (await transport.getDefaultCwd()).path);
-  const launchRef = cwd ? (await transport.createSessionLocation(cwd)).id : search.launchRef;
+  signal?.throwIfAborted();
+  const launchRef =
+    search.launchRef ??
+    (cwd && (!search.agentId || search.session !== undefined)
+      ? (await transport.createSessionLocation(cwd)).id
+      : undefined);
+  signal?.throwIfAborted();
+  if (search.session !== undefined) {
+    return toSession({ ...rest, launchRef, draft: '1', session: search.session });
+  }
+
+  const source: SessionAllocationSource | undefined = launchRef
+    ? { kind: 'location', launchRef }
+    : search.agentId
+      ? { kind: 'registered-agent', agentId: search.agentId }
+      : undefined;
+  if (!source) throw new Error('This chat’s folder isn’t available.');
+  const receipt = await transport.allocateSession(source);
+  signal?.throwIfAborted();
+  if (isStillWanted?.() !== false) {
+    useAgentBirthStore.getState().claimDeferred(receipt.sessionId, {
+      cwd,
+      agentId: source.kind === 'registered-agent' ? source.agentId : undefined,
+    });
+  }
   return toSession({
     ...rest,
-    launchRef,
+    launchRef: receipt.launchRef ?? launchRef,
     draft: '1',
-    session: search.session ?? crypto.randomUUID(),
+    session: receipt.sessionId,
   });
 }
 
