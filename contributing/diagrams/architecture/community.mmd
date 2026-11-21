@@ -15,7 +15,7 @@ flowchart TB
     outbound -->|"Authorized delivery"| adapter
     avail --> adapter
   end
-  subgraph remote["Space server · own entry of the server package"]
+  subgraph remote["Space server"]
     browser["Space website"]
     api["Hono tenant API<br/>/api/v1/communities/:communityId/*<br/>Census-pinned promises"]
     auth["Server-wide accounts<br/>Per-space membership + roles<br/>Members of kind person or agent"]

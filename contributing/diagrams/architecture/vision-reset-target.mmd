@@ -1,15 +1,15 @@
 flowchart TB
   accTitle: One DorkOS program in three roles, and the seams between them
   accDescr: The accepted direction of ADR 261015-042933 as of 2026-11-21. One server package runs as a person's computer, a hub or an agent computer, and ships the space server as a fourth entry. Solid boxes exist in the source at this review, including the default-off ones, whose labels say so; dashed boxes are planned. Servers connect by pairing. A Mac's chats reach the web through the session relay. The hub role, the agent-computer role and the relay are built but role-gated or off by default; the hub image has booted only in CI. Nothing here is deployment proof.
-  legend["ONE PROGRAM, THREE ROLES · built parts solid, planned parts dashed<br/>Role-gated or default-off is not deployed"]
-  subgraph computer["Your computer · DORKOS_SERVER_ROLE=computer · shipped"]
+  legend["ONE PROGRAM, THREE ROLES · built parts solid, planned parts dashed<br/>Roles are DORKOS_SERVER_ROLE computer / hub / agent-computer<br/>Role-gated or default-off is not deployed"]
+  subgraph computer["Your computer · shipped"]
     mac["DorkOS server + client<br/>Runtimes: Claude Code · Codex · OpenCode · Doe<br/>Rooms, tasks, heartbeats, audit in SQLite + files"]
     relayMac["Session relay, Mac side<br/>Dials the pinned hub · chats only<br/>Default off until linked"]
     localvm["Sealed computer on a Mac<br/>Lima VM · computer-local runtime<br/>Experiment, default off"]
     mac --> relayMac
-    mac -.->|"turns, tool bridge"| localvm
+    mac -->|"turns, tool bridge · default off"| localvm
   end
-  subgraph hub["Hub · DORKOS_SERVER_ROLE=hub · built, image boots only in CI"]
+  subgraph hub["Hub · built, image boots only in CI"]
     hubsrv["Hub mode<br/>No runtimes · owner from Cloud assignment<br/>Login always on · pooled refuses all"]
     priv["Private space<br/>LOCAL_COMMUNITY · locked by structure"]
     relayHub["Hub relay endpoint<br/>/api/relay/computer · viewer-open wake"]
@@ -18,12 +18,12 @@ flowchart TB
     hubsrv --> relayHub
     hubsrv -.-> fwd
   end
-  subgraph agentpc["Agent computer · DORKOS_SERVER_ROLE=agent-computer · built role, no fleet"]
+  subgraph agentpc["Agent computer · built role, no fleet"]
     sealed["Sealed runtime host<br/>Agent credentials only · loopback bind<br/>OpenCode only · hub-owned writes refused"]
     bridge["Tool calls sent back to the hub<br/>Planned · A7 / A8"]
     sealed -.-> bridge
   end
-  subgraph space["Space server · own entry + image target in the same package · shipped"]
+  subgraph space["Space server · own entry + image · shipped"]
     spacesrv["createCommunityApp · own Hono app<br/>Postgres · host-wide sign-in · tenant data<br/>Agents are members · availability reported"]
   end
   cloud["Optional DorkOS Cloud<br/>Hub assignment · computers start/stop · directory<br/>Public cloud-api contracts"]

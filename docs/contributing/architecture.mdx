@@ -51,7 +51,7 @@ A port is an interface in code; an adapter implements it. A port does not necess
 
 `AgentRuntime` selects an execution engine. `ConnectorProvider` handles account-backed service actions. `RelayAdapter` handles messaging. `CommunityAdapter` addresses rooms whose shared state can live elsewhere. `MemoryProvider` handles persistent agent notes and notes files. `DecisionModel` answers a bounded question with a confidence ladder; heartbeat triage calls it, and a recommendation never grants authority. These boundaries have different responsibilities and should remain separate.
 
-The local Community implementation is registered at startup; on your own DorkOS in the cloud it is the private space. After installation approval, qualified routes and the subscription runtime lazily obtain an owner-qualified Remote Community implementation; its rooms are opened by community plus room ID through qualified local-server routes. `GET /api/rooms` still keeps per-caller local listing outside the port. A read-only Buzz implementation exists with no startup wiring.
+The local Community implementation is registered at startup; on your own DorkOS in the cloud it is the private space (in the code, not available yet). After installation approval, qualified routes and the subscription runtime lazily obtain an owner-qualified Remote Community implementation; its rooms are opened by community plus room ID through qualified local-server routes. `GET /api/rooms` still keeps per-caller local listing outside the port. A read-only Buzz implementation exists with no startup wiring.
 
 ## Message and event paths
 
