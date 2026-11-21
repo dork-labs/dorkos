@@ -33,8 +33,19 @@ run for that head. A head that needs QA and has no current `qa-real-data` label,
 older than the head, is taken out (`no-qa-label`, `qa-label-older-than-head`). A label taken
 off still has its event, so the current labels are read too: that is #4096's case.
 
-It still fails open like the rest of arm-door: labels, label events or patches it cannot read
-keep the entry with a warning. The ruleset is unchanged.
+The designer's sign-off gets the same treatment: `scripts/design-ok.sh` (`needs`, `fresh`) holds
+the arm script's design rule (user-visible paths outside tests and the Dev Playground, or
+`needs-design`; release PRs exempt), and arm-door pulls a head that needs it with no current
+`design-ok` newer than the head (`no-design-ok`, `design-ok-older-than-head`). Its effect is not
+part of this entry's hypothesis, which stays on QA's metric; a design miss would show in the
+same arm-door verdict lines.
+
+Because the arm script will read these files from main instead of a hash-pinned local copy,
+`scripts/arm-door.sh`, `qa-real-data.sh`, `design-ok.sh` and `queue-repeat-guard.sh` join the
+security path set (all three copies), so a change to any of them needs Security's label.
+
+It still fails open like the rest of arm-door: labels, label events, patches or a title it cannot read
+keep the entry with a warning, but never hide another gate's pull. The ruleset is unchanged.
 
 The arm script reads the same file from main, the way it reads the verify-proof checker,
 once this merges; until Security promotes that change, its local copy holds the identical rule.

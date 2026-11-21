@@ -11,8 +11,10 @@ name: arm-door
 #     stamp naming one, a docs-only diff, or every required check and all six
 #     test shards green at the head. And, when the head touches config or
 #     migration code, QA's `qa-real-data` label added after it
-#     (scripts/qa-real-data.sh, the rule the arm script runs; DOR-4904). So a
-#     careful merge by a person from the GitHub page still goes through.
+#     (scripts/qa-real-data.sh), and when it changes something a person sees,
+#     the designer's `design-ok` added after it (scripts/design-ok.sh); the
+#     files the arm script reads from main (DOR-4904). So a careful merge by a
+#     person from the GitHub page still goes through.
 #   - The arm script only gets a comment. Gates met but no `arm-record` stamp
 #     means it went in some other way, and the author is told once.
 #
@@ -25,10 +27,10 @@ name: arm-door
 #
 # merge-tail (disabled since 2026-11-18) is held to the same gates: an entry it
 # queues stays only if the head carries Security's label and a proof this can
-# see (docs-only or green CI; it has no stamp), and QA's label where it needs
-# one, and it is told once that the arm script was skipped. The arm script's
-# other gates (the designer's sign-off among them) are not checked here, so
-# merge-tail stays off until it runs the arm script's gate code.
+# see (docs-only or green CI; it has no stamp), and QA's and the designer's
+# labels where it needs them, and it is told once that the arm script was
+# skipped. The arm script's other gates are not checked here, so merge-tail
+# stays off until it runs the arm script's gate code.
 #
 # A stamp is not a signature: every agent acts on GitHub as one login, so a
 # session can post one by hand. Per-role GitHub Apps are the real fix
@@ -140,16 +142,19 @@ jobs:
             for f in committed seen statuses runs; do echo null > "$w/$f"; done
           fi
           # Each list is read once, and every field is derived from that read (DOR-4904).
-          # Label events: Security's, and QA's real-data label (a label taken off still has its
+          # Label events: Security's, QA's real-data label and the designer's design-ok (a label taken off still has its
           # event, so the labels on it now are read too).
           if gh api --paginate "repos/$REPO/issues/$pr/events?per_page=100" \
                --jq '.[] | select(.event == "labeled") | {name: .label.name, at: .created_at}' \
                > "$w/events.raw" 2>/dev/null; then
             jq -s -c '[.[] | select(.name == "security-reviewed") | .at]' "$w/events.raw" > "$w/labels" 2>/dev/null || echo null > "$w/labels"
             jq -s -c '[.[] | select(.name == "qa-real-data") | .at]' "$w/events.raw" > "$w/qa-labels" 2>/dev/null || echo null > "$w/qa-labels"
+            jq -s -c '[.[] | select(.name == "design-ok") | .at]' "$w/events.raw" > "$w/design-labels" 2>/dev/null || echo null > "$w/design-labels"
           else
-            echo null > "$w/labels"; echo null > "$w/qa-labels"
+            echo null > "$w/labels"; echo null > "$w/qa-labels"; echo null > "$w/design-labels"
           fi
+          # The title: a release PR needs no design-ok (scripts/design-ok.sh).
+          JQ='.[0]' rd "$w/title" gh api "repos/$REPO/pulls/$pr" --jq '.title | tojson'
           JQ='.' rd "$w/current-labels" gh api --paginate "repos/$REPO/issues/$pr/labels?per_page=100" \
             --jq '.[].name | tojson'
           # Files: names for the gates, and per-file patches for QA's gate, built by the jq filter
@@ -176,11 +181,13 @@ jobs:
             --slurpfile runs "$w/runs" --slurpfile labels "$w/labels" --slurpfile files "$w/files" \
             --slurpfile changed "$w/changed" --slurpfile required "$w/required" \
             --slurpfile qalabels "$w/qa-labels" --slurpfile current "$w/current-labels" \
-            --slurpfile patches "$w/patches" '
+            --slurpfile patches "$w/patches" --slurpfile title "$w/title" \
+            --slurpfile designlabels "$w/design-labels" '
             {head: $head, headCommittedAt: $committed[0], headSeenAt: $seen[0], labelEvents: $labels[0],
              statuses: $statuses[0], checkRuns: $runs[0], required: $required[0],
              files: $files[0], changedFiles: $changed[0],
-             labels: $current[0], qaLabelEvents: $qalabels[0], patches: $patches[0]}' > "$w/payload.json" 2>/dev/null \
+             labels: $current[0], qaLabelEvents: $qalabels[0], patches: $patches[0],
+             title: $title[0], designLabelEvents: $designlabels[0]}' > "$w/payload.json" 2>/dev/null \
             || echo '{}' > "$w/payload.json"
 
           bash scripts/arm-door.sh verdict "$w/payload.json" > "$w/verdict.txt" 2>/dev/null || :

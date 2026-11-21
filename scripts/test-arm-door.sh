@@ -41,13 +41,17 @@ base() {
       checkRuns: ([run(1; "typecheck"), run(2; "test"), run(3; "lint"), run(4; "no-fragment-under-skip-label")]
                   + [range(1; 7) as $k | run(10 + $k; "test-shard (\($k)/6)")]),
       required: ["typecheck", "test", "lint", "no-fragment-under-skip-label"],
-      files: [{filename: "apps/client/src/a.ts"}],
+      files: [{filename: "apps/server/src/a.ts"}],
       changedFiles: 1,
       labels: ["review:deep", "security-reviewed"],
       qaLabelEvents: [],
-      patches: "@@FILE@@ apps/client/src/a.ts\n@@ -1 +1 @@\n+const a = 1;\n"
+      patches: "@@FILE@@ apps/server/src/a.ts\n@@ -1 +1 @@\n+const a = 1;\n",
+      title: "fix(server): a made-up change",
+      designLabelEvents: []
     }'
 }
+# The same PR, but it changes a screen: the designer's gate applies (DOR-4904).
+UI='.files = [{filename: "apps/client/src/layers/features/x/ui/X.tsx"}]'
 # The same PR, but it adds a migration: QA's real-data gate applies (DOR-4904).
 MIG='.files = [{filename: "packages/db/drizzle/0198_x.sql"}] | .patches = "@@FILE@@ packages/db/drizzle/0198_x.sql\n+ALTER TABLE x ADD y;\n"'
 stamp() { # state proof
@@ -120,8 +124,8 @@ check "label taken off since: pull"                "PULL no-qa-label" "$MIG"' | 
 check "no config or migration path: unaffected"    "KEEP gates-met proof=ci-green stamp=no" '.qaLabelEvents = ["2026-11-18T09:00:00Z"]'
 check "config path, test file only: unaffected"    "KEEP gates-met proof=ci-green stamp=no" '.files = [{filename: "packages/shared/src/config-schema/__tests__/a.test.ts"}]'
 check "config-manager.ts, no label: pull"          "PULL no-qa-label" '.files = [{filename: "apps/server/src/services/core/config-manager.ts"}]'
-check "ledger write anywhere, no label: pull"      "PULL no-qa-label" '.patches = "@@FILE@@ apps/client/src/a.ts\n+  tx.insert(connectorApplicationMigrations)\n"'
-check "no patch for a big file, no label: pull"    "PULL no-qa-label" '.patches = "@@FILE@@ apps/client/src/a.ts\n@@NOPATCH@@ apps/client/src/a.ts\n"'
+check "ledger write anywhere, no label: pull"      "PULL no-qa-label" '.patches = "@@FILE@@ apps/server/src/a.ts\n+  tx.insert(connectorApplicationMigrations)\n"'
+check "no patch for a big file, no label: pull"    "PULL no-qa-label" '.patches = "@@FILE@@ apps/server/src/a.ts\n@@NOPATCH@@ apps/server/src/a.ts\n"'
 check "a stale label on any PR is held to it"      "PULL qa-label-older-than-head" '.labels += ["qa-real-data"] | .qaLabelEvents = ["2026-11-18T09:00:00Z"]'
 check "a stamp doesn't stand in for QA"            "PULL no-qa-label" "$MIG | .statuses += [$(stamp success local-verify)]"
 check "every missing gate is named"                "PULL no-security-label,no-proof,no-qa-label" "$MIG"' | .labelEvents = [] | .checkRuns = []'
@@ -143,6 +147,23 @@ check "#4096 replayed: pull"                       "PULL no-qa-label" '.headComm
   "apps/server/src/services/extensions/pin/slots-backfill.ts",
   "changelog/unreleased/261119-035509-dor-4282-app-places.md",
   "packages/shared/src/config-schema/tooling.ts"] | map({filename: .})) | .changedFiles = 7 | .patches = ([.files[].filename] | map("@@FILE@@ \(.)\n+x\n") | join(""))'
+
+# Gate 4: the designer's design-ok after the head, for user-visible paths or needs-design
+# (DOR-4904). The rule is scripts/design-ok.sh, the one the arm script runs.
+check "UI path, no design-ok: pull"                "PULL no-design-ok" "$UI"
+check "UI path, design-ok before the head: pull"   "PULL design-ok-older-than-head" "$UI"' | .labels += ["design-ok"] | .designLabelEvents = ["2026-11-18T09:00:00Z"]'
+check "UI path, design-ok after the head: keep"    "KEEP gates-met proof=ci-green stamp=no" "$UI"' | .labels += ["design-ok"] | .designLabelEvents = ["2026-11-18T11:30:00Z"]'
+check "design-ok taken off since: pull"            "PULL no-design-ok" "$UI"' | .designLabelEvents = ["2026-11-18T11:30:00Z"]'
+check "packages/ui, no design-ok: pull"            "PULL no-design-ok" '.files = [{filename: "packages/ui/src/button.tsx"}]'
+check "needs-design on server code: pull"          "PULL no-design-ok" '.labels += ["needs-design"]'
+check "UI test file only: unaffected"              "KEEP gates-met proof=ci-green stamp=no" '.files = [{filename: "apps/client/src/layers/features/x/__tests__/X.test.tsx"}]'
+check "Dev Playground only: unaffected"            "KEEP gates-met proof=ci-green stamp=no" '.files = [{filename: "apps/client/src/dev/sections/X.tsx"}]'
+check "release PR touching UI: unaffected"         "KEEP gates-met proof=ci-green stamp=no" "$UI"' | .title = "chore(release): v0.140.0"'
+check "UI and migration, neither label: both"      "PULL no-qa-label,no-design-ok" '.files = [{filename: "apps/client/src/a.tsx"}, {filename: "packages/db/drizzle/0198_x.sql"}] | .changedFiles = 2'
+check "no seen time, design-ok after commit: keep" "KEEP unreadable headSeenAt" "$UI"' | del(.headSeenAt) | .labels += ["design-ok"] | .designLabelEvents = ["2026-11-18T10:00:10Z"]'
+check "design label events unreadable"             "KEEP unreadable designLabelEvents" "$UI | .designLabelEvents = null"
+check "title unreadable"                           "KEEP unreadable title" "$UI | .title = null"
+check "title unreadable, no Security label: pull"  "PULL no-security-label" '.title = null | .labelEvents = []'
 
 # Never jam the queue: anything unreadable keeps the entry.
 check "file list short of the count"               "KEEP unreadable files" '.changedFiles = 3000'
@@ -172,6 +193,12 @@ if grep -qF "\`qa-real-data\` label is older than this commit" <<<"$note"; then
   pass=$(( pass + 1 ))
 else
   fail=$(( fail + 1 )); echo "FAIL  pull note names a stale QA label"
+fi
+note=$(bash "$door" comment pull 4096 "$H" no-design-ok,design-ok-older-than-head)
+if grep -qF "\`design-ok\` label is not on it" <<<"$note" && grep -qF "\`design-ok\` label is older than this commit" <<<"$note" && ! grep -qF "qa-real-data" <<<"$note"; then
+  pass=$(( pass + 1 ))
+else
+  fail=$(( fail + 1 )); echo "FAIL  pull note names the design reasons"
 fi
 note=$(bash "$door" comment unarmed 3913 "$H" proof=ci-green)
 if grep -qF "<!-- arm-door unarmed head=$H -->" <<<"$note" && grep -qF "stays in the queue" <<<"$note"; then
