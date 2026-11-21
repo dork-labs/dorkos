@@ -27,6 +27,7 @@ import {
  * @param reason - Why it stopped this time.
  * @param decision - What the restart policy decided.
  * @param policy - The policy's tuning, so the words match the budget in use.
+ * @param restartFailed - The final automatic start was refused.
  * @returns Settles once the row is stored or deduped.
  */
 export async function tellExtensionStopped(
@@ -34,7 +35,8 @@ export async function tellExtensionStopped(
   name: string,
   reason: ExtensionStopReason,
   decision: RestartDecision,
-  policy: RestartPolicyOptions = {}
+  policy: RestartPolicyOptions = {},
+  restartFailed = false
 ): Promise<void> {
   // The policy's clock, so the stop is dated as the policy counted it.
   const stoppedAt = new Date((policy.now ?? Date.now)()).toISOString();
@@ -49,6 +51,7 @@ export async function tellExtensionStopped(
           stoppedAt,
           stops: policy.budget ?? RESTART_BUDGET,
           windowMinutes: Math.round((policy.windowMs ?? RESTART_WINDOW_MS) / 60_000),
+          ...(restartFailed && { restartFailed }),
         }
       : { extensionId, name, reason, state: 'restarting', stoppedAt }
   );

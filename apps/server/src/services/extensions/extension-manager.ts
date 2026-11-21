@@ -15,6 +15,10 @@
  * @module services/extensions/extension-manager
  */
 import path from 'path';
+import {
+  extensionErrors,
+  withSupervisedStatus,
+} from './isolation/recovery/extension-diagnostics.js';
 import type { ExtensionHttpHandler } from './http/extension-http.js';
 import type { ExtensionRecord, ExtensionRecordPublic } from '@dorkos/extension-api';
 import { isEnabled, setEnabled, type CoreExtensionInfo } from './extension-enable-resolution.js';
@@ -221,18 +225,7 @@ export class ExtensionManager {
    * copies never run, so they go through `toPublic` without tool statuses.
    */
   private publicOf(record: ExtensionRecord, approvals: ExtensionApprovals): ExtensionRecordPublic {
-    // An isolated extension's restart or stop after crashes outlives any one
-    // record (they are rebuilt every scan), so the lifecycle keeps it and it
-    // is laid over the record here (DOR-2686).
-    const supervised = this.serverLifecycle.supervisedStatus(record.id);
-    const shown =
-      supervised.serverError || supervised.restartingAt
-        ? {
-            ...record,
-            serverError: supervised.serverError ?? record.serverError,
-            restartingAt: supervised.restartingAt ?? null,
-          }
-        : record;
+    const shown = withSupervisedStatus(record, this.serverLifecycle.supervisedStatus(record.id));
     return toPublic(shown, approvals, this.serverLifecycle.toolStatuses(record));
   }
 
@@ -734,6 +727,11 @@ export class ExtensionManager {
   listPublic(): ExtensionRecordPublic[] {
     const approvals = configManager.get('extensions');
     return Array.from(this.extensions.values()).map((record) => this.publicOf(record, approvals));
+  }
+
+  /** Broken clients and stopped servers, with their latest reason even during backoff. */
+  listErrors(): ExtensionRecordPublic[] {
+    return extensionErrors(this.listPublic(), (id) => this.serverLifecycle.supervisedStatus(id));
   }
 
   /**

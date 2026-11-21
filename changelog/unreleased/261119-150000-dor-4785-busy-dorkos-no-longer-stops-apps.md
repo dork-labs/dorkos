@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(extensions): keep healthy apps running through host stalls (DOR-4785)'
+  - 'fix(extensions): recover automatic restarts after host stalls'
 ---
 
 ### Fixed
