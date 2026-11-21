@@ -4,62 +4,14 @@ import type { ApprovedPermissionSet } from '@dorkos/shared/config-schema';
 import { disclosesAnything, type DevLinkPreview } from '@dorkos/shared/marketplace-schemas';
 import { isCovered } from '../../extensions/isolation/permission-coverage.js';
 import { describeEffectsInFull } from '../preview/disclosed-effects.js';
+// One source for the per-app card line, places included (DOR-4282).
+import { describePermissionSet, parsePermissionSet } from './permission-card-line.js';
 
 /** App declarations captured once for the card and the permission grant. */
 export interface LinkCardSets {
   permissions: Record<string, ApprovedPermissionSet>;
   servers: Record<string, boolean>;
   appSecrets: Record<string, { key: string; required: boolean }[] | undefined>;
-}
-
-/** How a card line says an extension's server half runs inside DorkOS. */
-const IN_PROCESS_LINE = 'runs inside DorkOS with full access to this computer';
-
-/** How a card line says an extension has only screens. */
-const SCREENS_ONLY_LINE = 'only screens';
-
-/** How a card line says an extension runs separately. */
-const SEPARATE_LINE = 'runs separately';
-
-/**
- * One extension's permission set as a card line: where it runs, then every
- * host, program and agent grant, never a count.
- *
- * @param set - What it declares.
- * @param hasServer - Whether it has a server half; without one it is screens only.
- */
-function describePermissionSet(set: ApprovedPermissionSet, hasServer: boolean): string {
-  if (set.runtime === 'in-process') return hasServer ? IN_PROCESS_LINE : SCREENS_ONLY_LINE;
-  const parts = [
-    SEPARATE_LINE,
-    set.net.length > 0 ? `connects to ${set.net.join(', ')}` : 'no internet',
-    ...(set.run.length > 0 ? [`runs ${set.run.join(', ')}`] : []),
-    ...(set.agents ? ['messages your agents'] : []),
-  ];
-  return parts.join('; ');
-}
-
-/**
- * Read a card line back into the set it describes, or `null` when it is not
- * one {@link describePermissionSet} writes. Only ever trusted after the whole
- * card text is rebuilt from what it returns and matches exactly.
- *
- * @param line - The text after `<id>: `.
- */
-function parsePermissionSet(line: string): ApprovedPermissionSet | null {
-  if (line === IN_PROCESS_LINE || line === SCREENS_ONLY_LINE) {
-    return { runtime: 'in-process', net: [], run: [], agents: false };
-  }
-  if (!line.startsWith(`${SEPARATE_LINE}; `)) return null;
-  const set: ApprovedPermissionSet = { runtime: 'subprocess', net: [], run: [], agents: false };
-  for (const part of line.slice(SEPARATE_LINE.length + 2).split('; ')) {
-    if (part === 'no internet') continue;
-    if (part === 'messages your agents') set.agents = true;
-    else if (part.startsWith('connects to ')) set.net = part.slice(12).split(', ');
-    else if (part.startsWith('runs ')) set.run = part.slice(5).split(', ');
-    else return null;
-  }
-  return set;
 }
 
 /**

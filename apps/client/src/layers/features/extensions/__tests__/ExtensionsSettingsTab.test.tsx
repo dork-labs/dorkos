@@ -1324,7 +1324,55 @@ describe('what an extension can reach (DOR-2686)', () => {
         net: ['imap.fastmail.com'],
         run: ['git', 'bash'],
         agents: false,
+        // The places the card listed; this app declares none (DOR-4282).
+        slots: [],
       },
+    });
+  });
+
+  // Purpose: a running app whose new places wait, with no Inbox row left
+  // (Not now), is still allowed from Settings, echoing what the card shows:
+  // the line names the declared places not yet allowed, and Allow sends
+  // exactly those plus the ones already allowed.
+  it('allows a running app’s new places from Settings with the shown set', async () => {
+    const ledger = named('ledger', 'Ledger', {
+      sourcePlugin: 'ledger',
+      digest: 'sha256:abc',
+      isolation: null,
+      allowedSlots: ['right-panel'],
+      manifest: {
+        clientApiVersion: 2,
+        id: 'ledger',
+        name: 'Ledger',
+        version: '1.1.0',
+        contributions: { 'right-panel': true, pages: true, dialog: true },
+      },
+    });
+    mockFetch({
+      '/api/extensions': [ledger],
+      '/api/extensions/pending-approvals': { approvals: [] },
+      '/api/extensions/ledger/approve': { extension: { ...ledger, allowedSlots: ['pages'] } },
+    });
+    render(<ExtensionsSettingsTab />, { wrapper: createWrapper() });
+    await screen.findByTestId('extension-card-ledger');
+    openRow('ledger');
+
+    expect(screen.getByTestId('extension-new-places-ledger')).toHaveTextContent(
+      'Adds a page and dialogs. Allow when ready.'
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Allow Ledger’s new places' }));
+    await waitFor(() =>
+      expect(vi.mocked(toast.success)).toHaveBeenCalledWith('Ledger can show in its new places.')
+    );
+    const call = vi
+      .mocked(fetch)
+      .mock.calls.find(([url]) => String(url).endsWith('/api/extensions/ledger/approve'));
+    const body = JSON.parse(String((call?.[1] as RequestInit).body));
+    expect(body).toMatchObject({
+      version: '1.1.0',
+      plugin: 'ledger',
+      expectedDigest: 'sha256:abc',
+      permissions: { slots: ['pages', 'right-panel', 'dialog'] },
     });
   });
 

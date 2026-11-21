@@ -11,6 +11,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createInitialSlots, useAppStore, useExtensionRegistry } from '@/layers/shared/model';
 import { createExtensionAPI } from '../model/extension-api-factory';
 import type { ExtensionAPIDeps } from '../model/types';
+import { EXTENSION_CONTRIBUTION_KEYS } from '@dorkos/extension-api';
+
+/** Every place declared, for tests of what a registration does once it is allowed. */
+const DECLARES_ALL = {
+  contributions: Object.fromEntries(EXTENSION_CONTRIBUTION_KEYS.map((key) => [key, true])),
+  // And a person allowed every one (DOR-4282).
+  allowedSlots: [...EXTENSION_CONTRIBUTION_KEYS],
+};
 
 vi.mock('sonner', () => ({ toast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }));
 
@@ -44,7 +52,7 @@ afterEach(() => {
 
 describe('setPageBadge', () => {
   it('badges a page the extension registered, and clears it', () => {
-    const { api } = createExtensionAPI('flow', realDeps());
+    const { api } = createExtensionAPI('flow', realDeps(), [], DECLARES_ALL);
     api.registerPage('', Page, { title: 'Flow' });
 
     api.setPageBadge('', { status: 'needs-you', count: 2, sentence: '2 ideas wait for you' });
@@ -57,7 +65,7 @@ describe('setPageBadge', () => {
   });
 
   it('keys a badge on a param page by its registered path', () => {
-    const { api } = createExtensionAPI('flow', realDeps());
+    const { api } = createExtensionAPI('flow', realDeps(), [], DECLARES_ALL);
     api.registerPage('p/:name', Page, { title: 'Project' });
 
     api.setPageBadge('p/:name', { status: 'working' });
@@ -66,7 +74,7 @@ describe('setPageBadge', () => {
   });
 
   it('keeps its own copy, trimmed, so a later change to the object does not reach the tab', () => {
-    const { api } = createExtensionAPI('flow', realDeps());
+    const { api } = createExtensionAPI('flow', realDeps(), [], DECLARES_ALL);
     api.registerPage('', Page, { title: 'Flow' });
     const badge = { count: 1, sentence: '  1 new idea  ' };
 
@@ -78,8 +86,10 @@ describe('setPageBadge', () => {
 
   it('does nothing, out loud, for a page it did not register', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    createExtensionAPI('other', realDeps()).api.registerPage('', Page, { title: 'Other' });
-    const { api } = createExtensionAPI('flow', realDeps());
+    createExtensionAPI('other', realDeps(), [], DECLARES_ALL).api.registerPage('', Page, {
+      title: 'Other',
+    });
+    const { api } = createExtensionAPI('flow', realDeps(), [], DECLARES_ALL);
 
     api.setPageBadge('', { status: 'failed' });
 
@@ -97,7 +107,7 @@ describe('setPageBadge', () => {
     ['an empty string, which is not a clear', ''],
   ])('ignores %s, out loud, and keeps the badge it had', (_name, bad) => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const { api } = createExtensionAPI('flow', realDeps());
+    const { api } = createExtensionAPI('flow', realDeps(), [], DECLARES_ALL);
     api.registerPage('', Page, { title: 'Flow' });
     api.setPageBadge('', { count: 1 });
 
@@ -109,7 +119,7 @@ describe('setPageBadge', () => {
   });
 
   it("clears a page's badge when the page is unregistered", () => {
-    const { api } = createExtensionAPI('flow', realDeps());
+    const { api } = createExtensionAPI('flow', realDeps(), [], DECLARES_ALL);
     const unregister = api.registerPage('', Page, { title: 'Flow' });
     api.setPageBadge('', { status: 'needs-you' });
 
@@ -120,7 +130,7 @@ describe('setPageBadge', () => {
 
   it('keeps the badge when a later registration of the same path replaced the page', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const { api } = createExtensionAPI('flow', realDeps());
+    const { api } = createExtensionAPI('flow', realDeps(), [], DECLARES_ALL);
     const first = api.registerPage('', Page, { title: 'Flow' });
     api.registerPage('', Page, { title: 'Flow' });
     api.setPageBadge('', { count: 2 });
@@ -131,10 +141,10 @@ describe('setPageBadge', () => {
   });
 
   it('clears its badges, and only its own, when the extension deactivates', () => {
-    const other = createExtensionAPI('flow-extra', realDeps()).api;
+    const other = createExtensionAPI('flow-extra', realDeps(), [], DECLARES_ALL).api;
     other.registerPage('', Page, { title: 'Extra' });
     other.setPageBadge('', { status: 'new' });
-    const { api, cleanups } = createExtensionAPI('flow', realDeps());
+    const { api, cleanups } = createExtensionAPI('flow', realDeps(), [], DECLARES_ALL);
     api.registerPage('', Page, { title: 'Flow' });
     api.setPageBadge('', { status: 'needs-you' });
 

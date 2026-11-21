@@ -37,6 +37,7 @@ import type {
 import type { InstallRequest, InstallResult, PermissionPreview } from '../../types.js';
 import type { ResolvedPackageSource } from '../../package-resolver.js';
 import { RELATIVE_PATH_SENTINEL_SHA } from '@dorkos/marketplace';
+import { RESERVED_APP_NAME_MESSAGE } from '@dorkos/extension-api';
 
 // Mock the validator module. Tests override `validatePackage.mockResolvedValue`
 // per-case. Placed before the installer import so vi.mock hoisting captures it.
@@ -1485,6 +1486,34 @@ describe('MarketplaceInstaller', () => {
         };
         expect(call.replacing).toBe(true);
         expect([...(call.retainedExtensionIds ?? [])].sort()).toEqual(['flow', 'flow-extra']);
+      } finally {
+        await rm(localPath, { recursive: true, force: true });
+      }
+    });
+
+    it('refuses an update that renames a bundled app to DorkOS’s own name, before removing anything (DOR-4282)', async () => {
+      // The installed version was "Notes"; the new one calls itself "DorkOS
+      // Notes". The refusal runs before the uninstall half, so the old version
+      // stays installed under its old name.
+      const localPath = await mkdtemp(nodePath.join(tmpdir(), 'dorkos-installer-rename-'));
+      const extDir = nodePath.join(localPath, '.dork', 'extensions', 'notes');
+      await mkdir(extDir, { recursive: true });
+      await writeFile(
+        nodePath.join(extDir, 'extension.json'),
+        JSON.stringify({ id: 'notes', name: 'DorkOS Notes', version: '2.0.0' })
+      );
+      const { deps, resolver, pluginFlow, previewBuilder, uninstallFlow } = buildDeps();
+      const manifest = buildPluginManifest({ name: 'notes' });
+      wireLocalResolution(resolver, 'notes', localPath);
+      mockedValidatePackage.mockResolvedValue({ ok: true, issues: [], manifest });
+      previewBuilder.build.mockResolvedValue(buildEmptyPreview());
+
+      try {
+        const refusal = new MarketplaceInstaller(deps).update({ name: 'notes' });
+        await expect(refusal).rejects.toBeInstanceOf(InvalidPackageError);
+        await expect(refusal).rejects.toThrow(RESERVED_APP_NAME_MESSAGE);
+        expect(uninstallFlow.uninstall).not.toHaveBeenCalled();
+        expect(pluginFlow.install).not.toHaveBeenCalled();
       } finally {
         await rm(localPath, { recursive: true, force: true });
       }

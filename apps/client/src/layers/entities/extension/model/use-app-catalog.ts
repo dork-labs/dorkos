@@ -76,7 +76,12 @@ export function useAppCatalog(): AppCatalogState {
     updateKnownApps((previous) => forgetUninstalledApps(previous, installed));
   }, [list.data]);
 
-  const waitingIds = useMemo(() => new Set(approvals.map((approval) => approval.id)), [approvals]);
+  // An app whose only wait is new places keeps running, so it is not held (DOR-4282).
+  const waitingIds = useMemo(
+    () =>
+      new Set(approvals.filter((approval) => !approval.placesOnly).map((approval) => approval.id)),
+    [approvals]
+  );
 
   return useMemo(() => {
     const catalog = buildAppCatalog({

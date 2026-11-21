@@ -419,7 +419,14 @@ describe('create_extension on a Trusted install (ADR 261006-225605)', () => {
   it('approves the copy it created, for that folder and its declared permissions', async () => {
     const result = await createIt();
 
-    const declared = { runtime: 'in-process', net: [], run: [], agents: false };
+    // The command template's one place, recorded with the yes (DOR-4282).
+    const declared = {
+      runtime: 'in-process',
+      net: [],
+      run: [],
+      agents: false,
+      slots: ['command-palette.items'],
+    };
     expect(result.autoApproved).toEqual(declared);
     expect(runs()).toBe(true);
     expect(stored.value.approvedToRun).toEqual([NEW_ID]);

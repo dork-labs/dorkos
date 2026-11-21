@@ -154,6 +154,11 @@ export const ExtensionApprovalPermissionsSchema = z
     /** Whether it has screens (a client bundle), which run sealed off in their own frame. */
     hasPage: z.boolean(),
     /**
+     * The places it declares in `contributions` (DOR-4282), as keys in card
+     * order: the only places it may show in. The card turns each into words.
+     */
+    slots: z.array(z.string()).optional(),
+    /**
      * What its screens can change through the bridge (DOR-3293), as DorkOS's
      * own keys, read from its manifest: the card turns each into words.
      */
@@ -197,6 +202,8 @@ export const ExtensionApprovalAdditionsSchema = z
     runtime: z.boolean(),
     /** Apps it now calls that its last approval did not name (DOR-3293). */
     apps: z.array(z.string()).optional(),
+    /** Places it now declares that its last approval did not cover (DOR-4282). */
+    slots: z.array(z.string()).optional(),
   })
   .openapi('ExtensionApprovalAdditions');
 
@@ -315,6 +322,13 @@ export const PendingExtensionApprovalSchema = z
      * version is unchanged, unknown, or on a first ask.
      */
     updatedFrom: z.string().nullable().default(null),
+    /**
+     * The app runs, and only new places wait (DOR-4282): saying no leaves it
+     * running without them. Decided by the server from the stored approval,
+     * never from the manifest. `false` for every other row, and from an older
+     * server.
+     */
+    placesOnly: z.boolean().default(false),
   })
   .openapi('PendingExtensionApproval');
 
@@ -420,6 +434,8 @@ export const ApproveExtensionRequestSchema = z
         appAccess: z.record(z.string(), z.enum(['reads', 'changes', 'both'])).optional(),
         /** The apps whose pages the card said it opens. */
         appOpens: z.array(z.string()).max(20).optional(),
+        /** The places the card said it shows in (DOR-4282). */
+        slots: z.array(z.string()).max(20).optional(),
       })
       .optional(),
     /**
@@ -551,6 +567,8 @@ export const ApprovalSetPermissionsSchema = z.object({
   appAccess: z.record(z.string(), z.enum(['reads', 'changes', 'both'])).optional(),
   /** The apps whose pages it opens. */
   appOpens: z.array(z.string()).max(20).optional(),
+  /** The places it shows in (DOR-4282). */
+  slots: z.array(z.string()).max(20).optional(),
 });
 
 /** The permission set one member was shown with. */
@@ -606,6 +624,7 @@ export async function approvalSetHash(
         apps: [...(permissions.apps ?? [])].sort(),
         appAccess: Object.entries(permissions.appAccess ?? {}).sort(),
         appOpens: [...(permissions.appOpens ?? [])].sort(),
+        slots: [...(permissions.slots ?? [])].sort(),
       });
       return `${id}:${version}:${expectedDigest}:${await sha256(canonical)}`;
     })

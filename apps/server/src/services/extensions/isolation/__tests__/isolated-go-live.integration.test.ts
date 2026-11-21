@@ -368,6 +368,13 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  // A reload by id that finds files changed since the last scan asks for a
+  // background scan (DOR-4282). It compiles and writes snapshots under
+  // `cache/extensions`, so let it and the skills ledger finish before the
+  // server stops and the folder goes; a scan still writing made `rm` fail
+  // with ENOTEMPTY.
+  await manager?.whenIdle();
+  await manager?.whenSkillsSettled();
   await manager?.shutdownServer(ID);
   server.closeAllConnections();
   await new Promise((resolve) => server.close(resolve));
@@ -623,7 +630,11 @@ describe('an isolated extension goes live through the real lifecycle', () => {
       expect((await get(`/api/ext/${ID}/ping`)).body.version).toBe('v1');
       agentLevel.mode = 'default';
       await install('v2');
+      // An edit no scan has seen asks for one in the background (DOR-4282);
+      // the shared teardown waits for it before deleting the data folder.
+      const refresh = vi.spyOn(manager, 'requestRefresh');
       await manager.reloadExtension(ID);
+      expect(refresh).toHaveBeenCalledTimes(1);
       expect((await get(`/api/ext/${ID}/ping`)).body.version).not.toBe('v2');
       agentLevel.mode = 'bypassPermissions';
     },

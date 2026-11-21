@@ -46,6 +46,7 @@ const NOTES_UPDATE: PendingExtensionApproval = {
   digest: null,
   changedFiles: ['extension.json'],
   updatedFrom: '1.0.0',
+  placesOnly: false,
 };
 
 /** The same update with no new power: its files changed, nothing more. */

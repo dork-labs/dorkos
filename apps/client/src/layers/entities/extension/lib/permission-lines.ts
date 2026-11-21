@@ -17,7 +17,12 @@ import {
   type ExtensionApprovalPermissions,
   type PendingExtensionApproval,
 } from '@dorkos/shared/extension-approval-schemas';
-import { RUN_PROGRAM_NOT_FOUND, type ExtensionRecordPublic } from '@dorkos/extension-api';
+import {
+  contributionWords,
+  declaredContributions,
+  RUN_PROGRAM_NOT_FOUND,
+  type ExtensionRecordPublic,
+} from '@dorkos/extension-api';
 
 /** One program an extension may start, as far as this surface knows it. */
 export interface ExtensionPermissionProgram {
@@ -54,6 +59,11 @@ export interface ExtensionPermissionView {
    * access". Absent where unknown: treated as having one, the wider claim.
    */
   hasServer?: boolean;
+  /**
+   * The places it declares in `contributions` (DOR-4282), as keys. Echoed
+   * with a yes so an update that adds a place asks again. Absent where unknown.
+   */
+  slots?: readonly string[];
 }
 
 /** One other app an extension calls, as the server named it. */
@@ -113,6 +123,8 @@ export interface ExtensionPermissionSet {
   appAccess?: Record<string, 'reads' | 'changes' | 'both'>;
   /** The apps whose pages it opens. */
   appOpens?: string[];
+  /** The places it declares (DOR-4282). */
+  slots?: string[];
 }
 
 export { runsAnyProgram };
@@ -276,8 +288,34 @@ function calledAppsLine(
   return { key: 'apps', parts: ['It uses other apps:'], tone: 'plain', apps: rows };
 }
 
-/** The lines for where it runs and what it may reach. */
+/**
+ * "Shows in:", one row per place it declares, in DorkOS's fixed words, never
+ * the app's. On a re-ask the new places are on the "Now also shows in:" line
+ * instead, so no place is listed twice. `null` when it shows nowhere else.
+ *
+ * @param slots - The places it declares, as keys.
+ * @param added - The places new since the last yes, as keys.
+ */
+function showsInLine(
+  slots: readonly string[] | undefined,
+  added: readonly string[] | undefined
+): ExtensionPermissionLine | null {
+  const places = contributionWords((slots ?? []).filter((key) => !(added ?? []).includes(key)));
+  if (places.length === 0) return null;
+  return { key: 'slots', parts: ['Shows in:'], rows: places, tone: 'plain' };
+}
+
+/** The lines for where it runs, what it may reach and where it shows. */
 function reachLines(
+  permissions: ExtensionPermissionView,
+  added?: ExtensionPermissionAdditions | null
+): ExtensionPermissionLine[] {
+  const showsIn = showsInLine(permissions.slots, added?.slots);
+  return [...runLines(permissions, added), ...(showsIn ? [showsIn] : [])];
+}
+
+/** The lines for where it runs and what it may reach. */
+function runLines(
   permissions: ExtensionPermissionView,
   added?: ExtensionPermissionAdditions | null
 ): ExtensionPermissionLine[] {
@@ -305,6 +343,12 @@ function reachLines(
     }
     if (added.agents) {
       lines.push(plain('added-agents', 'Now also wants to message your agents.', 'new'));
+    }
+    // DorkOS's words for each place, never the app's (DOR-4282).
+    const places = contributionWords(added.slots ?? []);
+    if (places.length > 0) {
+      // Plain rows, not names: these are DorkOS's words, never the app's.
+      lines.push({ key: 'added-slots', parts: ['Now also shows in:'], rows: places, tone: 'new' });
     }
   }
 
@@ -391,7 +435,12 @@ export function permissionsAddedSince(
       !(seen.apps ?? []).includes(id) ||
       ((now.appOpens ?? []).includes(id) && !(seen.appOpens ?? []).includes(id))
   );
-  if (apps.length > 0) return { ...added, apps };
+  const slots = (now.slots ?? []).filter((key) => !(seen.slots ?? []).includes(key));
+  const extra = {
+    ...(apps.length > 0 ? { apps } : {}),
+    ...(slots.length > 0 ? { slots } : {}),
+  };
+  if (apps.length > 0 || slots.length > 0) return { ...added, ...extra };
   return added.net.length > 0 || added.run.length > 0 || added.agents || added.runtime
     ? added
     : null;
@@ -441,8 +490,10 @@ export function permissionViewFromRecord(
   >
 ): ExtensionPermissionView | null {
   if (record.isolation === undefined) return null;
+  const slots = declaredContributions(record.manifest);
   if (record.isolation === null) {
     return {
+      slots,
       runtime: 'in-process',
       net: [],
       run: [],
@@ -453,6 +504,7 @@ export function permissionViewFromRecord(
   }
   return {
     ...recordWrites(record),
+    slots,
     runtime: 'subprocess',
     net: record.isolation.net,
     run: record.isolation.resolvedRun.map((program) => ({
@@ -485,5 +537,6 @@ export function approvedSetOf(
     run: view.run.map((program) => program.name),
     agents: view.agents,
     ...(view.apps && view.apps.length > 0 ? sharedOf(view.apps) : {}),
+    ...(view.slots ? { slots: [...view.slots] } : {}),
   };
 }
