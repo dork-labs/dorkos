@@ -2221,6 +2221,24 @@ describe('a page load an action starts', () => {
     await f.service.disconnect();
   });
 
+  it('requires a main-frame request before a context-losing click can report navigation success', async () => {
+    const f = await create();
+    await selectOwned(f.service);
+    const { revision } = await f.service.observe();
+    f.click.mockImplementation(async (options?: { trial?: boolean }) => {
+      if (options?.trial) return;
+      // A same-document event alone is not evidence that this dispatch loaded a document.
+      f.navigate('http://fixture.test/#section');
+      throw new Error('Execution context was destroyed, most likely because of a navigation');
+    });
+    await expect(
+      f.service.action({ kind: 'click', role: 'button', name: 'Save', revision })
+    ).rejects.toMatchObject({ code: 'uncertain' });
+    expect((await journal(f)).at(-1)?.outcome).toBe('unknown');
+    expect(f.click).toHaveBeenCalledTimes(2);
+    await f.service.disconnect();
+  });
+
   it.each(['navigate', 'click'] as const)(
     'preserves a real load failure when a %s also loses its execution context',
     async (kind) => {
