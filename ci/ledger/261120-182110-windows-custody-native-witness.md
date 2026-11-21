@@ -26,7 +26,9 @@ It does not run at PR open, on pushes, on a schedule or in the merge queue.
 The first job pins Windows Server 2022, x64 Node 24.19.0, the VS 2022 v143
 toolchain and SDK 10.0.26100.0. It builds the existing private artifacts once,
 prepares the separate ARM64 companion and records the x64 and Node 22.23.3
-ia32 cases independently. The second job uses native Node 24.19.0 on Windows
+ia32 cases independently. Between the two it runs the witness tools' own
+node:test files (43 cases, seconds) on the same head, since no other suite
+runs them and one of them checks the summary that credits the eleven cases. The second job uses native Node 24.19.0 on Windows
 ARM64. It downloads the same-run artifact by its exact ID. The guardian and
 companion checks use independently exported manifest digests.
 
