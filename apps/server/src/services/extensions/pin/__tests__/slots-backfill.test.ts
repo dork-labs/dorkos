@@ -21,6 +21,7 @@ import {
   PLACES_SHOWN_BEFORE_DOR_4282,
   SLOTS_BACKFILLED_SUMMARY,
   backfillSlotlessApprovals,
+  digestsBeforeScan,
 } from '../slots-backfill.js';
 import { settleLegacyApprovals, upkeepApprovals } from '../extension-approval-upkeep.js';
 import { allowedPlacesOf, waitingPlacesOf } from '../../isolation/place-grace.js';
@@ -57,6 +58,11 @@ function copy(overrides: Partial<ExtensionRecord> = {}): ExtensionRecord {
 }
 
 type StoredExtensions = UserConfig['extensions'];
+
+/** One backfill pass, with the digests as they stand before it (no pin in between). */
+function backfill(records: ExtensionRecord[]): string[] {
+  return backfillSlotlessApprovals(records, digestsBeforeScan());
+}
 
 /** Store an approval as the 0.139.0 app wrote it: pinned, no `slots`, listed by the migration. */
 function storePre4282Approval(patch: Partial<StoredExtensions> = {}): void {
@@ -129,7 +135,7 @@ describe('backfillSlotlessApprovals', () => {
     expect(waitingPlacesOf(record, stored())).toEqual(['status-bar', 'command-palette.items']);
     expect(isPendingApproval(record, stored())).toBe(true);
 
-    expect(backfillSlotlessApprovals([record])).toEqual(['notes']);
+    expect(backfill([record])).toEqual(['notes']);
 
     expect(stored().approvedPermissions!.notes).toEqual({
       runtime: 'in-process',
@@ -148,7 +154,7 @@ describe('backfillSlotlessApprovals', () => {
   it('writes one audit entry per app, naming the app and its places', () => {
     storePre4282Approval();
 
-    backfillSlotlessApprovals([copy()]);
+    backfill([copy()]);
 
     expect(backfillEntries()).toHaveLength(1);
     expect(audit).toHaveBeenCalledWith(
@@ -180,7 +186,7 @@ describe('backfillSlotlessApprovals', () => {
       },
     };
 
-    backfillSlotlessApprovals([copy({ manifest })]);
+    backfill([copy({ manifest })]);
 
     expect(stored().approvedPermissions!.notes).toEqual({
       ...reach,
@@ -192,7 +198,7 @@ describe('backfillSlotlessApprovals', () => {
     storePre4282Approval();
     const record = copy({ currentDigest: OTHER_DIGEST });
 
-    expect(backfillSlotlessApprovals([record])).toEqual([]);
+    expect(backfill([record])).toEqual([]);
 
     expect(stored().approvedPermissions!.notes).toBeUndefined();
     expect(backfillEntries()).toHaveLength(0);
@@ -200,10 +206,10 @@ describe('backfillSlotlessApprovals', () => {
 
   it('asks again when the approval names no hash, or the manifest is invalid', () => {
     storePre4282Approval({ approvedSources: { notes: { path: APP_PATH } } });
-    expect(backfillSlotlessApprovals([copy()])).toEqual([]);
+    expect(backfill([copy()])).toEqual([]);
 
     storePre4282Approval();
-    expect(backfillSlotlessApprovals([copy({ status: 'invalid' })])).toEqual([]);
+    expect(backfill([copy({ status: 'invalid' })])).toEqual([]);
     expect(stored().approvedPermissions!.notes).toBeUndefined();
   });
 
@@ -213,7 +219,7 @@ describe('backfillSlotlessApprovals', () => {
       manifest: { ...MANIFEST, contributions: { canvas: true, inbox: true, 'status-bar': true } },
     });
 
-    backfillSlotlessApprovals([record]);
+    backfill([record]);
 
     expect(stored().approvedPermissions!.notes!.slots).toEqual(['status-bar']);
     expect(waitingPlacesOf(record, stored())).toEqual(['canvas', 'inbox']);
@@ -223,48 +229,64 @@ describe('backfillSlotlessApprovals', () => {
     storePre4282Approval();
     const record = copy({ manifest: { ...MANIFEST, contributions: { canvas: true } } });
 
-    expect(backfillSlotlessApprovals([record])).toEqual([]);
+    expect(backfill([record])).toEqual([]);
     expect(stored().approvedPermissions!.notes).toBeUndefined();
   });
 
   it('skips a revoked approval', () => {
     storePre4282Approval({ approvedToRun: [] });
 
-    expect(backfillSlotlessApprovals([copy()])).toEqual([]);
+    expect(backfill([copy()])).toEqual([]);
     expect(stored().approvedPermissions!.notes).toBeUndefined();
   });
 
   it('skips an app that is turned off', () => {
     storePre4282Approval({ enabled: [] });
-    expect(backfillSlotlessApprovals([copy()])).toEqual([]);
+    expect(backfill([copy()])).toEqual([]);
 
     storePre4282Approval();
-    expect(backfillSlotlessApprovals([copy({ status: 'disabled' })])).toEqual([]);
+    expect(backfill([copy({ status: 'disabled' })])).toEqual([]);
     expect(stored().approvedPermissions!.notes).toBeUndefined();
   });
 
   it('skips an uninstalled app: only copies this scan found get places', () => {
     storePre4282Approval();
 
-    expect(backfillSlotlessApprovals([])).toEqual([]);
+    expect(backfill([])).toEqual([]);
     expect(stored().approvedPermissions!.notes).toBeUndefined();
   });
 
   it('skips another copy at a different folder, and a dev link', () => {
     storePre4282Approval();
-    expect(backfillSlotlessApprovals([copy({ path: '/elsewhere/notes' })])).toEqual([]);
+    expect(backfill([copy({ path: '/elsewhere/notes' })])).toEqual([]);
 
     storePre4282Approval({
       approvedSources: { notes: { path: APP_PATH, devLink: '/src/notes' } },
     });
     const linked = copy({ devLink: { path: '/src/notes' } });
-    expect(backfillSlotlessApprovals([linked])).toEqual([]);
+    expect(backfill([linked])).toEqual([]);
+    expect(stored().approvedPermissions!.notes).toBeUndefined();
+  });
+
+  it("gives an agent's own approval its places only under Trusted, as today's path would", () => {
+    const agentMade = {
+      notes: { path: APP_PATH, digest: DIGEST, autoApprovedBy: 'create_extension' as const },
+    };
+    // Trusted (the default): `create_extension` records every declared place
+    // without asking, so parity gives them.
+    storePre4282Approval({ approvedSources: agentMade });
+    expect(backfill([copy()])).toEqual(['notes']);
+
+    // Careful: that path waits for a person, so the places ask.
+    configManager.set('permissions', { ...configManager.get('permissions'), preset: 'careful' });
+    storePre4282Approval({ approvedSources: agentMade });
+    expect(backfill([copy()])).toEqual([]);
     expect(stored().approvedPermissions!.notes).toBeUndefined();
   });
 
   it('skips an id the migration did not list', () => {
     storePre4282Approval({ legacySlotless: ['other'] });
-    expect(backfillSlotlessApprovals([copy()])).toEqual([]);
+    expect(backfill([copy()])).toEqual([]);
     expect(stored().approvedPermissions!.notes).toBeUndefined();
   });
 
@@ -276,7 +298,7 @@ describe('backfillSlotlessApprovals', () => {
     });
     const before = structuredClone(stored());
 
-    expect(backfillSlotlessApprovals([copy()])).toEqual([]);
+    expect(backfill([copy()])).toEqual([]);
 
     expect(stored()).toEqual(before);
     expect(stored().approvedPermissions!.notes!.slots).toEqual([]);
@@ -285,11 +307,11 @@ describe('backfillSlotlessApprovals', () => {
 
   it('changes nothing on a second run', () => {
     storePre4282Approval();
-    backfillSlotlessApprovals([copy()]);
+    backfill([copy()]);
     const once = structuredClone(stored());
     audit.mockReset();
 
-    expect(backfillSlotlessApprovals([copy()])).toEqual([]);
+    expect(backfill([copy()])).toEqual([]);
 
     expect(stored()).toEqual(once);
     expect(audit).not.toHaveBeenCalled();
@@ -297,6 +319,20 @@ describe('backfillSlotlessApprovals', () => {
 });
 
 describe('once per upgrade: the scan, then settle', () => {
+  it('never counts a pin this same scan wrote to whatever it found', () => {
+    // An approval from before content pins (DOR-3068): no digest yet, so the
+    // scan's own upkeep pins it to the files on disk a moment before.
+    storePre4282Approval({
+      approvedSources: { notes: { path: APP_PATH, legacyPathOnly: true } },
+    });
+
+    upkeepApprovals([copy()], [], dir);
+
+    expect(stored().approvedSources!.notes!.digest).toBe(DIGEST);
+    expect(stored().approvedPermissions!.notes).toBeUndefined();
+    expect(backfillEntries()).toHaveLength(0);
+  });
+
   it('backfills on the first scan, then clears the list so nothing runs it again', () => {
     storePre4282Approval();
     upkeepApprovals([copy()], [], dir);

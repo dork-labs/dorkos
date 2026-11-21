@@ -27,7 +27,7 @@ import { logger } from '../../../lib/logger.js';
 import { approvedSourceOf, isApprovedCopy, namesThisCopy } from '../extension-load-policy.js';
 import { isPathOnlyApproval } from './extension-path-trust.js';
 import { declaredSet } from '../isolation/permission-coverage.js';
-import { backfillSlotlessApprovals } from './slots-backfill.js';
+import { backfillSlotlessApprovals, digestsBeforeScan } from './slots-backfill.js';
 
 /**
  * Bind each approval given before approvals recorded their copy to the one copy
@@ -188,7 +188,9 @@ export function pinPathOnlyApprovals(records: readonly ExtensionRecord[]): strin
  * Every scan's bookkeeping on older approvals, in order: bind the unsourced
  * ones, ratchet full-access ones down, pin path-only ones to their files, and
  * record the places of ones from before places were. The places come last, so
- * they read the set and the pin the steps before settled.
+ * they read the set the ratchet settled, but only a digest stored before the
+ * scan began counts for them: a pin written here a moment earlier names files
+ * nobody approved (DOR-4891).
  *
  * @param records - The records this scan produced.
  * @param shadowed - The copies newer ones shadow, which a pin may also name.
@@ -199,10 +201,11 @@ export function upkeepApprovals(
   shadowed: readonly ExtensionRecord[],
   dorkHome: string
 ): void {
+  const pinnedBefore = digestsBeforeScan();
   bindUnsourcedApprovals(records, dorkHome);
   ratchetFullAccessApprovals(records);
   pinPathOnlyApprovals([...records, ...shadowed]);
-  backfillSlotlessApprovals(records);
+  backfillSlotlessApprovals(records, pinnedBefore);
 }
 
 /**

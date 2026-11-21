@@ -147,6 +147,35 @@ describe('ExtensionManager', () => {
     expect(writes.at(-1)?.[1]).not.toHaveProperty('legacyUnsourced');
   });
 
+  it('clears the list of approvals with no places once the first scan is done (DOR-4891)', async () => {
+    mockConfigGet.mockReturnValue({
+      enabled: [],
+      disabled: [],
+      ...approved([]),
+      legacySlotless: ['gone'],
+    });
+
+    await manager.initialize(null);
+
+    const writes = mockConfigSet.mock.calls.filter(([key]) => key === 'extensions');
+    expect(writes.at(-1)?.[1]).not.toHaveProperty('legacySlotless');
+  });
+
+  it('keeps that list when the first scan throws, so the next start tries again (DOR-4891)', async () => {
+    mockConfigGet.mockReturnValue({
+      enabled: [],
+      disabled: [],
+      ...approved([]),
+      legacySlotless: ['notes'],
+    });
+    mockDiscover.mockRejectedValueOnce(new Error('disk gone'));
+
+    await expect(manager.initialize(null)).rejects.toThrow('disk gone');
+
+    const writes = mockConfigSet.mock.calls.filter(([key]) => key === 'extensions');
+    expect(writes.every(([, value]) => 'legacySlotless' in (value as object))).toBe(true);
+  });
+
   it('drops approvals for an extension that is no longer installed, and its tool settings (DOR-4305)', async () => {
     // A real, throwaway parent folder; the extension's own folder is gone.
     const parent = mkdtempSync(path.join(tmpdir(), 'dor4305-'));
