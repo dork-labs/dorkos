@@ -1,0 +1,132 @@
+name: Windows custody witness
+
+# An explicit label on a reviewed same-repository draft selects this evidence run.
+on:
+  pull_request:
+    branches: [main]
+    types: [labeled]
+    paths:
+      - '.github/workflows/windows-custody-witness.yml'
+      - '.github/scripts/windows-custody-witness.mjs'
+      - 'packages/test-utils/native/windows-run-custody/**'
+      - 'packages/test-utils/src/run-custody/windows/**'
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+
+jobs:
+  x64-producer:
+    if: >-
+      github.event.label.name == 'run:windows-custody' &&
+      github.event.pull_request.draft &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: windows-2022
+    timeout-minutes: 20
+    outputs:
+      artifact-id: ${{ steps.handoff.outputs.artifact-id }}
+      arm64-manifest: ${{ steps.prepare.outputs.arm64_manifest }}
+      arm64-companion: ${{ steps.companion.outputs.arm64_companion }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.19.0'
+          architecture: x64
+          package-manager-cache: false
+
+      - name: Build the three guarded PE files
+        id: prepare
+        run: node .github/scripts/windows-custody-witness.mjs prepare
+
+      - name: Prepare the separate ARM64 companion
+        id: companion
+        env:
+          GUARDIAN_MANIFEST_SHA256: ${{ steps.prepare.outputs.arm64_manifest }}
+        run: node .github/scripts/windows-custody-witness.mjs companion
+
+      - name: Transfer the four verified ARM64 handoff files
+        id: handoff
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-custody-arm64-handoff-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/windows-custody-handoff
+          if-no-files-found: error
+
+      - name: Run the x64 native witness
+        if: ${{ !cancelled() && steps.prepare.outcome == 'success' }}
+        env:
+          GUARDIAN_MANIFEST_SHA256: ${{ steps.prepare.outputs.x64_manifest }}
+        run: node .github/scripts/windows-custody-witness.mjs x64
+
+      # Collect the two x64-host scopes independently, including after a witness failure.
+      - name: Select the eligible ia32 Node process
+        if: ${{ !cancelled() && steps.prepare.outcome == 'success' }}
+        id: node-ia32
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22.23.3'
+          architecture: x86
+          package-manager-cache: false
+
+      - name: Run the ia32 process-only witness
+        if: ${{ !cancelled() && steps.node-ia32.outcome == 'success' }}
+        env:
+          GUARDIAN_MANIFEST_SHA256: ${{ steps.prepare.outputs.ia32_manifest }}
+        run: node .github/scripts/windows-custody-witness.mjs ia32
+
+      - name: Retain x64 and ia32 evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-custody-x64-ia32-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/windows-custody-evidence
+          if-no-files-found: ignore
+
+  native-arm64:
+    needs: x64-producer
+    # An actual prepared handoff permits ARM64 evidence even if an x64-host witness failed.
+    if: >-
+      !cancelled() &&
+      (needs.x64-producer.result == 'success' || needs.x64-producer.result == 'failure') &&
+      needs.x64-producer.outputs.artifact-id != ''
+    runs-on: windows-11-arm
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.19.0'
+          architecture: arm64
+          package-manager-cache: false
+
+      - name: Download the exact producer handoff
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.x64-producer.outputs.artifact-id }}
+          path: ${{ runner.temp }}/windows-custody-handoff
+
+      - name: Run the native ARM64 witness
+        env:
+          GUARDIAN_MANIFEST_SHA256: ${{ needs.x64-producer.outputs.arm64-manifest }}
+          COMPANION_MANIFEST_SHA256: ${{ needs.x64-producer.outputs.arm64-companion }}
+        run: node .github/scripts/windows-custody-witness.mjs arm64
+
+      - name: Retain ARM64 evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-custody-arm64-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/windows-custody-evidence
+          if-no-files-found: ignore

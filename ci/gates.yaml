@@ -337,6 +337,14 @@ gates:
     source: lefthook.yml
     purpose: Refuses a push while this branch's test or browser-test run from the last push is under ten minutes old, since the push would cancel it.
 
+  # --- windows-custody-witness.yml ---
+  - id: wf.windows-custody-witness.x64-producer
+    source: .github/workflows/windows-custody-witness.yml
+    purpose: Builds the pinned private Windows guardian and ARM64 handoff, then records the x64 and ia32 witness cases on opt-in draft PRs.
+  - id: wf.windows-custody-witness.native-arm64
+    source: .github/workflows/windows-custody-witness.yml
+    purpose: Verifies the exact prepared handoff and records the native ARM64 witness cases on the same opt-in draft PR.
+
   # --- .claude/settings.json ---
   - id: claude.PreToolUse.file-guard
     source: .claude/settings.json
