@@ -36,6 +36,7 @@ import { registerExtensionDecisionsOpenApi } from '../extensions/inbox/extension
 import { registerExtensionRemovalOpenApi } from '../extensions/removal/extension-removal-openapi.js';
 import { registerExtensionApprovalSetOpenApi } from '../extensions/groups/extension-approval-set-openapi.js';
 import { registerExtensionMediaOpenApi } from '../extensions/http/media-openapi.js';
+import { registerConfigBackupsOpenApi } from './config/backups-openapi.js';
 import {
   PermissionModeSchema,
   SessionSchema,
@@ -8634,6 +8635,7 @@ registerExtensionDecisionsOpenApi(registry);
 registerExtensionRemovalOpenApi(registry);
 registerExtensionApprovalSetOpenApi(registry);
 registerExtensionMediaOpenApi(registry);
+registerConfigBackupsOpenApi(registry);
 
 documentFrontDoorStepUps(registry);
 

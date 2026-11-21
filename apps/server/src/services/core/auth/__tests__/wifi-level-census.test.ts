@@ -297,6 +297,9 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     'POST /api/local-browser/sign-in/done',
     'POST /api/local-browser/handoff/hand-back',
     'POST /api/local-browser/handoff/stop',
+    // Settings → Backups: the route's own person bar refuses plain-http Wi-Fi (DOR-4253).
+    'DELETE /api/config/backups/:name',
+    'POST /api/config/backups/:name/move',
   ],
   'Inbound and signed: a provider’s webhook, never a person on Wi-Fi': [
     'POST /api/connectors/webhooks/:providerInstanceId',

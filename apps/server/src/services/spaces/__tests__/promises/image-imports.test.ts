@@ -69,6 +69,9 @@ describe('the space image', () => {
       ...Object.entries(FORBIDDEN_IN_SPACE_IMAGE).map(
         ([name, why]) => `${name} (${why}), first from <stdin>`
       ),
+      // Reached only through `@dorkos/db`, itself forbidden above: the backup check finds the
+      // store's driver through createRequire to open it in a worker (DOR-4253).
+      'a load by a computed name in packages/db/src/backup-copies.ts',
       // The helper finds node-pty through createRequire; the walk names it as well.
       'a load by a computed name in packages/shared/src/node-pty-spawn-helper.ts',
     ]);

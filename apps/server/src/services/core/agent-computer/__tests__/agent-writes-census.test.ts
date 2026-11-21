@@ -489,11 +489,13 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
   [
     'settings are the hub’s',
     [
+      'DELETE /api/config/backups/:name',
       'DELETE /api/profile/avatar',
       'DELETE /api/profile/identities/:authorId',
       'DELETE /api/push/subscriptions/:id',
       'PATCH /api/config',
       'PATCH /api/profile',
+      'POST /api/config/backups/:name/move',
       'POST /api/config/mcp/reveal-token',
       'POST /api/config/mcp/rotate-token',
       'POST /api/onboarding/first-run',
