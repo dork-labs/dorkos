@@ -279,6 +279,7 @@ describe('Database Migrations', () => {
       // Durable DorkOS-id <-> OpenCode-session-id bindings so OpenCode
       // session ids survive a server restart (DOR-251, migration 0027).
       'opencode_sessions',
+      'owner_factors',
       'pulse_dispatch_log',
       'pulse_runs',
       'pulse_schedules',

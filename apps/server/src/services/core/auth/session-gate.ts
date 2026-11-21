@@ -77,6 +77,7 @@ import {
   type SessionRoute,
 } from './sessions/session-route.js';
 import { inRestartWindow, sessionRecentlyEnded } from './sessions/live-connections.js';
+import { noteWifiSessionUsed } from './sessions/wifi-activity.js';
 import { personProofMatches } from './person-proof.js';
 import { PERSON_PROOF_HEADER } from '@dorkos/shared/person-session';
 
@@ -303,13 +304,18 @@ export const AUTH_REQUIRED_BODY = { error: 'Unauthorized', code: 'AUTH_REQUIRED'
 
 /**
  * The session gate's `401`, saying how to sign in: on a hub, with a DorkOS
- * account (`services/core/hub/hub-sign-in.ts`), since a hub has no passwords.
- * Elsewhere the app's own sign-in form.
+ * account (`services/core/hub/hub-sign-in.ts`), since a hub has no passwords;
+ * over Wi-Fi, with a one-time code from this computer (DOR-4744), since Wi-Fi
+ * takes no password. Elsewhere the app's own sign-in form.
+ *
+ * @param ingress - The listener the request came in on, when known.
  */
-export function authRequiredBody(): typeof AUTH_REQUIRED_BODY & { signInWith?: 'dorkos' } {
-  return currentServerRole() === 'hub'
-    ? { ...AUTH_REQUIRED_BODY, signInWith: 'dorkos' }
-    : AUTH_REQUIRED_BODY;
+export function authRequiredBody(
+  ingress?: RequestFacts['ingress']
+): typeof AUTH_REQUIRED_BODY & { signInWith?: 'dorkos' | 'wifi-code' } {
+  if (currentServerRole() === 'hub') return { ...AUTH_REQUIRED_BODY, signInWith: 'dorkos' };
+  if (ingress === 'wifi') return { ...AUTH_REQUIRED_BODY, signInWith: 'wifi-code' };
+  return AUTH_REQUIRED_BODY;
 }
 
 /** What the session gate decided about one request. */
@@ -433,6 +439,8 @@ async function verifySessionCookie(
         sessionWorksOn(result.session, route) &&
         !sessionRecentlyEnded(result.session.id)
       ) {
+        // Its idle limit counts from here (`./sessions/wifi-activity.ts`).
+        if (route === 'wifi') noteWifiSessionUsed(result.session.id);
         return {
           userId: result.user.id,
           credential: 'cookie',

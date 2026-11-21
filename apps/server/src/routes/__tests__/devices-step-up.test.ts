@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createDevicesRoutes } from '../devices.js';
 import { frontDoorStepUpHarness } from './front-door-step-up-harness.js';
 import { deviceIdOf } from '../../services/core/auth/sessions/signed-in-devices.js';
+import { wifiSignInCookie } from '../../services/core/auth/__tests__/wifi-test-sign-in.js';
 
 describe('signed-in device confirmation', () => {
   const owner = frontDoorStepUpHarness(() => [
@@ -11,10 +12,8 @@ describe('signed-in device confirmation', () => {
   it.each(['direct', 'own-tunnel', 'managed'] as const)(
     'holds signing another device out from %s',
     async (via) => {
-      const made = await owner.signIn('wifi');
-      const cookie = (made.headers['set-cookie'] as unknown as string[])
-        .map((value) => value.split(';')[0])
-        .join('; ');
+      // Wi-Fi takes no password; a device signs in by code (DOR-4744).
+      const cookie = await wifiSignInCookie(owner.auth()!, 'localhost');
       const signedIn = await owner.auth()!.api.getSession({ headers: new Headers({ cookie }) });
       const before = await owner.call('get', '/api/devices/sessions', via);
       const other = before.body.sessions.find(

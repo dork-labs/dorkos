@@ -4,9 +4,16 @@ import { responseDeadline, CLOSE_RESPONSE_TIMEOUT_MS, closingError } from '../li
 export class BrowserPageClosing {
   private pending?: Promise<void>;
   private failed = false;
+  private completed?: Promise<void>;
 
   get active(): boolean {
     return !!this.pending;
+  }
+
+  /** An opaque receipt is true only for this exact close settling successfully. */
+  capture(): (() => boolean) | undefined {
+    const pending = this.pending;
+    return pending ? () => !this.failed && this.completed === pending : undefined;
   }
 
   /** New work cannot pass a close that is pending or failed. */
@@ -22,7 +29,10 @@ export class BrowserPageClosing {
       this.pending = pending;
       void pending
         .then(() => {
-          if (this.pending === pending) this.pending = undefined;
+          if (this.pending === pending) {
+            this.completed = pending;
+            this.pending = undefined;
+          }
         })
         .catch(() => {
           this.failed = true;

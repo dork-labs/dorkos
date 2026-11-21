@@ -33,6 +33,9 @@ function setup() {
   };
   const service = {
     requireProfileAccess: vi.fn(async () => undefined),
+    hasNavigationRefusal: vi.fn(() => false),
+    observeRefusal: vi.fn(() => state as never),
+    requireRefusalCurrent: vi.fn((_tabId: string, _url: string) => undefined),
     requireNotFullScreen: vi.fn(async () => undefined),
     assertLeaseIdentity: vi.fn((id: string) => {
       if (id !== 'chat-one')
@@ -89,6 +92,9 @@ function setup() {
         requireProfileAccess: service.requireProfileAccess,
         requireNotFullScreen: service.requireNotFullScreen,
         agentState: service.agentState,
+        hasNavigationRefusal: service.hasNavigationRefusal,
+        observeRefusal: service.observeRefusal,
+        requireRefusalCurrent: service.requireRefusalCurrent,
         observe: service.observe,
         screenshot: service.screenshot,
         action: service.action,
@@ -768,6 +774,29 @@ describe('local browser scoped tool projection', () => {
     );
   });
 
+  it.each(['stranger_chat', 'room_outside_words', 'outsider_turn'] as const)(
+    'a captured reload proof never bypasses the calling chat’s %s mark',
+    async (reason) => {
+      const { service, domain, deps, context } = setup();
+      service.hasNavigationRefusal.mockReturnValue(true);
+      service.handover.outsideTurnReason.mockImplementation(async (chat) => {
+        expect(chat).toBe('chat-one');
+        return reason;
+      });
+      const read = domain.capabilities.find((item) => item.id === 'local_browser.observe')!;
+      await expect(read.invoke(deps, {}, context('chat-one'))).rejects.toMatchObject({
+        payload: {
+          code: 'outside_turn',
+          reason,
+          error: 'This turn can’t use the browser.',
+          next: 'Ask the person in your direct chat.',
+        },
+      });
+      expect(service.observeRefusal).not.toHaveBeenCalled();
+      expect(service.observe).not.toHaveBeenCalled();
+    }
+  );
+
   it('lets no agent name the site it hands over', () => {
     const { domain } = setup();
     const ask = domain.capabilities.find((item) => item.id === 'local_browser.ask_person')!;
@@ -782,6 +811,91 @@ describe('local browser scoped tool projection', () => {
     const read = domain.capabilities.find((item) => item.id === 'local_browser.observe')!;
     await expect(read.invoke(deps, {}, context('chat-one'))).rejects.toThrow();
     expect(service.observe).toHaveBeenCalledOnce();
+  });
+
+  describe('a proven loop returns only refusal metadata (DOR-4816)', () => {
+    function loop() {
+      const f = setup();
+      const observation = {
+        revision: 4,
+        tabId: 'selected',
+        url: 'https://shop.example/check',
+        snapshot: '',
+        refusal: {
+          kind: 'blocked',
+          host: 'shop.example',
+          next: localBrowserRefusalNext('blocked'),
+        },
+      };
+      const hasNavigationRefusal = vi.fn(() => true);
+      const observeRefusal = vi.fn(() => observation);
+      const requireRefusalCurrent = vi.fn();
+      Object.assign(f.service, { hasNavigationRefusal, observeRefusal, requireRefusalCurrent });
+      f.service.requireNotFullScreen.mockRejectedValue(
+        new LocalBrowserError('screen_state_unavailable', 'Couldn’t check full screen.')
+      );
+      const read = f.domain.capabilities.find((item) => item.id === 'local_browser.observe')!;
+      return {
+        ...f,
+        observation,
+        hasNavigationRefusal,
+        observeRefusal,
+        requireRefusalCurrent,
+        read,
+      };
+    }
+
+    it('does not read the document or check its context to return a proven loop', async () => {
+      const f = loop();
+      await expect(f.read.invoke(f.deps, {}, f.context('chat-one'))).resolves.toEqual(
+        f.observation
+      );
+      expect(f.service.requireNotFullScreen).not.toHaveBeenCalled();
+      expect(f.service.observe).not.toHaveBeenCalled();
+      expect(f.observeRefusal).toHaveBeenCalledOnce();
+      expect(f.service.requireProfileAccess).toHaveBeenCalledTimes(2);
+      expect(f.service.handover.requireAgentMayUse).toHaveBeenCalledTimes(3);
+      expect(f.requireRefusalCurrent).toHaveBeenCalledWith(
+        'selected',
+        'https://shop.example/check'
+      );
+    });
+
+    it('still refuses when profile access is lost before the answer', async () => {
+      const f = loop();
+      f.service.requireProfileAccess
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(
+          new LocalBrowserError('profile_not_allowed', 'This profile is not shared.')
+        );
+      await expect(f.read.invoke(f.deps, {}, f.context('chat-one'))).rejects.toMatchObject({
+        payload: { code: 'profile_not_allowed' },
+      });
+    });
+
+    it('discards metadata if the exact proof changes while reading the turn mark', async () => {
+      const f = loop();
+      f.service.handover.outsideTurnReason.mockImplementationOnce(async () => {
+        f.hasNavigationRefusal.mockReturnValue(false);
+        return 'read_outside_text';
+      });
+      await expect(f.read.invoke(f.deps, {}, f.context('chat-one'))).rejects.toMatchObject({
+        payload: { code: 'stale_page' },
+      });
+    });
+
+    it.each(['local_browser.screenshot', 'local_browser.act'])(
+      'does not exempt %s from an unknown full-screen state',
+      async (id) => {
+        const f = loop();
+        const capability = f.domain.capabilities.find((item) => item.id === id)!;
+        await expect(
+          capability.invoke(f.deps, inputFor(id), f.context('chat-one'))
+        ).rejects.toMatchObject({ payload: { code: 'screen_state_unavailable' } });
+        expect(f.service.screenshot).not.toHaveBeenCalled();
+        expect(f.service.action).not.toHaveBeenCalled();
+      }
+    );
   });
   it('returns selected-only state after an action, never the human tab chooser', async () => {
     const { domain, deps, context } = setup();

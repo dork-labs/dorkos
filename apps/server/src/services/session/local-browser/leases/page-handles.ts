@@ -1,4 +1,7 @@
 import type { Page } from 'playwright-core';
+import type { LocalBrowserState } from '@dorkos/shared/local-browser';
+import { captureHandoffClose } from '../handoff-guards/handoff-close.js';
+import type { BrowserPageClosing } from './page-closing.js';
 import { captureAgentPage } from './agent-page-handle.js';
 import { captureBrokerSource } from './broker-source.js';
 import type { LocalBrowserPageSession } from './page-session.js';
@@ -23,6 +26,11 @@ export class BrowserPageHandles {
     private readonly identity: () => PageIdentity,
     private readonly assertAvailable: () => void
   ) {}
+
+  hasLivePage(): boolean {
+    const page = this.state.tabs.get(this.state.selectedTabId ?? '');
+    return this.identity().status === 'connected' && !!page && !page.isClosed();
+  }
 
   /** Only this connection’s exact held Page may be brought back to the person. */
   restorePersonFocus(page: Page): void {
@@ -63,6 +71,19 @@ export class BrowserPageHandles {
       epoch: this.runtime.custody.epoch,
       page: this.state.tabs.get(this.state.selectedTabId ?? ''),
     }));
+  }
+
+  /** A handoff retains this Page's physical-close receipt and immutable admission. */
+  handoffClose(state: LocalBrowserState, profileId: string | null, closing: BrowserPageClosing) {
+    return captureHandoffClose(
+      {
+        closing,
+        identity: () => ({ ...this.identity(), profileId: this.session.currentProfileId() }),
+        disconnect: () => this.session.disconnect(),
+        assertAuthority: () => this.session.assertAuthorityCurrent(),
+      },
+      { connectionId: state.connectionId, sessionId: state.sessionId, profileId }
+    );
   }
 
   viewer() {

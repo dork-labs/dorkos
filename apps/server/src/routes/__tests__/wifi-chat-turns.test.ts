@@ -61,6 +61,13 @@ vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null
 vi.mock('../../services/core/auth/index.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../services/core/auth/index.js')>()),
   readOwnerAccount: () => ({ id: 'owner' }),
+  // The owner allowed this Wi-Fi sign-in to run agents, at the computer (DOR-4744).
+  readAuthDb: await (async () => {
+    const { allowedWifiDeviceDb } =
+      await import('../../services/core/auth/__tests__/wifi-allowed-device.js');
+    const db = allowedWifiDeviceDb('owner', 'sign-in-phone');
+    return () => db;
+  })(),
 }));
 
 import request from '@dorkos/test-utils/supertest';

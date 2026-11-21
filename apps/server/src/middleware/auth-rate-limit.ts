@@ -59,9 +59,19 @@ export interface AuthRateLimitOptions {
  */
 function isCredentialAttempt(method: string, path: string): boolean {
   if (method !== 'POST') return false;
-  const lowered = path.toLowerCase();
-  return lowered === '/api/auth/sign-in/email' || lowered === '/api/auth/sign-up/email';
+  return CREDENTIAL_PATHS.has(path.toLowerCase());
 }
+
+/**
+ * The endpoints that try a credential: the two password ones, a Wi-Fi
+ * device's one-time code, and the owner's passkey (DOR-4744, DOR-3647).
+ */
+const CREDENTIAL_PATHS: ReadonlySet<string> = new Set([
+  '/api/auth/sign-in/email',
+  '/api/auth/sign-up/email',
+  '/api/wifi-sign-in/finish',
+  '/api/owner-sign-in/passkey/finish',
+]);
 
 /** What a refused attempt is answered with. */
 const RATE_LIMITED_BODY = {
@@ -165,9 +175,12 @@ export interface AccountSignInLimitOptions {
 /**
  * Read at most {@link MAX_ACCOUNT_BODY_BYTES} of a copy of the body, or
  * `undefined` when there is more: a chunked body names no length, so the cap is
- * counted as it arrives rather than trusted from a header.
+ * counted as it arrives rather than trusted from a header. The handler still
+ * reads the body itself. Shared with `./second-factor-gate.ts`.
+ *
+ * @param request - The request whose body to copy.
  */
-async function readCappedBody(request: Request): Promise<string | undefined> {
+export async function readCappedBody(request: Request): Promise<string | undefined> {
   const stream = request.clone().body;
   if (!stream) return '';
   const reader = stream.getReader();

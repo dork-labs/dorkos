@@ -28,10 +28,12 @@ let authRequired = false;
 const authRequiredListeners = new Set<Listener>();
 
 /**
- * How the server said to sign in: this DorkOS's own form, or a DorkOS account
- * (`signInWith: 'dorkos'` on the `401`, a person's own DorkOS in the cloud).
+ * How the server said to sign in: this DorkOS's own form, a DorkOS account
+ * (`signInWith: 'dorkos'` on the `401`, a person's own DorkOS in the cloud),
+ * or, over Wi-Fi, a one-time code from the computer DorkOS runs on
+ * (`signInWith: 'wifi-code'`, DOR-4744).
  */
-export type SignInWith = 'password' | 'dorkos';
+export type SignInWith = 'password' | 'dorkos' | 'wifi-code';
 
 let signInWith: SignInWith = 'password';
 
@@ -49,7 +51,7 @@ export function getSignInWith(): SignInWith {
  * @param value - What the `401` named.
  */
 export function setSignInWith(value: SignInWith): void {
-  if (signInWith === 'dorkos' && value === 'password') return;
+  if (signInWith !== 'password' && value === 'password') return;
   if (signInWith === value) return;
   signInWith = value;
   authRequiredListeners.forEach((l) => l());

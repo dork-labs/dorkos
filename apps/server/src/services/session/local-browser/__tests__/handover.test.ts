@@ -81,11 +81,20 @@ function fakeSignIns() {
     },
     holds: (candidate: string) =>
       (status === 'open' || status === 'saving') && candidate === folder,
-    start: vi.fn(async (profileFolder: string, _profileId: string | null, _url: string) => {
-      folder = profileFolder;
-      status = 'open';
-      return signIns.current!;
-    }),
+    start: vi.fn(
+      async (
+        profileFolder: string,
+        _profileId: string | null,
+        _url: string,
+        admission?: { require(): Promise<void>; assertCurrent(): void }
+      ) => {
+        await admission?.require();
+        admission?.assertCurrent();
+        folder = profileFolder;
+        status = 'open';
+        return signIns.current!;
+      }
+    ),
     // Like the real one: only an open window is asked to quit, and its save then lands.
     done: vi.fn(() => {
       if (status !== 'open') return;
@@ -186,7 +195,11 @@ describe('detached handoffs', () => {
       expect(signIns.start).toHaveBeenCalledWith(
         path.join(dataDirectory, 'browser-profiles', 'p1'),
         'p1',
-        connected().tabs[0]!.url
+        connected().tabs[0]!.url,
+        expect.objectContaining({
+          require: expect.any(Function),
+          assertCurrent: expect.any(Function),
+        })
       );
       expect(browser.disconnect.mock.invocationCallOrder[0]).toBeLessThan(
         signIns.start.mock.invocationCallOrder[0]!

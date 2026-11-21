@@ -7,6 +7,8 @@
  *   a connected app (DOR-2739).
  * - `web-device-notifications.ts`: a new browser used chat from the web here
  *   (DOR-2946).
+ * - `sign-in-check-notifications.ts`: a passkey or authenticator app was added
+ *   to the owner's account, or removed from it (DOR-3647).
  * - `community-notifications.ts`: a space's teammates reached their monthly
  *   limit, or it was changed (DOR-2956).
  * - `account-signin-notifications.ts`: a Claude folder's sign-in is new or
@@ -43,6 +45,10 @@ import {
   type CommunityNotificationPayloads,
 } from './community-notifications.js';
 import { WEB_DEVICE_ENTRIES, type WebDevicePayloads } from './web-device-notifications.js';
+import {
+  SIGN_IN_CHECK_ENTRIES,
+  type SignInCheckPayloads,
+} from '../core/auth/factors/sign-in-check-notifications.js';
 import {
   SPENDING_ENTRIES,
   SPENDING_NOTIFICATION_KINDS,
@@ -95,6 +101,7 @@ export interface DeclaredPayloads
     RemoteStepUpPayloads,
     ConnectorHoldPayloads,
     WebDevicePayloads,
+    SignInCheckPayloads,
     CommunityNotificationPayloads,
     SecretFilePayloads,
     AccountSigninPayloads,
@@ -115,6 +122,7 @@ export const DECLARED_ENTRIES = {
   ...REMOTE_STEP_UP_ENTRIES,
   ...CONNECTOR_HOLD_ENTRIES,
   ...WEB_DEVICE_ENTRIES,
+  ...SIGN_IN_CHECK_ENTRIES,
   ...COMMUNITY_NOTIFICATION_ENTRIES,
   ...SECRET_FILE_ENTRIES,
   ...ACCOUNT_SIGNIN_ENTRIES,
@@ -141,6 +149,8 @@ export const DECLARED_WIRED_KINDS = [
   'connector.destructive_pending',
   'connector.destructive_executed',
   'web.new_device',
+  'signin.check_added',
+  'signin.check_removed',
   'agent.secret_files',
   'account.signin_review',
   'browser.handoff',

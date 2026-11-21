@@ -230,6 +230,8 @@ const PAYLOADS: { [K in NotificationKind]: NotificationPayloads[K] } = {
   'mcp-server.tool_added': { server: 'tracker', tool: 'export_all', agentNames: ['Quill'] },
   'mcp-server.reserved_name': { server: 'dorkos' },
   'web.new_device': { deviceRef: 'ref-1', label: 'Safari on iPhone' },
+  'signin.check_added': { factorId: 'f-1', kind: 'passkey', host: 'localhost' },
+  'signin.check_removed': { factorId: 'f-1', kind: 'authenticator' },
   'agent.secret_files': {
     agentId: 'agent-1',
     agentName: 'Scout',
@@ -321,6 +323,8 @@ const EXPECTED_TIERS: Record<NotificationKind, string> = {
   // A saved server stopped reaching agents: worth fixing, nothing waits on it (DOR-4262).
   'mcp-server.reserved_name': 'notable',
   'web.new_device': 'notable',
+  'signin.check_added': 'notable',
+  'signin.check_removed': 'notable',
   'agent.secret_files': 'notable',
   'agent.folder_rules_too_long': 'notable',
   // The fixture is a restart: history only. One that stays off is notable (DOR-4785).
@@ -438,6 +442,8 @@ describe('notification registry', () => {
       'schedule.parked',
       'session.error',
       'shell.check_down',
+      'signin.check_added',
+      'signin.check_removed',
       'signin.required',
       'spending.limit-reached',
       'spending.meter-reset',
