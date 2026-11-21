@@ -3,10 +3,12 @@ import type { ProgressInfo, UpdateDownloadedEvent, UpdateInfo } from 'electron-u
 import { app, autoUpdater as nativeAutoUpdater, dialog } from 'electron';
 import type { BrowserWindow, MessageBoxOptions, MessageBoxReturnValue } from 'electron';
 import log from 'electron-log';
+import { resolveDataDirectory } from './dork-home';
 import { confirmInterruptingAgents } from './quit-guard';
 import { startServer, stopServer } from './server-process';
 import { pointWindowsAtServer } from './server-crash-recovery';
 import { purgeStaleStagedUpdates } from './updater/cache';
+import { updaterLog, updaterLogPath } from './updater/log';
 import { cancelAppRestart, markAppRestart } from './tab-session';
 import {
   clearUpdateIntent,
@@ -54,6 +56,16 @@ export type UpdateStatus =
 
 /** How often to re-check for updates in the background once the app is running. */
 const BACKGROUND_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
+
+/**
+ * Download progress is logged once per this many percent. electron-updater
+ * reports progress many times a second; one line per tick would bury the lines
+ * that say whether the download started, stalled or failed.
+ */
+const PROGRESS_LOG_STEP_PERCENT = 10;
+
+/** The last progress step logged for the current download, or -1 before the first. */
+let lastLoggedProgressStep = -1;
 
 /**
  * Point-in-time accessor for the main window, supplied by `index.ts` at
@@ -161,7 +173,10 @@ export function setupAutoUpdater(mainWindowAccessor: () => BrowserWindow | null)
 
   if (!app.isPackaged) return;
 
-  autoUpdater.logger = log;
+  // The updater's lines go to their own file, which main.log's rotation cannot
+  // take with it (DOR-4847). One line here says where, for whoever opens main.log.
+  autoUpdater.logger = updaterLog;
+  log.info(`[updater] Updater lines are written to ${updaterLogPath(resolveDataDirectory())}.`);
   autoUpdater.autoInstallOnAppQuit = true;
 
   // Judge the previous attempt before asking for a new one. Ordering matters
@@ -176,16 +191,19 @@ export function setupAutoUpdater(mainWindowAccessor: () => BrowserWindow | null)
   purgeStaleStagedUpdates();
 
   autoUpdater.on('checking-for-update', () => {
+    updaterLog.info(`[updater] Checking for an update (running ${app.getVersion()}).`);
     sendUpdateStatus({ state: 'checking' });
   });
 
   autoUpdater.on('update-available', (info: UpdateInfo) => {
-    log.info('Update available:', info.version);
+    updaterLog.info(`[updater] Update available: ${info.version}. Downloading it.`);
+    lastLoggedProgressStep = -1;
     sendUpdateStatus({ state: 'available', version: info.version });
     downloadingVersion = info.version;
   });
 
   autoUpdater.on('update-not-available', () => {
+    updaterLog.info('[updater] No update available.');
     downloadingVersion = null;
     failedDownloadVersion = null;
     sendUpdateStatus({ state: 'not-available' });
@@ -201,6 +219,7 @@ export function setupAutoUpdater(mainWindowAccessor: () => BrowserWindow | null)
   });
 
   autoUpdater.on('download-progress', (progress: ProgressInfo) => {
+    logDownloadProgress(progress);
     sendUpdateStatus({
       state: 'downloading',
       percent: progress.percent,
@@ -209,6 +228,7 @@ export function setupAutoUpdater(mainWindowAccessor: () => BrowserWindow | null)
   });
 
   autoUpdater.on('update-downloaded', (event: UpdateDownloadedEvent) => {
+    updaterLog.info(`[updater] Downloaded ${event.version}; it installs on the next restart.`);
     downloadingVersion = null;
     failedDownloadVersion = null;
     checkingInteractively = false;
@@ -234,7 +254,7 @@ export function setupAutoUpdater(mainWindowAccessor: () => BrowserWindow | null)
       // that shows the card that already carries the honest remedy. A native
       // dialog would only duplicate the platform download map into the main
       // process to say the same thing a beat earlier.
-      log.info(
+      updaterLog.info(
         `[updater] Not offering a restart for ${event.version}: it is already recorded as failing to install.`
       );
       return;
@@ -265,7 +285,7 @@ export function setupAutoUpdater(mainWindowAccessor: () => BrowserWindow | null)
   // comes from the C++ binding, which could not be verified from here. Nothing
   // above depends on it firing.
   nativeAutoUpdater.on('before-quit-for-update', () => {
-    log.info('[updater] The installer announced its restart (before-quit-for-update).');
+    updaterLog.info('[updater] The installer announced its restart (before-quit-for-update).');
     armUpdateRestart();
   });
 
@@ -288,7 +308,10 @@ export function setupAutoUpdater(mainWindowAccessor: () => BrowserWindow | null)
     // sidebar card never turns red and an interactive check gets a calm notice
     // instead of a raw HttpError stack trace.
     if (isReleaseNotReadyError(err)) {
-      log.info('Update metadata not published yet; treating as no update available.', err.message);
+      updaterLog.info(
+        '[updater] Update metadata not published yet; treating as no update available.',
+        err.message
+      );
       failedDownloadVersion = null;
       sendUpdateStatus({ state: 'not-available' });
       if (checkingInteractively) {
@@ -304,6 +327,8 @@ export function setupAutoUpdater(mainWindowAccessor: () => BrowserWindow | null)
       return;
     }
 
+    // Logged on both paths: a dialog someone dismissed is not a record.
+    updaterLog.error('[updater] Update error:', err);
     // Tagged with the version only when a download was under way, so the card
     // offers a retry for a failed download and stays quiet for a failed check.
     failedDownloadVersion = stoppedDownload;
@@ -319,8 +344,6 @@ export function setupAutoUpdater(mainWindowAccessor: () => BrowserWindow | null)
         message: 'DorkOS could not check for updates.',
         detail: err.message,
       });
-    } else {
-      log.error('Auto-update error:', err);
     }
     checkingInteractively = false;
   });
@@ -331,6 +354,23 @@ export function setupAutoUpdater(mainWindowAccessor: () => BrowserWindow | null)
   setInterval(() => {
     void autoUpdater.checkForUpdatesAndNotify();
   }, BACKGROUND_CHECK_INTERVAL_MS).unref();
+}
+
+/**
+ * Log a download's progress once per {@link PROGRESS_LOG_STEP_PERCENT}, so the
+ * updater log shows a download starting, moving and finishing without a line
+ * per tick.
+ *
+ * @param progress - The progress electron-updater just reported.
+ */
+function logDownloadProgress(progress: ProgressInfo): void {
+  const step = Math.floor(progress.percent / PROGRESS_LOG_STEP_PERCENT);
+  if (step <= lastLoggedProgressStep) return;
+  lastLoggedProgressStep = step;
+  updaterLog.info(
+    `[updater] Downloading: ${Math.floor(progress.percent)}% ` +
+      `(${progress.transferred} of ${progress.total} bytes, ${Math.round(progress.bytesPerSecond)} B/s).`
+  );
 }
 
 /**
@@ -375,6 +415,7 @@ export function checkForUpdatesInteractive(): void {
       });
       return;
     }
+    updaterLog.error('[updater] Update check failed:', error);
     sendUpdateStatus({ state: 'error', message: error.message });
     void showMessageBox({
       type: 'error',
@@ -533,7 +574,9 @@ export function recordUpdateInstallIntent(): void {
   intentRecorded = true;
   const intent = writeUpdateIntent(version);
   if (intent) {
-    log.info(`[updater] Recorded install attempt ${intent.attempts} for ${intent.offeredVersion}.`);
+    updaterLog.info(
+      `[updater] Recorded install attempt ${intent.attempts} for ${intent.offeredVersion}.`
+    );
   }
 }
 
@@ -592,7 +635,7 @@ export async function prepareUpdateRestart(): Promise<boolean> {
   // genuinely costs nothing — the installer was never armed, and the update
   // still lands on the next ordinary quit.
   if (!(await confirmInterruptingAgents('restart'))) {
-    log.info('[updater] Restart declined; the update still lands on the next quit.');
+    updaterLog.info('[updater] Restart declined; the update still lands on the next quit.');
     return false;
   }
 
@@ -602,11 +645,11 @@ export async function prepareUpdateRestart(): Promise<boolean> {
 
   try {
     await stopServer();
-    log.info('[updater] Server stopped; the quit that follows belongs to the installer.');
+    updaterLog.info('[updater] Server stopped; the quit that follows belongs to the installer.');
   } catch (err) {
     // A server that will not go down must not trap someone in an app they
     // asked to restart. The quit takes the child with it either way.
-    log.error('[updater] The server did not stop cleanly before the restart.', err);
+    updaterLog.error('[updater] The server did not stop cleanly before the restart.', err);
   }
 
   // Armed last, and after the await rather than before it: this is the token
@@ -624,9 +667,9 @@ export async function prepareUpdateRestart(): Promise<boolean> {
  * accounted for and the server is down. See {@link prepareUpdateRestart}.
  */
 async function beginUpdateRestart(): Promise<void> {
-  log.info('[updater] Restart to install requested.');
+  updaterLog.info('[updater] Restart to install requested.');
   if (!(await prepareUpdateRestart())) return;
-  log.info('[updater] Calling quitAndInstall().');
+  updaterLog.info('[updater] Calling quitAndInstall().');
   autoUpdater.quitAndInstall();
 
   // Reached on every platform, and meaningless on the branch that quits
@@ -666,14 +709,14 @@ async function recoverFromStalledRestart(reason: string): Promise<void> {
   resetUpdateRestartState();
   // The app is staying, so closing a window is closing tabs again.
   cancelAppRestart();
-  log.warn(`[updater] The restart did not happen (${reason}); bringing the server back up.`);
+  updaterLog.warn(`[updater] The restart did not happen (${reason}); bringing the server back up.`);
 
   try {
     pointWindowsAtServer(await startServer());
   } catch (err) {
     // Nothing left to try from here: the app is already in the state this
     // exists to prevent, and saying so in the log is what is left.
-    log.error('[updater] Could not restart the server after a stalled update restart.', err);
+    updaterLog.error('[updater] Could not restart the server after a stalled update restart.', err);
     return;
   }
 
@@ -735,7 +778,7 @@ function judgeLastInstallAttempt(): void {
     return;
   }
 
-  log.warn(
+  updaterLog.warn(
     `[updater] Update ${intent.offeredVersion} did not install: still running ${running} ` +
       `after ${intent.attempts} attempt(s).`
   );

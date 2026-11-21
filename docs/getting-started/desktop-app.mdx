@@ -149,6 +149,8 @@ An update that's waiting also installs itself the next time you quit DorkOS. Clo
 
 If an update doesn't apply for some reason, download the latest installer from the same link you used the first time and run it again. Your chats, agents, and settings live outside the app itself, so reinstalling doesn't lose anything.
 
+To find out why an update didn't show up, look in `~/.dork/logs/updater.log` (on Windows, `%USERPROFILE%\.dork\logs\updater.log`). The app writes a line there each time it checks for an update, starts and finishes a download, or hits an error. The file has only update lines, so it keeps months of them. **Help > Save Diagnostic Report** includes it, so you can attach it to a bug report.
+
 ## Opening DorkOS on your phone or tablet
 
 On a Mac, on the same home or office Wi-Fi, turn on **Let devices on my Wi-Fi in** in **Settings → Remote access**, then scan the QR code it shows. It needs a login, and the connection isn't encrypted yet; see [Securing your instance](/docs/self-hosting/securing-your-instance#on-your-own-wi-fi). From anywhere else, use remote access in the same tab.

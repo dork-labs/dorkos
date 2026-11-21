@@ -153,6 +153,33 @@ describe('logger rotation while running', () => {
     );
   });
 
+  it("never renames, trims or deletes the Mac app's updater.log beside it", () => {
+    // The Mac app's updater writes `updater.log` into this folder (DOR-4847).
+    // Its lines are what explain a missing update, so rotation must leave it be.
+    const updaterLog = path.join(dir, 'updater.log');
+    const contents = '[updater] Update available: 0.139.0. Downloading it.\n'.repeat(50);
+    fs.writeFileSync(updaterLog, contents);
+    fs.utimesSync(updaterLog, new Date('2026-01-01'), new Date('2026-01-01'));
+    for (const day of ['2026-10-01', '2026-10-02', '2026-10-03']) {
+      fs.writeFileSync(path.join(dir, `dorkos.${day}.log`), 'x'.repeat(400));
+    }
+
+    // Tight limits, so every rotation and every kind of cleanup runs.
+    loggerModule.initLogger({
+      logDir: dir,
+      level: 3,
+      maxLogSize: 300,
+      maxLogFiles: 1,
+      maxRotatedLogBytes: 500,
+    });
+    for (let i = 0; i < 200; i++) loggerModule.logger.info(`line ${i} ${'x'.repeat(40)}`);
+
+    // Cleanup did run: the old days are gone.
+    expect(fs.existsSync(path.join(dir, 'dorkos.2026-10-01.log'))).toBe(false);
+    expect(fs.readFileSync(updaterLog, 'utf8')).toBe(contents);
+    expect(fs.readdirSync(dir).filter((f) => f.startsWith('updater'))).toEqual(['updater.log']);
+  });
+
   it('retries a failed rotation only after another full size, not on every line', () => {
     loggerModule.initLogger({ logDir: dir, level: 3, maxLogSize: 500 });
     const rename = vi.spyOn(fs, 'renameSync').mockImplementation(() => {

@@ -314,12 +314,9 @@ async function waitingById(
   }
 }
 
-/** Error statuses that indicate an extension has a problem. */
-const ERROR_STATUSES = new Set(['invalid', 'incompatible', 'compile_error', 'activate_error']);
-
 /**
- * Handler factory for `get_extension_errors` — returns only extensions
- * that are in an error state (invalid, incompatible, compile_error, activate_error).
+ * Handler factory for `get_extension_errors`: broken clients and stopped servers,
+ * including the reason and time of a stop while an automatic retry is pending.
  *
  * Useful for agents diagnosing extension problems without sifting through
  * healthy extensions in the full list.
@@ -330,10 +327,7 @@ export function createGetExtensionErrorsHandler(deps: McpToolDeps) {
     if (!manager) {
       return jsonContent({ error: 'Extension system is not available' }, true);
     }
-    const errors = manager
-      .listPublic()
-      .filter((ext) => ERROR_STATUSES.has(ext.status))
-      .map(extensionForAgents);
+    const errors = manager.listErrors().map(extensionForAgents);
     return jsonContent({ note: EXTENSION_TEXT_NOTE, errors, count: errors.length });
   };
 }

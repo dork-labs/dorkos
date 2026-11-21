@@ -47,4 +47,24 @@ describe('RestartPolicy', () => {
     expect(policy.onUnexpectedExit()).toEqual({ restartIn: 5_000 });
     expect(policy.onUnexpectedExit()).toEqual({ giveUp: true });
   });
+
+  it('bounds refused automatic starts even when host stalls outlast the crash window', () => {
+    const { policy, advance } = policyAt();
+    expect(policy.onUnexpectedExit()).toEqual({ restartIn: 1_000 });
+    advance(11 * 60_000);
+    expect(policy.onStartFailure()).toEqual({ restartIn: 5_000 });
+    advance(11 * 60_000);
+    expect(policy.onStartFailure()).toEqual({ giveUp: true });
+  });
+
+  it('a successful start clears consecutive refusals without clearing crash history', () => {
+    const { policy, advance } = policyAt();
+    policy.onUnexpectedExit();
+    policy.onStartFailure();
+    policy.onStarted();
+    expect(policy.onUnexpectedExit()).toEqual({ giveUp: true });
+    advance(11 * 60_000);
+    expect(policy.onStartFailure()).toEqual({ restartIn: 30_000 });
+    expect(policy.onStartFailure()).toEqual({ giveUp: true });
+  });
 });
