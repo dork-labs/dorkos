@@ -9,6 +9,7 @@ import { readRefusedToolsColumn } from './run-cap-column.js';
 import { asc, desc, inArray } from 'drizzle-orm';
 import { pulseRuns, pulseSchedules, type Db } from '@dorkos/db';
 import type { TaskFailureReason, TaskHealth } from '@dorkos/shared/types';
+import { isSleptDuringRunError } from '@dorkos/shared/schedule-notice-copy';
 
 /**
  * The statuses that say how a run went. `skipped`, `cancelled` and `running`
@@ -121,13 +122,19 @@ export function failureReasonOf(run: FinishedRun): TaskFailureReason {
  * Failing when the newest is not `completed`; the streak is every run back to
  * the last `completed` one, and `since` is when the oldest of them started.
  *
- * @param runs - The schedule's finished runs, newest first.
+ * A run the computer's sleep broke is left out, like a stopped one: the
+ * computer went to sleep, which says nothing about whether the schedule works,
+ * and DorkOS tries it again on wake. So a broken run and its retry never read
+ * as "failed twice in a row" (DOR-3286).
+ *
+ * @param finished - The schedule's finished runs, newest first.
  * @param countFrom - Epoch ms the recent streak counts from ({@link streakCountsFrom}).
  */
 export function healthOf(
-  runs: readonly FinishedRun[],
+  finished: readonly FinishedRun[],
   countFrom: number = Date.parse(STREAKS_COUNTED_FROM)
 ): TaskHealth {
+  const runs = finished.filter((run) => !isSleptDuringRunError(run.error));
   const latest = runs[0];
   if (!latest || latest.status === 'completed') return HEALTHY;
   let streak = 0;

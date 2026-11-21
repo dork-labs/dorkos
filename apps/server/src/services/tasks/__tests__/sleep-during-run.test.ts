@@ -9,8 +9,9 @@
  * and that sum is the contract. The settle cases run on a hand-driven clock.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { StreamEvent } from '@dorkos/shared/types';
+import type { StreamEvent, Task, TaskRun } from '@dorkos/shared/types';
 import { SLOT_WAIT_STATUS } from '@dorkos/shared/schemas';
+import { sleptDuringRunError } from '@dorkos/shared/schedule-notice-copy';
 import { MAX_START_WAIT_MS } from '@dorkos/shared/run-time-limit';
 import { SESSIONS } from '../../../config/constants.js';
 import { createAwakeClock, type AwakeClock, type AwakeTimers } from '@dorkos/shared/awake-clock';
@@ -43,7 +44,7 @@ function reportedSleep(): { clock: AwakeClock; slept: (ms: number) => void } {
   real.dispose();
   let slept = 0;
   return {
-    clock: { ...real, sleptMs: () => slept, lastWakeAt: () => null },
+    clock: { ...real, sleptMs: () => slept, sleptSince: () => slept, lastWakeAt: () => null },
     slept: (ms) => (slept += ms),
   };
 }
@@ -206,6 +207,130 @@ describe('a scheduled fire right after a wake', () => {
     settle.stop();
     hand.advance(WAKE_SETTLE_MS * 2);
     expect(fire).not.toHaveBeenCalled();
+  });
+});
+
+/** The scheduler's own dispatch, as a cron fire or a retry reaches it. */
+type Dispatchable = {
+  dispatch(task: Task, fire: { firedAt: Date; expected: Date | null }): Promise<TaskRun | null>;
+};
+
+/** A turn the computer's sleep breaks the first `breaks` times, and that finishes after. */
+function agentBrokenBySleep(sleep: () => void, breaks = 1) {
+  let calls = 0;
+  return {
+    ...agentWorkingFor(0),
+    sendMessage: async function* (): AsyncGenerator<StreamEvent> {
+      calls += 1;
+      yield { type: 'text_delta', data: { text: 'working' } } as StreamEvent;
+      if (calls <= breaks) {
+        sleep();
+        throw new Error('fetch failed');
+      }
+      yield { type: 'done', data: { sessionId: 's' } } as StreamEvent;
+    },
+    calls: () => calls,
+  };
+}
+
+describe('a scheduled run the computer’s sleep broke (DOR-3286)', () => {
+  /** Fire a half-hourly task at 03:00 whose first run the computer sleeps through. */
+  async function firstRunBrokenBySleep(sleptMs: number, breaks = 1) {
+    const hand = handClock();
+    const agent = agentBrokenBySleep(() => hand.sleep(sleptMs), breaks);
+    const settle = new WakeSettle(hand.clock);
+    // Every retry handed to the settle, and every dispatch, so a test can wait
+    // for the work itself rather than for an arbitrary while.
+    const armed = vi.spyOn(settle, 'run');
+    const service = new TaskSchedulerService({
+      store,
+      runtimes: singleRuntimeSource(agent as never),
+      config: CONFIG,
+      wakeSettle: settle,
+    });
+    const dispatch = vi.spyOn(service as unknown as Dispatchable, 'dispatch');
+    const task = store.createTask({
+      name: 'half-hourly',
+      description: 'test',
+      prompt: 'test',
+      cron: '*/30 * * * *',
+      filePath: '/tmp/tasks/half-hourly/SKILL.md',
+    });
+    const first = await (service as unknown as Dispatchable).dispatch(task, {
+      firedAt: new Date(hand.clock.now()),
+      expected: null,
+    });
+    /** Every dispatch so far, run to its end. */
+    const dispatchesDone = () => Promise.all(dispatch.mock.results.map((result) => result.value));
+    return { hand, agent, service, task, first: first!, armed, dispatch, dispatchesDone };
+  }
+
+  it('says the computer slept, and runs again once it has stayed awake', async () => {
+    const { hand, agent, service, task, first, dispatchesDone } = await firstRunBrokenBySleep(
+      10 * 60_000
+    );
+
+    // The row says why, in the words a person reads, not the runtime's error.
+    expect(store.getRun(first.id)).toMatchObject({
+      status: 'failed',
+      error: sleptDuringRunError(),
+    });
+    // Not straight away: the computer may be in a dark wake that ends in seconds.
+    hand.advance(WAKE_SETTLE_MS - 5_000);
+    expect(agent.calls()).toBe(1);
+
+    hand.advance(10_000);
+    await dispatchesDone();
+    const retry = store.listRuns({ taskId: task.id }).find((run) => run.id !== first.id)!;
+    // The same occurrence, run late, and only once.
+    expect(retry).toMatchObject({ status: 'completed', scheduledFor: first.scheduledFor });
+    expect(agent.calls()).toBe(2);
+    await service.stop();
+  });
+
+  it('runs again only once, even when the retry is broken by sleep too', async () => {
+    // Two short sleeps: each break leaves the occurrence still due.
+    const { hand, agent, service, task, first, armed, dispatch, dispatchesDone } =
+      await firstRunBrokenBySleep(2 * 60_000, 2);
+    hand.advance(WAKE_SETTLE_MS + 5_000);
+    await dispatchesDone();
+    const retry = store.listRuns({ taskId: task.id }).find((run) => run.id !== first.id)!;
+    expect(store.getRun(retry.id)).toMatchObject({
+      status: 'failed',
+      error: sleptDuringRunError(),
+    });
+
+    // Only one retry was ever handed to the settle (it re-checks itself with
+    // the same fire), so the broken retry armed nothing more.
+    expect(new Set(armed.mock.calls.map(([fire]) => fire)).size).toBe(1);
+    hand.advance(WAKE_SETTLE_MS * 3);
+    expect(dispatch).toHaveBeenCalledTimes(2);
+    expect(agent.calls()).toBe(2);
+    expect(store.listRuns({ taskId: task.id })).toHaveLength(2);
+    await service.stop();
+  });
+
+  it('does not run again once the occurrence is no longer due', async () => {
+    // Asleep 20 minutes of a half-hourly schedule: past halfway to the next run.
+    const { hand, agent, service, task, first, armed, dispatch } = await firstRunBrokenBySleep(
+      20 * 60_000
+    );
+    expect(store.getRun(first.id)!.error).toBe(sleptDuringRunError());
+    expect(armed).toHaveBeenCalledTimes(1);
+
+    // The settle judges it when it fires, and it is too late by then.
+    hand.advance(WAKE_SETTLE_MS * 2);
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(agent.calls()).toBe(1);
+    expect(store.listRuns({ taskId: task.id })).toHaveLength(1);
+    await service.stop();
+  });
+
+  it('drops a waiting retry when the scheduler stops', async () => {
+    const { hand, service, dispatch } = await firstRunBrokenBySleep(10 * 60_000);
+    await service.stop();
+    hand.advance(WAKE_SETTLE_MS * 2);
+    expect(dispatch).toHaveBeenCalledTimes(1);
   });
 });
 

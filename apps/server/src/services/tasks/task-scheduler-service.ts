@@ -34,7 +34,7 @@ import { emitRefusedAskActivity } from './run-activity.js';
 import { checkRunAccount } from './session/run-account.js';
 import { dispatchRunViaRelay } from './relay-dispatch.js';
 import { pruneRunHistory, PRUNE_INTERVAL_MS } from './run-retention.js';
-import { sweepInterruptedRuns } from './crash-recovery.js';
+import { endInterruptedRuns } from './crash-recovery.js';
 import { RefusedScheduleLog } from './refused-schedule-log.js';
 import { taskTurnOpts } from './task-append.js';
 import { previewNextRuns } from './cron-preview.js';
@@ -51,6 +51,7 @@ import { capRunIfFileChanged } from './agent-mode/file-cap/run-cap.js';
 import { settleRunAllowList, allowListSources } from './allow-list/run-allow-list.js';
 import { armOneShot } from './store/task-run-controls.js';
 import { failRun, skipRun } from './lifecycle/fail-run.js';
+import { retryAfterSleep } from './lifecycle/sleep-retry.js';
 import { runMarked, withRunMarks } from './approvals/run-marks.js';
 import { endRunSessions, noteRunSession } from './session/active-run-sessions.js';
 import { claimRunTurn, SESSION_BUSY_ERROR, type RunTurn } from './session/run-projection.js';
@@ -113,10 +114,15 @@ const logger = createTaggedLogger('Tasks');
  * for, captured at registration and after every fire; null when nothing
  * captured one (a direct dispatch). {@link resolveOccurrence} turns the pair
  * into the occurrence the run stands for.
+ *
+ * `retryOf` marks the one fire that is no cron fire at all: a scheduled run the
+ * computer's sleep broke, tried again after it woke (`lifecycle/sleep-retry.ts`,
+ * DOR-3286). It stands for that run's occurrence, which is already claimed.
  */
 interface ScheduledFire {
   firedAt: Date;
   expected: Date | null;
+  retryOf?: TaskRun;
 }
 
 /**
@@ -346,7 +352,7 @@ export class TaskSchedulerService {
       this.activityService = null;
       this.leaderLock = null;
     }
-    this.runs = new RunAccounting(this.store);
+    this.runs = new RunAccounting(this.store, this.wakeSettle.clock);
   }
 
   /**
@@ -466,17 +472,7 @@ export class TaskSchedulerService {
     // The runs this process is executing go in as an exclusion set. At boot
     // there are none; on a PROMOTION there may well be, and ending one of those
     // would be this bug's own mistake made against ourselves.
-    const { swept, left } = sweepInterruptedRuns(
-      this.store,
-      this.leaderLock,
-      this.runs.heldRunIds()
-    );
-    if (swept > 0) logger.info(`marked ${swept} interrupted run(s) as failed`);
-    if (left > 0) {
-      logger.debug(
-        `left ${left} unfinished run(s) alone — this process cannot show they were interrupted`
-      );
-    }
+    endInterruptedRuns(this.store, this.leaderLock, this.runs, this.wakeSettle.clock);
   }
 
   /**
@@ -874,6 +870,11 @@ export class TaskSchedulerService {
    * computer was asleep, through the same claim, so a person finds the
    * occurrence in the task's own history instead of a run at an odd hour.
    *
+   * The one second chance: a run whose turn the computer's sleep broke comes
+   * back here once, after the wake, as a `retryOf` fire for the same occurrence
+   * (`lifecycle/sleep-retry.ts`, DOR-3286). It passes every gate a fire does
+   * except the claim, which its first run already holds.
+   *
    * ## Why the claim comes before the concurrency check
    *
    * The claim is what makes a tick happen once across every process sharing
@@ -890,7 +891,8 @@ export class TaskSchedulerService {
    *   opened none. A one-shot task gives its claim back on `null` (DOR-4315).
    */
   private async dispatch(task: Task, fire: ScheduledFire | Date): Promise<TaskRun | null> {
-    const { firedAt, expected } = fire instanceof Date ? { firedAt: fire, expected: null } : fire;
+    const { firedAt, expected, retryOf }: ScheduledFire =
+      fire instanceof Date ? { firedAt: fire, expected: null } : fire;
 
     // Production gate (ADR-285): suppress firing in non-production environments.
     // Crons still register, so display/next-run is unaffected — only firing stops.
@@ -924,15 +926,17 @@ export class TaskSchedulerService {
     // Which occurrence this fire stands for (DOR-2718), read off the schedule
     // that actually FIRED — the registered one — in its own timezone. A paused
     // evaluator, not the live job: it schedules no timer, and a job stopped
-    // since the fire would answer no next occurrence at all.
+    // since the fire would answer no next occurrence at all. A retry after
+    // sleep has its run's occurrence, already claimed and judged still due.
     const fired = task.cron ? task : current;
-    const occurrence = fired.cron
-      ? resolveOccurrence(
-          new Cron(fired.cron, { paused: true, timezone: fired.timezone ?? undefined }),
-          expected,
-          firedAt
-        )
-      : null;
+    const occurrence =
+      fired.cron && !retryOf
+        ? resolveOccurrence(
+            new Cron(fired.cron, { paused: true, timezone: fired.timezone ?? undefined }),
+            expected,
+            firedAt
+          )
+        : null;
 
     // Three reasons a tick is recorded but not run, in priority order. Stale
     // comes first because it is about this occurrence itself: it would not run
@@ -981,9 +985,10 @@ export class TaskSchedulerService {
         return null;
       }
     } else {
-      // No cron, so no occurrence to claim: only a one-shot task's one fire gets
-      // here (DOR-4315). A skip still writes its row, so that run never vanishes.
-      run = this.store.createRun(task.id, 'scheduled');
+      // No occurrence to claim: a one-shot task's one fire (DOR-4315), or a retry
+      // after sleep, whose occurrence its first run claimed (DOR-3286). A skip
+      // still writes its row, so that run never vanishes.
+      run = this.store.createRun(task.id, 'scheduled', retryOf?.scheduledFor);
       if (skipReason) skipRun(this.store, run, skipReason);
     }
 
@@ -1004,7 +1009,10 @@ export class TaskSchedulerService {
       return run;
     }
 
-    return this.executeRun(current, run, checkedAgent).then(() => run);
+    await this.executeRun(current, run, checkedAgent);
+    // Broken by the computer's sleep: tried once more after it wakes (DOR-3286).
+    if (!retryOf) retryAfterSleep(this.store, this.wakeSettle, task, run, this.dispatch.bind(this));
+    return run;
   }
 
   /**
@@ -1138,6 +1146,7 @@ export class TaskSchedulerService {
                   resolveCwd: () => Promise.resolve(placement.cwd),
                   ...(placement.agentPath !== undefined ? { forAgent: placement.agentPath } : {}),
                   onSession,
+                  clock: this.wakeSettle.clock,
                 },
                 task,
                 run,

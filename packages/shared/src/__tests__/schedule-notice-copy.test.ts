@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import type { TaskFailureReason } from '../types.js';
 import {
+  isSleptDuringRunError,
   nextRunWhen,
   scheduleFailureClause,
   scheduleFailureSentence,
   scheduleFullName,
   scheduleNextTry,
   scheduleNoticeName,
+  sleptDuringRunError,
+  withSleepBlame,
 } from '../schedule-notice-copy.js';
 import { runTimeLimitError } from '../run-time-limit.js';
 
@@ -73,6 +76,35 @@ describe('scheduleFailureClause (DOR-4121)', () => {
 
   it('capitalises the sentence form', () => {
     expect(scheduleFailureSentence(error(runTimeLimitError()))).toBe('It ran out of time.');
+  });
+});
+
+describe('a run the computer’s sleep broke (DOR-3286)', () => {
+  it('says only the fact, in plain words', () => {
+    expect(sleptDuringRunError()).toBe('Interrupted: the computer slept during this run.');
+  });
+
+  it('puts a failure just after a wake down to the sleep', () => {
+    const ended = { status: 'failed', error: 'fetch failed' };
+    expect(withSleepBlame(ended, true)).toEqual({ status: 'failed', error: sleptDuringRunError() });
+    expect(withSleepBlame(ended, false)).toBe(ended);
+    // Only a failure: a stopped or finished run keeps its own line.
+    const stopped = { status: 'cancelled', error: 'Run cancelled' };
+    expect(withSleepBlame(stopped, true)).toBe(stopped);
+  });
+
+  it('keeps a cause the person must act on, which a retry would only meet again', () => {
+    for (const error of ['Sign in again: 401', 'You’ve hit your weekly limit · resets Aug 24']) {
+      const ended = { status: 'failed', error };
+      expect(withSleepBlame(ended, true)).toBe(ended);
+    }
+  });
+
+  it('is told apart from every other run line', () => {
+    expect(isSleptDuringRunError(sleptDuringRunError())).toBe(true);
+    // The restart line opens with the same word, and must not match.
+    expect(isSleptDuringRunError('Interrupted by server restart')).toBe(false);
+    expect(isSleptDuringRunError(null)).toBe(false);
   });
 });
 
