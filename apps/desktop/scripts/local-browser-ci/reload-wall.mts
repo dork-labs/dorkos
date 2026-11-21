@@ -32,6 +32,11 @@ const echo = createServer((request, response) => {
     );
   } else if (request.url === '/blank') {
     response.end('<!doctype html><title>Made-up blank page</title><body></body>');
+  } else if (request.url === '/popups') {
+    response.end(`<!doctype html><title>Made-up popup page</title>
+      <a href="/popup-opened" target="_blank">Open page</a><p id="popup-result"></p>
+      <script>document.getElementById('popup-result').textContent =
+      window.open('/unsolicited') === null ? 'blocked' : 'opened';</script>`);
   } else {
     response.end('<!doctype html><title>Made-up starting page</title><a href="/good">Continue</a>');
   }
@@ -63,6 +68,28 @@ try {
   }));
   assert.equal(identity.webdriver, true, 'The production pipe stays honest about automation');
   assert.deepEqual(identity.cdcProperties, []);
+  await page.goto(`${origin}/popups`, { waitUntil: 'domcontentloaded' });
+  assert.equal(await page.locator('#popup-result').textContent(), 'blocked');
+  const nativeMedia = await page.evaluate(() => ({
+    dark: matchMedia('(prefers-color-scheme: dark)').matches,
+    reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
+    forcedColors: matchMedia('(forced-colors: active)').matches,
+    increasedContrast: matchMedia('(prefers-contrast: more)').matches,
+  }));
+  const popupRead = await service.observe();
+  const popupOpened = context!.waitForEvent('page', { timeout: 5_000 });
+  const [popup] = await Promise.all([
+    popupOpened,
+    service.action({
+      kind: 'click',
+      role: 'link',
+      name: 'Open page',
+      revision: popupRead.revision,
+    }),
+  ]);
+  await popup.waitForURL(`${origin}/popup-opened`);
+  await popup.close();
+  await service.selectTab(popupRead.tabId);
   const moved = await service.action({
     kind: 'navigate',
     url: `${origin}/good`,
@@ -129,6 +156,9 @@ try {
     JSON.stringify(
       {
         passed: true,
+        nativeMedia,
+        unsolicitedPopupBlocked: true,
+        gesturePopupOpened: true,
         identity,
         refusal: observation.refusal,
         blockedAfterMs,

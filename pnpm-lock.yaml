@@ -1944,6 +1944,9 @@ importers:
       ajv:
         specifier: ^8.20.0
         version: 8.20.0
+      tldts:
+        specifier: 7.0.28
+        version: 7.0.28
       ulidx:
         specifier: ^2.4.1
         version: 2.4.1

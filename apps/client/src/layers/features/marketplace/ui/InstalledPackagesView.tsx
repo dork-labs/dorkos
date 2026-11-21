@@ -539,7 +539,11 @@ export function InstalledPackagesView() {
                   // A new version that runs anything on its own is confirmed
                   // first, with what it runs listed; one that runs nothing
                   // updates straight away (DOR-2306).
-                  if (disclosesAnything(updateState.check.disclosed)) {
+                  if (
+                    disclosesAnything(updateState.check.disclosed) ||
+                    updateState.check.extensions === undefined ||
+                    updateState.check.extensions.length > 0
+                  ) {
                     setConfirmingUpdate([item]);
                   } else {
                     apply([item]);

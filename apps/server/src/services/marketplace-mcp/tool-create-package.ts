@@ -125,6 +125,7 @@ export function createCreatePackageHandler(deps: MarketplaceMcpDeps) {
       operation: 'create-package' as const,
       packageType: args.type,
       ...(context?.requestedBy ? { requestedBy: context.requestedBy } : {}),
+      ...(context?.outsideWords ? { outsideWords: true } : {}),
     };
     // A person already approved this exact invocation at the capability tier gate;
     // asking again would be a second card for one action.

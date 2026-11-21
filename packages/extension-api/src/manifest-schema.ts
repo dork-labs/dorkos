@@ -433,7 +433,12 @@ const ExtensionManifestObjectSchema = z.object({
   clientApiVersion: z.literal(2).optional(),
   /** Minimum DorkOS version required (semver). If host is older, extension cannot be enabled. */
   minHostVersion: z.string().optional(),
-  /** Declares which slots this extension contributes to. Informational only — not enforced. */
+  /**
+   * The places in DorkOS this app shows itself, each key set to `true`
+   * (`EXTENSION_CONTRIBUTION_KEYS`). Binding: a registration in a place not
+   * declared here is refused, the approval card names every place declared,
+   * and an update that declares a new one asks the person again.
+   */
   contributions: z.record(z.string(), z.boolean()).optional(),
   /** Reserved for future permission model. */
   permissions: z.array(z.string()).optional(),

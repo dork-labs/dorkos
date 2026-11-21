@@ -1086,6 +1086,34 @@ describe('the why line', () => {
     );
   });
 
+  it('names every place it declares, in DorkOS’s words (DOR-4282)', async () => {
+    await installPlugin('flow', {
+      name: 'Flow',
+      contributions: {
+        inbox: true,
+        'command-palette.items': true,
+        dialog: true,
+        pages: true,
+        'right-panel': true,
+        canvas: true,
+        'made-up': true,
+      },
+    });
+
+    const [approval] = await pending();
+    expect(approval.adds).toBe(
+      'It adds a page, a Flow tab, ⌘K commands, dialogs, canvas documents, and Inbox cards'
+    );
+    expect((approval.permissions as { slots?: string[] } | undefined)?.slots).toEqual([
+      'pages',
+      'right-panel',
+      'command-palette.items',
+      'dialog',
+      'canvas',
+      'inbox',
+    ]);
+  });
+
   it('falls back to the description when the manifest does not say what it adds', async () => {
     await installPlugin('flow', { name: 'Flow', description: 'Tracks your work items' });
 
@@ -1138,5 +1166,70 @@ describe('the why line', () => {
     // The author's part is what gets cut; DorkOS's own words always survive.
     expect(approval.why).toMatch(/^You installed the flow plugin from dork-labs\/marketplace\. /);
     expect(approval.why).toMatch(/… It runs as you\.$/);
+  });
+});
+
+describe('an app whose only new thing is places keeps running (DOR-4282, option C)', () => {
+  /** Narrow the stored yes to these places, as an approval given before they were declared. */
+  function approvedOnly(slots: string[]): void {
+    const stored = (state.extensions as { approvedPermissions?: Record<string, object> })
+      .approvedPermissions;
+    state.extensions = {
+      ...state.extensions,
+      approvedPermissions: { ...stored, [EXT_ID]: { ...stored?.[EXT_ID], slots } },
+    } as typeof state.extensions;
+  }
+
+  // Purpose: a places-only diff keeps the app running with only its old
+  // places; the row asks about the new places alone; allowing stores them.
+  it('asks only about the new places, and a yes allows exactly them', async () => {
+    await installPlugin('flow', {
+      name: 'Flow',
+      contributions: { 'right-panel': true, pages: true, dialog: true },
+    });
+    const first = await request(server).post(`/api/extensions/${EXT_ID}/approve`).send(card());
+    expect(first.status).toBe(200);
+    approvedOnly(['right-panel']);
+    await queue.sync();
+
+    const record = manager.listPublic().find((ext) => ext.id === EXT_ID)!;
+    expect(record.approvedToRun).toBe(true);
+    expect(record.allowedSlots).toEqual(['right-panel']);
+    const [row] = await pending();
+    expect(row).toMatchObject({ id: EXT_ID, placesOnly: true, changedFiles: null });
+    expect((row.added as { slots?: string[] }).slots).toEqual(['dialog', 'pages']);
+
+    const again = await request(server).post(`/api/extensions/${EXT_ID}/approve`).send(card());
+    expect(again.status).toBe(200);
+    await queue.sync();
+    expect(await pending()).toEqual([]);
+    expect(manager.listPublic().find((ext) => ext.id === EXT_ID)?.allowedSlots).toEqual([
+      'pages',
+      'right-panel',
+      'dialog',
+    ]);
+  });
+
+  // Purpose: "Not now" leaves it running without the new places.
+  it('keeps running without the new places after "Not now"', async () => {
+    await installPlugin('flow', {
+      name: 'Flow',
+      contributions: { 'right-panel': true, pages: true },
+    });
+    await request(server).post(`/api/extensions/${EXT_ID}/approve`).send(card());
+    approvedOnly(['right-panel']);
+    await queue.sync();
+    const [row] = await pending();
+
+    const res = await request(server)
+      .post(`/api/extensions/${EXT_ID}/dismiss-approval`)
+      .send({ path: row.path, version: row.version });
+    expect(res.status).toBe(204);
+    await queue.sync();
+
+    expect(await pending()).toEqual([]);
+    const record = manager.listPublic().find((ext) => ext.id === EXT_ID)!;
+    expect(record.approvedToRun).toBe(true);
+    expect(record.allowedSlots).toEqual(['right-panel']);
   });
 });

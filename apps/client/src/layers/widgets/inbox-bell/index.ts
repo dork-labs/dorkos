@@ -15,3 +15,5 @@ export { InboxBellPill } from './ui/InboxBellPill';
 export type { InboxBellPillProps, InboxBellGlyph } from './ui/InboxBellPill';
 export { ExtensionApprovalList } from './ui/ExtensionApprovalList';
 export type { ExtensionApprovalListProps } from './ui/ExtensionApprovalList';
+export { PlacesReaskCard } from './ui/PlacesReaskCard';
+export type { PlacesReaskCardProps } from './ui/PlacesReaskCard';

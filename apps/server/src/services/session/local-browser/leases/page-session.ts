@@ -29,10 +29,10 @@ import {
 import { AgentWindowNames, FullScreenGuard } from '../agent-window/index.js';
 import { productionBackend, type LocalBrowserBackend } from '../playwright-backend.js';
 import type { PageSessionBackend, PageConnection } from './profile-connection.js';
+import { BrowserPageProtection } from './page-protection.js';
 import { BrowserPageHandles } from './page-handles.js';
 import { BrowserAgentPageActions } from './page-action.js';
 import { BrowserPageRefusals } from './admission/page-refusals.js';
-import { refusePage } from './admission/page-protection.js';
 import { BrowserPageState } from './page-state.js';
 import type { PageSessionHost } from './page-session-host.js';
 import { BrowserAgentPageReads } from './agent-page-reads.js';
@@ -141,7 +141,7 @@ export class LocalBrowserPageSession {
       moves: this.moves,
       assertAvailable: () => {
         this.authority.assertCurrent('person');
-        this.assertNotClosing();
+        this.closing.assertAvailable();
       },
       invalidate: () => this.invalidate(),
       revision: () => this.pageState.revision,
@@ -205,7 +205,7 @@ export class LocalBrowserPageSession {
 
   async open(input: LocalBrowserOpen): Promise<LocalBrowserState> {
     this.profileRemoval.assertAvailable();
-    this.assertNotClosing();
+    this.closing.assertAvailable();
     if (this.actions.active)
       throw new LocalBrowserError('busy', 'A browser action is finishing. Read the page again.');
     if (this.opening)
@@ -356,7 +356,7 @@ export class LocalBrowserPageSession {
       sessionId: this.sessionId,
       connectionId: this.connectionId,
     }),
-    () => this.assertNotClosing()
+    () => this.closing.assertAvailable()
   );
   restorePersonFocus = (page: Page) => this.handles.restorePersonFocus(page);
   /** Capture identity once; a replacement under the same chat id cannot inherit this call. */
@@ -368,12 +368,19 @@ export class LocalBrowserPageSession {
   captureHandoffClose = (state: LocalBrowserState, profileId: string | null) =>
     this.handles.handoffClose(state, profileId, this.closing);
 
-  /** Preserve protected-origin and per-profile sign-in refusal for metadata-only watching. */
-  assertViewerWatchAllowed(page: Page): void {
-    if (this.handover.signInHoldsProfile(this.currentProfileId()))
-      throw new Error('viewer_unavailable');
-    this.refuseProtectedPage(page);
-  }
+  private readonly protection = new BrowserPageProtection(
+    this.handover,
+    () => this.profileId,
+    () => this.cloudOrigins(),
+    () => this.appOrigins(),
+    () => {
+      this.paused = true;
+      this.invalidate();
+    }
+  );
+  /** Host-only metadata guard; it performs no agent read while held. */
+  readonly viewerPageAllowed = (page: Page) => this.protection.allowed(page);
+  readonly assertViewerWatchAllowed = (page: Page) => this.protection.watch(page);
 
   /** The profile the browser opened last, or null for the default one. */
   readonly currentProfileId = (): string | null => this.profileId;
@@ -387,7 +394,7 @@ export class LocalBrowserPageSession {
       paused: this.paused,
     }),
     page: () => this.page(true),
-    protect: (page) => this.refuseProtectedPage(page),
+    protect: (page) => this.protection.refuse(page),
   });
   readonly lastRefusalHost = () => this.refusals.lastHost();
   readonly refusalIdentity = () => this.refusals.identity();
@@ -419,7 +426,7 @@ export class LocalBrowserPageSession {
     admit: () => this.requireAgentPage(),
     sync: () => this.syncTabs(),
     selected: () => this.page(true),
-    refuse: (page) => this.refuseProtectedPage(page),
+    refuse: (page) => this.protection.refuse(page),
     describe: () => this.snapshot(true),
   });
   agentState = () => this.reads.state();
@@ -432,7 +439,7 @@ export class LocalBrowserPageSession {
   }
 
   async selectTab(id: string): Promise<LocalBrowserState> {
-    this.assertNotClosing();
+    this.closing.assertAvailable();
     this.syncTabs();
     return selectPersonPage(this.pageState, id, () => this.state());
   }
@@ -454,12 +461,12 @@ export class LocalBrowserPageSession {
     page: () => this.page(true),
     assertAvailable: () => {
       this.shared?.assertAgentAction?.();
-      this.assertNotClosing();
+      this.closing.assertAvailable();
       assertAgentMayAct(this.status, this.paused);
     },
     assertDestination: (url) =>
       assertLocalBrowserUrl(url, 'agent', this.cloudOrigins(), this.appOrigins()),
-    refuse: (page) => this.refuseProtectedPage(page),
+    refuse: (page) => this.protection.refuse(page),
     stale: stalePageRefusal,
     admit: (revision) => this.admit(revision),
     invalidate: () => this.invalidate(),
@@ -513,8 +520,6 @@ export class LocalBrowserPageSession {
     return this.state();
   }
 
-  private assertNotClosing = () => this.closing.assertAvailable();
-
   private contexts = (): Pick<BrowserContext, 'pages' | 'newPage'>[] =>
     this.ownedContext ? [this.ownedContext] : (this.browser?.contexts() ?? []);
   private syncTabs(): void {
@@ -523,7 +528,7 @@ export class LocalBrowserPageSession {
   }
   /** The selected tab; `forAgent` picks the agent's words for a handoff's pause (DOR-4678). */
   private page(forAgent = false): Page {
-    this.assertNotClosing();
+    this.closing.assertAvailable();
     this.syncTabs();
     const page = this.pageState.tabs.get(this.pageState.selectedTabId ?? '');
     if (this.detachedState) throw forAgent ? agentPausedRefusal() : personPausedRefusal();
@@ -549,20 +554,9 @@ export class LocalBrowserPageSession {
   private admit(revision: number): void {
     this.shared?.assertAgentAction?.();
     this.authority.assertCurrent();
-    this.assertNotClosing();
+    this.closing.assertAvailable();
     assertAgentMayAct(this.status, this.paused);
     if (revision !== this.pageState.revision) throw stalePageRefusal();
-    this.refuseProtectedPage(this.page(true));
-  }
-  /**
-   * An agent never reads or acts on a page showing DorkOS or Cloud, in the
-   * tab or in any of its frames (DOR-3196): agent control pauses until the
-   * person resumes it, and the agent is refused.
-   */
-  private refuseProtectedPage(page: Page): void {
-    refusePage(page, this.cloudOrigins(), this.appOrigins(), () => {
-      this.paused = true;
-      this.invalidate();
-    });
+    this.protection.refuse(this.page(true));
   }
 }

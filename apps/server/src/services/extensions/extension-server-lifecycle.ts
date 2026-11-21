@@ -16,7 +16,6 @@
  *
  * @module services/extensions/extension-server-lifecycle
  */
-import fs from 'fs/promises';
 import path from 'path';
 import { Router } from 'express';
 import type { ExtensionRecord, ExtensionToolStatus } from '@dorkos/extension-api';
@@ -26,6 +25,7 @@ import { bridgeExpressRouterHere } from './http/express-bridge.js';
 import { createFetchHandler } from './http/fetch-handler.js';
 import { firstAnswer, type ExtensionHttpHandler } from './http/extension-http.js';
 import { createDataProviderContext } from './extension-server-api-factory.js';
+import { recordContextDeps } from './server-bundle/extension-context-deps.js';
 import { toRecordError, type ActiveServerExtension } from './extension-manager-types.js';
 import {
   EXTENSION_NOT_APPROVED_CODE,
@@ -56,10 +56,20 @@ import { resolveChildEntry } from './isolation/child-entry.js';
 import * as extensionConnections from './connections/extension-connections-ctx.js';
 import { settleWithin } from './settle-within.js';
 import { loadInProcessBundle } from './server-bundle/load-in-process.js';
+import { writeServerBundle } from './server-bundle/write-server-bundle.js';
+import { runDirMissingMessage, runDirOf } from './pin/run-dir.js';
 import { createIsolatedHandler } from './isolation/isolated-router.js';
-import { RestartPolicy, type RestartPolicyOptions } from './isolation/restart-policy.js';
-import { tellExtensionStopped } from './isolation/notices/tell-extension-stopped.js';
+import type { RestartPolicyOptions } from './isolation/restart-policy.js';
+import {
+  IsolatedRestarts,
+  type RestartAttempt,
+  type SupervisedServerStatus,
+} from './isolation/recovery/isolated-restarts.js';
 import { env } from '../../env.js';
+
+// The person's stored approvals as they are now: `ctx.inbox` reads its
+// allowed places through this on every call (DOR-4282).
+const storedApprovals = () => configManager.get('extensions');
 
 /**
  * Everything the running instance of an extension was built from, as one
@@ -128,12 +138,7 @@ const REGISTER_TIMEOUT_ERROR = 'server_start_timeout' satisfies IsolatedStartErr
  * rebuilt on every scan while this lasts; `ExtensionManager` lays it over the
  * public record.
  */
-export interface SupervisedServerStatus {
-  /** Why it is stopped and will not restart by itself. */
-  serverError?: { code: string; message: string };
-  /** When a pending restart is due (ISO 8601). */
-  restartingAt?: string;
-}
+export type { SupervisedServerStatus } from './isolation/recovery/isolated-restarts.js';
 
 /** What {@link ExtensionServerLifecycle} needs besides its data directory and compiler. */
 export interface ServerLifecycleOptions {
@@ -173,16 +178,8 @@ export class ExtensionServerLifecycle {
   private capabilityRegistry: CapabilityRegistry | null = null;
 
   private readonly registerTimeoutMs: number;
-  /** Per isolated extension: its crash budget and backoff. */
-  private readonly restartPolicies = new Map<string, RestartPolicy>();
-  /** Per isolated extension: the source its crash count is for. */
-  private readonly policySources = new Map<string, string>();
-  /** Per isolated extension: a pending restart. */
-  private readonly restartTimers = new Map<string, NodeJS.Timeout>();
-  /** Per isolated extension: the source it gave up on, so a page load does not start it again. */
-  private readonly gaveUp = new Map<string, string>();
-  /** Per isolated extension: what its card says between starts. */
-  private readonly supervised = new Map<string, SupervisedServerStatus>();
+  /** Retry budgets, cancellation and diagnostics survive rebuilt discovery records. */
+  private readonly restarts: IsolatedRestarts;
 
   /**
    * Build the lifecycle for one DorkOS data directory.
@@ -197,6 +194,11 @@ export class ExtensionServerLifecycle {
     private readonly options: ServerLifecycleOptions = {}
   ) {
     this.registerTimeoutMs = options.registerTimeoutMs ?? REGISTER_TIMEOUT_MS;
+    this.restarts = new IsolatedRestarts(
+      options.restartPolicy,
+      (attempt) => this.restartAfterExit(attempt),
+      (id) => this.options.onStatusChange?.(id)
+    );
   }
 
   /**
@@ -312,7 +314,7 @@ export class ExtensionServerLifecycle {
    * running instance serving its old code rather than killing it, which is the
    * better of the two: a typo saved into an extension's `server.ts` no longer
    * takes the working version down with it. The record's `serverError` records
-   * that, so "the old version is still serving" is something the cockpit shows
+   * that, so "the old version is still serving" is something the app shows
    * rather than something it hides — while `status` stays as it was, leaving the
    * extension's own client bundle loadable.
    *
@@ -374,7 +376,7 @@ export class ExtensionServerLifecycle {
       // The compile now happens before the teardown, so a broken `server.ts`
       // leaves the previous version answering requests. Say so on the record —
       // an extension quietly serving code that no longer matches its source must
-      // not read as healthy in the cockpit (DOR-1336 review). Nothing is marked
+      // not read as healthy in the app (DOR-1336 review). Nothing is marked
       // when there was nothing running: that failure is the caller's to report,
       // and the client bundle it may still have is not in question.
       //
@@ -411,22 +413,18 @@ export class ExtensionServerLifecycle {
     // (`resetRestarts`).
     if (runsSeparately(record) && !active) {
       const name = record.manifest.name;
-      if (this.restartTimers.has(id)) {
-        return { ok: false, error: `Restarting ${name}…` };
-      }
-      if (this.gaveUp.get(id) === sourceKey) {
-        return { ok: false, error: this.supervised.get(id)?.serverError?.message ?? 'Stopped' };
-      }
+      const refusal = this.restarts.refusal(id, sourceKey, name);
+      if (refusal) return { ok: false, error: refusal };
     }
 
     // Shut down the stale instance before its replacement takes over
     await this.stop(id);
 
-    // Written to disk, so stack traces and source maps name a real file.
-    const tempDir = path.join(this.dorkHome, 'cache', 'extensions', 'server', '_run');
-    await fs.mkdir(tempDir, { recursive: true });
-    const tempFile = path.join(tempDir, `${id}.js`);
-    await fs.writeFile(tempFile, compiled.code, 'utf-8');
+    const tempFile = await writeServerBundle(this.dorkHome, id, compiled.code);
+    // A rescan while it compiled may have taken its checked copy away, and a
+    // pinned copy never starts from the folder it was found in (`pin/run-dir.ts`).
+    // Asked after the last wait: both starts read its folder before any other.
+    if (!runDirOf(record)) return { ok: false, error: runDirMissingMessage(record.manifest.name) };
 
     if (runsSeparately(record)) return this.startIsolated(id, record, tempFile, sourceKey);
     // Running inside DorkOS now: any connection it held is revoked (DOR-3547, N3).
@@ -435,6 +433,8 @@ export class ExtensionServerLifecycle {
     let registered: (() => void) | undefined;
     let closeTools: (() => void) | undefined;
     try {
+      // Refuses a pinned copy with no snapshot before its bundle is loaded.
+      const deps = recordContextDeps(id, record, this.dorkHome, storedApprovals);
       const registerFn = serverEntryRegister(loadInProcessBundle(tempFile));
       if (!registerFn) {
         return { ok: false, error: 'Server entry does not export a register function' };
@@ -443,17 +443,8 @@ export class ExtensionServerLifecycle {
       const router = Router();
       // Starting again lifts the stop on its messages (DOR-2683).
       getAgentSendService()?.extensionStarted(id);
-      const toolChecks = checkDeclaredTools(record.manifest);
       const { ctx, getScheduledCleanups, releaseListeners, dispose, tools } =
-        createDataProviderContext({
-          extensionId: id,
-          // A copy that runs by origin runs from its verified snapshot, so what
-          // it reaches relative to itself at runtime is the snapshot's too.
-          extensionDir: record.runPath ?? record.path,
-          dorkHome: this.dorkHome,
-          extensionName: record.manifest.name,
-          toolChecks,
-        });
+        createDataProviderContext(deps);
       // A register() that throws, or returns something unusable, must leave
       // nothing behind: its schedules are cancelled, its account listeners and
       // advisor released, and a late `ctx` call starts nothing. This instance
@@ -484,7 +475,7 @@ export class ExtensionServerLifecycle {
 
       // register() finished: no more handlers. Only an instance that started
       // has tools, and only the declared tools it handled (DOR-2685).
-      const agentTools = sealAgentTools(id, record.manifest.name, toolChecks, tools);
+      const agentTools = sealAgentTools(id, record.manifest.name, deps.toolChecks, tools);
 
       // Its routes first; its proxy and its fetch handler get what they pass on.
       const handler = firstAnswer(
@@ -583,7 +574,7 @@ export class ExtensionServerLifecycle {
     revokeMediaTickets(id);
     const active = this.serverExtensions.get(id);
     if (!active) {
-      this.cancelRestart(id);
+      this.restarts.cancel(id);
       return;
     }
 
@@ -630,7 +621,7 @@ export class ExtensionServerLifecycle {
 
     // A pending restart is cancelled by any stop: turning it off, an
     // uninstall or a reload must not be undone a few seconds later.
-    this.cancelRestart(id);
+    this.restarts.cancel(id);
 
     if (this.serverExtensions.get(id) === active) this.serverExtensions.delete(id);
     logger.info(`[Extensions] Server shutdown for ${id}`);
@@ -660,30 +651,22 @@ export class ExtensionServerLifecycle {
       // Discovery always fills this for a subprocess manifest; a record
       // without it is refused, never run inside DorkOS instead.
       const message = extensionServerErrorCopy('isolation_unavailable', name)!;
-      record.serverError = { code: 'isolation_unavailable', message };
+      this.restarts.failed(id, { code: 'isolation_unavailable', message });
+      record.serverError = this.restarts.status(id).serverError;
       return { ok: false, error: message };
     }
 
     // New code or a new manifest is a fresh start, however it arrived (an
     // update, a rescan, a page load after an edit): its crash count is for
     // this source only.
-    if (this.policySources.get(id) !== sourceKey) {
-      this.restartPolicies.get(id)?.reset();
-      this.policySources.set(id, sourceKey);
-    }
+    this.restarts.source(id, sourceKey);
 
+    // Refuses a pinned copy with no snapshot before anything is lifted.
+    const deps = recordContextDeps(id, record, this.dorkHome, storedApprovals);
     // Starting again lifts the stop on its messages (DOR-2683).
     getAgentSendService()?.extensionStarted(id);
-    const toolChecks = checkDeclaredTools(record.manifest);
     const connections = extensionConnections.isolatedConnectionsFor(record);
-    const built = createDataProviderContext({
-      extensionId: id,
-      extensionDir: record.runPath ?? record.path,
-      dorkHome: this.dorkHome,
-      extensionName: name,
-      toolChecks,
-      connections: connections.api,
-    });
+    const built = createDataProviderContext({ ...deps, connections: connections.api });
     const release = (): void => {
       built.tools.close();
       built.dispose();
@@ -697,7 +680,7 @@ export class ExtensionServerLifecycle {
         extensionId: id,
         displayName: name,
         bundlePath,
-        extensionDir: record.runPath ?? record.path,
+        extensionDir: deps.extensionDir,
         dorkHome: this.dorkHome,
         isolation,
         dorkosPort: this.options.dorkosPort ?? env.DORKOS_PORT,
@@ -710,7 +693,7 @@ export class ExtensionServerLifecycle {
         ctx: built.ctx,
         projectRoots: async () => (await built.ctx.projects.list()).map((p) => p.root),
         timings: { loadTimeoutMs: this.registerTimeoutMs, ...this.options.isolatedTimings },
-        tools: toolChecks,
+        tools: deps.toolChecks,
         // Its tools leave the registry before anything else of the dead
         // child is released, so a call still running fails as stopped.
         onGone: () => {
@@ -725,7 +708,8 @@ export class ExtensionServerLifecycle {
     } catch (err) {
       release();
       const message = `${name} couldn't start: ${err instanceof Error ? err.message : String(err)}`;
-      record.serverError = { code: 'server_start_failed', message };
+      this.restarts.failed(id, { code: 'server_start_failed', message });
+      record.serverError = this.restarts.status(id).serverError;
       logger.error(`[Extensions] Isolated start failed for ${id}:`, err);
       return { ok: false, error: message };
     }
@@ -734,11 +718,12 @@ export class ExtensionServerLifecycle {
       release();
       // The host's load timer is the register timer here, so a slow start
       // carries the same code and words as in-process.
-      record.serverError = { code: result.code, message: result.message };
+      this.restarts.failed(id, { code: result.code, message: result.message });
+      record.serverError = this.restarts.status(id).serverError;
       logger.warn(
         `[Extensions] Isolated start refused for ${id}: ${result.code}: ${result.message}`
       );
-      return { ok: false, error: record.serverError.message };
+      return { ok: false, error: result.message };
     }
 
     // Starting waited; a turn-off or revoke meanwhile wins.
@@ -754,7 +739,7 @@ export class ExtensionServerLifecycle {
     // register() finished in the child (`registered`), and every tool it
     // bound was bound through the real ctx.tools.handle on the way: seal the
     // host's binding exactly as after an in-process register() (spec §8).
-    const agentTools = sealAgentTools(id, name, toolChecks, built.tools);
+    const agentTools = sealAgentTools(id, name, deps.toolChecks, built.tools);
     this.serverExtensions.set(id, {
       extensionId: id,
       handler: createIsolatedHandler({ displayName: name, host, proxy: this.proxyFor(id, record) }),
@@ -786,8 +771,7 @@ export class ExtensionServerLifecycle {
 
     getExtensionInbox()?.markRunning(id, name);
     record.serverError = undefined;
-    this.supervised.delete(id);
-    this.gaveUp.delete(id);
+    this.restarts.started(id);
     logger.info(`[Extensions] Isolated server started for ${id} (pid ${host.pid ?? '?'})`);
     return { ok: true };
   }
@@ -836,48 +820,47 @@ export class ExtensionServerLifecycle {
       `[Extensions] ${id} stopped on its own (${exit.reason}, code ${exit.code}, signal ${exit.signal})`
     );
 
-    const policy = this.restartPolicies.get(id) ?? new RestartPolicy(this.options.restartPolicy);
-    this.restartPolicies.set(id, policy);
-    const decision = policy.onUnexpectedExit();
-    // The person hears of every stop, by name: "restarted" or "is off" (DOR-4785).
-    void tellExtensionStopped(id, name, exit.reason, decision, this.options.restartPolicy);
-    if ('giveUp' in decision) {
-      const message = extensionServerErrorCopy(exit.reason, name)!;
-      this.supervised.set(id, { serverError: { code: exit.reason, message } });
-      this.gaveUp.set(id, sourceKey);
-      logger.warn(`[Extensions] ${id} stopped too often; left off until it is reloaded`);
-    } else {
-      this.supervised.set(id, {
-        restartingAt: new Date(Date.now() + decision.restartIn).toISOString(),
-      });
-      const timer = setTimeout(() => {
-        this.restartTimers.delete(id);
-        void this.restartAfterExit(id);
-      }, decision.restartIn);
-      timer.unref();
-      this.restartTimers.set(id, timer);
-    }
-    this.options.onStatusChange?.(id);
+    this.restarts.exited(id, name, sourceKey, exit.reason);
   }
 
   /** The restart a backoff timer fires: a fresh process, `register()` again. */
-  private async restartAfterExit(id: string): Promise<void> {
-    const record = this.options.recordOf?.(id);
-    this.supervised.delete(id);
-    if (record) {
-      const result = await this.initialize(id, record);
-      if (!result.ok) logger.warn(`[Extensions] Restart of ${id} failed: ${result.error}`);
-    }
-    this.options.onStatusChange?.(id);
-  }
-
-  /** Cancel a pending restart, if any. */
-  private cancelRestart(id: string): void {
-    const timer = this.restartTimers.get(id);
-    if (!timer) return;
-    clearTimeout(timer);
-    this.restartTimers.delete(id);
-    if (this.supervised.get(id)?.restartingAt) this.supervised.delete(id);
+  private restartAfterExit(attempt: RestartAttempt): Promise<void> {
+    const { id } = attempt;
+    return this.exclusive(id, async () => {
+      if (!this.restarts.current(attempt)) return;
+      const record = this.options.recordOf?.(id);
+      if (!record || !this.stillWanted(record)) {
+        this.restarts.reset(id);
+        return;
+      }
+      record.serverError = undefined;
+      const result = await this.start(id, record).catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        record.serverError = { code: 'server_start_failed', message };
+        return { ok: false, error: message };
+      });
+      if (!this.stillWanted(record)) {
+        this.restarts.reset(id);
+        return;
+      }
+      // An early child exit already made its own restart decision; count it once.
+      if (
+        !result.ok &&
+        this.restarts.sameSource(attempt) &&
+        !this.restarts.refusal(id, attempt.sourceKey, record.manifest.name)
+      ) {
+        logger.warn(`[Extensions] Restart of ${id} failed: ${result.error}`);
+        this.restarts.refused(
+          attempt,
+          record.manifest.name,
+          record.serverError ?? {
+            code: 'server_start_failed',
+            message: result.error ?? 'Extension could not start',
+          }
+        );
+      }
+      this.options.onStatusChange?.(id);
+    });
   }
 
   /**
@@ -888,10 +871,7 @@ export class ExtensionServerLifecycle {
    * @param id - The extension id.
    */
   resetRestarts(id: string): void {
-    this.restartPolicies.get(id)?.reset();
-    this.cancelRestart(id);
-    this.gaveUp.delete(id);
-    this.supervised.delete(id);
+    this.restarts.reset(id);
   }
 
   /**
@@ -902,7 +882,7 @@ export class ExtensionServerLifecycle {
    * @param id - The extension id.
    */
   supervisedStatus(id: string): SupervisedServerStatus {
-    return this.supervised.get(id) ?? {};
+    return this.restarts.status(id);
   }
 
   /**

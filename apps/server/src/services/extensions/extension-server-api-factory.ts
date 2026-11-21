@@ -16,6 +16,7 @@ import {
   type AccountsApi,
   type AgentApi,
   type DataProviderContext,
+  type InboxApi,
 } from '@dorkos/extension-api/server';
 import { LEDGER_RUNTIMES, type LedgerRuntime } from '@dorkos/shared/account-usage';
 import { writeFileAtomic } from '@dorkos/shared/atomic-write';
@@ -43,6 +44,7 @@ import { createToolBinding, type ToolBinding } from './agent-tools/tool-binding.
 import type { ExtensionToolCheck } from '@dorkos/extension-api/tool-check';
 import { isolatedFilesDir } from './isolation/grants.js';
 import { createPersonRecordApi, outsidePersonRequest } from './person-record/person-record.js';
+import { gateInboxByPlace } from './inbox/inbox-place-gate.js';
 
 /** Minimum scheduling interval in seconds (prevents tight loops). */
 const MIN_INTERVAL_SECONDS = 5;
@@ -230,7 +232,7 @@ function createAgentApi(extensionId: string): { agent: AgentApi; release: () => 
 }
 
 /** Dependencies required to build a {@link DataProviderContext}. */
-interface CreateContextDeps {
+export interface CreateContextDeps {
   extensionId: string;
   extensionDir: string;
   dorkHome: string;
@@ -247,7 +249,27 @@ interface CreateContextDeps {
    * declares connections passes (DOR-3547). Omitted means the ctx has none.
    */
   connections?: HostConnectionsApi;
+  /**
+   * The manifest's `contributions` (DOR-4282). `ctx.inbox` exists only when it
+   * declares `inbox: true`; every server start passes it. Omitted means the
+   * ctx declares nothing, so the inbox refuses every call (fail-closed).
+   */
+  contributions?: Record<string, boolean>;
+  /**
+   * The places a person allowed this app now, read from DorkOS's stored
+   * approval on every `ctx.inbox` call (DOR-4282), so a yes given while it
+   * runs takes effect without a restart. A declared inbox works only while
+   * this includes `inbox`; omitted allows nothing (fail-closed).
+   */
+  allowedPlaces?: () => readonly string[];
+  /**
+   * The inbox to gate in place of DorkOS's own. Only tests pass one; the
+   * place gate above wraps it the same way.
+   */
+  inbox?: InboxApi;
 }
+
+export { INBOX_NOT_ALLOWED, INBOX_NOT_DECLARED } from './inbox/inbox-place-gate.js';
 
 /**
  * Build a {@link DataProviderContext} for a server-side extension.
@@ -354,7 +376,9 @@ export function createDataProviderContext(deps: CreateContextDeps): {
   const extensionName = deps.extensionName ?? extensionId;
   const { accounts, release: releaseAccounts } = createAccountsApi(extensionId);
   const { projects, release: releaseProjects } = createProjectsApi(extensionId, projectRegistry);
-  const { inbox, release: releaseInbox } = createInboxApi(extensionId, extensionName);
+  const { inbox, release: releaseInbox } = deps.inbox
+    ? { inbox: deps.inbox, release: () => undefined }
+    : createInboxApi(extensionId, extensionName);
   const { projectSettings, release: releaseProjectSettings } = createProjectSettingsReader(
     extensionId,
     dorkHome
@@ -375,10 +399,16 @@ export function createDataProviderContext(deps: CreateContextDeps): {
     onChange: (listener: Parameters<typeof projects.onChange>[0]) =>
       disposed ? inert('projects.onChange') : projects.onChange(listener),
   };
-  const guardedInbox = inbox && {
-    ...inbox,
-    onAction: (handler: Parameters<typeof inbox.onAction>[0]) =>
-      disposed ? inert('inbox.onAction') : inbox.onAction(handler),
+  // Fail-closed: no map, or a map without `inbox: true`, gets no inbox; a
+  // declared one works only while the person's yes covers it (DOR-4282).
+  const gated = gateInboxByPlace(inbox, {
+    extensionId,
+    declared: deps.contributions?.inbox === true,
+    allowed: () => deps.allowedPlaces?.().includes('inbox') === true,
+  });
+  const guardedInbox: InboxApi = {
+    ...gated,
+    onAction: (handler) => (disposed ? inert('inbox.onAction') : gated.onAction(handler)),
   };
   const guardedAgent: AgentApi = {
     // A given-up instance sends nothing: the message would run after the

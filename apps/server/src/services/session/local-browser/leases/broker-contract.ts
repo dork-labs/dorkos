@@ -18,6 +18,7 @@ export interface BrowserPageBinding {
 
 /** Finite page-input vocabulary, never a JavaScript expression or arbitrary protocol command. */
 export type BrowserPersonInput =
+  | import('@dorkos/shared/browser-viewer-control').BrowserViewerInput
   | { kind: 'move'; x: number; y: number }
   | { kind: 'down' | 'up'; button: 'left' | 'middle' | 'right' }
   | { kind: 'wheel'; deltaX: number; deltaY: number }
@@ -59,6 +60,7 @@ export interface BrowserViewerPageHandle {
   readonly identity: BrowserViewerIdentity;
   isCurrent(): boolean;
   assertCurrent(): void;
+  /** Existing protected-origin/sign-in fence, without reading page content. */
   assertWatchAllowed(): void;
   /** Page-local metadata only; viewport transforms come from the exact screencast frames. */
   facts(): BrowserPageFacts;
@@ -70,9 +72,31 @@ export interface BrowserViewerPageHandle {
   close(): Promise<void>;
 }
 
-/** One controller at one custody epoch; disconnect leaves agents blocked. */
+/** Generations from a server-verified painted receipt and its person address snapshot. */
+export interface BrowserPersonPaint {
+  readonly navigationGeneration: number;
+  readonly addressGeneration: number;
+  readonly viewportGeneration: number;
+}
+
+/** One held controller; only a server-verified paint/address pair can enable input. */
 export interface BrowserPersonInputLease {
   readonly epoch: number;
   isCurrent(): boolean;
+  inputReady(): boolean;
+  confirmPaint(paint: BrowserPersonPaint): void;
   runPerson(input: BrowserPersonInput): Promise<void>;
+  readSelection(): Promise<string>;
+  onFileChooser(
+    listener: (ticket: import('@dorkos/shared/browser-viewer-control').BrowserViewerChooser) => void
+  ): () => void;
+  chooseFiles(ticketId: string, files: readonly BrowserPersonFile[]): Promise<void>;
+  cancelFileChooser(ticketId: string): Promise<void>;
+}
+
+/** Server-owned multipart payloads, never paths. Cleared after physical consumption settles. */
+export interface BrowserPersonFile {
+  readonly name: string;
+  readonly mimeType: string;
+  readonly buffer: Buffer;
 }

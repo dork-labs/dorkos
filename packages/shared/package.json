@@ -5,6 +5,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./browser-viewer-control": {
+      "types": "./src/browser-viewer-control.ts",
+      "default": "./dist/browser-viewer-control.js"
+    },
     "./account-usage": {
       "types": "./src/account-usage.ts",
       "default": "./dist/account-usage.js"
@@ -734,6 +738,7 @@
     "@dork-labs/cloud-api": "workspace:*",
     "@dork-labs/connector-providers": "workspace:*",
     "ajv": "^8.20.0",
+    "tldts": "7.0.28",
     "ulidx": "^2.4.1",
     "zod": "^4.6.6"
   },

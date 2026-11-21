@@ -24,6 +24,7 @@ const FLOW: PendingExtensionApproval = {
   digest: null,
   changedFiles: null,
   updatedFrom: null,
+  placesOnly: false,
 };
 
 describe('deriveWaitingItems — extensions waiting to be turned on', () => {

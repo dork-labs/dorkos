@@ -3,28 +3,21 @@ import type { BrowserBrokerSource } from './broker-source.js';
 import type {
   BrowserPageFacts,
   BrowserPageScreencast,
-  BrowserPersonInput,
   BrowserPersonInputLease,
   BrowserViewerIdentity,
   BrowserViewerPageHandle,
 } from './broker-contract.js';
-import { BrowserPersonInputFlight } from './person-input.js';
+import { BrowserPersonController } from './viewer-control/person-controller.js';
 import { openPageScreencast } from './page-screencast.js';
 import { LocalBrowserError } from '../errors.js';
-
-interface Controller {
-  source: BrowserBrokerSource;
-  epoch: number;
-  viewer: BrowserViewerPageHandle;
-  unregister(): void;
-}
 
 /** Server-only Page broker. Owner authentication remains in the caller's viewer router. */
 export class BrowserPageBroker {
   private readonly viewers = new WeakMap<BrowserViewerPageHandle, BrowserBrokerSource>();
-  private readonly controllers = new WeakMap<BrowserPersonInputLease, Controller>();
+  private readonly controllers = new WeakMap<BrowserPersonInputLease, BrowserPersonController>();
   private readonly active = new WeakMap<BrowserPageCustody, BrowserPersonInputLease>();
   private readonly preparing = new Set<string>();
+  private readonly fileOperations = new Map<string, number>();
 
   constructor(private readonly resolve: (sessionId: string) => BrowserBrokerSource) {}
 
@@ -97,7 +90,10 @@ export class BrowserPageBroker {
         admit();
         await source.authorize();
         admit();
-        const stream = await openPageScreencast(source, admit);
+        const stream = await openPageScreencast(source, () => {
+          admit();
+          source.assertWatchAllowed();
+        });
         try {
           admit();
         } catch (error) {
@@ -109,7 +105,7 @@ export class BrowserPageBroker {
       },
       close: async () => {
         if (closed) return;
-        const releasing = this.closeViewer(viewer);
+        const releasing = this.abandonViewer(viewer);
         closed = true;
         for (const [notify, unsubscribe] of revoked) {
           try {
@@ -151,47 +147,41 @@ export class BrowserPageBroker {
     viewer: BrowserViewerPageHandle,
     source: BrowserBrokerSource
   ): Promise<BrowserPersonInputLease> {
-    viewer.assertCurrent();
-    await source.authorize();
+    const navigation = source.facts().navigationGeneration;
+    const assertPreparing = () => {
+      viewer.assertCurrent();
+      if (source.facts().navigationGeneration !== navigation || !source.protectionAllowed())
+        throw stale();
+    };
     viewer.assertCurrent();
     const previous = this.active.get(source.custody);
     if (previous?.isCurrent())
       throw new LocalBrowserError('busy', 'Someone is already using this page.');
+    // Failed or delayed authorization cannot leave agent admission open.
+    source.custody.block();
+    assertPreparing();
+    await source.authorize();
+    assertPreparing();
     const epoch = source.custody.epoch + 1;
     await source.hold();
-    viewer.assertCurrent();
+    assertPreparing();
     if (source.custody.epoch !== epoch) throw stale();
     await source.authorize();
-    viewer.assertCurrent();
+    assertPreparing();
     if (source.custody.epoch !== epoch || !source.custody.held) throw stale();
     if (previous) this.controllers.get(previous)?.unregister();
-    const current = () =>
-      viewer.isCurrent() &&
-      source.custody.held &&
-      source.custody.epoch === epoch &&
-      this.active.get(source.custody) === lease;
-    const input = new BrowserPersonInputFlight(source, () => {
-      if (!current()) throw stale();
-    });
-    const lease: BrowserPersonInputLease = Object.freeze({
-      epoch,
-      isCurrent: current,
-      runPerson: async (event: BrowserPersonInput) => {
-        await source.authorize();
-        if (!current()) throw stale();
-        await input.run(event);
-        await source.authorize();
-        if (!current()) throw stale();
-      },
-    });
-    this.controllers.set(lease, {
+    const control: BrowserPersonController = new BrowserPersonController(
       source,
-      epoch,
       viewer,
-      unregister: source.custody.onReset(() => input.reset()),
-    });
-    this.active.set(source.custody, lease);
-    return lease;
+      epoch,
+      () => this.active.get(source.custody) === control.lease,
+      () => this.finish(control.lease, control),
+      this.fileOperations
+    );
+    this.controllers.set(control.lease, control);
+    this.active.set(source.custody, control.lease);
+    await control.start();
+    return control.lease;
   }
 
   /** Only this exact active controller can explicitly give the page back. */
@@ -199,6 +189,7 @@ export class BrowserPageBroker {
     const control = this.control(lease);
     await control.source.authorize();
     this.control(lease);
+    control.ending = true;
     await control.source.resume();
     this.finish(lease, control);
   }
@@ -206,30 +197,33 @@ export class BrowserPageBroker {
   /** Lost viewers release their input through the barrier and leave agent custody blocked. */
   async abandon(lease: BrowserPersonInputLease): Promise<void> {
     const control = this.control(lease);
+    control.ending = true;
     await control.source.hold();
     this.finish(lease, control);
   }
 
-  private control(lease: BrowserPersonInputLease): Controller {
+  private control(lease: BrowserPersonInputLease): BrowserPersonController {
     const control = this.controllers.get(lease);
     if (!control || !lease.isCurrent()) throw stale();
     return control;
   }
 
-  private finish(lease: BrowserPersonInputLease, control: Controller): void {
+  private finish(lease: BrowserPersonInputLease, control: BrowserPersonController): void {
     control.unregister();
     this.controllers.delete(lease);
     if (this.active.get(control.source.custody) === lease)
       this.active.delete(control.source.custody);
   }
 
-  private async closeViewer(viewer: BrowserViewerPageHandle): Promise<void> {
+  /** Retire only this viewer’s controller, keeping shared watching alive and agents held. */
+  async abandonViewer(viewer: BrowserViewerPageHandle): Promise<void> {
     const source = this.viewers.get(viewer);
     if (!source) return;
     const lease = this.active.get(source.custody);
     const control = lease && this.controllers.get(lease);
     if (!lease || !control || control.viewer !== viewer) return;
-    await source.hold();
+    control.ending = true;
+    await source.custody.hold();
     this.finish(lease, control);
   }
 }

@@ -64,10 +64,31 @@ export async function liveDigestOf(copy: DigestedCopy): Promise<string | null> {
 }
 
 /**
+ * The records whose pin missed after the scan that built them. Each scan
+ * builds new records, so a scan empties this without being told.
+ */
+const missedSinceScan = new WeakSet<ExtensionRecord>();
+
+/**
+ * Whether this record's pin missed between scans (DOR-4282). Such a copy is
+ * paused, and no card is raised for it: the next scan reads its files whole
+ * and decides, so an update that only adds places keeps its yes, and any
+ * other change gets the normal files-changed card then.
+ *
+ * @param record - The extension record.
+ */
+export function awaitsNextScan(record: ExtensionRecord): boolean {
+  return missedSinceScan.has(record);
+}
+
+/**
  * Whether a copy approved by digest still holds exactly the approved files,
  * read from disk now rather than from the last scan. When it does not, the
- * record is marked with what it holds now, so every gate refuses it until a
- * person approves again. A copy with no digest-pinned approval passes.
+ * record is marked with what it holds now, so every gate refuses it; it writes
+ * no config. A copy the last scan saw holding the approved files waits
+ * silently for the next scan ({@link awaitsNextScan}); one whose change the
+ * scan already saw keeps the card that scan raised. A copy with no
+ * digest-pinned approval passes.
  *
  * @param record - The extension record; updated in place on a mismatch.
  * @param approvals - `config.extensions`.
@@ -81,7 +102,13 @@ export async function pinStillHolds(
   const source = approvals.approvedSources?.[record.id];
   if (!source?.digest || !isSameStoredCopy(record, source)) return true;
   const live = await liveDigestOf(record);
-  if (live === source.digest) return true;
+  if (live === source.digest) {
+    missedSinceScan.delete(record);
+    return true;
+  }
+  // Only a miss the scan did not see waits for the next one. When the scan
+  // already read the change, its card stays up.
+  if (record.currentDigest === source.digest) missedSinceScan.add(record);
   record.currentDigest = live ?? undefined;
   record.pinnedDigest = undefined;
   record.runPath = undefined;

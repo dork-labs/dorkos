@@ -66,6 +66,10 @@ async function startIsolated(extensionId: string, allowAgents: boolean) {
     extensionDir: path.join(h.tmp, 'ext', extensionId),
     dorkHome: h.dorkHome,
     extensionName: 'Conformance',
+    // The inbox is fail-closed: the fixture raises cards, so it declares them
+    // and a person allowed them.
+    contributions: { inbox: true },
+    allowedPlaces: () => ['inbox'],
   });
   const host = makeHost(h, {
     id: extensionId,
@@ -94,6 +98,8 @@ describeCtxConformance('in-process', () => ({
       extensionDir: path.join(h.tmp, 'ext', extensionId),
       dorkHome: h.dorkHome,
       extensionName: 'Conformance',
+      contributions: { inbox: true },
+      allowedPlaces: () => ['inbox'],
     });
     const fixture = loadInProcess();
     const cleanupFn = (await fixture.register({}, built.ctx)) as (() => Promise<void>) | undefined;

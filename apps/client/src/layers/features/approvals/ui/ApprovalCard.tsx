@@ -4,6 +4,7 @@ import { useId, type ReactNode } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { Lock } from 'lucide-react';
 import { approvalHeading, type PendingApproval } from '@dorkos/shared/approval-schemas';
+import { revealHiddenCharacters } from '@dorkos/shared/marketplace-schemas';
 import { getPermissionArea, isFloorArea } from '@dorkos/shared/permissions';
 import { Badge, Button, RequestCode } from '@/layers/shared/ui';
 import { useNow } from '@/layers/shared/model';
@@ -281,7 +282,9 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
       ? `${approval.packageLabel ?? 'This package'} wants to run commands`
       : spend
         ? 'Run a paid action'
-        : (approval.serviceAction?.actionName ?? approval.capabilityTitle);
+        : approval.marketplaceSummary
+          ? `Review what’s in ${approval.marketplaceSummary.packages.map((pkg) => revealHiddenCharacters(JSON.stringify(pkg.name))).join(', ')}`
+          : (approval.serviceAction?.actionName ?? approval.capabilityTitle);
   const areaLabel = approval.area ? (getPermissionArea(approval.area)?.label ?? null) : null;
   // A floor area never offers Always allow, and says why; every other reason it
   // is absent needs no sentence (see the component docblock).
@@ -444,6 +447,7 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
                         // A settings change names its riskiest setting in the
                         // sentence; a clamp would cut it at phone widths (DOR-4778).
                         approval.capabilityId !== CONFIG_PATCH_CAPABILITY_ID &&
+                        !approval.capabilityId.startsWith('marketplace.') &&
                         'line-clamp-2'
                     )}
                   >
@@ -465,14 +469,18 @@ function CapabilityApprovalCard({ approval, onDecided, inChat }: ApprovalCardPro
               phone it gets up to half the screen: the card is full width there,
               and a settings file or a script is otherwise read a few lines at a
               time (DOR-2325). */}
-              {/* A Marketplace list too long for the detail comes as a summary
-              instead (DOR-3070): every row that adds power, then a link to
+              {/* Mini apps, schedules and long Marketplace lists use structured
+              rows (DOR-3070): every row that adds power, then a link to
               the whole list. It replaces the detail, which only restates it. */}
               {approval.marketplaceSummary ? (
                 <ApprovalMarketplaceSummary
                   approvalId={approval.approvalId}
                   summary={approval.marketplaceSummary}
                 />
+              ) : (approval.capabilityId === 'marketplace.install' ||
+                  approval.capabilityId === 'marketplace.update') &&
+                approval.detail === 'DorkOS will show you what’s in it next.' ? (
+                <p className="text-muted-foreground mt-1.5 text-xs">{approval.detail}</p>
               ) : (
                 approval.detail !== undefined && (
                   <pre

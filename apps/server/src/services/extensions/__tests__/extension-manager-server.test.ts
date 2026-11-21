@@ -112,6 +112,7 @@ vi.mock('fs/promises', () => ({
 // Import after mocks are set up
 import { ExtensionManager } from '../extension-manager.js';
 import { mintMediaTicket, resolveMediaTicket } from '../http/media-tickets.js';
+import { runDirMissingMessage } from '../pin/run-dir.js';
 
 // --- Helpers ---
 
@@ -200,6 +201,7 @@ describe('ExtensionManager — server lifecycle', () => {
         'no-srv',
         'disabled-srv',
         'bad-srv',
+        'pinned-srv',
         'throw-srv',
         'obj-srv',
         'reinit-ext',
@@ -247,6 +249,10 @@ describe('ExtensionManager — server lifecycle', () => {
         extensionDir: '/fake/extensions/srv-ext',
         dorkHome: '/fake/dork-home',
         extensionName: expect.any(String),
+        // The manifest declares no places, so `ctx.inbox` is refused (DOR-4282).
+        contributions: {},
+        // Read from the stored approval on every `ctx.inbox` call (DOR-4282).
+        allowedPlaces: expect.any(Function),
         // The manifest declares no tools, so `ctx.tools` binds nothing (DOR-2685).
         toolChecks: [],
       });
@@ -304,6 +310,40 @@ describe('ExtensionManager — server lifecycle', () => {
 
       expect(result.ok).toBe(false);
       expect(result.error).toBe('Syntax error in server.ts');
+    });
+
+    // Purpose: a pinned copy whose checked copy went away while it compiled
+    // (a rescan cleared `runPath`) never starts from the folder it was found
+    // in, inside DorkOS or in its own process: it is refused with the fixed
+    // words, never loaded or given a ctx, and the start does not throw
+    // (pin/run-dir).
+    it.each([
+      ['inside DorkOS', {}],
+      ['in its own process', { isolation: {} as ExtensionRecord['isolation'] }],
+    ])('refuses to start a pinned copy with no snapshot %s', async (_where, how) => {
+      const record = makeRecord('pinned-srv', {
+        status: 'compiled',
+        hasServerEntry: true,
+        serverEntryPath: '/fake/extensions/pinned-srv/server.ts',
+        ...how,
+      });
+      mockDiscover.mockResolvedValue([record]);
+      mockCompile.mockResolvedValue({ code: 'bundle', sourceHash: 'hash' });
+      mockCompileServer.mockImplementation(async (rec: ExtensionRecord) => {
+        rec.pinnedDigest = FIXTURE_DIGEST;
+        rec.runPath = undefined;
+        return { code: makeCjsModule(), sourceHash: 'srvhash' };
+      });
+      await manager.initialize(null);
+      mockCreateDataProviderContext.mockClear();
+      vi.mocked(logger.error).mockClear();
+
+      const result = await manager.initializeServer('pinned-srv');
+
+      expect(result).toEqual({ ok: false, error: runDirMissingMessage(record.manifest.name) });
+      expect(mockCreateDataProviderContext).not.toHaveBeenCalled();
+      // Refused before a start began, not a start that failed.
+      expect(logger.error).not.toHaveBeenCalled();
     });
 
     it('returns ok:false when register function throws', async () => {

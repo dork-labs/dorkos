@@ -46,6 +46,7 @@ export const RESTART_WINDOW_MS = 10 * 60_000;
 export class RestartPolicy {
   private exits: number[] = [];
   private restarts = 0;
+  private refusedStarts = 0;
   private readonly delays: readonly number[];
   private readonly budget: number;
   private readonly windowMs: number;
@@ -79,9 +80,22 @@ export class RestartPolicy {
     return { restartIn: delay };
   }
 
+  /** Count a refused automatic start, bounded even across long host stalls. */
+  onStartFailure(): RestartDecision {
+    this.refusedStarts++;
+    const decision = this.onUnexpectedExit();
+    return this.refusedStarts >= Math.max(1, this.budget - 1) ? { giveUp: true } : decision;
+  }
+
+  /** A running child ends a consecutive refusal sequence, retaining its crash history. */
+  onStarted(): void {
+    this.refusedStarts = 0;
+  }
+
   /** Forget every recorded exit (reload, enable, approve, dev-link reload). */
   reset(): void {
     this.exits = [];
     this.restarts = 0;
+    this.refusedStarts = 0;
   }
 }

@@ -15,7 +15,7 @@
  */
 import { APPROVAL_DETAIL_MAX_LENGTH } from '@dorkos/shared/approval-schemas';
 import { revealHiddenCharacters } from '@dorkos/shared/marketplace-schemas';
-import { describeEffectsInFull } from '../marketplace/preview/disclosed-effects.js';
+import { describePackageInFull } from '../marketplace/preview/extension-disclosure.js';
 import type { ApprovableUpdate } from '../marketplace/flows/update-installed.js';
 
 /** The longest detail a card stores; a longer list is refused, never cut. */
@@ -65,7 +65,7 @@ export function describeUpdatesInFull(updates: readonly ApprovableUpdate[]): str
       [
         `${whole(update.packageName)} (${update.type}, ${placeOf(update)}): ${whole(update.installedVersion)} → ${whole(update.latestVersion)}`,
         `  at ${whole(update.installPath)}`,
-        ...describeEffectsInFull(update.disclosed, whenProgramsStart(update)),
+        ...describePackageInFull(update.disclosed, update.extensions, whenProgramsStart(update)),
       ].join('\n')
     )
     .join('\n\n');

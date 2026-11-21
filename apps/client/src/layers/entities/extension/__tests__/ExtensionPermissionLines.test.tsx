@@ -248,6 +248,8 @@ describe('permission-lines helpers', () => {
     };
     expect(permissionViewFromRecord({ ...base, isolation: undefined })).toBeNull();
     expect(permissionViewFromRecord({ ...base, isolation: null })).toEqual({
+      // The places it declares: none here.
+      slots: [],
       runtime: 'in-process',
       net: [],
       run: [],
@@ -290,6 +292,88 @@ describe('permission-lines helpers', () => {
     expect(
       approvedSetOf({ ...ISOLATED, net: ['a.example.com'], run: [{ name: 'git', found: false }] })
     ).toEqual({ runtime: 'subprocess', net: ['a.example.com'], run: ['git'], agents: false });
+  });
+
+  // Purpose: the places a card showed are echoed with the yes, and an update
+  // that adds one is marked New in DorkOS's words (DOR-4282).
+  it('echoes declared places and marks a new one', () => {
+    const view = permissionViewFromRecord({
+      bundleReady: true,
+      hasServerEntry: false,
+      hasDataProxy: false,
+      isolation: null,
+      manifest: {
+        id: 'a',
+        name: 'A',
+        version: '1.0.0',
+        contributions: { pages: true, 'command-palette.items': true, 'made-up': true },
+      },
+    });
+    expect(approvedSetOf(view)?.slots).toEqual(['pages', 'command-palette.items']);
+
+    const seen = {
+      runtime: 'in-process' as const,
+      net: [],
+      run: [],
+      agents: false,
+      slots: ['pages'],
+    };
+    const added = permissionsAddedSince(seen, { ...seen, slots: ['pages', 'dialog'] });
+    expect(added?.slots).toEqual(['dialog']);
+
+    const lines = extensionPermissionLines(ISOLATED, {
+      net: [],
+      run: [],
+      agents: false,
+      runtime: false,
+      slots: ['command-palette.items', 'Sign in again'],
+    });
+    const placesLine = lines.find(({ key }) => key === 'added-slots');
+    expect(placesLine?.tone).toBe('new');
+    expect(placesLine && permissionLineText(placesLine)).toBe('Now also shows in: ⌘K commands');
+  });
+
+  // Purpose: every card lists every declared place, not only new ones, in
+  // DorkOS's words; a re-ask lists each place once (DOR-4282).
+  it('lists every declared place, and each place once on a re-ask', () => {
+    const view: ExtensionPermissionView = {
+      ...ISOLATED,
+      slots: ['pages', 'command-palette.items', 'Sign in again'],
+    };
+    const showsIn = (lines: ReturnType<typeof extensionPermissionLines>) =>
+      lines.find(({ key }) => key === 'slots');
+
+    const first = showsIn(extensionPermissionLines(view));
+    expect(first?.tone).toBe('plain');
+    expect(first && permissionLineText(first)).toBe('Shows in: a page ⌘K commands');
+    expect(first?.rows).toEqual(['a page', '⌘K commands']);
+
+    // In-process cards carry it too.
+    expect(
+      showsIn(extensionPermissionLines({ ...view, runtime: 'in-process', hasServer: false }))?.rows
+    ).toEqual(['a page', '⌘K commands']);
+
+    const reAsk = extensionPermissionLines(view, {
+      net: [],
+      run: [],
+      agents: false,
+      runtime: false,
+      slots: ['command-palette.items'],
+    });
+    expect(showsIn(reAsk)?.rows).toEqual(['a page']);
+    expect(reAsk.find(({ key }) => key === 'added-slots')?.rows).toEqual(['⌘K commands']);
+
+    // Every place new: only the New line.
+    const allNew = extensionPermissionLines(view, {
+      net: [],
+      run: [],
+      agents: false,
+      runtime: false,
+      slots: ['pages', 'command-palette.items'],
+    });
+    expect(showsIn(allNew)).toBeUndefined();
+
+    expect(showsIn(extensionPermissionLines({ ...view, slots: [] }))).toBeUndefined();
   });
 });
 
