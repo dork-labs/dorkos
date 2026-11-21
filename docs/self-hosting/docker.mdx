@@ -8,9 +8,10 @@ description: Run DorkOS in a Docker container with persistent data, custom confi
 Run DorkOS as a container. The official image bundles Node.js, the DorkOS CLI, and the built client, so Docker is the only thing you need on the host.
 
 <Callout type="warn">
-  On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that
-  includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it
-  (DOR-3965).
+  Codex needs one extra setting to start in Docker, and it doesn't run in Docker on Ubuntu or Debian
+  yet: see [Running Codex in Docker](#running-codex-in-docker). Where it does run, Codex at Full
+  access doesn't start on Linux if Claude Code has run on the same machine, and that includes the
+  Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
 </Callout>
 
 ## Quick Start
@@ -297,6 +298,12 @@ docker run --rm -v dorkos-data:/data -v "$(pwd)":/backup alpine \
   tar xzf /backup/dorkos-backup.tgz -C /data
 ```
 
+#### Database snapshots
+
+DorkOS also saves database copies in `backups/` inside the data folder. New daily copies use `dork-auto-YYYYMMDD-daily.db`; older copies use `dork-YYYYMMDD-daily.db`. Pre-upgrade copies use `dork-auto-YYYYMMDD-HHMMSS-pre-<migration>.db` or the older `dork-YYYYMMDD-HHMMSS-pre-<migration>.db`. Dates and times are UTC. Both naming forms are standalone database copies.
+
+To restore one, stop DorkOS and save the current data folder somewhere safe first. Copy the chosen completed `.db` file over `dork.db` in that folder. Remove the old `dork.db-wal` and `dork.db-shm` files before starting DorkOS again. Files ending in `.partial` are unfinished copies; do not restore those. Changes made after the chosen snapshot are lost, including later access changes, so apply those again after restoring.
+
 ## Docker Compose
 
 The `docker run` commands above work fine for trying DorkOS out, but they're unwieldy to maintain. You end up with long shell commands that are easy to mistype and hard to version control. Docker Compose captures the full configuration in one file, so it's reproducible, easy to update, and simple to tear down with `docker compose down`.
@@ -405,6 +412,89 @@ dorkos.example.com {
 <Callout type="info">
   `flush_interval -1` disables response buffering, which is required for SSE streaming. See the
   [reverse proxy guide](/docs/self-hosting/reverse-proxy) for nginx configuration.
+</Callout>
+
+## Running Codex in Docker
+
+Skip this section unless you use Codex. Claude Code and the rest of DorkOS work without it.
+
+Codex runs each command in a sandbox: a closed-off space where the command can only change the folders it's allowed to. Docker's standard security settings block that sandbox, so Codex stops before it runs anything. DorkOS ships a seccomp profile (the list of low-level requests a container may make to the Linux kernel) that lets the sandbox start.
+
+Where it works:
+
+- **Docker Desktop on a Mac:** checked, and Codex's sandbox starts.
+- **Docker Desktop on Windows, and Linux computers without AppArmor:** these run the same way, but haven't been checked yet.
+- **Ubuntu, Debian and other Linux computers that use AppArmor** (a Linux security layer): not supported for Codex yet. See the warning below.
+
+<Steps>
+<Step>
+
+### Download the profile
+
+```bash
+curl -fO https://dorkos.ai/dorkos-codex.json
+```
+
+This saves `dorkos-codex.json` in your current folder. Docker reads it from there when the container starts, so it doesn't go inside the image.
+
+The profile is licensed under Apache-2.0, from `moby/profiles` ([license text](https://github.com/dork-labs/dorkos/blob/main/docker/seccomp/LICENSE)).
+
+</Step>
+<Step>
+
+### Start the container with it
+
+Add the `--security-opt` line to the command you already use:
+
+```bash
+docker run -d --name dorkos \
+  -p 4242:4242 \
+  -e ANTHROPIC_API_KEY=your-key-here \
+  --security-opt seccomp=dorkos-codex.json \
+  -v dorkos-data:/home/node/.dork \
+  ghcr.io/dork-labs/dorkos:latest
+```
+
+Using Docker Compose? Keep `dorkos-codex.json` next to `compose.yml`, and add a `security_opt` entry to the `dorkos` service:
+
+```yaml title="compose.yml"
+services:
+  dorkos:
+    image: ghcr.io/dork-labs/dorkos:latest
+    security_opt:
+      - seccomp=./dorkos-codex.json
+```
+
+Then sign Codex in as the [runtimes guide](/docs/guides/runtimes#set-up-a-coding-runtime) shows.
+
+</Step>
+</Steps>
+
+The profile is Docker's own default profile with one addition: it allows the five requests Codex's sandbox uses to set itself up. It adds no capabilities (Linux's named extra powers), and DorkOS still runs as the regular `node` user. It does let programs in the container create user namespaces (the kernel feature sandboxes use to wall a command off) and mount folders inside them, which Docker's default allows only to more privileged containers. Codex's sandbox still refuses writes outside the folders it was given. What changed, and where the rest of the file comes from, is in the [profile's README](https://github.com/dork-labs/dorkos/tree/main/docker/seccomp).
+
+<Callout type="warn">
+  **Ubuntu and Debian: not supported for Codex yet.** Their AppArmor rules for Docker block the
+  sandbox one step later, even with the profile. The chat shows "Codex can’t run in this Docker
+  setup yet", and the server log shows:
+
+```text
+bwrap: Failed to make / slave: Permission denied
+```
+
+There is no safe way around this yet, so don't change AppArmor or
+Docker's security settings to make it work. Support is planned in DOR-4836. Until then, install
+DorkOS directly on the computer to use Codex there, and follow the Linux steps in the [runtimes
+guide](/docs/guides/runtimes#set-up-a-coding-runtime).
+
+</Callout>
+
+<Callout type="warn">
+  If the owner of the Linux computer has turned user namespaces off, Codex can't run in Docker
+  there, even with the profile. DorkOS doesn't support that setup. The chat shows "This computer
+  blocks Codex’s sandbox. Its owner can check Linux setup", and the server log shows a `bwrap:` line
+  about a namespace, such as `bwrap: No permissions to create a new namespace`. You see the same
+  message without the profile, so add the profile first. Don't loosen the computer's own security
+  settings or switch seccomp off to make it work. Run Codex on a computer that allows it instead.
 </Callout>
 
 ## Health Check

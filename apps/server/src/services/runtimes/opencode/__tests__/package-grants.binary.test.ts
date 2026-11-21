@@ -25,9 +25,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { AddressInfo } from 'node:net';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, inject, it, vi } from 'vitest';
 import { MARKETPLACE_BACKUP_DIR_MARKER } from '@dorkos/shared/marketplace-schemas';
 import type { StreamEvent } from '@dorkos/shared/types';
+import { createPinnedManagerCustody } from './pinned-manager-custody.js';
 import { OFFLINE_PROXY_ENV, pinnedOpenCode } from './pinned-opencode.js';
 
 const BINARY = pinnedOpenCode();
@@ -118,6 +119,8 @@ describe.skipIf(BINARY === null)('a global package on the real OpenCode (DOR-438
   let bodies: string[];
   let model: Awaited<ReturnType<typeof fakeModel>>;
   let manager: { shutdown: () => Promise<void> } | undefined;
+  let custody: ReturnType<typeof createPinnedManagerCustody> | undefined;
+  const suite = new AbortController();
   let runtime: InstanceType<typeof import('../opencode-runtime.js').OpenCodeRuntime>;
 
   /** Run one turn to its end, denying any card it raises, and return its events. */
@@ -197,16 +200,32 @@ describe.skipIf(BINARY === null)('a global package on the real OpenCode (DOR-438
     (await import('../../../core/config-manager.js')).initConfigManager(dorkHome);
     const { OpenCodeServerManager } = await import('../server-manager.js');
     const { OpenCodeRuntime } = await import('../opencode-runtime.js');
-    const live = new OpenCodeServerManager();
+    custody = createPinnedManagerCustody(inject('openCodeCustody'), suite.signal);
+    const live = new OpenCodeServerManager({ custody: custody.port });
     manager = live;
     runtime = new OpenCodeRuntime({ provider: live });
   }, 120_000);
 
   afterAll(async () => {
-    await manager?.shutdown();
+    const [shutdown] = await Promise.allSettled([manager?.shutdown()]);
+    const proof = custody?.report();
+    suite.abort();
     vi.unstubAllEnvs();
-    await model.close();
-    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    const [listener] = await Promise.allSettled([model?.close()]);
+    const failures = [
+      ...(shutdown.status === 'rejected' ? [shutdown.reason] : []),
+      ...(proof?.failures ?? []),
+      ...(listener.status === 'rejected' ? [listener.reason] : []),
+    ];
+    if (root && shutdown.status === 'fulfilled' && !proof?.retain) {
+      try {
+        fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    if (failures.length > 1) throw new AggregateError(failures, 'Package-grants serve failed');
+    if (failures.length === 1) throw failures[0];
   });
 
   it("reads the package's own skill with no card, and its words reach the model", async () => {

@@ -1,0 +1,3 @@
+### Added
+
+- When agents' heavy jobs, like builds and test suites, are waiting for the computer to be less busy, the Activity page now lists them: each job's place in line, which agent and chat it is for, what it runs, and how long it has waited. You can let one job run right away, mark it urgent so it goes ahead of the others, or move it to the front of the line. Each choice is recorded in Activity under All actions. The list shows only on the computer running DorkOS, and agents can't see it or change it. A job queued by another copy of DorkOS on the same computer shows as from another app, without its agent or chat (DOR-4209)

@@ -273,6 +273,8 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'ALL /api/extensions/media/:ticket',
       'POST /api/extensions/:id/move-out',
       'POST /api/extensions/:id/remove',
+      // Only a person may reset the stop budget with Restart (DOR-4785).
+      'POST /api/extensions/:id/restart',
       'POST /api/extensions/:id/revoke',
       'POST /api/extensions/:id/start-work',
       'POST /api/extensions/approve-set',
@@ -543,6 +545,14 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
       'POST /api/canvas/docs/:id/routes/:routeId/revoke',
       'POST /api/canvas/docs/:id/work/:batchId/clear',
       'POST /api/canvas/docs/:id/work/:batchId/replay',
+    ],
+  ],
+  [
+    'the waiting line of heavy jobs is a person’s to reorder (DOR-4209)',
+    [
+      'POST /api/system/load-gate/jobs/:id/front',
+      'POST /api/system/load-gate/jobs/:id/let-through',
+      'POST /api/system/load-gate/jobs/:id/urgent',
     ],
   ],
   [

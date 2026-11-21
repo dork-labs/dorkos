@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * How a heartbeat reads in words (spec `heartbeats` §14): the page's wake
  * sentence, the next check, and what a broken HEARTBEAT.md header needs.

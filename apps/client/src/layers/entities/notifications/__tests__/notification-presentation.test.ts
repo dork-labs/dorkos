@@ -147,6 +147,10 @@ describe('notification presentation', () => {
       outcome: 'dismissed',
     };
     expect(notificationLink(row)).toEqual({ to: '/', search: { settings: 'extensions' } });
+    expect(notificationLink({ ...row, kind: 'extension.stopped' })).toEqual({
+      to: '/',
+      search: { settings: 'extensions' },
+    });
   });
 
   // DOR-2543. The subject is the owner's connection ref; the row opens that community's page,

@@ -3,7 +3,7 @@
  *
  * @module features/inbox/ui/InboxRow
  */
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { motion } from 'motion/react';
 import { Lock, XCircle } from 'lucide-react';
 import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
@@ -15,6 +15,12 @@ import { AgentAvatar, resolveAgentVisual, type AgentVisualSource } from '@/layer
 import { UNDO_AGENT_MODE_ACTION_ID, UndoAgentModeAction } from './UndoAgentModeAction';
 import { RemoteStepUpAction } from './RemoteStepUpAction';
 import { AccessChangeActions, UNDO_ACCESS_CHANGE_ACTION_ID } from './AccessChangeActions';
+import {
+  RESTART_EXTENSION_ACTION_ID,
+  RestartExtensionAction,
+  extensionIdOfStoppedNotice,
+  type RestartExtensionStatus,
+} from './RestartExtensionAction';
 
 /** The entrance each row inherits from its list's stagger container. */
 export const staggerItem = {
@@ -206,6 +212,7 @@ function OpenChatAction({ sessionId }: { sessionId?: string }) {
  *   {@link InboxRowProps.agent}, and what opening it does.
  */
 export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) {
+  const [restartStatus, setRestartStatus] = useState<RestartExtensionStatus>('idle');
   // A failing scheduled run draws the Schedules row's own marks (DOR-3123): a
   // padlock for a refusal, a cross for a run that did not finish.
   const Icon =
@@ -236,8 +243,26 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
   const signsOutDevice =
     notification.kind === 'step-up.remote-refused' &&
     notification.actions?.some((a) => a.id === 'sign-out-device') === true;
+  // A notice that DorkOS left an extension off offers Restart (DOR-4785).
+  const restartsExtension =
+    onOpen !== undefined &&
+    notification.kind === 'extension.stopped' &&
+    notification.actions?.some((a) => a.id === RESTART_EXTENSION_ACTION_ID) === true
+      ? extensionIdOfStoppedNotice(notification.subject.id)
+      : null;
   const hasAction =
-    opensSchedule || opensChat || undoesMode || undoesAccessChange || signsOutDevice;
+    opensSchedule ||
+    opensChat ||
+    undoesMode ||
+    undoesAccessChange ||
+    signsOutDevice ||
+    restartsExtension !== null;
+  const restarted = restartsExtension !== null && restartStatus === 'success';
+  // The server's off title already names the manifest's app (including names ending in "app").
+  const title = restarted
+    ? `${notification.title.replace(/ is off$/, '')} is back on`
+    : notification.title;
+  const description = restarted ? undefined : notification.body;
   // The secret-files notice's body is what to do about it, so it gets the same
   // two lines below `sm` rather than being cut mid-sentence (DOR-3292). So does
   // a folder allow list too long to approve (DOR-4455).
@@ -261,13 +286,15 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
     notification.kind === 'mcp-server.tool_added' ||
     notification.kind === 'mcp-server.reserved_name' ||
     notification.kind === 'report.undelivered' ||
+    // The app's full name and restart status are the point of this notice.
+    notification.kind === 'extension.stopped' ||
     // The agent's reason is the point of a changed promise (DOR-3034).
     notification.kind === 'todo.changed';
   const isScheduleCreation =
     readsInFull && notification.actions?.some((action) => action.id === 'pause') === true;
   const refusalTitle =
     notification.mark === 'refused' ? refusalTitleParts(notification.title) : null;
-  const tone = notificationRowTone(notification);
+  const tone = restarted ? 'neutral' : notificationRowTone(notification);
   const unread = notification.readAt === undefined;
   const visual = tone !== 'error' && agent != null ? resolveAgentVisual(agent) : null;
 
@@ -313,11 +340,12 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
           />
         )}
       </span>
-      <span className="min-w-0 flex-1">
+      <span data-slot="inbox-row-text" className="min-w-0 flex-1">
         {/* A notice with a fix wraps its title to two lines rather than cut the
             mode it names (DOR-3703, designer round 7). */}
         <span
           data-slot="inbox-row-title"
+          role={restarted ? 'status' : undefined}
           className={cn(
             'block text-xs',
             refusalTitle
@@ -347,10 +375,10 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
               </span>
             </>
           ) : (
-            notification.title
+            title
           )}
         </span>
-        {notification.body !== undefined && (
+        {description !== undefined && (
           <span
             data-slot="inbox-row-body"
             className={cn(
@@ -366,7 +394,12 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
             {readsInFull && (
               <span className="sm:hidden">{formatCompactAge(notification.createdAt)} · </span>
             )}
-            {readsInFull ? withMonoHashes(notification.body) : notification.body}
+            {readsInFull ? withMonoHashes(description) : description}
+          </span>
+        )}
+        {restartsExtension !== null && restartStatus === 'error' && (
+          <span role="alert" className="text-destructive block w-full text-xs">
+            Couldn’t restart it. Open Settings to check.
           </span>
         )}
         {notification.meta !== undefined && (
@@ -388,7 +421,7 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
       <span
         className={cn(
           'text-muted-foreground shrink-0 text-xs tabular-nums',
-          readsInFull && notification.body !== undefined && 'hidden sm:inline'
+          readsInFull && description !== undefined && 'hidden sm:inline'
         )}
       >
         {formatCompactAge(notification.createdAt)}
@@ -449,6 +482,13 @@ export function InboxRow({ notification, agent, onOpen, index }: InboxRowProps) 
       )}
       {undoesAccessChange && (
         <AccessChangeActions changeId={notification.subject.id} notificationId={notification.id} />
+      )}
+      {restartsExtension !== null && (
+        <RestartExtensionAction
+          extensionId={restartsExtension}
+          notificationId={notification.id}
+          onStatusChange={setRestartStatus}
+        />
       )}
     </motion.div>
   );

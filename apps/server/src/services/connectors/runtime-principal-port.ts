@@ -1,5 +1,7 @@
 /** Runtime-facing port for short-lived, turn-bound connector principals. */
 import type { ServerPrincipalProof, ConnectorRuntime } from './principal/server-principal.js';
+import type { AgentHome } from '../core/agent-identity/index.js';
+import type { CapabilityHoldSession } from '../core/capabilities/capability-approval-hold.js';
 
 export type { ConnectorRuntime } from './principal/server-principal.js';
 
@@ -25,10 +27,49 @@ export interface ConnectorTurnRenewalPermit {
   readonly [connectorTurnRenewalPermitBrand]: true;
 }
 
+/** Live values read from the existing adapter-owned turn, never a stored permission snapshot. */
+export interface RuntimeToolTurnFacts {
+  /** Mode actually applied to this turn, including any Auto fallback or ceiling. */
+  readonly effectiveMode: string | undefined;
+  /** Active choice within person/agent bounds, before marks/stranger holds; never next-turn settings. */
+  readonly chosenMode: string | undefined;
+  /** Existing person-only Never ask policy, distinct from effective mode. */
+  readonly neverAsks: boolean;
+  /** Existing invoking-session event queue and optional wake-up callback. */
+  readonly session: CapabilityHoldSession;
+  /** Cancellation of the exact current turn. */
+  readonly signal: AbortSignal;
+}
+
+/** Canonical caller identity with read-through access to its existing live turn. */
+export interface RuntimeToolCaller {
+  readonly runtime: ConnectorRuntime;
+  readonly sessionId: string;
+  readonly agentHome: AgentHome;
+  /** The actual desk; capability context cwd keeps its existing home meaning. */
+  readonly workingDirectory: string;
+  /** Recheck ownership/signal and read fresh facts; do not retain modes across an await. */
+  read(): RuntimeToolTurnFacts;
+  /** Revalidate durable authority and exact ownership after the asynchronous check. */
+  assertCurrent(): Promise<void>;
+}
+
+/** A native tool cannot proceed without its current server-owned turn context. */
+export class RuntimeToolContextUnavailableError extends Error {
+  readonly code = 'CALLER_CONTEXT_UNAVAILABLE';
+
+  constructor() {
+    super('Tools are unavailable for this message.');
+    this.name = 'RuntimeToolContextUnavailableError';
+  }
+}
+
 /** Process-owned identity guard registered when a runtime turn opens. */
 export interface ConnectorTurnOwnership {
   /** Whether the same adapter-owned turn object still occupies its active slot. */
   readonly isCurrent: () => boolean;
+  /** Optional during migration; only the current adapter owner supplies these live facts. */
+  readonly readToolTurn?: () => RuntimeToolTurnFacts | undefined;
 }
 
 /** Opaque bearer and durable binding reference for one active runtime turn. */
@@ -96,6 +137,8 @@ export interface ConnectorRuntimePrincipalPort {
     input: OpenConnectorTurnInput,
     ownership: ConnectorTurnOwnership
   ): Promise<OpenConnectorTurnResult>;
+  /** Resolve a verified runtime proof to its exact current live-tool caller. */
+  resolveToolTurn(principal: ServerPrincipalProof): Promise<RuntimeToolCaller>;
   /** Renew one unchanged binding through its exact process-owned permit. */
   renew(input: RenewConnectorTurnInput): Promise<RenewConnectorTurnResult>;
   /** Resolve one bearer and recheck current process and durable authority. */

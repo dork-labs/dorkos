@@ -11,6 +11,7 @@ import { TasksShowcases } from '../showcases/TasksShowcases';
 import { PersonalityPickerShowcases } from '../showcases/PersonalityPickerShowcases';
 import { PulsePanelShowcase } from '../showcases/PulsePanelShowcases';
 import { ActivityShowcases } from '../showcases/ActivityShowcases';
+import { LoadGateQueueShowcases } from '../showcases/LoadGateQueueShowcases';
 import {
   HarnessPanelShowcases,
   HarnessSyncShowcases,
@@ -28,6 +29,7 @@ import { BrowserStatusPillShowcases } from '../showcases/BrowserStatusPillShowca
 import { BrowserPageErrorShowcases } from '../showcases/BrowserPageErrorShowcases';
 import { TriageHeaderShowcases } from '../showcases/TriageHeaderShowcases';
 import { InboxShowcases } from '../showcases/InboxShowcases';
+import { ExtensionStoppedShowcases } from '../showcases/ExtensionStoppedShowcases';
 import { ExtensionUpdateShowcases } from '../showcases/ExtensionUpdateShowcases';
 import { AppApprovalCardShowcases } from '../showcases/AppApprovalCardShowcases';
 import { AccessChangeShowcases } from '../showcases/AccessChangeShowcases';
@@ -79,6 +81,7 @@ export function FeaturesPage() {
       <TasksShowcases />
       <PulsePanelShowcase />
       <ActivityShowcases />
+      <LoadGateQueueShowcases />
       <SkillRowShowcases />
       <HarnessPanelShowcases />
       <HarnessSyncShowcases />
@@ -116,6 +119,7 @@ export function HomeInboxPage() {
       <BrowserPageErrorShowcases />
       <TriageHeaderShowcases />
       <InboxShowcases />
+      <ExtensionStoppedShowcases />
       <ExtensionUpdateShowcases />
       <AppApprovalCardShowcases />
       <AccessChangeShowcases />

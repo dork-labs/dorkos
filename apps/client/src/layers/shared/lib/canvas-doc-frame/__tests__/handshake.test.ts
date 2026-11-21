@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { MessageChannel } from 'node:worker_threads';
 import { describe, it, expect, vi } from 'vitest';
 import { DocFrameHandshake } from '../doc-handshake';

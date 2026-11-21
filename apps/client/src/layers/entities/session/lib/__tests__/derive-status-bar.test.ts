@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
 import { deriveStatusBarValues } from '../derive-status-bar';

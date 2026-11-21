@@ -454,8 +454,15 @@ export interface OperatingSkill {
  * - 64: `continuing-on-another-account` teaches moving your own seat from another
  *   chat at the usage threshold, once your answer in that room ends (DOR-3833).
  *   An agent seeded at 63 would still believe only a person can move it.
+ * - 65: `building-dorkos-apps` moves to App Builder Pack 1.1.5 (DOR-4851). In a marked
+ *   or limited turn its own extensions folder is read-only and `create_extension`
+ *   creates nothing, so it builds in the personal marketplace: one card a version.
+ *   An agent seeded at 64 would hit a bare refusal and hand the person a Terminal copy.
+ * - 66: `building-dorkos-apps` moves to App Builder Pack 1.1.6 (DOR-4854): what a held
+ *   version looks like, and that app settings are the person's, set in Settings > Add-ons.
+ *   An agent seeded at 65 would not know where a person sets an app's data folder.
  */
-export const OPERATING_SKILLS_VERSION = 64;
+export const OPERATING_SKILLS_VERSION = 66;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the
