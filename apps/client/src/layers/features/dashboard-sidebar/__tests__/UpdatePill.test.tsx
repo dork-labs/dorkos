@@ -212,8 +212,10 @@ describe('UpdatePill', () => {
       render(<PillHost />);
 
       expect(screen.getByText('Downloading 0.139.0…')).toBeInTheDocument();
-      // No numbers yet, so no bar pretending to know.
-      expect(screen.queryByRole('progressbar')).toBeNull();
+      // An empty track, so it looks like the state that follows; no number yet.
+      const bar = screen.getByRole('progressbar', { name: 'Downloading 0.139.0…' });
+      expect(bar).toHaveAttribute('aria-valuenow', '0');
+      expect(screen.queryByText(/%$/)).toBeNull();
       expect(screen.queryByText('Restart to update')).toBeNull();
     });
 
@@ -286,6 +288,57 @@ describe('UpdatePill', () => {
 
       expect(screen.getByText('Download fresh copy')).toBeInTheDocument();
       expect(screen.queryByText(/Downloading/)).toBeNull();
+    });
+  });
+
+  describe('emphasis (DOR-4846 design review)', () => {
+    // jsdom paints nothing, so these pin the classes the design review named.
+    // The rendered look is checked in the playground shots.
+    it('keeps the restart as the one bright amber pill', () => {
+      mockDesktop = { isDesktop: true, status: { state: 'downloaded', version: '0.139.0' } };
+      render(<PillHost />);
+
+      expect(screen.getByRole('button', { name: 'Restart to install the update' })).toHaveClass(
+        'bg-amber-500/15'
+      );
+    });
+
+    it('draws Try again as the quiet pill, with no amber', () => {
+      mockDesktop = {
+        isDesktop: true,
+        status: { state: 'error', message: 'net::ERR_CONNECTION_RESET', version: '0.139.0' },
+      };
+      render(<PillHost />);
+
+      const button = screen.getByRole('button', { name: 'Try downloading 0.139.0 again' });
+      expect(button).toHaveClass('bg-foreground/10');
+      expect(button.className).not.toMatch(/amber/);
+    });
+
+    it('draws Download fresh copy as the quiet pill, with no amber', () => {
+      stubDesktopShell('darwin');
+      mockDesktop = {
+        isDesktop: true,
+        status: { state: 'install-failed', version: '0.63.0', attempts: 1 },
+      };
+      render(<PillHost />);
+
+      const button = screen.getByRole('button', { name: 'Download a fresh copy of DorkOS' });
+      expect(button).toHaveClass('bg-foreground/10');
+      expect(button.className).not.toMatch(/amber/);
+    });
+
+    it('gives the progress track a tone that shows on the light sidebar', () => {
+      mockDesktop = {
+        isDesktop: true,
+        status: { state: 'downloading', percent: 42, version: '0.139.0' },
+      };
+      render(<PillHost />);
+
+      const bar = screen.getByRole('progressbar');
+      expect(bar).toHaveClass('bg-foreground/10');
+      // The shared bar's own track, which all but vanishes in light, is replaced.
+      expect(bar).not.toHaveClass('bg-dui-secondary');
     });
   });
 

@@ -56,9 +56,30 @@ function downloadFailedCopy(version: string): string {
   return `Couldn’t download ${version}. Check your connection and try again.`;
 }
 
-/** Shared by both shapes of the pill, so the amber reads the same either way. */
-const PILL_CLASSES =
-  'focus-ring inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-2xs font-medium text-amber-700 transition-colors duration-150 hover:bg-amber-500/25 dark:text-amber-300';
+/** The shape every pill here shares; the colour says how much it asks for. */
+const PILL_SHAPE =
+  'focus-ring inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-2xs font-medium transition-colors duration-150';
+
+/**
+ * The bright pill: the restart, and the web/CLI update command. Only one
+ * desktop state is bright, the one where there is something to do now.
+ */
+const PILL_CLASSES = cn(
+  PILL_SHAPE,
+  'bg-amber-500/15 text-amber-700 hover:bg-amber-500/25 dark:text-amber-300'
+);
+
+/** The quiet pill: a remedy after something went wrong, not a nudge. */
+const QUIET_PILL_CLASSES = cn(
+  PILL_SHAPE,
+  'bg-foreground/10 text-sidebar-foreground hover:bg-foreground/15'
+);
+
+/**
+ * The progress track. The shared bar's default track all but vanishes on the
+ * light sidebar; this is the tone dark already reads as.
+ */
+const PROGRESS_TRACK_CLASSES = 'h-1 bg-foreground/10';
 
 /**
  * What the copy button says this frame.
@@ -116,9 +137,12 @@ export function UpdatePill({ update }: UpdatePillProps) {
             <span className="shrink-0 tabular-nums">{Math.floor(update.percent)}%</span>
           )}
         </div>
-        {update.percent !== null && (
-          <Progress value={update.percent} aria-label={label} className="h-1" />
-        )}
+        {/* An empty track before the first report, so both downloading states look alike. */}
+        <Progress
+          value={update.percent ?? 0}
+          aria-label={label}
+          className={PROGRESS_TRACK_CLASSES}
+        />
       </div>
     );
   }
@@ -137,7 +161,7 @@ export function UpdatePill({ update }: UpdatePillProps) {
           type="button"
           onClick={update.retry}
           aria-label={`Try downloading ${update.version} again`}
-          className={cn(PILL_CLASSES, 'self-start')}
+          className={cn(QUIET_PILL_CLASSES, 'self-start')}
         >
           <RotateCw className="size-(--size-icon-xs)" />
           Try again
@@ -174,7 +198,7 @@ export function UpdatePill({ update }: UpdatePillProps) {
           type="button"
           onClick={update.downloadFresh}
           aria-label="Download a fresh copy of DorkOS"
-          className={cn(PILL_CLASSES, 'self-start')}
+          className={cn(QUIET_PILL_CLASSES, 'self-start')}
         >
           <Download className="size-(--size-icon-xs)" />
           Download fresh copy
