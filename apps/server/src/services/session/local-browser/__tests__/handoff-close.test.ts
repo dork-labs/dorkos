@@ -142,6 +142,21 @@ it('freezes the admitted URL, profile and chat before waiting', () => {
   );
 });
 
+it('refuses a mismatched chat as site_changed without restoring the retired sharing refusal', () => {
+  const state = {
+    status: 'connected',
+    sessionId: 'other-chat',
+    selectedTabId: 'tab-a',
+    tabs: [{ id: 'tab-a', url: 'https://example.test/' }],
+  } as LocalBrowserState;
+  expect(() => prepareHandoffPage({} as HandoverBrowser, state, 'chat-a')).toThrow(
+    expect.objectContaining({
+      code: 'site_changed',
+      message: 'The page changed. Read it again before acting.',
+    })
+  );
+});
+
 it('refuses a replacement already pending when admission names the previous connection', () => {
   const f = fixture();
   expect(() =>

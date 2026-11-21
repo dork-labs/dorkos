@@ -305,7 +305,7 @@ export class Doe {
   /** Run one user message; concurrent work on the same durable session is refused. */
   async run(
     input: string | ModelMessage,
-    options: { signal?: AbortSignal } = {}
+    options: Pick<ScopedExecutionOptions, 'signal' | 'finishTurn'> = {}
   ): Promise<ModelRunResult> {
     return this.exclusive(options.signal, async (signal) => {
       const resources = await cancellable(this.config.resources.load(), signal);
@@ -318,6 +318,7 @@ export class Doe {
           tools: this.config.registry.selected(),
           scope: 'main',
           purpose: 'run',
+          ...(options.finishTurn ? { finishTurn: options.finishTurn } : {}),
         },
         signal
       );

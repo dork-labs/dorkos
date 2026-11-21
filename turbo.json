@@ -148,6 +148,7 @@
         "$TURBO_ROOT$/apps/space/*.md",
         "$TURBO_ROOT$/apps/e2e/capture/config.ts",
         "$TURBO_ROOT$/apps/e2e/tests/rooms/canvas/room-follow.spec.ts",
+        "$TURBO_ROOT$/apps/e2e/tests/rooms/room-tool-only-replies.spec.ts",
         "$TURBO_ROOT$/apps/e2e/tests/connections/community-switching-proof.spec.ts",
         "$TURBO_ROOT$/packages/*/src/**",
         "$TURBO_ROOT$/packages/*/scripts/**",

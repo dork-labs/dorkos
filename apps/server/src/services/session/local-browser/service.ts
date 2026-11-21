@@ -8,9 +8,11 @@ import { BrowserProfileConnections } from './leases/profile-connection.js';
 import { BrowserHandoverPool } from './leases/handover-pool.js';
 import type { BrowserLeaseAuditWriter } from './leases/lease-journal.js';
 import { BrowserPageBroker } from './leases/page-broker.js';
+import { browserViewerCapabilities } from '../browser-viewers/viewer-capabilities.js';
+import { captureViewerPage } from '../browser-viewers/page-binding.js';
+import type { ResolveViewerPage } from '../browser-viewers/viewer-contract.js';
 import { productionBackend, type LocalBrowserBackend } from './playwright-backend.js';
 import {
-  localBrowserCapabilities,
   emptyBrowserPersonState,
   localBrowserHostFacts,
   type LocalBrowserHostFacts,
@@ -60,6 +62,11 @@ export class LocalBrowserService {
       );
     return session.captureViewerPage();
   });
+  /** A watch binds the broker's exact captured Page and authenticated owner ingress. */
+  readonly viewerPages: { resolve: ResolveViewerPage } = {
+    resolve: (chatId, principal, viewerId) =>
+      captureViewerPage(this.pageBroker, chatId, principal, viewerId),
+  };
   readonly profileRemoval = new BrowserProfileRemoval({
     dataDirectory: () => this.dataDirectory,
     busy: (id) =>
@@ -215,6 +222,8 @@ export class LocalBrowserService {
 
   /** Reserve before delegating, including awaits inside handoff preparation. */
   private async opening(input: LocalBrowserOpen, person: boolean) {
+    // Forget fences profile selection and creation as well as page acquisition.
+    this.profileRemoval.assertAvailable();
     if (this.stopping)
       throw new LocalBrowserError('closing', 'The browser is closing. Wait a moment.');
     const id = input.sessionId ?? null;
@@ -276,7 +285,7 @@ export class LocalBrowserService {
     for (const session of this.sessions.values()) session.useProfileAccess(...wiring);
   }
   capabilities() {
-    return localBrowserCapabilities(Boolean(this.embedded), this.hostFacts());
+    return browserViewerCapabilities(Boolean(this.embedded), this.hostFacts());
   }
   /** Called synchronously by the authoritative binding mutation, before it returns. */
   async revokeProfileAccess(profileId: string, agentId?: string): Promise<void> {

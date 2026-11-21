@@ -330,7 +330,7 @@ export function LocalBrowserPanel({
               tab list, Copy address, Forget saved sign-ins and Close browser live in its ⋯ menu
               (DOR-4429). DorkOS draws both outside the page, so the page can't hide or fake them. */}
           </div>
-          {state.profile?.agentId && mode === 'new-window' ? (
+          {state.profile?.agentId && mode === 'new-window' && !capabilities?.watchStream ? (
             <div
               data-slot="local-browser-page-area-block"
               className="flex min-h-0 flex-1 flex-col items-start gap-3 overflow-y-auto px-3 pb-3"
@@ -356,6 +356,7 @@ export function LocalBrowserPanel({
           ) : (
             <LocalBrowserView
               sessionId={sessionId}
+              streamChatId={capabilities?.watchStream ? sessionId : null}
               tab={selected ?? null}
               connectionId={state.connectionId ?? null}
               embedded={mode === 'embedded'}

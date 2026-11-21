@@ -20,6 +20,9 @@
  *    ticket;
  * 7. `contributing/capabilities/runtimes.md` is exactly what the registry
  *    renders.
+ * 8. Explicit `U` and `E` references name runnable test titles in their
+ *    source files. Each `L` cell cites a checked-in live receipt for that
+ *    runtime and a passing case in that receipt.
  *
  * ## Which tests count for which runtime
  *
@@ -49,26 +52,38 @@
  * @module services/runtimes/__tests__/runtime-capability-census
  */
 import { describe, it, expect } from 'vitest';
-import { readdirSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { z } from 'zod';
+import { createDb } from '@dorkos/db';
 import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import {
   HAS_CAPABILITY,
   MATRIX_RUNTIMES,
   RUNTIME_CAPABILITIES,
   renderRuntimeCapabilityMatrix,
+  type EvidenceTier,
+  type MatrixCell,
   type MatrixRuntime,
 } from '@dorkos/test-utils/runtime-capability-matrix';
-import { lexWithoutComments } from '../../../../../../scripts/lib/code-only.mjs';
+import { lex, lexWithoutComments } from '../../../../../../scripts/lib/code-only.mjs';
+import { LocalSessionAttachmentStore } from '../../session/attachments/local-session-attachment-store.js';
+import type { SessionAttachmentStore } from '../../session/attachments/session-attachment-store.js';
+import { ClaudeCodeRuntime } from '../claude-code/claude-code-runtime.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../claude-code/runtime-constants.js';
+import { CodexRuntime } from '../codex/codex-runtime.js';
 import { CODEX_APP_SERVER_CAPABILITIES, CODEX_CAPABILITIES } from '../codex/runtime-constants.js';
+import { CodexThreadMap } from '../codex/thread-map.js';
 import { resolveCodexTransport } from '../codex/transport/index.js';
+import { OpenCodeRuntime } from '../opencode/opencode-runtime.js';
 import { OPENCODE_CAPABILITIES } from '../opencode/runtime-constants.js';
 import { DOE_CAPABILITIES } from '../doe/runtime-constants.js';
 import { TEST_MODE_CAPABILITIES } from '../test-mode/runtime-constants.js';
 
 /** The repository root, six levels above this file. */
 const ROOT = resolve(import.meta.dirname, '../../../../../..');
+const REAL_ROOT = realpathSync(ROOT);
 
 /** The shared conformance suite every runtime runs. */
 const CONFORMANCE = 'packages/test-utils/src/runtime-conformance.ts';
@@ -76,10 +91,13 @@ const CONFORMANCE = 'packages/test-utils/src/runtime-conformance.ts';
 /** The generated document. */
 const DOC = 'contributing/capabilities/runtimes.md';
 
+const runtimeDir = (runtime: MatrixRuntime) => `apps/server/src/services/runtimes/${runtime}`;
+
 /**
  * Each runtime's declared capabilities, which flag-backed rows must agree with.
  * Codex declares per transport, so its column is what the DEFAULT transport
- * (`runtimes.codex.transport: auto`) declares.
+ * (`runtimes.codex.transport: auto`) declares. RT-MEDIA-02 uses instances because
+ * the attachment store changes the declaration.
  */
 const DECLARED: Readonly<Record<MatrixRuntime, RuntimeCapabilities>> = {
   'claude-code': CLAUDE_CODE_CAPABILITIES,
@@ -93,6 +111,36 @@ const DECLARED: Readonly<Record<MatrixRuntime, RuntimeCapabilities>> = {
 };
 
 /**
+ * Read real declarations with the same attachment-store dependency that
+ * startup/runtimes.ts supplies. No session or sidecar is started here.
+ */
+function declaredForMedia(
+  dorkHome: string,
+  threadMap: CodexThreadMap,
+  attachments?: SessionAttachmentStore
+): Readonly<Record<MatrixRuntime, RuntimeCapabilities>> {
+  const storeOptions = attachments ? { attachments } : {};
+  return {
+    ...DECLARED,
+    'claude-code': new ClaudeCodeRuntime(dorkHome, dorkHome, attachments).getCapabilities(),
+    codex: new CodexRuntime({
+      threadMap,
+      transport: resolveCodexTransport('auto'),
+      ...storeOptions,
+    }).getCapabilities(),
+    opencode: new OpenCodeRuntime({
+      provider: {
+        getClient: async () => {
+          throw new Error('Reading capability declarations must leave the sidecar stopped');
+        },
+        peekClient: () => null,
+      },
+      ...storeOptions,
+    }).getCapabilities(),
+  };
+}
+
+/**
  * The ids a title claims: one or more, comma separated, then a colon, at the
  * very start. An id anywhere else in a title is a mention, not a claim.
  */
@@ -103,13 +151,25 @@ const TITLE_ID_PREFIX =
  * Every runnable `it(…)`/`test(…)` title in a source text whose comments are
  * already blanked. `.skip`, `.todo` and `.only` are not coverage.
  */
-function titlesIn(source: string): string[] {
+function titlesIn(source: string, executableSource?: string): string[] {
   const call =
     /(?<![.\w$])(?:it|test)((?:\.\w+(?:\([^)]*\))?)*)\s*\(\s*(['"`])((?:\\.|(?!\2)[^\\])*)/g;
   const found: string[] = [];
   for (const match of source.matchAll(call)) {
-    if (/\.(?:skip|todo|only)\b/.test(match[1] ?? '')) continue;
-    found.push(match[3] ?? '');
+    const modifiers = match[1] ?? '';
+    const title = match[3] ?? '';
+    if (/\.(?:skip|todo|only)\b/.test(modifiers)) continue;
+    if (executableSource !== undefined) {
+      const callee = executableSource.slice(match.index, match.index + 5);
+      if (
+        !/^(?:it|test)\b/.test(callee) ||
+        /\.(?:skipIf|runIf)\b/.test(modifiers) ||
+        (match[2] === '`' && title.includes('${'))
+      ) {
+        continue;
+      }
+    }
+    found.push(title);
   }
   return found;
 }
@@ -137,7 +197,102 @@ function titlesOf(file: string): { titles: string[]; parseErrors: number } {
   return { titles: titlesIn(code), parseErrors };
 }
 
-const runtimeDir = (runtime: MatrixRuntime) => `apps/server/src/services/runtimes/${runtime}`;
+const REFERENCE_FILES: Readonly<Record<EvidenceTier, RegExp>> = {
+  U: /^apps\/server\/src\/services\/[\w.-]+(?:\/[\w.-]+)*\.test\.ts$/,
+  E: /^apps\/e2e\/tests\/[\w.-]+(?:\/[\w.-]+)*\.spec\.ts$/,
+  L: /^contributing\/capabilities\/runtime-evidence\/[\w-][\w.-]*\.json$/,
+};
+
+const LiveReceipt = z.object({
+  runtime: z.enum(MATRIX_RUNTIMES),
+  runtimeVersion: z.string().trim().min(1),
+  revision: z.string().regex(/^[a-f0-9]{40}$/),
+  source: z.enum(['live-conformance', 'eval', 'harness-smoke']),
+  mode: z.literal('live'),
+  cases: z.array(
+    z.object({ id: z.string().trim().min(1), status: z.enum(['passed', 'failed', 'skipped']) })
+  ),
+});
+
+/** A receipt must resolve to its own source path inside the repository. */
+function readEvidence(file: string): string | undefined {
+  try {
+    const target = join(REAL_ROOT, file);
+    if (realpathSync(target) !== target) return undefined;
+    return readFileSync(target, 'utf8');
+  } catch {
+    return undefined;
+  }
+}
+
+/** JSON parse failures and invalid receipt shapes are both absent proof. */
+function parseLiveReceipt(source: string): z.infer<typeof LiveReceipt> | undefined {
+  try {
+    return LiveReceipt.safeParse(JSON.parse(source)).data;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Validate every explicit proof and ensure each E or L claim names one. */
+function referenceProblems(
+  runtime: MatrixRuntime,
+  cell: MatrixCell,
+  read = readEvidence
+): string[] {
+  const refs = cell.references ?? [];
+  const problems: string[] = [];
+  for (const tier of ['E', 'L'] as const) {
+    if (cell.evidence?.includes(tier) && !refs.some((ref) => ref.tier === tier)) {
+      problems.push(`no ${tier} reference`);
+    }
+  }
+  for (const ref of refs) {
+    if (!cell.evidence?.includes(ref.tier)) {
+      problems.push(`${ref.file}: unclaimed ${ref.tier} reference`);
+      continue;
+    }
+    const ownedRuntime = MATRIX_RUNTIMES.find((owner) =>
+      ref.file.startsWith(`${runtimeDir(owner)}/`)
+    );
+    const runtimeMismatch =
+      (ref.tier === 'U' && ownedRuntime !== undefined && ownedRuntime !== runtime) ||
+      (ref.tier === 'E' && runtime !== 'test-mode') ||
+      (ref.tier === 'L' && runtime === 'test-mode');
+    if (runtimeMismatch) {
+      problems.push(`${ref.file}: ${ref.tier} reference does not apply to ${runtime}`);
+      continue;
+    }
+    if (
+      !REFERENCE_FILES[ref.tier].test(ref.file) ||
+      ref.file.split('/').some((segment) => segment === '.' || segment === '..') ||
+      (ref.tier === 'U' && ref.file.endsWith('.binary.test.ts'))
+    ) {
+      problems.push(`${ref.file}: invalid ${ref.tier} source path`);
+      continue;
+    }
+    const source = read(ref.file);
+    if (source === undefined) {
+      problems.push(`${ref.file}: evidence file missing`);
+      continue;
+    }
+    if (ref.tier === 'L') {
+      const report = parseLiveReceipt(source);
+      const cases = (report?.cases ?? []).filter(({ id }) => id === ref.caseId);
+      if (report?.runtime !== runtime || cases.length !== 1 || cases[0]?.status !== 'passed') {
+        problems.push(`${ref.file}: no unique passing live case ${ref.caseId} for ${runtime}`);
+      }
+    } else {
+      const { code, parseErrors } = lexWithoutComments(source, ref.file);
+      const executable = lex(source, ref.file);
+      const matching = titlesIn(code, executable.code).filter((title) => title === ref.title);
+      if (parseErrors > 0 || executable.parseErrors > 0 || matching.length !== 1) {
+        problems.push(`${ref.file}: no unique runnable test titled ${ref.title}`);
+      }
+    }
+  }
+  return problems;
+}
 
 /** Per runtime: the ids its own tests claim. */
 const ownClaims = new Map<MatrixRuntime, Set<string>>();
@@ -224,6 +379,8 @@ describe('the runtime capabilities census', () => {
       for (const runtime of MATRIX_RUNTIMES) {
         const cell = row.cells[runtime];
         if (!cell.evidence?.includes('U')) continue;
+        // The explicit-reference census below checks the cited title directly.
+        if (cell.references?.some((ref) => ref.tier === 'U')) continue;
         const own = ownClaims.get(runtime) ?? new Set<string>();
         const proven = claimIds.some(
           (id) => own.has(id) || (sharedClaims.has(id) && runsSuite(runtime, 'runtimeConformance'))
@@ -237,6 +394,102 @@ describe('the runtime capabilities census', () => {
         'with the row id (or a conformance id the row lists). Retitle the test that proves it, ' +
         'or mark the cell unverified.'
     ).toEqual([]);
+  });
+
+  it('resolves explicit evidence references to the exact test or passing live case', () => {
+    const problems: string[] = [];
+    let references = 0;
+    for (const row of RUNTIME_CAPABILITIES) {
+      for (const runtime of MATRIX_RUNTIMES) {
+        const cell = row.cells[runtime];
+        references += cell.references?.length ?? 0;
+        problems.push(
+          ...referenceProblems(runtime, cell).map((p) => `${row.id} × ${runtime}: ${p}`)
+        );
+      }
+    }
+    expect(references).toBeGreaterThan(0);
+    expect(problems).toEqual([]);
+  });
+
+  it('recognizes one explicit runnable title and refuses similar, inactive or duplicate titles', () => {
+    const file = 'apps/server/src/services/tasks/example.test.ts';
+    const read = () => `
+      it('chooses the named runtime', () => {});
+      it.skip('declines another runtime', () => {});
+      // it('starts a turn', () => {});
+      const prose = "it('looks like a test', () => {});";
+      it('duplicate title', () => {});
+      it('duplicate title', () => {});
+    `;
+    const check = (title: string) =>
+      referenceProblems(
+        'codex',
+        { status: 'supported', evidence: ['U'], references: [{ tier: 'U', file, title }] },
+        read
+      );
+
+    expect(check('chooses the named runtime')).toEqual([]);
+    for (const title of [
+      'chooses the named',
+      'declines another runtime',
+      'starts a turn',
+      'looks like a test',
+      'duplicate title',
+    ]) {
+      expect(check(title)).toEqual([`${file}: no unique runnable test titled ${title}`]);
+    }
+  });
+
+  it('uses a shared witness and refuses another runtime’s private test', () => {
+    const title = 'delivers the runtime turn';
+    const read = () => `it('${title}', () => {});`;
+    const check = (file: string) =>
+      referenceProblems(
+        'codex',
+        { status: 'supported', evidence: ['U'], references: [{ tier: 'U', file, title }] },
+        read
+      );
+    expect(check('apps/server/src/services/runtimes/shared/delivery.test.ts')).toEqual([]);
+    const other = 'apps/server/src/services/runtimes/opencode/delivery.test.ts';
+    expect(check(other)).toEqual([`${other}: U reference does not apply to codex`]);
+  });
+
+  it('recognizes only an exact passing live case for the stated runtime', () => {
+    const file = 'contributing/capabilities/runtime-evidence/synthetic.json';
+    const cell = {
+      status: 'supported',
+      evidence: ['L'],
+      references: [{ tier: 'L', file, caseId: 'registered-room-runtime' }],
+    } as const;
+    const report = {
+      runtime: 'codex',
+      runtimeVersion: 'fixture-version',
+      revision: 'a'.repeat(40),
+      source: 'live-conformance',
+      mode: 'live',
+      cases: [{ id: 'registered-room-runtime', status: 'passed' }],
+    };
+    const result = (receipt: typeof report) =>
+      referenceProblems('codex', cell, () => JSON.stringify(receipt));
+    const missingCase = [`${file}: no unique passing live case registered-room-runtime for codex`];
+
+    expect(result(report)).toEqual([]);
+    expect(result({ ...report, runtime: 'opencode' })).toEqual(missingCase);
+    expect(result({ ...report, mode: 'free' })).toEqual(missingCase);
+    expect(result({ ...report, cases: [{ id: 'different-case', status: 'passed' }] })).toEqual(
+      missingCase
+    );
+    expect(
+      result({ ...report, cases: [{ id: 'registered-room-runtime', status: 'skipped' }] })
+    ).toEqual(missingCase);
+    expect(result({ ...report, cases: [...report.cases, ...report.cases] })).toEqual(missingCase);
+    expect(referenceProblems('codex', cell, () => undefined)).toEqual([
+      `${file}: evidence file missing`,
+    ]);
+    expect(referenceProblems('codex', { status: 'supported', evidence: ['L'] })).toEqual([
+      'no L reference',
+    ]);
   });
 
   it('names no RT id the matrix does not have', () => {
@@ -264,22 +517,40 @@ describe('the runtime capabilities census', () => {
   });
 
   it('agrees with every runtime’s declared capabilities', () => {
-    const disagree: string[] = [];
-    for (const row of RUNTIME_CAPABILITIES) {
-      if (!row.flag) continue;
-      for (const runtime of MATRIX_RUNTIMES) {
-        const declared = row.flag.read(DECLARED[runtime]);
-        const has = HAS_CAPABILITY.has(row.cells[runtime].status);
-        if (declared !== has) {
-          disagree.push(
-            `${row.id} × ${runtime}: ${row.flag.label} is ${declared}, cell is ${row.cells[runtime].status}`
-          );
+    const dorkHome = mkdtempSync(join(tmpdir(), 'runtime-capability-census-'));
+    const db = createDb(':memory:');
+    try {
+      const threadMap = new CodexThreadMap(db);
+      const withStore = declaredForMedia(
+        dorkHome,
+        threadMap,
+        new LocalSessionAttachmentStore(dorkHome)
+      );
+      const withoutStore = declaredForMedia(dorkHome, threadMap);
+      const disagree: string[] = [];
+      for (const row of RUNTIME_CAPABILITIES) {
+        if (!row.flag) continue;
+        const capabilities = row.id === 'RT-MEDIA-02' ? withStore : DECLARED;
+        for (const runtime of MATRIX_RUNTIMES) {
+          const declared = row.flag.read(capabilities[runtime]);
+          const has = HAS_CAPABILITY.has(row.cells[runtime].status);
+          if (declared !== has) {
+            disagree.push(
+              `${row.id} × ${runtime}: ${row.flag.label} is ${declared}, cell is ${row.cells[runtime].status}`
+            );
+          }
         }
       }
+      expect(disagree, 'The matrix and runtime capability declarations disagree.').toEqual([]);
+      for (const runtime of MATRIX_RUNTIMES) {
+        expect(withoutStore[runtime].mediaOutput, `${runtime} without an attachment store`).toBe(
+          'none'
+        );
+      }
+    } finally {
+      db.$client.close();
+      rmSync(dorkHome, { recursive: true, force: true });
     }
-    expect(disagree, 'The matrix and runtime-constants.ts disagree. One of them is wrong.').toEqual(
-      []
-    );
   });
 
   it('says why for every cell but supported, and names a ticket for every planned one', () => {
@@ -301,20 +572,39 @@ describe('the runtime capabilities census', () => {
     expect(missing).toEqual([]);
   });
 
-  it('is rerun when only the generated doc or the title reader changes', () => {
-    // Neither file is in the server's default turbo inputs. Without this
-    // override, an edit to either alone replays a cached green (ci/ledger
-    // 261005-151421).
+  it('is rerun when an external source used by the census changes', () => {
+    // These files sit outside the server's default Turbo inputs. The cached
+    // result must follow edits to the guide, title reader, receipts and specs.
     const turbo = JSON.parse(readFileSync(join(ROOT, 'turbo.json'), 'utf8')) as {
       tasks: Record<string, { inputs?: string[] }>;
     };
-    expect(turbo.tasks['@dorkos/server#test']?.inputs).toEqual(
+    const inputs = turbo.tasks['@dorkos/server#test']?.inputs;
+    const browserFiles = new Set<string>();
+    for (const row of RUNTIME_CAPABILITIES) {
+      for (const cell of Object.values(row.cells)) {
+        for (const ref of cell.references ?? []) {
+          if (ref.tier === 'E') browserFiles.add(ref.file);
+        }
+      }
+    }
+    expect(inputs).toEqual(
       expect.arrayContaining([
         '$TURBO_DEFAULT$',
         `$TURBO_ROOT$/${DOC}`,
         '$TURBO_ROOT$/scripts/lib/code-only.mjs',
+        ...[...browserFiles].map((file) => `$TURBO_ROOT$/${file}`),
       ])
     );
+    expect(
+      inputs?.some((input) =>
+        [
+          '$TURBO_ROOT$/contributing/**',
+          '$TURBO_ROOT$/contributing/capabilities/**',
+          '$TURBO_ROOT$/contributing/capabilities/runtime-evidence/**',
+        ].includes(input)
+      ),
+      'The server test inputs must include live evidence receipts.'
+    ).toBe(true);
   });
 
   it(`keeps ${DOC} exactly what the registry renders`, () => {

@@ -36,7 +36,7 @@ export function prepareHandoffPage(
   if (state.status !== 'connected' || !tab)
     throw new LocalBrowserError('no_tab', 'Choose the tab your agent should use.');
   if (state.sessionId !== null && state.sessionId !== sessionId)
-    throw new LocalBrowserError('shared_elsewhere', 'The browser is shared with another chat.');
+    throw new LocalBrowserError('site_changed', 'The page changed. Read it again before acting.');
   const site = new URL(tab.url).host;
   if (!site) throw new LocalBrowserError('no_site', 'Open the website first, then ask again.');
   if (state.mode === 'new-window') {

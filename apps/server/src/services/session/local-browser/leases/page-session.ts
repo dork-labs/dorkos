@@ -89,9 +89,8 @@ export class LocalBrowserPageSession {
     this.actions,
     () => this.shared?.drainProfile?.() ?? Promise.resolve()
   );
-  runAgentOperation<T>(effect: boolean, run: () => Promise<T>): Promise<T> {
-    return this.runtime.operations.run(effect, run);
-  }
+  runAgentOperation = <T>(effect: boolean, run: () => Promise<T>): Promise<T> =>
+    this.runtime.operations.run(effect, run);
   private readonly fullScreen = new FullScreenGuard(undefined, this.runtime.work.track, () =>
     this.requireAgentPage()
   );
@@ -330,9 +329,8 @@ export class LocalBrowserPageSession {
     );
   }
 
-  matchesProfileGrant(profileId: string | null, agentId?: string): boolean {
-    return this.authority.matches(profileId, agentId);
-  }
+  matchesProfileGrant = (profileId: string | null, agentId?: string): boolean =>
+    this.authority.matches(profileId, agentId);
   assertAuthorityCurrent = (): void => this.authority.assertCurrent();
   requireHandoffAuthority = (chat: string): Promise<void> => this.authority.require(chat);
   requireHandoffCustody: (profile: string | null) => void = () => undefined;
@@ -370,6 +368,13 @@ export class LocalBrowserPageSession {
   captureHandoffClose = (state: LocalBrowserState, profileId: string | null) =>
     this.handles.handoffClose(state, profileId, this.closing);
 
+  /** Preserve protected-origin and per-profile sign-in refusal for metadata-only watching. */
+  assertViewerWatchAllowed(page: Page): void {
+    if (this.handover.signInHoldsProfile(this.currentProfileId()))
+      throw new Error('viewer_unavailable');
+    this.refuseProtectedPage(page);
+  }
+
   /** The profile the browser opened last, or null for the default one. */
   readonly currentProfileId = (): string | null => this.profileId;
 
@@ -393,9 +398,8 @@ export class LocalBrowserPageSession {
   /**
    * Set once at startup; a named browser remains unavailable until access is wired.
    */
-  useProfileAccess(...wiring: Parameters<BrowserProfileAccessGate['use']>): void {
+  useProfileAccess = (...wiring: Parameters<BrowserProfileAccessGate['use']>): void =>
     this.authority.profiles.use(...wiring);
-  }
 
   /** On a named profile, the chat's agent must be one a person added, on every call. */
   async requireProfileAccess(sessionId: string): Promise<void> {
@@ -511,9 +515,8 @@ export class LocalBrowserPageSession {
 
   private assertNotClosing = () => this.closing.assertAvailable();
 
-  private contexts(): Pick<BrowserContext, 'pages' | 'newPage'>[] {
-    return this.ownedContext ? [this.ownedContext] : (this.browser?.contexts() ?? []);
-  }
+  private contexts = (): Pick<BrowserContext, 'pages' | 'newPage'>[] =>
+    this.ownedContext ? [this.ownedContext] : (this.browser?.contexts() ?? []);
   private syncTabs(): void {
     if (this.detachedState || this.closing.active || this.status !== 'connected') return;
     this.pageState.sync(this.contexts().flatMap((context) => context.pages()));
