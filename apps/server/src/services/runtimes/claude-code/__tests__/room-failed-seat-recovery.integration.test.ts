@@ -15,7 +15,7 @@ import { randomUUID } from 'node:crypto';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import { FakeAgentRuntime, mockInterruptReceipt } from '@dorkos/test-utils';
 import { createTestDb } from '@dorkos/test-utils/db';
-import { roomSeatLaunchRequirements, sessionMetadata } from '@dorkos/db';
+import { roomSeatLaunchRequirements, sessionBirthAllocations, sessionMetadata } from '@dorkos/db';
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
 import { logger } from '../../../../lib/logger.js';
 import { runInDispatch } from '../../../../lib/dispatch-context.js';
@@ -504,6 +504,7 @@ async function fixture(variant: Variant = 'positive', projectPolicy?: 'eligible'
   const ranking = vi.fn(async () => {
     throw new Error('recovery must never rank/failover');
   });
+  let nextDestination = freshId;
   const mover = new RoomSeatMover({
     recoveryCandidate: failedSeatCandidate,
     requiredLaunches: runtimeRegistry.requiredLaunches(),
@@ -532,7 +533,11 @@ async function fixture(variant: Variant = 'positive', projectPolicy?: 'eligible'
     },
     recordActivity: vi.fn(),
     recordSeatMove: (id, r, a) => store.sessionLedger.recordSeatMove(id, r, a),
-    newSessionId: () => freshId,
+    newSessionId: () => {
+      const destination = nextDestination;
+      nextDestination = randomUUID();
+      return destination;
+    },
   });
   const beforeMarks = marksOf(priorId, undefined);
   const submit = async () => {
@@ -554,6 +559,7 @@ async function fixture(variant: Variant = 'positive', projectPolicy?: 'eligible'
     db,
     service,
     store,
+    mover,
     roomId,
     authorId,
     priorId,
@@ -638,6 +644,70 @@ describe('4328 real room recovery of a prior SDK server error', () => {
     expect(JSON.stringify(recovered)).not.toContain(NEW_DRAFT);
     expect(f.ranking).not.toHaveBeenCalled();
   });
+
+  it('leaves no detached records when moving the failed seat is refused after settings are written', async () => {
+    const f = await fixture();
+    const seat = {
+      roomId: f.roomId,
+      authorId: f.authorId,
+      agentPath: f.home,
+      sessionId: f.priorId,
+    };
+    const state = () => ({
+      allocation: f.db.select().from(sessionBirthAllocations).all(),
+      metadata: f.db.select().from(sessionMetadata).all(),
+      requirements: f.db.select().from(roomSeatLaunchRequirements).all(),
+      destination: f.store.getRoomSession(f.roomId, f.authorId),
+    });
+    const recover = (entryId: string) =>
+      runInDispatch({ dispatchId: `dsp_${randomUUID()}`, origin: 'room', entryId }, () =>
+        f.mover.recoverFailedSeat(
+          seat,
+          entryId,
+          () => f.store.getRoomSession(f.roomId, f.authorId) === f.priorId
+        )
+      );
+    const before = state();
+    f.db.$client.exec(`
+      CREATE TEMP TRIGGER refuse_late_recovery_move BEFORE UPDATE OF session_id ON room_sessions
+      WHEN NEW.session_id <> OLD.session_id
+        AND EXISTS (
+          SELECT 1 FROM session_metadata
+          WHERE session_id = NEW.session_id AND required_launch_id IS NOT NULL
+            AND model_launch_state = 'pending-v1' AND permission_mode = 'plan'
+            AND model = 'fixture-model' AND effort = 'high' AND fast_mode = 0
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM session_birth_allocations WHERE session_id = NEW.session_id
+        )
+      BEGIN
+        SELECT RAISE(ABORT, 'fixture refused the final recovery seat update');
+      END;
+    `);
+    try {
+      await expect(recover('refused-move')).rejects.toThrow(
+        'fixture refused the final recovery seat update'
+      );
+      expect(state()).toEqual(before);
+    } finally {
+      f.db.$client.exec('DROP TRIGGER refuse_late_recovery_move');
+    }
+
+    const moved = await recover('new-admission');
+    expect(moved).toMatchObject({ reason: { kind: 'failed' } });
+    const recoveredId = moved!.newSessionId;
+    expect(recoveredId).not.toBe(f.freshId);
+    expect(state()).toMatchObject({
+      allocation: [],
+      requirements: [{ destinationSessionId: recoveredId, sourceSessionId: f.priorId }],
+      destination: recoveredId,
+    });
+    expect(await runtimeRegistry.getSessionSettings(recoveredId)).toEqual(
+      await runtimeRegistry.getSessionSettings(f.priorId)
+    );
+    expect(marksOf(recoveredId, undefined)).toMatchObject(f.beforeMarks);
+  });
+
   it.each(['eligible', 'disallowed'] as const)(
     'qualifies the exact observed account against the actual seat project: %s',
     async (policy) => {

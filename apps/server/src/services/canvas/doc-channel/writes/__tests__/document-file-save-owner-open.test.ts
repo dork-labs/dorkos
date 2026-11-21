@@ -7,7 +7,7 @@ import fs from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
-import { agents, eq, canvasDocuments, sessionMetadata } from '@dorkos/db';
+import { agents, eq, canvasDocuments, sessionMetadata, sessionNativeBindings } from '@dorkos/db';
 import { CanvasDocIncarnationSchema } from '@dorkos/shared/canvas-channel-schemas';
 import { FileDocumentSaveReceiptSchema } from '@dorkos/shared/schemas';
 import request from '@dorkos/test-utils/supertest';
@@ -194,7 +194,7 @@ it('a file the person opens outside the boundary is still refused', async () => 
   expect(await fs.readFile(doc.path, 'utf8')).toBe(doc.content);
 });
 
-it('a chat with no agent records no folder, and its save stays unavailable', async () => {
+it('a chat with no agent and no known folder records none, and its save stays unavailable', async () => {
   const h = await setup(() => null);
   const doc = await openAsPerson(h, join(h.dir, 'notes.md'));
   expect(doc.row()?.resolvedCwd).toBeNull();
@@ -205,6 +205,70 @@ it('a chat with no agent records no folder, and its save stays unavailable', asy
     saveOriginalDocumentFile(h.http.fileWrites, doc.input(h.dir), { headers: {} })
   ).rejects.toBeInstanceOf(DocChannelNotFoundError);
   expect(await fs.readFile(doc.path, 'utf8')).toBe(doc.content);
+});
+
+/** Record the folder the chat really runs in, as the server does once it has seen the chat. */
+function bindChatFolder(h: Fixture, cwd: string) {
+  h.db
+    .insert(sessionNativeBindings)
+    .values({ sessionId: SESSION, runtime: 'codex', cwd, createdAt: new Date().toISOString() })
+    .run();
+}
+
+it('a chat with no agent recorded (a schedule’s run) records the chat’s own folder and saves (DOR-4844)', async () => {
+  // A schedule's run binds no agent, but the server knows where the chat runs:
+  // the same folder the agent's own `open_file` records for this chat.
+  const h = await setup(() => null);
+  bindChatFolder(h, h.dir);
+  const doc = await openAsPerson(h, join(h.dir, '.agents', 'flow', 'config.local.json'));
+  expect(doc.row()).toMatchObject({ resolvedCwd: h.dir, treeKind: null });
+
+  await request(docs.server).get(doc.endpoint).expect(200);
+  const input = doc.input(h.dir);
+  const saved = await request(files.server).put('/api/files/content').send(input);
+  expect(saved.status).toBe(200);
+  expect(await fs.readFile(doc.path, 'utf8')).toBe(input.content);
+});
+
+it('a chat with no agent still refuses a file outside the chat’s own folder (DOR-4844)', async () => {
+  const h = await setup(
+    () => null,
+    (dir) => dir
+  );
+  await fs.mkdir(join(h.dir, 'chat'));
+  bindChatFolder(h, join(h.dir, 'chat'));
+  const doc = await openAsPerson(h, join(h.dir, 'outside', 'notes.md'));
+  expect(doc.row()?.resolvedCwd).toBe(join(h.dir, 'chat'));
+  await request(docs.server).get(doc.endpoint).expect(404);
+  await expect(
+    saveOriginalDocumentFile(h.http.fileWrites, doc.input(h.dir), { headers: {} })
+  ).rejects.toBeInstanceOf(DocChannelNotFoundError);
+  expect(await fs.readFile(doc.path, 'utf8')).toBe(doc.content);
+});
+
+it('a chat with no agent whose own folder is outside the boundary still refuses', async () => {
+  // A schedule can bind a chat to a folder outside the boundary; recording it
+  // grants nothing, because the save checks the boundary itself.
+  const h = await setup(() => null);
+  const outside = await fs.realpath(await fs.mkdtemp(join(dirname(h.dir), 'chat-past-boundary-')));
+  cleanup.push(() => fs.rm(outside, { recursive: true, force: true }));
+  bindChatFolder(h, outside);
+  const doc = await openAsPerson(h, join(outside, 'notes.md'));
+  expect(doc.row()?.resolvedCwd).toBe(outside);
+  await request(docs.server).get(doc.endpoint).expect(404);
+  for (const cwd of [h.dir, outside])
+    await expect(
+      saveOriginalDocumentFile(h.http.fileWrites, doc.input(cwd), { headers: {} })
+    ).rejects.toThrow();
+  expect(await fs.readFile(doc.path, 'utf8')).toBe(doc.content);
+});
+
+it('an agent’s chat keeps the agent folder even when the chat’s own folder is elsewhere', async () => {
+  const h = await setup((dir) => join(dir, 'agent'));
+  await fs.mkdir(join(h.dir, 'agent'));
+  bindChatFolder(h, h.dir);
+  const doc = await openAsPerson(h, join(h.dir, 'agent', 'notes.md'));
+  expect(doc.row()?.resolvedCwd).toBe(join(h.dir, 'agent'));
 });
 
 it('a document opened before the fix, with no folder, gets it when the person reopens the file', async () => {

@@ -14,6 +14,13 @@ export type OutsideTurnReason =
 /** Which mark, if any, a chat's current turn carries: the handoff's check, wired at startup. */
 export type OutsideTurnCheck = (sessionId: string) => Promise<OutsideTurnReason | null>;
 
+/** The DOR-4693 split: an outside origin holds browser use; a page read alone does not. */
+export function isOutsideOriginTurn(
+  reason: OutsideTurnReason | null
+): reason is Exclude<OutsideTurnReason, 'read_outside_text'> {
+  return reason !== null && reason !== 'read_outside_text';
+}
+
 /** What the agent hears when a handoff is refused for a mark, so it can tell the person why. */
 const OUTSIDE_TURN_REFUSALS: Record<OutsideTurnReason, string> = {
   stranger_chat:

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtemp, rm, readFile, access } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Logger } from '@dorkos/shared/logger';
@@ -60,6 +60,7 @@ function buildTokenProvider() {
 import type { MarketplaceMcpDeps } from '../marketplace-mcp-tools.js';
 import type { MarketplaceSource } from '../../marketplace/types.js';
 import type { MarketplaceSourceManager } from '../../marketplace/sources/marketplace-source-manager.js';
+import { readDeclaredVersion } from '@dorkos/marketplace/package-validator';
 import { createCreatePackageHandler } from '../tool-create-package.js';
 
 /** Build a logger whose every method is a `vi.fn()` spy. */
@@ -103,12 +104,16 @@ function buildDeps(opts: {
   dorkHome: string;
   confirmationProvider: ConfirmationProvider;
   logger?: Logger;
+  sourceManager?: MarketplaceMcpDeps['sourceManager'];
+  fetcher?: MarketplaceMcpDeps['fetcher'];
 }): MarketplaceMcpDeps {
   return {
     dorkHome: opts.dorkHome,
     installer: {} as MarketplaceMcpDeps['installer'],
-    sourceManager: {} as MarketplaceMcpDeps['sourceManager'],
-    fetcher: {} as MarketplaceMcpDeps['fetcher'],
+    sourceManager:
+      opts.sourceManager ??
+      ({ list: vi.fn(async () => []) } as unknown as MarketplaceMcpDeps['sourceManager']),
+    fetcher: opts.fetcher ?? ({} as MarketplaceMcpDeps['fetcher']),
     cache: {} as MarketplaceMcpDeps['cache'],
     uninstallFlow: {} as MarketplaceMcpDeps['uninstallFlow'],
     updateFlow: {} as MarketplaceMcpDeps['updateFlow'],
@@ -281,6 +286,99 @@ describe('createCreatePackageHandler', () => {
     // (local copy, no git clone) — not a file:// url, which the schema rejects.
     const pkgDir = (payload.packagePath as string).split('/').pop();
     expect(entry?.source).toBe(`./packages/${pkgDir}`);
+  });
+
+  // Nothing on the install path reads a source itself, so without this re-read
+  // `marketplace_install` refused the new package (DOR-4851).
+  it('re-reads the personal marketplace after registering, so install finds the package', async () => {
+    const personal = { name: PERSONAL_MARKETPLACE_NAME, source: 'file:///p', enabled: true };
+    const listed: string[][] = [];
+    const fetchMarketplaceJson = vi.fn(async () => {
+      const raw = await readFile(
+        join(personalMarketplaceRoot(dorkHome), 'marketplace.json'),
+        'utf-8'
+      );
+      listed.push((JSON.parse(raw) as { plugins: { name: string }[] }).plugins.map((p) => p.name));
+      return {} as never;
+    });
+    const handler = createCreatePackageHandler(
+      buildDeps({
+        dorkHome,
+        confirmationProvider: new AlwaysApprovesConfirmationProvider(),
+        logger,
+        sourceManager: {
+          list: vi.fn(async () => [
+            { name: 'other', source: 'https://x', enabled: true },
+            personal,
+          ]),
+        } as unknown as MarketplaceMcpDeps['sourceManager'],
+        fetcher: { fetchMarketplaceJson } as unknown as MarketplaceMcpDeps['fetcher'],
+      })
+    );
+
+    const { payload } = parseResult(
+      await handler({ name: 'fresh-pkg', type: 'plugin', description: 'Made up.' })
+    );
+    expect(payload.status).toBe('created');
+    expect(fetchMarketplaceJson).toHaveBeenCalledTimes(1);
+    expect(fetchMarketplaceJson).toHaveBeenCalledWith(personal);
+    // Read after the package was registered, never before.
+    expect(listed).toEqual([['fresh-pkg']]);
+  });
+
+  // The route an agent with a read-only folder is told (DOR-4851): each new version raises
+  // "version" in plugin.json too, because that is the file a version is read from.
+  it('a new version shows only once plugin.json says so, as the read-only-folder guidance tells', async () => {
+    const handler = createCreatePackageHandler(
+      buildDeps({
+        dorkHome,
+        confirmationProvider: new AlwaysApprovesConfirmationProvider(),
+        logger,
+      })
+    );
+    const { payload } = parseResult(
+      await handler({ name: 'versioned-app', type: 'plugin', description: 'Made up.' })
+    );
+    const pkg = payload.packagePath as string;
+    const bump = async (rel: string) => {
+      const file = join(pkg, rel);
+      const json = JSON.parse(await readFile(file, 'utf-8')) as { version: string };
+      await writeFile(file, JSON.stringify({ ...json, version: '0.0.2' }, null, 2));
+    };
+    expect(await readDeclaredVersion(pkg)).toBe('0.0.1');
+    await bump('.dork/manifest.json');
+    expect(await readDeclaredVersion(pkg)).toBe('0.0.1');
+    await bump('.claude-plugin/plugin.json');
+    expect(await readDeclaredVersion(pkg)).toBe('0.0.2');
+  });
+
+  it('still returns created when the re-read fails, with a warning', async () => {
+    const handler = createCreatePackageHandler(
+      buildDeps({
+        dorkHome,
+        confirmationProvider: new AlwaysApprovesConfirmationProvider(),
+        logger,
+        sourceManager: {
+          list: vi.fn(async () => [
+            { name: PERSONAL_MARKETPLACE_NAME, source: 'file:///p', enabled: true },
+          ]),
+        } as unknown as MarketplaceMcpDeps['sourceManager'],
+        fetcher: {
+          fetchMarketplaceJson: vi.fn(async () => {
+            throw new Error('unreadable');
+          }),
+        } as unknown as MarketplaceMcpDeps['fetcher'],
+      })
+    );
+
+    const { payload } = parseResult(
+      await handler({ name: 'still-made', type: 'plugin', description: 'Made up.' })
+    );
+    expect(payload.status).toBe('created');
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[marketplace_create_package] failed to refresh the personal marketplace',
+      { error: 'unreadable' }
+    );
   });
 
   it('forwards categories to the scaffolder, deriving the primary category', async () => {

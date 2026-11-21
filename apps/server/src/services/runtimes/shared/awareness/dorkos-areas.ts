@@ -103,9 +103,8 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
   },
   {
     name: 'Agent browser',
-    // One default profile, said here because an agent holding other browser
-    // tools (a person's Chrome MCP servers) called those "profiles" (DOR-4633).
-    can: "drive shared pages (Browser, + menu); ask for one, never send them to a terminal. One default profile; other browser tools aren't profiles.",
+    // Distinguish browser sign-ins without teaching named profiles (DOR-3219, DOR-4633).
+    can: 'own signed-out Chrome; person shares: Browser (+). Stop sharing revokes. Other tools: own sign-ins; never send them to a terminal.',
     covers: ['local_browser.', 'mcp.browser_preset'],
     areas: [],
     gate: 'a person shares it',
@@ -120,7 +119,9 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
   {
     // MCP servers, packages and extensions share one permission area, so one line (DOR-3219 diet).
     name: 'Tools',
-    can: 'add or remove MCP servers and packages; build extensions a person approves. A change reaches you next turn, in this chat: no restart.',
+    // The block is at its size budget, so the mini app story (DOR-4854) is not repeated here:
+    // `create_extension` and `get_extension_api` carry all of it (`mini-app-story.ts`).
+    can: 'add or remove MCP servers and packages; build mini apps a person approves. A change reaches you next turn, in this chat: no restart.',
     covers: ['mcp.', 'marketplace.', 'create_extension', 'reload_extensions', 'test_extension'],
     areas: ['packages'],
     gate: 'adding or changing an MCP server asks, and only a person adds one for all agents',

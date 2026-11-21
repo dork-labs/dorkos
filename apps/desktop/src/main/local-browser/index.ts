@@ -1,6 +1,7 @@
 /* eslint-disable no-restricted-syntax -- Private shell-to-child credentials are transient handoff state, not app configuration. */
 import { BrowserWindow, WebContentsView, app, ipcMain, session } from 'electron';
 import { createServer } from 'node:http';
+import { isPersonBrowserOpen } from './person-profile.js';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { WebSocketServer, WebSocket } from 'ws';
 import type { ConnectOverCDPTransport } from 'playwright-core';
@@ -131,7 +132,7 @@ export async function startLocalBrowserBridge(
           return;
         }
       }
-      const { connectionId, index, urlHash, refused } = JSON.parse(body);
+      const { connectionId, index, urlHash, refused, sessionId, profileId } = JSON.parse(body);
       if (typeof connectionId !== 'string' || !/^[a-zA-Z0-9-]{1,64}$/.test(connectionId)) {
         response.writeHead(400).end();
         return;
@@ -227,6 +228,10 @@ export async function startLocalBrowserBridge(
       }
       if (forgetting || guests.has(connectionId)) {
         response.writeHead(409).end();
+        return;
+      }
+      if (!isPersonBrowserOpen({ sessionId, profileId })) {
+        response.writeHead(403).end('This browser opens in its own window.');
         return;
       }
       const view = new WebContentsView({

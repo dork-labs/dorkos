@@ -972,6 +972,28 @@
               "string",
               "null"
             ]
+          },
+          "unknown": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "since": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "key",
+                "label",
+                "since"
+              ]
+            }
           }
         },
         "required": [
@@ -20237,6 +20259,7 @@
           "credits.refused",
           "extension.approval",
           "extension.decision",
+          "extension.stopped",
           "community.owner-replacement",
           "community.teammate-limit",
           "community.teammate-limits-reset",
@@ -33337,6 +33360,36 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "profile": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "agentId",
+                        "agentName"
+                      ]
+                    },
                     "preparation": {
                       "type": [
                         "object",
@@ -33696,7 +33749,7 @@
                   },
                   "profileId": {
                     "type": "string",
-                    "format": "uuid"
+                    "pattern": "^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$"
                   }
                 },
                 "required": [
@@ -33715,6 +33768,36 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "profile": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "agentId",
+                        "agentName"
+                      ]
+                    },
                     "preparation": {
                       "type": [
                         "object",
@@ -34101,6 +34184,36 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "profile": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "agentId",
+                        "agentName"
+                      ]
+                    },
                     "preparation": {
                       "type": [
                         "object",
@@ -34356,6 +34469,36 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "profile": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "agentId",
+                        "agentName"
+                      ]
+                    },
                     "preparation": {
                       "type": [
                         "object",
@@ -34734,6 +34877,36 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "profile": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "agentId",
+                        "agentName"
+                      ]
+                    },
                     "preparation": {
                       "type": [
                         "object",
@@ -35113,6 +35286,36 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "profile": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "agentId",
+                        "agentName"
+                      ]
+                    },
                     "preparation": {
                       "type": [
                         "object",
@@ -35491,6 +35694,36 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "profile": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "agentId",
+                        "agentName"
+                      ]
+                    },
                     "preparation": {
                       "type": [
                         "object",
@@ -35722,6 +35955,36 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "profile": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "agentId",
+                        "agentName"
+                      ]
+                    },
                     "preparation": {
                       "type": [
                         "object",
@@ -36071,7 +36334,7 @@
                         "properties": {
                           "id": {
                             "type": "string",
-                            "format": "uuid"
+                            "pattern": "^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$"
                           },
                           "label": {
                             "type": "string",
@@ -36385,7 +36648,7 @@
                   "properties": {
                     "id": {
                       "type": "string",
-                      "format": "uuid"
+                      "pattern": "^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$"
                     },
                     "label": {
                       "type": "string",
@@ -36510,6 +36773,36 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "profile": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "agentId",
+                        "agentName"
+                      ]
+                    },
                     "preparation": {
                       "type": [
                         "object",
@@ -36852,6 +37145,36 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "profile": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "agentId",
+                        "agentName"
+                      ]
+                    },
                     "preparation": {
                       "type": [
                         "object",
@@ -37215,7 +37538,7 @@
                       },
                       "profileId": {
                         "type": "string",
-                        "format": "uuid"
+                        "pattern": "^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$"
                       }
                     },
                     "required": [
@@ -37249,6 +37572,36 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "profile": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "agentId",
+                        "agentName"
+                      ]
+                    },
                     "preparation": {
                       "type": [
                         "object",
@@ -37784,6 +38137,36 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "profile": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "agentId",
+                        "agentName"
+                      ]
+                    },
                     "preparation": {
                       "type": [
                         "object",
@@ -38168,6 +38551,36 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "profile": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^(?:default|agent-[a-zA-Z0-9-]{1,100}|[0-9a-fA-F-]{36})$"
+                        },
+                        "label": {
+                          "type": "string"
+                        },
+                        "agentId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "agentName": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "label",
+                        "agentId",
+                        "agentName"
+                      ]
+                    },
                     "preparation": {
                       "type": [
                         "object",

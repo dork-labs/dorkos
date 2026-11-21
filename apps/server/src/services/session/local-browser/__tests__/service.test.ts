@@ -740,7 +740,7 @@ describe('local browser ownership and observations', () => {
     }));
     await service.open({ mode: 'new-window', sessionId: 'chat-one' });
     expect(f.context.close).not.toHaveBeenCalled();
-    await service.open({ mode: 'embedded', sessionId: 'chat-one' });
+    await service.open({ mode: 'embedded' });
     expect(f.context.close).toHaveBeenCalledOnce();
     expect((await service.state()).mode).toBe('embedded');
   });
@@ -885,6 +885,10 @@ async function lifecycleFixture() {
 
 async function handoffCloseFixture() {
   const f = await lifecycleFixture();
+  f.service.useProfileAccess(
+    async () => undefined,
+    () => true
+  );
   const signIns = new SignInWindow({
     executable: async () => '/made-up/Chromium',
     installedChrome: () => undefined,
@@ -1321,17 +1325,17 @@ describe('named profiles (DOR-3218)', () => {
     await expect(readFile(path.join(f.dir, 'browser-profiles', profileId))).rejects.toThrow();
   });
 
-  it('asks the access check on each call, and skips it on the default profile', async () => {
+  it('asks the access check on every profile, including default', async () => {
     const f = await create();
     const access = vi.fn(async () => undefined);
     f.service.useProfileAccess(access, () => true);
     await f.service.open({ mode: 'new-window', sessionId: 's' });
     await f.service.requireProfileAccess('s');
-    expect(access).not.toHaveBeenCalled();
+    expect(access).toHaveBeenCalledExactlyOnceWith('default', 's');
     await f.service.open({ mode: 'new-window', profileId, sessionId: 's' });
     await f.service.requireProfileAccess('s');
     await f.service.requireProfileAccess('s');
-    expect(access).toHaveBeenCalledTimes(2);
+    expect(access).toHaveBeenCalledTimes(3);
     expect(access).toHaveBeenLastCalledWith(profileId, 's');
     await f.service.disconnect();
   });

@@ -186,6 +186,12 @@ export async function leaseFixture(leaseAudit?: (record: unknown) => Promise<voi
     leaseAudit,
     async () => 'agent-atlas'
   );
+  service.useProfileSelection(async (input) => ({
+    id: input.profileId ?? 'default',
+    label: 'Fixture browser',
+    agentId: input.sessionId ? 'agent-atlas' : null,
+    agentName: null,
+  }));
   service.useProfileAccess(
     async () => undefined,
     () => true

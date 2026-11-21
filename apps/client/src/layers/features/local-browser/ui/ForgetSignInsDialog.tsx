@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import type { LocalBrowserProfileChoice } from '@dorkos/shared/local-browser';
 import { LOCAL_BROWSER_STATE_KEY } from '@/layers/entities/local-browser';
 import { useTransport } from '@/layers/shared/model';
 import {
@@ -17,6 +18,8 @@ import { browserErrorMessage } from '../lib/browser-error-message';
 /** Props for {@link ForgetSignInsDialog}. */
 export interface ForgetSignInsDialogProps {
   open: boolean;
+  /** The browser named in the panel when Forget is opened. */
+  profile: Pick<LocalBrowserProfileChoice, 'id' | 'label' | 'agentName'>;
   onOpenChange: (open: boolean) => void;
   /** Where focus goes when the dialog closes: the control that opened it. */
   returnFocus: RefObject<HTMLElement | null>;
@@ -31,6 +34,7 @@ export interface ForgetSignInsDialogProps {
  */
 export function ForgetSignInsDialog({
   open,
+  profile,
   onOpenChange,
   returnFocus,
   onForgotten,
@@ -59,7 +63,7 @@ export function ForgetSignInsDialog({
     setPending(true);
     setError(null);
     try {
-      await transport.forgetLocalBrowserSignIns(null);
+      await transport.forgetLocalBrowserSignIns(profile.id);
       onForgotten();
       await client.invalidateQueries({ queryKey: LOCAL_BROWSER_STATE_KEY });
       onOpenChange(false);
@@ -103,7 +107,10 @@ export function ForgetSignInsDialog({
             <AlertDialogHeader>
               <AlertDialogTitle>Forget saved sign-ins?</AlertDialogTitle>
               <AlertDialogDescription>
-                This signs every agent here out of every site. It can’t be undone.
+                {profile.id === 'default'
+                  ? 'This signs you out of every site in your browser.'
+                  : `This signs ${profile.agentName ?? 'this agent'} out of every site in its browser.`}{' '}
+                It can’t be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
             {error && (

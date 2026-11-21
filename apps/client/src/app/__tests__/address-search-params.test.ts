@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import { ADDRESS_SEARCH_PARAMS } from '@/layers/shared/lib';
 import { sessionSearchSchema } from '@/layers/shared/lib/session-link';

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The line a Stop leaves (DOR-3285) usually lands after its turn's history
  * reload, so a person's next turn carries it until history has it.

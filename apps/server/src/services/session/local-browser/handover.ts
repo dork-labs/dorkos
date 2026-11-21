@@ -41,6 +41,7 @@ import {
 } from './handoff-guards/done-signing-in.js';
 import {
   assertHandoffProfileExists,
+  signInProfile,
   type HandoverBrowser,
   type HandoffReopenAt,
 } from './handoff-guards/handover-browser.js';
@@ -48,16 +49,16 @@ import { refuseAgentDuringHandoff } from './handoff-guards/agent-custody.js';
 import { assertSignInUrl, siteOnly, trimPage } from './handoff-guards/page-address.js';
 import { prepareProfileFolder } from './profile-folders.js';
 import type { SignInWindow } from './sign-in-window.js';
+import { handoffLaunchAdmission, launchHandoffSignIn } from './handoff-guards/launch-admission.js';
 import {
   prepareHandoffPage,
   refusedHere,
   requireHandoffPage,
   requireRefusalIdentity,
 } from './handoff-guards/prepare-handoff.js';
-export type { OutsideTurnCheck, OutsideTurnReason };
+export type { OutsideTurnCheck, OutsideTurnReason, HandoverBrowser };
 
 export { assertSignInUrl, siteOnly, SIGNING_IN_REFUSAL };
-export type { HandoverBrowser };
 
 /** What the agent is told after it hands the browser over. */
 export const HANDED_OVER_NEXT =
@@ -75,22 +76,19 @@ export class BrowserHandover {
     );
   }
   /** Person card lookup is independent of whichever chat the UI currently shows. */
-  ownsHandoff(id: string): boolean {
-    return this.record?.id === id;
-  }
+  ownsHandoff = (id: string): boolean => this.record?.id === id;
   /** Physical sign-in ownership is distinct from an answered handoff record. */
-  signInHoldsProfile(profileId: string | null): boolean {
-    return this.signIns.holds(this.folderOf(profileId));
-  }
-  private signingIn = 0;
+  signInHoldsProfile = (profileId: string | null): boolean =>
+    this.signIns.holds(this.folderOf(profileId));
+  private signingProfile: string | null | undefined;
   private preparingHandoff = false;
   private answeringHandoff = false;
 
   /** Includes preparation, saving, and a handoff that can reopen this profile. */
   holdsProfile(profileId: string | null): boolean {
     return (
-      this.preparingHandoff ||
-      this.signingIn > 0 ||
+      (this.preparingHandoff && this.browser.currentProfileId() === profileId) ||
+      (this.signingProfile !== undefined && this.signingProfile === profileId) ||
       this.signIns.holds(this.folderOf(profileId)) ||
       (this.record?.outcome === null && this.record.profileId === profileId)
     );
@@ -357,12 +355,16 @@ export class BrowserHandover {
       outcome: null,
     };
     if (snapshot.mode === 'new-window') {
-      // No page-reading connection, automation pipe or theme extension survives
-      // into the person's window. Form fields do not survive this deliberate swap.
-      if (snapshot.close) await snapshot.close.close();
-      else await this.browser.disconnect();
-      const folder = await prepareProfileFolder(this.dataDirectory(), profileId);
-      await this.signIns.start(folder, profileId, assertSignInUrl(tab.url).href);
+      await launchHandoffSignIn(
+        this.browser,
+        this.signIns,
+        this.dataDirectory(),
+        snapshot,
+        handoffLaunchAdmission(this.browser, snapshot, this.outsideTurn, () => {
+          this.refuseStopped(snapshot.chatId);
+          this.refuseTaken();
+        })
+      );
     }
     // Bring the agent's window to the person. Its strip and card are drawn by DorkOS.
     if (snapshot.mode === 'embedded') await this.browser.selectTab(tab.id).catch(() => undefined);
@@ -392,11 +394,12 @@ export class BrowserHandover {
     // A new sign-in owes nothing to an older one's window (DOR-4693), unless that one is still
     // open: its own end puts its window back.
     if (!this.signIns.active) this.reopenAfterSignIn = undefined;
-    this.signingIn++;
+    if (this.signingProfile !== undefined) throw browserInUseRefusal();
+    this.signingProfile = signInProfile(input, this.browser.currentProfileId(), this.record);
     try {
       return await this.startSignIn(input);
     } finally {
-      this.signingIn--;
+      this.signingProfile = undefined;
     }
   }
 
@@ -439,7 +442,7 @@ export class BrowserHandover {
       this.reopenAt = { sessionId: handoff.sessionId, profileId, url: this.askedUrl ?? tab.url };
     } else {
       url = assertSignInUrl(input.url);
-      profileId = input.profileId ?? null;
+      profileId = signInProfile(input, state.sessionId ? this.browser.currentProfileId() : null);
       assertHandoffProfileExists(this.browser, profileId);
     }
     this.browser.requireExclusiveProfile?.(profileId);
@@ -460,7 +463,7 @@ export class BrowserHandover {
       await this.signIns.start(folder, profileId, url.href);
     } catch (error) {
       // A sign-in that never started never ends, so nothing may reopen on its account.
-      this.reopenAfterSignIn = undefined;
+      if (agentWindowOnProfile) this.reopenAfterSignIn = undefined;
       throw error;
     }
     return this.state();
@@ -711,9 +714,7 @@ export class BrowserHandover {
   }
 
   /** The open handoff's id, or null when none is open. */
-  private openId(): string | null {
-    return this.record?.outcome === null ? this.record.id : null;
-  }
+  private openId = (): string | null => (this.record?.outcome === null ? this.record.id : null);
 
   /** The folder `prepareProfileFolder` gives a profile, without touching the disk. */
   private folderOf(profileId: string | null): string {

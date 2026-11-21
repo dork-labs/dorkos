@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { LocalBrowserCapabilities, LocalBrowserState } from '@dorkos/shared/local-browser';
 import { localBrowserStateKey } from '@/layers/entities/local-browser';
 import { LocalBrowserPanel } from '../ui/LocalBrowserPanel';
+import { LocalBrowserMenu } from '../ui/LocalBrowserMenu';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/layers/shared/ui';
 import { useSessionListStore } from '@/layers/entities/session';
 import { useAppStore } from '@/layers/shared/model';
@@ -28,6 +29,8 @@ const transport = vi.hoisted(() => ({
   interruptSession: vi.fn(),
   getSession: vi.fn(),
   getAgentByPath: vi.fn(),
+  listLocalBrowserProfiles: vi.fn(),
+  forgetLocalBrowserSignIns: vi.fn(),
 }));
 const navigate = vi.hoisted(() => vi.fn());
 vi.mock('@tanstack/react-router', async (importOriginal) => ({
@@ -104,6 +107,7 @@ beforeEach(() => {
   transport.getLocalBrowserState.mockResolvedValue(disconnected);
   transport.getLocalBrowserCapabilities.mockResolvedValue(capabilities);
   transport.openLocalBrowser.mockResolvedValue(connected);
+  transport.listLocalBrowserProfiles.mockResolvedValue({ profiles: [] });
   // The holder chat's title and folder, and no agent there, unless a test says otherwise.
   transport.getSession.mockImplementation(async (id: string) => {
     if (id !== 'other-chat') throw new Error('not found');
@@ -161,6 +165,30 @@ async function choosePage(name: string): Promise<void> {
 }
 
 describe('LocalBrowserPanel', () => {
+  it('keeps the panel usable before browser and profile data arrive', () => {
+    transport.getLocalBrowserState.mockReturnValue(new Promise(() => {}));
+    mount();
+    expect(screen.getByRole('region', { name: 'Agent browser' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Forget saved sign-ins…' })).toBeNull();
+    expect(transport.forgetLocalBrowserSignIns).not.toHaveBeenCalled();
+  });
+
+  it('names an agent browser and offers its own window', async () => {
+    transport.getLocalBrowserState.mockResolvedValue({
+      ...connected,
+      profile: {
+        id: 'agent-atlas',
+        label: 'Atlas · browser',
+        agentId: 'atlas',
+        agentName: 'Atlas',
+      },
+    });
+    mount();
+    expect(await screen.findByRole('heading', { name: 'Atlas · browser' })).toBeInTheDocument();
+    expect(screen.getByText('This browser opens in its own window.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Show window' })).toBeEnabled();
+  });
+
   it('never labels another chat’s browser with the current agent name', async () => {
     transport.getLocalBrowserState.mockResolvedValue({ ...connected, sessionId: 'other-chat' });
     mount();
@@ -676,7 +704,7 @@ describe('LocalBrowserPanel', () => {
     const open = await screen.findByRole('button', { name: 'Open browser' });
     await waitFor(() => expect(open).toBeEnabled());
     fireEvent.click(open);
-    expect(await screen.findByRole('heading', { name: 'Agent browser' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Your browser' })).toBeInTheDocument();
     await chooseFromMenu('Close browser');
     expect(await screen.findByRole('button', { name: 'Open browser' })).toBeEnabled();
     first.unmount();
@@ -1742,6 +1770,38 @@ describe('LocalBrowserPanel', () => {
       await waitFor(() =>
         expect(screen.getByRole('button', { name: 'Browser menu' })).toHaveFocus()
       );
+    });
+    it.each([
+      { id: 'agent-atlas', label: 'Atlas · browser', agentId: 'atlas', agentName: 'Atlas' },
+      { id: 'default', label: 'Your browser', agentId: null, agentName: null },
+      { id: 'default', label: 'Your browser', agentId: 'atlas', agentName: 'Atlas' },
+      { id: 'agent-unnamed', label: 'Agent browser', agentId: 'unnamed', agentName: null },
+    ])('the menu forgets only $label when given that browser', async (profile) => {
+      transport.forgetLocalBrowserSignIns.mockResolvedValue({ success: true });
+      const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+      render(
+        <QueryClientProvider client={client}>
+          <LocalBrowserMenu
+            state={{ ...connected, profile }}
+            busy={false}
+            action={vi.fn()}
+            canForgetSignIns
+            onClose={vi.fn()}
+          />
+        </QueryClientProvider>
+      );
+      await chooseFromMenu('Forget saved sign-ins…');
+      const dialog = await screen.findByRole('alertdialog');
+      expect(dialog).toHaveTextContent(
+        profile.id === 'default'
+          ? 'This signs you out of every site in your browser. It can’t be undone.'
+          : profile.agentName
+            ? 'This signs Atlas out of every site in its browser. It can’t be undone.'
+            : 'This signs this agent out of every site in its browser. It can’t be undone.'
+      );
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Forget sign-ins' }));
+      await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+      expect(transport.forgetLocalBrowserSignIns).toHaveBeenCalledExactlyOnceWith(profile.id);
     });
     it('waits while another browser action runs', async () => {
       transport.getLocalBrowserState.mockResolvedValue(connected);

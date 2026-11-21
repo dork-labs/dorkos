@@ -93,6 +93,33 @@ function liveSessionCwd(runtime: AgentRuntime, sessionId: string): string | unde
 }
 
 /**
+ * The directory a session actually runs in, from what this server already
+ * holds: the runtime's live binding, then the durable native binding. The
+ * directory never comes from a caller's hint, a disk search or the default, so
+ * it answers `null` rather than guess. For a record that may decide what can be
+ * saved, where a missing directory only refuses and an invented one would grant
+ * (DOR-4844).
+ *
+ * Every caller must still boundary-check whatever it does with the result.
+ *
+ * @param sessionId - The client-facing session id; aliases resolve internally.
+ * @returns The directory, or `null` when the server holds none.
+ */
+export async function knownSessionCwd(sessionId: string): Promise<string | null> {
+  let runtime: AgentRuntime | undefined;
+  try {
+    runtime = await runtimeRegistry.resolveForSession(sessionId);
+  } catch {
+    // An unregistered runtime has no live binding; the durable one still answers.
+    runtime = undefined;
+  }
+  return (
+    (runtime ? liveSessionCwd(runtime, sessionId) : undefined) ??
+    runtimeRegistry.getNativeSessionCwd(resolveSettingsKey(sessionId, runtime))
+  );
+}
+
+/**
  * Ask the runtime's own store for the session, passing the caller's directory
  * as a place to look first. The hint only speeds the search: the runtime still
  * answers with the directory the session records (DOR-2892).

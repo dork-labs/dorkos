@@ -70,81 +70,7 @@ describe('whole-profile disk removal (DOR-3887)', () => {
     });
   });
 
-  it('forgets every profile at once: the default and each named one (DOR-4105)', async () => {
-    const profiles = store();
-    const work = profiles.create('Example work');
-    const personal = profiles.create('Example personal');
-    const folders = [
-      await prepareProfileFolder(home, null),
-      await prepareProfileFolder(home, work.id),
-      await prepareProfileFolder(home, personal.id),
-    ];
-    for (const folder of folders) await seed(folder);
-    const forgotten: (string | null)[] = [];
-    await new BrowserProfileRemoval({
-      dataDirectory: () => home,
-      busy: () => false,
-      forgotten: (id) => forgotten.push(id),
-    }).forgetAll([work.id, personal.id]);
-    for (const folder of folders) {
-      await expect(readFile(path.join(folder, 'storage-state.json'))).rejects.toMatchObject({
-        code: 'ENOENT',
-      });
-      await expect(readFile(path.join(folder, 'Default/Network/Cookies'))).rejects.toMatchObject({
-        code: 'ENOENT',
-      });
-    }
-    // The named profiles stay on record, emptied; the panel just no longer lists them.
-    expect(profiles.get(work.id)).toBeDefined();
-    expect(forgotten.sort()).toEqual([null, work.id, personal.id].sort());
-  });
-
-  it('also clears a profile folder made outside the list, as a shell could', async () => {
-    const stray = path.join(home, 'browser-profiles', '22222222-2222-4222-8222-222222222222');
-    await seed(stray);
-    await removal().forgetAll([]);
-    await expect(readFile(path.join(stray, 'storage-state.json'))).rejects.toMatchObject({
-      code: 'ENOENT',
-    });
-    await expect(readFile(path.join(stray, 'Default/Network/Cookies'))).rejects.toMatchObject({
-      code: 'ENOENT',
-    });
-  });
-
-  it('removes orphan profile folders whole while preserving the binding key (DOR-4219)', async () => {
-    const profiles = store();
-    const known = profiles.create('Example work');
-    const orphan = '88888888-8888-4888-8888-888888888888';
-    const root = path.join(home, 'browser-profiles');
-    const folders = [
-      await prepareProfileFolder(home, null),
-      await prepareProfileFolder(home, known.id),
-      await prepareProfileFolder(home, orphan),
-    ];
-    for (const folder of folders) await seed(folder);
-    const key = path.join(root, '.binding-key');
-    await writeFile(key, 'made-up-binding-key');
-    const forgotten = vi.fn();
-
-    await new BrowserProfileRemoval({
-      dataDirectory: () => home,
-      busy: () => false,
-      forgotten,
-    }).forgetAll([known.id]);
-
-    for (const folder of folders)
-      await expect(stat(folder)).rejects.toMatchObject({ code: 'ENOENT' });
-    expect(await readFile(key, 'utf8')).toBe('made-up-binding-key');
-    expect(profiles.get(known.id)).toBeDefined();
-    expect(profiles.get(orphan)).toBeUndefined();
-    expect(forgotten).toHaveBeenCalledWith(orphan);
-    // A later open cannot recover cookies or another storage type from the orphan.
-    const reopened = await prepareProfileFolder(home, orphan);
-    for (const file of ['storage-state.json', 'Default/IndexedDB/site/data'])
-      await expect(readFile(path.join(reopened, file))).rejects.toMatchObject({ code: 'ENOENT' });
-  });
-
-  it('removes a planted link under a profile name and never empties what it points to', async () => {
+  it('refuses a planted profile link and never empties what it points to', async () => {
     const theirs = await mkdtemp(path.join(tmpdir(), 'dorkos-persons-own-'));
     try {
       await writeFile(path.join(theirs, 'keep.txt'), 'made-up-person-file');
@@ -152,8 +78,10 @@ describe('whole-profile disk removal (DOR-3887)', () => {
       await mkdir(root, { recursive: true });
       const link = path.join(root, '33333333-3333-4333-8333-333333333333');
       await symlink(theirs, link);
-      await removal().forgetAll([]);
-      await expect(stat(link)).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(removal().forget('33333333-3333-4333-8333-333333333333')).rejects.toMatchObject({
+        code: 'profiles_folder_changed',
+      });
+      expect((await stat(link)).isDirectory()).toBe(true);
       expect(await readFile(path.join(theirs, 'keep.txt'), 'utf8')).toBe('made-up-person-file');
     } finally {
       await rm(theirs, { recursive: true, force: true });
@@ -166,7 +94,7 @@ describe('whole-profile disk removal (DOR-3887)', () => {
       const kept = path.join(theirs, '55555555-5555-4555-8555-555555555555');
       await writeFile(kept, 'made-up-person-file');
       await symlink(theirs, path.join(home, 'browser-profiles'));
-      await expect(removal().forgetAll([])).rejects.toMatchObject({
+      await expect(removal().forget(null)).rejects.toMatchObject({
         code: 'profiles_folder_changed',
       });
       expect(await readFile(kept, 'utf8')).toBe('made-up-person-file');
@@ -183,7 +111,7 @@ describe('whole-profile disk removal (DOR-3887)', () => {
       const folder = path.join(home, 'browser-profiles', '44444444-4444-4444-8444-444444444444');
       await mkdir(folder, { recursive: true });
       await symlink(target, path.join(folder, 'storage-state.json'));
-      await removal().forgetAll([]);
+      await removal().forget('44444444-4444-4444-8444-444444444444');
       await expect(stat(path.join(folder, 'storage-state.json'))).rejects.toMatchObject({
         code: 'ENOENT',
       });
@@ -193,7 +121,7 @@ describe('whole-profile disk removal (DOR-3887)', () => {
     }
   });
 
-  it('clears nothing when any named profile is busy', async () => {
+  it('clears nothing when the selected named profile is busy', async () => {
     const profiles = store();
     const work = profiles.create('Example work');
     const folder = await prepareProfileFolder(home, null);
@@ -202,7 +130,7 @@ describe('whole-profile disk removal (DOR-3887)', () => {
       new BrowserProfileRemoval({
         dataDirectory: () => home,
         busy: (id) => id === work.id,
-      }).forgetAll([work.id])
+      }).forget(work.id)
     ).rejects.toMatchObject({ code: 'profile_busy' });
     expect(await readFile(path.join(folder, 'storage-state.json'), 'utf8')).toBe(
       'made-up-site-session'
@@ -243,7 +171,10 @@ describe('whole-profile disk removal (DOR-3887)', () => {
     );
     const preserved = await prepareProfileFolder(home, '11111111-1111-4111-8111-111111111111');
     await seed(preserved);
+    const bindingKey = path.join(home, 'browser-profiles', '.binding-key');
+    await writeFile(bindingKey, 'made-up-binding-key');
     await removal().forget(null);
+    expect(await readFile(bindingKey, 'utf8')).toBe('made-up-binding-key');
     for (const target of [folder, older, cli])
       await expect(stat(target)).rejects.toMatchObject({ code: 'ENOENT' });
     await prepareProfileFolder(home, null);
@@ -498,7 +429,7 @@ describe('whole-profile disk removal (DOR-3887)', () => {
       try {
         await symlink(theirs, path.join(home, 'browser-profiles'));
         const { findings, removal: tracked } = recorded();
-        await expect(tracked().forgetAll([])).rejects.toMatchObject({
+        await expect(tracked().forget(null)).rejects.toMatchObject({
           code: 'profiles_folder_changed',
         });
         expect(findings).toEqual([['root_not_directory', null]]);
@@ -508,14 +439,16 @@ describe('whole-profile disk removal (DOR-3887)', () => {
       }
     });
 
-    it('records each planted link it removes, by profile id, never where it points', async () => {
+    it('records a refused planted profile link, never where it points', async () => {
       const theirs = await mkdtemp(path.join(tmpdir(), 'dorkos-persons-own-'));
       try {
         const id = '33333333-3333-4333-8333-333333333333';
         await mkdir(path.join(home, 'browser-profiles'), { recursive: true });
         await symlink(theirs, path.join(home, 'browser-profiles', id));
         const { findings, removal: tracked } = recorded();
-        await tracked().forgetAll([]);
+        await expect(tracked().forget(id)).rejects.toMatchObject({
+          code: 'profiles_folder_changed',
+        });
         expect(findings).toEqual([['planted_link', id]]);
         expect(JSON.stringify(findings)).not.toContain(theirs);
       } finally {
@@ -523,7 +456,7 @@ describe('whole-profile disk removal (DOR-3887)', () => {
       }
     });
 
-    it('records a redirected parent on a single Forget as a planted link on that profile', async () => {
+    it('records a redirected profiles root on a single Forget without following it', async () => {
       await symlink(
         path.join(home, 'home'),
         path.join(home, 'browser-profiles'),
@@ -533,40 +466,7 @@ describe('whole-profile disk removal (DOR-3887)', () => {
       await expect(tracked().forget(null)).rejects.toMatchObject({
         code: 'profiles_folder_changed',
       });
-      expect(findings).toEqual([['planted_link', 'default']]);
-    });
-
-    it('checks the profiles folder again right before each removal', async () => {
-      // The folder is swapped for a link to the person's own folder after the default is
-      // cleared. Without the re-check, the planted entry's removal would delete the
-      // person's file of the same name.
-      const theirs = await mkdtemp(path.join(tmpdir(), 'dorkos-persons-own-'));
-      try {
-        const id = '66666666-6666-4666-8666-666666666666';
-        const root = path.join(home, 'browser-profiles');
-        await seed(await prepareProfileFolder(home, null));
-        await symlink(theirs, path.join(root, id));
-        await writeFile(path.join(theirs, id), 'made-up-person-file');
-        let swapped = false;
-        const { findings, removal: tracked } = recorded();
-        const clearing = tracked({
-          remove: async (folder) => {
-            await rm(folder, { recursive: true, force: true });
-            if (swapped || folder !== path.join(root, 'default')) return;
-            swapped = true;
-            await rename(root, path.join(home, 'original-profiles'));
-            await symlink(theirs, root);
-          },
-        });
-        await expect(clearing.forgetAll([])).rejects.toMatchObject({
-          code: 'profiles_folder_changed',
-        });
-        expect(swapped).toBe(true);
-        expect(await readFile(path.join(theirs, id), 'utf8')).toBe('made-up-person-file');
-        expect(findings).toEqual([['root_not_directory', null]]);
-      } finally {
-        await rm(theirs, { recursive: true, force: true });
-      }
+      expect(findings).toEqual([['root_not_directory', null]]);
     });
 
     it('writes one audit event per finding with the profile id and no path or contents', async () => {
@@ -589,15 +489,17 @@ describe('whole-profile disk removal (DOR-3887)', () => {
           await mkdir(path.join(home, 'browser-profiles'), { recursive: true });
           await writeFile(path.join(theirs, 'keep.txt'), 'made-up-person-file');
           await symlink(theirs, path.join(home, 'browser-profiles', id));
-          await new BrowserProfileRemoval({
-            dataDirectory: () => home,
-            busy: () => false,
-          }).forgetAll([]);
+          await expect(
+            new BrowserProfileRemoval({
+              dataDirectory: () => home,
+              busy: () => false,
+            }).forget(id)
+          ).rejects.toMatchObject({ code: 'profiles_folder_changed' });
           expect(events).toHaveLength(1);
           expect(log.verify()).toMatchObject({ ok: true, checked: 1 });
           expect(events[0]!).toMatchObject({
             action: 'local_browser.profiles.planted_link',
-            outcome: 'ok',
+            outcome: 'refused',
             target: { type: 'browser-profile', id },
           });
           // The actor is whoever ran Forget: the summary says what Forget found, never
@@ -633,9 +535,7 @@ describe('whole-profile disk removal (DOR-3887)', () => {
         try {
           await symlink(theirs, path.join(home, 'browser-profiles'));
           await expect(
-            new BrowserProfileRemoval({ dataDirectory: () => home, busy: () => false }).forgetAll(
-              []
-            )
+            new BrowserProfileRemoval({ dataDirectory: () => home, busy: () => false }).forget(null)
           ).rejects.toMatchObject({ code: 'profiles_folder_changed' });
           expect(events).toHaveLength(1);
           expect(log.verify()).toMatchObject({ ok: true, checked: 1 });

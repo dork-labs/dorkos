@@ -83,7 +83,7 @@ describe('buildDorkosAreasBlock', () => {
   it('keeps every step that needs a person (Security, DOR-3219 diet)', () => {
     // The trim may shorten a line, never drop what tells an agent to ask a person.
     expect(block).toContain('only a person adds one for all agents (Tools)');
-    expect(block).toContain('build extensions a person approves');
+    expect(block).toContain('build mini apps a person approves');
     expect(block).toContain('a person shares it (Agent browser)');
     expect(block).toContain('per-app grant (Connected apps)');
     for (const label of ['Permissions', 'Safety limits', 'Tools & packages'])
@@ -112,11 +112,13 @@ describe('buildDorkosAreasBlock', () => {
     expect(block).toContain('never send them to a terminal');
   });
 
-  it('says the Agent browser has one default profile, and other browser tools are not profiles (DOR-4633)', () => {
-    // QA's cold run: an agent holding its owner's Chrome MCP servers called them
-    // "profiles" and never named the Agent browser's default one.
+  it('distinguishes each agent’s browser from other browser tools without naming profiles (DOR-3219, DOR-4633)', () => {
     const line = block.split('\n').find((text) => text.startsWith('- Agent browser:')) ?? '';
-    expect(line).toContain("One default profile; other browser tools aren't profiles.");
+    expect(line).not.toMatch(/profile/i);
+    expect(line).toContain('own signed-out Chrome');
+    expect(line).toContain('person shares: Browser (+)');
+    expect(line).toContain('Stop sharing revokes');
+    expect(line).toContain('Other tools: own sign-ins');
   });
 
   it('stays small enough to ride in every session (DOR-3219 diet)', () => {

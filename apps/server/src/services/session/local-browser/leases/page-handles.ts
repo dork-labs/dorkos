@@ -27,6 +27,11 @@ export class BrowserPageHandles {
     private readonly assertAvailable: () => void
   ) {}
 
+  hasLivePage(): boolean {
+    const page = this.state.tabs.get(this.state.selectedTabId ?? '');
+    return this.identity().status === 'connected' && !!page && !page.isClosed();
+  }
+
   /** Only this connection’s exact held Page may be brought back to the person. */
   restorePersonFocus(page: Page): void {
     if (

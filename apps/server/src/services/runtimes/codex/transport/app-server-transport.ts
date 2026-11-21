@@ -17,7 +17,9 @@
  *
  * **Approvals (spec §10).** `on-request` for every mode but full access, so
  * Codex stops and asks; each server request becomes a card in the open turn
- * (`app-server/server-requests.ts`), answered only by a person.
+ * (`app-server/server-requests.ts`), answered only by a person. A heavy
+ * command's ask first waits for the machine's line (`app-server/load-gate-hold.ts`,
+ * DOR-4209); a command Codex runs without asking is never held (DOR-4743).
  *
  * **Work that outlives the turn (spec §12).** A background command or helper
  * agent still running at `turn/completed` is tracked
@@ -71,6 +73,7 @@ import {
   mapServerRequest,
   type ServerRequestTurnView,
 } from '../app-server/server-requests.js';
+import { CodexHeavyAsks, requestTurn, type HeavyAskDeps } from '../app-server/load-gate-hold.js';
 import type {
   CodexCompactRequest,
   CodexTransport,
@@ -143,6 +146,8 @@ export interface AppServerTransportOptions {
   readonly interactionCountdownMs?: number;
   /** When an unanswered request is declined (default: the park ceiling). */
   readonly interactionExpireMs?: number;
+  /** The machine-wide load gate a heavy command's ask waits in (tests; the server's own otherwise). */
+  readonly loadGate?: HeavyAskDeps;
   /** Background-work timings (tests). */
   readonly backgroundWork?: {
     readonly coalesceMs?: number;
@@ -244,6 +249,8 @@ export class AppServerCodexTransport implements CodexTransport {
   private readonly watched = new WeakSet<CodexAppServerProcess>();
   /** Approvals, questions and elicitations waiting on a person (spec §10). */
   private readonly requests: CodexServerRequestBroker;
+  /** Heavy commands' asks waiting for the machine's line, before any card (DOR-4209). */
+  private readonly heavyAsks: CodexHeavyAsks;
   /** Background terminals and helper agents that outlive their turn (spec §12). */
   private readonly background: CodexBackgroundWork;
   /** Where a wake goes; the runtime installs it with {@link onWake}. */
@@ -268,6 +275,7 @@ export class AppServerCodexTransport implements CodexTransport {
         ? { expireMs: options.interactionExpireMs }
         : {}),
     });
+    this.heavyAsks = new CodexHeavyAsks(options.loadGate);
     this.background = new CodexBackgroundWork({
       onWake: (wake) => this.wakeListener?.(wake) ?? false,
       terminate: (task) => this.terminateForCeiling(task),
@@ -1162,7 +1170,12 @@ export class AppServerCodexTransport implements CodexTransport {
     const unsubscribe = process.client.subscribeProcess((notification) =>
       this.onProcessNotification(process, notification)
     );
-    process.client.setServerRequestHandler((request) => this.onServerRequest(process, request));
+    // A heavy command's ask waits its turn first; then the normal handling runs, unchanged.
+    process.client.setServerRequestHandler((request) =>
+      this.heavyAsks.hold(process, request, this.openByThread, () =>
+        this.onServerRequest(process, request)
+      )
+    );
     process.onExit(() => {
       unsubscribe();
       // Its background commands outlive it (measured on 0.154): say DorkOS
@@ -1191,15 +1204,8 @@ export class AppServerCodexTransport implements CodexTransport {
     process: CodexAppServerProcess,
     request: ServerRequest
   ): Promise<unknown> | unknown {
-    const params = (request.params ?? {}) as { threadId?: unknown; turnId?: unknown };
-    const turn =
-      typeof params.threadId === 'string' ? this.openByThread.get(params.threadId) : undefined;
-    const wrongTurn =
-      turn !== undefined &&
-      typeof params.turnId === 'string' &&
-      turn.turnId !== undefined &&
-      params.turnId !== turn.turnId;
-    if (!turn || turn.process !== process || wrongTurn) {
+    const turn = requestTurn(this.openByThread, process, request);
+    if (!turn) {
       // Nobody is in a turn to ask: never answered yes on their behalf.
       logRefusedServerRequest(request.method, 'no DorkOS turn is open on that thread');
       return undefined;
@@ -1302,6 +1308,7 @@ export class AppServerCodexTransport implements CodexTransport {
         (notification) => {
           if (notification.method === 'serverRequest/resolved') {
             const params = notification.params as { requestId?: unknown } | undefined;
+            this.heavyAsks.resolvedByServer(process.key, params?.requestId);
             this.requests.resolvedByServer(process.key, params?.requestId);
             return;
           }
@@ -1416,9 +1423,7 @@ export class AppServerCodexTransport implements CodexTransport {
     if (this.openByThread.get(threadId)?.turnId === turnId) return;
     logger.warn(
       '[CodexAppServer] a late compaction opened after DorkOS gave up on it; stopping it',
-      {
-        threadId,
-      }
+      { threadId }
     );
     const stopWatching = process.onExit(() => {
       if (this.lingering.get(threadId)?.process === process) this.clearLingering(threadId);

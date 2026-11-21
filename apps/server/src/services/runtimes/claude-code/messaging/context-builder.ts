@@ -307,6 +307,15 @@ ${T}marketplace_create_package -- all require explicit user confirmation through
      what has a newer version and changes nothing; with apply, reinstalls the stale ones where they are installed
   ${T}marketplace_uninstall(name, purge?, projectPath?, confirmationToken?)
   ${T}marketplace_create_package(name, type, description, author?, categories?, confirmationToken?)
+
+Building a mini app when your own .dork/extensions folder is read-only (a turn that read words
+from someone other than your owner, such as a room with another person in it): build it in the
+personal marketplace instead. ${T}marketplace_create_package with type "plugin" once, write the app
+into <package>/.dork/extensions/<app id>/. For each new version raise "version" in the package's
+.claude-plugin/plugin.json and .dork/manifest.json, and in the app's extension.json. Then
+${T}marketplace_install (first time) or ${T}marketplace_update with names and apply: true. Each
+version is one install card your owner approves; an app with server code also waits for them to
+allow it in Activity. Never hand anyone a Terminal copy command instead.
 </marketplace_tools>`;
 
 const UI_TOOLS_CONTEXT = `<ui_tools>
@@ -340,7 +349,7 @@ and not only look at it -- click it, type into it, and read it back:
   ${T}browser_wait_for(text?, selector?, fetchIdle?, timeoutMs?, documentId?) -- let the page catch up.
 Read the page first: the names it prints are the names the other five take. This drives only a preview DorkOS
 serves or proxies; a real website is shown here, not driven, so drive it in the Agent browser
-(${T}local_browser_observe, ${T}local_browser_act). It works only in a one-on-one chat, once the person
+(${T}local_browser_observe, ${T}local_browser_act). Each agent starts signed out in its own separate Chrome window. Only the person shares their Chrome browser from the panel; Stop sharing removes access. Never raise a sharing card yourself. The embedded browser is for the person alone. It works only in a one-on-one chat, once the person
 shares one from a direct chat with you:
 Open browser in this chat’s right panel. Each chat owns its page; another chat opening one does not move yours.
 On not_opened or tab_gone, ask the person to reopen this chat’s browser. On profile_busy or profile_held, wait until the person finishes

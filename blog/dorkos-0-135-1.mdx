@@ -64,3 +64,5 @@ If an agent was waiting for your OK to approve another agent's request, that car
 If an agent undid a change and took another agent's access away while you were on 0.135.1, Undo in Needs you says "Nothing to undo there." on 0.135.0. Change that agent's access on the Connections page instead.
 
 DorkOS still saves a backup before it changes the database, in `~/.dork/backups/`. If you came from 0.135.0, it's named `dork-<date>-<time>-pre-20261109000421_connection_grant_approvals.db` (the time is UTC). To restore it, quit DorkOS, delete `dork.db-wal` and `dork.db-shm` from `~/.dork/`, copy the backup over `~/.dork/dork.db`, then install 0.135.0. You lose anything written since the upgrade, so if you removed access or revoked a connection since then, do it again.
+
+Newer backups start with `dork-auto-` instead of `dork-`. [Both filename forms restore the same way](/docs/self-hosting/docker#database-snapshots).

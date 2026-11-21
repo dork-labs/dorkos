@@ -78,3 +78,5 @@ Access an agent lowered in other ways, to Read, to fewer actions or to none, sta
 On 0.134.1, Needs you may not load if, while you were on 0.135.0, an agent took another agent's access away or DorkOS couldn't start its shell check. If that happens, restore the backup below.
 
 DorkOS still saves a backup before it changes the database, in `~/.dork/backups/`. If you came from 0.134.1, it's named `dork-<date>-<time>-pre-20261108172402_connection_grant_exclusions.db` (the time is UTC). To restore it, quit DorkOS, delete `dork.db-wal` and `dork.db-shm` from `~/.dork/`, copy the backup over `~/.dork/dork.db`, then install 0.134.1. You lose anything written since the upgrade, so if you removed access or revoked a connection since then, do it again.
+
+Newer backups start with `dork-auto-` instead of `dork-`. [Both filename forms restore the same way](/docs/self-hosting/docker#database-snapshots).

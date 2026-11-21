@@ -190,7 +190,22 @@ interface Line {
   leave(): void;
 }
 
-const isAbort = (error: unknown): boolean => (error as Error | undefined)?.name === 'AbortError';
+/**
+ * Whether `error` is a stopped wait.
+ *
+ * @param error - What a wait rejected with.
+ */
+export const isAbortError = (error: unknown): boolean =>
+  (error as Error | undefined)?.name === 'AbortError';
+
+/**
+ * A short, fixed name for what went wrong, for a runtime's log: the error's class, never its
+ * message, which could carry a path or a command.
+ *
+ * @param error - What a wait rejected with.
+ */
+export const errorName = (error: unknown): string =>
+  error instanceof Error && /^\w{1,40}$/.test(error.name) ? error.name : 'unknown';
 
 /** A short, fixed name for what went wrong: an error code or class, never a message. */
 function errorKind(error: unknown): string {
@@ -442,7 +457,7 @@ export function createLoadGate(options: LoadGateOptions): LoadGate {
     try {
       return await waitTurn(localLine(place), job, startedAt, opts);
     } catch (error) {
-      if (isAbort(error)) throw error;
+      if (isAbortError(error)) throw error;
       noteFailure('The load gate could not wait; heavy jobs run without waiting', error);
       return plainSlot('gate-error', now() - startedAt);
     } finally {
@@ -470,7 +485,7 @@ export function createLoadGate(options: LoadGateOptions): LoadGate {
       return await waitTurn(sharedLine(ticket), request.job, startedAt, opts);
     } catch (error) {
       if (ticket !== undefined) leaveQuietly(ticket);
-      if (isAbort(error)) throw error;
+      if (isAbortError(error)) throw error;
       noteFailure(
         "The shared load-gate queue could not be used; heavy jobs wait in this server's own line, one at a time",
         error

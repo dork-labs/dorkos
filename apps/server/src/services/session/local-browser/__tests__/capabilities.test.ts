@@ -14,7 +14,7 @@ import {
 } from '../../../core/capabilities/mcp-projection.js';
 import type { CapabilityDeps, CapabilityHandlerContext } from '../../../core/capabilities/index.js';
 import { createLocalBrowserDomain } from '../capabilities.js';
-import { BrowserHandover, SIGNING_IN_REFUSAL } from '../handover.js';
+import { BrowserHandover, SIGNING_IN_REFUSAL, type OutsideTurnReason } from '../handover.js';
 import type { SignInWindow } from '../sign-in-window.js';
 import { LocalBrowserError, type LocalBrowserService } from '../service.js';
 import { _UI_TOOLS_CONTEXT } from '../../../runtimes/claude-code/messaging/context-builder.js';
@@ -70,7 +70,9 @@ function setup() {
       refuseWhileSigningIn: vi.fn(() => undefined),
       isOpenFor: vi.fn((_sessionId: string) => false),
       ask: vi.fn(async () => ({ handoffId: 'h1', site: 'fixture.test', next: 'Wait.' })),
-      outsideTurnReason: vi.fn(async (_sessionId: string): Promise<string | null> => null),
+      outsideTurnReason: vi.fn(
+        async (_sessionId: string): Promise<OutsideTurnReason | null> => null
+      ),
     },
   };
   // These projection tests replace the service edge. Ownership itself is exercised by
@@ -113,6 +115,71 @@ function inputFor(id: string): unknown {
 }
 
 describe('local browser scoped tool projection', () => {
+  describe('browser turn checks', () => {
+    const guardedTools = [
+      ['local_browser.observe', 'observe'],
+      ['local_browser.screenshot', 'screenshot'],
+      ['local_browser.act', 'action'],
+    ] as const;
+    const reasons: OutsideTurnReason[] = [
+      'stranger_chat',
+      'room_outside_words',
+      'outsider_turn',
+      'read_outside_text',
+    ];
+
+    describe.each(guardedTools)('%s', (id, method) => {
+      it.each(reasons)('checks the %s mark before using the page', async (reason) => {
+        const { domain, service, deps, context } = setup();
+        service.handover.outsideTurnReason.mockResolvedValue(reason);
+        const tool = domain.capabilities.find((item) => item.id === id)!;
+        const result = tool.invoke(deps, inputFor(id), context('chat-one'));
+
+        if (reason === 'read_outside_text') {
+          await expect(result).resolves.toBeDefined();
+          expect(service[method]).toHaveBeenCalledOnce();
+        } else {
+          await expect(result).rejects.toMatchObject({
+            payload: {
+              code: 'outside_turn',
+              reason,
+              next: 'Ask the person in your direct chat.',
+            },
+          });
+          expect(service[method]).not.toHaveBeenCalled();
+          expect(service.agentState).not.toHaveBeenCalled();
+        }
+      });
+
+      it('checks the turn again before returning its answer', async () => {
+        const { domain, service, deps, context } = setup();
+        service.handover.outsideTurnReason
+          .mockResolvedValueOnce(null)
+          .mockResolvedValue('outsider_turn');
+        const tool = domain.capabilities.find((item) => item.id === id)!;
+        await expect(tool.invoke(deps, inputFor(id), context('chat-one'))).rejects.toMatchObject({
+          payload: { code: 'outside_turn', reason: 'outsider_turn' },
+        });
+        // A mid-act mark withholds the answer after the action happened. No replay: the next
+        // call refuses before dispatch, leaving the original effect as the only attempt.
+        await expect(tool.invoke(deps, inputFor(id), context('chat-one'))).rejects.toMatchObject({
+          payload: { code: 'outside_turn', reason: 'outsider_turn' },
+        });
+        expect(service[method]).toHaveBeenCalledOnce();
+      });
+    });
+
+    it.each(reasons)('keeps connection state readable on a %s turn', async (reason) => {
+      const { domain, service, deps, context } = setup();
+      service.handover.outsideTurnReason.mockResolvedValue(reason);
+      const tool = domain.capabilities.find((item) => item.id === 'local_browser.state')!;
+      await expect(tool.invoke(deps, {}, context('chat-one'))).resolves.toMatchObject({
+        status: 'connected',
+      });
+      expect(service.handover.outsideTurnReason).not.toHaveBeenCalled();
+    });
+  });
+
   it('offers observation and action only on the in-session surface', () => {
     const { domain } = setup();
     expect(domain.capabilities.map((item) => item.id)).toEqual([
@@ -676,7 +743,7 @@ describe('local browser scoped tool projection', () => {
       },
     };
 
-    it.each([null, 'read_outside_text'])(
+    it.each([null, 'read_outside_text'] as const)(
       'keeps the handoff for a turn marked by %s',
       async (reason) => {
         const { service, domain, deps, context } = setup();
@@ -688,20 +755,47 @@ describe('local browser scoped tool projection', () => {
       }
     );
 
-    it.each(['stranger_chat', 'room_outside_words', 'outsider_turn'])(
-      'points a %s turn at the person instead',
+    it.each(['stranger_chat', 'room_outside_words', 'outsider_turn'] as const)(
+      'holds a %s turn before reading a refused page',
       async (reason) => {
         const { service, domain, deps, context } = setup();
         service.observe.mockResolvedValueOnce(refused as never);
         service.handover.outsideTurnReason.mockResolvedValueOnce(reason);
         const read = domain.capabilities.find((item) => item.id === 'local_browser.observe')!;
-        const answer = (await read.invoke(deps, {}, context('chat-one'))) as typeof refused;
-        expect(answer.refusal.next).not.toContain('local_browser_ask_person');
-        expect(answer.refusal.next).toContain('tell the person');
-        expect(answer.refusal.host).toBe('www.godaddy.example');
+        await expect(read.invoke(deps, {}, context('chat-one'))).rejects.toMatchObject({
+          payload: {
+            code: 'outside_turn',
+            reason,
+            next: 'Ask the person in your direct chat.',
+          },
+        });
+        expect(service.observe).not.toHaveBeenCalled();
       }
     );
   });
+
+  it.each(['stranger_chat', 'room_outside_words', 'outsider_turn'] as const)(
+    'a captured reload proof never bypasses the calling chat’s %s mark',
+    async (reason) => {
+      const { service, domain, deps, context } = setup();
+      service.hasNavigationRefusal.mockReturnValue(true);
+      service.handover.outsideTurnReason.mockImplementation(async (chat) => {
+        expect(chat).toBe('chat-one');
+        return reason;
+      });
+      const read = domain.capabilities.find((item) => item.id === 'local_browser.observe')!;
+      await expect(read.invoke(deps, {}, context('chat-one'))).rejects.toMatchObject({
+        payload: {
+          code: 'outside_turn',
+          reason,
+          error: 'This turn can’t use the browser.',
+          next: 'Ask the person in your direct chat.',
+        },
+      });
+      expect(service.observeRefusal).not.toHaveBeenCalled();
+      expect(service.observe).not.toHaveBeenCalled();
+    }
+  );
 
   it('lets no agent name the site it hands over', () => {
     const { domain } = setup();

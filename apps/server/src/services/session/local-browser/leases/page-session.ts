@@ -192,6 +192,7 @@ export class LocalBrowserPageSession {
     this.syncTabs();
     return this.pageState.describe(
       {
+        profile: this.shared?.profile?.(),
         connectionId: this.connectionId,
         sessionId: this.sessionId,
         mode: this.mode,
@@ -255,7 +256,10 @@ export class LocalBrowserPageSession {
           );
           this.ownedContext.on('close', () => this.closed(connectionId));
         } else {
-          const bridge = await this.embedded!.open(connectionId);
+          const bridge = await this.embedded!.open(connectionId, {
+            sessionId: this.sessionId,
+            profileId: this.profileId,
+          });
           this.embeddedClose = bridge.close;
           setupAbort.signal.throwIfAborted();
           this.embeddedAttachment = new EmbeddedBrowserAttachment(bridge, this.backend, () =>
@@ -298,10 +302,7 @@ export class LocalBrowserPageSession {
   }
 
   /** Whether this exact Page can still be resolved, without reading its document. */
-  hasLivePage(): boolean {
-    const page = this.pageState.tabs.get(this.pageState.selectedTabId ?? '');
-    return this.status === 'connected' && !!page && !page.isClosed();
-  }
+  hasLivePage = (): boolean => this.handles.hasLivePage();
 
   /** Pending acquisitions and unresolved closure retain their resource slot. */
   hasPageReservation(): boolean {
@@ -329,10 +330,12 @@ export class LocalBrowserPageSession {
     );
   }
 
-  matchesProfileGrant(profileId: string, agentId?: string): boolean {
+  matchesProfileGrant(profileId: string | null, agentId?: string): boolean {
     return this.authority.matches(profileId, agentId);
   }
   assertAuthorityCurrent = (): void => this.authority.assertCurrent();
+  requireHandoffAuthority = (chat: string): Promise<void> => this.authority.require(chat);
+  requireHandoffCustody: (profile: string | null) => void = () => undefined;
 
   /** Revoke before awaiting cleanup; person custody never becomes an agent grant again. */
   async revoke(): Promise<void> {
@@ -470,9 +473,7 @@ export class LocalBrowserPageSession {
     this.closing.active ? this.closeConnection(false) : this.personControl.handToPerson();
   resume = () => this.personControl.resume();
 
-  async disconnect(): Promise<LocalBrowserState> {
-    return this.closeConnection(true);
-  }
+  disconnect = (): Promise<LocalBrowserState> => this.closeConnection(true);
 
   /**
    * Close the connection and release what it holds. `closed` is the person closing

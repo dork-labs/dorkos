@@ -94,6 +94,13 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     keywords: ['inbox', 'notification', 'row', 'unread', 'read', 'activity', 'history'],
   },
   {
+    id: 'stopped-app-rows',
+    title: 'Stopped app rows',
+    page: 'home-inbox',
+    category: 'Inbox',
+    keywords: ['extension', 'mini app', 'stopped', 'restart', 'watchdog', 'off'],
+  },
+  {
     id: 'access-change-rows',
     title: 'Access change rows',
     page: 'home-inbox',

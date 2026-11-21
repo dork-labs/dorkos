@@ -13,7 +13,11 @@ import type {
   ResolveConnectorTurnInput,
   ResolveConnectorTurnResult,
   RevokeConnectorTurnReason,
+  RuntimeToolCaller,
+  RuntimeToolTurnFacts,
 } from '../runtime-principal-port.js';
+import { RuntimeToolContextUnavailableError } from '../runtime-principal-port.js';
+import { homeOf, resolveAgentHome } from '../../core/agent-identity/index.js';
 import {
   createServerPrincipal,
   isServerPrincipal,
@@ -145,6 +149,10 @@ export class ConnectorRuntimePrincipalService
 
   /** Revoke every prior-process binding and establish the current boot epoch. */
   async initializeBoot(): Promise<{ readonly bootEpoch: string }> {
+    // Retire process authority before a fallible reset write; a failed boot stays unavailable.
+    this.bootEpoch = undefined;
+    this.renewalOwners.clear();
+    this.revokedBindingIds.clear();
     const now = this.now().toISOString();
     const bootEpoch = this.makeBootEpoch();
     this.db
@@ -152,8 +160,6 @@ export class ConnectorRuntimePrincipalService
       .set({ revokedAt: now, revokeReason: 'server_restart' })
       .where(isNull(connectorRuntimeBindings.revokedAt))
       .run();
-    this.revokedBindingIds.clear();
-    this.renewalOwners.clear();
     this.bootEpoch = bootEpoch;
     return Promise.resolve({ bootEpoch });
   }
@@ -377,6 +383,77 @@ export class ConnectorRuntimePrincipalService
       return { status: 'refused', reason: 'revoked' };
     }
     return { status: 'resolved', principal: createServerPrincipal(claims) };
+  }
+
+  /** Resolve only the authentic binding's existing owner, keeping permission facts live. */
+  async resolveToolTurn(principal: ServerPrincipalProof): Promise<RuntimeToolCaller> {
+    const unavailable = () => new RuntimeToolContextUnavailableError();
+    if (!isServerPrincipal(principal) || principal.claims.kind !== 'runtime') throw unavailable();
+    const claims = principal.claims;
+    const owner = this.renewalOwners.get(claims.bindingId);
+    const agentHome = homeOf(resolveAgentHome(claims.agentPath));
+    const workingDirectory = claims.canonicalCwd;
+    if (!owner || !agentHome || agentHome !== claims.agentPath || !workingDirectory)
+      throw unavailable();
+    const assertOwned = (): void => {
+      if (
+        this.renewalOwners.get(claims.bindingId) !== owner ||
+        !owner.ownership.isCurrent() ||
+        this.renewalOwners.get(claims.bindingId) !== owner ||
+        !owner.ownership.readToolTurn
+      )
+        throw unavailable();
+      const row = this.bindingRow(claims.bindingId);
+      if (
+        !row ||
+        this.bindingRefusal(row) ||
+        !this.bindingMatchesPrincipal(row, claims) ||
+        homeOf(resolveAgentHome(claims.agentPath)) !== agentHome ||
+        this.renewalOwners.get(claims.bindingId) !== owner ||
+        !owner.ownership.isCurrent()
+      )
+        throw unavailable();
+    };
+    const read = (): RuntimeToolTurnFacts => {
+      assertOwned();
+      const facts = owner.ownership.readToolTurn!();
+      if (
+        !facts ||
+        (facts.effectiveMode !== undefined && typeof facts.effectiveMode !== 'string') ||
+        (facts.chosenMode !== undefined && typeof facts.chosenMode !== 'string') ||
+        typeof facts.neverAsks !== 'boolean' ||
+        !facts.session ||
+        !Array.isArray(facts.session.eventQueue) ||
+        (facts.session.eventQueueNotify !== undefined &&
+          typeof facts.session.eventQueueNotify !== 'function') ||
+        !(facts.signal instanceof AbortSignal) ||
+        facts.signal.aborted
+      )
+        throw unavailable();
+      assertOwned();
+      if (facts.signal.aborted) throw unavailable();
+      return facts;
+    };
+    const assertCurrent = async (): Promise<void> => {
+      // Retain only cancellation across the await, never mode or session facts.
+      const signal = read().signal;
+      if (!(await this.authority.revalidateTurn(claims))) {
+        this.denyForAuthorityChange(claims.bindingId);
+        throw unavailable();
+      }
+      // The fresh guarded read is the operative post-await ownership/facts fence.
+      read();
+      if (signal.aborted) throw unavailable();
+    };
+    await assertCurrent();
+    return Object.freeze({
+      runtime: claims.runtime,
+      sessionId: claims.canonicalSessionId,
+      agentHome,
+      workingDirectory,
+      read,
+      assertCurrent,
+    });
   }
 
   /** Check the authentic current boot binding and its live turn owner without awaiting. */
