@@ -51,14 +51,13 @@ import {
   type TurnMarks,
 } from './turn-marks.js';
 import {
-  captureTransfer,
   copyCaptureMarks,
   type RecordedTurn,
+  type RecordedTurnView,
 } from './handoff-transfer-capture.js';
 import { primaryOf } from '../../session/resolution/session-key-registry.js';
 import { noteBridgedSender, noteTurnHold } from './continuation-hold.js';
 import { aliasRoomTurnWords } from './outside-words.js';
-import { chatReadOutsideWords } from './chat-outside-words.js';
 import { isOwnersCleanTurn, withHeldChatMark } from './held-chat-mark.js';
 import { aliasTurnStart, noteTurnStart } from './turn-start-marks.js';
 import { endReadMark, noteReadMark, sessionReadOutsideText } from './live-outsider-turns.js';
@@ -222,15 +221,14 @@ export function marksOf(
     : marks;
 }
 
-/** Current transferable marks, never a native/billing or tool-caller authority grant. */
-export function captureCurrentTransfer(sessionId: string, expectedCurrentSerial: number) {
-  return captureTransfer(
-    turnLevels.get(sessionId),
-    sessionId,
-    expectedCurrentSerial,
-    sessionReadOutsideText(primaryOf(sessionId)) ? { outsider: true } : NO_MARKS,
-    chatReadOutsideWords(sessionId)
-  );
+/**
+ * The latest turn this process recorded under an id, with its capture record, for
+ * `captureCurrentTransfer` alone. Read only, by type: the capture copies what it keeps.
+ *
+ * @param sessionId - The id the turn was sent under.
+ */
+export function recordedTurnOf(sessionId: string): RecordedTurnView | undefined {
+  return turnLevels.get(sessionId);
 }
 
 /**

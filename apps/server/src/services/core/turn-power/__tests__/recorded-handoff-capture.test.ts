@@ -9,12 +9,12 @@ import {
   recordTurnLevels,
   turnSerialOf,
   lastTurnLevelOf,
-  captureCurrentTransfer,
   aliasTurnLevel,
   carryTurnLevel,
   markRunningTurn,
   TURN_LEVEL_MEMORY,
 } from '../turn-levels.js';
+import { captureCurrentTransfer } from '../current-transfer.js';
 let id = 0;
 const fresh = () => `capture-casey-${++id}`;
 function recorder(mode = 'bypassPermissions') {

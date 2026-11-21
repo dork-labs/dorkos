@@ -45,6 +45,7 @@ import {
   roomVoice,
   type ScriptedTurnRunner,
 } from '../../../rooms/__tests__/room-test-harness.js';
+import { recordFixturePublicSource } from '../../../rooms/__tests__/durable-handoff-fixture.js';
 import {
   noteTurnFailure,
   settleTurnFailure,
@@ -388,6 +389,7 @@ async function fixture(variant: Variant = 'positive', projectPolicy?: 'eligible'
     seatMover: () => mover,
   });
   const { service, store, authors, human } = harness;
+  service.handoffs.initializeDurable(() => {});
   const room = service.createRoom(
     { kind: 'channel', title: 'Recovery', members: [], agentPaths: [home] },
     human
@@ -541,12 +543,15 @@ async function fixture(variant: Variant = 'positive', projectPolicy?: 'eligible'
   });
   const beforeMarks = marksOf(priorId, undefined);
   const submit = async () => {
+    const child = `child_${randomUUID()}`;
+    // A hand-off is admitted only from a real recorded turn of a known chat (DOR-3816).
+    await recordFixturePublicSource(harness, child, home, roomId);
     const answer = await registry.invoke(
       'rooms.post',
       { roomId, text: NEW_DRAFT },
       {
         identity: { agentPath: home, displayName: 'Fixture', createdAt: new Date().toISOString() },
-        sessionId: `child_${randomUUID()}`,
+        sessionId: child,
         retryChannel: 'mcp-argument',
       }
     );

@@ -1,5 +1,3 @@
-import { noteRoomTurnWords } from '../core/turn-power/turn-levels.js';
-import type { AsideCarry } from '../rooms/room-trigger/aside.js';
 /**
  * Trigger-only turn orchestration for the message POST (ADR-0264, Design B.2).
  *
@@ -122,6 +120,8 @@ import { awaitDispatchDecision } from './launch/dispatch-decision.js';
 import { dispatchOptions, joinProtectedHandoffCarry } from './launch/dispatch-options.js';
 import { DispatchContextCleanup } from './launch/dispatch-context-cleanup.js';
 import { runPrepareLaunch } from './launch/prepare-turn-launch.js';
+import { noteRoomTurnWords } from '../core/turn-power/turn-levels.js';
+import type { AsideCarry } from '../rooms/room-trigger/aside.js';
 import { SESSIONS } from '../../config/constants.js';
 import { startSpan, SPAN, ATTR } from '../observability/index.js';
 import { logError, logger } from '../../lib/logger.js';
@@ -897,8 +897,10 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     // its own transcript (the fold-into-next fallback, task 4.2). Taken — not
     // peeked — so each note rides exactly this one dispatch; the ordinary case
     // holds nothing and pays a single map lookup. A native-staging runtime never
-    // fills this hold, so its dispatches are untouched.
-    dispatchContext.takeStaged(additionalContext);
+    // fills this hold, so its dispatches are untouched. Taken after a protected
+    // claim below, so a claim that defers or fails leaves the notes untouched;
+    // they still go here, ahead of the notes that follow.
+    const stagedAt = additionalContext.length;
     // The one-time note that this conversation has filled past the early-warning
     // line (DOR-2732), owed by the turn that crossed it and taken here so it
     // rides exactly this dispatch. A command intent never reaches this path, so
@@ -965,10 +967,12 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
       handoffCarry = joinProtectedHandoffCarry(opts, claimed.roomHandoffCarry);
       if (claimed.docEvents) appendDocEventsContext(additionalContext, claimed.docEvents);
     }
+    // Synchronous: nothing may run between the claim above and the send below.
+    dispatchContext.takeStaged(additionalContext, stagedAt);
     if (handoffCarry?.outsideWords) noteRoomTurnWords(sessionId, true);
     const offerHold = deps.answersDispatchHold === true && opts.privateReceiptId === undefined;
     const send = (dispatchHold?: DispatchHoldHandshake): AsyncGenerator<StreamEvent> => {
-      // A thrown or partially consumed invocation is ambiguous: never requeue notes after this boundary.
+      // A thrown or partially consumed invocation is ambiguous: never requeue staged notes after this boundary.
       dispatchContext.runtimeAttempted = true;
       return deps.sendMessage(
         sessionId,

@@ -24,13 +24,23 @@ export class DispatchContextCleanup {
 
   constructor(private readonly owner: CleanupOwner) {}
 
-  /** Destructively take the real staged notes into this dispatch's context. */
-  takeStaged(bag: AdditionalContext): void {
+  /**
+   * Destructively take the real staged notes into this dispatch's context.
+   *
+   * @param bag - The dispatch's context.
+   * @param at - Where in `bag` they go, so a late take keeps the notes' usual place.
+   */
+  takeStaged(bag: AdditionalContext, at = bag.length): void {
     this.staged = takeStagedContext(this.owner.sessionId);
-    bag.push(...this.staged);
+    bag.splice(at, 0, ...this.staged);
   }
 
-  /** Finish the pre-effect attempt; an ambiguous runtime invocation never restores its notes. */
+  /**
+   * Finish an attempt that did not become a turn. A person's staged notes go back only when the
+   * runtime was never invoked: an ambiguous invocation may have read them, and a repeat is worse
+   * than a loss. DorkOS's own notes (the context warning, the cutoff, what is new since) go back
+   * whenever the attempt failed, as before durable hand-offs: telling the agent twice is harmless.
+   */
   cleanup(): void {
     if (this.cleaned) return;
     this.cleaned = true;
@@ -39,10 +49,10 @@ export class DispatchContextCleanup {
       if (!this.runtimeAttempted) {
         for (const entry of this.staged)
           holdStagedContext(sessionId, entry.data.text, randomUUID());
-        if (this.owedWarning !== null) restoreContextWarning(turnKey(), this.owedWarning);
-        if (this.owedCutoff !== null) restoreTurnCutoff(turnKey(), this.owedCutoff);
-        this.settleNewSince();
       }
+      if (this.owedWarning !== null) restoreContextWarning(turnKey(), this.owedWarning);
+      if (this.owedCutoff !== null) restoreTurnCutoff(turnKey(), this.owedCutoff);
+      this.settleNewSince();
     } finally {
       uiTurnFacts.endTurn(turnKey());
       release();

@@ -1,5 +1,5 @@
 /** Final runtime options; pure synchronous projection after protected authority is claimed. */
-import { joinSeatCarry } from '../../rooms/handoff/seat-message-prompt.js';
+import { joinSeatCarry } from '../../rooms/handoff/join-seat-carry.js';
 import type { DispatchHoldHandshake, MessageOpts } from '@dorkos/shared/agent-runtime';
 import type { AdditionalContext } from '@dorkos/shared/additional-context';
 import type { TriggerTurnOpts } from '../trigger-turn.js';

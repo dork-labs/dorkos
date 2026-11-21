@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(rooms): keep waiting handoffs and reports after restart (DOR-3816)'
+  - "fix(rooms): durable hand-offs keep main's note and mark behaviour (DOR-3816)"
 ---
 
 ### Fixed

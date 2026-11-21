@@ -8,7 +8,7 @@ import type {
   TurnPermissionLevel,
 } from '@dorkos/shared/agent-runtime';
 import type { AsideCarry } from '../room-trigger/aside.js';
-import { joinSeatCarry } from './seat-message-prompt.js';
+import { joinSeatCarry } from './join-seat-carry.js';
 
 // Shared contracts currently expose TypeScript shapes, not a reusable strict Zod decoder.
 // Existing chat parseCeiling intentionally discards power bounds and catches corrupt input;

@@ -3,11 +3,8 @@ import type { RoomCore } from '../service/room-core.js';
 import type { RoomHandoff, HandoffOrigin } from './handoff-presentation.js';
 import { decodeHandoffEnvelope, type HandoffEnvelope } from './handoff-envelope.js';
 import { randomUUID } from 'node:crypto';
-import {
-  captureCurrentTransfer,
-  turnSerialOf,
-  lastTurnLevelOf,
-} from '../../core/turn-power/turn-levels.js';
+import { turnSerialOf, lastTurnLevelOf } from '../../core/turn-power/turn-levels.js';
+import { captureCurrentTransfer } from '../../core/turn-power/current-transfer.js';
 import type { AuthorRecord } from '../author-registry.js';
 import type { RoomStore } from '../room-store.js';
 import type { AsideCarry } from '../room-trigger/aside.js';

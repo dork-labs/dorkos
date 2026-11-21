@@ -11,6 +11,11 @@ export interface RecordedTurn {
   level: TurnPermissionLevel;
   capture: CaptureRecord;
 }
+/** A recorded turn as a reader outside `turn-levels` sees it: its capture cannot be rewritten. */
+export interface RecordedTurnView {
+  readonly level: TurnPermissionLevel;
+  readonly capture: Readonly<CaptureRecord>;
+}
 /** Detached capture-only marks; public level objects retain legacy ownership semantics. */
 export function copyCaptureMarks(marks: TurnMarks): TurnMarks | null {
   try {
@@ -22,7 +27,7 @@ export function copyCaptureMarks(marks: TurnMarks): TurnMarks | null {
 
 /** Read only a positively current record; returned policy never changes with its source. */
 export function captureTransfer(
-  record: RecordedTurn | undefined,
+  record: RecordedTurnView | undefined,
   sessionId: string,
   expectedCurrentSerial: number,
   currentMarks: TurnMarks,
