@@ -100,6 +100,18 @@ export const ExtensionsConfigSchema = z
      */
     legacyUnsourced: z.array(z.string()).optional(),
     /**
+     * The approved ids whose stored permission set recorded no places
+     * (`slots`) when places arrived (DOR-4891), written once by the
+     * `'0.140.0'` config migration. The first scan after start gives each
+     * one the places its approved files declare, where the old version
+     * showed them, and only when those files are unchanged
+     * (`pin/slots-backfill.ts`); the list then goes. An id not listed is
+     * never backfilled.
+     *
+     * `operator-only` for the same reason as `approvedToRun`.
+     */
+    legacySlotless: z.array(z.string()).optional(),
+    /**
      * The permission set each approval covers, keyed by extension id
      * (DOR-2686): what the extension declared when a person said yes.
      *
