@@ -73,7 +73,7 @@ test.describe('Settings → Backups', () => {
 
     const panel = settingsPage.activePanel;
     await expect(panel.getByTestId('backups-total')).toHaveText(
-      'Backups use 52.0 MB on this computer.'
+      'Backups use 52 MB on this computer.'
     );
     const rows = panel.getByRole('list', { name: 'Backups' }).getByRole('listitem');
     await expect(rows).toHaveCount(2);
@@ -104,7 +104,7 @@ test.describe('Settings → Backups', () => {
     await page.getByRole('button', { name: 'Remove backup' }).click();
     await expect.poll(() => removed).toEqual([OLDER]);
     await expect(settingsPage.activePanel.getByTestId('backups-total')).toHaveText(
-      'Backups use 12.0 MB on this computer.'
+      'Backups use 12 MB on this computer.'
     );
   });
 });

@@ -45,7 +45,9 @@ export function useMoveBackup() {
 }
 
 /**
- * A byte count as a person reads it: `512 B`, `4.2 MB`, `1.3 GB`.
+ * A byte count as a person reads it: `512 B`, `4.2 MB`, `412 MB`, `1.3 GB`.
+ * One decimal only below 10, where it changes the reading; the same rounding
+ * as the community-hosting sizes.
  *
  * @param bytes - A non-negative size in bytes.
  */
@@ -57,5 +59,6 @@ export function formatBytes(bytes: number): string {
     value /= 1024;
     unit += 1;
   }
-  return unit === 0 ? `${value} B` : `${value.toFixed(1)} ${units[unit]}`;
+  const rounded = unit === 0 || value >= 10 ? Math.round(value) : Math.round(value * 10) / 10;
+  return `${rounded} ${units[unit]}`;
 }

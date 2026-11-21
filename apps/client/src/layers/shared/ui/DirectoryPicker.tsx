@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect, type ReactNode } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTransport, useAppStore, type RecentCwd } from '@/layers/shared/model';
 import { getAgentDisplayName } from '@dorkos/shared/validation';
@@ -7,6 +7,7 @@ import { resolveAgentVisual } from '@/layers/shared/lib/resolve-agent-visual';
 import { formatRelativeTime, shortenHomePath } from '@/layers/shared/lib/session-utils';
 import { IdentityAvatar } from './identity-avatar';
 import { PathBreadcrumb } from './path-breadcrumb';
+import { DirectoryPickerPathField } from './directory-picker-path-field';
 import { Spinner } from './spinner';
 import {
   ResponsiveDialog,
@@ -48,8 +49,20 @@ export interface DirectoryPickerProps {
   title?: string;
   /** One line under the title about where the pick should not go. */
   note?: string;
-  /** Extra controls above the footer, such as a typed path for a folder the browser can't reach. */
-  extra?: ReactNode;
+  /**
+   * A field to type a folder path, for one the browser can't reach (an
+   * external drive). Enter browses to it; while it holds text, the footer
+   * button picks it instead of the browsed folder.
+   */
+  pathField?: { label: string; placeholder?: string };
+  /** The footer button's label. */
+  selectLabel?: string;
+  /** Leave the dialog open after a pick, so the caller can show a refusal and close it itself. */
+  keepOpenOnSelect?: boolean;
+  /** The caller's refusal for the last pick, shown above the footer. */
+  error?: string | null;
+  /** A pick is running; the footer button waits. */
+  pending?: boolean;
   /**
    * Open on the folder browser, ignoring recent working folders. For a pick
    * where a project folder is not the usual answer (moving a backup, DOR-4253).
@@ -66,7 +79,11 @@ export function DirectoryPicker({
   resolvedAgents,
   title = 'Select working folder',
   note,
-  extra,
+  pathField,
+  selectLabel = 'Use this folder',
+  keepOpenOnSelect = false,
+  error,
+  pending = false,
   browseOnly = false,
 }: DirectoryPickerProps) {
   const transport = useTransport();
@@ -83,6 +100,14 @@ export function DirectoryPicker({
   const [newFolderError, setNewFolderError] = useState<string | null>(null);
   const newFolderInputRef = useRef<HTMLInputElement>(null);
 
+  const [typedPath, setTypedPath] = useState('');
+  // Each opening starts with an empty typed path.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) setTypedPath('');
+  }
+
   const onClose = useCallback(() => onOpenChange(false), [onOpenChange]);
 
   const { data, isLoading } = useQuery({
@@ -92,13 +117,19 @@ export function DirectoryPicker({
     staleTime: 30_000,
   });
 
-  // eslint-disable-next-line react-hooks/preserve-manual-memoization -- Semantic clarity
+  const typed = typedPath.trim();
   const handleSelect = useCallback(() => {
-    if (data?.path) {
-      onSelect(data.path);
-      onClose();
-    }
-  }, [data?.path, onSelect, onClose]);
+    // A typed path wins over the browsed folder: it is the one the person named last.
+    const chosen = typed || (view === 'browse' ? data?.path : undefined);
+    if (!chosen) return;
+    onSelect(chosen);
+    if (!keepOpenOnSelect) onClose();
+  }, [typed, view, data?.path, onSelect, onClose, keepOpenOnSelect]);
+
+  const handleBrowseTyped = useCallback((path: string) => {
+    setCurrentPath(path);
+    setView('browse');
+  }, []);
 
   const handleViewChange = useCallback((v: PickerView) => {
     setView(v);
@@ -113,6 +144,8 @@ export function DirectoryPicker({
   const handleNavigate = useCallback((dirPath: string) => {
     setCurrentPath(dirPath);
     setView('browse');
+    // Clicking into a folder is a new choice; a stale typed path must not win over it.
+    setTypedPath('');
   }, []);
 
   const handleRecentSelect = useCallback(
@@ -395,8 +428,24 @@ export function DirectoryPicker({
           )}
         </div>
 
-        {/* A caller's own way to name a folder, above the footer. */}
-        {extra && <div className="border-t px-4 py-3">{extra}</div>}
+        {pathField ? (
+          <div className="border-t px-4 py-3">
+            <DirectoryPickerPathField
+              label={pathField.label}
+              placeholder={pathField.placeholder}
+              value={typedPath}
+              onChange={setTypedPath}
+              onBrowse={handleBrowseTyped}
+              error={error}
+            />
+          </div>
+        ) : (
+          error && (
+            <p role="alert" className="text-destructive border-t px-4 py-3 text-xs">
+              {error}
+            </p>
+          )
+        )}
 
         {/* Footer */}
         <div className="bg-muted/20 flex items-center justify-end gap-2 border-t px-4 py-3">
@@ -410,10 +459,10 @@ export function DirectoryPicker({
           <button
             type="button"
             onClick={handleSelect}
-            disabled={!data?.path || view !== 'browse'}
+            disabled={pending || (!typed && (!data?.path || view !== 'browse'))}
             className="bg-primary text-primary-foreground hover:bg-primary/90 rounded-md px-3 py-1.5 text-xs transition-colors disabled:opacity-50"
           >
-            Use this folder
+            {selectLabel}
           </button>
         </div>
       </ResponsiveDialogContent>

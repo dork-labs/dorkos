@@ -13,6 +13,7 @@ import { createMockTransport } from '@dorkos/test-utils/mock-factories';
 import { TransportProvider } from '@/layers/shared/model';
 import { STORAGE_KEYS } from '@/layers/shared/lib';
 import { BackupsTab } from '../ui/backups/BackupsTab';
+import { formatBytes } from '../model/use-backups';
 
 const LIST: BackupCopiesResponse = {
   folder: '/home/demo/.dork/backups',
@@ -68,17 +69,26 @@ afterEach(() => {
   localStorage.clear();
 });
 
+describe('formatBytes', () => {
+  it('keeps one decimal only below 10', () => {
+    expect(formatBytes(512)).toBe('512 B');
+    expect(formatBytes(4.2 * 1024 * 1024)).toBe('4.2 MB');
+    expect(formatBytes(412 * 1024 * 1024)).toBe('412 MB');
+    expect(formatBytes(1.3 * 1024 ** 3)).toBe('1.3 GB');
+  });
+});
+
 describe('BackupsTab', () => {
   it('shows the total and every copy, with who keeps it', async () => {
     renderTab();
     expect(await screen.findByTestId('backups-total')).toHaveTextContent(
-      'Backups use 3.0 MB on this computer.'
+      'Backups use 3 MB on this computer.'
     );
     const rows = within(screen.getByRole('list', { name: 'Backups' })).getAllByRole('listitem');
     expect(rows).toHaveLength(2);
     expect(rows[0]).toHaveTextContent('Kept by DorkOS');
     expect(rows[1]).toHaveTextContent('Older copy');
-    expect(rows[1]).toHaveTextContent('2.0 MB');
+    expect(rows[1]).toHaveTextContent('2 MB');
   });
 
   it('offers Move and Remove only on an older copy', async () => {
@@ -117,7 +127,10 @@ describe('BackupsTab', () => {
       screen.getByText('Older copies can include past chats. A folder that syncs will upload them.')
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Recent folders' })).toBeNull();
-    const use = await screen.findByRole('button', { name: 'Use this folder' });
+    // One footer button, and no other way to pick.
+    expect(screen.queryByRole('button', { name: 'Use this folder' })).toBeNull();
+    expect(screen.getAllByRole('button', { name: 'Move here' })).toHaveLength(1);
+    const use = screen.getByRole('button', { name: 'Move here' });
     await waitFor(() => expect(use).toBeEnabled());
     fireEvent.click(use);
     await waitFor(() =>
@@ -126,13 +139,15 @@ describe('BackupsTab', () => {
         '/home/demo/archive'
       )
     );
+    await waitFor(() => expect(screen.queryByText('Move backup to…')).toBeNull());
   });
 
-  it('moves to a typed folder path, like an external drive', async () => {
+  it('the footer button moves to the typed path over the browsed folder, like an external drive', async () => {
     renderTab();
     fireEvent.click(await screen.findByRole('button', { name: 'Move dork-20260901-daily.db' }));
     const field = await screen.findByLabelText('Or type a folder path');
     expect(field).toHaveAttribute('placeholder', '/Volumes/…');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Move here' })).toBeEnabled());
     fireEvent.change(field, { target: { value: '  /Volumes/Backup Drive/dorkos  ' } });
     fireEvent.click(screen.getByRole('button', { name: 'Move here' }));
     await waitFor(() =>
@@ -142,6 +157,19 @@ describe('BackupsTab', () => {
       )
     );
     await waitFor(() => expect(screen.queryByLabelText('Or type a folder path')).toBeNull());
+  });
+
+  it('Enter in the typed path browses there, and moves nothing', async () => {
+    renderTab();
+    fireEvent.click(await screen.findByRole('button', { name: 'Move dork-20260901-daily.db' }));
+    const field = await screen.findByLabelText('Or type a folder path');
+    fireEvent.change(field, { target: { value: '/Volumes/Archive' } });
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await waitFor(() =>
+      expect(transport.browseDirectory).toHaveBeenCalledWith('/Volumes/Archive', false)
+    );
+    expect(transport.moveBackup).not.toHaveBeenCalled();
+    expect(screen.getByText('Move backup to…')).toBeInTheDocument();
   });
 
   it('shows the server’s refusal for a typed path in place, and keeps the dialog open', async () => {
@@ -168,10 +196,15 @@ describe('BackupsTab', () => {
     );
     renderTab();
     fireEvent.click(await screen.findByRole('button', { name: 'Move dork-20260901-daily.db' }));
-    const use = await screen.findByRole('button', { name: 'Use this folder' });
+    const use = await screen.findByRole('button', { name: 'Move here' });
     await waitFor(() => expect(use).toBeEnabled());
     fireEvent.click(use);
-    const rows = within(screen.getByRole('list', { name: 'Backups' })).getAllByRole('listitem');
+    // The dialog stays open until the move lands, so the list sits behind it.
+    await waitFor(() => expect(use).toBeDisabled());
+    const rows = within(screen.getByRole('list', { name: 'Backups', hidden: true })).getAllByRole(
+      'listitem',
+      { hidden: true }
+    );
     await waitFor(() => expect(rows[1]).toHaveTextContent('Moving…'));
     expect(rows[0]).not.toHaveTextContent('Moving…');
     finish({ destinationPath: '/home/demo/archive/dork-20260901-daily.db' });
@@ -186,7 +219,7 @@ describe('BackupsTab', () => {
     expect(
       await screen.findByRole('button', { name: 'Remove dork-20260901-daily.db' })
     ).toBeDisabled();
-    expect(screen.getByText(/In use/)).toBeInTheDocument();
+    expect(screen.getByText(/In use · DorkOS is reading it/)).toBeInTheDocument();
   });
 
   it('says so when there are no backups', async () => {

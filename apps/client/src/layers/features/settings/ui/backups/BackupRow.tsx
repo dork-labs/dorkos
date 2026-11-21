@@ -31,7 +31,8 @@ export function BackupRow({ copy, working, acting, onMove, onRemove }: BackupRow
   return (
     <li className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3">
       <div className="min-w-0 space-y-0.5">
-        <div className="flex flex-wrap items-center gap-2">
+        {/* On a phone the badge gets its own line, so every row lines up the same way. */}
+        <div className="flex flex-col items-start gap-1 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2">
           <p className="text-sm font-medium">{KIND_LABEL[copy.kind]}</p>
           <Badge tone="neutral" icon={null}>
             {copy.managed ? 'Kept by DorkOS' : 'Older copy'}
@@ -39,7 +40,8 @@ export function BackupRow({ copy, working, acting, onMove, onRemove }: BackupRow
         </div>
         <p className="text-muted-foreground text-xs">
           {formatRelativeTime(copy.createdAt)} · {formatBytes(copy.sizeBytes)}
-          {copy.busy ? ' · In use' : ''}
+          {/* Says why Move and Remove are off; text rather than a tooltip, so it reads on touch. */}
+          {copy.busy ? ' · In use · DorkOS is reading it' : ''}
           {acting ? <span aria-hidden="true"> · {ACTING_LABEL[acting]}</span> : null}
         </p>
         <p className="text-muted-foreground truncate font-mono text-xs" title={copy.name}>
@@ -57,9 +59,11 @@ export function BackupRow({ copy, working, acting, onMove, onRemove }: BackupRow
           >
             Move
           </Button>
+          {/* Quiet here; the filled red belongs to the "Remove this backup?" confirm. */}
           <Button
-            variant="destructive"
+            variant="ghost"
             size="sm"
+            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
             disabled={disabled}
             onClick={() => onRemove(copy)}
             aria-label={`Remove ${copy.name}`}
