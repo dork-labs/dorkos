@@ -8,7 +8,10 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import request, { type Test } from '@dorkos/test-utils/supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
 import { PERSON_PROOF_HEADER } from '@dorkos/shared/person-session';
-import { leaseFixture } from '../../services/session/local-browser/__tests__/page-leases-fixture.js';
+import {
+  heldProtocolCall,
+  leaseFixture,
+} from '../../services/session/local-browser/__tests__/page-leases-fixture.js';
 import { PERSON_SAFETY_EXPRESSION } from '../../services/session/local-browser/leases/viewer-control/person-safety.js';
 import { createApiApp } from '../../http/api-chain.js';
 import { mountBetterAuth } from '../../http/better-auth.js';
@@ -18,6 +21,7 @@ import { markIngress } from '../../services/core/remote/ingress-mark.js';
 import { honoRequestFacts } from '../../http/request-facts.js';
 import { requirePersonAtThisComputer } from '../../lib/caller-authority.js';
 import { initAuth } from '../../services/core/auth/index.js';
+import * as sessionGate from '../../services/core/auth/session-gate.js';
 import { personProofFor } from '../../services/core/auth/person-proof.js';
 import { initConfigManager } from '../../services/core/config-manager.js';
 import { env } from '../../env.js';
@@ -230,6 +234,116 @@ afterEach(async () => {
 });
 
 describe('viewer sessions on the real HTTP chain', () => {
+  it('S1: refuses viewer address state when the session ends during the read', async () => {
+    const f = await leaseFixture();
+    activeService = f.service;
+    try {
+      await f.open('fixture-chat');
+      f.contexts[0].pages[0].navigate('https://example.com');
+      resolvePage.mockImplementation(f.service.viewerPages.resolve);
+      const viewer = await subscribe();
+      const read = f.service.personState.bind(f.service);
+      const reading = vi.spyOn(f.service, 'personState').mockImplementationOnce(async (chatId) => {
+        const state = await read(chatId);
+        expect(state).toMatchObject({ status: 'connected', sessionId: 'fixture-chat' });
+        db.delete(session).where(eq(session.id, sessionId)).run();
+        return state;
+      });
+      try {
+        const response = await asOwner(
+          request(target.server).get('/api/local-browser/state?sessionId=fixture-chat')
+        )
+          .set('X-Viewer-Id', viewer.viewerId)
+          .set('X-Viewer-Nonce', viewer.nonce);
+        expect(reading).toHaveBeenCalledExactlyOnceWith('fixture-chat');
+        expect(response.status).toBe(403);
+        expect(response.body.code).toBe('viewer_denied');
+        expect(response.body).not.toHaveProperty('viewerAddress');
+        expect(response.body).not.toHaveProperty('url');
+      } finally {
+        reading.mockRestore();
+      }
+    } finally {
+      await f.cleanup();
+    }
+  });
+
+  it.each(['navigationGeneration', 'controlEpoch'] as const)(
+    'S2: drops a JPEG and clears its receipt when %s changes during stillPerson',
+    async (generation) => {
+      const viewer = await subscribe();
+      const page: ViewerPage = await resolvePage.mock.results[0].value;
+      let facts = { ...page.facts() };
+      const changed = vi.spyOn(page, 'facts').mockImplementation(() => facts);
+      const gate = heldProtocolCall();
+      const framePath = `/api/browser-viewers/${viewer.viewerId}/frame`;
+      const deliver = registry.frame.bind(registry);
+      let capturedReceipt: string | undefined;
+      let frameResolved = false;
+      const delivered = vi.spyOn(registry, 'frame').mockImplementationOnce(async (...args) => {
+        const result = await deliver(...args);
+        expect(result).not.toBeNull();
+        capturedReceipt = result!.receipt;
+        frameResolved = true;
+        return result;
+      });
+      const decide = sessionGate.decideSessionGate;
+      const admission = vi
+        .spyOn(sessionGate, 'decideSessionGate')
+        .mockImplementation(async (...args) => {
+          const decision = await decide(...args);
+          if (frameResolved && args[1] === framePath) {
+            frameResolved = false;
+            expect(decision).toMatchObject({ allowed: true, user: { sessionId } });
+            await gate.run();
+          }
+          return decision;
+        });
+      try {
+        frame();
+        const waiting = asOwner(request(target.server).post(framePath))
+          .send({ nonce: viewer.nonce })
+          .then((response) => response);
+        await gate.started;
+        facts = { ...facts, revision: facts.revision + 1, [generation]: facts[generation] + 1 };
+        gate.release();
+        const response = await waiting;
+        expect(response.status).toBe(204);
+        expect(response.text).toBe('');
+        expect(response.headers['content-type']).toBeUndefined();
+        expect(response.headers['x-frame-receipt']).toBeUndefined();
+        expect(capturedReceipt).toMatch(/^[\w-]{43}$/);
+        const replay = await asOwner(request(target.server).post(framePath)).send({
+          nonce: viewer.nonce,
+          receipt: capturedReceipt,
+        });
+        expect(replay.status).toBe(403);
+        expect(replay.body.code).toBe('viewer_denied');
+        publish({
+          sequence: 2,
+          generation: 1,
+          navigationGeneration: facts.navigationGeneration,
+          controlEpoch: facts.controlEpoch,
+          viewport: { generation: 1, width: 640, height: 480, offsetTop: 0, scale: 1 },
+          width: 640,
+          height: 480,
+          bytes: Buffer.from(marker),
+        });
+        // No previous receipt is required after the stale delivery was discarded.
+        const next = await asOwner(request(target.server).post(framePath)).send({
+          nonce: viewer.nonce,
+        });
+        expect(next.status).toBe(200);
+        expect(next.headers['x-frame-receipt']).not.toBe(capturedReceipt);
+      } finally {
+        gate.release();
+        admission.mockRestore();
+        delivered.mockRestore();
+        changed.mockRestore();
+      }
+    }
+  );
+
   it('drives the six finite routes through real cookie/proof and broker paint authority', async () => {
     const f = await leaseFixture();
     activeService = f.service;
