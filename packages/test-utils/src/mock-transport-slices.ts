@@ -42,6 +42,9 @@ type SliceMethods =
   | 'getMiniAppAccess'
   | 'revokeMiniAppAccess'
   | 'restartExtension'
+  | 'listBackups'
+  | 'removeBackup'
+  | 'moveBackup'
   | 'getSignInLanding'
   | 'retrySignIn'
   | 'getCanvasDocRoutes'
@@ -145,6 +148,13 @@ export function transportSliceMocks(): Pick<Transport, SliceMethods> &
       .mockImplementation(async (agentId: string) => ({ agentId, paused: false, changed: true })),
     getMiniAppAccess: vi.fn().mockResolvedValue({ waiting: [], allowed: [] }),
     restartExtension: vi.fn().mockResolvedValue(undefined),
+    listBackups: vi
+      .fn()
+      .mockResolvedValue({ folder: '/home/demo/.dork/backups', copies: [], totalBytes: 0 }),
+    removeBackup: vi.fn().mockResolvedValue(undefined),
+    moveBackup: vi.fn().mockImplementation(async (name: string, destination: string) => ({
+      destinationPath: `${destination}/${name}`,
+    })),
     revokeMiniAppAccess: vi
       .fn()
       .mockImplementation(async (approvalId: string) => ({ status: 'revoked', approvalId })),

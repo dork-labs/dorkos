@@ -333,7 +333,9 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/browser-viewers');
     // 91 -> 92: the owner's passkeys and authenticator apps (DOR-3647).
     expect(mounts).toContain('/api/owner-factors');
-    expect(mounts).toHaveLength(92);
+    // 92 -> 93: the person's own backup copies, ahead of `/api/config` (DOR-4253).
+    expect(mounts).toContain('/api/config/backups');
+    expect(mounts).toHaveLength(93);
     const byHand = [
       '/',
       '/x/fixture',
