@@ -50,7 +50,9 @@ function PlacesRow({
       >
         <Puzzle className="size-3" />
       </span>
-      <p className="min-w-0 flex-1 text-xs break-words">
+      {/* A 9rem start keeps the words whole: on a narrow card the buttons drop
+          to their own line rather than squeezing the text to a letter a line. */}
+      <p className="min-w-0 flex-1 basis-36 text-xs break-words">
         <bdi className="text-foreground font-medium">{approval.name}</bdi>
         <span className="text-muted-foreground">
           {' · '}

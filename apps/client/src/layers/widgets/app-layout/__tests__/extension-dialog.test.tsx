@@ -254,6 +254,22 @@ describe('extension dialogs (registerDialog → DialogHost)', () => {
       expect(within(dialog).queryByText('From Planner')).not.toBeInTheDocument();
     });
 
+    // Purpose: a long name stays inside the strip's column on a phone, cut at
+    // the end, with the icon kept (jsdom has no layout, so this pins the
+    // classes: capped at its column, never at the screen).
+    it('keeps a long name inside its column, cut at the end', () => {
+      const { api } = createExtensionAPI('planner', makeDeps(), [], DECLARES_ALL);
+      api.registerDialog('notice', NamedNotice).open();
+      renderHost({ planner: 'A made-up app with a very long name that runs out of room' });
+
+      const text = screen.getByText(/^From A made-up app/);
+      expect(text.className).toMatch(/\btruncate\b/);
+      const strip = text.closest('[data-slot="extension-dialog-origin"]')!;
+      expect(strip.className).toContain('max-w-[min(20rem,100%)]');
+      expect(strip.className).toMatch(/\bmin-w-0\b/);
+      expect(strip.querySelector('svg')?.getAttribute('class')).toMatch(/\bshrink-0\b/);
+    });
+
     it('draws nothing, never the id, while the name is not known', () => {
       const { api } = createExtensionAPI('planner', makeDeps(), [], DECLARES_ALL);
       api.registerDialog('notice', NamedNotice).open();

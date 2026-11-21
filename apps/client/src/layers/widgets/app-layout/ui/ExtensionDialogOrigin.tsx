@@ -31,7 +31,7 @@ export function ExtensionDialogOrigin({ name, icon, className }: ExtensionDialog
     <div
       data-slot="extension-dialog-origin"
       className={cn(
-        'bg-background/95 text-muted-foreground flex max-w-[min(20rem,calc(100vw-2rem))] min-w-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs shadow-sm backdrop-blur',
+        'bg-background/95 text-muted-foreground flex max-w-[min(20rem,100%)] min-w-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs shadow-sm backdrop-blur',
         className
       )}
     >

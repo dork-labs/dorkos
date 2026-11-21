@@ -80,6 +80,29 @@ describe('PaletteResultRow — a command', () => {
     expect(screen.getByTitle('Planner')).toBeInTheDocument();
   });
 
+  // Purpose: on a phone the label stays whole and the app's name moves to its
+  // own line rather than both squeezing (jsdom has no layout, so this pins the
+  // classes that do it: a wrapping group, and only the name is cut).
+  it('keeps the label whole and lets only the app name wrap below and cut', () => {
+    renderRow({
+      id: 'notes:sync',
+      label: 'Sync everything now',
+      icon: 'Settings',
+      action: 'ext:notes:sync',
+      appName: 'A made-up app with a very long name',
+    });
+
+    const name = screen.getByTitle('A made-up app with a very long name');
+    expect(name).toHaveAttribute('data-slot', 'palette-app-name');
+    expect(name.className).toMatch(/\btruncate\b/);
+    expect(name.className).toMatch(/\bmax-w-full\b/);
+    const group = name.parentElement!;
+    expect(group.className).toMatch(/\bflex-wrap\b/);
+    const label = screen.getByText('Sync everything now');
+    expect(label.parentElement).toBe(group);
+    expect(label.className).not.toMatch(/\btruncate\b/);
+  });
+
   it('draws no app name on DorkOS’s own command', () => {
     renderRow({ id: 'settings', label: 'Settings', icon: 'Settings', action: 'openSettings' });
 

@@ -119,9 +119,12 @@ export function PaletteResultRow({
             transition={{ duration: 0.1, ease: EASE_OUT }}
             className="flex w-full items-center gap-2"
           >
-            {Icon && <Icon className="size-4" />}
-            <span>{item.data.label}</span>
-            {item.data.appName && <PaletteAppName name={item.data.appName} />}
+            {Icon && <Icon className="size-4 shrink-0" />}
+            {item.data.appName ? (
+              <PaletteAppCommand label={item.data.label} appName={item.data.appName} />
+            ) : (
+              <span>{item.data.label}</span>
+            )}
             {item.data.shortcut && (
               <span className="text-muted-foreground ml-auto text-xs">{item.data.shortcut}</span>
             )}
@@ -168,15 +171,25 @@ export function PaletteResultRow({
 }
 
 /**
- * The app a command came from, after its label: "· Planner" (DOR-4282). The
- * name is DorkOS's record of the app, so every app command names its app. The
- * dot is for the eye; a reader hears the label, then the app's name.
+ * An app command's label, then the app it came from: "Plan this week ·
+ * Planner" (DOR-4282). The name is DorkOS's record of the app, so every app
+ * command names its app. The label is never cut; the app's name sits beside
+ * it when it fits, on its own line below when it does not, and is cut at the
+ * end only when even that line is too short. The dot is for the eye; a reader
+ * hears the label, then the app's name.
  */
-function PaletteAppName({ name }: { name: string }) {
+function PaletteAppCommand({ label, appName }: { label: string; appName: string }) {
   return (
-    <span className="text-muted-foreground min-w-0 truncate text-xs" title={name}>
-      <span aria-hidden>· </span>
-      {name}
+    <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2">
+      <span>{label}</span>
+      <span
+        data-slot="palette-app-name"
+        className="text-muted-foreground max-w-full min-w-0 truncate text-xs"
+        title={appName}
+      >
+        <span aria-hidden>· </span>
+        {appName}
+      </span>
     </span>
   );
 }

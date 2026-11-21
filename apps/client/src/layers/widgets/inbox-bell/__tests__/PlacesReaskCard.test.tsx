@@ -210,6 +210,20 @@ describe('PlacesReaskCard', () => {
     expect(screen.queryByRole('button', { name: /allow all|all apps/i })).not.toBeInTheDocument();
   });
 
+  // Purpose: on a phone the buttons drop below the text instead of squeezing
+  // it to a letter a line (jsdom has no layout, so this pins the classes: a
+  // wrapping row, and text that starts at 9rem rather than at nothing).
+  it('lets the buttons wrap below the text on a narrow card', () => {
+    render(
+      <PlacesReaskCard rows={rowsOf(1)} pending={null} onAllow={vi.fn()} onNotNow={vi.fn()} />
+    );
+    const row = screen.getByTestId('places-reask-row-atlas');
+    expect(row.className).toMatch(/\bflex-wrap\b/);
+    const text = row.querySelector('p')!;
+    expect(text.className).toMatch(/\bbasis-36\b/);
+    expect(text.className).toMatch(/\bmin-w-0\b/);
+  });
+
   // Purpose: an allowed row collapses to "Allowed ✓".
   it('collapses an allowed row', () => {
     const rows = rowsOf(2);
