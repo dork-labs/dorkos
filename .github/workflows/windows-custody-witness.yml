@@ -66,6 +66,12 @@ jobs:
           GUARDIAN_MANIFEST_SHA256: ${{ steps.prepare.outputs.x64_manifest }}
         run: node .github/scripts/windows-custody-witness.mjs x64
 
+      # No other suite runs these, and they include the check that all eleven
+      # cases passed, so a broken summary cannot report a partial run as passing.
+      - name: Test the witness tools on the same head
+        if: ${{ !cancelled() }}
+        run: node --test packages/test-utils/native/windows-run-custody/tests/*.test.mjs
+
       # Collect the two x64-host scopes independently, including after a witness failure.
       - name: Select the eligible ia32 Node process
         if: ${{ !cancelled() && steps.prepare.outcome == 'success' }}
