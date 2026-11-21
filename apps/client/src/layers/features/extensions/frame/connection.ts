@@ -94,6 +94,33 @@ interface FrameOptions {
   ): Promise<unknown>;
 }
 
+/**
+ * The host's readable stylesheet rules, as one string for a frame to adopt.
+ *
+ * `@font-face` rules are left out (DOR-4872). The default font ships with the
+ * app, so its faces sit in a same-origin sheet this copy can read. A frame is
+ * an opaque origin, though, and font files load only with CORS, which the
+ * app's assets don't answer. Copying the faces would fail one fetch per subset
+ * in every frame and still draw the fallback, so a frame keeps the system
+ * fallback it always had. A cross-origin sheet throws on read and adds nothing.
+ *
+ * @param sheets - The host document's stylesheets.
+ */
+export function hostCssForFrame(sheets: Iterable<CSSStyleSheet>): string {
+  return Array.from(sheets)
+    .map((sheet) => {
+      try {
+        return Array.from(sheet.cssRules)
+          .map((rule) => rule.cssText)
+          .filter((text) => !text.startsWith('@font-face'))
+          .join('\n');
+      } catch {
+        return '';
+      }
+    })
+    .join('\n');
+}
+
 /** Create an opaque document and give it one private, revocable host connection. */
 export function createFrameConnection(options: FrameOptions): FrameConnection {
   const iframe = document.createElement('iframe');
@@ -223,17 +250,7 @@ export function createFrameConnection(options: FrameOptions): FrameConnection {
     initialized = true;
     // The page runs only its own bootstrap; it takes the runtime once, from us.
     iframe.contentWindow?.postMessage({ type: 'dorkos-frame-runtime', runtime }, '*');
-    const css = Array.from(document.styleSheets)
-      .map((sheet) => {
-        try {
-          return Array.from(sheet.cssRules)
-            .map((rule) => rule.cssText)
-            .join('\n');
-        } catch {
-          return '';
-        }
-      })
-      .join('\n');
+    const css = hostCssForFrame(document.styleSheets);
     iframe.contentWindow?.postMessage(
       {
         type: 'initialize',
