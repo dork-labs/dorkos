@@ -658,15 +658,18 @@ describe('waiting-for-a-busy-computer', () => {
   });
 
   it('names the background gap and forbids every workaround', () => {
+    // The hook for raw heavy commands quotes this paragraph word for word
+    // (DOR-4209), so it stays short and names every workaround.
     for (const rule of [
-      '**Background.**',
-      '**Hiding.**',
-      '**Splitting.**',
-      '**Settings and switches.**',
+      'send them to the background',
+      'hide them in a script',
+      'split a suite into single files',
+      "change the line's settings or switches",
+      'Only the person can let a job through.',
     ]) {
-      expect(wait).toContain(rule);
+      expect(flat).toContain(rule);
     }
-    expect(flat).toContain('waits for its turn to start and then gives it back');
+    expect(flat).toContain('waits to start, then gives its turn back');
   });
 
   it('gives the person the three actions and the agent none', () => {

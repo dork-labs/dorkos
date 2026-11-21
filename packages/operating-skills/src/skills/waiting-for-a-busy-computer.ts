@@ -80,21 +80,27 @@ the jobs ahead:
 - "Waiting for the computer to calm down. 3rd in line." ("Next in line." at the front.)
 - After an hour (the person's setting): "Still waiting for the computer. 3rd in
   line. It runs anyway in about 3h."
+- A new reply that has not started yet: "Waiting for the computer to calm down
+  before starting."
 
 A job starts when the five-minute load average is under the limit (16 as shipped)
 and a slot is free (one as shipped, for the whole computer). Each chat thread waits
 as one: heavy calls in the same batch share its turn and never wait on each other.
 Helpers each wait their own turn. A job that has waited four hours (as shipped)
-runs anyway. The line only ever delays; it never refuses a command.
+runs anyway. The line only ever delays; it never refuses a command. If the line
+itself fails or is cancelled, your command simply goes ahead as normal.
 
 When a heavy command needs the person's OK, it gives its turn back while the card
 waits, and runs straight away once approved.
 
 ## Exit 75 means try later
 
-A project can guard its own heavy scripts too. One that gives up because the
-computer stayed too busy exits **75** (EX_TEMPFAIL) and says the load was over its
-limit, or stops a test run before any test starts because the machine is too busy.
+This is a second mechanism, separate from the line above: a project can guard its
+own heavy scripts too. One that gives up because the computer stayed too busy
+exits **75** (EX_TEMPFAIL) and says the load was over its limit, or stops a test
+run before any test starts because the machine is too busy. In the DorkOS repo
+that guard waits about ten minutes first, then prints a \`[heavy-run-lock]\` line
+saying the load is over its max and it is refusing this heavy job (exit 75).
 That is not a failure of the command or of the code:
 
 - Never report it as a failing test or a red build. Say it did not run.
@@ -105,17 +111,14 @@ That is not a failure of the command or of the code:
 
 ## Never work around the line
 
-Each of these puts a heavy job on top of the ones the line is holding back:
+Run heavy commands in the foreground, as they are, and let them wait their turn.
+Do not send them to the background, hide them in a script, split a suite into
+single files, or change the line's settings or switches: each puts a heavy job on
+top of the ones the line is holding back. Only the person can let a job through.
 
-- **Background.** Run heavy commands in the foreground. On Claude Code, a heavy
-  job sent to the background (\`run_in_background\`, \`&\`, \`nohup\`) waits for its
-  turn to start and then gives it back, so the next one starts on top of it.
-- **Hiding.** Do not tuck a heavy command into a script file or \`node -e\` so it
-  reads as light.
-- **Splitting.** Running the one test file you need is light and fine. Running a
-  suite as a loop of single files to slip under the rule is not.
-- **Settings and switches.** Do not turn the line off, raise its limits or remove a
-  command from the heavy list. Only the person changes those settings.
+(On Claude Code, a heavy job sent to the background with \`run_in_background\`,
+\`&\` or \`nohup\` waits to start, then gives its turn back, so the next one starts
+on top of it. Running the one test file you need is light and fine.)
 
 ## What only the person can do
 
