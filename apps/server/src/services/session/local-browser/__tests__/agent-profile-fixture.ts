@@ -7,14 +7,29 @@ import {
   createLocalBrowserProfileProof,
 } from '../profile-access.js';
 
-/** Real profile records, birth proofs, service and capability projection over fake Chrome. */
-export async function profileLeaseFixture() {
-  const f = await leaseFixture();
-  const facts = new Map([
+type PageLeaseFixture = Awaited<ReturnType<typeof leaseFixture>>;
+type ProfileLeaseFixture = PageLeaseFixture & {
+  profiles: ReturnType<typeof createLocalBrowserProfileStore>;
+  facts: ReturnType<typeof createProfileFacts>;
+  selection: ReturnType<typeof createAgentBrowserProfiles>;
+  personOpen: (
+    sessionId?: string,
+    profileId?: string
+  ) => ReturnType<PageLeaseFixture['service']['openForPerson']>;
+};
+
+function createProfileFacts() {
+  return new Map([
     ['atlas', { runtime: 'test', agentPath: '/agents/atlas' }],
     ['atlas-two', { runtime: 'test', agentPath: '/agents/atlas' }],
     ['bolt', { runtime: 'test', agentPath: '/agents/bolt' }],
   ]);
+}
+
+/** Real profile records, birth proofs, service and capability projection over fake Chrome. */
+export async function profileLeaseFixture(): Promise<ProfileLeaseFixture> {
+  const f = await leaseFixture();
+  const facts = createProfileFacts();
   const profiles = createLocalBrowserProfileStore(
     createTestDb(),
     () => Buffer.alloc(32, 2),

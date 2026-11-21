@@ -222,9 +222,29 @@ describe('whole-profile disk removal (DOR-3887)', () => {
     const gate = new Promise<void>((resolve) => {
       finish = resolve;
     });
-    const service = new LocalBrowserService(home, { open: vi.fn(), forgetSignIns: () => gate });
+    const service = new LocalBrowserService(
+      home,
+      { open: vi.fn(), forgetSignIns: () => gate },
+      undefined,
+      undefined,
+      () => ({ platform: 'linux' })
+    );
+    const profile = { id: 'default', label: 'Your browser', agentId: null, agentName: null };
+    const select = vi.fn(async () => profile);
+    const initialize = vi.fn(async () => profile);
+    service.useProfileSelection(select, initialize);
+    expect(service.capabilities().newWindow).toBe(false);
     const pending = service.profileRemoval.forget(null);
-    await expect(service.open({ mode: 'new-window' })).rejects.toMatchObject({ code: 'busy' });
+    await expect(service.open({ mode: 'new-window' })).rejects.toMatchObject({
+      code: 'busy',
+      message: 'Sign-ins are being cleared. Wait a moment.',
+    });
+    await expect(service.openForPerson({ mode: 'new-window' })).rejects.toMatchObject({
+      code: 'busy',
+      message: 'Sign-ins are being cleared. Wait a moment.',
+    });
+    expect(select).not.toHaveBeenCalled();
+    expect(initialize).not.toHaveBeenCalled();
     await expect(
       service.personSession(null).handover.signIn({ url: 'https://example.test/' })
     ).rejects.toMatchObject({

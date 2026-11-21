@@ -203,6 +203,8 @@ export class LocalBrowserService {
 
   /** Reserve before delegating, including awaits inside handoff preparation. */
   private async opening(input: LocalBrowserOpen, person: boolean) {
+    // Forget fences profile selection and creation as well as page acquisition.
+    this.profileRemoval.assertAvailable();
     if (this.stopping)
       throw new LocalBrowserError('closing', 'The browser is closing. Wait a moment.');
     const id = input.sessionId ?? null;
