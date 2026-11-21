@@ -6,7 +6,7 @@ This preserves the September recommendations and subsequent assessments as dated
 
 The [system architecture atlas](../contributing/system-architecture.md) describes the system. This roadmap records improvement rationale, scope and handoffs. Linear owns live status, assignments, dependencies and execution order. The evidence below is a dated snapshot, not a second status database.
 
-**Coordination:** [DOR-2344](https://linear.app/dorkspace/issue/DOR-2344/coordinate-the-architecture-improvement-roadmap) was the coordination record. Linear shows it **Canceled on 2026-11-10**; the November 21 review keeps a non-closing reference and asks the PM whether to reopen it or name a successor. The original capture created one tracker idea per workstream; the dispositions below record subsequent delivery. Saving or updating this roadmap does not make remaining work automatically dispatchable. Existing projects remain the delivery homes. There is no new catch-all architecture project.
+**Coordination:** [DOR-2344](https://linear.app/dorkspace/issue/DOR-2344/coordinate-the-architecture-improvement-roadmap) was the coordination record. Linear shows it **Canceled on 2026-11-10**; the November 21 review keeps a non-closing reference and asks the PM whether to reopen it or name a successor. The original capture created one tracker idea per workstream; the dispositions below record subsequent delivery. Saving or updating this roadmap does not make remaining work automatically dispatchable. Existing projects remain the delivery homes for the rebaseline's risks. The shape work of the November 21 target design has one project of its own, "Architecture: simpler and modular"; it links existing issues rather than re-filing them.
 
 ## Review documents
 
@@ -47,7 +47,9 @@ Four of October's five ranks are shipped or superseded. What remains ranked, wit
 
 The November 10 groom canceled DOR-2735, DOR-2743, DOR-2754, DOR-2755 and DOR-2759 and marked DOR-2748 Duplicate, while the canon [ROADMAP](../meta/ROADMAP.md) still names them in its after-launch order. That is a canon-and-tracker reconciliation for the PM, recorded here so nobody dispatches against a canceled ticket. DOR-2881 reads Done with no production-upgrade receipt, and DOR-2882 reads Done with the live-gate rerun still owed; both are named in the research document.
 
-This review selects no paid run, rollout, cleanup or overlapping implementation, opens no second architecture project, and reopens nothing.
+This review selects no paid run, rollout, cleanup or overlapping implementation, opens no second architecture project of its own, and reopens nothing. The target design (below) has its own project, "Architecture: simpler and modular", for the shape work.
+
+The [target design](../research/20261121_architecture-target-design.md) (2026-11-21) is the shape to steer toward: one folder per product, boundaries the compiler holds, the shared buckets split by who reads them, tooling out of the product tree, and prose turned into lint and census tests. Its ranked plan is tracked in the Linear project "Architecture: simpler and modular"; its three proposed ADR amendments wait on the operator.
 
 ## Historical assessment, 2026-10-09
 
