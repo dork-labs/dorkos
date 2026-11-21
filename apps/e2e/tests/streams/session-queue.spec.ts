@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
+import { test } from '../../fixtures/base';
 import { randomUUID } from 'node:crypto';
 import { BasePage } from '../../pages/BasePage.js';
 import { ChatPage } from '../../pages/ChatPage.js';
