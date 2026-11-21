@@ -8,6 +8,10 @@
  * picks up the same words and keeps it. A caller that knows only the agent (external `/mcp`) sees
  * it too, until that chat's next turn starts.
  *
+ * Same-source writes (DOR-4794, Security's six cases): a turn whose only outside words came from
+ * one app writes back to that app with no card, when the person turned writes back on for it.
+ * Anything else in the turn, another app, a deletion, or the switch off keeps the card.
+ *
  * @vitest-environment node
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -37,10 +41,19 @@ import {
   resetPermissionGate,
 } from '../../../core/capabilities/permission-enforcement.js';
 import { eventFanOut } from '../../../core/event-fan-out.js';
-import { recordTurnLevels } from '../../../core/turn-power/turn-levels.js';
+import {
+  aliasTurnLevel,
+  markRunningTurnOutsider,
+  recordTurnLevels,
+} from '../../../core/turn-power/turn-levels.js';
 import { resetChosenTurns } from '../../../core/turn-power/full-autonomy.js';
 import { noteOwnersCleanSend } from '../../../core/turn-power/held-chat-mark.js';
 import { resetLiveOutsiderTurns } from '../../../core/turn-power/live-outsider-turns.js';
+import { noteRoomTurnWords } from '../../../core/turn-power/outside-words.js';
+import { carrySessionMarks } from '../../../core/turn-power/seat-marks.js';
+import { resolveCallPermission } from '../../../core/capabilities/permission-enforcement.js';
+import { setShouldAskActivity } from '../../../core/prompts/should-ask.js';
+import { setWritesBack } from '../../access/writes-back-store.js';
 import {
   linkSessionId,
   resetSessionKeys,
@@ -63,6 +76,11 @@ const OWNER = { kind: 'local_install', installationId: 'install-a' } as const;
 const CONNECTION_ID = 'connection-a';
 const SEND_REVISION_ID = 'revision-send';
 const READ_REVISION_ID = 'revision-read';
+/** A second app, a tracker, beside the mail account (DOR-4794). */
+const TRACKER_ID = 'connection-tracker';
+const TRACKER_READ_ID = 'revision-tracker-read';
+const TRACKER_WRITE_ID = 'revision-tracker-write';
+const TRACKER_DELETE_ID = 'revision-tracker-delete';
 const AGENT = {
   agentPath: '/agents/agent-a',
   displayName: 'Wren',
@@ -83,6 +101,11 @@ const fresh = () => `read-marks-${(counter += 1)}`;
 
 /** Run one turn in a chat set to Full autonomy. */
 async function ranAtFull(sessionId: string, opts?: MessageOpts) {
+  await ranAt('bypassPermissions', sessionId, opts);
+}
+
+/** Run one turn in a chat set to `mode`: below Full for anything but `bypassPermissions`. */
+async function ranAt(mode: string, sessionId: string, opts?: MessageOpts) {
   const runtime = recordTurnLevels(
     {
       type: 'claude-code',
@@ -91,7 +114,7 @@ async function ranAtFull(sessionId: string, opts?: MessageOpts) {
         yield { type: 'done', data: {} } as StreamEvent;
       },
     } as unknown as AgentRuntime,
-    () => 'bypassPermissions'
+    () => mode
   );
   for await (const _event of runtime.sendMessage(sessionId, 'hi', opts)) {
     // drain
@@ -121,18 +144,19 @@ describe('a connected-app read marks the turn it ran in, at Full', () => {
     };
   });
 
-  /** A revision and the agent's grant to it. */
+  /** A revision and the agent's grant to it, on the mail account unless another is named. */
   function revision(
     id: string,
     slug: string,
-    classification: 'read' | 'write',
-    providerId: string
+    classification: 'read' | 'write' | 'destructive',
+    providerId: string,
+    connection: { id: string; toolkit: string } = { id: CONNECTION_ID, toolkit: 'gmail' }
   ) {
     db.insert(connectorOperationRevisions)
       .values({
         id,
         providerInstanceId: providerId,
-        toolkit: 'gmail',
+        toolkit: connection.toolkit,
         operationSlug: slug,
         toolkitVersion: '2026-09-01',
         schemaHash: `sha256:${id}`,
@@ -149,7 +173,7 @@ describe('a connected-app read marks the turn it ran in, at Full', () => {
         subjectType: 'agent' as const,
         subjectId: 'agent-a',
         agentId: 'agent-a',
-        connectionId: CONNECTION_ID,
+        connectionId: connection.id,
         operationRevisionId: id,
         createdBy: 'operator',
         createdAt: '2026-11-17T12:00:00.000Z',
@@ -182,24 +206,33 @@ describe('a connected-app read marks the turn it ran in, at Full', () => {
       })
       .where(eq(connectorProviderInstances.id, provider.instanceId))
       .run();
-    db.insert(connections)
-      .values({
-        id: CONNECTION_ID,
-        providerInstanceId: provider.instanceId,
-        externalAccountRef: 'provider-account-a' as ConnectorExternalAccountRef,
-        toolkit: 'gmail',
-        label: 'Work',
-        identityHint: 'work@example.com',
-        status: 'active',
-        lifecycleState: 'connected',
-        enabled: true,
-        grantReconciliationStatus: 'ready',
-        createdAt: '2026-11-17T12:00:00.000Z',
-        updatedAt: '2026-11-17T12:00:00.000Z',
-      })
-      .run();
+    for (const [id, toolkit, ref] of [
+      [CONNECTION_ID, 'gmail', 'provider-account-a'],
+      [TRACKER_ID, 'linear', 'provider-account-tracker'],
+    ] as const) {
+      db.insert(connections)
+        .values({
+          id,
+          providerInstanceId: provider.instanceId,
+          externalAccountRef: ref as ConnectorExternalAccountRef,
+          toolkit,
+          label: 'Work',
+          identityHint: 'work@example.com',
+          status: 'active',
+          lifecycleState: 'connected',
+          enabled: true,
+          grantReconciliationStatus: 'ready',
+          createdAt: '2026-11-17T12:00:00.000Z',
+          updatedAt: '2026-11-17T12:00:00.000Z',
+        })
+        .run();
+    }
     revision(SEND_REVISION_ID, 'GMAIL_SEND_EMAIL', 'write', provider.instanceId);
     revision(READ_REVISION_ID, 'GMAIL_FETCH_EMAILS', 'read', provider.instanceId);
+    const tracker = { id: TRACKER_ID, toolkit: 'linear' };
+    revision(TRACKER_READ_ID, 'LINEAR_LIST_ISSUES', 'read', provider.instanceId, tracker);
+    revision(TRACKER_WRITE_ID, 'LINEAR_UPDATE_ISSUE', 'write', provider.instanceId, tracker);
+    revision(TRACKER_DELETE_ID, 'LINEAR_DELETE_ISSUE', 'destructive', provider.instanceId, tracker);
     approvals = new ApprovalService(db, { describeCapability: (id) => registry.get(id) });
     initCapabilityTierGate({ approvals });
     initPermissionGate({
@@ -218,6 +251,7 @@ describe('a connected-app read marks the turn it ran in, at Full', () => {
   });
 
   afterEach(() => {
+    setShouldAskActivity(undefined);
     resetCapabilityTierGate();
     resetPermissionGate();
     resetChosenTurns();
@@ -282,6 +316,28 @@ describe('a connected-app read marks the turn it ran in, at Full', () => {
           operationRevisionId: SEND_REVISION_ID,
           arguments: { recipient_email: 'ann@example.com', subject: 'Garden', body: 'Made up.' },
         },
+        caller(sessionId, runtimeTurn)
+      )
+      .then(
+        () => 'ran',
+        (error: unknown) =>
+          (error as { decision?: { outcome?: string } }).decision?.outcome ?? String(error)
+      );
+    return { outcome, cards: approvals.listPending().length };
+  }
+
+  /** Run one exact action from the chat; the outcome and how many cards wait. */
+  async function act(
+    capabilityId: string,
+    connectionId: string,
+    operationRevisionId: string,
+    sessionId: string | undefined,
+    runtimeTurn?: string
+  ) {
+    const outcome = await registry
+      .invoke(
+        capabilityId,
+        { connectionId, operationRevisionId, arguments: { query: 'made up' } },
         caller(sessionId, runtimeTurn)
       )
       .then(
@@ -483,6 +539,196 @@ describe('a connected-app read marks the turn it ran in, at Full', () => {
 
     it('lets the send through after a Codex turn that only ran a shell command', async () => {
       expect(await streamTurn('codex', 'Shell')).toEqual({ outcome: 'ran', cards: 0 });
+    });
+  });
+
+  describe('a write back to the one app the turn read (DOR-4794)', () => {
+    /** Below Full, where a marked turn's write always asks. */
+    const BELOW_FULL = 'acceptEdits';
+    const readTracker = (chat: string | undefined, runtimeTurn?: string) =>
+      act('connectors.execute_read', TRACKER_ID, TRACKER_READ_ID, chat, runtimeTurn);
+    const writeTracker = (chat: string | undefined, runtimeTurn?: string) =>
+      act('connectors.execute_write', TRACKER_ID, TRACKER_WRITE_ID, chat, runtimeTurn);
+    const lines: { eventType: string; resourceId?: string | null }[] = [];
+
+    beforeEach(() => {
+      lines.length = 0;
+      setShouldAskActivity({
+        emit: async (event) => {
+          lines.push(event);
+        },
+      });
+      // Both apps have the switch on, so only where the turn's words came from decides. Mail is
+      // off the app list, so its column is forced on here, as an old or hand-edited row could be.
+      setWritesBack(db, OWNER, TRACKER_ID, true, new Date('2026-11-19T12:00:00.000Z'));
+      db.update(connections)
+        .set({ writesBackUnasked: true })
+        .where(eq(connections.id, CONNECTION_ID))
+        .run();
+    });
+
+    // Spec case 1. Red without the gate: a marked turn below Full cards every write.
+    it('lets a write back to the app the turn read run, with no card and one Activity line', async () => {
+      const chat = fresh();
+      await ranAt(BELOW_FULL, chat);
+      await readTracker(chat);
+      expect(await writeTracker(chat)).toEqual({ outcome: 'ran', cards: 0 });
+      expect(sent).toHaveBeenCalledTimes(1);
+      expect(lines).toEqual([
+        expect.objectContaining({ eventType: 'agent.same_source_write', resourceId: TRACKER_ID }),
+      ]);
+    });
+
+    it('does the same at Full, where a tracker write reaches outside and would ask', async () => {
+      const chat = fresh();
+      await ranAtFull(chat);
+      await readTracker(chat);
+      expect(await writeTracker(chat)).toEqual({ outcome: 'ran', cards: 0 });
+    });
+
+    it('does the same through the connector loopback, a runtime principal with no chat named', async () => {
+      const born = fresh();
+      const sdk = `${born}-sdk`;
+      await ranAt(BELOW_FULL, born);
+      linkSessionId(born, sdk);
+      // As the loopback's turn context does as it opens (`connector-turn-context.ts`).
+      aliasTurnLevel(born, sdk);
+      await readTracker(undefined, sdk);
+      expect(await writeTracker(undefined, sdk)).toEqual({ outcome: 'ran', cards: 0 });
+    });
+
+    // Red if the switch were not read: everything else matches case 1.
+    it('cards the write when the person has not turned writes back on for that app', async () => {
+      setWritesBack(db, OWNER, TRACKER_ID, false, new Date());
+      const chat = fresh();
+      await ranAt(BELOW_FULL, chat);
+      await readTracker(chat);
+      expect(await writeTracker(chat)).toEqual({ outcome: 'approval_required', cards: 1 });
+      expect(sent).not.toHaveBeenCalled();
+      expect(lines).toEqual([]);
+    });
+
+    // Spec case 2. Red if the gate checked only that the source is an app, not which one: the
+    // mail account has the switch on too.
+    it('cards a send through another app after reading the tracker', async () => {
+      const chat = fresh();
+      await ranAt(BELOW_FULL, chat);
+      await readTracker(chat);
+      expect(await send(chat)).toEqual({ outcome: 'approval_required', cards: 1 });
+      expect(sent).not.toHaveBeenCalled();
+    });
+
+    // Security Must 1. A mail send is `write` class, and the turn's only words came from that same
+    // mail account. Red without the app list: the send ran with no card.
+    it('cards a mail send after a mail read, even with the mail row switched on', async () => {
+      const chat = fresh();
+      await ranAt(BELOW_FULL, chat);
+      await read(chat);
+      expect(await send(chat)).toEqual({ outcome: 'approval_required', cards: 1 });
+      expect(sent).not.toHaveBeenCalled();
+      expect(lines).toEqual([]);
+    });
+
+    it('cards the tracker write once the turn read the mail account too', async () => {
+      const chat = fresh();
+      await ranAt(BELOW_FULL, chat);
+      await readTracker(chat);
+      await read(chat);
+      expect(await writeTracker(chat)).toEqual({ outcome: 'approval_required', cards: 1 });
+    });
+
+    // Spec case 3. Red if a source that is not an app were let through.
+    it("cards the tracker write once the turn also read a stranger's room post", async () => {
+      const chat = fresh();
+      await ranAt(BELOW_FULL, chat);
+      await readTracker(chat);
+      // What `room-read-marks.ts` does for a post from outside the team.
+      markRunningTurnOutsider(chat, AGENT.agentPath, { kind: 'room' });
+      expect(await writeTracker(chat)).toEqual({ outcome: 'approval_required', cards: 1 });
+      expect(sent).not.toHaveBeenCalled();
+    });
+
+    // Red if the room-turn note (a mini app's post, DOR-4587) were not read.
+    it('cards the tracker write in a room turn that answered someone from outside', async () => {
+      const chat = fresh();
+      await ranAt(BELOW_FULL, chat);
+      noteRoomTurnWords(chat, true);
+      await readTracker(chat);
+      expect(await writeTracker(chat)).toEqual({ outcome: 'approval_required', cards: 1 });
+    });
+
+    // Spec case 4. Red if the gate let a destructive class through: the action is the write
+    // capability itself, so only the preflight's class tells them apart.
+    it('keeps the ask for a destructive action, even through the write capability', async () => {
+      const chat = fresh();
+      await ranAt(BELOW_FULL, chat);
+      await readTracker(chat);
+      const writeAction = { id: 'connectors.execute_write', tier: 'act' as const, area: null };
+      const sameSource = { connectionId: TRACKER_ID, toolkit: 'linear', writesBackUnasked: true };
+      const permission = (classification: 'write' | 'destructive') =>
+        resolveCallPermission({
+          action: writeAction,
+          identity: AGENT,
+          sessionId: chat,
+          sameSource: { ...sameSource, classification },
+        });
+      expect(await permission('write')).toBeNull();
+      expect(await permission('destructive')).toMatchObject({ state: 'ask' });
+      expect(
+        await act('connectors.execute_destructive', TRACKER_ID, TRACKER_DELETE_ID, chat)
+      ).toEqual({ outcome: 'approval_required', cards: 1 });
+      expect(sent).not.toHaveBeenCalled();
+    });
+
+    // Spec case 6. Red if a turn with no app source at all were let through.
+    it('cards the tracker write after a WebFetch, a mark that is not an app', async () => {
+      const chat = fresh();
+      await ranAt(BELOW_FULL, chat);
+      const matcher = outsideTextHookMatcher(() => chat, AGENT.agentPath);
+      await matcher.hooks[0]!(
+        { hook_event_name: 'PreToolUse', tool_name: 'WebFetch', tool_input: {} } as never,
+        'call-1',
+        { signal: new AbortController().signal }
+      );
+      expect(await writeTracker(chat)).toEqual({ outcome: 'approval_required', cards: 1 });
+    });
+
+    // Red if the turn's start were not read: a carried mark has no source.
+    it('cards the tracker write in a turn that started marked, read or not', async () => {
+      const chat = fresh();
+      await ranAt(BELOW_FULL, chat, { carriedMarks: { outsider: true } });
+      await readTracker(chat);
+      expect(await writeTracker(chat)).toEqual({ outcome: 'approval_required', cards: 1 });
+    });
+
+    it("cards the tracker write in the chat's next turn, which starts with the read's mark", async () => {
+      const chat = fresh();
+      await ranAt(BELOW_FULL, chat);
+      await readTracker(chat);
+      await ranAt(BELOW_FULL, chat);
+      expect(await writeTracker(chat)).toEqual({ outcome: 'approval_required', cards: 1 });
+    });
+
+    // Security's ruling (a), case (i). Red without recording the carried mark as unknown: the
+    // turn started clean and its only read was the tracker, so nothing else would tell them apart.
+    it('cards the tracker write after a moved seat carried a mark onto the chat', async () => {
+      const oldSeat = fresh();
+      const chat = fresh();
+      await ranAt(BELOW_FULL, oldSeat, { carriedMarks: { outsider: true } });
+      await ranAt(BELOW_FULL, chat);
+      carrySessionMarks(oldSeat, chat);
+      await readTracker(chat);
+      expect(await writeTracker(chat)).toEqual({ outcome: 'approval_required', cards: 1 });
+      expect(sent).not.toHaveBeenCalled();
+    });
+
+    // Security's ruling (a), case (ii). Red if a mark that names no source were left unrecorded.
+    it('cards the tracker write when a mark with no source joins the tracker read', async () => {
+      const chat = fresh();
+      await ranAt(BELOW_FULL, chat);
+      await readTracker(chat);
+      markRunningTurnOutsider(chat, AGENT.agentPath);
+      expect(await writeTracker(chat)).toEqual({ outcome: 'approval_required', cards: 1 });
     });
   });
 });

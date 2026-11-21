@@ -713,6 +713,10 @@
       "types": "./src/file-save/recovery.ts",
       "default": "./dist/file-save/recovery.js"
     },
+    "./prompts/prompt-kinds": {
+      "types": "./src/prompts/prompt-kinds.ts",
+      "default": "./dist/prompts/prompt-kinds.js"
+    },
     "./space-page": {
       "types": "./src/space-page/index.ts",
       "default": "./dist/space-page/index.js"

@@ -11,6 +11,7 @@
  */
 import type { ServerPrincipalProof } from '../../connectors/principal/server-principal.js';
 import { markRunningTurnOutsider } from '../turn-power/turn-levels.js';
+import type { ReadMarkSource } from '../turn-power/live-outsider-turns.js';
 import { principalTurnOf } from './marked-turn-holds.js';
 
 /** What a verified call says about the turn it ran in. */
@@ -27,11 +28,15 @@ export interface CallerTurn {
  * Mark the caller's running turn, under every id the call verified.
  *
  * @param caller - The verified call.
+ * @param source - Where the text came from (DOR-4794). Name it from what the server verified,
+ *   never from the call's arguments; a caller that names none is recorded as unknown.
  */
-export function markCallerTurnOutsider(caller: CallerTurn): void {
+export function markCallerTurnOutsider(caller: CallerTurn, source?: ReadMarkSource): void {
   const { principalTurn } = principalTurnOf(caller.serverPrincipal);
-  if (principalTurn) markRunningTurnOutsider(principalTurn.sessionId, principalTurn.agentPath);
+  if (principalTurn) {
+    markRunningTurnOutsider(principalTurn.sessionId, principalTurn.agentPath, source);
+  }
   if (caller.sessionId && caller.sessionId !== principalTurn?.sessionId) {
-    markRunningTurnOutsider(caller.sessionId, caller.identity?.agentPath);
+    markRunningTurnOutsider(caller.sessionId, caller.identity?.agentPath, source);
   }
 }

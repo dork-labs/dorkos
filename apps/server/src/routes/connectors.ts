@@ -1,7 +1,7 @@
 /**
  * Every `/api/connectors` group, in the one order they answer in.
  *
- * Eight groups share the prefix, and the order is part of what they answer:
+ * Nine groups share the prefix, and the order is part of what they answer:
  *
  * 1. **Provider keys** (`/providers`), behind their own migration gate.
  * 2. **Notifications** (`/connections/:id/events/*`): any path under one
@@ -19,6 +19,8 @@
  * 8. **Mini app access** (`/mini-app-access`): what mini apps wait for and
  *    may read, revoking a yes, and the one page outside the app where a
  *    person gives one (`routes/mini-app-access-page.ts`).
+ * 9. **Writes back** (`/connections/:id/writes-back`): the person's switch that lets an agent
+ *    that only read an app write back to it without asking (DOR-4794).
  *
  * No route in one group shares a method and path with a route in another, so
  * a `:param` in one never claims a literal path another group answers. The
@@ -57,6 +59,10 @@ import {
 } from './connector-mini-app-access.js';
 import { createMiniAppAccessPageRoutes } from './mini-app-access-page.js';
 import {
+  createConnectorWritesBackRoutes,
+  type ConnectorWritesBackRouterDeps,
+} from './connector-writes-back.js';
+import {
   createConnectorSpendingRoutes,
   type ConnectorSpendingRouteDeps,
 } from './connector-spending.js';
@@ -81,6 +87,8 @@ export interface ConnectorRoutesDeps {
   miniAppAccess?: ConnectorMiniAppAccessRouterDeps;
   /** The monthly spend limit and prices per run (`/spending`, DOR-4204 PR 2). */
   spending?: ConnectorSpendingRouteDeps;
+  /** Whether an agent that only read an app may write back to it unasked (DOR-4794). */
+  writesBack?: ConnectorWritesBackRouterDeps;
 }
 
 /**
@@ -99,6 +107,7 @@ export function createConnectorRoutes(deps: ConnectorRoutesDeps): Hono<ApiEnv> {
   if (deps.holds) app.route('/', createConnectorHoldRoutes(deps.holds));
   if (deps.accessChanges) app.route('/', createConnectorAccessChangeRoutes(deps.accessChanges));
   if (deps.spending) app.route('/spending', createConnectorSpendingRoutes(deps.spending));
+  if (deps.writesBack) app.route('/', createConnectorWritesBackRoutes(deps.writesBack));
   if (deps.miniAppAccess) {
     app.route('/', createConnectorMiniAppAccessRoutes(deps.miniAppAccess));
     app.route('/', createMiniAppAccessPageRoutes(deps.miniAppAccess));
