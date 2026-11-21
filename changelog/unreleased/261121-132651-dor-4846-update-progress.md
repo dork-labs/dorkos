@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(desktop): show update download progress and a retry in the sidebar (DOR-4846)'
+  - "fix(desktop): update restart and retry only answer DorkOS's own page (DOR-4846)"
 ---
 
 ### Fixed

@@ -146,6 +146,22 @@ function isTrackedRenderer(event: Electron.IpcMainInvokeEvent): boolean {
 }
 
 /**
+ * Whether an IPC message came from the main frame of a page at DorkOS's own
+ * origin. The frame that sent it, and only the main frame: a subframe's message
+ * carries the main frame's URL in `event.sender.getURL()`, so checking that
+ * would let an embedded page through.
+ *
+ * @param event - The IPC event, from `ipcMain.on` or `ipcMain.handle`.
+ */
+function isOwnMainFrame(event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): boolean {
+  return (
+    event.senderFrame !== null &&
+    event.senderFrame === event.sender.mainFrame &&
+    isOwnOrigin(event.senderFrame.url, getRendererUrl())
+  );
+}
+
+/**
  * What the "DorkOS couldn't start" box says.
  *
  * Most start-up failures are opaque (a crash, a failed migration, a spawn that
@@ -355,12 +371,7 @@ if (refusedSwitch !== null) {
   // "Confirm it's you" (DOR-3234): the password goes in the shell's own window,
   // never the app's page, and the shell posts it through the window's session.
   registerStepUpWindow({
-    // The frame that sent it, and only the main frame: a subframe's message
-    // carries the main frame's URL in `event.sender.getURL()`.
-    isOwnSender: (event) =>
-      event.senderFrame !== null &&
-      event.senderFrame === event.sender.mainFrame &&
-      isOwnOrigin(event.senderFrame.url, getRendererUrl()),
+    isOwnSender: isOwnMainFrame,
     port: getServerPort,
     fetch: (url, init) => session.defaultSession.fetch(url, init),
     personProof: currentPersonProof,
@@ -411,14 +422,17 @@ if (refusedSwitch !== null) {
   // back on the `update:status` channel and retains the last actionable status
   // for `get-update-status` to replay to a renderer that mounted after the
   // event fired (macOS close→reopen). No-ops in dev (unpackaged builds can't
-  // apply updates).
-  ipcMain.on('update:restart', () => {
+  // apply updates). Both answer only DorkOS's own page: a restart stops the
+  // server, so an embedded or foreign page must not be able to ask for one.
+  ipcMain.on('update:restart', (event) => {
+    if (!isOwnMainFrame(event)) return;
     void restartToUpdate();
   });
 
   // The card's retry after a failed download (DOR-4846). Same shape as the
   // restart: fire-and-forget, the outcome comes back on `update:status`.
-  ipcMain.on('update:retry', () => {
+  ipcMain.on('update:retry', (event) => {
+    if (!isOwnMainFrame(event)) return;
     retryUpdateDownload();
   });
 

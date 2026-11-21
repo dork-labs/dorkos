@@ -642,34 +642,79 @@ describe('update IPC handlers', () => {
     return call[1] as (event: Electron.IpcMainInvokeEvent) => unknown;
   }
 
-  it('update:restart routes to restartToUpdate', async () => {
+  /** The renderer origin these cases treat as DorkOS's own page. */
+  const OWN_URL = 'http://localhost:4242/';
+
+  /**
+   * An IPC event from a frame at `url`. `subframe` makes the sender a frame
+   * inside the page rather than the page itself.
+   */
+  function ipcEventFrom(url: string, { subframe = false } = {}): Electron.IpcMainEvent {
+    const mainFrame = { url: OWN_URL };
+    const senderFrame = subframe ? { url } : Object.assign(mainFrame, { url });
+    return { senderFrame, sender: { mainFrame } } as unknown as Electron.IpcMainEvent;
+  }
+
+  /** Boot `../index` with the renderer at {@link OWN_URL} and return one `ipcMain.on` handler. */
+  async function bootUpdateHandler(channel: 'update:restart' | 'update:retry') {
     const { app, resetElectronMock } = await getElectronMock();
     resetElectronMock();
     app.requestSingleInstanceLock = vi.fn(() => true);
+    const windowManager = await import('../window-manager');
+    vi.mocked(windowManager.makeRendererUrlAccessor).mockReturnValue(() => OWN_URL);
 
     const autoUpdater = await import('../auto-updater');
-    await import('../index');
-
-    const handler = await getOnHandler('update:restart');
-    handler();
-
-    expect(autoUpdater.restartToUpdate).toHaveBeenCalledTimes(1);
-  });
-
-  it('update:retry routes to retryUpdateDownload (DOR-4846)', async () => {
-    const { app, resetElectronMock } = await getElectronMock();
-    resetElectronMock();
-    app.requestSingleInstanceLock = vi.fn(() => true);
-
-    const autoUpdater = await import('../auto-updater');
+    vi.mocked(autoUpdater.restartToUpdate).mockClear();
     vi.mocked(autoUpdater.retryUpdateDownload).mockClear();
     await import('../index');
 
-    const handler = await getOnHandler('update:retry');
-    handler();
+    const handler = (await getOnHandler(channel)) as (event: Electron.IpcMainEvent) => void;
+    const action =
+      channel === 'update:restart' ? autoUpdater.restartToUpdate : autoUpdater.retryUpdateDownload;
+    return { handler, action };
+  }
 
-    expect(autoUpdater.retryUpdateDownload).toHaveBeenCalledTimes(1);
-  });
+  describe.each(['update:restart', 'update:retry'] as const)(
+    '%s answers only DorkOS’s own page',
+    (channel) => {
+      it('acts for the main frame of our own page', async () => {
+        const { handler, action } = await bootUpdateHandler(channel);
+
+        handler(ipcEventFrom(OWN_URL));
+
+        expect(action).toHaveBeenCalledTimes(1);
+      });
+
+      it('ignores a subframe, even one at our own origin', async () => {
+        // A subframe's event carries the main frame's URL in sender.getURL();
+        // only senderFrame tells them apart.
+        const { handler, action } = await bootUpdateHandler(channel);
+
+        handler(ipcEventFrom(OWN_URL, { subframe: true }));
+
+        expect(action).not.toHaveBeenCalled();
+      });
+
+      it('ignores a page at a foreign origin', async () => {
+        const { handler, action } = await bootUpdateHandler(channel);
+
+        handler(ipcEventFrom('https://example.test/'));
+
+        expect(action).not.toHaveBeenCalled();
+      });
+
+      it('ignores an event whose frame is already gone', async () => {
+        const { handler, action } = await bootUpdateHandler(channel);
+
+        handler({
+          senderFrame: null,
+          sender: { mainFrame: {} },
+        } as unknown as Electron.IpcMainEvent);
+
+        expect(action).not.toHaveBeenCalled();
+      });
+    }
+  );
 
   it('get-update-status replays the last status to the tracked renderer, and rejects a stray sender', async () => {
     const { app, BrowserWindow, resetElectronMock } = await getElectronMock();
