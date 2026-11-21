@@ -1,6 +1,9 @@
 import type { BrowserPageBroker } from '../local-browser/leases/page-broker.js';
-import type { BrowserViewerPageHandle } from '../local-browser/leases/broker-contract.js';
-import { startChromeScreencast } from './chrome-screencast.js';
+import type {
+  BrowserPersonInputLease,
+  BrowserViewerPageHandle,
+} from '../local-browser/leases/broker-contract.js';
+import { startBrokerPageStream } from './page-stream.js';
 import { BrowserViewerError, type ViewerPage, type ViewerPrincipal } from './viewer-contract.js';
 
 /** Capture server-derived authority once. No raw Page, context or later target lookup escapes. */
@@ -22,12 +25,12 @@ export async function captureViewerPage(
     throw new BrowserViewerError('viewer_unavailable');
   }
   const lifetime = new AbortController();
-  const navigation = handle.facts().navigationGeneration;
   const ended = () => lifetime.abort();
   const offRevoke = handle.onRevoked(ended);
-  // Preserve PR1's explicit reopen after navigation until the paint/address range lands.
-  const offChange = handle.onPageChange((facts) => {
-    if (facts.navigationGeneration !== navigation) ended();
+  let control: BrowserPersonInputLease | undefined;
+  const offChange = handle.onPageChange(() => {
+    // A failed safety renewal ends this watch; explicit hand-back/abandon clear it first.
+    if (control && !control.isCurrent()) ended();
   });
   const assertLive = () => {
     try {
@@ -51,6 +54,25 @@ export async function captureViewerPage(
   };
   return {
     binding: handle.binding,
+    facts: () => {
+      assertLive();
+      return handle.facts();
+    },
+    onChange: (listener) => handle.onPageChange(listener),
+    async takeControl() {
+      try {
+        const lease = await broker.takePersonControl(handle);
+        control = lease;
+        return lease;
+      } catch (error) {
+        ended();
+        throw error;
+      }
+    },
+    handBack: (lease) => {
+      control = undefined;
+      return broker.handBack(lease);
+    },
     identity: Object.freeze({
       chatId,
       profileId: handle.binding.profileId,
@@ -60,23 +82,19 @@ export async function captureViewerPage(
     signal: lifetime.signal,
     assertLive,
     assertCurrent,
-    abandon: () => broker.abandonViewer(handle),
+    abandon: () => {
+      control = undefined;
+      return broker.abandonViewer(handle);
+    },
     async close() {
       ended();
-      offChange();
       offRevoke();
+      offChange();
       await handle.close();
     },
     async start(receive) {
       await assertCurrent();
-      const stop = await startChromeScreencast(handle, (frame) => {
-        try {
-          assertLive();
-          receive(frame);
-        } catch {
-          /* Revocation fences publication. */
-        }
-      });
+      const stop = await startBrokerPageStream(handle, receive, ended);
       const detach = () => {
         void stop().catch(() => undefined);
       };

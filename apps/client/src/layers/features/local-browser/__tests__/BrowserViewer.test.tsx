@@ -6,6 +6,14 @@ import { TransportProvider } from '@/layers/shared/model';
 import { BrowserViewer } from '../ui/BrowserViewer';
 
 const subscription = {
+  metadata: {
+    revision: 0,
+    navigationGeneration: 0,
+    controlEpoch: 0,
+    viewport: null,
+    control: null,
+    chooser: null,
+  },
   viewerId: 'v'.repeat(43),
   nonce: 'n'.repeat(43),
   binding: { chatId: 'chat', profileId: 'profile', connectionId: 'connection', tabId: 'tab' },
@@ -18,6 +26,7 @@ const props = { chatId: 'chat', connectionId: 'connection', tabId: 'tab', visibl
 
 function frame() {
   return {
+    view: subscription.metadata,
     sequence: 1,
     generation: 1,
     width: 640,

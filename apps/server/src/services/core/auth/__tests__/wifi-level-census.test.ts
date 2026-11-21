@@ -270,6 +270,12 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
   'Already this computer only: the route refuses every other caller': [
     'POST /api/browser-viewers',
     'POST /api/browser-viewers/:viewerId/frame',
+    'POST /api/browser-viewers/:viewerId/take-over',
+    'POST /api/browser-viewers/:viewerId/input',
+    'POST /api/browser-viewers/:viewerId/hand-back',
+    'POST /api/browser-viewers/:viewerId/copy',
+    'POST /api/browser-viewers/:viewerId/paste',
+    'POST /api/browser-viewers/:viewerId/files',
     'DELETE /api/browser-viewers/:viewerId',
     'POST /api/system/shell-check/continue',
     // The load gate's waiting line: let one job through, or move it up (DOR-4209).

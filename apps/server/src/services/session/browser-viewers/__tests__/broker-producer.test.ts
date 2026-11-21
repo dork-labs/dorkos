@@ -84,6 +84,42 @@ describe('one physical broker producer per server-bound Page (V6)', () => {
     }
   });
 
+  it('never starts a replacement stream before navigation teardown physically settles', async () => {
+    const f = await setup();
+    const viewer = await f.registry.subscribe(principal, 'chat-a');
+    const old = f.starts()[0];
+    let release!: () => void;
+    old.detach.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        })
+    );
+    f.contexts[0].pages[0].navigate('https://example.com/next');
+    await vi.waitFor(() => expect(old.detach).toHaveBeenCalledTimes(1));
+    expect(f.starts()).toHaveLength(1);
+    f.emit(old);
+    await expect(f.registry.frame(principal, viewer.viewerId, viewer.nonce)).resolves.toBeNull();
+    release();
+    await vi.waitFor(() => expect(f.starts()).toHaveLength(2));
+    f.emit(f.starts()[1]);
+    expect((await f.registry.frame(principal, viewer.viewerId, viewer.nonce))?.sequence).toBe(1);
+    expect(old.detach).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a delivered old-generation frame after same-site navigation before HTTP delivery', async () => {
+    const f = await setup();
+    const viewer = await f.registry.subscribe(principal, 'chat-a');
+    f.emit(f.starts()[0]);
+    const frame = await f.registry.frame(principal, viewer.viewerId, viewer.nonce);
+    expect(frame).not.toBeNull();
+    expect(f.registry.deliveryCurrent(principal, viewer.viewerId, viewer.nonce, frame!)).toBe(true);
+    f.contexts[0].pages[0].navigate('https://example.com/next');
+    expect(f.registry.deliveryCurrent(principal, viewer.viewerId, viewer.nonce, frame!)).toBe(
+      false
+    );
+  });
+
   it('shares concurrent captures while keeping each viewer authority separate', async () => {
     const f = await setup();
     const viewers = await Promise.all(
@@ -159,7 +195,7 @@ describe('one physical broker producer per server-bound Page (V6)', () => {
     f.emit(f.starts()[1]);
     expect((await f.registry.frame(principal, b.viewerId, b.nonce))?.bytes).toEqual(image);
   });
-  it('takeover opens only its input session; navigation drops old frames before a new watch starts', async () => {
+  it('serializes replacement streams and retains the subscription across custody and navigation', async () => {
     const f = await setup();
     const a = await f.registry.subscribe(principal, 'chat-a');
     const stream = f.starts()[0];
@@ -170,16 +206,19 @@ describe('one physical broker producer per server-bound Page (V6)', () => {
       viewerId: 'control',
     });
     await f.service.pageBroker.takePersonControl(viewer);
-    expect(f.starts()).toHaveLength(1);
+    await vi.waitFor(() => expect(f.starts().at(-1)!.detach).not.toHaveBeenCalled());
+    expect(f.starts().length).toBeGreaterThan(1);
+    for (const previous of f.starts().slice(0, -1))
+      expect(previous.detach).toHaveBeenCalledTimes(1);
+    const count = f.starts().length;
     await expect(f.observe('chat-a')).rejects.toBeDefined();
     f.contexts[0].pages[0].navigate('https://example.com/next');
     f.emit(stream);
-    await expect(f.registry.frame(principal, a.viewerId, a.nonce)).rejects.toBeDefined();
-    const b = await vi.waitFor(() => f.registry.subscribe(principal, 'chat-a'));
-    expect(f.starts()).toHaveLength(2);
-    expect(stream.detach).toHaveBeenCalledTimes(1);
-    f.emit(f.starts()[1]);
-    expect((await f.registry.frame(principal, b.viewerId, b.nonce))?.bytes).toEqual(image);
+    await vi.waitFor(() => expect(f.starts()).toHaveLength(count + 1));
+    for (const previous of f.starts().slice(0, -1))
+      expect(previous.detach).toHaveBeenCalledTimes(1);
+    f.emit(f.starts().at(-1)!);
+    expect((await f.registry.frame(principal, a.viewerId, a.nonce))?.bytes).toEqual(image);
     await viewer.close();
     await expect(f.observe('chat-a')).rejects.toBeDefined();
   });

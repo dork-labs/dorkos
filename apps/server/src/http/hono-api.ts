@@ -604,16 +604,15 @@ export function createHonoApi(options: HonoApiOptions): Hono<ApiEnv> {
     app.route('/api/heartbeats/wakers-off', createWakersOffRoutes(deps.wakersOff));
   if (deps.terminal) app.route('/api/terminal', createTerminalRoutes(deps.terminal));
   if (deps.localBrowser) {
+    const viewerInput = () => env.DORKOS_AGENT_BROWSER_STREAM && env.DORKOS_AGENT_BROWSER_INPUT;
+    const viewers = new BrowserViewerRegistry(deps.localBrowser.viewerPages.resolve, viewerInput);
     app.route(
       '/api/local-browser',
-      createLocalBrowserRoutes(deps.localBrowser, deps.localBrowserProfiles)
+      createLocalBrowserRoutes(deps.localBrowser, deps.localBrowserProfiles, viewers)
     );
     app.route(
       '/api/browser-viewers',
-      createBrowserViewerRoutes(
-        new BrowserViewerRegistry(deps.localBrowser.viewerPages.resolve),
-        () => env.DORKOS_AGENT_BROWSER_STREAM
-      )
+      createBrowserViewerRoutes(viewers, () => env.DORKOS_AGENT_BROWSER_STREAM, viewerInput)
     );
   }
   if (deps.mcpServers) {

@@ -1,4 +1,9 @@
-import type { BrowserPageBinding } from '../local-browser/leases/broker-contract.js';
+import type { BrowserViewerViewport } from '@dorkos/shared/browser-viewer-control';
+import type {
+  BrowserPageBinding,
+  BrowserPageFacts,
+  BrowserPersonInputLease,
+} from '../local-browser/leases/broker-contract.js';
 /** The authenticated person and app instance owning a viewer. Never supplied in JSON. */
 export interface ViewerPrincipal {
   readonly ownerId: string;
@@ -16,6 +21,9 @@ export interface ViewerPageIdentity {
 
 /** One bounded JPEG produced by an owned page, with no URLs or page text. */
 export interface ViewerFrame {
+  readonly navigationGeneration: number;
+  readonly controlEpoch: number;
+  readonly viewport: BrowserViewerViewport;
   readonly sequence: number;
   readonly generation: number;
   readonly width: number;
@@ -26,6 +34,10 @@ export interface ViewerFrame {
 /** The narrow read-only broker seam. It cannot launch, select, navigate or type. */
 export interface ViewerPage {
   readonly binding: BrowserPageBinding;
+  facts(): BrowserPageFacts;
+  onChange(listener: () => void): () => void;
+  takeControl(): Promise<BrowserPersonInputLease>;
+  handBack(lease: BrowserPersonInputLease): Promise<void>;
   abandon(): Promise<void>;
   close(): Promise<void>;
   readonly identity: ViewerPageIdentity;
@@ -70,7 +82,14 @@ export const VIEWER_LIMITS = Object.freeze({
 /** Refusals contain only a fixed code, never an exception from Chrome or page content. */
 export class BrowserViewerError extends Error {
   constructor(
-    readonly code: 'viewer_unavailable' | 'viewer_denied' | 'viewer_busy' | 'viewer_limit'
+    readonly code:
+      | 'viewer_unavailable'
+      | 'viewer_denied'
+      | 'viewer_busy'
+      | 'viewer_limit'
+      | 'viewer_stale'
+      | 'viewer_uncertain'
+      | 'file_picker_stuck'
   ) {
     super(code);
   }
