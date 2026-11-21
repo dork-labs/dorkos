@@ -1,6 +1,6 @@
 import { app, dialog } from 'electron';
 import type { BrowserWindow, MessageBoxOptions } from 'electron';
-import log from 'electron-log';
+import { updaterLog } from './log';
 import { installedBundleVersion, resetAppBundleCache } from './app-bundle';
 import { purgeStaleStagedUpdates } from './cache';
 import { prepareUpdateRestart } from '../auto-updater';
@@ -102,7 +102,7 @@ export async function checkForManualOverwrite(
   if (promptedVersion === installed) return;
   promptedVersion = installed;
 
-  log.info(
+  updaterLog.info(
     `[updater] DorkOS ${installed} is installed on disk while ${running} is still running — ` +
       'the app was replaced underneath this process.'
   );
@@ -128,7 +128,7 @@ export async function checkForManualOverwrite(
     clearUpdateIntent();
   }
 
-  log.info(`[updater] Restarting into the installed ${installed}.`);
+  updaterLog.info(`[updater] Restarting into the installed ${installed}.`);
   app.relaunch();
   app.quit();
 }

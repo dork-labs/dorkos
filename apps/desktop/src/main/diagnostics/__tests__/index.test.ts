@@ -104,6 +104,7 @@ beforeEach(() => {
   write(holder.exe, 'binary');
   write(holder.mainLog, 'electron main log\n');
   write(path.join(holder.dataDirectory, 'logs', 'dorkos.log'), '{"msg":"server log"}\n');
+  write(path.join(holder.dataDirectory, 'logs', 'updater.log'), '[updater] checked\n');
   write(path.join(holder.dataDirectory, 'config.json'), JSON.stringify(CONFIG_FIXTURE));
   write(path.join(holder.cache, SHIPIT_DIR, 'ShipItState.plist'), 'bplist00');
   write(path.join(holder.cache, UPDATER_DIR, 'DorkOS-0.63.0.zip'), 'a staged download');
@@ -139,12 +140,14 @@ describe('saveDiagnosticReport', () => {
       'report.txt',
       'main.log',
       'dorkos.log',
+      'updater.log',
       `update/${SHIPIT_DIR}/ShipItState.plist`,
       'update/listings.txt',
       'config-redacted.json',
     ]);
     expect(files.get('main.log')!.toString('utf8')).toBe('electron main log\n');
     expect(files.get('dorkos.log')!.toString('utf8')).toBe('{"msg":"server log"}\n');
+    expect(files.get('updater.log')!.toString('utf8')).toBe('[updater] checked\n');
     expect(files.get(`update/${SHIPIT_DIR}/ShipItState.plist`)!.toString('utf8')).toBe('bplist00');
   });
 
@@ -264,6 +267,7 @@ describe('saveDiagnosticReport', () => {
     expect(report).toContain('Could not be collected:');
     expect(report).toContain('main.log: ENOENT');
     expect(report).toContain('dorkos.log: ENOENT');
+    expect(report).toContain('updater.log: ENOENT');
     expect(report).toContain('config.json: ENOENT');
     expect(files.get('update/listings.txt')!.toString('utf8')).toContain('No update state found');
   });
