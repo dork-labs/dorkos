@@ -313,8 +313,14 @@ export const marketplaceDomain: CapabilityDomain = {
       tier: 'act',
       area: 'packages',
       approvalDisplayFields: ['name', 'marketplace', 'projectPath'],
-      approvalSentence: (input) =>
-        `wants to install ${quoteSummaryValue((input as { name: string }).name)}`,
+      // The card is built before input validation, so a call without a name
+      // still gets a sentence rather than a crash.
+      approvalSentence: (input) => {
+        const name = (input as { name?: unknown } | undefined)?.name;
+        return typeof name === 'string'
+          ? `wants to install ${quoteSummaryValue(name)}`
+          : 'wants to install a package';
+      },
       approvalViewDetail: () => 'DorkOS will show you what’s in it next.',
       input: z.object(InstallInputSchema),
       output: z.unknown(),
