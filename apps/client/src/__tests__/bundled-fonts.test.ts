@@ -21,12 +21,23 @@ const html = readFileSync(path.join(here, '..', '..', 'index.html'), 'utf8');
 const indexCss = readFileSync(path.join(here, '..', 'index.css'), 'utf8');
 const require = createRequire(import.meta.url);
 
+/**
+ * A `unicode-range` value as its list of ranges. Prettier writes `a, b` in our
+ * stylesheet while the package writes `a,b`, so both are compared as lists.
+ */
+function rangesOf(body: string): string[] | undefined {
+  return /unicode-range:\s*([^;]+);/
+    .exec(body)?.[1]
+    ?.split(',')
+    .map((range) => range.trim());
+}
+
 /** Each `@font-face` block, as family, weight, its sources and its unicode-range. */
 const faces = [...css.matchAll(/@font-face\s*{([^}]*)}/g)].map(([, body]) => ({
   family: /font-family:\s*'([^']+)'/.exec(body!)?.[1],
   weight: /font-weight:\s*([\d ]+);/.exec(body!)?.[1],
   sources: [...body!.matchAll(/url\('([^']+)'\)/g)].map(([, url]) => url!),
-  range: /unicode-range:\s*([^;]+);/.exec(body!)?.[1]?.trim(),
+  range: rangesOf(body!),
 }));
 
 /** The subsets Google Fonts served for each face, so no script loses the font. */
@@ -42,12 +53,12 @@ const INTER_SUBSETS = [
 const MONO_SUBSETS = ['cyrillic-ext', 'cyrillic', 'greek', 'vietnamese', 'latin-ext', 'latin'];
 
 /** The package's own `wght.css`, as each file it names mapped to that face's unicode-range. */
-function packageRanges(pkg: string): Map<string, string> {
+function packageRanges(pkg: string): Map<string, string[]> {
   const source = readFileSync(require.resolve(`@fontsource-variable/${pkg}/wght.css`), 'utf8');
   return new Map(
     [...source.matchAll(/@font-face\s*{([^}]*)}/g)].map(([, body]) => [
       /url\(\.\/files\/([^)]+)\)/.exec(body!)![1]!,
-      /unicode-range:\s*([^;]+);/.exec(body!)![1]!.trim(),
+      rangesOf(body!)!,
     ])
   );
 }
@@ -76,7 +87,9 @@ describe('the default fonts shipped with the app', () => {
     };
     for (const face of faces) {
       const [, pkg, file] = /^@fontsource-variable\/([^/]+)\/files\/(.+)$/.exec(face.sources[0]!)!;
-      expect(face.range, file).toBe(ranges[pkg as keyof typeof ranges].get(file!));
+      const expected = ranges[pkg as keyof typeof ranges].get(file!);
+      expect(expected, file).toBeDefined();
+      expect(face.range, file).toEqual(expected);
     }
   });
 
