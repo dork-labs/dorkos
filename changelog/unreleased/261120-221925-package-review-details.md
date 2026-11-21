@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(marketplace): package review cards name a marked turn and list each mini app (DOR-4866)'
+  - 'fix(marketplace): label each declared secret in the update review (DOR-4866)'
 ---
 
 ### Changed

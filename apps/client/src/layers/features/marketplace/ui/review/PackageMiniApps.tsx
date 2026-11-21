@@ -60,7 +60,7 @@ export function PackageMiniApps({
               <ul className="space-y-1" aria-label={`Secrets for ${ext.id}`}>
                 {ext.secrets.map((secret) => (
                   <li key={secret.key}>
-                    <bdi>{secret.key}</bdi> ({secret.required ? 'required' : 'optional'})
+                    Secrets: <bdi>{secret.key}</bdi> ({secret.required ? 'required' : 'optional'})
                   </li>
                 ))}
               </ul>

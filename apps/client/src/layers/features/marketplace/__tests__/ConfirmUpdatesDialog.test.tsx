@@ -145,8 +145,7 @@ describe('ConfirmUpdatesDialog', () => {
       'pages',
       'api.sample.invalid',
       'node',
-      'SAMPLE_KEY',
-      'required',
+      'Secrets: SAMPLE_KEY (required)',
     ]) {
       expect(apps).toHaveTextContent(value);
     }
