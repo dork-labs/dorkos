@@ -2,9 +2,14 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createExtensionAPI } from '../model/extension-api-factory';
 import { setRunningApps } from '../frame/running-apps';
-import { StartWorkError } from '@dorkos/extension-api';
+import { EXTENSION_CONTRIBUTION_KEYS, StartWorkError } from '@dorkos/extension-api';
 import type { ExtensionAPIDeps } from '../model/types';
-import type { UiCanvasContent } from '@dorkos/shared/types';
+import type { ExtensionAPI } from '@dorkos/extension-api';
+import {
+  clearUndeclaredSlots,
+  getUndeclaredSlots,
+} from '@/layers/shared/lib/extension-undeclared-slots';
+import type { UiCanvasContent, UiCommand } from '@dorkos/shared/types';
 
 // Mock sonner toast before importing the factory
 vi.mock('sonner', () => ({
@@ -24,6 +29,16 @@ vi.mock('@/layers/shared/lib/ui-action-dispatcher', () => ({
 import { toast } from 'sonner';
 import { revealForContent } from '@/layers/shared/lib/ui-action-dispatcher';
 import { executeUiCommand } from '@/layers/shared/lib/ui-action-dispatcher';
+
+/** Every place declared, for tests of what a registration does once it is allowed. */
+const DECLARES_ALL = {
+  contributions: Object.fromEntries(EXTENSION_CONTRIBUTION_KEYS.map((key) => [key, true])),
+  // And a person allowed every one (DOR-4282).
+  allowedSlots: [...EXTENSION_CONTRIBUTION_KEYS],
+};
+
+/** Every place declared, none allowed: what a record without `allowedSlots` reads as. */
+const DECLARES_ALL_UNALLOWED = { contributions: DECLARES_ALL.contributions };
 
 // --- Helpers ---
 
@@ -100,14 +115,14 @@ describe('createExtensionAPI', () => {
 
   // 1. id field
   it('exposes the extension ID as a readonly property', () => {
-    const { api } = createExtensionAPI('my-ext', deps);
+    const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
     expect(api.id).toBe('my-ext');
   });
 
   // 2. registerComponent
   describe('registerComponent', () => {
     it('calls registry.register with a contribution containing the namespaced ID', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
       const FakeComponent = () => null;
 
       api.registerComponent('dashboard.sections', 'widget', FakeComponent);
@@ -123,7 +138,7 @@ describe('createExtensionAPI', () => {
     });
 
     it('respects the priority option', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
       api.registerComponent('dashboard.sections', 'widget', () => null, { priority: 10 });
 
       const [, contribution] = vi.mocked(deps.registry.register).mock.calls[0] as [
@@ -134,7 +149,7 @@ describe('createExtensionAPI', () => {
     });
 
     it('forwards visibleWhen for dashboard.sections so a section can hide itself', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
       const visibleWhen = () => false;
 
       api.registerComponent('dashboard.sections', 'widget', () => null, { visibleWhen });
@@ -150,7 +165,7 @@ describe('createExtensionAPI', () => {
     });
 
     it('leaves visibleWhen undefined when the extension does not pass one', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
 
       api.registerComponent('dashboard.sections', 'widget', () => null);
 
@@ -162,7 +177,7 @@ describe('createExtensionAPI', () => {
     });
 
     it('uses the label option for a labelled slot, defaulting to the namespaced id', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
 
       api.registerComponent('sidebar.footer', 'labelled', () => null, { label: 'Labelled' });
       api.registerComponent('sidebar.footer', 'unlabelled', () => null);
@@ -182,7 +197,7 @@ describe('createExtensionAPI', () => {
     });
 
     it('threads an icon option into a right-panel contribution', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
       const MyIcon = () => null;
 
       api.registerComponent('right-panel', 'inspector', () => null, {
@@ -200,7 +215,7 @@ describe('createExtensionAPI', () => {
     });
 
     it("marks a right-panel tab as a mini app's and carries its showIn default", () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
 
       api.registerComponent('right-panel', 'queue', () => null, {
         label: 'Queue',
@@ -219,7 +234,7 @@ describe('createExtensionAPI', () => {
     });
 
     it('has no declared placement when showIn is omitted, so the tab shows everywhere', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
       api.registerComponent('right-panel', 'queue', () => null, { label: 'Queue' });
       const [, contribution] = vi.mocked(deps.registry.register).mock.calls[0] as [
         string,
@@ -230,7 +245,7 @@ describe('createExtensionAPI', () => {
 
     it('warns when showIn names nothing, or names a page no page has', () => {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
 
       api.registerComponent('right-panel', 'a', () => null, {
         showIn: { pages: 'session' } as never,
@@ -249,7 +264,7 @@ describe('createExtensionAPI', () => {
     });
 
     it('leaves a right-panel contribution iconless when no icon option is given', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
 
       api.registerComponent('right-panel', 'inspector', () => null, { label: 'Inspector' });
 
@@ -264,7 +279,7 @@ describe('createExtensionAPI', () => {
     it('returns the unsubscribe function from registry.register', () => {
       const unsub = vi.fn();
       vi.mocked(deps.registry.register).mockReturnValueOnce(unsub);
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
 
       const returned = api.registerComponent('dashboard.sections', 'widget', () => null);
       expect(returned).toBe(unsub);
@@ -273,7 +288,7 @@ describe('createExtensionAPI', () => {
     it('adds the unsubscribe function to cleanups', () => {
       const unsub = vi.fn();
       vi.mocked(deps.registry.register).mockReturnValueOnce(unsub);
-      const { api, cleanups } = createExtensionAPI('my-ext', deps);
+      const { api, cleanups } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
 
       api.registerComponent('dashboard.sections', 'widget', () => null);
       expect(cleanups).toContain(unsub);
@@ -283,7 +298,7 @@ describe('createExtensionAPI', () => {
   // 3. registerCommand
   describe('registerCommand', () => {
     it('registers a command palette contribution with namespaced IDs', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
 
       api.registerCommand('do-thing', 'Do the thing', vi.fn());
 
@@ -294,12 +309,14 @@ describe('createExtensionAPI', () => {
           label: 'Do the thing',
           action: 'ext:my-ext:do-thing',
           category: 'feature',
+          // So the palette can name the app from DorkOS's record (DOR-4282).
+          extensionId: 'my-ext',
         })
       );
     });
 
     it('uses the provided icon and shortcut', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
 
       api.registerCommand('do-thing', 'Do the thing', vi.fn(), {
         icon: 'zap',
@@ -315,7 +332,7 @@ describe('createExtensionAPI', () => {
     });
 
     it('falls back to "puzzle" icon when none provided', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
       api.registerCommand('do-thing', 'Label', vi.fn());
 
       const [, contribution] = vi.mocked(deps.registry.register).mock.calls[0] as [
@@ -327,7 +344,7 @@ describe('createExtensionAPI', () => {
 
     it('registers the action handler with the correct action ID', () => {
       const cb = vi.fn();
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
 
       api.registerCommand('do-thing', 'Label', cb);
 
@@ -337,7 +354,7 @@ describe('createExtensionAPI', () => {
     it('adds the registry unsub to cleanups', () => {
       const unsub = vi.fn();
       vi.mocked(deps.registry.register).mockReturnValueOnce(unsub);
-      const { api, cleanups } = createExtensionAPI('my-ext', deps);
+      const { api, cleanups } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
 
       api.registerCommand('do-thing', 'Label', vi.fn());
       // Cleanup is a wrapper that calls both registry unsub and command handler removal
@@ -351,7 +368,7 @@ describe('createExtensionAPI', () => {
   // 4. registerDialog
   describe('registerDialog', () => {
     it('registers a dialog contribution with the dialog slot', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
       const DialogComponent = () => null;
 
       api.registerDialog('my-dialog', DialogComponent);
@@ -366,7 +383,7 @@ describe('createExtensionAPI', () => {
     });
 
     it('returns open and close controls', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
       const controls = api.registerDialog('my-dialog', () => null);
 
       expect(typeof controls.open).toBe('function');
@@ -374,7 +391,7 @@ describe('createExtensionAPI', () => {
     });
 
     it('keeps its own open flag, which open() and close() drive', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
       const controls = api.registerDialog('my-dialog', () => null);
       const contribution = vi.mocked(deps.registry.register).mock.calls[0]![1] as {
         openState: { getSnapshot: () => boolean };
@@ -390,8 +407,18 @@ describe('createExtensionAPI', () => {
       expect(contribution.openState.getSnapshot()).toBe(false);
     });
 
+    it('stamps the dialog with the app’s id, so the host names the app (DOR-4282)', () => {
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
+      api.registerDialog('my-dialog', () => null);
+
+      expect(deps.registry.register).toHaveBeenCalledWith(
+        'dialog',
+        expect.objectContaining({ id: 'my-ext:my-dialog', extensionId: 'my-ext' })
+      );
+    });
+
     it('gives each dialog its own open flag', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
       const first = api.registerDialog('one', () => null);
       api.registerDialog('two', () => null);
       const [one, two] = vi
@@ -405,7 +432,7 @@ describe('createExtensionAPI', () => {
 
     it("refuses registerComponent('dialog'), which could never open", () => {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      const { api, cleanups } = createExtensionAPI('my-ext', deps);
+      const { api, cleanups } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
 
       const unsub = api.registerComponent('dialog', 'my-dialog', () => null);
 
@@ -419,7 +446,7 @@ describe('createExtensionAPI', () => {
     it('adds the registry unsub to cleanups', () => {
       const unsub = vi.fn();
       vi.mocked(deps.registry.register).mockReturnValueOnce(unsub);
-      const { api, cleanups } = createExtensionAPI('my-ext', deps);
+      const { api, cleanups } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
 
       api.registerDialog('my-dialog', () => null);
       expect(cleanups).toHaveLength(1);
@@ -431,7 +458,7 @@ describe('createExtensionAPI', () => {
   // 5. registerSettingsTab
   describe('registerSettingsTab', () => {
     it('registers a settings tab with the namespaced ID and label', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
       const TabComponent = () => null;
 
       api.registerSettingsTab('prefs', 'Preferences', TabComponent);
@@ -449,7 +476,7 @@ describe('createExtensionAPI', () => {
     it('adds the registry unsub to cleanups', () => {
       const unsub = vi.fn();
       vi.mocked(deps.registry.register).mockReturnValueOnce(unsub);
-      const { api, cleanups } = createExtensionAPI('my-ext', deps);
+      const { api, cleanups } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
 
       api.registerSettingsTab('prefs', 'Prefs', () => null);
       expect(cleanups).toContain(unsub);
@@ -458,7 +485,7 @@ describe('createExtensionAPI', () => {
 
   // 6. executeCommand
   it('executeCommand delegates to executeUiCommand with agent origin (programmatic, never persists tab picks)', () => {
-    const { api } = createExtensionAPI('my-ext', deps);
+    const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
     const command = { action: 'open_command_palette' as const };
 
     api.executeCommand(command);
@@ -475,7 +502,7 @@ describe('createExtensionAPI', () => {
     const ownDeps = makeDeps({
       dispatcherContext: { ...deps.dispatcherContext, getStore: () => store },
     });
-    const { api } = createExtensionAPI('my-ext', ownDeps);
+    const { api } = createExtensionAPI('my-ext', ownDeps, [], DECLARES_ALL);
     const content: UiCanvasContent = { type: 'markdown', content: '# Hello' };
 
     api.openCanvas(content);
@@ -487,9 +514,215 @@ describe('createExtensionAPI', () => {
     expect(executeUiCommand).not.toHaveBeenCalled();
   });
 
+  // 7b. Only the places the manifest declares (DOR-4282)
+  describe('places the manifest does not declare', () => {
+    let warn: ReturnType<typeof vi.spyOn>;
+    beforeEach(() => {
+      warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      clearUndeclaredSlots('my-ext');
+    });
+    afterEach(() => warn.mockRestore());
+
+    it('adds neither a command nor a dialog for an app that declares only a Settings page', () => {
+      const { api, cleanups } = createExtensionAPI('my-ext', deps, [], {
+        contributions: { 'settings.tabs': true },
+        allowedSlots: ['settings.tabs'],
+      });
+
+      const unsubCommand = api.registerCommand('sign-in', 'Sign in again', vi.fn());
+      const dialog = api.registerDialog('sign-in', () => null);
+      api.registerSettingsTab('prefs', 'Preferences', () => null);
+
+      expect(vi.mocked(deps.registry.register).mock.calls.map(([slot]) => slot)).toEqual([
+        'settings.tabs',
+      ]);
+      expect(deps.registerCommandHandler).not.toHaveBeenCalled();
+      expect(cleanups).toHaveLength(1);
+      expect(() => {
+        unsubCommand();
+        dialog.open();
+        dialog.close();
+      }).not.toThrow();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('command-palette.items'));
+      expect(getUndeclaredSlots('my-ext')).toEqual(['command-palette.items', 'dialog']);
+    });
+
+    it.each([
+      ['a page', (api: ExtensionAPI) => api.registerPage('', () => null, { title: 'Home' })],
+      [
+        'a status bar item',
+        (api: ExtensionAPI) => api.registerStatusBarItem('s', () => null, { label: 'S' }),
+      ],
+      ['a panel tab', (api: ExtensionAPI) => api.registerComponent('right-panel', 't', () => null)],
+      [
+        'an Activity section',
+        (api: ExtensionAPI) => api.registerComponent('dashboard.sections', 'a', () => null),
+      ],
+      [
+        'a sidebar item',
+        (api: ExtensionAPI) => api.registerComponent('sidebar.footer', 'f', () => null),
+      ],
+      ['a Settings page', (api: ExtensionAPI) => api.registerSettingsTab('p', 'P', () => null)],
+    ])('adds %s only when declared', (_what, register) => {
+      const { api } = createExtensionAPI('my-ext', deps);
+      register(api);
+      expect(deps.registry.register).not.toHaveBeenCalled();
+
+      const declared = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
+      register(declared.api);
+      expect(deps.registry.register).toHaveBeenCalledOnce();
+    });
+
+    it('opens nothing on the canvas without `canvas`', () => {
+      const openCanvasDocument = vi.fn();
+      const store = { openCanvasDocument } as unknown as ReturnType<
+        ExtensionAPIDeps['dispatcherContext']['getStore']
+      >;
+      const ownDeps = makeDeps({
+        dispatcherContext: { ...deps.dispatcherContext, getStore: () => store },
+      });
+      const { api } = createExtensionAPI('my-ext', ownDeps, [], {
+        contributions: { pages: true },
+      });
+
+      api.openCanvas({ type: 'markdown', content: '# Hello' });
+
+      expect(openCanvasDocument).not.toHaveBeenCalled();
+      expect(getUndeclaredSlots('my-ext')).toEqual(['canvas']);
+    });
+
+    it.each([
+      ['open_canvas', { action: 'open_canvas', content: { type: 'markdown', content: '# Hi' } }],
+      [
+        'update_canvas',
+        { action: 'update_canvas', content: { type: 'markdown', content: '# Hi' } },
+      ],
+    ])('runs no %s command without `canvas`', (_action, command) => {
+      const { api } = createExtensionAPI('my-ext', deps, [], { contributions: { pages: true } });
+
+      api.executeCommand(command as UiCommand);
+
+      expect(executeUiCommand).not.toHaveBeenCalled();
+      expect(getUndeclaredSlots('my-ext')).toEqual(['canvas']);
+
+      const declared = createExtensionAPI('my-ext', deps, [], {
+        contributions: { canvas: true },
+        allowedSlots: ['canvas'],
+      });
+      declared.api.executeCommand(command as UiCommand);
+      expect(executeUiCommand).toHaveBeenCalledWith(deps.dispatcherContext, command, 'agent');
+    });
+
+    it('runs other commands without `canvas`', () => {
+      const { api } = createExtensionAPI('my-ext', deps, [], { contributions: { pages: true } });
+      api.executeCommand({ action: 'open_command_palette' });
+      expect(executeUiCommand).toHaveBeenCalledOnce();
+    });
+
+    it('refuses a place set to anything but true', () => {
+      const loose = { contributions: { 'command-palette.items': 'yes' } } as unknown as {
+        contributions: Record<string, boolean>;
+      };
+      const { api } = createExtensionAPI('my-ext', deps, [], loose);
+      api.registerCommand('go', 'Go', vi.fn());
+      expect(deps.registry.register).not.toHaveBeenCalled();
+    });
+
+    // An app approved before places were recorded keeps its old places
+    // while DorkOS's record says so; nothing else, whatever the record lists.
+    it('keeps a panel tab, Settings page and page under grace, and nothing else', () => {
+      const { api } = createExtensionAPI('my-ext', deps, [], {
+        allowedSlots: [
+          'right-panel',
+          'settings.tabs',
+          'pages',
+          'command-palette.items',
+          'dialog',
+          'status-bar',
+          'canvas',
+        ],
+      });
+
+      api.registerComponent('right-panel', 't', () => null);
+      api.registerSettingsTab('p', 'P', () => null);
+      api.registerPage('', () => null, { title: 'Home' });
+      api.registerCommand('go', 'Go', vi.fn());
+      api.registerDialog('d', () => null);
+      api.registerStatusBarItem('s', () => null, { label: 'S' });
+      api.openCanvas({ type: 'markdown', content: '# Hi' });
+
+      expect(
+        vi
+          .mocked(deps.registry.register)
+          .mock.calls.map(([slot]) => slot)
+          .sort()
+      ).toEqual(['pages', 'right-panel', 'settings.tabs'].sort());
+      expect(getUndeclaredSlots('my-ext')).toEqual([
+        'command-palette.items',
+        'dialog',
+        'status-bar',
+        'canvas',
+      ]);
+    });
+
+    // Purpose: a place the manifest declares but no person allowed yet is
+    // refused and never drawn, while the places they did allow still work
+    // (DOR-4282, option C). It is waiting, not undeclared, so nothing asks
+    // its maker to update it.
+    it('refuses a declared place a person has not allowed, and keeps the allowed ones', () => {
+      const openCanvasDocument = vi.fn();
+      const store = { openCanvasDocument } as unknown as ReturnType<
+        ExtensionAPIDeps['dispatcherContext']['getStore']
+      >;
+      const ownDeps = makeDeps({
+        dispatcherContext: { ...deps.dispatcherContext, getStore: () => store },
+      });
+      const { api } = createExtensionAPI('my-ext', ownDeps, [], {
+        contributions: {
+          'right-panel': true,
+          'settings.tabs': true,
+          pages: true,
+          'status-bar': true,
+          'command-palette.items': true,
+          dialog: true,
+          canvas: true,
+        },
+        allowedSlots: ['right-panel', 'settings.tabs'],
+      });
+
+      api.registerComponent('right-panel', 't', () => null);
+      api.registerSettingsTab('p', 'P', () => null);
+      api.registerPage('', () => null, { title: 'Home' });
+      api.registerStatusBarItem('s', () => null, { label: 'S' });
+      api.registerCommand('go', 'Go', vi.fn());
+      const dialog = api.registerDialog('d', () => null);
+      api.openCanvas({ type: 'markdown', content: '# Hi' });
+
+      expect(
+        vi
+          .mocked(ownDeps.registry.register)
+          .mock.calls.map(([slot]) => slot)
+          .sort()
+      ).toEqual(['right-panel', 'settings.tabs'].sort());
+      expect(ownDeps.registerCommandHandler).not.toHaveBeenCalled();
+      expect(openCanvasDocument).not.toHaveBeenCalled();
+      expect(() => dialog.open()).not.toThrow();
+      expect(getUndeclaredSlots('my-ext')).toEqual([]);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('has not allowed "pages"'));
+    });
+
+    // Purpose: fail-closed, the manifest alone never opens a place.
+    it('refuses every place when the record carries no allowed places', () => {
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL_UNALLOWED);
+      api.registerPage('', () => null, { title: 'Home' });
+      api.registerComponent('right-panel', 't', () => null);
+      expect(deps.registry.register).not.toHaveBeenCalled();
+    });
+  });
+
   // 8. navigate
   it('navigate calls deps.navigate with the correct path', () => {
-    const { api } = createExtensionAPI('my-ext', deps);
+    const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
 
     api.navigate('/team');
 
@@ -505,7 +738,7 @@ describe('createExtensionAPI', () => {
     'javascript:alert(1)',
     'data:text/html,<script>alert(1)</script>',
   ])('navigate refuses %s rather than handing it to the router', (path) => {
-    const { api } = createExtensionAPI('my-ext', deps);
+    const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
 
     api.navigate(path);
 
@@ -561,7 +794,7 @@ describe('createExtensionAPI', () => {
   });
 
   it('navigate keeps the search an in-app path carries', () => {
-    const { api } = createExtensionAPI('my-ext', deps);
+    const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
 
     api.navigate('/session?dir=%2Ftmp');
 
@@ -573,7 +806,7 @@ describe('createExtensionAPI', () => {
   it('navigate opens the Inbox over the current page for a search-only ?inbox=', () => {
     window.history.replaceState(null, '', '/x/my-ext/p/dorkos?tab=runs');
     try {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
 
       api.navigate('?inbox=01J0000000000000000000000D');
 
@@ -592,7 +825,7 @@ describe('createExtensionAPI', () => {
         selectedCwd: '/home/kai/project',
         sessionId: 'sess-xyz',
       });
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
 
       const state = api.getState();
 
@@ -607,21 +840,21 @@ describe('createExtensionAPI', () => {
 
     it('says whether Require login is on', () => {
       vi.mocked(deps.appStore.getState).mockReturnValue({ requireLogin: true });
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
       expect(api.getState().requireLogin).toBe(true);
     });
 
     it('projects currentProject from the app store', () => {
       const project = { root: '/home/kai/project', name: 'project' };
       vi.mocked(deps.appStore.getState).mockReturnValue({ currentProject: project });
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
 
       expect(api.getState().currentProject).toBe(project);
     });
 
     it('returns null for missing fields', () => {
       vi.mocked(deps.appStore.getState).mockReturnValue({});
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
 
       const state = api.getState();
 
@@ -637,7 +870,7 @@ describe('createExtensionAPI', () => {
         sessionId: 'sess-xyz',
         currentAgentId: '01HZ0000000000000000000001',
       });
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
 
       expect(api.getState().agentId).toBe('01HZ0000000000000000000001');
     });
@@ -648,7 +881,7 @@ describe('createExtensionAPI', () => {
         sessionId: 'sess-xyz',
         currentAgentId: null,
       });
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
 
       expect(api.getState().agentId).toBeNull();
     });
@@ -657,7 +890,7 @@ describe('createExtensionAPI', () => {
   // 10. subscribe
   describe('subscribe', () => {
     it('subscribes to the app store via a projected selector', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
       const selector = vi.fn((s) => s.currentCwd);
       const callback = vi.fn();
 
@@ -669,7 +902,7 @@ describe('createExtensionAPI', () => {
     it('adds the unsubscribe function to cleanups', () => {
       const unsub = vi.fn();
       vi.mocked(deps.appStore.subscribe).mockReturnValueOnce(unsub);
-      const { api, cleanups } = createExtensionAPI('my-ext', deps);
+      const { api, cleanups } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
 
       api.subscribe(() => null, vi.fn());
       expect(cleanups).toContain(unsub);
@@ -678,7 +911,7 @@ describe('createExtensionAPI', () => {
     it('returns the unsubscribe function', () => {
       const unsub = vi.fn();
       vi.mocked(deps.appStore.subscribe).mockReturnValueOnce(unsub);
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
 
       const returned = api.subscribe(() => null, vi.fn());
       expect(returned).toBe(unsub);
@@ -691,7 +924,7 @@ describe('createExtensionAPI', () => {
         currentAgentId: 'agent-a',
       });
       deps = makeDeps({ appStore: store as unknown as ExtensionAPIDeps['appStore'] });
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
       const received: unknown[] = [];
 
       api.subscribe(
@@ -711,7 +944,7 @@ describe('createExtensionAPI', () => {
         currentAgentId: 'agent-a',
       });
       deps = makeDeps({ appStore: store as unknown as ExtensionAPIDeps['appStore'] });
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
       const callback = vi.fn();
 
       api.subscribe((s) => s.agentId, callback);
@@ -734,7 +967,7 @@ describe('createExtensionAPI', () => {
           json: vi.fn().mockResolvedValue(payload),
         })
       );
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
 
       const result = await api.loadData();
 
@@ -752,7 +985,7 @@ describe('createExtensionAPI', () => {
           json: vi.fn(),
         })
       );
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
 
       const result = await api.loadData();
 
@@ -764,7 +997,7 @@ describe('createExtensionAPI', () => {
   // 12. saveData
   it('saveData PUTs JSON to /api/extensions/{id}/data', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status: 200, ok: true }));
-    const { api } = createExtensionAPI('my-ext', deps);
+    const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
     const data = { count: 42 };
 
     await api.saveData(data);
@@ -815,7 +1048,7 @@ describe('createExtensionAPI', () => {
         }),
       });
       vi.stubGlobal('fetch', fetchMock);
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
 
       const result = await api.answerDecision(decision.id, { action: 'approve' });
 
@@ -875,7 +1108,7 @@ describe('createExtensionAPI', () => {
           json: vi.fn().mockResolvedValue({ value: 1, updatedAt: 42, updatedBy: 'robot' }),
         })
       );
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
       await expect(api.projectSettings.get('/repos/dorkos')).rejects.toThrow();
     });
 
@@ -890,7 +1123,7 @@ describe('createExtensionAPI', () => {
             .mockResolvedValue({ error: 'This was already settled.', code: 'already_resolved' }),
         })
       );
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
       await expect(api.answerDecision(decision.id, { action: 'approve' })).rejects.toMatchObject({
         message: 'This was already settled.',
         code: 'already_resolved',
@@ -904,7 +1137,7 @@ describe('createExtensionAPI', () => {
         json: vi.fn().mockResolvedValue({ decisions: [decision], offers: [] }),
       });
       vi.stubGlobal('fetch', fetchMock);
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
       const views = await api.listDecisions();
       expect(fetchMock.mock.calls[0][0]).toBe('/api/extensions/my-ext/decisions');
       expect(views).toEqual([
@@ -938,7 +1171,7 @@ describe('createExtensionAPI', () => {
         })
         .mockResolvedValueOnce({ ok: true, status: 204, json: vi.fn() });
       vi.stubGlobal('fetch', fetchMock);
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
 
       expect(await api.projectSettings.get('/repos/my.app')).toEqual({ autonomy: 'ask-me-first' });
       expect(fetchMock.mock.calls[0][0]).toBe(
@@ -968,7 +1201,7 @@ describe('createExtensionAPI', () => {
           json: async () => response,
         })
       );
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
       await expect(api.startWork(input)).resolves.toEqual(response);
     });
 
@@ -990,7 +1223,7 @@ describe('createExtensionAPI', () => {
         json: vi.fn().mockResolvedValue({ sessionId: 'chat-new' }),
       });
       vi.stubGlobal('fetch', fetchMock);
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
 
       await expect(api.startWork(input)).resolves.toEqual({ sessionId: 'chat-new' });
       expect(fetchMock.mock.calls[0][0]).toBe('/api/extensions/my-ext/start-work');
@@ -1011,7 +1244,7 @@ describe('createExtensionAPI', () => {
           }),
         })
       );
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
       const err = await api.startWork(input).catch((e: unknown) => e);
       expect(err).toBeInstanceOf(StartWorkError);
       expect(err).toMatchObject({
@@ -1033,7 +1266,7 @@ describe('createExtensionAPI', () => {
           }),
         })
       );
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
       const err = await api.startWork(input).catch((e: unknown) => e);
       expect(err).not.toBeInstanceOf(StartWorkError);
       expect(err).toMatchObject({ code: 'start_work_person_required', status: 403 });
@@ -1042,28 +1275,28 @@ describe('createExtensionAPI', () => {
 
   describe('notify', () => {
     it('calls toast.info by default', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
       api.notify('Hello world');
 
       expect(toast.info).toHaveBeenCalledWith('Hello world');
     });
 
     it('calls toast.success when type is "success"', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
       api.notify('Done!', { type: 'success' });
 
       expect(toast.success).toHaveBeenCalledWith('Done!');
     });
 
     it('calls toast.error when type is "error"', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
       api.notify('Failed', { type: 'error' });
 
       expect(toast.error).toHaveBeenCalledWith('Failed');
     });
 
     it('calls toast.info when type is explicitly "info"', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
       api.notify('FYI', { type: 'info' });
 
       expect(toast.info).toHaveBeenCalledWith('FYI');
@@ -1073,14 +1306,14 @@ describe('createExtensionAPI', () => {
   // 14. isSlotAvailable
   describe('isSlotAvailable', () => {
     it('returns true for slots in the available set', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
       expect(api.isSlotAvailable('dashboard.sections')).toBe(true);
       expect(api.isSlotAvailable('command-palette.items')).toBe(true);
     });
 
     it('returns false for slots not in the available set', () => {
       deps = makeDeps({ availableSlots: new Set(['dashboard.sections'] as const) });
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
       expect(api.isSlotAvailable('right-panel')).toBe(false);
     });
   });
@@ -1095,7 +1328,7 @@ describe('createExtensionAPI', () => {
         .mockReturnValueOnce(unsub1)
         .mockReturnValueOnce(unsub2)
         .mockReturnValueOnce(unsub3);
-      const { api, cleanups } = createExtensionAPI('my-ext', deps);
+      const { api, cleanups } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
 
       api.registerComponent('dashboard.sections', 'w1', () => null);
       api.registerCommand('cmd', 'Label', vi.fn());
@@ -1112,7 +1345,7 @@ describe('createExtensionAPI', () => {
     });
 
     it('starts with an empty cleanups array', () => {
-      const { cleanups } = createExtensionAPI('my-ext', deps);
+      const { cleanups } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
       expect(cleanups).toHaveLength(0);
     });
   });
@@ -1179,7 +1412,7 @@ describe('createExtensionAPI', () => {
     });
 
     it('defaults to no declared events when the argument is omitted', () => {
-      const { api } = createExtensionAPI('my-ext', deps);
+      const { api } = createExtensionAPI('my-ext', deps, [], DECLARES_ALL);
       api.events.subscribe(['turn.completed'], vi.fn());
       expect(deps.eventBridge.subscribe).not.toHaveBeenCalled();
     });

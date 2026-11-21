@@ -1,6 +1,6 @@
 ---
 id: 261120-223425
-title: Browser tests serve their fonts locally and never wait on Google Fonts
+title: Browser tests never wait on Google Fonts
 kind: experiment
 status: proposed
 actor: agent
@@ -22,7 +22,8 @@ stylesheet, and on Nov 20 21:36-21:38Z Google stalled it for 20-45 s. Whatever
 spec was loading a page then timed out, and the queue ejected PRs that touched
 nothing near it.
 
-The fix is in the e2e harness only. `apps/e2e/fixtures/base.ts` installs
+The first mechanism, as DOR-4871 shipped it, was in the e2e harness only
+(DOR-4872 below replaced its font serving). `apps/e2e/fixtures/base.ts` installs
 context-level routes on every test's context: a Google Fonts stylesheet that
 asks for Inter or JetBrains Mono (the client's default pairing) gets
 `@font-face` rules pointing at a local path on `fonts.gstatic.com`, answered
@@ -36,13 +37,23 @@ that imported `test` straight from `@playwright/test` now import it from the
 base. As a backstop for contexts no fixture reaches (`browser.newContext()` in
 a spec), the config passes Chromium `--host-resolver-rules` that make both
 Google Fonts hosts fail to resolve at once instead of stalling. The global-setup
-warm-up page is stubbed too. No `goto` wait changed and no product code changed.
+warm-up page is stubbed too. No `goto` wait changed, and that first version
+changed no product code.
 
 The first version of this change seeded `dorkos-font-family=system` into every
 context instead. That was rejected because the system font's metrics changed
 layout: run 44831381307 failed
 `dashboard-sidebar/sidebar-model-showcase.spec.ts:197` (a row title truncated,
 light and dark) and `workbench/file-tree-open.spec.ts:49`.
+
+DOR-4872 moved the font serving into the client: the default pairing now ships
+with the app (`apps/client/src/bundled-fonts.css`, the same
+`@fontsource-variable` packages, as client dependencies), so a start asks Google
+for nothing. The e2e devDependencies and the stub's local Inter and JetBrains
+Mono serving are removed; the stub now only fails Google Fonts closed (empty
+stylesheet, aborted font file) for fonts a person picks, and the host-resolver
+backstop and `fixtures/base.ts` stay. The metric and the 3-day window are
+unchanged; only the mechanism moved.
 
 Ruled out: the Vite ws proxy ECONNRESET lines in the same logs are noise (they
 are in green runs too); there was no dependency re-optimisation, HMR reload or

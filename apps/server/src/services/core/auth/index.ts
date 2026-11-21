@@ -50,6 +50,7 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { hubSignInPlugin } from '../hub/hub-sign-in.js';
 import { desktopSignInPlugin } from './desktop-sign-in.js';
 import { personStepUpPlugin } from './person-step-up.js';
+import { checkedSignInPlugin } from './sessions/checked-sign-in.js';
 import { hashOwnerPassword, verifyOwnerPassword } from './passwords/password-hash.js';
 import { APIError } from 'better-auth/api';
 import { toNodeHandler, fromNodeHeaders } from 'better-auth/node';
@@ -87,13 +88,18 @@ import { discardSetupCode } from './setup-code.js';
 type AuthOptions = Omit<BetterAuthOptions, 'user' | 'session' | 'plugins'> & {
   user: { additionalFields: { role: { type: 'string'; required: false; input: false } } };
   session: NonNullable<BetterAuthOptions['session']> & {
-    additionalFields: { route: { type: 'string'; required: false; input: false } };
+    additionalFields: {
+      route: { type: 'string'; required: false; input: false };
+      lastActiveAt: { type: 'date'; required: false; input: false };
+      wifiAgentTurnsAt: { type: 'date'; required: false; input: false };
+    };
   };
   plugins: [
     ReturnType<typeof apiKey>,
     ReturnType<typeof desktopSignInPlugin>,
     ReturnType<typeof hubSignInPlugin>,
     ReturnType<typeof personStepUpPlugin>,
+    ReturnType<typeof checkedSignInPlugin>,
   ];
 };
 
@@ -231,6 +237,13 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
         // works on (`./sessions/session-route.ts`). Server-only: stamped by the
         // session-create hook below, never taken from a request.
         route: { type: 'string', required: false, input: false },
+        // When a request last used a Wi-Fi sign-in, for its idle limit
+        // (`./sessions/wifi-activity.ts`). Server-only.
+        lastActiveAt: { type: 'date', required: false, input: false },
+        // When the owner, at this computer, let this Wi-Fi sign-in run agents
+        // at their own level (`./sessions/wifi-agent-turns.ts`). Server-only,
+        // and never set at sign-in.
+        wifiAgentTurnsAt: { type: 'date', required: false, input: false },
       },
     },
     // Per-user scoped API keys (consumed by tasks 1.2 and 1.4).
@@ -271,6 +284,7 @@ function buildAuthOptions(db: Db, dorkHome: string, port: number): AuthOptions {
       desktopSignInPlugin(),
       hubSignInPlugin(),
       personStepUpPlugin(),
+      checkedSignInPlugin(),
     ],
     // CSRF/origin surface: the dynamic origin policy (loopback dev origins + the
     // live tunnel origin) plus the operator's explicit `DORKOS_CORS_ORIGIN`
@@ -418,6 +432,15 @@ export function initAuth(db: Db, dorkHome: string): Auth {
   activeDb = db;
   activeAuth = createAuth(db, dorkHome);
   return activeAuth;
+}
+
+/**
+ * The database auth was initialized over, or `undefined` before
+ * {@link initAuth}. For the auth modules that keep their own rows beside
+ * Better Auth's (the Wi-Fi sign-in fields, the owner's second factors).
+ */
+export function readAuthDb(): Db | undefined {
+  return activeDb;
 }
 
 /**

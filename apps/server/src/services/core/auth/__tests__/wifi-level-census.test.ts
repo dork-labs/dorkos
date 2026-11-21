@@ -259,6 +259,16 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     'POST /api/step-up/:heldActionId/change-password',
     'POST /api/step-up/:heldActionId/password',
   ],
+  // DOR-4744: a Wi-Fi device asks for a code and types it, with no password.
+  'Signing in on Wi-Fi: a device by a code from this computer': [
+    'POST /api/wifi-sign-in/start',
+    'POST /api/wifi-sign-in/finish',
+  ],
+  // DOR-3647: answers 404 on Wi-Fi itself, before any check.
+  'Passkey sign-in: refused on Wi-Fi by the route itself, before the gate': [
+    'POST /api/owner-sign-in/passkey/options',
+    'POST /api/owner-sign-in/passkey/finish',
+  ],
   'Already this computer only: the route refuses every other caller': [
     'POST /api/browser-viewers',
     'POST /api/browser-viewers/:viewerId/frame',
@@ -289,6 +299,9 @@ const ALLOWED_ON_WIFI: Readonly<Record<string, readonly string[]>> = {
     'POST /api/local-browser/sign-in/done',
     'POST /api/local-browser/handoff/hand-back',
     'POST /api/local-browser/handoff/stop',
+    // Settings → Backups: the route's own person bar refuses plain-http Wi-Fi (DOR-4253).
+    'DELETE /api/config/backups/:name',
+    'POST /api/config/backups/:name/move',
   ],
   'Inbound and signed: a provider’s webhook, never a person on Wi-Fi': [
     'POST /api/connectors/webhooks/:providerInstanceId',
@@ -325,6 +338,7 @@ const MOUNTS: Readonly<Record<string, string>> = {
   'ALL /api/connectors/connections/:connectionId/events/*': 'An app’s event stream.',
   'ALL /api/connectors/providers/*': 'Group middleware; stored keys are refused by path.',
   'ALL /api/devices/*': 'Group middleware; sign-out-all is refused by path.',
+  'ALL /api/owner-factors/*': 'Group middleware; its writes are refused by path.',
   'ALL /api/docs': 'The API reference, read only.',
   'ALL /api/docs/*': 'The API reference, read only.',
   'ALL /api/ext/:id': 'An extension’s own page; extensions are turned on at the computer.',

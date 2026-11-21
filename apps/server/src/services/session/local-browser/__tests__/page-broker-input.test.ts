@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { heldProtocolCall, leaseFixture } from './page-leases-fixture.js';
+import { confirmPersonPaint, heldProtocolCall, leaseFixture } from './page-leases-fixture.js';
 
 const fixtures: Awaited<ReturnType<typeof leaseFixture>>[] = [];
 afterEach(async () => {
@@ -24,6 +24,7 @@ describe('page broker input and cleanup', () => {
     const f = await setup();
     const viewer = await f.service.pageBroker.captureViewerLease('chat-a', owner);
     const person = await f.service.pageBroker.takePersonControl(viewer);
+    confirmPersonPaint(person, viewer);
     const page = f.contexts[0].pages[0].page;
     await person.runPerson({ kind: 'keyDown', key: 'Shift' });
     expect(page.keyboard.down).toHaveBeenCalledExactlyOnceWith('Shift');
@@ -41,11 +42,13 @@ describe('page broker input and cleanup', () => {
       viewerId: 'second',
     });
     const first = await f.service.pageBroker.takePersonControl(firstView);
+    confirmPersonPaint(first, firstView);
     await expect(f.service.pageBroker.takePersonControl(secondView)).rejects.toMatchObject({
       code: 'busy',
     });
     await firstView.close();
     const second = await f.service.pageBroker.takePersonControl(secondView);
+    confirmPersonPaint(second, secondView);
     const page = f.contexts[0].pages[0].page;
     await second.runPerson({ kind: 'keyDown', key: 'Control' });
     await expect(first.runPerson({ kind: 'text', text: 'stale' })).rejects.toMatchObject({

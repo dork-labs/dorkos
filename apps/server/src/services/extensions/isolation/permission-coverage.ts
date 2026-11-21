@@ -42,6 +42,19 @@
  * live from DorkOS's records through {@link setCalledAppAccessLookup}. And so
  * does an app it starts opening the pages of (`appOpens`, `navigate: true`).
  *
+ * The places it shows in (`contributions`, DOR-4282) sit beside those too,
+ * whatever the runtime: DorkOS shows an app only in the places its card
+ * named, so a newly declared place asks again. An approval recorded before
+ * places were (no `slots`) covers only {@link legacyApprovedSlots}: the two
+ * places the card named then. No stored approval carries card text today, so
+ * a page and every other place it declares asks once.
+ *
+ * A new place does not stop the app, though: when new places are ALL a copy
+ * adds ({@link addsOnlyPlaces}), it keeps running with what its approval
+ * covered, and each new place stays off until a person allows it
+ * (`place-grace.ts`, {@link isCoveredApartFromPlaces}). Anything else new
+ * stops the whole app, as before.
+ *
  * `limits.memoryMb` is not part of the set: it bounds the extension rather
  * than granting it anything.
  *
@@ -51,6 +64,7 @@
  */
 import {
   calledApps,
+  declaredContributions,
   isNetEntryCovered,
   openableApps,
   type ExtensionManifest,
@@ -97,6 +111,68 @@ export interface PermissionSetAdditions {
   runtime: boolean;
   /** Apps it now calls that its approval did not name. Absent when none are new. */
   apps?: string[];
+  /** Places it now declares that its approval did not cover. Absent when none are new. */
+  slots?: string[];
+}
+
+/**
+ * The places an approval with no recorded `slots` covers: the two its card
+ * named before DOR-4282 ("a Flow tab", "a Flow settings page"). Anything else
+ * such an app declares was never on a card, so it asks once.
+ *
+ * Source of the pair: before DOR-4282 the card's "This adds …" line came from
+ * `contributedNouns` in `services/extensions/extension-approval-queue.ts`
+ * (read by `whyLine` there), which named only `right-panel` ("<name> tab")
+ * and `settings.tabs` ("<name> settings page") and nothing else.
+ */
+export const LEGACY_APPROVED_SLOTS: readonly string[] = ['right-panel', 'settings.tabs'];
+
+/** Words that turn a sentence around, so it is never read as a yes to a page. */
+const NEGATING_WORDS = /\b(?:no|not|never|none|nor|without|neither|cannot)\b|n['’]t\b/i;
+
+/** The one phrasing that says it adds a page: "This adds a page" or "It adds a page". */
+const ADDS_A_PAGE = /^(?:this|it) adds a page(?:$| and\b| that\b|,)/i;
+
+/**
+ * Whether card text saved with an approval when it was granted says the app
+ * adds a page of its own. Only the exact phrasing DorkOS's own card uses
+ * counts, at the start of a sentence ("This adds a page and …"), and only in
+ * text with no negating word anywhere in it: a bare "page", "a Flow settings
+ * page", "no page" and "doesn't add a page" never do. Anything unclear reads
+ * as no.
+ *
+ * @param text - Card text stored with the approval, never the manifest now.
+ */
+export function cardTextAddsAPage(text: string | undefined): boolean {
+  if (!text || NEGATING_WORDS.test(text)) return false;
+  return text
+    .split(/[.!?;\n]+/)
+    .map((sentence) => sentence.trim())
+    .some((sentence) => ADDS_A_PAGE.test(sentence));
+}
+
+/**
+ * The places an approval with no recorded `slots` covers: the two
+ * {@link LEGACY_APPROVED_SLOTS}. Never ⌘K, dialogs, the status bar or any
+ * other place.
+ *
+ * No stored approval carries card text today. An approval records its copy
+ * (`approvedSources`) and its permission set (`approvedPermissions`), and
+ * neither has ever held words from the card. So every caller passes nothing,
+ * the answer is always the two legacy places, and `pages` asks once.
+ *
+ * The parameter exists only for an approval that would one day store its
+ * card text: then `pages` counts too when that text says it adds a page
+ * ({@link cardTextAddsAPage}). It must be text saved at the yes; reading the
+ * manifest or its description now would let an update grant itself a page.
+ *
+ * @param storedCardText - Card text saved with the approval when granted.
+ *   No stored approval has any today, so callers pass nothing.
+ */
+export function legacyApprovedSlots(storedCardText?: string): readonly string[] {
+  return cardTextAddsAPage(storedCardText)
+    ? [...LEGACY_APPROVED_SLOTS, 'pages']
+    : LEGACY_APPROVED_SLOTS;
 }
 
 /**
@@ -116,14 +192,19 @@ export function declaredSet(manifest: ExtensionManifest): ApprovedPermissionSet 
     })
   );
   const appOpens = openableApps(manifest);
-  const withApps =
-    apps.length > 0
+  const slots = [...declaredContributions(manifest)].sort();
+  const withApps = {
+    ...(apps.length > 0
       ? {
           apps,
           ...(Object.keys(appAccess).length > 0 ? { appAccess } : {}),
           ...(appOpens.length > 0 ? { appOpens } : {}),
         }
-      : {};
+      : {}),
+    // Always recorded, even empty: a set without it is an approval from
+    // before places were, which covers only the two its card named.
+    slots,
+  };
   if (caps?.runtime !== 'subprocess') {
     return { runtime: 'in-process', net: [], run: [], agents: false, ...withApps };
   }
@@ -142,13 +223,16 @@ export function declaredSet(manifest: ExtensionManifest): ApprovedPermissionSet 
  * @param declared - What the extension declares now ({@link declaredSet}).
  * @param approved - What a person approved, or `undefined` for an approval
  *   that recorded no set (the full in-process set).
+ * @param storedCardText - Card text saved with an approval that recorded no
+ *   `slots` ({@link addedSince}).
  * @returns `true` when the approval covers the declared set.
  */
 export function isCovered(
   declared: ApprovedPermissionSet,
-  approved: ApprovedPermissionSet | undefined
+  approved: ApprovedPermissionSet | undefined,
+  storedCardText?: string
 ): boolean {
-  return addedSince(declared, approved) === null;
+  return addedSince(declared, approved, storedCardText) === null;
 }
 
 /**
@@ -158,10 +242,14 @@ export function isCovered(
  * @param declared - What the extension declares now ({@link declaredSet}).
  * @param approved - What a person approved, or `undefined` for the full
  *   in-process set.
+ * @param storedCardText - Card text saved with an approval that recorded no
+ *   `slots`, when granted ({@link legacyApprovedSlots}). Ignored for one that
+ *   recorded `slots`.
  */
 export function addedSince(
   declared: ApprovedPermissionSet,
-  approved: ApprovedPermissionSet | undefined
+  approved: ApprovedPermissionSet | undefined,
+  storedCardText?: string
 ): PermissionSetAdditions | null {
   const approvedApps = approved?.apps ?? [];
   // New to the list, sharing more with it than when the person said yes, or
@@ -172,9 +260,16 @@ export function addedSince(
       !accessCovered(approved?.appAccess?.[id], declared.appAccess?.[id]) ||
       ((declared.appOpens ?? []).includes(id) && !(approved?.appOpens ?? []).includes(id))
   );
-  const apps = newApps.length > 0 ? { apps: newApps } : {};
+  // An approval that records its places never reads text (DOR-4282).
+  const approvedSlots = approved?.slots ?? legacyApprovedSlots(storedCardText);
+  const newSlots = (declared.slots ?? []).filter((key) => !approvedSlots.includes(key));
+  const apps = {
+    ...(newApps.length > 0 ? { apps: newApps } : {}),
+    ...(newSlots.length > 0 ? { slots: newSlots } : {}),
+  };
+  const anyNew = newApps.length > 0 || newSlots.length > 0;
   if (!approved || approved.runtime === 'in-process') {
-    return newApps.length > 0 ? { net: [], run: [], agents: false, runtime: false, ...apps } : null;
+    return anyNew ? { net: [], run: [], agents: false, runtime: false, ...apps } : null;
   }
   if (declared.runtime === 'in-process') {
     return { net: [], run: [], agents: false, runtime: true, ...apps };
@@ -182,8 +277,45 @@ export function addedSince(
   const net = declared.net.filter((entry) => !isNetEntryCovered(approved.net, entry));
   const run = declared.run.filter((entry) => !approved.run.includes(entry));
   const agents = declared.agents && !approved.agents;
-  if (net.length === 0 && run.length === 0 && !agents && newApps.length === 0) return null;
+  if (net.length === 0 && run.length === 0 && !agents && !anyNew) return null;
   return { net, run, agents, runtime: false, ...apps };
+}
+
+/**
+ * Whether new places are the ONLY thing a copy asks for beyond its approval
+ * (DOR-4282). Fail-closed: every other field must read as "nothing new"
+ * (`false`, an empty list, or absent), so a field added to
+ * {@link PermissionSetAdditions} later stops the whole app until this says
+ * otherwise.
+ *
+ * @param added - What {@link addedSince} found.
+ */
+export function addsOnlyPlaces(added: PermissionSetAdditions): boolean {
+  const { slots, ...rest } = added;
+  if ((slots ?? []).length === 0) return false;
+  return Object.values(rest).every(
+    (value) =>
+      value === undefined || value === false || (Array.isArray(value) && value.length === 0)
+  );
+}
+
+/**
+ * Whether `approved` covers everything `declared` asks for apart from new
+ * places: what decides whether the app's code may run at all (DOR-4282). New
+ * places alone never stop it; each stays off on its own until allowed.
+ *
+ * @param declared - What the extension declares now ({@link declaredSet}).
+ * @param approved - What a person approved, or `undefined` for the full
+ *   in-process set.
+ * @param storedCardText - As for {@link addedSince}.
+ */
+export function isCoveredApartFromPlaces(
+  declared: ApprovedPermissionSet,
+  approved: ApprovedPermissionSet | undefined,
+  storedCardText?: string
+): boolean {
+  const added = addedSince(declared, approved, storedCardText);
+  return added === null || addsOnlyPlaces(added);
 }
 
 /**
@@ -207,6 +339,9 @@ export function isSamePermissionSet(
     sameList(a.run, b.run) &&
     sameList(a.apps ?? [], b.apps ?? []) &&
     sameList(a.appOpens ?? [], b.appOpens ?? []) &&
+    // A stored set with no `slots` is recorded again, so it gains them.
+    (a.slots !== undefined) === (b.slots !== undefined) &&
+    sameList(a.slots ?? [], b.slots ?? []) &&
     JSON.stringify(Object.entries(a.appAccess ?? {}).sort()) ===
       JSON.stringify(Object.entries(b.appAccess ?? {}).sort())
   );

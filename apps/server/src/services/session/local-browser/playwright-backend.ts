@@ -171,18 +171,25 @@ export const productionBackend: LocalBrowserBackend = {
       headless: false,
       viewport: null,
       chromiumSandbox: true,
+      // Leave display and accessibility preferences to the person's operating system.
+      colorScheme: null,
+      reducedMotion: null,
+      forcedColors: null,
+      contrast: null,
       args: [
         '--disable-sync',
         `${PINNED_DISABLED_FEATURES_ARG},HttpsUpgrades,HttpsFirstBalancedModeAutoEnable`,
         ...(theme ? agentWindowThemeArgs(theme) : []),
         agentWindowNameArg(agentName),
       ],
-      // Without the automation flag the window looks like the person's Chrome;
-      // password saving is off in the profile itself. The theme's own flag allows
-      // that one folder and no other extension, in place of Playwright's blanket one.
+      // The automation pipe stays intact; password saving is off in the profile.
+      // The theme flag permits just its own extension folder, replacing the blanket block.
       ignoreDefaultArgs: [
         '--enable-automation',
         PINNED_DISABLED_FEATURES_ARG,
+        // Restore Chrome's color management and ordinary popup blocking.
+        '--force-color-profile=srgb',
+        '--disable-popup-blocking',
         ...(theme ? ['--disable-extensions'] : []),
       ],
     });

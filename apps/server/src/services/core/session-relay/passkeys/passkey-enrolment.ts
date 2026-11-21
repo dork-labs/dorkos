@@ -226,8 +226,14 @@ function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
   return true;
 }
 
-/** `clientDataJSON` carries no `crossOrigin: true` and no `topOrigin`. */
-function notFramed(clientDataJSON: string): boolean {
+/**
+ * `clientDataJSON` carries no `crossOrigin: true` and no `topOrigin`: the
+ * ceremony ran in a top-level page, not a frame. Shared with the owner's
+ * sign-in passkeys (`services/core/auth/factors/owner-passkeys.ts`).
+ *
+ * @param clientDataJSON - Base64url, as the browser returned it.
+ */
+export function notFramed(clientDataJSON: string): boolean {
   try {
     const data = JSON.parse(
       new TextDecoder('utf-8', { fatal: true }).decode(decodeStepUpBase64url(clientDataJSON))
@@ -238,8 +244,15 @@ function notFramed(clientDataJSON: string): boolean {
   }
 }
 
-/** The COSE algorithm a public key names, or `undefined` when it names none. */
-function algOf(publicKey: Parameters<typeof decodeCredentialPublicKey>[0]): number | undefined {
+/**
+ * The COSE algorithm a public key names, or `undefined` when it names none.
+ * Shared with the owner's sign-in passkeys.
+ *
+ * @param publicKey - The COSE public key bytes.
+ */
+export function algOf(
+  publicKey: Parameters<typeof decodeCredentialPublicKey>[0]
+): number | undefined {
   try {
     const alg = decodeCredentialPublicKey(publicKey).get(cose.COSEKEYS.alg);
     return typeof alg === 'number' ? alg : undefined;

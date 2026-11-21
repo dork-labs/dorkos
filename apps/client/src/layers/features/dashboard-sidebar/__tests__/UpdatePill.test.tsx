@@ -30,14 +30,27 @@ vi.mock('@/layers/entities/config', () => ({
 // ── The desktop native updater. Off by default: these run in a browser ──
 let mockDesktop: {
   isDesktop: boolean;
-  status: { state: string; version?: string; attempts?: number } | null;
+  status: {
+    state: string;
+    version?: string;
+    attempts?: number;
+    percent?: number;
+    message?: string;
+  } | null;
+  retryingVersion?: string | null;
 } = {
   isDesktop: false,
   status: null,
 };
 const mockRestart = vi.fn();
+const mockRetry = vi.fn();
 vi.mock('@/layers/features/session-list', () => ({
-  useDesktopUpdater: () => ({ ...mockDesktop, restart: mockRestart }),
+  useDesktopUpdater: () => ({
+    retryingVersion: null,
+    ...mockDesktop,
+    restart: mockRestart,
+    retry: mockRetry,
+  }),
 }));
 
 import { useUpdateReady } from '../ui/bottom-slot/use-update-ready';
@@ -179,15 +192,154 @@ describe('UpdatePill', () => {
   });
 
   it('offers a restart on the desktop app, and only once the download has landed', () => {
-    mockDesktop = { isDesktop: true, status: { state: 'downloading' } };
+    mockDesktop = {
+      isDesktop: true,
+      status: { state: 'downloading', percent: 50, version: '2.0.0' },
+    };
     const { unmount } = render(<PillHost />);
-    expect(screen.queryByText(/Update ready/)).toBeNull();
+    expect(screen.queryByText('Restart to update')).toBeNull();
     unmount();
 
     mockDesktop = { isDesktop: true, status: { state: 'downloaded', version: '2.0.0' } };
     render(<PillHost />);
     fireEvent.click(screen.getByText('Restart to update'));
     expect(mockRestart).toHaveBeenCalled();
+  });
+
+  describe('while a desktop update downloads (DOR-4846)', () => {
+    it('names the real version as soon as the update is found, before any progress', () => {
+      mockDesktop = { isDesktop: true, status: { state: 'available', version: '0.139.0' } };
+      render(<PillHost />);
+
+      expect(screen.getByText('Downloading 0.139.0…')).toBeInTheDocument();
+      // An empty track, so it looks like the state that follows; no number yet.
+      const bar = screen.getByRole('progressbar', { name: 'Downloading 0.139.0…' });
+      expect(bar).toHaveAttribute('aria-valuenow', '0');
+      expect(screen.queryByText(/%$/)).toBeNull();
+      expect(screen.queryByText('Restart to update')).toBeNull();
+    });
+
+    it('shows how far the download has got', () => {
+      mockDesktop = {
+        isDesktop: true,
+        status: { state: 'downloading', percent: 42.7, version: '0.139.0' },
+      };
+      render(<PillHost />);
+
+      expect(screen.getByText('Downloading 0.139.0…')).toBeInTheDocument();
+      expect(screen.getByText('42%')).toBeInTheDocument();
+      const bar = screen.getByRole('progressbar', { name: 'Downloading 0.139.0…' });
+      expect(bar).toHaveAttribute('aria-valuenow', '42.7');
+    });
+
+    it('still says it is downloading when an older shell sends no version', () => {
+      mockDesktop = { isDesktop: true, status: { state: 'downloading', percent: 5 } };
+      render(<PillHost />);
+
+      expect(screen.getByText('Downloading the update…')).toBeInTheDocument();
+    });
+
+    it('says the download failed, plainly, and retries on the button', () => {
+      mockDesktop = {
+        isDesktop: true,
+        status: { state: 'error', message: 'net::ERR_CONNECTION_RESET', version: '0.139.0' },
+      };
+      render(<PillHost />);
+
+      expect(
+        screen.getByText('Couldn’t download 0.139.0. Check your connection and try again.')
+      ).toBeInTheDocument();
+      // The machine's own words never reach the card.
+      expect(screen.queryByText(/ERR_CONNECTION_RESET/)).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'Try downloading 0.139.0 again' }));
+      expect(mockRetry).toHaveBeenCalledTimes(1);
+    });
+
+    it('goes back to downloading the moment retry is pressed', () => {
+      mockDesktop = {
+        isDesktop: true,
+        status: { state: 'error', message: 'net::ERR_CONNECTION_RESET', version: '0.139.0' },
+        retryingVersion: '0.139.0',
+      };
+      render(<PillHost />);
+
+      expect(screen.getByText('Downloading 0.139.0…')).toBeInTheDocument();
+      expect(screen.queryByText('Try again')).toBeNull();
+    });
+
+    it('stays quiet when a background check fails with nothing downloading', () => {
+      mockDesktop = {
+        isDesktop: true,
+        status: { state: 'error', message: 'getaddrinfo ENOTFOUND' },
+      };
+      const { container } = render(<PillHost />);
+
+      expect(container).toBeEmptyDOMElement();
+    });
+
+    it('lets a failed install outrank a retry in flight', () => {
+      stubDesktopShell('darwin');
+      mockDesktop = {
+        isDesktop: true,
+        status: { state: 'install-failed', version: '0.63.0', attempts: 1 },
+        retryingVersion: '0.63.0',
+      };
+      render(<PillHost />);
+
+      expect(screen.getByText('Download fresh copy')).toBeInTheDocument();
+      expect(screen.queryByText(/Downloading/)).toBeNull();
+    });
+  });
+
+  describe('emphasis (DOR-4846 design review)', () => {
+    // jsdom paints nothing, so these pin the classes the design review named.
+    // The rendered look is checked in the playground shots.
+    it('keeps the restart as the one bright amber pill', () => {
+      mockDesktop = { isDesktop: true, status: { state: 'downloaded', version: '0.139.0' } };
+      render(<PillHost />);
+
+      expect(screen.getByRole('button', { name: 'Restart to install the update' })).toHaveClass(
+        'bg-amber-500/15'
+      );
+    });
+
+    it('draws Try again as the quiet pill, with no amber', () => {
+      mockDesktop = {
+        isDesktop: true,
+        status: { state: 'error', message: 'net::ERR_CONNECTION_RESET', version: '0.139.0' },
+      };
+      render(<PillHost />);
+
+      const button = screen.getByRole('button', { name: 'Try downloading 0.139.0 again' });
+      expect(button).toHaveClass('bg-foreground/10');
+      expect(button.className).not.toMatch(/amber/);
+    });
+
+    it('draws Download fresh copy as the quiet pill, with no amber', () => {
+      stubDesktopShell('darwin');
+      mockDesktop = {
+        isDesktop: true,
+        status: { state: 'install-failed', version: '0.63.0', attempts: 1 },
+      };
+      render(<PillHost />);
+
+      const button = screen.getByRole('button', { name: 'Download a fresh copy of DorkOS' });
+      expect(button).toHaveClass('bg-foreground/10');
+      expect(button.className).not.toMatch(/amber/);
+    });
+
+    it('gives the progress track a tone that shows on the light sidebar', () => {
+      mockDesktop = {
+        isDesktop: true,
+        status: { state: 'downloading', percent: 42, version: '0.139.0' },
+      };
+      render(<PillHost />);
+
+      const bar = screen.getByRole('progressbar');
+      expect(bar).toHaveClass('bg-foreground/10');
+      // The shared bar's own track, which all but vanishes in light, is replaced.
+      expect(bar).not.toHaveClass('bg-dui-secondary');
+    });
   });
 
   it('stops offering a restart once the install has failed, and offers a fresh copy instead', () => {

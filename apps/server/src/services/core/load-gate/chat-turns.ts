@@ -18,6 +18,12 @@
  * runs. Each helper takes its own turn instead; the runtime in the key keeps one runtime's ids from
  * ever meeting another's. Still one turn at a time per machine: everyone else waits behind it.
  *
+ * **A job already running counts at once** ({@link ChatTurns.occupy}, DOR-4743): a runtime that
+ * only hears about a heavy job once it runs (a Codex command nobody was asked about) shares the
+ * slot its thread holds, or takes one now, past every limit, because the job is running whatever
+ * the line says. It never grants a thread still in line: a job that only looks like it runs (Codex
+ * reports a command it is about to ask about) must not let that thread's waiting calls past.
+ *
  * @module services/core/load-gate/chat-turns
  */
 import type { HeldSlot, WaitOptions, WaitRequest, WaitStatus } from './load-gate.js';
@@ -52,6 +58,15 @@ export interface ChatTurns {
    * @returns This call's share of the slot; giving it back frees the slot when it is the last.
    */
   join(key: string, request: WaitRequest, options: WaitOptions): Promise<HeldSlot>;
+  /**
+   * Count a job that is already running: share the slot this thread holds, or take one now with
+   * `take`, never waiting. While the thread is still in line, the slot taken is the job's alone.
+   *
+   * @param key - The thread the job belongs to.
+   * @param take - Takes a slot at once, past every limit, or `null` when there is none to take.
+   * @returns This job's share of the slot, or `null` when `take` gave none.
+   */
+  occupy(key: string, take: () => HeldSlot | null): HeldSlot | null;
 }
 
 /** `promise`, or an `AbortError` as soon as `signal` fires, whichever comes first. */
@@ -164,6 +179,22 @@ export function createChatTurns(
           if (left) abandon(key, turn);
         }
       }
+      return hold(key, turn);
+    },
+    occupy(key, take) {
+      const existing = turns.get(key);
+      if (existing?.granted !== undefined) return hold(key, existing);
+      const slot = take();
+      // Still in line under this key: the running job counts on its own and the line stands.
+      if (slot === null || existing !== undefined) return slot;
+      const turn: Turn = {
+        waiting: new Map(),
+        holders: 0,
+        stop: new AbortController(),
+        done: Promise.resolve(slot),
+        granted: slot,
+      };
+      turns.set(key, turn);
       return hold(key, turn);
     },
   };

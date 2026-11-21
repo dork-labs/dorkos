@@ -11,6 +11,8 @@
 @import 'tailwindcss';
 @import '@dork-labs/ui/tailwind.css';
 @import '@xyflow/react/dist/style.css';
+/* The default fonts, shipped with the app: no request to Google (DOR-4872). */
+@import './bundled-fonts.css';
 
 @custom-variant dark (&:is(.dark *));
 @custom-variant desktop (&:is(.desktop *));

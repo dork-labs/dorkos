@@ -1,3 +1,4 @@
+import { PackageReviewCards, LargePackageReviewCard } from './PackageReviewCards';
 import { RemoteApprovalSection } from './RemoteApprovalShowcase';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import { PlaygroundSection } from '../PlaygroundSection';
@@ -165,6 +166,9 @@ export function ApprovalCardShowcase() {
           </WidthColumn>
         </div>
       </ShowcaseDemo>
+
+      <PackageReviewCards sample={sample} />
+      <LargePackageReviewCard sample={sample} />
 
       <RemoteApprovalSection />
 
@@ -356,22 +360,6 @@ export function ApprovalCardShowcase() {
                 'Update 2 installed packages to a newer version, each where it is installed.',
               detail: 'The rows as text.',
               marketplaceSummary: UPDATE_SUMMARY,
-            }),
-          ]}
-        />
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>A large Marketplace install, with an in-process extension</ShowcaseLabel>
-      <ShowcaseDemo responsive>
-        <ApprovalList
-          approvals={[
-            sample({
-              approvalId: '01JZ0000000000000000000072',
-              capabilityId: 'marketplace.install',
-              capabilityTitle: 'Install a marketplace package',
-              summary: 'Install "sample-flow" from "sample-market"',
-              detail: 'The rows as text.',
-              marketplaceSummary: INSTALL_SUMMARY,
             }),
           ]}
         />

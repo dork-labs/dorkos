@@ -14,6 +14,7 @@ import {
   SHIPIT_STATE_FILE,
   UPDATER_DIR_SUFFIX,
 } from '../updater/cache';
+import { UPDATER_LOG_FILE, updaterLogPath } from '../updater/log';
 import { buildZip, type ZipEntry } from './zip-writer';
 
 /**
@@ -209,6 +210,16 @@ function collectServerLog(collector: DiagnosticsCollector, dataDirectory: string
   });
 }
 
+/**
+ * Collect the updater log's tail: what the updater checked, downloaded and
+ * failed at, kept out of `main.log`'s rotation (DOR-4847).
+ */
+function collectUpdaterLog(collector: DiagnosticsCollector, dataDirectory: string): void {
+  collector.attempt(UPDATER_LOG_FILE, () => {
+    collector.file(UPDATER_LOG_FILE, readTail(updaterLogPath(dataDirectory), LOG_TAIL_BYTES));
+  });
+}
+
 /** Collect Squirrel's install state and the updater's download cache. */
 function collectUpdateState(collector: DiagnosticsCollector): void {
   collector.attempt('update state', () => {
@@ -332,6 +343,7 @@ async function writeDiagnosticReport(): Promise<string> {
 
   collectElectronLog(collector);
   collectServerLog(collector, dataDirectory);
+  collectUpdaterLog(collector, dataDirectory);
   collectUpdateState(collector);
   collectRedactedConfig(collector, dataDirectory);
 

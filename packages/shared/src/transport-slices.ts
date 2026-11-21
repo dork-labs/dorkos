@@ -5,7 +5,8 @@
  * a canvas document's route controls, a space's docs, a person's signed-in
  * devices, an account's automatic moves, a framed page's script decision, an
  * agent's level, undoing an agent's task mode, global MCP servers, the shell
- * check, sending another chat's queued message now, the load gate's waiting line), joined here so `transport.ts` extends one name. Nothing consuming
+ * check, sending another chat's queued message now, the load gate's waiting line, the database
+ * backups), joined here so `transport.ts` extends one name. Nothing consuming
  * the port sees a difference.
  *
  * @module shared/transport-slices
@@ -47,6 +48,7 @@ import type { ShellCheckTransport } from './transport-shell-check.js';
 import type { LoadGateTransport } from './transport-load-gate.js';
 import type { QueuedChatTransport } from './transport-queued-chat.js';
 import type { ConnectorSpendingTransport } from './transport-connector-spending.js';
+import type { BackupsTransport } from './transport-backups.js';
 import type { SessionLocationTransport } from './transport-session-locations.js';
 
 /** Every Transport slice declared outside `transport.ts`. */
@@ -90,4 +92,5 @@ export interface TransportSlices
     LoadGateTransport,
     QueuedChatTransport,
     ConnectorSpendingTransport,
+    BackupsTransport,
     SessionLocationTransport {}

@@ -1,7 +1,7 @@
 # Placement: where the app shows, and the interview that decides it
 
-Once the person approves an app, nothing limits which surfaces it uses. So where it
-shows is your choice, made with the person, before you build. Placement is a product
+Once approved, an app shows only in the places its manifest declares and the person
+allowed. So where it shows is your choice, made with the person, before you build. Placement is a product
 decision, not a template.
 
 ## The interview
@@ -43,11 +43,59 @@ own files. (4) Just for you, and your comments go to me. Change any of these, or
 | **Settings tab** | "its own tab in Settings" | `registerSettingsTab(id, label, C, { group })` | The app's own settings | None |
 | **⌘K command** | "a command you run from the search bar" | `registerCommand(id, label, fn)` | A one-step action | None |
 | **Dialog** | "a small pop-up" | `registerDialog(id, C)` | A short confirm or form the app opens | Closes it |
-| **Canvas** | "opens beside the chat" | `api.openCanvas(content)` (opens only, no slot) | Showing a result beside the chat | Closes it |
+| **Canvas** | "opens beside the chat" | `api.openCanvas(content)` (opens only, no slot; declare `canvas`) | Showing a result beside the chat | Closes it |
 | **Tools only** | "no screen, just something your agents can use" | `tools` in the manifest, no UI | Something only agents use | Turns the app off |
 
 `get_extension_api` doesn't list `registerPage` or `registerStatusBarItem`; they're in
 `@dorkos/extension-api`. Check `api.isSlotAvailable(slot)` when a slot may be missing.
+
+## Declare every place in `contributions`
+
+`extension.json` lists every place the app shows in, under `contributions`, each set to
+exactly `true`. DorkOS shows the app only in the places it lists, and the person's
+approval card names each one. Declare only the places you register.
+
+| Key | Allows | The card says |
+|---|---|---|
+| `pages` | `registerPage` | a page |
+| `right-panel` | `registerComponent('right-panel', …)` | a panel tab |
+| `dashboard.sections` | `registerComponent('dashboard.sections', …)` | an Activity section |
+| `settings.tabs` | `registerSettingsTab` | a Settings page |
+| `status-bar` | `registerStatusBarItem` | a status bar item |
+| `command-palette.items` | `registerCommand` | ⌘K commands |
+| `dialog` | `registerDialog` | dialogs |
+| `sidebar.footer` | `registerComponent('sidebar.footer', …)` | a sidebar item |
+| `canvas` | `api.openCanvas` | canvas documents |
+| `inbox` | `ctx.inbox` (server code) | Inbox cards |
+
+```json
+"contributions": { "pages": true, "command-palette.items": true }
+```
+
+- **A place you didn't declare is refused.** A screen registration draws nothing and
+  does nothing, logs a console warning, and the app's Settings row lists the place. In
+  a framed app, `openCanvas` throws instead. On the server, `ctx.inbox` calls reject and
+  `onAction` does nothing. `test_extension` counts an undeclared place as 0 and adds a
+  warning, so read `warnings`. It can't see `ctx.inbox`, a registration made after
+  `activate` returns, or one behind `api.context === 'registration'`, so check those
+  yourself. Other keys are ignored, but adding one
+  still counts as a change.
+- **An update that only adds places can keep running.** This works for an app in your
+  own folder that the person approved on a DorkOS release that records places. The app
+  keeps its old places, and only the new ones wait for the person's OK ("Not now" leaves
+  it running without them). It counts only when `contributions` gains known places, each
+  set to `true`, and nothing else changes: the same files, every other file byte for
+  byte, and the same `version`. If you also changed code, bump `version`, and the whole
+  app asks again, as every update does. An app from the personal marketplace always
+  bumps its version, so every change there is a new card.
+- **Names that pass for DorkOS are refused.** An app named "DorkOS…", or exactly a
+  DorkOS page name (Settings, Inbox, Activity, Connections, Marketplace, Security,
+  Tasks, Team, Apps, Workspaces, Channels, DorkBot), won't install or start. Spacing,
+  case, accents and look-alike letters don't get around it. A name that mixes Latin
+  letters with letters from another alphabet is refused too. DorkOS's own scan and the
+  marketplace install check `name` in `extension.json`; `create_extension` checks the
+  name you give it. If the app gives agents tools, its name must use plain letters A to
+  Z, at most 40 characters, with no quotes.
 
 Rules of thumb:
 
@@ -57,11 +105,12 @@ Rules of thumb:
   unless the person asked for everywhere.
 - **The status bar is shared and scarce.** Use `when` so the item only shows when it has
   something to say. Keep `when` and `urgent` pure: read only `ctx`.
-- **Nothing may pass for DorkOS.** DorkOS draws the app's name itself only on inbox
-  cards. Until it does on dialogs and ⌘K rows too, start every ⌘K label with the app's
-  name ("Weather: refresh") and put the name in each dialog's heading. Also:
-  - Pick a name that isn't reserved: nothing starting "DorkOS", and no names of DorkOS
-    surfaces or of agents.
+- **Nothing may pass for DorkOS.** DorkOS draws the app's name itself on its ⌘K rows,
+  dialogs and Inbox cards, so leave the name out of ⌘K labels and dialog titles
+  ("Refresh the forecast", not "Weather: refresh"). ⌘K search reads only the label, so
+  make it say what the command does. Also:
+  - Pick a name that isn't reserved ([above](#declare-every-place-in-contributions)),
+    and no names of agents.
   - Keep titles and labels plain text, and never style anything like an approval card or
     use DorkOS's mark.
   - **Never ask for a password, code, key or sign-in inside the app.** A dialog that asks

@@ -61,7 +61,13 @@ function makeDeps(unsubscribe: () => void): ExtensionAPIDeps {
 
 const record: ExtensionRecordPublic = {
   id: 'thrower',
-  manifest: { clientApiVersion: 2, id: 'thrower', name: 'Thrower', version: '1.0.0' },
+  manifest: {
+    clientApiVersion: 2,
+    id: 'thrower',
+    name: 'Thrower',
+    version: '1.0.0',
+    contributions: { 'command-palette.items': true },
+  },
   status: 'compiled',
   scope: 'global',
   origin: 'user',
@@ -69,6 +75,7 @@ const record: ExtensionRecordPublic = {
   hasServerEntry: false,
   hasDataProxy: false,
   approvedToRun: true,
+  allowedSlots: ['command-palette.items'],
   shadowedBy: null,
 };
 

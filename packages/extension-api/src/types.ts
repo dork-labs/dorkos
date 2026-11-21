@@ -199,6 +199,12 @@ export interface ExtensionRecord {
    */
   pinnedDigest?: string;
   /**
+   * The plugin folder digest a proven install origin set as `pinnedDigest`
+   * at discovery (DOR-4282). Only while the two match may a pinned copy with
+   * no snapshot build from its own folder (`pin/run-dir.ts`).
+   */
+  originPinnedDigest?: string;
+  /**
    * The digest of the client bundle the last compile produced: the exact
    * bytes the app would load (DOR-3068). A copy that keeps path trust loads
    * its screen half only while this matches the approval's `clientDigest`.
@@ -213,18 +219,16 @@ export interface ExtensionRecord {
   /** Structured error info (compilation failure, manifest parse error, etc.) */
   error?: { code: string; message: string; details?: string };
   /**
-   * A failure to rebuild the SERVER entry (`server.ts`) while a previous version
-   * of it is still mounted and answering requests.
+   * A server start, rebuild or runtime failure, independent of its client bundle.
    *
    * Deliberately NOT `status`/`error`: those are one field each for the whole
    * extension, and `status` is what `ExtensionManager.readBundle` and the client
    * loader gate the CLIENT bundle on. Writing `compile_error` there for a
    * server-side failure would take the extension's perfectly good UI off the
-   * screen in every new tab — a bigger break than the one being reported. This
-   * field says the narrower, true thing: the running server code no longer
-   * matches its source. Cleared when a fixed version takes over.
+   * screen in every new tab — a bigger break than the one being reported.
+   * Cleared when a working version takes over. Stops carry an ISO 8601 time.
    */
-  serverError?: { code: string; message: string; details?: string };
+  serverError?: { code: string; message: string; details?: string; occurredAt?: string };
   /**
    * When a restart of an extension that runs separately is pending after it
    * stopped (DOR-2686), as ISO 8601; `null` or absent otherwise. The card says
@@ -271,12 +275,11 @@ export interface ExtensionRecordPublic {
   sourcePlugin?: string;
   error?: { code: string; message: string; details?: string };
   /**
-   * The extension's server half failed to rebuild and the previously loaded
-   * version is still running. The cockpit shows this as a warning line beside an
-   * otherwise healthy extension — `status` and `bundleReady` are untouched, so
-   * the client bundle keeps loading. See {@link ExtensionRecord.serverError}.
+   * A server start, rebuild or runtime failure, including the latest stop time.
+   * `status` and `bundleReady` are untouched, so the client bundle keeps loading.
+   * See {@link ExtensionRecord.serverError}.
    */
-  serverError?: { code: string; message: string; details?: string };
+  serverError?: { code: string; message: string; details?: string; occurredAt?: string };
   /**
    * When a restart is pending after it stopped (DOR-2686), as ISO 8601, or
    * `null`. See {@link ExtensionRecord.restartingAt}. Absent from an older server.
@@ -309,6 +312,24 @@ export interface ExtensionRecordPublic {
    * it as waiting for an OK. Absent from an older server.
    */
   screensPaused?: boolean;
+  /**
+   * Its files changed after DorkOS last checked them (DOR-4282): it is paused
+   * until the next check decides whether it keeps running with new places
+   * waiting or asks again. Settings says it is checking and offers no Allow.
+   * Absent otherwise, and from an older server.
+   */
+  awaitingScan?: boolean;
+  /**
+   * The places it may show in right now, as DorkOS's records decide
+   * (DOR-4282): each place it declares that a person allowed, in card order.
+   * A place it declares that is not here waits for a person while the rest
+   * of the app runs. It may also hold `pages`, `right-panel` or
+   * `settings.tabs` without the manifest declaring them, for an app approved
+   * before places were recorded whose files have not changed since (Settings
+   * asks for an update). The screen shows the app nowhere else; absent shows
+   * it nowhere.
+   */
+  allowedSlots?: string[];
   /**
    * The path of the newer copy that runs instead of this one, or `null` when
    * this is the copy that runs (spec `flow-multiproject` §9.2). Informational:

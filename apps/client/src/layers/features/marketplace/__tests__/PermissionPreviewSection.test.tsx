@@ -494,7 +494,7 @@ describe('PermissionPreviewSection', () => {
 describe('PermissionPreviewSection — what its extensions can reach (DOR-2686)', () => {
   afterEach(cleanup);
 
-  const REACH = 'What its extensions can reach';
+  const REACH = 'Mini apps';
 
   // Purpose: an isolated extension shows the same lines its approval card
   // will, open by default, with its hosts in full.
@@ -584,7 +584,7 @@ describe('PermissionPreviewSection — what its extensions can reach (DOR-2686)'
 
   // Purpose: an extension with only screens is never described as having
   // full access, nor as running with yours: its screens are sealed off.
-  it('draws no reach row for an extension with only screens', () => {
+  it('lists an extension with only screens without claiming server access', () => {
     render(
       <PermissionPreviewSection
         preview={makePreview({
@@ -599,17 +599,18 @@ describe('PermissionPreviewSection — what its extensions can reach (DOR-2686)'
         })}
       />
     );
-    expect(screen.queryByTestId('preview-extension-reach')).not.toBeInTheDocument();
+    expect(screen.getByTestId('preview-extension-reach')).toBeInTheDocument();
+    expect(screen.getByText('Only screens; no server code.')).toBeInTheDocument();
     expect(document.body).not.toHaveTextContent('with your access');
     expect(document.body).not.toHaveTextContent('full access');
   });
 
-  // Purpose: an older server sends no isolation; the section is left out.
-  it('leaves the section out when the server says nothing about where they run', () => {
+  // Older metadata must say what is unknown, rather than imply no access.
+  it('names missing permission metadata from an older server', () => {
     render(
       <PermissionPreviewSection preview={makePreview({ extensions: [{ id: 'old', slots: [] }] })} />
     );
-    expect(screen.queryByText(REACH)).not.toBeInTheDocument();
+    expect(screen.getByText('Server permissions weren’t included.')).toBeInTheDocument();
   });
 });
 

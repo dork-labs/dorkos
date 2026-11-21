@@ -5,6 +5,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./browser-viewer-control": {
+      "types": "./src/browser-viewer-control.ts",
+      "default": "./dist/browser-viewer-control.js"
+    },
     "./account-usage": {
       "types": "./src/account-usage.ts",
       "default": "./dist/account-usage.js"
@@ -701,6 +705,10 @@
       "types": "./src/transport-local-browser.ts",
       "default": "./dist/transport-local-browser.js"
     },
+    "./transport-backups": {
+      "types": "./src/transport-backups.ts",
+      "default": "./dist/transport-backups.js"
+    },
     "./file-save/recovery": {
       "types": "./src/file-save/recovery.ts",
       "default": "./dist/file-save/recovery.js"
@@ -730,6 +738,7 @@
     "@dork-labs/cloud-api": "workspace:*",
     "@dork-labs/connector-providers": "workspace:*",
     "ajv": "^8.20.0",
+    "tldts": "7.0.28",
     "ulidx": "^2.4.1",
     "zod": "^4.6.6"
   },

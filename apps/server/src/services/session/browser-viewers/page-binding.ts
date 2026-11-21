@@ -60,6 +60,7 @@ export async function captureViewerPage(
     signal: lifetime.signal,
     assertLive,
     assertCurrent,
+    abandon: () => broker.abandonViewer(handle),
     async close() {
       ended();
       offChange();

@@ -12,6 +12,7 @@ import {
   firstSentence,
   matchesExtensionSearch,
   sectionExtensions,
+  waitingPlacesLine,
 } from '../lib/extension-row-state';
 
 function ext(id: string, overrides: Partial<ExtensionRecordPublic> = {}): ExtensionRecordPublic {
@@ -54,6 +55,18 @@ describe('extensionRowState', () => {
       ext('a', { screensPaused: true, bundleReady: false, status: 'compile_error' })
     );
     expect(state).toMatchObject({ need: 'screens-paused', trailing: 'review', rank: 0 });
+  });
+
+  // Purpose: a copy whose files changed between checks offers no Allow, since
+  // no card with the changed files exists yet (DOR-4282).
+  it('says "Checking an update…" with no switch for one awaiting the next check', () => {
+    const state = extensionRowState(ext('a', { approvedToRun: false, awaitingScan: true }));
+    expect(state).toMatchObject({
+      need: 'checking-update',
+      chip: { label: 'Checking an update…', tone: 'neutral' },
+      needsYou: false,
+      trailing: 'review',
+    });
   });
 
   it('keeps an unapproved one that is off out of "Needs you", but never offers its switch', () => {
@@ -180,5 +193,41 @@ describe('the one line and the search', () => {
       expect(matchesExtensionSearch(mail, query)).toBe(true);
     }
     expect(matchesExtensionSearch(mail, 'zebra')).toBe(false);
+  });
+});
+
+// Purpose: the Settings line names the waiting places in DorkOS's own words,
+// never the app's, and stays within 15 words however many there are.
+describe('waitingPlacesLine', () => {
+  it('names each place in card order', () => {
+    expect(waitingPlacesLine(['pages'])).toBe('Adds a page. Allow when ready.');
+    expect(waitingPlacesLine(['dialog', 'pages'])).toBe(
+      'Adds a page and dialogs. Allow when ready.'
+    );
+    expect(waitingPlacesLine(['inbox', 'dialog', 'pages'])).toBe(
+      'Adds a page, dialogs and Inbox cards. Allow when ready.'
+    );
+  });
+
+  it('counts the rest past three, and never uses an unknown key', () => {
+    const many = ['pages', 'status-bar', 'dashboard.sections', 'settings.tabs', 'canvas'];
+    expect(waitingPlacesLine([...many, 'made-up'])).toBe(
+      'Adds a page, an Activity section and 3 more. Allow when ready.'
+    );
+    const every = [
+      'pages',
+      'right-panel',
+      'dashboard.sections',
+      'settings.tabs',
+      'status-bar',
+      'command-palette.items',
+      'dialog',
+      'sidebar.footer',
+      'canvas',
+      'inbox',
+    ];
+    for (let n = 1; n <= every.length; n++) {
+      expect(waitingPlacesLine(every.slice(0, n)).split(/\s+/).length).toBeLessThanOrEqual(15);
+    }
   });
 });

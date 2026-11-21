@@ -11,6 +11,7 @@ import { PROMO_REGISTRY, PromoCard, usePromoSlot } from '@/layers/features/featu
 import type { PromoPlacement } from '@/layers/features/feature-promos';
 import { PromoDialog } from '@/layers/features/feature-promos/ui/PromoDialog';
 import { UpdatePill } from '@/layers/features/dashboard-sidebar';
+import type { UpdateReadiness } from '@/layers/features/dashboard-sidebar';
 import { IdentityPromptCard, ProfilePromptCard, ProgressCard } from '@/layers/features/onboarding';
 import type { IdentityPromptApi, ProfilePromptApi } from '@/layers/features/onboarding';
 
@@ -222,6 +223,40 @@ function BottomSlotInPanel() {
         </SidebarContent>
         <BottomSlot candidates={candidates} ready />
       </div>
+    </div>
+  );
+}
+
+/** Every shape the desktop update card takes, with made-up versions (DOR-4846). */
+const DESKTOP_UPDATE_STATES: { label: string; update: UpdateReadiness }[] = [
+  {
+    label: 'Found, no progress yet',
+    update: { kind: 'desktop-downloading', version: '0.139.0', percent: null },
+  },
+  {
+    label: 'Downloading',
+    update: { kind: 'desktop-downloading', version: '0.139.0', percent: 42 },
+  },
+  {
+    label: 'Download failed',
+    update: { kind: 'desktop-download-failed', version: '0.139.0', retry: () => {} },
+  },
+  { label: 'Ready to restart', update: { kind: 'desktop-restart', restart: () => {} } },
+  { label: 'Install failed', update: { kind: 'desktop-install-failed', downloadFresh: () => {} } },
+];
+
+/** Each desktop update state in a sidebar-width panel, side by side. */
+function DesktopUpdateStates() {
+  return (
+    <div className="flex flex-wrap gap-4">
+      {DESKTOP_UPDATE_STATES.map(({ label, update }) => (
+        <div key={label} className="space-y-1.5">
+          <ShowcaseLabel>{label}</ShowcaseLabel>
+          <div className="bg-sidebar text-sidebar-foreground w-[272px] rounded-lg border p-2">
+            <UpdatePill update={update} />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -448,6 +483,15 @@ export function PromoShowcases() {
       >
         <ShowcaseDemo>
           <BottomSlotInPanel />
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="Desktop update card — every state"
+        description="The update card as the desktop app draws it, from the update being found to a failed install. Only the restart is bright: it is the one moment there is something to do."
+      >
+        <ShowcaseDemo>
+          <DesktopUpdateStates />
         </ShowcaseDemo>
       </PlaygroundSection>
 

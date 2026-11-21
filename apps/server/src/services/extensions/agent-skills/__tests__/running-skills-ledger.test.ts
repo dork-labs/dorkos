@@ -175,6 +175,17 @@ describe('which extensions the ledger lists', () => {
     ]);
   });
 
+  // Purpose: a pinned copy with no snapshot runs from nowhere, so its skills
+  // are never read from the folder it was found in (pin/run-dir).
+  it('leaves out a pinned copy with no snapshot, never reading its folder', async () => {
+    const dir = path.join(project, '.dork', 'extensions', 'mail');
+    await writeSkill(dir, 'triage-inbox');
+    const pinned = record(dir, { scope: 'local', pinnedDigest: DIGEST });
+    expect(await selectRunningSkills([pinned], { config: approving('mail', dir), core })).toEqual(
+      []
+    );
+  });
+
   it('leaves out a declared skill whose SKILL.md is not on disk', async () => {
     const dir = path.join(dorkHome, 'extensions', 'mail');
     await writeSkill(dir, 'triage-inbox');

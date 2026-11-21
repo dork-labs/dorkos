@@ -144,6 +144,36 @@ describe('DirectoryPicker', () => {
     expect(onSelect).toHaveBeenCalledWith('/home/user');
   });
 
+  it('a typed path wins until the person clicks into a folder, which clears it', async () => {
+    const onSelect = vi.fn();
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <TransportProvider transport={mockTransport}>
+          <DirectoryPicker
+            open={true}
+            onOpenChange={vi.fn()}
+            onSelect={onSelect}
+            initialPath="/home/user"
+            browseOnly
+            pathField={{ label: 'Or type a folder path' }}
+            selectLabel="Move here"
+          />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+    await waitFor(() => expect(screen.getByText('Documents')).toBeDefined());
+    const field = screen.getByLabelText('Or type a folder path');
+    fireEvent.change(field, { target: { value: '/Volumes/Drive' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Move here' }));
+    expect(onSelect).toHaveBeenLastCalledWith('/Volumes/Drive');
+
+    fireEvent.change(field, { target: { value: '/Volumes/Drive' } });
+    fireEvent.click(screen.getByText('Documents'));
+    expect(field).toHaveValue('');
+  });
+
   it('shows recent directories in default view', () => {
     renderPicker();
 

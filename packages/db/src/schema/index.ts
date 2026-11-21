@@ -27,6 +27,7 @@ export * from './session/session-context.js';
 export * from './session/session-started-by.js';
 export * from './workspace.js';
 export * from './auth.js';
+export * from './owner/owner-factors.js';
 export * from './unclaimed-chats.js';
 export * from './connectors/connections.js';
 export * from './connectors/connector-events.js';

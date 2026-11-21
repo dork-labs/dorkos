@@ -19,7 +19,9 @@
  * Codex stops and asks; each server request becomes a card in the open turn
  * (`app-server/server-requests.ts`), answered only by a person. A heavy
  * command's ask first waits for the machine's line (`app-server/load-gate-hold.ts`,
- * DOR-4209); a command Codex runs without asking is never held (DOR-4743).
+ * DOR-4209); a command Codex runs without asking takes a slot while it runs, and a new
+ * reply waits to start on a busy computer while Codex commands hold slots
+ * (`app-server/running-commands.ts`, DOR-4743).
  *
  * **Work that outlives the turn (spec §12).** A background command or helper
  * agent still running at `turn/completed` is tracked
@@ -146,7 +148,10 @@ export interface AppServerTransportOptions {
   readonly interactionCountdownMs?: number;
   /** When an unanswered request is declined (default: the park ceiling). */
   readonly interactionExpireMs?: number;
-  /** The machine-wide load gate a heavy command's ask waits in (tests; the server's own otherwise). */
+  /**
+   * The machine-wide load gate a heavy command's ask waits in and a running one is counted in
+   * (tests; the server's own otherwise).
+   */
   readonly loadGate?: HeavyAskDeps;
   /** Background-work timings (tests). */
   readonly backgroundWork?: {
@@ -249,7 +254,10 @@ export class AppServerCodexTransport implements CodexTransport {
   private readonly watched = new WeakSet<CodexAppServerProcess>();
   /** Approvals, questions and elicitations waiting on a person (spec §10). */
   private readonly requests: CodexServerRequestBroker;
-  /** Heavy commands' asks waiting for the machine's line, before any card (DOR-4209). */
+  /**
+   * Heavy commands' asks waiting for the machine's line, before any card (DOR-4209), and the
+   * heavy commands running, counted in it (`running`, DOR-4743).
+   */
   private readonly heavyAsks: CodexHeavyAsks;
   /** Background terminals and helper agents that outlive their turn (spec §12). */
   private readonly background: CodexBackgroundWork;
@@ -337,11 +345,12 @@ export class AppServerCodexTransport implements CodexTransport {
     mode: 'turn' | 'compact'
   ): AsyncGenerator<StreamEvent> {
     const sessionId = request.sessionId;
+    // A reply on a busy computer, with Codex commands already running, waits to start (DOR-4743).
+    if (mode === 'turn' && !(yield* this.heavyAsks.running.startWhenCalm(request))) return;
     const onCredits = request.launch.home === 'credits';
     let process: CodexAppServerProcess;
     let release: (() => void) | undefined;
     let loaded: LoadedThread;
-    let relay: { baseUrl: string; key: string } | undefined;
     // Read once per turn, so the load and any reload agree (spec `keep-awake`).
     const preventIdleSleep = keepAwakeService.preventsIdleSleep();
     let loadInput: ThreadLoadInput;
@@ -363,7 +372,7 @@ export class AppServerCodexTransport implements CodexTransport {
         yield { type: 'done', data: { sessionId } };
         return;
       }
-      relay = onCredits ? this.relayFor(process) : undefined;
+      const relay = onCredits ? this.relayFor(process) : undefined;
       loadInput = {
         process,
         home: onCredits ? 'credits' : 'person',
@@ -547,7 +556,8 @@ export class AppServerCodexTransport implements CodexTransport {
         yield { type: 'system_status', data: { message } };
       }
       keyTurn.attach();
-      channel.open(sink);
+      // Its commands count in the machine's line while they run (DOR-4743).
+      channel.open(this.heavyAsks.running.watch(sink, turn));
       if (request.signal.aborted) {
         yield* finish(mapper.closeQuietly());
         return;

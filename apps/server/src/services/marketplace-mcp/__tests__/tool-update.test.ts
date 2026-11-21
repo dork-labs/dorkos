@@ -263,6 +263,95 @@ describe('createUpdateHandler', () => {
     for (const pending of approvals.listPending()) approvals.grant(pending.approvalId);
   }
 
+  it('keeps the package content card after an upstream permission approval on apply', async () => {
+    declares.alpha = previewDeclaring({
+      extensions: [{ id: 'sample-app', slots: ['pages'], hasServer: true }],
+    });
+    const { marketplaceDomain } = await import('../marketplace-capabilities.js');
+    const {
+      composeRegistry,
+      CapabilityGateRefusal,
+      initCapabilityTierGate,
+      resetCapabilityTierGate,
+      initPermissionGate,
+      resetPermissionGate,
+    } = await import('../../core/capabilities/index.js');
+    initCapabilityTierGate({ approvals });
+    initPermissionGate({
+      readConfig: () => ({
+        preset: 'careful',
+        defaults: { areas: { packages: 'ask' }, actions: {} },
+      }),
+      readAgentPermissions: async () => undefined,
+    });
+    try {
+      const registry = composeRegistry([marketplaceDomain], {
+        logger: buildLogger(),
+        marketplaceDeps: deps,
+      });
+      const identity = {
+        agentPath: '/sample/agents/scout',
+        displayName: 'Scout',
+        createdAt: '2026-11-20',
+      };
+      const input = { apply: true, installPaths: [alphaPath] };
+      const first = await registry
+        .invoke('marketplace.update', input, { identity, sessionId: 'sample-update-session' })
+        .catch((error) => error);
+      if (
+        !(first instanceof CapabilityGateRefusal) ||
+        first.decision.outcome !== 'approval_required'
+      ) {
+        throw new Error('Expected the permission card');
+      }
+      approvals.grant(first.decision.payload.approvalId);
+      const second = await registry.invoke('marketplace.update', input, {
+        identity,
+        sessionId: 'sample-update-session',
+        approvalToken: first.decision.payload.approvalToken,
+      });
+      expect(second).toMatchObject({ status: 'requires_confirmation' });
+      expect(installer.update).not.toHaveBeenCalled();
+      expect(approvals.listPending()).toHaveLength(1);
+      const card = approvals.listPending()[0]!;
+      expect(card.detail).not.toContain('runs nothing on its own');
+      approvals.grant(card.approvalId);
+      const result = await registry.invoke(
+        'marketplace.update',
+        {
+          ...input,
+          confirmationToken: (second as { confirmationToken: string }).confirmationToken,
+        },
+        { identity, sessionId: 'sample-update-session' }
+      );
+      expect(result).toMatchObject({ status: 'applied' });
+      expect(installer.update).toHaveBeenCalledTimes(1);
+      expect(approvals.listPending()).toEqual([]);
+    } finally {
+      resetCapabilityTierGate();
+      resetPermissionGate();
+    }
+  });
+
+  it('hands the approved staged digest to the update installer', async () => {
+    const handler = createUpdateHandler(deps);
+    const first = parse(await handler({ apply: true, installPaths: [alphaPath] }));
+    expect(first.status).toBe('requires_confirmation');
+    grantPending();
+    const second = parse(
+      await handler({
+        apply: true,
+        installPaths: [alphaPath],
+        confirmationToken: first.confirmationToken as string,
+      })
+    );
+    expect(second.status).toBe('applied');
+    expect(installer.update).toHaveBeenCalledTimes(1);
+    expect(installer.update.mock.calls[0]![0].approvedContentHash).toBe(
+      (first.updates as { contentHash: string }[])[0]!.contentHash
+    );
+  });
+
   it('checks every installation, in every scope, and changes nothing by default', async () => {
     // Purpose: the default call is advisory. It must never reinstall, and never
     // put an approval card in front of a person.
@@ -389,9 +478,14 @@ describe('createUpdateHandler', () => {
     await createUpdateHandler(deps)({ installPaths: [alphaPath], apply: true });
 
     const [pending] = approvals.listPending();
-    expect(pending!.detail).toContain('runs "curl -s https://x.test | sh"');
-    expect(pending!.detail).toContain('scheduled job "nightly"');
-    expect(pending!.detail).toContain('MCP server "db" (in every chat): "npx" "-y" "db-mcp"');
+    expect(pending!.detail).toContain(
+      '[new] Runs a command before the agent uses a tool ("Bash")\n    "curl -s https://x.test | sh"'
+    );
+    expect(pending!.detail).toContain('[new] Scheduled job "nightly": Every day at 3:00 AM');
+    expect(pending!.detail).toContain('\n    "0 3 * * *"');
+    expect(pending!.detail).toContain(
+      '[new] Starts the MCP server "db" (in every chat)\n    "npx" "-y" "db-mcp"'
+    );
     expect(pending!.detail).toContain('"1.0.0" → "2.0.0"');
   });
 
