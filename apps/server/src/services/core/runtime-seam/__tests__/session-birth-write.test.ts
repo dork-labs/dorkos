@@ -46,6 +46,7 @@ function locationBirth(): SessionBirthWriteContext {
     .run();
   return {
     kind: 'person-location',
+    sessionId,
     allocationCreatedAt: stamp,
     ownerId: 'person',
     locationId: 'location',

@@ -66,6 +66,8 @@ import { SESSION_LIST_LIMIT, SESSION_REBUILD_LIMIT } from '../runtime-constants.
 export interface OpenCodeSessionMapStore {
   /** Persist a binding, replacing any existing row on either key (strictly 1:1). */
   bind(sessionId: string, ocSessionId: string): void;
+  /** Strict prepared-birth lookup. null proves absence; unavailable reads must throw. */
+  readBinding?(sessionId: string): { ocSessionId: string } | null;
   /** All persisted bindings, for hydration at construction. */
   listAll(): { sessionId: string; ocSessionId: string }[];
 }
@@ -523,6 +525,16 @@ export class OpenCodeSessionMapper {
     );
     this.link(dorkosSessionId, created.id);
     return created.id;
+  }
+
+  /** Cache and durable absence are both required only for a prepared first settings write. */
+  hasUnboundPreparedIdentity(sessionId: string): boolean {
+    if (this.dorkosToOpenCode.has(sessionId) || !this.store?.readBinding) return false;
+    try {
+      return this.store.readBinding(sessionId) === null;
+    } catch {
+      return false;
+    }
   }
 
   /**

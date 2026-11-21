@@ -4,7 +4,7 @@
  *
  * A runtime switch is ALWAYS a new session, never a mutation of the current
  * one and never a transplant of its history. This menu reuses the existing
- * `?runtime=` launch and carries the prompt as the `?prompt=` seed: it mints a
+ * `?runtime=` launch and carries the prompt as the `?prompt=` seed: it requests a
  * fresh session id (so the route loader can never auto-select an existing
  * session), binds it to the chosen runtime, and lets the new session's composer
  * pick up the prompt. The current session — its binding and transcript — is
@@ -24,7 +24,12 @@
 import { useState, type KeyboardEvent, type Ref } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { Shuffle } from 'lucide-react';
-import { useSessions, notifySessionLookupFailed } from '@/layers/entities/session';
+import {
+  beginSessionNavigation,
+  useLiveLocation,
+  useSessions,
+  notifySessionLookupFailed,
+} from '@/layers/entities/session';
 import {
   SELECTABLE_RUNTIME_TYPES,
   RuntimeSetupDialog,
@@ -83,6 +88,7 @@ export function EntryRunWithMenu({
   onTriggerKeyDown,
 }: EntryRunWithMenuProps) {
   const navigate = useNavigate();
+  const readLocation = useLiveLocation();
   const transport = useTransport();
   const { sessions } = useSessions();
   const { data: capabilityMap } = useRuntimeCapabilities();
@@ -103,14 +109,14 @@ export function EntryRunWithMenu({
     return registered && isRuntimeReady(requirements, type);
   };
 
-  // Fresh session, always: an explicit new id bypasses the loader's
-  // auto-select of an existing session; `runtime` binds it; `prompt` seeds it.
+  // Start with the server-acknowledged draft, then carry the runtime and prompt.
   const launchOn = (type: string) => {
-    void newSessionTarget(transport, { dir: cwd, runtime: type, prompt })
-      .then((target) => navigate(target))
+    const isStillWanted = beginSessionNavigation(readLocation);
+    void newSessionTarget(transport, { dir: cwd, runtime: type, prompt }, { isStillWanted })
+      .then((target) => (isStillWanted() ? navigate(target) : undefined))
       .catch((error) => {
         reportClientError(transport, error);
-        notifySessionLookupFailed(cwd ?? null);
+        if (isStillWanted()) notifySessionLookupFailed(cwd ?? null);
       });
   };
 

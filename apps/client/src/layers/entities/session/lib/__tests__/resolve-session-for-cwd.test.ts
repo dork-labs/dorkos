@@ -202,13 +202,8 @@ describe('resolveSessionForCwd', () => {
 
     const resolved = await resolveSessionForCwd({ queryClient, transport }, CWD);
 
-    expect(resolved?.isNew).toBe(true);
-    // Emphatically NOT the automated run it looked past.
-    expect(resolved?.sessionId).not.toBe('nightly');
-    expect(resolved?.sessionId).not.toBe('telegram');
-    // An invented id belongs to no directory yet, so the one that was asked for
-    // is the only one it can be started in.
-    expect(resolved?.cwd).toBe(CWD);
+    expect(resolved).toEqual({ isNew: true, cwd: CWD });
+    expect(transport.allocateSession).not.toHaveBeenCalled();
   });
 
   it('still starts a fresh session for a directory with nothing at all', async () => {

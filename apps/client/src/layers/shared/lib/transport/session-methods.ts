@@ -19,6 +19,7 @@ import type {
   AlwaysAllowBreadth,
 } from '@dorkos/shared/types';
 import type { ClaudePluginTransport, DevtoolsRecordingPayload } from '@dorkos/shared/transport';
+import { createSessionLocationMethods } from './session-location-methods';
 import type {
   UiActionRequest,
   McpAppResourceRequest,
@@ -85,6 +86,7 @@ export function createSessionMethods(
   messageCache: Map<string, HistoryRead>
 ) {
   return {
+    ...createSessionLocationMethods(baseUrl),
     // ── Session CRUD ────────────────────────────────────────────────────────
 
     listSessions(cwd?: string): Promise<SessionListResponse> {
@@ -106,17 +108,6 @@ export function createSessionMethods(
       const qs = buildQueryString({ days });
       const data = await fetchJSON<unknown>(baseUrl, `/sessions/daily-counts${qs}`);
       return SessionDailyCountsResponseSchema.parse(data);
-    },
-
-    createSessionLocation(cwd: string): Promise<{ id: string }> {
-      return fetchJSON(baseUrl, '/session-locations', {
-        method: 'POST',
-        body: JSON.stringify({ cwd }),
-      });
-    },
-
-    getSessionLocation(id: string): Promise<{ cwd: string }> {
-      return fetchJSON(baseUrl, `/session-locations/${encodeURIComponent(id)}`);
     },
 
     getSession(id: string, cwd?: string): Promise<Session> {

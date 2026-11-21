@@ -64,10 +64,12 @@ vi.mock('@tanstack/react-router', async (importOriginal) => ({
 const mockListSessions = vi.fn((): Promise<{ sessions: { id: string }[] }> =>
   Promise.resolve({ sessions: [] })
 );
+const mockAllocate = vi.fn(async () => ({ sessionId: 'directory-chat' }));
 vi.mock('@/layers/shared/model/TransportContext', () => ({
   useTransport: () => ({
     listSessions: mockListSessions,
     createSessionLocation: vi.fn(async () => ({ id: 'location' })),
+    allocateSession: mockAllocate,
   }),
 }));
 
@@ -129,12 +131,16 @@ describe('useDirectoryState', () => {
           search: expect.objectContaining({
             launchRef: 'location',
             draft: '1',
-            session: expect.any(String),
+            session: 'directory-chat',
           }),
         })
       )
     );
     expect(mockSetSessionId).not.toHaveBeenCalled();
+    expect(mockAllocate).toHaveBeenCalledExactlyOnceWith({
+      kind: 'location',
+      launchRef: 'location',
+    });
   });
 
   it('setting null removes ?dir= from URL via navigate', async () => {
