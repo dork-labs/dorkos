@@ -342,8 +342,9 @@ export interface ScopedExecutionOptions {
   workingDirectory?: string;
   resources?: Resources;
   signal?: AbortSignal;
+  /** Returning undefined preserves the engine's normal scheduling. */
   finishTurn?: (
     messages: readonly ModelMessage[],
     signal: AbortSignal
-  ) => Promise<'continue' | 'end'>;
+  ) => Promise<'continue' | 'end' | undefined>;
 }

@@ -301,6 +301,14 @@ export function ExtensionRow({
                     isReloading={isReloading}
                     primaryRef={primaryRef}
                   />
+                  {panelNeed === 'needs-ok' && (
+                    <p
+                      className="text-muted-foreground text-sm"
+                      data-testid={`extension-waiting-state-${extension.id}`}
+                    >
+                      Off until you allow it.
+                    </p>
+                  )}
                   <button
                     type="button"
                     aria-expanded={detailsOpen}

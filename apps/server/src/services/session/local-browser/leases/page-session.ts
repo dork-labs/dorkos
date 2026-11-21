@@ -317,9 +317,7 @@ export class LocalBrowserPageSession {
       (this.hasPageReservation() && this.runtime.custody.held) || this.handover.hasActiveHandoff()
     );
   }
-  drainPageWork(): Promise<void> {
-    return this.runtime.work.drainWith(this.actions);
-  }
+  drainPageWork = () => this.runtime.work.drainWith(this.actions);
   /** Profile cleanup sees every page and pending acquisition, including a held page. */
   holdsProfileReservation(id: string | null): boolean {
     return (
@@ -364,12 +362,15 @@ export class LocalBrowserPageSession {
   );
   restorePersonFocus = (page: Page) => this.handles.restorePersonFocus(page);
   /** Capture identity once; a replacement under the same chat id cannot inherit this call. */
-  captureAgentLease(sessionId = this.sessionId) {
-    return this.handles.agent(sessionId);
-  }
+  captureAgentLease = (sessionId = this.sessionId) => this.handles.agent(sessionId);
   /** Host-only source for the typed owner viewer, never a tool argument. */
-  captureViewerPage() {
-    return this.handles.viewer();
+  captureViewerPage = () => this.handles.viewer();
+
+  /** Preserve protected-origin and per-profile sign-in refusal for metadata-only watching. */
+  assertViewerWatchAllowed(page: Page): void {
+    if (this.handover.signInHoldsProfile(this.currentProfileId()))
+      throw new Error('viewer_unavailable');
+    this.refuseProtectedPage(page);
   }
 
   /** The profile the browser opened last, or null for the default one. */

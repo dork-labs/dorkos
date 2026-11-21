@@ -120,7 +120,9 @@ export const DORKOS_AREAS: readonly DorkosAreaLine[] = [
   {
     // MCP servers, packages and extensions share one permission area, so one line (DOR-3219 diet).
     name: 'Tools',
-    can: 'add or remove MCP servers and packages; build extensions a person approves. A change reaches you next turn, in this chat: no restart.',
+    // The block is at its size budget, so the mini app story (DOR-4854) is not repeated here:
+    // `create_extension` and `get_extension_api` carry all of it (`mini-app-story.ts`).
+    can: 'add or remove MCP servers and packages; build mini apps a person approves. A change reaches you next turn, in this chat: no restart.',
     covers: ['mcp.', 'marketplace.', 'create_extension', 'reload_extensions', 'test_extension'],
     areas: ['packages'],
     gate: 'adding or changing an MCP server asks, and only a person adds one for all agents',

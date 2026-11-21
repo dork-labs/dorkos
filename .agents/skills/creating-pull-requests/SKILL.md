@@ -157,7 +157,8 @@ fix, never an empty commit:
 - **User-facing after all**: the label is wrong. Remove it and add the fragment.
 
 Prevention is the same move up front: type a non-user-facing commit `chore(` or
-`ci(` before you open the PR.
+`ci(` before you open the PR. `scripts/open-pr.sh` refuses a `skip-changelog` PR
+whose commits are still typed `feat(`/`fix(`/`refactor(`/`perf(`.
 
 ### Run the changelog gate locally
 
@@ -227,33 +228,31 @@ The full protocol is in `contributing/ci.md` and the `stewarding-ci-pipeline` sk
 
 ## Opening the PR
 
-**Check the open-PR count first.** Run
-`.agents/skills/creating-pull-requests/scripts/open-pr-cap.sh` before `gh pr create`.
-It refuses when 30 non-draft PRs into `main` are already open (set `DORKOS_OPEN_PR_CAP` to change it),
-because a review line that can't keep up turns every new PR into a pileup
-(DOR-3341). At the cap, keep building locally and commit; open the PR when one
-lands. A P0 or a CI fix can pass with `--p0 "<reason>"`.
-
-Open it once the branch has converged, with the squashed commit and its fragment
-already pushed:
+**Open every PR with `scripts/open-pr.sh`, never a bare `gh pr create`.** Open it
+once the branch has converged, with the squashed commit and its fragment already
+pushed:
 
 ```bash
-gh pr create --title "<type>(<scope>): <summary>" --body "<body>"
+scripts/open-pr.sh --title "<type>(<scope>): <summary>" --body-file <file> \
+  [--draft] [--hold "<reason>"] [--extra-label <label>] [--p0 "<reason>"] [--dry-run]
 ```
+
+It runs the open-PR cap (30 non-draft PRs into `main`, DOR-3341; at the cap keep
+building locally, or pass a P0 or CI fix with `--p0`), computes `review:light` or
+`review:deep` (the security-gate path list), `skip-changelog` and `needs-design`
+from the diff, appends the provenance line if the body has none, and opens the PR
+with every label at creation. `--hold` adds `hold` and posts `hold: <reason>`; a
+hold with no reason is never applied. `--extra-label` refuses hold and gate labels
+(`security-*`, `design-ok`, `qa-*`). `--dry-run` prints the labels and the exact
+`gh` command. The header of the script is the reference; in Claude Code,
+`.claude/hooks/pr-create-guard.mjs` refuses a bare `gh pr create`.
 
 PR body: lead with what changed and why, link the spec or issue, and call out
 anything reviewers should look at first.
 
-Open a **draft** instead when you still need CI to tell you something, then mark it
-ready once review converges:
-
-```bash
-gh pr create --draft --title "<type>(<scope>): <summary>" --body "<body>"
-gh pr ready <number>        # marking ready fires exactly one full review
-```
-
-A draft gets no automatic review, so you can push to it freely; marking ready
-triggers one review of the final state.
+Open a **draft** (`--draft`) when you still need CI to tell you something, then
+`gh pr ready <number>` once review converges. A draft gets no automatic review;
+marking it ready fires exactly one review of the final state.
 
 ### A merged PR closes the ticket it names — from the title, the branch, or a magic word
 
@@ -405,11 +404,8 @@ gets cancelled by the next automatic trigger — the newest request wins.
 | `review:deep`  | Exhaustive: traces every caller, runs the full dangling-reference sweep.                                                            |
 | `re-review`    | Request another pass after addressing feedback. Auto-cleared after the review runs, so re-apply it each time you want another look. |
 
-Apply at creation so the `opened` event sees them:
-
-```bash
-gh pr create --draft --label review:light --title "..." --body "..."
-```
+`scripts/open-pr.sh` applies them at creation, so the `opened` event sees them.
+Raise light to deep with `--extra-label review:deep`; it never lowers deep.
 
 **Never add or remove a `security-*` label** (`security-reviewed`,
 `security-deep-reviewed`). Only Security's `label-pr.sh` adds them, after its own

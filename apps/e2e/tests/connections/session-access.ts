@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, type APIRequestContext, type Page } from '@playwright/test';
+import { test } from '../../fixtures/base';
 import { ChatPage } from '../../pages/ChatPage.js';
 import { ConnectionsPage } from '../../pages/ConnectionsPage.js';
 import { RightPanelPage } from '../../pages/RightPanelPage.js';

@@ -6,6 +6,7 @@ import type {
   ModelMessage,
   ModelUsage,
   QueueDisposition,
+  ScopedExecutionOptions,
   ToolContext,
   ToolDescriptor,
 } from './contracts.js';
@@ -31,10 +32,7 @@ export interface EngineRequest {
     messages?: readonly ModelMessage[];
     tools?: readonly ToolDescriptor[];
   }>;
-  finishTurn?: (
-    messages: readonly ModelMessage[],
-    signal: AbortSignal
-  ) => Promise<'continue' | 'end'>;
+  finishTurn?: ScopedExecutionOptions['finishTurn'];
 }
 /** Terminal engine outcome distinguishes failed and length-stopped summaries. */
 export interface EngineResult {

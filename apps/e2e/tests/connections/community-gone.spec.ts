@@ -1,4 +1,5 @@
-import { test, expect } from '@playwright/test';
+import { expect } from '@playwright/test';
+import { test } from '../../fixtures/base';
 import { mockCommunities, ROOM } from './community-mocks.js';
 
 /**

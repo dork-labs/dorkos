@@ -1,0 +1,67 @@
+name: hold-reason
+
+# Advisory, never required: a pull request carrying `hold` should also carry a
+# comment starting `hold:` that says why, and who lifts it.
+#
+# merge-tail and the arm script refuse a held PR and neither lifts `hold`, so a
+# hold with no reason names nobody to lift it. On 2026-11-20 a coordinator brief
+# told agents to open security-path PRs with `hold` while the arm script refused
+# it, and 19 PRs sat for 9 hours. scripts/open-pr.sh posts the reason itself
+# (`--hold "<reason>"`), and .claude/hooks/pr-create-guard.mjs steers Claude
+# sessions to it; this check covers every other way a hold goes on, including
+# Codex and OpenCode agents, which run no Claude hooks. The decision is
+# scripts/hold-reason-check.sh (fixtures: scripts/test-hold-reason-check.sh).
+# Ledger: ci/ledger/261120-090000-open-pr-script.md.
+#
+# It reads PR metadata only, through `gh api`, with a read-only token. It checks
+# out main's copy of the one script it runs, never the pull request's code.
+#
+# `issue_comment` runs (a reason posted, edited or deleted) are reported against
+# main, not on the pull request: they show in the Actions tab only. The check on
+# the PR itself is re-read on the next label change.
+#
+# No `concurrency:` group on purpose: `gh pr create --label a --label hold`
+# raises one `labeled` event per label at once, and a cancelled run is a
+# cancelled check, which merge-tail refuses to arm past.
+
+on:
+  pull_request:
+    types: [labeled, unlabeled]
+  issue_comment:
+    types: [created, edited, deleted]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+jobs:
+  hold-reason:
+    # Only when `hold` is on the PR or just came off it, and for a comment only
+    # on a held pull request (an issue has no `pull_request` key).
+    if: >-
+      (github.event_name == 'pull_request' &&
+        (github.event.label.name == 'hold' ||
+         contains(github.event.pull_request.labels.*.name, 'hold'))) ||
+      (github.event_name == 'issue_comment' &&
+        github.event.issue.pull_request &&
+        contains(github.event.issue.labels.*.name, 'hold'))
+    runs-on: ubuntu-latest
+    # Two reads, re-read twice 15 s apart when the reason lags the label.
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: scripts/hold-reason-check.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Require a hold reason
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number || github.event.issue.number }}
+        run: bash scripts/hold-reason-check.sh "$PR"
