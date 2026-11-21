@@ -75,9 +75,9 @@ async function main(): Promise<void> {
     const response = await fetch(`${endpoint}/${operation}`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ connectionId: 'native-witness' }),
+      body: JSON.stringify({ connectionId: 'native-witness', sessionId: null, profileId: null }),
     });
-    assert.equal(response.status, 200);
+    assert.equal(response.status, 200, `Native person-browser ${operation}`);
     return response;
   };
   const opened = (await (await call('open')).json()) as {

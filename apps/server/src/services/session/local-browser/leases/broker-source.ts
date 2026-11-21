@@ -17,6 +17,7 @@ export interface BrowserBrokerSource {
   facts(): BrowserPageFacts;
   onChange(listener: () => void): () => void;
   authorize(): Promise<void>;
+  assertWatchAllowed(): void;
   hold(): Promise<unknown>;
   resume(): Promise<unknown>;
   recordInput(kind: string): Promise<void>;
@@ -57,6 +58,7 @@ export function captureBrokerSource(
   });
   return {
     binding,
+    assertWatchAllowed: () => session.assertViewerWatchAllowed(page),
     facts: () =>
       Object.freeze({
         revision: state.revision,

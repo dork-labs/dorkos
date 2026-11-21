@@ -1,6 +1,7 @@
 import type { Page, Route } from '@playwright/test';
 import { test, expect } from '../../fixtures';
 import { LocalBrowserPage } from '../../pages/LocalBrowserPage';
+import { fakeBrowserState } from '../../pages/fake-browser-state';
 
 /**
  * The Agent browser's ⋯ menu in the real app (DOR-4429). Only the browser's own
@@ -9,23 +10,18 @@ import { LocalBrowserPage } from '../../pages/LocalBrowserPage';
  */
 
 function sharedWith(sessionId: string) {
-  return {
+  return fakeBrowserState({
     connectionId: 'c1',
     sessionId,
     mode: 'new-window',
     status: 'connected',
-    paused: false,
     tabs: [
       { id: 't1', url: 'https://northwind.example/fares?to=LIS', title: 'Fares to Lisbon' },
       { id: 't2', url: 'https://accounts.northwind.example/signin', title: 'Sign in' },
     ],
     selectedTabId: 't1',
     revision: 1,
-    preparation: null,
-    signIn: null,
-    handoff: null,
-    takenOver: false,
-  };
+  });
 }
 
 /** Open a chat with one finished turn whose browser is shared with it, then its panel. */
@@ -47,7 +43,7 @@ async function chatWithBrowser(
   const sessionId = new URL(page.url()).searchParams.get('session')!;
   const answers: string[] = [];
   const shared = sharedWith(sessionId);
-  let state: Record<string, unknown> = shared;
+  let state = shared;
   await page.route('**/api/local-browser/**', async (route: Route) => {
     const url = new URL(route.request().url()).pathname;
     if (url.endsWith('/capabilities') || url.endsWith('/profiles')) return route.fallback();

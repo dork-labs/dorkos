@@ -47,6 +47,7 @@ it.each(['page', 'epoch', 'lifecycle'] as const)(
     };
     const session = {
       handover: { isOpenFor: () => false },
+      assertAuthorityCurrent: vi.fn(),
       requireProfileAccess: vi.fn(gate.run),
     } as unknown as LocalBrowserPageSession;
     const lease = captureAgentPage(session, () => ({ ...current }));

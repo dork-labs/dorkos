@@ -49,6 +49,10 @@ export class BrowserPageBroker {
       identity: Object.freeze({ ...identity }),
       isCurrent: current,
       assertCurrent: admit,
+      assertWatchAllowed: () => {
+        admit();
+        source.assertWatchAllowed();
+      },
       facts() {
         admit();
         return source.facts();

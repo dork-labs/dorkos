@@ -329,7 +329,9 @@ describe('main HTTP admission through the real app', () => {
     expect(mounts).toContain('/api/extension-frame');
     // 89 -> 90: every schedule and heartbeat that cannot wake (DOR-3641).
     expect(mounts).toContain('/api/heartbeats/wakers-off');
-    expect(mounts).toHaveLength(90);
+    // 90 -> 91: the owner-only browser watch stream (DOR-2667).
+    expect(mounts).toContain('/api/browser-viewers');
+    expect(mounts).toHaveLength(91);
     const byHand = [
       '/',
       '/x/fixture',

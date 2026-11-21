@@ -310,6 +310,7 @@ export class PiEngine implements Engine {
       await persist(initial);
       completed.push(initial);
     }
+    const finishTurn = request.finishTurn;
     const agent = new Agent({
       initialState: {
         messages: messages as unknown as AgentMessage[],
@@ -384,14 +385,15 @@ export class PiEngine implements Engine {
         currentPrompt = nextPrompt;
         return { context: { messages: next, tools: executable }, model: modelOf(activeDescriptor) };
       },
-      ...(request.finishTurn
+      ...(finishTurn
         ? {
-            finishTurn: async (turn, signal) => ({
-              action: await request.finishTurn!(
+            finishTurn: async (turn, signal) => {
+              const action = await finishTurn(
                 turn.newMessages.map((message) => redactor.json(jsonMessage(message))),
                 signal ?? request.signal
-              ),
-            }),
+              );
+              return action === undefined ? undefined : { action };
+            },
           }
         : {}),
     });

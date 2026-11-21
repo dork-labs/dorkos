@@ -73,7 +73,8 @@
  *
  * @module tests/chat/runtime-capability-parity
  */
-import { test, expect } from '@playwright/test';
+import { expect } from '@playwright/test';
+import { test } from '../../fixtures/base';
 import { ChatPage } from '../../pages/ChatPage.js';
 
 /** The same ceiling the rest of the suite uses — a bound on a stall, not a delay. */

@@ -173,9 +173,8 @@ export class LocalBrowserPageSession {
       shared?.removal ?? pageSessionProfileRemoval(dataDirectory, this, embedded);
   }
 
-  capabilities(): LocalBrowserCapabilities {
-    return localBrowserCapabilities(Boolean(this.embedded), this.hostFacts());
-  }
+  capabilities = (): LocalBrowserCapabilities =>
+    localBrowserCapabilities(Boolean(this.embedded), this.hostFacts());
 
   /** The person's view, with whether Back and Forward have a page to go to (DOR-4449). */
   async state(): Promise<LocalBrowserState> {
@@ -191,6 +190,7 @@ export class LocalBrowserPageSession {
     this.syncTabs();
     return this.pageState.describe(
       {
+        profile: this.shared?.profile?.(),
         connectionId: this.connectionId,
         sessionId: this.sessionId,
         mode: this.mode,
@@ -254,7 +254,10 @@ export class LocalBrowserPageSession {
           );
           this.ownedContext.on('close', () => this.closed(connectionId));
         } else {
-          const bridge = await this.embedded!.open(connectionId);
+          const bridge = await this.embedded!.open(connectionId, {
+            sessionId: this.sessionId,
+            profileId: this.profileId,
+          });
           this.embeddedClose = bridge.close;
           setupAbort.signal.throwIfAborted();
           this.embeddedAttachment = new EmbeddedBrowserAttachment(bridge, this.backend, () =>
@@ -317,9 +320,7 @@ export class LocalBrowserPageSession {
       (this.hasPageReservation() && this.runtime.custody.held) || this.handover.hasActiveHandoff()
     );
   }
-  drainPageWork(): Promise<void> {
-    return this.runtime.work.drainWith(this.actions);
-  }
+  drainPageWork = () => this.runtime.work.drainWith(this.actions);
   /** Profile cleanup sees every page and pending acquisition, including a held page. */
   holdsProfileReservation(id: string | null): boolean {
     return (
@@ -330,12 +331,10 @@ export class LocalBrowserPageSession {
     );
   }
 
-  matchesProfileGrant(profileId: string, agentId?: string): boolean {
+  matchesProfileGrant(profileId: string | null, agentId?: string): boolean {
     return this.authority.matches(profileId, agentId);
   }
-  assertAuthorityCurrent(): void {
-    this.authority.assertCurrent();
-  }
+  assertAuthorityCurrent = (): void => this.authority.assertCurrent();
 
   /** Revoke before awaiting cleanup; person custody never becomes an agent grant again. */
   async revoke(): Promise<void> {
@@ -364,12 +363,15 @@ export class LocalBrowserPageSession {
   );
   restorePersonFocus = (page: Page) => this.handles.restorePersonFocus(page);
   /** Capture identity once; a replacement under the same chat id cannot inherit this call. */
-  captureAgentLease(sessionId = this.sessionId) {
-    return this.handles.agent(sessionId);
-  }
+  captureAgentLease = (sessionId = this.sessionId) => this.handles.agent(sessionId);
   /** Host-only source for the typed owner viewer, never a tool argument. */
-  captureViewerPage() {
-    return this.handles.viewer();
+  captureViewerPage = () => this.handles.viewer();
+
+  /** Preserve protected-origin and per-profile sign-in refusal for metadata-only watching. */
+  assertViewerWatchAllowed(page: Page): void {
+    if (this.handover.signInHoldsProfile(this.currentProfileId()))
+      throw new Error('viewer_unavailable');
+    this.refuseProtectedPage(page);
   }
 
   /** The profile the browser opened last, or null for the default one. */

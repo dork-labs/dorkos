@@ -24,7 +24,10 @@ const HISTORY_STEP_BRIDGE_TIMEOUT_MS = 25_000;
 /** Desktop returns an authenticated connection to one guest page, never its app shell. */
 export interface EmbeddedBrowserPort {
   forgetSignIns?(): Promise<void>;
-  open(connectionId: string): Promise<{
+  open(
+    connectionId: string,
+    identity: { sessionId: string | null; profileId: string | null }
+  ): Promise<{
     endpoint: string;
     headers: Record<string, string>;
     close(): Promise<void>;
@@ -72,8 +75,8 @@ export function desktopBrowserPort(): EmbeddedBrowserPort | undefined {
     async forgetSignIns() {
       await call('/forget-sign-ins', 'default');
     },
-    async open(connectionId) {
-      const response = await call('/open', connectionId);
+    async open(connectionId, identity) {
+      const response = await call('/open', connectionId, identity);
       const guest = (await response.json()) as {
         endpoint: string;
         headers: Record<string, string>;

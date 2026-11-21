@@ -1,6 +1,8 @@
 import type { Page, Route } from '@playwright/test';
+import type { LocalBrowserPersonState } from '@dorkos/shared/local-browser';
 import { test, expect } from '../../fixtures';
 import { LocalBrowserPage } from '../../pages/LocalBrowserPage';
+import { fakeBrowserState } from '../../pages/fake-browser-state';
 
 /**
  * The Agent browser's page area when there is no page to show (DOR-4433): one
@@ -8,26 +10,13 @@ import { LocalBrowserPage } from '../../pages/LocalBrowserPage';
  * browser's own state is intercepted, with made-up chats and pages.
  */
 
-const NOT_OPEN = {
-  connectionId: null,
-  sessionId: null,
-  mode: null,
-  status: 'disconnected',
-  paused: false,
-  tabs: [],
-  selectedTabId: null,
-  revision: 0,
-  preparation: null,
-  signIn: null,
-  handoff: null,
-  takenOver: false,
-};
+const NOT_OPEN = fakeBrowserState();
 
 /** Open a chat whose browser reports `state`, then its Agent browser panel. */
 async function panelWith(
   page: Page,
   chatPage: { goto: (id?: string, opts?: { dir: string }) => Promise<void> },
-  state: (sessionId: string) => Record<string, unknown>
+  state: (sessionId: string) => LocalBrowserPersonState
 ) {
   const seed = await page.request.post('/api/test/seed-agent');
   expect(seed.ok()).toBe(true);

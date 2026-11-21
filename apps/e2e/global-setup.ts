@@ -32,6 +32,7 @@
 import { statSync } from 'node:fs';
 import { chromium, request, type APIResponse, type FullConfig } from '@playwright/test';
 import { measureGlobalSetup } from './setup-timing';
+import { stubGoogleFonts } from './google-fonts-stub';
 
 /**
  * Where a leg's `DORK_HOME` is allowed to be.
@@ -344,6 +345,8 @@ async function warmClient(baseURL: string): Promise<void> {
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage({ baseURL });
+    // Not under a fixture, so stub Google Fonts here too (DOR-4871).
+    await stubGoogleFonts(page.context());
     await page.goto('/', { timeout: 180_000 });
     await page.waitForSelector('[data-testid="app-shell"]', { timeout: 180_000 });
   } finally {

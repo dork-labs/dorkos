@@ -86,6 +86,7 @@ describe('opening the Agent browser refuses in the designer’s words (DOR-3219)
     } catch (error) {
       message = (error as Error).message;
     }
-    expect(message).toBe('Open a browser profile in its own window.');
+    expect(message).toBe('This browser opens in its own window.');
+    expect(message).not.toMatch(/profile/i);
   });
 });

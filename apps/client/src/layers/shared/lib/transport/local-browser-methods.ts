@@ -7,9 +7,14 @@ import {
 } from '@dorkos/shared/local-browser';
 import { YourBrowserScanSchema } from '@dorkos/shared/your-browser';
 import { fetchJSON } from './http-client';
+import { createBrowserViewerMethods } from './browser-viewer-methods';
+import { resolveStableClientId } from './client-id';
 
 /** Local browser human controls, using the same authenticated origin as every app action. */
-export function createLocalBrowserMethods(baseUrl: string): LocalBrowserTransport {
+export function createLocalBrowserMethods(
+  baseUrl: string,
+  clientId: () => string = resolveStableClientId
+): LocalBrowserTransport {
   const request = <T>(path: string, body?: unknown): Promise<T> =>
     fetchJSON<T>(baseUrl, `/local-browser${path}`, {
       method: body === undefined ? 'GET' : 'POST',
@@ -18,6 +23,7 @@ export function createLocalBrowserMethods(baseUrl: string): LocalBrowserTranspor
   const selected = (path: string, sessionId?: string | null) =>
     sessionId == null ? path : `${path}?sessionId=${encodeURIComponent(sessionId)}`;
   return {
+    ...createBrowserViewerMethods(baseUrl, clientId),
     scanYourBrowsers: async () =>
       YourBrowserScanSchema.parse(
         await fetchJSON(baseUrl, '/your-browser/scan', {
@@ -38,6 +44,20 @@ export function createLocalBrowserMethods(baseUrl: string): LocalBrowserTranspor
         profiles: result.profiles.map((profile) => LocalBrowserProfileSchema.parse(profile)),
       };
     },
+    bindLocalBrowserProfile: async (id, agentId, sessionId) =>
+      LocalBrowserProfileSchema.parse(
+        await request(selected(`/profiles/${encodeURIComponent(id)}/agents`, sessionId), {
+          agentId,
+        })
+      ),
+    unbindLocalBrowserProfile: async (id, agentId, sessionId) =>
+      LocalBrowserProfileSchema.parse(
+        await fetchJSON(
+          baseUrl,
+          `/local-browser${selected(`/profiles/${encodeURIComponent(id)}/agents/${encodeURIComponent(agentId)}`, sessionId)}`,
+          { method: 'DELETE' }
+        )
+      ),
     forgetLocalBrowserSignIns: (id) =>
       request(`/profiles/${encodeURIComponent(id ?? 'default')}/forget-sign-ins`, {}),
     deleteLocalBrowserProfile: (id) =>

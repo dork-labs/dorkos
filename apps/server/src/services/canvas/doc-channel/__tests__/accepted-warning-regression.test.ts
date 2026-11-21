@@ -1,5 +1,5 @@
 import { addAcceptedReceiptPage } from './accepted-page-fixtures.js';
-/** Real file SQLite evidence for accepted, unclaimed document waiting warnings. */
+/** Real SQLite evidence for accepted, unclaimed document waiting warnings. */
 import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -54,10 +54,10 @@ function snapshot(f: BatchFixture, batchId: string) {
       .filter((row) => row.direction === 'upstream'),
   };
 }
-async function setup(defer = true) {
-  const dir = mkdtempSync(join(tmpdir(), 'doc-accepted-warning-'));
-  directories.push(dir);
-  const file = join(dir, 'state.db');
+async function setup({ defer = true, inMemory = false } = {}) {
+  const dir = inMemory ? null : mkdtempSync(join(tmpdir(), 'doc-accepted-warning-'));
+  if (dir) directories.push(dir);
+  const file = dir ? join(dir, 'state.db') : ':memory:';
   let time = Date.parse(NOW);
   const now = () => new Date(time);
   const deadline = new Date(time + 60 * MINUTE).toISOString();
@@ -224,7 +224,7 @@ it('does not expire an accepted unclaimed wait after twenty-four hours', async (
 it.each(['claimed', 'started', 'terminal', 'revoked'] as const)(
   'never warns when current receipt authority is %s',
   async (state) => {
-    const h = await setup(state === 'revoked');
+    const h = await setup({ defer: state === 'revoked' });
     if (state === 'revoked') h.f.grants.revoke(h.f.documentId, h.f.grantId, h.f.actor);
     else {
       expect(h.f.admission.acceptance.claim(h.accepted.receipt.id, h.prepared)).toMatchObject({
@@ -301,7 +301,7 @@ async function addWaiting(h: Awaited<ReturnType<typeof setup>>, index: number) {
   return receipt;
 }
 it('pages more than 100 same-session accepted waits without adopting them and wraps new earlier keys', async () => {
-  const h = await setup();
+  const h = await setup({ inMemory: true });
   h.f.canvas.pin(FROM, h.f.documentId, true);
   // Populate actual accepted/routed busy waits; the original row still proves the
   // one-hour final-budget hold. Warning pagination does not need 104 extra
@@ -311,15 +311,12 @@ it('pages more than 100 same-session accepted waits without adopting them and wr
   expect(evidence).toHaveLength(105);
   expect(new Set(evidence.map((row) => row.id)).size).toBe(105);
   expect(new Set(evidence.map((row) => row.sourceId)).size).toBe(105);
-  expect(
-    new Set(
-      h.f.db
-        .select()
-        .from(canvasDocBatches)
-        .all()
-        .map((row) => row.grantId)
-    ).size
-  ).toBe(105);
+  const batches = h.f.db
+    .select()
+    .from(canvasDocBatches)
+    .orderBy(asc(canvasDocBatches.dueAt), asc(canvasDocBatches.batchId))
+    .all();
+  expect(new Set(batches.map((row) => row.grantId)).size).toBe(105);
   h.at(15 * MINUTE);
   const prepare = vi.spyOn(h.f.admission.acceptance, 'prepare');
   const first = await h.pump().inspectAcceptedWaitWarnings();
@@ -337,9 +334,15 @@ it('pages more than 100 same-session accepted waits without adopting them and wr
     hasMore: false,
     nextEligibleAt: null,
   });
-  expect(prepare).toHaveBeenCalledTimes(105);
+  expect(prepare.mock.calls.map(([id]) => id)).toEqual(
+    batches.map((batch) => batch.admissionReceiptId)
+  );
   expect(warnings(h.f)).toHaveLength(105);
   const inserted = await addWaiting(h, 999);
+  const insertedBatch = h.f.store.getBatch(inserted.sourceId)!;
+  expect(Date.parse(insertedBatch.dueAt)).toBeLessThan(Date.parse(second.cursor!.dueAt));
+  const continued = await h.pump().inspectAcceptedWaitWarnings(second.cursor);
+  expect(continued).toMatchObject({ selected: 0, warned: 0, hasMore: false });
   const wrap = await h.pump().inspectAcceptedWaitWarnings();
   expect(wrap).toMatchObject({ selected: 1, warned: 1, hasMore: false });
   expect(h.f.store.getBatch(inserted.sourceId)?.leaseUntil).toBe(h.deadline);
@@ -427,7 +430,7 @@ it('stopping during held preparation prevents marker and status mutation after t
 });
 
 it('a warning inspection failure preserves progress through the independent accepted recovery lane', async () => {
-  const h = await setup(false);
+  const h = await setup({ defer: false });
   const pump = h.pump();
   vi.spyOn(pump, 'inspectAcceptedWaitWarnings').mockRejectedValueOnce(
     new Error('warning storage unavailable')
