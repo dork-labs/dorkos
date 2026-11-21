@@ -339,7 +339,9 @@ export const auditDomain: CapabilityDomain = {
           { withoutTitles }
         );
         // A title from a chat that holds outside words may quote them (DOR-3969).
-        if (runningChatsHandOutsideWords(running, withoutTitles)) markCallerTurnOutsider(context);
+        if (runningChatsHandOutsideWords(running, withoutTitles)) {
+          markCallerTurnOutsider(context, { kind: 'chat' });
+        }
         return running;
       },
     }),

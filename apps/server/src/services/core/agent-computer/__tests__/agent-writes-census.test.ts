@@ -51,6 +51,19 @@ const OWN_AUTHORIZER: ReadonlyMap<string, string> = new Map([
   ['POST /a2a/agents/:id', 'A2A, decided as /mcp is'],
 ]);
 
+/**
+ * Writes that change what agents may do in a person's connected app. These are
+ * refused to agents, and they must stay that way: an agent must never widen its
+ * own access.
+ */
+const PERSON_ONLY_GRANTS: readonly string[] = [
+  'DELETE /api/connectors/connections/:connectionId/exclusions/:agentId',
+  'PUT /api/connectors/connections/:connectionId/exclusions/:agentId',
+  'POST /api/connectors/access-changes/:changeId/undo',
+  // Letting agents that only read an app write back to it without asking (DOR-4794).
+  'PUT /api/connectors/connections/:connectionId/writes-back',
+];
+
 /** Every write an agent computer refuses to agents, by why. */
 const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[] = [
   [
@@ -611,6 +624,10 @@ const REFUSED: readonly (readonly [reason: string, routes: readonly string[]])[]
     'person-only Undo of an agent’s access change (spec agent-grant-autonomy); it can re-widen access',
     ['POST /api/connectors/access-changes/:changeId/undo'],
   ],
+  [
+    'person-only: writing back without asking widens every reading agent’s power (DOR-4794)',
+    ['PUT /api/connectors/connections/:connectionId/writes-back'],
+  ],
 ];
 
 /** The write methods an `ALL` route answers. */
@@ -648,6 +665,14 @@ describe('the write census', () => {
   it('names only routes the server serves', () => {
     const classified = [...AGENT_COMPUTER_WRITES.keys(), ...OWN_AUTHORIZER.keys(), ...refused];
     expect(classified.filter((route) => !WRITE_ROUTES.includes(route))).toEqual([]);
+  });
+
+  it('keeps every person-only grant route refused, never open to agents', () => {
+    const open = [...AGENT_COMPUTER_WRITES.keys(), ...OWN_AUTHORIZER.keys()];
+    for (const route of PERSON_ONLY_GRANTS) {
+      expect(open, route).not.toContain(route);
+      expect(refused, route).toContain(route);
+    }
   });
 
   it('gives every open write a reason', () => {

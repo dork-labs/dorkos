@@ -263,7 +263,7 @@ export function dorkosToolReadOf(name: string): DorkosToolRead {
 export function markAfterDorkosTool(name: string, caller: CallerTurn, returned?: unknown): void {
   const read = dorkosToolReadOf(name);
   if (read === 'outside' || (typeof read === 'function' && holdsOutside(read, returned))) {
-    markCallerTurnOutsider(caller);
+    markCallerTurnOutsider(caller, { kind: 'dorkos-tool' });
   }
 }
 
