@@ -42,6 +42,7 @@ import {
   type StepUpPasswordUnavailable,
   type StepUpRefusalCode,
 } from '@dorkos/shared/step-up';
+import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 
 import type { ApiEnv } from '../http/api-chain.js';
 import { readJsonBody } from '../http/request-body.js';
@@ -175,6 +176,31 @@ const REFUSALS: Record<StepUpRefusalCode, { status: 400 | 403 | 404 | 409 | 429;
   };
 
 /**
+ * Why confirming is off, naming the mini app and the way out (DOR-4906).
+ * The names are the app author's, so each is cleaned to one short line and
+ * set off in quotes: it can never read as a sentence DorkOS wrote.
+ *
+ * @param risks - The loaded mini apps that keep step-up off; at least one.
+ */
+export function extensionRiskError(risks: readonly StepUpExtensionRisk[]): string {
+  const [risk] = risks;
+  if (!risk) return REFUSALS['extension-risk'].error;
+  const name = quoted(risk.name) ?? quoted(risk.id) ?? 'A mini app';
+  if (risks.length > 1) {
+    return `${name} and ${risks.length - 1} more need review. Open Settings → Extensions.`;
+  }
+  return risk.reason === 'agent-folder'
+    ? `${quoted(risk.agentName ?? '') ?? 'An agent'} can edit ${name}. Move or remove it in Settings → Extensions.`
+    : `${name} changed. Review it in Settings → Extensions, or remove it.`;
+}
+
+/** An author's name cleaned to one line of at most 40 characters, in quotes; none when empty. */
+function quoted(raw: string): string | undefined {
+  const clean = sanitizeIdentity(raw, 40);
+  return clean === undefined ? undefined : `“${clean}”`;
+}
+
+/**
  * Build the routes mounted at `/api/step-up`.
  *
  * @param deps - Seams for tests; the live owner and password check by default.
@@ -301,7 +327,12 @@ export function createStepUpRoutes(deps: StepUpRouteDeps = liveDeps): Hono<ApiEn
   function refuseUnavailable(c: Context<ApiEnv>, unavailable: StepUpPasswordUnavailable): Response {
     if (unavailable !== 'extension-risk') return refuse(c, unavailable);
     const risks = blockedBy();
-    if (risks.length > 0) return refuse(c, unavailable, { blockedBy: risks });
+    if (risks.length > 0) {
+      return c.json(
+        { ...errorBody(extensionRiskError(risks), 'extension-risk'), blockedBy: risks },
+        REFUSALS['extension-risk'].status
+      );
+    }
     return c.json(
       { ...errorBody(CLEARED_RISK_ERROR, 'extension-risk'), blockedBy: [] },
       REFUSALS['extension-risk'].status
