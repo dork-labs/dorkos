@@ -415,7 +415,7 @@ await request.post(`${API_URL}/api/test/scenario`, {
 });
 ```
 
-To start a room hand-off, set `rooms-post-to` on one direct chat with an agent (`{ name: 'rooms-post-to', sessionId }`) and send that chat `<roomId> <text>`. It posts as the agent from that chat, so the room hands the words to the agent's seat there, and it answers `HANDED-OFF: <handoff id>`. Details are in the `/chat:rooms-test` command (DOR-5032).
+To start a room hand-off, set `rooms-post-to` on one direct chat with an agent (`{ name: 'rooms-post-to', sessionId }`) and send that chat `<roomId> <text>`. It posts as the agent from that chat, so the room hands the words to the agent's seat there, and it answers `HANDED-OFF: <handoff id>`. Start the chat with the agent's folder as `cwd`; no `agentPath` is needed (DOR-5035). Details are in the `/chat:rooms-test` command (DOR-5032).
 
 The `seed-agent` endpoint creates a temporary `.dork/agent.json` under the mock DORK_HOME, registers that agent with the mesh, and returns `{ agentDir, agentId }`. Without it, the chat input's send button stays disabled because no agent is registered for the working directory.
 
