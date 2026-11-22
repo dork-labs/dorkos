@@ -18,6 +18,7 @@ import { resolveApiBaseUrl } from '@/layers/shared/lib';
 import { extensionQueryKeys } from './use-pending-extension-approvals';
 import { useTrustOfferStore } from './trust-offer-store';
 import { useSeenBeforeStaleStore } from './seen-before-stale-store';
+import { useAllowNotConfirmedStore } from './allow-not-confirmed-store';
 
 /**
  * Which copy the person answered — the one their row showed — and the name to
@@ -113,7 +114,9 @@ export interface ExtensionApprovalActions {
    * `onDone` runs only once the server said yes to this very call, and
    * `onFail` once it did not (the toast is already shown). A refusal for
    * "Confirm it's you" waits for a fresh list first: when that no longer
-   * lists the copy, the yes went through elsewhere and `onDone` runs.
+   * lists the copy, the yes went through elsewhere and `onDone` runs;
+   * otherwise the sheet closed unconfirmed, and `useAllowNotConfirmed` says
+   * so for that extension until it is answered again (DOR-4909).
    */
   approve: (input: ApproveExtensionInput, onDone?: () => void, onFail?: () => void) => void;
   /**
@@ -154,6 +157,9 @@ export function useExtensionApprovalActions(): ExtensionApprovalActions {
       });
       if (!res.ok) throw await failureOf(res);
       useSeenBeforeStaleStore.getState().forget(id);
+      // A yes that landed ends any "Nothing was allowed" line, even one an
+      // earlier, slower call left after this one began (DOR-4909).
+      useAllowNotConfirmedStore.getState().forget(id);
       // The one-time "Next time, trust everything from <source>?" (spec
       // `flow-multiproject` §9.3): only this window heard it, so only this
       // window shows it, under the history row the answer leaves.
@@ -230,17 +236,32 @@ export function useExtensionApprovalActions(): ExtensionApprovalActions {
     return listed !== undefined && !listed.some((approval) => approval.id === id);
   };
 
+  const notConfirmed = useAllowNotConfirmedStore.getState;
+
   return {
     // Per call, so a second answer given before the first settles never
     // swallows the first one's `onDone`. A refusal is already reported by
     // `onError` above, so the rejected promise only tells `onFail`.
-    approve: (input, onDone, onFail) =>
+    approve: (input, onDone, onFail) => {
+      // A new answer replaces whatever the last one left on the card.
+      notConfirmed().forget(input.id);
       void approve.mutateAsync(input).then(onDone, async (err: unknown) => {
-        if (await settledElsewhere(err, input.id)) onDone?.();
-        else onFail?.();
-      }),
-    dismiss: (input, onDone, onFail) =>
-      void dismiss.mutateAsync(input).then(onDone, () => onFail?.()),
+        if (await settledElsewhere(err, input.id)) {
+          onDone?.();
+          return;
+        }
+        // "Confirm it's you" closed without confirming: nothing was allowed,
+        // and the card says so rather than staying as it was (DOR-4909).
+        if (err instanceof AnswerRefused && err.code === STEP_UP_REQUIRED_CODE) {
+          notConfirmed().remember(input.id, input.version);
+        }
+        onFail?.();
+      });
+    },
+    dismiss: (input, onDone, onFail) => {
+      notConfirmed().forget(input.id);
+      void dismiss.mutateAsync(input).then(onDone, () => onFail?.());
+    },
     pending,
   };
 }

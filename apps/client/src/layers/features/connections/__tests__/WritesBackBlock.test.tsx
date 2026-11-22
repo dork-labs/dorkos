@@ -128,7 +128,8 @@ describe('the writes-back switch', () => {
     });
   });
 
-  it('stays off, with no error, when "Confirm it’s you" is not confirmed', async () => {
+  // DOR-4909: and says nothing changed, calmly, so it never looks saved.
+  it('stays off, with no error but a calm line, when "Confirm it’s you" is not confirmed', async () => {
     const { transport } = renderBlock({
       setConnectorWritesBack: vi
         .fn()
@@ -147,5 +148,6 @@ describe('the writes-back switch', () => {
       expect(screen.getByRole('switch', { name: WRITES_BACK_LABEL })).not.toBeChecked()
     );
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(await screen.findByRole('status')).toHaveTextContent('Not confirmed. Nothing changed.');
   });
 });

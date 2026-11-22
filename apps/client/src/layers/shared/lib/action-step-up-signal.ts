@@ -14,6 +14,8 @@
  * @module shared/lib/action-step-up-signal
  */
 
+import { STEP_UP_REQUIRED_CODE } from '@dorkos/shared/step-up';
+
 type Listener = () => void;
 
 /** How a sheet ended. */
@@ -29,6 +31,30 @@ export type ActionStepUpOutcome =
    * again, which holds it afresh in the new session (M1 on #3401).
    */
   | { kind: 'sign-in-again' };
+
+/**
+ * What a change says once "Confirm it's you" closed without confirming
+ * (DOR-4909). The window's fetch puts it in place of the server's "Confirm
+ * it's you to do this.", which read as an instruction after the sheet was
+ * gone, so every caller that shows the refusal's words says what is true.
+ */
+export const STEP_UP_NOT_CONFIRMED_MESSAGE = 'Not confirmed. Nothing changed.';
+
+/**
+ * The same, on a card whose answer is a yes (an approval, an Allow): what did
+ * not happen is the allowing.
+ */
+export const STEP_UP_NOT_ALLOWED_MESSAGE = 'Not confirmed. Nothing was allowed.';
+
+/**
+ * Whether a change came back because "Confirm it's you" closed without
+ * confirming: nothing changed.
+ *
+ * @param error - What the change rejected with.
+ */
+export function isStepUpNotConfirmed(error: unknown): boolean {
+  return (error as { code?: unknown } | null)?.code === STEP_UP_REQUIRED_CODE;
+}
 
 interface Ask {
   heldActionId: string;

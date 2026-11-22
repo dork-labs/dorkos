@@ -36,5 +36,8 @@ export function useResetAgentPermission() {
       void queryClient.invalidateQueries({ queryKey: permissionKeys.all });
       void queryClient.invalidateQueries({ queryKey: ['mesh', 'agents'] });
     },
+    // Named, so the shared toast reports a failure in these words, and a
+    // cancelled "Confirm it's you" as nothing changed rather than silence (DOR-4909).
+    meta: { errorLabel: 'Couldn’t reset that permission' },
   });
 }

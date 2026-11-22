@@ -16,6 +16,7 @@ import { useOnWifi, useConfig } from '@/layers/entities/config';
 import { DENY_REASON_MAX_LENGTH } from '@dorkos/shared/schemas';
 import type { AlwaysAllowBreadth, AlwaysAllowScope } from '@dorkos/shared/types';
 import {
+  STEP_UP_NOT_ALLOWED_MESSAGE,
   ToolArgumentsDisplay,
   awayFromTheComputerSentence,
   cn,
@@ -341,7 +342,12 @@ export function ApprovalPrompt({
       onDecided?.();
     } catch (err) {
       const code = (err as { code?: string }).code;
-      if (code === STEP_UP_REQUIRED_CODE) return;
+      // "Confirm it's you" closed unconfirmed: say so, or the card reads as if
+      // the yes is still on its way (DOR-4909).
+      if (code === STEP_UP_REQUIRED_CODE) {
+        setError(STEP_UP_NOT_ALLOWED_MESSAGE);
+        return;
+      }
       if (code === 'INTERACTION_ALREADY_RESOLVED') {
         setDecided('approved');
         onDecided?.();
@@ -369,7 +375,10 @@ export function ApprovalPrompt({
         onDecided?.();
       } catch (err) {
         const code = (err as { code?: string }).code;
-        if (code === STEP_UP_REQUIRED_CODE) return;
+        if (code === STEP_UP_REQUIRED_CODE) {
+          setError(STEP_UP_NOT_ALLOWED_MESSAGE);
+          return;
+        }
         if (code === 'INTERACTION_ALREADY_RESOLVED') {
           setDecided('approved');
           onDecided?.();
@@ -561,7 +570,15 @@ export function ApprovalPrompt({
           context={answerContext}
           confirms={approvalHasSuggestions ? 'Always allow asks you to confirm it’s you.' : null}
         />
-        {error && <p className="text-status-error text-2xs mb-2">{error}</p>}
+        {/* A cancelled "Confirm it's you" is a choice, said calmly (DOR-4909). */}
+        {error &&
+          (error === STEP_UP_NOT_ALLOWED_MESSAGE ? (
+            <p role="status" className="text-status-warning-fg text-2xs mb-2 font-medium">
+              {error}
+            </p>
+          ) : (
+            <p className="text-status-error text-2xs mb-2">{error}</p>
+          ))}
         {choosing && mcp && (
           <AlwaysAllowChoice
             toolLabel={mcp.toolLabel}

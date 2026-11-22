@@ -3,7 +3,13 @@ import { ChevronRight, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import type { ExtensionRecordPublic } from '@dorkos/extension-api';
 import { Button, Chip, Input, Skeleton } from '@/layers/shared/ui';
-import { cn, openLink } from '@/layers/shared/lib';
+import {
+  STEP_UP_NOT_ALLOWED_MESSAGE,
+  STEP_UP_NOT_CONFIRMED_MESSAGE,
+  cn,
+  isStepUpNotConfirmed,
+  openLink,
+} from '@/layers/shared/lib';
 import { useDeepLinkScroll, useSettingsDeepLink } from '@/layers/shared/model';
 import {
   useExtensions,
@@ -16,6 +22,7 @@ import {
 import {
   approvedSetOf,
   permissionViewFromRecord,
+  useAllowNotConfirmedStore,
   useSeenBeforeStaleStore,
   useStepUpRisks,
   usePendingExtensionApprovals,
@@ -122,7 +129,11 @@ export function ExtensionsSettingsTab() {
       },
       {
         onSuccess: (result) => {
-          if (approve) useSeenBeforeStaleStore.getState().forget(id);
+          if (approve) {
+            useSeenBeforeStaleStore.getState().forget(id);
+            // The Inbox card's "Nothing was allowed" line ends with a yes from here too (DOR-4909).
+            useAllowNotConfirmedStore.getState().forget(id);
+          }
           const name = result.extension.manifest.name;
           // "inside DorkOS" only for one that does run inside (DOR-2686).
           const where = result.extension.isolation ? '' : ' inside DorkOS';
@@ -135,6 +146,11 @@ export function ExtensionsSettingsTab() {
           );
         },
         onError: (err) => {
+          // "Confirm it's you" closed unconfirmed: one calm line, not a failure (DOR-4909).
+          if (isStepUpNotConfirmed(err)) {
+            toast(approve ? STEP_UP_NOT_ALLOWED_MESSAGE : STEP_UP_NOT_CONFIRMED_MESSAGE);
+            return;
+          }
           if (err instanceof RunApprovalError && err.stale) {
             // The redrawn panel leads with what this one did not list.
             if (permissions) useSeenBeforeStaleStore.getState().remember(id, permissions);
@@ -163,6 +179,10 @@ export function ExtensionsSettingsTab() {
       // `description`, never concatenated into the headline, because the
       // server's own sentence says what DorkOS did not do and who can (DOR-1507).
       onError: (err) => {
+        if (isStepUpNotConfirmed(err)) {
+          toast(STEP_UP_NOT_CONFIRMED_MESSAGE);
+          return;
+        }
         toast.error(enabled ? 'Couldn’t turn that on.' : 'Couldn’t turn that off.', {
           description: err.message,
         });

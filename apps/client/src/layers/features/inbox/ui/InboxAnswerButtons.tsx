@@ -30,6 +30,11 @@ export interface InboxAnswerButtonsProps {
   rejectRef?: Ref<HTMLButtonElement>;
   /** Whether the no has opened a note field. */
   rejectExpanded?: boolean;
+  /**
+   * A line read with the answer, drawn right above the buttons and pinned with
+   * them on a phone: "Not confirmed, so nothing was allowed." (DOR-4909).
+   */
+  notice?: string;
 }
 
 /**
@@ -48,6 +53,7 @@ export function InboxAnswerButtons({
   canApprove = true,
   rejectRef,
   rejectExpanded,
+  notice,
 }: InboxAnswerButtonsProps) {
   return (
     // On a phone the Inbox is a bottom sheet, and a long card would push its
@@ -58,6 +64,15 @@ export function InboxAnswerButtons({
       className="mt-2 flex flex-wrap items-center gap-2 max-md:sticky max-md:bottom-0 max-md:bg-[var(--dui-scroll-cover,var(--color-popover))] max-md:py-2 max-sm:flex-col max-sm:items-stretch"
       data-slot="inbox-answer-buttons"
     >
+      {/* Next to the decision and the focus, never a screen above it (designer, DOR-4909). */}
+      {notice && (
+        <p
+          role="status"
+          className="text-status-warning-fg w-full basis-full text-xs leading-snug font-medium"
+        >
+          {notice}
+        </p>
+      )}
       {canApprove && (
         <Button
           type="button"

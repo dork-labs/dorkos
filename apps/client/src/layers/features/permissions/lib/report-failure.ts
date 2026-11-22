@@ -4,7 +4,11 @@
  * @module features/permissions/lib/report-failure
  */
 import { toast } from 'sonner';
-import { awayFromTheComputerSentence } from '@/layers/shared/lib';
+import {
+  STEP_UP_NOT_CONFIRMED_MESSAGE,
+  awayFromTheComputerSentence,
+  isStepUpNotConfirmed,
+} from '@/layers/shared/lib';
 
 /**
  * Tell the person a write did not land, in the server's words. The switch is
@@ -18,6 +22,11 @@ import { awayFromTheComputerSentence } from '@/layers/shared/lib';
  */
 export function reportPermissionFailure(err: unknown): void {
   if (awayFromTheComputerSentence(err)) return;
+  // "Confirm it's you" closed unconfirmed is a choice, said calmly (DOR-4909).
+  if (isStepUpNotConfirmed(err)) {
+    toast(STEP_UP_NOT_CONFIRMED_MESSAGE);
+    return;
+  }
   toast.error(
     err instanceof Error && err.message ? err.message : 'Couldn’t save that change. Try again.'
   );

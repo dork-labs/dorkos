@@ -58,7 +58,10 @@ export {
 export { readPersonProof, writePersonProof } from './person-proof-store';
 export { installPersonAwareFetch, personAwareFetch } from './person-aware-fetch';
 export {
+  STEP_UP_NOT_ALLOWED_MESSAGE,
+  STEP_UP_NOT_CONFIRMED_MESSAGE,
   finishActionStepUp,
+  isStepUpNotConfirmed,
   getActionStepUpAfterExpiry,
   getActionStepUpAfterDifferent,
   getActionStepUpShowing,

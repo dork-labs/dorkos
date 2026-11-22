@@ -9,11 +9,13 @@ import { Puzzle } from 'lucide-react';
 import type { NotificationDTO } from '@dorkos/shared/notification-schemas';
 import { formatResetTime } from '@/layers/shared/lib';
 import {
+  TURN_ON_NOT_CONFIRMED_COPY,
   ExtensionPermissionLines,
   approvedSetOf,
   canTurnOnInPlace,
   permissionViewFromRecord,
   parseExtensionApprovalSubject,
+  useAllowNotConfirmed,
   useExtensionApprovalActions,
   useExtensionList,
   useTrustOfferFor,
@@ -51,6 +53,9 @@ export function ExtensionApprovalHistoryRow({
   const { data: extensions } = useExtensionList();
   const { approve, pending } = useExtensionApprovalActions();
   const subject = parseExtensionApprovalSubject(notification.subject.id);
+  // "Turn it on" here ended on "Confirm it's you" closed unconfirmed (DOR-4909).
+  const notConfirmed = useAllowNotConfirmed(subject?.id, subject?.version);
+  let notice: string | undefined;
   const time = formatResetTime(notification.createdAt, new Date());
   const trail: ReactNode[] = time ? [time] : [];
   // The one-time "Next time, trust everything from …?" rides only the row
@@ -65,6 +70,8 @@ export function ExtensionApprovalHistoryRow({
   if (notification.outcome === 'dismissed') {
     const record = extensions?.find((extension) => extension.id === subject?.id);
     const inPlace = subject !== null && canTurnOnInPlace(subject, extensions);
+    // Only on the row whose own "Turn it on" works here, for this version.
+    if (inPlace && notConfirmed) notice = TURN_ON_NOT_CONFIRMED_COPY;
     const view = inPlace && record ? permissionViewFromRecord(record) : null;
     if (view) {
       details = (
@@ -109,6 +116,7 @@ export function ExtensionApprovalHistoryRow({
       title={notification.title}
       trail={trail}
       {...(details ? { details } : {})}
+      {...(notice ? { notice } : {})}
       onOpen={onOpen}
     />
   );

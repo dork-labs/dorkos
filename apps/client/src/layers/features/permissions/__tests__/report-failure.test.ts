@@ -17,6 +17,15 @@ describe('reportPermissionFailure', () => {
     expect(toast.error).not.toHaveBeenCalled();
   });
 
+  // DOR-4909: a cancelled "Confirm it’s you" is a choice, said calmly, never red.
+  it('says calmly that nothing changed after a cancelled Confirm it’s you', () => {
+    reportPermissionFailure(
+      Object.assign(new Error('Not confirmed. Nothing changed.'), { code: 'step_up_required' })
+    );
+    expect(toast).toHaveBeenCalledExactlyOnceWith('Not confirmed. Nothing changed.');
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
   it('says any other failure in the server’s words', () => {
     reportPermissionFailure(new Error('Only a person can change permissions.'));
     expect(toast.error).toHaveBeenCalledWith('Only a person can change permissions.');
