@@ -57,7 +57,7 @@ Additional evidence: [tenant resolution](../apps/server/src/services/spaces/tena
 
 ## Core Patterns
 
-These are architecture patterns, so the examples are diagrams and wire contracts rather than application snippets. Every diagram uses one key: a blue box is built, a dashed grey box is planned or contract-only, an amber box is optional DorkOS Cloud, a white box is something outside DorkOS, and a green hexagon is a port. In current-state flowcharts, solid arrows show implemented paths; dashed arrows explicitly label unfinished wiring or a schema relationship. The roles view below mixes built and planned pieces and marks each. The sequence diagram uses dashed arrows for responses and events, following sequence-diagram conventions. An optional path is still drawn solid when the app-side implementation exists. Arrows show the main operation or data direction, not every response packet. Boxes carry a name and one short line; the code names, routes, switches and ticket numbers behind each box are in the prose and the [Key Files](#key-files) table. Open an image to read it at full size.
+These are architecture patterns, so the examples are diagrams and wire contracts rather than application snippets. Every diagram uses one key: a blue box is built, a dashed grey box is planned, a dashed line is unfinished wiring or contract-only, an amber box is optional DorkOS Cloud, a white box is something outside DorkOS, and a green hexagon is a port. In current-state flowcharts, solid arrows show implemented paths; dashed arrows explicitly label unfinished wiring or a schema relationship. The roles view below mixes built and planned pieces and marks each. The sequence diagram uses dashed arrows for responses and events, following sequence-diagram conventions. An optional path is still drawn solid when the app-side implementation exists. Arrows show the main operation or data direction, not every response packet. Boxes carry a name and one short line; the code names, routes, switches and ticket numbers behind each box are in the prose and the [Key Files](#key-files) table. Open an image to read it at full size.
 
 ### One program, three roles
 
@@ -258,7 +258,7 @@ The account surface reads opaque offers and validated hosted billing URLs. Payme
 
 #### Ways in from another device
 
-[![Four routes from another device to your DorkOS: the Wi-Fi listener, your own tunnel, managed remote ingress, and the session relay through a hub](../apps/site/public/diagrams/architecture/remote-access.svg)](../apps/site/public/diagrams/architecture/remote-access.svg)
+[![Four routes from another device to your DorkOS: the Wi-Fi listener, your own tunnel, managed remote ingress, and the chat relay through a hub](../apps/site/public/diagrams/architecture/remote-access.svg)](../apps/site/public/diagrams/architecture/remote-access.svg)
 
 [Editable diagram](diagrams/architecture/remote-access.mmd)
 
