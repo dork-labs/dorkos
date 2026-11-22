@@ -21,9 +21,9 @@ export interface ReleaseBranchFile {
   path: string;
   /** Git's one-letter status: added, modified, deleted, renamed, copied, type change. */
   status: 'A' | 'M' | 'D' | 'R' | 'C' | 'T';
-  /** The file before the commit; read only for VERSION and package.json files. */
+  /** The file before the commit; read only for VERSION, package.json files and the API document. */
   before?: string;
-  /** The file after the commit; read only for VERSION and package.json files. */
+  /** The file after the commit; read only for VERSION, package.json files and the API document. */
   after?: string;
 }
 
@@ -347,12 +347,17 @@ const PACKAGE_FILES = new Set([
   'apps/desktop/package.json',
 ]);
 const NOTES_FILES = new Set(['CHANGELOG.md', 'docs/changelog.mdx', 'docs/changelog-archive.mdx']);
+const API_DOCUMENT = 'docs/api/openapi.json';
 
 function isReleaseFileChange(file: ReleaseBranchFile, version: string): boolean {
   const { path, status } = file;
   if (NOTES_FILES.has(path)) return status === 'M';
   if (path === 'VERSION') return status === 'M' && file.after?.trim() === version;
   if (PACKAGE_FILES.has(path)) return status === 'M' && onlyVersionChanged(file, version);
+  // The API document carries VERSION as `info.version`, and the release
+  // procedure regenerates it right after the bump (`openapi-fresh` would go red
+  // otherwise). That one field, and nothing else, may move here.
+  if (path === API_DOCUMENT) return status === 'M' && onlyApiVersionChanged(file, version);
   if (/^changelog\/unreleased\/[^/]+\.md$/.test(path)) return status === 'D';
   // Every release renames the rolling archive (…-to-v<previous>.md) by delete and add.
   if (/^changelog\/archive\/CHANGELOG-v0\.1\.0-to-v\d+\.\d+\.\d+\.md$/.test(path))
@@ -371,6 +376,22 @@ function onlyVersionChanged(file: ReleaseBranchFile, version: string): boolean {
     if (!isRecord(before) || !isRecord(after) || after.version !== version) return false;
     const strip = (value: Record<string, unknown>) =>
       JSON.stringify({ ...value, version: undefined });
+    return strip(before) === strip(after);
+  } catch {
+    return false;
+  }
+}
+
+/** Whether the API document changed only its `info.version`, to this release's version. */
+function onlyApiVersionChanged(file: ReleaseBranchFile, version: string): boolean {
+  try {
+    const before: unknown = JSON.parse(file.before ?? '');
+    const after: unknown = JSON.parse(file.after ?? '');
+    if (!isRecord(before) || !isRecord(after)) return false;
+    if (!isRecord(before.info) || !isRecord(after.info) || after.info.version !== version)
+      return false;
+    const strip = (value: Record<string, unknown>) =>
+      JSON.stringify({ ...value, info: { ...(value.info as object), version: undefined } });
     return strip(before) === strip(after);
   } catch {
     return false;

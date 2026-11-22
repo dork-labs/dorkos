@@ -5,6 +5,7 @@
  * @module services/core/usage/account-eligibility-openapi
  */
 import type { OpenAPIRegistry } from '@asteasolutions/zod-to-openapi';
+import { z } from 'zod';
 import {
   AccountEligibilityQuerySchema,
   AccountEligibilityResponseSchema,
@@ -19,6 +20,11 @@ import { ErrorResponseSchema } from '@dorkos/shared/schemas';
 const error = (description: string) => ({
   description,
   content: { 'application/json': { schema: ErrorResponseSchema } },
+});
+
+/** The `{id}` an account route names: the account's id, `default` for Main. */
+const ACCOUNT_PARAMS = z.object({
+  id: z.string().describe('The Claude account’s id; `default` is Main'),
 });
 
 const PERSON_BAR =
@@ -115,6 +121,7 @@ export function registerAccountEligibilityOpenApi(registry: OpenAPIRegistry): vo
       'Sets the projects one account may work in (`default` is Main), or frees it with ' +
       `\`projects: null\`. An account kept to projects never works in a folder that is in no project. ${PERSON_BAR}`,
     request: {
+      params: ACCOUNT_PARAMS,
       body: { content: { 'application/json': { schema: OnlyProjectsRequestSchema } } },
     },
     responses: {
@@ -140,6 +147,7 @@ export function registerAccountEligibilityOpenApi(registry: OpenAPIRegistry): vo
       'picked again. Recorded in the permission history with an Undo, rather than as a config ' +
       `change. Main (\`default\`) has no registry row, so it answers \`404\`. ${PERSON_BAR}`,
     request: {
+      params: ACCOUNT_PARAMS,
       body: { content: { 'application/json': { schema: NoAutoMoveSchema } } },
     },
     responses: {

@@ -341,6 +341,15 @@ If the tag exists, **STOP** and report (delete with `git tag -d vX.Y.Z && git pu
 printf "X.Y.Z" > VERSION
 ```
 
+Then regenerate the API docs, because `docs/api/openapi.json` carries `VERSION` as its `info.version` and the queue's `openapi-fresh` check regenerates it on every entry:
+
+```bash
+pnpm docs:export-api
+pnpm --filter @dorkos/site generate:api-docs
+```
+
+Stage `docs/api/` with the rest of this phase (it is in the 6.8 `git add` list).
+
 ### 6.3: Sync version to package.json files
 
 ```bash
@@ -514,7 +523,7 @@ cd .claude/worktrees/release-vX.Y.Z && pnpm install   # or the pre-push hook die
 # also stage apps/server/src/services/core/config-migrations/ and
 # apps/server/src/services/core/__tests__/merged-migration-hashes.ts (and
 # packages/shared/src/config-schema.ts if it was part of the drift).
-git add VERSION CHANGELOG.md docs/changelog.mdx docs/changelog-archive.mdx changelog/ packages/cli/package.json packages/cloud-api/package.json packages/connector-providers/package.json package.json apps/desktop/package.json blog/ apps/site/public/product/archive/vX.Y.Z/
+git add VERSION CHANGELOG.md docs/changelog.mdx docs/changelog-archive.mdx docs/api/ changelog/ packages/cli/package.json packages/cloud-api/package.json packages/connector-providers/package.json package.json apps/desktop/package.json blog/ apps/site/public/product/archive/vX.Y.Z/
 
 git commit -m "$(cat <<'EOF'
 chore(release): vX.Y.Z

@@ -36,7 +36,8 @@ export interface ReleaseBranchRequest {
   expectedSha: string;
 }
 
-const SNAPSHOT_FILES = /^(VERSION|(?:[^/]+\/)*package\.json)$/;
+// The files the release rules read the contents of (`rules.ts`, `isReleaseFileChange`).
+const SNAPSHOT_FILES = /^(VERSION|docs\/api\/openapi\.json|(?:[^/]+\/)*package\.json)$/;
 
 function run(cwd: string, command: string, args: string[], input?: string): string {
   return execFileSync(command, args, {
