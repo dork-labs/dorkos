@@ -415,6 +415,8 @@ await request.post(`${API_URL}/api/test/scenario`, {
 });
 ```
 
+To start a room hand-off, set `rooms-post-to` on one direct chat with an agent (`{ name: 'rooms-post-to', sessionId }`) and send that chat `<roomId> <text>`. It posts as the agent from that chat, so the room hands the words to the agent's seat there, and it answers `HANDED-OFF: <handoff id>`. Details are in the `/chat:rooms-test` command (DOR-5032).
+
 The `seed-agent` endpoint creates a temporary `.dork/agent.json` under the mock DORK_HOME, registers that agent with the mesh, and returns `{ agentDir, agentId }`. Without it, the chat input's send button stays disabled because no agent is registered for the working directory.
 
 Both halves matter, and the second one used to be missing (DOR-1142). `GET /api/sessions/recent` and `/daily-counts` fan out over `meshCore.listWithPaths()`, so a directory the mesh has never heard of contributes no sessions however many it holds — which left every sidebar zone built from recent sessions (Today, Heads-up) structurally empty on the test-mode leg. **Do not hand-roll registration around it.** Three suites once carried their own `POST /api/mesh/agents` dance in `beforeEach`; all three are deleted. That route is also the wrong tool here — it seats the agent in `#team`, which is a cross-project side effect on a server another project also drives. (It no longer mints a second id over the manifest's own: since DOR-1019 it adopts a manifest already on disk rather than rewriting it.)
