@@ -655,6 +655,9 @@ describe('waiting-for-a-busy-computer', () => {
     expect(flat).toContain('exits **75** (EX_TEMPFAIL)');
     expect(flat).toContain('Never report it as a failing test or a red build.');
     expect(flat).toMatch(/That switch is the person's\. Use it only when they tell you to\./);
+    // Security (#4106): name no off switch. The refusal prints one when it
+    // applies; seeding it into every agent's pack teaches it to all of them.
+    expect(flat).not.toMatch(/DORKOS_HEAVY_LOCK|DORKOS_IGNORE_LOAD/);
   });
 
   it('names the background gap and forbids every workaround', () => {

@@ -105,8 +105,7 @@ That is not a failure of the command or of the code:
 
 - Never report it as a failing test or a red build. Say it did not run.
 - Wait, then run it once more later. Do not retry in a tight loop.
-- The message may offer a switch that runs it anyway (in the DorkOS repo,
-  \`DORKOS_HEAVY_LOCK=0\` or \`DORKOS_IGNORE_LOAD=1\`). That switch is the
+- The message may offer a switch that runs it anyway. That switch is the
   person's. Use it only when they tell you to.
 
 ## Never work around the line
