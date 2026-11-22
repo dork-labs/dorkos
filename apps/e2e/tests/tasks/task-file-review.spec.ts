@@ -55,12 +55,12 @@ test.describe('Tasks — reviewing a task’s file with no cap standing', () => 
     await expect(
       tasksPage.dialog.getByText('The next run is capped until you approve the file.')
     ).toBeVisible();
-    await tasksPage.dialog.getByRole('button', { name: 'Review file' }).click();
+    await tasksPage.dialog.getByRole('button', { name: 'Review file', exact: true }).click();
     const reviewing = page.getByRole('dialog', { name: 'Review the file' });
     await expect(reviewing.getByText('Reply to anything urgent.')).toBeVisible();
     expect(sent).toBeNull();
 
-    await reviewing.getByRole('button', { name: 'Approve' }).click();
+    await reviewing.getByRole('button', { name: 'Approve', exact: true }).click();
     await expect.poll(() => sent).toEqual({ hash: review.hash });
     // A file that moved on since the review approves nothing, and says why.
     await expect(reviewing.getByText('The file changed again. Review it once more.')).toBeVisible();
