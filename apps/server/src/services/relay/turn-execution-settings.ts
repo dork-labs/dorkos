@@ -49,6 +49,7 @@ import type { ExecutionSettingsResolver, TurnExecutionSettings } from '@dorkos/r
 import { LEDGER_RUNTIMES, type LedgerRuntime } from '@dorkos/shared/account-usage';
 import { logger } from '../../lib/logger.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
+import { sessionAgentById } from '../core/agent-identity/session-agent.js';
 import { checkAccountLaunch } from '../core/usage/account-ranking.js';
 import { getAccountUsageStore } from '../core/usage/current-usage-store.js';
 import { resolveAccountRef } from '../core/usage/runtime-accounts.js';
@@ -79,7 +80,11 @@ import { resolveUnattendedSessionDefaults } from '../session/index.js';
  *   the turn on the runtime's own default, never a reason to drop a message.
  */
 export function createTurnExecutionSettingsResolver(): ExecutionSettingsResolver {
-  return async ({ sessionId, runtimeType, agentDirectory, requestedAccount }) => {
+  return async ({ sessionId, runtimeType, agentDirectory: named, requestedAccount }) => {
+    // The agent the relay resolved from the subject, else the chat's own agent
+    // as the server holds it; never a folder the payload named (DOR-5057). A
+    // failed read means no agent: the server's configured defaults alone.
+    const agentDirectory = named ?? (await sessionAgentById(sessionId).catch(() => undefined));
     const stored = await readStoredSettings(sessionId);
     // `has` first, because `get` THROWS on an unregistered type and this
     // resolver promises never to. It could not happen while the runtime was

@@ -16,6 +16,12 @@
  * Claiming and running the hand-off still refuse one, so a chat dropped before
  * its seat runs has the hand-off declined, and hears that it ended unposted.
  *
+ * One limit, on purpose (DOR-5057): a relay-created chat with no recorded agent
+ * and no stored folder runs where its first turn's desk-checked folder put it,
+ * so its live folder, and the agent it resolves to, reflect that first turn's
+ * sender. Only a registered agent home resolves, and the desk check approved
+ * that folder; without this rung the guard would trust each turn's payload.
+ *
  * @module server/services/core/agent-identity/session-agent
  */
 import {
