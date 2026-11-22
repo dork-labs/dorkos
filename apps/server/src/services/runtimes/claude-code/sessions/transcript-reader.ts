@@ -17,7 +17,7 @@ import {
 } from './transcript-parser.js';
 import type { TranscriptLine } from './transcript-parser.js';
 import { classifyOrigin } from './classify-origin.js';
-import { deriveSessionTitle } from '../../shared/derive-title.js';
+import { deriveSessionTitle, shownToPerson } from '../../shared/derive-title.js';
 import { projectSlug, subtreeSlugScope } from './project-slug.js';
 import { SessionRootIndex, accountForTranscript } from './session-root-index.js';
 import { SessionLocator, type FindSessionOptions } from './transcripts/session-locator.js';
@@ -801,7 +801,9 @@ export class TranscriptReader {
           continue;
         }
         const cleanText = stripSystemTags(text);
-        if (!cleanText.trim()) continue;
+        // Empty, or a new agent's greeting kickoff: DorkOS's message, not the
+        // person's, so their own first message names the chat (DOR-4976).
+        if (!shownToPerson(cleanText.trim())) continue;
 
         firstUserMessage = cleanText.trim();
       }

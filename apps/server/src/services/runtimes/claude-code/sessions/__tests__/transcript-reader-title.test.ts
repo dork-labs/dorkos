@@ -21,6 +21,7 @@ vi.mock('../../../../../lib/boundary.js', () => ({
   validateBoundaryOrDorkHome: vi.fn().mockResolvedValue(undefined),
 }));
 
+import { wrapKickoff } from '@dorkos/shared/kickoff';
 import { TranscriptReader } from '../transcript-reader.js';
 
 /** A realistic head/user JSONL line carrying the first prompt, cwd, and a timestamp. */
@@ -114,6 +115,25 @@ describe('TranscriptReader title precedence (DOR-2083)', () => {
 
     const [session] = await reader.listSessionsInDir(dir);
     expect(session?.title).toBe('@agent do the thing');
+  });
+
+  it('skips a new agent’s greeting kickoff and titles from the person’s first message (DOR-4976)', async () => {
+    await writeTranscript(dir, 'sess-kickoff', [
+      userLine(wrapKickoff('Read your SOUL.md and say hello.')),
+      userLine('Fix the build'),
+    ]);
+
+    const [session] = await reader.listSessionsInDir(dir);
+    expect(session?.title).toBe('Fix the build');
+  });
+
+  it('never titles a chat with only the greeting kickoff after its tag', async () => {
+    await writeTranscript(dir, 'sess-kickoff-only', [
+      userLine(wrapKickoff('Read your SOUL.md and say hello.')),
+    ]);
+
+    const [session] = await reader.listSessionsInDir(dir);
+    expect(session?.title).toBe('Chat sess-kic');
   });
 
   it('/rename still wins over a later ai-title', async () => {

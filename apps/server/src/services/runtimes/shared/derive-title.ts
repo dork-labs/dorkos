@@ -1,5 +1,20 @@
 import { chatMessageWords } from '@dorkos/shared/chat-messages';
+import { isKickoffEnvelope } from '@dorkos/shared/kickoff';
 import { TRANSCRIPT } from '../../../config/constants.js';
+
+/**
+ * The part of a recorded message a person may see as a title or preview.
+ *
+ * A new agent's greeting kickoff is DorkOS's own message, not the person's, so
+ * it reads as empty here: the chat stays untitled until the person writes, and
+ * its fence tag never shows as a title or preview (DOR-4976).
+ *
+ * @param content - Raw message content a runtime recorded.
+ * @returns The content, or `''` for a greeting kickoff.
+ */
+export function shownToPerson(content: string): string {
+  return isKickoffEnvelope(content) ? '' : content;
+}
 
 /**
  * Leading request-filler phrases that carry no information in a session title.
@@ -105,16 +120,18 @@ function capitalizeFirst(text: string): string {
  *
  * @param firstUserMessage - The cleaned first user message text (may be empty)
  * @param options - See {@link DeriveSessionTitleOptions}.
- * @returns The derived title, or `''` when the message is empty/whitespace
+ * @returns The derived title, or `''` when the message is empty/whitespace or a
+ *   greeting kickoff ({@link shownToPerson})
  */
 export function deriveSessionTitle(
   firstUserMessage: string,
   options?: DeriveSessionTitleOptions
 ): string {
+  const shown = shownToPerson(firstUserMessage);
   // A first message another chat sent (a spin-off's, an agent's DM) is named
   // after its words, never after the constant line the fence opens with (spec
   // `spin-off-chats` §2).
-  const words = chatMessageWords(firstUserMessage) ?? firstUserMessage;
+  const words = chatMessageWords(shown) ?? shown;
   const source = options?.stripLeadingMention ? words.replace(LEADING_MENTION, '') : words;
   const lines = source.split('\n');
 

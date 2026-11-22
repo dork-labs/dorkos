@@ -16,7 +16,7 @@
  */
 import type { Session, PermissionModeId } from '@dorkos/shared/types';
 import { isWithinDirectory } from '@dorkos/shared/paths';
-import { deriveSessionTitle } from '../shared/derive-title.js';
+import { deriveSessionTitle, shownToPerson } from '../shared/derive-title.js';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
 import { TEST_MODE_CAPABILITIES } from './runtime-constants.js';
 
@@ -111,9 +111,10 @@ export class TestModeSessionRegistry {
    */
   recordMessage(sessionId: string, content: string, patch: TrackedSessionPatch = {}): void {
     const session = this.upsert(sessionId, patch);
-    const preview = toPreview(content);
-    if (session.title === '')
-      session.title = this.labelTitle(deriveSessionTitle(content) || preview);
+    const preview = toPreview(shownToPerson(content));
+    const derived = deriveSessionTitle(content) || preview;
+    // A greeting kickoff derives nothing, so the person's own first message titles it.
+    if (session.title === '' && derived) session.title = this.labelTitle(derived);
     session.lastMessagePreview = preview;
     session.updatedAt = new Date().toISOString();
     this.emit({ type: 'session_upserted', session: { ...session } });

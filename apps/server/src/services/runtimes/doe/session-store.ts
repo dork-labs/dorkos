@@ -6,7 +6,7 @@ import type { Session, SessionSettings } from '@dorkos/shared/types';
 import { isWithinDirectory } from '@dorkos/shared/paths';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
 import { resolveDorkHome } from '../../../lib/dork-home.js';
-import { deriveSessionTitle } from '../shared/derive-title.js';
+import { deriveSessionTitle, shownToPerson } from '../shared/derive-title.js';
 import { DoeEventQueue } from './event-queue.js';
 
 /** The engine's independent data directory, outside vendor-owned session stores. */
@@ -142,7 +142,9 @@ export class DoeSessionStore {
     const record = this.get(id)!;
     if (!record.session.title) record.session.title = title ?? deriveSessionTitle(content);
     record.session.cwd = canonicalDoeCwd(cwd);
-    record.session.lastMessagePreview = [...content.split('\n')[0]!].slice(0, 80).join('');
+    record.session.lastMessagePreview = [...shownToPerson(content).split('\n')[0]!]
+      .slice(0, 80)
+      .join('');
     record.session.updatedAt = new Date().toISOString();
     record.session.userLastMessageAt = record.session.updatedAt;
     this.save(record);
