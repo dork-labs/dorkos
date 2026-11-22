@@ -21,10 +21,11 @@
  *     `429` starts no retry storm either.
  *   - **Per-event allowlist validation.** Each event is validated against the
  *     route-LOCAL schema below, which MIRRORS the shared registry at
- *     `packages/shared/src/telemetry-events.ts`. Per ADR-0235 the site keeps
- *     route-local schemas rather than importing `@dorkos/shared`; the two carry
- *     cross-reference comments so a reviewer catches drift. Keep them in
- *     lockstep — every strict property allowlist here must match the registry.
+ *     `packages/shared/src/telemetry-events.ts`. The site may import
+ *     `@dorkos/shared` (the install route does); this route still keeps a local
+ *     mirror, and the two carry cross-reference comments so a reviewer catches
+ *     drift. Keep them in lockstep — every strict property allowlist here must
+ *     match the registry.
  *   - **Accept-and-drop when unconfigured.** With `POSTHOG_PROJECT_KEY` unset,
  *     valid events are accepted and simply not forwarded (zero errors, zero
  *     PostHog requests).

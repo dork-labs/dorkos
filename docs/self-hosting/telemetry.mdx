@@ -76,6 +76,8 @@ Four events ship today:
 
 Each event is wrapped in the same anonymous envelope as everything else: your random `instanceId`, a timestamp, and your DorkOS version. Like the heartbeat, it never includes your prompts, your code, file paths, your hostname or username, or anything from your chats.
 
+Each usage event also asks our analytics tool (PostHog) not to build a profile from it. The one exception: you linked this install to a DorkOS account and chose to link your usage data to it (below).
+
 Like the heartbeat and install counts, this channel is off until you turn it on. Two things still hold once you do: nothing sends until after DorkOS has shown you the first-run notice, and you can turn it back off three ways, the same as every other channel:
 
 - Flip `telemetry.usage` to `false` in `~/.dork/config.json` (or use the **Privacy & Data** tab, or `dorkos telemetry disable --channel usage`).
@@ -128,7 +130,7 @@ When you link this install to a DorkOS account, you can also connect this instal
 - The environment kill switches turn it off too: with `DO_NOT_TRACK=1` or `DORKOS_TELEMETRY_DISABLED=1` set, nothing is connected even if the checkbox is on.
 - No new data is collected. It is the same anonymous usage counts described above, now visible under your account.
 
-To undo it: turn the checkbox off (it takes effect on your next link), and remove the already-connected data from your account page on dorkos.ai. Unlinking the instance stops it from reporting further.
+To undo it: turn the checkbox off (from the next event DorkOS sends, usage events ask for no profile again), and remove the already-connected data from your account page on dorkos.ai. Unlinking the instance stops it from reporting further.
 
 ## AI run metadata (a separate opt-in)
 
