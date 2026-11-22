@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { CaptureResult } from 'posthog-js';
 
-import { errorSignature, scrubExceptionEvent } from '../error-signature';
+import { errorSignature } from '../error-signature';
 
 /** An error with a fixed stack, so the test never depends on the runner's frames. */
 function errorWith(name: string, message: string, stack: string | undefined): Error {
@@ -71,48 +70,44 @@ describe('errorSignature', () => {
 
     expect(errorSignature(error)).not.toContain(SECRET);
   });
-});
 
-describe('scrubExceptionEvent', () => {
-  function exceptionEvent(properties: Record<string, unknown>): CaptureResult {
-    return { uuid: 'u-1', event: '$exception', properties } as CaptureResult;
-  }
-
-  it('empties every exception value and drops message-bearing fields', () => {
-    const frames = [{ filename: 'https://dorkos.ai/a.js', function: 'f', lineno: 1, colno: 2 }];
-    const scrubbed = scrubExceptionEvent(
-      exceptionEvent({
-        $exception_list: [
-          {
-            type: 'TypeError',
-            value: SECRET,
-            mechanism: { handled: false },
-            stacktrace: { frames },
-          },
-          { type: 'Error', value: 'cause text' },
-        ],
-        $exception_level: 'error',
-        $exception_message: SECRET,
-        $exception_values: [SECRET],
-        $exception_steps: [{ message: SECRET }],
-      })
+  it('treats everything before the first indented frame as message, even after the message changed', () => {
+    const error = errorWith(
+      'Error',
+      'changed later',
+      'Error: was\nat checkout said acme\n    at g (https://dorkos.ai/g.js:4:5)'
     );
 
-    expect(JSON.stringify(scrubbed)).not.toContain(SECRET);
-    expect(JSON.stringify(scrubbed)).not.toContain('cause text');
-    expect(scrubbed?.properties).toEqual({
-      $exception_list: [
-        { type: 'TypeError', value: '', mechanism: { handled: false }, stacktrace: { frames } },
-        { type: 'Error', value: '' },
-      ],
-      $exception_level: 'error',
-    });
+    const signature = errorSignature(error);
+    expect(signature).toBe('Error at g (https://dorkos.ai/g.js:4:5)');
+    expect(signature).not.toContain('checkout said acme');
   });
 
-  it('leaves every other event untouched', () => {
-    const pageview = { uuid: 'u-2', event: '$pageview', properties: { a: 1 } } as CaptureResult;
+  it('does not take a message line that only contains an @ for a Firefox frame', () => {
+    const error = errorWith(
+      'Error',
+      'x',
+      'mail me@acme invoices:1:2\nrun@https://dorkos.ai/r.js:3:4'
+    );
 
-    expect(scrubExceptionEvent(pageview)).toBe(pageview);
-    expect(scrubExceptionEvent(null)).toBeNull();
+    expect(errorSignature(error)).toBe('Error run@https://dorkos.ai/r.js:3:4');
+  });
+
+  it('strips every query string in an eval frame', () => {
+    const error = errorWith(
+      'Error',
+      'boom',
+      'Error: boom\n    at eval (eval at f (https://dorkos.ai/p?q=acme:1:2), <anonymous>:3:4)'
+    );
+
+    expect(errorSignature(error)).toBe(
+      'Error at eval (eval at f (https://dorkos.ai/p:1:2), <anonymous>:3:4)'
+    );
+  });
+
+  it.each([['acme invoices'], ['Bad-Name'], ['']])('reports a name like %j as Error', (name) => {
+    const error = errorWith(name, 'boom', undefined);
+
+    expect(errorSignature(error)).toBe('Error');
   });
 });

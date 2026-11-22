@@ -25,8 +25,8 @@ describe('MarketplaceBrowseTracker', () => {
     expect(trackMarketplaceBrowse).toHaveBeenCalledTimes(1);
     expect(trackMarketplaceBrowse).toHaveBeenCalledWith({
       type: 'agent',
-      category: 'devops',
-      q: '',
+      category: 'other',
+      hasQuery: false,
       resultCount: 4,
     });
   });
@@ -50,8 +50,21 @@ describe('MarketplaceBrowseTracker', () => {
     expect(trackMarketplaceBrowse).toHaveBeenLastCalledWith({
       type: 'agent',
       category: undefined,
-      q: 'telegram',
+      hasQuery: true,
       resultCount: 1,
+    });
+    // The search words never reach analytics.
+    expect(JSON.stringify(trackMarketplaceBrowse.mock.calls)).not.toContain('telegram');
+  });
+
+  it('reports a catalog that could not load as unavailable, not as zero results', () => {
+    render(<MarketplaceBrowseTracker resultCount={null} />);
+
+    expect(trackMarketplaceBrowse).toHaveBeenCalledWith({
+      type: undefined,
+      category: undefined,
+      hasQuery: false,
+      resultCount: null,
     });
   });
 

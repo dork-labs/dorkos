@@ -44,7 +44,7 @@
  * | `hero_install_copy`   | Visitor copies an install command (`install_ref` when the copy carried one, see {@link prepareInstallCopy}) |
  * | `hero_download`       | Visitor clicks a desktop-download link — macOS (install hero, nav, or the off-Mac terminal-hero link) or Windows (install hero, nav, or the "Other ways to install" link) |
  * | `docs_visit`          | Visitor lands on a `/docs` page                      |
- * | `marketplace_browse`  | Visitor lands on `/marketplace` (whether a search was active and a result bucket, never the search words) |
+ * | `marketplace_browse`  | Visitor lands on `/marketplace` (checked filters, whether a search was active, a result bucket; no search words) |
  * | `github_click`        | Visitor clicks an outbound GitHub link (header, footer, or mobile hero CTA) |
  * | `newsletter_signup`   | Visitor completes the newsletter signup form         |
  *
@@ -211,26 +211,38 @@ export function trackDocsVisit(path: string): void {
   capture('docs_visit', { path });
 }
 
-/** Active filters on the marketplace catalog at the moment of the visit. */
-export interface MarketplaceBrowseFilters {
+/**
+ * A marketplace visit as analytics records it. The search words are not part
+ * of it: the caller passes only whether a search was active, so the words
+ * never reach this module (DOR-4992). The page URL, which can hold them, is
+ * cut down on the send path (`lib/telemetry/before-send.ts`).
+ */
+export interface MarketplaceBrowseVisit {
+  /** A package type from the catalog's own list, `other` for anything else. */
   type?: string;
+  /** A category from the catalog's own list, `other` for anything else. */
   category?: string;
-  /** The search text. Read only to tell whether a search was active; never sent. */
-  q?: string;
+  /** Whether a search was active. */
+  hasQuery: boolean;
+  /** How many packages the page showed, or `null` when the catalog could not load. */
+  resultCount: number | null;
 }
 
 /** How many packages a marketplace visit showed, coarsely. */
-export type ResultCountBucket = '0' | '1-5' | '6-20' | '21+';
+export type ResultCountBucket = '0' | '1-5' | '6-20' | '21+' | 'unavailable';
 
 /**
  * Bucket a result count so `marketplace_browse` says how a search went without
  * a count precise enough to fingerprint one query: `0` (nothing matched, the
- * case worth fixing), `1-5` (a narrow match), `6-20` (a page or so), `21+`
- * (effectively the whole catalog).
+ * case worth fixing), `1-5` (a narrow match), `6-20` (a page or so; the whole
+ * catalog of 15 packages, November 2026, lands here), `21+` (room for the
+ * catalog to grow), and `unavailable` when the catalog could not load, which
+ * is not the same as a search that matched nothing.
  *
- * @param count - How many packages the page showed.
+ * @param count - How many packages the page showed, or `null` when it could not tell.
  */
-export function resultCountBucket(count: number): ResultCountBucket {
+export function resultCountBucket(count: number | null): ResultCountBucket {
+  if (count === null) return 'unavailable';
   if (count <= 0) return '0';
   if (count <= 5) return '1-5';
   if (count <= 20) return '6-20';
@@ -238,22 +250,18 @@ export function resultCountBucket(count: number): ResultCountBucket {
 }
 
 /**
- * Fires when a visitor lands on the `/marketplace` catalog page. Sends the
- * type and category filters (set by the catalog's own filter links), whether a search
- * was active, and a result-count bucket. The search text itself never leaves
- * the page: `/privacy` says the site does not log what you type (DOR-4992).
+ * Fires when a visitor lands on the `/marketplace` catalog page, with the
+ * checked type and category filters, whether a search was active, and a
+ * result-count bucket.
  *
- * @param filters - The active filters, including the search text.
- * @param filters.resultCount - How many packages the page showed.
+ * @param visit - The visit, already checked by the marketplace feature.
  */
-export function trackMarketplaceBrowse(
-  filters: MarketplaceBrowseFilters & { resultCount: number }
-): void {
+export function trackMarketplaceBrowse(visit: MarketplaceBrowseVisit): void {
   capture('marketplace_browse', {
-    type: filters.type,
-    category: filters.category,
-    has_query: Boolean(filters.q?.trim()),
-    result_count: resultCountBucket(filters.resultCount),
+    type: visit.type,
+    category: visit.category,
+    has_query: visit.hasQuery,
+    result_count: resultCountBucket(visit.resultCount),
   });
 }
 
@@ -280,7 +288,7 @@ export function trackNewsletterSignup(source: string, emailDomain: string): void
  * event names the error by its signature (type and first stack frame) and
  * Next.js's digest, never its message (DOR-4992). The error also goes to
  * PostHog Error Tracking, whose `before_send` hook empties the message there
- * (see `lib/telemetry/error-signature.ts`).
+ * (see `lib/telemetry/before-send.ts`).
  *
  * @param error - The error the boundary caught.
  * @param scope - `route` for `app/error.tsx`, `global` for `app/global-error.tsx`.

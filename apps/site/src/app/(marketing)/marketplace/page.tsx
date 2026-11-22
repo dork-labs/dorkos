@@ -60,7 +60,7 @@ export default async function MarketplacePage(props: {
   if (!marketplaceResult.ok || !marketplaceResult.marketplace) {
     return (
       <main className="mx-auto max-w-6xl px-6 pt-32 pb-24">
-        <MarketplaceBrowseTracker type={type} category={category} q={q} resultCount={0} />
+        <MarketplaceBrowseTracker type={type} category={category} q={q} resultCount={null} />
         <MarketplaceHeader />
         <section className="border-warm-gray-light/30 bg-cream-secondary/50 mt-12 rounded-lg border p-12 text-center">
           <h2 className="text-charcoal font-mono text-2xl font-semibold">Launching soon</h2>

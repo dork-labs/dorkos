@@ -10,7 +10,7 @@ afterEach(() => {
 });
 
 describe('instrumentation-client (DOR-4992)', () => {
-  it('scrubs error messages from every exception PostHog sends, caught or uncaught', async () => {
+  it('scrubs page URLs and error messages from every event PostHog sends', async () => {
     // `@/env` parses process.env when first imported, so the key is set before
     // the module graph loads: PostHog only initialises when a key is present.
     vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', 'phc_test_key');
@@ -28,9 +28,12 @@ describe('instrumentation-client (DOR-4992)', () => {
     const sent = beforeSend({
       uuid: 'u-1',
       event: '$exception',
-      properties: { $exception_list: [{ type: 'Error', value: 'typed text' }] },
+      properties: {
+        $current_url: 'https://dorkos.ai/marketplace?q=typed%20words',
+        $exception_list: [{ type: 'Error', value: 'typed text' }],
+      },
     } as CaptureResult);
 
-    expect(JSON.stringify(sent)).not.toContain('typed text');
+    expect(JSON.stringify(sent)).not.toMatch(/typed/);
   });
 });

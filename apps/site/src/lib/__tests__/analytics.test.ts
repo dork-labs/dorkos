@@ -191,31 +191,25 @@ describe('prepareInstallCopy (DOR-2862)', () => {
 });
 
 describe('trackMarketplaceBrowse (DOR-4992)', () => {
-  it('sends whether there was a search and a result bucket, never the search text', () => {
-    trackMarketplaceBrowse({
-      type: 'agent',
-      category: 'devops',
-      q: 'acme invoices',
-      resultCount: 3,
-    });
+  it('sends the checked filters, whether there was a search, and a result bucket', () => {
+    trackMarketplaceBrowse({ type: 'agent', category: 'security', hasQuery: true, resultCount: 3 });
 
     expect(mockPosthog.capture).toHaveBeenCalledWith('marketplace_browse', {
       type: 'agent',
-      category: 'devops',
+      category: 'security',
       has_query: true,
       result_count: '1-5',
     });
-    expect(JSON.stringify(mockPosthog.capture.mock.calls)).not.toContain('acme');
   });
 
-  it('reads a blank search as no search', () => {
-    trackMarketplaceBrowse({ q: '   ', resultCount: 0 });
+  it('sends unavailable when the catalog could not load', () => {
+    trackMarketplaceBrowse({ hasQuery: false, resultCount: null });
 
     expect(mockPosthog.capture).toHaveBeenCalledWith('marketplace_browse', {
       type: undefined,
       category: undefined,
       has_query: false,
-      result_count: '0',
+      result_count: 'unavailable',
     });
   });
 
@@ -227,7 +221,8 @@ describe('trackMarketplaceBrowse (DOR-4992)', () => {
     [20, '6-20'],
     [21, '21+'],
     [500, '21+'],
-  ])('buckets %i results as %s', (count, bucket) => {
+    [null, 'unavailable'],
+  ] as const)('buckets %s results as %s', (count, bucket) => {
     expect(resultCountBucket(count)).toBe(bucket);
   });
 });
@@ -255,7 +250,7 @@ describe('trackClientError (DOR-4992)', () => {
     expect(JSON.stringify(mockPosthog.capture.mock.calls)).not.toContain(SECRET);
   });
 
-  it('still reports the error to Error Tracking, whose message the scrubber removes', () => {
+  it('still hands the error itself to PostHog Error Tracking', () => {
     const error = boundaryError();
     trackClientError(error, 'route');
 
