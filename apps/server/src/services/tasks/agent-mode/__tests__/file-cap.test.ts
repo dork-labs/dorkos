@@ -744,6 +744,48 @@ describe('a SKILL file changed outside the task tools (M4, M8)', () => {
       expect(store.getRun(run.id)?.cappedFile).toEqual(run.cappedFile);
     });
 
+    describe('the existing Approve file clears a capped live row', () => {
+      /** Cap the task the way its next run does, with no ordinary chat to lift it from. */
+      async function cappedBy(body: string): Promise<{ id: string; at: string; to: string }> {
+        const id = await attestedByAgent(WRITTEN);
+        const { run } = await afterEdit(id, body);
+        expect(run.cappedAt).toBe('dontAsk');
+        await nextRun(id, false);
+        const cap = store.approvals.agentModeColumnOf(id).fileCap!;
+        expect(cap).toMatchObject({ needsPerson: true, to: bodyHash(body) });
+        return { id, at: cap.at, to: cap.to! };
+      }
+
+      it.each([
+        // weekly-linear-grooming: its agent attested one body, and the file now holds another.
+        ['a real change after the agent attested it', 'groom the board by hand'],
+        // agent-teams-watch-codex-prs: a formatter re-indented a line after the attested write.
+        [
+          'a re-indent after the agent attested it',
+          'sweep the backlog\n\n- first\n  still the first\n\n```sh\n  pnpm test\n```',
+        ],
+      ])(
+        '%s: approving the file lifts the cap, and the next run is uncapped',
+        async (_case, body) => {
+          const { id, at, to } = await cappedBy(body);
+          expect(store.approvals.agentModeColumnOf(id).syncedPrompt).toBe(bodyHash(body));
+
+          const outcome = await approveCappedFile(store, id, at, to);
+
+          expect(outcome.ok).toBe(true);
+          expect(store.approvals.agentModeColumnOf(id).fileAttest).toMatchObject({
+            by: 'person',
+            hash: to,
+          });
+          expect(store.getTask(id)).toMatchObject({ fileCapNext: false });
+          expect(store.getTask(id)?.fileCap).toBeUndefined();
+          const { ran, run } = await nextRun(id);
+          expect(ran.permissionMode).toBe('acceptEdits');
+          expect(run.cappedAt).toBeUndefined();
+        }
+      );
+    });
+
     describe('a person approves the file as it is, with no cap standing (option D)', () => {
       /** As a plugin update left it: the sync re-bodied the row, nothing attested it, an approval let it run. */
       async function reBodiedBySync(): Promise<string> {
