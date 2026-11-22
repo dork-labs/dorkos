@@ -74,7 +74,7 @@ const ALLOWED: Record<string, { count: number; why: string }> = {
   },
   'services/connectors/principal/runtime-authority-resolver.ts': {
     count: 2,
-    why: 'connected apps refuse a chat with no recorded agent (DOR-2752); slice B moves it',
+    why: 'connected apps refuse a chat with no recorded agent (DOR-2752), on purpose for now',
   },
   'services/core/runtime-registry.ts': {
     count: 1,
@@ -102,7 +102,7 @@ const ALLOWED: Record<string, { count: number; why: string }> = {
   },
   'services/session/local-browser/profile-access.ts': {
     count: 1,
-    why: 'the same chat now vs when its browser opened; NULL already refuses above (slice B)',
+    why: 'the same chat now vs when its browser opened, both from chatFactsOf; a lost folder refuses',
   },
   'startup/steps/connector-services.ts': {
     count: 1,
@@ -197,6 +197,20 @@ describe('the chat agent census', () => {
         ].join('\n')
       )
     ).toHaveLength(6);
+  });
+
+  // DOR-5038: these read a chat's agent only through session-agent. Their wiring has no test
+  // of its own, so the recorded-only read coming back here fails this instead.
+  it.each([
+    'services/relay/adapter-factory.ts',
+    'services/session/fleet/carry-over.ts',
+    'services/session/local-browser/outside-turn.ts',
+    'startup/steps/doc-delivery.ts',
+    'startup/steps/local-browser-wiring.ts',
+  ])('%s reads the chat’s agent through session-agent', (file) => {
+    const code = codeOnly(fs.readFileSync(path.join(SRC, file), 'utf8'));
+    expect(code).not.toContain('getSessionAgentPath(');
+    expect(code).toMatch(/\b(?:sessionAgentById|sessionAgentOf|chatFactsOf)\(?/);
   });
 
   it('gives every listed file a reason', () => {
