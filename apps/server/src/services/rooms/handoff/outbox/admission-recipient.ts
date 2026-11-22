@@ -1,7 +1,11 @@
-/** Same-database positive admission recipient facts. Read-only; never resolves a native session. */
+/**
+ * Same-database positive admission recipient facts. Read-only: stored rows, plus the bound
+ * runtime's in-memory folder for a chat that recorded no agent (DOR-5035).
+ */
 import { createHash } from 'node:crypto';
 import { stableStringify } from '@dorkos/shared/capabilities';
 import { eq, agents, authors, sessionMetadata, type Db, type DbTransaction } from '@dorkos/db';
+import { sessionAgentOf } from '../../../core/agent-identity/session-agent.js';
 /** Capture a positive original session/agent epoch from the owning database. */
 export function captureAdmissionRecipient(
   db: Db | DbTransaction,
@@ -16,9 +20,10 @@ export function captureAdmissionRecipient(
     .get();
   const author = db.select().from(authors).where(eq(authors.id, authorId)).get();
   const agent = db.select().from(agents).where(eq(agents.projectPath, agentPath)).get();
+  // A chat bound without an agent belongs to the agent its folder resolves to (DOR-5035).
   if (
     !metadata?.runtime ||
-    metadata.agentPath !== agentPath ||
+    sessionAgentOf(db, sessionId) !== agentPath ||
     !author ||
     author.kind !== 'agent' ||
     author.naturalKey !== agentPath ||

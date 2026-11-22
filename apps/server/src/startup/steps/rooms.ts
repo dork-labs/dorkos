@@ -71,6 +71,8 @@ import { readOwnerAccount } from '../../services/core/auth/index.js';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import path from 'path';
 import { setAgentHomeRegistry, canonicalDir } from '../../services/core/agent-identity/index.js';
+import { setSessionAgentSources } from '../../services/core/agent-identity/session-agent.js';
+import { liveRuntimeCwd } from '../../services/core/runtime-seam/live-runtime-cwd.js';
 import { setAgentSessionSources, continueActivity } from '../../services/session/index.js';
 import { runBootSessionReconcile } from '../../services/session/catalog/boot-session-reconcile.js';
 import { roomWorktreesOfAgent } from '../../services/runtimes/claude-code/migrate-room-transcripts.js';
@@ -449,6 +451,9 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
     // so the git kill switch refuses every folder (DOR-3343).
     homesKnown: () => refs.meshCore !== undefined,
   });
+  // A chat bound without an agent is its folder's agent's; the folder its own
+  // runtime runs it in now is one place that folder is known (DOR-5035).
+  setSessionAgentSources({ liveCwd: (sessionId) => liveRuntimeCwd(db, sessionId) });
   // Where else an agent's conversations are: session storage is derived per
   // working directory (ADR-0310), and room turns stood in their agent's copy of
   // the room's files until spec `agent-home-desk` moved them home. Claude Code's
