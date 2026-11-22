@@ -2,8 +2,8 @@
  * Marketplace install telemetry hook.
  *
  * Thin registration point for a single process-wide telemetry reporter that
- * receives one {@link InstallEvent} per terminal install/uninstall/update
- * outcome. The default is a no-op so the marketplace installer can call
+ * receives one {@link InstallEvent} per finished install or update (an update
+ * reports as an install; uninstall reports nothing). The default is a no-op so the marketplace installer can call
  * {@link reportInstallEvent} unconditionally without leaking telemetry
  * concerns into the orchestrator.
  *
@@ -19,13 +19,14 @@ import type { InstallTelemetrySourceType } from '@dorkos/shared/marketplace-inst
 /**
  * A single terminal outcome from the marketplace installer pipeline.
  *
- * Emitted exactly once per `install`, `uninstall`, or `update` operation,
- * regardless of which type-specific flow handled the package.
+ * Emitted exactly once per `install` or `update` operation, regardless of
+ * which type-specific flow handled the package. Built by `buildInstallEvent`
+ * (`install-event.ts`), which never sees the name the person typed.
  */
 export interface InstallEvent {
-  /** The package identifier (e.g. `code-review-suite`). */
+  /** The resolved package identifier (e.g. `code-review-suite`), or `<unresolved>`. */
   packageName: string;
-  /** The marketplace source the package was resolved from. */
+  /** The marketplace the package was resolved from, or `<direct>`. */
   marketplace: string;
   /** The package taxonomy bucket. */
   type: PackageType;
@@ -36,10 +37,8 @@ export interface InstallEvent {
   /** Stable error code when `outcome === 'failure'`. */
   errorCode?: string;
   /**
-   * Marketplace source form the package was installed from. One of
-   * `relative-path`, `github`, `url`, `git-subdir`, `npm`. Added in
-   * marketplace-05 so the marketplace team can track adoption per
-   * source type. Non-PII install-pipeline metadata.
+   * The kind of source the package was installed from (see
+   * `INSTALL_TELEMETRY_SOURCE_TYPES`). Only the kind, never a path or URL.
    */
   sourceType: InstallTelemetrySourceType;
 }

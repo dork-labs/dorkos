@@ -12,7 +12,10 @@
  */
 
 import { siteUrl } from '@dorkos/shared/links';
-import type { InstallTelemetryPackageType } from '@dorkos/shared/marketplace-install-telemetry';
+import {
+  MAX_INSTALL_DURATION_MS,
+  type InstallTelemetryPackageType,
+} from '@dorkos/shared/marketplace-install-telemetry';
 import { getOrCreateInstanceId } from '../../../lib/instance-id.js';
 import {
   registerTelemetryReporter,
@@ -99,7 +102,8 @@ export function registerDorkosCommunityTelemetry(
  *
  * Strips nothing — the {@link InstallEvent} shape from `telemetry-hook` is
  * already PII-free by design. The `errorCode` field is only included when
- * present so successful events stay slim.
+ * present so successful events stay slim. `durationMs` is clamped to what the
+ * site accepts, so a very slow install is still counted rather than refused.
  *
  * @param event - The terminal install event reported by the installer.
  * @param installId - The stable per-machine UUID stored in dorkHome.
@@ -115,7 +119,7 @@ export function buildPayload(
     marketplace: event.marketplace,
     type: event.type,
     outcome: event.outcome,
-    durationMs: event.durationMs,
+    durationMs: Math.min(Math.max(0, Math.round(event.durationMs)), MAX_INSTALL_DURATION_MS),
     ...(event.errorCode !== undefined && { errorCode: event.errorCode }),
     installId,
     dorkosVersion,

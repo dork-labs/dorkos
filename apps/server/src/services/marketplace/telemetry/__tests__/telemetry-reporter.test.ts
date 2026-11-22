@@ -29,6 +29,7 @@ import {
   INSTALL_TELEMETRY_PACKAGE_TYPES,
   INSTALL_TELEMETRY_SOURCE_TYPES,
   InstallTelemetryEventSchema,
+  MAX_INSTALL_DURATION_MS,
 } from '@dorkos/shared/marketplace-install-telemetry';
 
 import {
@@ -133,6 +134,17 @@ describe('telemetry-reporter', () => {
       const parsed = InstallTelemetryEventSchema.safeParse(JSON.parse(init.body as string));
       expect(parsed.error?.issues).toBeUndefined();
       expect(parsed.success).toBe(true);
+    });
+
+    it('clamps a very slow install so the site still counts it', async () => {
+      mockReadFile.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+
+      registerDorkosCommunityTelemetry(true, DORK_HOME, DORKOS_VERSION);
+      await reportInstallEvent({ ...sampleEvent, durationMs: MAX_INSTALL_DURATION_MS * 3 });
+
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      const parsed = InstallTelemetryEventSchema.parse(JSON.parse(init.body as string));
+      expect(parsed.durationMs).toBe(MAX_INSTALL_DURATION_MS);
     });
 
     it('accepts exactly the package types the marketplace defines', () => {

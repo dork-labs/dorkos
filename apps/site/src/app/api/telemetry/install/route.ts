@@ -8,7 +8,8 @@
  * the rows on read.
  *
  * Privacy contract:
- *   - The validated `InstallEvent` shape is the **complete** set of fields the
+ *   - The validated `InstallTelemetryEvent` shape (from
+ *     `@dorkos/shared/marketplace-install-telemetry`) is the **complete** set of fields the
  *     handler is allowed to persist. No request header — IP, cookies, user
  *     agent — is ever stored, logged, or forwarded.
  *   - The one header read is the client IP, taken by the per-IP throttle below

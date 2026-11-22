@@ -10,11 +10,11 @@ import {
   resolvePackageVersion,
   type MarketplacePackageManifest,
   type PackageType,
-  type PluginSource,
 } from '@dorkos/marketplace';
 import type { ResolvedPackageSource } from '../package-resolver.js';
 import { rebuildInstalledFiles } from '../lib/records/legacy-record.js';
-import { reportInstallEvent, type InstallEvent } from '../telemetry/telemetry-hook.js';
+import { reportInstallEvent } from '../telemetry/telemetry-hook.js';
+import { buildInstallEvent } from '../telemetry/install-event.js';
 import { writeInstallMetadata } from '../installed-metadata.js';
 import { deriveSourceProvenance } from '../lib/source-provenance.js';
 import { materializePackageSchedules } from '../lib/schedules/materialize-schedules.js';
@@ -34,9 +34,6 @@ import { INSTALL_ROOT_DIR_BY_TYPE, projectScopeRoot } from '../lib/install-roots
 import { DevLinkError, packageIsDevLinked } from '../dev-links/errors.js';
 import { devLinkInSlot } from '../dev-links/registry.js';
 import { withInstallTargetLock } from '../transaction.js';
-
-/** Sentinel marketplace value used when a package was resolved directly (git URL / local path). */
-const DIRECT_SOURCE_LABEL = '<direct>';
 
 /** Runs an install of a staged package, on the installer's dependencies. */
 export class InstallDispatcher {
@@ -314,7 +311,7 @@ export class InstallDispatcher {
       await this.reportTerminalOutcome({
         resolved,
         packageType: staged.manifest.type,
-        requestedName: req.name,
+        requestedMarketplace: req.marketplace,
         outcome: 'success',
         startTime,
       });
@@ -326,7 +323,7 @@ export class InstallDispatcher {
       await this.reportTerminalOutcome({
         resolved,
         packageType,
-        requestedName: req.name,
+        requestedMarketplace: req.marketplace,
         outcome: 'failure',
         startTime,
         errorCode: err instanceof Error ? err.name : 'UnknownError',
@@ -385,40 +382,30 @@ export class InstallDispatcher {
   /**
    * Emit a single {@link reportInstallEvent} call describing the terminal
    * state of the pipeline. Called once per `install()` invocation from both
-   * the success and failure paths.
+   * the success and failure paths. The requested name never reaches it: see
+   * {@link buildInstallEvent}.
    *
    * @internal
    */
   private async reportTerminalOutcome(params: {
     resolved: ResolvedPackageSource | null;
     packageType: PackageType | null;
-    requestedName: string;
+    requestedMarketplace?: string;
     outcome: 'success' | 'failure' | 'cancelled';
     startTime: number;
     errorCode?: string;
   }): Promise<void> {
-    await reportInstallEvent({
-      packageName: params.resolved?.packageName ?? params.requestedName,
-      marketplace: params.resolved?.marketplaceName ?? DIRECT_SOURCE_LABEL,
-      type: params.packageType ?? 'plugin',
-      outcome: params.outcome,
-      durationMs: Date.now() - params.startTime,
-      errorCode: params.errorCode,
-      sourceType: derivePluginSourceType(params.resolved?.pluginSource),
-    });
+    await reportInstallEvent(
+      buildInstallEvent({
+        resolved: params.resolved,
+        packageType: params.packageType,
+        requestedMarketplace: params.requestedMarketplace,
+        outcome: params.outcome,
+        durationMs: Date.now() - params.startTime,
+        errorCode: params.errorCode,
+      })
+    );
   }
-}
-
-/**
- * Derive the `sourceType` discriminator for telemetry from a resolved
- * discriminated-union `PluginSource`. Falls back to `github` when the
- * resolver surface hasn't been populated yet (direct-URL installs
- * routed through the legacy `gitUrl` path).
- */
-function derivePluginSourceType(source: PluginSource | undefined): InstallEvent['sourceType'] {
-  if (!source) return 'github';
-  if (typeof source === 'string') return 'relative-path';
-  return source.source;
 }
 
 /**

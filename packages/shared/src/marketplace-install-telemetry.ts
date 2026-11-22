@@ -1,7 +1,8 @@
 /**
  * The wire format of one marketplace install telemetry event: what the DorkOS
- * server POSTs to `https://dorkos.ai/api/telemetry/install` after an install,
- * uninstall or update finishes.
+ * server POSTs to `https://dorkos.ai/api/telemetry/install` after an install
+ * or an update finishes (an update reports as an install; removing a package
+ * sends nothing).
  *
  * One definition for both sides: the site's Edge route validates every request
  * against {@link InstallTelemetryEventSchema}, and the server's reporter test
@@ -22,12 +23,22 @@ import { z } from 'zod';
 const MAX_NAME_LEN = 64;
 const MAX_ERROR_CODE_LEN = 64;
 const MAX_VERSION_LEN = 32;
-const MAX_DURATION_MS = 600_000;
+/**
+ * The longest install duration the route accepts, in milliseconds. A sender
+ * clamps a slower install to this rather than have the event refused.
+ */
+export const MAX_INSTALL_DURATION_MS = 600_000;
 
 /**
- * The marketplace source forms a package can be installed from: a bare
- * `./name` path inside the marketplace clone, or one of the object forms
- * `github`, `url`, `git-subdir` and `npm`.
+ * The kinds of source a package can be installed from:
+ *
+ * - The marketplace entry forms: a bare `./name` path inside the marketplace
+ *   clone (`relative-path`), or the object forms `github`, `url`,
+ *   `git-subdir` and `npm`. A direct `github:user/repo` or a github.com URL
+ *   also reports `github`.
+ * - `local`: a folder on the person's own computer. Only the kind is sent,
+ *   never the path.
+ * - `unknown`: the install failed before its source was known.
  */
 export const INSTALL_TELEMETRY_SOURCE_TYPES = [
   'relative-path',
@@ -35,6 +46,8 @@ export const INSTALL_TELEMETRY_SOURCE_TYPES = [
   'url',
   'git-subdir',
   'npm',
+  'local',
+  'unknown',
 ] as const;
 
 /** One of {@link INSTALL_TELEMETRY_SOURCE_TYPES}. */
@@ -71,7 +84,7 @@ export const InstallTelemetryEventSchema = z.object({
   marketplace: z.string().min(1).max(MAX_NAME_LEN),
   type: z.enum(INSTALL_TELEMETRY_PACKAGE_TYPES),
   outcome: z.enum(['success', 'failure', 'cancelled']),
-  durationMs: z.number().int().min(0).max(MAX_DURATION_MS),
+  durationMs: z.number().int().min(0).max(MAX_INSTALL_DURATION_MS),
   errorCode: z.string().max(MAX_ERROR_CODE_LEN).optional(),
   installId: z.string().uuid(),
   dorkosVersion: z.string().min(1).max(MAX_VERSION_LEN),

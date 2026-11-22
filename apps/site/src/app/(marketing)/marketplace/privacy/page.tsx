@@ -69,11 +69,14 @@ export default function MarketplacePrivacyPage() {
         <div className="space-y-4">
           <h2 className="text-charcoal font-mono text-xl font-semibold">What we collect</h2>
           <ul className="text-warm-gray ml-5 list-disc space-y-2 text-base leading-relaxed">
-            <li>The package name and marketplace it came from.</li>
+            <li>
+              The package name and marketplace it came from. If an install fails before DorkOS finds
+              the package, neither is sent: what you typed is never sent.
+            </li>
             <li>The package type (agent, plugin, skill-pack, adapter, shape).</li>
             <li>
-              The kind of source the package came from (GitHub, a URL, a git subfolder, npm, or a
-              folder in the marketplace), never the address itself.
+              The kind of source the package came from (GitHub, a URL, a git subfolder, npm, a
+              folder in the marketplace, or a folder on your computer), never the address or path.
             </li>
             <li>The install outcome (success, failure, cancelled).</li>
             <li>How long the install took (for performance debugging).</li>

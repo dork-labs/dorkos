@@ -628,7 +628,9 @@ describe('MarketplaceInstaller', () => {
         expect.objectContaining({
           outcome: 'failure',
           errorCode: 'InvalidPackageError',
-          packageName: 'broken-plugin',
+          // Staging failed before handing back the resolved source, so the
+          // event never carries the typed name (DOR-4988).
+          packageName: '<unresolved>',
         })
       );
     });
