@@ -254,7 +254,8 @@ describe('bounded snapshot retention', () => {
   });
 
   it('leaves a copy alone if its identity changes during inspection', () => {
-    const oldest = plant('dork-auto-20261101-daily.db');
+    // Retention inspects canonical paths, even when the temp directory has an alias.
+    const oldest = fs.realpathSync(plant('dork-auto-20261101-daily.db'));
     plant('dork-auto-20261102-daily.db');
     const originalStat = fs.statSync;
     let replaced = false;
