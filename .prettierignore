@@ -170,3 +170,17 @@ docker/seccomp/*.json
 # The copy dorkos.ai serves at /dorkos-codex.json; the same test holds it byte
 # for byte to docker/seccomp/dorkos-codex.json.
 apps/site/public/dorkos-codex.json
+
+# Skill files in the skills roots DorkOS watches for scheduled tasks. A task's
+# SKILL.md is held to the hash a person or its agent approved, and a task whose
+# file no longer matches runs with fewer permissions until someone approves it
+# again. On Nov 22 the end-of-turn format hook reflowed a task's SKILL.md
+# seconds after its agent wrote and approved it, and the task ran limited from
+# then on (DOR-5060). Any SKILL.md here can gain a schedule, so all of them are
+# skipped, not only the ones that hold one today. All three formatting layers
+# read this file: the Stop hook (.claude/hooks/format-changed.sh), the lefthook
+# pre-commit format step, and the pre-push check and CI gate. The task comes
+# back to a person through the task tools, never through a formatter.
+.agents/skills/**/SKILL.md
+.claude/skills/**/SKILL.md
+**/.dork/tasks/**/SKILL.md
