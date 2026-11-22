@@ -46,9 +46,9 @@ export type TelemetryEnv = Readonly<Record<string, unknown>>;
  * Whether an environment flag's raw value is "on". Follows the `donottrack.sh`
  * convention: `'1'` or `'true'` (case-insensitive, surrounding whitespace
  * trimmed) count as on; everything else — including `'0'`, `'false'`, the empty
- * string, unset, and any value that is not a string — counts as off. Every
- * DorkOS on/off switch read from the environment parses through here, so the
- * server and the CLI agree on what "set" means.
+ * string, unset, and any value that is not a string — counts as off. The
+ * telemetry switches and the update-check switch (`DORKOS_UPDATE_CHECK_DISABLED`)
+ * parse through here, so the server and the CLI agree on what "set" means.
  *
  * @param raw - The raw environment value, or `undefined` when unset.
  */

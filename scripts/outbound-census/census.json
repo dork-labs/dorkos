@@ -21,6 +21,13 @@
     "offSwitch": "Not outbound: the app's own server"
   },
   {
+    "file": "apps/client/src/layers/features/canvas/lib/load-rasterizer.ts",
+    "destination": "Nothing outbound: the image library's own code, bundled with the app",
+    "class": "feature",
+    "reason": "Loads html-to-image's source into the canvas's image maker; at capture it inlines the images already on the page.",
+    "offSwitch": "Do not save a canvas as an image"
+  },
+  {
     "file": "apps/client/src/layers/features/canvas/lib/probe-direct.ts",
     "destination": "An address a canvas document names",
     "class": "feature",
@@ -32,6 +39,13 @@
     "destination": "An address a canvas document names",
     "class": "feature",
     "reason": "Loads a CSV file a canvas document points to.",
+    "offSwitch": "Do not open such a document"
+  },
+  {
+    "file": "apps/client/src/layers/features/canvas/ui/Model3dViewer.tsx",
+    "destination": "An address a canvas document names",
+    "class": "feature",
+    "reason": "Loads the 3D model a canvas document points to.",
     "offSwitch": "Do not open such a document"
   },
   {
@@ -74,6 +88,13 @@
     "destination": "The DorkOS server this app is connected to",
     "class": "feature",
     "reason": "Wraps the page's own requests to mark which person sent them.",
+    "offSwitch": "Not outbound: the app's own server"
+  },
+  {
+    "file": "apps/client/src/layers/shared/lib/transport/community-move-methods.ts",
+    "destination": "The DorkOS server this app is connected to",
+    "class": "feature",
+    "reason": "Uploads a Community export a person is moving, with progress.",
     "offSwitch": "Not outbound: the app's own server"
   },
   {
@@ -130,6 +151,13 @@
     "destination": "The DorkOS server this app is connected to",
     "class": "feature",
     "reason": "Opens and closes terminals.",
+    "offSwitch": "Not outbound: the app's own server"
+  },
+  {
+    "file": "apps/client/src/layers/shared/lib/transport/upload-methods.ts",
+    "destination": "The DorkOS server this app is connected to",
+    "class": "feature",
+    "reason": "Uploads files a person attaches, with progress.",
     "offSwitch": "Not outbound: the app's own server"
   },
   {
@@ -210,6 +238,13 @@
     "offSwitch": "Keep the default font, which ships with the app"
   },
   {
+    "file": "apps/server/src/routes/api-docs.ts",
+    "destination": "Scalar's CDN",
+    "class": "feature",
+    "reason": "The API reference page at /api/docs loads its viewer from a CDN when a person opens it.",
+    "offSwitch": "Do not open /api/docs"
+  },
+  {
     "file": "apps/server/src/routes/extension-frame.ts",
     "destination": "Google Fonts",
     "class": "feature",
@@ -287,6 +322,13 @@
     "offSwitch": "Do not open the Connections catalog"
   },
   {
+    "file": "apps/server/src/services/core/agent-templates/template-downloader.ts",
+    "destination": "The git host of an agent template",
+    "class": "feature",
+    "reason": "Downloads a template when a person creates an agent from one.",
+    "offSwitch": "Do not create agents from a template"
+  },
+  {
     "file": "apps/server/src/services/core/ai-metadata-reporter.ts",
     "destination": "dorkos.ai telemetry events",
     "class": "consent",
@@ -348,6 +390,13 @@
     "offSwitch": "Do not use a hub"
   },
   {
+    "file": "apps/server/src/services/core/remote/managed-forwarding.ts",
+    "destination": "ngrok",
+    "class": "feature",
+    "reason": "Forwards remote access through ngrok when a person turns it on.",
+    "offSwitch": "Leave remote access off"
+  },
+  {
     "file": "apps/server/src/services/core/session-relay/index.ts",
     "destination": "The owner's hub",
     "class": "feature",
@@ -360,6 +409,13 @@
     "class": "feature",
     "reason": "Links this computer to a hub when a person pastes a link code.",
     "offSwitch": "Do not link this computer"
+  },
+  {
+    "file": "apps/server/src/services/core/tunnel-manager.ts",
+    "destination": "ngrok",
+    "class": "feature",
+    "reason": "Opens the remote-access tunnel when a person turns it on.",
+    "offSwitch": "Leave remote access off"
   },
   {
     "file": "apps/server/src/services/core/update-checker.ts",
@@ -446,6 +502,13 @@
     "offSwitch": "Remove the MCP server"
   },
   {
+    "file": "apps/server/src/services/notifications/channels/web-push.ts",
+    "destination": "The browser's push service",
+    "class": "feature",
+    "reason": "Sends phone and browser notifications a person turned on.",
+    "offSwitch": "Turn push notifications off"
+  },
+  {
     "file": "apps/server/src/services/observability/otel.ts",
     "destination": "The operator's own trace endpoint",
     "class": "feature",
@@ -502,6 +565,69 @@
     "offSwitch": "Never leaves the computer"
   },
   {
+    "file": "apps/server/src/services/session/local-browser/playwright-backend.ts",
+    "destination": "The sites an agent's browser opens",
+    "class": "feature",
+    "reason": "Drives the local browser an agent uses.",
+    "offSwitch": "Do not give agents the browser"
+  },
+  {
+    "file": "apps/server/src/services/spaces/auth.ts",
+    "destination": "The sign-in providers a Community owner turned on",
+    "class": "feature",
+    "reason": "A Community server signs members in with Google or GitHub when its owner set them up.",
+    "offSwitch": "Runs only on a Community server, and only for the providers its owner set"
+  },
+  {
+    "file": "apps/server/src/services/spaces/backout.ts",
+    "destination": "A Community's Postgres database",
+    "class": "feature",
+    "reason": "Reverses a Community update in its database.",
+    "offSwitch": "Runs only on a Community server"
+  },
+  {
+    "file": "apps/server/src/services/spaces/erasure/reapply.ts",
+    "destination": "A Community's Postgres database",
+    "class": "feature",
+    "reason": "Re-applies erasures in a Community's database.",
+    "offSwitch": "Runs only on a Community server"
+  },
+  {
+    "file": "apps/server/src/services/spaces/exports/purge-v2.ts",
+    "destination": "A Community's Postgres database",
+    "class": "feature",
+    "reason": "Purges old exports from a Community's database.",
+    "offSwitch": "Runs only on a Community server"
+  },
+  {
+    "file": "apps/server/src/services/spaces/host-keys.ts",
+    "destination": "A Community's Postgres database",
+    "class": "feature",
+    "reason": "Reads and writes a Community's host keys.",
+    "offSwitch": "Runs only on a Community server"
+  },
+  {
+    "file": "apps/server/src/services/spaces/host/release-unverified-account.ts",
+    "destination": "A Community's Postgres database",
+    "class": "feature",
+    "reason": "Releases unverified accounts in a Community's database.",
+    "offSwitch": "Runs only on a Community server"
+  },
+  {
+    "file": "apps/server/src/services/spaces/live/listener.ts",
+    "destination": "A Community's Postgres database",
+    "class": "feature",
+    "reason": "Listens for a Community's live updates.",
+    "offSwitch": "Runs only on a Community server"
+  },
+  {
+    "file": "apps/server/src/services/spaces/live/monitoring.ts",
+    "destination": "A Community's Postgres database",
+    "class": "feature",
+    "reason": "Watches a Community's live-update connection.",
+    "offSwitch": "Runs only on a Community server"
+  },
+  {
     "file": "apps/server/src/services/spaces/mail/transport.ts",
     "destination": "A Community's mail server",
     "class": "feature",
@@ -509,10 +635,24 @@
     "offSwitch": "Runs only on a Community server"
   },
   {
+    "file": "apps/server/src/services/spaces/migrate.ts",
+    "destination": "A Community's Postgres database",
+    "class": "feature",
+    "reason": "Migrates a Community's database.",
+    "offSwitch": "Runs only on a Community server"
+  },
+  {
     "file": "apps/server/src/services/spaces/oidc.ts",
     "destination": "A Community's sign-in provider",
     "class": "feature",
     "reason": "A Community server signs members in through the provider its owner set.",
+    "offSwitch": "Runs only on a Community server"
+  },
+  {
+    "file": "apps/server/src/services/spaces/recover-password.ts",
+    "destination": "A Community's Postgres database",
+    "class": "feature",
+    "reason": "Resets a Community member's password in its database.",
     "offSwitch": "Runs only on a Community server"
   },
   {
@@ -527,6 +667,13 @@
     "destination": "A Community's file storage",
     "class": "feature",
     "reason": "A Community server stores uploads in the bucket its owner set.",
+    "offSwitch": "Runs only on a Community server"
+  },
+  {
+    "file": "apps/server/src/services/spaces/takedown/commands.ts",
+    "destination": "A Community's Postgres database",
+    "class": "feature",
+    "reason": "Runs takedown commands against a Community's database.",
     "offSwitch": "Runs only on a Community server"
   },
   {
@@ -694,6 +841,13 @@
     "destination": "MCP servers a builder turn uses",
     "class": "feature",
     "reason": "Connects a DorkOS builder turn to its tools.",
+    "offSwitch": "Do not use the DorkOS builder"
+  },
+  {
+    "file": "packages/doe/src/pi-engine.ts",
+    "destination": "The model endpoint a person set for the DorkOS builder",
+    "class": "feature",
+    "reason": "Runs the builder's model calls against the endpoint that was set.",
     "offSwitch": "Do not use the DorkOS builder"
   },
   {
