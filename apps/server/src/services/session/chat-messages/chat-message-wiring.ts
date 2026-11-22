@@ -14,6 +14,7 @@ import type { Db } from '@dorkos/db';
 import { filterKickoffHistory } from '@dorkos/shared/kickoff';
 import type { HistoryMessage, PendingInteractionDTO } from '@dorkos/shared/types';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
+import { sessionAgentById } from '../../core/agent-identity/session-agent.js';
 import { marksOf, passedOnLevelOf } from '../../core/turn-power/turn-levels.js';
 import {
   describeSessionFor,
@@ -337,7 +338,9 @@ export function wireChatMessaging(deps: WireChatMessagingDeps): {
     },
     describe: async (sessionId) => {
       const title = await chatTitleOf(sessionId);
-      const agentPath = await runtimeRegistry.getSessionAgentPath(sessionId).catch(() => null);
+      // The chat's agent by `session-agent`, so a chat started with only its
+      // agent's folder still names that agent (DOR-5038).
+      const agentPath = await sessionAgentById(sessionId).catch(() => undefined);
       const agent = agentPath
         ? deps
             .meshCore()

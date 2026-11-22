@@ -10,6 +10,7 @@
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { SessionLaunchWarning } from '@dorkos/shared/schemas';
 import { runtimeRegistry } from '../../core/runtime-registry.js';
+import { sessionAgentById } from '../../core/agent-identity/session-agent.js';
 import { logger } from '../../../lib/logger.js';
 
 /** The chat a turn would run in: where, which chat, and for which agent. */
@@ -54,8 +55,10 @@ export async function sessionToolWarnings(
 }
 
 /**
- * The same warning for an opened chat, from its recorded owner. Only a Codex
- * chat can lack DorkOS tools, so only it pays for the owner lookup.
+ * The same warning for an opened chat, from its owner: `session-agent`'s
+ * answer, so a chat started with only its agent's folder is asked about as that
+ * agent's (DOR-5038). Only a Codex chat can lack DorkOS tools, so only it pays
+ * for the owner lookup. A failed lookup asks with no agent, as before.
  *
  * @param runtime - The runtime the chat resolved to.
  * @param cwd - The chat's folder.
@@ -67,7 +70,13 @@ export async function openedChatToolWarnings(
   sessionId: string
 ): Promise<{ warnings?: SessionLaunchWarning[] }> {
   if (runtime.type !== 'codex') return {};
-  const agentPath = await recordedAgentOf(sessionId);
+  const agentPath = await sessionAgentById(sessionId).catch((err: unknown) => {
+    logger.debug('[launch] could not read the chat’s agent', {
+      sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return undefined;
+  });
   return sessionToolWarnings(runtime.type, runtime, { cwd, sessionId, agentPath });
 }
 
