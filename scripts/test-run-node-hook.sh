@@ -279,7 +279,7 @@ check "the real wired command still allows an innocent command" \
 # file it could not read.
 probe=$(node -e '
 const settings = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
-const guards = ["file-guard.mjs", "git-guard.mjs", "process-guard.mjs", "merge-guard.mjs", "pr-create-guard.mjs"];
+const guards = ["file-guard.mjs", "git-guard.mjs", "process-guard.mjs", "merge-guard.mjs", "pr-create-guard.mjs", "heavy-command-guard.mjs"];
 const problems = [];
 const wired = new Set();
 for (const [event, entries] of Object.entries(settings.hooks || {})) {
