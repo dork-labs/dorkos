@@ -78,6 +78,11 @@ import {
   type ContinueLaunchDeps,
 } from '../continue-service.js';
 import { CARRY_OVER_PROMPT } from '../carry-over.js';
+import { setSessionAgentSources } from '../../../core/agent-identity/session-agent.js';
+import {
+  clearTestHomes,
+  registerTestHomes,
+} from '../../../core/agent-identity/__tests__/agent-home-fixture.js';
 import { SessionStartedByStore } from '../../origin/session-started-by-store.js';
 import { StartWorkService, setStartWorkService } from '../../../extensions/start-work.js';
 
@@ -545,6 +550,35 @@ describe('without an advisor', () => {
   it('refuses to cancel when no handoff is pending', async () => {
     await limitedSession('src-1');
     expect((await refusal(cancelAutoContinue('src-1'))).code).toBe('NOT_HANDING_OFF');
+  });
+});
+
+// === Which agent the new session is for (DOR-5038) ==========================
+
+describe('the agent a carry-over carries', () => {
+  const JUNO = '/agents/juno';
+  const withMesh: ContinueLaunchDeps = {
+    ...deps,
+    meshCore: { listWithPaths: () => [{ projectPath: JUNO }] } as never,
+  };
+
+  afterEach(() => {
+    setSessionAgentSources(undefined);
+    clearTestHomes();
+  });
+
+  it.each([
+    // A chat started in an agent's folder from the command line records no agent.
+    ['the agent whose home an unrecorded chat runs in', JUNO, JUNO],
+    ['no agent for an unrecorded chat in a folder that is nobody’s', '/work/project', undefined],
+  ])('carries %s', async (_label, folder, carried) => {
+    registerTestHomes([JUNO]);
+    setSessionAgentSources({ db, liveCwd: (id) => (id === 'src-1' ? folder : undefined) });
+    await limitedSession('src-1');
+
+    await continueSession('src-1', { account: 'spare' }, withMesh);
+
+    expect(vi.mocked(dispatchSessionMessage).mock.calls[0]![0].request.agentPath).toBe(carried);
   });
 });
 

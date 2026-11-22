@@ -26,11 +26,14 @@ import {
   type DbTransaction,
 } from '@dorkos/db';
 import { homeOf, resolveAgentHome } from './agent-home.js';
+import { runtimeRegistry } from '../runtime-registry.js';
 
 /** What the resolver reads from the rest of the server, wired once at boot. */
 export interface SessionAgentSources {
   /** The folder the chat's own runtime is running it in now, from that runtime's memory. */
   liveCwd(sessionId: string): string | undefined;
+  /** The server's database, for {@link sessionAgentById}'s callers, which hold none. */
+  db?: Db;
 }
 
 let sources: SessionAgentSources | undefined;
@@ -115,6 +118,19 @@ export function chatAgentStateOf(db: Db | DbTransaction, sessionId: string): Cha
 export function sessionAgentOf(db: Db | DbTransaction, sessionId: string): string | undefined {
   const state = chatAgentStateOf(db, sessionId);
   return state.kind === 'agent' ? state.agentPath : undefined;
+}
+
+/**
+ * {@link sessionAgentOf} for a caller that holds only the chat's id (the relay,
+ * a carry-over), read from the database wired at boot (DOR-5038). Before that,
+ * only the recorded agent is known, so it answers that: what these callers read
+ * before, never less. A database failure rejects; callers decide what it means.
+ *
+ * @param sessionId - The chat.
+ */
+export async function sessionAgentById(sessionId: string): Promise<string | undefined> {
+  if (sources?.db) return sessionAgentOf(sources.db, sessionId);
+  return (await runtimeRegistry.getSessionAgentPath(sessionId)) ?? undefined;
 }
 
 /**
