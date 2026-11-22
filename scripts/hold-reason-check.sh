@@ -74,6 +74,8 @@ CATEGORIES='migration-collision stacked external-dependency other'
 # Matched against single words: hyphenated names arrive split ("design-ok" is
 # "design" and "ok", "@dorkos-qa" is "dorkos" and "qa").
 GATE_WORDS=' security auditor deputy sec design designer qa real data verify verified verification preopen proof release lead pin freeze frozen label labels labelled labeled review reviews reviewed reviewer sign off signoff signed approval approve approved ok oks go gate gates check checks ci green arm armed arming record pm '
+# Held in a variable: bash 3.2 and 5 read an unquoted `=~` pattern differently.
+TIME_WORD_RE='^[0-9]{1,2}(z|am|pm|st|nd|rd|th)?$'
 FILLER_WORDS=' waiting wait waits on for the a an to from until till by and or of pending needs need needed held hold holding deep light read reads re range pass passes passed lift lifts lifted who it its at head sha after before is be then with this that new exact current final first still yet s dorkos utc ct z today tomorrow tonight am mon tue wed thu fri sat sun jan feb mar apr may jun jul aug sep oct nov dec '
 
 # judge <reason> : prints why the reason is not accepted and returns 1, or
@@ -114,7 +116,7 @@ judge() {
     case "$word" in *[a-z0-9]*) ;; *) continue ;; esac
     case "$GATE_WORDS$FILLER_WORDS" in *" $word "*) continue ;; esac
     # Times and days of the month ("15:00Z", "by 21"), not what it waits on.
-    if printf '%s' "$word" | grep -qE '^[0-9]{1,2}(z|am|pm|st|nd|rd|th)?$'; then continue; fi
+    [[ "$word" =~ $TIME_WORD_RE ]] && continue
     kept="$kept $word"
   done
   if [ -z "$kept" ]; then
