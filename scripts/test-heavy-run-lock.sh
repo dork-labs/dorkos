@@ -66,10 +66,16 @@ CHECK="${CHECK:-$repo_root/scripts/heavy-run-lock.sh}"
 unset CI DORKOS_HEAVY_SLOT_HELD DORKOS_HEAVY_LOCK DORKOS_HEAVY_WAIT_SECONDS DORKOS_HEAVY_SLOTS \
   DORKOS_HEAVY_MAX_LOAD DORKOS_HEAVY_TEST_MAX_LOAD DORKOS_IGNORE_LOAD DORKOS_HEAVY_LOAD_WAIT_SECONDS DORKOS_HEAVY_LOAD_POLL_SECONDS \
   CI_STEWARD_TIMINGS_FILE CI_STEWARD_RUN_ID DORKOS_HEAVY_ORDER_DIR DORKOS_HEAVY_LABEL \
-  DORKOS_HEAVY_ORDER_STALE_SECONDS DORKOS_LOAD_GATE_IN_TURN DORKOS_HEAVY_NOTIFY
+  DORKOS_HEAVY_ORDER_STALE_SECONDS DORKOS_LOAD_GATE_IN_TURN DORKOS_HEAVY_NOTIFY \
+  DORKOS_HEAVY_SECOND_SWAP_MAX_MB DORKOS_HEAVY_SECOND_FREE_MIN_PCT DORKOS_HEAVY_SECOND_SWAP_GROWTH_MAX_MB \
+  DORKOS_HEAVY_SECOND_MAX_LOAD DORKOS_HEAVY_SECOND_DISK_MIN_GB
 # This machine's real load must never decide a case: a busy host would make
 # every --job case below wait out the load bound. The load cases set their own.
 export DORKOS_HEAVY_LOADAVG_CMD='echo 0.00'
+# Nor its real memory, load or disk: by default the reading is unreadable, so a
+# second label in line waits exactly as it did before DOR-5073. The DOR-5073
+# cases set their own.
+export DORKOS_HEAVY_MACHINE_CMD='false'
 # These cases are about this lock alone. A --job also waits in the app's line
 # for heavy jobs (DOR-4209), whose folder is this machine's real one; that line
 # has its own suite, scripts/test-load-gate-turn.sh, over a throwaway folder.
@@ -964,6 +970,169 @@ sleep 3
 stale_env "$coord" "$locks" bash "$CHECK" --status >/dev/null 2>&1
 check_eq 'a lone idle top is not moved' 'lonely' "$(cat "$coord/heavy-order")"
 if [ -e "$coord/heavy-order-notes.md" ]; then not_ok 'a note was written for a lone top'; else ok 'and no note is written'; fi
+
+echo ""
+echo "== the second label may start beside the top while the machine is healthy (DOR-5073) =="
+
+# The machine is faked: DORKOS_HEAVY_MACHINE_CMD prints "<swap MB> <free %>
+# <5-minute load> <free disk GB>", and a swap sample from 700 s ago is planted
+# so the growth check has something to measure against. 12 GB is 12288 MB, so
+# 11.9 / 12.0 / 12.1 GB are 12185.6 / 12288 / 12390.4.
+memf="$work/machine"
+mem_env() { order_env "$1" "$2" DORKOS_HEAVY_MACHINE_CMD="cat $memf" "${@:3}"; }
+# try_label <label> <reading> [<swap MB 700 s ago> | none] [<age of that sample, s>]
+# runs <label> against a fresh top/second/third line, leaving "<exit>:<output>"
+# in $out. By default the old sample has the same swap, so growth is 0.
+try_label() {
+  local old=${3:-} age=${4:-700}
+  coord=$(new_coord)
+  locks=$(new_locks)
+  printf 'top-job\nsecond-job\nthird-job\n' >"$coord/heavy-order"
+  printf '%s\n' "$2" >"$memf"
+  [ -n "$old" ] || old=$(printf '%s' "$2" | awk '{ print $1 }')
+  [ "$old" = none ] || [ -z "$old" ] || printf '%s %s\n' "$(($(date +%s) - age))" "$old" >"$coord/heavy-swap-samples"
+  out=$(mem_env "$coord" "$locks" bash "$CHECK" --label "$1" bash -c "echo $1-ran" 2>&1)
+  out="$?:$out"
+}
+starts() { check_contains "$1" '0:' "${out:0:2}"; }
+refused() { check_contains "$1" '75:' "${out:0:3}"; }
+
+try_label second-job '12185.6 41 1.0 200'
+starts 'a healthy machine: the second starts'
+check_contains 'its command ran' 'second-job-ran' "$out"
+check_contains 'it says why it may start' "may start beside 'top-job'" "$out"
+check_eq 'it left the line when it ended; the top keeps its place' \
+  "$(printf 'top-job\nthird-job')" "$(cat "$coord/heavy-order")"
+
+# Swap used: under 12288 MB.
+try_label second-job '12288 41 1.0 200'
+refused 'swap 12.0 GB: the second is refused'
+check_contains 'and told why' 'swap used is 12288 MB, at or over 12288 MB' "$out"
+check_contains 'and who is next' "Next is 'top-job'" "$out"
+check_contains 'and that it may try again soon' 'Try again in a few minutes' "$out"
+check_lacks 'and runs nothing' 'second-job-ran' "$out"
+try_label second-job '12390.4 41 1.0 200'
+refused 'swap 12.1 GB: the second is refused'
+
+# Free memory: at least 40%.
+try_label second-job '0 39 1.0 200'
+refused 'free 39%: the second is refused'
+check_contains 'and told why' 'free memory is 39%, under 40%' "$out"
+try_label second-job '0 40 1.0 200'
+starts 'free 40%: the second starts'
+try_label second-job '0 41 1.0 200'
+starts 'free 41%: the second starts'
+try_label second-job '12390.4 39 1.0 200'
+refused 'both over (12.1 GB, 39%): the second is refused'
+try_label second-job '12185.6 40 1.0 200'
+starts 'both just inside (11.9 GB, 40%): the second starts'
+try_label second-job '12185.6 39 1.0 200'
+refused 'swap fine but free 39%: the second is refused'
+try_label second-job '12288 40 1.0 200'
+refused 'free fine but swap 12.0 GB: the second is refused'
+
+# Swap growth: at most 512 MB over 10 minutes.
+try_label second-job '1512 50 1.0 200' 1000
+starts 'swap grew 512 MB: the second starts'
+try_label second-job '1513 50 1.0 200' 1000
+refused 'swap grew 513 MB: the second is refused'
+check_contains 'and told why' 'swap grew from 1000 to 1513 MB' "$out"
+try_label second-job '1511.5 50 1.0 200' 1000
+starts 'swap grew 511.5 MB: the second starts'
+try_label second-job '1000 50 1.0 200' none
+refused 'no swap sample from 10 minutes ago: the second is refused'
+check_contains 'and told one was just taken' 'one was just taken' "$out"
+check_eq 'and the sample is recorded' 1 "$(awk 'END { print NR }' "$coord/heavy-swap-samples")"
+try_label second-job '1000 50 1.0 200' 1000 300
+refused 'a sample only 5 minutes old: the second is refused'
+try_label second-job '1000 50 1.0 200' 1000 2000
+refused 'a sample over 30 minutes old: the second is refused'
+try_label second-job '1000 50 1.0 200' 1000 1700
+starts 'a sample 28 minutes old: the second starts'
+
+# 5-minute load: under 16.
+try_label second-job '0 50 15.99 200'
+starts 'load 15.99: the second starts'
+try_label second-job '0 50 16 200'
+refused 'load 16: the second is refused'
+check_contains 'and told why' 'the 5-minute load is 16, at or over 16' "$out"
+try_label second-job '0 50 16.01 200'
+refused 'load 16.01: the second is refused'
+
+# Free disk: at least 50 GB.
+try_label second-job '0 50 1.0 49.99'
+refused 'disk 49.99 GB: the second is refused'
+check_contains 'and told why' 'free disk is 49.99 GB, under 50 GB' "$out"
+try_label second-job '0 50 1.0 50'
+starts 'disk 50 GB: the second starts'
+try_label second-job '0 50 1.0 50.01'
+starts 'disk 50.01 GB: the second starts'
+
+# A reading that cannot be had, or makes no sense, counts as unhealthy.
+try_label second-job '' none
+refused 'no reading: the second is refused'
+check_contains 'and told it could not be read' 'could not all be read' "$out"
+try_label second-job '0 50 1.0' none
+refused 'a reading missing the disk: the second is refused'
+try_label second-job 'lots 50 1.0 200' none
+refused 'a malformed reading: the second is refused'
+try_label second-job '-5 50 1.0 200' none
+refused 'a negative reading: the second is refused'
+try_label second-job '1e3 50 1.0 200' none
+refused 'an exponent reading: the second is refused'
+# A limit that is not a number refuses rather than turning into 0.
+coord=$(new_coord)
+locks=$(new_locks)
+printf 'top-job\nsecond-job\n' >"$coord/heavy-order"
+printf '0 50 1.0 200\n' >"$memf"
+printf '%s 0\n' "$(($(date +%s) - 700))" >"$coord/heavy-swap-samples"
+out=$(mem_env "$coord" "$locks" DORKOS_HEAVY_SECOND_DISK_MIN_GB=lots bash "$CHECK" --label second-job bash -c 'echo x' 2>&1)
+check_eq 'a limit that is not a number refuses the second' 75 "$?"
+check_contains 'and says so' 'is not a number' "$out"
+
+# The top always may start; the third never does.
+try_label top-job '99999 0 99 0' none
+starts 'the top starts however bad the machine is'
+check_contains 'its command ran' 'top-job-ran' "$out"
+try_label third-job '0 100 0 999'
+refused 'the third never starts, however healthy the machine is'
+check_lacks 'and runs nothing' 'third-job-ran' "$out"
+check_lacks 'and is not told about the machine' 'REFUSE (machine)' "$out"
+
+# Two at once: the second starts while the top is running.
+coord=$(new_coord)
+locks=$(new_locks)
+printf 'top-job\nsecond-job\n' >"$coord/heavy-order"
+printf '0 100 0 999\n' >"$memf"
+printf '%s 0\n' "$(($(date +%s) - 700))" >"$coord/heavy-swap-samples"
+mem_env "$coord" "$locks" bash "$CHECK" --label 'top-job' sleep 30 >/dev/null 2>&1 &
+holder=$!
+own_pids+=("$holder")
+await_locked "$locks" 1 || not_ok 'top-job never took a slot'
+out=$(mem_env "$coord" "$locks" bash "$CHECK" --label 'second-job' bash -c 'echo beside-ran' 2>&1)
+check_eq 'the second runs while the top runs' 0 "$?"
+check_contains 'its command ran' 'beside-ran' "$out"
+check_eq 'the running top keeps its place' 'top-job' "$(awk 'NF' "$coord/heavy-order")"
+signal_tree KILL "$holder"
+wait "$holder" 2>/dev/null
+
+# A second starting beside an idle top does not restart the top's idle clock,
+# so an idle top still moves down on time. Wide margins: without the guard the
+# clock restarts at the second's exit, 2 s in, so a 6 s bound would not be
+# reached until 8 s; this checks at 7 s.
+coord=$(new_coord)
+locks=$(new_locks)
+printf 'idle-top\nsecond-job\nthird-job\n' >"$coord/heavy-order"
+printf '0 100 0 999\n' >"$memf"
+printf '%s 0\n' "$(($(date +%s) - 700))" >"$coord/heavy-swap-samples"
+mem_env "$coord" "$locks" DORKOS_HEAVY_ORDER_STALE_SECONDS=6 bash "$CHECK" --status >/dev/null 2>&1
+sleep 2
+out=$(mem_env "$coord" "$locks" DORKOS_HEAVY_ORDER_STALE_SECONDS=6 bash "$CHECK" --label 'second-job' bash -c 'echo ok' 2>&1)
+check_contains 'the second ran beside the idle top' 'may start beside' "$out"
+sleep 5
+mem_env "$coord" "$locks" DORKOS_HEAVY_ORDER_STALE_SECONDS=6 bash "$CHECK" --status >/dev/null 2>&1
+check_eq 'the idle top moved down on its own clock' \
+  "$(printf 'third-job\nidle-top')" "$(awk 'NF' "$coord/heavy-order")"
 
 echo ""
 printf '%s passed, %s failed\n' "$pass" "$fail"

@@ -168,6 +168,21 @@
 #                               live run before it moves down one place (900)
 #   DORKOS_HEAVY_NOTIFY         a program run as `<it> <label> <note>` after a
 #                               move; from the caller's environment only
+#   DORKOS_HEAVY_SECOND_SWAP_MAX_MB  the second label in line may start only
+#                               while swap used is under this
+#                               (local.heavy_second_swap_max_mb; 12288)
+#   DORKOS_HEAVY_SECOND_FREE_MIN_PCT  ...and free memory is at least this
+#                               (local.heavy_second_free_min_pct; 40)
+#   DORKOS_HEAVY_SECOND_SWAP_GROWTH_MAX_MB  ...and swap grew at most this
+#                               since a reading 10 to 30 minutes old (local.heavy_second_swap_growth_max_mb; 512)
+#   DORKOS_HEAVY_SECOND_MAX_LOAD  ...and the 5-minute load is under this
+#                               (local.heavy_second_max_load; 16)
+#   DORKOS_HEAVY_SECOND_DISK_MIN_GB  ...and free disk is at least this
+#                               (local.heavy_second_disk_min_gb; 50)
+#   DORKOS_HEAVY_MACHINE_CMD    test only: a command that prints "<swap MB> <free %>
+#                               <5-minute load> <free disk GB>", in place of
+#                               macOS's sysctl, memory_pressure and df; the
+#                               fixtures use it to fake all four
 #   DORKOS_HEAVY_LABEL          set for the copy run inside the app's line, so
 #                               waiters see the label; not for people
 # scripts/test-load-gate-turn.sh drives the app's line.
@@ -329,6 +344,17 @@ LOAD_WAIT_SECONDS="${DORKOS_HEAVY_LOAD_WAIT_SECONDS:-$(config_number heavy_load_
 LOAD_WAIT_SECONDS="${LOAD_WAIT_SECONDS:-600}"
 LOAD_POLL_SECONDS="${DORKOS_HEAVY_LOAD_POLL_SECONDS:-$(config_number heavy_load_poll_seconds)}"
 LOAD_POLL_SECONDS="${LOAD_POLL_SECONDS:-30}"
+# The order line's second label may start beside the top only under these (DOR-5073).
+SECOND_SWAP_MAX_MB="${DORKOS_HEAVY_SECOND_SWAP_MAX_MB:-$(config_number heavy_second_swap_max_mb)}"
+SECOND_SWAP_MAX_MB="${SECOND_SWAP_MAX_MB:-12288}"
+SECOND_FREE_MIN_PCT="${DORKOS_HEAVY_SECOND_FREE_MIN_PCT:-$(config_number heavy_second_free_min_pct)}"
+SECOND_FREE_MIN_PCT="${SECOND_FREE_MIN_PCT:-40}"
+SECOND_SWAP_GROWTH_MAX_MB="${DORKOS_HEAVY_SECOND_SWAP_GROWTH_MAX_MB:-$(config_number heavy_second_swap_growth_max_mb)}"
+SECOND_SWAP_GROWTH_MAX_MB="${SECOND_SWAP_GROWTH_MAX_MB:-512}"
+SECOND_MAX_LOAD="${DORKOS_HEAVY_SECOND_MAX_LOAD:-$(config_number heavy_second_max_load)}"
+SECOND_MAX_LOAD="${SECOND_MAX_LOAD:-16}"
+SECOND_DISK_MIN_GB="${DORKOS_HEAVY_SECOND_DISK_MIN_GB:-$(config_number heavy_second_disk_min_gb)}"
+SECOND_DISK_MIN_GB="${SECOND_DISK_MIN_GB:-50}"
 check_load=0
 [ "$job" = 1 ] && [ -z "$hold_pid" ] && check_load=1
 
@@ -358,7 +384,8 @@ run_uncapped() {
 }
 
 # THE ORDER LINE (DOR-4209, DOR-4901). Only the label on the order file's top
-# line may start; anyone else is refused with exit 75 and told who is next. The
+# line may start, plus the second line's while the machine is healthy (DOR-5073);
+# anyone else is refused with exit 75 and told who is next. The
 # check runs before every way past the cap below, because it is about whose
 # turn it is, not how busy the machine is. Not checked: CI (no order there), a
 # nested call (its parent already took the turn) and the copy of this script
@@ -380,12 +407,29 @@ if [ "$order_on" = 1 ] && [ -z "${DORKOS_HEAVY_SLOT_HELD:-}" ] && [ -z "${DORKOS
       order_lock
       order_rotate_stale
       next=$(order_top)
-      if [ -n "$next" ] && [ "$next" != "$label" ]; then
+      beside=0
+      second_wait=0
+      if [ -n "$next" ] && [ "$next" != "$label" ] && [ "$(order_second)" = "$label" ]; then
+        if why=$(order_second_ok "$SECOND_SWAP_MAX_MB" "$SECOND_FREE_MIN_PCT" \
+          "$SECOND_SWAP_GROWTH_MAX_MB" "$SECOND_MAX_LOAD" "$SECOND_DISK_MIN_GB"); then
+          beside=1
+          echo "[heavy] order: '$label' is second in line and the machine is healthy, so it may start beside '$next'." >&2
+        else
+          second_wait=1
+          echo "[heavy] REFUSE (machine): '$label' is second in line, but $why." >&2
+          echo "[heavy] The second may start beside '$next' while swap is under ${SECOND_SWAP_MAX_MB} MB and grew at most ${SECOND_SWAP_GROWTH_MAX_MB} MB since a reading 10 to 30 minutes old, free memory is at least ${SECOND_FREE_MIN_PCT}%, the 5-minute load is under ${SECOND_MAX_LOAD} and free disk is at least ${SECOND_DISK_MIN_GB} GB." >&2
+        fi
+      fi
+      if [ -n "$next" ] && [ "$next" != "$label" ] && [ "$beside" = 0 ]; then
         order_unlock
         echo "[heavy] REFUSE (order): '$label' is not next. Next is '$next'. Order: $(order_lines | tr '\n' '|' | sed 's/|$//; s/|/ | /g')" >&2
         moved=$(order_last_note_for "$label")
         [ -n "$moved" ] && echo "[heavy] about '$label': $moved" >&2
-        echo "[heavy] Nothing ran. Try again when '$label' is on top (exit 75). See: bash scripts/heavy-run-lock.sh --status" >&2
+        if [ "$second_wait" = 1 ]; then
+          echo "[heavy] Nothing ran. Try again in a few minutes, or when '$label' is on top (exit 75). See: bash scripts/heavy-run-lock.sh --status" >&2
+        else
+          echo "[heavy] Nothing ran. Try again when '$label' is on top (exit 75). See: bash scripts/heavy-run-lock.sh --status" >&2
+        fi
         exit 75
       fi
       if [ -n "$next" ]; then
@@ -396,7 +440,9 @@ if [ "$order_on" = 1 ] && [ -z "${DORKOS_HEAVY_SLOT_HELD:-}" ] && [ -z "${DORKOS
           claim_take "$label" "$$" 1
           trap order_leave EXIT
         fi
-        printf '%s\t%s\n' "$(date +%s)" "$label" >"$TOP_STATE" 2>/dev/null
+        # Only the top's start resets the top's idle clock; a second starting
+        # beside it says nothing about the top.
+        [ "$beside" = 0 ] && printf '%s\t%s\n' "$(date +%s)" "$label" >"$TOP_STATE" 2>/dev/null
       fi
       order_unlock
       ;;

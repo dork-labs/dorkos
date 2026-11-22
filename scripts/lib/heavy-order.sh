@@ -30,6 +30,35 @@
 # moved a line, so anything able to write one file there could run code at that
 # agent's level. An executable left in the folder is never run.
 #
+# THE SECOND IN LINE MAY START TOO, WHILE THE MACHINE IS HEALTHY (DOR-5073).
+# One job at a time halves what the lanes get done, so the label on the SECOND
+# line may also start beside the top, but only while ALL of these hold (the
+# numbers are `local.heavy_second_*` in ci/config.yaml):
+#   swap used        under 12288 MB (12 GB)        heavy_second_swap_max_mb
+#   free memory      at least 40%                  heavy_second_free_min_pct
+#   swap growth      at most 512 MB since a        heavy_second_swap_growth_max_mb
+#                    reading 10-30 minutes old
+#   5-minute load    under 16                      heavy_second_max_load
+#   free disk        at least 50 GB                heavy_second_disk_min_gb
+# (50 GB is twice the usual floor: two jobs fill the disk twice as fast.) Any
+# other time, and always from the third line down, it is refused like any
+# label that is not next. A reading that cannot be had counts as unhealthy, so
+# the second waits. The rule and its numbers are copied unchanged from the
+# coordinator's own order script (Dorian's OK, 2026-11-22), so that script can
+# be retired.
+#
+# Swap growth needs an older reading: each check appends "<epoch> <swap MB>" to
+# `heavy-swap-samples` and compares with the newest sample from 10 to 30
+# minutes ago (an older one says nothing about now). With none yet, the second
+# waits; the sample just taken lets a later try measure.
+#
+# On macOS the readings come from `sysctl -n vm.swapusage`, `memory_pressure
+# -Q`, `sysctl -n vm.loadavg` and `df -k /System/Volumes/Data`; elsewhere there
+# is no reading yet, so the second waits. `DORKOS_HEAVY_MACHINE_CMD` is a test
+# hook (the fixtures fake the machine with it), read from the caller's
+# environment only; it prints "<swap MB> <free %> <5-minute load> <free
+# disk GB>" in place of the real readers. Never set it outside a test.
+#
 # "A live run" is a CLAIM: the top label writes one the moment it passes the
 # order check, so a run still waiting in the gate counts as live. A job outside
 # this script keeps its place for a pid's lifetime with
@@ -45,6 +74,7 @@
 #                        been idle
 #   heavy-claims/        written here: one file per live top-of-line run
 #   heavy-order-notes.md written here: one dated line per move
+#   heavy-swap-samples   written here: "<epoch> <swap MB>", the last 200 checks
 #
 # HARD RULE 7. Nothing here signals a process. Liveness is `kill -0`, which
 # sends nothing, plus a beat file the run touches every 30 seconds, because a
@@ -77,6 +107,7 @@ order_lines() {
 }
 
 order_top() { order_lines | head -n 1; }
+order_second() { order_lines | sed -n 2p; }
 
 # Seconds since $1 was last modified, or empty when it cannot be read. perl,
 # because `stat` flags differ between macOS and Linux.
@@ -207,7 +238,7 @@ order_rotate_stale() {
     return 0
   fi
   [ $((now - state_since)) -ge "$ORDER_STALE_SECONDS" ] || return 0
-  second=$(order_lines | sed -n 2p)
+  second=$(order_second)
   # Alone in line: there is nobody to let past, so it stays.
   [ -n "$second" ] || return 0
   order_move_top_down
@@ -231,10 +262,94 @@ order_init() {
   TOP_STATE="$1/heavy-order.top"
   CLAIMS_DIR="$1/heavy-claims"
   NOTES_FILE="$1/heavy-order-notes.md"
+  SWAP_SAMPLES="$1/heavy-swap-samples"
   NOTIFY_CMD="${DORKOS_HEAVY_NOTIFY:-}"
   ORDER_STALE_SECONDS="${DORKOS_HEAVY_ORDER_STALE_SECONDS:-900}"
   case $ORDER_STALE_SECONDS in '' | *[!0-9]*) ORDER_STALE_SECONDS=900 ;; esac
   ORDER_BEATER=''
+}
+
+# This machine's readings as "<swap used, MB> <free memory, %> <5-minute load>
+# <free disk, GB>", or nothing when any cannot be read. DORKOS_HEAVY_MACHINE_CMD
+# wins; then macOS's own readers. vm.swapusage prints "total = 2048.00M
+# used = 1234.56M  free = ..."; vm.loadavg prints "{ 1m 5m 15m }".
+order_machine_now() {
+  if [ -n "${DORKOS_HEAVY_MACHINE_CMD:-}" ]; then
+    sh -c "$DORKOS_HEAVY_MACHINE_CMD" 2>/dev/null | head -n 1
+    return 0
+  fi
+  local swap free load disk
+  # shellcheck disable=SC2016 # awk programs, not shell expansions
+  swap=$(sysctl -n vm.swapusage 2>/dev/null | awk '
+    { for (i = 1; i < NF - 1; i++) if ($i == "used" && $(i + 1) == "=") { v = $(i + 2); break } }
+    END {
+      if (v ~ /^[0-9]+(\.[0-9]+)?M$/) { sub(/M$/, "", v); print v }
+      else if (v ~ /^[0-9]+(\.[0-9]+)?G$/) { sub(/G$/, "", v); print v * 1024 }
+    }')
+  free=$(memory_pressure -Q 2>/dev/null | awk -F': *' '/free percentage/ { sub(/%.*/, "", $2); print $2; exit }')
+  # shellcheck disable=SC2016
+  load=$(sysctl -n vm.loadavg 2>/dev/null | awk '$1 == "{" { print $3; exit }')
+  # shellcheck disable=SC2016
+  disk=$(df -k /System/Volumes/Data 2>/dev/null | awk 'NR == 2 { printf "%.2f", $4 / 1048576 }')
+  [ -n "$swap" ] && [ -n "$free" ] && [ -n "$load" ] && [ -n "$disk" ] &&
+    printf '%s %s %s %s\n' "$swap" "$free" "$load" "$disk"
+  return 0
+}
+
+ORDER_NUM_RE='^[0-9]+([.][0-9]+)?$'
+
+# True when $1 < $2. Both are checked against ORDER_NUM_RE first.
+order_lt() { awk -v a="$1" -v b="$2" 'BEGIN { exit !(a + 0 < b + 0) }'; }
+
+# True while the second label may start beside the top. Arguments: swap max
+# (MB), free min (%), swap growth max (MB since a reading 10 to 30 minutes old), load max, disk min
+# (GB). Otherwise prints why and fails; an unreadable or malformed reading, or
+# a limit that is not a number, fails too. Call with the order lock held: it
+# appends to SWAP_SAMPLES.
+order_second_ok() {
+  local reading swap free load disk old now v
+  for v in "$@"; do
+    [[ "$v" =~ $ORDER_NUM_RE ]] || { echo "a limit for the second label is not a number ('$v')"; return 1; }
+  done
+  [ "$#" -eq 5 ] || { echo "the second label's limits are incomplete"; return 1; }
+  reading=$(order_machine_now)
+  read -r swap free load disk _ <<<"$reading"
+  for v in "${swap:-}" "${free:-}" "${load:-}" "${disk:-}"; do
+    [[ "$v" =~ $ORDER_NUM_RE ]] || { echo "swap, free memory, load and free disk could not all be read"; return 1; }
+  done
+  now=$(date +%s)
+  printf '%s %s\n' "$now" "$swap" >>"$SWAP_SAMPLES" 2>/dev/null
+  tail -n 200 -- "$SWAP_SAMPLES" >"$SWAP_SAMPLES.tmp.$$" 2>/dev/null &&
+    mv -f -- "$SWAP_SAMPLES.tmp.$$" "$SWAP_SAMPLES"
+  rm -f -- "$SWAP_SAMPLES.tmp.$$"
+  if ! order_lt "$swap" "$1"; then
+    echo "swap used is ${swap} MB, at or over ${1} MB"
+    return 1
+  fi
+  if order_lt "$free" "$2"; then
+    echo "free memory is ${free}%, under ${2}%"
+    return 1
+  fi
+  if ! order_lt "$load" "$4"; then
+    echo "the 5-minute load is ${load}, at or over ${4}"
+    return 1
+  fi
+  if order_lt "$disk" "$5"; then
+    echo "free disk is ${disk} GB, under ${5} GB"
+    return 1
+  fi
+  # The newest well-formed sample from 10 to 30 minutes ago.
+  # shellcheck disable=SC2016 # an awk program, not a shell expansion
+  old=$(awk -v n="$now" '$1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+(\.[0-9]+)?$/ && $1 <= n - 600 && $1 >= n - 1800 { s = $2 } END { print s }' "$SWAP_SAMPLES" 2>/dev/null)
+  if [ -z "$old" ]; then
+    echo "there is no swap reading from 10 to 30 minutes ago to measure its growth against yet (one was just taken)"
+    return 1
+  fi
+  if order_lt "$3" "$(awk -v s="$swap" -v o="$old" 'BEGIN { print s - o }')"; then
+    echo "swap grew from ${old} to ${swap} MB in the last 10 minutes, more than ${3} MB"
+    return 1
+  fi
+  return 0
 }
 
 # --status: the order, who holds a claim, and the stale check, then exit 0.
