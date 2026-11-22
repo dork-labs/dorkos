@@ -129,6 +129,9 @@ tracked:
   - id: tracked.green-to-armed
     unit: minutes
     definition: Per merged PR, time from its final head's required checks all going green to the first auto-merge arming or queue entry after that; p50. Not yet computed by the collector (it needs the head SHA's check completion joined to the AUTO_MERGE_ENABLED and ADDED_TO_MERGE_QUEUE timeline events); the event-driven merge-tail experiment adds it.
+  - id: tracked.unjustified-hold-share
+    unit: ratio
+    definition: Share of open PRs into main carrying the hold label whose newest hold reason is missing, has no category, or names only a gate the arm script already checks (scripts/hold-reason-check.sh's rule), read once a day. Not yet computed by the collector; CI Steward reads it by hand for its digest (DOR-4974).
   - id: tracked.repeat-ejections
     unit: count
     definition: >-

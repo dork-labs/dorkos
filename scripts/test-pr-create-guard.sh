@@ -112,14 +112,14 @@ block gh api graphql -f query='mutation { createPullRequest(input: {repositoryId
 # --- the supported road, and everything else gh pr does. ---
 allow scripts/open-pr.sh --title "feat: x" --body-file body.md
 allow bash scripts/open-pr.sh --title "feat: x" --body-file body.md --dry-run
-allow ./scripts/open-pr.sh --title x --body-file b.md --hold "waiting on Security"
+allow ./scripts/open-pr.sh --title x --body-file b.md --hold "stacked: on #4100"
 allow gh pr view 12
 allow gh pr view 12 --json labels,headRefOid
 allow gh pr edit 12 --add-label re-review
 allow gh pr edit 12 --title "feat: create the thing"
 allow gh pr list --state open --search "gh pr create"
 allow gh pr checks 12
-allow gh pr comment 12 --body "hold: waiting on Security"
+allow gh pr comment 12 --body "hold: stacked: on #4100"
 allow gh pr merge --auto 12
 allow gh pr ready 12
 allow gh pr diff 12 --name-only

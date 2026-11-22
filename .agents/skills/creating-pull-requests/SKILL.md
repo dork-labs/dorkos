@@ -234,7 +234,7 @@ pushed:
 
 ```bash
 scripts/open-pr.sh --title "<type>(<scope>): <summary>" --body-file <file> \
-  [--draft] [--hold "<reason>"] [--extra-label <label>] [--p0 "<reason>"] [--dry-run]
+  [--draft] [--hold "<category>: <detail>"] [--extra-label <label>] [--p0 "<reason>"] [--dry-run]
 ```
 
 It runs the open-PR cap (30 non-draft PRs into `main`, DOR-3341; at the cap keep
@@ -242,7 +242,11 @@ building locally, or pass a P0 or CI fix with `--p0`), computes `review:light` o
 `review:deep` (the security-gate path list), `skip-changelog` and `needs-design`
 from the diff, appends the provenance line if the body has none, and opens the PR
 with every label at creation. `--hold` adds `hold` and posts `hold: <reason>`; a
-hold with no reason is never applied. `--extra-label` refuses hold and gate labels
+hold with no reason is never applied. The reason is `<category>: <detail>`, and the
+category is `migration-collision`, `stacked`, `external-dependency` or `other`. A
+reason that names only a gate the arm script already checks (Security, design, QA,
+the verify proof, the release pin or freeze) is refused: `arm.sh` already waits
+for those, so a hold for one only adds a person to wake (DOR-4974). `--extra-label` refuses hold and gate labels
 (`security-*`, `design-ok`, `qa-*`). `--dry-run` prints the labels and the exact
 `gh` command. The header of the script is the reference; in Claude Code,
 `.claude/hooks/pr-create-guard.mjs` refuses a bare `gh pr create`.

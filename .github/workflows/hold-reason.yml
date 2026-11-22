@@ -1,13 +1,16 @@
 name: hold-reason
 
 # Advisory, never required: a pull request carrying `hold` should also carry a
-# comment starting `hold:` that says why, and who lifts it.
+# comment starting `hold:` that says why, and who lifts it. The reason is
+# `<category>: <detail>` (migration-collision, stacked, external-dependency or
+# other) and must name more than a gate the arm script already checks
+# (DOR-4974).
 #
 # merge-tail and the arm script refuse a held PR and neither lifts `hold`, so a
 # hold with no reason names nobody to lift it. On 2026-11-20 a coordinator brief
 # told agents to open security-path PRs with `hold` while the arm script refused
 # it, and 19 PRs sat for 9 hours. scripts/open-pr.sh posts the reason itself
-# (`--hold "<reason>"`), and .claude/hooks/pr-create-guard.mjs steers Claude
+# (`--hold "<category>: <detail>"`), and .claude/hooks/pr-create-guard.mjs steers Claude
 # sessions to it; this check covers every other way a hold goes on, including
 # Codex and OpenCode agents, which run no Claude hooks. The decision is
 # scripts/hold-reason-check.sh (fixtures: scripts/test-hold-reason-check.sh).
@@ -17,8 +20,10 @@ name: hold-reason
 # out main's copy of the one script it runs, never the pull request's code.
 #
 # `issue_comment` runs (a reason posted, edited or deleted) are reported against
-# main, not on the pull request: they show in the Actions tab only. The check on
-# the PR itself is re-read on the next label change.
+# main, not on the pull request: they show in the Actions tab only. So a reason
+# may also be a line starting `hold:` in the PR body, and editing the body
+# (`edited`) re-runs the check on the PR itself: fixing a reason never needs the
+# hold label toggled, which would re-fire merge-tail and the arm events.
 #
 # No `concurrency:` group on purpose: `gh pr create --label a --label hold`
 # raises one `labeled` event per label at once, and a cancelled run is a
@@ -26,7 +31,7 @@ name: hold-reason
 
 on:
   pull_request:
-    types: [labeled, unlabeled]
+    types: [labeled, unlabeled, opened, reopened, edited]
   issue_comment:
     types: [created, edited, deleted]
 
@@ -49,7 +54,8 @@ jobs:
         github.event.issue.pull_request &&
         contains(github.event.issue.labels.*.name, 'hold'))
     runs-on: ubuntu-latest
-    # Two reads, re-read twice 15 s apart when the reason lags the label.
+    # Three reads (labels, comments, body), re-read twice 15 s apart when the
+    # reason lags the label.
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7

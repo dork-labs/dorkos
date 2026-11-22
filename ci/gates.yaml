@@ -250,7 +250,7 @@ gates:
   # --- hold-reason.yml ---
   - id: wf.hold-reason.hold-reason
     source: .github/workflows/hold-reason.yml
-    purpose: Advisory; flags a PR carrying the hold label with no comment starting hold, so every hold says why and who lifts it.
+    purpose: Advisory; flags a PR carrying the hold label with no comment or body line starting hold, or one with no category (migration-collision, stacked, external-dependency, other) or naming only a gate the arm script already checks, so every hold says why and who lifts it.
 
   # --- scripts-test.yml ---
   - id: wf.scripts-test.fixtures

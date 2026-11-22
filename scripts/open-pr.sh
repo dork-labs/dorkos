@@ -2,7 +2,8 @@
 # open-pr.sh — the one supported way to open a pull request in this repo.
 #
 #   scripts/open-pr.sh --title "<type>(<scope>): <summary>" --body-file <file>
-#                      [--draft] [--hold "<reason>"] [--extra-label <label>]...
+#                      [--draft] [--hold "<category>: <detail>"]
+#                      [--extra-label <label>]...
 #                      [--p0 "<reason>"] [--dry-run]
 #
 # WHY THIS IS CODE AND NOT PROSE
@@ -42,7 +43,11 @@
 #      the review see them. With `--hold`, `hold` is one of them and the reason
 #      is posted straight after as a one-line comment, `hold: <reason>`, which
 #      the hold-reason workflow looks for. Without `--hold` the PR never gets
-#      `hold`, from here or from `--extra-label`.
+#      `hold`, from here or from `--extra-label`. The reason must name a
+#      category (`migration-collision`, `stacked`, `external-dependency` or
+#      `other`) and must not name only a gate the scripts already check
+#      (Security, design, QA, verify, the release pin or lead): that rule is
+#      scripts/hold-reason-check.sh --reason, so the two never disagree.
 #   Then it prints the PR URL, the head SHA and the labels GitHub reports.
 #
 # `--extra-label` adds any other label, but never `hold` or another hold label
@@ -91,7 +96,7 @@ HOLD_LABELS_RE='^(hold|do-not-merge|do not merge|wip|blocked)$'
 GATE_LABELS_RE='^(security-.*|design-ok|qa-.*|needs-qa-gate)$'
 
 usage() {
-  sed -n '3,6p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
+  sed -n '3,7p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
   exit 2
 }
 die() { # $1 exit code, rest: message
@@ -137,13 +142,14 @@ if [ "$hold_given" = 1 ]; then
   case "$hold_reason" in *$'\n'* | *$'\r'*) die 2 "--hold takes a one-line reason" ;; esac
   hold_reason=$(printf '%s' "$hold_reason" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
   [ -n "$hold_reason" ] || die 2 "--hold needs a reason: a hold with no reason deadlocks the PR, because nobody knows who lifts it"
+  "$DIR/hold-reason-check.sh" --reason "$hold_reason" || die 1 "--hold \"$hold_reason\" was refused (above), so nothing was opened"
 fi
 
 for label in ${extra[@]+"${extra[@]}"}; do
   [ -n "${label//[[:space:]]/}" ] || die 2 "--extra-label needs a label name"
   case "$label" in *,*) die 1 "--extra-label '$label' has a comma; gh would split it into several labels. Pass each one on its own." ;; esac
   if grep -qiE "$HOLD_LABELS_RE" <<<"$label"; then
-    die 1 "--extra-label '$label' is a hold label. Use --hold \"<reason>\": a hold needs a reason posted with it."
+    die 1 "--extra-label '$label' is a hold label. Use --hold \"<category>: <detail>\": a hold needs a reason posted with it."
   fi
   if grep -qiE "$GATE_LABELS_RE" <<<"$label"; then
     die 1 "--extra-label '$label' is a gate label its owner adds after their own review (Security, the designer, QA). Ask them; never add it yourself."

@@ -205,11 +205,21 @@ check 'a UI test does not take needs-design' 'review:light,skip-changelog' "$(la
 
 # --- hold --------------------------------------------------------------------
 branch 'feat(server): x' apps/server/src/services/widgets/e.ts changelog/unreleased/261120-000010-x.md
-open --hold 'waiting on Security for the token change'
+open --hold 'external-dependency: waits on #4105'
 check 'with --hold it opens' 0 "$rc"
 check 'with --hold, hold is a label at creation' 'review:light,hold' "$(labels)"
 check 'with --hold, the reason is posted as a comment' yes \
-  "$(has "$(cat "$GH_LOG")" 'pr comment https://github.com/made-up/repo/pull/42 --body hold: waiting on Security for the token change')"
+  "$(has "$(cat "$GH_LOG")" 'pr comment https://github.com/made-up/repo/pull/42 --body hold: external-dependency: waits on #4105')"
+open --hold 'Security review'
+check '--hold "Security review" is refused' 1 "$rc"
+check '--hold "Security review" opens nothing' no "$(created)"
+check '--hold "Security review" lists the categories' yes "$(has "$out" 'migration-collision, stacked, external-dependency, other')"
+open --hold 'other: waiting on the designer for design-ok'
+check '--hold naming only a gate is refused' 1 "$rc"
+check '--hold naming only a gate says so' yes "$(has "$out" 'names nothing but a gate')"
+check '--hold naming only a gate runs no gh' '' "$(cat "$GH_LOG")"
+open --hold 'stacked'
+check '--hold with a category and no detail is refused' 1 "$rc"
 open
 check 'without --hold there is no hold label' 'review:light' "$(labels)"
 check 'without --hold there is no comment' no "$(grep -q '^pr comment' "$GH_LOG" && echo yes || echo no)"
@@ -222,9 +232,9 @@ open --hold $'two\nlines'
 check '--hold with a two-line reason is refused' 2 "$rc"
 open --hold
 check '--hold with no value is refused' 2 "$rc"
-FAKE_FAIL=comment open --hold 'waiting'
+FAKE_FAIL=comment open --hold 'stacked: on #4100'
 check 'a failed hold comment is exit 3' 3 "$rc"
-check 'a failed hold comment says how to post it' yes "$(has "$out" 'gh pr comment https://github.com/made-up/repo/pull/42 --body "hold: waiting"')"
+check 'a failed hold comment says how to post it' yes "$(has "$out" 'gh pr comment https://github.com/made-up/repo/pull/42 --body "hold: stacked: on #4100"')"
 
 # --- --extra-label gate labels -------------------------------------------------
 for label in hold HOLD do-not-merge wip blocked security-reviewed security-deep-reviewed \
@@ -252,7 +262,7 @@ check 'a cap that cannot decide refuses' 1 "$rc"
 check 'a cap that cannot decide opens nothing' no "$(created)"
 
 # --- --dry-run ---------------------------------------------------------------
-open --dry-run --hold 'waiting on QA' --draft
+open --dry-run --hold 'migration-collision: same idx as #4090' --draft
 check '--dry-run exits 0' 0 "$rc"
 check '--dry-run runs no gh at all' '' "$(cat "$GH_LOG")"
 check '--dry-run prints the labels' yes "$(has "$out" 'labels: review:light,hold')"

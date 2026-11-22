@@ -541,16 +541,21 @@ may merge between that commit and the release PR, or the squash carries
 unverified code. `publish:cli` refuses a commit that is not on `main` (6.10), so
 tagging a side-branch commit is not a way around it. Instead:
 
-1. Before arming the release PR, take every other PR out of the queue: put
-   `hold` on each armed or queued PR and disarm it (`gh pr merge --disable-auto
-<n>`; a PR already in the queue needs the GraphQL `dequeuePullRequest`).
-   Save the list.
-2. Keep guarding while the release PR is in the queue: anything armed in the
-   meantime gets the same `hold`.
+1. Before arming the release PR, lock arming: write `.temp/coord/FREEZE` in
+   the main checkout, line 1 the release PR number, line 2 why. While it
+   exists, `arm.sh` refuses every other PR (the release pin file does the same
+   once QA pins a head). Then take every other PR out of the queue: disarm each
+   armed or queued PR (`gh pr merge --disable-auto <n>`; a PR already in the
+   queue needs the GraphQL `dequeuePullRequest`). Save the list. Do not put
+   `hold` on them: a hold whose only reason is the freeze fails the
+   `hold-reason` check (DOR-4974).
+2. Keep guarding while the release PR is in the queue. The lock binds only
+   `arm.sh`, not a bare `gh pr merge --auto` or the GitHub page, so read the
+   queue each tick and disarm anything armed in the meantime the same way.
 3. **The queue stays frozen until npm is curl-verified** (6.10:
    `curl -sf https://registry.npmjs.org/dorkos/X.Y.Z` returns 200). Tagging is
    not the end of the freeze, and neither is starting the publish.
-4. Only then take `hold` off and re-arm the saved list. A harness or CI fix
+4. Only then delete `.temp/coord/FREEZE` and re-arm the saved list. A harness or CI fix
    that turns a red check green goes first, so the next results mean
    something.
 
