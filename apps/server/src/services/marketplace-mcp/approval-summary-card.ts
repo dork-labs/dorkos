@@ -36,7 +36,12 @@ import { disclosedEffectsOf } from '../marketplace/preview/disclosed-effects.js'
 import type { PermissionPreview, PreviewExtension } from '../marketplace/types.js';
 import type { ApprovableUpdate } from '../marketplace/flows/update-installed.js';
 import { codeRowCount, effectRows, sortRows, whole } from './approval-summary-rows.js';
-import { placeOf, UPDATE_APP_WAITS, whenProgramsStart } from './update-approval-detail.js';
+import {
+  packageWaitNote,
+  perAppWaitNote,
+  placeOf,
+  whenProgramsStart,
+} from './update-approval-detail.js';
 import { extensionDeclarationLines } from '../marketplace/preview/extension-disclosure.js';
 
 /** What a confirmation request carries that the summary reads. */
@@ -148,6 +153,13 @@ function installSummary(req: SummarySource): MarketplacePackageSummary {
   );
 }
 
+/** The app rows, with a line said once for all of them under the first, when there is one. */
+function withPackageNote(rows: MarketplaceRisk[], note: string | undefined): MarketplaceRisk[] {
+  const [first, ...rest] = rows;
+  if (!note || !first) return rows;
+  return [{ ...first, items: [...(first.items ?? []), note] }, ...rest];
+}
+
 /**
  * The summary of one reinstall, compared with what is installed. The
  * baseline is used only when the caller vouched for it (`installedDisclosed`
@@ -167,7 +179,13 @@ function updateSummary(update: ApprovableUpdate): MarketplacePackageSummary {
       fromVersion: update.installedVersion,
       toVersion: update.latestVersion,
     },
-    [...extensionRows(update.extensions, baseline ? 'broader' : 'new', UPDATE_APP_WAITS), ...rows],
+    [
+      ...withPackageNote(
+        extensionRows(update.extensions, baseline ? 'broader' : 'new', perAppWaitNote(update)),
+        packageWaitNote(update)
+      ),
+      ...rows,
+    ],
     unchangedCount
   );
 }

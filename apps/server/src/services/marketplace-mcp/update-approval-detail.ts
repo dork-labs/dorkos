@@ -25,11 +25,50 @@ export const UPDATE_DETAIL_MAX_LENGTH = APPROVAL_DETAIL_MAX_LENGTH;
  * Said under each app an update brings. An app's code runs only on a person's
  * yes to its exact files, so new code waits in Activity however an earlier
  * version was approved (DOR-4895). A source the person trusts outright
- * (`extensions.trustedSources`) runs without asking; an update that only adds
- * places keeps its code and asks only for those places (`places-only-update.ts`).
+ * (`extensions.trustedSources`) runs without asking. An update that only adds
+ * places brings no new code, keeps running and asks only for those places
+ * (`places-only-update.ts`), which "any" leaves true.
  */
 export const UPDATE_APP_WAITS =
-  'New code waits for your OK in Activity, unless you trust its source.';
+  'Any new code waits for your OK in Activity, unless you trust its source.';
+
+/**
+ * The most apps an update says {@link UPDATE_APP_WAITS} under one by one. Past
+ * it the line is said once for the package ({@link updateAppsWait}), so a
+ * many-app update is not pushed past what a card can hold and refused.
+ */
+export const UPDATE_APP_NOTE_PER_APP_MAX = 3;
+
+/**
+ * {@link UPDATE_APP_WAITS}, said once for every app an update brings.
+ *
+ * @param count - How many apps it brings.
+ */
+export function updateAppsWait(count: number): string {
+  return `All ${count} mini apps: any new code waits for an OK, unless its source is trusted.`;
+}
+
+/**
+ * The line said under each app of this update, or none when it brings too many
+ * to say it each time.
+ *
+ * @param update - The reinstall.
+ */
+export function perAppWaitNote(update: ApprovableUpdate): string | undefined {
+  const count = update.extensions?.length ?? 0;
+  return count <= UPDATE_APP_NOTE_PER_APP_MAX ? UPDATE_APP_WAITS : undefined;
+}
+
+/**
+ * The line said once for this update's apps, when there are too many to say it
+ * under each.
+ *
+ * @param update - The reinstall.
+ */
+export function packageWaitNote(update: ApprovableUpdate): string | undefined {
+  const count = update.extensions?.length ?? 0;
+  return count > UPDATE_APP_NOTE_PER_APP_MAX ? updateAppsWait(count) : undefined;
+}
 
 /**
  * A value written out whole, quoted and escaped, with every hidden or
@@ -71,17 +110,19 @@ export function whenProgramsStart(update: ApprovableUpdate): string {
  */
 export function describeUpdatesInFull(updates: readonly ApprovableUpdate[]): string {
   return updates
-    .map((update) =>
-      [
+    .map((update) => {
+      const once = packageWaitNote(update);
+      return [
         `${whole(update.packageName)} (${update.type}, ${placeOf(update)}): ${whole(update.installedVersion)} → ${whole(update.latestVersion)}`,
         `  at ${whole(update.installPath)}`,
         ...describePackageInFull(
           update.disclosed,
           update.extensions,
           whenProgramsStart(update),
-          UPDATE_APP_WAITS
+          perAppWaitNote(update)
         ),
-      ].join('\n')
-    )
+        ...(once ? [`  ${once}`] : []),
+      ].join('\n');
+    })
     .join('\n\n');
 }

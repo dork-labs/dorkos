@@ -146,13 +146,17 @@ describe('re-scans move the server half onto the new copy', () => {
       { roots: async () => [], onChange: () => () => undefined },
       { announce }
     );
-    mockDiscover.mockResolvedValue([flowIn('b', '1.2.0')]);
+    mockDiscover.mockResolvedValue([sameFilesIn('b')]);
 
     manager.requestRefresh();
     expect(lifecycle.initialize).not.toHaveBeenCalled();
     await manager.whenIdle();
 
     expect(lifecycle.shutdown).toHaveBeenCalledWith('flow');
+    expect(lifecycle.initialize).toHaveBeenCalledWith(
+      'flow',
+      expect.objectContaining({ path: sameFilesIn('b').path })
+    );
     expect(announce).toHaveBeenCalledWith(['flow']);
   });
 
