@@ -450,7 +450,7 @@ function ExtensionRiskBody({
     return (
       <div className="space-y-4">
         <p role="status" className="text-sm">
-          A mini app ran since this page opened. Sign in again to confirm.
+          A mini app ran after this page opened. Sign in again, then try once more.
         </p>
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button

@@ -394,7 +394,9 @@ describe('ActionStepUpHost', () => {
     render(<ActionStepUpHost />);
     const outcome = ask();
     expect(
-      await screen.findByText('A mini app ran since this page opened. Sign in again to confirm.')
+      await screen.findByText(
+        'A mini app ran after this page opened. Sign in again, then try once more.'
+      )
     ).toBeTruthy();
     expect(screen.queryByLabelText('DorkOS password')).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Sign in again' }));
