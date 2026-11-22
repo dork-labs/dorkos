@@ -1,0 +1,33 @@
+{
+ "schema": 1,
+ "id": "261030-230941",
+ "verdict": "verified",
+ "reason": "gate.wf.changelog-fragment-check.fragment-present.failure_rate@pull_request reached 0.0139 against a target of 0.04 (baseline 0.06).",
+ "computed_at": "2026-11-22T13:12:07.662Z",
+ "hypothesis_hash": "bf077754c0eec3cc",
+ "metric": "gate.wf.changelog-fragment-check.fragment-present.failure_rate@pull_request",
+ "anchor": "2026-11-01T02:12:11Z",
+ "prs": [
+  3324
+ ],
+ "baseline": {
+  "value": 0.06,
+  "source": "before-window"
+ },
+ "target": 0.04,
+ "min_n": 10,
+ "before": {
+  "from": "2026-10-25T02:12:11Z",
+  "to": "2026-11-01T02:12:11Z",
+  "n": 1266,
+  "value": 0.06
+ },
+ "after": {
+  "from": "2026-11-01T02:12:11Z",
+  "to": "2026-11-15T02:12:11Z",
+  "n": 1728,
+  "value": 0.0139
+ },
+ "confounders": [],
+ "slo": null
+}

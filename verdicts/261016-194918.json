@@ -1,0 +1,33 @@
+{
+ "schema": 1,
+ "id": "261016-194918",
+ "verdict": "failed",
+ "reason": "gate.wf.publish-docker.build-and-push-hub.failure_rate is 0.125 against a target of 0, less than halfway from the baseline of 0.",
+ "computed_at": "2026-11-22T13:12:07.662Z",
+ "hypothesis_hash": "61411e93390aaabe",
+ "metric": "gate.wf.publish-docker.build-and-push-hub.failure_rate",
+ "anchor": "2026-10-17T00:50:06Z",
+ "prs": [
+  2973
+ ],
+ "baseline": {
+  "value": 0,
+  "source": "ledger"
+ },
+ "target": 0,
+ "min_n": 10,
+ "before": {
+  "from": "2026-10-10T00:50:06Z",
+  "to": "2026-10-17T00:50:06Z",
+  "n": 0,
+  "value": null
+ },
+ "after": {
+  "from": "2026-10-17T00:50:06Z",
+  "to": "2026-11-16T00:50:06Z",
+  "n": 40,
+  "value": 0.125
+ },
+ "confounders": [],
+ "slo": null
+}

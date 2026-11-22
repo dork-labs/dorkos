@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261019-173057",
+ "file": "ci/ledger/261019-173057-typecheck-memory-cap.md",
+ "pr": 3108,
+ "merged_at": "2026-10-19T22:25:44Z",
+ "sha": "2c0349dd778c491f83f3ecc2c26c204c87815063",
+ "resolved_at": "2026-11-22T13:12:07.662Z"
+}

@@ -1,0 +1,40 @@
+{
+ "schema": 1,
+ "id": "261031-071000",
+ "verdict": "inconclusive",
+ "reason": "Confounded: 261030-180020, 261031-090000, 261031-121500, 261031-163500, 261103-214142, 261111-163545 changed the same gate inside the after-window (2026-10-31T17:57:52Z to 2026-11-14T17:57:52Z), so the movement cannot be attributed to this change alone.",
+ "computed_at": "2026-11-22T13:12:07.662Z",
+ "hypothesis_hash": "cb03a16a6028ac16",
+ "metric": "gate.wf.credential-free-build.credential-free-build.ejections_caused",
+ "anchor": "2026-10-31T17:57:52Z",
+ "prs": [
+  3347
+ ],
+ "baseline": {
+  "value": 4,
+  "source": "ledger"
+ },
+ "target": 0,
+ "min_n": 10,
+ "before": {
+  "from": "2026-10-24T17:57:52Z",
+  "to": "2026-10-31T17:57:52Z",
+  "n": 6,
+  "value": 1
+ },
+ "after": {
+  "from": "2026-10-31T17:57:52Z",
+  "to": "2026-11-14T17:57:52Z",
+  "n": 13,
+  "value": 7
+ },
+ "confounders": [
+  "261030-180020",
+  "261031-090000",
+  "261031-121500",
+  "261031-163500",
+  "261103-214142",
+  "261111-163545"
+ ],
+ "slo": null
+}

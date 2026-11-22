@@ -1,0 +1,39 @@
+{
+ "schema": 1,
+ "id": "261016-192347",
+ "verdict": "verified",
+ "reason": "gate.wf.cli-smoke-test.hub-smoke-test.duration_p90 reached 1.8 against a target of 3 (baseline 1.3).",
+ "computed_at": "2026-11-22T13:12:07.662Z",
+ "hypothesis_hash": "9f131f8d05d2c4f9",
+ "metric": "gate.wf.cli-smoke-test.hub-smoke-test.duration_p90",
+ "anchor": "2026-10-16T21:43:58Z",
+ "prs": [
+  2971
+ ],
+ "baseline": {
+  "value": 1.3,
+  "source": "ledger"
+ },
+ "target": 3,
+ "min_n": 10,
+ "before": {
+  "from": "2026-10-09T21:43:58Z",
+  "to": "2026-10-16T21:43:58Z",
+  "n": 4,
+  "value": 1.2
+ },
+ "after": {
+  "from": "2026-10-16T21:43:58Z",
+  "to": "2026-10-30T21:43:58Z",
+  "n": 925,
+  "value": 1.8
+ },
+ "confounders": [],
+ "slo": {
+  "id": "headroom",
+  "stat": "p95_over_timeout",
+  "before": 1.02,
+  "after": 1.039,
+  "movement": "worse"
+ }
+}

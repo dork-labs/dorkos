@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261031-072224",
+ "file": "ci/ledger/261031-072224-heavy-lock-turbo-and-owned-dir.md",
+ "pr": 3368,
+ "merged_at": "2026-11-01T02:39:16Z",
+ "sha": "1115a3f65a38c89f6606f9668b3bf5491bf2bb89",
+ "resolved_at": "2026-11-22T13:12:07.662Z"
+}

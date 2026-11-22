@@ -1,0 +1,33 @@
+{
+ "schema": 1,
+ "id": "261031-091500",
+ "verdict": "failed",
+ "reason": "wasted-queue-builds is 0.1056 against a target of 0.03, less than halfway from the baseline of 0.0813.",
+ "computed_at": "2026-11-22T13:12:07.662Z",
+ "hypothesis_hash": "682da6afdde36468",
+ "metric": "wasted-queue-builds",
+ "anchor": "2026-10-31T18:04:21Z",
+ "prs": [
+  3352
+ ],
+ "baseline": {
+  "value": 0.0813,
+  "source": "before-window"
+ },
+ "target": 0.03,
+ "min_n": 30,
+ "before": {
+  "from": "2026-10-24T18:04:21Z",
+  "to": "2026-10-31T18:04:21Z",
+  "n": 209,
+  "value": 0.0813
+ },
+ "after": {
+  "from": "2026-10-31T18:04:21Z",
+  "to": "2026-11-14T18:04:21Z",
+  "n": 549,
+  "value": 0.1056
+ },
+ "confounders": [],
+ "slo": null
+}

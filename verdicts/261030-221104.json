@@ -1,0 +1,39 @@
+{
+ "schema": 1,
+ "id": "261030-221104",
+ "verdict": "verified",
+ "reason": "tracked.repeat-ejections reached 3.2 against a target of 7.5 (baseline 10.5).",
+ "computed_at": "2026-11-22T13:12:07.662Z",
+ "hypothesis_hash": "0284aadca44f854c",
+ "metric": "tracked.repeat-ejections",
+ "anchor": "2026-11-01T03:07:31Z",
+ "prs": [
+  3321
+ ],
+ "baseline": {
+  "value": 10.5,
+  "source": "before-window"
+ },
+ "target": 7.5,
+ "min_n": 10,
+ "before": {
+  "from": "2026-10-25T03:07:31Z",
+  "to": "2026-11-01T03:07:31Z",
+  "n": 39,
+  "value": 10.5
+ },
+ "after": {
+  "from": "2026-11-01T03:07:31Z",
+  "to": "2026-11-15T03:07:31Z",
+  "n": 57,
+  "value": 3.2
+ },
+ "confounders": [],
+ "slo": {
+  "id": "queue-green",
+  "stat": "share",
+  "before": 0.2688,
+  "after": 0.8119,
+  "movement": "better"
+ }
+}

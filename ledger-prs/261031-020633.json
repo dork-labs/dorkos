@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "id": "261031-020633",
+ "file": "ci/ledger/261031-020633-pr-concurrency-cancel.md",
+ "pr": 3346,
+ "merged_at": "2026-10-31T17:58:37Z",
+ "sha": "458e14472f942cc59642e959d876200e103b3ece",
+ "resolved_at": "2026-11-22T13:12:07.662Z"
+}
