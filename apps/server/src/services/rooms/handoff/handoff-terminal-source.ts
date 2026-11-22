@@ -23,6 +23,7 @@ import {
   type PreparedPrivateSessionMessage,
 } from '../../session/private-messages/acceptance.js';
 import { decodeHandoffEnvelope, joinHandoffCurrentCarry } from './handoff-envelope.js';
+import { sessionAgentOf } from '../../core/agent-identity/session-agent.js';
 import { captureAdmissionRecipient } from './outbox/admission-recipient.js';
 import { HandoffOutboxStore, decodeSavedHandoffScope } from './outbox/handoff-outbox-store.js';
 type Ref = Extract<PrivateSessionMessageSourceRef, { kind: 'room_handoff_terminal' }>;
@@ -104,7 +105,7 @@ export class HandoffTerminalSource implements PrivateSessionMessageSourceAdapter
       .get();
     if (
       !metadata?.runtime ||
-      metadata.agentPath !== envelope.source.agentPath ||
+      sessionAgentOf(exec, envelope.source.callerSessionId) !== envelope.source.agentPath ||
       !author ||
       author.kind !== 'agent' ||
       author.naturalKey !== envelope.source.agentPath ||

@@ -16,10 +16,12 @@
  *
  * Row 3 and row 4 overlap when the path-approved copy itself has the approved
  * origin, which is the ordinary case (a person approved flow in repo A, then
- * installed a newer flow in repo B from the same source). Then row 4 governs,
- * so the newer copy runs and the approved one steps aside: that is the whole
- * point of the approval carrying an origin. Row 3 keeps its old meaning only
- * for a path-approved copy that is NOT part of that family.
+ * installed flow in repo B from the same source). Then row 4 governs, so the
+ * newest copy is the one listed and the approved one steps aside. It runs with
+ * no new yes only when it holds the approved files; a newer version is other
+ * files and waits for its own (`isApprovedByOrigin`, DOR-4895), so until a
+ * person answers, that app runs nowhere. Row 3 keeps its
+ * old meaning only for a path-approved copy that is NOT part of that family.
  *
  * A version tie goes to the global copy, then the sorted project root, then
  * the sorted plugin name: the order discovery already hands the copies in.

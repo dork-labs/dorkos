@@ -21,6 +21,7 @@
 import { isDeepStrictEqual } from 'node:util';
 import type { Session, PermissionModeId } from '@dorkos/shared/types';
 import { isWithinDirectory } from '@dorkos/shared/paths';
+import { shownToPerson, titleShownToPerson } from '@dorkos/shared/kickoff';
 import { deriveSessionTitle } from '../../shared/derive-title.js';
 import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
@@ -131,7 +132,7 @@ export class OpenCodeSessionRegistry {
   ): void {
     const { title, ...settings } = patch;
     const session = this.upsert(sessionId, settings);
-    const preview = toPreview(content);
+    const preview = titleShownToPerson(toPreview(shownToPerson(content)));
     // MessageOpts.title is only honored on the first turn (see AgentRuntime).
     if (session.title === '') session.title = title ?? (deriveSessionTitle(content) || preview);
     session.lastMessagePreview = preview;

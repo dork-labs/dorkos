@@ -17,6 +17,8 @@ import type { Context } from 'hono';
 import type { ApiEnv } from '../http/api-chain.js';
 import { readQuery } from '../http/request-query.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
+import { liveSessionCwd } from '../services/core/agent-identity/session-agent.js';
+import { homeOf, resolveAgentHome } from '../services/core/agent-identity/agent-home.js';
 import { auditRefusedLaunch } from '../services/session/launch/launch-audit.js';
 import { getDirectChats } from '../services/rooms/direct-chat/index.js';
 import { unprovenDirectChatBound } from './room-post-bound.js';
@@ -144,7 +146,8 @@ async function forkPlaceRefusal(
 /**
  * Why this caller may not touch a message waiting in this chat, or `null` when
  * it may: the same place rule a new message meets, asked of the chat's
- * recorded agent and, when the runtime knows it, its folder (DOR-3644 S1).
+ * recorded agent (else its folder's agent) and, when known, its folder
+ * (DOR-3644 S1, DOR-5035).
  *
  * @param facts - The request's facts.
  * @param meshCore - Mesh, which lists the registered homes.
@@ -158,10 +161,19 @@ export async function chatPlaceRefusal(
   const launcher = sessionLauncherOf(facts);
   if (launcher.kind === 'person') return null;
   // An unreadable record names an agent nobody can be: refuse, never guess.
-  const chatAgent = await runtimeRegistry
+  const recorded = await runtimeRegistry
     .getSessionAgentPath(sessionId)
     .catch(() => 'unreadable' as const);
-  const cwd = runtimeRegistry.getNativeSessionCwd?.(sessionId) ?? undefined;
+  const cwd = runtimeRegistry.getNativeSessionCwd?.(sessionId) ?? liveSessionCwd(sessionId);
+  // A chat bound without an agent is its folder's agent's. A folder the resolver
+  // refuses, or no folder known, names nobody: refused like an unreadable record (DOR-5035).
+  const folder = recorded === null && cwd ? resolveAgentHome(cwd) : undefined;
+  const chatAgent =
+    recorded !== null
+      ? recorded
+      : folder === undefined || folder.kind === 'refused'
+        ? 'unreadable'
+        : (homeOf(folder) ?? null);
   const place = { chatAgent, ...(cwd ? { cwd } : {}) };
   const refusal = launchPlaceRefusal(meshCore, launcher, place);
   if (refusal) {

@@ -456,10 +456,25 @@ describe('text-only-tests.sh runs vitest related per package', () => {
     );
   });
 
+  // DOR-5024: #4110 changed only meta/, plans/ and research/ Markdown, and the
+  // lane failed the required check with nothing wrong. No package suite can see
+  // such a change, so the shards would run nothing for it either.
+  it('passes, running nothing, when no named file belongs to a package suite', () => {
+    const r = repo(START);
+    dirs.push(r.dir);
+    const out = lane('["meta/ROADMAP.md","plans/a.md","research/b.md"]', r.dir);
+    expect(out.status).toBe(0);
+    expect(out.stdout).toContain(
+      'text-only-tests: no named file belongs to a package with a test suite, so nothing runs here'
+    );
+    expect(out.stdout).not.toContain('build');
+    expect(out.stdout).not.toContain('vitest');
+  });
+
   it.each([
     ['an empty list', '[]'],
     ['a list that is not JSON', 'packages/shared/src/company.ts'],
-    ['a list with no package suite in it', '["changelog/a.md"]'],
+    ['a list of something other than paths', '[1]'],
   ])('fails on %s rather than running nothing', (_name, list) => {
     const r = repo(START);
     dirs.push(r.dir);

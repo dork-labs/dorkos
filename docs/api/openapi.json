@@ -5501,6 +5501,10 @@
           "unchangedCount": {
             "type": "integer",
             "minimum": 0
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 4000
           }
         },
         "required": [

@@ -36,7 +36,12 @@ import { disclosedEffectsOf } from '../marketplace/preview/disclosed-effects.js'
 import type { PermissionPreview, PreviewExtension } from '../marketplace/types.js';
 import type { ApprovableUpdate } from '../marketplace/flows/update-installed.js';
 import { codeRowCount, effectRows, sortRows, whole } from './approval-summary-rows.js';
-import { placeOf, whenProgramsStart } from './update-approval-detail.js';
+import {
+  packageWaitNote,
+  perAppWaitNote,
+  placeOf,
+  whenProgramsStart,
+} from './update-approval-detail.js';
 import { extensionDeclarationLines } from '../marketplace/preview/extension-disclosure.js';
 
 /** What a confirmation request carries that the summary reads. */
@@ -59,7 +64,8 @@ export type MarketplaceCardPlan =
 /** Every bundled app, with server code first and its declarations written in full. */
 function extensionRows(
   extensions: readonly PreviewExtension[] | undefined,
-  change: MarketplaceRisk['change']
+  change: MarketplaceRisk['change'],
+  appNote?: string
 ): MarketplaceRisk[] {
   if (extensions === undefined)
     return [
@@ -72,7 +78,7 @@ function extensionRows(
   return (extensions ?? []).map((ext) => {
     const isolation = ext.isolation;
     const inProcess = !isolation || isolation.runtime === 'in-process';
-    const items = extensionDeclarationLines(ext);
+    const items = [...extensionDeclarationLines(ext), ...(appNote ? [appNote] : [])];
     const unproven =
       change === 'broader'
         ? '. DorkOS cannot show its server code is unchanged, so this counts as more power'
@@ -159,14 +165,20 @@ function updateSummary(update: ApprovableUpdate): MarketplacePackageSummary {
     baseline,
     whenProgramsStart(update)
   );
+  const note = packageWaitNote(update);
   return packageSummary(
     {
       name: update.packageName,
       where: `${update.type}, ${placeOf(update)}`,
       fromVersion: update.installedVersion,
       toVersion: update.latestVersion,
+      // Said once for the package, under its verdict, never inside one app's rows.
+      ...(note && { note }),
     },
-    [...extensionRows(update.extensions, baseline ? 'broader' : 'new'), ...rows],
+    [
+      ...extensionRows(update.extensions, baseline ? 'broader' : 'new', perAppWaitNote(update)),
+      ...rows,
+    ],
     unchangedCount
   );
 }
@@ -185,6 +197,7 @@ export function summaryDetail(summary: MarketplaceApprovalSummary): string {
     `…and ${more} more ${more === 1 ? 'row' : 'rows'}. Open this card in DorkOS to read every one.`;
   const blocks = summary.packages.flatMap((pkg) => [
     `${whole(pkg.name)} (${pkg.where}): ${pkg.fromVersion ? `${whole(pkg.fromVersion)} → ` : ''}${whole(pkg.toVersion)}`,
+    ...(pkg.note ? [`  ${pkg.note}`] : []),
     ...pkg.risks.map(
       (risk) =>
         `  [${risk.change}] ${risk.text}` +

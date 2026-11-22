@@ -178,6 +178,131 @@ describe('package card disclosure', () => {
     }
   );
 
+  it('says an update brings app code that waits for a fresh OK (DOR-4895)', async () => {
+    const UPDATE_APP_WAITS =
+      'Any new code waits for your OK in Activity, unless you trust its source.';
+    const approvals = new ApprovalService(createTestDb());
+    const provider = new TokenConfirmationProvider(approvals);
+    const extensions = [
+      {
+        id: 'sample-board',
+        slots: ['pages'],
+        hasServer: true,
+        isolation: { runtime: 'in-process' as const, net: [], run: [], agents: false },
+        secrets: [],
+      },
+    ];
+    await provider.requestInstallConfirmation({
+      packageName: 'sample-pack',
+      operation: 'update',
+      updates: [
+        {
+          packageName: 'sample-pack',
+          type: 'plugin',
+          scope: 'agent-local',
+          projectPath: '/sample/project',
+          installPath: '/sample/project/.dork/plugins/sample-pack',
+          installedVersion: '1.0.0',
+          latestVersion: '2.0.0',
+          contentHash: 'digest-b',
+          disclosed: NOTHING,
+          extensions,
+        },
+      ],
+    });
+    const [card] = approvals.listPending();
+    const app = card!.marketplaceSummary!.packages[0]!.risks.find(
+      (risk) => risk.kind === 'extension'
+    );
+    expect(app?.text).toContain('runs server code inside DorkOS');
+    expect(app?.items).toContain(UPDATE_APP_WAITS);
+    expect(approvals.fullDetail(card!.approvalId)).toContain(UPDATE_APP_WAITS);
+    expect(approvals.fullDetail(card!.approvalId)).not.toContain('runs nothing on its own');
+  });
+
+  it('says it once per package for many mini apps, so a big update still gets a card (DOR-4895)', async () => {
+    const approvals = new ApprovalService(createTestDb());
+    const provider = new TokenConfirmationProvider(approvals);
+    // Screens only, so the code-row cap stays out of it: only the text's length is tested.
+    const extensions = Array.from({ length: 1200 }, (_, index) => ({
+      id: `sample-screen-${String(index).padStart(4, '0')}`,
+      slots: ['pages', 'right-panel'],
+      hasServer: false,
+      secrets: [],
+    }));
+    const result = await provider.requestInstallConfirmation({
+      packageName: 'sample-pack',
+      operation: 'update',
+      updates: [
+        {
+          packageName: 'sample-pack',
+          type: 'plugin',
+          scope: 'global',
+          installPath: '/sample/plugins/sample-pack',
+          installedVersion: '1.0.0',
+          latestVersion: '2.0.0',
+          contentHash: 'digest-c',
+          disclosed: NOTHING,
+          extensions,
+        },
+      ],
+    });
+    expect(result).toMatchObject({ status: 'pending' });
+    const [card] = approvals.listPending();
+    const full = approvals.fullDetail(card!.approvalId)!;
+    expect(full).not.toContain('Any new code waits for your OK');
+    expect(
+      full.split(
+        'All 1,200 mini apps: any new code waits in Activity, unless you trust its source.'
+      ).length
+    ).toBe(2);
+    // Said once on the package, under its verdict, never inside one app's rows.
+    const pkg = card!.marketplaceSummary!.packages[0]!;
+    expect(pkg.note).toBe(
+      'All 1,200 mini apps: any new code waits in Activity, unless you trust its source.'
+    );
+    const items = pkg.risks.flatMap((risk) => [risk.text, ...(risk.items ?? [])]);
+    expect(items.some((item) => item.includes('All 1,200 mini apps'))).toBe(false);
+  });
+
+  it.each([
+    [3, 3, 0],
+    [4, 0, 1],
+  ])(
+    'with %i mini apps, says the line under %i of them and %i time for the package',
+    async (count, perApp, once) => {
+      const approvals = new ApprovalService(createTestDb());
+      const provider = new TokenConfirmationProvider(approvals);
+      const extensions = Array.from({ length: count }, (_, index) => ({
+        id: `sample-screen-${index}`,
+        slots: ['pages'],
+        hasServer: false,
+        secrets: [],
+      }));
+      await provider.requestInstallConfirmation({
+        packageName: 'sample-pack',
+        operation: 'update',
+        updates: [
+          {
+            packageName: 'sample-pack',
+            type: 'plugin',
+            scope: 'global',
+            installPath: '/sample/plugins/sample-pack',
+            installedVersion: '1.0.0',
+            latestVersion: '2.0.0',
+            contentHash: 'digest-d',
+            disclosed: NOTHING,
+            extensions,
+          },
+        ],
+      });
+      const [card] = approvals.listPending();
+      const full = approvals.fullDetail(card!.approvalId) ?? card!.detail ?? '';
+      expect(full.split('Any new code waits for your OK').length - 1).toBe(perApp);
+      expect(full.split(`All ${count} mini apps:`).length - 1).toBe(once);
+    }
+  );
+
   it('keeps the marked-turn line and every app on a large summary card', async () => {
     const approvals = new ApprovalService(createTestDb());
     const provider = new TokenConfirmationProvider(approvals);

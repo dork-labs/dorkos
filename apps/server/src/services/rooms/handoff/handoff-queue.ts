@@ -21,7 +21,8 @@ interface Seat<T> {
 }
 type Admission<T> =
   | { accepted: true; item: T }
-  | { accepted: false; why: 'capacity' | 'expired' | 'invalid' | 'stopped' };
+  | { accepted: false; why: 'capacity' | 'expired' | 'stopped' }
+  | { accepted: false; why: 'invalid'; error: unknown };
 /**
  * Bounded process-local FIFO for room hand-offs, including preparing and active work.
  * Waiting entries expire independently; an actual active turn retains its slot until completion.
@@ -57,7 +58,7 @@ export class HandoffQueue<T> {
    * @param key - The room-and-author seat key.
    * @param deadline - Original acceptance deadline in epoch milliseconds.
    * @param create - Scope factory, called only while this preparation owns capacity.
-   * @returns The accepted item or a safe refusal without exposing factory errors.
+   * @returns The accepted item, or a refusal carrying the factory's error for the caller to log.
    */
   admit(key: string, deadline: number, create: () => T): Admission<T> {
     if (this.stopped) return { accepted: false, why: 'stopped' };
@@ -74,9 +75,10 @@ export class HandoffQueue<T> {
     let item: T;
     try {
       item = create();
-    } catch {
+    } catch (error) {
       this.release(key, seat);
-      return { accepted: false, why: 'invalid' };
+      // The caller logs it and answers by its cause; it is never shown to the sender raw.
+      return { accepted: false, why: 'invalid', error };
     }
     if (this.stopped) {
       this.release(key, seat);

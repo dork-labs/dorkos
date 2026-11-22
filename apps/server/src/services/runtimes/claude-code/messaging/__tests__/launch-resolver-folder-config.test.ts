@@ -5,7 +5,7 @@ import { isolatedRequiredLaunchOwner } from './required-launch-fixture.js';
  * MCP servers file or agent file runs without the change (DOR-3068).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { setAgentHomeRegistry } from '../../../../core/agent-identity/index.js';
@@ -21,6 +21,8 @@ import {
 } from '../../folder-settings/folder-allow-approval.js';
 import { _internal as configCards } from '../../folder-settings/folder-config-approval.js';
 import { setMarkedFullActivity } from '../../../../core/turn-power/full-autonomy.js';
+import { DEV_LINKS_FILE } from '@dorkos/shared/marketplace-schemas';
+import { writeDenyRules } from '../directory-grants.js';
 
 const requiredLaunches = isolatedRequiredLaunchOwner();
 
@@ -88,8 +90,9 @@ function write(rel: string, body: unknown): void {
   writeFileSync(file, JSON.stringify(body));
 }
 
-function makeSession(): AgentSession {
+function makeSession(extra: { ceiling?: boolean } = {}): AgentSession {
   return {
+    ...(extra.ceiling ? { turnPermissionCeiling: { asks: 'always', reach: 'edit' } } : {}),
     sdkSessionId: 'sdk-1',
     lastActivity: Date.now(),
     permissionMode: mode,
@@ -99,11 +102,11 @@ function makeSession(): AgentSession {
   };
 }
 
-const launch = (extra: { teammate?: boolean } = {}) =>
+const launch = (extra: { teammate?: boolean; ceiling?: boolean } = {}) =>
   resolveLaunch({
     sessionId: 's1',
     content: 'hello',
-    session: makeSession(),
+    session: makeSession(extra),
     opts: {
       cwd: home,
       requiredLaunches,
@@ -332,5 +335,86 @@ describe('an agent at Full whose own files changed (DOR-3432)', () => {
     expect(cards).toContainEqual(
       expect.objectContaining({ capabilityId: 'runtime.apply_folder_config' })
     );
+  });
+});
+
+describe('a dev-linked folder at launch (DOR-4896)', () => {
+  /** Link `<root>/work/sample-plugin` for development under a throwaway data folder. */
+  function linkSample(): string {
+    const dork = path.join(root, 'dork');
+    vi.stubEnv('DORK_HOME', dork);
+    const work = path.join(root, 'work', 'sample-plugin');
+    mkdirSync(work, { recursive: true });
+    const slot = path.join(dork, 'plugins', 'sample-plugin');
+    mkdirSync(path.dirname(slot), { recursive: true });
+    symlinkSync(work, slot);
+    const registry = path.join(dork, DEV_LINKS_FILE);
+    mkdirSync(path.dirname(registry), { recursive: true });
+    writeFileSync(
+      registry,
+      JSON.stringify({
+        version: 1,
+        links: [
+          {
+            name: 'sample-plugin',
+            type: 'plugin',
+            scope: 'global',
+            slot,
+            target: work,
+            linkedAt: '2026-11-21T00:00:00.000Z',
+            linkedVia: 'app',
+          },
+        ],
+      })
+    );
+    return work;
+  }
+
+  /** The refusal reasons the launch's `PreToolUse` hooks give a `Write` to `file`. */
+  async function writeRefusals(resolved: Awaited<ReturnType<typeof launch>>, file: string) {
+    const matchers = resolved.sdkOptions.hooks?.PreToolUse ?? [];
+    const answers = await Promise.all(
+      matchers
+        .filter((m) => !m.matcher || new RegExp(m.matcher).test('Write'))
+        .flatMap((m) =>
+          m.hooks.map((hook) =>
+            hook(
+              {
+                hook_event_name: 'PreToolUse',
+                tool_name: 'Write',
+                tool_input: { file_path: file, content: 'x' },
+                tool_use_id: 't1',
+              } as never,
+              't1',
+              { signal: new AbortController().signal }
+            )
+          )
+        )
+    );
+    return answers
+      .map(
+        (a) =>
+          (a as { hookSpecificOutput?: { permissionDecisionReason?: string } }).hookSpecificOutput
+            ?.permissionDecisionReason
+      )
+      .filter((reason): reason is string => !!reason?.includes('linked for development'));
+  }
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('keeps a ceilinged turn out of it, by rule and by hook, and leaves an open turn alone', async () => {
+    const work = linkSample();
+    const rules = writeDenyRules(realpathSync(work), 'folder')!;
+
+    const held = await launch({ ceiling: true });
+    expect(settingsOf(held)?.permissions?.deny).toEqual(expect.arrayContaining(rules));
+    expect(await writeRefusals(held, path.join(work, 'index.ts'))).toHaveLength(1);
+
+    const open = await launch();
+    const openDeny = settingsOf(open)?.permissions?.deny ?? [];
+    expect(rules.some((rule) => openDeny.includes(rule))).toBe(false);
+    expect(await writeRefusals(open, path.join(work, 'index.ts'))).toEqual([]);
   });
 });

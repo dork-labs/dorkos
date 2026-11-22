@@ -267,6 +267,17 @@ describe('mergeJumpBackIn', () => {
     expect(items[0]!.summary).toBe('Deploy is green next up: docs');
   });
 
+  it('never summarises a chat with a greeting kickoff’s tag (DOR-4976)', () => {
+    const { items } = mergeJumpBackIn({
+      sessions: [
+        session({ id: 's1', title: '<dork-kickoff>', lastMessagePreview: '<dork-kickoff>' }),
+      ],
+      rooms: [],
+    });
+    expect(items[0]!.name).toBe('New chat');
+    expect(items[0]!.summary).toBeNull();
+  });
+
   it('leaves the summary null when a session has no preview', () => {
     const { items } = mergeJumpBackIn({ sessions: [session({ id: 's1' })], rooms: [] });
     expect(items[0]!.summary).toBeNull();

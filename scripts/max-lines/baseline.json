@@ -76,7 +76,7 @@
     "apps/server/src/services/runtimes/claude-code/claude-code-runtime.ts": 1048,
     "apps/server/src/services/runtimes/claude-code/sessions/persistent-dispatch.ts": 720,
     "apps/server/src/services/runtimes/claude-code/sessions/session-turn-windows.ts": 724,
-    "apps/server/src/services/runtimes/claude-code/sessions/transcript-reader.ts": 551,
+    "apps/server/src/services/runtimes/claude-code/sessions/transcript-reader.ts": 539,
     "apps/server/src/services/runtimes/codex/app-server/notification-mapper.ts": 533,
     "apps/server/src/services/runtimes/codex/codex-runtime.ts": 1054,
     "apps/server/src/services/runtimes/codex/transport/app-server-transport.ts": 1130,

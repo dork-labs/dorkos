@@ -4,7 +4,15 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { LocalBrowserState } from '@dorkos/shared/local-browser';
+import { createTestDb } from '@dorkos/test-utils/db';
+import { sessionMetadata } from '@dorkos/db';
 import { noteRoomTurnWords } from '../../../core/turn-power/outside-words.js';
+import { runtimeRegistry } from '../../../core/runtime-registry.js';
+import {
+  clearTestHomes,
+  registerTestHomes,
+} from '../../../core/agent-identity/__tests__/agent-home-fixture.js';
+import { setSessionAgentSources } from '../../../core/agent-identity/session-agent.js';
 import { BrowserHandover } from '../handover.js';
 import { liveOutsideTurnCheck, type OutsideTurnSources } from '../outside-turn.js';
 import type { SignInWindow } from '../sign-in-window.js';
@@ -212,4 +220,33 @@ describe('a handoff on a turn marked only by what it read', () => {
       expect(browser.handToPerson).not.toHaveBeenCalled();
     }
   );
+});
+
+describe('the chat’s agent, for the marks its turns carry', () => {
+  afterEach(() => {
+    setSessionAgentSources(undefined);
+    clearTestHomes();
+  });
+
+  it('is its folder’s agent when the launch recorded none (DOR-5035)', async () => {
+    const db = createTestDb();
+    runtimeRegistry.setDb(db);
+    db.insert(sessionMetadata)
+      .values({
+        sessionId: 'chat-1',
+        runtime: 'claude-code',
+        agentPath: null,
+        createdAt: new Date().toISOString(),
+      })
+      .run();
+    registerTestHomes(['/agents/juno']);
+    setSessionAgentSources({ liveCwd: () => '/agents/juno' });
+    const marksOf = vi.fn((): ReturnType<OutsideTurnSources['marksOf']> => ({}));
+    await liveOutsideTurnCheck({
+      launchOriginOf: () => null,
+      marksOf,
+      startedMarked: () => 'clean',
+    })('chat-1');
+    expect(marksOf).toHaveBeenCalledWith('chat-1', '/agents/juno');
+  });
 });

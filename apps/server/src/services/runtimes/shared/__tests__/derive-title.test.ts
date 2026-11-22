@@ -1,10 +1,21 @@
 import { describe, expect, it } from 'vitest';
+import { wrapKickoff } from '@dorkos/shared/kickoff';
 import { deriveSessionTitle } from '../derive-title.js';
 
 describe('deriveSessionTitle', () => {
   it('returns empty string for empty or whitespace input', () => {
     expect(deriveSessionTitle('')).toBe('');
     expect(deriveSessionTitle('   \n  ')).toBe('');
+  });
+
+  it('gives no title for a new agent’s greeting kickoff, never its tag (DOR-4976)', () => {
+    expect(deriveSessionTitle(wrapKickoff('Read your SOUL.md and say hello.'))).toBe('');
+  });
+
+  it('never makes a title carrying DorkOS markup, even from a person’s words', () => {
+    // No stored or shown title may carry `<dork-…>` (DOR-4976); the chat stays
+    // untitled, so the person's next message can still name it.
+    expect(deriveSessionTitle('what is <dork-kickoff> for')).toBe('');
   });
 
   it('keeps a short message intact, capitalized, without ellipsis', () => {
