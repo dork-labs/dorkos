@@ -35,6 +35,7 @@ import { registerUsageReporter } from '../../services/core/usage-reporter.js';
 import { getCloudLinkManager } from '../../services/core/auth/cloud-link.js';
 import { isAnalyticsLinkedToAccount } from '../../services/core/auth/link-telemetry.js';
 import { startInstallFunnel } from '../../services/core/telemetry/install-funnel.js';
+import { startUsageChannel } from '../../services/core/telemetry/usage-channel.js';
 import { registerServerErrorReporting } from '../../services/core/error-reporter.js';
 import { registerAiMetadataReporter } from '../../services/core/ai-metadata-reporter.js';
 import type { CoreExtensionInfo } from '../../services/extensions/extension-enable-resolution.js';
@@ -169,7 +170,8 @@ export async function startTelemetryExtensionsAndRuntimes(
   // `tier1SendGate` above is open — the same snapshotted gate the install and
   // heartbeat senders use, never re-read after the notice writes
   // `lastPromptedVersion`, so a never-prompted install sends nothing this boot.
-  // No-op (no timer, no network) unless all three hold. Curated events flow
+  // No-op (no timer, no network) unless all three hold, until the person's own
+  // answer turns usage on (see `startUsageChannel` below). Curated events flow
   // through the owned ingest at https://dorkos.ai/api/telemetry/events.
   // `?? false`, matching the install and heartbeat gates above and below. A
   // config block that is present but missing this key is not a person saying
@@ -189,20 +191,28 @@ export async function startTelemetryExtensionsAndRuntimes(
       env: telemetryEnv,
       getLinkManager: getCloudLinkManager,
     });
-  registerUsageReporter({
-    enabled: usageConsent,
-    isConsentLive: usageOn,
-    isAnalyticsLinkedToAccount: analyticsLinkedToAccount,
-    debug: telemetryDebug,
-    dorkHome,
-    dorkosVersion: SERVER_VERSION,
+  // Starts now when consent held at boot, or the moment the person's own answer
+  // turns usage on mid-run (DOR-5018): a fresh install's first run happens on
+  // its first boot, so a boot-only start never sent `first_run_completed`.
+  startUsageChannel({
+    consentedAtBoot: usageConsent,
+    usageOn,
+    onChange: (listener) => configManager.onChange(listener),
+    start: () => {
+      registerUsageReporter({
+        enabled: true,
+        isConsentLive: usageOn,
+        isAnalyticsLinkedToAccount: analyticsLinkedToAccount,
+        debug: telemetryDebug,
+        dorkHome,
+        dorkosVersion: SERVER_VERSION,
+      });
+      // `app_started` now, `first_run_completed` once per install (with the
+      // dorkos.ai install ref, if any) and `instance_active` once a day (DOR-2862).
+      startInstallFunnel({ dorkHome, config: configManager });
+      logger.info('[Telemetry] Usage reporter active (consent: opt-in, notice-gated)');
+    },
   });
-  if (usageConsent) {
-    // `app_started` now, `first_run_completed` once per install (with the
-    // dorkos.ai install ref, if any) and `instance_active` once a day (DOR-2862).
-    startInstallFunnel({ dorkHome, config: configManager });
-    logger.info('[Telemetry] Usage reporter active (consent: opt-in, notice-gated)');
-  }
 
   // Opt-in error reporting (DOR-293, consolidated in DOR-318). A SEPARATE
   // explicit opt-in (Tier 2) from the anonymous-data channels: fires only when
