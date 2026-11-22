@@ -107,7 +107,7 @@ The contract's remote command stream uses SSE and has lease/acknowledgement sema
 
 [![Four routes from another device to your DorkOS: the Wi-Fi listener, your own tunnel, managed remote ingress, and the chat relay through your own DorkOS in the cloud](/diagrams/architecture/remote-access.svg)](/diagrams/architecture/remote-access.svg)
 
-Each of those routes is its own listener or dial, and a session records the route that made it. A session made on one route is refused on another.
+Each of those routes is its own listener or dial, and DorkOS remembers which route each sign-in came through. A sign-in made on one route is refused on another.
 
 The account surface asks Cloud for opaque offers and short-lived hosted billing URLs; payment happens in a browser. Account export is a service job, separate from exporting a community. Claude Code and Doe select credits per chat. Codex binds a new chat to its credits home. OpenCode selects credits for its whole sidecar and waits for running replies before switching. Its local relay holds the Cloud token outside the sidecar. Every runtime requires its format in the token’s served list; there is no fallback to a different payer.
 
