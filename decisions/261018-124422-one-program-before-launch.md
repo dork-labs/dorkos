@@ -14,6 +14,8 @@ amends: [261006-235238, 261015-042933]
 
 Accepted (operator decision, #dorkos, 2026-10-18: "I want to make a big adjustment and make the two programs become one (server-merge step 7) BEFORE LAUNCH. I want to do that ASAP").
 
+**Amended 2026-11-22** by [261122-173853](261122-173853-one-space-model.md) (one space model): step 7's placement (`apps/server/src/services/spaces`) is confirmed as the only one, and research S1 and a `packages/space` package are retired. The neutral note on step 9 gains a PGlite measurement gate, and the private space moves onto the space store after launch. Nothing in this ADR is retired.
+
 **Amends** (each stays Accepted):
 
 - [261006-235238](261006-235238-one-dorkos-server-in-every-size.md): retires its after-launch order for the program merge. Step 7 ("one program") now lands before launch. Steps 8 (the active-runner lease) and 9 (a Mac can host spaces) stay after launch, in the same order.

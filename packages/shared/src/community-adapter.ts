@@ -1,7 +1,8 @@
 /**
  * The `CommunityAdapter` port — one contract for reading and writing rooms in
- * more than one place: this machine's own SQLite rooms, a Buzz relay, and (one
- * day) `apps/space`.
+ * more than one place: this machine's own SQLite rooms, a Buzz relay, and a
+ * space server (`apps/server/src/services/spaces`, reached over HTTP). It is the
+ * only way the app reads any space (ADR `261122-173853`).
  *
  * This is the FOURTH swappable seam beside {@link ./agent-runtime.js | AgentRuntime},
  * {@link ./transport.js | Transport} and {@link ./connector-provider.js | ConnectorProvider}:
