@@ -390,7 +390,11 @@ export function InboxDecisionRow({
             </p>
           )}
           {notice && (
-            <p className="text-status-warning-fg mt-0.5 text-xs leading-snug font-medium">
+            // A status line, so a notice that appears after an answer is read out.
+            <p
+              role="status"
+              className="text-status-warning-fg mt-0.5 text-xs leading-snug font-medium"
+            >
               {notice}
             </p>
           )}

@@ -129,7 +129,15 @@ export const FEATURE_SURFACE_SECTIONS: PlaygroundSection[] = [
     title: 'Extension update card',
     page: 'home-inbox',
     category: 'Inbox',
-    keywords: ['extension', 'update', 'new power', 'files changed', 'approval', 're-ask'],
+    keywords: [
+      'extension',
+      'update',
+      'new power',
+      'files changed',
+      'approval',
+      're-ask',
+      'not confirmed',
+    ],
   },
   // PlacesReaskShowcases
   {

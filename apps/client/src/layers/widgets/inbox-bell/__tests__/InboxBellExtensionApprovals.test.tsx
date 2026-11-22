@@ -65,6 +65,9 @@ const FLOW: PendingExtensionApproval = {
   placesOnly: false,
 };
 
+/** The card's line after "Confirm it's you" closed without confirming (designer, DOR-4909). */
+const STEP_UP_NOT_CONFIRMED = 'Not confirmed, so nothing was allowed. Choose Allow to try again.';
+
 /** What the fake server holds and what it was asked. */
 let waiting: PendingExtensionApproval[];
 let approveStatus: number;
@@ -97,6 +100,11 @@ async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<
           },
           409
         );
+      }
+      if (approveStatus === 428) {
+        // "Confirm it's you" closed without confirming: the window's fetch
+        // hands back the server's refusal, and the copy still waits.
+        return json({ error: 'Confirm it’s you.', code: STEP_UP_REQUIRED_CODE }, 428);
       }
       if (approveStatus !== 200) return json({ error: 'Nope' }, approveStatus);
       if (approvalGate) await approvalGate;
@@ -540,6 +548,74 @@ describe('InboxBell — an extension waiting to be turned on', () => {
     expect(row).toHaveTextContent('Flow · Allowed');
     expect(within(row).queryByRole('button')).toBeNull();
     expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
+  });
+
+  describe('a "Confirm it’s you" closed without confirming (DOR-4909)', () => {
+    // Purpose: on Nov 21 a cancelled step-up left the card exactly as it was,
+    // so "Not now" looked like the way out and the app stayed off for hours.
+    // The card now says nothing was allowed, and how to try again.
+    it('says on the card that nothing was allowed, and how to try again', async () => {
+      approveStatus = 428;
+      renderBell();
+      const { user, row } = await openRow();
+
+      await user.click(within(row).getByRole('button', { name: 'Allow' }));
+
+      const notice = await within(row).findByRole('status');
+      expect(notice).toHaveTextContent(STEP_UP_NOT_CONFIRMED);
+      // The row still waits, and still asks; nothing was turned on.
+      expect(within(row).getByRole('button', { name: 'Allow' })).toBeEnabled();
+      expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
+
+      // Trying again clears the line the moment it is asked.
+      approveStatus = 200;
+      approvalGate = new Promise(() => {});
+      await user.click(within(row).getByRole('button', { name: 'Allow' }));
+      await waitFor(() => expect(within(row).queryByText(STEP_UP_NOT_CONFIRMED)).toBeNull());
+    });
+
+    it('clears the line when the person answers Not now instead', async () => {
+      approveStatus = 428;
+      renderBell();
+      const { user, row } = await openRow();
+      await user.click(within(row).getByRole('button', { name: 'Allow' }));
+      expect(await within(row).findByText(STEP_UP_NOT_CONFIRMED)).toBeInTheDocument();
+
+      await user.click(within(row).getByRole('button', { name: 'Not now' }));
+
+      await waitFor(() => expect(screen.queryByText(STEP_UP_NOT_CONFIRMED)).toBeNull());
+    });
+
+    it('says it on the places card too, on that app’s own row', async () => {
+      const placesOnly = {
+        placesOnly: true,
+        added: { net: [], run: [], agents: false, runtime: false, slots: ['pages'] },
+        runsInServer: false,
+      };
+      const beacon = {
+        ...FLOW,
+        ...placesOnly,
+        id: 'beacon',
+        name: 'Beacon',
+        plugin: 'beacon',
+        path: '/home/me/.dork/plugins/beacon/.dork/extensions/beacon',
+      };
+      waiting = [{ ...FLOW, ...placesOnly }, beacon];
+      approveStatus = 428;
+      renderBell();
+      const user = userEvent.setup();
+      await user.click(await screen.findByTestId('inbox-bell'));
+      await user.click(await screen.findByRole('button', { name: 'Allow Flow' }));
+
+      const row = screen.getByTestId('places-reask-row-flow');
+      await waitFor(() =>
+        expect(within(row).getByRole('status')).toHaveTextContent(STEP_UP_NOT_CONFIRMED)
+      );
+      expect(within(row).getByRole('button', { name: 'Allow Flow' })).toBeEnabled();
+      expect(
+        within(screen.getByTestId('places-reask-row-beacon')).queryByRole('status')
+      ).toBeNull();
+    });
   });
 
   it('opens ⓘ in place with the consent sentence and the way to Settings', async () => {

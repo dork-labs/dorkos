@@ -1,5 +1,6 @@
 import { useId, useState } from 'react';
 import { STEP_UP_REQUIRED_CODE } from '@dorkos/shared/step-up';
+import { STEP_UP_NOT_CONFIRMED_MESSAGE } from '@/layers/shared/lib';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -66,9 +67,11 @@ export function WritesBackBlock({ connectionId, appName }: WritesBackBlockProps)
 
   // While a change is on its way (or waits on "Confirm it's you"), show where it goes.
   const checked = set.isPending ? set.variables.writesBackUnasked : state.writesBackUnasked;
-  // Not confirming it's you is a choice, not a failure: the switch just stays off.
-  const failed =
-    set.isError && (set.error as { code?: unknown } | null)?.code !== STEP_UP_REQUIRED_CODE;
+  // Not confirming it's you is a choice, not a failure: the switch stays off,
+  // and a calm line says nothing changed, so it never looks like it saved (DOR-4909).
+  const notConfirmed =
+    set.isError && (set.error as { code?: unknown } | null)?.code === STEP_UP_REQUIRED_CODE;
+  const failed = set.isError && !notConfirmed;
 
   return (
     <div data-testid="writes-back-block" className="space-y-1">
@@ -85,6 +88,11 @@ export function WritesBackBlock({ connectionId, appName }: WritesBackBlockProps)
       {failed && (
         <p role="alert" className="text-destructive text-sm">
           Couldn’t change this. Try again.
+        </p>
+      )}
+      {notConfirmed && (
+        <p role="status" className="text-status-warning-fg text-sm font-medium">
+          {STEP_UP_NOT_CONFIRMED_MESSAGE}
         </p>
       )}
       <ConfirmWritesBack

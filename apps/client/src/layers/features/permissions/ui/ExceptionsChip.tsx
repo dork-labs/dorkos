@@ -8,8 +8,10 @@ import {
   ResponsivePopoverTitle,
   ResponsivePopoverTrigger,
 } from '@/layers/shared/ui';
+import { isStepUpNotConfirmed } from '@/layers/shared/lib';
 import { STATE_LABEL } from '../lib/permission-copy';
 import { lastChangeWhy } from '../lib/permission-why';
+import { reportPermissionFailure } from '../lib/report-failure';
 
 /** Props for {@link ExceptionsChip}. */
 export interface ExceptionsChipProps {
@@ -31,13 +33,22 @@ function ExceptionRow({
 }) {
   const write = useSetPermission({ kind: 'agent', agentId: exception.agentId });
   const reset = () =>
-    write.mutate({
-      kind: 'patch',
-      ...(exception.action
-        ? { actions: { [exception.action]: null } }
-        : { areas: { [area]: null } }),
-      surface: 'settings',
-    });
+    write.mutate(
+      {
+        kind: 'patch',
+        ...(exception.action
+          ? { actions: { [exception.action]: null } }
+          : { areas: { [area]: null } }),
+        surface: 'settings',
+      },
+      // A cancelled "Confirm it's you" is said, calmly, never silent (DOR-4909).
+      // Any other failure is the shared toast's, so it is never said twice.
+      {
+        onError: (err) => {
+          if (isStepUpNotConfirmed(err)) reportPermissionFailure(err);
+        },
+      }
+    );
   const changed = lastChangeWhy(exception.lastChange);
   return (
     <li className="flex items-center justify-between gap-3">

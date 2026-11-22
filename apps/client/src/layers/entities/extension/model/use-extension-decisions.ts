@@ -21,7 +21,11 @@ import {
   type ListExtensionDecisionsResponse,
   type PendingDecisionOffer,
 } from '@dorkos/shared/extension-decision-schemas';
-import { resolveApiBaseUrl } from '@/layers/shared/lib';
+import {
+  STEP_UP_NOT_ALLOWED_MESSAGE,
+  STEP_UP_NOT_CONFIRMED_MESSAGE,
+  resolveApiBaseUrl,
+} from '@/layers/shared/lib';
 import { useEventSubscription } from '@/layers/shared/model';
 import { extensionQueryKeys } from './use-pending-extension-approvals';
 import { createRefreshLeader } from './refresh-leader';
@@ -237,8 +241,17 @@ export function useExtensionDecisionActions(): ExtensionDecisionActions {
       });
       if (!res.ok) {
         const err = await failureOf(res);
+        // "Confirm it's you" closed unconfirmed: said calmly, so the row never
+        // reads as answered (DOR-4909).
+        if (err.code === STEP_UP_REQUIRED_CODE) {
+          toast(
+            request.action === 'approve'
+              ? STEP_UP_NOT_ALLOWED_MESSAGE
+              : STEP_UP_NOT_CONFIRMED_MESSAGE
+          );
+          return null;
+        }
         // A question that changed is not a failure to shout about.
-        if (err.code === STEP_UP_REQUIRED_CODE) return null;
         if (err.code === DECISION_STALE_CODE) toast(err.message);
         else toast.error(err.message);
         return null;
@@ -292,7 +305,10 @@ export function useExtensionDecisionActions(): ExtensionDecisionActions {
       if (message) toast(message);
     },
     onError: (err: Error & { code?: string }, { accept }) => {
-      if (err.code === STEP_UP_REQUIRED_CODE) return;
+      if (err.code === STEP_UP_REQUIRED_CODE) {
+        toast(accept ? STEP_UP_NOT_ALLOWED_MESSAGE : STEP_UP_NOT_CONFIRMED_MESSAGE);
+        return;
+      }
       // A dismiss of an offer that already lapsed is not news.
       if (!accept && err.code === DECISION_OFFER_GONE_CODE) return;
       toast.error(err.message);
