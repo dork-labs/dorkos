@@ -58,6 +58,10 @@ test.describe('Tasks — reviewing a task’s file with no cap standing', () => 
     await tasksPage.dialog.getByRole('button', { name: 'Review file', exact: true }).click();
     const reviewing = page.getByRole('dialog', { name: 'Review the file' });
     await expect(reviewing.getByText('Reply to anything urgent.')).toBeVisible();
+    // No approved copy was kept, so the review says why every line reads as added.
+    await expect(
+      reviewing.getByText('No approved copy was kept, so the whole file shows.')
+    ).toBeVisible();
     expect(sent).toBeNull();
 
     await reviewing.getByRole('button', { name: 'Approve', exact: true }).click();
