@@ -7878,7 +7878,7 @@
     {
       "id": "261122-173853",
       "slug": "one-space-model",
-      "title": "One space model on the space store; the private space moves onto it after launch",
+      "title": "One space model on the space store; a space holds its members' data, a computer holds execution state; the private space becomes a tenant after launch",
       "status": "accepted",
       "created": "2026-11-22",
       "extractedFrom": null,
