@@ -5,6 +5,7 @@ import { sessionMetadata, sessionNativeBindings, type Db } from '@dorkos/db';
 import { registerTestHomes, clearTestHomes } from './agent-home-fixture.js';
 import {
   agentOfChat,
+  chatAgentStateOf,
   liveSessionCwd,
   sessionAgentOf,
   setSessionAgentSources,
@@ -78,6 +79,30 @@ describe('sessionAgentOf', () => {
     bind('stored', null, JUNO);
     clearTestHomes();
     expect(sessionAgentOf(db, 'stored')).toBeUndefined();
+  });
+});
+
+describe('chatAgentStateOf', () => {
+  it('tells an agent, an unknown agent, nobody’s folder and a refused folder apart', () => {
+    registerTestHomes([JUNO, RIO], { managed: { '/workspaces/ghost': '/agents/gone' } });
+    bind('agent', null, JUNO);
+    bind('unknown', null);
+    bind('nobody', null, '/work/project');
+    bind('refused', null, '/workspaces/ghost');
+    expect(chatAgentStateOf(db, 'agent')).toEqual({ kind: 'agent', agentPath: JUNO });
+    expect(chatAgentStateOf(db, 'unknown')).toEqual({ kind: 'unknown' });
+    expect(chatAgentStateOf(db, 'no-such-chat')).toEqual({ kind: 'unknown' });
+    expect(chatAgentStateOf(db, 'nobody')).toEqual({ kind: 'nobody' });
+    expect(chatAgentStateOf(db, 'refused')).toEqual({ kind: 'refused' });
+  });
+
+  it('reads the live folder when the stored one is empty', () => {
+    bind('empty', null);
+    db.insert(sessionNativeBindings)
+      .values({ sessionId: 'empty', runtime: 'claude-code', cwd: '', createdAt: at })
+      .run();
+    live.empty = JUNO;
+    expect(chatAgentStateOf(db, 'empty')).toEqual({ kind: 'agent', agentPath: JUNO });
   });
 });
 
