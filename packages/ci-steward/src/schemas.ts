@@ -274,6 +274,16 @@ export const ConfigSchema = z
         heavy_load_wait_seconds: z.number().int().positive(),
         /** How often a `--job` waiting on the load re-reads it. */
         heavy_load_poll_seconds: z.number().int().positive(),
+        /** The order line's second label may start beside the top only while swap used is under this many MB. */
+        heavy_second_swap_max_mb: z.number().int().positive(),
+        /** ...and only while free memory is at least this percentage. */
+        heavy_second_free_min_pct: z.number().int().min(0).max(100),
+        /** ...and only while swap grew at most this many MB since the newest reading 10 to 30 minutes old. */
+        heavy_second_swap_growth_max_mb: z.number().int().nonnegative(),
+        /** ...and only while the 5-minute load is under this. */
+        heavy_second_max_load: z.number().int().positive(),
+        /** ...and only while at least this many GB of disk are free. */
+        heavy_second_disk_min_gb: z.number().int().nonnegative(),
       })
       .strict(),
   })
