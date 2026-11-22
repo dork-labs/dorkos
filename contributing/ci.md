@@ -579,6 +579,10 @@ gh api repos/{owner}/{repo}/rules/branches/main
 
 **Cause:** a file over 500 lines (ESLint's `max-lines` count) grew, a new file passed 500, a file shrank and its entry in `scripts/max-lines/baseline.json` was not lowered, or the baseline was raised against the base. **Fix:** the step names each file and what to do. Move code out of a file that grew or is new; run `pnpm check:max-lines -- --update` to lower entries after a shrink, or to carry an entry to a file's new path after a `git mv`. Never raise an entry: that is the one fix the check refuses.
 
+### "API lint gate (DOR-4996)" is red in `typecheck`
+
+**Cause:** a change added an API lint finding in a route group (an operation with no `operationId`, a command-word path, an undocumented route, an unpaged list and so on), two operations share an `operationId`, a finding was fixed and `scripts/api-lint/baseline.json` was not lowered, or the baseline was raised against the base. **Fix:** the step names the rule, the group and what it found. Fix the new finding; run `pnpm check:api-lint -- --update` after a fix. Rules and fixes: [api-reference.md](api-reference.md#the-api-lint-gate).
+
 ### "CI Steward ledger coverage" is red
 
 **Cause:** the PR touches a pipeline path and adds no `ci/ledger/` entry. **Fix:** `node packages/ci-steward/src/cli.ts ledger-new --slug <what-changed>`, fill in the hypothesis, amend it into the commit.

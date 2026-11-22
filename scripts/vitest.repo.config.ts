@@ -35,6 +35,9 @@ export const REPO_WIDE_SUITES = [
   '__tests__/browser-proof-page.test.ts',
   '__tests__/browser-turbo-build-cache.test.ts',
   '__tests__/build-cache-workflow.test.ts',
+  // Reads docs/api/openapi.json, the route census and the server's hand-written
+  // OpenAPI registry (DOR-4996).
+  '__tests__/check-api-lint.test.ts',
   '__tests__/check-boundary.test.ts',
   '__tests__/check-design-tokens.test.ts',
   '__tests__/check-own-mocks.test.ts',

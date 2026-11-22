@@ -133,11 +133,12 @@
     },
     {
       "guide": "api-reference.md",
-      "description": "OpenAPI spec, Scalar docs UI, Zod schema patterns",
+      "description": "OpenAPI spec, Scalar docs UI, Zod schema patterns, the API lint gate",
       "patterns": [
         "openapi-registry",
         "apps/server/src/routes/",
-        "packages/shared/src/schemas"
+        "packages/shared/src/schemas",
+        "scripts/api-lint/"
       ]
     },
     {
