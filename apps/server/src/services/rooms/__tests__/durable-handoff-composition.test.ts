@@ -548,7 +548,11 @@ describe('durable public handoff full composition', () => {
     });
     const liveMarks = marksOf(f.runner.requests.at(-1)!);
     // The drafting turn ran at the runtime default, a stranger's bound, so it is marked.
-    expect(liveMarks).toMatchObject({ outsideWords: true, externalAuthor: true, carriedOutsider: true });
+    expect(liveMarks).toMatchObject({
+      outsideWords: true,
+      externalAuthor: true,
+      carriedOutsider: true,
+    });
     const id = await admitThenStop();
     const saved = JSON.parse(f.harness.store.handoffOutbox.readOwned(id, authorId)!.envelopeJson);
     expect(saved.carry).toMatchObject({ outsider: true, outsideWords: true, externalAuthor: true });
