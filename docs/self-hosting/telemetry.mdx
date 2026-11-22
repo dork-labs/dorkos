@@ -17,9 +17,9 @@ DorkOS sends us no usage data unless you turn it on. If you choose to help, you 
 ## The short version
 
 - Three anonymous channels are available, all off by default: a daily heartbeat, marketplace install counts, and a few named feature-usage events.
-- On first run, DorkOS shows a notice explaining them. If you do nothing, nothing is ever sent.
+- On first run, DorkOS shows a notice explaining them. If you do nothing, no usage data is ever sent.
 - It is anonymous. No prompts, no code, no file paths, no chat content, ever.
-- Turn it on any time with `dorkos telemetry enable` or the Privacy & Data settings tab, and back off the same way. `DO_NOT_TRACK=1` keeps every channel off no matter what the settings say. A few other requests are not telemetry and keep going; [the list is below](#what-the-kill-switches-do-not-stop).
+- Turn it on any time in the Privacy & Data settings tab, or with `dorkos telemetry enable --channel <name>` one channel at a time, and back off the same way. A bare `dorkos telemetry enable` turns on every channel it knows, crash reports included. `DO_NOT_TRACK=1` keeps every channel off no matter what the settings say. A few other requests are not telemetry and keep going; [the list is below](#what-the-kill-switches-do-not-stop).
 - The full payload is documented here and enforced in code and tests.
 - The public version of this page lives at [dorkos.ai/telemetry](https://dorkos.ai/telemetry).
 
@@ -55,7 +55,7 @@ The list above is the complete payload. It is enforced in code and in tests, so 
 
 ## We tell you before anything sends
 
-The first time DorkOS starts, it prints a plain notice in its log: what it could share, a link to the payload, and how to turn it on. Nothing is sent on that run, or on any run, until you say yes. On top of that, the code holds every channel shut until the notice has actually been shown, so even switching a channel on cannot send before you have seen what it covers.
+The first time DorkOS starts, it prints a plain notice in its log: what it could share, a link to the payload, and how to turn it on. No usage data is sent on that run, or on any run, until you say yes. On top of that, the code holds the three anonymous channels shut until the notice has actually been shown, so even switching one on cannot send before you have seen what it covers. Crash reports and AI run summaries are separate choices: each sends only after you turn it on.
 
 ## Marketplace installs
 
@@ -108,7 +108,7 @@ Prefer a public thread? At the bottom of the feedback form, **Open one instead**
 
 ## Error reporting (a separate opt-in)
 
-DorkOS can also send a crash report when something breaks, so we can fix it without asking you for your log files. Unlike the anonymous heartbeat, this one is off until you turn it on:
+DorkOS can also send a crash report when something breaks, so we can fix it without asking you for your log files. It is off until you turn it on:
 
 - It goes to dorkos.ai, which passes it to PostHog Error Tracking, the service we use to group and read crash reports. There is nothing to set up.
 - It sends the error type and a cleaned-up stack trace (which function, file, and line) and nothing else. It does **not** send the error message text, because a message can contain anything your code put in it. No prompts, no code, no file paths, no chat data.
@@ -122,14 +122,14 @@ Before anything leaves your machine, home directories and full file paths are st
 
 ## Linking analytics to your account (a separate opt-in)
 
-When you link this install to a DorkOS account, you can also connect this install's anonymous usage counts to your account, so you can see them when you are signed in on dorkos.ai. Like crash reports, this is off until you turn it on.
+When you link this install to a DorkOS account, you can also tie this install's usage data to your account. Like crash reports, this is off until you turn it on.
 
 - It is off by default. You turn it on with a checkbox in the account-link flow, right before you link, in Settings under DorkOS account.
 - It only takes effect at link time. If you link first and turn it on later, the connection happens the next time you link, not retroactively.
 - The environment kill switches turn it off too: with `DO_NOT_TRACK=1` or `DORKOS_TELEMETRY_DISABLED=1` set, nothing is connected even if the checkbox is on.
 - It sends one more thing: this install's random `instanceId`, with the link request. Our analytics then treats your install, your account, and your visits to dorkos.ai while signed in (if you allow analytics cookies there) as one record. The counts themselves are the same ones described above, but they are no longer anonymous to us.
 
-To undo it: turn the checkbox off (it takes effect on your next link), and remove the already-connected data from your account page on dorkos.ai. Unlinking the instance stops it from reporting further.
+Turning the checkbox off takes effect on your next link; it does not undo a link already made. To remove the joined record, delete your DorkOS account, which asks PostHog to erase it, or email us.
 
 ## AI run metadata (a separate opt-in)
 
@@ -173,10 +173,10 @@ export DORKOS_TELEMETRY_DISABLED=1
 
 Either one on its own is enough. When a kill switch is set, no channel sends anything even if its config flag is `true`. Either one also:
 
-- stops the update checks, both the one the `dorkos` command runs at start and the one the server runs about once an hour;
+- stops the update checks, both the one the `dorkos` command runs at start and the server's, which asks at most once an hour when the app requests it;
 - is passed on to the agents: DorkOS passes `DO_NOT_TRACK=1`, `DISABLE_TELEMETRY=1`, and `DISABLE_ERROR_REPORTING=1` on to every Claude Code, Codex, and OpenCode agent it starts. What each of those programs does with them is up to that program.
 
-On the Mac and Windows apps, DorkOS reads these variables from your login shell, so setting them in your shell profile works there too.
+On the Mac app, DorkOS reads these variables from your login shell, so setting them in your shell profile works there too. On Windows, set them as a user or system environment variable.
 
 ### What the kill switches do not stop
 
@@ -196,7 +196,7 @@ These requests are not telemetry. The kill switches leave them alone, so here is
 
 ```bash
 dorkos telemetry status                     # show each channel and any env override
-dorkos telemetry enable                      # turn on all channels
+dorkos telemetry enable                      # turn on all channels, crash reports included
 dorkos telemetry disable                     # turn off all channels
 dorkos telemetry enable --channel heartbeat  # turn on just one (install | heartbeat | errors | usage)
 dorkos telemetry disable --channel errors    # turn off just one

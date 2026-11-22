@@ -91,8 +91,19 @@ describe('formatFirstRunTelemetryNotice', () => {
     expect(notice).toContain('Privacy & Data');
     expect(notice).toContain('DO_NOT_TRACK=1');
     // Honest about the posture: silence is never taken as a yes.
-    expect(notice).toMatch(/if you do nothing, nothing is ever sent/i);
+    expect(notice).toMatch(/if you do nothing, no usage data is ever sent/i);
     expect(notice).not.toMatch(/sharing begins/i);
+  });
+
+  it('says a bare `dorkos telemetry enable` turns on crash reports too (DOR-4994)', () => {
+    const notice = formatFirstRunTelemetryNotice();
+
+    expect(notice).toContain('dorkos telemetry enable --channel');
+    expect(notice).toMatch(/crash reports/i);
+  });
+
+  it('speaks without "we" or "us" (writing-app-copy)', () => {
+    expect(formatFirstRunTelemetryNotice()).not.toMatch(/\b(we|us|our)\b/i);
   });
 
   it('never uses an em dash (writing-for-humans)', () => {

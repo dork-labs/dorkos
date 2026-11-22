@@ -42,8 +42,9 @@ export default function MarketplacePrivacyPage() {
               and never passed to anyone else.
             </li>
             <li>
-              <strong className="text-charcoal font-semibold">No user identifiers</strong> — only
-              random per-install UUIDs (one per install, not per user).
+              <strong className="text-charcoal font-semibold">No name or email.</strong> Each event
+              carries your install’s random ID (one per install, not per person). That ID is tied to
+              your DorkOS account only if you choose to link usage data to your account.
             </li>
             <li>
               <strong className="text-charcoal font-semibold">
@@ -52,8 +53,9 @@ export default function MarketplacePrivacyPage() {
             </li>
             <li>
               <strong className="text-charcoal font-semibold">Anonymous and opt-in.</strong> Off
-              until you turn it on, and genuinely anonymous when you do. DorkOS shows a first-run
-              notice explaining it, and you can turn it back off any time.
+              until you turn it on, and anonymous when you do, unless you link usage data to your
+              account. DorkOS shows a first-run notice explaining it, and you can turn it back off
+              any time.
             </li>
             <li>
               <strong className="text-charcoal font-semibold">Aggregate counts only</strong>{' '}
@@ -85,11 +87,16 @@ export default function MarketplacePrivacyPage() {
         <div className="space-y-4">
           <h2 className="text-charcoal font-mono text-xl font-semibold">How to turn it off</h2>
           <p className="text-warm-gray text-base leading-relaxed">
-            Install counts are off until you turn them on, and always anonymous. Turn them on or
-            back off any time: run{' '}
-            <span className="text-charcoal font-mono">dorkos telemetry enable</span> or{' '}
-            <span className="text-charcoal font-mono">dorkos telemetry disable</span>, or use the
-            Privacy and Data tab in DorkOS settings. Setting the environment variable{' '}
+            Install counts are off until you turn them on, and anonymous unless you link usage data
+            to your account. Turn them on or back off any time: run{' '}
+            <span className="text-charcoal font-mono">
+              dorkos telemetry enable --channel install
+            </span>{' '}
+            or{' '}
+            <span className="text-charcoal font-mono">
+              dorkos telemetry disable --channel install
+            </span>
+            , or use the Privacy and Data tab in DorkOS settings. Setting the environment variable{' '}
             <span className="text-charcoal font-mono">DO_NOT_TRACK=1</span> keeps install counts and
             every other telemetry channel off, no matter what the settings say.
           </p>

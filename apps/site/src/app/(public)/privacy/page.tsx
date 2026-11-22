@@ -109,8 +109,8 @@ export default function PrivacyPolicyPage() {
             include (such as a picture or recent chat messages), and the same install id.
           </p>
           <p className="text-warm-gray leading-relaxed">
-            The first time you run DorkOS, it shows a notice explaining this and sends nothing on
-            that first run. You can turn it off any time in three ways: run{' '}
+            The first time you run DorkOS, it shows a notice explaining this and sends no usage data
+            on that first run. You can turn it off any time in three ways: run{' '}
             <span className="font-mono">dorkos telemetry disable</span>, set the environment
             variable <span className="font-mono">DO_NOT_TRACK=1</span>, or use the Privacy and Data
             tab in settings. Crash reporting is a separate choice and stays off until you turn it
@@ -304,8 +304,10 @@ export default function PrivacyPolicyPage() {
               install command. When you open the marketplace, the visit event notes whether a search
               was active and roughly how many packages matched, not the search words. If a page
               breaks, we record the error type and where in our code it happened, never the error
-              text. There is no recording of your screen, we do not log what you type, and we do not
-              use tracking that follows you to other sites.
+              text. Page addresses are recorded without their search words. There is no recording of
+              your screen, and we do not log what you type, with one exception: when you sign up for
+              the newsletter, the signup event notes your email’s domain (like gmail.com), never the
+              rest of the address. We do not use tracking that follows you to other sites.
             </p>
             <p className="text-warm-gray leading-relaxed">
               How we ask depends on where you are. In the EU, the EEA, the UK, and Switzerland, we

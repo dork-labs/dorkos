@@ -55,7 +55,7 @@ export default function TelemetryPage() {
             </li>
             <li>
               The first time you run DorkOS, it shows you a notice with the payload below. If you do
-              nothing, nothing is ever sent.
+              nothing, no usage data is ever sent.
             </li>
             <li>It is anonymous. No prompts, no code, no file paths, no chat content, ever.</li>
             <li>
@@ -65,7 +65,10 @@ export default function TelemetryPage() {
             </li>
             <li>
               Crash reports, AI run summaries, and linking analytics to your account are separate
-              choices. Each stays off until you turn it on.
+              choices. Each stays off until you turn it on. A bare{' '}
+              <span className="font-mono">dorkos telemetry enable</span> turns on every channel,
+              crash reports included; add <span className="font-mono">{'--channel <name>'}</span> to
+              turn on just one.
             </li>
           </ul>
         </section>
@@ -133,9 +136,11 @@ export default function TelemetryPage() {
           </h2>
           <p className="text-warm-gray leading-relaxed">
             The very first time DorkOS starts, it prints a plain notice in its log: what it could
-            share, a link to this page, and how to turn it on. Nothing is sent on that run, or on
-            any run, until you say yes. On top of that, the code holds every channel shut until the
-            notice has actually been shown, so nothing can send before you have seen what it covers.
+            share, a link to this page, and how to turn it on. No usage data is sent on that run, or
+            on any run, until you say yes. On top of that, the code holds the three anonymous
+            channels shut until the notice has actually been shown, so none of them can send before
+            you have seen what it covers. Crash reports and AI run summaries send only after you
+            turn them on.
           </p>
         </section>
 
@@ -200,8 +205,8 @@ export default function TelemetryPage() {
           </h2>
           <p className="text-warm-gray leading-relaxed">
             DorkOS can also send a crash report when something breaks, so we can fix it without
-            asking you to dig through log files. Unlike the heartbeat, this one is off until you
-            turn it on, and it is careful about what it sends:
+            asking you to dig through log files. It is off until you turn it on, and it is careful
+            about what it sends:
           </p>
           <ul className="text-warm-gray ml-5 list-disc space-y-1.5 leading-relaxed">
             <li>
