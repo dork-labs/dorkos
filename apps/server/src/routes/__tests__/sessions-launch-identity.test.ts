@@ -491,6 +491,50 @@ describe('a message waiting in a chat (DOR-3644 S1)', () => {
   });
 });
 
+describe('a message waiting in its own chat, while the agent is under limits (DOR-5039)', () => {
+  beforeEach(() => {
+    vi.mocked(runtimeRegistry.getSessionAgentPath).mockResolvedValue(homeA);
+  });
+
+  /** One of A's turns runs under limits for the whole case. */
+  function aTurnUnderLimits(): void {
+    const turn = countWhileRunning(
+      { forAgent: homeA },
+      { outsider: true },
+      (async function* () {
+        await new Promise(() => undefined);
+      })()
+    );
+    void turn.next();
+  }
+
+  it.each([
+    ['reword', 'PATCH', { content: 'something else' }],
+    ['move', 'PATCH', { move: { before: 'm-2' } }],
+    ['remove', 'DELETE', {}],
+  ] as const)(
+    'refuses A trying to %s it, the way a send carries its limits',
+    async (_l, method, body) => {
+      aTurnUnderLimits();
+      const res = await post('/queue/m-1', body, AS_A, method);
+      expect(res.status).toBe(403);
+      expect(await codeOf(res)).toBe('LIMITED_TURN');
+    }
+  );
+
+  it('lets A through when none of its turns is under limits', async () => {
+    const res = await post('/queue/m-1', { content: 'mine' }, AS_A, 'PATCH');
+    // Past both rules: this queue simply has no such message.
+    expect(res.status).toBe(404);
+  });
+
+  it('lets a person reword, whatever the agent is running', async () => {
+    aTurnUnderLimits();
+    const res = await post('/queue/m-1', { content: 'mine' }, PERSON, 'PATCH');
+    expect(res.status).toBe(404);
+  });
+});
+
 describe('UI-action person stamp', () => {
   it.each([
     ['owner app', PERSON, 'person'],
