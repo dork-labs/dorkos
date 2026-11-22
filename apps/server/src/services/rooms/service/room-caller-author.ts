@@ -13,6 +13,24 @@ import { RoomError } from '../room-errors.js';
 import type { RoomService } from '../room-service.js';
 
 /**
+ * Read the working directory from the verified invocation, never a tool argument.
+ *
+ * @param context - The capability invocation context.
+ * @returns The session's working directory.
+ * @throws {RoomError} `ATTACHMENT_PATH_REFUSED` when this surface has no working directory.
+ */
+export function requireAgentCwd(context: CapabilityHandlerContext): string {
+  if (!context.cwd) {
+    throw new RoomError(
+      'ATTACHMENT_PATH_REFUSED',
+      'Attaching a file needs a working directory to read it from, and this surface has none. ' +
+        'Post the message without attachments.'
+    );
+  }
+  return context.cwd;
+}
+
+/**
  * Who is calling, as a room author — the same answers `resolveCaller`
  * (`routes/room-caller.ts`) gives the HTTP room routes, asked in the same order.
  *

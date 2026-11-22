@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 /**
  * One automatic room turn that was actually spent, as a timestamp (DOR-1205).
@@ -123,4 +123,89 @@ export const roomSeatMoves = sqliteTable(
     movedAt: integer('moved_at').notNull(),
   },
   (table) => [index('idx_room_seat_moves_at').on(table.movedAt)]
+);
+
+/** Public handoff source, outcome and terminal notice outbox. No private-seat replay policy. */
+export const roomHandoffOutbox = sqliteTable(
+  'room_handoff_outbox',
+  {
+    id: text('id').primaryKey(),
+    authorId: text('author_id').notNull(),
+    roomId: text('room_id').notNull(),
+    envelopeJson: text('envelope_json').notNull(),
+    draft: text('draft').notNull(),
+    originJson: text('origin_json').notNull(),
+    replyTo: text('reply_to'),
+    verbatim: integer('verbatim', { mode: 'boolean' }).notNull(),
+    enqueuedAt: integer('enqueued_at').notNull(),
+    waitDeadlineAt: integer('wait_deadline_at').notNull(),
+    state: text('state', {
+      enum: [
+        'queued',
+        'preparing',
+        'running',
+        'posted',
+        'declined',
+        'interrupted',
+        'expired',
+        'quarantined',
+      ],
+    }).notNull(),
+    bootOwner: text('boot_owner'),
+    dispatchId: text('dispatch_id'),
+    postedEntryId: text('posted_entry_id'),
+    postedSeq: integer('posted_seq'),
+    settledAt: integer('settled_at'),
+    terminalReason: text('terminal_reason'),
+    noticeState: text('notice_state', { enum: ['none', 'ready', 'accepted', 'skipped'] }).notNull(),
+    noticeReceiptId: text('notice_receipt_id'),
+    noticeText: text('notice_text'),
+    noticeSkipReason: text('notice_skip_reason'),
+    noticeRoomEntryId: text('notice_room_entry_id'),
+    noticeRoomSeq: integer('notice_room_seq'),
+  },
+  (t) => [
+    index('idx_room_handoff_replay').on(t.state, t.enqueuedAt),
+    index('idx_room_handoff_notice').on(t.noticeState),
+    // SQLite permits multiple NULL posted IDs; an actual room post has one source owner.
+    uniqueIndex('uq_room_handoff_posted_entry').on(t.roomId, t.postedEntryId),
+  ]
+);
+
+/** Completed-work reports owned by the hand-off outbox; their authority differs from new drafts. */
+export const roomReportOutbox = sqliteTable(
+  'room_report_outbox',
+  {
+    id: text('id').primaryKey(),
+    sourceSessionId: text('source_session_id').notNull(),
+    parentSessionId: text('parent_session_id').notNull(),
+    payloadJson: text('payload_json').notNull(),
+    state: text('state', {
+      enum: [
+        'collecting',
+        'deferred',
+        'ready',
+        'dispatching',
+        'running',
+        'delivered',
+        'declined',
+        'interrupted',
+        'quarantined',
+        'superseded',
+      ],
+    }).notNull(),
+    enqueuedAt: integer('enqueued_at').notNull(),
+    waitDeadlineAt: integer('wait_deadline_at'),
+    bootOwner: text('boot_owner'),
+    terminalReason: text('terminal_reason'),
+    settledAt: integer('settled_at'),
+    noticeState: text('notice_state', { enum: ['none', 'ready', 'accepted'] })
+      .notNull()
+      .default('none'),
+  },
+  (t) => [
+    index('idx_room_report_recovery').on(t.state, t.enqueuedAt),
+    index('idx_room_report_source').on(t.sourceSessionId, t.state),
+    index('idx_room_report_notice').on(t.noticeState),
+  ]
 );

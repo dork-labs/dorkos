@@ -17,12 +17,12 @@ import {
   seatBatchStillCurrent,
 } from './seat-message-target.js';
 import {
-  joinSeatCarry,
   seatCarryOf,
   seatMessageBatch,
   seatMessageNotice,
   SEAT_MESSAGE_BATCH_MAX,
 } from './seat-message-prompt.js';
+import { joinSeatCarry } from './join-seat-carry.js';
 import type {
   RoomSeatMessagesPort,
   SeatMessageAdmission,

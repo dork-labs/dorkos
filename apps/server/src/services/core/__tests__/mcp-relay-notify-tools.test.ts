@@ -1,4 +1,10 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
+import { createDb, notifications, runMigrations } from '@dorkos/db';
+import { NotificationStore } from '../../notifications/notification-store.js';
+import {
+  NotificationService,
+  setNotificationService,
+} from '../../notifications/notification-service.js';
 import {
   createRelayNotifyUserHandler,
   type McpToolDeps,
@@ -149,6 +155,31 @@ function makeHandler(deps: McpToolDeps, identity: SenderIdentity = NOTIFY) {
 }
 
 describe('relay_notify_user', () => {
+  it('never forwards agent-supplied notification options into the server receipt callback', async () => {
+    const db = createDb(':memory:');
+    runMigrations(db);
+    setNotificationService(new NotificationService(new NotificationStore(db)));
+    const onStored = vi.fn();
+    const input = {
+      message: 'The receipt stays server-owned.',
+      onStored,
+      opts: { onStored },
+      options: { onStored },
+    };
+    try {
+      const result = await makeHandler(makeMockDeps())(input);
+      expect(result.isError).toBeUndefined();
+      await expect.poll(() => db.select().from(notifications).all().length).toBe(1);
+      expect(onStored).not.toHaveBeenCalled();
+      const row = db.select().from(notifications).get()!;
+      expect(JSON.parse(row.dataJson!)).toMatchObject({ message: input.message });
+      expect(row.dataJson).not.toContain('onStored');
+    } finally {
+      setNotificationService(null);
+      db.$client.close();
+    }
+  });
+
   it('sends to most recently active chat when channel omitted', async () => {
     const deps = makeMockDeps();
     const handler = makeHandler(deps);

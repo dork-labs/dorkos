@@ -184,6 +184,8 @@ describe('canvas channel production migration', () => {
       'connector_agent_request',
       'connector_event',
       'document_event_batch',
+      // A durable hand-off's closing notice to the chat that sent it (DOR-3816).
+      'room_handoff_terminal',
     ]);
     expect(db.$client.pragma('foreign_key_check')).toEqual([]);
   });

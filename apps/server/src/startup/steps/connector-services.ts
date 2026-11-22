@@ -1,3 +1,5 @@
+import { HandoffTerminalSource } from '../../services/rooms/handoff/handoff-terminal-source.js';
+import { HandoffOutboxStore } from '../../services/rooms/handoff/outbox/handoff-outbox-store.js';
 /**
  * The connector services built on the registered providers: sign-in refresh,
  * lifecycle, management, reconciliation, usage, managed mirrors, event
@@ -405,7 +407,8 @@ export async function wireConnectorServices(refs: ServerRefs, built: WireConnect
           owner: connectorOwner,
         })
       : undefined;
-  const existingPrivateSources = requestAuthority
+  const handoffTerminalSource = new HandoffTerminalSource(db, new HandoffOutboxStore(db));
+  const connectorPrivateSources = requestAuthority
     ? [
         new ConnectorAgentRequestSourceAdapter(
           db,
@@ -423,7 +426,7 @@ export async function wireConnectorServices(refs: ServerRefs, built: WireConnect
     lifecycle: canvasDocuments.lifecycle,
     queue: messageQueueStore,
     bootEpoch: connectorBootEpoch,
-    existingSources: existingPrivateSources,
+    existingSources: [...connectorPrivateSources, handoffTerminalSource],
     beforeClaim: privateDocTurnBudget,
   });
   const recoveredPrivateAttempts = docBatchAdmission.initializeBoot();
@@ -461,6 +464,7 @@ export async function wireConnectorServices(refs: ServerRefs, built: WireConnect
     requestAuthority,
     docBatchAdmission,
     privateAcceptance,
+    handoffTerminalSource,
     docDispatchLifetime,
   };
 }

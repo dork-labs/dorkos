@@ -1,3 +1,5 @@
+import { recoverChatReports } from '../../services/session/chat-messages/chat-message-current.js';
+import { HandoffTerminalNotices } from '../../services/rooms/handoff/handoff-terminal-notices.js';
 /**
  * Document delivery to private sessions, connector agent requests, and the
  * connector access and execution broker.
@@ -41,6 +43,7 @@ import type { ServerRefs } from '../server-refs.js';
 export interface WireDocDeliveryInput {
   docDispatchLifetime: WireConnectorServicesResult['docDispatchLifetime'];
   privateAcceptance: WireConnectorServicesResult['privateAcceptance'];
+  handoffTerminalSource: WireConnectorServicesResult['handoffTerminalSource'];
   db: OpenConfigAndDatabaseResult['db'];
   docChannelHttp: WireConnectorEventsAndApprovalsResult['docChannelHttp'];
   docBatchAdmission: WireConnectorServicesResult['docBatchAdmission'];
@@ -79,6 +82,7 @@ export function wireDocDelivery(refs: ServerRefs, built: WireDocDeliveryInput) {
   const {
     docDispatchLifetime,
     privateAcceptance,
+    handoffTerminalSource,
     db,
     docChannelHttp,
     docBatchAdmission,
@@ -136,7 +140,22 @@ export function wireDocDelivery(refs: ServerRefs, built: WireDocDeliveryInput) {
         logger.warn('[session messages] Could not resume a private message', logError(error));
       });
   };
+  const handoffNotices = new HandoffTerminalNotices(
+    roomStore.handoffOutbox,
+    handoffTerminalSource,
+    privateAcceptance,
+    (sessionId) => nudgePrivateSession(sessionId)
+  );
+  roomService.handoffs.initializeDurable(() => handoffNotices.flush());
   const recoverAcceptedPrivateSessions = (): void => {
+    void recoverChatReports().catch((error: unknown) => {
+      logger.warn('[reports] startup recovery remains durable', logError(error));
+    });
+    try {
+      roomService.handoffs.flushTerminals();
+    } catch (error) {
+      logger.warn('[handoffs] terminal source recovery will retry', logError(error));
+    }
     const sessionIds = privateAcceptance.listAcceptedSessionIds(
       100,
       refs.acceptedPrivateSessionCursor,

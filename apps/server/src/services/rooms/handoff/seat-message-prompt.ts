@@ -1,5 +1,4 @@
 /** Private peer messages are fenced/defused data; room traces never contain their words. */
-import type { TurnPermissionBound } from '@dorkos/shared/agent-runtime';
 import { defuseUntrustedPrompt, sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { CHAT_MESSAGE_MAX } from '../../session/chat-messages/chat-client-id.js';
 import { defuseMarkers } from '../../session/chat-messages/chat-message-fence.js';
@@ -8,6 +7,7 @@ import type { NewChatMessage } from '../../session/chat-messages/chat-message-st
 import type { AsideCarry } from '../room-trigger/aside.js';
 import { marksOfCeiling } from '../../core/turn-power/turn-marks.js';
 import { carryFrom } from './seat-carry.js';
+import { joinSeatCarry } from './join-seat-carry.js';
 import {
   parseCarriedHold,
   parseCarriedWords,
@@ -41,24 +41,6 @@ export function renderSeatMessage(row: NewChatMessage): string {
 /** Complete prompt; separators and all framing participate in the batch bound. */
 export function seatMessageBatch(messages: readonly string[]): string {
   return HEADER + messages.join('\n\n');
-}
-
-/** Union all actual bounds and flags; outside words themselves create no permission cap. */
-export function joinSeatCarry(...values: readonly AsideCarry[]): AsideCarry {
-  const bounds = values.flatMap((v): TurnPermissionBound[] =>
-    v.permissionCeiling === undefined
-      ? []
-      : Array.isArray(v.permissionCeiling)
-        ? [...(v.permissionCeiling as readonly TurnPermissionBound[])]
-        : [v.permissionCeiling as TurnPermissionBound]
-  );
-  return {
-    externalAuthor: values.some((v) => v.externalAuthor),
-    ...(bounds.length ? { permissionCeiling: bounds } : {}),
-    ...(values.some((v) => v.outsider) ? { outsider: true as const } : {}),
-    ...(values.some((v) => v.outsideWords) ? { outsideWords: true as const } : {}),
-    ...(values.some((v) => v.teammate) ? { teammate: true as const } : {}),
-  };
 }
 
 /** Immutable receipt carry joined with the sender's current restrictions. */

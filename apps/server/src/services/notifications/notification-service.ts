@@ -55,7 +55,7 @@ import {
   type NotificationPayload,
   type StandingNotificationKind,
 } from './notification-registry.js';
-import type { NotificationStore } from './notification-store.js';
+import type { NotificationStore, NotificationStoredWitness } from './notification-store.js';
 import { cancelEscalationByKey } from './escalation-service.js';
 import { broadcastStandingResolved } from './standing-events.js';
 import {
@@ -70,6 +70,8 @@ export type NotifyRelayOptions = Omit<RelayDeliveryRequest, 'agentId' | 'message
 
 /** What a caller can tell the pipeline beyond the payload itself. */
 export interface NotifyOptions {
+  /** Server-only source acknowledgement in the notification insert transaction. Not an agent input. */
+  onStored?: NotificationStoredWitness;
   /**
    * Who caused this, when the seam knows.
    *
@@ -462,6 +464,7 @@ export class NotificationService {
     }
 
     const notification = this.store.insert({
+      ...(opts.onStored ? { onStored: opts.onStored } : {}),
       kind,
       tier: resolvePerKind(entry.tier, payload),
       subjectType: location.subjectType ?? entry.subjectType,

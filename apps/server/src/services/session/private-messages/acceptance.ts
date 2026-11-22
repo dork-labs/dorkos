@@ -47,6 +47,7 @@ import type {
 } from './source-types.js';
 export { PrivateSessionMessageRefusalError } from './refusal.js';
 import { PrivateSessionMessageRefusalError } from './refusal.js';
+import { privateSourceIdOf } from './source-types.js';
 
 /** Durable private-source acceptance and exactly-once dispatch coordinator. */
 export class PrivateSessionMessageAcceptanceService {
@@ -76,7 +77,7 @@ export class PrivateSessionMessageAcceptanceService {
     const adapter = this.adapterFor(ref.kind);
     const now = this.now().toISOString();
     return documentTransaction(this.db, (tx) => {
-      const sourceId = sourceIdOf(ref);
+      const sourceId = privateSourceIdOf(ref);
       const existing = tx
         .select()
         .from(sessionMessageAcceptanceReceipts)
@@ -623,9 +624,4 @@ export class PrivateSessionMessageAcceptanceService {
     }
     return adapter;
   }
-}
-
-function sourceIdOf(ref: PrivateSessionMessageSourceRef): string {
-  if (ref.kind === 'document_event_batch') return ref.batchId;
-  return ref.kind === 'connector_agent_request' ? ref.requestId : ref.inboxId;
 }

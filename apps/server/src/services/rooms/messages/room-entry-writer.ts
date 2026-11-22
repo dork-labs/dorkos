@@ -287,7 +287,7 @@ export class RoomEntryWriter {
     opts?: {
       mentionAugment?: { agentPath: string; names: readonly string[] };
       recordRef?: (entryId: string, tx: DbTransaction) => void;
-      bind?: (entryId: string, tx: DbTransaction) => void;
+      bind?: (entryId: string, tx: DbTransaction, seq: number) => void;
       attachments?: RoomAttachment[];
       /**
        * The level the author's turn ran at, from `postLevelFor`, kept with the
@@ -403,8 +403,8 @@ export class RoomEntryWriter {
           : { outsider: true };
     const bindTransactional =
       bindAfterInsert || mirrorWrite || rowMarks || held
-        ? (tx: DbTransaction) => {
-            bindAfterInsert?.(id, tx);
+        ? (tx: DbTransaction, seq: number) => {
+            bindAfterInsert?.(id, tx, seq);
             mirrorWrite?.enqueue(id, tx);
             if (rowMarks || held) {
               tx.update(roomEntries)

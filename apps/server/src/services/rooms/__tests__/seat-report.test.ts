@@ -32,22 +32,28 @@ import {
 import { withStrangerMarkFlag } from './stranger-mark-flag.js';
 import type { AuthorRegistry } from '../author-registry.js';
 
-// The spin-off's own marks, as `marksOf` would read them. Since DOR-3440 the only mark that
-// holds is a Wi-Fi sign-in's (`outsider`); reading outside words alone marks nothing.
-const spinOffMarks = vi.hoisted(() => new Map<string, { outsider?: true }>());
-vi.mock('../../core/turn-power/turn-levels.js', async (importOriginal) => {
-  const real = await importOriginal<typeof import('../../core/turn-power/turn-levels.js')>();
-  const { ceilingCarrying } = await import('../../core/turn-power/turn-marks.js');
-  return {
-    ...real,
-    marksOf: (sessionId: string | null | undefined, agentPath: string | undefined) =>
-      (sessionId && spinOffMarks.get(sessionId)) || real.marksOf(sessionId, agentPath),
-    markedBoundOf: (sessionId: string | null | undefined, agentPath: string | undefined) => {
-      const held = sessionId ? spinOffMarks.get(sessionId) : undefined;
-      return held ? ceilingCarrying(held) : real.markedBoundOf(sessionId, agentPath);
-    },
-  };
-});
+// Only the report-back dependency uses this fake; room-seat checks use real turn records.
+const spinOffMarks = new Map<string, { outsider?: true }>();
+
+/** Record the source turn through the same runtime decorator as a production launch. */
+async function recordSpinOffMark(outsider: boolean): Promise<void> {
+  const runtime = recordTurnLevels(
+    {
+      type: 'claude-code',
+      getCapabilities: () => CLAUDE_CODE_CAPABILITIES,
+      async *sendMessage(): AsyncGenerator<StreamEvent> {
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+    } as unknown as AgentRuntime,
+    () => 'bypassPermissions'
+  );
+  for await (const _event of runtime.sendMessage('spin-off-1', 'source turn', {
+    permissionMode: 'bypassPermissions',
+    ...(outsider ? { permissionCeiling: 'runtime-default' as const } : {}),
+  })) {
+    // Drain the recorded turn; the source has no model work.
+  }
+}
 
 // Bo's own level, set to Full by a person, so the one thing that can keep the seat's own folder
 // closed in these checks is a mark (`resolveOwnFolderOpen`). Only while a check asks for it.
@@ -467,12 +473,12 @@ describe('a spin-off reports into the room seat that started it (DOR-3488)', () 
   // DOR-3440 a mark lowers nothing, but it still keeps a turn from a raise.
   it('a spin-off whose turn carries an outsider mark wakes the seat marked, refused a raise, uncapped', async () => {
     const seatId = await seat();
-    spinOffMarks.set('spin-off-1', { outsider: true });
+    await recordSpinOffMark(true);
     try {
       service.handoffs.reports.deliver(seatId, report('read a web page'));
       await settle();
     } finally {
-      spinOffMarks.clear();
+      await recordSpinOffMark(false);
     }
 
     const turn = reportTurns()[0]!;

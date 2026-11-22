@@ -45,10 +45,16 @@ import {
   marksForTurn,
   marksHold,
   marksOfLevel,
+  mergeMarks,
   NO_MARKS,
   withMarks,
   type TurnMarks,
 } from './turn-marks.js';
+import {
+  copyCaptureMarks,
+  type RecordedTurn,
+  type RecordedTurnView,
+} from './handoff-transfer-capture.js';
 import { primaryOf } from '../../session/resolution/session-key-registry.js';
 import { noteBridgedSender, noteTurnHold } from './continuation-hold.js';
 import { aliasRoomTurnWords } from './outside-words.js';
@@ -82,7 +88,9 @@ export const TURN_LEVEL_MEMORY = 10_000;
 const AUTO_MODE_ID = 'auto';
 const AUTO_FALLBACK_MODE_ID = 'default';
 
-const turnLevels = new Map<string, TurnPermissionLevel>();
+// Existing level-map residency owns security capture. Legacy turnSerials below
+// deliberately keeps its independent counter-guard lifetime and eviction policy.
+const turnLevels = new Map<string, RecordedTurn>();
 /**
  * Each conversation's latest turn's level WITHOUT a stranger's hold, kept only when the hold
  * changed it (DOR-3390): the level its hand-offs carry. A stranger's hold binds the turn it
@@ -117,7 +125,7 @@ function remember<T>(map: Map<string, T>, key: string, level: T) {
  * @param sessionId - The id the turn was sent under.
  */
 export function lastTurnLevelOf(sessionId: string): TurnPermissionLevel | undefined {
-  return turnLevels.get(sessionId);
+  return turnLevels.get(sessionId)?.level;
 }
 
 /**
@@ -129,7 +137,7 @@ export function lastTurnLevelOf(sessionId: string): TurnPermissionLevel | undefi
  * @param sessionId - The id the turn was sent under.
  */
 export function passedOnLevelOf(sessionId: string): TurnPermissionLevel | undefined {
-  const level = handOffLevels.get(sessionId) ?? turnLevels.get(sessionId);
+  const level = handOffLevels.get(sessionId) ?? turnLevels.get(sessionId)?.level;
   if (level === undefined) return undefined;
   const { outsider: _kept, ...handed } = level;
   return handed;
@@ -207,7 +215,7 @@ export function marksOf(
   sessionId: string | null | undefined,
   agentPath: string | undefined
 ): TurnMarks {
-  const level = sessionId ? turnLevels.get(sessionId) : undefined;
+  const level = sessionId ? turnLevels.get(sessionId)?.level : undefined;
   const marks =
     level !== undefined
       ? marksOfLevel(level)
@@ -218,6 +226,27 @@ export function marksOf(
   return sessionId && sessionReadOutsideText(primaryOf(sessionId))
     ? { ...marks, outsider: true }
     : marks;
+}
+
+/**
+ * The latest turn this process recorded under an id, with its capture record, for
+ * `captureCurrentTransfer` alone. A deep-frozen copy, never the live record: nothing a reader does
+ * to it can make a later capture read as current.
+ *
+ * @param sessionId - The id the turn was sent under.
+ */
+export function recordedTurnOf(sessionId: string): RecordedTurnView | undefined {
+  const record = turnLevels.get(sessionId);
+  return record === undefined ? undefined : deepFreeze(structuredClone(record));
+}
+
+/** Freeze a plain value and everything inside it. */
+function deepFreeze<T>(value: T): T {
+  if (typeof value === 'object' && value !== null) {
+    for (const child of Object.values(value)) deepFreeze(child);
+    Object.freeze(value);
+  }
+  return value;
 }
 
 /**
@@ -311,8 +340,18 @@ export function noteEntryLevel(
 export function markRunningTurn(sessionId: string, read: TurnMarks): void {
   if (read.teammate === undefined) return;
   const marks: TurnMarks = { teammate: read.teammate };
-  const level = turnLevels.get(sessionId);
-  if (level !== undefined) remember(turnLevels, sessionId, withMarks(level, marks));
+  const record = turnLevels.get(sessionId);
+  if (record !== undefined) {
+    // Capture-only alias union; public levels retain the existing per-key update behavior.
+    record.capture.marks =
+      record.capture.marks === null
+        ? null
+        : copyCaptureMarks(mergeMarks(record.capture.marks, marks));
+    remember(turnLevels, sessionId, {
+      level: withMarks(record.level, marks),
+      capture: record.capture,
+    });
+  }
   const handOff = handOffLevels.get(sessionId);
   if (handOff !== undefined) remember(handOffLevels, sessionId, withMarks(handOff, marks));
 }
@@ -341,8 +380,14 @@ export function markRunningTurnOutsider(
 ): void {
   const marks: TurnMarks = { outsider: true };
   for (const id of new Set([sessionId, primaryOf(sessionId)])) {
-    const level = turnLevels.get(id);
-    if (level !== undefined) remember(turnLevels, id, withMarks(level, marks));
+    const record = turnLevels.get(id);
+    if (record !== undefined) {
+      record.capture.marks =
+        record.capture.marks === null
+          ? null
+          : copyCaptureMarks(mergeMarks(record.capture.marks, marks));
+      remember(turnLevels, id, { level: withMarks(record.level, marks), capture: record.capture });
+    }
     const handOff = handOffLevels.get(id);
     if (handOff !== undefined) remember(handOffLevels, id, withMarks(handOff, marks));
   }
@@ -452,9 +497,18 @@ export function entryHeldToDefault(entryId: string, roomId?: string): boolean {
  * @param to - The id the runtime renamed the session to.
  */
 export function aliasTurnLevel(from: string, to: string): void {
-  const level = turnLevels.get(from);
-  if (level !== undefined && from !== to) remember(turnLevels, to, level);
-  if (level !== undefined) noteCarriedOutsider(from, to, level);
+  const record = turnLevels.get(from);
+  const target = turnLevels.get(to);
+  if (record !== undefined && from !== to) {
+    if (target !== undefined && target.capture !== record.capture) {
+      // Any distinct target needs positive ownership equivalence; ineligible/absent
+      // serial is not proof. Capture only: legacy alias/counter behavior is unchanged.
+      target.capture.eligible = false;
+      record.capture.eligible = false;
+    }
+    remember(turnLevels, to, { level: record.level, capture: record.capture });
+  }
+  if (record !== undefined) noteCarriedOutsider(from, to, record.level);
   aliasTurnStart(from, to);
   const handOff = handOffLevels.get(from);
   if (handOff !== undefined && from !== to) remember(handOffLevels, to, handOff);
@@ -462,7 +516,7 @@ export function aliasTurnLevel(from: string, to: string): void {
   const serial = turnSerials.get(from);
   if (serial !== undefined && from !== to) turnSerials.set(to, serial);
   // Like the level: only a turn this process recorded under `from` replaces what `to` holds.
-  if (level !== undefined) aliasChosenTurn(from, to);
+  if (record !== undefined) aliasChosenTurn(from, to);
   // The room turn's outside words go with it, or every check reading the new id sees none (DOR-4023).
   aliasRoomTurnWords(from, to);
 }
@@ -479,10 +533,17 @@ export function aliasTurnLevel(from: string, to: string): void {
 export function carryTurnLevel(from: string, to: string): void {
   // A moved seat keeps outside words its old session's turn read (DOR-4023); they only add.
   aliasRoomTurnWords(from, to);
-  const level = turnLevels.get(from);
+  const source = turnLevels.get(from);
+  const level = source?.level;
   if (level === undefined || from === to) return;
-  const existing = turnLevels.get(to);
-  remember(turnLevels, to, existing === undefined ? level : stricterLevel(existing, level));
+  const previous = turnLevels.get(to);
+  const existing = previous?.level;
+  if (previous) previous.capture.eligible = false;
+  const carried = existing === undefined ? level : stricterLevel(existing, level);
+  remember(turnLevels, to, {
+    level: carried,
+    capture: { serial: undefined, eligible: false, marks: copyCaptureMarks(marksOfLevel(carried)) },
+  });
   noteCarriedOutsider(from, to, level);
   if (handOffLevels.has(from) || handOffLevels.has(to)) {
     const theirs = handOffLevels.get(from) ?? level;
@@ -537,7 +598,13 @@ function recordTurn(
   opts: MessageOpts | undefined
 ): TurnPermissionLevel {
   const level = levelForTurn(runtime, stored, opts);
-  remember(turnLevels, sessionId, level);
+  const previous = turnLevels.get(sessionId);
+  if (previous) previous.capture.eligible = false;
+  // recordRefused calls this too: only the real start below may certify a new serial.
+  remember(turnLevels, sessionId, {
+    level,
+    capture: { serial: undefined, eligible: false, marks: copyCaptureMarks(marksOfLevel(level)) },
+  });
   // A continuation picks up a held turn, so it is still that turn: started marked (DOR-4693).
   noteTurnStart(sessionId, level.outsider === true || opts?.continuationHold === true);
   // What the chat is set to, with no ceiling, and whether anybody can be asked in it (DOR-3394):
@@ -661,7 +728,7 @@ export function recordTurnLevels(
   return markHeldChats(
     applyTurnMarks(
       recordLevels(runtime, storedModeOf),
-      (sessionId) => marksOfLevel(turnLevels.get(sessionId)),
+      (sessionId) => marksOfLevel(turnLevels.get(sessionId)?.level),
       (sessionId, opts) => {
         recordTurn(runtime, sessionId, storedOf(sessionId), opts);
       }
@@ -755,6 +822,11 @@ function recordLevels(
           }
           while (turnSerials.size > TURN_LEVEL_MEMORY) {
             turnSerials.delete(turnSerials.keys().next().value!);
+          }
+          const recorded = turnLevels.get(sessionId);
+          if (recorded?.level === level) {
+            recorded.capture.serial = serial;
+            recorded.capture.eligible = recorded.capture.marks !== null;
           }
           return start(sessionId, content, opts);
         };
