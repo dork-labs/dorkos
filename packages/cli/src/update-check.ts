@@ -2,6 +2,7 @@
 
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
+import { isEnvFlagOn, isTelemetryDisabledByEnv } from '@dorkos/shared/telemetry-consent';
 import { resolveDorkHome } from './lib/dork-home.js';
 
 interface UpdateCache {
@@ -18,12 +19,26 @@ function getCachePath(): string {
 }
 
 /**
- * Check the npm registry for a newer version of dorkos.
+ * Whether the update check is switched off: `DORKOS_UPDATE_CHECK_DISABLED`
+ * (the server's own switch), or `DO_NOT_TRACK` / `DORKOS_TELEMETRY_DISABLED`,
+ * which mean DorkOS sends nothing. Read at call time, the CLI's env convention.
+ */
+function updateCheckDisabled(): boolean {
+  // eslint-disable-next-line no-restricted-syntax -- call-time env resolution (CLI convention)
+  const env = process.env;
+  return isEnvFlagOn(env.DORKOS_UPDATE_CHECK_DISABLED) || isTelemetryDisabledByEnv(env);
+}
+
+/**
+ * Check the npm registry for a newer version of dorkos. Answers `null` without
+ * touching the network or the cache when the check is switched off.
  *
  * @param currentVersion - The currently running version string (e.g., "0.1.0")
  * @returns The latest version string if newer than current, or null
  */
 export async function checkForUpdate(currentVersion: string): Promise<string | null> {
+  if (updateCheckDisabled()) return null;
+
   // 1. Check cache
   try {
     const raw = await readFile(getCachePath(), 'utf-8');
