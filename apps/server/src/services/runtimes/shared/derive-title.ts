@@ -1,5 +1,5 @@
 import { chatMessageWords } from '@dorkos/shared/chat-messages';
-import { shownToPerson } from '@dorkos/shared/kickoff';
+import { shownToPerson, titleShownToPerson } from '@dorkos/shared/kickoff';
 import { TRANSCRIPT } from '../../../config/constants.js';
 
 /**
@@ -134,7 +134,7 @@ export function deriveSessionTitle(
     const capped = capCodepoints(budgeted, TRANSCRIPT.TITLE_MAX_LENGTH);
     const truncated = capped.length < normalized.length;
     const titled = capitalizeFirst(capped);
-    return truncated ? `${titled}…` : titled;
+    return titleShownToPerson(truncated ? `${titled}…` : titled);
   }
 
   // The whole message was empty or pure courtesy — fall back to the first
@@ -142,5 +142,7 @@ export function deriveSessionTitle(
   const fallback = lines.map((l) => l.trim()).find((l) => l !== '') ?? '';
   if (fallback === '') return '';
   const fallbackWords = fallback.split(/\s+/).slice(0, MAX_WORDS).join(' ');
-  return capitalizeFirst(capCodepoints(fallbackWords, TRANSCRIPT.TITLE_MAX_LENGTH));
+  return titleShownToPerson(
+    capitalizeFirst(capCodepoints(fallbackWords, TRANSCRIPT.TITLE_MAX_LENGTH))
+  );
 }

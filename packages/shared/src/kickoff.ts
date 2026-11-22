@@ -134,9 +134,10 @@ const DORK_MARKUP = /<\/?dork-[a-z0-9-]*>/i;
  * A chat title as a person may see it: `''` when it carries DorkOS markup.
  *
  * Titles are stored, so one derived from a greeting kickoff before DOR-4976 still
- * reads `<dork-kickoff>`. Every runtime passes its titles through here on the way
- * out, and the client does again when it renders, so no `<dork-…>` tag ever
- * shows as a title; `''` renders as the untitled label.
+ * reads `<dork-kickoff>`. Runtimes apply this where they make a title or preview
+ * and where a stored chat comes back in (see {@link sessionShownToPerson}); the
+ * client's `sessionDisplayTitle` and Jump back in summaries apply it again.
+ * `''` renders as the untitled label.
  *
  * @param title - A runtime's stored or derived title (may be missing).
  * @returns The title, or `''` when it is missing or carries DorkOS markup.

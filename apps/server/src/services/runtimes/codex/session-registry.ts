@@ -28,7 +28,7 @@
  */
 import type { Session, PermissionModeId, EffortLevel } from '@dorkos/shared/types';
 import { isWithinDirectory } from '@dorkos/shared/paths';
-import { sessionShownToPerson, shownToPerson } from '@dorkos/shared/kickoff';
+import { sessionShownToPerson, shownToPerson, titleShownToPerson } from '@dorkos/shared/kickoff';
 import { deriveSessionTitle } from '../shared/derive-title.js';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
 
@@ -98,7 +98,7 @@ export class CodexSessionRegistry {
   ): void {
     const { title, ...settings } = patch;
     const session = this.upsert(sessionId, settings);
-    const preview = toPreview(shownToPerson(content));
+    const preview = titleShownToPerson(toPreview(shownToPerson(content)));
     // MessageOpts.title is only honored on the first turn (see AgentRuntime).
     if (session.title === '') session.title = title ?? (deriveSessionTitle(content) || preview);
     // "Tools are back" shows until the next message (DOR-4393). Null, not

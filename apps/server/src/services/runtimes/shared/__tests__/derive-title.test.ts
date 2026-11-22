@@ -12,8 +12,10 @@ describe('deriveSessionTitle', () => {
     expect(deriveSessionTitle(wrapKickoff('Read your SOUL.md and say hello.'))).toBe('');
   });
 
-  it('still titles a person’s message that only mentions the kickoff tag', () => {
-    expect(deriveSessionTitle('what is <dork-kickoff> for')).toBe('What is <dork-kickoff> for');
+  it('never makes a title carrying DorkOS markup, even from a person’s words', () => {
+    // No stored or shown title may carry `<dork-…>` (DOR-4976); the chat stays
+    // untitled, so the person's next message can still name it.
+    expect(deriveSessionTitle('what is <dork-kickoff> for')).toBe('');
   });
 
   it('keeps a short message intact, capitalized, without ellipsis', () => {

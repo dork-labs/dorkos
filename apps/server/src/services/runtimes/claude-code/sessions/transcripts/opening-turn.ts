@@ -9,6 +9,10 @@
  * in yet shows the untitled label, never the tag and never a model title made
  * from the greeting.
  *
+ * Cost: the scan reruns whenever such a chat's metadata is re-read (its file
+ * changed), capped at {@link OPENING_SCAN_BYTES} and stopping at the person's
+ * first message, so it stays small; ordinary chats never take it.
+ *
  * @module services/runtimes/claude-code/sessions/transcripts/opening-turn
  */
 import { createReadStream } from 'node:fs';
@@ -51,13 +55,21 @@ export interface OpeningTurn {
 }
 
 /**
- * Whether a transcript head mentions the kickoff tag at all. Cheap, and true
- * even when the kickoff's own line is cut off by the head read.
+ * Whether the head alone cannot say how the chat opens, so {@link readOpeningTurn}
+ * must look further. True when the head found no person message and either
+ * mentions the kickoff tag (its line was cut off) or held no whole `user`
+ * record at all (the turn's context blocks, which come before the words, ran
+ * past it). An ordinary chat, a room turn or an agent's own chat has a `user`
+ * record in the head and never pays for the scan.
  *
  * @param head - The raw head the list already read.
+ * @param headFirstUser - The first `user` record's text the head parsed, or `''`.
+ * @param fileSize - The transcript's size in bytes.
  */
-export function headMentionsKickoff(head: string): boolean {
-  return head.includes(`<${KICKOFF_TAG}>`);
+export function needsOpeningScan(head: string, headFirstUser: string, fileSize: number): boolean {
+  return (
+    head.includes(`<${KICKOFF_TAG}>`) || (!headFirstUser && fileSize > Buffer.byteLength(head))
+  );
 }
 
 /**

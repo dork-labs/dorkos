@@ -68,6 +68,15 @@ describe.each(registries)('%s: a chat that opens with the greeting kickoff', (_n
     expect(chat.read().title).toBe('Fix the build');
     expect(chat.read().lastMessagePreview).toBe('Fix the build');
   });
+
+  it('stores no markup when a person’s own first message mentions the tag', () => {
+    const chat = make();
+    chat.record('what is <dork-kickoff> for');
+    expectNoDorkMarkup(chat.read());
+
+    chat.record('Fix the build');
+    expect(chat.read().title).toBe('Fix the build');
+  });
 });
 
 /** A chat stored before DOR-4976, titled from its greeting kickoff. */
@@ -119,10 +128,13 @@ describe('Doe: a chat that opens with the greeting kickoff', () => {
       expectNoDorkMarkup(store.get(SESSION)?.session);
       expect(store.get(SESSION)?.session.title ?? '').toBe('');
       expect(store.get(SESSION)?.session.lastMessagePreview).toBe('');
+      // DorkOS wrote the greeting, not the person.
+      expect(store.get(SESSION)?.session.userLastMessageAt).toBeUndefined();
 
       store.message(SESSION, 'Fix the build', CWD);
       expect(store.get(SESSION)?.session.title).toBe('Fix the build');
       expect(store.get(SESSION)?.session.lastMessagePreview).toBe('Fix the build');
+      expect(store.get(SESSION)?.session.userLastMessageAt).toBeDefined();
     }));
 
   it('shows a chat stored with a kickoff title before the fix as untitled', () =>

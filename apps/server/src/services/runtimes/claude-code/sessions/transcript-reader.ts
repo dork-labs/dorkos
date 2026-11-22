@@ -14,11 +14,7 @@ import { extractTextContent, isPersonAuthoredUserRecord } from './transcript-par
 import type { TranscriptLine } from './transcript-parser.js';
 import { classifyOrigin } from './classify-origin.js';
 import { isKickoffEnvelope, titleShownToPerson } from '@dorkos/shared/kickoff';
-import {
-  headMentionsKickoff,
-  personTitleText,
-  readOpeningTurn,
-} from './transcripts/opening-turn.js';
+import { needsOpeningScan, personTitleText, readOpeningTurn } from './transcripts/opening-turn.js';
 import { deriveSessionTitle } from '../../shared/derive-title.js';
 import { projectSlug, subtreeSlugScope } from './project-slug.js';
 import { SessionRootIndex, accountForTranscript } from './session-root-index.js';
@@ -797,9 +793,9 @@ export class TranscriptReader {
       if (firstUserMessage && firstTimestamp && model && cwd) break;
     }
 
-    // A kickoff whose line ran past the head: scan on for the person's words (DOR-4976).
+    // When the head can't tell how the chat opens, scan on for the person's words (DOR-4976).
     const opening =
-      !firstUserMessage && headMentionsKickoff(chunk)
+      !firstUserMessage && needsOpeningScan(chunk, firstRawUserMessage, Number(stat.size))
         ? await readOpeningTurn(filePath)
         : { kickoff: isKickoffEnvelope(firstRawUserMessage), personFirst: firstUserMessage };
     const derivedTitle =

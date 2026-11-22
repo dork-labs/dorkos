@@ -182,6 +182,19 @@ describe('TranscriptReader title precedence (DOR-2083)', () => {
     expect(session?.title).toBe('Fix the build');
   });
 
+  it('scans on when context before the greeting pushes its tag past the head', async () => {
+    // DorkOS puts the turn's context blocks in front of the words, so the tag
+    // itself can sit past the 8 KB head, with no whole user record inside it.
+    const context = `<git_status>\n${'branch detail\n'.repeat(700)}</git_status>\n`;
+    await writeTranscript(dir, 'sess-kickoff-context', [
+      userLine(`${context}${wrapKickoff('Read your SOUL.md and say hello.')}`),
+      aiTitleLine('sess-kickoff-context', 'Agent introduces itself'),
+    ]);
+
+    const [session] = await reader.listSessionsInDir(dir);
+    expect(session?.title).toBe('');
+  });
+
   it('keeps a /rename even on a chat that only has the greeting', async () => {
     await writeTranscript(dir, 'sess-kickoff-renamed', [
       userLine(wrapKickoff('Read your SOUL.md and say hello.')),
