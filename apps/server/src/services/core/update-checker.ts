@@ -17,6 +17,7 @@
  * @module services/update-checker
  */
 
+import { isTelemetryDisabledByEnv } from '@dorkos/shared/telemetry-consent';
 import { env } from '../../env.js';
 import { IS_DEV_BUILD } from '../../lib/version.js';
 import { isPersonalComputer } from './server-role/role-checks.js';
@@ -47,7 +48,8 @@ let refreshing: Promise<void> | null = null;
  * A dev build never phones home. A hub never updates itself: DorkOS Cloud
  * upgrades hubs in waves, so an "update available" there would ask a person
  * to do something they cannot. `DORKOS_UPDATE_CHECK_DISABLED` is how a test
- * server (the contract harness) stays off the network.
+ * server (the contract harness) stays off the network, and `DO_NOT_TRACK` or
+ * `DORKOS_TELEMETRY_DISABLED` turn it off too, since they mean nothing is sent.
  */
 function checksRegistry(): boolean {
   if (IS_DEV_BUILD) return false;
@@ -55,6 +57,13 @@ function checksRegistry(): boolean {
   // an agent computer, whose image its hub chooses (DOR-2940). Only a person's
   // own computer asks the registry.
   if (!isPersonalComputer()) return false;
+  if (
+    isTelemetryDisabledByEnv({
+      DO_NOT_TRACK: env.DO_NOT_TRACK,
+      DORKOS_TELEMETRY_DISABLED: env.DORKOS_TELEMETRY_DISABLED,
+    })
+  )
+    return false;
   return !isSwitchOn(env.DORKOS_UPDATE_CHECK_DISABLED);
 }
 

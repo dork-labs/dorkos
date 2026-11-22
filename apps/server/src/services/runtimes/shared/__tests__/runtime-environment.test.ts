@@ -52,6 +52,8 @@ describe('runtime environment authority', () => {
           PATH: parent.PATH,
           HOME: parent.HOME,
           DO_NOT_TRACK: '1',
+          // DO_NOT_TRACK on the server also switches the runtime's own telemetry off.
+          DISABLE_TELEMETRY: '1',
         });
       }
     }

@@ -1,0 +1,456 @@
+[
+  {
+    "file": "apps/desktop/src/main/auto-updater.ts",
+    "destination": "The desktop app's release feed",
+    "class": "feature",
+    "reason": "Checks for and downloads new versions of the Mac and Windows app.",
+    "offSwitch": "Packaged app only; no separate switch yet"
+  },
+  {
+    "file": "apps/desktop/src/main/event-stream.ts",
+    "destination": "This computer's own DorkOS server",
+    "class": "feature",
+    "reason": "The app shell reads the server's event stream for tray counts and notifications.",
+    "offSwitch": "Never leaves the computer"
+  },
+  {
+    "file": "apps/desktop/src/main/index.ts",
+    "destination": "This computer's own DorkOS server",
+    "class": "feature",
+    "reason": "The shell posts a person's step-up password to the local server.",
+    "offSwitch": "Never leaves the computer"
+  },
+  {
+    "file": "apps/desktop/src/main/notifications/answer.ts",
+    "destination": "This computer's own DorkOS server",
+    "class": "feature",
+    "reason": "Sends the answer a person gave in a desktop notification.",
+    "offSwitch": "Never leaves the computer"
+  },
+  {
+    "file": "apps/desktop/src/main/sign-in/window-sign-in.ts",
+    "destination": "This computer's own DorkOS server",
+    "class": "feature",
+    "reason": "Signs the app window in to the local server.",
+    "offSwitch": "Never leaves the computer"
+  },
+  {
+    "file": "apps/server/src/core-extensions/linear-issues/server.ts",
+    "destination": "Linear's API",
+    "class": "feature",
+    "reason": "The built-in Linear extension reads issues with the person's own key.",
+    "offSwitch": "Leave the Linear extension off or without a key"
+  },
+  {
+    "file": "apps/server/src/http/client-files.ts",
+    "destination": "Google Fonts",
+    "class": "feature",
+    "reason": "The page's content policy lets the browser load a font a person picked.",
+    "offSwitch": "Keep the default font, which ships with the app"
+  },
+  {
+    "file": "apps/server/src/routes/extension-frame.ts",
+    "destination": "Google Fonts",
+    "class": "feature",
+    "reason": "An extension frame's content policy lets the browser load a picked font.",
+    "offSwitch": "Keep the default font, which ships with the app"
+  },
+  {
+    "file": "apps/server/src/routes/onboarding.ts",
+    "destination": "The model service a person picks at first run",
+    "class": "feature",
+    "reason": "Sets up the model service the person chose on the Welcome screen.",
+    "offSwitch": "Skip that setup choice"
+  },
+  {
+    "file": "apps/server/src/services/browser/egress/broker/node-transport.ts",
+    "destination": "The sites an agent's browser opens",
+    "class": "feature",
+    "reason": "Carries the web traffic of the managed browser an agent uses.",
+    "offSwitch": "Do not give agents the browser"
+  },
+  {
+    "file": "apps/server/src/services/communities/buzz/buzz-socket.ts",
+    "destination": "A connected community's relay",
+    "class": "feature",
+    "reason": "Carries messages for a community the person joined.",
+    "offSwitch": "Leave the community"
+  },
+  {
+    "file": "apps/server/src/services/communities/remote/pinned-origin.ts",
+    "destination": "A connected, independently hosted community",
+    "class": "feature",
+    "reason": "Talks to a community the person joined, pinned to its checked address.",
+    "offSwitch": "Leave the community"
+  },
+  {
+    "file": "apps/server/src/services/computers/backend/artifact-installer.ts",
+    "destination": "The pinned agent computer image",
+    "class": "feature",
+    "reason": "Downloads an agent computer when a person sets one up.",
+    "offSwitch": "Do not set up an agent computer"
+  },
+  {
+    "file": "apps/server/src/services/computers/computer-service.ts",
+    "destination": "An agent computer on this machine",
+    "class": "feature",
+    "reason": "Checks and drives an agent computer's own services.",
+    "offSwitch": "Do not set up an agent computer"
+  },
+  {
+    "file": "apps/server/src/services/connectors/providers/composio-client.ts",
+    "destination": "Composio",
+    "class": "feature",
+    "reason": "Runs the outside apps a person connected through Composio.",
+    "offSwitch": "Do not connect apps through Composio"
+  },
+  {
+    "file": "apps/server/src/services/connectors/providers/nango-client.ts",
+    "destination": "Nango",
+    "class": "feature",
+    "reason": "Runs the outside apps a person connected through Nango.",
+    "offSwitch": "Do not connect apps through Nango"
+  },
+  {
+    "file": "apps/server/src/services/connectors/providers/test-composio/fixture.ts",
+    "destination": "A local stand-in for Composio",
+    "class": "feature",
+    "reason": "Loaded only by the test runtime; talks to its own local listener.",
+    "offSwitch": "Never loaded outside the test runtime"
+  },
+  {
+    "file": "apps/server/src/services/connectors/resources/catalog-logos.ts",
+    "destination": "App logos from the connection catalog",
+    "class": "feature",
+    "reason": "Fetches logos for the Connections list so the browser never loads them itself.",
+    "offSwitch": "Do not open the Connections catalog"
+  },
+  {
+    "file": "apps/server/src/services/core/ai-metadata-reporter.ts",
+    "destination": "dorkos.ai telemetry events",
+    "class": "consent",
+    "gatedBy": ["apps/server/src/startup/steps/telemetry-extensions-runtimes.ts"]
+  },
+  {
+    "file": "apps/server/src/services/core/auth/cloud-link-client.ts",
+    "destination": "DorkOS Cloud",
+    "class": "feature",
+    "reason": "Keeps a computer linked to a DorkOS account, including its linked-device heartbeat.",
+    "offSwitch": "Do not link, or unlink, this computer"
+  },
+  {
+    "file": "apps/server/src/services/core/cloud/community-move-parts.ts",
+    "destination": "The Community server a move goes to",
+    "class": "feature",
+    "reason": "Sends a Community's export in parts when a person moves it.",
+    "offSwitch": "Do not move a Community"
+  },
+  {
+    "file": "apps/server/src/services/core/cloud/community-move-upload.ts",
+    "destination": "The Community server a move goes to",
+    "class": "feature",
+    "reason": "Uploads a Community's export when a person moves it.",
+    "offSwitch": "Do not move a Community"
+  },
+  {
+    "file": "apps/server/src/services/core/cloud/credits-relay.ts",
+    "destination": "The DorkOS credits endpoint",
+    "class": "feature",
+    "reason": "Carries model requests for a session a person set to run on credits.",
+    "offSwitch": "Do not pick credits; DORKOS_CLOUD_CREDITS=0"
+  },
+  {
+    "file": "apps/server/src/services/core/cloud/v1-client.ts",
+    "destination": "DorkOS Cloud",
+    "class": "feature",
+    "reason": "Talks to the DorkOS account this computer is linked to.",
+    "offSwitch": "Do not link, or unlink, this computer"
+  },
+  {
+    "file": "apps/server/src/services/core/feedback-reporter.ts",
+    "destination": "dorkos.ai feedback",
+    "class": "feature",
+    "reason": "Sends a report only when a person writes one and presses Send.",
+    "offSwitch": "Do not send feedback"
+  },
+  {
+    "file": "apps/server/src/services/core/heartbeat-reporter.ts",
+    "destination": "dorkos.ai telemetry heartbeat",
+    "class": "consent",
+    "gatedBy": ["apps/server/src/index.ts"]
+  },
+  {
+    "file": "apps/server/src/services/core/hub/hub-sign-in.ts",
+    "destination": "The sign-in provider of a person's hub",
+    "class": "feature",
+    "reason": "Signs a person in to the hub they set up.",
+    "offSwitch": "Do not use a hub"
+  },
+  {
+    "file": "apps/server/src/services/core/session-relay/index.ts",
+    "destination": "The owner's hub",
+    "class": "feature",
+    "reason": "Relays sessions for a computer linked to its owner's hub.",
+    "offSwitch": "Do not link, or unlink, this computer"
+  },
+  {
+    "file": "apps/server/src/services/core/session-relay/relay-link.ts",
+    "destination": "The owner's hub",
+    "class": "feature",
+    "reason": "Links this computer to a hub when a person pastes a link code.",
+    "offSwitch": "Do not link this computer"
+  },
+  {
+    "file": "apps/server/src/services/core/update-checker.ts",
+    "destination": "The npm registry",
+    "class": "consent",
+    "reason": "Checks for a newer DorkOS; also off with DORKOS_UPDATE_CHECK_DISABLED."
+  },
+  {
+    "file": "apps/server/src/services/core/usage-reporter.ts",
+    "destination": "dorkos.ai telemetry events",
+    "class": "consent",
+    "gatedBy": ["apps/server/src/startup/steps/telemetry-extensions-runtimes.ts"]
+  },
+  {
+    "file": "apps/server/src/services/decisions/triage-wiring.ts",
+    "destination": "The DorkOS credits endpoint",
+    "class": "feature",
+    "reason": "Runs a beat's cheap check on credits after a person answered Use credits.",
+    "offSwitch": "Do not answer Use credits; DORKOS_CLOUD_CREDITS=0"
+  },
+  {
+    "file": "apps/server/src/services/extensions/http/extension-proxy.ts",
+    "destination": "The services an extension declares",
+    "class": "feature",
+    "reason": "Forwards an installed extension's requests to the services it declared.",
+    "offSwitch": "Turn the extension off"
+  },
+  {
+    "file": "apps/server/src/services/extensions/isolation/isolated-media.ts",
+    "destination": "An extension's own process on this computer",
+    "class": "feature",
+    "reason": "Forwards media requests to an isolated extension.",
+    "offSwitch": "Never leaves the computer"
+  },
+  {
+    "file": "apps/server/src/services/extensions/isolation/isolated-router.ts",
+    "destination": "An extension's own process on this computer",
+    "class": "feature",
+    "reason": "Forwards requests to an isolated extension.",
+    "offSwitch": "Never leaves the computer"
+  },
+  {
+    "file": "apps/server/src/services/marketplace/package-fetcher.ts",
+    "destination": "Marketplace sources",
+    "class": "feature",
+    "reason": "Downloads marketplace listings and the packages a person installs.",
+    "offSwitch": "Do not browse or install from the marketplace"
+  },
+  {
+    "file": "apps/server/src/services/marketplace/telemetry/install-counts.ts",
+    "destination": "dorkos.ai install counts",
+    "class": "consent"
+  },
+  {
+    "file": "apps/server/src/services/marketplace/telemetry/telemetry-reporter.ts",
+    "destination": "dorkos.ai install events",
+    "class": "consent",
+    "gatedBy": ["apps/server/src/startup/steps/telemetry-extensions-runtimes.ts"]
+  },
+  {
+    "file": "apps/server/src/services/marketplace/telemetry/updated-at.ts",
+    "destination": "dorkos.ai package update times",
+    "class": "consent"
+  },
+  {
+    "file": "apps/server/src/services/mcp-apps/mcp-app-resource-service.ts",
+    "destination": "MCP servers a person added",
+    "class": "feature",
+    "reason": "Loads app views from MCP servers a person added.",
+    "offSwitch": "Remove the MCP server"
+  },
+  {
+    "file": "apps/server/src/services/mesh/agent-mcp-oauth-service.ts",
+    "destination": "MCP servers a person added, and their sign-in",
+    "class": "feature",
+    "reason": "Signs an agent in to an MCP server a person added.",
+    "offSwitch": "Remove the MCP server"
+  },
+  {
+    "file": "apps/server/src/services/mesh/agent-mcp-probe.ts",
+    "destination": "MCP servers a person added",
+    "class": "feature",
+    "reason": "Tests an MCP server a person added.",
+    "offSwitch": "Remove the MCP server"
+  },
+  {
+    "file": "apps/server/src/services/observability/otel.ts",
+    "destination": "The operator's own trace endpoint",
+    "class": "feature",
+    "reason": "Sends traces only to the endpoint an operator set.",
+    "offSwitch": "Leave OTEL_EXPORTER_OTLP_ENDPOINT unset, or OTEL_SDK_DISABLED=true"
+  },
+  {
+    "file": "apps/server/src/services/runtimes/connect/check-credential.ts",
+    "destination": "The service a pasted key belongs to",
+    "class": "feature",
+    "reason": "Tries a key a person pasted before it is saved.",
+    "offSwitch": "Do not paste a key"
+  },
+  {
+    "file": "apps/server/src/services/runtimes/doe/mcp.ts",
+    "destination": "This server's own MCP route",
+    "class": "feature",
+    "reason": "A DorkOS builder turn reaches its tools on this server.",
+    "offSwitch": "Never leaves the computer"
+  },
+  {
+    "file": "apps/server/src/services/runtimes/opencode/computer/provider.ts",
+    "destination": "OpenCode on an agent computer",
+    "class": "feature",
+    "reason": "Drives OpenCode inside an agent computer.",
+    "offSwitch": "Do not set up an agent computer"
+  },
+  {
+    "file": "apps/server/src/services/runtimes/opencode/providers/ollama.ts",
+    "destination": "Ollama on this computer",
+    "class": "feature",
+    "reason": "Checks a local Ollama a person chose as a model service.",
+    "offSwitch": "Do not pick Ollama"
+  },
+  {
+    "file": "apps/server/src/services/runtimes/opencode/providers/openrouter.ts",
+    "destination": "OpenRouter",
+    "class": "feature",
+    "reason": "Reads OpenRouter's model list and checks a person's key.",
+    "offSwitch": "Do not pick OpenRouter"
+  },
+  {
+    "file": "apps/server/src/services/runtimes/test-mode/doc-frame/doc-frame-sdk-probe.ts",
+    "destination": "This server's own tool route",
+    "class": "feature",
+    "reason": "Loaded only by the test runtime.",
+    "offSwitch": "Never loaded outside the test runtime"
+  },
+  {
+    "file": "apps/server/src/services/session/local-browser/desktop-bridge.ts",
+    "destination": "The desktop app on this computer",
+    "class": "feature",
+    "reason": "Drives the Mac app's local browser for an agent.",
+    "offSwitch": "Never leaves the computer"
+  },
+  {
+    "file": "apps/server/src/services/spaces/oidc.ts",
+    "destination": "A Community's sign-in provider",
+    "class": "feature",
+    "reason": "A Community server signs members in through the provider its owner set.",
+    "offSwitch": "Runs only on a Community server"
+  },
+  {
+    "file": "apps/server/src/services/spaces/startup/space-server.ts",
+    "destination": "A Community's post-check models",
+    "class": "feature",
+    "reason": "A Community server checks new posts with the models its owner armed.",
+    "offSwitch": "Leave COMMUNITY_DECISIONS_PAID unset"
+  },
+  {
+    "file": "apps/server/src/services/workbench-serve/preview-listener.ts",
+    "destination": "A dev server on this computer",
+    "class": "feature",
+    "reason": "Previews an app an agent is building.",
+    "offSwitch": "Never leaves the computer"
+  },
+  {
+    "file": "apps/server/src/services/workbench-serve/probe.ts",
+    "destination": "A dev server on this computer",
+    "class": "feature",
+    "reason": "Checks whether a previewed app is up.",
+    "offSwitch": "Never leaves the computer"
+  },
+  {
+    "file": "apps/server/src/startup/computer-mcp-bridge.ts",
+    "destination": "An agent computer on this machine",
+    "class": "feature",
+    "reason": "Forwards an agent computer's tool calls to this server.",
+    "offSwitch": "Do not set up an agent computer"
+  },
+  {
+    "file": "apps/server/src/startup/steps/capabilities.ts",
+    "destination": "This server's own connector tool listener",
+    "class": "feature",
+    "reason": "Lists connector tools from the listener this server runs.",
+    "offSwitch": "Never leaves the computer"
+  },
+  {
+    "file": "packages/cli/src/cleanup-command.ts",
+    "destination": "This computer's own DorkOS server",
+    "class": "feature",
+    "reason": "Checks whether a server is still running before cleanup.",
+    "offSwitch": "Never leaves the computer"
+  },
+  {
+    "file": "packages/cli/src/commands/community-deploy/fly-graphql-client.ts",
+    "destination": "Fly",
+    "class": "feature",
+    "reason": "Deploys a Community when a person runs the deploy command.",
+    "offSwitch": "Do not run the deploy command"
+  },
+  {
+    "file": "packages/cli/src/commands/community-deploy/health.ts",
+    "destination": "The Community being deployed",
+    "class": "feature",
+    "reason": "Checks a Community the deploy command just started.",
+    "offSwitch": "Do not run the deploy command"
+  },
+  {
+    "file": "packages/cli/src/commands/community-deploy/runtime/default-owner.ts",
+    "destination": "The Community being deployed",
+    "class": "feature",
+    "reason": "Sets up the owner of a Community the deploy command started.",
+    "offSwitch": "Do not run the deploy command"
+  },
+  {
+    "file": "packages/cli/src/commands/community-deploy/runtime/image-platform.ts",
+    "destination": "The Community image registry",
+    "class": "feature",
+    "reason": "Reads which image the deploy command should run.",
+    "offSwitch": "Do not run the deploy command"
+  },
+  {
+    "file": "packages/cli/src/commands/package-validate-remote.ts",
+    "destination": "The marketplace a person names",
+    "class": "feature",
+    "reason": "Validates a remote marketplace when a person runs the command.",
+    "offSwitch": "Do not run the command"
+  },
+  {
+    "file": "packages/cli/src/commands/validate-source-paths.ts",
+    "destination": "The plugin sources a package names",
+    "class": "feature",
+    "reason": "Checks a package's plugins are reachable when a person validates it.",
+    "offSwitch": "Do not run the command"
+  },
+  {
+    "file": "packages/cli/src/lib/api-client.ts",
+    "destination": "This computer's own DorkOS server",
+    "class": "feature",
+    "reason": "CLI commands talk to the running local server.",
+    "offSwitch": "Never leaves the computer"
+  },
+  {
+    "file": "packages/cli/src/update-check.ts",
+    "destination": "The npm registry",
+    "class": "consent",
+    "reason": "Checks for a newer DorkOS; also off with DORKOS_UPDATE_CHECK_DISABLED."
+  },
+  {
+    "file": "packages/shared/src/error-report.ts",
+    "destination": "dorkos.ai telemetry events",
+    "class": "consent",
+    "gatedBy": [
+      "apps/server/src/startup/steps/telemetry-extensions-runtimes.ts",
+      "packages/cli/src/lib/error-reporter.ts"
+    ]
+  }
+]

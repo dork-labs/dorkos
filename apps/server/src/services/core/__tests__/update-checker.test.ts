@@ -11,6 +11,8 @@ vi.mock('../../../lib/server-role.js', () => ({ currentServerRole: () => role.va
 
 const envMock = vi.hoisted(() => ({
   DORKOS_UPDATE_CHECK_DISABLED: undefined as string | undefined,
+  DO_NOT_TRACK: undefined as string | undefined,
+  DORKOS_TELEMETRY_DISABLED: undefined as string | undefined,
 }));
 vi.mock('../../../env.js', () => ({ env: envMock }));
 
@@ -44,6 +46,8 @@ describe('update-checker', () => {
     vi.mocked(versionModule).IS_DEV_BUILD = false as never;
     role.value = 'computer';
     envMock.DORKOS_UPDATE_CHECK_DISABLED = undefined;
+    envMock.DO_NOT_TRACK = undefined;
+    envMock.DORKOS_TELEMETRY_DISABLED = undefined;
   });
 
   afterEach(() => {
@@ -67,6 +71,28 @@ describe('update-checker', () => {
     expect(await readAfterRefresh()).toBeNull();
     expect(mockFetch).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ['DO_NOT_TRACK', '1'],
+    ['DO_NOT_TRACK', 'true'],
+    ['DORKOS_TELEMETRY_DISABLED', '1'],
+    ['DORKOS_TELEMETRY_DISABLED', 'TRUE'],
+  ] as const)('honours %s=%s and never asks the registry', async (name, value) => {
+    envMock[name] = value;
+    mockFetch.mockResolvedValue(answers('0.2.0'));
+    expect(await readAfterRefresh()).toBeNull();
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, '0', 'false', ''])(
+    'still asks the registry when DO_NOT_TRACK is %j',
+    async (value) => {
+      envMock.DO_NOT_TRACK = value;
+      mockFetch.mockResolvedValue(answers('0.2.0'));
+      expect(await readAfterRefresh()).toBe('0.2.0');
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    }
+  );
 
   it('answers from the cache at once and fetches in the background (DOR-3226)', async () => {
     mockFetch.mockResolvedValue(answers('0.2.0'));
