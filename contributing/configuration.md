@@ -1997,10 +1997,10 @@ pnpm smoke:docker        # CLI install smoke test only
 Publish the CLI to npm:
 
 ```bash
-pnpm publish:cli
+DORKOS_QA_GO_LEDGER=<QA's GO-LEDGER.md> pnpm publish:cli
 ```
 
-This runs `pnpm publish --filter=dorkos`, which triggers the `prepublishOnly` script to build the CLI bundle automatically.
+It refuses unless QA's ledger holds a GO for the release tag's exact tree (DOR-5050), then builds the CLI bundle and publishes it. The full procedure, tag first, is `/system:release` 6.9 and 6.10.
 
 ### Shared browser experiment
 
