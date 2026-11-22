@@ -2,6 +2,24 @@
   "version": 1,
   "decisions": [
     {
+      "id": "261122-124821",
+      "slug": "one-dork-reference-ids-for-machines-addresses-for-people",
+      "title": "One dork: reference for every DorkOS thing: ids for machines, addresses for people",
+      "status": "proposed",
+      "created": "2026-11-22",
+      "extractedFrom": null,
+      "specSlug": "conversation-model",
+      "supersedes": null,
+      "amends": ["261017-211859"],
+      "affects": [
+        "packages/shared/src/handle.ts",
+        "packages/shared/src/session-link.ts",
+        "packages/cloud-api/src/seats.ts",
+        "packages/relay/src/lib/subjects.ts",
+        "apps/server/src/routes/a2a.ts"
+      ]
+    },
+    {
       "id": "261119-190201",
       "slug": "one-real-chrome-per-agent-two-views",
       "title": "One real Chrome per agent, two views",

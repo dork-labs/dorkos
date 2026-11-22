@@ -14,6 +14,8 @@ amends: [261006-235240, 261009-171114]
 
 Proposed (operator direction 2026-10-17, relayed by the designer agent; spec `specs/conversation-model/`). Becomes Accepted when Dorian approves the spec.
 
+**Amended (proposed) by** [261122-124821](261122-124821-one-dork-reference-ids-for-machines-addresses-for-people.md): the decision bullet "One address points at one conversation. `{handle}[+{name}]@{space}` renders the canonical `dork://{space}/{handle}/{conversation}`" is retired in favour of two `dork:` shapes, a reference by id and an address by name. The display form stands, with `@{space}` optional inside your own space, and every other clause stands. Takes effect when that record is accepted.
+
 **Extends** [260726-170125](260726-170125-a-room-is-a-membership-scoped-durable-stream.md) (a room is a membership-scoped durable stream, not a session) from rooms to every chat. That ADR's decision is unchanged; this one says it now holds everywhere.
 
 **Amends:**
