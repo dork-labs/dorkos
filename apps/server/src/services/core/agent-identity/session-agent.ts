@@ -11,7 +11,10 @@
  * it in now; both are server-held, never a caller's claim. Read-side only:
  * nothing is written back. So a chat with no stored folder names nobody once
  * its runtime no longer holds it (a restart, an idle reclaim), and checks that
- * read it then refuse rather than guess.
+ * read it then refuse rather than guess. One exception: a hand-off's end notice
+ * lets the witness checked at admission stand for an unknown agent (DOR-5040).
+ * Claiming and running the hand-off still refuse one, so a chat dropped before
+ * its seat runs has the hand-off declined, and hears that it ended unposted.
  *
  * @module server/services/core/agent-identity/session-agent
  */
@@ -46,8 +49,8 @@ export function setSessionAgentSources(port: SessionAgentSources | undefined): v
  * The chat's agent from its stored agent and its folder: the recorded agent,
  * else the registered home the folder resolves to. A folder that is no agent's,
  * or one the resolver refuses, answers `undefined`: a caller comparing it with a
- * poster fails closed. A caller that must tell "nobody's" from "refused" reads
- * {@link resolveAgentHome} itself.
+ * poster fails closed. A caller that must tell these apart reads
+ * {@link chatAgentStateOf}.
  *
  * @param recorded - The `agent_path` recorded for the chat at launch.
  * @param cwd - The folder the chat runs in, when one is known.
@@ -61,25 +64,57 @@ export function agentOfChat(
 }
 
 /**
- * The chat's agent, read from the database the caller is already in, so a
- * transaction's checks see one snapshot.
+ * What is known about a chat's agent (DOR-5040):
+ *
+ * - `agent`: the recorded agent, or the registered home its folder resolves to;
+ * - `unknown`: no agent was recorded and no folder is known any more (the
+ *   runtime no longer holds the chat, and none was stored);
+ * - `nobody`: its folder is known and is no agent's;
+ * - `refused`: the resolver refused its folder.
+ */
+export type ChatAgentState =
+  | { kind: 'agent'; agentPath: string }
+  | { kind: 'unknown' }
+  | { kind: 'nobody' }
+  | { kind: 'refused' };
+
+/**
+ * The chat's agent state, read from the database the caller is already in, so
+ * a transaction's checks see one snapshot.
  *
  * @param db - The database or open transaction.
  * @param sessionId - The chat.
  */
-export function sessionAgentOf(db: Db | DbTransaction, sessionId: string): string | undefined {
+export function chatAgentStateOf(db: Db | DbTransaction, sessionId: string): ChatAgentState {
   const metadata = db
     .select({ agentPath: sessionMetadata.agentPath })
     .from(sessionMetadata)
     .where(eq(sessionMetadata.sessionId, sessionId))
     .get();
-  if (metadata?.agentPath) return metadata.agentPath;
+  if (metadata?.agentPath) return { kind: 'agent', agentPath: metadata.agentPath };
   const stored = db
     .select({ cwd: sessionNativeBindings.cwd })
     .from(sessionNativeBindings)
     .where(eq(sessionNativeBindings.sessionId, sessionId))
     .get()?.cwd;
-  return agentOfChat(undefined, stored ?? liveSessionCwd(sessionId));
+  const cwd = stored || liveSessionCwd(sessionId);
+  if (!cwd) return { kind: 'unknown' };
+  const resolved = resolveAgentHome(cwd);
+  if (resolved.kind === 'refused') return { kind: 'refused' };
+  const home = homeOf(resolved);
+  return home ? { kind: 'agent', agentPath: home } : { kind: 'nobody' };
+}
+
+/**
+ * The chat's agent, read from the database the caller is already in: the
+ * agent of {@link chatAgentStateOf}, or `undefined` for every other state.
+ *
+ * @param db - The database or open transaction.
+ * @param sessionId - The chat.
+ */
+export function sessionAgentOf(db: Db | DbTransaction, sessionId: string): string | undefined {
+  const state = chatAgentStateOf(db, sessionId);
+  return state.kind === 'agent' ? state.agentPath : undefined;
 }
 
 /**

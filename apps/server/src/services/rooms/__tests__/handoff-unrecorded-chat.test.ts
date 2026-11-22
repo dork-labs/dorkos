@@ -66,6 +66,8 @@ describe('a hand-off from a chat started with only its folder (DOR-5035)', () =>
         request.onSessionBound(sessionId);
         const draft = draftIn(request.prompt);
         if (draft === undefined) return { sessionId, text: null };
+        // What happens to the source chat while the seat works (DOR-5040).
+        if (state.whileSeatRuns) live.override = state.whileSeatRuns();
         // The seat is not the chat under test: its own launch facts stand in.
         const { recordFixturePublicSource } = await import('./durable-handoff-fixture.js');
         const { durableHarness } = state;
@@ -79,7 +81,14 @@ describe('a hand-off from a chat started with only its folder (DOR-5035)', () =>
       },
     } as unknown as ScriptedTurnRunner;
   }
-  const state: { durableHarness?: import('./room-test-harness.js').RoomHarness } = {};
+  const state: {
+    durableHarness?: import('./room-test-harness.js').RoomHarness;
+    /** The folder the source chat's runtime reports once the seat runs: `null` for none. */
+    whileSeatRuns?: () => string | null;
+  } = {};
+  /** An override of the folder the runtime reports for the source chat. */
+  const live: { override?: string | null } = {};
+  const GHOST_WORKSPACE = '/workspaces/ghost-ws';
 
   /** Start the chat for real with `cwd` only, its one turn posting into the room as `as`. */
   async function launchFolderChat(as: AgentIdentity): Promise<PostResult> {
@@ -139,7 +148,9 @@ describe('a hand-off from a chat started with only its folder (DOR-5035)', () =>
     rio = { agentPath: otherHome, displayName: 'Rio', createdAt };
     const { registerTestHomes } =
       await import('../../core/agent-identity/__tests__/agent-home-fixture.js');
-    registerTestHomes([home, otherHome]);
+    registerTestHomes([home, otherHome], { managed: { [GHOST_WORKSPACE]: '/agents/gone' } });
+    state.whileSeatRuns = undefined;
+    live.override = undefined;
     const permission = await import('../../core/capabilities/permission-enforcement.js');
     permission.initPermissionGate({
       readConfig: () => ({ preset: 'trusted', defaults: { areas: {}, actions: {} } }),
@@ -183,10 +194,12 @@ describe('a hand-off from a chat started with only its folder (DOR-5035)', () =>
     runtime = new FakeAgentRuntime('fake-live');
     // Like Claude Code: the runtime knows the folder it is running each chat in.
     runtime.getSessionCwd = (sessionId) =>
-      (
-        runtime.sendMessage.mock.calls.find((call) => call[0] === sessionId)?.[2] as
-          { cwd?: string } | undefined
-      )?.cwd;
+      live.override !== undefined
+        ? (live.override ?? undefined)
+        : (
+            runtime.sendMessage.mock.calls.find((call) => call[0] === sessionId)?.[2] as
+              { cwd?: string } | undefined
+          )?.cwd;
     runtimeRegistry.register(runtime);
     runtimeRegistry.setDefault('fake-live');
     const { setSessionAgentSources } = await import('../../core/agent-identity/session-agent.js');
@@ -274,6 +287,31 @@ describe('a hand-off from a chat started with only its folder (DOR-5035)', () =>
     expect(row.noticeReceiptId).toEqual(expect.any(String));
     const prepared = await terminalAcceptance.prepare(row.noticeReceiptId!);
     expect(prepared.content).toBe('Juno shared it in #launch.');
+  });
+
+  // DOR-5040: the runtime drops the chat (a restart, an idle reclaim) after admission.
+  it('still accepts the end notice after the runtime dropped the chat', async () => {
+    state.whileSeatRuns = () => null;
+    const answer = await launchFolderChat(juno);
+    await settle();
+    const row = store.handoffOutbox.readOwned(answer.handoffId!, junoId)!;
+    expect(row.noticeState).toBe('accepted');
+    const prepared = await terminalAcceptance.prepare(row.noticeReceiptId!);
+    expect(prepared.content).toBe('Juno shared it in #launch.');
+  });
+
+  it.each([
+    ['now stands in another agent’s home', () => otherHome],
+    ['now stands in a folder that is no agent’s', () => join(dorkHome, 'scratch')],
+    ['now stands in a folder the resolver refuses', () => GHOST_WORKSPACE],
+  ])('skips the end notice when the chat %s', async (_label, folder) => {
+    state.whileSeatRuns = folder;
+    const answer = await launchFolderChat(juno);
+    await settle();
+    const row = store.handoffOutbox.readOwned(answer.handoffId!, junoId)!;
+    // The post went out, so the skip is the notice-time check, not an earlier failure.
+    expect(row.state).toBe('posted');
+    expect(row.noticeState).toBe('skipped');
   });
 
   it("refuses another agent posting from it, and says the chat isn't theirs", async () => {
