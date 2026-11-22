@@ -2,6 +2,8 @@
 
 **For:** Dorian and DorkOS Cloud · **Date:** 2026-10-18 · **Status:** proposed, waiting on agreement · **Builds on:** A1 (#2952), B1 to B3 (the session relay), C7 (the teammate tier) · **Tickets:** DOR-2939 (A7), DOR-2940 (A8)
 
+> **Note 2026-11-22, ADR [`261122-173853`](../../decisions/261122-173853-one-space-model.md) (one space model).** Section 1's split is now the general rule: a space holds its members' data (identity, rules, memory, schedules, conversations, connections, settings) and the computer that runs turns holds only execution state (workspaces, runtime transcripts and sign-ins, processes). A hub is a one-tenant space server. "A hub runs no agents" is a hosting policy read from the role setting, not an architectural wall. A Mac agent's identity stays on the Mac at launch; after launch the private space becomes a tenant on the space store, agents last.
+
 "Hub" is the code's word for a person's own DorkOS in the cloud. No app copy says it: people see **Private**, **Cloud** and their computer's name.
 
 ## 0. The short version
@@ -24,9 +26,9 @@
 
 **Why identity and permissions stay home.** The computer runs agent code and packages, so it is treated as untrusted. The permission gate reads `agent.json` fresh on every call, so that file lives where the tool runs, never where the agent could rewrite it. This matches A1's `DirectoryAgentSchema` (for a cloud agent, `instanceId` is the hub and `worksOn` is the computer) and the local sealed computer, where the host keeps the agent's home and the guest only runs it.
 
-**"Works on: Cloud".** `agent.json` gains `worksOn: { kind: 'cloud', computerId }`. On the hub, `runtimeRegistry.resolveForAgent` sends that agent to a new **forwarding runtime** (`cloud-computer`). It implements just enough of `AgentRuntime`: ensure and list sessions, history, snapshot, subscribe, send, interrupt, approve, answer, models, commands, capabilities. Each one is a relay operation; locks stay on the hub, and everything else is refused. Rooms, tasks, heartbeats and approvals on the hub then work unchanged, and "a hub runs no agents" still holds, because the forwarding runtime only passes work along.
+**"Works on: Cloud".** `agent.json` gains `worksOn: { kind: 'cloud', computerId }`. On the hub, `runtimeRegistry.resolveForAgent` sends that agent to a new **forwarding runtime** (`cloud-computer`). It implements just enough of `AgentRuntime`: ensure and list sessions, history, snapshot, subscribe, send, interrupt, approve, answer, models, commands, capabilities. Each one is a relay operation; locks stay on the hub, and everything else is refused. Rooms, tasks, heartbeats and approvals on the hub then work unchanged, and the hub's no-runtime policy still holds, because the forwarding runtime only passes work along.
 
-**"Works on: Dorian's MacBook".** The agent lives on the Mac exactly as today. The hub keeps no copy of its identity: it lists the agent (directory, B6) and chats with it over the relay (B1). Creating a Mac agent from the web is a page move to the Mac's own dialog (B5, Full control); at the Chat level the option says "Open DorkOS on your Mac to add an agent there." (Open question 1.)
+**"Works on: Dorian's MacBook".** At launch the agent lives on the Mac exactly as today (after launch its identity moves into the private space's tenant, last of all). The hub keeps no copy of its identity: it lists the agent (directory, B6) and chats with it over the relay (B1). Creating a Mac agent from the web is a page move to the Mac's own dialog (B5, Full control); at the Chat level the option says "Open DorkOS on your Mac to add an agent there." (Open question 1.)
 
 ## 2. The channel between your DorkOS and the computer
 

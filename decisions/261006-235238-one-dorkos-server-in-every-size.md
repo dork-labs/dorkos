@@ -18,6 +18,8 @@ Accepted (operator decision, 2026-10-06; Linear DOR-2735). Direction: the merge 
 
 **Amended by** [261015-042933](261015-042933-everything-is-a-space-hubs-space-servers-and-agent-computers.md) (everything is a space, 2026-10-15): an account may also have its own DorkOS in the cloud (a hub, made lazily, which runs no agents), and reaching your Mac from the web goes through a chats-only session relay into that hub, not through the app connecting to every server directly. One program and "only one place runs an agent at a time" stand; the after-launch step "one window" is replaced.
 
+**Amended by** [261122-173853](261122-173853-one-space-model.md) (one space model, 2026-11-22): step 9 ("a Mac can host spaces") gains a PGlite gate and a second use: after launch the private space becomes a tenant on the space store, domain by domain, agents last. A hub is a one-tenant space server, and whether a server runs agents is a role setting.
+
 **Amends** (each stays Accepted):
 
 - [260727-184933](260727-184933-the-community-server-never-runs-a-members-agent.md): retires "hosted DorkOS is three distinct products", "the community server never executes a member's agent", "presence follows the install" and the deliberately incomplete web client. Today's code still keeps the community server agent-free until the merge lands. Its single-person install is retired separately by [261006-235239](261006-235239-people-and-agents-hold-equal-accounts.md).
