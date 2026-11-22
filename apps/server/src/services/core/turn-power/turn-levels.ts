@@ -60,7 +60,14 @@ import { noteBridgedSender, noteTurnHold } from './continuation-hold.js';
 import { aliasRoomTurnWords } from './outside-words.js';
 import { isOwnersCleanTurn, withHeldChatMark } from './held-chat-mark.js';
 import { aliasTurnStart, noteTurnStart } from './turn-start-marks.js';
-import { endReadMark, noteReadMark, sessionReadOutsideText } from './live-outsider-turns.js';
+import {
+  endReadMark,
+  noteReadMark,
+  noteUnsourcedMark,
+  sessionReadOutsideText,
+  startTurnReadSources,
+  type ReadMarkSource,
+} from './live-outsider-turns.js';
 
 /** The room turn's outside-words note travels with its level; a room runner sets both here. */
 export { noteRoomTurnWords } from './outside-words.js';
@@ -364,8 +371,13 @@ export function markRunningTurn(sessionId: string, read: TurnMarks): void {
  *
  * @param sessionId - The conversation, from the verified caller.
  * @param agentPath - The calling agent's home, from its verified identity.
+ * @param source - Where the text came from, kept in memory with the read record (DOR-4794).
  */
-export function markRunningTurnOutsider(sessionId: string, agentPath?: string): void {
+export function markRunningTurnOutsider(
+  sessionId: string,
+  agentPath?: string,
+  source?: ReadMarkSource
+): void {
   const marks: TurnMarks = { outsider: true };
   for (const id of new Set([sessionId, primaryOf(sessionId)])) {
     const record = turnLevels.get(id);
@@ -379,7 +391,7 @@ export function markRunningTurnOutsider(sessionId: string, agentPath?: string): 
     const handOff = handOffLevels.get(id);
     if (handOff !== undefined) remember(handOffLevels, id, withMarks(handOff, marks));
   }
-  noteReadMark(primaryOf(sessionId), agentPath);
+  noteReadMark(primaryOf(sessionId), agentPath, source);
   // Not the bridged-sender latch: that says a stranger spoke on a Telegram or Slack bridge, and
   // one inbox read in the owner's own linked chat must not make it a stranger's for good.
   noteTurnHold(sessionId, true);
@@ -496,6 +508,7 @@ export function aliasTurnLevel(from: string, to: string): void {
     }
     remember(turnLevels, to, { level: record.level, capture: record.capture });
   }
+  if (record !== undefined) noteCarriedOutsider(from, to, record.level);
   aliasTurnStart(from, to);
   const handOff = handOffLevels.get(from);
   if (handOff !== undefined && from !== to) remember(handOffLevels, to, handOff);
@@ -531,12 +544,26 @@ export function carryTurnLevel(from: string, to: string): void {
     level: carried,
     capture: { serial: undefined, eligible: false, marks: copyCaptureMarks(marksOfLevel(carried)) },
   });
+  noteCarriedOutsider(from, to, level);
   if (handOffLevels.has(from) || handOffLevels.has(to)) {
     const theirs = handOffLevels.get(from) ?? level;
     const ours = handOffLevels.get(to) ?? existing;
     remember(handOffLevels, to, ours === undefined ? theirs : stricterLevel(ours, theirs));
   }
   if (strangerHeld.has(from)) strangerHeld.add(to);
+}
+
+/**
+ * An outsider mark carried onto another conversation's level has no source that conversation's
+ * reads name (DOR-4794), so it is recorded as unknown there. A rename within one conversation
+ * shares its first id, and so its sources, and is left alone.
+ */
+function noteCarriedOutsider(from: string, to: string, level: TurnPermissionLevel): void {
+  const target = primaryOf(to);
+  if (primaryOf(from) === target) return;
+  if (level.outsider === true || sessionReadOutsideText(primaryOf(from))) {
+    noteUnsourcedMark(target);
+  }
 }
 
 /**
@@ -772,6 +799,8 @@ function recordLevels(
           // works out its own marks from the posts it answers, so it still ends it.
           const roomTurn = opts?.roomTurn !== undefined && opts.continuationHold !== true;
           if (isOwnersCleanTurn(opts) || roomTurn) endReadMark(primaryOf(sessionId));
+          // What an earlier turn's read came from is not this turn's to claim (DOR-4794).
+          startTurnReadSources(primaryOf(sessionId));
           const level = recordTurn(target, sessionId, stored, opts);
           // Kept on the chat's row, for the turns that later pick it up on their own. A
           // turn a continuation's hold clamped read no new words, so it leaves the answer

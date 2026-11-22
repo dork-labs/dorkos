@@ -13,6 +13,7 @@ const ALLOW_LIST_PATHS = new Set([
   'extensions.enabled',
   'extensions.approvedToRun',
   'extensions.legacyUnsourced',
+  'extensions.legacySlotless',
   'extensions.trustedSources',
   'harness.approvedHooks',
   'harness.approvedFolderConfig',

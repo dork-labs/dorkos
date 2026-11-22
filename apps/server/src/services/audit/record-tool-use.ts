@@ -428,7 +428,8 @@ function markOutsideTextStart(
   event: StreamEvent
 ): void {
   if (!readsOutsideText(runtime, event)) return;
-  markRunningTurnOutsider(sessionId, homeOf(resolveAgentHome(opts?.cwd, turnAgentOf(opts))));
+  const agentPath = homeOf(resolveAgentHome(opts?.cwd, turnAgentOf(opts)));
+  markRunningTurnOutsider(sessionId, agentPath, { kind: 'tool' });
 }
 
 async function* recordDuring(

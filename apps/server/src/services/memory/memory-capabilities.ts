@@ -473,7 +473,7 @@ export const memoryDomain: CapabilityDomain = {
             }
             // A note saved in a turn that read outside words hands them on (DOR-3969).
             if (snapshot.content.includes(OUTSIDER_PROVENANCE_PHRASE))
-              markCallerTurnOutsider(context);
+              markCallerTurnOutsider(context, { kind: 'memory' });
             return {
               ok: true,
               text: fenceNotes(snapshot.content, snapshot.warning ? [snapshot.warning] : []),

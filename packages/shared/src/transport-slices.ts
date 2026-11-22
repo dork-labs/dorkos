@@ -48,6 +48,7 @@ import type { ShellCheckTransport } from './transport-shell-check.js';
 import type { LoadGateTransport } from './transport-load-gate.js';
 import type { QueuedChatTransport } from './transport-queued-chat.js';
 import type { ConnectorSpendingTransport } from './transport-connector-spending.js';
+import type { ConnectorWritesBackTransport } from './transport-connector-writes-back.js';
 import type { BackupsTransport } from './transport-backups.js';
 
 /** Every Transport slice declared outside `transport.ts`. */
@@ -91,4 +92,5 @@ export interface TransportSlices
     LoadGateTransport,
     QueuedChatTransport,
     ConnectorSpendingTransport,
+    ConnectorWritesBackTransport,
     BackupsTransport {}

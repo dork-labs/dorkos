@@ -1,6 +1,7 @@
 /**
  * OpenAPI entries for leaving one agent out of a connection's every-agent
- * share (DOR-3961), projected from the schemas the routes answer with.
+ * share (DOR-3961), and for the per-app writes-back switch (DOR-4794), projected from the
+ * schemas the routes answer with.
  *
  * @module services/connectors/access/exclusions-openapi
  */
@@ -14,6 +15,9 @@ import {
   ConnectorGrantExclusionChangeSchema,
   ConnectorGrantExclusionListSchema,
   ConnectorGrantExclusionParamsSchema,
+  ConnectorWritesBackChangeRequestSchema,
+  ConnectorWritesBackChangeSchema,
+  ConnectorWritesBackSchema,
 } from '@dorkos/shared/connector-exclusion-schemas';
 
 const ErrorSchema = z.object({ error: z.string(), code: z.string() });
@@ -135,6 +139,57 @@ export function registerConnectorExclusionsOpenApi(registry: OpenAPIRegistry): v
         content: { 'application/json': { schema: ConnectorGrantExclusionChangeSchema } },
       },
       404: notFound,
+    },
+  });
+  registry.registerPath({
+    method: 'get',
+    path: '/api/connectors/connections/{connectionId}/writes-back',
+    tags: ['Connectors'],
+    summary: 'Whether agents may write back to an app they only read',
+    description:
+      'Owner only. On: an agent whose turn read only this app may make a change back in it ' +
+      'without asking. Deletions, sends and changes in any other app still ask.',
+    request: { params: z.object({ connectionId: z.string().min(1) }) },
+    responses: {
+      200: {
+        description: 'The switch, and when the person confirmed it',
+        content: { 'application/json': { schema: ConnectorWritesBackSchema } },
+      },
+      404: notFound,
+    },
+  });
+  registry.registerPath({
+    method: 'put',
+    path: '/api/connectors/connections/{connectionId}/writes-back',
+    tags: ['Connectors'],
+    summary: 'Let agents write back to an app they only read, or stop it',
+    description:
+      'Owner only; no agent or program can set it. Turning it on needs `confirmsNoOutsideSync`: ' +
+      'DorkOS cannot see whether the app copies what it holds to another place on its own, so ' +
+      'the person confirms it does not, and the time is kept. Turning it off answers at once.',
+    request: {
+      params: z.object({ connectionId: z.string().min(1) }),
+      body: { content: { 'application/json': { schema: ConnectorWritesBackChangeRequestSchema } } },
+    },
+    responses: {
+      200: {
+        description: 'What the change did',
+        content: { 'application/json': { schema: ConnectorWritesBackChangeSchema } },
+      },
+      422: {
+        description:
+          'The switch is not offered for this app, because its changes can reach other people (`writes_back_unsupported_app`)',
+        content: { 'application/json': { schema: ErrorSchema } },
+      },
+      400: {
+        description: 'The body is invalid, or turns it on without the confirmation',
+        content: { 'application/json': { schema: z.unknown() } },
+      },
+      404: {
+        description:
+          'No such app account here, or it belongs to someone else (`connection_not_found`)',
+        content: { 'application/json': { schema: ErrorSchema } },
+      },
     },
   });
 }

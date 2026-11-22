@@ -652,6 +652,10 @@ export const CONFIG_WRITE_POLICY = {
   // A caller that could add an id here would have the next scan bind an old
   // approval to whatever folder sits at that name.
   'extensions.legacyUnsourced': 'operator-only',
+  // The pre-DOR-4282 approvals still waiting for their places (DOR-4891). A
+  // caller that could add an id here would have the next start give an old
+  // approval places nobody re-read.
+  'extensions.legacySlotless': 'operator-only',
   // The permission set each of those approvals covers (DOR-2686). The third
   // half of the record: a caller that could widen an entry would let an
   // extension reach hosts, programs or agents a person never saw on its card.

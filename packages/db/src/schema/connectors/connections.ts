@@ -103,6 +103,18 @@ export const connections = sqliteTable(
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
     lastVerifiedAt: text('last_verified_at'),
+    /**
+     * A person's choice that an agent whose turn read only this account may write back to it
+     * without asking (DOR-4794). Off by default. Only a person sets it, through an operator-only
+     * route: no agent tool, capability or management action can.
+     */
+    writesBackUnasked: integer('writes_back_unasked', { mode: 'boolean' }).notNull().default(false),
+    /**
+     * When the person turned {@link connections.writesBackUnasked} on, confirming the app sends
+     * nothing it holds somewhere else on its own (DorkOS can't see an app's own syncs). Null
+     * while it is off.
+     */
+    writesBackAttestedAt: text('writes_back_attested_at'),
   },
   (table) => [
     uniqueIndex('connections_instance_external_ref_unique')

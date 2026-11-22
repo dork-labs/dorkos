@@ -219,6 +219,8 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
     holds: { holds: connectorHolds },
     spending: { spending: connectorSpending, activity: activityService },
     accessChanges: { ...connectorOwnerBoundary, narrowing: connectorAccessNarrowing, db },
+    // A person's per-app switch; never reachable by an agent (DOR-4794).
+    writesBack: { ...connectorOwnerBoundary, db, activity: activityService },
     // Read at request time: the extension manager starts after these routes.
     miniAppAccess: {
       access: () => miniAppAccessFor(() => refs.extensionManager?.listRecords() ?? []),

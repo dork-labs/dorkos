@@ -26,6 +26,8 @@ const WRITES = new Set([
   'applyGuardedConfigWrite',
   'setChoice',
   'rotateMcpLocalToken',
+  // DOR-4794: a person's per-app switch that lets agents write back unasked.
+  'setWritesBack',
 ]);
 type Fn = ts.FunctionDeclaration | ts.ArrowFunction | ts.FunctionExpression;
 const compact = (text: string) => text.replace(/\s+/g, '').replaceAll('"', "'");

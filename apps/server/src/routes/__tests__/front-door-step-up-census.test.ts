@@ -15,6 +15,7 @@ const M3_GROUPS = [
   'connector-providers',
   'connector-spending',
   'connector-access-changes',
+  'connector-writes-back',
   'mini-app-access-page',
   'marketplace/package-actions',
   'marketplace/updates',
@@ -341,6 +342,8 @@ const NARROWING: Record<string, string[]> = {
   // Main's DOR-4204 routes: lowering the limit, or raising a price, answers at once.
   'connector-spending PUT /limit': ['!raises'],
   'connector-spending PUT /prices/:toolkit': ['!loosens'],
+  // DOR-4794: turning writes back off only narrows, so it answers at once.
+  'connector-writes-back PUT /connections/:connectionId/writes-back': ['!on'],
 };
 const DELEGATES = new Map([
   ['patchConfig', exportedHandler(parse('config-patch-http'), 'patchConfig')],
@@ -544,6 +547,7 @@ describe('front-door write census', () => {
       'connector-resources': '/api/connectors',
       'connector-events': '/api/connectors',
       'connector-access-changes': '/api/connectors',
+      'connector-writes-back': '/api/connectors',
       'mini-app-access-page': '/api/connectors',
       'connector-providers': '/api/connectors/providers',
       'connector-spending': '/api/connectors/spending',
