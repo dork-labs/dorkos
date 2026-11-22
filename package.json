@@ -71,8 +71,10 @@
     "docker:run": "docker run --rm -p 4242:4242 -e ANTHROPIC_API_KEY -v dorkos-data:/home/node/.dork dorkos",
     "publish:cli": "tsx packages/cli/scripts/release-cli.ts --publish",
     "release:cli:prepare": "tsx packages/cli/scripts/release-cli.ts",
-    "publish:cloud-api": "pnpm publish --filter=@dork-labs/cloud-api",
-    "publish:connector-providers": "pnpm publish --filter=@dork-labs/connector-providers",
+    "release:dispatch": "tsx packages/cli/scripts/release-gate/release-dispatch.ts",
+    "release:tag": "tsx packages/cli/scripts/release-gate/release-tag.ts",
+    "publish:cloud-api": "tsx packages/cli/scripts/release-gate/publish-package.ts @dork-labs/cloud-api",
+    "publish:connector-providers": "tsx packages/cli/scripts/release-gate/publish-package.ts @dork-labs/connector-providers",
     "cli:dev": "pnpm --filter=./packages/cli run build && node packages/cli/dist/bin/cli.js"
   },
   "dependencies": {
