@@ -3,6 +3,7 @@ covers:
   - 'fix(site): keep search words and error text out of dorkos.ai analytics (DOR-4992)'
   - 'fix(site): take search words out of page addresses and error frames in dorkos.ai analytics (DOR-4992)'
   - 'fix(site): scrub every address PostHog sends, not a list of names (DOR-4992)'
+  - 'fix(site): read the site host for the analytics scrub from the links module (DOR-4992)'
 ---
 
 ### Fixed

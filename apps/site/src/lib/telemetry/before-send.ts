@@ -24,6 +24,7 @@
  * @module lib/telemetry/before-send
  */
 import type { CaptureResult } from 'posthog-js';
+import { links } from '@dorkos/shared/links';
 
 import { isKnownCategory, isKnownPackageType } from './marketplace-filters';
 
@@ -33,8 +34,10 @@ const KEPT_PARAMS = [
   ['category', isKnownCategory],
 ] as const;
 
-/** Hosts whose `/marketplace` addresses keep their catalog filters. */
-const OWN_HOSTS = new Set(['dorkos.ai', 'www.dorkos.ai']);
+/** The site's own host, from the links module. */
+const SITE_HOST = new URL(links.site).hostname;
+/** Hosts whose `/marketplace` addresses keep their catalog filters: the site and its `www.`. */
+const OWN_HOSTS = new Set([SITE_HOST, `www.${SITE_HOST}`]);
 
 /** How deep the walk goes; PostHog's payloads are a few levels at most. */
 const MAX_DEPTH = 8;
@@ -42,8 +45,8 @@ const MAX_DEPTH = 8;
 /** Fields PostHog may put on an `$exception` that carry message text. */
 const MESSAGE_FIELDS = ['$exception_message', '$exception_values', '$exception_steps'] as const;
 
-/** A throwaway origin so a bare path still parses as a URL. */
-const PATH_BASE = 'https://dorkos.ai';
+/** The site's origin, so a bare path parses as one of the site's own addresses. */
+const PATH_BASE = links.site;
 
 /** Whether a host is this site: dorkos.ai, or the deploy the page runs on. */
 function isOwnHost(host: string): boolean {
