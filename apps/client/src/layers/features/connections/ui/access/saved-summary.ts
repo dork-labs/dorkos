@@ -10,7 +10,7 @@ import type {
   EveryAgentDecision,
   WhoCanUse,
 } from '../../lib/access-card-selection';
-import { joinNames } from './access-labels';
+import { accessResult } from './access-result';
 
 /** What the card decided, as {@link savedSummary} reads it. */
 export interface SavedSummaryInput {
@@ -41,36 +41,18 @@ function levelSentence(subject: string, level: CardAccessLevel | null, serviceNa
 }
 
 /**
- * Who the saved change reaches, including anyone who lost access. With every
- * agent chosen it says so ("Every agent can read Gmail."), and turning every
- * agent off says that too, so the line is never narrower than what was saved.
+ * Who the saved change reaches, including anyone who lost access. The page
+ * card repeats the line it showed above Save ({@link accessResult}), so before
+ * and after read the same; the chat's one-agent card names its agent.
  *
  * @param input - The card's decision and the snapshot it was made against.
  */
-export function savedSummary(input: SavedSummaryInput): string {
-  const { preview, serviceName, decision, level } = input;
-  const nameOf = (agentId: string) =>
-    preview.agents.find((agent) => agent.agentId === agentId)?.displayName ?? 'The agent';
+export function savedSummary(input: SavedSummaryInput): string | undefined {
+  const { preview, serviceName, level } = input;
   if (input.mode === 'agent') {
-    return levelSentence(nameOf(input.agentId ?? ''), level, serviceName);
+    const name =
+      preview.agents.find((agent) => agent.agentId === input.agentId)?.displayName ?? 'The agent';
+    return levelSentence(name, level, serviceName);
   }
-  if (input.who === 'every') {
-    return levelSentence('Every agent', level, serviceName);
-  }
-  const kept = preview.agents
-    .filter((agent) => input.picked.has(agent.agentId))
-    .map((agent) => agent.displayName);
-  const lines = [
-    kept.length > 0
-      ? `${joinNames(kept)} can use ${serviceName}.`
-      : `No agent can use ${serviceName}.`,
-  ];
-  if (input.every.everyAgent?.operationRevisionIds.length === 0) {
-    lines.push(`${serviceName} is no longer shared with every agent.`);
-  }
-  const downgraded = decision.downgradedAgentIds.map(nameOf);
-  if (downgraded.length > 0) lines.push(`${joinNames(downgraded)} can now only read.`);
-  const removed = decision.removedAgentIds.map(nameOf);
-  if (removed.length > 0) lines.push(`${joinNames(removed)} can no longer use it.`);
-  return lines.join(' ');
+  return accessResult(input)?.line;
 }
