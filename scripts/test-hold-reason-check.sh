@@ -45,6 +45,8 @@ esac
 EOF
 chmod +x "$tmp/gh"
 # The grace date is in the past for every case except the grace cases below.
+# CI sets GITHUB_ACTIONS; only the annotation case below sets it on purpose.
+unset GITHUB_ACTIONS
 export GH="$tmp/gh" GH_LOG="$tmp/gh.log" REPO=made-up/repo HOLD_REASON_WAIT=0 HOLD_REASON_GRACE_UNTIL=2000-01-01
 
 out=""
