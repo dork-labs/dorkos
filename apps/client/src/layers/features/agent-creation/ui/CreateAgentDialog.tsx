@@ -219,7 +219,9 @@ export function CreateAgentDialog() {
         onSuccess: (data) => {
           const displayName = data.displayName ?? data.name;
           const origin: KickoffOrigin = template || seed ? 'template' : 'design-your-own';
-          const birth = {
+          // The first acknowledged chat for this agent claims its greeting, even if another
+          // chat opens while the creator's own allocation is pending or fails.
+          useAgentBirthStore.getState().defer({
             name: data.name,
             displayName,
             agentId: data.id,
@@ -232,9 +234,7 @@ export function CreateAgentDialog() {
               displayName,
               capabilities: data.capabilities,
             }),
-          };
-
-          if (onCreated) useAgentBirthStore.getState().defer(birth);
+          });
           playCelebration();
           close();
           resetAll();
@@ -242,18 +242,14 @@ export function CreateAgentDialog() {
             onCreated();
             return;
           }
-          // A person who clicked away keeps the greeting for the agent's next new chat.
-          const keepForLater = () => useAgentBirthStore.getState().defer(birth);
-          if (!isStillWanted?.()) return keepForLater();
+          if (!isStillWanted?.()) return;
           void newSessionTarget(
             transport,
             { agentId: data.id, runtime: data.runtime },
             { isStillWanted }
           )
             .then((target) => {
-              if (!isStillWanted()) return keepForLater();
-              useAgentBirthStore.getState().register(target.search.session, birth);
-              return navigate(target);
+              if (isStillWanted()) return navigate(target);
             })
             .catch((error: unknown) => {
               reportClientError(transport, error);

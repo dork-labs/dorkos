@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, beforeAll, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor, renderHook } from '@testing-library/react';
+import { act, render, screen, cleanup, waitFor, renderHook } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -215,6 +215,25 @@ async function reachNamingViaDesign(user: ReturnType<typeof userEvent.setup>) {
   useAgentCreationStore.getState().open();
   await user.click(await screen.findByTestId('mock-design-your-own'));
   return screen.findByLabelText('Name');
+}
+
+function renderFreshAgentChat(sessionId: string) {
+  const submitKickoff = vi.fn().mockResolvedValue(undefined);
+  const hook = renderHook(
+    (props: { sessionId: string }) =>
+      useAutoKickoff({
+        sessionId: props.sessionId,
+        cwd: '/home/test/.dork/agents/scout',
+        status: 'idle',
+        messages: [],
+        hydrated: true,
+        submitKickoff,
+        submitContent: vi.fn().mockResolvedValue(undefined),
+      }),
+    { initialProps: { sessionId } }
+  );
+
+  return { submitKickoff, rerender: hook.rerender };
 }
 
 // ---------------------------------------------------------------------------
@@ -588,47 +607,69 @@ describe('CreateAgentDialog', () => {
     });
   });
 
-  it('keeps the greeting for the next new chat when the person clicks away mid-create', async () => {
-    const user = userEvent.setup();
-    const transport = createMockTransport();
-    vi.mocked(transport.createAgent).mockResolvedValue({
-      id: 'id',
-      name: 'scout',
-      displayName: 'Scout',
-      runtime: 'claude-code',
-      registeredAt: '2026-07-20T00:00:00.000Z',
-      _path: '/home/test/.dork/agents/scout',
-      capabilities: [],
-    } as never);
-    let resolveAcknowledgement!: (value: { sessionId: string }) => void;
-    vi.mocked(transport.allocateSession).mockReturnValueOnce(
-      new Promise<{ sessionId: string }>((resolve) => {
-        resolveAcknowledgement = resolve;
-      })
-    );
-    renderDialog(transport);
+  it.each(['creator first', 'new chat first', 'allocation fails'] as const)(
+    'keeps the greeting for exactly one new chat when %s',
+    async (order) => {
+      const user = userEvent.setup();
+      const transport = createMockTransport();
+      vi.mocked(transport.createAgent).mockResolvedValue({
+        id: 'id',
+        name: 'scout',
+        displayName: 'Scout',
+        runtime: 'claude-code',
+        registeredAt: '2026-07-20T00:00:00.000Z',
+        _path: '/home/test/.dork/agents/scout',
+        capabilities: [],
+      } as never);
+      let resolveAcknowledgement!: (value: { sessionId: string }) => void;
+      let rejectAcknowledgement!: (error: Error) => void;
+      vi.mocked(transport.allocateSession)
+        .mockReturnValueOnce(
+          new Promise<{ sessionId: string }>((resolve, reject) => {
+            resolveAcknowledgement = resolve;
+            rejectAcknowledgement = reject;
+          })
+        )
+        .mockResolvedValueOnce({ sessionId: 'next-chat' })
+        .mockResolvedValueOnce({ sessionId: 'later-chat' });
+      renderDialog(transport);
 
-    const nameInput = await reachNamingViaDesign(user);
-    await user.type(nameInput, 'Scout');
-    await user.click(screen.getByTestId('create-button'));
-    await waitFor(() => expect(transport.allocateSession).toHaveBeenCalledTimes(1));
+      const nameInput = await reachNamingViaDesign(user);
+      await user.type(nameInput, 'Scout');
+      await user.click(screen.getByTestId('create-button'));
+      await waitFor(() => expect(transport.allocateSession).toHaveBeenCalledTimes(1));
 
-    // The person opens something else while the chat is still being set up.
-    beginSessionNavigation(() => ({ pathname: '/channels', search: {} }));
-    resolveAcknowledgement({ sessionId: 'abandoned-chat' });
+      const openNext = () => {
+        const isStillWanted = beginSessionNavigation(() => ({ pathname: '/session', search: {} }));
+        return newSessionTarget(transport, { agentId: 'id' }, { isStillWanted });
+      };
+      if (order === 'allocation fails') {
+        // The creator still wants the chat when the server refuses its allocation.
+        await act(async () => rejectAcknowledgement(new Error('Chat allocation failed')));
+        const { toast } = await import('sonner');
+        expect(toast.error).toHaveBeenCalledWith('Couldn’t open a new chat.');
+      } else if (order === 'creator first') {
+        beginSessionNavigation(() => ({ pathname: '/channels', search: {} }));
+        await act(async () => resolveAcknowledgement({ sessionId: 'abandoned-chat' }));
+        expect(useAgentBirthStore.getState().records).toEqual({});
+      }
+      const next = await openNext();
+      const { submitKickoff, rerender } = renderFreshAgentChat(next.search.session);
+      expect.soft(submitKickoff).toHaveBeenCalledTimes(1);
+      if (order === 'new chat first') {
+        await act(async () => resolveAcknowledgement({ sessionId: 'abandoned-chat' }));
+      }
 
-    await waitFor(() =>
-      expect(useAgentBirthStore.getState().deferred.id?.path).toBe('/home/test/.dork/agents/scout')
-    );
-    expect(mockNavigate).not.toHaveBeenCalled();
-    expect(useAgentBirthStore.getState().records).toEqual({});
-
-    // The next new chat with that agent says hello.
-    vi.mocked(transport.allocateSession).mockResolvedValueOnce({ sessionId: 'next-chat' });
-    await newSessionTarget(transport, { agentId: 'id' });
-    expect(useAgentBirthStore.getState().records['next-chat']?.fired).toBe(false);
-    expect(useAgentBirthStore.getState().deferred).toEqual({});
-  });
+      expect.soft(mockNavigate).not.toHaveBeenCalled();
+      expect.soft(useAgentBirthStore.getState().deferred).toEqual({});
+      // An older response must not park a second greeting for a later chat.
+      const later = await newSessionTarget(transport, { agentId: 'id' });
+      rerender({ sessionId: later.search.session });
+      expect.soft(submitKickoff).toHaveBeenCalledTimes(1);
+      expect(Object.keys(useAgentBirthStore.getState().records)).toEqual(['next-chat']);
+      expect(useAgentBirthStore.getState().records['next-chat']?.fired).toBe(true);
+    }
+  );
 
   it('onboarding (onCreated set): parks a birth without navigating, then the first session claims + fires it once', async () => {
     const user = userEvent.setup();
@@ -665,20 +706,7 @@ describe('CreateAgentDialog', () => {
     const target = await newSessionTarget(transport, { agentId: 'id' });
     expect(target.search.session).toBe('first-real-session');
     expect(useAgentBirthStore.getState().deferred).toEqual({});
-    const submitKickoff = vi.fn().mockResolvedValue(undefined);
-    const { rerender } = renderHook(
-      (props: { sessionId: string }) =>
-        useAutoKickoff({
-          sessionId: props.sessionId,
-          cwd: '/home/test/.dork/agents/scout',
-          status: 'idle',
-          messages: [],
-          hydrated: true,
-          submitKickoff,
-          submitContent: vi.fn().mockResolvedValue(undefined),
-        }),
-      { initialProps: { sessionId: 'first-real-session' } }
-    );
+    const { submitKickoff, rerender } = renderFreshAgentChat('first-real-session');
 
     await waitFor(() => expect(submitKickoff).toHaveBeenCalledTimes(1));
     expect(submitKickoff.mock.calls[0][0]).toContain('<dork-kickoff>');
