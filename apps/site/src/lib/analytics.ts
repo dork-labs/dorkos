@@ -44,7 +44,7 @@
  * | `hero_install_copy`   | Visitor copies an install command (`install_ref` when the copy carried one, see {@link prepareInstallCopy}) |
  * | `hero_download`       | Visitor clicks a desktop-download link — macOS (install hero, nav, or the off-Mac terminal-hero link) or Windows (install hero, nav, or the "Other ways to install" link) |
  * | `docs_visit`          | Visitor lands on a `/docs` page                      |
- * | `marketplace_browse`  | Visitor lands on `/marketplace`                      |
+ * | `marketplace_browse`  | Visitor lands on `/marketplace` (whether a search was active and a result bucket, never the search words) |
  * | `github_click`        | Visitor clicks an outbound GitHub link (header, footer, or mobile hero CTA) |
  * | `newsletter_signup`   | Visitor completes the newsletter signup form         |
  *
@@ -96,6 +96,7 @@
 import posthog from 'posthog-js';
 import { env } from '@/env';
 import { hasDntSignal, hasGpcSignal } from '@/lib/consent';
+import { errorSignature } from '@/lib/telemetry/error-signature';
 import {
   createInstallRefToken,
   formatInstallRef,
@@ -214,12 +215,46 @@ export function trackDocsVisit(path: string): void {
 export interface MarketplaceBrowseFilters {
   type?: string;
   category?: string;
+  /** The search text. Read only to tell whether a search was active; never sent. */
   q?: string;
 }
 
-/** Fires when a visitor lands on the `/marketplace` catalog page. */
-export function trackMarketplaceBrowse(filters: MarketplaceBrowseFilters): void {
-  capture('marketplace_browse', { ...filters });
+/** How many packages a marketplace visit showed, coarsely. */
+export type ResultCountBucket = '0' | '1-5' | '6-20' | '21+';
+
+/**
+ * Bucket a result count so `marketplace_browse` says how a search went without
+ * a count precise enough to fingerprint one query: `0` (nothing matched, the
+ * case worth fixing), `1-5` (a narrow match), `6-20` (a page or so), `21+`
+ * (effectively the whole catalog).
+ *
+ * @param count - How many packages the page showed.
+ */
+export function resultCountBucket(count: number): ResultCountBucket {
+  if (count <= 0) return '0';
+  if (count <= 5) return '1-5';
+  if (count <= 20) return '6-20';
+  return '21+';
+}
+
+/**
+ * Fires when a visitor lands on the `/marketplace` catalog page. Sends the
+ * type and category filters (set by the catalog's own filter links), whether a search
+ * was active, and a result-count bucket. The search text itself never leaves
+ * the page: `/privacy` says the site does not log what you type (DOR-4992).
+ *
+ * @param filters - The active filters, including the search text.
+ * @param filters.resultCount - How many packages the page showed.
+ */
+export function trackMarketplaceBrowse(
+  filters: MarketplaceBrowseFilters & { resultCount: number }
+): void {
+  capture('marketplace_browse', {
+    type: filters.type,
+    category: filters.category,
+    has_query: Boolean(filters.q?.trim()),
+    result_count: resultCountBucket(filters.resultCount),
+  });
 }
 
 /** Where on the site an outbound GitHub link was clicked. */
@@ -240,7 +275,16 @@ export function trackNewsletterSignup(source: string, emailDomain: string): void
 // one place for event names, and one place that already knows how to no-op
 // safely when no key is configured.
 
-/** Fires when a route-level error boundary catches an unhandled error. */
+/**
+ * Fires when a route-level error boundary catches an unhandled error. The
+ * event names the error by its signature (type and first stack frame) and
+ * Next.js's digest, never its message (DOR-4992). The error also goes to
+ * PostHog Error Tracking, whose `before_send` hook empties the message there
+ * (see `lib/telemetry/error-signature.ts`).
+ *
+ * @param error - The error the boundary caught.
+ * @param scope - `route` for `app/error.tsx`, `global` for `app/global-error.tsx`.
+ */
 export function trackClientError(
   error: Error & { digest?: string },
   scope: 'route' | 'global'
@@ -248,7 +292,7 @@ export function trackClientError(
   if (!analyticsEnabled) return;
   posthog.captureException(error);
   capture(scope === 'global' ? 'global_error' : 'client_error', {
-    error_message: error.message,
+    error_signature: errorSignature(error),
     error_digest: error.digest,
   });
 }

@@ -1,6 +1,7 @@
 import posthog from 'posthog-js';
 import { env } from '@/env';
 import { deriveUiHost } from '@/lib/posthog-host';
+import { scrubExceptionEvent } from '@/lib/telemetry/error-signature';
 
 // PostHog stays entirely uninitialized until NEXT_PUBLIC_POSTHOG_KEY is set
 // (a BUILD-time value: changing it in Vercel requires a fresh, uncached build).
@@ -65,6 +66,10 @@ if (env.NEXT_PUBLIC_POSTHOG_KEY) {
     respect_dnt: true,
     // Enables capturing unhandled exceptions via Error Tracking
     capture_exceptions: true,
+    // Every `$exception`, captured here or by an error boundary, leaves with
+    // its message emptied: /privacy says the site does not log what you type,
+    // and an error message can hold typed text (DOR-4992).
+    before_send: scrubExceptionEvent,
     // Turn on debug in development mode
     debug: env.NODE_ENV === 'development',
   });
