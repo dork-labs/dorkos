@@ -1,0 +1,93 @@
+/**
+ * The agent a chat belongs to, for checks that compare it with a caller (DOR-5035).
+ *
+ * A chat started with only a folder (by the API, the CLI or an older client) is
+ * bound with `agent_path` NULL, and the binding is first-write-wins, so it stays
+ * NULL. The poster's identity still resolves from that folder, so a reader that
+ * compares the two on the recorded value alone refuses the chat's own agent.
+ * These read the recorded agent first, then the agent whose home the chat's
+ * folder resolves to, by the same resolver the poster's identity comes from.
+ * The folder is the stored native location, else the one its runtime is running
+ * it in now; both are server-held, never a caller's claim. Read-side only:
+ * nothing is written back. So a chat with no stored folder names nobody once
+ * its runtime no longer holds it (a restart, an idle reclaim), and checks that
+ * read it then refuse rather than guess.
+ *
+ * @module server/services/core/agent-identity/session-agent
+ */
+import {
+  eq,
+  sessionMetadata,
+  sessionNativeBindings,
+  type Db,
+  type DbTransaction,
+} from '@dorkos/db';
+import { homeOf, resolveAgentHome } from './agent-home.js';
+
+/** What the resolver reads from the rest of the server, wired once at boot. */
+export interface SessionAgentSources {
+  /** The folder the chat's own runtime is running it in now, from that runtime's memory. */
+  liveCwd(sessionId: string): string | undefined;
+}
+
+let sources: SessionAgentSources | undefined;
+
+/**
+ * Register (or clear) what {@link sessionAgentOf} reads beyond the database it is handed.
+ * Unwired, a chat bound without an agent resolves only from its stored location.
+ *
+ * @param port - The live lookups, or `undefined` to clear them.
+ */
+export function setSessionAgentSources(port: SessionAgentSources | undefined): void {
+  sources = port;
+}
+
+/**
+ * The chat's agent from its stored agent and its folder: the recorded agent,
+ * else the registered home the folder resolves to. A folder that is no agent's,
+ * or one the resolver refuses, answers `undefined`: a caller comparing it with a
+ * poster fails closed. A caller that must tell "nobody's" from "refused" reads
+ * {@link resolveAgentHome} itself.
+ *
+ * @param recorded - The `agent_path` recorded for the chat at launch.
+ * @param cwd - The folder the chat runs in, when one is known.
+ */
+export function agentOfChat(
+  recorded: string | null | undefined,
+  cwd: string | null | undefined
+): string | undefined {
+  if (recorded) return recorded;
+  return cwd ? homeOf(resolveAgentHome(cwd)) : undefined;
+}
+
+/**
+ * The chat's agent, read from the database the caller is already in, so a
+ * transaction's checks see one snapshot.
+ *
+ * @param db - The database or open transaction.
+ * @param sessionId - The chat.
+ */
+export function sessionAgentOf(db: Db | DbTransaction, sessionId: string): string | undefined {
+  const metadata = db
+    .select({ agentPath: sessionMetadata.agentPath })
+    .from(sessionMetadata)
+    .where(eq(sessionMetadata.sessionId, sessionId))
+    .get();
+  if (metadata?.agentPath) return metadata.agentPath;
+  const stored = db
+    .select({ cwd: sessionNativeBindings.cwd })
+    .from(sessionNativeBindings)
+    .where(eq(sessionNativeBindings.sessionId, sessionId))
+    .get()?.cwd;
+  return agentOfChat(undefined, stored ?? liveSessionCwd(sessionId));
+}
+
+/**
+ * The folder the chat's runtime is running it in now, or `undefined` when no
+ * runtime holds it (after a restart, or unwired).
+ *
+ * @param sessionId - The chat.
+ */
+export function liveSessionCwd(sessionId: string): string | undefined {
+  return sources?.liveCwd(sessionId);
+}

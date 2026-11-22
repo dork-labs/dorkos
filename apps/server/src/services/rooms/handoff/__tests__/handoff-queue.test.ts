@@ -61,11 +61,13 @@ describe('bounded handoff queue', () => {
   });
   it('rolls a throwing preparing reservation back exactly once without keeping an empty seat', async () => {
     const queue = new HandoffQueue<string>({ async run() {}, expired() {}, failed() {} });
+    const thrown = new Error('private');
+    // The factory's error goes back to the caller to log (DOR-5035), never on to the sender.
     expect(
       queue.admit('seat', Date.now() + 120000, () => {
-        throw new Error('private');
+        throw thrown;
       })
-    ).toEqual({ accepted: false, why: 'invalid' });
+    ).toEqual({ accepted: false, why: 'invalid', error: thrown });
     expect(queue.has('seat')).toBe(false);
     for (let i = 0; i < 25; i++)
       expect(queue.admit('seat', Date.now() + 120000, () => 'draft').accepted).toBe(true);

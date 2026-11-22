@@ -9,6 +9,7 @@ import { HandoffTerminalNotices } from '../../services/rooms/handoff/handoff-ter
  * @module startup/steps/doc-delivery
  */
 import { runtimeRegistry } from '../../services/core/runtime-registry.js';
+import { agentOfChat, liveSessionCwd } from '../../services/core/agent-identity/session-agent.js';
 import {
   getOrCreateProjector,
   adoptAcceptedPrivateMessages,
@@ -116,8 +117,13 @@ export function wireDocDelivery(refs: ServerRefs, built: WireDocDeliveryInput) {
       runtimeRegistry.resolveForSession(sessionId),
       runtimeRegistry.getSessionAgentPath(sessionId),
     ])
-      .then(([runtime, agentPath]) => {
+      .then(([runtime, recorded]) => {
         if (documentReceiptIds && !docDeliveryRunner?.active) return;
+        // A chat bound without an agent is its folder's agent's (DOR-5035).
+        const agentPath = agentOfChat(
+          recorded,
+          runtimeRegistry.getNativeSessionCwd(sessionId) ?? liveSessionCwd(sessionId)
+        );
         if (!agentPath) return;
         const projector = getOrCreateProjector(sessionId, agentPath);
         adoptAcceptedPrivateMessages({
