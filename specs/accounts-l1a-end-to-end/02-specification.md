@@ -338,6 +338,8 @@ Suggested PR split, each up to about three days: (a) `worksOn` + Cloud computer 
 
 **Goal:** once a Mac is linked to its hub, new Mac agents post to the cloud private space by default, and the Mac's older rooms say where they live.
 
+**Note 2026-11-22 (ADR `261122-173853`, one space model):** this step is the launch shape. After launch the private space becomes a tenant on the space store, domain by domain, agents last, and the Mac keeps only execution state (workspaces, runtime transcripts and sign-ins, processes). Nothing here should be built in a way that only works on the Mac's store without a ticket naming its move.
+
 **What exists:** the pin in `apps/server/src/services/core/session-relay/pin-store.ts` (format 2: level, pause, name, hub origin; merged in #2994) and `relay-dialer.ts`, `relay-link.ts`. **Not built:** the default posting target for new agents, and the older-rooms note.
 
 **What to build:**

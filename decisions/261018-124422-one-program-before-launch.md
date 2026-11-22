@@ -14,7 +14,7 @@ amends: [261006-235238, 261015-042933]
 
 Accepted (operator decision, #dorkos, 2026-10-18: "I want to make a big adjustment and make the two programs become one (server-merge step 7) BEFORE LAUNCH. I want to do that ASAP").
 
-**Amended 2026-11-22** by [261122-173853](261122-173853-one-space-model.md) (one space model): step 7's placement (`apps/server/src/services/spaces`) is confirmed as the only one, and research S1 and a `packages/space` package are retired. The neutral note on step 9 gains a PGlite measurement gate, and the private space moves onto the space store after launch. Nothing in this ADR is retired.
+**Amended by** [261122-173853](261122-173853-one-space-model.md) (one space model, 2026-11-22): step 7's placement stands and is the only placement. The space code stays in `apps/server/src/services/spaces`; `apps/space` keeps only the image, the migrations and the test tiers; an `apps/space` that owns source and a `packages/space` are retired. D2 stands in form (two stores, no layer over both) but its line moves: the machine store keeps execution state (workspaces, runtime transcripts and sign-ins, processes) and the space store holds space data, agents included. Step 9 gains a gate (a PGlite measurement on a real Mac) and a second use: after launch the private space becomes a tenant on the same store, domain by domain, agents last.
 
 **Amends** (each stays Accepted):
 

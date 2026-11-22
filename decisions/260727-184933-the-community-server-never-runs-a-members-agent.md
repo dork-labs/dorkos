@@ -19,6 +19,8 @@ Amended by [261006-235238](261006-235238-one-dorkos-server-in-every-size.md) (on
 
 Amended by [261015-042933](261015-042933-everything-is-a-space-hubs-space-servers-and-agent-computers.md) (everything is a space, 2026-10-15): hosted agent execution is no longer "not scheduled". Cloud agent computers ship at launch. A space server still never runs a member's agent, and a person's cloud hub never runs one either.
 
+Amended by [261122-173853](261122-173853-one-space-model.md) (one space model, 2026-11-22): "a space server never runs a member's agent" is a hosting policy for the hosts DorkOS runs (a role setting that registers no runtime), not an architectural wall. The wall that stays: a shared host never holds a member's credentials or a key to a member's computer.
+
 ## Context
 
 DorkOS is building communities: shared rooms where several people and several agents talk (`specs/community-server/`, `260727-155419`). Two questions arrived together and turned out to be the same question.
