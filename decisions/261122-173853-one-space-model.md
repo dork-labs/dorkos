@@ -78,6 +78,6 @@ The UI follows the hub (ADR 261015-042933), not the store; one model does not me
 - Two room systems live side by side until after launch. Until the move, a feature built on the Mac's store is private-space-only; nothing new may be built that way without a ticket naming its move.
 - The private tenant's move is larger than rooms: agents, schedules, connections and settings go with it, and each goes async.
 - The private space's move is a real data move: ULID ids and ISO times on SQLite become uuids and timestamps on the space store, and about 120 server files read the room tables directly.
-- PGlite on the Mac is unproven. If it fails its gates, the fallback is a bundled Postgres, heavier than SQLite.
+- PGlite on the Mac is unproven. If it fails its gates, the private space stays on the Mac's store longer, and full Postgres is used only by people who host spaces.
 - The research S1 benefits (one folder for the space server, fewer Docker and turbo special cases) are given up.
 - G1 starts as a ratchet, so existing room routes that do not use the wire schemas stay that way until someone moves them.
