@@ -153,13 +153,6 @@ function installSummary(req: SummarySource): MarketplacePackageSummary {
   );
 }
 
-/** The app rows, with a line said once for all of them under the first, when there is one. */
-function withPackageNote(rows: MarketplaceRisk[], note: string | undefined): MarketplaceRisk[] {
-  const [first, ...rest] = rows;
-  if (!note || !first) return rows;
-  return [{ ...first, items: [...(first.items ?? []), note] }, ...rest];
-}
-
 /**
  * The summary of one reinstall, compared with what is installed. The
  * baseline is used only when the caller vouched for it (`installedDisclosed`
@@ -172,18 +165,18 @@ function updateSummary(update: ApprovableUpdate): MarketplacePackageSummary {
     baseline,
     whenProgramsStart(update)
   );
+  const note = packageWaitNote(update);
   return packageSummary(
     {
       name: update.packageName,
       where: `${update.type}, ${placeOf(update)}`,
       fromVersion: update.installedVersion,
       toVersion: update.latestVersion,
+      // Said once for the package, under its verdict, never inside one app's rows.
+      ...(note && { note }),
     },
     [
-      ...withPackageNote(
-        extensionRows(update.extensions, baseline ? 'broader' : 'new', perAppWaitNote(update)),
-        packageWaitNote(update)
-      ),
+      ...extensionRows(update.extensions, baseline ? 'broader' : 'new', perAppWaitNote(update)),
       ...rows,
     ],
     unchangedCount
@@ -204,6 +197,7 @@ export function summaryDetail(summary: MarketplaceApprovalSummary): string {
     `…and ${more} more ${more === 1 ? 'row' : 'rows'}. Open this card in DorkOS to read every one.`;
   const blocks = summary.packages.flatMap((pkg) => [
     `${whole(pkg.name)} (${pkg.where}): ${pkg.fromVersion ? `${whole(pkg.fromVersion)} → ` : ''}${whole(pkg.toVersion)}`,
+    ...(pkg.note ? [`  ${pkg.note}`] : []),
     ...pkg.risks.map(
       (risk) =>
         `  [${risk.change}] ${risk.text}` +

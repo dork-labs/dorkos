@@ -205,6 +205,11 @@ function PackageBlock({
         <span className="text-foreground font-medium">{verdict.lead}</span>{' '}
         <span className="text-muted-foreground">{verdict.rest}</span>
       </p>
+      {pkg.note && (
+        <p data-slot="marketplace-package-note" className="text-muted-foreground mt-1 text-xs">
+          {pkg.note}
+        </p>
+      )}
       {pkg.risks.length > 0 && (
         <div className="bg-muted/50 mt-1.5 rounded-md p-2">
           {summary.operation === 'install' ? (

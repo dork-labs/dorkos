@@ -487,6 +487,8 @@ export const MarketplacePackageSummarySchema = z
     risks: z.array(MarketplaceRiskSchema),
     /** Update only: things it already runs that stay exactly the same. */
     unchangedCount: z.number().int().min(0),
+    /** Update only: one line said for the whole package, shown under its verdict. */
+    note: z.string().max(4_000).optional(),
   })
   .openapi('MarketplacePackageSummary');
 

@@ -256,8 +256,13 @@ describe('package card disclosure', () => {
         'All 1,200 mini apps: any new code waits in Activity, unless you trust its source.'
       ).length
     ).toBe(2);
-    const items = card!.marketplaceSummary!.packages[0]!.risks.flatMap((risk) => risk.items ?? []);
-    expect(items.filter((item) => item.startsWith('All 1,200 mini apps'))).toHaveLength(1);
+    // Said once on the package, under its verdict, never inside one app's rows.
+    const pkg = card!.marketplaceSummary!.packages[0]!;
+    expect(pkg.note).toBe(
+      'All 1,200 mini apps: any new code waits in Activity, unless you trust its source.'
+    );
+    const items = pkg.risks.flatMap((risk) => [risk.text, ...(risk.items ?? [])]);
+    expect(items.some((item) => item.includes('All 1,200 mini apps'))).toBe(false);
   });
 
   it.each([
