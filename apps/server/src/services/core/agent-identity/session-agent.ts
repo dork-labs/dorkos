@@ -95,12 +95,7 @@ export function chatAgentStateOf(db: Db | DbTransaction, sessionId: string): Cha
     .where(eq(sessionMetadata.sessionId, sessionId))
     .get();
   if (metadata?.agentPath) return { kind: 'agent', agentPath: metadata.agentPath };
-  const stored = db
-    .select({ cwd: sessionNativeBindings.cwd })
-    .from(sessionNativeBindings)
-    .where(eq(sessionNativeBindings.sessionId, sessionId))
-    .get()?.cwd;
-  const cwd = stored || liveSessionCwd(sessionId);
+  const cwd = chatFolderOf(db, sessionId);
   if (!cwd) return { kind: 'unknown' };
   const resolved = resolveAgentHome(cwd);
   if (resolved.kind === 'refused') return { kind: 'refused' };
@@ -121,10 +116,63 @@ export function sessionAgentOf(db: Db | DbTransaction, sessionId: string): strin
 }
 
 /**
+ * A bound chat's runtime and agent, read synchronously in one go, for a check
+ * that must not await (the browser's pre-dispatch proof). `undefined` for a chat
+ * with no binding row; `agentPath` is {@link sessionAgentOf}'s answer or `null`.
+ *
+ * @param db - The database or open transaction.
+ * @param sessionId - The chat.
+ */
+export function chatFactsOf(
+  db: Db | DbTransaction,
+  sessionId: string
+): { runtime: string | null; agentPath: string | null } | undefined {
+  const row = db
+    .select({ runtime: sessionMetadata.runtime })
+    .from(sessionMetadata)
+    .where(eq(sessionMetadata.sessionId, sessionId))
+    .get();
+  return row
+    ? { runtime: row.runtime, agentPath: sessionAgentOf(db, sessionId) ?? null }
+    : undefined;
+}
+
+/**
+ * The folder the chat runs in, as the server holds it: its stored native
+ * location, else the folder its own bound runtime is running it in now. Never a
+ * caller's claim. An empty stored folder falls to the live one. `undefined` once
+ * neither is known (a restart with nothing stored), so a caller keeps its own
+ * fallback (DOR-5038).
+ *
+ * @param db - The database or open transaction.
+ * @param sessionId - The chat.
+ */
+export function chatFolderOf(db: Db | DbTransaction, sessionId: string): string | undefined {
+  const stored = db
+    .select({ cwd: sessionNativeBindings.cwd })
+    .from(sessionNativeBindings)
+    .where(eq(sessionNativeBindings.sessionId, sessionId))
+    .get()?.cwd;
+  return stored || liveSessionCwd(sessionId);
+}
+
+/**
+ * {@link chatFolderOf} for a caller that holds only the chat's id, from the
+ * database wired at boot; `undefined` before that.
+ *
+ * @param sessionId - The chat.
+ */
+export function chatFolderById(sessionId: string): string | undefined {
+  return sources?.db ? chatFolderOf(sources.db, sessionId) : undefined;
+}
+
+/**
  * {@link sessionAgentOf} for a caller that holds only the chat's id (the relay,
  * a carry-over), read from the database wired at boot (DOR-5038). Before that,
  * only the recorded agent is known, so it answers that: what these callers read
  * before, never less. A database failure rejects; callers decide what it means.
+ * The server wires it before it listens, so the unwired path is a test's or an
+ * early boot step's, never a chat's.
  *
  * @param sessionId - The chat.
  */

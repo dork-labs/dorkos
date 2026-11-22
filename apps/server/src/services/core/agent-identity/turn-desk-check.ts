@@ -50,7 +50,16 @@ export interface TurnDeskCheckDeps {
  */
 export function createTurnDeskCheck(deps: TurnDeskCheckDeps): TurnDeskCheck {
   return async ({ cwd, agentDirectory, forAgent, sessionKey }) => {
-    const known = agentDirectory ?? (await deps.sessionAgentPath(sessionKey).catch(() => null));
+    let known = agentDirectory;
+    if (!known) {
+      // A failed read is not "nobody's chat": trusting the payload's `forAgent`
+      // then would let a sender pick the agent (Security, DOR-5038).
+      try {
+        known = (await deps.sessionAgentPath(sessionKey)) ?? undefined;
+      } catch {
+        return 'This chat’s agent could not be read, so this message was not run.';
+      }
+    }
     if (known && forAgent && path.resolve(known) !== path.resolve(forAgent)) {
       return 'This message named a different agent than the one it was sent to, so it was not run.';
     }
