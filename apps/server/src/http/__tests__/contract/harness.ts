@@ -20,6 +20,7 @@
  * @module http/__tests__/contract/harness
  */
 import { PERSON_PROOF_HEADER, PERSON_SESSION_PATH } from '@dorkos/shared/person-session';
+import { PAGE_STAMP_HEADER } from '@dorkos/shared/step-up';
 import { loadCeilingMs } from '@dorkos/shared/test-budget';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -716,6 +717,24 @@ export async function stepUpAt(baseUrl: string, password: string): Promise<Recor
   };
 }
 
+/**
+ * The page stamp the server writes into the app page for a browser that
+ * navigates to it under `cookie`, or null when it sends no page (DOR-5026).
+ *
+ * @param baseUrl - The composed server.
+ * @param cookie - The sign-in the page is loaded under.
+ */
+async function pageStampAt(baseUrl: string, cookie: string | undefined): Promise<string | null> {
+  // Raw HTTP, not `fetch`: undici sends its own `Sec-Fetch-Mode: cors`, which
+  // the server rightly treats as a script asking, not a page load.
+  const res = await send(baseUrl, 'GET', '/', {
+    'sec-fetch-mode': 'navigate',
+    'sec-fetch-dest': 'document',
+    ...(cookie ? { cookie } : {}),
+  });
+  return /<meta name="dorkos-page-stamp" content="([^"]+)">/.exec(res.text)?.[1] ?? null;
+}
+
 /** Complete an explicitly approved fixture write through the real per-action ceremony. */
 export async function confirmSetupAt(
   baseUrl: string,
@@ -725,9 +744,17 @@ export async function confirmSetupAt(
 ): Promise<Response> {
   if (response.status !== 428) return response;
   const held = (await response.json()) as { heldActionId: string };
+  // Confirm as the app's own page does: from a page the server sent, carrying
+  // its stamp (DOR-5026). A server with no client build sends none, and needs none.
+  const stamp = await pageStampAt(baseUrl, headers.cookie);
   const confirmed = await fetch(new URL(`/api/step-up/${held.heldActionId}/password`, baseUrl), {
     method: 'POST',
-    headers: { origin: baseUrl, ...headers, 'content-type': 'application/json' },
+    headers: {
+      origin: baseUrl,
+      ...headers,
+      ...(stamp ? { [PAGE_STAMP_HEADER]: stamp } : {}),
+      'content-type': 'application/json',
+    },
     body: JSON.stringify({ password }),
   });
   if (!confirmed.ok)
