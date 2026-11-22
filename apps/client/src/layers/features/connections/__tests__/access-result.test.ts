@@ -197,10 +197,14 @@ describe('accessResult — the line above Save (DOR-4899)', () => {
         levelTouched: true,
       }
     );
-    expect(result?.line).toBe(
-      'Marketing Lead and Scout keep Apify. Every other agent loses it. Marketing Lead and Scout get Read and write.'
+    // Two lines (designer, Nov 21), so neither runs past 15 words.
+    expect(result).toEqual({
+      line: 'Marketing Lead and Scout keep Apify. Every other agent loses it.',
+      detail: 'Marketing Lead and Scout move up to Read and write.',
+    });
+    expect(saved).toBe(
+      'Marketing Lead and Scout keep Apify. Every other agent loses it.\nMarketing Lead and Scout move up to Read and write.'
     );
-    expect(saved).toBe(result?.line);
   });
 
   it('Every agent → picked: an agent kept on its own Read loses the write every agent had', () => {
@@ -208,19 +212,22 @@ describe('accessResult — the line above Save (DOR-4899)', () => {
       preview({ sharedWithEvery: WRITE, grants: { 'Marketing Lead': READ } }),
       { who: 'picked', picked: ['Marketing Lead'], level: 'read-write' }
     );
-    expect(result?.line).toBe(
-      'Marketing Lead keeps Apify. Every other agent loses it. Marketing Lead drops to Read.'
-    );
+    expect(result).toEqual({
+      line: 'Marketing Lead keeps Apify. Every other agent loses it.',
+      detail: 'Marketing Lead drops to Read.',
+    });
   });
 
-  it('Picked only: an agent that already reads and now can change says it moves up, not "gets"', () => {
+  it('Picked only: an agent that already reads moves up, rather than "gets" the app', () => {
     const { result } = lineFor(preview({ grants: { Lens: READ } }), {
       who: 'picked',
       picked: ['Lens', 'Scout'],
       level: 'read-write',
       levelTouched: true,
     });
-    expect(result?.line).toBe('Scout gets Apify (Read and write). Lens gets Read and write.');
+    expect(result?.line).toBe(
+      'Scout gets Apify (Read and write). Lens moves up to Read and write.'
+    );
   });
 
   it('says nothing while Save still needs a level', () => {

@@ -15,7 +15,7 @@ export function AccessResultLine(props: AccessResultInput) {
     <div
       aria-live="polite"
       data-testid="access-result-line"
-      className="text-foreground text-[13px]"
+      className="text-foreground space-y-0.5 text-[13px]"
     >
       {result?.allNames ? (
         <TooltipProvider>
@@ -28,6 +28,7 @@ export function AccessResultLine(props: AccessResultInput) {
       ) : (
         result && <p>{result.line}</p>
       )}
+      {result?.detail && <p>{result.detail}</p>}
     </div>
   );
 }

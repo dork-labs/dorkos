@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(connections): the access card says who keeps an app before Save (DOR-4899)'
+  - 'fix(connections): access card wording from design review (DOR-4899)'
 ---
 
 ### Fixed

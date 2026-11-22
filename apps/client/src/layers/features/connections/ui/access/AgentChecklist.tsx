@@ -79,14 +79,17 @@ export function AgentChecklist({
                 setPicked(updated);
               }}
             />
-            <Label htmlFor={id} className="min-w-0 flex-1 cursor-pointer py-2 font-normal">
-              <span className="truncate">{agent.displayName}</span>
-            </Label>
-            {ownAccess && (
-              <span id={`${id}-own`} className="text-muted-foreground shrink-0 text-xs">
-                Own access
-              </span>
-            )}
+            {/* The tag sits under the name, so a phone never cuts the name short. */}
+            <div className="flex min-w-0 flex-1 flex-col py-1.5">
+              <Label htmlFor={id} className="cursor-pointer py-0.5 font-normal">
+                <span className="truncate">{agent.displayName}</span>
+              </Label>
+              {ownAccess && (
+                <span id={`${id}-own`} className="text-muted-foreground text-xs">
+                  Own access
+                </span>
+              )}
+            </div>
             {held !== 'none' && (
               <Badge size="xs" variant="secondary" aria-label={`Now: ${HELD_LABELS[held]}`}>
                 {HELD_LABELS[held]}

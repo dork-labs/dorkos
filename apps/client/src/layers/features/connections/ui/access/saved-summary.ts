@@ -54,5 +54,7 @@ export function savedSummary(input: SavedSummaryInput): string | undefined {
       preview.agents.find((agent) => agent.agentId === input.agentId)?.displayName ?? 'The agent';
     return levelSentence(name, level, serviceName);
   }
-  return accessResult(input)?.line;
+  const result = accessResult(input);
+  // Two lines stay two lines; the outcome keeps the break.
+  return result ? [result.line, result.detail].filter(Boolean).join('\n') : undefined;
 }

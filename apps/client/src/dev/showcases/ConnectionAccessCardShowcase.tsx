@@ -189,7 +189,7 @@ export function ConnectionAccessCardShowcase() {
       </ShowcaseDemo>
 
       <ShowcaseLabel>
-        Page: pick agents (mailroom already reads; untick it to see the warning)
+        Page: pick agents (mailroom already reads; untick it to see the result line)
       </ShowcaseLabel>
       <ShowcaseDemo responsive>
         <CardDemo
@@ -199,7 +199,7 @@ export function ConnectionAccessCardShowcase() {
       </ShowcaseDemo>
 
       <ShowcaseLabel>
-        Page: shared with every agent (switch to Read and write to see the warning)
+        Page: shared with every agent (pick agents to see who keeps it; Read and write warns)
       </ShowcaseLabel>
       <ShowcaseDemo responsive>
         <CardDemo

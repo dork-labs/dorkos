@@ -42,6 +42,8 @@ export interface AccessResultInput {
 export interface AccessResult {
   /** One or more short sentences. */
   line: string;
+  /** A second line: level changes for agents that keep access after "Every agent". */
+  detail?: string;
   /** The full list of names, set only when the line says "and N more". */
   allNames?: string[];
 }
@@ -64,7 +66,8 @@ function verb(names: string[], one: string, many: string): string {
  *
  * - Every agent → picked: "Ada keeps Gmail. Every other agent loses it.", or
  *   "No agent will be able to use Gmail." with nobody ticked. A kept agent
- *   whose level changes says so after it ("Ada gets Read and write.").
+ *   whose level changes says so on a second line ("Ada moves up to Read and
+ *   write.").
  * - → Every agent: "Every agent can read Gmail, including agents you add later."
  * - Picked only: gains first, then losses, then level changes:
  *   "Bo gets Gmail (Read). Cy loses it. Ada drops to Read."
@@ -116,7 +119,7 @@ export function accessResult(input: AccessResultInput): AccessResult | null {
   }
   const levelChanges = [
     raised.length > 0 &&
-      `${joinNames(raised)} ${verb(raised, 'gets', 'get')} ${LEVEL_LABELS['read-write']}.`,
+      `${joinNames(raised)} ${verb(raised, 'moves', 'move')} up to ${LEVEL_LABELS['read-write']}.`,
     lowered.length > 0 &&
       `${joinNames(lowered)} ${verb(lowered, 'drops', 'drop')} to ${LEVEL_LABELS.read}.`,
   ].filter((sentence): sentence is string => Boolean(sentence));
@@ -127,8 +130,10 @@ export function accessResult(input: AccessResultInput): AccessResult | null {
       .map((agent) => agent.displayName);
     if (kept.length === 0) return { line: `No agent will be able to use ${serviceName}.` };
     const keeps = `${shortList(kept)} ${verb(kept, 'keeps', 'keep')} ${serviceName}. Every other agent loses it.`;
+    // Level changes go on a line of their own, so neither line runs long.
     return {
-      line: [keeps, ...levelChanges].join(' '),
+      line: keeps,
+      ...(levelChanges.length > 0 && { detail: levelChanges.join(' ') }),
       ...(kept.length > NAMED_LIMIT && { allNames: kept }),
     };
   }
