@@ -72,7 +72,7 @@ function show(view: StepUpWindowView): void {
       return;
     }
     // None named: none is loaded now, but one ran since sign-in (M1 on #3401).
-    end('A mini app has run since you signed in. Sign in again to confirm.');
+    end('A mini app ran since this page opened. Sign in again to confirm.');
     byId('close').className = '';
     byId('sign-in-again').hidden = false;
     byId<HTMLButtonElement>('sign-in-again').focus();

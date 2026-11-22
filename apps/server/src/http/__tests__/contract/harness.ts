@@ -51,6 +51,9 @@ const TSX_CLI = path.join(SERVER_DIR, 'node_modules/tsx/dist/cli.mjs');
 /** How often a boot checks whether the server answers. */
 const HEALTH_POLL_MS = 50;
 
+/** The app page’s fresh stamp (DOR-5026), which no fixed body can match. */
+const PAGE_STAMP_META_TAG = /<meta name="dorkos-page-stamp" content="[^"]*">/;
+
 /** How long a cold boot may take, once the server's build is in hand, before the harness gives up. */
 export const BOOT_TIMEOUT_MS = 180_000;
 
@@ -600,7 +603,9 @@ export async function checkContractCase(baseUrl: string, testCase: ContractCase)
     } else if (want instanceof RegExp) expect(have, `header ${name}`).toMatch(want);
     else expect(have, `header ${name}`).toBe(fill(want));
   }
-  let parsed: unknown = res.text;
+  // The app page carries a fresh page stamp on each navigation (DOR-5026), so
+  // it never matches a fixed body; `client-files-page-stamp.test.ts` pins it.
+  let parsed: unknown = res.text.replace(PAGE_STAMP_META_TAG, '');
   try {
     parsed = JSON.parse(res.text);
   } catch {

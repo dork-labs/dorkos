@@ -30,6 +30,15 @@ import { z } from 'zod';
 /** The base path of the step-up routes. */
 export const STEP_UP_PATH = '/api/step-up';
 
+/**
+ * The header a step-up request carries its page's stamp in (DOR-5026): the
+ * server writes one into each app page it sends, and checks it on confirm.
+ */
+export const PAGE_STAMP_HEADER = 'x-dorkos-page-stamp';
+
+/** The `<meta name>` the app page carries its stamp under. */
+export const PAGE_STAMP_META = 'dorkos-page-stamp';
+
 /** The code a guarded action answers with while it waits for a step-up. */
 export const STEP_UP_REQUIRED_CODE = 'step_up_required';
 

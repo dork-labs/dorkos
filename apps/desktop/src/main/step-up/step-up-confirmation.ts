@@ -12,6 +12,8 @@
  *
  * @module main/step-up/step-up-confirmation
  */
+import { PAGE_STAMP_HEADER } from '@dorkos/shared/step-up';
+
 import type {
   StepUpWindowAnswer,
   StepUpWindowOutcome,
@@ -33,6 +35,12 @@ export interface StepUpConfirmationDeps {
   fetch: (url: string, init: RequestInit) => Promise<Response>;
   /** The window's person proof, or `null`. */
   personProof: () => string | null;
+  /**
+   * The stamp the server wrote into the app window's page when it sent it, or
+   * `null`. The server counts a confirm only from a page loaded after the last
+   * mini app risk cleared (DOR-5026). Read once, on the first call.
+   */
+  pageStamp: () => Promise<string | null>;
 }
 
 /** Whether `id` can be a held action's id. */
@@ -70,6 +78,8 @@ export class StepUpConfirmation {
   private confirmed = false;
   /** The submit still waiting on the server, so closing the window waits for its answer. */
   private inFlight: Promise<StepUpWindowAnswer> | null = null;
+  /** The app window's page stamp, read once on the first call. */
+  private stamp: Promise<string | null> | undefined;
 
   /**
    * Start confirming one held action; nothing is sent until {@link view}.
@@ -86,8 +96,11 @@ export class StepUpConfirmation {
     return `${this.deps.origin}/api/step-up/${this.heldActionId}${suffix}`;
   }
 
-  private headers(write: boolean): Record<string, string> {
+  private async headers(write: boolean): Promise<Record<string, string>> {
     const headers: Record<string, string> = {};
+    this.stamp ??= this.deps.pageStamp().catch(() => null);
+    const stamp = await this.stamp;
+    if (stamp) headers[PAGE_STAMP_HEADER] = stamp;
     const proof = this.deps.personProof();
     if (proof) headers[PERSON_PROOF_HEADER] = proof;
     // The shell is this server's own app, so it names the server's own origin,
@@ -108,7 +121,7 @@ export class StepUpConfirmation {
     try {
       res = await this.deps.fetch(this.url(), {
         method: 'GET',
-        headers: this.headers(false),
+        headers: await this.headers(false),
         credentials: 'include',
       });
     } catch {
@@ -174,7 +187,7 @@ export class StepUpConfirmation {
     try {
       res = await this.deps.fetch(this.url(suffix), {
         method: 'POST',
-        headers: this.headers(true),
+        headers: await this.headers(true),
         body: JSON.stringify(payload),
         // Without it, a request from the main process sends no session cookie.
         credentials: 'include',
@@ -243,7 +256,7 @@ export class StepUpConfirmation {
       await this.deps
         .fetch(this.url(), {
           method: 'DELETE',
-          headers: this.headers(true),
+          headers: await this.headers(true),
           credentials: 'include',
         })
         .catch(() => undefined);

@@ -15,11 +15,18 @@
  *
  * @module http/client-files
  */
+import { readFile } from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
 import send from 'send';
 import serveStatic from 'serve-static';
 import { currentServerRole } from '../lib/server-role.js';
+import {
+  enforcePageStamps,
+  mintPageStamp,
+  pageStampMeta,
+  wantsPageStamp,
+} from '../services/extensions/step-up/page-stamp.js';
 import { createFirstContactMarker } from './first-contact.js';
 
 /**
@@ -159,7 +166,7 @@ const HASHED_ASSET_DIR = 'assets';
  * @param filePath - Absolute path of the file the static handler resolved.
  */
 function cacheControlForDistFile(distPath: string, filePath: string): string | null {
-  if (path.basename(filePath) === 'index.html') return SHELL_CACHE_CONTROL;
+  if (isShellFile(filePath)) return SHELL_CACHE_CONTROL;
   const relative = path.relative(distPath, filePath);
   if (relative.split(path.sep)[0] === HASHED_ASSET_DIR) return IMMUTABLE_ASSET_HEADER;
   return null;
@@ -172,14 +179,34 @@ export type ClientFilesHandler = (
   next: (error?: unknown) => void
 ) => void;
 
+/** A request line's path, without its query, whether or not it carries a full URL. */
+function pathnameOf(url: string): string {
+  const target = /^[a-z][a-z0-9+.-]*:\/\//i.test(url) ? new URL(url).pathname : url;
+  return target.split('?')[0] ?? target;
+}
+
+/**
+ * Whether a path names the shell file itself, however its slashes, dots and
+ * case are spelled. Escapes are never decoded, so `/assets/..%2findex.html`
+ * stays the missing bundle it is.
+ */
+function isShellFilePath(pathname: string): boolean {
+  const normal = path.posix.normalize(pathname).toLowerCase();
+  return normal === '/' || normal === '/index.html';
+}
+
+/** Whether a file the static handler resolved is the shell (the disk may ignore case). */
+function isShellFile(filePath: string): boolean {
+  return path.basename(filePath).toLowerCase() === 'index.html';
+}
+
 /**
  * Whether a path falls under the hashed-bundle folder, the way an Express
  * `app.use('/assets')` mount matched it: ignoring case, at a segment boundary.
  */
 function underAssets(url: string): boolean {
   // A request line may carry a full URL (a proxy's form); judge its path.
-  const target = /^[a-z][a-z0-9+.-]*:\/\//i.test(url) ? new URL(url).pathname : url;
-  const pathname = (target.split('?')[0] ?? target).toLowerCase();
+  const pathname = pathnameOf(url).toLowerCase();
   return pathname === `/${HASHED_ASSET_DIR}` || pathname.startsWith(`/${HASHED_ASSET_DIR}/`);
 }
 
@@ -209,9 +236,36 @@ function underAssets(url: string): boolean {
  */
 export function createClientFiles(distPath: string): ClientFilesHandler {
   const noteShellServed = createFirstContactMarker('[Client] first index.html served');
+  // This server sends the page, so confirms must carry its stamp (DOR-5026).
+  enforcePageStamps();
+
+  /**
+   * The shell for a top-level navigation, with a fresh page stamp in its
+   * `<head>` (`services/extensions/step-up/page-stamp.ts`). Read from disk
+   * each time, since every copy is different: no `ETag`, and never stored.
+   */
+  function sendStampedShell(
+    req: IncomingMessage,
+    res: ServerResponse,
+    next: (e?: unknown) => void
+  ) {
+    readFile(path.join(distPath, 'index.html'), 'utf8').then((html) => {
+      const meta = pageStampMeta(mintPageStamp(req.headers.cookie));
+      const body = html.includes('</head>')
+        ? html.replace('</head>', `${meta}</head>`)
+        : html.replace(/^(<!doctype html>)?/i, (doctype) => doctype + meta);
+      res.statusCode = 200;
+      for (const [name, value] of Object.entries(shellHeaders())) res.setHeader(name, value);
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Content-Length', Buffer.byteLength(body));
+      res.once('finish', noteShellServed);
+      res.end(body);
+    }, next);
+  }
+
   const files = serveStatic(distPath, {
     setHeaders: (res, filePath) => {
-      if (path.basename(filePath) === 'index.html') {
+      if (isShellFile(filePath)) {
         noteShellServed();
         // The shell served straight off disk (`/`, `/index.html`) has to carry
         // the policy too — the fallback below is only reached by deep links,
@@ -226,6 +280,10 @@ export function createClientFiles(distPath: string): ClientFilesHandler {
 
   return (req, res, next) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+    const stamp = wantsPageStamp(req);
+    if (stamp && isShellFilePath(pathnameOf(req.url ?? '/'))) {
+      return sendStampedShell(req, res, next);
+    }
     files(req, res, (error?: unknown) => {
       if (error) return next(error);
       const url = req.url ?? '/';
@@ -237,6 +295,7 @@ export function createClientFiles(distPath: string): ClientFilesHandler {
         res.end(req.method === 'HEAD' ? undefined : body);
         return;
       }
+      if (stamp) return sendStampedShell(req, res, next);
       // Latched once the shell has gone out, so the line means it did. Claiming
       // it before the send would put "first index.html served" in the log of a
       // build whose dist is missing — precisely the boot where the line would
