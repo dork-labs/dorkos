@@ -251,10 +251,52 @@ describe('package card disclosure', () => {
     const [card] = approvals.listPending();
     const full = approvals.fullDetail(card!.approvalId)!;
     expect(full).not.toContain('Any new code waits for your OK');
-    expect(full.split('All 1200 mini apps: any new code waits').length).toBe(2);
+    expect(
+      full.split(
+        'All 1,200 mini apps: any new code waits in Activity, unless you trust its source.'
+      ).length
+    ).toBe(2);
     const items = card!.marketplaceSummary!.packages[0]!.risks.flatMap((risk) => risk.items ?? []);
-    expect(items.filter((item) => item.startsWith('All 1200 mini apps'))).toHaveLength(1);
+    expect(items.filter((item) => item.startsWith('All 1,200 mini apps'))).toHaveLength(1);
   });
+
+  it.each([
+    [3, 3, 0],
+    [4, 0, 1],
+  ])(
+    'with %i mini apps, says the line under %i of them and %i time for the package',
+    async (count, perApp, once) => {
+      const approvals = new ApprovalService(createTestDb());
+      const provider = new TokenConfirmationProvider(approvals);
+      const extensions = Array.from({ length: count }, (_, index) => ({
+        id: `sample-screen-${index}`,
+        slots: ['pages'],
+        hasServer: false,
+        secrets: [],
+      }));
+      await provider.requestInstallConfirmation({
+        packageName: 'sample-pack',
+        operation: 'update',
+        updates: [
+          {
+            packageName: 'sample-pack',
+            type: 'plugin',
+            scope: 'global',
+            installPath: '/sample/plugins/sample-pack',
+            installedVersion: '1.0.0',
+            latestVersion: '2.0.0',
+            contentHash: 'digest-d',
+            disclosed: NOTHING,
+            extensions,
+          },
+        ],
+      });
+      const [card] = approvals.listPending();
+      const full = approvals.fullDetail(card!.approvalId) ?? card!.detail ?? '';
+      expect(full.split('Any new code waits for your OK').length - 1).toBe(perApp);
+      expect(full.split(`All ${count} mini apps:`).length - 1).toBe(once);
+    }
+  );
 
   it('keeps the marked-turn line and every app on a large summary card', async () => {
     const approvals = new ApprovalService(createTestDb());

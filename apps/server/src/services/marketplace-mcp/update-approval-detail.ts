@@ -45,7 +45,7 @@ export const UPDATE_APP_NOTE_PER_APP_MAX = 3;
  * @param count - How many apps it brings.
  */
 export function updateAppsWait(count: number): string {
-  return `All ${count} mini apps: any new code waits for an OK, unless its source is trusted.`;
+  return `All ${count.toLocaleString('en-US')} mini apps: any new code waits in Activity, unless you trust its source.`;
 }
 
 /**
