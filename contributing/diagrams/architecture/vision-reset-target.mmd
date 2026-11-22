@@ -20,8 +20,8 @@ flowchart TB
     hubsrv -.-> fwd
   end
 
-  subgraph agentpc["Agent computer · built role, none running"]
-    sealed["<b>Sealed runtime host</b><br/><span class='d'>Agent credentials only · OpenCode only<br/>Hub-owned writes refused</span>"]
+  subgraph agentpc["Agent computer · built"]
+    sealed["<b>Sealed runtime host</b><br/><span class='d'>None running yet · OpenCode only<br/>Agent credentials only · hub writes refused</span>"]
     bridge["<b>Tool calls sent back to the hub</b><br/><span class='d'>Planned</span>"]
     sealed -.-> bridge
   end
@@ -34,7 +34,7 @@ flowchart TB
 
   relayMac -->|"signed frames<br/>chats only"| relayHub
   fwd -.->|"turns, agent sync"| sealed
-  bridge -.->|"tool calls, as the agent"| hubsrv
+  bridge -.->|"tool calls, as the agent"| relayHub
   mac <-->|"pairing"| spacesrv
   hubsrv <-.->|"pairing · planned"| spacesrv
   hubsrv -->|"reads its assignment"| cloud
@@ -48,7 +48,6 @@ flowchart TB
     k3["Optional Cloud"]
     k1 ~~~ k2 ~~~ k3
   end
-  spacesrv ~~~ k1
 
   classDef planned fill:#f8fafc,stroke:#8a9bab,color:#3b4a58,stroke-dasharray:6 4
   classDef cloud fill:#fff5e4,stroke:#a87720,color:#49320c

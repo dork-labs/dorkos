@@ -31,7 +31,7 @@ flowchart TB
   refusal["<b>Authoritative removal</b><br/><span class='d'>Denial, deletion or takedown<br/>An unknown 404 or an outage is not deletion</span>"]
 
   browser <-->|"HTTP, SSE"| api
-  adapter <-->|"HTTP and SSE<br/><span class='d'>scoped personal and agent credentials</span>"| api
+  api <-->|"HTTP and SSE<br/><span class='d'>scoped personal and agent credentials</span>"| adapter
   messaging -->|"relay bridges"| rooms
   removal -->|"remote cleanup · failures reported"| adapter
   api --> refusal

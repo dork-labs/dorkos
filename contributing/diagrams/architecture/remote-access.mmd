@@ -10,7 +10,7 @@ flowchart LR
   subgraph mac["Your computer"]
     wifi["<b>Wi-Fi listener</b><br/><span class='d'>Mac only · a lower session level</span>"]
     tunnel["<b>Own tunnel</b><br/><span class='d'>Optional · outbound connection</span>"]
-    remote["<b>Managed remote ingress</b><br/><span class='d'>Built · off until switched on</span>"]
+    remote["<b>Managed remote ingress</b><br/><span class='d'>Commands from Cloud · built, off until switched on</span>"]
     relay["<b>Chat relay</b><br/><span class='d'>Chats only · off until linked</span>"]
     local["<b>Local DorkOS server</b><br/><span class='d'>Records which route made each session</span>"]
     wifi --> local
@@ -26,7 +26,6 @@ flowchart LR
   device -->|"on the web"| hub
   relay -->|"dials, signed frames"| hub
   hub -->|"reads its assignment"| cloud
-  cloud -->|"commands, when switched on"| remote
 
   classDef cloud fill:#fff5e4,stroke:#a87720,color:#49320c
   classDef external fill:#ffffff,stroke:#8a9bab,color:#3b4a58

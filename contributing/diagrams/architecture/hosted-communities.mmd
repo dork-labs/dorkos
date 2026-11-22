@@ -6,7 +6,6 @@ flowchart TB
   cloud["<b>Cloud space management · optional</b><br/><span class='d'>Public contract · availability checked separately</span>"]
   browser["<b>Space website</b>"]
   issuer["<b>OIDC issuer · optional</b>"]
-  journal["<b>Erasure journal</b><br/><span class='d'>IDs only · a copy kept off the server</span>"]
 
   subgraph host["Space server · runs on its own"]
     admin["<b>Administration API</b><br/><span class='d'>Scoped keys · lifecycle, limits, usage, holds<br/>Takedown and evidence · owner replacement</span>"]
@@ -26,8 +25,8 @@ flowchart TB
   app -->|"archive, uploaded directly"| upload
   cloud -.->|"space management<br/><span class='d'>contract · scoped server key</span>"| admin
   issuer <-->|"OIDC sign-in"| auth
+  journal["<b>Erasure journal</b><br/><span class='d'>IDs only · a copy kept off the server<br/>Reapplied to the store after a restore</span>"]
   admin -->|"export erasure records"| journal
-  journal -->|"reapply after a restore"| data
 
   classDef cloud fill:#fff5e4,stroke:#a87720,color:#49320c
   classDef external fill:#ffffff,stroke:#8a9bab,color:#3b4a58
