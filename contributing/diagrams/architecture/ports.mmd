@@ -1,22 +1,30 @@
 flowchart LR
   accTitle: DorkOS replaceable interfaces
-  accDescr: Each row names a caller, its port, and implementations. A port is a code boundary, not necessarily a network boundary. Dashed edges identify the unregistered Buzz implementation and the computer-local runtime, which has no conformance suite. The decision ladder has two production callers since October: heartbeat triage and the space server's post checks.
-  ui["React client"] --> transport{{"Transport"}}
-  transport --> http["HttpTransport<br/>HTTP + WebSocket + Space SSE<br/>Hono"]
-  dispatch["Session dispatcher"] --> agent{{"AgentRuntime"}}
-  agent --> runtimes["Claude Code SDK · Codex app-server<br/>OpenCode HTTP + SSE sidecar<br/>Doe in-process engine"]
-  agent -.->|"No conformance suite"| vm["computer-local<br/>OpenCode in a Lima VM · default off"]
-  accounts["Account actions"] --> connector{{"ConnectorProvider"}}
-  connector --> backends["Composio · Nango · raw MCP<br/>Managed Cloud backend"]
-  rooms["Local registry / remote consumers"] --> community{{"CommunityAdapter"}}
-  community --> local["LocalCommunityAdapter<br/>Wraps local RoomService<br/>The private space on a hub"]
-  community --> remote["RemoteCommunityAdapter<br/>Owner-qualified, lazy instance<br/>Pinned server + space UUID<br/>Qualified HTTP + SSE · availability report"]
-  community -.-> buzz["Buzz implementation<br/>Read-only · not registered"]
-  notes["Agent memory"] --> memory{{"MemoryProvider"}}
-  memory --> files["Built-in MEMORY.md + notes files<br/>Optional registered backends"]
-  relay["Relay message bus"] --> messaging{{"RelayAdapter"}}
-  messaging --> channels["Messaging platforms / agent delivery<br/>Protocol depends on implementation"]
-  beats["Heartbeat triage · space post checks"] --> decision{{"DecisionModel"}}
-  decision --> bridges["Rules · OpenAI-compatible · Jev<br/>Recommendation, not authority<br/>Paid tiers behind a person's yes or a flag"]
+  accDescr: Each row names a caller, its port, and the implementations behind it. A port is a code boundary, not necessarily a network boundary. Dashed edges mark the unregistered Buzz implementation and the sealed-computer runtime, which has no conformance suite. The decision ladder has two production callers since October: heartbeat triage and the space server's post checks.
+
+  ui["<b>React client</b>"] --> transport{{"Transport"}}
+  transport --> http["<b>HttpTransport</b><br/><span class='d'>HTTP · WebSocket · space SSE</span>"]
+
+  dispatch["<b>Session dispatcher</b>"] --> agent{{"AgentRuntime"}}
+  agent --> runtimes["<b>Claude Code · Codex · OpenCode · Doe</b><br/><span class='d'>One contract, one conformance suite</span>"]
+  agent -.->|"no conformance suite"| vm["<b>Sealed computer on the Mac</b><br/><span class='d'>OpenCode in a VM · off by default</span>"]
+
+  accounts["<b>Account actions</b>"] --> connector{{"ConnectorProvider"}}
+  connector --> backends["<b>Composio · Nango · raw MCP</b><br/><span class='d'>Plus the managed Cloud backend</span>"]
+
+  rooms["<b>Rooms, local and remote</b>"] --> community{{"CommunityAdapter"}}
+  community --> local["<b>Local</b><br/><span class='d'>Wraps local rooms · a hub's private space</span>"]
+  community --> remote["<b>Remote</b><br/><span class='d'>One per owner and space · pinned server<br/>HTTP and SSE · availability report</span>"]
+  community -.->|"not registered"| buzz["<b>Buzz</b><br/><span class='d'>Read only</span>"]
+
+  notes["<b>Agent memory</b>"] --> memory{{"MemoryProvider"}}
+  memory --> files["<b>Built-in files</b><br/><span class='d'>Memory file and notes · other backends can register</span>"]
+
+  relay["<b>Relay message bus</b>"] --> messaging{{"RelayAdapter"}}
+  messaging --> channels["<b>Messaging platforms, agent delivery</b><br/><span class='d'>Protocol belongs to each implementation</span>"]
+
+  beats["<b>Heartbeat triage · space post checks</b>"] --> decision{{"DecisionModel"}}
+  decision --> bridges["<b>Rules · OpenAI-compatible · Jev</b><br/><span class='d'>A recommendation, never authority<br/>Paid tiers behind a person's yes</span>"]
+
   classDef port fill:#e7f1eb,stroke:#427a55,color:#183f26
   class transport,agent,connector,community,memory,messaging,decision port

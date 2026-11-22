@@ -1,18 +1,25 @@
 flowchart TB
   accTitle: Website account handover to DorkOS Cloud
   accDescr: Without a valid configured accounts origin the website serves local accounts. When configured, selected browser routes redirect and machine calls proxy to the accounts origin. Managed connections need an independent forwarding switch and service availability; their migration evidence stays separate. This diagram describes code behavior, not the production switch state.
-  browser["Browser · account pages / navigation"]
-  machine["App / machine · account and instance calls"]
-  site["Website route-specific forwarding<br/>DORKOS_CLOUD_ACCOUNTS_ORIGIN"]
-  local["Website account implementation<br/>Fallback while origin unset or invalid"]
-  accounts["Configured Cloud account origin<br/>Separate hosted browser surface"]
-  managed["Managed connections<br/>Second switch required<br/>Unavailable here if accounts forward alone"]
-  public["Public website remains<br/>Docs · marketing · marketplace<br/>Separate public migration history"]
+
+  browser["<b>Browser</b><br/><span class='d'>Account pages and navigation</span>"]
+  machine["<b>App or machine</b><br/><span class='d'>Account and instance calls</span>"]
+  site["<b>Website forwarding policy</b><br/><span class='d'>Per route, when an accounts origin is configured</span>"]
+  local["<b>Website account pages</b><br/><span class='d'>Serve locally while no origin is set</span>"]
+  accounts["<b>Cloud account origin</b><br/><span class='d'>A separate hosted sign-in surface</span>"]
+  managed["<b>Managed connections</b><br/><span class='d'>Need a second switch · unavailable until then</span>"]
+  public["<b>Public website</b><br/><span class='d'>Docs · marketing · marketplace · stays local</span>"]
+
   browser --> site
   machine --> site
-  site -->|"Unset / invalid origin"| local
-  site -->|"Configured: 307 redirect<br/>Account pages + eligible navigation"| accounts
-  site -->|"Configured: proxy bearer / body / background calls<br/>Selected account + instance routes; preserve query"| accounts
-  site -->|"Managed switch off"| managed
-  site -->|"Managed switch on: selected proxy / redirects<br/>Service first; cron ownership follows"| accounts
-  site -->|"Public routes stay local"| public
+  site -->|"no origin, or invalid"| local
+  site -->|"307 redirect<br/><span class='d'>account pages, eligible navigation</span>"| accounts
+  site -->|"proxy<br/><span class='d'>bearer, body and background calls · query kept</span>"| accounts
+  site -->|"second switch off"| managed
+  site -->|"second switch on<br/><span class='d'>service first, cron ownership follows</span>"| accounts
+  site -->|"public routes"| public
+
+  classDef cloud fill:#fff5e4,stroke:#a87720,color:#49320c
+  classDef external fill:#ffffff,stroke:#8a9bab,color:#3b4a58
+  class accounts cloud
+  class browser external
