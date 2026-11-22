@@ -112,3 +112,58 @@ export function filterKickoffHistory<T extends { role: string; content: string }
   if (!isKickoffEnvelope(messages[firstUserIndex].content)) return messages;
   return messages.filter((_, i) => i !== firstUserIndex);
 }
+
+/**
+ * The part of a recorded message a person may see as a title or preview.
+ *
+ * A new agent's greeting kickoff is DorkOS's own message, not the person's, so
+ * it reads as empty here: the chat stays untitled until the person writes, and
+ * its fence tag never shows as a title or preview (DOR-4976).
+ *
+ * @param content - Raw message content a runtime recorded.
+ * @returns The content, or `''` for a greeting kickoff.
+ */
+export function shownToPerson(content: string): string {
+  return isKickoffEnvelope(content) ? '' : content;
+}
+
+/** Any DorkOS fence tag, opening or closing: `<dork-kickoff>`, `</dork-…>`. */
+const DORK_MARKUP = /<\/?dork-[a-z0-9-]*>/i;
+
+/**
+ * A chat title as a person may see it: `''` when it carries DorkOS markup.
+ *
+ * Titles are stored, so one derived from a greeting kickoff before DOR-4976 still
+ * reads `<dork-kickoff>`. Every runtime passes its titles through here on the way
+ * out, and the client does again when it renders, so no `<dork-…>` tag ever
+ * shows as a title; `''` renders as the untitled label.
+ *
+ * @param title - A runtime's stored or derived title (may be missing).
+ * @returns The title, or `''` when it is missing or carries DorkOS markup.
+ */
+export function titleShownToPerson(title: string | null | undefined): string {
+  if (!title || DORK_MARKUP.test(title)) return '';
+  return title;
+}
+
+/**
+ * A copy of a stored chat whose title and preview a person may see ({@link titleShownToPerson}).
+ *
+ * The read-side strip every runtime applies where a stored chat comes back in,
+ * so a chat named from a greeting kickoff before DOR-4976 shows the untitled
+ * label instead of the tag, and its next real message can still name it.
+ *
+ * @param session - A stored chat record with a title and an optional preview.
+ * @returns A shallow copy with any DorkOS markup title or preview blanked.
+ */
+export function sessionShownToPerson<T extends { title: string; lastMessagePreview?: string }>(
+  session: T
+): T {
+  return {
+    ...session,
+    title: titleShownToPerson(session.title),
+    ...(session.lastMessagePreview !== undefined
+      ? { lastMessagePreview: titleShownToPerson(session.lastMessagePreview) }
+      : {}),
+  };
+}

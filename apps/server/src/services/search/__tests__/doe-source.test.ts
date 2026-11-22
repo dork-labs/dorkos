@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
+import { wrapKickoff } from '@dorkos/shared/kickoff';
 import { projectDoeMessages } from '../projections/doe.js';
 import { openDoeSnapshot } from '../doe-store.js';
 import { createTestDb } from '@dorkos/test-utils/db';
@@ -49,6 +50,14 @@ describe('DorkOS search prose boundaries', () => {
     expect(result.skipped).toBe(1);
     expect(result.messages.map((message) => message.body)).toEqual(['hello']);
   });
+  it('leaves the greeting kickoff out of search, like every other runtime (DOR-4976)', () => {
+    const result = projectDoeMessages('one', [
+      { seq: 1, payload: JSON.stringify({ role: 'user', content: wrapKickoff('Say hello.') }) },
+      { seq: 2, payload: JSON.stringify({ role: 'user', content: 'Fix the build' }) },
+    ]);
+    expect(result.messages.map((message) => message.body)).toEqual(['Fix the build']);
+  });
+
   it('snapshots only tracked main conversations, keeps the live store untouched, and discovers removal', async () => {
     const directory = mkdtempSync(path.join(tmpdir(), 'doe-search-test-'));
     const metadata = new Database(path.join(directory, 'sessions.sqlite'));

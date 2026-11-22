@@ -1,20 +1,6 @@
 import { chatMessageWords } from '@dorkos/shared/chat-messages';
-import { isKickoffEnvelope } from '@dorkos/shared/kickoff';
+import { shownToPerson } from '@dorkos/shared/kickoff';
 import { TRANSCRIPT } from '../../../config/constants.js';
-
-/**
- * The part of a recorded message a person may see as a title or preview.
- *
- * A new agent's greeting kickoff is DorkOS's own message, not the person's, so
- * it reads as empty here: the chat stays untitled until the person writes, and
- * its fence tag never shows as a title or preview (DOR-4976).
- *
- * @param content - Raw message content a runtime recorded.
- * @returns The content, or `''` for a greeting kickoff.
- */
-export function shownToPerson(content: string): string {
-  return isKickoffEnvelope(content) ? '' : content;
-}
 
 /**
  * Leading request-filler phrases that carry no information in a session title.

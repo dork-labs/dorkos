@@ -20,7 +20,8 @@
  */
 import type { Session, PermissionModeId } from '@dorkos/shared/types';
 import { isWithinDirectory } from '@dorkos/shared/paths';
-import { deriveSessionTitle, shownToPerson } from '../../shared/derive-title.js';
+import { shownToPerson } from '@dorkos/shared/kickoff';
+import { deriveSessionTitle } from '../../shared/derive-title.js';
 import { canonicalDirectory } from '@dorkos/shared/canonical-directory';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
 

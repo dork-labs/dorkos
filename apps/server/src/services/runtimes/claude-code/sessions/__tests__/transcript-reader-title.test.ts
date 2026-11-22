@@ -22,6 +22,7 @@ vi.mock('../../../../../lib/boundary.js', () => ({
 }));
 
 import { wrapKickoff } from '@dorkos/shared/kickoff';
+import { expectNoDorkMarkup } from '../../../shared/__tests__/no-dork-markup.js';
 import { TranscriptReader } from '../transcript-reader.js';
 
 /** A realistic head/user JSONL line carrying the first prompt, cwd, and a timestamp. */
@@ -127,13 +128,68 @@ describe('TranscriptReader title precedence (DOR-2083)', () => {
     expect(session?.title).toBe('Fix the build');
   });
 
-  it('never titles a chat with only the greeting kickoff after its tag', async () => {
+  it('shows a chat with only the greeting kickoff as untitled, never its tag or "Chat …"', async () => {
     await writeTranscript(dir, 'sess-kickoff-only', [
       userLine(wrapKickoff('Read your SOUL.md and say hello.')),
     ]);
 
     const [session] = await reader.listSessionsInDir(dir);
-    expect(session?.title).toBe('Chat sess-kic');
+    expectNoDorkMarkup(session);
+    expect(session?.title).toBe('');
+  });
+
+  it('never shows an ai-title that is itself DorkOS markup', async () => {
+    await writeTranscript(dir, 'sess-markup-ai', [
+      userLine('Fix the build'),
+      aiTitleLine('sess-markup-ai', '<dork-kickoff>'),
+    ]);
+
+    const [session] = await reader.listSessionsInDir(dir);
+    expectNoDorkMarkup(session);
+  });
+
+  it('ignores an ai-title made from the greeting before the person wrote', async () => {
+    await writeTranscript(dir, 'sess-kickoff-ai', [
+      userLine(wrapKickoff('Read your SOUL.md and say hello.')),
+      aiTitleLine('sess-kickoff-ai', 'Agent introduces itself'),
+    ]);
+
+    const [session] = await reader.listSessionsInDir(dir);
+    expect(session?.title).toBe('');
+  });
+
+  it('trusts the ai-title once the person has written', async () => {
+    await writeTranscript(dir, 'sess-kickoff-replied', [
+      userLine(wrapKickoff('Read your SOUL.md and say hello.')),
+      userLine('Fix the build'),
+      aiTitleLine('sess-kickoff-replied', 'Fixing the build'),
+    ]);
+
+    const [session] = await reader.listSessionsInDir(dir);
+    expect(session?.title).toBe('Fixing the build');
+  });
+
+  it('finds the person’s words past a greeting longer than the head read', async () => {
+    // A real kickoff turn opens with a large setup record, and the kickoff line
+    // itself runs past the 8 KB head the list reads.
+    await writeTranscript(dir, 'sess-kickoff-long', [
+      JSON.stringify({ type: 'queue-operation', content: 'x'.repeat(4000) }),
+      userLine(wrapKickoff(`Read your SOUL.md. ${'Context. '.repeat(700)}`)),
+      userLine('Fix the build'),
+    ]);
+
+    const [session] = await reader.listSessionsInDir(dir);
+    expect(session?.title).toBe('Fix the build');
+  });
+
+  it('keeps a /rename even on a chat that only has the greeting', async () => {
+    await writeTranscript(dir, 'sess-kickoff-renamed', [
+      userLine(wrapKickoff('Read your SOUL.md and say hello.')),
+      customTitleLine('sess-kickoff-renamed', 'My new agent'),
+    ]);
+
+    const [session] = await reader.listSessionsInDir(dir);
+    expect(session?.title).toBe('My new agent');
   });
 
   it('/rename still wins over a later ai-title', async () => {

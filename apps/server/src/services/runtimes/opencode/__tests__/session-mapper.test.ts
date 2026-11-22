@@ -10,6 +10,7 @@ import { DIRECTORY_MEMBERSHIP_VECTORS } from '@dorkos/test-utils/directory-membe
 import { describeAuthError } from '@dorkos/shared/runtime-error-classification';
 import { OpenCodeSessionMapper, type OpenCodeClientProvider } from '../sessions/session-mapper.js';
 import { SESSION_LIST_LIMIT, SESSION_REBUILD_LIMIT } from '../runtime-constants.js';
+import { expectNoDorkMarkup } from '../../shared/__tests__/no-dork-markup.js';
 
 // SDK-only access guard (ADR-0308: OpenCode's store is opaque, runtime-owned).
 // The mapper must reach session data exclusively through the SDK client — if it
@@ -242,6 +243,17 @@ describe('OpenCodeSessionMapper', () => {
       await expect(mapper.listSessions(PROJECT_DIR)).resolves.toEqual([]);
       // A cold sidecar must never block the aggregated session list.
       expect(provider.getClient).not.toHaveBeenCalled();
+    });
+
+    it('shows a title OpenCode stored from a greeting kickoff as untitled (DOR-4976)', async () => {
+      const client = createMockClient();
+      serveSessions(client, [ocSession({ title: '<dork-kickoff>' })]);
+      const mapper = new OpenCodeSessionMapper(createProvider(client));
+
+      const [session] = await mapper.listSessions(PROJECT_DIR);
+
+      expectNoDorkMarkup(session);
+      expect(session!.title).toBe('');
     });
 
     it('lists via the SDK and maps sessions tagged runtime "opencode"', async () => {

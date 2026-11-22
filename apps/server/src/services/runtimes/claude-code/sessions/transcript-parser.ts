@@ -12,6 +12,7 @@ import type { PromptSource } from '@dorkos/shared/chat-messages';
 import { SDK_TOOL_NAMES } from '@dorkos/shared/constants';
 import { QuestionItemSchema } from '@dorkos/shared/schemas';
 import { CONTEXT_TAG, stripInjectedTagBlocks } from '@dorkos/shared/additional-context';
+import { isKickoffEnvelope } from '@dorkos/shared/kickoff';
 import { extractToolResultImages, type ToolResultImage } from '../tool-result-images.js';
 import { apiErrorCode, buildApiErrorPart, isApiErrorRecord } from '../sdk/api-error-record.js';
 import type { AssistantErrorContext } from '../sdk/sdk-error-mapping.js';
@@ -216,6 +217,8 @@ function personAuthoredText(text: string): string | null {
   // person's typed command and deliberately still counts.
   if (text.startsWith('<bash-stdout>') || text.startsWith('<bash-stderr>')) return null;
   if (text.startsWith('This session is being continued')) return null;
+  // A new agent's greeting kickoff is DorkOS's message, not the person's (DOR-4976).
+  if (isKickoffEnvelope(text)) return null;
 
   let body = text;
   if (body.startsWith(`<${CONTEXT_TAG.relay_context}>`)) {

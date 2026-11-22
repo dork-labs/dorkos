@@ -6,7 +6,8 @@ import type { Session, SessionSettings } from '@dorkos/shared/types';
 import { isWithinDirectory } from '@dorkos/shared/paths';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
 import { resolveDorkHome } from '../../../lib/dork-home.js';
-import { deriveSessionTitle, shownToPerson } from '../shared/derive-title.js';
+import { sessionShownToPerson, shownToPerson } from '@dorkos/shared/kickoff';
+import { deriveSessionTitle } from '../shared/derive-title.js';
 import { DoeEventQueue } from './event-queue.js';
 
 /** The engine's independent data directory, outside vendor-owned session stores. */
@@ -56,7 +57,10 @@ export class DoeSessionStore {
   get(id: string): DoeSessionRecord | null {
     const row = this.db.prepare('SELECT record FROM sessions WHERE id = ?').get(id) as
       { record: string } | undefined;
-    return row ? (JSON.parse(row.record) as DoeSessionRecord) : null;
+    if (!row) return null;
+    const record = JSON.parse(row.record) as DoeSessionRecord;
+    // A title or preview stored from a greeting kickoff reads as untitled (DOR-4976).
+    return { ...record, session: sessionShownToPerson(record.session) };
   }
 
   /** Read all durable metadata, then scope it by canonical project membership. */
@@ -64,7 +68,9 @@ export class DoeSessionStore {
     const rows = this.db.prepare('SELECT record FROM sessions ORDER BY id').all() as {
       record: string;
     }[];
-    const sessions = rows.map((row) => (JSON.parse(row.record) as DoeSessionRecord).session);
+    const sessions = rows.map((row) =>
+      sessionShownToPerson((JSON.parse(row.record) as DoeSessionRecord).session)
+    );
     return projectDir === undefined
       ? sessions
       : sessions.filter((session) => isWithinDirectory(session.cwd, canonicalDoeCwd(projectDir)));

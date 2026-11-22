@@ -10,14 +10,16 @@ import type {
   SessionListWarning,
 } from '@dorkos/shared/types';
 import { isWithinDirectory } from '@dorkos/shared/paths';
-import {
-  extractTextContent,
-  isPersonAuthoredUserRecord,
-  stripSystemTags,
-} from './transcript-parser.js';
+import { extractTextContent, isPersonAuthoredUserRecord } from './transcript-parser.js';
 import type { TranscriptLine } from './transcript-parser.js';
 import { classifyOrigin } from './classify-origin.js';
-import { deriveSessionTitle, shownToPerson } from '../../shared/derive-title.js';
+import { isKickoffEnvelope, titleShownToPerson } from '@dorkos/shared/kickoff';
+import {
+  headMentionsKickoff,
+  personTitleText,
+  readOpeningTurn,
+} from './transcripts/opening-turn.js';
+import { deriveSessionTitle } from '../../shared/derive-title.js';
 import { projectSlug, subtreeSlugScope } from './project-slug.js';
 import { SessionRootIndex, accountForTranscript } from './session-root-index.js';
 import { SessionLocator, type FindSessionOptions } from './transcripts/session-locator.js';
@@ -787,33 +789,21 @@ export class TranscriptReader {
         if (!firstRawUserMessage) {
           firstRawUserMessage = text;
         }
-        if (
-          text.startsWith('<local-command') ||
-          text.startsWith('<command-name>') ||
-          text.startsWith('<command-message>') ||
-          text.startsWith('<task-notification>') ||
-          text.startsWith('<dorkos-system-note>') ||
-          text.startsWith('<relay_context>')
-        ) {
-          continue;
-        }
-        if (text.startsWith('This session is being continued')) {
-          continue;
-        }
-        const cleanText = stripSystemTags(text);
-        // Empty, or a new agent's greeting kickoff: DorkOS's message, not the
-        // person's, so their own first message names the chat (DOR-4976).
-        if (!shownToPerson(cleanText.trim())) continue;
-
-        firstUserMessage = cleanText.trim();
+        // CLI echoes, DorkOS notes and a greeting kickoff never name the chat.
+        firstUserMessage = personTitleText(text);
       }
 
       // Once we have all head metadata, stop early
       if (firstUserMessage && firstTimestamp && model && cwd) break;
     }
 
+    // A kickoff whose line ran past the head: scan on for the person's words (DOR-4976).
+    const opening =
+      !firstUserMessage && headMentionsKickoff(chunk)
+        ? await readOpeningTurn(filePath)
+        : { kickoff: isKickoffEnvelope(firstRawUserMessage), personFirst: firstUserMessage };
     const derivedTitle =
-      deriveSessionTitle(firstUserMessage) ||
+      deriveSessionTitle(opening.personFirst) ||
       `Chat ${sessionId.slice(0, TRANSCRIPT.SESSION_ID_PREVIEW_LENGTH)}`;
     // Which Claude account this session belongs to: the root the file was found
     // under, read straight off the path — no syscall, no config read. Resolved
@@ -859,12 +849,15 @@ export class TranscriptReader {
     // reading, and for the untitled case that is the RAW first prompt, which
     // `deriveSessionTitle` filters (slash-commands, system tags, courtesy
     // openers) more carefully than the SDK does.
+    // A greeting kickoff the person has not answered yet shows as untitled: no
+    // `ai-title` made from the greeting, no "Chat …" placeholder (DOR-4976).
     const sdkTitle = await this.resolveSdkTitle(sessionId, cwd, account);
-    const title =
+    const kickoffOnly = opening.kickoff && !opening.personFirst && !tailStatus.userLastMessageAt;
+    const title = titleShownToPerson(
       sdkTitle.customTitle?.trim() ||
-      tailStatus.customTitle?.trim() ||
-      tailStatus.aiTitle?.trim() ||
-      derivedTitle;
+        tailStatus.customTitle?.trim() ||
+        (kickoffOnly ? '' : tailStatus.aiTitle?.trim() || derivedTitle)
+    );
     const { origin, originLabel } = classifyOrigin(firstRawUserMessage);
 
     const session: Session = {
