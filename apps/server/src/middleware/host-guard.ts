@@ -46,7 +46,7 @@ import { logger } from '../lib/logger.js';
 import { getTunnelHosts, isLoopbackHost, parseHostname } from '../lib/trusted-origins.js';
 import { getLanAccessHosts } from '../services/core/lan-access/lan-trust.js';
 import { configManager } from '../services/core/config-manager.js';
-import { redactMediaTicket } from '../services/extensions/http/media-tickets.js';
+import { redactLogPath } from './request-logger.js';
 
 /**
  * Error code returned with the 403. Stable contract: clients and support docs
@@ -163,8 +163,8 @@ export function refuseUntrustedHost(
   logger.warn('[HostGuard] Rejected a request with an untrusted Host header', {
     host: hostname ?? '(missing)',
     method,
-    // A video link's ticket never reaches the log (DOR-4321).
-    path: redactMediaTicket(url),
+    // No query string, and no video link ticket in any spelling (DOR-4321, DOR-4736).
+    path: redactLogPath(url),
   });
   return { error: refusalMessage(hostname), code: HOST_NOT_ALLOWED_CODE };
 }
