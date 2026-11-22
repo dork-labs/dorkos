@@ -2,7 +2,7 @@
 
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
-import { isTelemetryDisabledByEnv } from '@dorkos/shared/telemetry-consent';
+import { isEnvFlagOn, isTelemetryDisabledByEnv } from '@dorkos/shared/telemetry-consent';
 import { resolveDorkHome } from './lib/dork-home.js';
 
 interface UpdateCache {
@@ -26,8 +26,7 @@ function getCachePath(): string {
 function updateCheckDisabled(): boolean {
   // eslint-disable-next-line no-restricted-syntax -- call-time env resolution (CLI convention)
   const env = process.env;
-  const own = env.DORKOS_UPDATE_CHECK_DISABLED?.trim().toLowerCase();
-  return own === '1' || own === 'true' || isTelemetryDisabledByEnv(env);
+  return isEnvFlagOn(env.DORKOS_UPDATE_CHECK_DISABLED) || isTelemetryDisabledByEnv(env);
 }
 
 /**

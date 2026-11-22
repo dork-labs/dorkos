@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
@@ -9,45 +9,77 @@ import { describe, expect, it, vi } from 'vitest';
 vi.setConfig({ testTimeout: 120_000 });
 
 /**
- * Every place the product can reach the network is on a checked-in list
- * (DOR-4990).
+ * Every place the shipped product's source can reach the network is on a
+ * checked-in list (DOR-4990).
  *
  * The docs promise that `DO_NOT_TRACK=1` means DorkOS sends nothing it was not
  * asked to. That promise is only as good as our knowledge of every sender, so
- * this scan finds each file in the shipped server, CLI, shared package and
- * desktop shell that uses a network primitive, and fails on any file that is
- * not in `scripts/outbound-census/census.json`. Each entry is one of two kinds:
+ * this scan finds each file under {@link ROOTS} (the server, the browser app,
+ * the desktop app and every shipped workspace package; see `shippedRoots`)
+ * that uses a network primitive, and fails on any file that is not in
+ * `scripts/outbound-census/census.json`. Each entry is one of two kinds:
  *
  * - `consent`: the file, or every file named in `gatedBy`, calls a helper from
  *   `@dorkos/shared/telemetry-consent`, so the kill switches stop it.
  * - `feature`: not telemetry. It says why it talks to the network and how a
  *   person turns it off (`reason`, `offSwitch`).
  *
- * What counts as a network primitive, read from the syntax tree so comments and
- * the browser scripts inside template strings never count: the global `fetch`
- * used as a value or called, `globalThis.fetch`, Electron's
- * `defaultSession.fetch` and `net.fetch`/`net.request`, `http(s).request/get`,
- * `net`/`tls` `connect`, `new WebSocket`/`EventSource` and the MCP SDK's
- * network client transports, a named `request`/`get`/`connect` import from
- * `node:http(s)`, `net` or `tls`, an import of an HTTP client or updater
- * package, and a hard-coded Google Fonts address (a page this server serves
- * loads from it).
+ * What counts as a network primitive, read from the syntax tree so comments,
+ * type positions and the browser scripts inside template strings never count:
  *
- * This is a static guard, not a proof: a call through an injected `fetch`
- * parameter is caught where the global is wired in, and a spawned program's
- * own network use (git, the runtimes) is out of its reach.
+ * - the global `fetch` called or passed as a value, and `globalThis`, `window`
+ *   or `self` `.fetch` / `['fetch']`; a parameter or local named `fetch`
+ *   shadows the global and is not counted;
+ * - `request`/`get`/`connect` on `node:http(s)`, `http2`, `net` or `tls`, under
+ *   whatever name the file imports or requires them as, and named imports of
+ *   those functions;
+ * - `new WebSocket` (and the `ws` class under any name), `EventSource` and the
+ *   MCP SDK's network client transports; Electron's `net.fetch`/`net.request`
+ *   and `defaultSession.fetch`; `navigator.sendBeacon`;
+ * - a value import of an HTTP client, the desktop updater, a trace exporter or
+ *   a service SDK that makes its own requests (`NETWORK_MODULE`);
+ * - a hard-coded Google Fonts address.
+ *
+ * One rule keeps the browser app's calls to its own server out:
+ * `isSameOriginCall`. A call whose address is a same-origin path, or is built
+ * by a helper that always names the connected DorkOS server, is not outbound.
+ * Calls through a base URL variable are listed in the census instead, as the
+ * app's own server.
+ *
+ * This is a static guard, not a proof: a call through an injected `fetch` is
+ * caught where the global is wired in (so `packages/decisions` shows up as
+ * `triage-wiring.ts` and `space-server.ts`), and a spawned program's own
+ * network use (git, the runtimes) is out of its reach. The marketing site
+ * (`apps/site`), the e2e and design-system apps and the dev-only packages are
+ * not scanned.
  */
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const CENSUS_PATH = 'scripts/outbound-census/census.json';
 
-/** The shipped product source this census covers. */
-const ROOTS = [
-  'apps/server/src/',
-  'packages/cli/src/',
-  'packages/shared/src/',
-  'apps/desktop/src/main/',
-];
+/** Workspace packages that never ship in the product: build, lint and test tooling. */
+const DEV_ONLY_PACKAGES = new Set([
+  'ci-steward',
+  'eslint-config',
+  'evals',
+  'heavy-slot',
+  'test-utils',
+  'typescript-config',
+]);
+
+/**
+ * The shipped product source this census covers: the server, the browser app,
+ * the desktop shell, and the `src/` of every workspace package except the
+ * dev-only ones. Not covered: the marketing site (`apps/site`, its own
+ * deployment) and the test and catalog apps (`apps/e2e`, `apps/design-system`).
+ */
+function shippedRoots(): string[] {
+  const packages = readdirSync(path.join(ROOT, 'packages'), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && !DEV_ONLY_PACKAGES.has(entry.name))
+    .map((entry) => `packages/${entry.name}/src/`);
+  return ['apps/server/src/', 'apps/client/src/', 'apps/desktop/src/', ...packages];
+}
+const ROOTS = shippedRoots();
 
 /** The helpers whose call means a send is gated on the person's consent. */
 const CONSENT_HELPERS = new Set([
@@ -57,12 +89,20 @@ const CONSENT_HELPERS = new Set([
 ]);
 const CONSENT_MODULE = '@dorkos/shared/telemetry-consent';
 
-/** Modules whose import alone means network use. */
+/**
+ * Modules whose (value) import alone means network use: HTTP clients, the
+ * desktop updater, trace exporters and the service SDKs that make their own
+ * requests (Slack, Telegram, Composio, S3, mail).
+ */
 const NETWORK_MODULE =
-  /^(?:electron-updater|undici|axios|node-fetch|got|ky|@opentelemetry\/exporter-.+)$/;
-/** Node modules whose named `request`/`get`/`connect` import is a network call. */
+  /^(?:electron-updater|undici|axios|node-fetch|got|ky|@opentelemetry\/exporter-.+|@slack\/(?:web-api|bolt)|grammy|@composio\/core|@aws-sdk\/client-.+|nodemailer)$/;
+/** Node modules whose `request`/`get`/`connect` is a network call. */
 const NODE_NET_MODULE = /^(?:node:)?(?:https?|http2|net|tls)$/;
 const NODE_NET_EXPORTS = new Set(['request', 'get', 'connect', 'createConnection']);
+/** The names those modules are usually bound to, imported or required. */
+const NODE_NET_NAMES = ['http', 'https', 'http2', 'net', 'tls'];
+/** Objects whose `fetch` is the global one, in Node and in a browser. */
+const GLOBAL_OBJECTS = new Set(['globalThis', 'window', 'self']);
 /** Constructors that open a connection. */
 const NETWORK_CONSTRUCTORS = new Set([
   'WebSocket',
@@ -143,10 +183,26 @@ function isGlobalFetchValue(node: ts.Identifier): boolean {
   return !(named && (parent as { name?: ts.Node }).name === node);
 }
 
+/** Whether an import brings in types only, which cannot reach the network. */
+function isTypeOnlyImport(node: ts.ImportDeclaration): boolean {
+  const clause = node.importClause;
+  if (clause === undefined) return false;
+  if (clause.isTypeOnly) return true;
+  const bindings = clause.namedBindings;
+  return (
+    clause.name === undefined &&
+    bindings !== undefined &&
+    ts.isNamedImports(bindings) &&
+    bindings.elements.length > 0 &&
+    bindings.elements.every((spec) => spec.isTypeOnly)
+  );
+}
+
 /** The module a string literal names, when it is an import, a dynamic import or a require. */
 function moduleSpecifierOf(node: ts.StringLiteralLike): string | null {
   const parent = node.parent;
-  if (ts.isImportDeclaration(parent) || ts.isExportDeclaration(parent)) return node.text;
+  if (ts.isImportDeclaration(parent)) return isTypeOnlyImport(parent) ? null : node.text;
+  if (ts.isExportDeclaration(parent)) return parent.isTypeOnly ? null : node.text;
   if (
     ts.isCallExpression(parent) &&
     (parent.expression.kind === ts.SyntaxKind.ImportKeyword ||
@@ -165,30 +221,41 @@ function moduleSpecifierOf(node: ts.StringLiteralLike): string | null {
 function findNetworkUses(file: string, source: string): string[] {
   const kind = file.endsWith('x') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
   const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, kind);
+  const { netNamespaces, constructors, electronNet } = importedAliases(sf);
   const found: string[] = [];
   const at = (node: ts.Node, what: string) =>
     found.push(`${sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1}: ${what}`);
   const visit = (node: ts.Node): void => {
-    if (ts.isIdentifier(node) && node.text === 'fetch' && isGlobalFetchValue(node))
+    if (
+      ts.isIdentifier(node) &&
+      node.text === 'fetch' &&
+      isGlobalFetchValue(node) &&
+      !isSameOriginCall(node)
+    )
       at(node, 'fetch');
     if (ts.isPropertyAccessExpression(node)) {
       const target = node.expression.getText(sf);
       const name = node.name.text;
-      if (target === 'globalThis' && name === 'fetch') at(node, 'globalThis.fetch');
+      if (GLOBAL_OBJECTS.has(target) && name === 'fetch' && !isSameOriginCall(node))
+        at(node, `${target}.fetch`);
+      if (target === 'navigator' && name === 'sendBeacon') at(node, 'navigator.sendBeacon');
       if (/(?:^|\.)defaultSession$/.test(target) && name === 'fetch') at(node, `${target}.fetch`);
-      if (target === 'net' && ['fetch', 'request', 'connect', 'createConnection'].includes(name))
-        at(node, `net.${name}`);
-      if (
-        ['http', 'https', 'http2'].includes(target) &&
-        ['request', 'get', 'connect'].includes(name)
-      )
-        at(node, `${target}.${name}`);
-      if (target === 'tls' && name === 'connect') at(node, 'tls.connect');
+      if (electronNet.has(target) && ['fetch', 'request'].includes(name))
+        at(node, `${target}.${name} (electron)`);
+      if (netNamespaces.has(target) && NODE_NET_EXPORTS.has(name)) at(node, `${target}.${name}`);
     }
+    if (
+      ts.isElementAccessExpression(node) &&
+      GLOBAL_OBJECTS.has(node.expression.getText(sf)) &&
+      ts.isStringLiteralLike(node.argumentExpression) &&
+      node.argumentExpression.text === 'fetch'
+    )
+      at(node, `${node.expression.getText(sf)}['fetch']`);
     if (
       ts.isNewExpression(node) &&
       ts.isIdentifier(node.expression) &&
-      NETWORK_CONSTRUCTORS.has(node.expression.text)
+      constructors.has(node.expression.text) &&
+      !isSameOriginCall(node.expression)
     )
       at(node, `new ${node.expression.text}`);
     if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
@@ -218,6 +285,106 @@ function findNetworkUses(file: string, source: string): string[] {
   };
   visit(sf);
   return found;
+}
+
+/**
+ * The local names a file binds the network modules to, however it renames
+ * them: a default or namespace import of `node:http(s)`, `net` or `tls` (and a
+ * `require` of one), the `WebSocket` class from `ws`, and Electron's `net`.
+ *
+ * @param sf - The parsed file.
+ */
+function importedAliases(sf: ts.SourceFile): {
+  netNamespaces: Set<string>;
+  constructors: Set<string>;
+  electronNet: Set<string>;
+} {
+  const netNamespaces = new Set(NODE_NET_NAMES);
+  const constructors = new Set(NETWORK_CONSTRUCTORS);
+  const electronNet = new Set<string>();
+  const visit = (node: ts.Node): void => {
+    if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
+      const from = node.moduleSpecifier.text;
+      const clause = node.importClause;
+      const bindings = clause?.namedBindings;
+      if (NODE_NET_MODULE.test(from)) {
+        if (clause?.name) netNamespaces.add(clause.name.text);
+        if (bindings && ts.isNamespaceImport(bindings)) netNamespaces.add(bindings.name.text);
+      }
+      if (from === 'ws') {
+        if (clause?.name) constructors.add(clause.name.text);
+        if (bindings && ts.isNamespaceImport(bindings)) netNamespaces.add(bindings.name.text);
+        if (bindings && ts.isNamedImports(bindings))
+          for (const spec of bindings.elements)
+            if ((spec.propertyName ?? spec.name).text === 'WebSocket')
+              constructors.add(spec.name.text);
+      }
+      if (from === 'electron' && bindings && ts.isNamedImports(bindings))
+        for (const spec of bindings.elements)
+          if ((spec.propertyName ?? spec.name).text === 'net') electronNet.add(spec.name.text);
+    }
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer &&
+      ts.isCallExpression(node.initializer) &&
+      ts.isIdentifier(node.initializer.expression) &&
+      node.initializer.expression.text === 'require' &&
+      node.initializer.arguments[0] &&
+      ts.isStringLiteralLike(node.initializer.arguments[0]) &&
+      NODE_NET_MODULE.test(node.initializer.arguments[0].text)
+    )
+      netNamespaces.add(node.name.text);
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
+  return { netNamespaces, constructors, electronNet };
+}
+
+/**
+ * The browser app's helpers that build a URL on the DorkOS server it is
+ * connected to: `resolveApiBaseUrl()` and `extensionApiUrl()`, which wraps it,
+ * and the Community pages' `tenantApiPath()`, which returns a same-origin path.
+ */
+const SERVER_URL_HELPERS = new Set(['extensionApiUrl', 'resolveApiBaseUrl', 'tenantApiPath']);
+
+/** Whether an expression is a call to one of {@link SERVER_URL_HELPERS}. */
+function callsServerUrlHelper(node: ts.Expression): boolean {
+  return (
+    ts.isCallExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    SERVER_URL_HELPERS.has(node.expression.text)
+  );
+}
+
+/**
+ * Whether a call goes to the app's own server rather than outbound: its first
+ * argument is a same-origin path (a string or template starting with `/` but
+ * not `//`), or a URL built by one of {@link SERVER_URL_HELPERS}, alone or at
+ * the start of a template. In the browser app that is the DorkOS server the
+ * page is connected to; anywhere else a relative path cannot reach the network.
+ *
+ * @param callee - The `fetch` (or constructor) being called.
+ */
+function isSameOriginCall(callee: ts.Node): boolean {
+  const call = callee.parent;
+  if (!(ts.isCallExpression(call) || ts.isNewExpression(call)) || call.expression !== callee)
+    return false;
+  const first = call.arguments?.[0];
+  if (first === undefined) return false;
+  if (callsServerUrlHelper(first)) return true;
+  if (
+    ts.isTemplateExpression(first) &&
+    first.head.text === '' &&
+    callsServerUrlHelper(first.templateSpans[0]!.expression)
+  )
+    return true;
+  const text = ts.isStringLiteralLike(first)
+    ? first.text
+    : ts.isTemplateExpression(first)
+      ? first.head.text
+      : null;
+  return text !== null && text.startsWith('/') && !text.startsWith('//');
 }
 
 /** Whether a file imports the consent module and calls one of its helpers. */
@@ -334,6 +501,49 @@ describe('outbound destination census (DOR-4990)', () => {
 });
 
 describe('the network-use scan', () => {
+  it('follows renamed imports and other spellings of the global', () => {
+    const source = [
+      "import web from 'node:https';",
+      "import * as plain from 'http';",
+      "import Socket, { WebSocket as Ws } from 'ws';",
+      "import { net as electronNet } from 'electron';",
+      "import type { Bot } from 'grammy';",
+      "const raw = require('node:net');",
+      'web.request(url);',
+      'plain.get(url);',
+      'new Socket(url);',
+      'new Ws(url);',
+      'electronNet.fetch(url);',
+      'raw.connect(port);',
+      "globalThis['fetch'](url);",
+      'window.fetch(url);',
+    ].join('\n');
+    // The type-only `grammy` import on line 5 is not network use.
+    expect(findNetworkUses('a.ts', source)).toEqual([
+      '7: web.request',
+      '8: plain.get',
+      '9: new Socket',
+      '10: new Ws',
+      '11: electronNet.fetch (electron)',
+      '12: raw.connect',
+      "13: globalThis['fetch']",
+      '14: window.fetch',
+    ]);
+  });
+
+  it('treats a same-origin path as the app talking to its own server', () => {
+    const source = [
+      "fetch('/api/sessions');",
+      'fetch(`/api/sessions/${id}`);',
+      "new EventSource('/api/events');",
+      "fetch('//cdn.example/x');",
+      'fetch(`${base}/api/x`);',
+      "fetch(extensionApiUrl('/extensions'));",
+      'fetch(`${resolveApiBaseUrl()}/api/x`);',
+    ].join('\n');
+    expect(findNetworkUses('a.ts', source)).toEqual(['4: fetch', '5: fetch']);
+  });
+
   it('ignores comments, names, types and browser scripts in strings', () => {
     const source = [
       '// await fetch(url)',

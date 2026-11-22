@@ -54,6 +54,7 @@ describe('runtime environment authority', () => {
           DO_NOT_TRACK: '1',
           // DO_NOT_TRACK on the server also switches the runtime's own telemetry off.
           DISABLE_TELEMETRY: '1',
+          DISABLE_ERROR_REPORTING: '1',
         });
       }
     }

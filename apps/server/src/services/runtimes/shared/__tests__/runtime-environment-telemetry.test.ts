@@ -10,7 +10,7 @@ describe('runtime children honour DO_NOT_TRACK (DOR-4990)', () => {
     ['DO_NOT_TRACK', 'true'],
     ['DORKOS_TELEMETRY_DISABLED', '1'],
     ['DORKOS_TELEMETRY_DISABLED', 'TRUE'],
-  ])('%s=%s sets DO_NOT_TRACK=1 and DISABLE_TELEMETRY=1 on every runtime child', (name, value) => {
+  ])('%s=%s passes the three telemetry-off names to every runtime child', (name, value) => {
     for (const runtime of RUNTIMES)
       for (const purpose of PURPOSES) {
         const result = projectRuntimeEnvironment({
@@ -19,8 +19,12 @@ describe('runtime children honour DO_NOT_TRACK (DOR-4990)', () => {
           purpose,
           platform: 'linux',
         });
-        expect(result).toMatchObject({ DO_NOT_TRACK: '1', DISABLE_TELEMETRY: '1' });
-        // The DorkOS-scoped switch itself is not passed on; only the two names are.
+        expect(result).toMatchObject({
+          DO_NOT_TRACK: '1',
+          DISABLE_TELEMETRY: '1',
+          DISABLE_ERROR_REPORTING: '1',
+        });
+        // The DorkOS-scoped switch itself is not passed on; only the three names are.
         expect(result).not.toHaveProperty('DORKOS_TELEMETRY_DISABLED');
       }
   });
@@ -29,7 +33,12 @@ describe('runtime children honour DO_NOT_TRACK (DOR-4990)', () => {
     '%s: an inherited or overridden value cannot turn telemetry back on',
     (runtime) => {
       const result = projectRuntimeEnvironment({
-        parent: { DORKOS_TELEMETRY_DISABLED: '1', DO_NOT_TRACK: '0', DISABLE_TELEMETRY: '0' },
+        parent: {
+          DORKOS_TELEMETRY_DISABLED: '1',
+          DO_NOT_TRACK: '0',
+          DISABLE_TELEMETRY: '0',
+          DISABLE_ERROR_REPORTING: '0',
+        },
         runtime,
         purpose: 'turn',
         overrides: { DO_NOT_TRACK: '0' },
@@ -37,6 +46,7 @@ describe('runtime children honour DO_NOT_TRACK (DOR-4990)', () => {
       });
       expect(result.DO_NOT_TRACK).toBe('1');
       expect(result.DISABLE_TELEMETRY).toBe('1');
+      expect(result.DISABLE_ERROR_REPORTING).toBe('1');
     }
   );
 
@@ -47,7 +57,12 @@ describe('runtime children honour DO_NOT_TRACK (DOR-4990)', () => {
       purpose: 'turn',
       platform: 'win32',
     });
-    expect(result).toEqual({ Path: 'C:\\synthetic', DO_NOT_TRACK: '1', DISABLE_TELEMETRY: '1' });
+    expect(result).toEqual({
+      Path: 'C:\\synthetic',
+      DO_NOT_TRACK: '1',
+      DISABLE_TELEMETRY: '1',
+      DISABLE_ERROR_REPORTING: '1',
+    });
   });
 
   it.each([undefined, '0', 'false', ''])('adds nothing when the switches are %j', (value) => {

@@ -36,20 +36,24 @@ export const TELEMETRY_DEBUG_ENV_VAR = 'DORKOS_TELEMETRY_DEBUG';
 
 /**
  * A minimal env record: the string-keyed values this module reads. Both
- * `process.env` (`NodeJS.ProcessEnv`) and a plain test object satisfy it.
+ * `process.env` (`NodeJS.ProcessEnv`), a parsed env object (whose other fields
+ * may be numbers or booleans) and a plain test object satisfy it; a value that
+ * is not a string reads as off.
  */
-export type TelemetryEnv = Record<string, string | undefined>;
+export type TelemetryEnv = Readonly<Record<string, unknown>>;
 
 /**
- * Whether a flag's raw string value is "on". Follows the `donottrack.sh`
+ * Whether an environment flag's raw value is "on". Follows the `donottrack.sh`
  * convention: `'1'` or `'true'` (case-insensitive, surrounding whitespace
  * trimmed) count as on; everything else — including `'0'`, `'false'`, the empty
- * string, and unset — counts as off.
+ * string, unset, and any value that is not a string — counts as off. Every
+ * DorkOS on/off switch read from the environment parses through here, so the
+ * server and the CLI agree on what "set" means.
  *
  * @param raw - The raw environment value, or `undefined` when unset.
  */
-function isFlagOn(raw: string | undefined): boolean {
-  if (raw == null) return false;
+export function isEnvFlagOn(raw: unknown): boolean {
+  if (typeof raw !== 'string') return false;
   const normalized = raw.trim().toLowerCase();
   return normalized === '1' || normalized === 'true';
 }
@@ -61,7 +65,7 @@ function isFlagOn(raw: string | undefined): boolean {
  * @param env - The environment record to read (e.g. `process.env`).
  */
 export function isTelemetryDisabledByEnv(env: TelemetryEnv): boolean {
-  return TELEMETRY_DISABLE_ENV_VARS.some((name) => isFlagOn(env[name]));
+  return TELEMETRY_DISABLE_ENV_VARS.some((name) => isEnvFlagOn(env[name]));
 }
 
 /**
@@ -71,7 +75,7 @@ export function isTelemetryDisabledByEnv(env: TelemetryEnv): boolean {
  * @param env - The environment record to read (e.g. `process.env`).
  */
 export function isTelemetryDebugEnabled(env: TelemetryEnv): boolean {
-  return isFlagOn(env[TELEMETRY_DEBUG_ENV_VAR]);
+  return isEnvFlagOn(env[TELEMETRY_DEBUG_ENV_VAR]);
 }
 
 /**

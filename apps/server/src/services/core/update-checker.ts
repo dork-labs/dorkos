@@ -17,7 +17,7 @@
  * @module services/update-checker
  */
 
-import { isTelemetryDisabledByEnv } from '@dorkos/shared/telemetry-consent';
+import { isEnvFlagOn, isTelemetryDisabledByEnv } from '@dorkos/shared/telemetry-consent';
 import { env } from '../../env.js';
 import { IS_DEV_BUILD } from '../../lib/version.js';
 import { isPersonalComputer } from './server-role/role-checks.js';
@@ -57,23 +57,8 @@ function checksRegistry(): boolean {
   // an agent computer, whose image its hub chooses (DOR-2940). Only a person's
   // own computer asks the registry.
   if (!isPersonalComputer()) return false;
-  if (
-    isTelemetryDisabledByEnv({
-      DO_NOT_TRACK: env.DO_NOT_TRACK,
-      DORKOS_TELEMETRY_DISABLED: env.DORKOS_TELEMETRY_DISABLED,
-    })
-  )
-    return false;
-  return !isSwitchOn(env.DORKOS_UPDATE_CHECK_DISABLED);
-}
-
-/**
- * Whether an env switch is set: `1` or `true`.
- *
- * @param value - The raw variable.
- */
-function isSwitchOn(value: string | undefined): boolean {
-  return value === '1' || value?.toLowerCase() === 'true';
+  if (isTelemetryDisabledByEnv(env)) return false;
+  return !isEnvFlagOn(env.DORKOS_UPDATE_CHECK_DISABLED);
 }
 
 /** Ask the registry once, and record the answer or the failure. */

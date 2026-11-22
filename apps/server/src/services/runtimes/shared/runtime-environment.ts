@@ -126,10 +126,15 @@ export function flowIdentityEnv(
 
 /**
  * What every runtime child is told when the parent has `DO_NOT_TRACK` or
- * `DORKOS_TELEMETRY_DISABLED` on: the cross-tool convention and Claude Code's
- * own switch, so no runtime sends its own telemetry either.
+ * `DORKOS_TELEMETRY_DISABLED` on: the cross-tool convention, and Claude Code's
+ * own names for its telemetry and its crash reports. What each runtime does
+ * with them is up to that runtime.
  */
-const RUNTIME_TELEMETRY_OFF_ENV = { DO_NOT_TRACK: '1', DISABLE_TELEMETRY: '1' } as const;
+const RUNTIME_TELEMETRY_OFF_ENV = {
+  DO_NOT_TRACK: '1',
+  DISABLE_TELEMETRY: '1',
+  DISABLE_ERROR_REPORTING: '1',
+} as const;
 
 /** Whether the parent turns telemetry off, read with the platform's name matching. */
 function parentDisablesTelemetry(input: RuntimeEnvironmentInput): boolean {

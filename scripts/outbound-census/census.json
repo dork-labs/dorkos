@@ -1,5 +1,159 @@
 [
   {
+    "file": "apps/client/src/layers/features/auth/model/auth-client.ts",
+    "destination": "The DorkOS server this app is connected to",
+    "class": "feature",
+    "reason": "Signs a person in and out.",
+    "offSwitch": "Not outbound: the app's own server"
+  },
+  {
+    "file": "apps/client/src/layers/features/auth/model/confirm-action.ts",
+    "destination": "The DorkOS server this app is connected to",
+    "class": "feature",
+    "reason": "Asks a person to confirm a protected action.",
+    "offSwitch": "Not outbound: the app's own server"
+  },
+  {
+    "file": "apps/client/src/layers/features/auth/model/confirm-its-you.ts",
+    "destination": "The DorkOS server this app is connected to",
+    "class": "feature",
+    "reason": "Asks a person to confirm it is them.",
+    "offSwitch": "Not outbound: the app's own server"
+  },
+  {
+    "file": "apps/client/src/layers/features/canvas/lib/probe-direct.ts",
+    "destination": "An address a canvas document names",
+    "class": "feature",
+    "reason": "Checks whether a page a person put on the canvas can be shown directly.",
+    "offSwitch": "Do not put outside pages on the canvas"
+  },
+  {
+    "file": "apps/client/src/layers/features/canvas/ui/CanvasCsvContent.tsx",
+    "destination": "An address a canvas document names",
+    "class": "feature",
+    "reason": "Loads a CSV file a canvas document points to.",
+    "offSwitch": "Do not open such a document"
+  },
+  {
+    "file": "apps/client/src/layers/features/extensions/model/extension-bundle-import.ts",
+    "destination": "The DorkOS server this app is connected to",
+    "class": "feature",
+    "reason": "Loads an installed app's code bundle.",
+    "offSwitch": "Not outbound: the app's own server"
+  },
+  {
+    "file": "apps/client/src/layers/features/extensions/model/extension-forward-api.ts",
+    "destination": "The DorkOS server this app is connected to",
+    "class": "feature",
+    "reason": "Carries an installed app's requests through its server route.",
+    "offSwitch": "Not outbound: the app's own server"
+  },
+  {
+    "file": "apps/client/src/layers/features/extensions/model/extension-rooms-api.ts",
+    "destination": "The DorkOS server this app is connected to",
+    "class": "feature",
+    "reason": "Reads and follows rooms for an installed app.",
+    "offSwitch": "Not outbound: the app's own server"
+  },
+  {
+    "file": "apps/client/src/layers/features/settings/model/use-tunnel-machine.ts",
+    "destination": "This computer's own remote-access address",
+    "class": "feature",
+    "reason": "Checks that the remote-access address a person turned on answers.",
+    "offSwitch": "Leave remote access off"
+  },
+  {
+    "file": "apps/client/src/layers/shared/lib/font-config.ts",
+    "destination": "Google Fonts",
+    "class": "feature",
+    "reason": "Loads a font a person picked; the default font ships with the app.",
+    "offSwitch": "Keep the default font"
+  },
+  {
+    "file": "apps/client/src/layers/shared/lib/person-aware-fetch.ts",
+    "destination": "The DorkOS server this app is connected to",
+    "class": "feature",
+    "reason": "Wraps the page's own requests to mark which person sent them.",
+    "offSwitch": "Not outbound: the app's own server"
+  },
+  {
+    "file": "apps/client/src/layers/shared/lib/transport/http-client.ts",
+    "destination": "The DorkOS server this app is connected to",
+    "class": "feature",
+    "reason": "The app's request client.",
+    "offSwitch": "Not outbound: the app's own server"
+  },
+  {
+    "file": "apps/client/src/layers/shared/lib/transport/mesh-methods.ts",
+    "destination": "The DorkOS server this app is connected to",
+    "class": "feature",
+    "reason": "Agent and mesh requests.",
+    "offSwitch": "Not outbound: the app's own server"
+  },
+  {
+    "file": "apps/client/src/layers/shared/lib/transport/relay-methods.ts",
+    "destination": "The DorkOS server this app is connected to",
+    "class": "feature",
+    "reason": "Relay requests.",
+    "offSwitch": "Not outbound: the app's own server"
+  },
+  {
+    "file": "apps/client/src/layers/shared/lib/transport/session-methods.ts",
+    "destination": "The DorkOS server this app is connected to",
+    "class": "feature",
+    "reason": "Chat and session requests.",
+    "offSwitch": "Not outbound: the app's own server"
+  },
+  {
+    "file": "apps/client/src/layers/shared/lib/transport/stream-health-report.ts",
+    "destination": "The DorkOS server this app is connected to",
+    "class": "feature",
+    "reason": "Reports a chat stream's health.",
+    "offSwitch": "Not outbound: the app's own server"
+  },
+  {
+    "file": "apps/client/src/layers/shared/lib/transport/stream-socket-iterator.ts",
+    "destination": "The DorkOS server this app is connected to",
+    "class": "feature",
+    "reason": "Reads a chat's live stream.",
+    "offSwitch": "Not outbound: the app's own server"
+  },
+  {
+    "file": "apps/client/src/layers/shared/lib/transport/system-methods.ts",
+    "destination": "The DorkOS server this app is connected to",
+    "class": "feature",
+    "reason": "Settings and system requests.",
+    "offSwitch": "Not outbound: the app's own server"
+  },
+  {
+    "file": "apps/client/src/layers/shared/lib/transport/terminal-methods.ts",
+    "destination": "The DorkOS server this app is connected to",
+    "class": "feature",
+    "reason": "Opens and closes terminals.",
+    "offSwitch": "Not outbound: the app's own server"
+  },
+  {
+    "file": "apps/client/src/layers/shared/lib/transport/ws-connection.ts",
+    "destination": "The DorkOS server this app is connected to",
+    "class": "feature",
+    "reason": "The app's live event connection.",
+    "offSwitch": "Not outbound: the app's own server"
+  },
+  {
+    "file": "apps/client/src/layers/shared/ui/image-lightbox/lightbox-image.ts",
+    "destination": "The address of an image a person is viewing",
+    "class": "feature",
+    "reason": "Downloads an image a person chose to save.",
+    "offSwitch": "Do not save the image"
+  },
+  {
+    "file": "apps/client/src/space/api.ts",
+    "destination": "The DorkOS server this app is connected to",
+    "class": "feature",
+    "reason": "A Community page's requests to its own server.",
+    "offSwitch": "Not outbound: the app's own server"
+  },
+  {
     "file": "apps/desktop/src/main/auto-updater.ts",
     "destination": "The desktop app's release feed",
     "class": "feature",
@@ -32,6 +186,13 @@
     "destination": "This computer's own DorkOS server",
     "class": "feature",
     "reason": "Signs the app window in to the local server.",
+    "offSwitch": "Never leaves the computer"
+  },
+  {
+    "file": "apps/desktop/src/server-entry.ts",
+    "destination": "This computer's own DorkOS server",
+    "class": "feature",
+    "reason": "The desktop app waits for its server to answer before opening.",
     "offSwitch": "Never leaves the computer"
   },
   {
@@ -341,6 +502,13 @@
     "offSwitch": "Never leaves the computer"
   },
   {
+    "file": "apps/server/src/services/spaces/mail/transport.ts",
+    "destination": "A Community's mail server",
+    "class": "feature",
+    "reason": "A Community server sends sign-in and notice email through the mail server its owner set.",
+    "offSwitch": "Runs only on a Community server"
+  },
+  {
     "file": "apps/server/src/services/spaces/oidc.ts",
     "destination": "A Community's sign-in provider",
     "class": "feature",
@@ -353,6 +521,27 @@
     "class": "feature",
     "reason": "A Community server checks new posts with the models its owner armed.",
     "offSwitch": "Leave COMMUNITY_DECISIONS_PAID unset"
+  },
+  {
+    "file": "apps/server/src/services/spaces/storage/s3-blob-store.ts",
+    "destination": "A Community's file storage",
+    "class": "feature",
+    "reason": "A Community server stores uploads in the bucket its owner set.",
+    "offSwitch": "Runs only on a Community server"
+  },
+  {
+    "file": "apps/server/src/services/spaces/takedown/evidence/sink.ts",
+    "destination": "A Community's file storage",
+    "class": "feature",
+    "reason": "A Community server keeps takedown records in its owner's bucket.",
+    "offSwitch": "Runs only on a Community server"
+  },
+  {
+    "file": "apps/server/src/services/workbench-serve/devtools-shim.ts",
+    "destination": "Nothing outbound: a script inside a previewed app",
+    "class": "feature",
+    "reason": "Wraps the previewed app's own requests so its developer tools can show them.",
+    "offSwitch": "Never leaves the preview"
   },
   {
     "file": "apps/server/src/services/workbench-serve/preview-listener.ts",
@@ -381,6 +570,20 @@
     "class": "feature",
     "reason": "Lists connector tools from the listener this server runs.",
     "offSwitch": "Never leaves the computer"
+  },
+  {
+    "file": "packages/browser/src/network/fixture-proxy.ts",
+    "destination": "A local test page server",
+    "class": "feature",
+    "reason": "Serves the managed browser's test pages through a local proxy.",
+    "offSwitch": "Never leaves the computer"
+  },
+  {
+    "file": "packages/browser/src/runtime/private-proxy-auth.ts",
+    "destination": "The managed browser on this computer",
+    "class": "feature",
+    "reason": "Talks to the managed browser's own control socket.",
+    "offSwitch": "Do not give agents the browser"
   },
   {
     "file": "packages/cli/src/cleanup-command.ts",
@@ -443,6 +646,111 @@
     "destination": "The npm registry",
     "class": "consent",
     "reason": "Checks for a newer DorkOS; also off with DORKOS_UPDATE_CHECK_DISABLED."
+  },
+  {
+    "file": "packages/cloud-api/src/client.ts",
+    "destination": "DorkOS Cloud",
+    "class": "feature",
+    "reason": "The client for the DorkOS account a computer is linked to.",
+    "offSwitch": "Do not link, or unlink, this computer"
+  },
+  {
+    "file": "packages/connector-providers/src/composio/event-client.ts",
+    "destination": "Composio",
+    "class": "feature",
+    "reason": "Receives events from apps a person connected through Composio.",
+    "offSwitch": "Do not connect apps through Composio"
+  },
+  {
+    "file": "packages/connector-providers/src/composio/managed-account-client.ts",
+    "destination": "Composio",
+    "class": "feature",
+    "reason": "Manages the Composio account behind a person's connected apps.",
+    "offSwitch": "Do not connect apps through Composio"
+  },
+  {
+    "file": "packages/connector-providers/src/composio/sdk-client.ts",
+    "destination": "Composio",
+    "class": "feature",
+    "reason": "Runs the outside apps a person connected through Composio.",
+    "offSwitch": "Do not connect apps through Composio"
+  },
+  {
+    "file": "packages/connector-providers/src/composio/webhook-verifier.ts",
+    "destination": "Composio",
+    "class": "feature",
+    "reason": "Checks the signature on a Composio event; uses the Composio SDK.",
+    "offSwitch": "Do not connect apps through Composio"
+  },
+  {
+    "file": "packages/doe/src/http-policy.ts",
+    "destination": "The model endpoint a person set for the DorkOS builder",
+    "class": "feature",
+    "reason": "Sends the builder's model requests, held to the endpoint that was set.",
+    "offSwitch": "Do not use the DorkOS builder"
+  },
+  {
+    "file": "packages/doe/src/mcp/connection.ts",
+    "destination": "MCP servers a builder turn uses",
+    "class": "feature",
+    "reason": "Connects a DorkOS builder turn to its tools.",
+    "offSwitch": "Do not use the DorkOS builder"
+  },
+  {
+    "file": "packages/doe/src/tools/web-fetch.ts",
+    "destination": "A web page an agent asks for",
+    "class": "feature",
+    "reason": "The builder's web fetch tool, used when an agent reads a page.",
+    "offSwitch": "Do not use the DorkOS builder"
+  },
+  {
+    "file": "packages/relay/src/adapters/slack/private-notification.ts",
+    "destination": "Slack",
+    "class": "feature",
+    "reason": "Sends a person a private Slack note through their Slack connection.",
+    "offSwitch": "Do not connect Slack"
+  },
+  {
+    "file": "packages/relay/src/adapters/slack/proxy.ts",
+    "destination": "Slack",
+    "class": "feature",
+    "reason": "Routes Slack traffic through the person's proxy settings.",
+    "offSwitch": "Do not connect Slack"
+  },
+  {
+    "file": "packages/relay/src/adapters/slack/slack-adapter.ts",
+    "destination": "Slack",
+    "class": "feature",
+    "reason": "Carries messages for a Slack connection a person set up.",
+    "offSwitch": "Do not connect Slack"
+  },
+  {
+    "file": "packages/relay/src/adapters/telegram/private-notification.ts",
+    "destination": "Telegram",
+    "class": "feature",
+    "reason": "Sends a person a private Telegram note through their connection.",
+    "offSwitch": "Do not connect Telegram"
+  },
+  {
+    "file": "packages/relay/src/adapters/telegram/telegram-adapter.ts",
+    "destination": "Telegram",
+    "class": "feature",
+    "reason": "Carries messages for a Telegram connection a person set up.",
+    "offSwitch": "Do not connect Telegram"
+  },
+  {
+    "file": "packages/relay/src/adapters/telegram/webhook.ts",
+    "destination": "Telegram",
+    "class": "feature",
+    "reason": "Registers the webhook for a Telegram connection.",
+    "offSwitch": "Do not connect Telegram"
+  },
+  {
+    "file": "packages/relay/src/adapters/webhook/webhook-adapter.ts",
+    "destination": "The webhook address a person set",
+    "class": "feature",
+    "reason": "Posts messages to a webhook connection a person set up.",
+    "offSwitch": "Do not set up a webhook connection"
   },
   {
     "file": "packages/shared/src/error-report.ts",

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  isEnvFlagOn,
   isTelemetryDisabledByEnv,
   isTelemetryDebugEnabled,
   resolveTelemetryConsent,
@@ -11,6 +12,16 @@ import {
   TELEMETRY_DISABLE_ENV_VARS,
   TELEMETRY_DEBUG_ENV_VAR,
 } from '../telemetry-consent.js';
+
+describe('isEnvFlagOn', () => {
+  it.each(['1', 'true', 'TRUE', ' true '])('reads %j as on', (raw) => {
+    expect(isEnvFlagOn(raw)).toBe(true);
+  });
+
+  it.each([undefined, '', '0', 'false', 'yes', 1, true])('reads %j as off', (raw) => {
+    expect(isEnvFlagOn(raw)).toBe(false);
+  });
+});
 
 describe('isTelemetryDisabledByEnv', () => {
   it('is false when no kill switch is set', () => {

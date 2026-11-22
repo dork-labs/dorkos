@@ -66,11 +66,15 @@ describe('update-checker', () => {
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
-  it('never asks the registry when DORKOS_UPDATE_CHECK_DISABLED is set', async () => {
-    envMock.DORKOS_UPDATE_CHECK_DISABLED = '1';
-    expect(await readAfterRefresh()).toBeNull();
-    expect(mockFetch).not.toHaveBeenCalled();
-  });
+  it.each(['1', 'true', ' TRUE '])(
+    'never asks the registry when DORKOS_UPDATE_CHECK_DISABLED is %j',
+    async (value) => {
+      // Parsed by the shared flag reader, the same way the CLI parses it.
+      envMock.DORKOS_UPDATE_CHECK_DISABLED = value;
+      expect(await readAfterRefresh()).toBeNull();
+      expect(mockFetch).not.toHaveBeenCalled();
+    }
+  );
 
   it.each([
     ['DO_NOT_TRACK', '1'],
