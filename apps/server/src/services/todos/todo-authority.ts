@@ -189,8 +189,10 @@ export function agentWordsMarks(
 export type TodoActor =
   /**
    * The person who owns this DorkOS, through the app. `proven` only for a request that carries the
-   * owner's own session cookie (`personProof`); anything less writes no `person` authority.
-   * `ownerless` when the install has no owner account, so no request can ever be proven.
+   * owner's own session cookie and is not held by the Wi-Fi hold (`personProof`); anything less
+   * writes no `person` authority. `ownerless` grants the no-owner allowance (`todo-policy`): when
+   * the install has no owner account, so no request can ever be proven, or, on `/api/todos` only,
+   * when it is the owner's own sign-in on a Wi-Fi device not let run agents (DOR-5070).
    */
   | { readonly kind: 'person'; readonly proven: boolean; readonly ownerless?: boolean }
   /**
