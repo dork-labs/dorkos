@@ -32,6 +32,7 @@ import { SERVER_VERSION } from '../../lib/version.js';
 import { registerDorkosCommunityTelemetry } from '../../services/marketplace/telemetry/telemetry-reporter.js';
 import { logConfigWrite } from '../../services/core/operator/config-write.js';
 import { registerUsageReporter } from '../../services/core/usage-reporter.js';
+import { getCloudLinkManager } from '../../services/core/auth/cloud-link.js';
 import { startInstallFunnel } from '../../services/core/telemetry/install-funnel.js';
 import { registerServerErrorReporting } from '../../services/core/error-reporter.js';
 import { registerAiMetadataReporter } from '../../services/core/ai-metadata-reporter.js';
@@ -178,9 +179,19 @@ export async function startTelemetryExtensionsAndRuntimes(
   const usageOn = () =>
     resolveTier1ChannelConsent(configManager.get('telemetry'), 'usage', telemetryEnv);
   const usageConsent = usageOn() && tier1SendGate;
+  // Usage events stay anonymous in PostHog (`$process_person_profile: false`)
+  // unless this computer is linked to an account AND the person opted into
+  // linking analytics to it (DOR-4989). Read on every flush: before the cloud
+  // link manager exists, `getCloudLinkManager` throws, which counts as unlinked.
+  const analyticsLinkedToAccount = () =>
+    resolveTelemetryConsent(
+      configManager.get('telemetry')?.linkAnalyticsToAccount ?? false,
+      telemetryEnv
+    ) && getCloudLinkManager().isLinked();
   registerUsageReporter({
     enabled: usageConsent,
     isConsentLive: usageOn,
+    isAnalyticsLinkedToAccount: analyticsLinkedToAccount,
     debug: telemetryDebug,
     dorkHome,
     dorkosVersion: SERVER_VERSION,
