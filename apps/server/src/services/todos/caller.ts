@@ -8,11 +8,14 @@
  * - {@link personProof}: whether an HTTP request proves the person who owns this DorkOS. Only the
  *   owner's own session cookie does. This computer's open gate (`isOwner` with login off) does not:
  *   any program here can reach it with no agent headers, and it must not mint `person` authority.
+ *   Nor does a request from Wi-Fi that the shared Wi-Fi hold holds (DOR-5070): a to-do runs at
+ *   the agent's own level, so it follows the same rule as a message from that device.
  *
  * @module services/todos/caller
  */
 import { clearsTheAgentBar } from '../../lib/caller-authority.js';
 import { isInstallOwner } from '../core/auth/install-owner.js';
+import { wifiTurnHeld, type WifiTurnFacts } from '../core/auth/sessions/wifi-turn-ceiling.js';
 import { presentsAgentIdentity } from '../../middleware/agent-identity.js';
 
 /** The verified identity a caller presented, as the capability context and request facts carry it. */
@@ -44,13 +47,18 @@ export function callerAgentId(
 }
 
 /**
- * Whether a request proves the owner in person: no agent identity, no approval token, and the
- * owner's own session cookie (the sign-in, or the step-up that leaves the same cookie).
+ * Whether a request proves the owner in person: no agent identity, no approval token, the
+ * owner's own session cookie (the sign-in, or the step-up that leaves the same cookie), and not
+ * a Wi-Fi request the Wi-Fi hold holds. From Wi-Fi only a sign-in the owner let run agents
+ * proves the person, the same rule every path that starts a turn asks (`wifiTurnHeld`).
  *
  * @param facts - The request's facts.
  */
-export function personProof(facts: Parameters<typeof clearsTheAgentBar>[0]): boolean {
+export function personProof(
+  facts: Parameters<typeof clearsTheAgentBar>[0] & WifiTurnFacts
+): boolean {
   if (presentsAgentIdentity(facts)) return false;
   if (!clearsTheAgentBar(facts)) return false;
+  if (wifiTurnHeld(facts)) return false;
   return facts.user?.credential === 'cookie' && isInstallOwner(facts.user);
 }
