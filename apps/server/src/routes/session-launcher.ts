@@ -116,7 +116,6 @@ export function httpLaunchOf(
   const turn = launcherTurnCeiling(launcher, facts);
   const directChat = sessionId !== undefined && getDirectChats()?.forSession(sessionId) != null;
   const unproven = directChat ? unprovenDirectChatBound(facts, launcher.kind) : undefined;
-  if (!unproven) return { launcher, ...turn };
   const existing = turn.permissionCeiling;
   const bounds: readonly TurnPermissionBound[] =
     existing === undefined
@@ -124,6 +123,8 @@ export function httpLaunchOf(
       : Array.isArray(existing)
         ? existing
         : [existing as TurnPermissionBound];
+  // A Wi-Fi hold already holds a turn to this bound (DOR-5070): never record it twice.
+  if (!unproven || bounds.includes(unproven)) return { launcher, ...turn };
   return { launcher, ...turn, permissionCeiling: bounds.length ? [...bounds, unproven] : unproven };
 }
 

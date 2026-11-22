@@ -13,7 +13,7 @@ import { todoNeedsStepUp, type TodoRouterDeps } from '../../routes/todos.js';
 import type { CapabilityDeps } from '../core/capabilities/index.js';
 import type { RoomSessionPlacePort } from '../workspace/room-session-place.js';
 import { ownerAccountExists } from '../core/auth/gate-policy.js';
-import { personProof } from './caller.js';
+import { heldWifiOwner, personProof } from './caller.js';
 import { TodoPromiseService } from './todo-promise-service.js';
 import { TodoPromiseStore } from './todo-promise-store.js';
 import { TodoService } from './todo-service.js';
@@ -157,6 +157,7 @@ export function wireTodos(deps: TodoWiringDeps): TodoWiring {
       personProven: personProof,
       // A failed lookup reads as an owner, so the no-owner allowance fails closed.
       ownerExists: ownerAccountExists,
+      heldWifiOwner,
       needsStepUp: todoNeedsStepUp,
       workSessionOf: (todoId) => todoTurns.lastSessionOf(todoId),
       readSource: (entryId) => readTodoSourceFacts(deps.db, entryId),

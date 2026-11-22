@@ -25,7 +25,7 @@ import type { RequestFacts } from '../../../http/request-facts.js';
 import type { RequestUser } from '../../core/auth/session-gate.js';
 import { APPROVAL_TOKEN_HEADER } from '../../core/capabilities/index.js';
 import { requestFactsFor } from '../../../http/__tests__/described-request.js';
-import { callerAgentId, personProof } from '../caller.js';
+import { callerAgentId, heldWifiOwner, personProof } from '../caller.js';
 
 const OWNER_COOKIE: RequestUser = { userId: 'user_owner', credential: 'cookie' };
 const OWNER_KEY: RequestUser = { userId: 'user_owner', credential: 'api-key' };
@@ -138,6 +138,33 @@ describe('personProof from Wi-Fi (DOR-5070)', () => {
   it("leaves the owner's own cookie at this computer as it was", async () => {
     seedWifiSignIns();
     expect(personProof(await here({ user: OWNER_COOKIE }))).toBe(true);
+  });
+
+  describe('heldWifiOwner', () => {
+    it("is the owner's sign-in on a Wi-Fi device not let run agents", () => {
+      seedWifiSignIns();
+      expect(heldWifiOwner(fromWifi('laptop'))).toBe(true);
+    });
+
+    it('is not a device let run agents (it proves the person instead), or this computer', async () => {
+      seedWifiSignIns();
+      expect(heldWifiOwner(fromWifi('phone'))).toBe(false);
+      expect(heldWifiOwner(await here({ user: OWNER_COOKIE }))).toBe(false);
+    });
+
+    it("is never another page riding the owner's cookie, an agent, or someone else", () => {
+      seedWifiSignIns();
+      const laptop = fromWifi('laptop');
+      expect(
+        heldWifiOwner({ ...laptop, headers: { ...laptop.headers, origin: 'http://evil.example' } })
+      ).toBe(false);
+      expect(
+        heldWifiOwner({ ...laptop, headers: { ...laptop.headers, 'x-dorkos-agent': 'token' } })
+      ).toBe(false);
+      expect(heldWifiOwner({ ...laptop, user: { ...laptop.user!, userId: 'user_guest' } })).toBe(
+        false
+      );
+    });
   });
 });
 

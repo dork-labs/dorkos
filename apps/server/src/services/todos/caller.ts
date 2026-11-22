@@ -15,7 +15,11 @@
  */
 import { clearsTheAgentBar } from '../../lib/caller-authority.js';
 import { isInstallOwner } from '../core/auth/install-owner.js';
-import { wifiTurnHeld, type WifiTurnFacts } from '../core/auth/sessions/wifi-turn-ceiling.js';
+import {
+  isOwnerSignInOnWifi,
+  wifiTurnHeld,
+  type WifiTurnFacts,
+} from '../core/auth/sessions/wifi-turn-ceiling.js';
 import { presentsAgentIdentity } from '../../middleware/agent-identity.js';
 
 /** The verified identity a caller presented, as the capability context and request facts carry it. */
@@ -61,4 +65,20 @@ export function personProof(
   if (!clearsTheAgentBar(facts)) return false;
   if (wifiTurnHeld(facts)) return false;
   return facts.user?.credential === 'cookie' && isInstallOwner(facts.user);
+}
+
+/**
+ * Whether a request is the owner's own sign-in on a Wi-Fi device the Wi-Fi hold holds (DOR-5070,
+ * Security's option 1): their cookie, from the app's own page, on a device not let run agents.
+ * It never proves the person ({@link personProof} stays false), so it mints no `person`
+ * authority. The to-do routes give it only the no-owner allowance: finish, reopen, note or reorder
+ * a to-do assigned to the person, which starts no agent turn (`todo-policy`).
+ *
+ * @param facts - The request's facts.
+ */
+export function heldWifiOwner(
+  facts: Parameters<typeof clearsTheAgentBar>[0] & WifiTurnFacts
+): boolean {
+  if (!clearsTheAgentBar(facts)) return false;
+  return wifiTurnHeld(facts) && isOwnerSignInOnWifi(facts);
 }
