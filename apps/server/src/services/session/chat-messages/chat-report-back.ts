@@ -77,13 +77,22 @@ import { lastTurnText } from './report-back/report-text.js';
 import { reasonOf } from './report-back/report-reason.js';
 import type { NotificationStoredWitness } from '../../notifications/notification-store.js';
 import { DurableReportBack } from './report-back/durable-report-back.js';
+import {
+  SUMMARY,
+  composeReport,
+  type ReportNotice,
+  type ReportReason,
+} from './report-back/report-words.js';
 
 export { lastTurnText } from './report-back/report-text.js';
 export { reasonOf } from './report-back/report-reason.js';
 export { spinOffBriefing } from './spin-off-briefing.js';
-
-/** The longest last message a report carries; the parent reads more with `chat_read`. */
-export const REPORT_TEXT_MAX = 6_000;
+export {
+  REPORT_TEXT_MAX,
+  composeReport,
+  type ReportNotice,
+  type ReportReason,
+} from './report-back/report-words.js';
 
 /** How long after a turn ends the report reads the chat's words, so the runtime has written them. */
 export const REPORT_SETTLE_MS = 750;
@@ -100,10 +109,6 @@ export const DEFER_MAX_MS = 15 * 60_000;
 /** The waits before each new try at a report that could not be delivered. */
 export const DELIVERY_RETRY_MS: readonly number[] = [5_000, 30_000, 120_000, 600_000, 1_800_000];
 
-/** Why a report went. */
-export type ReportReason =
-  'finished' | 'failed' | 'stopped' | 'limit' | 'needs-you' | 'holding' | 'never-started';
-
 /** A report that exhausted every delivery attempt. */
 export interface UndeliveredReport {
   /** Server-only SQLite witness; never part of the notification payload. */
@@ -118,30 +123,8 @@ export interface UndeliveredReport {
   /** The chat that started the spin-off and did not receive its report. */
   parentSessionId: string;
   /** Why the report went. */
-  reason: ReportReason;
+  reason: ReportNotice;
 }
-
-/** The status line each reason opens a report with. */
-const STATUS_LINE: Record<ReportReason, string> = {
-  finished: 'Finished this turn.',
-  failed: 'This turn failed.',
-  'never-started': 'Failed: never started.',
-  stopped: 'This turn was stopped.',
-  limit: 'Paused: the account this chat runs on hit its usage limit.',
-  'needs-you': 'Waiting on the person to answer before it can go on.',
-  holding: 'Ended this turn with background work still running. More may come.',
-};
-
-/** The Sent-card label each reason gets. */
-const SUMMARY: Record<ReportReason, string> = {
-  finished: 'Finished',
-  failed: 'Failed',
-  'never-started': 'Failed: never started',
-  stopped: 'Stopped',
-  limit: 'Paused at a usage limit',
-  'needs-you': 'Needs the person',
-  holding: 'Still working',
-};
 
 /** The parent a chat reports to, when it reports. */
 export interface ReportTarget {
@@ -225,24 +208,6 @@ interface DeferredReport {
 /** Wait, without holding the process open for it. */
 function unrefTimer(ms: number, run: () => void): void {
   setTimeout(run, ms).unref?.();
-}
-
-/**
- * The report a spin-off sends its parent.
- *
- * @param reason - Why it goes.
- * @param text - The spin-off's last words.
- * @param detail - A further line, when there is one (the question it waits on).
- */
-export function composeReport(reason: ReportReason, text: string, detail?: string): string {
-  const parts = [STATUS_LINE[reason]];
-  if (detail) parts.push(detail);
-  if (text) {
-    const cut = text.length > REPORT_TEXT_MAX;
-    parts.push(cut ? `${text.slice(0, REPORT_TEXT_MAX)}…` : text);
-    if (cut) parts.push('(Cut short. Read the rest with chat_read.)');
-  }
-  return parts.join('\n\n');
 }
 
 /** Spin-off chats reporting back. See the module documentation. */
@@ -470,6 +435,25 @@ export class ChatReportBack {
     else if (job) await this.durable.flushNotices();
   }
 
+  /**
+   * Correct a startup failure already sent: the chat's first turn has begun
+   * after all (DOR-4985). Sent once, by the startup deadline that sent the
+   * failure, through the same delivery and retry path.
+   */
+  async onStartedLate(sessionId: string, initialMarks: TurnMarks = NO_MARKS): Promise<void> {
+    if (this.stopped) return;
+    // Live delivery only: once per process, never replayed from the outbox after a restart.
+    const target = this.deps.reportTargetOf(sessionId);
+    if (target)
+      await this.report(
+        sessionId,
+        target,
+        'started-late',
+        mergeMarks(this.marksOfTurn(sessionId), initialMarks),
+        ''
+      );
+  }
+
   /** The marks the chat's latest turn carries. */
   private marksOfTurn(sessionId: string): TurnMarks {
     return this.deps.marksOfTurn?.(sessionId) ?? NO_MARKS;
@@ -630,7 +614,7 @@ export class ChatReportBack {
   private async report(
     sessionId: string,
     target: ReportTarget,
-    reason: ReportReason,
+    reason: ReportNotice,
     marks: TurnMarks,
     text: string,
     detail?: string,
@@ -638,7 +622,7 @@ export class ChatReportBack {
   ): Promise<void> {
     if (this.stopped) return;
     const message = composeReport(reason, text, detail);
-    if (jobId) {
+    if (jobId && reason !== 'started-late') {
       const journal = this.deps.outbox!.reports;
       const row = journal.get(jobId);
       if (!row) return;
@@ -684,7 +668,7 @@ export class ChatReportBack {
   private async deliver(
     sessionId: string,
     parent: string,
-    reason: ReportReason,
+    reason: ReportNotice,
     marks: TurnMarks,
     message: string
   ): Promise<void> {
