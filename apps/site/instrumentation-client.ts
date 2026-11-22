@@ -71,6 +71,9 @@ if (env.NEXT_PUBLIC_POSTHOG_KEY) {
     // `$exception`, captured here or by an error boundary, with its message
     // emptied. See src/lib/telemetry/before-send.ts.
     before_send: scrubAnalyticsEvent,
+    // The site uses no feature flags, and the flags request carries the raw
+    // landing address past before_send, so it is never made (DOR-4992).
+    advanced_disable_flags: true,
     // Turn on debug in development mode
     debug: env.NODE_ENV === 'development',
   });

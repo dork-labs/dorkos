@@ -132,7 +132,7 @@ export default function TelemetryPage() {
 
         <section className="space-y-4">
           <h2 className="text-charcoal font-mono text-xl font-semibold">
-            We tell you before anything sends
+            We tell you before any usage data sends
           </h2>
           <p className="text-warm-gray leading-relaxed">
             The very first time DorkOS starts, it prints a plain notice in its log: what it could

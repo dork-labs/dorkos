@@ -1,5 +1,5 @@
-import { MARKETPLACE_CATEGORIES, PackageTypeSchema } from '@dorkos/marketplace';
 import type { MarketplaceBrowseVisit } from '@/lib/analytics';
+import { isKnownCategory, isKnownPackageType } from '@/lib/telemetry/marketplace-filters';
 
 /** The catalog filters as they arrive in the page URL: any text at all. */
 export interface MarketplaceBrowseFilters {
@@ -8,13 +8,10 @@ export interface MarketplaceBrowseFilters {
   q?: string;
 }
 
-const KNOWN_TYPES: ReadonlySet<string> = new Set(PackageTypeSchema.options);
-const KNOWN_CATEGORIES: ReadonlySet<string> = new Set(MARKETPLACE_CATEGORIES);
-
-/** A value from a known list, `other` for anything else, `undefined` when absent. */
-function known(value: string | undefined, list: ReadonlySet<string>): string | undefined {
+/** A value that passes `isKnown`, `other` for anything else, `undefined` when absent. */
+function known(value: string | undefined, isKnown: (v: string) => boolean): string | undefined {
   if (value === undefined || value === '') return undefined;
-  return list.has(value) ? value : 'other';
+  return isKnown(value) ? value : 'other';
 }
 
 /**
@@ -33,8 +30,8 @@ export function toBrowseVisit(
   resultCount: number | null
 ): MarketplaceBrowseVisit {
   return {
-    type: known(filters.type, KNOWN_TYPES),
-    category: known(filters.category, KNOWN_CATEGORIES),
+    type: known(filters.type, isKnownPackageType),
+    category: known(filters.category, isKnownCategory),
     hasQuery: Boolean(filters.q?.trim()),
     resultCount,
   };

@@ -22,6 +22,8 @@ describe('instrumentation-client (DOR-4992)', () => {
     // Uncaught errors are captured automatically, so the scrub has to sit on
     // the send path rather than at each call site.
     expect(config.capture_exceptions).toBe(true);
+    // The flags request would carry the raw landing address past the hook.
+    expect(config.advanced_disable_flags).toBe(true);
 
     const beforeSend = config.before_send as BeforeSendFn;
     expect(typeof beforeSend).toBe('function');

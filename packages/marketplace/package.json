@@ -29,6 +29,10 @@
       "types": "./src/package-types.ts",
       "default": "./dist/package-types.js"
     },
+    "./categories": {
+      "types": "./src/categories.ts",
+      "default": "./dist/categories.js"
+    },
     "./marketplace-json-schema": {
       "types": "./src/marketplace-json-schema.ts",
       "default": "./dist/marketplace-json-schema.js"

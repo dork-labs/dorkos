@@ -53,7 +53,7 @@ DorkOS sends one small message to dorkos.ai about once a day. This is how we can
 
 The list above is the complete payload. It is enforced in code and in tests, so nothing sneaks in. It never includes your prompts, your code, file paths, your hostname or username, IP address, or anything from your chats. This is what makes it anonymous rather than personal. If we ever want to add a field, we update this page first.
 
-## We tell you before anything sends
+## We tell you before any usage data sends
 
 The first time DorkOS starts, it prints a plain notice in its log: what it could share, a link to the payload, and how to turn it on. No usage data is sent on that run, or on any run, until you say yes. On top of that, the code holds the three anonymous channels shut until the notice has actually been shown, so even switching one on cannot send before you have seen what it covers. Crash reports and AI run summaries are separate choices: each sends only after you turn it on.
 
@@ -173,7 +173,7 @@ export DORKOS_TELEMETRY_DISABLED=1
 
 Either one on its own is enough. When a kill switch is set, no channel sends anything even if its config flag is `true`. Either one also:
 
-- stops the update checks, both the one the `dorkos` command runs at start and the server's, which asks at most once an hour when the app requests it;
+- stops the update checks, both the one the `dorkos` command runs at start and the server's, which asks when it starts, then at most once an hour while it runs (sooner after a failed check);
 - is passed on to the agents: DorkOS passes `DO_NOT_TRACK=1`, `DISABLE_TELEMETRY=1`, and `DISABLE_ERROR_REPORTING=1` on to every Claude Code, Codex, and OpenCode agent it starts. What each of those programs does with them is up to that program.
 
 On the Mac app, DorkOS reads these variables from your login shell, so setting them in your shell profile works there too. On Windows, set them as a user or system environment variable.

@@ -25,6 +25,20 @@ describe('scrubUrl', () => {
     expect(scrubUrl('/marketplace?q=acme#x')).toBe('/marketplace');
   });
 
+  it('keeps the filters only on a dorkos.ai /marketplace page, and only real values', () => {
+    expect(scrubUrl('https://dorkos.ai/marketplace?type=acme&category=security')).toBe(
+      'https://dorkos.ai/marketplace?category=security'
+    );
+    expect(scrubUrl('https://dorkos.ai/docs?type=agent')).toBe('https://dorkos.ai/docs');
+    expect(scrubUrl('https://example.com/marketplace?type=agent')).toBe(
+      'https://example.com/marketplace'
+    );
+  });
+
+  it('leaves plain text that happens to hold a question mark alone', () => {
+    expect(scrubUrl('Ready?')).toBe('Ready?');
+  });
+
   it('leaves values with no query, and non-strings, alone', () => {
     expect(scrubUrl('https://dorkos.ai/docs')).toBe('https://dorkos.ai/docs');
     expect(scrubUrl('$direct')).toBe('$direct');
@@ -134,6 +148,39 @@ describe('scrubAnalyticsEvent', () => {
         { type: 'Error', value: '' },
       ],
       $exception_level: 'error',
+    });
+  });
+
+  it('finds a URL under any key, nested or not, including keys that are URLs', () => {
+    const sent = scrubAnalyticsEvent(
+      event('$web_vitals', {
+        $session_entry_url: SEARCH_URL,
+        $session_entry_referrer: `https://news.example.com/item?id=1&q=${SEARCH}#c`,
+        $web_vitals_LCP_event: { name: 'LCP', $current_url: SEARCH_URL },
+        $heatmap_data: {
+          [SEARCH_URL]: [{ x: 1, y: 2 }],
+          'https://dorkos.ai/marketplace?type=agent&category=security&q=other': [{ x: 3, y: 4 }],
+        },
+        list: [{ url: `https://dorkos.ai/marketplace?q=${SEARCH}` }],
+      })
+    );
+
+    expect(JSON.stringify(sent)).not.toMatch(/acme|other|id=1/);
+    expect(sent?.properties).toEqual({
+      $session_entry_url: 'https://dorkos.ai/marketplace?type=agent&category=security',
+      $session_entry_referrer: 'https://news.example.com/item',
+      $web_vitals_LCP_event: {
+        name: 'LCP',
+        $current_url: 'https://dorkos.ai/marketplace?type=agent&category=security',
+      },
+      // Two pages that scrub to the same address keep both sets of clicks.
+      $heatmap_data: {
+        'https://dorkos.ai/marketplace?type=agent&category=security': [
+          { x: 1, y: 2 },
+          { x: 3, y: 4 },
+        ],
+      },
+      list: [{ url: 'https://dorkos.ai/marketplace' }],
     });
   });
 

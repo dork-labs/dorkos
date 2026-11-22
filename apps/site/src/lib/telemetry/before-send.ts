@@ -5,55 +5,65 @@
  * sends on its own would break that, so every event passes through
  * {@link scrubAnalyticsEvent} on its way out:
  *
- * - **Page URLs.** Every event carries the page's URL (`$current_url`, and the
- *   first one a visitor landed on in `$initial_current_url`), and the URL can
- *   carry a search, like `/marketplace?q=…`. Each URL property keeps only the
- *   two catalog filters (`type`, `category`) and loses the rest of its query
- *   string and its hash. Campaign tags survive: PostHog records them as their
- *   own `utm_*` properties before this hook runs.
+ * - **URLs.** PostHog puts the page's address on events under many names
+ *   (`$current_url`, `$initial_current_url`, `$session_entry_url`, the
+ *   referrers, web-vitals and heatmap payloads keyed by URL), and an address
+ *   can carry a search, like `/marketplace?q=…`. Rather than trust a list of
+ *   names, the hook walks every property, value and key, nested ones too, and
+ *   scrubs anything that reads as an address: a dorkos.ai `/marketplace` page
+ *   keeps its `type` and `category` filters when they name a real type or
+ *   category; every other address loses its whole query string and hash.
+ *   Campaign tags survive: PostHog records them as their own `utm_*`
+ *   properties before this hook runs.
  * - **Error text.** PostHog Error Tracking captures uncaught errors itself
  *   (`capture_exceptions` in `instrumentation-client.ts`) as well as the ones
  *   the error boundaries hand it. Each `$exception` leaves with its message
- *   emptied, the fields that repeat it dropped, and the query strings taken
- *   off its stack frames' URLs (an inline script's frame names the page URL).
+ *   emptied and the fields that repeat it dropped; the walk above takes the
+ *   query strings off its stack frames' URLs.
  *
  * @module lib/telemetry/before-send
  */
 import type { CaptureResult } from 'posthog-js';
 
-/** The query parameters a URL property may keep: the catalog's own filters. */
-const KEPT_PARAMS = ['type', 'category'] as const;
+import { isKnownCategory, isKnownPackageType } from './marketplace-filters';
 
-/** Event properties that hold a URL PostHog read from the browser. */
-const URL_PROPERTIES = [
-  '$current_url',
-  '$referrer',
-  '$initial_current_url',
-  '$initial_referrer',
-  '$pathname',
-  '$initial_pathname',
+/** The catalog filters a dorkos.ai marketplace address may keep, with their check. */
+const KEPT_PARAMS = [
+  ['type', isKnownPackageType],
+  ['category', isKnownCategory],
 ] as const;
+
+/** Hosts whose `/marketplace` addresses keep their catalog filters. */
+const OWN_HOSTS = new Set(['dorkos.ai', 'www.dorkos.ai']);
+
+/** How deep the walk goes; PostHog's payloads are a few levels at most. */
+const MAX_DEPTH = 8;
 
 /** Fields PostHog may put on an `$exception` that carry message text. */
 const MESSAGE_FIELDS = ['$exception_message', '$exception_values', '$exception_steps'] as const;
 
-/** Stack frame fields that hold a script URL. */
-const FRAME_URL_FIELDS = ['filename', 'abs_path'] as const;
-
 /** A throwaway origin so a bare path still parses as a URL. */
-const PATH_BASE = 'https://path.invalid';
+const PATH_BASE = 'https://dorkos.ai';
+
+/** Whether a host is this site: dorkos.ai, or the deploy the page runs on. */
+function isOwnHost(host: string): boolean {
+  if (OWN_HOSTS.has(host)) return true;
+  return typeof window !== 'undefined' && window.location?.hostname === host;
+}
 
 /**
- * Cut a URL down to what analytics may keep: no hash, and no query parameter
- * except `type` and `category`. Anything that is not a string, or carries no
- * `?` or `#`, comes back as it was. A value that does not parse loses
- * everything from its first `?` or `#`.
+ * Cut an address down to what analytics may keep. A dorkos.ai `/marketplace`
+ * address keeps `type` and `category` when each names a real package type or
+ * catalog category; anything else keeps no query at all, and nothing keeps
+ * its hash. A string that is not an absolute http(s) address or a path, or
+ * that carries no `?` or `#`, comes back as it was.
  *
- * @param value - A URL, a path, or anything else PostHog put in a URL field.
+ * @param value - Any property value.
  */
 export function scrubUrl(value: unknown): unknown {
   if (typeof value !== 'string' || !/[?#]/.test(value)) return value;
-  const isPath = value.startsWith('/');
+  const isPath = value.startsWith('/') && !value.startsWith('//');
+  if (!isPath && !/^https?:\/\//i.test(value)) return value;
   let url: URL;
   try {
     url = new URL(value, isPath ? PATH_BASE : undefined);
@@ -61,74 +71,64 @@ export function scrubUrl(value: unknown): unknown {
     return value.replace(/[?#][\s\S]*$/, '');
   }
   const kept = new URLSearchParams();
-  for (const key of KEPT_PARAMS) {
-    const v = url.searchParams.get(key);
-    if (v !== null) kept.set(key, v);
+  const ours = isPath || isOwnHost(url.hostname);
+  if (ours && (url.pathname === '/marketplace' || url.pathname === '/marketplace/')) {
+    for (const [key, isKnown] of KEPT_PARAMS) {
+      const v = url.searchParams.get(key);
+      if (v !== null && isKnown(v)) kept.set(key, v);
+    }
   }
   const query = kept.toString();
   const base = isPath ? url.pathname : `${url.origin}${url.pathname}`;
   return query ? `${base}?${query}` : base;
 }
 
-/** Scrub every URL property in one property bag (top level, `$set`, `$set_once`). */
-function scrubUrlProperties(bag: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = { ...bag };
-  for (const key of URL_PROPERTIES) {
-    if (key in out) out[key] = scrubUrl(out[key]);
-  }
-  const info = out.$initial_person_info;
-  if (info && typeof info === 'object') {
-    const { u, r, ...rest } = info as { u?: unknown; r?: unknown };
-    out.$initial_person_info = { ...rest, u: scrubUrl(u), r: scrubUrl(r) };
-  }
-  return out;
-}
-
-/** Strip the query and hash off a stack frame's script URL fields. */
-function scrubFrame(frame: unknown): unknown {
-  if (!frame || typeof frame !== 'object') return frame;
-  const out: Record<string, unknown> = { ...(frame as Record<string, unknown>) };
-  for (const key of FRAME_URL_FIELDS) {
-    if (typeof out[key] === 'string') out[key] = (out[key] as string).replace(/[?#][\s\S]*$/, '');
+/**
+ * Scrub every string in a value, nested objects and arrays included, and every
+ * object key that is itself an address. Two keys that scrub to the same address
+ * keep both values: arrays are joined, anything else keeps the last one. Past
+ * {@link MAX_DEPTH} a branch is dropped rather than sent unread.
+ */
+function scrubDeep(value: unknown, depth: number): unknown {
+  if (typeof value === 'string') return scrubUrl(value);
+  if (value === null || typeof value !== 'object') return value;
+  if (depth >= MAX_DEPTH) return undefined;
+  if (Array.isArray(value)) return value.map((item) => scrubDeep(item, depth + 1));
+  if (value instanceof Date) return value;
+  const out: Record<string, unknown> = {};
+  for (const [rawKey, rawValue] of Object.entries(value)) {
+    const key = scrubUrl(rawKey) as string;
+    const next = scrubDeep(rawValue, depth + 1);
+    const prev = out[key];
+    out[key] = Array.isArray(prev) && Array.isArray(next) ? [...prev, ...next] : next;
   }
   return out;
 }
 
-/** Empty one `$exception_list` entry's message and clean its frames. */
-function scrubException(entry: unknown): unknown {
-  if (!entry || typeof entry !== 'object') return entry;
-  const out: Record<string, unknown> = { ...(entry as Record<string, unknown>), value: '' };
-  const stacktrace = out.stacktrace as { frames?: unknown } | undefined;
-  if (stacktrace && typeof stacktrace === 'object' && Array.isArray(stacktrace.frames)) {
-    out.stacktrace = { ...stacktrace, frames: stacktrace.frames.map(scrubFrame) };
-  }
-  return out;
+/** Empty one `$exception_list` entry's message. */
+function emptyMessage(entry: unknown): unknown {
+  return entry && typeof entry === 'object' ? { ...entry, value: '' } : entry;
 }
 
 /**
- * PostHog `before_send` hook: scrub page URLs on every event, and error text
- * on every `$exception`, keeping the type, level and frames Error Tracking
- * groups on. A `null` (an event an earlier hook dropped) passes through.
+ * PostHog `before_send` hook: scrub every address in the event, and the error
+ * text on every `$exception`, keeping the type, level and frames Error
+ * Tracking groups on. A `null` (an event an earlier hook dropped) passes
+ * through.
  *
  * @param event - The event PostHog is about to send.
  */
 export function scrubAnalyticsEvent(event: CaptureResult | null): CaptureResult | null {
   if (!event) return event;
-  let properties = scrubUrlProperties({ ...event.properties });
-  for (const key of ['$set', '$set_once'] as const) {
-    const bag = properties[key];
-    if (bag && typeof bag === 'object') {
-      properties[key] = scrubUrlProperties(bag as Record<string, unknown>);
-    }
-  }
+  const properties = scrubDeep(event.properties ?? {}, 0) as Record<string, unknown>;
   if (event.event === '$exception') {
     for (const field of MESSAGE_FIELDS) delete properties[field];
     const list = properties.$exception_list;
-    if (Array.isArray(list))
-      properties = { ...properties, $exception_list: list.map(scrubException) };
+    if (Array.isArray(list)) properties.$exception_list = list.map(emptyMessage);
   }
   const scrubbed: CaptureResult = { ...event, properties };
-  if (event.$set) scrubbed.$set = scrubUrlProperties(event.$set);
-  if (event.$set_once) scrubbed.$set_once = scrubUrlProperties(event.$set_once);
+  if (event.$set) scrubbed.$set = scrubDeep(event.$set, 0) as CaptureResult['$set'];
+  if (event.$set_once)
+    scrubbed.$set_once = scrubDeep(event.$set_once, 0) as CaptureResult['$set_once'];
   return scrubbed;
 }
