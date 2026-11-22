@@ -367,6 +367,25 @@ describe('ActionStepUpHost', () => {
     await expect(outcome).resolves.toEqual({ kind: 'not-confirmed' });
   });
 
+  it('shows a mini app’s name as plain text: its author picks it (DOR-4906)', async () => {
+    const name = '<img src="x" alt="planted">Notes';
+    heldWith(
+      {
+        ...VIEW,
+        methods: [],
+        passwordUnavailable: 'extension-risk',
+        blockedBy: [{ id: 'notes', name, reason: 'changed' }],
+      },
+      [200, { ok: true, status: 200, result: {} }]
+    );
+    render(<ActionStepUpHost />);
+    void ask();
+    expect(
+      await screen.findByText(`Confirming is off while ${name} has changed since you approved it.`)
+    ).toBeTruthy();
+    expect(screen.queryByAltText('planted')).toBeNull();
+  });
+
   it('after a mini app ran since sign-in, drops this hold and asks to sign in again', async () => {
     const fetchSpy = heldWith(
       { ...VIEW, methods: [], passwordUnavailable: 'extension-risk', blockedBy: [] },

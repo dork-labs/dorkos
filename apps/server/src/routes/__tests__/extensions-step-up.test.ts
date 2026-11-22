@@ -51,6 +51,8 @@ function record(id: string, folder: string, extra: Partial<ExtensionRecord> = {}
     origin: 'user',
     path: folder,
     realPath: folder,
+    // From a source the person trusts outright, so its bundle is served.
+    trustedOrigin: { plugin: 'kit', source: 'made-up/kit' },
     ...extra,
   } as unknown as ExtensionRecord;
 }
@@ -75,7 +77,11 @@ beforeEach(() => {
   records = [record('social-queue', folder)];
   setStepUpExtensionRiskInputs(() => ({
     records,
-    approvals: {},
+    extensions: {
+      approvedToRun: [],
+      approvedSources: {},
+      trustedSources: [{ source: 'made-up/kit', trustedAt: '2026-11-01T00:00:00.000Z' }],
+    },
     agents: [{ path: agentHome, name: 'dorkos-marketing' }],
   }));
   reload.mockClear();

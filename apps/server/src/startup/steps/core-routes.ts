@@ -725,7 +725,7 @@ export function mountCoreRoutes(refs: ServerRefs, built: MountCoreRoutesInput) {
   useStepUpRiskLedgerFile(path.join(dorkHome, 'step-up', 'risk-ledger.json'));
   setStepUpExtensionRiskInputs(() => ({
     records: refs.extensionManager?.listRecords() ?? [],
-    approvals: configManager.get('extensions')?.approvedSources ?? {},
+    extensions: configManager.get('extensions') ?? { approvedToRun: [], approvedSources: {} },
     agents: (refs.meshCore?.listWithPaths() ?? []).map((agent) => ({
       path: agent.projectPath,
       name: agent.displayName ?? agent.name,
