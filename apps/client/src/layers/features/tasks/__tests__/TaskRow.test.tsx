@@ -1226,5 +1226,31 @@ describe('TaskRow: a task capped for a changed SKILL file (DOR-3703, M4)', () =>
       fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
       await waitFor(() => expect(approveTaskFile).toHaveBeenCalledWith('sched-1', null, HASH));
     });
+
+    it('shows every hidden character in the reviewed file as a marker, and Approve binds to the server’s hash (DOR-5060)', async () => {
+      // A zero-width space, a bidi override, and a tag character: the last is
+      // invisible to a person but read as text by a model.
+      const hidden = [0x200b, 0x202e, 0xe0041].map((cp) => String.fromCodePoint(cp));
+      const approveTaskFile = vi.fn().mockResolvedValue(activeSchedule);
+      renderScheduleRow(
+        {
+          ...activeSchedule,
+          fileCapNext: true,
+          fileReview: { hash: HASH, previous: null, current: `pay${hidden.join('the')}invoice` },
+        },
+        {},
+        createMockTransport({ approveTaskFile })
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Review file' }));
+      await screen.findByText('Review the file');
+      const line = document.querySelector('[data-slot="task-file-cap-diff"] [data-kind]')!;
+      expect(line.textContent).toContain('<U+200B>');
+      expect(line.textContent).toContain('<U+202E>');
+      expect(line.textContent).toContain('<U+E0041>');
+      for (const ch of hidden) expect(line.textContent).not.toContain(ch);
+      fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+      // What was shown is the markers; what is approved is the server's hash of the real bytes.
+      await waitFor(() => expect(approveTaskFile).toHaveBeenCalledWith('sched-1', null, HASH));
+    });
   });
 });
