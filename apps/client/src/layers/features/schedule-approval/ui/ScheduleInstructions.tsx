@@ -1,8 +1,13 @@
 import { ChevronRight } from 'lucide-react';
 import type { Task } from '@dorkos/shared/types';
-import { revealHiddenCharacters } from '@dorkos/shared/marketplace-schemas';
 import { cn } from '@/layers/shared/lib';
-import { Button, Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/layers/shared/ui';
+import {
+  Button,
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+  HiddenCharacterText,
+} from '@/layers/shared/ui';
 import { ScheduleRunPermissions } from './ScheduleRunPermissions';
 
 const SCROLL_EDGE_SHADOW = [
@@ -80,9 +85,9 @@ export function ScheduleInstructions({
               ]
             )}
           >
-            {/* Hidden characters shown, as the file review shows them: a yes
-                here vouches for exactly these bytes (DOR-5060). */}
-            {revealHiddenCharacters(task.prompt)}
+            {/* Hidden characters shown as chips, as the file review shows them:
+                a yes here vouches for exactly these bytes (DOR-5060, DOR-5075). */}
+            <HiddenCharacterText text={task.prompt} />
           </pre>
         </div>
       ) : (
@@ -127,7 +132,7 @@ export function ScheduleInstructions({
               data-slot="schedule-prompt"
               className="bg-muted/60 text-foreground/90 text-2xs mt-1.5 max-h-48 overflow-auto rounded-md p-2 font-mono break-words whitespace-pre-wrap"
             >
-              {revealHiddenCharacters(task.prompt)}
+              <HiddenCharacterText text={task.prompt} />
             </pre>
           </CollapsibleContent>
         </Collapsible>
