@@ -268,7 +268,11 @@ describe('BindingRouter', () => {
       createdAt: '2026-01-01T00:00:00.000Z',
     };
     await capturedHandler!(envelope);
-    expect(mockAgentManager.createSession).toHaveBeenCalledWith(AGENT_CWD, 'acceptEdits');
+    expect(mockAgentManager.createSession).toHaveBeenCalledWith(
+      AGENT_CWD,
+      'acceptEdits',
+      AGENT_PATH
+    );
     expect(mockRelayCore.publish).toHaveBeenCalledWith(
       'relay.agent.claude-code.session-abc',
       expect.objectContaining({ text: 'hello', cwd: AGENT_CWD }),

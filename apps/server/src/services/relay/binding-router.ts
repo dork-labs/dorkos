@@ -73,13 +73,17 @@ function hasEmptyContent(payload: unknown): boolean {
 /** Minimal interface for AgentManager session creation. */
 export interface AgentSessionCreator {
   /**
-   * @param cwd - Working directory for the new session, which is also where the
-   *   answering agent's `.dork/agent.json` lives.
-   * @param permissionMode - Required, and deliberately so: an optional mode here
+   * @param cwd - Working directory for the new session: the folder the
+   *   session-cwd chain placed the agent in (its home, a managed checkout, or
+   *   the default folder).
+   * @param mode - Required, and deliberately so: an optional mode here
    *   invited a second `?? 'acceptEdits'` fallback to decide it (DOR-604). The
    *   caller resolves it from the binding, which always carries one.
+   * @param agentPath - The binding's agent's home, as Mesh lists it. The chat
+   *   records this as its agent, and its manifest is read from here, never from
+   *   `cwd` (DOR-5055).
    */
-  createSession(cwd: string, permissionMode: PermissionMode): Promise<{ id: string }>;
+  createSession(cwd: string, mode: PermissionMode, agentPath: string): Promise<{ id: string }>;
 }
 
 /** Minimal interface for RelayCore publish and subscription. */
@@ -1166,8 +1170,8 @@ export class BindingRouter {
       projectPath,
       cwd,
     });
-    const session = await this.deps.agentManager.createSession(cwd, binding.permissionMode);
-    return session.id;
+    const { agentManager } = this.deps;
+    return (await agentManager.createSession(cwd, binding.permissionMode, projectPath)).id;
   }
 
   private async loadSessionMap(): Promise<void> {
