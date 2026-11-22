@@ -69,6 +69,12 @@ export interface PromptUndo {
 export interface FileAttestation {
   /** `sha256:<base64url>` of the body the task reads (`file-cap/file-hash.ts`). */
   hash: string;
+  /**
+   * The same hash of the body with only a formatter's spacing taken out
+   * (`normalizedBodyHash`, DOR-5060): what a later read is compared with.
+   * Absent on an attestation from before it.
+   */
+  normHash?: string;
   /** The task's own agent through the task tools, a person, or the first read (M5). */
   by: 'agent' | 'person' | 'baseline';
   /** When. */

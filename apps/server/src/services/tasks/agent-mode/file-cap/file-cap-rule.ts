@@ -7,6 +7,9 @@
  *   tools from an ordinary turn, or a person, writes it. The first read of a
  *   row that has none records the file as it is (M5), so nothing changes at
  *   upgrade. The file sync never writes it (M8).
+ * - A body matches it when it is the same once only a formatter's spacing is
+ *   taken out (DOR-5060, Security's ruling of Nov 22): a Prettier pass over
+ *   the file is no change. The exact hash is kept beside it for the audit.
  * - A file that no longer hashes to it (a raw edit, another writer) does not
  *   park the task: its runs go on, capped at Don't ask (`run-cap.ts`).
  * - Which tasks: every task WITH an agent (Security's ruling of Nov 3, round
@@ -19,11 +22,17 @@
  *
  * @module services/tasks/agent-mode/file-cap/file-cap-rule
  */
-import type { Task } from '@dorkos/shared/types';
+import type { Task, TaskFileReview } from '@dorkos/shared/types';
 import type { TaskStore } from '../../task-store.js';
 import { agentModeControlOn } from '../agent-mode-actions.js';
 import { readAgentModeColumn, type FileAttestation } from '../agent-mode-record-field.js';
-import { bodyHash, KEPT_BODY_CHARS, readFileState, type FileState } from './file-hash.js';
+import {
+  bodyHash,
+  KEPT_BODY_CHARS,
+  normalizedBodyHash,
+  readFileState,
+  type FileState,
+} from './file-hash.js';
 
 /**
  * Whether a changed SKILL file still parks a task with no agent (the ruling's
@@ -52,6 +61,23 @@ export function fileEditsRunCapped(task: FileCapSubject): boolean {
   return !!task.agentId || !NO_AGENT_TASKS_PARK_ON_RAW_EDIT;
 }
 
+/**
+ * Whether a body is the one an attestation vouched for: the same bytes, or the
+ * same once only a formatter's spacing is taken out (DOR-5060). An attestation
+ * from before the normalized hash is read off the body it kept, and only while
+ * that body still hashes to what it attested; without one, only the same bytes
+ * match.
+ *
+ * @param body - The file's body, or the prompt the run sends.
+ * @param attest - The attestation.
+ */
+export function bodyMatchesAttest(body: string, attest: FileAttestation): boolean {
+  if (bodyHash(body) === attest.hash) return true;
+  const kept = attest.body !== undefined && bodyHash(attest.body) === attest.hash;
+  const norm = attest.normHash ?? (kept ? normalizedBodyHash(attest.body!) : undefined);
+  return norm !== undefined && normalizedBodyHash(body) === norm;
+}
+
 /** Where the rule reads and writes its records. */
 export type FileCapStore = Pick<TaskStore, 'approvals'>;
 
@@ -70,6 +96,7 @@ export function attestationOf(
 ): FileAttestation {
   return {
     hash: state.hash,
+    normHash: normalizedBodyHash(state.body),
     by,
     at: new Date().toISOString(),
     ...(agentPath ? { agentPath } : {}),
@@ -143,31 +170,41 @@ export async function runsCappedForFile(
   if (!fileEditsRunCapped(task)) return false;
   const column = store.approvals.agentModeColumnOf(task.id);
   const state = await readFileState(task.filePath);
-  const runs = bodyHash(task.prompt);
-  if (column.fileAttest) {
-    return state?.hash !== column.fileAttest.hash || runs !== column.fileAttest.hash;
+  const attest = column.fileAttest;
+  if (attest) {
+    return (
+      !state || !bodyMatchesAttest(state.body, attest) || !bodyMatchesAttest(task.prompt, attest)
+    );
   }
-  return !state || state.hash !== runs || column.syncedPrompt === state.hash;
+  return !state || state.hash !== bodyHash(task.prompt) || column.syncedPrompt === state.hash;
 }
 
 /**
  * Whether the task's next run would be capped until a person approves its file
  * (`Task.fileCapNext`), read off the row alone, with no file read: capped now,
  * or no attestation covers the prompt it runs (one the sync folded in never
- * becomes a baseline, M-B). Nothing where the cap does not apply.
+ * becomes a baseline, M-B). Nothing where the cap does not apply. With no cap
+ * standing yet, also the review a person approves the file from (DOR-5060).
  *
  * @param row - The schedule row: its agent, file, prompt and agent-mode column.
  */
 export function fileCapNextOf(
   row: FileCapSubject & { prompt: string; agentModeRecord: string | null }
-): { fileCapNext?: boolean } {
+): { fileCapNext?: boolean; fileReview?: TaskFileReview } {
   if (!fileEditsRunCapped(row)) return {};
   const column = readAgentModeColumn(row.agentModeRecord);
-  const runs = bodyHash(row.prompt);
   const next =
     column.fileCap !== undefined ||
-    (column.fileAttest ? column.fileAttest.hash !== runs : column.syncedPrompt === runs);
-  return { fileCapNext: next };
+    (column.fileAttest
+      ? !bodyMatchesAttest(row.prompt, column.fileAttest)
+      : column.syncedPrompt === bodyHash(row.prompt));
+  if (!next || column.fileCap) return { fileCapNext: next };
+  const fileReview: TaskFileReview = {
+    hash: bodyHash(row.prompt),
+    previous: column.fileAttest?.body ?? null,
+    current: row.prompt.length <= KEPT_BODY_CHARS ? row.prompt : null,
+  };
+  return { fileCapNext: next, fileReview };
 }
 
 /**
@@ -188,7 +225,10 @@ export async function fileChangedWhileSwitchedOff(
   if (agentModeControlOn() || !task.filePath) return false;
   const column = store.approvals.agentModeColumnOf(task.id);
   if (column.fileCap) return true;
-  if (!column.fileAttest) return false;
+  const attest = column.fileAttest;
+  if (!attest) return false;
   const state = await readFileState(task.filePath);
-  return state?.hash !== column.fileAttest.hash || bodyHash(task.prompt) !== column.fileAttest.hash;
+  return (
+    !state || !bodyMatchesAttest(state.body, attest) || !bodyMatchesAttest(task.prompt, attest)
+  );
 }

@@ -126,6 +126,7 @@ export type {
   TaskHealth,
   TaskRunTrigger,
   Task,
+  TaskFileReview,
   TaskRun,
   CancelTaskRunResponse,
   TaskTemplate,
