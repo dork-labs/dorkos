@@ -1,0 +1,53 @@
+---
+title: DorkOS 0.140.1
+description: Approve an updated mini app again, and room hand-offs and spin-off reports survive a restart.
+date: 2026-11-22
+author: DorkOS Team
+category: release
+tags: [release, security, mini-apps, rooms]
+---
+
+DorkOS 0.140.1 lets you approve an updated mini app again: a mini app waiting for your OK no longer turns off "Confirm it’s you". Room hand-offs and spin-off reports that are still waiting now survive a restart.
+
+## All Changes
+
+### Note for people upgrading
+
+- **After you update, sign in again and reload the page in each open browser before you confirm it's you there.** (DOR-4906)
+- **A mini app from a GitHub plugin, like Flow, that you use in more than one place may pause.** If a copy in another project, or one installed for every project, has different files from the copy you allowed, or you allowed it before version 0.127, it waits for your OK in Activity. (DOR-4895)
+- Known issue: Flow can't ask you questions in the Inbox until you update it to its next version and allow Inbox cards.
+- In a room bridged to Telegram or Slack, your own phone's posts still count as someone else's for now, so agents can't use the Agent browser for those turns. Ask from a direct chat instead. (DOR-4453)
+- On Linux, Codex at Full access doesn't start if Claude Code has run on the same machine, and that includes the Docker image. Use Ask first or Workspace write there for now. We're fixing it (DOR-3965).
+- Codex in Docker doesn't work on Ubuntu or Debian yet, even with the new profile: their AppArmor rules block its sandbox. The chat says "Codex can’t run in this Docker setup yet". Leave AppArmor as it is, and use Claude Code or run DorkOS outside Docker for now. We're fixing it (DOR-4836).
+- On a Mac, Codex chats can't delete or move folders (rm -r, rmdir, mv). We're fixing it (DOR-4358).
+- Known issue: offline, OpenCode's first turn in a new folder can take about a minute. Online, the first turn waits about 10 seconds once. A fix is coming in a later release (DOR-4422).
+- Known issue: Codex won't start in a folder whose Git path has `* ? [ ] { }` in its name, like `site [old]`, or in a worktree whose Git folder is gone, at any level. Use another folder for now. We're fixing it (DOR-4542).
+
+### Security
+
+- If you allowed a mini app from a GitHub plugin, a copy of it in another project, or one installed for every project, now runs on that OK only when its files are the same. A different version waits for your own OK in Activity, and that mini app is paused until then, unless you trust its source. The update card says this for its mini apps. (DOR-4895)
+- A Claude Code agent's file editing tools are blocked in a folder you linked for development, in a chat that read words from someone other than you, like a shared room, and in a turn that runs under a limit. (DOR-4896)
+- Setting `DO_NOT_TRACK=1` or `DORKOS_TELEMETRY_DISABLED=1` now also turns off the DorkOS server's check for a newer version, and the same check in the `dorkos` command. The desktop app's own updater still checks for new versions. With either set, DorkOS passes `DO_NOT_TRACK=1`, `DISABLE_TELEMETRY=1` and `DISABLE_ERROR_REPORTING=1` on to Claude Code, Codex and OpenCode. (DOR-4990)
+- The `dorkos` command now honours `DORKOS_UPDATE_CHECK_DISABLED=1`, the same switch the DorkOS server already had. (DOR-4990)
+- On the Mac app, a `DO_NOT_TRACK` you set in your shell's startup file now reaches DorkOS too. Before, only a terminal start picked it up. (DOR-4990)
+
+### Fixed
+
+- **A mini app waiting for your OK no longer turns off "Confirm it’s you".** Before, approving an updated mini app could fail because of that same update, or because of another app's update. DorkOS never loads a waiting app's new code into the page. A mini app that is running changed code still turns confirming off, and DorkOS names it. (DOR-4906)
+- If you close "Confirm it’s you" without confirming, the app now says nothing changed. In the Mac app, the sheet names the "Confirm it’s you" window and says closing it changes nothing. (DOR-4909)
+- A hand-off waiting on a busy room seat, or a report waiting to come back from a spin-off chat, now survives a server restart. If one can’t safely pick up where it left off, you get a notice instead of silence. (DOR-3816)
+- An agent's chat started with only a folder, for example from the API or the command line, can now hand a post to the agent's place in a room. When DorkOS can't accept a hand-off, the message now says what's missing. (DOR-5035)
+- When every agent slot on your computer is busy, a chat one agent starts for another waits in line, and that wait no longer counts against its five-minute start limit. If a chat was reported as never started and then starts, the agent that started it hears "started after all", once. (DOR-4985)
+- A message waiting in a chat's queue keeps its limits when you pause the agent or DorkOS restarts. When it runs, it still says it came from outside your team, so a refusal names that instead of showing a plain approval card. (DOR-4350)
+- Before you save who can use an app, one line says what will happen, like "Scout keeps Apify. Every other agent loses it." The same line shows after you save. An agent ticked because it has its own access says **Own access**. (DOR-4899)
+- You get a new notice if a schedule succeeds and then fails again, even when runs start at the same time. (DOR-4907)
+- A new agent's first chat shows "New chat" as its title until you write, not a code tag. Chats that already had the tag show "New chat" too. (DOR-4976)
+
+### Going back
+
+0.140.1 adds two database changes: the limits a queued message carries, and a list of hand-offs and reports waiting to be delivered. To go back, install 0.140.0. It ignores them and starts normally.
+
+- If an agent is paused when you go back, resume it and check its queued messages first. 0.140.0 runs them without the limits they carried.
+- A hand-off or spin-off report that is still waiting is dropped, with no notice.
+- A different version of a GitHub plugin's mini app runs again without asking, if you allowed another version.
+- Approving an updated mini app can turn off "Confirm it’s you" again. If you come back to 0.140.1, sign in again and reload the page in each open browser before you confirm.
