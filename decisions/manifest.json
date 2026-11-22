@@ -7893,6 +7893,18 @@
         "packages/shared/src/community-wire.ts",
         "packages/test-utils/src/community-conformance.ts"
       ]
+    },
+    {
+      "id": "261122-161025",
+      "slug": "one-work-order-computed-from-linear",
+      "title": "Compute one work order from Linear with one function",
+      "status": "proposed",
+      "created": "2026-11-22",
+      "extractedFrom": null,
+      "specSlug": null,
+      "supersedes": null,
+      "amends": null,
+      "affects": ["contributing/prioritization.md", ".agents/flow/config.json"]
     }
   ]
 }
