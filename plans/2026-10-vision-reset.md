@@ -104,7 +104,7 @@ These replace most of the earlier headline copy. Ownership is said as "yours", n
     - The proof it works: the LifeOS and Tangerines dashboards, and the flow plugin.
     - This is core, and every agent knows how to build these.
 16. **Everything is a plugin.** The marketplace has one package type. A plugin lists what it contains (skills, agents, mini apps, connections, hooks, CLI commands, schedules and so on), and you can filter by contents.
-17. **Everything is programmable.** With the right key, a person or agent can control all of a local or remote DorkOS, through a CLI, an SDK and API, and GraphQL queries over everything with live subscriptions to any event. Each account has its own API keys, kept in its own vault, limited to its access level, never shared, rotated by the account and expiring by policy. MCP stays as the way agents get started.
+17. **Everything is programmable.** With the right key, a person or agent can control all of a local or remote DorkOS, through a CLI, an SDK and API, and GraphQL queries over everything with live subscriptions to any event. Each account has its own API keys, kept in its own vault, limited to its access level, never shared, rotated by the account and expiring by policy. MCP stays as the way agents get started. _Note, 2026-11-21:_ this now rests on the work graph (the links between agents, chats and work items) and the one-source rule: the capability registry plus the entity-and-edge model is the source, and REST, MCP, the CLI and a read-only GraphQL (last, once an outside SDK needs it) are projected from it; there is no raw database access. The proposed ADR drafts are in `research/20261121_architecture-target-design.md`; tracked as DOR-4966 and DOR-4973 (DOR-2754 was canceled on 2026-11-10).
 18. **Decision models as first-line support** (research: [`research/20261006_decision-models.md`](../research/20261006_decision-models.md)). Fast, cheap decision models make the quick calls first: moderation, spam, "is this conversation stuck?", routing and more. Only the hard cases go up to a frontier model, and then to a person or agent with authority, like tier-1 and tier-2 support. Users pick which decision model to use. Every decision is recorded in the audit trail. The first users are the loop-guard judge and community moderation in watch-only mode.
 19. **DorkOS first, ready in under a minute** (2026-10-07).
     - **No outside subscription needed.** New users run on DorkOS: account, DorkOS Cloud and DorkOS's own AI. DorkOS's own products and services come first everywhere in the app. Using your own Claude, ChatGPT or OpenRouter is the second option.
@@ -148,7 +148,7 @@ These replace most of the earlier headline copy. Ownership is said as "yours", n
 
 1. Move the server from Express to Hono, then merge it with the space server: one program, one app.
 2. Equal accounts: access levels, role and responsibilities on profiles, per-account API keys, agents creating agents.
-3. Everything programmable: CLI, SDK and API, GraphQL queries and event subscriptions.
+3. Everything programmable: CLI, SDK and API, GraphQL queries and event subscriptions (since 2026-11-21: on the work graph and the one-source rule, DOR-4966 and DOR-4973).
 4. One message system (Relay into conversations).
 5. Groups, projects, tasks and tiered goals, plus the health check.
 6. Vault, email and phone as account features; agents own their outside accounts.
