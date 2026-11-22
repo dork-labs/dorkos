@@ -20,9 +20,14 @@
 
 import { z } from 'zod';
 
-const MAX_NAME_LEN = 64;
+/**
+ * The longest `packageName` or `marketplace` the route accepts. A sender
+ * replaces a longer one with a placeholder rather than have the event refused.
+ */
+export const MAX_INSTALL_NAME_LEN = 64;
 const MAX_ERROR_CODE_LEN = 64;
 const MAX_VERSION_LEN = 32;
+
 /**
  * The longest install duration the route accepts, in milliseconds. A sender
  * clamps a slower install to this rather than have the event refused.
@@ -80,8 +85,8 @@ export type InstallTelemetryPackageType = (typeof INSTALL_TELEMETRY_PACKAGE_TYPE
  * anonymous per-machine id, never a user id.
  */
 export const InstallTelemetryEventSchema = z.object({
-  packageName: z.string().min(1).max(MAX_NAME_LEN),
-  marketplace: z.string().min(1).max(MAX_NAME_LEN),
+  packageName: z.string().min(1).max(MAX_INSTALL_NAME_LEN),
+  marketplace: z.string().min(1).max(MAX_INSTALL_NAME_LEN),
   type: z.enum(INSTALL_TELEMETRY_PACKAGE_TYPES),
   outcome: z.enum(['success', 'failure', 'cancelled']),
   durationMs: z.number().int().min(0).max(MAX_INSTALL_DURATION_MS),

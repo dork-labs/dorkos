@@ -70,8 +70,18 @@ export default function MarketplacePrivacyPage() {
           <h2 className="text-charcoal font-mono text-xl font-semibold">What we collect</h2>
           <ul className="text-warm-gray ml-5 list-disc space-y-2 text-base leading-relaxed">
             <li>
-              The package name and marketplace it came from. If an install fails before DorkOS finds
-              the package, neither is sent: what you typed is never sent.
+              The package name and the marketplace it came from. For a marketplace package, that is
+              its name in the marketplace. For a package installed from a direct link, the
+              repository or package name is sent as the package name, never the link itself.
+            </li>
+            <li>
+              For a package installed from a folder on your computer, the placeholder{' '}
+              <span className="font-mono">&lt;local&gt;</span> instead of the folder name.
+            </li>
+            <li>
+              If an install fails before DorkOS finds the package, a placeholder instead of the
+              package name. What you typed is never sent, and the marketplace is sent only if it is
+              one you added.
             </li>
             <li>The package type (agent, plugin, skill-pack, adapter, shape).</li>
             <li>

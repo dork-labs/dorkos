@@ -395,16 +395,39 @@ export class InstallDispatcher {
     startTime: number;
     errorCode?: string;
   }): Promise<void> {
+    const durationMs = Date.now() - params.startTime;
+    // Once resolved, the event names the marketplace the resolver found. Before
+    // that, the requested marketplace is free text: forward it only when it
+    // names one this install has configured.
+    const configuredMarketplace =
+      params.resolved === null && params.requestedMarketplace !== undefined
+        ? await this.configuredMarketplace(params.requestedMarketplace)
+        : undefined;
     await reportInstallEvent(
       buildInstallEvent({
         resolved: params.resolved,
         packageType: params.packageType,
-        requestedMarketplace: params.requestedMarketplace,
+        configuredMarketplace,
         outcome: params.outcome,
-        durationMs: Date.now() - params.startTime,
+        durationMs,
         errorCode: params.errorCode,
       })
     );
+  }
+
+  /**
+   * `name` when it is a configured marketplace, else `undefined`. A check that
+   * fails counts as not configured, so telemetry can never fail the install.
+   *
+   * @param name - The marketplace the request named.
+   * @internal
+   */
+  private async configuredMarketplace(name: string): Promise<string | undefined> {
+    try {
+      return (await this.deps.resolver.isConfiguredMarketplace(name)) ? name : undefined;
+    } catch {
+      return undefined;
+    }
   }
 }
 

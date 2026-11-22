@@ -3,12 +3,12 @@
  *
  * Thin registration point for a single process-wide telemetry reporter that
  * receives one {@link InstallEvent} per finished install or update (an update
- * reports as an install; uninstall reports nothing). The default is a no-op so the marketplace installer can call
- * {@link reportInstallEvent} unconditionally without leaking telemetry
- * concerns into the orchestrator.
+ * reports as an install; uninstall reports nothing). The default is a no-op,
+ * so the marketplace installer can call {@link reportInstallEvent}
+ * unconditionally without leaking telemetry concerns into the orchestrator.
  *
- * Spec 04 will plug in a real reporter via {@link registerTelemetryReporter};
- * until then this module exists purely as the contract.
+ * The dorkos.ai reporter (`telemetry-reporter.ts`) plugs in through
+ * {@link registerTelemetryReporter} at startup when the install channel is on.
  *
  * @module services/marketplace/telemetry/telemetry-hook
  */
@@ -24,7 +24,7 @@ import type { InstallTelemetrySourceType } from '@dorkos/shared/marketplace-inst
  * (`install-event.ts`), which never sees the name the person typed.
  */
 export interface InstallEvent {
-  /** The resolved package identifier (e.g. `code-review-suite`), or `<unresolved>`. */
+  /** The resolved package name (e.g. `code-review-suite`), `<local>` or `<unresolved>`. */
   packageName: string;
   /** The marketplace the package was resolved from, or `<direct>`. */
   marketplace: string;

@@ -233,8 +233,11 @@ of each discriminated source form over time. The column is a plain
 
 A marketplace entry reports the form it declares. An install that fails
 before resolving reports `packageName: '<unresolved>'` and the requested
-marketplace (or `<direct>`), never the name the person typed. The mapping
-lives in `services/marketplace/telemetry/install-event.ts`.
+marketplace only when it is a configured one (else `<direct>`), never the
+name the person typed. A folder install reports `packageName: '<local>'`.
+`errorCode` is kept only when it looks like an error class name, else
+`UnknownError`. A name over the 64-character cap is sent as `<too-long>`.
+The mapping lives in `services/marketplace/telemetry/install-event.ts`.
 
 ### Privacy implications
 

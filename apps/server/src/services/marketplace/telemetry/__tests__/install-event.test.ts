@@ -1,7 +1,7 @@
 /**
  * What an install reports about itself (DOR-4988): never the name the person
- * typed, an honest source kind, and the requested marketplace when the package
- * never resolved.
+ * typed, never free text from the marketplace field, a placeholder for a
+ * folder install, an honest source kind, and only error-class-shaped codes.
  */
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -13,6 +13,8 @@ import type { PackageStager } from '../../installer/staging.js';
 import type { ResolvedPackageSource } from '../../package-resolver.js';
 import {
   DIRECT_SOURCE_LABEL,
+  LOCAL_PACKAGE_LABEL,
+  UNKNOWN_ERROR_CODE,
   UNRESOLVED_PACKAGE_LABEL,
   buildInstallEvent,
   installSourceType,
@@ -25,9 +27,17 @@ import {
 import { buildPayload } from '../telemetry-reporter.js';
 
 const INSTALL_ID = '7c6d2b9a-9f44-4f3a-bf67-3f3aa6bbf7c4';
+const CONFIGURED = new Set(['dorkos-community']);
 
-/** Run a dispatcher whose resolve fails, and return the event it reported. */
-async function failedInstallEvent(name: string, marketplace?: string): Promise<InstallEvent> {
+/**
+ * Run a dispatcher whose resolve fails, and return the event it reported and
+ * the body that would be sent. Only `dorkos-community` is a configured
+ * marketplace.
+ */
+async function failedInstall(
+  name: string,
+  marketplace?: string
+): Promise<{ event: InstallEvent; body: string }> {
   const events: InstallEvent[] = [];
   registerTelemetryReporter(async (event) => {
     events.push(event);
@@ -35,10 +45,14 @@ async function failedInstallEvent(name: string, marketplace?: string): Promise<I
   const stager = {
     resolveAndValidate: () => Promise.reject(new Error(`could not resolve ${name}`)),
   } as unknown as PackageStager;
-  const dispatcher = new InstallDispatcher({} as InstallerDeps, stager);
+  const deps = {
+    resolver: { isConfiguredMarketplace: async (m: string) => CONFIGURED.has(m) },
+  } as unknown as InstallerDeps;
+  const dispatcher = new InstallDispatcher(deps, stager);
   await expect(dispatcher.installStaged({ name, marketplace })).rejects.toThrow();
   expect(events).toHaveLength(1);
-  return events[0]!;
+  const event = events[0]!;
+  return { event, body: JSON.stringify(buildPayload(event, INSTALL_ID, '1.2.3')) };
 }
 
 afterEach(() => _resetTelemetryReporter());
@@ -49,8 +63,7 @@ describe('an install that fails before its package resolves', () => {
     ['a github shorthand', 'github:kai-example/secret-repo'],
     ['a URL carrying a token', 'pack@https://kai:ghp_madeUpToken123@git.example.com/kai/pack.git'],
   ])('never sends %s anywhere in the payload', async (_label, name) => {
-    const event = await failedInstallEvent(name);
-    const body = JSON.stringify(buildPayload(event, INSTALL_ID, '1.2.3'));
+    const { event, body } = await failedInstall(name);
 
     expect(body).not.toContain(name);
     for (const part of [
@@ -67,10 +80,21 @@ describe('an install that fails before its package resolves', () => {
     expect(InstallTelemetryEventSchema.safeParse(JSON.parse(body)).success).toBe(true);
   });
 
-  it('reports the marketplace the request named', async () => {
-    const event = await failedInstallEvent('code-reviewer', 'dorkos-community');
+  it('reports the marketplace the request named when it is a configured one', async () => {
+    const { event } = await failedInstall('code-reviewer', 'dorkos-community');
     expect(event.marketplace).toBe('dorkos-community');
     expect(event.packageName).toBe(UNRESOLVED_PACKAGE_LABEL);
+  });
+
+  it.each([
+    ['a URL carrying a token', 'https://kai:ghp_madeUpToken456@git.example.com/m.git'],
+    ['a name that is not configured', 'kais-private-marketplace'],
+  ])('never sends %s from the marketplace field', async (_label, marketplace) => {
+    const { event, body } = await failedInstall('code-reviewer', marketplace);
+    expect(body).not.toContain(marketplace);
+    expect(body).not.toContain('ghp_madeUpToken456');
+    expect(body).not.toContain('kais-private');
+    expect(event.marketplace).toBe(DIRECT_SOURCE_LABEL);
   });
 });
 
@@ -115,8 +139,15 @@ describe('installSourceType', () => {
 });
 
 describe('buildInstallEvent', () => {
+  const base = {
+    packageType: 'plugin' as const,
+    outcome: 'failure' as const,
+    durationMs: 12,
+  };
+
   it('uses the resolved name and marketplace once resolved', () => {
     const event = buildInstallEvent({
+      ...base,
       resolved: {
         kind: 'marketplace',
         packageName: 'code-reviewer',
@@ -124,9 +155,8 @@ describe('buildInstallEvent', () => {
         pluginSource: './plugins/code-reviewer',
       },
       packageType: 'shape',
-      requestedMarketplace: 'something-else',
+      configuredMarketplace: 'something-else',
       outcome: 'success',
-      durationMs: 12,
     });
     expect(event).toMatchObject({
       packageName: 'code-reviewer',
@@ -134,5 +164,38 @@ describe('buildInstallEvent', () => {
       type: 'shape',
       sourceType: 'relative-path',
     });
+  });
+
+  it.each(['success', 'failure'] as const)(
+    'sends <local>, never the folder name, for a %s folder install',
+    (outcome) => {
+      const event = buildInstallEvent({
+        ...base,
+        outcome,
+        resolved: {
+          kind: 'local',
+          packageName: 'kais-client-project',
+          localPath: '/Users/kai-example/kais-client-project',
+        },
+      });
+      expect(event.packageName).toBe(LOCAL_PACKAGE_LABEL);
+      expect(JSON.stringify(event)).not.toContain('kai');
+    }
+  );
+
+  it.each([
+    ['InvalidPackageError', 'InvalidPackageError'],
+    ['Error', 'Error'],
+    ['ENOENT_2', 'ENOENT_2'],
+    ['a message with spaces', UNKNOWN_ERROR_CODE],
+    ['/Users/kai-example/leak', UNKNOWN_ERROR_CODE],
+    ['1StartsWithDigit', UNKNOWN_ERROR_CODE],
+    ['A'.repeat(65), UNKNOWN_ERROR_CODE],
+  ])('reports error code %j as %j', (errorCode, expected) => {
+    expect(buildInstallEvent({ ...base, resolved: null, errorCode }).errorCode).toBe(expected);
+  });
+
+  it('leaves errorCode out when there is none', () => {
+    expect(buildInstallEvent({ ...base, resolved: null }).errorCode).toBeUndefined();
   });
 });

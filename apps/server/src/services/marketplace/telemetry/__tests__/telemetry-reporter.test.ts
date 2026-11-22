@@ -30,6 +30,7 @@ import {
   INSTALL_TELEMETRY_SOURCE_TYPES,
   InstallTelemetryEventSchema,
   MAX_INSTALL_DURATION_MS,
+  MAX_INSTALL_NAME_LEN,
 } from '@dorkos/shared/marketplace-install-telemetry';
 
 import {
@@ -37,7 +38,11 @@ import {
   reportInstallEvent,
   type InstallEvent,
 } from '../telemetry-hook.js';
-import { buildPayload, registerDorkosCommunityTelemetry } from '../telemetry-reporter.js';
+import {
+  TOO_LONG_NAME_LABEL,
+  buildPayload,
+  registerDorkosCommunityTelemetry,
+} from '../telemetry-reporter.js';
 
 const DORK_HOME = '/tmp/test-dork-home';
 const TELEMETRY_ENDPOINT = 'https://dorkos.ai/api/telemetry/install';
@@ -134,6 +139,27 @@ describe('telemetry-reporter', () => {
       const parsed = InstallTelemetryEventSchema.safeParse(JSON.parse(init.body as string));
       expect(parsed.error?.issues).toBeUndefined();
       expect(parsed.success).toBe(true);
+    });
+
+    it('replaces a name over the length cap so the site still counts it', () => {
+      const long = 'x'.repeat(MAX_INSTALL_NAME_LEN + 1);
+      const exact = 'y'.repeat(MAX_INSTALL_NAME_LEN);
+      const payload = buildPayload(
+        { ...sampleEvent, packageName: long, marketplace: exact },
+        '7c6d2b9a-9f44-4f3a-bf67-3f3aa6bbf7c4',
+        DORKOS_VERSION
+      );
+      expect(payload.packageName).toBe(TOO_LONG_NAME_LABEL);
+      expect(payload.marketplace).toBe(exact);
+      expect(InstallTelemetryEventSchema.safeParse(payload).success).toBe(true);
+
+      const longMarketplace = buildPayload(
+        { ...sampleEvent, marketplace: long },
+        '7c6d2b9a-9f44-4f3a-bf67-3f3aa6bbf7c4',
+        DORKOS_VERSION
+      );
+      expect(longMarketplace.marketplace).toBe(TOO_LONG_NAME_LABEL);
+      expect(InstallTelemetryEventSchema.safeParse(longMarketplace).success).toBe(true);
     });
 
     it('clamps a very slow install so the site still counts it', async () => {

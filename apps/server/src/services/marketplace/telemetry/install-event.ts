@@ -6,7 +6,9 @@
  * only name available is what the person typed, which can be a folder path
  * with their username in it, a private repository, or a URL carrying a token.
  * None of that is ever sent; an unresolved install reports a fixed placeholder
- * instead (DOR-4988).
+ * instead (DOR-4988). The same goes for a folder install, whose name is the
+ * folder's name, and for the marketplace field, which is only ever a
+ * configured marketplace's name.
  *
  * @module services/marketplace/telemetry/install-event
  */
@@ -21,19 +23,31 @@ export const DIRECT_SOURCE_LABEL = '<direct>';
 /** Package name reported when an install failed before its package was resolved. */
 export const UNRESOLVED_PACKAGE_LABEL = '<unresolved>';
 
+/** Package name reported for a package installed from a folder on this computer. */
+export const LOCAL_PACKAGE_LABEL = '<local>';
+
+/** Error code reported when the real one does not look like an error class name. */
+export const UNKNOWN_ERROR_CODE = 'UnknownError';
+
+/** An error class name: a letter, then up to 63 letters, digits or underscores. */
+const ERROR_CODE_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
+
 /** What {@link buildInstallEvent} needs to know about a finished install. */
 export interface InstallEventInput {
   /** The resolved package source, or `null` when resolving it failed. */
   resolved: ResolvedPackageSource | null;
   /** The staged manifest's type, or `null` when staging never got that far. */
   packageType: PackageType | null;
-  /** The marketplace the request named, if any. Never the requested package name. */
-  requestedMarketplace?: string;
+  /**
+   * The marketplace the request named, ONLY once checked to be one this
+   * install has configured. Free text a person typed must never be passed here.
+   */
+  configuredMarketplace?: string;
   /** The terminal outcome. */
   outcome: InstallEvent['outcome'];
   /** Wall-clock duration of the install in milliseconds. */
   durationMs: number;
-  /** Stable error code when the install failed. */
+  /** The error's class name when the install failed; anything else becomes `UnknownError`. */
   errorCode?: string;
 }
 
@@ -46,16 +60,28 @@ export interface InstallEventInput {
 export function buildInstallEvent(input: InstallEventInput): InstallEvent {
   const { resolved } = input;
   return {
-    packageName: resolved?.packageName ?? UNRESOLVED_PACKAGE_LABEL,
+    packageName: installPackageName(resolved),
     marketplace: resolved
       ? (resolved.marketplaceName ?? DIRECT_SOURCE_LABEL)
-      : (input.requestedMarketplace ?? DIRECT_SOURCE_LABEL),
+      : (input.configuredMarketplace ?? DIRECT_SOURCE_LABEL),
     type: input.packageType ?? 'plugin',
     outcome: input.outcome,
     durationMs: input.durationMs,
-    errorCode: input.errorCode,
+    errorCode:
+      input.errorCode === undefined
+        ? undefined
+        : ERROR_CODE_PATTERN.test(input.errorCode)
+          ? input.errorCode
+          : UNKNOWN_ERROR_CODE,
     sourceType: installSourceType(resolved),
   };
+}
+
+/** The package name to report: a placeholder when unresolved or from a folder. */
+function installPackageName(resolved: ResolvedPackageSource | null): string {
+  if (!resolved) return UNRESOLVED_PACKAGE_LABEL;
+  if (resolved.kind === 'local') return LOCAL_PACKAGE_LABEL;
+  return resolved.packageName;
 }
 
 /**

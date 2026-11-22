@@ -389,7 +389,9 @@ describe('MarketplaceInstaller', () => {
       expect(mockedReportInstallEvent).toHaveBeenCalledTimes(1);
       expect(mockedReportInstallEvent).toHaveBeenCalledWith(
         expect.objectContaining({
-          packageName: 'hello-plugin',
+          // A folder install never sends the folder's name (DOR-4988).
+          packageName: '<local>',
+          sourceType: 'local',
           type: 'plugin',
           outcome: 'success',
           marketplace: '<direct>',
@@ -1451,7 +1453,8 @@ describe('MarketplaceInstaller', () => {
       // Telemetry fires once for the inner install() call.
       expect(mockedReportInstallEvent).toHaveBeenCalledTimes(1);
       expect(mockedReportInstallEvent).toHaveBeenCalledWith(
-        expect.objectContaining({ outcome: 'success', packageName: 'updateable-plugin' })
+        // A folder install never sends the folder's name (DOR-4988).
+        expect.objectContaining({ outcome: 'success', packageName: '<local>' })
       );
 
       expect(result.packageName).toBe('updateable-plugin');
