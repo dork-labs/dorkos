@@ -73,6 +73,15 @@ function PlacesRow({
           <Check aria-hidden className="text-status-success-fg ml-1 inline size-3" />
         )}
       </p>
+      {/* Its own line, right above its two answers (designer, DOR-4909). */}
+      {answer === null && notConfirmed && (
+        <p
+          role="status"
+          className="text-status-warning-fg basis-full text-xs leading-snug font-medium"
+        >
+          {ALLOW_NOT_CONFIRMED_COPY}
+        </p>
+      )}
       {answer === null && (
         <span className="flex shrink-0 items-center gap-1.5">
           <Button
@@ -100,14 +109,6 @@ function PlacesRow({
             Not now
           </Button>
         </span>
-      )}
-      {answer === null && notConfirmed && (
-        <p
-          role="status"
-          className="text-status-warning-fg basis-full text-xs leading-snug font-medium"
-        >
-          {ALLOW_NOT_CONFIRMED_COPY}
-        </p>
       )}
     </li>
   );

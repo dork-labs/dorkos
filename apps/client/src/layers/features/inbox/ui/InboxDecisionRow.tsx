@@ -107,6 +107,11 @@ export interface InboxDecisionRowProps {
   /** A line that needs the reader: "The agent couldn't go ahead. It needs you." */
   notice?: string;
   /**
+   * A line about the last answer, drawn right above the worded yes-no buttons:
+   * "Not confirmed, so nothing was allowed. Choose Allow to try again." (DOR-4909).
+   */
+  answerNotice?: string;
+  /**
    * What follows the title on a history row, joined with " · ": the time, and
    * what happened or what can still be done.
    */
@@ -284,6 +289,7 @@ export function InboxDecisionRow({
   meta,
   details,
   notice,
+  answerNotice,
   trail,
   more,
   actions,
@@ -422,6 +428,7 @@ export function InboxDecisionRow({
               disabled={busy}
               rejectRef={rejectRef}
               {...(actions.rejectNote ? { rejectExpanded: answering === 'note' } : {})}
+              {...(answerNotice ? { notice: answerNotice } : {})}
             />
           )}
           {actions?.kind === 'word' && actions.block && !wifiGrant && (

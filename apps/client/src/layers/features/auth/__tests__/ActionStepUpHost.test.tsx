@@ -26,8 +26,7 @@ const VIEW: HeldStepUpView = {
 };
 
 /** What the Mac app's sheet says while the shell's own window asks (designer, DOR-4909). */
-const DESKTOP_SHEET_LINE =
-  'Type your password in the “Confirm it’s you” window. Closing it changes nothing.';
+const DESKTOP_SHEET_LINE = 'Finish in the “Confirm it’s you” window. Closing it changes nothing.';
 
 afterEach(() => {
   act(() => {

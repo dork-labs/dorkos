@@ -563,6 +563,8 @@ describe('InboxBell — an extension waiting to be turned on', () => {
 
       const notice = await within(row).findByRole('status');
       expect(notice).toHaveTextContent(STEP_UP_NOT_CONFIRMED);
+      // Right above Allow and Not now, pinned with them on a phone (designer).
+      expect(notice.closest('[data-slot="inbox-answer-buttons"]')).not.toBeNull();
       // The row still waits, and still asks; nothing was turned on.
       expect(within(row).getByRole('button', { name: 'Allow' })).toBeEnabled();
       expect(vi.mocked(toast.error)).not.toHaveBeenCalled();

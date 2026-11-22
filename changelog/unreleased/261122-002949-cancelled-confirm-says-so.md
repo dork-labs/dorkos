@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(client): closing "Confirm it’s you" without confirming now says nothing changed (DOR-4909)'
+  - 'fix(client): the not-confirmed line sits right above Allow, and the Mac sheet line stays true (DOR-4909)'
 ---
 
 ### Fixed

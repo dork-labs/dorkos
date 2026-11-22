@@ -250,7 +250,7 @@ export function ExtensionApprovalList({
                 answerContext={answerContext}
                 why={words.why}
                 {...(notConfirmed[approval.id] === approval.version
-                  ? { notice: ALLOW_NOT_CONFIRMED_COPY }
+                  ? { answerNotice: ALLOW_NOT_CONFIRMED_COPY }
                   : {})}
                 // What it gives agents, on the row itself, so it is read before the
                 // yes; each tool and its tier is in the ⓘ panel (DOR-2685).

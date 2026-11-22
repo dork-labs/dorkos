@@ -85,7 +85,7 @@ function DesktopStepUpSheet({ heldActionId }: { heldActionId: string }) {
             {/* Name the window and what closing it does: a lost window once
                 read as a yes that never landed (DOR-4909). */}
             {confirm
-              ? 'Type your password in the “Confirm it’s you” window. Closing it changes nothing.'
+              ? 'Finish in the “Confirm it’s you” window. Closing it changes nothing.'
               : 'Update the DorkOS app to confirm this.'}
           </AlertDialogDescription>
         </AlertDialogHeader>
