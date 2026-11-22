@@ -1089,6 +1089,7 @@ describe('ExtensionDiscovery', () => {
       path: string;
       sourcePlugin?: string;
       trustedOrigin?: { plugin: string; source: string };
+      digest?: string;
     }): ExtensionsConfig {
       return {
         enabled: ['flow'],
@@ -1099,6 +1100,7 @@ describe('ExtensionDiscovery', () => {
             path: copy.path,
             ...(copy.sourcePlugin ? { plugin: copy.sourcePlugin } : {}),
             ...(copy.trustedOrigin ? { origin: copy.trustedOrigin } : {}),
+            ...(copy.digest ? { digest: copy.digest } : {}),
           },
         },
       };
@@ -1220,7 +1222,7 @@ describe('ExtensionDiscovery', () => {
         expect(results.find((r) => r.id === 'flow' && !r.shadowedBy)?.path).toBe(a.dir);
       });
 
-      it('row 4: the newest copy of the approved origin wins, and the older reports shadowedBy', async () => {
+      it('row 4: the newest copy of the approved origin is listed, and the older reports shadowedBy', async () => {
         const a = await installedProject('a', '1.0.0');
         const b = await installedProject('b', '1.2.0');
         const config = approve({ path: a.dir, sourcePlugin: 'flow', trustedOrigin: ORIGIN });
@@ -1231,8 +1233,8 @@ describe('ExtensionDiscovery', () => {
 
         expect(running).toHaveLength(1);
         expect(running[0]).toMatchObject({ path: b.dir, trustedOrigin: ORIGIN });
-        // No re-approval: it is the same approved source.
-        expect(mayRunExtensionCode(running[0]!, config)).toBe(true);
+        // A newer version is other files: the same source is not a yes to them (DOR-4895).
+        expect(mayRunExtensionCode(running[0]!, config)).toBe(false);
         expect(shadowed).toEqual([expect.objectContaining({ path: a.dir, shadowedBy: b.dir })]);
       });
 
@@ -1314,22 +1316,31 @@ describe('ExtensionDiscovery', () => {
         expect(mayRunExtensionCode(clone!, trusting)).toBe(false);
       });
 
-      it('falls back to the next newest trusted copy, with no prompt, when the newest is deleted', async () => {
+      it('falls back to the next newest trusted copy when the newest is deleted, with no prompt for the approved files', async () => {
         const a = await installedProject('a', '1.0.0');
         const b = await installedProject('b', '1.1.0');
         const c = await installedProject('c', '1.2.0');
-        const config = approve({ path: a.dir, sourcePlugin: 'flow', trustedOrigin: ORIGIN });
+        const roots = [a.root, b.root, c.root];
+        const byOrigin = approve({ path: a.dir, sourcePlugin: 'flow', trustedOrigin: ORIGIN });
 
         await fs.rm(path.join(c.root, '.dork', 'plugins'), { recursive: true });
-        const results = await discovery.discover(null, config, EMPTY_CORE, [
-          a.root,
-          b.root,
-          c.root,
-        ]);
+        const results = await discovery.discover(null, byOrigin, EMPTY_CORE, roots);
         const running = results.find((r) => !r.shadowedBy);
 
         expect(running?.path).toBe(b.dir);
-        expect(mayRunExtensionCode(running!, config)).toBe(true);
+        // Its files are not the approved ones, so it asks (DOR-4895)...
+        expect(mayRunExtensionCode(running!, byOrigin)).toBe(false);
+        // ...and a yes that names its files covers it with no prompt.
+        const toItsFiles = approve({
+          path: a.dir,
+          sourcePlugin: 'flow',
+          trustedOrigin: ORIGIN,
+          digest: running!.currentDigest!,
+        });
+        const again = await discovery.discover(null, toItsFiles, EMPTY_CORE, roots);
+        const covered = again.find((r) => !r.shadowedBy);
+        expect(covered?.path).toBe(b.dir);
+        expect(mayRunExtensionCode(covered!, toItsFiles)).toBe(true);
       });
 
       it('skips a known project whose folder is gone, silently', async () => {

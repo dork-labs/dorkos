@@ -50,18 +50,28 @@ export function extensionDeclarationLines(ext: PreviewExtension): string[] {
   ];
 }
 
-/** Every app and package-level effect, with no empty promise hiding server code. */
+/**
+ * Every app and package-level effect, with no empty promise hiding server code.
+ *
+ * @param effects - What the package runs on its own, or `null` when not previewed.
+ * @param extensions - Its bundled apps, or `undefined` when not previewed.
+ * @param where - When its own programs start, in words.
+ * @param appNote - A line said under each app, e.g. that an update's new code waits.
+ */
 export function describePackageInFull(
   effects: DisclosedEffects | null,
   extensions: readonly PreviewExtension[] | undefined,
-  where: string
+  where: string,
+  appNote?: string
 ): string[] {
   const appLines =
     extensions === undefined
       ? ['  Mini app details were not included in this preview.']
       : extensions.flatMap((ext) => [
           `  Mini app ${whole(ext.id)}:`,
-          ...extensionDeclarationLines(ext).map((line) => `    ${line}`),
+          ...[...extensionDeclarationLines(ext), ...(appNote ? [appNote] : [])].map(
+            (line) => `    ${line}`
+          ),
         ]);
   // Unknown old metadata is never evidence that there is no server half.
   const mayRunServer =
