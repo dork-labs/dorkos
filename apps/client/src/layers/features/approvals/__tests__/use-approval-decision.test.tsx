@@ -41,13 +41,11 @@ afterEach(() => {
 describe('useGrantApproval after a cancelled "Confirm it’s you"', () => {
   it('says nothing was allowed, calmly, with no failure toast', async () => {
     const { result } = mount(
-      vi
-        .fn<Transport['grantApproval']>()
-        .mockRejectedValue(
-          Object.assign(new Error('Not confirmed. Nothing changed.'), {
-            code: STEP_UP_REQUIRED_CODE,
-          })
-        )
+      vi.fn<Transport['grantApproval']>().mockRejectedValue(
+        Object.assign(new Error('Not confirmed. Nothing changed.'), {
+          code: STEP_UP_REQUIRED_CODE,
+        })
+      )
     );
     act(() => result.current.mutate({ approvalId: 'approval-1' }));
     await waitFor(() => expect(result.current.isError).toBe(true));
