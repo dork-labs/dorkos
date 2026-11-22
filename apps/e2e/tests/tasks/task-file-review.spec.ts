@@ -47,7 +47,8 @@ test.describe('Tasks — reviewing a task’s file with no cap standing', () => 
       });
     });
 
-    await page.reload();
+    // Routes are in place before the app first loads, so the list it fetches is the rewritten one.
+    await basePage.goto();
     await basePage.waitForAppReady();
     await tasksPage.open();
 
