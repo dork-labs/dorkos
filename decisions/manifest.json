@@ -7874,6 +7874,25 @@
         "packages/evals/src/runner/isolation/**",
         "scripts/harness-smoke/**"
       ]
+    },
+    {
+      "id": "261122-173853",
+      "slug": "one-space-model",
+      "title": "One space model on the space store; a space holds its members' data, a computer holds execution state; the private space becomes a tenant after launch",
+      "status": "accepted",
+      "created": "2026-11-22",
+      "extractedFrom": null,
+      "specSlug": "server-merge",
+      "amends": ["261018-124422"],
+      "affects": [
+        "apps/server/src/services/spaces/**",
+        "apps/server/src/services/rooms/**",
+        "apps/server/src/services/communities/**",
+        "apps/space/**",
+        "packages/shared/src/community-adapter.ts",
+        "packages/shared/src/community-wire.ts",
+        "packages/test-utils/src/community-conformance.ts"
+      ]
     }
   ]
 }
