@@ -47,10 +47,10 @@ export function forcedLimitScenario(
   noteTestWorldLaunch(sessionId, opts?.accountHint);
   const at = forcedLimitFor(sessionId);
   if (at === null) return undefined;
-  return async function* forcedLimit(_content, _ctx, turnOpts) {
+  return async function* forcedLimit(_content, ctx, turnOpts) {
     if (at === 'after-post') {
       // Mid-turn: it has already said something in the room and used a tool.
-      await sayInRoom(turnOpts, FORCED_LIMIT_PARTIAL_ANSWER);
+      await sayInRoom(turnOpts, ctx.sessionId, FORCED_LIMIT_PARTIAL_ANSWER);
       const toolCallId = `forced-limit-${sessionId}`;
       yield {
         type: 'tool_call_start',

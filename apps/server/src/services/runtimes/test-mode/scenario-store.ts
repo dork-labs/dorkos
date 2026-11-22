@@ -9,6 +9,7 @@ import { interactionGate, type ScenarioContext } from './interaction-gate.js';
 import { INTERACTIVE_SCENARIOS } from './interactive-scenarios.js';
 import { Q3_SCENARIOS } from './q3-contention-scenarios.js';
 import { roomReplyScenarios, sayInRoom } from './room-reply-scenarios.js';
+import { handedOffDraft, roomPostToScenario } from './scenarios/room-post-to-scenario.js';
 import { localBrowserDrivingScenario } from './local-browser-driving-scenario.js';
 import { browserDrivingScenarios } from './browser-driving-scenarios.js';
 import { fileSaveReceiptScenarios } from './file-save-receipt-scenarios.js';
@@ -161,7 +162,7 @@ function workingTurn(ticks: number, closeDelayMs = 0): ScenarioFn {
     // somebody halted, so a turn that is stopped mid-hold still leaves the room
     // with nothing — which is what a halt means. Outside a room `sayInRoom` is
     // a no-op, so an ordinary session is exactly what it always was.
-    await sayInRoom(opts, 'Working on it');
+    await sayInRoom(opts, ctx.sessionId, 'Working on it');
     yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
     if (closeDelayMs > 0) {
       try {
@@ -310,6 +311,10 @@ const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
   // capability, and two that deliberately say nothing (spec
   // `tool-only-room-replies` §D14).
   ...roomReplyScenarios(() => finishRequested),
+  // Sent "<roomId> <text>" on a direct chat with an agent, posts as that agent
+  // from that chat, which hands the words to its seat in the room: the one way a
+  // driver can start a real hand-off (DOR-5032).
+  'rooms-post-to': roomPostToScenario,
   // A turn that really drives the preview: reads the page, clicks a button,
   // waits for what the click produced, and reads it back (spec
   // `canvas-agent-seat` §2). It calls the production handlers rather than
@@ -346,7 +351,7 @@ const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
     yield { type: 'text_delta', data: { text: 'Reply after model replacement.' } };
     yield { type: 'done', data: { sessionId: 'test-mode' } };
   },
-  'simple-text': async function* (content, _ctx, opts) {
+  'simple-text': async function* (content, ctx, opts) {
     // session_status data cast needed because data union requires sessionId
     yield {
       type: 'session_status',
@@ -397,9 +402,10 @@ const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
     // **In a room it says this by CALLING the posting tool**, because a room
     // turn's own words are never posted for it (spec `tool-only-room-replies`).
     // Outside a room `sayInRoom` is a no-op, so an ordinary session is exactly
-    // what it always was: one echoed line on its own stream.
-    const said = `Echo: ${content}`;
-    const posted = await sayInRoom(opts, said);
+    // what it always was: one echoed line on its own stream. A seat answering a
+    // hand-off posts the draft it was handed, as a real seat would (DOR-5032).
+    const said = handedOffDraft(content) ?? `Echo: ${content}`;
+    const posted = await sayInRoom(opts, ctx.sessionId, said);
     if (opts?.roomTurn && posted !== true) {
       throw new Error(
         `Echo could not answer in the room: ${posted === false ? 'post refused' : posted}`

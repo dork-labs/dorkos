@@ -682,7 +682,11 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       const testModeSpy = vi.spyOn(testMode, 'getMessageHistory');
       const claudeSpy = vi.spyOn(claude, 'getMessageHistory');
 
-      const res = await request(testServer).get(`/api/sessions/${TEST_MODE_SESSION}/messages`);
+      // The session never ran, so like Claude Code the test runtime holds no folder for it
+      // (DOR-5035): the caller names one.
+      const res = await request(testServer).get(
+        `/api/sessions/${TEST_MODE_SESSION}/messages?cwd=${encodeURIComponent('/tmp/dork-test-cwd')}`
+      );
 
       expect(testModeSpy).toHaveBeenCalled();
       expect(claudeSpy).not.toHaveBeenCalled();

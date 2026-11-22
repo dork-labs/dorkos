@@ -848,4 +848,112 @@ describe('one seat per agent per room, and the hand-off', () => {
     const prepared = await terminalAcceptance.prepare(row.noticeReceiptId!);
     expect(prepared.content).toBe('Bo shared it in #dorkos.');
   });
+
+  // DOR-5032: the test runtime has to drive a hand-off end to end, so QA can check one survives
+  // a restart. The seat runs the test runtime's own default turn, not a stand-in for it.
+  describe('on the test runtime', () => {
+    /** Bo's #dorkos seat runs each turn on the test runtime's default `simple-text`. */
+    async function seatRunsTestMode(): Promise<void> {
+      const { setRoomService } = await import('../index.js');
+      const { TestModeRuntime } = await import('../../runtimes/test-mode/test-mode-runtime.js');
+      setRoomService(service);
+      const runtime = new TestModeRuntime();
+      scripts[dorkos.id] = async (request, sessionId) => {
+        if (draftIn(request.prompt) === undefined) return null;
+        const opts = {
+          cwd: request.cwd,
+          roomTurn: { roomId: dorkos.id, authorId: bo, turnId: request.entry.id },
+        } as MessageOpts;
+        for await (const _event of runtime.sendMessage(sessionId, request.prompt, opts)) {
+          /* drain */
+        }
+        return null;
+      };
+    }
+
+    /** What a scripted turn said on its own stream. */
+    async function textOf(events: AsyncGenerator<StreamEvent>): Promise<string> {
+      const said: string[] = [];
+      for await (const event of events) {
+        if (event.type === 'text_delta') said.push((event.data as { text: string }).text);
+      }
+      return said.join('');
+    }
+
+    /** The context a direct chat's scripted turn runs with. */
+    function chatContext(
+      sessionId: string
+    ): import('../../runtimes/test-mode/interaction-gate.js').ScenarioContext {
+      return {
+        sessionId,
+        signal: new AbortController().signal,
+        delay: async () => {},
+      } as unknown as import('../../runtimes/test-mode/interaction-gate.js').ScenarioContext;
+    }
+
+    it('a seat’s scripted reply posts the handed-off draft, and the hand-off ends posted', async () => {
+      await seatRunsTestMode();
+
+      const receipt = await postAsBo('bo-chat', { roomId: dorkos.id, text: 'from test mode' });
+      await settle();
+
+      expect(receipt).toMatchObject({ posted: false, handedOff: true });
+      expect(bosPosts(dorkos)).toEqual(['from test mode\n\n_Shared from another chat._']);
+      expect(service.handoffs.status(receipt.handoffId!, bo)).toMatchObject({ status: 'posted' });
+    });
+
+    it('a word-for-word hand-off is posted word for word by the scripted seat', async () => {
+      await seatRunsTestMode();
+
+      const receipt = await postAsBo('bo-chat', {
+        roomId: dorkos.id,
+        text: 'exactly this',
+        verbatim: true,
+      });
+      await settle();
+
+      expect(service.handoffs.status(receipt.handoffId!, bo)).toMatchObject({ status: 'posted' });
+      expect(bosPosts(dorkos)[0]?.split('\n')[0]).toBe('exactly this');
+    });
+
+    it('rooms-post-to hands a direct chat’s post to the seat, and it ends posted', async () => {
+      await seatRunsTestMode();
+      const { setAgentHomeRegistry } = await import('../../core/agent-identity/agent-home.js');
+      setAgentHomeRegistry({
+        isRegisteredHome: (dir) => dir === '/agents/bo',
+        listRegisteredHomes: () => ['/agents/bo'],
+        managedWorkspaceOwner: () => null,
+        roomsDir: null,
+      });
+      const { recordFixturePublicSource } = await import('./durable-handoff-fixture.js');
+      await recordFixturePublicSource(durableHarness, 'bo-chat', '/agents/bo', dorkos.id);
+      const { roomPostToScenario } =
+        await import('../../runtimes/test-mode/scenarios/room-post-to-scenario.js');
+
+      let said: string;
+      try {
+        said = await textOf(
+          roomPostToScenario(`${dorkos.id}  hello from a direct chat`, chatContext('bo-chat'), {
+            cwd: '/agents/bo',
+          })
+        );
+      } finally {
+        setAgentHomeRegistry(undefined);
+      }
+      await settle();
+
+      const handoffId = /^HANDED-OFF: (\S+)$/.exec(said)?.[1];
+      expect(handoffId).toBeDefined();
+      expect(bosPosts(dorkos)).toEqual(['hello from a direct chat\n\n_Shared from another chat._']);
+      expect(service.handoffs.status(handoffId!, bo)).toMatchObject({ status: 'posted' });
+    });
+
+    it('rooms-post-to says how to call it when the message names no room and text', async () => {
+      const { roomPostToScenario } =
+        await import('../../runtimes/test-mode/scenarios/room-post-to-scenario.js');
+      await expect(
+        textOf(roomPostToScenario('just-a-room-id', chatContext('bo-chat'), { cwd: '/agents/bo' }))
+      ).resolves.toBe('POST-TO-USAGE: send "<roomId> <text>"');
+    });
+  });
 });
