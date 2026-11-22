@@ -75,6 +75,8 @@ export const REPO_WIDE_SUITES = [
   '__tests__/session-link-boundary.test.ts',
   '__tests__/space-page-versions.test.ts',
   '__tests__/space-server.test.ts',
+  // Reads .github/workflows/security-gate.yml through the classifier (DOR-4834).
+  '__tests__/text-only-scope.test.ts',
   '__tests__/tsconfig-extends-resolve.test.ts',
   '__tests__/vitest-projects.test.ts',
   'release-checks/__tests__/chromium-age.test.ts',
