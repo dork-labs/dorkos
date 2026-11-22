@@ -182,13 +182,11 @@ On the Mac app, DorkOS reads these variables from your login shell, so setting t
 
 These requests are not telemetry. The kill switches leave them alone, so here is each one, what it sends, and how to stop it. Feedback you send by pressing Send is one of them, on purpose: the switches stop tracking, not a message you chose to send.
 
-| Request                    | What it sends                                                                                                                                                                      | How to stop it                                                         |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| The desktop app's updater  | Asks GitHub for a newer version when the Mac or Windows app opens and every 4 hours after. Only in the downloaded app.                                                             | It has no switch. Use the `dorkos` command instead of the desktop app. |
-| A font you pick            | The default font (Inter) ships with the app. If you pick another font in settings, other than **System default**, your browser loads it from Google Fonts each time the app opens. | Keep Inter or pick **System default**.                                 |
-| The linked-device check-in | While this computer is linked to a DorkOS account, it tells DorkOS Cloud every 15 minutes that it is still online, with the computer's name, its platform, and the DorkOS version. | Unlink the computer from your account.                                 |
-| Feedback                   | Only what you send when you press Send (see [Feedback](#feedback-only-when-you-press-send)).                                                                                       | Don't press Send.                                                      |
-| The agents' own AI service | Your prompts, code, and chats go to the AI service each agent uses, under that service's terms.                                                                                    | Choose which service each agent uses.                                  |
+- **The desktop app's updater.** Asks GitHub for a newer version when the Mac or Windows app opens and every 4 hours after, only in the downloaded app. It has no switch: use the `dorkos` command instead of the desktop app.
+- **A font you pick.** The default font (Inter) ships with the app. If you pick another font in settings, other than **System default**, your browser loads it from Google Fonts each time the app opens. To stop it, keep Inter or pick **System default**.
+- **The linked-device check-in.** While this computer is linked to a DorkOS account, it tells DorkOS Cloud every 15 minutes that it is still online, with the computer's name, its platform, and the DorkOS version. To stop it, unlink the computer from your account.
+- **Feedback.** Only what you send when you press Send (see [Feedback](#feedback-only-when-you-press-send)). To stop it, don't press Send.
+- **The agents' own AI service.** Your prompts, code, and chats go to the AI service each agent uses, under that service's terms. You choose which service each agent uses.
 
 ## See and change it from the command line
 
