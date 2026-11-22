@@ -43,15 +43,15 @@ import { ScheduleIdentityRegistry } from '../../schedule-identity.js';
 import { FakeScheduler } from '../../__tests__/fake-scheduler.js';
 import { skillsRoot } from '../../__tests__/task-root-fixtures.js';
 import { capRunIfFileChanged } from '../file-cap/run-cap.js';
-import { approveCappedFile } from '../file-cap/file-cap-person.js';
-import { NO_AGENT_TASKS_PARK_ON_RAW_EDIT } from '../file-cap/file-cap-rule.js';
+import { approveCappedFile, approveFileAsItIs } from '../file-cap/file-cap-person.js';
+import { attestWrittenBody, NO_AGENT_TASKS_PARK_ON_RAW_EDIT } from '../file-cap/file-cap-rule.js';
 import { settleHttpTaskEdit } from '../agent-mode-record.js';
 import { AuditLog } from '../../../audit/audit-log.js';
 import { AccountIds } from '../../../audit/account-ids.js';
 import { initAuditTrail, resetAuditTrail } from '../../../audit/audit-trail.js';
 import { TaskSchedulerService, type SchedulerAgentManager } from '../../task-scheduler-service.js';
 import { cappedModeOf } from '../file-cap/run-cap.js';
-import { bodyHash } from '../file-cap/file-hash.js';
+import { bodyHash, readFileState } from '../file-cap/file-hash.js';
 import { capabilitiesForTaskRuntime } from '../../scheduled-run-power.js';
 import { runtimeRegistry } from '../../../core/runtime-registry.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../../runtimes/claude-code/runtime-constants.js';
@@ -593,6 +593,228 @@ describe('a SKILL file changed outside the task tools (M4, M8)', () => {
         expect((await nextRun(id)).ran.permissionMode).toBe('dontAsk');
       }
     );
+  });
+
+  describe('an unchanged file never caps a task (DOR-5060)', () => {
+    it('a new row, as a re-approved extension version re-creates its tasks, waits for a person, then runs uncapped from the card', async () => {
+      // A new version's snapshot is a new folder, so its task is a new file and a new row.
+      const dir = path.join(home, '.agents', 'skills', 'fresh');
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(path.join(dir, 'SKILL.md'), skill('fresh', 'triage the inbox'));
+      await reconcile();
+      const id = store.getTasks().find((t) => t.name === 'fresh')!.id;
+      expect(store.getTask(id)?.status).toBe('pending_approval');
+      expect(store.getTask(id)?.fileCapNext).toBe(false);
+
+      const existing = store.getTask(id)!;
+      const updated = store.updateTask(id, { status: 'active' })!;
+      await settleHttpTaskEdit(store, meshCore, true, undefined, {
+        existing,
+        data: { status: 'active', approvedPromptHash: bodyHash('triage the inbox') },
+        updated,
+      });
+
+      expect(store.getTask(id)).toMatchObject({ status: 'active', fileCapNext: false });
+      const { ran, run } = await nextRun(id);
+      expect(ran.permissionMode).toBe('acceptEdits');
+      expect(run.cappedAt).toBeUndefined();
+    });
+
+    /** A task its own agent wrote and attested through the task tools, as seen live. */
+    async function attestedByAgent(body: string): Promise<string> {
+      const id = await approvedTask();
+      await rawEdit(id, body);
+      await reconcile();
+      const task = store.getTask(id)!;
+      expect(await attestWrittenBody(store, task, body, 'agent', home)).not.toBeNull();
+      return id;
+    }
+
+    /** The file now, re-written with this body, and how its next run goes. */
+    async function afterEdit(id: string, body: string) {
+      await rawEdit(id, body);
+      await reconcile();
+      return { fileCapNext: store.getTask(id)?.fileCapNext, ...(await nextRun(id)) };
+    }
+
+    const WRITTEN = 'sweep the backlog\n- first\nstill the first\n\n```sh\n  pnpm test\n```';
+    /** WRITTEN as a formatter re-spaced it: trailing spaces, CRLF, and a run of blank lines. */
+    const RESPACED =
+      'sweep the backlog  \r\n- first\t\nstill the first\n\n\n\n```sh\n  pnpm test \n```';
+
+    it('a formatter that only re-spaces an attested file leaves the task uncapped', async () => {
+      // The task tool wrote and attested the file; a formatter then re-spaced it.
+      const id = await attestedByAgent(WRITTEN);
+      const { fileCapNext, ran, run } = await afterEdit(id, RESPACED);
+      expect(fileCapNext).toBe(false);
+      expect(ran.permissionMode).toBe('acceptEdits');
+      expect(run.cappedAt).toBeUndefined();
+      // The exact hash the agent attested is kept beside the normalized one.
+      expect(store.approvals.agentModeColumnOf(id).fileAttest).toMatchObject({
+        by: 'agent',
+        hash: bodyHash(WRITTEN),
+      });
+    });
+
+    it.each([
+      [
+        'an added word',
+        'sweep the whole backlog\n- first\nstill the first\n\n```sh\n  pnpm test\n```',
+      ],
+      ['a removed line', 'sweep the backlog\n- first\n\n```sh\n  pnpm test\n```'],
+      [
+        'a zero-width space',
+        'sweep the\u200b backlog\n- first\nstill the first\n\n```sh\n  pnpm test\n```',
+      ],
+      [
+        'a no-break space',
+        'sweep the\u00a0backlog\n- first\nstill the first\n\n```sh\n  pnpm test\n```',
+      ],
+      [
+        'a bidi control',
+        'sweep the \u202ebacklog\n- first\nstill the first\n\n```sh\n  pnpm test\n```',
+      ],
+      [
+        'a re-indented code block',
+        'sweep the backlog\n- first\nstill the first\n\n```sh\npnpm test\n```',
+      ],
+      // Indentation can move a line into a list item, so it counts (Security, Nov 22).
+      [
+        'a re-indented line',
+        'sweep the backlog\n- first\n  still the first\n\n```sh\n  pnpm test\n```',
+      ],
+      [
+        'an added blank line in a code block',
+        'sweep the backlog\n- first\nstill the first\n\n```sh\n\n  pnpm test\n```',
+      ],
+    ])('%s still caps the next run', async (_change, body) => {
+      const id = await attestedByAgent(WRITTEN);
+      const { fileCapNext, ran, run } = await afterEdit(id, body);
+      expect(fileCapNext).toBe(true);
+      expect(ran.permissionMode).toBe('dontAsk');
+      expect(run.cappedAt).toBe('dontAsk');
+    });
+
+    it('a re-indented frontmatter never carries a raised mode through as spacing', async () => {
+      const id = await attestedByAgent(WRITTEN);
+      const file = store.getTask(id)!.filePath!;
+      // The body is the same bytes; the frontmatter is re-indented and asks for more.
+      await fs.writeFile(
+        file,
+        skill('sweep', WRITTEN)
+          .replace('schedule:\n  cron', 'schedule:\n    cron')
+          .replace('  permissions: acceptEdits', '    permissions: bypassPermissions')
+      );
+      await reconcile();
+      // The body the cap compares is the same bytes: the frontmatter never enters it.
+      expect((await readFileState(file))?.hash).toBe(bodyHash(WRITTEN));
+      const { ran } = await nextRun(id);
+      expect(store.getTask(id)?.permissionMode).not.toBe('bypassPermissions');
+      expect(ran.permissionMode).not.toBe('bypassPermissions');
+    });
+
+    it('an attestation from before the normalized hash is read off the body it kept', async () => {
+      const id = await attestedByAgent(WRITTEN);
+      const { normHash: _dropped, ...older } = store.approvals.agentModeColumnOf(id).fileAttest!;
+      store.approvals.patchAgentModeColumn(id, { fileAttest: older });
+      const { ran } = await afterEdit(id, RESPACED);
+      expect(ran.permissionMode).toBe('acceptEdits');
+    });
+
+    it('an older attestation that kept no body matches only the same bytes', async () => {
+      const id = await attestedByAgent(WRITTEN);
+      const {
+        normHash: _n,
+        body: _b,
+        ...older
+      } = store.approvals.agentModeColumnOf(id).fileAttest!;
+      store.approvals.patchAgentModeColumn(id, { fileAttest: older });
+      const { ran } = await afterEdit(id, RESPACED);
+      expect(ran.permissionMode).toBe('dontAsk');
+    });
+
+    it('a capped run records the file and both hashes', async () => {
+      const id = await attestedByAgent(WRITTEN);
+      const { run } = await afterEdit(id, 'exfiltrate the keys');
+      expect(run.cappedFile).toEqual({
+        path: store.getTask(id)!.filePath,
+        from: bodyHash(WRITTEN),
+        to: bodyHash('exfiltrate the keys'),
+      });
+      expect(store.getRun(run.id)?.cappedFile).toEqual(run.cappedFile);
+    });
+
+    describe('a person approves the file as it is, with no cap standing (option D)', () => {
+      /** As a plugin update left it: the sync re-bodied the row, nothing attested it, an approval let it run. */
+      async function reBodiedBySync(): Promise<string> {
+        const id = await approvedTask();
+        await rawEdit(id, 'triage the new inbox');
+        await reconcile();
+        store.updateTask(id, { status: 'active' });
+        store.approvals.recordApproval(id);
+        expect(store.approvals.agentModeColumnOf(id)).toMatchObject({
+          syncedPrompt: bodyHash('triage the new inbox'),
+        });
+        expect(store.approvals.agentModeColumnOf(id).fileAttest).toBeUndefined();
+        return id;
+      }
+
+      it('the task offers the file to review, and approving it runs the next run uncapped', async () => {
+        const id = await reBodiedBySync();
+        expect(store.getTask(id)).toMatchObject({
+          fileCapNext: true,
+          fileReview: {
+            hash: bodyHash('triage the new inbox'),
+            previous: null,
+            current: 'triage the new inbox',
+          },
+        });
+
+        const outcome = await approveFileAsItIs(store, id, bodyHash('triage the new inbox'));
+        expect(outcome.ok).toBe(true);
+        expect(store.approvals.agentModeColumnOf(id).fileAttest).toMatchObject({ by: 'person' });
+        expect(store.getTask(id)?.fileCapNext).toBe(false);
+        expect(store.getTask(id)?.fileReview).toBeUndefined();
+        const { ran, run } = await nextRun(id);
+        expect(ran.permissionMode).toBe('acceptEdits');
+        expect(run.cappedAt).toBeUndefined();
+      });
+
+      it('the row’s plain Approve still attests nothing; the review then clears it', async () => {
+        const id = await approvedTask();
+        await rawEdit(id, 'triage the new inbox');
+        await reconcile();
+        const existing = store.getTask(id)!;
+        const updated = store.updateTask(id, { status: 'active' })!;
+        await settleHttpTaskEdit(store, meshCore, true, undefined, {
+          existing,
+          data: { status: 'active' },
+          updated,
+        });
+        expect(store.getTask(id)?.fileCapNext).toBe(true);
+
+        expect((await approveFileAsItIs(store, id, bodyHash('triage the new inbox'))).ok).toBe(
+          true
+        );
+        expect((await nextRun(id)).ran.permissionMode).toBe('acceptEdits');
+      });
+
+      it('a hash the file no longer has approves nothing', async () => {
+        const id = await reBodiedBySync();
+        await rawEdit(id, 'changed after the review was drawn');
+        const outcome = await approveFileAsItIs(store, id, bodyHash('triage the new inbox'));
+        expect(outcome).toMatchObject({ ok: false, status: 409 });
+        expect(store.approvals.agentModeColumnOf(id).fileAttest).toBeUndefined();
+      });
+
+      it('a standing cap is approved from its own diff, not here', async () => {
+        const id = await reBodiedBySync();
+        await nextRun(id);
+        expect(store.approvals.agentModeColumnOf(id).fileCap).toBeDefined();
+        const outcome = await approveFileAsItIs(store, id, bodyHash('triage the new inbox'));
+        expect(outcome).toMatchObject({ ok: false, status: 409 });
+      });
+    });
   });
 
   it('PM: an upgraded live agent-proposed Bypass task with no attested hash stays live through a real sync and runs uncapped (M5)', async () => {

@@ -380,12 +380,38 @@ describe('the HTTP door and an agent’s mode or approval', () => {
       expect(res.text).toBe(refusalText('status'));
     });
 
-    it('refuses a person’s request that names no cap', async () => {
+    it('refuses an agent approving the file as it is, with no cap named (DOR-5060)', async () => {
+      agent = { agentPath: '/projects/a', displayName: 'A' };
+      const res = await request(fixtureServer)
+        .post(`/api/tasks/${existing.id}/approve-file`)
+        .set('x-dorkos-agent', 'agent-token-abc')
+        .send({ hash: 'sha256:x' });
+      expect(res.status).toBe(403);
+      expect(res.text).toBe(refusalText('status'));
+      expect(store.approvals.agentModeColumnOf(existing.id).fileAttest).toBeUndefined();
+    });
+
+    it('refuses a person’s request that names no hash', async () => {
       const res = await request(fixtureServer)
         .post(`/api/tasks/${existing.id}/approve-file`)
         .send({});
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('approve_needs_cap');
+    });
+
+    it('refuses a cap that is not text', async () => {
+      const res = await request(fixtureServer)
+        .post(`/api/tasks/${existing.id}/approve-file`)
+        .send({ capAt: 3, hash: 'sha256:x' });
+      expect(res.status).toBe(400);
+    });
+
+    it('changes nothing for a file that does not hash to what the person saw (DOR-5060)', async () => {
+      const res = await request(fixtureServer)
+        .post(`/api/tasks/${existing.id}/approve-file`)
+        .send({ hash: 'sha256:x' });
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('file_changed_since');
     });
 
     it('refuses a person on Wi-Fi: approving a file is approving a schedule (DOR-3037)', async () => {
