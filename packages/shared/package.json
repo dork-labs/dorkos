@@ -237,6 +237,10 @@
       "types": "./src/connector-arguments.ts",
       "default": "./dist/connector-arguments.js"
     },
+    "./marketplace-install-telemetry": {
+      "types": "./src/marketplace-install-telemetry.ts",
+      "default": "./dist/marketplace-install-telemetry.js"
+    },
     "./connector-event-schemas": {
       "types": "./src/connector-event-schemas.ts",
       "default": "./dist/connector-event-schemas.js"

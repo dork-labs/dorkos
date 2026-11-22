@@ -43,7 +43,7 @@ export const marketplaceInstallEvents = pgTable(
     packageName: text('package_name').notNull(),
     /** Marketplace identifier (e.g. `dorkos-community`). 1..64 chars. */
     marketplace: text('marketplace').notNull(),
-    /** Package type — agent | plugin | skill-pack | adapter. */
+    /** Package type — agent | plugin | skill-pack | adapter | shape. */
     type: text('type').notNull(),
     /** Install outcome — success | failure | cancelled. */
     outcome: text('outcome').notNull(),

@@ -12,6 +12,7 @@
  */
 
 import { siteUrl } from '@dorkos/shared/links';
+import type { InstallTelemetryPackageType } from '@dorkos/shared/marketplace-install-telemetry';
 import { getOrCreateInstanceId } from '../../../lib/instance-id.js';
 import {
   registerTelemetryReporter,
@@ -26,17 +27,25 @@ const TELEMETRY_ENDPOINT = siteUrl('/api/telemetry/install');
  *
  * Mirrors {@link InstallEvent} (which is already PII-free by construction)
  * and adds two server-supplied fields: a stable per-machine `installId` and
- * the running `dorkosVersion`.
+ * the running `dorkosVersion`. The site route validates it against
+ * `InstallTelemetryEventSchema` from `@dorkos/shared/marketplace-install-telemetry`,
+ * and the reporter's test parses this payload against that same schema.
  */
 export interface TelemetryPayload {
   packageName: string;
   marketplace: string;
-  type: InstallEvent['type'];
+  /**
+   * The site's list, not the marketplace's: {@link buildPayload} assigns the
+   * marketplace `PackageType` here, so a package type the site would refuse
+   * fails to compile.
+   */
+  type: InstallTelemetryPackageType;
   outcome: InstallEvent['outcome'];
   durationMs: number;
   errorCode?: string;
   installId: string;
   dorkosVersion: string;
+  sourceType: InstallEvent['sourceType'];
 }
 
 /**
@@ -110,5 +119,6 @@ export function buildPayload(
     ...(event.errorCode !== undefined && { errorCode: event.errorCode }),
     installId,
     dorkosVersion,
+    sourceType: event.sourceType,
   };
 }

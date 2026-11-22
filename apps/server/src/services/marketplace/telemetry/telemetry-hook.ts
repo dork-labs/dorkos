@@ -14,6 +14,7 @@
  */
 
 import type { PackageType } from '@dorkos/marketplace';
+import type { InstallTelemetrySourceType } from '@dorkos/shared/marketplace-install-telemetry';
 
 /**
  * A single terminal outcome from the marketplace installer pipeline.
@@ -40,7 +41,7 @@ export interface InstallEvent {
    * marketplace-05 so the marketplace team can track adoption per
    * source type. Non-PII install-pipeline metadata.
    */
-  sourceType: 'relative-path' | 'github' | 'url' | 'git-subdir' | 'npm';
+  sourceType: InstallTelemetrySourceType;
 }
 
 /**

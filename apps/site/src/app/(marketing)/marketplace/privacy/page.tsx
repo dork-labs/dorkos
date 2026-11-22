@@ -70,7 +70,11 @@ export default function MarketplacePrivacyPage() {
           <h2 className="text-charcoal font-mono text-xl font-semibold">What we collect</h2>
           <ul className="text-warm-gray ml-5 list-disc space-y-2 text-base leading-relaxed">
             <li>The package name and marketplace it came from.</li>
-            <li>The package type (agent, plugin, skill-pack, adapter).</li>
+            <li>The package type (agent, plugin, skill-pack, adapter, shape).</li>
+            <li>
+              The kind of source the package came from (GitHub, a URL, a git subfolder, npm, or a
+              folder in the marketplace), never the address itself.
+            </li>
             <li>The install outcome (success, failure, cancelled).</li>
             <li>How long the install took (for performance debugging).</li>
             <li>An error code on failure (so we can fix what is breaking).</li>

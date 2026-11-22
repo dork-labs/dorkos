@@ -148,7 +148,7 @@ The two indexes back the only two read patterns the marketplace page needs: "cou
 
 ## 7. Privacy contract
 
-**The schema is the contract.** Anything that is not a column on `marketplaceInstallEvents` cannot be stored, by construction. Drizzle will reject the insert at compile time, and the Zod `InstallEventSchema` in the Edge Function will reject the payload at runtime before it ever reaches the DB.
+**The schema is the contract.** Anything that is not a column on `marketplaceInstallEvents` cannot be stored, by construction. Drizzle will reject the insert at compile time, and the Zod `InstallTelemetryEventSchema` (`@dorkos/shared/marketplace-install-telemetry`) the Edge Function validates with will reject the payload at runtime before it ever reaches the DB.
 
 The forbidden columns — the ones that are explicitly not on the table and never will be without a public ADR overruling this section — include:
 
@@ -256,3 +256,10 @@ derives `sourceType` from the resolved `PluginSource` discriminator and
 includes it in every POST to `/api/telemetry/install`. The Edge Function
 validates the field via the Zod `enum(['relative-path', 'github', 'url', 'git-subdir', 'npm'])`
 schema and inserts it into the `source_type` column.
+
+The whole event schema lives in one place, `@dorkos/shared/marketplace-install-telemetry`
+(`InstallTelemetryEventSchema`). The Edge Function validates with it, and
+`telemetry-reporter.test.ts` parses the body the reporter really sends against
+it, so a field the route requires cannot go missing on the send side without a
+red test. Until DOR-4988 the reporter dropped `sourceType` and every event got a
+`400`.
