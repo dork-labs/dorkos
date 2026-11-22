@@ -3,10 +3,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { sessionMetadata, sessionNativeBindings, type Db } from '@dorkos/db';
 import { registerTestHomes, clearTestHomes } from './agent-home-fixture.js';
+import { runtimeRegistry } from '../../runtime-registry.js';
 import {
   agentOfChat,
   chatAgentStateOf,
   liveSessionCwd,
+  sessionAgentById,
   sessionAgentOf,
   setSessionAgentSources,
 } from '../session-agent.js';
@@ -103,6 +105,20 @@ describe('chatAgentStateOf', () => {
       .run();
     live.empty = JUNO;
     expect(chatAgentStateOf(db, 'empty')).toEqual({ kind: 'agent', agentPath: JUNO });
+  });
+});
+
+describe('sessionAgentById', () => {
+  it('resolves from the database wired at boot; before that, reads only the recorded agent', async () => {
+    runtimeRegistry.setDb(db);
+    bind('stored', null, JUNO);
+    bind('recorded', RIO);
+    setSessionAgentSources(undefined);
+    await expect(sessionAgentById('stored')).resolves.toBeUndefined();
+    await expect(sessionAgentById('recorded')).resolves.toBe(RIO);
+    setSessionAgentSources({ db, liveCwd: (sessionId) => live[sessionId] });
+    await expect(sessionAgentById('stored')).resolves.toBe(JUNO);
+    await expect(sessionAgentById('recorded')).resolves.toBe(RIO);
   });
 });
 

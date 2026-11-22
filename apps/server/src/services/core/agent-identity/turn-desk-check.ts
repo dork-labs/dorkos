@@ -9,8 +9,9 @@
  * and a refusal stops it through the same door an expired message takes.
  *
  * Which agent the turn is for comes from what the SERVER knows first — the
- * agent the relay resolved from the subject, else the session's own recorded
- * agent — and only then from the payload's `forAgent`. A payload that names a
+ * agent the relay resolved from the subject, else the session's own agent (the
+ * recorded one, else the agent whose home its server-held folder is, DOR-5038)
+ * — and only then from the payload's `forAgent`. A payload that names a
  * different agent than the server knows is refused outright.
  *
  * @module services/core/agent-identity/turn-desk-check
@@ -31,7 +32,7 @@ export interface TurnDeskPlacement {
 
 /** What {@link createTurnDeskCheck} reads, injected so a test needs no server. */
 export interface TurnDeskCheckDeps {
-  /** The agent a session was recorded for (`session_metadata.agent_path`), or `null`. */
+  /** The session's agent, by `session-agent`'s `sessionAgentById`, or `null`. */
   sessionAgentPath(sessionId: string): Promise<string | null>;
   /**
    * Where the session-cwd chain places `agentPath` — the same question the

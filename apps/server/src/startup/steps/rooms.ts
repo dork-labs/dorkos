@@ -453,7 +453,7 @@ export async function wireRooms(refs: ServerRefs, built: WireRoomsInput) {
   });
   // A chat bound without an agent is its folder's agent's; the folder its own
   // runtime runs it in now is one place that folder is known (DOR-5035).
-  setSessionAgentSources({ liveCwd: (sessionId) => liveRuntimeCwd(db, sessionId) });
+  setSessionAgentSources({ db, liveCwd: (sessionId) => liveRuntimeCwd(db, sessionId) });
   // Where else an agent's conversations are: session storage is derived per
   // working directory (ADR-0310), and room turns stood in their agent's copy of
   // the room's files until spec `agent-home-desk` moved them home. Claude Code's
