@@ -74,7 +74,10 @@ export default function MarketplacePrivacyPage() {
             <li>The install outcome (success, failure, cancelled).</li>
             <li>How long the install took (for performance debugging).</li>
             <li>An error code on failure (so we can fix what is breaking).</li>
-            <li>A random install ID generated locally per install.</li>
+            <li>
+              Your install’s random ID, made once on your computer and shared by every DorkOS
+              telemetry channel.
+            </li>
             <li>The DorkOS version (so we can spot version-specific install regressions).</li>
           </ul>
         </div>
@@ -87,8 +90,8 @@ export default function MarketplacePrivacyPage() {
             <span className="text-charcoal font-mono">dorkos telemetry enable</span> or{' '}
             <span className="text-charcoal font-mono">dorkos telemetry disable</span>, or use the
             Privacy and Data tab in DorkOS settings. Setting the environment variable{' '}
-            <span className="text-charcoal font-mono">DO_NOT_TRACK=1</span> keeps everything off no
-            matter what the settings say.
+            <span className="text-charcoal font-mono">DO_NOT_TRACK=1</span> keeps install counts and
+            every other telemetry channel off, no matter what the settings say.
           </p>
         </div>
 

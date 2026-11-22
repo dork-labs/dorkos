@@ -5,7 +5,7 @@ description: What the anonymous DorkOS heartbeat sends, how to turn it off, and 
 
 import { Callout } from 'fumadocs-ui/components/callout';
 
-DorkOS sends us nothing unless you turn it on. If you choose to help, you can share a little anonymous data so we can see roughly how many people run it. It is anonymous, not personal: no prompts, no code, no file paths, no chat content, ever. This page shows the exact data, word for word, and how to switch it on or off.
+DorkOS sends us no usage data unless you turn it on. If you choose to help, you can share a little anonymous data so we can see roughly how many people run it. It is anonymous, not personal: no prompts, no code, no file paths, no chat content, ever. This page shows the exact data, word for word, and how to switch it on or off.
 
 <Callout type="info">
   The three anonymous channels (a daily heartbeat, marketplace install counts, and a few named
@@ -19,7 +19,7 @@ DorkOS sends us nothing unless you turn it on. If you choose to help, you can sh
 - Three anonymous channels are available, all off by default: a daily heartbeat, marketplace install counts, and a few named feature-usage events.
 - On first run, DorkOS shows a notice explaining them. If you do nothing, nothing is ever sent.
 - It is anonymous. No prompts, no code, no file paths, no chat content, ever.
-- Turn it on any time with `dorkos telemetry enable` or the Privacy & Data settings tab, and back off the same way. `DO_NOT_TRACK=1` keeps everything off no matter what the settings say.
+- Turn it on any time with `dorkos telemetry enable` or the Privacy & Data settings tab, and back off the same way. `DO_NOT_TRACK=1` keeps every channel off no matter what the settings say. A few other requests are not telemetry and keep going; [the list is below](#what-the-kill-switches-do-not-stop).
 - The full payload is documented here and enforced in code and tests.
 - The public version of this page lives at [dorkos.ai/telemetry](https://dorkos.ai/telemetry).
 
@@ -39,15 +39,15 @@ DorkOS sends one small message to dorkos.ai about once a day. This is how we can
 }
 ```
 
-| Field                | What it is                                                                                                        |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `instanceId`         | A random id created on your machine. Marks one install so we do not double-count you. Not traceable to you.       |
-| `dorkosVersion`      | Which version of DorkOS you are running.                                                                          |
-| `os`                 | Your platform and chip type, like `darwin-arm64`. Not your hostname.                                              |
-| `runtimesConfigured` | Which agent runtimes you have turned on, like Claude Code or Codex.                                               |
-| `tunnelEnabled`      | Whether you use the tunnel to reach DorkOS from your phone. True or false only.                                   |
-| `cloudLinked`        | Whether this install is linked to a DorkOS account. True or false only.                                           |
-| `counts`             | Rough totals of your agents, tasks, and chat apps and other bridges. Just numbers, never their names or contents. |
+| Field                | What it is                                                                                                                                                                                                                |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `instanceId`         | A random id created once on your computer and kept. Every channel and feedback use the same one, so we do not double-count you. It is not tied to your name or account unless you link analytics to your account (below). |
+| `dorkosVersion`      | Which version of DorkOS you are running.                                                                                                                                                                                  |
+| `os`                 | Your platform and chip type, like `darwin-arm64`. Not your hostname.                                                                                                                                                      |
+| `runtimesConfigured` | Which agent runtimes you have turned on, like Claude Code or Codex.                                                                                                                                                       |
+| `tunnelEnabled`      | Whether you use the tunnel to reach DorkOS from your phone. True or false only.                                                                                                                                           |
+| `cloudLinked`        | Whether this install is linked to a DorkOS account. True or false only.                                                                                                                                                   |
+| `counts`             | Rough totals of your agents, tasks, and chat apps and other bridges. Just numbers, never their names or contents.                                                                                                         |
 
 ## What it never sends
 
@@ -100,7 +100,8 @@ When someone who allows analytics cookies on dorkos.ai copies the one-line insta
 DorkOS has a **Send feedback** button in the help menu, and there is a feedback form on the website too. This is not telemetry. It is a message you write and choose to send: general feedback, a bug, or an idea. Because you are deliberately sending it, it does not follow the anonymous-telemetry rules above.
 
 - It is sent **only when you press Send**. Nothing about feedback goes out on its own.
-- It carries exactly what you chose to send: your message, your email if you gave one so we can tell you when it's fixed, and any picture you attached. If you pointed at part of the app, it names that part too. It also notes which screen you were on and your DorkOS version, so we have context.
+- It carries exactly what you chose to send: your message, your email if you gave one so we can tell you when it's fixed, and any picture you attached. If you pointed at part of the app, it names that part too. Under **Also send**, you can add diagnostics or the recent messages of the chat or room you are in. It also notes which screen you were on and your DorkOS version, so we have context.
+- It includes this install's random `instanceId`, the same id the channels above use. That is how **Your reports** in the help menu finds the reports you sent.
 - It ignores the telemetry switches. `DO_NOT_TRACK`, `DORKOS_TELEMETRY_DISABLED`, and the Privacy & Data toggles turn off tracking, not the Send button. If you press Send, your message reaches us, because that is what you asked for. If you never press it, nothing is sent.
 
 Prefer a public thread? At the bottom of the feedback form, **Open one instead** opens a prefilled GitHub issue you review and edit before submitting.
@@ -109,10 +110,10 @@ Prefer a public thread? At the bottom of the feedback form, **Open one instead**
 
 DorkOS can also send a crash report when something breaks, so we can fix it without asking you for your log files. Unlike the anonymous heartbeat, this one is off until you turn it on:
 
-- It goes to dorkos.ai, the same place as the heartbeat, and nowhere else. There is no third party and nothing to set up.
+- It goes to dorkos.ai, which passes it to PostHog Error Tracking, the service we use to group and read crash reports. There is nothing to set up.
 - It sends the error type and a cleaned-up stack trace (which function, file, and line) and nothing else. It does **not** send the error message text, because a message can contain anything your code put in it. No prompts, no code, no file paths, no chat data.
 
-Before anything leaves your machine, home directories and full file paths are stripped so no username can leak, and anything shaped like a key, token, or password is redacted. To turn it on, set `telemetry.errorReporting: true` in your config. That is the only switch. Leave it off (the default) and nothing is reported.
+Before anything leaves your machine, home directories and full file paths are stripped so no username can leak, and anything shaped like a key, token, or password is redacted. To turn it on, use the **Privacy & Data** tab, run `dorkos telemetry enable --channel errors`, or set `telemetry.errorReporting: true` in your config. All three change the same setting. Leave it off (the default) and nothing is reported.
 
 <Callout type="info">
   Want to see exactly what a crash report looks like before it sends? Set `DORKOS_TELEMETRY_DEBUG=1`
@@ -121,12 +122,12 @@ Before anything leaves your machine, home directories and full file paths are st
 
 ## Linking analytics to your account (a separate opt-in)
 
-When you link this install to a DorkOS account, you can also connect this install's anonymous usage counts to your account, so you can see them when you are signed in on dorkos.ai. Like crash reports, this is off until you turn it on, and it never sends anything new: it only ties the counts you already share to your account.
+When you link this install to a DorkOS account, you can also connect this install's anonymous usage counts to your account, so you can see them when you are signed in on dorkos.ai. Like crash reports, this is off until you turn it on.
 
 - It is off by default. You turn it on with a checkbox in the account-link flow, right before you link, in Settings under DorkOS account.
 - It only takes effect at link time. If you link first and turn it on later, the connection happens the next time you link, not retroactively.
 - The environment kill switches turn it off too: with `DO_NOT_TRACK=1` or `DORKOS_TELEMETRY_DISABLED=1` set, nothing is connected even if the checkbox is on.
-- No new data is collected. It is the same anonymous usage counts described above, now visible under your account.
+- It sends one more thing: this install's random `instanceId`, with the link request. Our analytics then treats your install, your account, and your visits to dorkos.ai while signed in (if you allow analytics cookies there) as one record. The counts themselves are the same ones described above, but they are no longer anonymous to us.
 
 To undo it: turn the checkbox off (it takes effect on your next link), and remove the already-connected data from your account page on dorkos.ai. Unlinking the instance stops it from reporting further.
 
@@ -134,7 +135,7 @@ To undo it: turn the checkbox off (it takes effect on your next link), and remov
 
 Every time an agent finishes a turn, DorkOS knows a few plain facts about it: which model ran, how many tokens it used, how long it took, and what it cost. You can choose to share a short summary of those facts with us, so we can see how the different runtimes compare. Like crash reports, this is **off until you turn it on**.
 
-- It goes to dorkos.ai, the same place as everything else, and nowhere else.
+- It goes to dorkos.ai, which passes it to PostHog, the analytics service we use. Feature-usage events take the same path. The heartbeat and install counts stay in our own database.
 - Each turn sends one small summary: the model, the runtime (Claude Code, Codex, or OpenCode), the input and output token counts, the turn's time, and its cost.
 - It carries **no** prompt, **no** code, **no** file path, and **nothing** you or the agent said. It is counts and a model name, full stop.
 
@@ -159,9 +160,9 @@ dorkos --debug-trace
 
 ## Turn everything off from the environment
 
-Two environment variables force **every** channel off, no matter what your config says. They beat the config, so they are the fastest way to silence DorkOS in a shared image, a CI runner, or a locked-down machine:
+Two environment variables force **every** channel on this page off, no matter what your config says. They beat the config, so they are the fastest way to quiet DorkOS in a shared image, a CI runner, or a locked-down machine:
 
-- `DO_NOT_TRACK` is the universal, cross-tool convention. Set it to `1` (or `true`) and DorkOS sends nothing.
+- `DO_NOT_TRACK` is the universal, cross-tool convention. Set it to `1` (or `true`) and every channel stays off.
 - `DORKOS_TELEMETRY_DISABLED` does the same thing but only affects DorkOS.
 
 ```bash
@@ -170,7 +171,24 @@ export DO_NOT_TRACK=1
 export DORKOS_TELEMETRY_DISABLED=1
 ```
 
-Either one on its own is enough. When a kill switch is set, no channel sends anything even if its config flag is `true`.
+Either one on its own is enough. When a kill switch is set, no channel sends anything even if its config flag is `true`. Either one also:
+
+- stops the update checks, both the one the `dorkos` command runs at start and the one the server runs about once an hour;
+- is passed on to the agents: DorkOS passes `DO_NOT_TRACK=1`, `DISABLE_TELEMETRY=1`, and `DISABLE_ERROR_REPORTING=1` on to every Claude Code, Codex, and OpenCode agent it starts. What each of those programs does with them is up to that program.
+
+On the Mac and Windows apps, DorkOS reads these variables from your login shell, so setting them in your shell profile works there too.
+
+### What the kill switches do not stop
+
+These requests are not telemetry. The kill switches leave them alone, so here is each one, what it sends, and how to stop it. Feedback you send by pressing Send is one of them, on purpose: the switches stop tracking, not a message you chose to send.
+
+| Request                    | What it sends                                                                                                                                                                      | How to stop it                                                         |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| The desktop app's updater  | Asks GitHub for a newer version when the Mac or Windows app opens and every 4 hours after. Only in the downloaded app.                                                             | It has no switch. Use the `dorkos` command instead of the desktop app. |
+| A font you pick            | The default font (Inter) ships with the app. If you pick another font in settings, other than **System default**, your browser loads it from Google Fonts each time the app opens. | Keep Inter or pick **System default**.                                 |
+| The linked-device check-in | While this computer is linked to a DorkOS account, it tells DorkOS Cloud every 15 minutes that it is still online, with the computer's name, its platform, and the DorkOS version. | Unlink the computer from your account.                                 |
+| Feedback                   | Only what you send when you press Send (see [Feedback](#feedback-only-when-you-press-send)).                                                                                       | Don't press Send.                                                      |
+| The agents' own AI service | Your prompts, code, and chats go to the AI service each agent uses, under that service's terms.                                                                                    | Choose which service each agent uses.                                  |
 
 ## See and change it from the command line
 
@@ -214,10 +232,11 @@ The first time you open DorkOS, a dialog asks whether you want to share anonymou
 Set a value to `true` to turn a channel on, or `false` to turn it off. Every channel defaults to `false`, and each one's flag is the only switch it needs.
 
 <Callout type="info">
-  Plenty of developer tools collect anonymous usage by default. We decided not to: nothing leaves
-  your machine unless you say so. When you do turn a channel on, we keep it genuinely anonymous and
-  show you the whole payload. Your code and your chats with the AI never leave your machine either
-  way.
+  Plenty of developer tools collect anonymous usage by default. We decided not to: no usage data
+  leaves your machine unless you say so. When you do turn a channel on, we keep it genuinely
+  anonymous and show you the whole payload. Your code and your chats never reach us as telemetry
+  either way. They go only to the AI service your agents use, and to us only if you include them in
+  feedback.
 </Callout>
 
 ## When this changes

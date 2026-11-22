@@ -81,8 +81,8 @@ export function decideTier1Boot(
  */
 export function formatFirstRunTelemetryNotice(): string {
   return [
-    'DorkOS sends nothing to us unless you turn it on. If you would like to help,',
-    'you can share three anonymous things:',
+    'DorkOS sends no usage data to us unless you turn it on. If you would like',
+    'to help, you can share three anonymous things:',
     '',
     '  - a daily anonymous heartbeat (a random install id, the version, your OS and',
     '    chip type, which runtimes you have on, and rough counts)',
