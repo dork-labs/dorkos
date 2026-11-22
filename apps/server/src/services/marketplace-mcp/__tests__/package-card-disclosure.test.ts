@@ -178,6 +178,47 @@ describe('package card disclosure', () => {
     }
   );
 
+  it('says an update brings app code that waits for a fresh OK (DOR-4895)', async () => {
+    const UPDATE_APP_WAITS = 'New code waits for your OK in Activity, unless you trust its source.';
+    const approvals = new ApprovalService(createTestDb());
+    const provider = new TokenConfirmationProvider(approvals);
+    const extensions = [
+      {
+        id: 'sample-board',
+        slots: ['pages'],
+        hasServer: true,
+        isolation: { runtime: 'in-process' as const, net: [], run: [], agents: false },
+        secrets: [],
+      },
+    ];
+    await provider.requestInstallConfirmation({
+      packageName: 'sample-pack',
+      operation: 'update',
+      updates: [
+        {
+          packageName: 'sample-pack',
+          type: 'plugin',
+          scope: 'agent-local',
+          projectPath: '/sample/project',
+          installPath: '/sample/project/.dork/plugins/sample-pack',
+          installedVersion: '1.0.0',
+          latestVersion: '2.0.0',
+          contentHash: 'digest-b',
+          disclosed: NOTHING,
+          extensions,
+        },
+      ],
+    });
+    const [card] = approvals.listPending();
+    const app = card!.marketplaceSummary!.packages[0]!.risks.find(
+      (risk) => risk.kind === 'extension'
+    );
+    expect(app?.text).toContain('runs server code inside DorkOS');
+    expect(app?.items).toContain(UPDATE_APP_WAITS);
+    expect(approvals.fullDetail(card!.approvalId)).toContain(UPDATE_APP_WAITS);
+    expect(approvals.fullDetail(card!.approvalId)).not.toContain('runs nothing on its own');
+  });
+
   it('keeps the marked-turn line and every app on a large summary card', async () => {
     const approvals = new ApprovalService(createTestDb());
     const provider = new TokenConfirmationProvider(approvals);

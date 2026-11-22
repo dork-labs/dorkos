@@ -800,13 +800,13 @@ export function trustedOriginOf(
 
 Precedence per id (first match wins; rows 1-3 are today's order, unchanged):
 
-| #   | Candidate                                                                                         | Rule                                                                                                                                                                                        |
-| --- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Core extension                                                                                    | Always wins; other copies are ignored with today's warning.                                                                                                                                 |
-| 2   | Installed directly (`{dorkHome}/extensions/<id>`, then the cwd project's `.dork/extensions/<id>`) | Today's rule, including "a project copy is dropped when its id is approved for another copy". A direct copy in any other known project counts as a project copy with the same rule.         |
-| 3   | Plugin-carried copies approved **by path**                                                        | Today's rule: the approved copy wins.                                                                                                                                                       |
-| 4   | Plugin-carried copies whose **trusted origin equals the approved origin**                         | New. Among them, the **highest manifest version** wins (semver; a tie goes to global before project, then sorted root, then sorted plugin name). No re-approval: same approved source (N3). |
-| 5   | Other plugin-carried copies                                                                       | Today's rule: global before project, sorted plugin name; with multi-project scan, then sorted project root. It runs only after a person approves it.                                        |
+| #   | Candidate                                                                                         | Rule                                                                                                                                                                                                                                                                                                                                |
+| --- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Core extension                                                                                    | Always wins; other copies are ignored with today's warning.                                                                                                                                                                                                                                                                         |
+| 2   | Installed directly (`{dorkHome}/extensions/<id>`, then the cwd project's `.dork/extensions/<id>`) | Today's rule, including "a project copy is dropped when its id is approved for another copy". A direct copy in any other known project counts as a project copy with the same rule.                                                                                                                                                 |
+| 3   | Plugin-carried copies approved **by path**                                                        | Today's rule: the approved copy wins.                                                                                                                                                                                                                                                                                               |
+| 4   | Plugin-carried copies whose **trusted origin equals the approved origin**                         | New. Among them, the **highest manifest version** wins (semver; a tie goes to global before project, then sorted root, then sorted plugin name). No re-approval: same approved source (N3). **Amended by DOR-4895:** no re-approval only for a copy with the approved files (folder digest); a newer version waits for its own yes. |
+| 5   | Other plugin-carried copies                                                                       | Today's rule: global before project, sorted plugin name; with multi-project scan, then sorted project root. It runs only after a person approves it.                                                                                                                                                                                |
 
 One warning per id lists every copy found and which one won, as today.
 
@@ -814,7 +814,7 @@ One warning per id lists every copy found and which one won, as today.
 
 - **One repo has an older flow.** Row 4 picks the newest; the older copy is listed in `GET /api/extensions` with a new informational field `shadowedBy: string | null` (the winning copy's path; not a new `ExtensionStatus`), so flow can say "runs an older flow, update" (N5).
 - **A cloned repo carries a flow copy with a higher version and a claimed origin.** No install record on this machine means no trusted origin, so row 4 ignores it; at most it is a row-5 candidate that must be approved by path, and only if nothing in rows 1-4 exists.
-- **The newest trusted copy is deleted.** The next discovery falls back to the next highest trusted copy with no prompt.
+- **The newest trusted copy is deleted.** The next discovery falls back to the next highest trusted copy, with no prompt when it holds the approved files (DOR-4895).
 - **A known project's folder is gone.** Skipped silently; the registry keeps the root (§6.1).
 - **Different sources, same id.** Unchanged: rows 3 and 5, today's warning, and approval stays source-bound.
 - **The server's working folder changes.** The chosen copy no longer changes with it (the cwd project is just one of the scanned roots). `POST /api/extensions/cwd-changed` still triggers a rescan so a newly opened project is picked up at once.
@@ -1352,7 +1352,7 @@ Tests:
 Tests:
 
 - Unit (`extension-discovery.test.ts`): each row of the precedence table; the four edge cases in §9.2; a clone-with-claimed-origin case never runs unapproved; `trustedOriginOf` for global, recorded project, and unrecorded project copies; `isApprovedCopy` by origin.
-- Server: approving flow in repo A, then installing a newer flow in repo B through the installer, loads B's copy with no new approval item; an older copy reports `shadowedBy`.
+- Server: approving flow in repo A, then installing the same flow in repo B through the installer, loads B's copy with no new approval item; the other copy reports `shadowedBy`. A newer flow in repo B waits for its own yes (amended by DOR-4895).
 - Risk: scanning every known project on each reload costs disk reads; the scan is bounded to `.dork/extensions` and `.dork/plugins/*/.dork/extensions` per root, debounced, and runs off the request path.
 
 ### Docs and changelog

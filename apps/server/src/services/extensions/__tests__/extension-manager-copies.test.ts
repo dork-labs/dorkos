@@ -82,6 +82,10 @@ function flowIn(project: string, version: string): ExtensionRecord {
 
 describe('re-scans move the server half onto the new copy', () => {
   let manager: ExtensionManager;
+  /** The approved files; another copy runs on the yes only with these (DOR-4895). */
+  const FILES = `sha256:${'f'.repeat(64)}`;
+  /** A copy of the approved files in `project`. */
+  const sameFilesIn = (project: string) => ({ ...flowIn(project, '1.0.0'), currentDigest: FILES });
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -90,10 +94,10 @@ describe('re-scans move the server half onto the new copy', () => {
       disabled: [],
       approvedToRun: ['flow'],
       approvedSources: {
-        flow: { path: flowIn('a', '1.0.0').path, plugin: 'flow', origin: ORIGIN },
+        flow: { path: flowIn('a', '1.0.0').path, plugin: 'flow', origin: ORIGIN, digest: FILES },
       },
     };
-    mockDiscover.mockResolvedValue([flowIn('a', '1.0.0')]);
+    mockDiscover.mockResolvedValue([sameFilesIn('a')]);
     manager = new ExtensionManager('/fake/dork-home');
     await manager.initialize(null);
     expect(lifecycle.initialize).toHaveBeenCalledWith(
@@ -104,27 +108,36 @@ describe('re-scans move the server half onto the new copy', () => {
   });
 
   it('reload() restarts it when another copy takes over', async () => {
-    mockDiscover.mockResolvedValue([flowIn('b', '1.2.0')]);
+    mockDiscover.mockResolvedValue([sameFilesIn('b')]);
 
     await manager.reload();
 
     expect(lifecycle.shutdown).toHaveBeenCalledWith('flow');
     expect(lifecycle.initialize).toHaveBeenCalledWith(
       'flow',
-      expect.objectContaining({ path: flowIn('b', '1.2.0').path })
+      expect.objectContaining({ path: sameFilesIn('b').path })
     );
   });
 
   it('a working-directory change restarts it too', async () => {
-    mockDiscover.mockResolvedValue([flowIn('b', '1.2.0')]);
+    mockDiscover.mockResolvedValue([sameFilesIn('b')]);
 
     await manager.updateCwd('/work/b');
 
     expect(lifecycle.shutdown).toHaveBeenCalledWith('flow');
     expect(lifecycle.initialize).toHaveBeenCalledWith(
       'flow',
-      expect.objectContaining({ path: flowIn('b', '1.2.0').path })
+      expect.objectContaining({ path: sameFilesIn('b').path })
     );
+  });
+
+  it('stops it, and starts nothing, when a newer version from the origin takes over (DOR-4895)', async () => {
+    mockDiscover.mockResolvedValue([{ ...flowIn('b', '1.2.0'), currentDigest: 'sha256:newer' }]);
+
+    await manager.reload();
+
+    expect(lifecycle.shutdown).toHaveBeenCalledWith('flow');
+    expect(lifecycle.initialize).not.toHaveBeenCalled();
   });
 
   it('a background refresh restarts it, after the caller has moved on', async () => {
@@ -227,10 +240,13 @@ describe('"Stop trusting" pins only what is on, to that exact copy', () => {
 });
 
 describe('an approval handed to another copy of the same origin (DOR-3068)', () => {
+  /** The files the person approved, in project a. */
+  const APPROVED = `sha256:${'a'.repeat(64)}`;
+
   /** Set up `flow` approved by origin at project a, with project b's copy shadowed. */
   async function boot(heirDigest: string | undefined) {
     vi.clearAllMocks();
-    const removed = { ...flowIn('a', '2.0.0'), currentDigest: `sha256:${'a'.repeat(64)}` };
+    const removed = { ...flowIn('a', '1.0.0'), currentDigest: APPROVED };
     const heir: ExtensionRecord = {
       ...flowIn('b', '1.0.0'),
       ...(heirDigest ? { currentDigest: heirDigest } : {}),
@@ -240,7 +256,9 @@ describe('an approval handed to another copy of the same origin (DOR-3068)', () 
       enabled: ['flow'],
       disabled: [],
       approvedToRun: ['flow'],
-      approvedSources: { flow: { path: removed.path, plugin: 'flow', origin: ORIGIN } },
+      approvedSources: {
+        flow: { path: removed.path, plugin: 'flow', origin: ORIGIN, digest: APPROVED },
+      },
     };
     mockDiscover.mockResolvedValue([removed, heir]);
     const manager = new ExtensionManager('/fake/dork-home');
@@ -249,15 +267,20 @@ describe('an approval handed to another copy of the same origin (DOR-3068)', () 
   }
 
   it('names the heir’s files, so no later scan pins it to whatever is there', async () => {
-    const digest = `sha256:${'b'.repeat(64)}`;
-    const { manager, heir } = await boot(digest);
+    const { manager, heir } = await boot(APPROVED);
     await manager.forgetRunApproval('flow', '/work/a/.dork/plugins/flow');
     expect(stored.value.approvedSources?.flow).toEqual({
       path: heir.path,
       plugin: 'flow',
       origin: ORIGIN,
-      digest,
+      digest: APPROVED,
     });
+  });
+
+  it('hands nothing to a copy with other files, and forgets the approval (DOR-4895)', async () => {
+    const { manager } = await boot(`sha256:${'b'.repeat(64)}`);
+    await manager.forgetRunApproval('flow', '/work/a/.dork/plugins/flow');
+    expect(stored.value.approvedSources?.flow).toBeUndefined();
   });
 
   it('hands nothing to a copy whose files it cannot read, and forgets the approval', async () => {

@@ -22,6 +22,16 @@ import type { ApprovableUpdate } from '../marketplace/flows/update-installed.js'
 export const UPDATE_DETAIL_MAX_LENGTH = APPROVAL_DETAIL_MAX_LENGTH;
 
 /**
+ * Said under each app an update brings. An app's code runs only on a person's
+ * yes to its exact files, so new code waits in Activity however an earlier
+ * version was approved (DOR-4895). A source the person trusts outright
+ * (`extensions.trustedSources`) runs without asking; an update that only adds
+ * places keeps its code and asks only for those places (`places-only-update.ts`).
+ */
+export const UPDATE_APP_WAITS =
+  'New code waits for your OK in Activity, unless you trust its source.';
+
+/**
  * A value written out whole, quoted and escaped, with every hidden or
  * direction-changing character shown, so it cannot forge the text around it.
  */
@@ -65,7 +75,12 @@ export function describeUpdatesInFull(updates: readonly ApprovableUpdate[]): str
       [
         `${whole(update.packageName)} (${update.type}, ${placeOf(update)}): ${whole(update.installedVersion)} → ${whole(update.latestVersion)}`,
         `  at ${whole(update.installPath)}`,
-        ...describePackageInFull(update.disclosed, update.extensions, whenProgramsStart(update)),
+        ...describePackageInFull(
+          update.disclosed,
+          update.extensions,
+          whenProgramsStart(update),
+          UPDATE_APP_WAITS
+        ),
       ].join('\n')
     )
     .join('\n\n');
